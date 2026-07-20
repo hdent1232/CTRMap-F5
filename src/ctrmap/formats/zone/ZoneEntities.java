@@ -28,9 +28,9 @@ public class ZoneEntities {
 	public ArrayList<Prop> furniture = new ArrayList<>();
 	public ArrayList<NPC> npcs = new ArrayList<>();
 	public ArrayList<Warp> warps = new ArrayList<>();
+	public ArrayList<Trigger> triggers1 = new ArrayList<>();
+	public ArrayList<Trigger> triggers2 = new ArrayList<>();
 	public GFLPawnScript scripts;
-
-	public byte[] rest_unprogrammed;
 
 	public boolean modified = false;
 
@@ -53,9 +53,12 @@ public class ZoneEntities {
 			for (int i = 0; i < warpCount; i++) {
 				warps.add(new Warp(dis));
 			}
-			int restLength = trigger1Count * 0x18 + trigger2Count * 0x18;
-			rest_unprogrammed = new byte[restLength];
-			dis.read(rest_unprogrammed);
+			for (int i = 0; i < trigger1Count; i++) {
+				triggers1.add(new Trigger(dis));
+			}
+			for (int i = 0; i < trigger2Count; i++) {
+				triggers2.add(new Trigger(dis));
+			}
 			scripts = new GFLPawnScript(dis);
 			dis.close();
 		} catch (IOException ex) {
@@ -67,6 +70,11 @@ public class ZoneEntities {
 		try {
 			ByteArrayOutputStream baos = new ByteArrayOutputStream();
 			LittleEndianDataOutputStream dos = new LittleEndianDataOutputStream(baos);
+			furnitureCount = furniture.size();
+			NPCCount = npcs.size();
+			warpCount = warps.size();
+			trigger1Count = triggers1.size();
+			trigger2Count = triggers2.size();
 			totalLength = 8 /*header without length*/ + furnitureCount * 0x14 + NPCCount * 0x30 + warpCount * 0x18 + trigger1Count * 0x18 + trigger2Count * 0x18;
 			dos.writeInt(totalLength);
 			dos.write(furnitureCount);
@@ -85,7 +93,12 @@ public class ZoneEntities {
 			for (int i = 0; i < warps.size(); i++) {
 				warps.get(i).write(dos);
 			}
-			dos.write(rest_unprogrammed);
+			for (int i = 0; i < triggers1.size(); i++) {
+				triggers1.get(i).write(dos);
+			}
+			for (int i = 0; i < triggers2.size(); i++) {
+				triggers2.get(i).write(dos);
+			}
 			scripts.write(dos);
 			dos.close();
 			return baos.toByteArray();
@@ -451,6 +464,68 @@ public class ZoneEntities {
 						&& w.coordinateType == coordinateType && w.x == x && w.y == y && w.z == z
 						&& w.w == this.w && w.h == h && w.directionality == directionality
 						&& w.u14 == u14 && w.u16 == u16;
+			}
+			return false;
+		}
+	}
+
+	public static class Trigger {
+
+		public int script;
+		public int u2;
+		public int constant;
+		public int u6;
+		public int u8;
+		public int uA;
+		public int x;
+		public int y;
+		public int w;
+		public int h;
+		public int u14;
+		public int u16val;
+
+		public Trigger() {
+			w = 1;
+			h = 1;
+		}
+
+		public Trigger(LittleEndianDataInputStream dis) throws IOException {
+			script = dis.readUnsignedShort();
+			u2 = dis.readUnsignedShort();
+			constant = dis.readUnsignedShort();
+			u6 = dis.readUnsignedShort();
+			u8 = dis.readUnsignedShort();
+			uA = dis.readUnsignedShort();
+			x = dis.readUnsignedShort();
+			y = dis.readUnsignedShort();
+			w = dis.readShort();
+			h = dis.readShort();
+			u14 = dis.readShort();
+			u16val = dis.readShort();
+		}
+
+		public void write(LittleEndianDataOutputStream dos) throws IOException {
+			dos.writeShort((short) script);
+			dos.writeShort((short) u2);
+			dos.writeShort((short) constant);
+			dos.writeShort((short) u6);
+			dos.writeShort((short) u8);
+			dos.writeShort((short) uA);
+			dos.writeShort((short) x);
+			dos.writeShort((short) y);
+			dos.writeShort((short) w);
+			dos.writeShort((short) h);
+			dos.writeShort((short) u14);
+			dos.writeShort((short) u16val);
+		}
+
+		@Override
+		public boolean equals(Object o){
+			if (o != null && o instanceof Trigger){
+				Trigger t = (Trigger)o;
+				return t.script == script && t.u2 == u2 && t.constant == constant
+						&& t.u6 == u6 && t.u8 == u8 && t.uA == uA && t.x == x && t.y == y
+						&& t.w == this.w && t.h == h && t.u14 == u14 && t.u16val == u16val;
 			}
 			return false;
 		}
