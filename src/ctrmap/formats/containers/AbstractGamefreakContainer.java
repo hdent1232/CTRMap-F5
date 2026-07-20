@@ -132,7 +132,13 @@ public abstract class AbstractGamefreakContainer {
 	
 	public abstract boolean getIsPadded();
 	
-	public void storeFile(int num, byte[] data) {
+	/**
+	 * Stores a subfile, rewriting the container on disk. Returns true when the
+	 * container ends up holding the given data (including the no-op case where
+	 * it already did), false when the write failed - callers that must not
+	 * report a failed write as success have to check this.
+	 */
+	public boolean storeFile(int num, byte[] data) {
 		byte[] paddedData;
 		if (getIsPadded()){
 			byte[] padding = Utils.getPadding(getOffset(num), data.length);
@@ -144,7 +150,7 @@ public abstract class AbstractGamefreakContainer {
 			paddedData = data;
 		}
 		if (!checkStoreStatus(num, paddedData)){
-			return;
+			return true;
 		}
 		try {
 			int pos = 0;
@@ -185,21 +191,25 @@ public abstract class AbstractGamefreakContainer {
 			out.flush();
 			out.close();
 			Workspace.addPersist(getOriginFile());
+			return true;
 		} catch (IOException e) {
 			e.printStackTrace();
-			System.out.println("An IOException occured while reading " + f.getName());
+			System.out.println("An IOException occured while writing " + f.getName());
+			return false;
 		}
 	}
-	
-	public void storeFile(int num, File f){
+
+	public boolean storeFile(int num, File f){
 		try {
 			InputStream in = new FileInputStream(f);
 			byte[] b = new byte[in.available()];
 			in.read(b);
-			storeFile(num, b);
+			boolean ok = storeFile(num, b);
 			in.close();
+			return ok;
 		} catch (IOException ex) {
 			Logger.getLogger(AbstractGamefreakContainer.class.getName()).log(Level.SEVERE, null, ex);
+			return false;
 		}
 	}
 }

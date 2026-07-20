@@ -13,6 +13,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
@@ -24,18 +25,28 @@ import java.util.logging.Logger;
 public class ADPropRegistry {
 
 	private AD f;
-	public Map<Integer, ADPropRegistryEntry> entries = new HashMap<>();
+	public Map<Integer, ADPropRegistryEntry> entries = new LinkedHashMap<>();
 	public Map<Integer, H3DModel> models = new HashMap<>();
 	public boolean modified = false;
 
 	public ADPropRegistry(AD ad, List<H3DTexture> textures) {
+		this(ad, textures, true);
+	}
+
+	public ADPropRegistry(AD ad, List<H3DTexture> textures, boolean loadModels) {
 		try {
 			f = ad;
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(ad.getFile(0)));
 			int numEntries = dis.readInt();
 			for (int i = 0; i < numEntries; i++) {
 				ADPropRegistryEntry entry = new ADPropRegistryEntry(dis);
+				if (entries.containsKey(entry.reference)) {
+					System.err.println("ADPropRegistry: duplicate reference id " + entry.reference + " at entry " + i + " - the previous entry will be overwritten");
+				}
 				entries.put(entry.reference, entry);
+				if (!loadModels) {
+					continue;
+				}
 				BCHFile bch = new BCHFile(new BM(Workspace.getWorkspaceFile(Workspace.ArchiveType.BUILDING_MODELS, entry.model)).getFile(0));
 				if (!bch.models.isEmpty()){
 					bch.models.get(0).setMaterialTextures(bch.textures);

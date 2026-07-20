@@ -51,6 +51,14 @@ public class GFLPawnScript {
 
 	public int allocatedMem;
 
+	/**
+	 * VM heap/stack headroom (allocatedMem - heapStart) measured at parse
+	 * time. write() preserves it: when the code/data section grows (e.g. a
+	 * talker clone), allocatedMem grows by the same delta instead of silently
+	 * shrinking the runtime heap/stack.
+	 */
+	private int initialHeadroom;
+
 	public int compCodeLen;
 	public int decCodeLen;
 
@@ -72,6 +80,7 @@ public class GFLPawnScript {
 			dataStart = in.readInt();
 			heapStart = in.readInt();
 			allocatedMem = in.readInt();
+			initialHeadroom = allocatedMem - heapStart;
 			mainEntryPoint = in.readInt();
 
 			publicsOffset = in.readInt();
@@ -114,6 +123,7 @@ public class GFLPawnScript {
 			updateRaw();
 			instructionStart = overlaysOffset + rest.length;
 			heapStart = instructionStart + decInstructions.length * 4;
+			allocatedMem = heapStart + initialHeadroom; //grow the VM allocation with the code section, preserving the original heap/stack headroom
 			dataStart = heapStart - data.size() * 4;
 			mainEntryPoint = mainEntryPointDummy.argumentCells[0];
 			instructionsToWrite = compressScript(decInstructions);

@@ -37,6 +37,7 @@ public class Workspace {
 	public static File fielddata;
 	public static File mapmatrix;
 	public static File gametext;
+	public static File storytext;
 	public static File zonedata;
 	public static File buildingmodels;
 	public static File npcregistries;
@@ -50,6 +51,7 @@ public class Workspace {
 	public static GARC gr;
 	public static GARC mm;
 	public static GARC texts;
+	public static GARC storytexts;
 	public static GARC zo;
 	public static GARC bm;
 	public static GARC npcreg;
@@ -110,6 +112,7 @@ public class Workspace {
 					"fielddata",
 					"mapmatrix",
 					"gametext",
+					"storytext",
 					"zonedata",
 					"buildingmodels",
 					"npcregistries",
@@ -156,6 +159,7 @@ public class Workspace {
 					fielddata = new File(basepath + getArchivePath(ArchiveType.FIELD_DATA, game));
 					mapmatrix = new File(basepath + getArchivePath(ArchiveType.MAP_MATRIX, game));
 					gametext = new File(basepath + getArchivePath(ArchiveType.GAMETEXT, game));
+					storytext = new File(basepath + getArchivePath(ArchiveType.STORYTEXT, game)); //no existence check - lazy-loaded on demand via getStoryTextGARC()
 					zonedata = new File(basepath + getArchivePath(ArchiveType.ZONE_DATA, game));
 					buildingmodels = new File(basepath + getArchivePath(ArchiveType.BUILDING_MODELS, game));
 					npcregistries = new File(basepath + getArchivePath(ArchiveType.NPC_REGISTRIES, game));
@@ -194,6 +198,8 @@ public class Workspace {
 			LocationNames.loadFromGarc();
 			CtrmapMainframe.mBuilder.loadGARCs();
 			CtrmapMainframe.mZonePnl.loadEverything();
+			CtrmapMainframe.mTextEditor.loadGarc();
+			CtrmapMainframe.showZoneLoadingHint();
 		} else {
 			valid = false;
 			StringBuilder sb = new StringBuilder();
@@ -201,6 +207,8 @@ public class Workspace {
 				sb.append(s);
 				sb.append("\n");
 			}
+			sb.append("\nSet the RomFS (game directory) and workspace paths in Options > Workspace settings,\n");
+			sb.append("then open a map from the zone dropdown in the \"Zone Loader\" tab.");
 			JOptionPane.showMessageDialog(parent, sb.toString(), "Setup Error", JOptionPane.ERROR_MESSAGE);
 		}
 	}
@@ -222,6 +230,8 @@ public class Workspace {
 					return "/a/0/4/2";
 				case GAMETEXT:
 					return "/a/0/7/4";
+				case STORYTEXT:
+					return "/a/0/8/2"; //pk3DS GARCReference_XY: storytext base 080 + English language offset 2
 				case ZONE_DATA:
 					return "/a/0/1/2";
 				case BUILDING_MODELS:
@@ -243,6 +253,8 @@ public class Workspace {
 					return "/a/0/4/0";
 				case GAMETEXT:
 					return "/a/0/7/3";
+				case STORYTEXT:
+					return "/a/0/8/1"; //pk3DS GARCReference_AO: storytext base 079 + English language offset 2
 				case ZONE_DATA:
 					return "/a/0/1/3";
 				case BUILDING_MODELS:
@@ -281,6 +293,7 @@ public class Workspace {
 		cleanDirectory(WORKSPACE_PATH + "/areadata", deletePersistent);
 		cleanDirectory(WORKSPACE_PATH + "/fielddata", deletePersistent);
 		cleanDirectory(WORKSPACE_PATH + "/gametext", deletePersistent);
+		cleanDirectory(WORKSPACE_PATH + "/storytext", deletePersistent);
 		cleanDirectory(WORKSPACE_PATH + "/mapmatrix", deletePersistent);
 		cleanDirectory(WORKSPACE_PATH + "/zonedata", deletePersistent);
 		cleanDirectory(WORKSPACE_PATH + "/buildingmodels", deletePersistent);
@@ -314,6 +327,8 @@ public class Workspace {
 				return mm;
 			case GAMETEXT:
 				return texts;
+			case STORYTEXT:
+				return getStoryTextGARC();
 			case ZONE_DATA:
 				return zo;
 			case BUILDING_MODELS:
@@ -341,6 +356,9 @@ public class Workspace {
 			case GAMETEXT:
 				sb.append("gametext");
 				break;
+			case STORYTEXT:
+				sb.append("storytext");
+				break;
 			case ZONE_DATA:
 				sb.append("zonedata");
 				break;
@@ -360,8 +378,29 @@ public class Workspace {
 		return new File(sb.toString());
 	}
 
+	/**
+	 * Lazily loads the STORYTEXT GARC (dialogue text; one GFMessageFile per
+	 * ZoneHeader.textID). Unlike GAMETEXT it is not loaded at startup because
+	 * of its size (637 files on ORAS).
+	 *
+	 * Archive paths follow pk3DS's GARCReference tables: storytext base GARC
+	 * 079 (ORAS) / 080 (XY) plus the language offset (2 = English), giving
+	 * /a/0/8/1 for ORAS and /a/0/8/2 for XY; other languages are adjacent
+	 * (e.g. ORAS /a/0/7/9 JP-kana, /a/0/8/0 JP-kanji).
+	 *
+	 * @return the storytext GARC, or null if the workspace is not validated
+	 * or the archive file does not exist
+	 */
+	public static GARC getStoryTextGARC() {
+		if (storytexts == null && storytext != null && storytext.exists()) {
+			storytexts = new GARC(storytext);
+		}
+		return storytexts;
+	}
+
 	public static void loadArchives() {
 		if (valid) {
+			storytexts = null; //enforce lazy re-load from the current game dir
 			ad = new GARC(areadata);
 			gr = new GARC(fielddata);
 			mm = new GARC(mapmatrix);
@@ -381,6 +420,8 @@ public class Workspace {
 				bm = new GARC(bm.file);
 			case FIELD_DATA:
 				gr = new GARC(gr.file);
+			case GAMETEXT:
+				texts = new GARC(texts.file);
 			case MAP_MATRIX:
 				mm = new GARC(mm.file);
 			case MOVE_MODELS:
@@ -389,6 +430,10 @@ public class Workspace {
 				npcreg = new GARC(npcreg.file);
 			case ZONE_DATA:
 				zo = new GARC(zo.file);
+			case STORYTEXT:
+				if (storytexts != null) {
+					storytexts = new GARC(storytexts.file);
+				}
 		}
 	}
 
@@ -441,6 +486,20 @@ public class Workspace {
 					progress.setBarPercent(90);
 					progress.setDescription("Packing - npcregistries");
 					npcreg.packDirectory(getExtractionDirectory(ArchiveType.NPC_REGISTRIES));
+					progress.setBarPercent(95);
+					progress.setDescription("Packing - gametext");
+					//packDirectory rewrites the GARC in the game directory even with zero persisted files - only pack when text was actually edited
+					if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {
+						texts.packDirectory(getExtractionDirectory(ArchiveType.GAMETEXT));
+					}
+					progress.setBarPercent(97);
+					progress.setDescription("Packing - storytext");
+					//storytext is lazy-loaded and huge - only pack when dialogue was actually edited
+					GARC storyGarc = getStoryTextGARC();
+					if (storyGarc != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.STORYTEXT))) {
+						storyGarc.packDirectory(getExtractionDirectory(ArchiveType.STORYTEXT));
+						reloadGARC(ArchiveType.STORYTEXT);
+					}
 					progress.setBarPercent(100);
 					progress.setDescription("Done, updating GARCs");
 					//the GARC indices may have changed and as such we need to reload them
@@ -450,6 +509,10 @@ public class Workspace {
 					reloadGARC(ArchiveType.MAP_MATRIX);
 					reloadGARC(ArchiveType.BUILDING_MODELS);
 					reloadGARC(ArchiveType.NPC_REGISTRIES);
+					reloadGARC(ArchiveType.GAMETEXT);
+					//the session prop database was built from the pre-pack GARCs;
+					//drop it so the next palette use rebuilds from the fresh archives
+					ctrmap.formats.propdata.PropDatabase.invalidate();
 					return null;
 				}
 			};
@@ -458,6 +521,19 @@ public class Workspace {
 		}
 	}
 	
+	private static boolean hasPersistedFiles(File dir) {
+		File[] files = dir.listFiles();
+		if (files == null) {
+			return false;
+		}
+		for (File f : files) {
+			if (persist_paths.contains(f.getAbsolutePath())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public static String getMusicName(int id){
 		return musicNames[id - 65536];
 	}
@@ -484,6 +560,7 @@ public class Workspace {
 		FIELD_DATA,
 		MAP_MATRIX,
 		GAMETEXT,
+		STORYTEXT,
 		ZONE_DATA,
 		BUILDING_MODELS,
 		NPC_REGISTRIES,
