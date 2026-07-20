@@ -232,8 +232,18 @@ public class Builder extends javax.swing.JPanel {
         });
 
         btnFAExport.setText("Export");
+        btnFAExport.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnFAExportActionPerformed(evt);
+            }
+        });
 
         btnFADummy.setText("Dummy");
+        btnFADummy.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnFADummyActionPerformed(evt);
+            }
+        });
 
         container.setText("<none>");
 
@@ -268,8 +278,18 @@ public class Builder extends javax.swing.JPanel {
         garcActionsLabel.setText("File actions:");
 
         btnNewContainer.setText("Create new");
+        btnNewContainer.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnNewContainerActionPerformed(evt);
+            }
+        });
 
         btnClearContainer.setText("Clear");
+        btnClearContainer.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnClearContainerActionPerformed(evt);
+            }
+        });
 
         btnAddFileToGARC.setText("Add new file");
         btnAddFileToGARC.addActionListener(new java.awt.event.ActionListener() {
@@ -384,7 +404,11 @@ public class Builder extends javax.swing.JPanel {
 						String[] extra = (textures == JOptionPane.YES_OPTION) ? new String[0] : new String[]{"-notextures"};
 						ESPICAControl.ESPICAProcess proc = new ESPICAControl.ESPICAProcess(ESPICAControl.ESPICAFunctionMode.MODEL_CONVERT, f, donor, output, extra);
 						runESPICA(proc, () -> {
-							persistentContainerReference.storeFile(index, output);
+							if (persistentContainerReference.storeFile(index, output)) {
+								Workspace.addPersist(persistentContainerReference.getOriginFile());
+							} else {
+								JOptionPane.showMessageDialog(Builder.this, "Storing the converted model into the container failed. The container was not modified.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+							}
 						});
 					}
 				} else {
@@ -399,7 +423,11 @@ public class Builder extends javax.swing.JPanel {
 						File output = new File(Workspace.temp + "/espica_texturepack_" + UUID.randomUUID().toString() + ".bch");
 						ESPICAControl.ESPICAProcess proc = new ESPICAControl.ESPICAProcess(ESPICAControl.ESPICAFunctionMode.TEXTURE_MERGE, f, donor, output, new String[0]);
 						runESPICA(proc, () -> {
-							persistentContainerReference.storeFile(index, output);
+							if (persistentContainerReference.storeFile(index, output)) {
+								Workspace.addPersist(persistentContainerReference.getOriginFile());
+							} else {
+								JOptionPane.showMessageDialog(Builder.this, "Storing the merged texture pack into the container failed. The container was not modified.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+							}
 							reloadContainer();
 						});
 					}
@@ -484,6 +512,71 @@ public class Builder extends javax.swing.JPanel {
 		}
     }//GEN-LAST:event_btnAddFileToGARCActionPerformed
 
+    private void btnFAExportActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnFAExportActionPerformed
+		int index = contFileList.getSelectedIndex();
+		if (index != -1 && currentAGFC != null) {
+			File fNew = openFileDialog("Select export location");
+			if (fNew != null) {
+				try {
+					Files.copy(currentAGFC.getIOFile(index).toPath(), fNew.toPath(), StandardCopyOption.REPLACE_EXISTING);
+				} catch (IOException ex) {
+					Logger.getLogger(Builder.class.getName()).log(Level.SEVERE, null, ex);
+				}
+			}
+		}
+    }//GEN-LAST:event_btnFAExportActionPerformed
+
+    private void btnFADummyActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnFADummyActionPerformed
+		int index = contFileList.getSelectedIndex();
+		if (index != -1 && currentAGFC != null) {
+			int rsl = JOptionPane.showConfirmDialog(this, "This will replace the selected file with a dummy. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION);
+			if (rsl == JOptionPane.YES_OPTION) {
+				if (currentAGFC.storeFile(index, new byte[0])) {
+					Workspace.addPersist(currentAGFC.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
+				} else {
+					JOptionPane.showMessageDialog(this, "Replacing the file with a dummy failed. The container was not modified.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+				}
+				reloadContainer();
+			}
+		}
+    }//GEN-LAST:event_btnFADummyActionPerformed
+
+    private void btnNewContainerActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNewContainerActionPerformed
+		if (currentAGFC != null) {
+			int rsl = JOptionPane.showConfirmDialog(this, "This will replace the container with a blank one. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION);
+			if (rsl == JOptionPane.YES_OPTION) {
+				File target = currentAGFC.getOriginFile();
+				if (currentAGFC instanceof GR) {
+					currentAGFC = new GR(target, currentAGFC.len);
+				} else if (currentAGFC instanceof MM) {
+					currentAGFC = new MM(target, currentAGFC.len, ((MM) currentAGFC).type);
+				} else {
+					JOptionPane.showMessageDialog(this, "Creating this container type from scratch is not supported.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+					return;
+				}
+				Workspace.addPersist(target);
+				reloadContainer();
+			}
+		}
+    }//GEN-LAST:event_btnNewContainerActionPerformed
+
+    private void btnClearContainerActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnClearContainerActionPerformed
+		if (currentAGFC != null) {
+			int rsl = JOptionPane.showConfirmDialog(this, "This will clear all files in the container. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION);
+			if (rsl == JOptionPane.YES_OPTION) {
+				boolean allOk = true;
+				for (int i = 0; i < currentAGFC.len; i++) {
+					allOk &= currentAGFC.storeFile(i, new byte[0]);
+				}
+				Workspace.addPersist(currentAGFC.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
+				if (!allOk) {
+					JOptionPane.showMessageDialog(this, "Clearing one or more files failed - the container may be only partially cleared.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+				}
+				reloadContainer();
+			}
+		}
+    }//GEN-LAST:event_btnClearContainerActionPerformed
+
 	private void reloadContainer() {
 		loadContainer(currentAGFC);
 	}
@@ -491,7 +584,11 @@ public class Builder extends javax.swing.JPanel {
 	private void importGeneric(AbstractGamefreakContainer persistentContainerReference, int index) {
 		File in = openFileDialog("Select file to import");
 		if (in != null) {
-			persistentContainerReference.storeFile(index, in);
+			if (persistentContainerReference.storeFile(index, in)) {
+				Workspace.addPersist(persistentContainerReference.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
+			} else {
+				JOptionPane.showMessageDialog(this, "Importing the file into the container failed. The container was not modified.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+			}
 		}
 	}
 

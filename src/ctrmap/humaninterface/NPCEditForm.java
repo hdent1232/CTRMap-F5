@@ -12,17 +12,37 @@ import javax.swing.text.NumberFormatter;
 import static ctrmap.CtrmapMainframe.*;
 import ctrmap.Utils;
 import ctrmap.Workspace;
+import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.h3d.model.H3DVertex;
+import ctrmap.formats.scripts.GFLPawnScript;
+import ctrmap.formats.scripts.MsgWrapperInjector;
+import ctrmap.formats.scripts.TalkerScriptWizard;
+import ctrmap.formats.scripts.ZoneScriptAnalyzer;
+import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.vectors.Vec3f;
+import ctrmap.formats.zone.Zone;
 import ctrmap.humaninterface.tools.NPCTool;
 import java.awt.Component;
 import java.awt.Point;
 import java.awt.event.MouseEvent;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.JLabel;
 import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
+import javax.swing.JTextArea;
 
 /**
  * GUI form for modifying NPC properties.
@@ -41,6 +61,10 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	public List<H3DModel> models = new ArrayList<>();
 	public DefaultComboBoxModel motionModel = new DefaultComboBoxModel();
 	public DefaultComboBoxModel motion2Model = new DefaultComboBoxModel();
+
+	private boolean scrDropdownLoading = false;
+	private GFMessageFile storyFile;
+	private int storyFileTextID = -1;
 
 	public NPCEditForm() {
 		initComponents();
@@ -66,7 +90,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		npc = null;
 		regentry = null;
 		entryBox.removeAllItems();
+		storyFile = null;
+		storyFileTextID = -1;
+		populateScriptDropdown();
 		if (e == null) {
+			updateDialogueSection();
 			return;
 		}
 		for (int i = 0; i < e.NPCCount; i++) {
@@ -78,6 +106,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		loaded = true;
 		if (entryBox.getItemCount() > 0) {
 			showEntry(0);
+		} else {
+			updateDialogueSection(); //zone with zero NPCs - clear the previous zone's preview
 		}
 	}
 
@@ -293,6 +323,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		models.clear();
 		entryBox.setSelectedIndex(-1);
 		entryBox.removeAllItems();
+		storyFile = null;
+		storyFileTextID = -1;
+		scrDropdownLoading = true;
+		scrDropdown.removeAllItems();
+		scrDropdownLoading = false;
+		updateDialogueSection();
 	}
 
 	public void refresh() {
@@ -371,6 +407,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		updateModel(index);
 		updateH3D(index);
 		m3DDebugPanel.bindNavi(e.npcs.get(index));
+		syncScrDropdown(npc.script);
+		updateDialogueSection();
 		loaded = true;
 	}
 
@@ -422,6 +460,427 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return true;
 		}
 		return reg.store(dialog);
+	}
+
+	private Zone getLoadedZone() {
+		if (!Workspace.valid || mZonePnl == null) {
+			return null;
+		}
+		return mZonePnl.zone;
+	}
+
+	private void populateScriptDropdown() {
+		scrDropdownLoading = true;
+		scrDropdown.removeAllItems();
+		Zone zone = getLoadedZone();
+		if (zone != null && zone.s != null) {
+			zone.s.decompressThis();
+			for (String item : TalkerScriptWizard.buildScriptIdItems(zone.s)) {
+				scrDropdown.addItem(item);
+			}
+		}
+		scrDropdown.setSelectedIndex(-1);
+		scrDropdownLoading = false;
+	}
+
+	private void syncScrDropdown(int scriptId) {
+		scrDropdownLoading = true;
+		int match = -1;
+		for (int i = 0; i < scrDropdown.getItemCount(); i++) {
+			if (parseLeadingInt(scrDropdown.getItemAt(i)) == scriptId) {
+				match = i;
+				break;
+			}
+		}
+		scrDropdown.setSelectedIndex(match);
+		scrDropdownLoading = false;
+	}
+
+	private static int parseLeadingInt(String item) {
+		try {
+			int space = item.indexOf(' ');
+			return Integer.parseInt(space == -1 ? item : item.substring(0, space));
+		} catch (NumberFormatException ex) {
+			return Integer.MIN_VALUE;
+		}
+	}
+
+	/**
+	 * Refreshes the Dialogue section for the selected NPC: a read-only
+	 * preview of the STORYTEXT line displayed by the NPC's talker script, or
+	 * an explanatory label when the NPC's script is not a simple talker (or
+	 * no workspace/zone/storytext is available).
+	 */
+	private void updateDialogueSection() {
+		dlgPreview.setText("");
+		btnEditDialogue.setEnabled(false);
+		Zone zone = getLoadedZone();
+		if (zone == null || zone.s == null) {
+			btnAddTalker.setEnabled(false);
+			dlgStatus.setText("No zone loaded.");
+			return;
+		}
+		zone.s.decompressThis();
+		boolean hasDispatch = ZoneScriptAnalyzer.findDispatch(zone.s) != null;
+		boolean hasWrapper = ZoneScriptAnalyzer.findMsgWrapper(zone.s) != null;
+		boolean hasStoryText = Workspace.getStoryTextGARC() != null;
+		//a missing wrapper no longer disables the wizard - it offers to
+		//inject the game's own message routine into the zone script
+		boolean zoneEligible = hasDispatch && hasStoryText;
+		btnAddTalker.setEnabled(zoneEligible && e != null);
+		//explain a disabled button - the zone-level reason is otherwise invisible
+		if (!hasDispatch) {
+			btnAddTalker.setToolTipText("This zone's script has no script dispatch (main SWITCH/CASETBL).");
+		} else if (!hasStoryText) {
+			btnAddTalker.setToolTipText("STORYTEXT archive not found in the game directory.");
+		} else if (!hasWrapper) {
+			btnAddTalker.setToolTipText("This zone's script has no message-display routine - the wizard will offer to inject the game's own (adds ~2.4 KB to the zone script).");
+		} else {
+			btnAddTalker.setToolTipText(null);
+		}
+		if (npc == null) {
+			dlgStatus.setText("No NPC selected.");
+			return;
+		}
+		int scriptId = npc.script;
+		if (scriptId >= TalkerScriptWizard.ENGINE_RESERVED_MIN) {
+			dlgStatus.setText("Script " + scriptId + " is in an engine-reserved range (no local dialogue).");
+			return;
+		}
+		ZoneScriptAnalyzer.TalkerPattern tp = ZoneScriptAnalyzer.findTalkerPattern(zone.s, scriptId);
+		if (tp == null) {
+			dlgStatus.setText("Script " + scriptId + " is not a simple talker script.");
+			return;
+		}
+		if (Workspace.getStoryTextGARC() == null) {
+			dlgStatus.setText("STORYTEXT archive not found in the game directory.");
+			return;
+		}
+		GFMessageFile msg = getStoryFile(zone.header.textID);
+		if (msg == null) {
+			dlgStatus.setText("Story text file " + zone.header.textID + " could not be read.");
+			return;
+		}
+		if (tp.msgLine < 0 || tp.msgLine >= msg.getLineCount()) {
+			dlgStatus.setText("Talker line " + tp.msgLine + " is out of range of story text file " + zone.header.textID + ".");
+			return;
+		}
+		int users = TalkerScriptWizard.countTalkersUsingLine(zone.s, tp.msgLine);
+		dlgStatus.setText("Story text " + zone.header.textID + ", line " + tp.msgLine + (users > 1 ? " (shared by " + users + " talkers)" : ""));
+		dlgPreview.setText(msg.getLine(tp.msgLine));
+		btnEditDialogue.setEnabled(true);
+	}
+
+	private GFMessageFile getStoryFile(int textID) {
+		if (storyFile != null && storyFileTextID == textID) {
+			return storyFile;
+		}
+		storyFile = null;
+		storyFileTextID = -1;
+		if (Workspace.getStoryTextGARC() == null) {
+			return null;
+		}
+		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.STORYTEXT, textID);
+		if (f == null || !f.exists()) {
+			return null;
+		}
+		try {
+			InputStream in = new FileInputStream(f);
+			byte[] b = new byte[in.available()];
+			in.read(b);
+			in.close();
+			storyFile = new GFMessageFile(b);
+			storyFileTextID = textID;
+		} catch (IOException | RuntimeException ex) {
+			storyFile = null;
+			storyFileTextID = -1;
+		}
+		return storyFile;
+	}
+
+	/**
+	 * Stores the story text file into the workspace and registers it for
+	 * packing - the same workspace-file + addPersist flow TextEditor.store()
+	 * uses for GAMETEXT.
+	 */
+	private boolean storeStoryFile(int textID, GFMessageFile msg) {
+		byte[] b;
+		try {
+			b = msg.write();
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not encode story text file " + textID + ":\n" + ex.getMessage(), "Text encode error", JOptionPane.ERROR_MESSAGE);
+			return false;
+		}
+		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.STORYTEXT, textID);
+		if (f == null) {
+			JOptionPane.showMessageDialog(this, "Could not extract story text file " + textID + " from the STORYTEXT archive.", "Text save error", JOptionPane.ERROR_MESSAGE);
+			return false;
+		}
+		try {
+			OutputStream os = new FileOutputStream(f);
+			os.write(b);
+			os.flush();
+			os.close();
+		} catch (IOException ex) {
+			Logger.getLogger(NPCEditForm.class.getName()).log(Level.SEVERE, null, ex);
+			return false;
+		}
+		Workspace.addPersist(f);
+		return true;
+	}
+
+	/**
+	 * Selects a message-routine donor script from the ZoneData archive via
+	 * the workspace-respecting path (a user-modified canonical zone that no
+	 * longer validates is skipped in favour of the first zone that does).
+	 *
+	 * @throws MsgWrapperInjector.InjectionException when no zone validates
+	 */
+	private GFLPawnScript loadWrapperDonor() {
+		final GARC zoneGarc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		if (zoneGarc == null) {
+			throw new MsgWrapperInjector.InjectionException("The ZoneData archive is not loaded.");
+		}
+		return MsgWrapperInjector.pickDonor(new MsgWrapperInjector.ScriptSource() {
+			@Override
+			public GFLPawnScript get(int zoneIndex) {
+				File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+				if (f == null || !f.exists()) {
+					return null;
+				}
+				try {
+					InputStream in = new FileInputStream(f);
+					byte[] b = new byte[in.available()];
+					in.read(b);
+					in.close();
+					return MsgWrapperInjector.extractZoneScript(b);
+				} catch (IOException ex) {
+					return null;
+				}
+			}
+		}, zoneGarc.length);
+	}
+
+	/**
+	 * Multi-line text typed into a dialog uses real newlines; the message
+	 * files store them as the \n escape (same form the TextEditor shows).
+	 */
+	private static String escapeTypedText(String text) {
+		return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n");
+	}
+
+	private void btnEditDialogueActionPerformed(java.awt.event.ActionEvent evt) {
+		Zone zone = getLoadedZone();
+		if (zone == null || npc == null) {
+			return;
+		}
+		zone.s.decompressThis();
+		ZoneScriptAnalyzer.TalkerPattern tp = ZoneScriptAnalyzer.findTalkerPattern(zone.s, npc.script);
+		if (tp == null) {
+			return;
+		}
+		GFMessageFile msg = getStoryFile(zone.header.textID);
+		if (msg == null || tp.msgLine < 0 || tp.msgLine >= msg.getLineCount()) {
+			return;
+		}
+		JTextArea ta = new JTextArea(msg.getLine(tp.msgLine), 5, 40);
+		ta.setLineWrap(true);
+		ta.setWrapStyleWord(true);
+		int rsl = JOptionPane.showConfirmDialog(frame, new JScrollPane(ta), "Edit dialogue (story text " + zone.header.textID + ", line " + tp.msgLine + ")", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+		if (rsl != JOptionPane.OK_OPTION) {
+			return;
+		}
+		String text = escapeTypedText(ta.getText());
+		try {
+			GFMessageFile.write(java.util.Arrays.asList(text)); //validate the bracket/escape syntax before touching anything
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		boolean scriptChanged = false;
+		String previousLine = null;
+		if (TalkerScriptWizard.countTalkersUsingLine(zone.s, tp.msgLine) > 1) {
+			//the line is shared with other talkers - add a new line and re-point this talker only
+			msg.addLine(text);
+			int newLine = msg.getLineCount() - 1;
+			if (!ZoneScriptAnalyzer.patchTalkerLine(zone.s, npc.script, newLine)) {
+				msg.removeLine(newLine);
+				JOptionPane.showMessageDialog(this, "Could not re-point the talker script to line " + newLine + ".", "Script patch error", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			zone.s.updateRaw();
+			scriptChanged = true;
+		} else {
+			previousLine = msg.getLine(tp.msgLine);
+			msg.setLine(tp.msgLine, text);
+		}
+		if (!storeStoryFile(zone.header.textID, msg)) {
+			if (scriptChanged) {
+				//roll back the re-point so a later zone save cannot ship a script
+				//referencing a line that was never written
+				int addedLine = msg.getLineCount() - 1;
+				ZoneScriptAnalyzer.patchTalkerLine(zone.s, npc.script, tp.msgLine);
+				zone.s.updateRaw();
+				msg.removeLine(addedLine);
+			} else {
+				//roll back the in-place edit so the cache matches disk and a later
+				//store of this text file cannot silently commit the failed edit
+				msg.setLine(tp.msgLine, previousLine);
+			}
+			return;
+		}
+		if (scriptChanged) {
+			mZonePnl.store(false); //same path ScriptEditor uses to save the zone script
+			mScriptPnl.loadScript(zone.s);
+			populateScriptDropdown();
+			syncScrDropdown(npc.script);
+		}
+		updateDialogueSection();
+	}
+
+	private void btnAddTalkerActionPerformed(java.awt.event.ActionEvent evt) {
+		Zone zone = getLoadedZone();
+		if (zone == null || zone.s == null || e == null) {
+			JOptionPane.showMessageDialog(this, "No zone is loaded.", "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		zone.s.decompressThis();
+		if (ZoneScriptAnalyzer.findDispatch(zone.s) == null) {
+			JOptionPane.showMessageDialog(this, "This zone's script has no script dispatch (main SWITCH/CASETBL).", "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		boolean injectWrapper = false;
+		GFLPawnScript wrapperDonor = null;
+		if (ZoneScriptAnalyzer.findMsgWrapper(zone.s) == null) {
+			try {
+				wrapperDonor = loadWrapperDonor();
+			} catch (RuntimeException ex) {
+				JOptionPane.showMessageDialog(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ex.getMessage(), "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			int insCount = MsgWrapperInjector.countInjectedInstructions(zone.s, wrapperDonor);
+			int rslInject = JOptionPane.showConfirmDialog(frame,
+					"This zone's script has no message-display routine.\n"
+					+ "Inject one (copied from the game's own code)?\n"
+					+ "This adds " + insCount + " instructions (about 2.4 KB) to the zone script.",
+					"Add talking NPC", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+			if (rslInject != JOptionPane.OK_OPTION) {
+				return;
+			}
+			injectWrapper = true;
+		}
+		if (Workspace.getStoryTextGARC() == null) {
+			JOptionPane.showMessageDialog(this, "The STORYTEXT archive was not found in the game directory.", "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		GFMessageFile msg = getStoryFile(zone.header.textID);
+		if (msg == null) {
+			JOptionPane.showMessageDialog(this, "Story text file " + zone.header.textID + " could not be read.", "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		JTextArea ta = new JTextArea("", 5, 40);
+		ta.setLineWrap(true);
+		ta.setWrapStyleWord(true);
+		JSpinner modelSpinner = new JSpinner(new javax.swing.SpinnerNumberModel((npc != null) ? npc.model : 0, 0, 65535, 1));
+		JPanel panel = new JPanel();
+		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
+		JLabel textLabel = new JLabel("Dialogue text:");
+		textLabel.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(textLabel);
+		JScrollPane taScroll = new JScrollPane(ta);
+		taScroll.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(taScroll);
+		JLabel modelLabel = new JLabel("Model:");
+		modelLabel.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(modelLabel);
+		modelSpinner.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(modelSpinner);
+		JLabel hintLabel = new JLabel("<html>The NPC is placed at the centre of the current view.<br>Model = MoveModel UID (copy from an existing NPC).</html>");
+		hintLabel.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(hintLabel);
+		int rsl = JOptionPane.showConfirmDialog(frame, panel, "Add talking NPC", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+		if (rsl != JOptionPane.OK_OPTION) {
+			return;
+		}
+		String text = escapeTypedText(ta.getText());
+		try {
+			GFMessageFile.write(java.util.Arrays.asList(text)); //validate the bracket/escape syntax before touching anything
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		//the whole script edit (injection + talker clone) runs on a copy that
+		//replaces zone.s only after the story text has been stored, so no
+		//failure anywhere in the flow can leave an orphan wrapper or talker
+		//in the in-memory zone script
+		GFLPawnScript work;
+		try {
+			work = new GFLPawnScript(zone.s.getScriptBytes());
+			work.decompressThis();
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (injectWrapper) {
+			try {
+				MsgWrapperInjector.injectMsgWrapper(work, wrapperDonor);
+				if (ZoneScriptAnalyzer.findMsgWrapper(work) == null) {
+					throw new MsgWrapperInjector.InjectionException("The injected routine did not verify.");
+				}
+			} catch (RuntimeException ex) {
+				JOptionPane.showMessageDialog(this, "Could not inject the message routine:\n" + ex.getMessage(), "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+		}
+		int newLine = msg.getLineCount();
+		int newId;
+		try {
+			newId = TalkerScriptWizard.cloneTalker(work, newLine);
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not add the talker script:\n" + ex.getMessage(), "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		msg.addLine(text);
+		if (!storeStoryFile(zone.header.textID, msg)) {
+			msg.removeLine(newLine); //keep the cached story file consistent with disk; zone.s is still the untouched original
+			return;
+		}
+		zone.s = work; //commit - nothing before this point modified the zone script
+		//add the NPC record at the viewport centre with the new script ID
+		loaded = false;
+		ZoneEntities.NPC newNPC = new ZoneEntities.NPC();
+		int newuid = 0;
+		for (int i = 0; i < e.npcs.size(); i++) {
+			newuid = Math.max(e.npcs.get(i).uid + 1, newuid); //get first free UID but don't pollute free spaces if any
+		}
+		newNPC.uid = newuid;
+		newNPC.model = (Integer) modelSpinner.getValue();
+		newNPC.script = newId;
+		Point defaultPos = mTileMapPanel.getTileAtViewportCentre();
+		newNPC.xTile = defaultPos.x;
+		newNPC.yTile = defaultPos.y;
+		e.npcs.add(newNPC);
+		if (reg != null) {
+			models.add(reg.getModel(newNPC.model));
+		}
+		e.NPCCount++;
+		entryBox.addItem(String.valueOf(newNPC.uid));
+		loaded = true;
+		e.modified = true;
+		populateScriptDropdown();
+		setNPC(entryBox.getItemCount() - 1);
+		mZonePnl.store(false); //same path ScriptEditor uses to save the zone script
+		mScriptPnl.loadScript(zone.s);
+		frame.repaint();
+	}
+
+	private void scrDropdownActionPerformed(java.awt.event.ActionEvent evt) {
+		if (loaded && !scrDropdownLoading && scrDropdown.getSelectedIndex() != -1) {
+			int id = parseLeadingInt((String) scrDropdown.getSelectedItem());
+			if (id != Integer.MIN_VALUE) {
+				scr.setValue(id);
+			}
+		}
 	}
 
 	public void setNPC(int num) {
@@ -583,6 +1042,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
         zlSep = new javax.swing.JSeparator();
         motDropdown = new javax.swing.JComboBox<>();
         mot2Dropdown = new javax.swing.JComboBox<>();
+        scrDropdown = new javax.swing.JComboBox<>();
+        dlgSep = new javax.swing.JSeparator();
+        dlgLabel = new javax.swing.JLabel();
+        dlgStatus = new javax.swing.JLabel();
+        dlgScrollPane = new javax.swing.JScrollPane();
+        dlgPreview = new javax.swing.JTextArea();
+        btnEditDialogue = new javax.swing.JButton();
+        btnAddTalker = new javax.swing.JButton();
 
         mdlLabel.setText("Model");
 
@@ -762,6 +1229,39 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
             }
         });
 
+        scrDropdown.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                scrDropdownActionPerformed(evt);
+            }
+        });
+
+        dlgLabel.setText("Dialogue:");
+
+        dlgStatus.setForeground(new java.awt.Color(102, 102, 102));
+        dlgStatus.setText("No zone loaded.");
+
+        dlgPreview.setEditable(false);
+        dlgPreview.setLineWrap(true);
+        dlgPreview.setWrapStyleWord(true);
+        dlgPreview.setRows(3);
+        dlgScrollPane.setViewportView(dlgPreview);
+
+        btnEditDialogue.setText("Edit dialogue...");
+        btnEditDialogue.setEnabled(false);
+        btnEditDialogue.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnEditDialogueActionPerformed(evt);
+            }
+        });
+
+        btnAddTalker.setText("Add talking NPC...");
+        btnAddTalker.setEnabled(false);
+        btnAddTalker.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnAddTalkerActionPerformed(evt);
+            }
+        });
+
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(this);
         this.setLayout(layout);
         layout.setHorizontalGroup(
@@ -792,6 +1292,15 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
                         .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                             .addComponent(headerSep)
                             .addComponent(btnRegEdit, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addComponent(dlgSep)
+                            .addComponent(dlgScrollPane)
+                            .addComponent(btnEditDialogue, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addComponent(btnAddTalker, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addGroup(layout.createSequentialGroup()
+                                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                                    .addComponent(dlgLabel)
+                                    .addComponent(dlgStatus))
+                                .addGap(0, 0, Short.MAX_VALUE))
                             .addComponent(btnSave, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                             .addComponent(btnRemoveEntry, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                             .addComponent(btnNewEntry, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
@@ -820,7 +1329,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                                 .addComponent(scrLabel)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                                .addComponent(scr, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                                .addComponent(scr, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(scrDropdown, javax.swing.GroupLayout.PREFERRED_SIZE, 110, javax.swing.GroupLayout.PREFERRED_SIZE))
                             .addGroup(layout.createSequentialGroup()
                                 .addComponent(facedirLabel)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
@@ -896,7 +1407,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
                     .addComponent(mdl, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(evtFlag, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(scrLabel)
-                    .addComponent(scr, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                    .addComponent(scr, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(scrDropdown, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(headerSep, javax.swing.GroupLayout.PREFERRED_SIZE, 2, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
@@ -985,6 +1497,18 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
                 .addComponent(btnSave)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(btnRegEdit)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(dlgSep, javax.swing.GroupLayout.PREFERRED_SIZE, 2, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(dlgLabel)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(dlgStatus)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(dlgScrollPane, javax.swing.GroupLayout.PREFERRED_SIZE, 60, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(btnEditDialogue)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(btnAddTalker)
                 .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
         );
     }// </editor-fold>//GEN-END:initComponents
@@ -1031,6 +1555,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
     private void btnSaveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSaveActionPerformed
 		saveEntry();
+		updateDialogueSection(); //the NPC's script may have just been re-assigned
 		frame.repaint();
     }//GEN-LAST:event_btnSaveActionPerformed
 
@@ -1079,6 +1604,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
     }//GEN-LAST:event_mp2ActionPerformed
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
+    private javax.swing.JButton btnAddTalker;
+    private javax.swing.JButton btnEditDialogue;
+    private javax.swing.JLabel dlgLabel;
+    private javax.swing.JTextArea dlgPreview;
+    private javax.swing.JScrollPane dlgScrollPane;
+    private javax.swing.JSeparator dlgSep;
+    private javax.swing.JLabel dlgStatus;
+    private javax.swing.JComboBox<String> scrDropdown;
     private javax.swing.JLabel aiLabel;
     private javax.swing.JSeparator aiSep;
     private javax.swing.JFormattedTextField altitude;

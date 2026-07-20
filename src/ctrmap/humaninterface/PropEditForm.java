@@ -3,6 +3,7 @@ package ctrmap.humaninterface;
 import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.glu.gl2.GLUgl2;
 import ctrmap.CtrmapMainframe;
+import ctrmap.LittleEndianDataInputStream;
 import ctrmap.Utils;
 import ctrmap.formats.propdata.GRProp;
 import ctrmap.formats.propdata.GRPropData;
@@ -10,18 +11,29 @@ import ctrmap.Workspace;
 import ctrmap.formats.containers.BM;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BCHFile;
+import ctrmap.formats.h3d.BchTexturePack;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.h3d.model.H3DVertex;
 import ctrmap.formats.h3d.texturing.H3DTexture;
 import ctrmap.formats.propdata.ADPropRegistry;
+import ctrmap.formats.propdata.PropDatabase;
+import ctrmap.formats.text.LocationNames;
 import ctrmap.formats.vectors.Vec3f;
+import ctrmap.formats.zone.Zone;
+import ctrmap.formats.zone.ZoneHeader;
 import ctrmap.humaninterface.tools.PropTool;
 import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.Point;
 import java.awt.event.MouseEvent;
+import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import javax.swing.DefaultListModel;
 import javax.swing.JFormattedTextField;
 import javax.swing.JOptionPane;
 import javax.swing.event.DocumentEvent;
@@ -47,8 +59,24 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 	public List<H3DTexture> propTextures = new ArrayList<>();
 
+	/**
+	 * Palette rows currently shown in paletteList, index-aligned with the list
+	 * model (getNamedModels() filtered by the search field).
+	 */
+	private PropDatabase.PropModel[] paletteEntries = new PropDatabase.PropModel[0];
+
+	/**
+	 * True while a background SwingWorker is building the PropDatabase for the
+	 * palette - guards against launching a second build.
+	 */
+	private boolean paletteLoading = false;
+
 	public PropEditForm() {
 		initComponents();
+		//affordance for the lazy database build - the list is not just empty
+		DefaultListModel<String> placeholderModel = new DefaultListModel<>();
+		placeholderModel.addElement("Click to load the prop database...");
+		paletteList.setModel(placeholderModel);
 		setFloatValueClass(new JFormattedTextField[]{x, y, z, sx, sy, sz, rx, ry, rz});
 		//Only need the DocListeners on the fields that we want to reflect on the GUI immediately
 		x.getDocument().addDocumentListener(new DocumentListener() {
@@ -126,6 +154,371 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			public void changedUpdate(DocumentEvent e) {
 			}
 		});
+		paletteFilter.getDocument().addDocumentListener(new DocumentListener() {
+			@Override
+			public void insertUpdate(DocumentEvent e) {
+				refreshPalette();
+			}
+
+			@Override
+			public void removeUpdate(DocumentEvent e) {
+				refreshPalette();
+			}
+
+			@Override
+			public void changedUpdate(DocumentEvent e) {
+			}
+		});
+		paletteFilter.addFocusListener(new java.awt.event.FocusAdapter() {
+			@Override
+			public void focusGained(java.awt.event.FocusEvent e) {
+				ensurePaletteLoaded();
+			}
+		});
+		paletteList.addMouseListener(new java.awt.event.MouseAdapter() {
+			@Override
+			public void mousePressed(MouseEvent e) {
+				ensurePaletteLoaded();
+			}
+		});
+		paletteList.addListSelectionListener(new javax.swing.event.ListSelectionListener() {
+			@Override
+			public void valueChanged(javax.swing.event.ListSelectionEvent e) {
+				if (!e.getValueIsAdjusting()) {
+					previewPaletteSelection();
+				}
+			}
+		});
+	}
+
+	/**
+	 * Builds the session PropDatabase on the first palette interaction and
+	 * fills the list. The build runs in a SwingWorker (it decompresses two
+	 * whole GARCs) with the list showing "Loading..." so the EDT stays
+	 * responsive; the list is populated in done(). No-op until the workspace
+	 * archives are loaded.
+	 */
+	public void ensurePaletteLoaded() {
+		if (PropDatabase.isBuilt()) {
+			if (paletteEntries.length == 0 && paletteFilter.getText().isEmpty()) {
+				refreshPalette();
+			}
+			return;
+		}
+		if (paletteLoading) {
+			return;
+		}
+		paletteLoading = true;
+		DefaultListModel<String> loadingModel = new DefaultListModel<>();
+		loadingModel.addElement("Loading prop database...");
+		paletteEntries = new PropDatabase.PropModel[0];
+		paletteList.setModel(loadingModel);
+		new javax.swing.SwingWorker<PropDatabase, Void>() {
+			@Override
+			protected PropDatabase doInBackground() {
+				return PropDatabase.get();
+			}
+
+			@Override
+			protected void done() {
+				paletteLoading = false;
+				PropDatabase db = null;
+				try {
+					db = get();
+				} catch (Exception ex) {
+					ex.printStackTrace();
+				}
+				if (db != null) {
+					refreshPalette();
+				} else {
+					//no workspace - explain the empty list instead of staying silent
+					DefaultListModel<String> listModel = new DefaultListModel<>();
+					listModel.addElement("Palette requires a workspace (Options > Workspace settings)");
+					paletteEntries = new PropDatabase.PropModel[0];
+					paletteList.setModel(listModel);
+				}
+			}
+		}.execute();
+	}
+
+	/**
+	 * Refills the palette list from the database using the current search
+	 * filter. Does nothing (and keeps the list empty) until the database has
+	 * been built by ensurePaletteLoaded().
+	 */
+	private void refreshPalette() {
+		if (!PropDatabase.isBuilt()) {
+			return;
+		}
+		PropDatabase db = PropDatabase.get();
+		if (db == null) {
+			return;
+		}
+		String filter = paletteFilter.getText().trim().toLowerCase();
+		List<PropDatabase.PropModel> shown = new ArrayList<>();
+		DefaultListModel<String> listModel = new DefaultListModel<>();
+		for (PropDatabase.PropModel m : db.getNamedModels()) {
+			if (filter.isEmpty() || m.name.toLowerCase().contains(filter)) {
+				shown.add(m);
+				listModel.addElement(m.name + "  (model " + m.modelIndex + ", used in " + m.donorAreas.size() + " areas)");
+			}
+		}
+		paletteEntries = shown.toArray(new PropDatabase.PropModel[shown.size()]);
+		paletteList.setModel(listModel);
+	}
+
+	/**
+	 * Previews the selected palette model in the existing preview widget. The
+	 * BCH is read straight from the BuildingModels GARC, textured with the
+	 * current area's texture pack where possible.
+	 */
+	private void previewPaletteSelection() {
+		int sel = paletteList.getSelectedIndex();
+		if (sel < 0 || sel >= paletteEntries.length || Workspace.bm == null) {
+			return;
+		}
+		try {
+			byte[] bch = PropDatabase.getSubfile(Workspace.bm.getDecompressedEntry(paletteEntries[sel].modelIndex), 0);
+			if (!PropDatabase.isBCH(bch)) {
+				return;
+			}
+			BCHFile bchf = new BCHFile(bch);
+			if (bchf.models.isEmpty()) {
+				return;
+			}
+			H3DModel m = bchf.models.get(0);
+			m.setMaterialTextures(bchf.textures);
+			if (propTextures != null) {
+				m.setMaterialTextures(propTextures);
+			}
+			m.makeAllBOs();
+			PropPreview.loadModel(m);
+		} catch (Exception ex) {
+			ex.printStackTrace();
+		}
+	}
+
+	/**
+	 * Places the selected palette prop at the viewport centre, auto-importing
+	 * its registry entry from a donor area when this area does not have it.
+	 * When the prop's textures are not in this area's texture pack (which
+	 * would hardlock the game when the area loads), offers to import them
+	 * from a donor area first; the prop is only placed when the textures are
+	 * available.
+	 */
+	private void placeSelectedPaletteProp() {
+		ensurePaletteLoaded();
+		int sel = paletteList.getSelectedIndex();
+		if (sel < 0 || sel >= paletteEntries.length) {
+			JOptionPane.showMessageDialog(this, "Select a prop in the palette list first.", "No prop selected", JOptionPane.INFORMATION_MESSAGE);
+			return;
+		}
+		if (!loaded || props == null) {
+			JOptionPane.showMessageDialog(this, "Load a map through the Zone Loader first.", "No map loaded", JOptionPane.WARNING_MESSAGE);
+			return;
+		}
+		if (reg == null) {
+			JOptionPane.showMessageDialog(this, "The prop palette needs an area prop registry.\nLoad a map through the Zone Loader first.", "No registry loaded", JOptionPane.WARNING_MESSAGE);
+			return;
+		}
+		PropDatabase.PropModel pm = paletteEntries[sel];
+		int uid = -1;
+		for (ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
+			if (e.model == pm.modelIndex) {
+				uid = e.reference;
+				break;
+			}
+		}
+		if (uid == -1) {
+			//model not in this area's registry - guard the textures, then auto-import a donor entry
+			byte[] bch = PropDatabase.getSubfile(Workspace.bm.getDecompressedEntry(pm.modelIndex), 0);
+			Set<String> available = new HashSet<>();
+			if (propTextures != null) {
+				for (H3DTexture t : propTextures) {
+					available.add(t.textureName);
+				}
+			}
+			List<String> missing = PropDatabase.getMissingTextureNames(bch, available);
+			if (!missing.isEmpty() && !offerTextureImport(pm, missing)) {
+				return; //user cancelled or the import failed - nothing was modified
+			}
+			ADPropRegistry.ADPropRegistryEntry imported = null;
+			if (pm.template != null) {
+				try {
+					imported = new ADPropRegistry.ADPropRegistryEntry(new LittleEndianDataInputStream(new ByteArrayInputStream(pm.template)));
+				} catch (IOException ex) {
+					imported = null;
+				}
+			}
+			if (imported == null) {
+				imported = new ADPropRegistry.ADPropRegistryEntry(); //no donor anywhere - dummy entry, animations must be set in PRE
+			}
+			int ref = pm.modelIndex;
+			while (reg.entries.containsKey(ref)) {
+				ref++; //ref == model everywhere in vanilla; only user-made mismatched entries can collide
+			}
+			imported.reference = ref;
+			imported.model = pm.modelIndex;
+			imported.eventScr1 = 0;
+			imported.eventScr2 = 0;
+			reg.entries.put(imported.reference, imported);
+			reg.modified = true;
+			//register the model under the new reference the same way the
+			//registry loader does, so rendering does not depend on the
+			//uid==modelIndex failsafe (ref can differ from model on collision)
+			try {
+				BCHFile mdlBch = new BCHFile(new BM(Workspace.getWorkspaceFile(Workspace.ArchiveType.BUILDING_MODELS, imported.model)).getFile(0));
+				if (!mdlBch.models.isEmpty()) {
+					H3DModel mdl = mdlBch.models.get(0);
+					mdl.setMaterialTextures(mdlBch.textures);
+					if (propTextures != null) {
+						mdl.setMaterialTextures(propTextures);
+					}
+					mdl.makeAllBOs();
+					reg.models.put(imported.reference, mdl);
+				}
+			} catch (Exception ex) {
+				ex.printStackTrace();
+			}
+			uid = imported.reference;
+		}
+		//mirror of the New entry flow, with the palette model's UID
+		loaded = false;
+		GRProp newProp = new GRProp();
+		newProp.uid = uid;
+		Point defaultPos = CtrmapMainframe.mTileMapPanel.getWorldLocAtViewportCentre();
+		newProp.x = defaultPos.x;
+		newProp.z = defaultPos.y;
+		newProp.updateName(reg);
+		props.props.add(newProp);
+		models.add(reg.getModel(uid));
+		entryBox.addItem(String.valueOf(props.props.size() - 1));
+		loaded = true;
+		setProp(entryBox.getItemCount() - 1);
+		props.modified = true;
+	}
+
+	/**
+	 * Offers to import the given missing prop textures from the best donor
+	 * area into this area's texture pack (AD subfile 1) and performs the
+	 * import on OK. All-or-nothing: the merged pack bytes are fully built and
+	 * verified in memory before the single storeFile call, so a failure can
+	 * never leave a half-imported pack. On success the imported textures are
+	 * appended to the live propTextures list (shared with the ZoneHeader) so
+	 * the prop renders immediately.
+	 *
+	 * @return true when the textures are available afterwards, false when the
+	 * user cancelled or the import failed (nothing was modified either way)
+	 */
+	private boolean offerTextureImport(PropDatabase.PropModel pm, List<String> missing) {
+		StringBuilder list = new StringBuilder();
+		StringBuilder inline = new StringBuilder();
+		for (String tex : missing) {
+			list.append("\n    ").append(tex);
+			if (inline.length() > 0) {
+				inline.append(", ");
+			}
+			inline.append(tex);
+		}
+		PropDatabase db = PropDatabase.get();
+		ZoneHeader header = (CtrmapMainframe.mZonePnl != null && CtrmapMainframe.mZonePnl.zone != null) ? CtrmapMainframe.mZonePnl.zone.header : null;
+		if (db == null || header == null || header.areadata == null) {
+			JOptionPane.showMessageDialog(this,
+					"This prop needs textures that this area does not have:" + list
+					+ "\n\nPlacing it anyway would hardlock the game when the area loads,"
+					+ "\nand no area data is loaded to import them into, so the prop was not placed.",
+					"Missing textures", JOptionPane.ERROR_MESSAGE);
+			return false;
+		}
+		int donorArea = db.findDonorAreaWithTextures(pm, missing);
+		if (donorArea == -1) {
+			JOptionPane.showMessageDialog(this,
+					"This prop needs textures that this area does not have:" + list
+					+ "\n\nPlacing it anyway would hardlock the game when the area loads."
+					+ "\nNo single donor area contains all of these textures, so CTRMap"
+					+ "\ncan not import them automatically and the prop was not placed.",
+					"Missing textures", JOptionPane.ERROR_MESSAGE);
+			return false;
+		}
+		int rsl = JOptionPane.showConfirmDialog(this,
+				"This prop's textures (" + inline + ") are not in this area.\n"
+				+ "Import them from " + getAreaDisplayName(donorArea) + "?\n\n"
+				+ "This modifies the area's texture data.",
+				"Missing textures", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+		if (rsl != JOptionPane.OK_OPTION) {
+			return false;
+		}
+		try {
+			byte[] targetPack = header.areadata.getFile(1);
+			//read the donor from the same on-disk state the game will see: the
+			//workspace file when one exists (it carries earlier in-session
+			//imports that the packed GARC does not have yet), else the GARC
+			byte[] donorPack;
+			File donorWs = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA), String.valueOf(donorArea));
+			if (donorWs.exists()) {
+				donorPack = PropDatabase.getSubfile(java.nio.file.Files.readAllBytes(donorWs.toPath()), 1);
+			} else {
+				donorPack = PropDatabase.getSubfile(Workspace.ad.getDecompressedEntry(donorArea), 1);
+			}
+			//verify against the actual bytes that will be read - the database's
+			//name-sets can be ahead of disk after earlier in-session imports
+			if (donorPack == null || !PropDatabase.getTexturePackTextureNames(donorPack).containsAll(missing)) {
+				throw new IllegalStateException("donor area " + donorArea + " does not actually contain all the needed textures on disk");
+			}
+			byte[] merged = BchTexturePack.importTextures(targetPack, donorPack, missing);
+			if (merged != targetPack) { //already-present names are a no-op (same array returned)
+				//decode and verify the merged pack BEFORE storing anything
+				BCHFile packBch = new BCHFile(merged);
+				if (packBch.errorlevel != 0) {
+					throw new IllegalStateException("merged texture pack failed verification (errorlevel " + packBch.errorlevel + ")");
+				}
+				List<H3DTexture> imported = new ArrayList<>();
+				for (H3DTexture t : packBch.textures) {
+					if (missing.contains(t.textureName)) {
+						imported.add(t);
+					}
+				}
+				if (imported.size() != missing.size()) {
+					throw new IllegalStateException("merged texture pack is missing " + (missing.size() - imported.size()) + " of the imported textures");
+				}
+				//the single write: the workspace AD file, persisted by storeFile itself
+				if (!header.areadata.storeFile(1, merged)) {
+					throw new IOException("could not write the merged texture pack to the workspace area data file");
+				}
+				//minimal in-memory refresh instead of a zone reload
+				if (propTextures != null) {
+					propTextures.addAll(imported);
+				}
+				db.registerImportedTextures(header.areadataID, missing);
+			}
+			return true;
+		} catch (Exception ex) {
+			ex.printStackTrace();
+			JOptionPane.showMessageDialog(this,
+					"The texture import failed:\n" + ex
+					+ "\n\nThe area was not modified and the prop was not placed.",
+					"Import failed", JOptionPane.ERROR_MESSAGE);
+			return false;
+		}
+	}
+
+	/**
+	 * Human-readable label for an AreaData index: the location name of the
+	 * first zone that uses the area, plus the raw index.
+	 */
+	private static String getAreaDisplayName(int area) {
+		try {
+			if (CtrmapMainframe.mZonePnl != null && CtrmapMainframe.mZonePnl.zones != null) {
+				for (Zone z : CtrmapMainframe.mZonePnl.zones) {
+					if (z != null && z.header != null && z.header.areadataID == area) {
+						return LocationNames.getLocName(z.header.parentMap) + " (area " + area + ")";
+					}
+				}
+			}
+		} catch (Exception ex) {
+			//no location names available - fall through to the raw index
+		}
+		return "area " + area;
 	}
 
 	public void setFloatValueClass(JFormattedTextField[] fields) {
@@ -394,8 +787,13 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			models.set(index, reg.getModel(props.props.get(index).uid));
 		}
 		if (models.get(index) == null) {
-			//failsafe
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.BUILDING_MODELS, props.props.get(index).uid);
+			//failsafe - resolve the model through the registry entry when one
+			//exists; only fall back to uid==modelIndex when there is none
+			int mdlIndex = props.props.get(index).uid;
+			if (reg != null && reg.entries.containsKey(mdlIndex)) {
+				mdlIndex = reg.entries.get(mdlIndex).model;
+			}
+			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.BUILDING_MODELS, mdlIndex);
 			if (f.exists()) {
 				BCHFile bch = new BCHFile(new BM(f).getFile(0));
 				bch.models.get(0).setMaterialTextures(bch.textures);
@@ -481,6 +879,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
         btnNewEntry = new javax.swing.JButton();
         btnRegEdit = new javax.swing.JButton();
         PropPreview = new ctrmap.humaninterface.CustomH3DPreview();
+        paletteLabel = new javax.swing.JLabel();
+        paletteFilter = new javax.swing.JTextField();
+        paletteScroll = new javax.swing.JScrollPane();
+        paletteList = new javax.swing.JList<>();
+        btnPalettePlace = new javax.swing.JButton();
 
         entryBox.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
@@ -574,6 +977,18 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
             }
         });
 
+        paletteLabel.setText("Prop palette (search by name)");
+
+        paletteList.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+        paletteScroll.setViewportView(paletteList);
+
+        btnPalettePlace.setText("Place selected prop");
+        btnPalettePlace.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnPalettePlaceActionPerformed(evt);
+            }
+        });
+
         javax.swing.GroupLayout PropPreviewLayout = new javax.swing.GroupLayout(PropPreview);
         PropPreview.setLayout(PropPreviewLayout);
         PropPreviewLayout.setHorizontalGroup(
@@ -653,7 +1068,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
                             .addComponent(btnRemEntry, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                             .addComponent(btnNewEntry, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                             .addComponent(btnRegEdit, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                            .addComponent(PropPreview, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+                            .addComponent(PropPreview, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addComponent(paletteLabel)
+                            .addComponent(paletteFilter)
+                            .addComponent(paletteScroll, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                            .addComponent(btnPalettePlace, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
                         .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))))
         );
         layout.setVerticalGroup(
@@ -725,6 +1144,14 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
                 .addComponent(btnSave)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(btnRegEdit)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                .addComponent(paletteLabel)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(paletteFilter, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(paletteScroll, javax.swing.GroupLayout.PREFERRED_SIZE, 140, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(btnPalettePlace)
                 .addContainerGap())
         );
     }// </editor-fold>//GEN-END:initComponents
@@ -780,10 +1207,15 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		saveAndRefresh();
     }//GEN-LAST:event_mdlNumStateChanged
 
+    private void btnPalettePlaceActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnPalettePlaceActionPerformed
+		placeSelectedPaletteProp();
+    }//GEN-LAST:event_btnPalettePlaceActionPerformed
+
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private ctrmap.humaninterface.CustomH3DPreview PropPreview;
     private javax.swing.JButton btnNewEntry;
+    private javax.swing.JButton btnPalettePlace;
     private javax.swing.JButton btnRegEdit;
     private javax.swing.JButton btnRemEntry;
     private javax.swing.JButton btnSave;
@@ -798,6 +1230,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
     private javax.swing.JLabel mdlName;
     private javax.swing.JSpinner mdlNum;
     private javax.swing.JLabel mdlNumLabel;
+    private javax.swing.JTextField paletteFilter;
+    private javax.swing.JLabel paletteLabel;
+    private javax.swing.JList<String> paletteList;
+    private javax.swing.JScrollPane paletteScroll;
     private javax.swing.JLabel rotLabel;
     private javax.swing.JLabel rotXLabel;
     private javax.swing.JLabel rotYLabel;
