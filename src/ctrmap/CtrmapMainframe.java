@@ -47,9 +47,11 @@ import ctrmap.humaninterface.MatrixPanelInputManager;
 import ctrmap.humaninterface.NPCEditForm;
 import ctrmap.humaninterface.PropEditForm;
 import ctrmap.humaninterface.ScriptEditor;
+import ctrmap.humaninterface.TextEditor;
 import ctrmap.humaninterface.TileEditForm;
 import ctrmap.humaninterface.TilemapPanelInputManager;
 import ctrmap.humaninterface.TileMapPanel;
+import ctrmap.humaninterface.TriggerEditForm;
 import ctrmap.humaninterface.WarpEditForm;
 import ctrmap.humaninterface.WorkspaceSettings;
 import ctrmap.humaninterface.ZoneLoadingPanel;
@@ -107,6 +109,7 @@ public class CtrmapMainframe {
 	public static JRadioButton btnPropTool;
 	public static JRadioButton btnNPCTool;
 	public static JRadioButton btnWarpTool;
+	public static JRadioButton btnTriggerTool;
 	public static JLabel currentTool;
 
 	public static JScrollPane mTilemapScrollPane;
@@ -117,6 +120,7 @@ public class CtrmapMainframe {
 	public static PropEditForm mPropEditForm;
 	public static NPCEditForm mNPCEditForm;
 	public static WarpEditForm mWarpEditForm;
+	public static TriggerEditForm mTriggerEditForm;
 
 	public static GLPanel mGLPanel;
 	public static H3DRenderingPanel m3DDebugPanel;
@@ -129,6 +133,7 @@ public class CtrmapMainframe {
 	public static ZoneLoadingPanel mZonePnl;
 	public static ScriptEditor mScriptPnl;
 	public static ExtrasPanel mExtrasPnl;
+	public static TextEditor mTextEditor;
 	public static Builder mBuilder;
 
 	public static JPanel tileEditMasterPnl;
@@ -169,6 +174,7 @@ public class CtrmapMainframe {
 		opengr = new JMenuItem("Open GR Mapfile");
 		openmm = new JMenuItem("Open MapMatrix");
 		openzo = new JMenuItem("Open Zone");
+		openzo.setToolTipText("Opens a single loose ZO file. To load a map from the game, use the zone dropdown in the \"Zone Loader\" tab instead.");
 		save = new JMenuItem("Save");
 		packworkspace = new JMenuItem("Pack Workspace");
 		tilesetWriter = new JMenuItem("Tileset Editor");
@@ -185,6 +191,15 @@ public class CtrmapMainframe {
 		btnPropTool = Utils.createGraphicalButton("_tool_prop");
 		btnNPCTool = Utils.createGraphicalButton("_tool_npc");
 		btnWarpTool = Utils.createGraphicalButton("_tool_warp");
+		btnTriggerTool = Utils.createGraphicalButton("_tool_trigger");
+		btnEditTool.setToolTipText("Edit tool - click a tile to load its settings");
+		btnSetTool.setToolTipText("Set tool - paint the panel's settings onto tiles");
+		btnFillTool.setToolTipText("Fill tool - drag a box to fill tiles with settings");
+		btnCamTool.setToolTipText("Camera tool - place and edit camera zones");
+		btnPropTool.setToolTipText("Prop tool - place and edit map props (trees, signs)");
+		btnNPCTool.setToolTipText("NPC tool - place and edit overworld NPCs");
+		btnWarpTool.setToolTipText("Warp tool - place and edit warps (doors, stairs)");
+		btnTriggerTool.setToolTipText("Trigger tool - place script triggers (step-on events)");
 		toolBtnGroup = new ButtonGroup();
 		btnEditTool.setSelected(true);
 		currentTool = new JLabel("Current tool: Edit");
@@ -196,6 +211,7 @@ public class CtrmapMainframe {
 		toolBtnGroup.add(btnPropTool);
 		toolBtnGroup.add(btnNPCTool);
 		toolBtnGroup.add(btnWarpTool);
+		toolBtnGroup.add(btnTriggerTool);
 		toolbar.add(btnEditTool);
 		toolbar.add(btnSetTool);
 		toolbar.add(btnFillTool);
@@ -203,6 +219,7 @@ public class CtrmapMainframe {
 		toolbar.add(btnPropTool);
 		toolbar.add(btnNPCTool);
 		toolbar.add(btnWarpTool);
+		toolbar.add(btnTriggerTool);
 		toolbar.add(currentTool);
 
 		tileEditMasterPnl = new JPanel(new BorderLayout());
@@ -211,6 +228,7 @@ public class CtrmapMainframe {
 		mZonePnl = new ZoneLoadingPanel();
 		mScriptPnl = new ScriptEditor();
 		mExtrasPnl = new ExtrasPanel(mZonePnl);
+		mTextEditor = new TextEditor();
 		mBuilder = new Builder();
 
 		frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -226,6 +244,7 @@ public class CtrmapMainframe {
 		mPropEditForm = new PropEditForm();
 		mNPCEditForm = new NPCEditForm();
 		mWarpEditForm = new WarpEditForm();
+		mTriggerEditForm = new TriggerEditForm();
 		mCollEditPanel = new CollEditPanel();
 		mGLPanel = new GLPanel(mCollEditPanel);
 		m3DDebugPanel = new H3DRenderingPanel(CM3DComponents);
@@ -263,8 +282,10 @@ public class CtrmapMainframe {
 		tabs.add("Collision Editor", collEditMasterPnl);
 		tabs.add("Matrix Editor", mtxEditMasterPnl);
 		tabs.add("Zone Loader", mZonePnl);
+		tabs.setToolTipTextAt(tabs.indexOfComponent(mZonePnl), "Pick a map from the zone dropdown here - this is how zones are opened.");
 		tabs.add("Script Editor (experimental)", mScriptPnl);
 		tabs.add("Extras", mExtrasPnl);
+		tabs.add("Text Editor", mTextEditor);
 		tabs.add("Builder", mBuilder);
 
 		btnEditTool.setActionCommand("edit");
@@ -281,6 +302,8 @@ public class CtrmapMainframe {
 		btnNPCTool.addActionListener(mTilemapInputManager);
 		btnWarpTool.setActionCommand("warp");
 		btnWarpTool.addActionListener(mTilemapInputManager);
+		btnTriggerTool.setActionCommand("trigger");
+		btnTriggerTool.addActionListener(mTilemapInputManager);
 
 		frame.getContentPane().add(tabs);
 
@@ -288,6 +311,9 @@ public class CtrmapMainframe {
 		opengr.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent arg0) {
+				if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open GR Mapfile")) {
+					return;
+				}
 				Preferences prefs = Preferences.userRoot().node(getClass().getName());
 				JFileChooser jfc = new JFileChooser(prefs.get("LAST_DIR",
 						new File(".").getAbsolutePath()));
@@ -316,6 +342,7 @@ public class CtrmapMainframe {
 				mPropEditForm.store(false);
 				mNPCEditForm.saveRegistry(false);
 				mZonePnl.store(false);
+				mTextEditor.store(false);
 			}
 		});
 		tilesetWriter.addActionListener(new ActionListener() {
@@ -363,6 +390,9 @@ public class CtrmapMainframe {
 		openmm.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
+				if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open MapMatrix")) {
+					return;
+				}
 				Preferences prefs = Preferences.userRoot().node(getClass().getName());
 				JFileChooser jfc = new JFileChooser(prefs.get("LAST_DIR",
 						new File(".").getAbsolutePath()));
@@ -394,15 +424,44 @@ public class CtrmapMainframe {
 		openzo.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
+				if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open Zone")) {
+					return;
+				}
 				Preferences prefs = Preferences.userRoot().node(getClass().getName());
-				JFileChooser jfc = new JFileChooser(prefs.get("LAST_DIR",
-						new File(".").getAbsolutePath()));
+				//the loose ZO files live in the workspace, never in the RomFS - start there when we can
+				File zoneDir = Workspace.valid ? Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA) : null;
+				JFileChooser jfc = (zoneDir != null && zoneDir.exists())
+						? new JFileChooser(zoneDir)
+						: new JFileChooser(prefs.get("LAST_DIR", new File(".").getAbsolutePath()));
 				jfc.setDialogTitle("Open ZO file");
 				jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
 				jfc.setMultiSelectionEnabled(false);
+				jfc.setFileFilter(new FileFilter() {
+					@Override
+					public boolean accept(File f) {
+						if (f.isDirectory()) {
+							return true;
+						}
+						return f.getName().matches("\\d+") || f.getName().endsWith(".zo") || f.getName().endsWith(".bin");
+					}
+
+					@Override
+					public String getDescription() {
+						return "Zone mini-pack | .zo, .bin, extracted zonedata";
+					}
+				});
 				jfc.showOpenDialog(frame);
 				if (jfc.getSelectedFile() != null) {
 					prefs.put("LAST_DIR", jfc.getSelectedFile().getParent());
+					if (!Utils.checkMagicLE16(jfc.getSelectedFile(), 0x5a4f)) {
+						Utils.showErrorMessage("Not a ZO file", jfc.getSelectedFile().getName()
+								+ " is not a zone mini-pack.\n\n"
+								+ "The RomFS only holds packed GARC archives, not single zone files, so pointing\n"
+								+ "this dialog at the game directory can never work.\n"
+								+ (zoneDir != null ? ("Extracted zone files live in " + zoneDir.getAbsolutePath() + "\n") : "")
+								+ "\nThe normal way to open a map is the zone dropdown in the \"Zone Loader\" tab.");
+						return;
+					}
 					mZonePnl.loadZone(new Zone(new ZO(jfc.getSelectedFile()), (Workspace.valid) ? Workspace.game : Workspace.GameType.ORAS));
 				}
 			}
@@ -475,7 +534,7 @@ public class CtrmapMainframe {
 		frame.addWindowListener(new WindowAdapter() {
 			@Override
 			public void windowClosing(WindowEvent e) {
-				if (mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true) && mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && mZonePnl.store(true)) {
+				if (mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true) && mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && mZonePnl.store(true) && mTextEditor.store(true)) {
 					Workspace.cleanUnchanged();
 					Workspace.saveWorkspace();
 					System.exit(0);
@@ -508,6 +567,23 @@ public class CtrmapMainframe {
 			adjustSplitPanes();
 		});
 		Workspace.validate(frame);
+	}
+
+	/**
+	 * Lands the user on the tab that actually opens zones and explains how to use
+	 * it. Called from Workspace.validate() so that it also fires for the first
+	 * validation that succeeds after the paths are set in Workspace settings.
+	 */
+	public static void showZoneLoadingHint() {
+		tabs.setSelectedComponent(mZonePnl);
+		Preferences hintPrefs = Preferences.userRoot().node(CtrmapMainframe.class.getName());
+		if (!hintPrefs.getBoolean("ZONE_HINT_SHOWN", false)) {
+			hintPrefs.putBoolean("ZONE_HINT_SHOWN", true);
+			Utils.showInfoMessage("Opening a zone", "Workspace loaded.\n\n"
+					+ "Pick a map from the zone dropdown at the top of the \"Zone Loader\" tab.\n"
+					+ "That loads the world, matrix, collisions and entities for editing.\n\n"
+					+ "(File > Open Zone is only for single loose ZO files.)");
+		}
 	}
 
 	public static void adjustSplitPanes() {

@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.swing.JOptionPane;
 
 /**
  *
@@ -94,6 +95,10 @@ public class ExtrasPanel extends javax.swing.JPanel {
     }// </editor-fold>//GEN-END:initComponents
 
     private void freecamActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_freecamActionPerformed
+		if (!confirmMassEdit("This will inject dummy camera collision data into ALL AreaData areas.\n"
+				+ "It cannot be undone from within CTRMap. Continue?")) {
+			return;
+		}
 		byte[] ad7 = ResourceAccess.getByteArray("DummyLumioseCollision.bin");
 		for (int i = 0; i < Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length - (Workspace.isOA() ? 2 : 1); i++) {
 			AD ad = new AD(Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, i));
@@ -102,6 +107,10 @@ public class ExtrasPanel extends javax.swing.JPanel {
     }//GEN-LAST:event_freecamActionPerformed
 
     private void freecamRegActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_freecamRegActionPerformed
+		if (!confirmMassEdit("This will modify the headers of ALL zones (camera flags + failsafes) and patch AreaData.\n"
+				+ "It cannot be undone from within CTRMap. Continue?")) {
+			return;
+		}
 		Zone[] zones = parent.zones;
 		if (zones != null) {
 			for (int i = 0; i < zones.length; i++) {
@@ -132,6 +141,10 @@ public class ExtrasPanel extends javax.swing.JPanel {
     }//GEN-LAST:event_freecamRegActionPerformed
 
     private void btn3dActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btn3dActionPerformed
+		if (!confirmMassEdit("This will modify the headers of ALL zones and patch AreaData to enable stereoscopic 3D.\n"
+				+ "It cannot be undone from within CTRMap. Continue?")) {
+			return;
+		}
 		Zone[] zones = parent.zones;
 
 		if (zones != null) {
@@ -158,6 +171,10 @@ public class ExtrasPanel extends javax.swing.JPanel {
 		}
     }//GEN-LAST:event_btn3dActionPerformed
 
+	private boolean confirmMassEdit(String message) {
+		return JOptionPane.showConfirmDialog(this, message, "Confirm mass edit",
+				JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
+	}
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JButton btn3d;
