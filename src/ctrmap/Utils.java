@@ -5,10 +5,13 @@ import static ctrmap.CtrmapMainframe.*;
 import ctrmap.formats.vectors.Vec3f;
 import ctrmap.resources.ResourceAccess;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Polygon;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -17,6 +20,7 @@ import javax.swing.JComponent;
 import javax.swing.JFormattedTextField;
 import javax.swing.JOptionPane;
 import javax.swing.JRadioButton;
+import javax.swing.JScrollPane;
 import javax.swing.text.BadLocationException;
 
 /**
@@ -44,6 +48,49 @@ public class Utils {
 
 	public static void showErrorMessage(String title, String message) {
 		JOptionPane.showMessageDialog(null, message, title, JOptionPane.ERROR_MESSAGE);
+	}
+
+	public static void showInfoMessage(String title, String message) {
+		JOptionPane.showMessageDialog(null, message, title, JOptionPane.INFORMATION_MESSAGE);
+	}
+
+	/**
+	 * Explains that no workspace is loaded when a File menu open action is
+	 * triggered. Returns true if the user still wants to open a loose file.
+	 */
+	public static boolean confirmOpenWithoutWorkspace(String action) {
+		return JOptionPane.showConfirmDialog(null,
+				"No workspace is loaded, so \"" + action + "\" can only open a single loose file.\n\n"
+				+ "To edit a game, first set the RomFS (game directory) and workspace paths in\n"
+				+ "Options > Workspace settings. CTRMap then unpacks the game's GARC archives into\n"
+				+ "the workspace, and you pick a map from the zone dropdown in the \"Zone Loader\" tab.\n\n"
+				+ "Continue anyway to open a loose file?",
+				"No workspace loaded", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
+	}
+
+	/**
+	 * Compares the first two bytes of a file against a little endian 16bit magic
+	 * value. Returns false if the file is too short or unreadable.
+	 */
+	public static boolean checkMagicLE16(File f, int magic) {
+		FileInputStream in = null;
+		try {
+			in = new FileInputStream(f);
+			byte[] b = new byte[2];
+			if (in.read(b) != 2) {
+				return false;
+			}
+			return ((b[0] & 0xFF) | ((b[1] & 0xFF) << 8)) == magic;
+		} catch (IOException ex) {
+			return false;
+		} finally {
+			if (in != null) {
+				try {
+					in.close();
+				} catch (IOException ex) {
+				}
+			}
+		}
 	}
 
 	public static int showSaveConfirmationDialog(String changeSubject) {
@@ -86,7 +133,20 @@ public class Utils {
 	}
 
 	public static void switchToolUI(JComponent rightComponent) {
-		jsp.setRightComponent(rightComponent);
+		//the tool forms are taller than the visible side panel on small screens -
+		//wrap them in a scroll pane so the bottom controls stay reachable
+		if (rightComponent instanceof JScrollPane) {
+			jsp.setRightComponent(rightComponent);
+		} else {
+			JScrollPane scroll = new JScrollPane(rightComponent);
+			scroll.getVerticalScrollBar().setUnitIncrement(16);
+			scroll.setBorder(null);
+			//keep the divider maths of adjustSplitPanes() intact: advertise the
+			//form's width plus room for the vertical scrollbar
+			Dimension pref = rightComponent.getPreferredSize();
+			scroll.setPreferredSize(new Dimension(pref.width + scroll.getVerticalScrollBar().getPreferredSize().width + 3, pref.height));
+			jsp.setRightComponent(scroll);
+		}
 		adjustSplitPanes();
 		frame.revalidate();
 	}

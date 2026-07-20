@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -104,6 +105,17 @@ public class GARC {
 	}
 
 	public void packDirectory(File dir) {
+		packDirectory(dir, null);
+	}
+
+	/**
+	 * Packs a workspace directory into this GARC. Entries that already exist in
+	 * the archive keep their original compression flag. Appended entries (index
+	 * beyond the original entry count) inherit the compression flag of the LAST
+	 * original entry, unless compressionOverrides contains a Boolean for their
+	 * index (keyed by the numeric file name in the pack directory).
+	 */
+	public void packDirectory(File dir, Map<Integer, Boolean> compressionOverrides) {
 		try {
 			if (!dir.isDirectory()) {
 				return;
@@ -124,6 +136,7 @@ public class GARC {
 					return i1 - i2;
 				}
 			});
+			int originalEntryCount = entries.size();
 			int[] changedIndices = new int[files.size()];
 			byte[][] compressedData = new byte[files.size()][];
 			for (int i = 0; i < files.size(); i++) {
@@ -132,14 +145,21 @@ public class GARC {
 				byte[] or = new byte[in.available()];
 				in.read(or);
 				in.close();
-				if ((entries.size() > changedIndices[i] ? entries.get(changedIndices[i]) : entries.get(0)).compressed) {
+				boolean compressed;
+				if (changedIndices[i] < originalEntryCount) {
+					compressed = entries.get(changedIndices[i]).compressed;
+				} else {
+					Boolean override = (compressionOverrides != null) ? compressionOverrides.get(changedIndices[i]) : null;
+					compressed = (override != null) ? override : entries.get(originalEntryCount - 1).compressed;
+				}
+				if (compressed) {
 					compressedData[i] = LZ11.compress(or);
 				} else {
 					compressedData[i] = or;
 				}
 				if (changedIndices[i] > entries.size() - 1) {
 					GARCEntry add = new GARCEntry();
-					add.compressed = entries.get(0).compressed;
+					add.compressed = compressed;
 					add.offset = entries.get(entries.size() - 1).offset + entries.get(entries.size() - 1).length;
 					add.length = compressedData[i].length;
 					changedIndices[i] = entries.size();
@@ -215,7 +235,9 @@ public class GARC {
 				fatbe[i].flags = fatbe[0].flags;
 				fatbe[i].offset = baseOffset;
 				fatbe[i].endOffset = baseOffset + entries.get(i).length;
-				fatbe[i].endOffset += 4 - (fatbe[i].endOffset % 4); //padding
+				if (fatbe[i].endOffset % 4 != 0) {
+					fatbe[i].endOffset += 4 - (fatbe[i].endOffset % 4); //padding
+				}
 				fatbe[i].len = entries.get(i).length;
 				baseOffset = fatbe[i].endOffset;
 			}
