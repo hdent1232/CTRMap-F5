@@ -95,6 +95,10 @@
                           <Component id="btnNewEntry" max="32767" attributes="0"/>
                           <Component id="btnRegEdit" max="32767" attributes="0"/>
                           <Component id="PropPreview" max="32767" attributes="0"/>
+                          <Component id="paletteLabel" alignment="0" min="-2" max="-2" attributes="0"/>
+                          <Component id="paletteFilter" max="32767" attributes="0"/>
+                          <Component id="paletteScroll" max="32767" attributes="0"/>
+                          <Component id="btnPalettePlace" max="32767" attributes="0"/>
                       </Group>
                       <EmptySpace max="32767" attributes="0"/>
                   </Group>
@@ -184,6 +188,14 @@
               <Component id="btnSave" min="-2" max="-2" attributes="0"/>
               <EmptySpace max="-2" attributes="0"/>
               <Component id="btnRegEdit" min="-2" max="-2" attributes="0"/>
+              <EmptySpace type="unrelated" max="-2" attributes="0"/>
+              <Component id="paletteLabel" min="-2" max="-2" attributes="0"/>
+              <EmptySpace max="-2" attributes="0"/>
+              <Component id="paletteFilter" min="-2" max="-2" attributes="0"/>
+              <EmptySpace max="-2" attributes="0"/>
+              <Component id="paletteScroll" min="-2" pref="140" max="-2" attributes="0"/>
+              <EmptySpace max="-2" attributes="0"/>
+              <Component id="btnPalettePlace" min="-2" max="-2" attributes="0"/>
               <EmptySpace max="-2" attributes="0"/>
           </Group>
       </Group>
@@ -408,5 +420,37 @@
         </DimensionLayout>
       </Layout>
     </Container>
+    <Component class="javax.swing.JLabel" name="paletteLabel">
+      <Properties>
+        <Property name="text" type="java.lang.String" value="Prop palette (search by name)"/>
+      </Properties>
+    </Component>
+    <Component class="javax.swing.JTextField" name="paletteFilter">
+    </Component>
+    <Container class="javax.swing.JScrollPane" name="paletteScroll">
+      <AuxValues>
+        <AuxValue name="autoScrollPane" type="java.lang.Boolean" value="true"/>
+      </AuxValues>
+
+      <Layout class="org.netbeans.modules.form.compat2.layouts.support.JScrollPaneSupportLayout"/>
+      <SubComponents>
+        <Component class="javax.swing.JList" name="paletteList">
+          <Properties>
+            <Property name="selectionMode" type="int" value="0"/>
+          </Properties>
+          <AuxValues>
+            <AuxValue name="JavaCodeGenerator_TypeParameters" type="java.lang.String" value="&lt;String&gt;"/>
+          </AuxValues>
+        </Component>
+      </SubComponents>
+    </Container>
+    <Component class="javax.swing.JButton" name="btnPalettePlace">
+      <Properties>
+        <Property name="text" type="java.lang.String" value="Place selected prop"/>
+      </Properties>
+      <Events>
+        <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnPalettePlaceActionPerformed"/>
+      </Events>
+    </Component>
   </SubComponents>
 </Form>

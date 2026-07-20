@@ -17,6 +17,7 @@ import ctrmap.humaninterface.tools.FillTool;
 import ctrmap.humaninterface.tools.NPCTool;
 import ctrmap.humaninterface.tools.PropTool;
 import ctrmap.humaninterface.tools.SetTool;
+import ctrmap.humaninterface.tools.TriggerTool;
 import ctrmap.humaninterface.tools.WarpTool;
 
 /**
@@ -120,6 +121,10 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 			case ("warp"):
 				CtrmapMainframe.tool = new WarpTool();
 				currentTool.setText("Current tool: Warp");
+				break;
+			case ("trigger"):
+				CtrmapMainframe.tool = new TriggerTool();
+				currentTool.setText("Current tool: Trigger");
 				break;
 		}
 	}

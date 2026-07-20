@@ -2,6 +2,7 @@ package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
 import ctrmap.Workspace;
+import ctrmap.ZoneCloner;
 import ctrmap.formats.containers.ZO;
 import ctrmap.formats.cameradata.CameraDataFile;
 import ctrmap.formats.mapmatrix.MapMatrix;
@@ -15,7 +16,9 @@ import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.JComboBox;
 import javax.swing.JFormattedTextField;
+import javax.swing.JOptionPane;
 import javax.swing.SwingWorker;
 import javax.swing.text.NumberFormatter;
 
@@ -35,6 +38,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 
 	public ZoneLoadingPanel() {
 		initComponents();
+		zoneList.setToolTipText("Select a map here to open it - this is the normal way to load a zone.");
+		btnCloneZone.setToolTipText("Copy the currently loaded zone over another existing zone slot.");
 		setIntValueClass(new JFormattedTextField[]{cam1, cam2, camFlags, unknownFlags, battleBG, ad, bgmSpring,
 			matrix, textFile, script, move, parentMap, x1, y1, z1, x2, y2, z2});
 	}
@@ -252,6 +257,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		zone.header.Z2 = (Integer) z2.getValue();
 
 		mNPCEditForm.saveEntry();
+		mTriggerEditForm.saveEntry();
 		if (zone.store(dialog)) {
 			try {
 				//save to master table
@@ -465,6 +471,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
         unknownFlags = new javax.swing.JFormattedTextField();
         unknownFlag = new javax.swing.JCheckBox();
         zoneList = new javax.swing.JComboBox<>();
+        btnCloneZone = new javax.swing.JButton();
         loadZoneLabel = new javax.swing.JLabel();
         loaderSeparator = new javax.swing.JSeparator();
         typeLabel = new javax.swing.JLabel();
@@ -560,6 +567,13 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
         zoneList.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 zoneListActionPerformed(evt);
+            }
+        });
+
+        btnCloneZone.setText("Clone zone...");
+        btnCloneZone.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnCloneZoneActionPerformed(evt);
             }
         });
 
@@ -764,7 +778,9 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
                             .addGroup(layout.createSequentialGroup()
                                 .addComponent(loadZoneLabel)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                                .addComponent(zoneList, javax.swing.GroupLayout.PREFERRED_SIZE, 350, javax.swing.GroupLayout.PREFERRED_SIZE))
+                                .addComponent(zoneList, javax.swing.GroupLayout.PREFERRED_SIZE, 350, javax.swing.GroupLayout.PREFERRED_SIZE)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(btnCloneZone))
                             .addComponent(skybox)
                             .addGroup(layout.createSequentialGroup()
                                 .addComponent(x2Label)
@@ -816,7 +832,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
                 .addContainerGap()
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(zoneList, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                    .addComponent(loadZoneLabel))
+                    .addComponent(loadZoneLabel)
+                    .addComponent(btnCloneZone))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(loaderSeparator, javax.swing.GroupLayout.PREFERRED_SIZE, 2, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
@@ -958,6 +975,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 					@Override
 					protected void done() {
 						progress.close();
+						//show the map that was just loaded instead of leaving the user on the property form
+						tabs.setSelectedComponent(tileEditMasterPnl);
 					}
 
 					@Override
@@ -976,6 +995,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						mCamEditForm.loadDataFile(new CameraDataFile(z.header.areadata));
 						mNPCEditForm.loadFromEntities(z.entities, z.header.npcreg);
 						mWarpEditForm.loadFromEntities(z.entities);
+						mTriggerEditForm.loadFromEntities(z.entities);
 						mScriptPnl.loadScript(z.s);
 						m3DDebugPanel.bindNavi(null);
 						System.gc();
@@ -990,6 +1010,61 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
     }//GEN-LAST:event_zoneListActionPerformed
 
+	/**
+	 * "Clone zone into existing slot" - safe variant, both slots must already
+	 * exist (no GARC appending). See ZoneCloner for the byte-level contract.
+	 */
+	private void btnCloneZoneActionPerformed(java.awt.event.ActionEvent evt) {
+		if (zones == null || zone == null || zoneIndex == -1) {
+			JOptionPane.showMessageDialog(this, "Load the source zone from the dropdown first.", "Clone zone", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		//the cloner reads the last-SAVED workspace bytes, so flush any pending
+		//on-screen edits first (same store chain as switching zones) - abort on cancel
+		if (!(mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true) && mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && store(true))) {
+			return;
+		}
+		int srcIndex = zoneIndex;
+		String[] names = new String[zones.length];
+		for (int i = 0; i < zones.length; i++) {
+			names[i] = LocationNames.getLocName(zones[i].header.parentMap) + " - " + i;
+		}
+		JComboBox<String> dstPicker = new JComboBox<>(names);
+		dstPicker.setMaximumRowCount(20);
+		Object[] form = {
+			"Source (currently loaded): " + names[srcIndex],
+			"Destination (will be overwritten):",
+			dstPicker
+		};
+		if (JOptionPane.showConfirmDialog(this, form, "Clone zone", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+			return;
+		}
+		int dstIndex = dstPicker.getSelectedIndex();
+		if (dstIndex == srcIndex) {
+			JOptionPane.showMessageDialog(this, "The source and destination zones are the same.", "Clone zone", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int confirm = JOptionPane.showConfirmDialog(this,
+				"Zone " + dstIndex + " (" + names[dstIndex] + ") will be completely replaced by a copy of zone "
+				+ srcIndex + " (" + names[srcIndex] + "):\n"
+				+ "header, NPCs, warps, triggers, scripts.\n"
+				+ "Its wild encounters are NOT changed.\n\n"
+				+ "This is reversible only by restoring a backup.",
+				"Confirm zone clone", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+		if (confirm != JOptionPane.OK_OPTION) {
+			return;
+		}
+		try {
+			ZoneCloner.cloneIntoSlot(srcIndex, dstIndex);
+		} catch (Exception ex) {
+			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
+			JOptionPane.showMessageDialog(this, "Could not clone the zone:\n" + ex.getMessage(), "Clone zone", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		//reload the zone list from the workspace and open the freshly written destination
+		loadEverything(); //modal - blocks until the worker is done
+		zoneList.setSelectedIndex(dstIndex);
+	}
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JLabel BGMTitleLabel;
@@ -999,6 +1074,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
     private javax.swing.JLabel battleBGLabel;
     private javax.swing.JCheckBox bgmCyclingEnable;
     private javax.swing.JFormattedTextField bgmSpring;
+    private javax.swing.JButton btnCloneZone;
     private javax.swing.JButton btnSave;
     private javax.swing.JFormattedTextField cam1;
     private javax.swing.JLabel cam1label;
