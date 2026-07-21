@@ -975,12 +975,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			JOptionPane.showMessageDialog(this, "This zone's script has no give-item routine (120 of 536 vanilla zones have one).\nPick a zone that already gives an item, or use pk3DS to place items differently.", "Add item giver", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		JSpinner itemSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, NpcTemplates.ITEM_ID_MAX, 1));
+		IdChooser itemChooser = new IdChooser(loadGameTextNames(NpcTemplates.GAMETEXT_ITEM_NAMES_OA), NpcTemplates.ITEM_ID_MAX, 1);
 		JSpinner countSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 99, 1));
 		JSpinner modelSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 65535, 1));
 		JPanel panel = new JPanel();
 		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
-		addLabeled(panel, "Item ID (see pk3DS for item names):", itemSpinner);
+		addLabeled(panel, "Item (type to search):", itemChooser);
 		addLabeled(panel, "Quantity:", countSpinner);
 		addLabeled(panel, "NPC model (MoveModel UID):", modelSpinner);
 		JLabel hint = new JLabel("<html>The NPC is placed at the centre of the view and gives the item<br>each time it is talked to (no one-time flag yet).</html>");
@@ -997,9 +997,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add item giver", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
+		int itemId = itemChooser.getId();
+		if (itemId < 1) {
+			JOptionPane.showMessageDialog(this, "Select an item first.", "Add item giver", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
 		int caseId;
 		try {
-			caseId = NpcTemplates.addItemGiverScript(work, (Integer) itemSpinner.getValue(), (Integer) countSpinner.getValue());
+			caseId = NpcTemplates.addItemGiverScript(work, itemId, (Integer) countSpinner.getValue());
 		} catch (RuntimeException ex) {
 			JOptionPane.showMessageDialog(this, "Could not add the give-item script:\n" + ex.getMessage(), "Add item giver", JOptionPane.ERROR_MESSAGE);
 			return;
@@ -1015,14 +1020,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * optional double-battle partner. No script surgery.
 	 */
 	private void addTrainerTemplate(Zone zone) {
-		JSpinner idSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, NpcTemplates.TRAINER_ID_MAX, 1));
+		IdChooser idChooser = new IdChooser(loadGameTextNames(NpcTemplates.GAMETEXT_TRAINER_NAMES_OA), NpcTemplates.TRAINER_ID_MAX, 1);
 		JSpinner modelSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 65535, 1));
 		JSpinner sightSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 8, 1));
 		javax.swing.JComboBox<String> faceBox = new javax.swing.JComboBox<>(new String[]{"Down", "Up", "Left", "Right"});
 		javax.swing.JCheckBox pairBox = new javax.swing.JCheckBox("Add double-battle partner (script 5000 + ID) beside it");
 		JPanel panel = new JPanel();
 		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
-		addLabeled(panel, "Trainer ID (edit party/class in pk3DS):", idSpinner);
+		addLabeled(panel, "Trainer (type to search; edit party/class in pk3DS):", idChooser);
 		addLabeled(panel, "NPC model (MoveModel UID):", modelSpinner);
 		addLabeled(panel, "Sight range (0 = battle on talk only):", sightSpinner);
 		addLabeled(panel, "Facing:", faceBox);
@@ -1034,7 +1039,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (JOptionPane.showConfirmDialog(frame, panel, "Add trainer", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
 			return;
 		}
-		int tid = (Integer) idSpinner.getValue();
+		int tid = idChooser.getId();
+		if (tid < 1) {
+			JOptionPane.showMessageDialog(this, "Select a trainer first.", "Add trainer", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
 		int model = (Integer) modelSpinner.getValue();
 		int sight = (Integer) sightSpinner.getValue();
 		int face = Math.max(0, faceBox.getSelectedIndex());
@@ -1080,6 +1089,99 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private void saveZoneScript(Zone zone) {
 		mZonePnl.store(false); //same path ScriptEditor uses to save the zone script
 		mScriptPnl.loadScript(zone.s);
+	}
+
+	/**
+	 * Loads a GameText name list (item names, trainer names) for the item/trainer
+	 * pickers. ORAS-only - the file indices differ on X/Y, so this returns null
+	 * there and the pickers fall back to a numeric spinner.
+	 */
+	private java.util.List<String> loadGameTextNames(int fileIndex) {
+		if (!Workspace.isOA() || Workspace.texts == null) {
+			return null;
+		}
+		try {
+			byte[] raw = Workspace.texts.getDecompressedEntry(fileIndex);
+			return raw == null ? null : GFMessageFile.getStrings(raw);
+		} catch (RuntimeException ex) {
+			return null;
+		}
+	}
+
+	/**
+	 * A searchable ID picker: a filter field over a "id: name" list when names
+	 * are available, or a plain numeric spinner otherwise. getId() returns the
+	 * chosen 1-based ID, or -1 when the filtered list has no selection.
+	 */
+	private static class IdChooser extends JPanel {
+
+		private javax.swing.JList<String> list;
+		private final java.util.List<Integer> ids = new java.util.ArrayList<>();
+		private JSpinner spinner;
+
+		IdChooser(java.util.List<String> names, int maxId, int defaultId) {
+			setLayout(new java.awt.BorderLayout());
+			if (names == null || names.size() <= 1) {
+				spinner = new JSpinner(new javax.swing.SpinnerNumberModel(defaultId, 1, maxId, 1));
+				add(spinner, java.awt.BorderLayout.CENTER);
+				return;
+			}
+			final java.util.List<String> entries = new java.util.ArrayList<>();
+			final java.util.List<Integer> baseIds = new java.util.ArrayList<>();
+			for (int i = 1; i <= maxId && i < names.size(); i++) {
+				String nm = names.get(i);
+				if (nm == null || nm.isEmpty() || nm.equals("-")) {
+					continue;
+				}
+				entries.add(i + ": " + nm);
+				baseIds.add(i);
+			}
+			final javax.swing.DefaultListModel<String> model = new javax.swing.DefaultListModel<>();
+			list = new javax.swing.JList<>(model);
+			list.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+			final javax.swing.JTextField filter = new javax.swing.JTextField();
+			final Runnable rebuild = new Runnable() {
+				@Override
+				public void run() {
+					String f = filter.getText().toLowerCase();
+					model.clear();
+					ids.clear();
+					for (int k = 0; k < entries.size(); k++) {
+						if (f.isEmpty() || entries.get(k).toLowerCase().contains(f)) {
+							model.addElement(entries.get(k));
+							ids.add(baseIds.get(k));
+						}
+					}
+					if (!model.isEmpty() && list.getSelectedIndex() < 0) {
+						list.setSelectedIndex(0);
+					}
+				}
+			};
+			filter.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+				@Override public void insertUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
+				@Override public void removeUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
+				@Override public void changedUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
+			});
+			rebuild.run();
+			for (int k = 0; k < ids.size(); k++) {
+				if (ids.get(k) == defaultId) {
+					list.setSelectedIndex(k);
+					break;
+				}
+			}
+			add(filter, java.awt.BorderLayout.NORTH);
+			JScrollPane sc = new JScrollPane(list);
+			sc.setPreferredSize(new java.awt.Dimension(280, 150));
+			add(sc, java.awt.BorderLayout.CENTER);
+		}
+
+		int getId() {
+			if (spinner != null) {
+				return (Integer) spinner.getValue();
+			}
+			int sel = list.getSelectedIndex();
+			return (sel >= 0 && sel < ids.size()) ? ids.get(sel) : -1;
+		}
 	}
 
 	private void addLabeled(JPanel panel, String label, java.awt.Component field) {
