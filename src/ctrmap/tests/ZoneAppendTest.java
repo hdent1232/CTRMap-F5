@@ -204,7 +204,26 @@ public class ZoneAppendTest {
 		System.out.println("stats: packed " + garcCopy.length() + " bytes (pristine " + pristineFile.length()
 				+ "), new zone " + NEW_INDEX + " from source " + SRC + ", master " + e537.length
 				+ " bytes, EN " + e538.length + " bytes");
+		chainedAppend(pristine, srcZo, masterOld, enOld);
 		System.out.println("PASS");
+	}
+
+	/**
+	 * Verifies zone append CHAINS: a first append's grown master/EN must be
+	 * valid input to a second append (536 -> 537 -> 538), so multiple new zones
+	 * can be created over successive pack cycles.
+	 */
+	private static void chainedAppend(GARC pristine, byte[] srcZo, byte[] masterOld, byte[] enOld) {
+		ZoneAppender.AppendPayloads c1 = ZoneAppender.buildAppendPayloads(srcZo, masterOld, enOld, SRC, 536);
+		ZoneAppender.AppendPayloads c2 = ZoneAppender.buildAppendPayloads(pristine.getDecompressedEntry(25), c1.master, c1.en, 25, 537);
+		check(c2.master.length == 538 * 0x38, "chained append: master grows to 538 rows");
+		ZoneAppender.validateEN(c2.en, 538);
+		boolean rowsKept = true;
+		for (int r = 0; r < 537 * 0x38; r++) {
+			if (c1.master[r] != c2.master[r]) { rowsKept = false; break; }
+		}
+		check(rowsKept, "chained append: second append preserves the first appended row");
+		check(c2.en.length == enOld.length + 8, "chained append: EN grew by 8 bytes over two appends");
 	}
 
 	private static void expectThrow(String what, byte[] srcZo, byte[] master, byte[] en, int srcIndex, int newIndex) {
