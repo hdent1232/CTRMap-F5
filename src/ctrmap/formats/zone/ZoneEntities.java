@@ -120,6 +120,11 @@ public class ZoneEntities {
 		public int h;
 		public int unknown10;
 
+		public Prop() {
+			w = 1;
+			h = 1;
+		}
+
 		public Prop(LittleEndianDataInputStream dis) {
 			try {
 				script = dis.readUnsignedShort();
