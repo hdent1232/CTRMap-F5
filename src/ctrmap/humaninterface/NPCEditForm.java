@@ -17,6 +17,7 @@ import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.h3d.model.H3DVertex;
 import ctrmap.formats.scripts.GFLPawnScript;
 import ctrmap.formats.scripts.MsgWrapperInjector;
+import ctrmap.formats.scripts.NpcTemplates;
 import ctrmap.formats.scripts.TalkerScriptWizard;
 import ctrmap.formats.scripts.ZoneScriptAnalyzer;
 import ctrmap.formats.text.GFMessageFile;
@@ -524,19 +525,19 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		boolean hasDispatch = ZoneScriptAnalyzer.findDispatch(zone.s) != null;
 		boolean hasWrapper = ZoneScriptAnalyzer.findMsgWrapper(zone.s) != null;
 		boolean hasStoryText = Workspace.getStoryTextGARC() != null;
-		//a missing wrapper no longer disables the wizard - it offers to
-		//inject the game's own message routine into the zone script
-		boolean zoneEligible = hasDispatch && hasStoryText;
-		btnAddTalker.setEnabled(zoneEligible && e != null);
-		//explain a disabled button - the zone-level reason is otherwise invisible
+		//the button opens a template chooser (Talking NPC / Sign / Item giver /
+		//Trainer); each template validates its own needs, so the button only
+		//needs a script dispatch (every zone has one). A missing message wrapper
+		//no longer disables anything - the talker path offers to inject one.
+		btnAddTalker.setEnabled(hasDispatch && e != null);
 		if (!hasDispatch) {
 			btnAddTalker.setToolTipText("This zone's script has no script dispatch (main SWITCH/CASETBL).");
 		} else if (!hasStoryText) {
-			btnAddTalker.setToolTipText("STORYTEXT archive not found in the game directory.");
+			btnAddTalker.setToolTipText("Add a trainer here; talking NPCs and signs need the STORYTEXT archive, which was not found.");
 		} else if (!hasWrapper) {
-			btnAddTalker.setToolTipText("This zone's script has no message-display routine - the wizard will offer to inject the game's own (adds ~2.4 KB to the zone script).");
+			btnAddTalker.setToolTipText("Talking NPCs work here (the game's message routine is injected if needed). Signs and item givers need a zone that already has one.");
 		} else {
-			btnAddTalker.setToolTipText(null);
+			btnAddTalker.setToolTipText("Add a talking NPC, sign, item giver, or trainer.");
 		}
 		if (npc == null) {
 			dlgStatus.setText("No NPC selected.");
@@ -746,7 +747,27 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		zone.s.decompressThis();
 		if (ZoneScriptAnalyzer.findDispatch(zone.s) == null) {
-			JOptionPane.showMessageDialog(this, "This zone's script has no script dispatch (main SWITCH/CASETBL).", "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(this, "This zone's script has no script dispatch (main SWITCH/CASETBL).", "Add NPC / object", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		//pick which template to add; "Talking NPC" continues the proven flow below,
+		//the others dispatch to their own self-contained handlers
+		String[] templates = {"Talking NPC", "Sign", "Item giver", "Trainer"};
+		Object choice = JOptionPane.showInputDialog(frame, "What would you like to add?", "Add NPC / object",
+				JOptionPane.PLAIN_MESSAGE, null, templates, templates[0]);
+		if (choice == null) {
+			return;
+		}
+		if ("Sign".equals(choice)) {
+			addSignTemplate(zone);
+			return;
+		}
+		if ("Item giver".equals(choice)) {
+			addGiverTemplate(zone);
+			return;
+		}
+		if ("Trainer".equals(choice)) {
+			addTrainerTemplate(zone);
 			return;
 		}
 		boolean injectWrapper = false;
@@ -872,6 +893,203 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		mZonePnl.store(false); //same path ScriptEditor uses to save the zone script
 		mScriptPnl.loadScript(zone.s);
 		frame.repaint();
+	}
+
+	/**
+	 * Sign template: clones the zone's vanilla sign script for a new STORYTEXT
+	 * line and drops an interactable furniture record at the view centre.
+	 */
+	private void addSignTemplate(Zone zone) {
+		if (ZoneScriptAnalyzer.findSignWrapper(zone.s) == null) {
+			JOptionPane.showMessageDialog(this, "This zone's script has no sign-display routine (69 of 536 vanilla zones have one).\nUse a Talking NPC, or pick a zone that already contains a sign.", "Add sign", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (Workspace.getStoryTextGARC() == null) {
+			JOptionPane.showMessageDialog(this, "The STORYTEXT archive was not found in the game directory.", "Add sign", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		GFMessageFile msg = getStoryFile(zone.header.textID);
+		if (msg == null) {
+			JOptionPane.showMessageDialog(this, "Story text file " + zone.header.textID + " could not be read.", "Add sign", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		JTextArea ta = new JTextArea("", 5, 40);
+		ta.setLineWrap(true);
+		ta.setWrapStyleWord(true);
+		javax.swing.JComboBox<String> typeBox = new javax.swing.JComboBox<>(NpcTemplates.SIGN_TYPE_LABELS);
+		JPanel panel = new JPanel();
+		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
+		addLabeled(panel, "Sign text:", new JScrollPane(ta));
+		addLabeled(panel, "Sign style:", typeBox);
+		JLabel hint = new JLabel("<html>A sign furniture object is placed at the centre of the current view.<br>Edit its exact tile with the Prop tool.</html>");
+		hint.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(hint);
+		if (JOptionPane.showConfirmDialog(frame, panel, "Add sign", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+			return;
+		}
+		String text = escapeTypedText(ta.getText());
+		try {
+			GFMessageFile.write(java.util.Arrays.asList(text));
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int signType = NpcTemplates.SIGN_TYPES[Math.max(0, typeBox.getSelectedIndex())];
+		GFLPawnScript work;
+		try {
+			work = new GFLPawnScript(zone.s.getScriptBytes());
+			work.decompressThis();
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add sign", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int newLine = msg.getLineCount();
+		int caseId;
+		try {
+			caseId = NpcTemplates.addSignScript(work, newLine, signType);
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not add the sign script:\n" + ex.getMessage(), "Add sign", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		msg.addLine(text);
+		if (!storeStoryFile(zone.header.textID, msg)) {
+			msg.removeLine(newLine); //keep the cache consistent with disk; zone.s untouched
+			return;
+		}
+		zone.s = work; //commit
+		Point pos = mTileMapPanel.getTileAtViewportCentre();
+		e.furniture.add(NpcTemplates.makeSignFurniture(caseId, pos.x, pos.y));
+		e.furnitureCount = e.furniture.size();
+		e.modified = true;
+		saveZoneScript(zone);
+		JOptionPane.showMessageDialog(this, "Sign added at tile (" + pos.x + ", " + pos.y + "). Adjust its position with the Prop tool.", "Add sign", JOptionPane.INFORMATION_MESSAGE);
+		frame.repaint();
+	}
+
+	/**
+	 * Item-giver template: clones the zone's vanilla give-item script and adds
+	 * an NPC that hands over the item on interaction (repeatable).
+	 */
+	private void addGiverTemplate(Zone zone) {
+		if (ZoneScriptAnalyzer.findGiveWrapper(zone.s) == null) {
+			JOptionPane.showMessageDialog(this, "This zone's script has no give-item routine (120 of 536 vanilla zones have one).\nPick a zone that already gives an item, or use pk3DS to place items differently.", "Add item giver", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		JSpinner itemSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, NpcTemplates.ITEM_ID_MAX, 1));
+		JSpinner countSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 99, 1));
+		JSpinner modelSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 65535, 1));
+		JPanel panel = new JPanel();
+		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
+		addLabeled(panel, "Item ID (see pk3DS for item names):", itemSpinner);
+		addLabeled(panel, "Quantity:", countSpinner);
+		addLabeled(panel, "NPC model (MoveModel UID):", modelSpinner);
+		JLabel hint = new JLabel("<html>The NPC is placed at the centre of the view and gives the item<br>each time it is talked to (no one-time flag yet).</html>");
+		hint.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(hint);
+		if (JOptionPane.showConfirmDialog(frame, panel, "Add item giver", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+			return;
+		}
+		GFLPawnScript work;
+		try {
+			work = new GFLPawnScript(zone.s.getScriptBytes());
+			work.decompressThis();
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add item giver", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int caseId;
+		try {
+			caseId = NpcTemplates.addItemGiverScript(work, (Integer) itemSpinner.getValue(), (Integer) countSpinner.getValue());
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not add the give-item script:\n" + ex.getMessage(), "Add item giver", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		zone.s = work; //commit - the clone is the only mutation and it succeeded
+		Point pos = mTileMapPanel.getTileAtViewportCentre();
+		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), (Integer) modelSpinner.getValue(), caseId, pos.x, pos.y);
+		finishNpcAdd(zone, npc, true);
+	}
+
+	/**
+	 * Trainer template: a pure NPC record (script = 3000 + trainer ID), with an
+	 * optional double-battle partner. No script surgery.
+	 */
+	private void addTrainerTemplate(Zone zone) {
+		JSpinner idSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, NpcTemplates.TRAINER_ID_MAX, 1));
+		JSpinner modelSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 65535, 1));
+		JSpinner sightSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 8, 1));
+		javax.swing.JComboBox<String> faceBox = new javax.swing.JComboBox<>(new String[]{"Down", "Up", "Left", "Right"});
+		javax.swing.JCheckBox pairBox = new javax.swing.JCheckBox("Add double-battle partner (script 5000 + ID) beside it");
+		JPanel panel = new JPanel();
+		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
+		addLabeled(panel, "Trainer ID (edit party/class in pk3DS):", idSpinner);
+		addLabeled(panel, "NPC model (MoveModel UID):", modelSpinner);
+		addLabeled(panel, "Sight range (0 = battle on talk only):", sightSpinner);
+		addLabeled(panel, "Facing:", faceBox);
+		pairBox.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(pairBox);
+		JLabel hint = new JLabel("<html>Places the overworld trainer NPC only. The battle exists only if<br>trainer data slot ID is valid (set it in pk3DS).</html>");
+		hint.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(hint);
+		if (JOptionPane.showConfirmDialog(frame, panel, "Add trainer", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+			return;
+		}
+		int tid = (Integer) idSpinner.getValue();
+		int model = (Integer) modelSpinner.getValue();
+		int sight = (Integer) sightSpinner.getValue();
+		int face = Math.max(0, faceBox.getSelectedIndex());
+		Point pos = mTileMapPanel.getTileAtViewportCentre();
+		try {
+			ZoneEntities.NPC trainer = NpcTemplates.makeTrainerNpc(NpcTemplates.nextFreeUid(e), tid, model, sight, face, pos.x, pos.y);
+			finishNpcAdd(zone, trainer, false);
+			if (pairBox.isSelected()) {
+				ZoneEntities.NPC pair = NpcTemplates.makeTrainerPairNpc(NpcTemplates.nextFreeUid(e), tid, model, sight, face, pos.x + 1, pos.y);
+				finishNpcAdd(zone, pair, false);
+			}
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not add the trainer:\n" + ex.getMessage(), "Add trainer", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		frame.repaint();
+	}
+
+	/**
+	 * Adds a scripted NPC record to the loaded zone, updates the list/model
+	 * state exactly like the talker flow, and saves. When saveScript is true the
+	 * zone script was changed and is persisted too.
+	 */
+	private void finishNpcAdd(Zone zone, ZoneEntities.NPC newNPC, boolean saveScript) {
+		loaded = false;
+		e.npcs.add(newNPC);
+		if (reg != null) {
+			models.add(reg.getModel(newNPC.model));
+		}
+		e.NPCCount = e.npcs.size();
+		entryBox.addItem(String.valueOf(newNPC.uid));
+		loaded = true;
+		e.modified = true;
+		populateScriptDropdown();
+		setNPC(entryBox.getItemCount() - 1);
+		if (saveScript) {
+			saveZoneScript(zone);
+		} else {
+			mZonePnl.store(false);
+		}
+	}
+
+	private void saveZoneScript(Zone zone) {
+		mZonePnl.store(false); //same path ScriptEditor uses to save the zone script
+		mScriptPnl.loadScript(zone.s);
+	}
+
+	private void addLabeled(JPanel panel, String label, java.awt.Component field) {
+		JLabel l = new JLabel(label);
+		l.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(l);
+		if (field instanceof javax.swing.JComponent) {
+			((javax.swing.JComponent) field).setAlignmentX(LEFT_ALIGNMENT);
+		}
+		panel.add(field);
 	}
 
 	private void scrDropdownActionPerformed(java.awt.event.ActionEvent evt) {
@@ -1254,7 +1472,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
             }
         });
 
-        btnAddTalker.setText("Add talking NPC...");
+        btnAddTalker.setText("Add NPC / object...");
         btnAddTalker.setEnabled(false);
         btnAddTalker.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
