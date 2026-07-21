@@ -476,7 +476,8 @@ public class Workspace {
 					ad.packDirectory(getExtractionDirectory(ArchiveType.AREA_DATA));
 					progress.setBarPercent(60);
 					progress.setDescription("Packing - zonedata");
-					zo.packDirectory(getExtractionDirectory(ArchiveType.ZONE_DATA));
+					//a pending zone append needs its compression overrides exactly once (see ZoneAppender)
+					zo.packDirectory(getExtractionDirectory(ArchiveType.ZONE_DATA), ZoneAppender.consumePendingZoneDataOverrides());
 					progress.setBarPercent(65);
 					progress.setDescription("Packing - mapmatrix");
 					mm.packDirectory(getExtractionDirectory(ArchiveType.MAP_MATRIX));
