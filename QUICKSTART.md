@@ -62,20 +62,34 @@ smaller than warp coordinates in the same zone.
 - **Script** — the script index this trigger runs. This is the link to the game's Pawn
   script for that zone (see the Script Editor tab).
 - **X / Y / W / H** — tile position and size of the trigger rectangle.
-- **Constant**, **Unknown 2/6/8/14/16** — not yet decoded. Leave them alone unless you are
-  reverse-engineering; they are preserved byte-for-byte when untouched.
+- **Constant** / **Unknown 2** — decoded from real ORAS data: **Constant** is a work-variable
+  ID (the 16xxx range) and **Unknown 2** is the value it must equal for the trigger to fire.
+  A story script sets that work variable (e.g. after an event), which turns the trigger on.
+- **Unknown 6/8/14/16** — not yet decoded; preserved byte-for-byte when untouched.
 
 ### NPC dialogue
 
 With the NPC tool selected, the bottom of the right-hand panel has a **Dialogue** section:
 for NPCs whose script is a simple "talker", it previews the STORYTEXT line they speak and
 **Edit dialogue...** lets you change it in place (shared lines are automatically split so
-other NPCs keep their text). **Add talking NPC...** creates a brand-new NPC at the centre
-of the view with its own dialogue and a freshly generated talker script — it works in any
-zone whose script has a dispatch (and whose STORYTEXT file is readable). If the zone's
-script lacks the message-display routine the talker needs, CTRMap offers to inject one,
-copied from the game's own code (~2.4 KB added to the zone script), before creating the
-NPC. The button's tooltip explains when it is disabled.
+other NPCs keep their text).
+
+**Add NPC / object...** opens a template picker for creating new content at the centre of
+the current view:
+
+- **Talking NPC** — your own dialogue and a freshly generated talker script. Works in any
+  zone with a script dispatch; if the zone lacks the message-display routine, CTRMap
+  offers to inject one copied from the game's own code (~2.4 KB).
+- **Sign** — a readable sign furniture object with your text and a chosen frame style.
+  Available in the 69 zones whose script already contains a sign routine.
+- **Item giver** — an NPC that hands over an item (and quantity) when talked to. Available
+  in the 120 zones with a give-item routine. Repeatable (no one-time flag yet); enter the
+  item ID from pk3DS.
+- **Trainer** — places an overworld trainer NPC (script = 3000 + trainer ID), optionally
+  with a double-battle partner. Works in any zone. The *battle* itself only exists if that
+  trainer slot has data — edit the party and class in pk3DS.
+
+The button's tooltip explains what each zone supports.
 
 ### Prop palette
 
@@ -91,6 +105,15 @@ the prop is placed fully textured; cancel and nothing is modified.
 The Zone Loader tab has **Clone zone...**: it copies the currently loaded zone (header,
 NPCs, warps, triggers, scripts — not wild encounters) over another existing zone slot.
 Pending edits are saved first; the overwrite is only reversible by restoring a backup.
+
+**Add new zone (EXPERIMENTAL)...** (ORAS only) is different — it creates a brand-new zone
+slot rather than overwriting one, by copying a source zone to the next free index and
+growing the game's master and encounter tables to match. **This has never been done in any
+X/Y/ORAS fan hack.** The archive rebuild is fully verified — every existing zone stays
+byte-identical, so your existing content is safe — but whether the *game* accepts a 537th
+zone (its code may hard-code the zone count) is unknown until tested. Keep a RomFS backup,
+test in an emulator first, and confirm you can still load a save in an old zone. Point a
+warp at the new zone to reach it.
 
 ### Text Editor tab
 
