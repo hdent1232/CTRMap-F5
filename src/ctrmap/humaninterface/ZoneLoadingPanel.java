@@ -2,6 +2,7 @@ package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
 import ctrmap.Workspace;
+import ctrmap.ZoneAppender;
 import ctrmap.ZoneCloner;
 import ctrmap.formats.containers.ZO;
 import ctrmap.formats.cameradata.CameraDataFile;
@@ -40,6 +41,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		initComponents();
 		zoneList.setToolTipText("Select a map here to open it - this is the normal way to load a zone.");
 		btnCloneZone.setToolTipText("Copy the currently loaded zone over another existing zone slot.");
+		btnAddZone.setToolTipText("Append a brand-new zone slot to the end of ZoneData. EXPERIMENTAL - emulator testing mandatory.");
 		setIntValueClass(new JFormattedTextField[]{cam1, cam2, camFlags, unknownFlags, battleBG, ad, bgmSpring,
 			matrix, textFile, script, move, parentMap, x1, y1, z1, x2, y2, z2});
 	}
@@ -120,6 +122,14 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				zoneList.removeAllItems();
 				tmg.setSelectedIndex(-1);
 				tmg.removeAllItems();
+				//zone appending is ORAS-only in v1 (XY has no EN pack and different OAZoneNumber semantics)
+				if (Workspace.game == Workspace.GameType.XY) {
+					btnAddZone.setEnabled(false);
+					btnAddZone.setToolTipText("Adding new zones is ORAS-only in v1.");
+				} else {
+					btnAddZone.setEnabled(true);
+					btnAddZone.setToolTipText("Append a brand-new zone slot to the end of ZoneData. EXPERIMENTAL - emulator testing mandatory.");
+				}
 				int totalZones = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length;
 				totalZones -= (Workspace.game == Workspace.GameType.XY) ? 1 : 2;
 				zones = new Zone[totalZones]; //last file is not a ZO
@@ -472,6 +482,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
         unknownFlag = new javax.swing.JCheckBox();
         zoneList = new javax.swing.JComboBox<>();
         btnCloneZone = new javax.swing.JButton();
+        btnAddZone = new javax.swing.JButton();
         loadZoneLabel = new javax.swing.JLabel();
         loaderSeparator = new javax.swing.JSeparator();
         typeLabel = new javax.swing.JLabel();
@@ -574,6 +585,13 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
         btnCloneZone.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 btnCloneZoneActionPerformed(evt);
+            }
+        });
+
+        btnAddZone.setText("Add new zone (EXPERIMENTAL)...");
+        btnAddZone.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                btnAddZoneActionPerformed(evt);
             }
         });
 
@@ -780,7 +798,9 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                                 .addComponent(zoneList, javax.swing.GroupLayout.PREFERRED_SIZE, 350, javax.swing.GroupLayout.PREFERRED_SIZE)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                                .addComponent(btnCloneZone))
+                                .addComponent(btnCloneZone)
+                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                                .addComponent(btnAddZone))
                             .addComponent(skybox)
                             .addGroup(layout.createSequentialGroup()
                                 .addComponent(x2Label)
@@ -833,7 +853,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(zoneList, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(loadZoneLabel)
-                    .addComponent(btnCloneZone))
+                    .addComponent(btnCloneZone)
+                    .addComponent(btnAddZone))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(loaderSeparator, javax.swing.GroupLayout.PREFERRED_SIZE, 2, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
@@ -1066,6 +1087,88 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		zoneList.setSelectedIndex(dstIndex);
 	}
 
+	/**
+	 * EXPERIMENTAL "append a brand-new zone slot" - ORAS only. See
+	 * ZoneAppender for the byte-level contract. The append only stages the
+	 * three workspace files, so the workspace is packed and fully reloaded
+	 * immediately afterwards (GARC.length is constructor-only and one append
+	 * is allowed per pack cycle).
+	 */
+	private void btnAddZoneActionPerformed(java.awt.event.ActionEvent evt) {
+		if (!Workspace.isOA()) {
+			JOptionPane.showMessageDialog(this, "Adding new zones is ORAS-only in v1.", "Add new zone", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (zones == null || zones.length == 0) {
+			JOptionPane.showMessageDialog(this, "Load a workspace first.", "Add new zone", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		//the appender reads the last-SAVED workspace bytes, so flush any pending
+		//on-screen edits first (same store chain as switching zones) - abort on cancel
+		if (!(mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true) && mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && store(true))) {
+			return;
+		}
+		int newIndex = zones.length;
+		String[] names = new String[zones.length];
+		for (int i = 0; i < zones.length; i++) {
+			names[i] = LocationNames.getLocName(zones[i].header.parentMap) + " - " + i;
+		}
+		JComboBox<String> srcPicker = new JComboBox<>(names);
+		srcPicker.setMaximumRowCount(20);
+		if (zoneIndex >= 0 && zoneIndex < names.length) {
+			srcPicker.setSelectedIndex(zoneIndex);
+		}
+		Object[] form = {
+			"New zone slot " + newIndex + " will be appended as a copy of:",
+			srcPicker
+		};
+		if (JOptionPane.showConfirmDialog(this, form, "Add new zone (EXPERIMENTAL)", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+			return;
+		}
+		int srcIndex = srcPicker.getSelectedIndex();
+		//strong warning, Cancel is the default option
+		Object[] options = {"Continue", "Cancel"};
+		int confirm = JOptionPane.showOptionDialog(this,
+				"WARNING - UNTESTED TERRITORY.\n\n"
+				+ "This appends a brand-new zone slot to ZoneData. No fan hack for X/Y/OR/AS has\n"
+				+ "ever shipped an added zone: the mechanics of the archive are fully understood\n"
+				+ "and round-trip verified, but whether the GAME's code accepts an extra zone\n"
+				+ "(e.g. hardcoded table sizes or entry indices in code.bin) is unknown.\n\n"
+				+ "The rebuilt archive keeps every existing zone byte-identical, so existing\n"
+				+ "content is safe - but the new zone itself may crash or softlock the game.\n\n"
+				+ "MANDATORY: keep a backup of your RomFS, test in Citra/an emulator before\n"
+				+ "touching real hardware, and verify you can still load a save in an OLD zone\n"
+				+ "first.\n\n"
+				+ "Continue?",
+				"Add new zone (EXPERIMENTAL)",
+				JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE,
+				null, options, options[1]);
+		if (confirm != 0) {
+			return;
+		}
+		try {
+			ZoneAppender.appendZone(srcIndex);
+		} catch (Exception ex) {
+			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
+			JOptionPane.showMessageDialog(this, "Could not append the zone:\n" + ex.getMessage(), "Add new zone", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		//the append changed the GARC layout - repack NOW (also consumes the pending
+		//compression overrides) and reload everything from the fresh archive
+		Workspace.packWorkspace(); //modal - blocks until the worker is done
+		loadEverything(); //modal - blocks until the worker is done
+		if (newIndex < zoneList.getItemCount()) {
+			zoneList.setSelectedIndex(newIndex);
+		}
+		JOptionPane.showMessageDialog(this,
+				"Zone " + newIndex + " created.\n\n"
+				+ "It is not reachable until you point a warp or script at it (edit a warp in\n"
+				+ "another zone to target zone " + newIndex + ").\n\n"
+				+ "Wild encounters are empty: the in-zone encounter subfile was copied from the\n"
+				+ "source, but the zone's entry in the EN encounter pack is new and empty.",
+				"Add new zone", JOptionPane.INFORMATION_MESSAGE);
+	}
+
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JLabel BGMTitleLabel;
     private javax.swing.JFormattedTextField ad;
@@ -1074,6 +1177,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
     private javax.swing.JLabel battleBGLabel;
     private javax.swing.JCheckBox bgmCyclingEnable;
     private javax.swing.JFormattedTextField bgmSpring;
+    private javax.swing.JButton btnAddZone;
     private javax.swing.JButton btnCloneZone;
     private javax.swing.JButton btnSave;
     private javax.swing.JFormattedTextField cam1;
