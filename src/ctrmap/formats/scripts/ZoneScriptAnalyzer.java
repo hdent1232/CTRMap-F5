@@ -33,6 +33,24 @@ public class ZoneScriptAnalyzer {
 	 */
 	public static final int MSG_WRAPPER_GETWORK_CONST = 32785;
 
+	/**
+	 * Name hash of the bag-space-check native (item, count) the vanilla
+	 * give-item wrapper calls before adding, stable game-wide.
+	 */
+	public static final int CHECK_ITEM_SPACE_NATIVE_HASH = 0xA5135FDE;
+
+	/**
+	 * Name hash of the add-item native (item, count) on the give-item
+	 * wrapper's success branch, stable game-wide.
+	 */
+	public static final int ADD_ITEM_NATIVE_HASH = 0x8D631FFE;
+
+	/**
+	 * Name hash of the sign frame-style native (arg 0x60000) the vanilla sign
+	 * wrapper calls before opening the message window, stable game-wide.
+	 */
+	public static final int SIGN_STYLE_NATIVE_HASH = 0x6393BE9A;
+
 	private static final int OP_LOAD_PRI = PawnInstruction.Commands.LOAD_PRI.ordinal();
 	private static final int OP_LOAD_P_PRI = PawnInstruction.Commands.LOAD_P_PRI.ordinal();
 	private static final int OP_PUSH_C = PawnInstruction.Commands.PUSH_C.ordinal();
@@ -67,6 +85,36 @@ public class ZoneScriptAnalyzer {
 		 * offset does not land on an instruction boundary.
 		 */
 		public final LinkedHashMap<Integer, PawnInstruction> cases = new LinkedHashMap<>();
+	}
+
+	/**
+	 * Result of findCallerPattern - a matched constant-pushing wrapper-caller
+	 * sub: PROC; N x PUSH(_P)_C; CALL &lt;wrapper&gt;; ZERO_PRI; RETN. The simple
+	 * talker, the R4 sign and the give-item call sites all share this
+	 * geometry, differing only in push count, constants and callee.
+	 */
+	public static class CallerPattern {
+
+		/**
+		 * The PROC entry of the caller subroutine.
+		 */
+		public PawnInstruction subEntry;
+		/**
+		 * The push instructions in order (patch targets for the constants).
+		 */
+		public PawnInstruction[] pushes;
+		/**
+		 * The pushed constants in push order (last one is the argbytes count).
+		 */
+		public int[] pushConsts;
+		/**
+		 * The CALL to the wrapper.
+		 */
+		public PawnInstruction wrapperCall;
+		/**
+		 * The wrapper's entry instruction (CALL target), null if unresolvable.
+		 */
+		public PawnInstruction wrapperEntry;
 	}
 
 	/**
@@ -174,6 +222,29 @@ public class ZoneScriptAnalyzer {
 	 * @return the matched talker, or null if the case is not a simple talker
 	 */
 	public static TalkerPattern findTalkerPattern(GFLPawnScript script, int caseKey) {
+		CallerPattern cp = findCallerPattern(script, caseKey, 4);
+		if (cp == null || cp.pushConsts[0] != -1 || cp.pushConsts[1] != 1 || cp.pushConsts[3] != 12) {
+			return null;
+		}
+		TalkerPattern tp = new TalkerPattern();
+		tp.msgLine = cp.pushConsts[2];
+		tp.subEntry = cp.subEntry;
+		tp.msgLinePush = cp.pushes[2];
+		tp.wrapperCall = cp.wrapperCall;
+		tp.wrapperEntry = cp.wrapperEntry;
+		return tp;
+	}
+
+	/**
+	 * Matches the case target of caseKey against the constant-pushing
+	 * wrapper-caller geometry with the given number of pushed constants
+	 * (directly or through the usual PUSH_P_C(0); CALL sub dispatch stub).
+	 * Only the shape is checked - callers decide what the constants and the
+	 * callee must be.
+	 *
+	 * @return the matched caller, or null if the case has a different shape
+	 */
+	public static CallerPattern findCallerPattern(GFLPawnScript script, int caseKey, int pushCount) {
 		Dispatch d = findDispatch(script);
 		if (d == null) {
 			return null;
@@ -187,41 +258,40 @@ public class ZoneScriptAnalyzer {
 			return null;
 		}
 		int idx = script.instructions.indexOf(subEntry);
-		if (idx < 0 || idx + 8 > script.instructions.size()) {
+		if (idx < 0 || idx + pushCount + 4 > script.instructions.size()) {
 			return null;
 		}
 		if (subEntry.getCommand() != OP_PROC) {
 			return null;
 		}
-		int[] pushConsts = new int[4];
-		for (int i = 0; i < 4; i++) {
+		PawnInstruction[] pushes = new PawnInstruction[pushCount];
+		int[] pushConsts = new int[pushCount];
+		for (int i = 0; i < pushCount; i++) {
 			PawnInstruction push = script.instructions.get(idx + 1 + i);
 			int cmd = push.getCommand();
 			if ((cmd != OP_PUSH_P_C && cmd != OP_PUSH_C) || push.argumentCells.length < 1) {
 				return null;
 			}
+			pushes[i] = push;
 			pushConsts[i] = push.argumentCells[0];
 		}
-		PawnInstruction call = script.instructions.get(idx + 5);
+		PawnInstruction call = script.instructions.get(idx + pushCount + 1);
 		if (call.getCommand() != OP_CALL || call.argumentCells.length != 1) {
 			return null;
 		}
-		if (script.instructions.get(idx + 6).getCommand() != OP_ZERO_PRI) {
+		if (script.instructions.get(idx + pushCount + 2).getCommand() != OP_ZERO_PRI) {
 			return null;
 		}
-		if (script.instructions.get(idx + 7).getCommand() != OP_RETN) {
+		if (script.instructions.get(idx + pushCount + 3).getCommand() != OP_RETN) {
 			return null;
 		}
-		if (pushConsts[0] != -1 || pushConsts[1] != 1 || pushConsts[3] != 12) {
-			return null;
-		}
-		TalkerPattern tp = new TalkerPattern();
-		tp.msgLine = pushConsts[2];
-		tp.subEntry = subEntry;
-		tp.msgLinePush = script.instructions.get(idx + 3);
-		tp.wrapperCall = call;
-		tp.wrapperEntry = script.lookupInstructionByPtr(call.pointer + call.argumentCells[0]);
-		return tp;
+		CallerPattern cp = new CallerPattern();
+		cp.subEntry = subEntry;
+		cp.pushes = pushes;
+		cp.pushConsts = pushConsts;
+		cp.wrapperCall = call;
+		cp.wrapperEntry = script.lookupInstructionByPtr(call.pointer + call.argumentCells[0]);
+		return cp;
 	}
 
 	/**
@@ -246,6 +316,116 @@ public class ZoneScriptAnalyzer {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Locates the zone's give-item wrapper sub (the routine the vanilla
+	 * give-item call sites CALL): the first sub whose direct body calls the
+	 * bag-space-check native and whose call chain reaches the add-item
+	 * native. Present in 120 of the 536 pristine ORAS zones.
+	 *
+	 * @return the wrapper's PROC entry instruction, or null
+	 */
+	public static PawnInstruction findGiveWrapper(GFLPawnScript script) {
+		if (script == null || script.instructions.isEmpty()) {
+			return null;
+		}
+		for (int i = 0; i < script.instructions.size(); i++) {
+			PawnInstruction ins = script.instructions.get(i);
+			if (ins.getCommand() == OP_PROC && isGiveWrapperEntry(script, ins)) {
+				return ins;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Whether the given PROC entry satisfies the give-item wrapper predicate
+	 * (bag-space check in the direct body, add-item reachable via CALLs).
+	 */
+	public static boolean isGiveWrapperEntry(GFLPawnScript script, PawnInstruction entry) {
+		if (entry == null || entry.getCommand() != OP_PROC) {
+			return false;
+		}
+		int idx = script.instructions.indexOf(entry);
+		if (idx < 0) {
+			return false;
+		}
+		return bodyUsesNative(script, idx, CHECK_ITEM_SPACE_NATIVE_HASH)
+				&& chainReachesNative(script, entry, ADD_ITEM_NATIVE_HASH);
+	}
+
+	/**
+	 * Locates the zone's sign wrapper sub (the routine the vanilla R4 sign
+	 * call sites CALL): the first sub that calls the sign frame-style native
+	 * within its first five instructions and whose call chain reaches the
+	 * message-display native. Present in 69 of the 536 pristine ORAS zones.
+	 *
+	 * @return the wrapper's PROC entry instruction, or null
+	 */
+	public static PawnInstruction findSignWrapper(GFLPawnScript script) {
+		if (script == null || script.instructions.isEmpty()) {
+			return null;
+		}
+		for (int i = 0; i < script.instructions.size(); i++) {
+			PawnInstruction ins = script.instructions.get(i);
+			if (ins.getCommand() == OP_PROC && isSignWrapperEntry(script, ins)) {
+				return ins;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Whether the given PROC entry satisfies the sign wrapper predicate
+	 * (frame-style native in the first five instructions, message display
+	 * reachable via CALLs).
+	 */
+	public static boolean isSignWrapperEntry(GFLPawnScript script, PawnInstruction entry) {
+		if (entry == null || entry.getCommand() != OP_PROC) {
+			return false;
+		}
+		int idx = script.instructions.indexOf(entry);
+		if (idx < 0) {
+			return false;
+		}
+		int end = subBodyEnd(script, idx);
+		boolean style = false;
+		for (int k = idx; k <= end && k <= idx + 4; k++) {
+			PawnInstruction b = script.instructions.get(k);
+			if (b.getCommand() == OP_SYSREQ_N && b.argumentCells.length >= 1) {
+				int nIdx = b.argumentCells[0];
+				if (nIdx >= 0 && nIdx < script.natives.size()) {
+					int[] data = script.natives.get(nIdx).data;
+					if (data.length >= 2 && data[1] == SIGN_STYLE_NATIVE_HASH) {
+						style = true;
+						break;
+					}
+				}
+			}
+		}
+		return style && chainReachesNative(script, entry, MSG_DISPLAY_NATIVE_HASH);
+	}
+
+	/**
+	 * Whether the direct body of the sub starting at entryIdx (no CALL
+	 * recursion) contains a SYSREQ_N of the given native name hash.
+	 */
+	private static boolean bodyUsesNative(GFLPawnScript script, int entryIdx, int nativeHash) {
+		int end = subBodyEnd(script, entryIdx);
+		for (int i = entryIdx; i <= end; i++) {
+			PawnInstruction ins = script.instructions.get(i);
+			if (ins.getCommand() == OP_SYSREQ_N && ins.argumentCells.length >= 1) {
+				int nIdx = ins.argumentCells[0];
+				if (nIdx >= 0 && nIdx < script.natives.size()) {
+					int[] data = script.natives.get(nIdx).data;
+					if (data.length >= 2 && data[1] == nativeHash) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
 	}
 
 	/**
