@@ -44,8 +44,7 @@ public class TalkerScriptWizard {
 	 */
 	public static int cloneTalker(GFLPawnScript script, int msgLine) {
 		script.decompressThis();
-		ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(script);
-		if (d == null) {
+		if (ZoneScriptAnalyzer.findDispatch(script) == null) {
 			throw new IllegalStateException("The zone script has no script dispatch (main SWITCH/CASETBL).");
 		}
 		PawnInstruction wrapper = ZoneScriptAnalyzer.findMsgWrapper(script);
@@ -55,6 +54,44 @@ public class TalkerScriptWizard {
 		if (msgLine < Short.MIN_VALUE || msgLine > Short.MAX_VALUE) {
 			//packed PUSH_P_C stores its argument in the upper 16 bits of the cell
 			throw new IllegalStateException("Message line " + msgLine + " does not fit a packed PUSH_P_C argument.");
+		}
+		return cloneCallerSub(script, wrapper, new int[]{-1, 1, msgLine, 12});
+	}
+
+	/**
+	 * Clones a constant-pushing wrapper-caller sub (PROC; one packed PUSH per
+	 * constant; CALL wrapper; ZERO_PRI; RETN - the shared geometry of the
+	 * vanilla talker, sign and give-item call sites) into the zone script's
+	 * dispatch. The insertion machinery is byte-identical to the proven
+	 * talking-NPC surgery; only the push constants and the callee vary.
+	 *
+	 * @param script a decompressThis()'d zone script, modified in place
+	 * @param wrapper the PROC entry of the wrapper sub the clone will CALL
+	 * (from ZoneScriptAnalyzer.findMsgWrapper/findSignWrapper/findGiveWrapper)
+	 * @param pushConsts the constants to push, in push order, including the
+	 * trailing argbytes constant (talker: -1, 1, line, 12; sign: type, line,
+	 * 8; give: mode, count, item, 12)
+	 * @return the newly allocated local script ID (dispatch case key)
+	 * @throws IllegalStateException if the script has no dispatch, the wrapper
+	 * is null, no free user script ID exists, a constant does not fit a packed
+	 * PUSH_P_C argument or a pre-existing dispatch branch target does not
+	 * resolve to an instruction boundary; the script is not modified in that
+	 * case
+	 */
+	public static int cloneCallerSub(GFLPawnScript script, PawnInstruction wrapper, int[] pushConsts) {
+		script.decompressThis();
+		ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(script);
+		if (d == null) {
+			throw new IllegalStateException("The zone script has no script dispatch (main SWITCH/CASETBL).");
+		}
+		if (wrapper == null) {
+			throw new IllegalStateException("The zone script has no wrapper subroutine to call.");
+		}
+		for (int i = 0; i < pushConsts.length; i++) {
+			if (pushConsts[i] < Short.MIN_VALUE || pushConsts[i] > Short.MAX_VALUE) {
+				//packed PUSH_P_C stores its argument in the upper 16 bits of the cell
+				throw new IllegalStateException("Constant " + pushConsts[i] + " does not fit a packed PUSH_P_C argument.");
+			}
 		}
 		//validate every pre-existing branch target of the dispatch CASETBL before
 		//any surgery: a null case target would be silently skipped by
@@ -88,7 +125,7 @@ public class TalkerScriptWizard {
 		}
 		int oldCaseTblPtr = d.caseTbl.pointer;
 
-		//append the talker sub at the end of the code section (provisional
+		//append the caller sub at the end of the code section (provisional
 		//pointers - setPtrsByIndex renumbers them below)
 		PawnInstruction lastIns = script.instructions.get(script.instructions.size() - 1);
 		int ptr = lastIns.pointer + 4 + (lastIns.hasCompressedArgument ? 0 : lastIns.argumentCount * 4);
@@ -96,14 +133,10 @@ public class TalkerScriptWizard {
 		PawnInstruction proc = makeIns(PawnInstruction.Commands.PROC, ptr, 0);
 		talker.add(proc);
 		ptr += 4;
-		talker.add(makeIns(PawnInstruction.Commands.PUSH_P_C, ptr, -1));
-		ptr += 4;
-		talker.add(makeIns(PawnInstruction.Commands.PUSH_P_C, ptr, 1));
-		ptr += 4;
-		talker.add(makeIns(PawnInstruction.Commands.PUSH_P_C, ptr, msgLine));
-		ptr += 4;
-		talker.add(makeIns(PawnInstruction.Commands.PUSH_P_C, ptr, 12));
-		ptr += 4;
+		for (int i = 0; i < pushConsts.length; i++) {
+			talker.add(makeIns(PawnInstruction.Commands.PUSH_P_C, ptr, pushConsts[i]));
+			ptr += 4;
+		}
 		talker.add(makeIns(PawnInstruction.Commands.CALL, ptr, wrapper.pointer - ptr));
 		ptr += 8; //CALL carries a full argument cell
 		talker.add(makeIns(PawnInstruction.Commands.ZERO_PRI, ptr, 0));
