@@ -34,6 +34,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -802,7 +803,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		JTextArea ta = new JTextArea("", 5, 40);
 		ta.setLineWrap(true);
 		ta.setWrapStyleWord(true);
-		JSpinner modelSpinner = new JSpinner(new javax.swing.SpinnerNumberModel((npc != null) ? npc.model : 0, 0, 65535, 1));
+		ModelPicker modelPicker = new ModelPicker((npc != null) ? npc.model : -1);
 		JPanel panel = new JPanel();
 		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
 		JLabel textLabel = new JLabel("Dialogue text:");
@@ -811,16 +812,22 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		JScrollPane taScroll = new JScrollPane(ta);
 		taScroll.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(taScroll);
-		JLabel modelLabel = new JLabel("Model (MoveModel UID) - preview below:");
+		JLabel modelLabel = new JLabel("Model (type to search) - preview below:");
 		modelLabel.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(modelLabel);
-		panel.add(modelWithPreview(modelSpinner));
-		JLabel hintLabel = new JLabel("<html>The NPC is placed at the centre of the current view.<br>Change the UID to preview a different overworld model.</html>");
+		modelPicker.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(modelPicker);
+		JLabel hintLabel = new JLabel("<html>The NPC is placed at the centre of the current view.<br>Only registered overworld models are listed.</html>");
 		hintLabel.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(hintLabel);
 		int rsl = JOptionPane.showConfirmDialog(frame, panel, "Add talking NPC", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
 		disposePreviews();
 		if (rsl != JOptionPane.OK_OPTION) {
+			return;
+		}
+		int chosenModel = modelPicker.getSelectedUid();
+		if (chosenModel < 0) {
+			JOptionPane.showMessageDialog(this, "Select an overworld model first.", "Add talking NPC", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
 		String text = escapeTypedText(ta.getText());
@@ -875,7 +882,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			newuid = Math.max(e.npcs.get(i).uid + 1, newuid); //get first free UID but don't pollute free spaces if any
 		}
 		newNPC.uid = newuid;
-		newNPC.model = (Integer) modelSpinner.getValue();
+		newNPC.model = chosenModel;
 		newNPC.script = newId;
 		Point defaultPos = mTileMapPanel.getTileAtViewportCentre();
 		newNPC.xTile = defaultPos.x;
@@ -977,12 +984,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		IdChooser itemChooser = new IdChooser(loadGameTextNames(NpcTemplates.GAMETEXT_ITEM_NAMES_OA), NpcTemplates.ITEM_ID_MAX, 1);
 		JSpinner countSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 99, 1));
-		JSpinner modelSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 65535, 1));
+		ModelPicker modelPicker = new ModelPicker(-1);
 		JPanel panel = new JPanel();
 		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
 		addLabeled(panel, "Item (type to search):", itemChooser);
 		addLabeled(panel, "Quantity:", countSpinner);
-		addLabeled(panel, "NPC model (preview below):", modelWithPreview(modelSpinner));
+		addLabeled(panel, "NPC model (type to search; preview below):", modelPicker);
 		JLabel hint = new JLabel("<html>The NPC is placed at the centre of the view and gives the item<br>each time it is talked to (no one-time flag yet).</html>");
 		hint.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(hint);
@@ -1004,6 +1011,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			JOptionPane.showMessageDialog(this, "Select an item first.", "Add item giver", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
+		int giverModel = modelPicker.getSelectedUid();
+		if (giverModel < 0) {
+			JOptionPane.showMessageDialog(this, "Select an overworld model first.", "Add item giver", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
 		int caseId;
 		try {
 			caseId = NpcTemplates.addItemGiverScript(work, itemId, (Integer) countSpinner.getValue());
@@ -1013,7 +1025,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		zone.s = work; //commit - the clone is the only mutation and it succeeded
 		Point pos = mTileMapPanel.getTileAtViewportCentre();
-		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), (Integer) modelSpinner.getValue(), caseId, pos.x, pos.y);
+		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), giverModel, caseId, pos.x, pos.y);
 		finishNpcAdd(zone, npc, true);
 	}
 
@@ -1023,14 +1035,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	private void addTrainerTemplate(Zone zone) {
 		IdChooser idChooser = new IdChooser(loadGameTextNames(NpcTemplates.GAMETEXT_TRAINER_NAMES_OA), NpcTemplates.TRAINER_ID_MAX, 1);
-		JSpinner modelSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 65535, 1));
+		ModelPicker modelPicker = new ModelPicker(-1);
 		JSpinner sightSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 8, 1));
 		javax.swing.JComboBox<String> faceBox = new javax.swing.JComboBox<>(new String[]{"Down", "Up", "Left", "Right"});
 		javax.swing.JCheckBox pairBox = new javax.swing.JCheckBox("Add double-battle partner (script 5000 + ID) beside it");
 		JPanel panel = new JPanel();
 		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
 		addLabeled(panel, "Trainer (type to search; edit party/class in pk3DS):", idChooser);
-		addLabeled(panel, "NPC model (preview below):", modelWithPreview(modelSpinner));
+		addLabeled(panel, "NPC model (type to search; preview below):", modelPicker);
 		addLabeled(panel, "Sight range (0 = battle on talk only):", sightSpinner);
 		addLabeled(panel, "Facing:", faceBox);
 		pairBox.setAlignmentX(LEFT_ALIGNMENT);
@@ -1048,7 +1060,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			JOptionPane.showMessageDialog(this, "Select a trainer first.", "Add trainer", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		int model = (Integer) modelSpinner.getValue();
+		int model = modelPicker.getSelectedUid();
+		if (model < 0) {
+			JOptionPane.showMessageDialog(this, "Select an overworld model first.", "Add trainer", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
 		int sight = (Integer) sightSpinner.getValue();
 		int face = Math.max(0, faceBox.getSelectedIndex());
 		Point pos = mTileMapPanel.getTileAtViewportCentre();
@@ -1236,6 +1252,98 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			p.stop();
 		}
 		activePreviews.clear();
+	}
+
+	/**
+	 * A searchable NPC-model picker with a live 3D preview. Lists ONLY the
+	 * registered overworld models (from the NPC registry) as "UID: name" - so
+	 * empty/unregistered UIDs never clutter the browser - and previews the
+	 * selection. Names come from each model's embedded BCH name.
+	 */
+	private class ModelPicker extends JPanel {
+
+		private final javax.swing.JList<String> list = new javax.swing.JList<>();
+		private final List<Integer> visibleUids = new ArrayList<>();
+		private final List<Integer> allUids = new ArrayList<>();
+		private final List<String> allLabels = new ArrayList<>();
+		private final CustomH3DPreview preview = new CustomH3DPreview();
+
+		ModelPicker(int defaultUid) {
+			setLayout(new java.awt.BorderLayout());
+			if (reg != null) {
+				List<Integer> keys = new ArrayList<>(reg.entries.keySet());
+				Collections.sort(keys);
+				for (int uid : keys) {
+					H3DModel m = reg.getModel(uid);
+					String nm = (m != null && m.name != null) ? m.name.trim() : "";
+					allUids.add(uid);
+					allLabels.add(uid + (nm.isEmpty() ? "" : ": " + nm));
+				}
+			}
+			final javax.swing.DefaultListModel<String> model = new javax.swing.DefaultListModel<>();
+			list.setModel(model);
+			list.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+			final javax.swing.JTextField filter = new javax.swing.JTextField();
+			final Runnable rebuild = new Runnable() {
+				@Override
+				public void run() {
+					String f = filter.getText().toLowerCase();
+					model.clear();
+					visibleUids.clear();
+					for (int k = 0; k < allUids.size(); k++) {
+						if (f.isEmpty() || allLabels.get(k).toLowerCase().contains(f)) {
+							model.addElement(allLabels.get(k));
+							visibleUids.add(allUids.get(k));
+						}
+					}
+					if (!model.isEmpty() && list.getSelectedIndex() < 0) {
+						list.setSelectedIndex(0);
+					}
+				}
+			};
+			filter.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+				@Override public void insertUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
+				@Override public void removeUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
+				@Override public void changedUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
+			});
+			list.addListSelectionListener(new javax.swing.event.ListSelectionListener() {
+				@Override
+				public void valueChanged(javax.swing.event.ListSelectionEvent e) {
+					if (!e.getValueIsAdjusting()) {
+						updatePreview();
+					}
+				}
+			});
+			rebuild.run();
+			for (int k = 0; k < visibleUids.size(); k++) {
+				if (visibleUids.get(k) == defaultUid) {
+					list.setSelectedIndex(k);
+					break;
+				}
+			}
+			JScrollPane listScroll = new JScrollPane(list);
+			listScroll.setPreferredSize(new java.awt.Dimension(250, 120));
+			preview.setPreferredSize(new java.awt.Dimension(250, 190));
+			add(filter, java.awt.BorderLayout.NORTH);
+			add(listScroll, java.awt.BorderLayout.CENTER);
+			add(preview, java.awt.BorderLayout.SOUTH);
+			activePreviews.add(preview);
+			updatePreview();
+		}
+
+		int getSelectedUid() {
+			int s = list.getSelectedIndex();
+			return (s >= 0 && s < visibleUids.size()) ? visibleUids.get(s) : -1;
+		}
+
+		boolean hasModels() {
+			return !allUids.isEmpty();
+		}
+
+		private void updatePreview() {
+			int u = getSelectedUid();
+			preview.loadModel((u >= 0 && reg != null) ? reg.loadFreshModel(u) : null);
+		}
 	}
 
 	private void scrDropdownActionPerformed(java.awt.event.ActionEvent evt) {
