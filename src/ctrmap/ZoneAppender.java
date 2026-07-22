@@ -175,11 +175,23 @@ public class ZoneAppender {
 		}
 		File srcFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, srcIndex);
 		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, oldCount);
-		File enFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, oldCount + 1);
-		if (srcFile == null || masterFile == null || enFile == null) {
+		if (srcFile == null || masterFile == null) {
 			throw new IOException("Could not extract the required ZoneData files from the workspace.");
 		}
-		MultiAppendPayloads p = buildMultiAppendPayloads(readAll(srcFile), readAll(masterFile), readAll(enFile), srcIndex, oldCount, addCount);
+		// Master respects saved zone-header edits via the workspace file, but fall
+		// back to the authoritative GARC bytes if it is the wrong structure (a
+		// reverted single-zone append can leave a grown-master artifact behind).
+		byte[] masterBytes = readAll(masterFile);
+		if (masterBytes.length != oldCount * ZoneCloner.ZONE_HEADER_SIZE) {
+			masterBytes = garc.getDecompressedEntry(oldCount);
+		}
+		// The EN encounter pack is never edited in the zone editor, so read it
+		// straight from the GARC. A stale extraction file in the EN slot (index
+		// oldCount+1, exactly where the old single-zone append wrote the grown
+		// master) is what produced "EN pack has wrong magic"; going to the GARC
+		// makes the append self-healing against that.
+		byte[] enBytes = garc.getDecompressedEntry(oldCount + 1);
+		MultiAppendPayloads p = buildMultiAppendPayloads(readAll(srcFile), masterBytes, enBytes, srcIndex, oldCount, addCount);
 
 		if (pendingZoneDataOverrides == null) {
 			pendingZoneDataOverrides = new HashMap<>();
