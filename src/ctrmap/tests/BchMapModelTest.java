@@ -102,6 +102,12 @@ public class BchMapModelTest {
 							fails++;
 							System.out.println("region " + idx + " vertex r/w: " + vProblem);
 						}
+						// --- grow a mesh: append geometry, re-parse, mesh grew, no new mesh ---
+						String aProblem = checkAppendGeometry(mm);
+						if (aProblem != null) {
+							fails++;
+							System.out.println("region " + idx + " append: " + aProblem);
+						}
 					}
 				}
 			} catch (Exception e) {
@@ -189,6 +195,49 @@ public class BchMapModelTest {
 			if (!java.util.Arrays.equals(back, original)) {
 				return "mesh " + mi + " read/write-back not byte-identical";
 			}
+		}
+		return null;
+	}
+
+	/** Grow one eligible mesh by 3 vertices + a triangle and confirm the result
+	 *  re-parses with that mesh's vertex count up by 3 and no extra mesh. */
+	private static String checkAppendGeometry(BchMapModel mm) {
+		java.util.List<BchMapModel.MeshGeom> geom = mm.geometry();
+		for (int mi = 0; mi < geom.size(); mi++) {
+			BchMapModel.MeshGeom g = geom.get(mi);
+			if (!g.posOk || g.stride <= 0) {
+				continue;
+			}
+			byte[] extraV = new byte[g.stride * 3];
+			for (int k = 0; k < 3; k++) {
+				System.arraycopy(mm.raw, g.vtxAbs, extraV, k * g.stride, g.stride); // 3 copies of vertex 0
+			}
+			int base = g.vertexCount;
+			int[] extraI = {base, base + 1, base + 2};
+			byte[] grown;
+			try {
+				grown = mm.appendGeometry(mi, extraV, extraI);
+			} catch (IllegalStateException ex) {
+				continue; // e.g. would need a u8->u16 upgrade - try another mesh
+			}
+			BchMapModel re;
+			try {
+				re = new BchMapModel(grown);
+			} catch (Exception ex) {
+				return "grown mesh " + mi + " failed to parse: " + ex;
+			}
+			if (!re.validate().isEmpty()) {
+				return "grown mesh " + mi + " structural: " + re.validate().get(0);
+			}
+			if (re.meshCount != mm.meshCount) {
+				return "append changed the mesh count";
+			}
+			float[][] p = re.getVertexPositions(mi);
+			if (p == null || p.length != g.vertexCount + 3) {
+				return "grown mesh " + mi + " vertex count is " + (p == null ? "null" : p.length)
+						+ ", expected " + (g.vertexCount + 3);
+			}
+			return null; // one successful grow per region is enough
 		}
 		return null;
 	}
