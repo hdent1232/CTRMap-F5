@@ -108,6 +108,12 @@ public class BchMapModelTest {
 							fails++;
 							System.out.println("region " + idx + " append: " + aProblem);
 						}
+						// --- grow a u8 mesh past 255 verts: it upgrades to u16 indices ---
+						String uProblem = checkU16Upgrade(mm);
+						if (uProblem != null) {
+							fails++;
+							System.out.println("region " + idx + " u16 upgrade: " + uProblem);
+						}
 					}
 				}
 			} catch (Exception e) {
@@ -240,6 +246,61 @@ public class BchMapModelTest {
 			return null; // one successful grow per region is enough
 		}
 		return null;
+	}
+
+	/** Grow a u8-indexed mesh past 255 vertices and confirm exactly one index
+	 *  buffer becomes u16 and the result still parses. */
+	private static String checkU16Upgrade(BchMapModel mm) {
+		int u16before = 0;
+		for (int[] ib : mm.idxBuffers) {
+			if (ib[2] == 2) {
+				u16before++;
+			}
+		}
+		java.util.List<BchMapModel.MeshGeom> geom = mm.geometry();
+		for (int mi = 0; mi < geom.size(); mi++) {
+			BchMapModel.MeshGeom g = geom.get(mi);
+			if (!g.posOk || g.stride <= 0 || g.vertexCount == 0) {
+				continue;
+			}
+			int add = Math.max(3, 260 - g.vertexCount); // push the total over 255
+			byte[] extraV = new byte[g.stride * add];
+			for (int k = 0; k < add; k++) {
+				System.arraycopy(mm.raw, g.vtxAbs, extraV, k * g.stride, g.stride);
+			}
+			int b = g.vertexCount + add - 3;
+			int[] extraI = {b, b + 1, b + 2}; // references vertices > 255 -> forces u16
+			byte[] grown;
+			try {
+				grown = mm.appendGeometry(mi, extraV, extraI);
+			} catch (Exception ex) {
+				continue;
+			}
+			BchMapModel re;
+			try {
+				re = new BchMapModel(grown);
+			} catch (Exception ex) {
+				return "grown mesh " + mi + " failed to parse: " + ex;
+			}
+			int u16after = 0;
+			for (int[] ib : re.idxBuffers) {
+				if (ib[2] == 2) {
+					u16after++;
+				}
+			}
+			if (u16after != u16before + 1) {
+				continue; // this mesh was already u16 (no upgrade) - try another
+			}
+			if (!re.validate().isEmpty()) {
+				return "upgraded mesh " + mi + " structural: " + re.validate().get(0);
+			}
+			float[][] p = re.getVertexPositions(mi);
+			if (p == null || p.length != g.vertexCount + add) {
+				return "upgraded mesh " + mi + " vertex count wrong";
+			}
+			return null; // one confirmed upgrade is enough
+		}
+		return null; // no u8 mesh available to upgrade
 	}
 
 	private static int le32(byte[] b, int o) {
