@@ -447,6 +447,88 @@ public class BchMapModel {
 		return i32(o) & 0xFFFFFFFFL;
 	}
 
+	// ---- raw-data relayout writer (Tier-2 geometry foundation) ------------
+
+	/**
+	 * Rebuilds the BCH with the raw-data section re-laid-out. Each vertex/index
+	 * buffer is keyed by its command-word location (see {@link #vtxBuffers} /
+	 * {@link #idxBuffers}, element [1]); any buffer present in {@code replacements}
+	 * is swapped for the given bytes (padded to the 0x10 buffer alignment), and
+	 * every buffer after a size change slides down. The command words that hold
+	 * each buffer's offset are rewritten, and the header's raw-data length and the
+	 * rawExt/relocation addresses are patched. Relocation ENTRIES are untouched
+	 * (they reference command-word locations in the unchanged commands section,
+	 * not raw-data offsets). With an empty map the output is byte-identical.
+	 *
+	 * <p>This is the structural-write plumbing: it keeps offsets/sizes internally
+	 * consistent. Producing a semantically-valid <em>edit</em> (matching vertex
+	 * counts, attribute config and index buffer) is the layer built on top.
+	 */
+	public byte[] rebuildRawData(Map<Integer, byte[]> replacements) {
+		// all raw-data buffers, in on-disk order
+		List<int[]> bufs = new ArrayList<>(); // {absOffset, cmdWordLoc}
+		for (int[] vb : vtxBuffers) {
+			bufs.add(new int[]{vb[0], vb[1]});
+		}
+		for (int[] ib : idxBuffers) {
+			bufs.add(new int[]{ib[0], ib[1]});
+		}
+		bufs.sort((a, b) -> Integer.compare(a[0], b[0]));
+		int rawEnd = rawDataAddr + rawDataLen;
+
+		java.io.ByteArrayOutputStream newRaw = new java.io.ByteArrayOutputStream();
+		Map<Integer, Integer> newRelByCmd = new HashMap<>();
+		// preserve any bytes before the first buffer (data not referenced by a
+		// vertex/index relocation - kept verbatim so the layout stays exact)
+		int firstBufAbs = bufs.isEmpty() ? rawEnd : bufs.get(0)[0];
+		newRaw.write(raw, rawDataAddr, firstBufAbs - rawDataAddr);
+		for (int bi = 0; bi < bufs.size(); bi++) {
+			int absOff = bufs.get(bi)[0];
+			int cmdLoc = bufs.get(bi)[1];
+			int spanEnd = (bi + 1 < bufs.size()) ? bufs.get(bi + 1)[0] : rawEnd;
+			byte[] data;
+			byte[] repl = replacements == null ? null : replacements.get(cmdLoc);
+			if (repl != null) {
+				int padded = (repl.length + 0xF) & ~0xF;
+				data = new byte[padded];
+				System.arraycopy(repl, 0, data, 0, repl.length);
+			} else {
+				data = java.util.Arrays.copyOfRange(raw, absOff, spanEnd); // original span (already 0x10-padded)
+			}
+			newRelByCmd.put(cmdLoc, newRaw.size()); // 0x10-aligned by construction
+			newRaw.write(data, 0, data.length);
+		}
+		byte[] newRawData = newRaw.toByteArray();
+		int newRelocAddr = (rawDataAddr + newRawData.length + 0x7F) & ~0x7F;
+		// the whole file is padded to 0x80 after the relocation section
+		int fileLen = (newRelocAddr + relocLen + 0x7F) & ~0x7F;
+		byte[] out = new byte[fileLen];
+
+		// header + contents + strings + commands, verbatim
+		System.arraycopy(raw, 0, out, 0, rawDataAddr);
+		// rewrite each buffer's offset command word (preserving any high bit)
+		for (Map.Entry<Integer, Integer> e : newRelByCmd.entrySet()) {
+			int cmdLoc = e.getKey();
+			int high = i32(cmdLoc) & 0x80000000;
+			pokeInt(out, cmdLoc, e.getValue() | high);
+		}
+		// new raw-data, then (zero) section padding, then relocation verbatim
+		System.arraycopy(newRawData, 0, out, rawDataAddr, newRawData.length);
+		System.arraycopy(raw, relocAddr, out, newRelocAddr, relocLen);
+		// patch header addresses/length
+		pokeInt(out, 24, newRelocAddr); // rawExtAddr (rawExt is empty, shares reloc addr)
+		pokeInt(out, 28, newRelocAddr); // relocationAddr
+		pokeInt(out, 44, newRawData.length); // rawDataLength
+		return out;
+	}
+
+	private static void pokeInt(byte[] b, int o, int v) {
+		b[o] = (byte) v;
+		b[o + 1] = (byte) (v >> 8);
+		b[o + 2] = (byte) (v >> 16);
+		b[o + 3] = (byte) (v >> 24);
+	}
+
 	private static void putFloat(byte[] b, int o, float f) {
 		int v = Float.floatToIntBits(f);
 		b[o] = (byte) v;

@@ -84,6 +84,19 @@ public class BchMapModelTest {
 						fails++;
 						System.out.println("region " + idx + " translate: " + tProblem);
 					}
+					// --- writer plumbing: a no-op raw-data rebuild is byte-identical ---
+					byte[] noop = mm.rebuildRawData(new java.util.HashMap<Integer, byte[]>());
+					if (!java.util.Arrays.equals(noop, model)) {
+						fails++;
+						System.out.println("region " + idx + " rebuildRawData no-op not byte-identical ("
+								+ noop.length + " vs " + model.length + ")");
+					} else {
+						String rProblem = checkResizeConsistent(mm);
+						if (rProblem != null) {
+							fails++;
+							System.out.println("region " + idx + " resize: " + rProblem);
+						}
+					}
 				}
 			} catch (Exception e) {
 				fails++;
@@ -126,6 +139,34 @@ public class BchMapModelTest {
 			if (edited[i] != mm.raw[i] && (i < lo || i >= hi)) {
 				return "byte " + i + " changed outside raw-data section [" + lo + "," + hi + ")";
 			}
+		}
+		return null;
+	}
+
+	/** Resize the first vertex buffer via the relayout writer and confirm the
+	 *  output still parses with consistent structure (plumbing, not semantics). */
+	private static String checkResizeConsistent(BchMapModel mm) {
+		if (mm.vtxBuffers.isEmpty()) {
+			return null;
+		}
+		int cmdLoc = mm.vtxBuffers.get(0)[1];
+		java.util.Map<Integer, byte[]> repl = new java.util.HashMap<>();
+		repl.put(cmdLoc, new byte[80]); // a different-size buffer forces every later buffer to slide
+		byte[] resized = mm.rebuildRawData(repl);
+		BchMapModel re;
+		try {
+			re = new BchMapModel(resized);
+		} catch (Exception ex) {
+			return "resized model failed to parse: " + ex;
+		}
+		if (!re.validate().isEmpty()) {
+			return "resized model structural problem: " + re.validate().get(0);
+		}
+		if (re.meshCount != mm.meshCount || re.matCount != mm.matCount) {
+			return "resize changed mesh/material counts";
+		}
+		if (re.vtxBuffers.size() != mm.vtxBuffers.size() || re.idxBuffers.size() != mm.idxBuffers.size()) {
+			return "resize changed buffer counts";
 		}
 		return null;
 	}
