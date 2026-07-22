@@ -1312,10 +1312,19 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private class ModelPicker extends JPanel {
 
 		private final javax.swing.JList<String> list = new javax.swing.JList<>();
-		private final List<Integer> visibleUids = new ArrayList<>();
-		private final List<Integer> allUids = new ArrayList<>();
+		// each entry is {kind, value}: kind 0 = registered UID, kind 1 = global MoveModels index
+		private final List<int[]> visibleEntries = new ArrayList<>();
+		private final List<int[]> allEntries = new ArrayList<>();
 		private final List<String> allLabels = new ArrayList<>();
+		private final List<int[]> registered = new ArrayList<>();
+		private final List<String> registeredLabels = new ArrayList<>();
+		private final List<int[]> poolExtra = new ArrayList<>();
+		private final List<String> poolExtraLabels = new ArrayList<>();
+		private boolean poolLoaded = false;
 		private final CustomH3DPreview preview = new CustomH3DPreview();
+		private final javax.swing.JTextField filter = new javax.swing.JTextField();
+		private final javax.swing.JCheckBox showAll = new javax.swing.JCheckBox("Browse ALL game NPC models (adds the one you pick to this area)");
+		private final javax.swing.DefaultListModel<String> listModel = new javax.swing.DefaultListModel<>();
 
 		ModelPicker(int defaultUid) {
 			setLayout(new java.awt.BorderLayout());
@@ -1325,73 +1334,142 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				for (int uid : keys) {
 					H3DModel m = reg.getModel(uid);
 					String nm = (m != null && m.name != null) ? m.name.trim() : "";
-					allUids.add(uid);
-					allLabels.add(uid + (nm.isEmpty() ? "" : ": " + nm));
+					registered.add(new int[]{0, uid});
+					registeredLabels.add(uid + (nm.isEmpty() ? "" : ": " + nm));
 				}
 			}
-			final javax.swing.DefaultListModel<String> model = new javax.swing.DefaultListModel<>();
-			list.setModel(model);
+			list.setModel(listModel);
 			list.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
-			final javax.swing.JTextField filter = new javax.swing.JTextField();
-			final Runnable rebuild = new Runnable() {
-				@Override
-				public void run() {
-					String f = filter.getText().toLowerCase();
-					model.clear();
-					visibleUids.clear();
-					for (int k = 0; k < allUids.size(); k++) {
-						if (f.isEmpty() || allLabels.get(k).toLowerCase().contains(f)) {
-							model.addElement(allLabels.get(k));
-							visibleUids.add(allUids.get(k));
-						}
-					}
-					if (!model.isEmpty() && list.getSelectedIndex() < 0) {
-						list.setSelectedIndex(0);
-					}
-				}
-			};
 			filter.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-				@Override public void insertUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
-				@Override public void removeUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
-				@Override public void changedUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
+				@Override public void insertUpdate(javax.swing.event.DocumentEvent e) { rebuild(); }
+				@Override public void removeUpdate(javax.swing.event.DocumentEvent e) { rebuild(); }
+				@Override public void changedUpdate(javax.swing.event.DocumentEvent e) { rebuild(); }
 			});
-			list.addListSelectionListener(new javax.swing.event.ListSelectionListener() {
-				@Override
-				public void valueChanged(javax.swing.event.ListSelectionEvent e) {
-					if (!e.getValueIsAdjusting()) {
-						updatePreview();
+			showAll.addActionListener((java.awt.event.ActionEvent e) -> {
+				if (showAll.isSelected() && !poolLoaded) {
+					setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.WAIT_CURSOR));
+					try {
+						loadFullPool();
+					} finally {
+						setCursor(java.awt.Cursor.getDefaultCursor());
 					}
 				}
+				buildEntries();
+				rebuild();
 			});
-			rebuild.run();
-			for (int k = 0; k < visibleUids.size(); k++) {
-				if (visibleUids.get(k) == defaultUid) {
+			list.addListSelectionListener((javax.swing.event.ListSelectionEvent e) -> {
+				if (!e.getValueIsAdjusting()) {
+					updatePreview();
+				}
+			});
+			buildEntries();
+			rebuild();
+			for (int k = 0; k < visibleEntries.size(); k++) {
+				int[] en = visibleEntries.get(k);
+				if (en[0] == 0 && en[1] == defaultUid) {
 					list.setSelectedIndex(k);
 					break;
 				}
 			}
 			JScrollPane listScroll = new JScrollPane(list);
-			listScroll.setPreferredSize(new java.awt.Dimension(250, 120));
-			preview.setPreferredSize(new java.awt.Dimension(250, 190));
-			add(filter, java.awt.BorderLayout.NORTH);
+			listScroll.setPreferredSize(new java.awt.Dimension(300, 120));
+			preview.setPreferredSize(new java.awt.Dimension(300, 190));
+			javax.swing.JPanel top = new javax.swing.JPanel(new java.awt.BorderLayout());
+			top.add(filter, java.awt.BorderLayout.NORTH);
+			top.add(showAll, java.awt.BorderLayout.SOUTH);
+			add(top, java.awt.BorderLayout.NORTH);
 			add(listScroll, java.awt.BorderLayout.CENTER);
 			add(preview, java.awt.BorderLayout.SOUTH);
 			activePreviews.add(preview);
 			updatePreview();
 		}
 
+		private void loadFullPool() {
+			poolExtra.clear();
+			poolExtraLabels.clear();
+			java.util.Set<Integer> already = new java.util.HashSet<>();
+			if (reg != null) {
+				for (NPCRegistry.NPCRegistryEntry en : reg.entries.values()) {
+					already.add(en.model);
+				}
+			}
+			int n = ctrmap.formats.npcreg.MoveModelPool.size();
+			for (int i = 0; i < n; i++) {
+				if (already.contains(i)) {
+					continue; //already offered via the registered list
+				}
+				String nm = ctrmap.formats.npcreg.MoveModelPool.name(i);
+				poolExtra.add(new int[]{1, i});
+				poolExtraLabels.add("[+] model " + i + (nm == null || nm.isEmpty() ? "" : ": " + nm));
+			}
+			poolLoaded = true;
+		}
+
+		private void buildEntries() {
+			allEntries.clear();
+			allLabels.clear();
+			allEntries.addAll(registered);
+			allLabels.addAll(registeredLabels);
+			if (showAll.isSelected()) {
+				allEntries.addAll(poolExtra);
+				allLabels.addAll(poolExtraLabels);
+			}
+		}
+
+		private void rebuild() {
+			String f = filter.getText().toLowerCase();
+			listModel.clear();
+			visibleEntries.clear();
+			for (int k = 0; k < allEntries.size(); k++) {
+				if (f.isEmpty() || allLabels.get(k).toLowerCase().contains(f)) {
+					listModel.addElement(allLabels.get(k));
+					visibleEntries.add(allEntries.get(k));
+				}
+			}
+			if (!listModel.isEmpty() && list.getSelectedIndex() < 0) {
+				list.setSelectedIndex(0);
+			}
+		}
+
+		/**
+		 * The chosen UID. If the user picked a global model that is not yet in this
+		 * area, it is registered on demand (and the new UID returned). Returns -1
+		 * when nothing valid is selected or the area's registry is full.
+		 */
 		int getSelectedUid() {
 			int s = list.getSelectedIndex();
-			return (s >= 0 && s < visibleUids.size()) ? visibleUids.get(s) : -1;
+			if (s < 0 || s >= visibleEntries.size()) {
+				return -1;
+			}
+			int[] en = visibleEntries.get(s);
+			if (en[0] == 0) {
+				return en[1]; //already a registered UID
+			}
+			int uid = (reg != null) ? reg.registerModel(en[1]) : -1;
+			if (uid < 0) {
+				JOptionPane.showMessageDialog(this,
+						"This area's NPC registry is full (max " + NPCRegistry.MAX_ENTRIES + " unique models).\n"
+						+ "Remove an unused model in the NPC registry editor and try again.",
+						"Registry full", JOptionPane.ERROR_MESSAGE);
+			}
+			return uid;
 		}
 
 		boolean hasModels() {
-			return !allUids.isEmpty();
+			return !registered.isEmpty();
 		}
 
 		private void updatePreview() {
-			int u = getSelectedUid();
-			preview.loadModel((u >= 0 && reg != null) ? reg.loadFreshModel(u) : null);
+			int s = list.getSelectedIndex();
+			if (s < 0 || s >= visibleEntries.size()) {
+				preview.loadModel(null);
+				return;
+			}
+			int[] en = visibleEntries.get(s);
+			H3DModel m = (en[0] == 0)
+					? ((reg != null) ? reg.loadFreshModel(en[1]) : null)
+					: NPCRegistry.loadFreshModelByIndex(en[1]);
+			preview.loadModel(m);
 		}
 	}
 

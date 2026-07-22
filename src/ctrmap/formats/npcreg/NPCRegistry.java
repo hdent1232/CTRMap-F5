@@ -59,8 +59,67 @@ public class NPCRegistry {
 		}
 	}
 
+	/**
+	 * Soft cap on unique models per area. The registry format itself has no length
+	 * field, but the game's per-area model table is assumed bounded; 31 is the
+	 * long-standing safe value CTRMap uses. (Raising it is a code.bin RE question.)
+	 */
+	public static final int MAX_ENTRIES = 31;
+
 	public H3DModel getModel(int uid) {
 		return models.get(uid);
+	}
+
+	/**
+	 * Makes a global MoveModels index usable in THIS area by adding a registry
+	 * entry for it, and returns the local UID to reference it by. If the model is
+	 * already registered here its existing UID is returned (no duplicate). Returns
+	 * -1 when the registry is at capacity. The new entry uses default
+	 * collision/render props (as with the dummy-entry failsafe); MoveModel BCHs
+	 * carry their own textures, so nothing else needs importing.
+	 */
+	public int registerModel(int moveModelsIndex) {
+		for (NPCRegistryEntry e : entries.values()) {
+			if (e.model == moveModelsIndex) {
+				return e.uid;
+			}
+		}
+		if (entries.size() >= MAX_ENTRIES) {
+			return -1;
+		}
+		int uid = moveModelsIndex;
+		if (entries.containsKey(uid)) {
+			uid = 1;
+			while (entries.containsKey(uid)) {
+				uid++;
+			}
+		}
+		NPCRegistryEntry ne = new NPCRegistryEntry();
+		ne.uid = uid;
+		ne.model = moveModelsIndex;
+		entries.put(uid, ne);
+		mapModel(uid, moveModelsIndex);
+		modified = true;
+		return uid;
+	}
+
+	/**
+	 * Loads a fresh, uncached H3DModel straight from a global MoveModels index
+	 * (for previewing a model that is not yet registered in this area). Returns
+	 * null if the index has no mesh.
+	 */
+	public static H3DModel loadFreshModelByIndex(int moveModelsIndex) {
+		try {
+			BCHFile bch = new BCHFile(new MM(Workspace.getWorkspaceFile(Workspace.ArchiveType.MOVE_MODELS, moveModelsIndex)).getFile(0));
+			if (bch.models.isEmpty()) {
+				return null;
+			}
+			H3DModel m = bch.models.get(0);
+			m.setMaterialTextures(bch.textures);
+			return m;
+		} catch (RuntimeException ex) {
+			return null;
+		}
 	}
 
 	/**
