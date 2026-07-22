@@ -209,16 +209,29 @@ public class ZoneAppender {
 	 * result is byte-identical to a well-formed input.
 	 */
 	public static byte[] rebuildEN(byte[] en, int expectedCount, boolean appendEmpty) {
+		return rebuildENMulti(en, expectedCount, appendEmpty ? 1 : 0);
+	}
+
+	/**
+	 * Like {@link #rebuildEN} but appends {@code appendCount} empty ("no wild
+	 * data") blobs at once - used when adding several zones in one shot. Every
+	 * appended offset equals the (unchanged) data end, so the new blobs are
+	 * zero-length. appendCount 0 reproduces the input byte-for-byte.
+	 */
+	public static byte[] rebuildENMulti(byte[] en, int expectedCount, int appendCount) {
+		if (appendCount < 0) {
+			throw new IllegalArgumentException("appendCount must be >= 0");
+		}
 		validateEN(en, expectedCount);
 		int count = (en[2] & 0xFF) | ((en[3] & 0xFF) << 8);
 		int[] offs = new int[count + 1];
 		for (int i = 0; i <= count; i++) {
 			offs[i] = readIntLE(en, 4 + i * 4);
 		}
-		int newCount = appendEmpty ? count + 1 : count;
+		int newCount = count + appendCount;
 		int tableEnd = 4 + (newCount + 1) * 4;
 		int dataLen = offs[count] - offs[0];
-		byte[] out = new byte[tableEnd + dataLen]; //an appended blob is empty - contributes 0 bytes
+		byte[] out = new byte[tableEnd + dataLen]; //appended blobs are empty - contribute 0 bytes
 		out[0] = 'E';
 		out[1] = 'N';
 		out[2] = (byte) newCount;
@@ -227,11 +240,69 @@ public class ZoneAppender {
 		for (int i = 0; i <= count; i++) {
 			writeIntLE(out, 4 + i * 4, offs[i] + shift);
 		}
-		if (appendEmpty) {
-			writeIntLE(out, 4 + newCount * 4, offs[count] + shift); //empty blob: offsets[newCount] == offsets[newCount - 1]
+		for (int j = 1; j <= appendCount; j++) {
+			writeIntLE(out, 4 + (count + j) * 4, offs[count] + shift); //empty blob -> points at data end
 		}
 		System.arraycopy(en, offs[0], out, tableEnd, dataLen);
 		return out;
+	}
+
+	/**
+	 * Payloads for a MULTI-zone append (the block-of-N layout that
+	 * {@link ctrmap.formats.codepatch.ZoneLimitPatch} expects): {@code addCount}
+	 * new ZO containers, the master table grown to {@code oldCount + addCount}
+	 * rows, and the EN pack grown by {@code addCount} empty blobs.
+	 */
+	public static class MultiAppendPayloads {
+
+		/** addCount new ZO containers (decompressed; OAZoneNumber patched to their own new index). */
+		public byte[][] newZos;
+		/** Master table grown to newCount rows. */
+		public byte[] master;
+		/** EN pack grown by addCount empty blobs. */
+		public byte[] en;
+		public int oldCount;
+		public int addCount;
+		public int newCount;
+	}
+
+	/**
+	 * Core byte transform (headless, no filesystem) for appending several zones
+	 * at once. All new zones are cloned from {@code srcIndex}; callers turn the
+	 * "real" ones into their own maps afterwards and leave the spares as-is
+	 * (they exist only to keep the master index a multiple of 4 - see
+	 * ZoneLimitPatch). Validates everything and self-checks the EN round-trip
+	 * before building, so a failure leaves no partial state.
+	 */
+	public static MultiAppendPayloads buildMultiAppendPayloads(byte[] srcZo, byte[] master, byte[] en, int srcIndex, int oldCount, int addCount) {
+		if (addCount < 1) {
+			throw new IllegalArgumentException("addCount must be >= 1");
+		}
+		if (srcIndex < 0 || srcIndex >= oldCount) {
+			throw new IllegalArgumentException("Source zone " + srcIndex + " out of range (0.." + (oldCount - 1) + ").");
+		}
+		if (master.length != oldCount * ZoneCloner.ZONE_HEADER_SIZE) {
+			throw new IllegalArgumentException("Master table is " + master.length + " bytes, expected " + oldCount + " x 0x38.");
+		}
+		validateEN(en, oldCount);
+		if (!Arrays.equals(rebuildENMulti(en, oldCount, 0), en)) {
+			throw new IllegalArgumentException("EN pack rebuild round-trip self-check failed - refusing to touch the archive.");
+		}
+		MultiAppendPayloads p = new MultiAppendPayloads();
+		p.oldCount = oldCount;
+		p.addCount = addCount;
+		p.newCount = oldCount + addCount;
+		p.newZos = new byte[addCount][];
+		for (int i = 0; i < addCount; i++) {
+			p.newZos[i] = ZoneCloner.cloneZoneBytes(srcZo, oldCount + i, true);
+		}
+		p.master = new byte[p.newCount * ZoneCloner.ZONE_HEADER_SIZE];
+		System.arraycopy(master, 0, p.master, 0, master.length);
+		for (int i = 0; i < addCount; i++) {
+			ZoneCloner.patchMasterRow(p.master, srcIndex, oldCount + i, true);
+		}
+		p.en = rebuildENMulti(en, oldCount, addCount);
+		return p;
 	}
 
 	private static int readIntLE(byte[] b, int off) {
