@@ -104,17 +104,22 @@ public class ZoneAppender {
 			throw new IOException("Could not extract the required ZoneData files from the workspace.");
 		}
 		AppendPayloads p = buildAppendPayloads(readAll(srcFile), readAll(masterFile), readAll(enFile), srcIndex, newIndex);
-		//insert-shift: overwrite the old master slot with the new ZO, master and EN move up by one
-		writeAll(masterFile, p.compressedZo); //file "newIndex"
-		writeAll(enFile, p.master); //file "newIndex + 1"
-		writeAll(enOut, p.en); //file "newIndex + 2"
+		//insert-shift: overwrite the old master slot with the new ZO, master and EN
+		//move up by one. Write DECOMPRESSED bytes so the files stay loadable in the
+		//editor (a compressed ZO would fail to parse); the pack applies the
+		//compression per the overrides below.
+		writeAll(masterFile, p.newZo); //file "newIndex" = the new zone (decompressed)
+		writeAll(enFile, p.master); //file "newIndex + 1" = grown master
+		writeAll(enOut, p.en); //file "newIndex + 2" = grown EN
 		Workspace.addPersist(masterFile);
 		Workspace.addPersist(enFile);
 		Workspace.addPersist(enOut);
 		if (pendingZoneDataOverrides == null) {
 			pendingZoneDataOverrides = new HashMap<>();
 		}
-		pendingZoneDataOverrides.put(newIndex + 2, Boolean.FALSE); //the appended EN slot must stay uncompressed
+		pendingZoneDataOverrides.put(newIndex, Boolean.TRUE);      //new ZO: LZ11 like every zone
+		pendingZoneDataOverrides.put(newIndex + 1, Boolean.FALSE); //master table: uncompressed
+		pendingZoneDataOverrides.put(newIndex + 2, Boolean.FALSE); //EN pack: uncompressed
 		return newIndex;
 	}
 
