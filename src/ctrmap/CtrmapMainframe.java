@@ -17,6 +17,7 @@ import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JSplitPane;
@@ -94,6 +95,7 @@ public class CtrmapMainframe {
 	public static JMenuItem openzo;
 	public static JMenuItem save;
 	public static JMenuItem packworkspace;
+	public static JMenuItem deploymod;
 	public static JMenuItem tilesetWriter;
 	public static JMenuItem objconvert;
 	public static JMenuItem importMapModel;
@@ -178,6 +180,7 @@ public class CtrmapMainframe {
 		openzo.setToolTipText("Opens a single loose ZO file. To load a map from the game, use the zone dropdown in the \"Zone Loader\" tab instead.");
 		save = new JMenuItem("Save");
 		packworkspace = new JMenuItem("Pack Workspace");
+		deploymod = new JMenuItem("Deploy to emulator (mod)...");
 		tilesetWriter = new JMenuItem("Tileset Editor");
 		objconvert = new JMenuItem("OBJ to collisions");
 		importMapModel = new JMenuItem("Import map model (.bch)...");
@@ -395,6 +398,12 @@ public class CtrmapMainframe {
 				importMapModelAction();
 			}
 		});
+		deploymod.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				deployModAction();
+			}
+		});
 		openmm.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -508,6 +517,7 @@ public class CtrmapMainframe {
 		filemenu.add(openzo);
 		filemenu.add(save);
 		filemenu.add(packworkspace);
+		filemenu.add(deploymod);
 		toolsmenu.add(tilesetWriter);
 		toolsmenu.add(objconvert);
 		toolsmenu.add(importMapModel);
@@ -603,6 +613,88 @@ public class CtrmapMainframe {
 	 * subfile and every untouched map region stays byte-exact. It is NOT
 	 * in-editor geometry editing - that needs a full BCH model writer.
 	 */
+	private static void deployModAction() {
+		if (!Workspace.valid) {
+			JOptionPane.showMessageDialog(frame, "Load a workspace first.", "Deploy mod", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		String titleId = ModDeployer.guessTitleId();
+		File azahar = ModDeployer.azaharModRoot(titleId);
+
+		final javax.swing.JTextField titleField = new javax.swing.JTextField(titleId);
+		final javax.swing.JTextField folderField = new javax.swing.JTextField(azahar != null ? azahar.getAbsolutePath() : "");
+		javax.swing.JButton browse = new javax.swing.JButton("Browse...");
+		browse.addActionListener((java.awt.event.ActionEvent ev) -> {
+			JFileChooser fc = new JFileChooser(folderField.getText());
+			fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+			fc.setDialogTitle("Mod folder (Azahar mods\\<title>, or your SD luma\\titles\\<title>)");
+			if (fc.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
+				folderField.setText(fc.getSelectedFile().getAbsolutePath());
+			}
+		});
+		final javax.swing.JTextField ipsField = new javax.swing.JTextField("");
+		javax.swing.JButton ipsBrowse = new javax.swing.JButton("Browse...");
+		ipsBrowse.addActionListener((java.awt.event.ActionEvent ev) -> {
+			JFileChooser fc = new JFileChooser();
+			fc.setDialogTitle("Optional: pick a code.ips (from Add zones) to install");
+			if (fc.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
+				ipsField.setText(fc.getSelectedFile().getAbsolutePath());
+			}
+		});
+		javax.swing.JPanel folderRow = new javax.swing.JPanel(new java.awt.BorderLayout());
+		folderRow.add(folderField, java.awt.BorderLayout.CENTER);
+		folderRow.add(browse, java.awt.BorderLayout.EAST);
+		javax.swing.JPanel ipsRow = new javax.swing.JPanel(new java.awt.BorderLayout());
+		ipsRow.add(ipsField, java.awt.BorderLayout.CENTER);
+		ipsRow.add(ipsBrowse, java.awt.BorderLayout.EAST);
+		Object[] form = {
+			"Deploy your edits as a LayeredFS mod - only archives you actually changed are copied.",
+			"Run File > Pack Workspace first so the RomFS reflects your latest edits.",
+			" ",
+			"Title ID:", titleField,
+			"Mod folder (Azahar auto-detected; Browse to your SD card for a 3DS/Luma):", folderRow,
+			"Code patch to install (optional - the code.ips from 'Add zones'):", ipsRow
+		};
+		if (JOptionPane.showConfirmDialog(frame, form, "Deploy to emulator (LayeredFS mod)",
+				JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+			return;
+		}
+		String folder = folderField.getText().trim();
+		if (folder.isEmpty()) {
+			JOptionPane.showMessageDialog(frame, "Pick a mod folder first.", "Deploy mod", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		File modRoot = new File(folder);
+		String ipsPath = ipsField.getText().trim();
+		File ips = ipsPath.isEmpty() ? null : new File(ipsPath);
+		ModDeployer.Result res = ModDeployer.deploy(modRoot, ips);
+
+		StringBuilder sb = new StringBuilder();
+		if (res.deployed.isEmpty() && !res.codeIpsDeployed) {
+			sb.append("Nothing changed to deploy.\nDid you run Pack Workspace after editing?\n");
+		} else {
+			sb.append("Deployed to:\n  ").append(modRoot.getAbsolutePath()).append("\n\n");
+			if (!res.deployed.isEmpty()) {
+				sb.append("Archives:\n");
+				for (String d : res.deployed) {
+					sb.append("  ").append(d).append("\n");
+				}
+			}
+			if (res.codeIpsDeployed) {
+				sb.append("  exefs\\code.ips  (executable patch)\n");
+			}
+			sb.append("\n").append(res.unchanged).append(" archive(s) unchanged, skipped.\n");
+		}
+		if (!res.skipped.isEmpty()) {
+			sb.append("\nProblems:\n");
+			for (String s : res.skipped) {
+				sb.append("  ").append(s).append("\n");
+			}
+		}
+		sb.append("\nLaunch the game in the emulator. To disable the mod, delete that folder.");
+		JOptionPane.showMessageDialog(frame, sb.toString(), "Deploy to emulator", JOptionPane.INFORMATION_MESSAGE);
+	}
+
 	private static void importMapModelAction() {
 		if (!Workspace.valid) {
 			javax.swing.JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);

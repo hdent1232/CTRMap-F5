@@ -409,6 +409,45 @@ public class Workspace {
 			bm = new GARC(buildingmodels);
 			npcreg = new GARC(npcregistries);
 			npcmm = new GARC(movemodels);
+			snapshotOriginals();
+		}
+	}
+
+	/** Directory holding the one-time pristine copy of the moddable archives,
+	 *  used by {@link ModDeployer} to ship only what actually changed. */
+	public static File originalSnapshotDir() {
+		return new File(WORKSPACE_PATH + "/_original_garcs");
+	}
+
+	/**
+	 * One-time pristine snapshot of the moddable RomFS archives. Copies each to
+	 * _original_garcs/&lt;archive path&gt; only when it is not already there, so it
+	 * captures the state at the first load and is never overwritten (later loads,
+	 * including post-pack reloads, are no-ops). Fully guarded: a snapshot failure
+	 * must never break loading a workspace.
+	 */
+	public static void snapshotOriginals() {
+		try {
+			if (GAMEDIR_PATH == null || WORKSPACE_PATH == null || game == null) {
+				return;
+			}
+			File snap = originalSnapshotDir();
+			for (ArchiveType t : ModDeployer.MODDABLE) {
+				String rel = getArchivePath(t, game);
+				if (rel == null) {
+					continue;
+				}
+				File live = new File(GAMEDIR_PATH + rel);
+				File dst = new File(snap.getAbsolutePath() + rel);
+				if (live.exists() && !dst.exists()) {
+					if (dst.getParentFile() != null) {
+						dst.getParentFile().mkdirs();
+					}
+					java.nio.file.Files.copy(live.toPath(), dst.toPath());
+				}
+			}
+		} catch (Exception ex) {
+			System.err.println("Original-archive snapshot failed (non-fatal): " + ex);
 		}
 	}
 	
