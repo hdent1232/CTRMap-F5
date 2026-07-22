@@ -41,7 +41,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		initComponents();
 		zoneList.setToolTipText("Select a map here to open it - this is the normal way to load a zone.");
 		btnCloneZone.setToolTipText("Copy the currently loaded zone over another existing zone slot.");
-		btnAddZone.setToolTipText("Append a brand-new zone slot to the end of ZoneData. EXPERIMENTAL - emulator testing mandatory.");
+		btnAddZone.setToolTipText("Add new zones and lift ORAS's 536-zone limit; also generates the required code.ips patch. ORAS only - test in Azahar first.");
 		setIntValueClass(new JFormattedTextField[]{cam1, cam2, camFlags, unknownFlags, battleBG, ad, bgmSpring,
 			matrix, textFile, script, move, parentMap, x1, y1, z1, x2, y2, z2});
 	}
@@ -141,7 +141,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 					btnAddZone.setToolTipText("Adding new zones is ORAS-only in v1.");
 				} else {
 					btnAddZone.setEnabled(true);
-					btnAddZone.setToolTipText("Append a brand-new zone slot to the end of ZoneData. EXPERIMENTAL - emulator testing mandatory.");
+					btnAddZone.setToolTipText("Add new zones and lift ORAS's 536-zone limit; also generates the required code.ips patch. ORAS only - test in Azahar first.");
 				}
 				int totalZones = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length;
 				totalZones -= (Workspace.game == Workspace.GameType.XY) ? 1 : 2;
@@ -601,7 +601,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
             }
         });
 
-        btnAddZone.setText("Add new zone (EXPERIMENTAL)...");
+        btnAddZone.setText("Add zones (lift limit)...");
         btnAddZone.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 btnAddZoneActionPerformed(evt);
@@ -1109,11 +1109,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 */
 	private void btnAddZoneActionPerformed(java.awt.event.ActionEvent evt) {
 		if (!Workspace.isOA()) {
-			JOptionPane.showMessageDialog(this, "Adding new zones is ORAS-only in v1.", "Add new zone", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(this, "Adding new zones is ORAS-only in v1.", "Add new zones", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
 		if (zones == null || zones.length == 0) {
-			JOptionPane.showMessageDialog(this, "Load a workspace first.", "Add new zone", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(this, "Load a workspace first.", "Add new zones", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
 		//the appender reads the last-SAVED workspace bytes, so flush any pending
@@ -1121,7 +1121,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		if (!(mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true) && mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && store(true))) {
 			return;
 		}
-		int newIndex = zones.length;
+		int baseCount = zones.length;
 		String[] names = new String[zones.length];
 		for (int i = 0; i < zones.length; i++) {
 			names[i] = LocationNames.getLocName(zones[i].header.parentMap) + " - " + i;
@@ -1131,65 +1131,96 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		if (zoneIndex >= 0 && zoneIndex < names.length) {
 			srcPicker.setSelectedIndex(zoneIndex);
 		}
+		javax.swing.JSpinner countSpin = new javax.swing.JSpinner(
+				new javax.swing.SpinnerNumberModel(1, 1, ctrmap.formats.codepatch.ZoneLimitPatch.MAX_NEW_ZONES, 1));
 		Object[] form = {
-			"A brand-new zone will be created as index " + newIndex + " (the " + (newIndex + 1) + "th zone -",
-			"zones are numbered from 0, so the game currently has zones 0-" + (newIndex - 1) + ").",
-			"Nothing existing is overwritten; it is added after the last zone.",
+			"Lift ORAS's 536-zone limit and add new zones for your fan game.",
 			" ",
-			"Copy the new zone's contents from:",
-			srcPicker
+			"How many new zones to add?",
+			countSpin,
+			" ",
+			"Copy each new zone's contents from:",
+			srcPicker,
+			" ",
+			"New zones are added after the last one; nothing existing is overwritten.",
+			"A matching code patch (code.ips) is generated - the game needs BOTH the",
+			"new ZoneData and that patch installed, or it will not boot."
 		};
-		if (JOptionPane.showConfirmDialog(this, form, "Add new zone (EXPERIMENTAL)", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+		if (JOptionPane.showConfirmDialog(this, form, "Add new zones (lift zone limit)", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
 			return;
 		}
+		int realZones = (Integer) countSpin.getValue();
 		int srcIndex = srcPicker.getSelectedIndex();
+		int m = ctrmap.formats.codepatch.ZoneLimitPatch.masterIndex(realZones);
+		int spares = m - baseCount - realZones;
 		//strong warning, Cancel is the default option
 		Object[] options = {"Continue", "Cancel"};
 		int confirm = JOptionPane.showOptionDialog(this,
-				"WARNING - UNTESTED TERRITORY.\n\n"
-				+ "This appends a brand-new zone slot to ZoneData. No fan hack for X/Y/OR/AS has\n"
-				+ "ever shipped an added zone: the mechanics of the archive are fully understood\n"
-				+ "and round-trip verified, but whether the GAME's code accepts an extra zone\n"
-				+ "(e.g. hardcoded table sizes or entry indices in code.bin) is unknown.\n\n"
-				+ "The rebuilt archive keeps every existing zone byte-identical, so existing\n"
-				+ "content is safe - but the new zone itself may crash or softlock the game.\n\n"
-				+ "MANDATORY: keep a backup of your RomFS, test in Citra/an emulator before\n"
-				+ "touching real hardware, and verify you can still load a save in an OLD zone\n"
-				+ "first.\n\n"
+				"Adding " + realZones + " new zone(s): indices " + baseCount + ".." + (baseCount + realZones - 1) + ".\n\n"
+				+ "The game's zone table must stay 4-aligned, so the total is rounded up to " + m + "\n"
+				+ "(" + realZones + " real + " + spares + " spare, never-visited slot(s)).\n\n"
+				+ "FIRST-OF-ITS-KIND: no fan hack has ever added an ORAS zone. The archive and the\n"
+				+ "code patch are byte-verified here, but the in-game boot is unproven - test in\n"
+				+ "Azahar first and keep a RomFS backup.\n\n"
+				+ "You MUST install the generated code.ips or the game will black-screen:\n"
+				+ "  Azahar: right-click the game -> Open Mods Location -> exefs\\code.ips\n"
+				+ "  3DS Luma: sdmc:/luma/titles/000400000011C400/code.ips (enable Game Patching)\n\n"
 				+ "Continue?",
-				"Add new zone (EXPERIMENTAL)",
+				"Add new zones (lift zone limit)",
 				JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE,
 				null, options, options[1]);
 		if (confirm != 0) {
 			return;
 		}
+		ctrmap.ZoneAppender.AppendResult res;
 		try {
-			ZoneAppender.appendZone(srcIndex);
+			res = ctrmap.ZoneAppender.appendZones(realZones, srcIndex);
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			JOptionPane.showMessageDialog(this, "Could not append the zone:\n" + ex.getMessage(), "Add new zone", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(this, "Could not add the zones:\n" + ex.getMessage(), "Add new zones", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
+		//generate + save the paired code patch (same N drives both sides)
+		boolean savedIps = false;
+		try {
+			byte[] ips = ctrmap.formats.codepatch.ZoneLimitPatch.buildIPS(realZones);
+			javax.swing.JFileChooser fc = new javax.swing.JFileChooser();
+			fc.setDialogTitle("Save the zone-limit code patch (name it code.ips)");
+			fc.setSelectedFile(new java.io.File("code.ips"));
+			if (fc.showSaveDialog(this) == javax.swing.JFileChooser.APPROVE_OPTION) {
+				java.io.FileOutputStream fos = new java.io.FileOutputStream(fc.getSelectedFile());
+				fos.write(ips);
+				fos.close();
+				savedIps = true;
+			}
+		} catch (Exception ex) {
+			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
+			JOptionPane.showMessageDialog(this, "The zones were staged, but the code.ips could not be saved:\n" + ex.getMessage()
+					+ "\n\nThe game will not boot without it - regenerate it before testing.", "Add new zones", JOptionPane.WARNING_MESSAGE);
+		}
 		//the append changed the GARC layout. packWorkspace and loadEverything are
-		//BOTH async (SwingWorkers); the fresh entry count is only visible after the
-		//pack's GARC reload completes, so chain: pack -> reload -> select + confirm.
-		final int appendedIndex = newIndex;
+		//BOTH async (SwingWorkers); chain: pack -> reload -> select + confirm.
+		final int firstNew = res.firstNewZone;
+		final int lastReal = res.firstNewZone + res.realZones - 1;
+		final int total = res.newZoneCount;
+		final boolean ipsSaved = savedIps;
 		Workspace.packWorkspace(new Runnable() {
 			@Override
 			public void run() {
 				loadEverything(new Runnable() {
 					@Override
 					public void run() {
-						if (appendedIndex < zoneList.getItemCount()) {
-							zoneList.setSelectedIndex(appendedIndex);
+						if (firstNew < zoneList.getItemCount()) {
+							zoneList.setSelectedIndex(firstNew);
 						}
 						JOptionPane.showMessageDialog(ZoneLoadingPanel.this,
-								"Zone " + appendedIndex + " created" + (appendedIndex < zoneList.getItemCount() ? " and now in the Load Zone list" : "") + ".\n\n"
-								+ "It is not reachable until you point a warp or script at it (edit a warp in\n"
-								+ "another zone to target zone " + appendedIndex + ").\n\n"
-								+ "Wild encounters are empty: the in-zone encounter subfile was copied from the\n"
-								+ "source, but the zone's entry in the EN encounter pack is new and empty.",
-								"Add new zone", JOptionPane.INFORMATION_MESSAGE);
+								"Added zones " + firstNew + ".." + lastReal + " (archive now holds " + total + " zone slots).\n\n"
+								+ (ipsSaved
+										? "code.ips saved - install it (Azahar mods exefs, or Luma titles folder) before booting.\n\n"
+										: "code.ips was NOT saved - the game will black-screen until you generate and install it.\n\n")
+								+ "New zones aren't reachable until you point a warp or script at them (edit a\n"
+								+ "warp in another zone to target zone " + firstNew + "). Wild encounters start empty.",
+								"Add new zones", JOptionPane.INFORMATION_MESSAGE);
 					}
 				});
 			}
