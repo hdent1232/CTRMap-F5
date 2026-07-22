@@ -454,6 +454,17 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			npc = npc2;
 			e.npcs.set(idx, npc);
 			e.modified = true;
+			if (loaded) {
+				String problem = talkerMessageProblem(npc2.script);
+				if (problem != null) {
+					JOptionPane.showMessageDialog(this,
+							"Heads up: this NPC runs a talking script, but " + problem + ".\n\n"
+							+ "Talking to it in-game will FREEZE the game - there is no message box to close.\n\n"
+							+ "Give it text with the \"Edit dialogue\" button, or set its Script to a\n"
+							+ "non-talking one.",
+							"This NPC will soft-lock the game", JOptionPane.WARNING_MESSAGE);
+				}
+			}
 		}
 	}
 
@@ -462,6 +473,44 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return true;
 		}
 		return reg.store(dialog);
+	}
+
+	/**
+	 * Returns a plain-language reason why an NPC with this talker script id would
+	 * soft-lock the game (its message line is missing or empty - the game opens a
+	 * message box the player can never close), or null when the NPC is not a
+	 * talker or its message is fine. Same detection as the read-only Dialogue
+	 * preview, but surfaced as an active guard when the NPC is saved. Fully
+	 * defensive: any lookup failure returns null rather than a false alarm.
+	 */
+	private String talkerMessageProblem(int scriptId) {
+		try {
+			Zone zone = getLoadedZone();
+			if (zone == null || zone.s == null || scriptId >= TalkerScriptWizard.ENGINE_RESERVED_MIN) {
+				return null;
+			}
+			if (Workspace.getStoryTextGARC() == null) {
+				return null;
+			}
+			zone.s.decompressThis();
+			ZoneScriptAnalyzer.TalkerPattern tp = ZoneScriptAnalyzer.findTalkerPattern(zone.s, scriptId);
+			if (tp == null) {
+				return null; //not a simple talker - nothing to guard against
+			}
+			GFMessageFile msg = getStoryFile(zone.header.textID);
+			if (msg == null) {
+				return null;
+			}
+			if (tp.msgLine < 0 || tp.msgLine >= msg.getLineCount()) {
+				return "its message line " + tp.msgLine + " does not exist in story-text file " + zone.header.textID;
+			}
+			if (msg.getLine(tp.msgLine).trim().isEmpty()) {
+				return "its message (story-text file " + zone.header.textID + ", line " + tp.msgLine + ") is empty";
+			}
+			return null;
+		} catch (Exception ex) {
+			return null;
+		}
 	}
 
 	private Zone getLoadedZone() {
