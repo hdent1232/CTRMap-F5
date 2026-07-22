@@ -595,9 +595,9 @@ public class BchMapModel {
 	 *                         (existing vertices keep their indices; the first new
 	 *                         vertex is index {@code oldVertexCount})
 	 * @return a new BCH with the grown mesh (call again on the result to chain)
-	 * @throws IllegalStateException if the new index range would need a wider
-	 *         index type than the mesh currently uses (u8-&gt;u16 upgrade is not
-	 *         supported yet), or the mesh has no decodable geometry
+	 * @throws IllegalStateException if the mesh has no decodable geometry, or the
+	 *         combined mesh would exceed 16-bit indices (a u8 index buffer is
+	 *         upgraded to u16 automatically when needed)
 	 */
 	public byte[] appendGeometry(int meshIndex, byte[] extraVertexBytes, int[] extraIndices) {
 		List<MeshGeom> geom = geometry();
@@ -646,20 +646,19 @@ public class BchMapModel {
 			throw new IllegalArgumentException("an index references a vertex that does not exist (max index "
 					+ maxIdx + " >= vertex count " + newVertexCount + ")");
 		}
-		int maxForFormat = elemSize == 1 ? 0xFF : 0xFFFF;
-		if (maxIdx > maxForFormat) {
-			throw new IllegalStateException("mesh " + meshIndex + " would need "
-					+ (elemSize == 1 ? "16-bit" : "wider") + " indices (max index " + maxIdx
-					+ "); the u8->u16 upgrade is not supported yet - split the mesh or grow a u16 mesh.");
+		// upgrade the index width to u16 if the new range needs it
+		int newElemSize = (elemSize == 1 && maxIdx > 0xFF) ? 2 : elemSize;
+		if (maxIdx > 0xFFFF) {
+			throw new IllegalStateException("mesh " + meshIndex + " would exceed 16-bit indices (max index " + maxIdx + ")");
 		}
 
 		byte[] newVtx = new byte[vtxDataLen + extraVertexBytes.length];
 		System.arraycopy(raw, g.vtxAbs, newVtx, 0, vtxDataLen);
 		System.arraycopy(extraVertexBytes, 0, newVtx, vtxDataLen, extraVertexBytes.length);
 
-		byte[] newIdx = new byte[newIndices.length * elemSize];
+		byte[] newIdx = new byte[newIndices.length * newElemSize];
 		for (int i = 0; i < newIndices.length; i++) {
-			if (elemSize == 1) {
+			if (newElemSize == 1) {
 				newIdx[i] = (byte) newIndices[i];
 			} else {
 				newIdx[i * 2] = (byte) newIndices[i];
@@ -672,7 +671,35 @@ public class BchMapModel {
 		repl.put(idxCmdLoc, newIdx);
 		byte[] out = rebuildRawData(repl);
 		pokeInt(out, numVerticesLoc, newIndices.length); // NUMVERTICES = new draw count
+
+		// if the index width was upgraded u8 -> u16, flip its relocation flag
+		// (0x28 RawDataIndex8 -> 0x27 RawDataIndex16) so the loader reads 2-byte
+		// indices; the on-disk offset word stays plain (the high bit is injected
+		// at load by the relocator per the flag)
+		if (newElemSize != elemSize) {
+			int ei = relocEntryIndexFor(idxCmdLoc, 0x28);
+			if (ei >= 0) {
+				int outRelocAddr = le32(out, 28);
+				int off = outRelocAddr + ei * 4;
+				pokeInt(out, off, (le32(out, off) & 0x1FFFFFF) | (0x27 << 25));
+			}
+		}
 		return out;
+	}
+
+	/** Index of the relocation entry for a given command-word location + flag, or -1. */
+	private int relocEntryIndexFor(int cmdWordLoc, int wantFlag) {
+		for (int i = 0; i < reloc.length; i++) {
+			int v = reloc[i];
+			int flag = (v >>> 25) & 0x7F;
+			if (flag != wantFlag || (flag >>> 4) != SEC_COMMANDS) {
+				continue;
+			}
+			if (commandsAddr + (v & 0x1FFFFFF) * 4 == cmdWordLoc) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	private static void putFloat(byte[] b, int o, float f) {
