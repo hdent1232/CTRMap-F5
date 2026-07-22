@@ -96,6 +96,7 @@ public class CtrmapMainframe {
 	public static JMenuItem packworkspace;
 	public static JMenuItem tilesetWriter;
 	public static JMenuItem objconvert;
+	public static JMenuItem importMapModel;
 	public static JMenuItem wssettings;
 	public static JMenuItem wsclean;
 	public static JMenuItem isstracker;
@@ -179,6 +180,7 @@ public class CtrmapMainframe {
 		packworkspace = new JMenuItem("Pack Workspace");
 		tilesetWriter = new JMenuItem("Tileset Editor");
 		objconvert = new JMenuItem("OBJ to collisions");
+		importMapModel = new JMenuItem("Import map model (.bch)...");
 		wssettings = new JMenuItem("Workspace settings");
 		wsclean = new JMenuItem("Clean workspace");
 		isstracker = new JMenuItem("Support/Issue tracker");
@@ -387,6 +389,12 @@ public class CtrmapMainframe {
 				}
 			}
 		});
+		importMapModel.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				importMapModelAction();
+			}
+		});
 		openmm.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -502,6 +510,7 @@ public class CtrmapMainframe {
 		filemenu.add(packworkspace);
 		toolsmenu.add(tilesetWriter);
 		toolsmenu.add(objconvert);
+		toolsmenu.add(importMapModel);
 		optionsmenu.add(wssettings);
 		optionsmenu.add(wsclean);
 		helpmenu.add(isstracker);
@@ -584,6 +593,101 @@ public class CtrmapMainframe {
 					+ "That loads the world, matrix, collisions and entities for editing.\n\n"
 					+ "(File > Open Zone is only for single loose ZO files.)");
 		}
+	}
+
+	/**
+	 * Milestone 1 of native map editing: replace a map region's visual 3D model
+	 * (FieldData GR subfile 1) with an externally authored .bch, via the proven
+	 * byte-faithful container passthrough (storeFile). This enables the
+	 * "build a map in a 3D tool, drop it into the game" workflow; every other
+	 * subfile and every untouched map region stays byte-exact. It is NOT
+	 * in-editor geometry editing - that needs a full BCH model writer.
+	 */
+	private static void importMapModelAction() {
+		if (!Workspace.valid) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int fieldCount = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length;
+		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(0, 0, fieldCount - 1, 1));
+		Object[] form = {
+			"Replace the visual 3D model of a map region.",
+			"The region's FieldData ID is shown per cell in the Matrix Editor",
+			"(\"Refers to: FIELD_DATA/<id>\"). Enter that ID:",
+			idSpinner,
+			" ",
+			"The .bch must be a valid ORAS field map model (e.g. exported from a",
+			"3D tool and converted with SPICA). This does NOT edit geometry in-app."
+		};
+		if (javax.swing.JOptionPane.showConfirmDialog(frame, form, "Import map model", javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.PLAIN_MESSAGE) != javax.swing.JOptionPane.OK_OPTION) {
+			return;
+		}
+		int id = (Integer) idSpinner.getValue();
+
+		Preferences prefs = Preferences.userRoot().node(CtrmapMainframe.class.getName());
+		JFileChooser jfc = new JFileChooser(prefs.get("LAST_DIR", new File(".").getAbsolutePath()));
+		jfc.setDialogTitle("Open map model .bch");
+		jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
+		jfc.setMultiSelectionEnabled(false);
+		if (jfc.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION || jfc.getSelectedFile() == null) {
+			return;
+		}
+		File chosen = jfc.getSelectedFile();
+		prefs.put("LAST_DIR", chosen.getParent());
+
+		byte[] bch;
+		try {
+			bch = java.nio.file.Files.readAllBytes(chosen.toPath());
+		} catch (java.io.IOException ex) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "Could not read the file:\n" + ex.getMessage(), "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		//sanity-check that it parses as a BCH model
+		try {
+			ctrmap.formats.h3d.BCHFile parsed = new ctrmap.formats.h3d.BCHFile(bch);
+			if (parsed.errorlevel != 0 || parsed.models.isEmpty()) {
+				javax.swing.JOptionPane.showMessageDialog(frame, "That file does not parse as a BCH model (no models / read error).", "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+		} catch (RuntimeException ex) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "That file is not a readable BCH model:\n" + ex.getMessage(), "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+
+		Object[] warnOpts = {"Continue", "Cancel"};
+		int confirm = javax.swing.JOptionPane.showOptionDialog(frame,
+				"EXPERIMENTAL - untested on real hardware.\n\n"
+				+ "This replaces the visual model of FieldData region " + id + " with your\n"
+				+ ".bch. The archive rebuild is byte-faithful for every other region and\n"
+				+ "subfile, but whether the GAME loads a rebuilt/replaced map model is not\n"
+				+ "yet verified. Keep a RomFS backup and test in Citra before hardware.\n\n"
+				+ "Continue?",
+				"Import map model", javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.WARNING_MESSAGE,
+				null, warnOpts, warnOpts[1]);
+		if (confirm != 0) {
+			return;
+		}
+		try {
+			File grFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, id);
+			GR gr = new GR(grFile);
+			if (gr.len < 2) {
+				javax.swing.JOptionPane.showMessageDialog(frame, "FieldData entry " + id + " is not a map region container.", "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			if (!gr.storeFile(1, bch)) {
+				javax.swing.JOptionPane.showMessageDialog(frame, "Could not write the model into the workspace.", "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			Workspace.addPersist(grFile);
+		} catch (RuntimeException ex) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "Import failed:\n" + ex.getMessage(), "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		javax.swing.JOptionPane.showMessageDialog(frame,
+				"Map model imported into FieldData region " + id + ".\n\n"
+				+ "Run File > Pack Workspace, then load the RomFS as a LayeredFS mod and\n"
+				+ "TEST IN CITRA - confirm the map loads before trusting it.",
+				"Import map model", javax.swing.JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	public static void adjustSplitPanes() {
