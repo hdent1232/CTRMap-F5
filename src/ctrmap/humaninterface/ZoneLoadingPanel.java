@@ -103,11 +103,24 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	}
 
 	public void loadEverything() {
+		loadEverything(null);
+	}
+
+	/**
+	 * Rebuilds the zone list from the current ZoneData archive on a background
+	 * worker. onDone (if given) runs on the EDT after the list is populated -
+	 * use it when follow-up UI (e.g. selecting a freshly appended zone) must see
+	 * the reloaded list rather than the stale one.
+	 */
+	public void loadEverything(final Runnable onDone) {
 		LoadingDialog progress = LoadingDialog.makeDialog("Loading Zone data");
 		SwingWorker worker = new SwingWorker() {
 			@Override
 			protected void done() {
 				progress.close();
+				if (onDone != null) {
+					onDone.run();
+				}
 			}
 
 			@Override
@@ -1157,20 +1170,30 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			JOptionPane.showMessageDialog(this, "Could not append the zone:\n" + ex.getMessage(), "Add new zone", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		//the append changed the GARC layout - repack NOW (also consumes the pending
-		//compression overrides) and reload everything from the fresh archive
-		Workspace.packWorkspace(); //modal - blocks until the worker is done
-		loadEverything(); //modal - blocks until the worker is done
-		if (newIndex < zoneList.getItemCount()) {
-			zoneList.setSelectedIndex(newIndex);
-		}
-		JOptionPane.showMessageDialog(this,
-				"Zone " + newIndex + " created.\n\n"
-				+ "It is not reachable until you point a warp or script at it (edit a warp in\n"
-				+ "another zone to target zone " + newIndex + ").\n\n"
-				+ "Wild encounters are empty: the in-zone encounter subfile was copied from the\n"
-				+ "source, but the zone's entry in the EN encounter pack is new and empty.",
-				"Add new zone", JOptionPane.INFORMATION_MESSAGE);
+		//the append changed the GARC layout. packWorkspace and loadEverything are
+		//BOTH async (SwingWorkers); the fresh entry count is only visible after the
+		//pack's GARC reload completes, so chain: pack -> reload -> select + confirm.
+		final int appendedIndex = newIndex;
+		Workspace.packWorkspace(new Runnable() {
+			@Override
+			public void run() {
+				loadEverything(new Runnable() {
+					@Override
+					public void run() {
+						if (appendedIndex < zoneList.getItemCount()) {
+							zoneList.setSelectedIndex(appendedIndex);
+						}
+						JOptionPane.showMessageDialog(ZoneLoadingPanel.this,
+								"Zone " + appendedIndex + " created" + (appendedIndex < zoneList.getItemCount() ? " and now in the Load Zone list" : "") + ".\n\n"
+								+ "It is not reachable until you point a warp or script at it (edit a warp in\n"
+								+ "another zone to target zone " + appendedIndex + ").\n\n"
+								+ "Wild encounters are empty: the in-zone encounter subfile was copied from the\n"
+								+ "source, but the zone's entry in the EN encounter pack is new and empty.",
+								"Add new zone", JOptionPane.INFORMATION_MESSAGE);
+					}
+				});
+			}
+		});
 	}
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
