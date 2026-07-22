@@ -18,11 +18,24 @@ public class CustomH3DPreview extends GLJPanel implements GLEventListener {
 	private static final long serialVersionUID = -6824913720967100278L;
 
 	private H3DModel model;
+	private final FPSAnimator animator;
 
 	public CustomH3DPreview() {
 		super(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
 		super.addGLEventListener(this);
-		new FPSAnimator(this, 60).start();
+		animator = new FPSAnimator(this, 60);
+		animator.start();
+	}
+
+	/**
+	 * Stops the render loop. Call this when a transient preview (e.g. one placed
+	 * in a modal dialog) is no longer needed, so its animator thread and GL
+	 * context are released instead of leaking.
+	 */
+	public void stop() {
+		if (animator.isStarted()) {
+			animator.stop();
+		}
 	}
 
 	@Override

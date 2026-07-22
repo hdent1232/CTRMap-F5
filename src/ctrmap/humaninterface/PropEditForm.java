@@ -77,6 +77,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		DefaultListModel<String> placeholderModel = new DefaultListModel<>();
 		placeholderModel.addElement("Click to load the prop database...");
 		paletteList.setModel(placeholderModel);
+		paletteFilter.setToolTipText("<html>Props are placeable objects: trees, doors, signs, statues, TVs, furniture.<br>"
+				+ "Large buildings and Pok&eacute;mon Centers are part of the map itself, not props.<br>"
+				+ "Names are Game Freak's internal codenames - type plain words (tree, computer,<br>"
+				+ "statue, lighthouse, coral, boat, tv) and matching props are found.</html>");
 		setFloatValueClass(new JFormattedTextField[]{x, y, z, sx, sy, sz, rx, ry, rz});
 		//Only need the DocListeners on the fields that we want to reflect on the GUI immediately
 		x.getDocument().addDocumentListener(new DocumentListener() {
@@ -246,6 +250,15 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * filter. Does nothing (and keeps the list empty) until the database has
 	 * been built by ensurePaletteLoaded().
 	 */
+	//English search terms -> substrings of Game Freak's internal model names,
+	//so "computer"/"statue"/"lighthouse" find the right props despite codenames.
+	private static final String[][] SEARCH_ALIASES = {
+		{"computer", "_bm_pc"}, {"healing", "_bm_pc"}, {"pokemon center", "_bm_pc"},
+		{"statue", "monument"}, {"lighthouse", "toudai"}, {"coral", "kaisou"},
+		{"boat", "boat"}, {"ship", "spship"}, {"submarine", "submarine"},
+		{"tv", "_bm_tv"}, {"television", "_bm_tv"}, {"palm", "yashi"},
+	};
+
 	private void refreshPalette() {
 		if (!PropDatabase.isBuilt()) {
 			return;
@@ -255,13 +268,36 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return;
 		}
 		String filter = paletteFilter.getText().trim().toLowerCase();
+		//expand the filter with any alias substrings whose English key matches
+		List<String> extra = new ArrayList<>();
+		if (!filter.isEmpty()) {
+			for (String[] a : SEARCH_ALIASES) {
+				if (a[0].contains(filter)) {
+					extra.add(a[1]);
+				}
+			}
+		}
 		List<PropDatabase.PropModel> shown = new ArrayList<>();
 		DefaultListModel<String> listModel = new DefaultListModel<>();
 		for (PropDatabase.PropModel m : db.getNamedModels()) {
-			if (filter.isEmpty() || m.name.toLowerCase().contains(filter)) {
+			String nl = m.name.toLowerCase();
+			boolean match = filter.isEmpty() || nl.contains(filter);
+			if (!match) {
+				for (String s : extra) {
+					if (nl.contains(s)) {
+						match = true;
+						break;
+					}
+				}
+			}
+			if (match) {
 				shown.add(m);
 				listModel.addElement(m.name + "  (model " + m.modelIndex + ", used in " + m.donorAreas.size() + " areas)");
 			}
+		}
+		if (listModel.isEmpty()) {
+			listModel.addElement("No match. Props are trees, doors, signs, statues, furniture...");
+			listModel.addElement("Pokemon Centers, Marts and houses are part of the map, not props.");
 		}
 		paletteEntries = shown.toArray(new PropDatabase.PropModel[shown.size()]);
 		paletteList.setModel(listModel);

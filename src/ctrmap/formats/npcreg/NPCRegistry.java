@@ -63,6 +63,31 @@ public class NPCRegistry {
 		return models.get(uid);
 	}
 
+	/**
+	 * Loads a FRESH, uncached H3DModel for a registered NPC UID. Unlike
+	 * getModel(), this never returns the shared cached instance, so it is safe
+	 * to render in a throwaway preview widget (with its own GL buffer objects)
+	 * without corrupting the main viewport's copy. Returns null if the UID is
+	 * not registered or its model has no mesh.
+	 */
+	public H3DModel loadFreshModel(int uid) {
+		NPCRegistryEntry e = entries.get(uid);
+		if (e == null) {
+			return null;
+		}
+		try {
+			BCHFile bch = new BCHFile(new MM(Workspace.getWorkspaceFile(Workspace.ArchiveType.MOVE_MODELS, e.model)).getFile(0));
+			if (bch.models.isEmpty()) {
+				return null;
+			}
+			H3DModel m = bch.models.get(0);
+			m.setMaterialTextures(bch.textures);
+			return m;
+		} catch (RuntimeException ex) {
+			return null;
+		}
+	}
+
 	public boolean store(boolean dialog) {
 		if (!modified) {
 			return true;

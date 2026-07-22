@@ -811,15 +811,15 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		JScrollPane taScroll = new JScrollPane(ta);
 		taScroll.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(taScroll);
-		JLabel modelLabel = new JLabel("Model:");
+		JLabel modelLabel = new JLabel("Model (MoveModel UID) - preview below:");
 		modelLabel.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(modelLabel);
-		modelSpinner.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(modelSpinner);
-		JLabel hintLabel = new JLabel("<html>The NPC is placed at the centre of the current view.<br>Model = MoveModel UID (copy from an existing NPC).</html>");
+		panel.add(modelWithPreview(modelSpinner));
+		JLabel hintLabel = new JLabel("<html>The NPC is placed at the centre of the current view.<br>Change the UID to preview a different overworld model.</html>");
 		hintLabel.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(hintLabel);
 		int rsl = JOptionPane.showConfirmDialog(frame, panel, "Add talking NPC", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+		disposePreviews();
 		if (rsl != JOptionPane.OK_OPTION) {
 			return;
 		}
@@ -982,11 +982,13 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
 		addLabeled(panel, "Item (type to search):", itemChooser);
 		addLabeled(panel, "Quantity:", countSpinner);
-		addLabeled(panel, "NPC model (MoveModel UID):", modelSpinner);
+		addLabeled(panel, "NPC model (preview below):", modelWithPreview(modelSpinner));
 		JLabel hint = new JLabel("<html>The NPC is placed at the centre of the view and gives the item<br>each time it is talked to (no one-time flag yet).</html>");
 		hint.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(hint);
-		if (JOptionPane.showConfirmDialog(frame, panel, "Add item giver", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+		int giverRsl = JOptionPane.showConfirmDialog(frame, panel, "Add item giver", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+		disposePreviews();
+		if (giverRsl != JOptionPane.OK_OPTION) {
 			return;
 		}
 		GFLPawnScript work;
@@ -1028,7 +1030,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		JPanel panel = new JPanel();
 		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
 		addLabeled(panel, "Trainer (type to search; edit party/class in pk3DS):", idChooser);
-		addLabeled(panel, "NPC model (MoveModel UID):", modelSpinner);
+		addLabeled(panel, "NPC model (preview below):", modelWithPreview(modelSpinner));
 		addLabeled(panel, "Sight range (0 = battle on talk only):", sightSpinner);
 		addLabeled(panel, "Facing:", faceBox);
 		pairBox.setAlignmentX(LEFT_ALIGNMENT);
@@ -1036,7 +1038,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		JLabel hint = new JLabel("<html>Places the overworld trainer NPC only. The battle exists only if<br>trainer data slot ID is valid (set it in pk3DS).</html>");
 		hint.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(hint);
-		if (JOptionPane.showConfirmDialog(frame, panel, "Add trainer", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+		int trainerRsl = JOptionPane.showConfirmDialog(frame, panel, "Add trainer", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+		disposePreviews();
+		if (trainerRsl != JOptionPane.OK_OPTION) {
 			return;
 		}
 		int tid = idChooser.getId();
@@ -1192,6 +1196,46 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			((javax.swing.JComponent) field).setAlignmentX(LEFT_ALIGNMENT);
 		}
 		panel.add(field);
+	}
+
+	private final java.util.List<CustomH3DPreview> activePreviews = new java.util.ArrayList<>();
+
+	/**
+	 * Wraps a MoveModel-UID spinner with a live 3D preview of the model, so the
+	 * user sees the NPC they are placing and can flip through UIDs. Uses a fresh
+	 * model instance (not the shared registry cache) so the preview cannot
+	 * disturb the main viewport's rendering.
+	 */
+	private JPanel modelWithPreview(final JSpinner modelSpinner) {
+		JPanel wrap = new JPanel(new java.awt.BorderLayout());
+		wrap.setAlignmentX(LEFT_ALIGNMENT);
+		wrap.add(modelSpinner, java.awt.BorderLayout.NORTH);
+		final CustomH3DPreview preview = new CustomH3DPreview();
+		preview.setPreferredSize(new java.awt.Dimension(200, 200));
+		wrap.add(preview, java.awt.BorderLayout.CENTER);
+		final Runnable reload = new Runnable() {
+			@Override
+			public void run() {
+				preview.loadModel(reg == null ? null : reg.loadFreshModel((Integer) modelSpinner.getValue()));
+			}
+		};
+		modelSpinner.addChangeListener(new javax.swing.event.ChangeListener() {
+			@Override
+			public void stateChanged(javax.swing.event.ChangeEvent e) {
+				reload.run();
+			}
+		});
+		reload.run();
+		activePreviews.add(preview);
+		return wrap;
+	}
+
+	/** Stops the render loops of any preview widgets from a just-closed dialog. */
+	private void disposePreviews() {
+		for (CustomH3DPreview p : activePreviews) {
+			p.stop();
+		}
+		activePreviews.clear();
 	}
 
 	private void scrDropdownActionPerformed(java.awt.event.ActionEvent evt) {
