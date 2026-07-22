@@ -580,6 +580,101 @@ public class BchMapModel {
 		b[o + 3] = (byte) (v >> 24);
 	}
 
+	/**
+	 * Grows an existing mesh by appending vertices and faces to its buffers,
+	 * reusing the mesh's material and vertex format - the first operation that
+	 * actually ADDS geometry to a map (extend terrain, merge in a reused asset,
+	 * or land imported geometry that matches this mesh's material).
+	 *
+	 * @param meshIndex        the mesh to grow
+	 * @param extraVertexBytes raw vertex data for the new vertices, a whole
+	 *                         number of the mesh's vertex stride, in the mesh's
+	 *                         exact attribute layout (copy an existing vertex to
+	 *                         see the format)
+	 * @param extraIndices     new triangle indices into the COMBINED vertex set
+	 *                         (existing vertices keep their indices; the first new
+	 *                         vertex is index {@code oldVertexCount})
+	 * @return a new BCH with the grown mesh (call again on the result to chain)
+	 * @throws IllegalStateException if the new index range would need a wider
+	 *         index type than the mesh currently uses (u8-&gt;u16 upgrade is not
+	 *         supported yet), or the mesh has no decodable geometry
+	 */
+	public byte[] appendGeometry(int meshIndex, byte[] extraVertexBytes, int[] extraIndices) {
+		List<MeshGeom> geom = geometry();
+		if (meshIndex < 0 || meshIndex >= geom.size()) {
+			throw new IllegalArgumentException("mesh index out of range");
+		}
+		MeshGeom g = geom.get(meshIndex);
+		if (!g.posOk || g.stride <= 0) {
+			throw new IllegalStateException("mesh " + meshIndex + " has no decodable geometry");
+		}
+		if (extraVertexBytes.length % g.stride != 0) {
+			throw new IllegalArgumentException("extra vertex bytes (" + extraVertexBytes.length
+					+ ") must be a multiple of the mesh stride (" + g.stride + ")");
+		}
+		int vtxCmdLoc = meshes.get(meshIndex)[1] + 0x30;     // ATTRIBBUFFER0_OFFSET word
+		int vtxDataLen = g.vertexCount * g.stride;
+		int subCmdPtr = ptr(meshes.get(meshIndex)[3] + 0x2C);
+		int idxCmdLoc = subCmdPtr + 0x10;                    // INDEXBUFFER_CONFIG word
+		int numVerticesLoc = idxCmdLoc + 8;                  // NUMVERTICES param
+		int elemSize = -1;
+		for (int[] ib : idxBuffers) {
+			if (ib[1] == idxCmdLoc) {
+				elemSize = ib[2];
+				break;
+			}
+		}
+		if (elemSize < 0) {
+			throw new IllegalStateException("mesh " + meshIndex + " index buffer not located");
+		}
+		int idxAbs = rawDataAddr + (i32(idxCmdLoc) & 0x7FFFFFFF);
+		int curIndexCount = i32(numVerticesLoc);
+		int newVertexCount = g.vertexCount + extraVertexBytes.length / g.stride;
+
+		// combine indices, then range-check against the current index width
+		int[] newIndices = new int[curIndexCount + extraIndices.length];
+		int maxIdx = 0;
+		for (int i = 0; i < curIndexCount; i++) {
+			newIndices[i] = elemSize == 1 ? (raw[idxAbs + i] & 0xFF) : u16(idxAbs + i * 2);
+			maxIdx = Math.max(maxIdx, newIndices[i]);
+		}
+		for (int i = 0; i < extraIndices.length; i++) {
+			newIndices[curIndexCount + i] = extraIndices[i];
+			maxIdx = Math.max(maxIdx, extraIndices[i]);
+		}
+		if (maxIdx >= newVertexCount) {
+			throw new IllegalArgumentException("an index references a vertex that does not exist (max index "
+					+ maxIdx + " >= vertex count " + newVertexCount + ")");
+		}
+		int maxForFormat = elemSize == 1 ? 0xFF : 0xFFFF;
+		if (maxIdx > maxForFormat) {
+			throw new IllegalStateException("mesh " + meshIndex + " would need "
+					+ (elemSize == 1 ? "16-bit" : "wider") + " indices (max index " + maxIdx
+					+ "); the u8->u16 upgrade is not supported yet - split the mesh or grow a u16 mesh.");
+		}
+
+		byte[] newVtx = new byte[vtxDataLen + extraVertexBytes.length];
+		System.arraycopy(raw, g.vtxAbs, newVtx, 0, vtxDataLen);
+		System.arraycopy(extraVertexBytes, 0, newVtx, vtxDataLen, extraVertexBytes.length);
+
+		byte[] newIdx = new byte[newIndices.length * elemSize];
+		for (int i = 0; i < newIndices.length; i++) {
+			if (elemSize == 1) {
+				newIdx[i] = (byte) newIndices[i];
+			} else {
+				newIdx[i * 2] = (byte) newIndices[i];
+				newIdx[i * 2 + 1] = (byte) (newIndices[i] >> 8);
+			}
+		}
+
+		Map<Integer, byte[]> repl = new HashMap<>();
+		repl.put(vtxCmdLoc, newVtx);
+		repl.put(idxCmdLoc, newIdx);
+		byte[] out = rebuildRawData(repl);
+		pokeInt(out, numVerticesLoc, newIndices.length); // NUMVERTICES = new draw count
+		return out;
+	}
+
 	private static void putFloat(byte[] b, int o, float f) {
 		int v = Float.floatToIntBits(f);
 		b[o] = (byte) v;
