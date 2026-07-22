@@ -1119,7 +1119,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			srcPicker.setSelectedIndex(zoneIndex);
 		}
 		Object[] form = {
-			"New zone slot " + newIndex + " will be appended as a copy of:",
+			"A brand-new zone will be created as index " + newIndex + " (the " + (newIndex + 1) + "th zone -",
+			"zones are numbered from 0, so the game currently has zones 0-" + (newIndex - 1) + ").",
+			"Nothing existing is overwritten; it is added after the last zone.",
+			" ",
+			"Copy the new zone's contents from:",
 			srcPicker
 		};
 		if (JOptionPane.showConfirmDialog(this, form, "Add new zone (EXPERIMENTAL)", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
