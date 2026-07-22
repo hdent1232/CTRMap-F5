@@ -124,6 +124,91 @@ public class ZoneAppender {
 	}
 
 	/**
+	 * Result of a multi-zone append: the index of the first new (real) zone, how
+	 * many real zones were added, and the total zone count M the matching code
+	 * patch must target (== {@link ctrmap.formats.codepatch.ZoneLimitPatch#masterIndex}).
+	 */
+	public static class AppendResult {
+		public int firstNewZone;   // index of the first added zone (== old zone count, 536)
+		public int realZones;      // how many the user asked for
+		public int spareZones;     // padding to keep M a multiple of 4
+		public int newZoneCount;   // M = firstNewZone + realZones + spareZones
+	}
+
+	/**
+	 * Appends {@code newRealZones} new zones to the current ORAS workspace, plus
+	 * enough spare slots to raise the total to M = the next multiple of 4, so it
+	 * matches the {@link ctrmap.formats.codepatch.ZoneLimitPatch} code patch for
+	 * the same N. All new zones (real + spare) are cloned from {@code srcIndex};
+	 * the caller turns the real ones into their own maps afterwards. As with the
+	 * single-zone path, the GARC is NOT rewritten here - Pack Workspace must run
+	 * immediately after, and only one append is allowed per pack cycle.
+	 *
+	 * <p>Generate the paired code patch with
+	 * {@code ZoneLimitPatch.buildIPS(newRealZones)} and deploy the resulting
+	 * code.ips (Azahar: load/mods/&lt;titleid&gt;/exefs/; Luma: luma/titles/&lt;titleid&gt;/).
+	 */
+	public static AppendResult appendZones(int newRealZones, int srcIndex) throws IOException {
+		if (!Workspace.isOA()) {
+			throw new IOException("Adding new zones is ORAS-only in v1.");
+		}
+		if (newRealZones < 1) {
+			throw new IOException("Must add at least one zone.");
+		}
+		GARC garc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		if (garc == null) {
+			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
+		}
+		int oldCount = garc.length - 2;                       // current zone count (master's GARC index)
+		int m = ctrmap.formats.codepatch.ZoneLimitPatch.masterIndex(newRealZones);
+		int addCount = m - oldCount;
+		if (oldCount != ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES) {
+			throw new IOException("ZoneData already has " + oldCount + " zones; the code patch assumes a stock 536-zone base. Revert first.");
+		}
+		if (srcIndex < 0 || srcIndex >= oldCount) {
+			throw new IOException("Source zone " + srcIndex + " out of range (0.." + (oldCount - 1) + ").");
+		}
+		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA);
+		File enOut = new File(dir, String.valueOf(m + 1));    // the new EN slot
+		if (Workspace.persist_paths.contains(enOut.getAbsolutePath())) {
+			throw new IOException("An appended zone is already pending. Pack the workspace before adding more.");
+		}
+		File srcFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, srcIndex);
+		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, oldCount);
+		File enFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, oldCount + 1);
+		if (srcFile == null || masterFile == null || enFile == null) {
+			throw new IOException("Could not extract the required ZoneData files from the workspace.");
+		}
+		MultiAppendPayloads p = buildMultiAppendPayloads(readAll(srcFile), readAll(masterFile), readAll(enFile), srcIndex, oldCount, addCount);
+
+		if (pendingZoneDataOverrides == null) {
+			pendingZoneDataOverrides = new HashMap<>();
+		}
+		// new ZOs occupy entries oldCount..m-1 (decompressed on disk, LZ11 on pack)
+		for (int i = 0; i < addCount; i++) {
+			File f = new File(dir, String.valueOf(oldCount + i));
+			writeAll(f, p.newZos[i]);
+			Workspace.addPersist(f);
+			pendingZoneDataOverrides.put(oldCount + i, Boolean.TRUE);
+		}
+		// master table shifts to entry m, EN to entry m+1 (both uncompressed)
+		File masterOut = new File(dir, String.valueOf(m));
+		writeAll(masterOut, p.master);
+		writeAll(enOut, p.en);
+		Workspace.addPersist(masterOut);
+		Workspace.addPersist(enOut);
+		pendingZoneDataOverrides.put(m, Boolean.FALSE);
+		pendingZoneDataOverrides.put(m + 1, Boolean.FALSE);
+
+		AppendResult r = new AppendResult();
+		r.firstNewZone = oldCount;
+		r.realZones = newRealZones;
+		r.spareZones = addCount - newRealZones;
+		r.newZoneCount = m;
+		return r;
+	}
+
+	/**
 	 * Hands the compression overrides of a pending append to the pack flow
 	 * and clears them (they apply to exactly one packDirectory call).
 	 * Returns null when no append is pending - packDirectory accepts that.
