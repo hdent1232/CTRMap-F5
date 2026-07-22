@@ -145,12 +145,18 @@ public class GARC {
 				byte[] or = new byte[in.available()];
 				in.read(or);
 				in.close();
+				//an explicit override wins for ANY slot (a zone insert-shift needs to
+				//re-compress a slot whose original entry was uncompressed); otherwise
+				//existing slots keep their entry's flag and appended slots inherit the
+				//last original entry's flag
+				Boolean override = (compressionOverrides != null) ? compressionOverrides.get(changedIndices[i]) : null;
 				boolean compressed;
-				if (changedIndices[i] < originalEntryCount) {
+				if (override != null) {
+					compressed = override;
+				} else if (changedIndices[i] < originalEntryCount) {
 					compressed = entries.get(changedIndices[i]).compressed;
 				} else {
-					Boolean override = (compressionOverrides != null) ? compressionOverrides.get(changedIndices[i]) : null;
-					compressed = (override != null) ? override : entries.get(originalEntryCount - 1).compressed;
+					compressed = entries.get(originalEntryCount - 1).compressed;
 				}
 				if (compressed) {
 					compressedData[i] = LZ11.compress(or);
