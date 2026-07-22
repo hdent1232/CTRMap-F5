@@ -87,7 +87,7 @@ public class ZoneAppendTest {
 		File f536 = new File(packDir, "536");
 		File f537 = new File(packDir, "537");
 		File f538 = new File(packDir, "538");
-		writeAll(f536, p.compressedZo); //shifted slot was uncompressed -> stored verbatim, sniffed compressed on reopen
+		writeAll(f536, p.newZo); //DECOMPRESSED - stays editable; the override compresses it at pack time
 		writeAll(f537, p.master);
 		writeAll(f538, p.en);
 		String savedWsPath = Workspace.WORKSPACE_PATH;
@@ -97,7 +97,9 @@ public class ZoneAppendTest {
 		Workspace.persist_paths.add(f537.getAbsolutePath());
 		Workspace.persist_paths.add(f538.getAbsolutePath());
 		HashMap<Integer, Boolean> overrides = new HashMap<>();
-		overrides.put(538, Boolean.FALSE); //appended EN slot must stay uncompressed
+		overrides.put(536, Boolean.TRUE);  //new ZO must be LZ11 like every other zone
+		overrides.put(537, Boolean.FALSE); //master table uncompressed
+		overrides.put(538, Boolean.FALSE); //appended EN slot uncompressed
 		GARC work = new GARC(garcCopy);
 		work.packDirectory(packDir, overrides);
 		Workspace.WORKSPACE_PATH = savedWsPath;

@@ -459,12 +459,27 @@ public class Workspace {
 	}
 
 	public static void packWorkspace() {
+		packWorkspace(null);
+	}
+
+	/**
+	 * Packs the workspace back into the game archives on a background worker.
+	 * Because the pack is asynchronous (and only finishes reloading the GARCs -
+	 * updating their entry counts - when the worker completes), callers that
+	 * need the fresh archives (e.g. after a zone append changes the entry count)
+	 * MUST pass onDone rather than running follow-up work on the calling thread.
+	 * onDone runs on the EDT after packing and the GARC reloads are complete.
+	 */
+	public static void packWorkspace(final Runnable onDone) {
 		if (valid) {
 			LoadingDialog progress = LoadingDialog.makeDialog("Packing");
 			SwingWorker worker = new SwingWorker() {
 				@Override
 				protected void done() {
 					progress.close();
+					if (onDone != null) {
+						onDone.run();
+					}
 				}
 
 				@Override
