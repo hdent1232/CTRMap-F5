@@ -427,6 +427,57 @@ public class BchMapModel {
 	 * by construction (the sibling of BchTexturePack's deterministic rebuild).
 	 * Meshes whose position is not Float(3) are left untouched.
 	 */
+	/**
+	 * Reads a mesh's vertex positions as an array of {x,y,z}, or null if the mesh
+	 * has no decodable Float(3) position. This is the read side for in-app
+	 * reshaping (drag/sculpt vertices).
+	 */
+	public float[][] getVertexPositions(int meshIndex) {
+		List<MeshGeom> geom = geometry();
+		if (meshIndex < 0 || meshIndex >= geom.size()) {
+			return null;
+		}
+		MeshGeom g = geom.get(meshIndex);
+		if (!g.posOk) {
+			return null;
+		}
+		float[][] out = new float[g.vertexCount][3];
+		for (int v = 0; v < g.vertexCount; v++) {
+			int base = g.vtxAbs + v * g.stride + g.posOffset;
+			out[v][0] = Float.intBitsToFloat(le32(raw, base));
+			out[v][1] = Float.intBitsToFloat(le32(raw, base + 4));
+			out[v][2] = Float.intBitsToFloat(le32(raw, base + 8));
+		}
+		return out;
+	}
+
+	/**
+	 * Returns a copy of the model with one mesh's vertex positions replaced. This
+	 * is offset-PRESERVING (vertex count/format unchanged - only position bytes
+	 * change), so every offset, tree and relocation entry stays identical. Extra
+	 * positions beyond the mesh's vertex count are ignored; the mesh must have a
+	 * decodable Float(3) position.
+	 */
+	public byte[] setVertexPositions(int meshIndex, float[][] positions) {
+		List<MeshGeom> geom = geometry();
+		if (meshIndex < 0 || meshIndex >= geom.size()) {
+			return raw.clone();
+		}
+		MeshGeom g = geom.get(meshIndex);
+		byte[] out = raw.clone();
+		if (!g.posOk || positions == null) {
+			return out;
+		}
+		int n = Math.min(positions.length, g.vertexCount);
+		for (int v = 0; v < n; v++) {
+			int base = g.vtxAbs + v * g.stride + g.posOffset;
+			putFloat(out, base, positions[v][0]);
+			putFloat(out, base + 4, positions[v][1]);
+			putFloat(out, base + 8, positions[v][2]);
+		}
+		return out;
+	}
+
 	public byte[] translate(float dx, float dy, float dz) {
 		byte[] out = raw.clone();
 		for (MeshGeom g : geometry()) {
