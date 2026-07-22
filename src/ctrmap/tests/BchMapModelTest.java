@@ -96,6 +96,12 @@ public class BchMapModelTest {
 							fails++;
 							System.out.println("region " + idx + " resize: " + rProblem);
 						}
+						// --- per-vertex read then write-back is byte-identical ---
+						String vProblem = checkVertexReadWrite(mm, model);
+						if (vProblem != null) {
+							fails++;
+							System.out.println("region " + idx + " vertex r/w: " + vProblem);
+						}
 					}
 				}
 			} catch (Exception e) {
@@ -167,6 +173,22 @@ public class BchMapModelTest {
 		}
 		if (re.vtxBuffers.size() != mm.vtxBuffers.size() || re.idxBuffers.size() != mm.idxBuffers.size()) {
 			return "resize changed buffer counts";
+		}
+		return null;
+	}
+
+	/** Reading a mesh's vertex positions and writing the same values back must be
+	 *  byte-identical (offset-preserving) for every decodable mesh. */
+	private static String checkVertexReadWrite(BchMapModel mm, byte[] original) {
+		for (int mi = 0; mi < mm.meshCount; mi++) {
+			float[][] pos = mm.getVertexPositions(mi);
+			if (pos == null) {
+				continue; // undecodable mesh - skipped elsewhere
+			}
+			byte[] back = mm.setVertexPositions(mi, pos);
+			if (!java.util.Arrays.equals(back, original)) {
+				return "mesh " + mi + " read/write-back not byte-identical";
+			}
 		}
 		return null;
 	}
