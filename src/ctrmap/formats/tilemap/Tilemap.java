@@ -81,7 +81,15 @@ public class Tilemap {
 			}
 			dos.flush();
 			dos.close();
-			return baos.toByteArray();
+			byte[] out = baos.toByteArray();
+			//every retail tilemap carries a zero tail padding the subfile to 6528
+			//bytes (0x80 alignment); whether the game tolerates a truncated one is
+			//untested - preserve the original padded length
+			byte[] orig = mapFile.getFile(0);
+			if (orig != null && orig.length > out.length) {
+				out = java.util.Arrays.copyOf(out, orig.length);
+			}
+			return out;
 		} catch (IOException e) {
 			e.printStackTrace();
 			return null;

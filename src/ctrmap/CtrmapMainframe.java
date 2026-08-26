@@ -52,6 +52,7 @@ import ctrmap.humaninterface.TextEditor;
 import ctrmap.humaninterface.TileEditForm;
 import ctrmap.humaninterface.TilemapPanelInputManager;
 import ctrmap.humaninterface.TileMapPanel;
+import ctrmap.humaninterface.GeoEditForm;
 import ctrmap.humaninterface.TriggerEditForm;
 import ctrmap.humaninterface.WarpEditForm;
 import ctrmap.humaninterface.WorkspaceSettings;
@@ -119,6 +120,7 @@ public class CtrmapMainframe {
 	public static JRadioButton btnNPCTool;
 	public static JRadioButton btnWarpTool;
 	public static JRadioButton btnTriggerTool;
+	public static JRadioButton btnGeoTool;
 	public static JLabel currentTool;
 
 	public static JScrollPane mTilemapScrollPane;
@@ -130,6 +132,7 @@ public class CtrmapMainframe {
 	public static NPCEditForm mNPCEditForm;
 	public static WarpEditForm mWarpEditForm;
 	public static TriggerEditForm mTriggerEditForm;
+	public static GeoEditForm mGeoEditForm;
 
 	public static GLPanel mGLPanel;
 	public static H3DRenderingPanel m3DDebugPanel;
@@ -209,6 +212,8 @@ public class CtrmapMainframe {
 		btnNPCTool = Utils.createGraphicalButton("_tool_npc");
 		btnWarpTool = Utils.createGraphicalButton("_tool_warp");
 		btnTriggerTool = Utils.createGraphicalButton("_tool_trigger");
+		btnGeoTool = new JRadioButton("3D");
+		btnGeoTool.setToolTipText("Geometry tool - drag tiles, then move/duplicate/delete the 3D map geometry on them");
 		btnEditTool.setToolTipText("Edit tool - click a tile to load its settings");
 		btnSetTool.setToolTipText("Set tool - paint the panel's settings onto tiles");
 		btnFillTool.setToolTipText("Fill tool - drag a box to fill tiles with settings");
@@ -229,6 +234,7 @@ public class CtrmapMainframe {
 		toolBtnGroup.add(btnNPCTool);
 		toolBtnGroup.add(btnWarpTool);
 		toolBtnGroup.add(btnTriggerTool);
+		toolBtnGroup.add(btnGeoTool);
 		toolbar.add(btnEditTool);
 		toolbar.add(btnSetTool);
 		toolbar.add(btnFillTool);
@@ -237,6 +243,7 @@ public class CtrmapMainframe {
 		toolbar.add(btnNPCTool);
 		toolbar.add(btnWarpTool);
 		toolbar.add(btnTriggerTool);
+		toolbar.add(btnGeoTool);
 		toolbar.add(currentTool);
 
 		tileEditMasterPnl = new JPanel(new BorderLayout());
@@ -262,6 +269,7 @@ public class CtrmapMainframe {
 		mNPCEditForm = new NPCEditForm();
 		mWarpEditForm = new WarpEditForm();
 		mTriggerEditForm = new TriggerEditForm();
+		mGeoEditForm = new GeoEditForm();
 		mCollEditPanel = new CollEditPanel();
 		mGLPanel = new GLPanel(mCollEditPanel);
 		m3DDebugPanel = new H3DRenderingPanel(CM3DComponents);
@@ -321,6 +329,8 @@ public class CtrmapMainframe {
 		btnWarpTool.addActionListener(mTilemapInputManager);
 		btnTriggerTool.setActionCommand("trigger");
 		btnTriggerTool.addActionListener(mTilemapInputManager);
+		btnGeoTool.setActionCommand("geo");
+		btnGeoTool.addActionListener(mTilemapInputManager);
 
 		frame.getContentPane().add(tabs);
 
