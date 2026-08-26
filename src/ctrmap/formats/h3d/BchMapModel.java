@@ -574,7 +574,21 @@ public class BchMapModel {
 	 * counts, attribute config and index buffer) is the layer built on top.
 	 */
 	public byte[] rebuildRawData(Map<Integer, byte[]> replacements) {
-		// all raw-data buffers, in on-disk order
+		return rebuildRawData(replacements, null);
+	}
+
+	/**
+	 * Like {@link #rebuildRawData(Map)}, with optional OUTPUT-ORDER overrides:
+	 * {@code sortKeyOverride} maps a buffer's command-word location to a
+	 * synthetic sort key (default key = originalOffset*2), letting a buffer be
+	 * relocated - e.g. an index buffer upgraded u8-&gt;u16 moves to the end of
+	 * the u16 group (key = firstU8Offset*2-1) so GF's vtx&lt;idx16&lt;idx8
+	 * grouping convention survives. Spans/extents always come from the
+	 * ORIGINAL adjacency; with no overrides the output order (and a no-op
+	 * rebuild) is byte-identical as before.
+	 */
+	public byte[] rebuildRawData(Map<Integer, byte[]> replacements, Map<Integer, Long> sortKeyOverride) {
+		// all raw-data buffers, in on-disk order (for span/extent derivation)
 		List<int[]> bufs = new ArrayList<>(); // {absOffset, cmdWordLoc}
 		for (int[] vb : vtxBuffers) {
 			bufs.add(new int[]{vb[0], vb[1]});
@@ -585,16 +599,25 @@ public class BchMapModel {
 		bufs.sort((a, b) -> Integer.compare(a[0], b[0]));
 		int rawEnd = rawDataAddr + rawDataLen;
 
+		// extents from ORIGINAL adjacency, then emit in (possibly overridden) order
+		List<long[]> emit = new ArrayList<>(); // {sortKey, absOffset, spanEnd, cmdLoc}
+		for (int bi = 0; bi < bufs.size(); bi++) {
+			int absOff = bufs.get(bi)[0];
+			int cmdLoc = bufs.get(bi)[1];
+			int spanEnd = (bi + 1 < bufs.size()) ? bufs.get(bi + 1)[0] : rawEnd;
+			Long key = sortKeyOverride == null ? null : sortKeyOverride.get(cmdLoc);
+			emit.add(new long[]{key != null ? key : absOff * 2L, absOff, spanEnd, cmdLoc});
+		}
+		emit.sort((a, b) -> Long.compare(a[0], b[0]));
+
 		java.io.ByteArrayOutputStream newRaw = new java.io.ByteArrayOutputStream();
 		Map<Integer, Integer> newRelByCmd = new HashMap<>();
 		// preserve any bytes before the first buffer (data not referenced by a
 		// vertex/index relocation - kept verbatim so the layout stays exact)
 		int firstBufAbs = bufs.isEmpty() ? rawEnd : bufs.get(0)[0];
 		newRaw.write(raw, rawDataAddr, firstBufAbs - rawDataAddr);
-		for (int bi = 0; bi < bufs.size(); bi++) {
-			int absOff = bufs.get(bi)[0];
-			int cmdLoc = bufs.get(bi)[1];
-			int spanEnd = (bi + 1 < bufs.size()) ? bufs.get(bi + 1)[0] : rawEnd;
+		for (long[] e : emit) {
+			int absOff = (int) e[1], spanEnd = (int) e[2], cmdLoc = (int) e[3];
 			byte[] data;
 			byte[] repl = replacements == null ? null : replacements.get(cmdLoc);
 			if (repl != null) {
@@ -727,7 +750,7 @@ public class BchMapModel {
 		Map<Integer, byte[]> repl = new HashMap<>();
 		repl.put(vtxCmdLoc, newVtx);
 		repl.put(idxCmdLoc, newIdx);
-		byte[] out = rebuildRawData(repl);
+		byte[] out = rebuildRawData(repl, newElemSize != elemSize ? upgradeOrderFix(idxCmdLoc) : null);
 		pokeInt(out, numVerticesLoc, newIndices.length); // NUMVERTICES = new draw count
 
 		// if the index width was upgraded u8 -> u16, flip its relocation flag
@@ -818,7 +841,7 @@ public class BchMapModel {
 		Map<Integer, byte[]> repl = new HashMap<>();
 		repl.put(vtxCmdLoc, vertexBytes.clone());
 		repl.put(idxCmdLoc, newIdx);
-		byte[] out = rebuildRawData(repl);
+		byte[] out = rebuildRawData(repl, newElemSize != elemSize ? upgradeOrderFix(idxCmdLoc) : null);
 		pokeInt(out, numVerticesLoc, indices.length);
 		if (newElemSize != elemSize) {
 			int ei = relocEntryIndexFor(idxCmdLoc, 0x28);
@@ -829,6 +852,27 @@ public class BchMapModel {
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * Sort-key override that moves an upgraded (u8-&gt;u16) index buffer to the
+	 * end of the u16 group - just before the first OTHER u8 buffer - so GF's
+	 * vtx&lt;idx16&lt;idx8 raw-data grouping convention survives the upgrade.
+	 * Null when no other u8 buffer exists (position already conforms).
+	 */
+	private Map<Integer, Long> upgradeOrderFix(int idxCmdLoc) {
+		int minOtherU8 = Integer.MAX_VALUE;
+		for (int[] ib : idxBuffers) {
+			if (ib[2] == 1 && ib[1] != idxCmdLoc) {
+				minOtherU8 = Math.min(minOtherU8, ib[0]);
+			}
+		}
+		if (minOtherU8 == Integer.MAX_VALUE) {
+			return null;
+		}
+		Map<Integer, Long> m = new HashMap<>();
+		m.put(idxCmdLoc, minOtherU8 * 2L - 1);
+		return m;
 	}
 
 	/** Index of the relocation entry for a given command-word location + flag, or -1. */
