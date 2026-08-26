@@ -172,6 +172,9 @@ public class GeoEditForm extends JPanel {
 				return;
 			}
 			p.sourceRegion = regionId;
+			if (mZonePnl != null && mZonePnl.zone != null) {
+				p.donorArea = mZonePnl.zone.header.areadataID; //for cross-area texture carry
+			}
 			clipboard = p;
 			StringBuilder mats = new StringBuilder();
 			for (ctrmap.formats.h3d.MapPrefab.Piece piece : p.pieces) {
@@ -266,13 +269,28 @@ public class GeoEditForm extends JPanel {
 					tileNote = " +" + nTiles + " tiles";
 				}
 			}
+			//cross-area texture carry: injected materials reference the DONOR area's
+			//textures - import any the target area's packs lack, or the game hardlocks
+			String texNote = "";
+			if (!r.texturesNeeded.isEmpty() && p.donorArea >= 0
+					&& mZonePnl != null && mZonePnl.zone != null
+					&& mZonePnl.zone.header.areadataID != p.donorArea) {
+				try {
+					texNote = carryTextures(p.donorArea, mZonePnl.zone.header.areadataID, r.texturesNeeded);
+				} catch (Exception ex) {
+					texNote = "  TEXTURE CARRY FAILED (" + ex.getMessage() + ") - the stamped pieces may hardlock; undo if unsure!";
+				}
+			}
 			undo.push(snap);
 			currentModel = r.newModel;
 			unsaved = true;
 			mTileMapPanel.reloadRegionModel(cellX, cellY, currentModel);
-			status.setText("Stamped " + r.stamped.size() + "/" + p.pieces.size() + " pieces" + tileNote
-					+ (r.missingMaterials.isEmpty() ? "" : "  (missing materials: " + r.missingMaterials + ")")
+			status.setText("Stamped " + r.stamped.size() + "/" + p.pieces.size() + " pieces" + tileNote + texNote
+					+ (r.missingMaterials.isEmpty() ? "" : "  (skipped: " + r.missingMaterials.size() + " piece(s), see log)")
 					+ "  (unsaved)");
+			if (!r.missingMaterials.isEmpty()) {
+				System.out.println("Prefab stamp skipped pieces: " + r.missingMaterials);
+			}
 		} catch (RuntimeException ex) {
 			status.setText("Stamp failed: " + ex.getMessage());
 		} finally {
@@ -506,6 +524,49 @@ public class GeoEditForm extends JPanel {
 	private void refreshTiles(Tilemap tm) {
 		tm.updateImage();
 		mTileMapPanel.perfScale(mTileMapPanel.tilemapScale, cellX, cellY);
+	}
+
+	/**
+	 * Imports textures the stamped materials need from the donor area's packs
+	 * into the target area's (AreaData file 11, the world pack). Returns a
+	 * status fragment.
+	 */
+	private String carryTextures(int donorArea, int targetArea, List<String> needed) throws Exception {
+		java.io.File tgtFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, targetArea);
+		java.io.File donFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, donorArea);
+		if (tgtFile == null || donFile == null) {
+			throw new IllegalStateException("area files unavailable");
+		}
+		ctrmap.formats.containers.AD tgt = new ctrmap.formats.containers.AD(tgtFile);
+		ctrmap.formats.containers.AD don = new ctrmap.formats.containers.AD(donFile);
+		//names already present in the target area (file 11 world pack + file 1 prop pack)
+		java.util.Set<String> have = new java.util.HashSet<>();
+		byte[] tgt11 = tgt.getFile(11), tgt1 = tgt.getFile(1);
+		for (byte[] pk : new byte[][]{tgt11, tgt1}) {
+			if (pk != null && ctrmap.formats.h3d.BchTexturePack.isTexturePack(pk)) {
+				for (ctrmap.formats.h3d.BchTexturePack.Texture t : ctrmap.formats.h3d.BchTexturePack.parse(pk)) {
+					have.add(t.name);
+				}
+			}
+		}
+		java.util.List<String> missing = new java.util.ArrayList<>();
+		for (String n : needed) {
+			if (!have.contains(n)) {
+				missing.add(n);
+			}
+		}
+		if (missing.isEmpty()) {
+			return "  (textures already present)";
+		}
+		byte[] don11 = don.getFile(11);
+		if (don11 == null || !ctrmap.formats.h3d.BchTexturePack.isTexturePack(don11)) {
+			don11 = don.getFile(1);
+		}
+		byte[] newPack = ctrmap.formats.h3d.BchTexturePack.importTextures(
+				ctrmap.formats.h3d.BchTexturePack.isTexturePack(tgt11) ? tgt11 : tgt1, don11, missing);
+		tgt.storeFile(ctrmap.formats.h3d.BchTexturePack.isTexturePack(tgt11) ? 11 : 1, newPack);
+		Workspace.addPersist(tgtFile);
+		return "  +" + missing.size() + " textures carried to this area";
 	}
 
 	private void undo() {

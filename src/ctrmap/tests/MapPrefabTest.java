@@ -58,8 +58,8 @@ public class MapPrefabTest {
 
 				// SELF-stamp at tile (2,2): all materials must match; verify positions
 				verifyStamp(p, grA.getFile(1), 2, 2, 50f, true, "self");
-				byte[] collA = grA.getFile(2);
-				if (GfColl.isColl(collA) && !p.collTris.isEmpty()) {
+				byte[] collA = grA.len > 2 ? grA.getFile(2) : null;
+				if (collA != null && GfColl.isColl(collA) && !p.collTris.isEmpty()) {
 					GfColl before = new GfColl(collA);
 					GfColl after = new GfColl(p.stampCollision(collA, 2, 2, 50f));
 					if (after.uniqueTris.size() != before.uniqueTris.size() + p.collTris.size()) {
@@ -79,15 +79,29 @@ public class MapPrefabTest {
 				}
 				if (grB != null) {
 					MapPrefab.StampResult r = verifyStamp(p, grB.getFile(1), 4, 4, 0f, false, "cross");
-					if (r.stamped.isEmpty()) {
-						crossSkipped++; //no shared materials - fine, the full-append path covers this later
-					} else {
+					//v2: the full path injects missing materials - EVERY piece must land
+					//unless injection legitimately refused (e.g. skinned donor)
+					if (r.stamped.size() == p.pieces.size()) {
 						crossOk++;
+						if (!r.newMaterials.isEmpty()) {
+							//injected materials: re-verify the model against the strict oracle
+							java.util.List<String> v = ctrmap.formats.h3d.BchModelVerifier.verify(r.newModel);
+							BchMapModel rm = new BchMapModel(r.newModel);
+							if (!v.isEmpty() && rm.auxDicts.isEmpty()) {
+								throw new IllegalStateException("cross inject: verifier " + v);
+							}
+						}
+					} else {
+						crossSkipped++;
+						System.out.println("  note region " + i + " cross: " + r.missingMaterials);
 					}
 				}
 			} catch (RuntimeException ex) {
 				failures++;
 				System.out.println("FAIL region " + i + ": " + ex.getMessage());
+				if (ex instanceof IndexOutOfBoundsException) {
+					ex.printStackTrace();
+				}
 				if (failures > 8) {
 					break;
 				}
@@ -121,33 +135,37 @@ public class MapPrefabTest {
 		if (render.errorlevel != 0 || render.models.isEmpty()) {
 			throw new IllegalStateException(label + ": render parser rejected the stamped model");
 		}
-		//geometry landing check: replay the stamp's mesh-selection order, tracking
-		//each target mesh's cumulative append base (several pieces can share a mesh)
-		BchMapModel before = new BchMapModel(targetModel);
-		java.util.Map<Integer, Integer> base = new java.util.HashMap<>();
+		//geometry landing check: the stamper RECORDS where each piece landed
+		//(final material name + vertex base) - verify against those records
 		float ax = tileX * 18f - 360f, az = tileY * 18f - 360f;
-		for (MapPrefab.Piece piece : p.pieces) {
-			int mesh = MapPrefab.findTargetMesh(before, piece);
+		for (int pi = 0; pi < p.pieces.size(); pi++) {
+			MapPrefab.Piece piece = p.pieces.get(pi);
+			MapPrefab.Landing l = pi < r.landings.size() ? r.landings.get(pi) : null;
+			if (l == null) {
+				continue; //missing-material/inject-refused skip
+			}
+			MapPrefab.Piece probe = new MapPrefab.Piece();
+			probe.material = l.material;
+			probe.stride = piece.stride;
+			probe.posOffset = piece.posOffset;
+			int mesh = MapPrefab.findTargetMesh(re, probe);
 			if (mesh < 0) {
-				continue; //was a missing-material/layout skip
+				throw new IllegalStateException(label + ": landed mesh for '" + l.material + "' not found");
 			}
-			int nOld = base.computeIfAbsent(mesh, m -> before.geometry().get(m).vertexCount);
 			float[][] pos = re.getVertexPositions(mesh);
-			int n = piece.vertexBytes.length / piece.stride;
-			if (pos.length < nOld + n) {
-				throw new IllegalStateException(label + ": mesh " + mesh + " did not grow by piece size");
+			if (pos.length < l.base + l.count) {
+				throw new IllegalStateException(label + ": mesh for '" + l.material + "' smaller than landing");
 			}
-			for (int v = 0; v < n; v++) {
+			for (int v = 0; v < l.count; v++) {
 				float relX = getF(piece.vertexBytes, v * piece.stride + piece.posOffset);
 				float relY = getF(piece.vertexBytes, v * piece.stride + piece.posOffset + 4);
 				float relZ = getF(piece.vertexBytes, v * piece.stride + piece.posOffset + 8);
-				float[] got = pos[nOld + v];
+				float[] got = pos[l.base + v];
 				if (Math.abs(got[0] - (relX + ax)) > 1e-3f || Math.abs(got[1] - (relY + dy)) > 1e-3f
 						|| Math.abs(got[2] - (relZ + az)) > 1e-3f) {
-					throw new IllegalStateException(label + ": piece landed at wrong position (v" + v + ")");
+					throw new IllegalStateException(label + ": piece " + pi + " landed at wrong position (v" + v + ")");
 				}
 			}
-			base.put(mesh, nOld + n);
 		}
 		return r;
 	}

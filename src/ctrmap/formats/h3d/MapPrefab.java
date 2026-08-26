@@ -39,7 +39,7 @@ import java.util.Map;
 public class MapPrefab {
 
 	public static final int MAGIC = 0x434D5046; // CMPF
-	public static final int VERSION = 1;
+	public static final int VERSION = 2;
 
 	public static class Piece {
 
@@ -48,10 +48,14 @@ public class MapPrefab {
 		public int posOffset;
 		public byte[] vertexBytes;   // n * stride, positions RELATIVE to the prefab anchor
 		public int[] triangles;      // local indices, 3 per face
+		public int donorMeshIndex = -1;            // mesh in the embedded donor model (v2)
+		public final List<String> textures = new ArrayList<>();  // texture names the material references (v2)
 	}
 
 	public String name = "prefab";
 	public int sourceRegion = -1;
+	public int donorArea = -1;            // the source region's AreaData id (v2, for texture carry)
+	public byte[] donorModel;             // the source region's full model (v2, enables new-material stamping)
 	public int tilesW, tilesH;            // footprint in tiles
 	public final List<Piece> pieces = new ArrayList<>();
 	public final List<float[]> collTris = new ArrayList<>();   // float[9], anchor-relative
@@ -103,6 +107,22 @@ public class MapPrefab {
 			piece.material = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
 			piece.stride = g.stride;
 			piece.posOffset = g.posOffset;
+			piece.donorMeshIndex = g.meshIndex;
+			//texture names from the material header slots (+0x1C/+0x20/+0x24) - what
+			//must exist in the target AREA's texture packs for the piece to render
+			int matHdr = model.matValuesPtr + model.getMeshMaterialIndex(g.meshIndex) * 0x2C;
+			for (int slot : new int[]{0x1C, 0x20, 0x24}) {
+				int sp = model.ptr(matHdr + slot);
+				if (sp > 0) {
+					StringBuilder sb = new StringBuilder();
+					for (int q = sp; q < model.raw.length && model.raw[q] != 0; q++) {
+						sb.append((char) (model.raw[q] & 0xFF));
+					}
+					if (sb.length() > 0 && !piece.textures.contains(sb.toString())) {
+						piece.textures.add(sb.toString());
+					}
+				}
+			}
 			piece.vertexBytes = new byte[remap.size() * g.stride];
 			for (Map.Entry<Integer, Integer> e : remap.entrySet()) {
 				int src = e.getKey(), dst = e.getValue();
@@ -120,9 +140,15 @@ public class MapPrefab {
 		if (p.pieces.isEmpty()) {
 			return null;
 		}
+		//embed the donor model so pieces with materials the target lacks can be
+		//stamped as brand-new material+mesh via BchModelAppender (v2 full path)
+		p.donorModel = modelBytes;
 
 		//collision (layer 0; multi-layer regions contribute their extra layers too)
 		for (int cs : collSubfiles(gr)) {
+			if (cs >= gr.len) {
+				continue;
+			}
 			byte[] cb = gr.getFile(cs);
 			if (!GfColl.isColl(cb)) {
 				continue;
@@ -173,11 +199,25 @@ public class MapPrefab {
 
 	// ---- stamping ---------------------------------------------------------
 
+	/** Where one piece's geometry landed in the final model (for verification). */
+	public static class Landing {
+
+		public String material;   // the FINAL material name (unique name if injected)
+		public int base;          // first vertex index of the piece within that mesh
+		public int count;         // piece vertex count
+	}
+
 	/** Per-piece stamp outcome for user-facing reporting. */
 	public static class StampResult {
 
 		public final List<String> stamped = new ArrayList<>();
 		public final List<String> missingMaterials = new ArrayList<>();
+		/** Materials INJECTED into the target model (donor mesh+material append). */
+		public final List<String> newMaterials = new ArrayList<>();
+		/** Texture names the injected materials need in the target AREA's packs. */
+		public final List<String> texturesNeeded = new ArrayList<>();
+		/** Per-piece landing (parallel to the prefab's pieces; null = not stamped). */
+		public final List<Landing> landings = new ArrayList<>();
 		public byte[] newModel;
 		public byte[] newColl;          // layer-0 collision
 		public int collTrisAdded;
@@ -200,30 +240,92 @@ public class MapPrefab {
 		for (Piece piece : pieces) {
 			BchMapModel model = new BchMapModel(current);
 			int target = findTargetMesh(model, piece);
-			if (target < 0) {
-				r.missingMaterials.add(piece.material);
-				continue;
-			}
-			BchMapModel.MeshGeom g = model.geometry().get(target);
 			int n = piece.vertexBytes.length / piece.stride;
-			byte[] vtx = new byte[n * g.stride];
-			System.arraycopy(piece.vertexBytes, 0, vtx, 0, vtx.length);
+			//rebased vertex bytes (anchor + height applied to every position)
+			byte[] vtx = piece.vertexBytes.clone();
 			for (int v = 0; v < n; v++) {
-				int o = v * g.stride + g.posOffset;
+				int o = v * piece.stride + piece.posOffset;
 				putF(vtx, o, getF(vtx, o) + ax);
 				putF(vtx, o + 4, getF(vtx, o + 4) + dy);
 				putF(vtx, o + 8, getF(vtx, o + 8) + az);
 			}
-			int base = g.vertexCount;
-			int[] tris = new int[piece.triangles.length];
-			for (int i = 0; i < tris.length; i++) {
-				tris[i] = base + piece.triangles[i];
+			if (target >= 0) {
+				//FAST PATH: grow the existing mesh with the same material+layout
+				BchMapModel.MeshGeom g = model.geometry().get(target);
+				int base = g.vertexCount;
+				int[] tris = new int[piece.triangles.length];
+				for (int i = 0; i < tris.length; i++) {
+					tris[i] = base + piece.triangles[i];
+				}
+				current = model.appendGeometry(target, vtx, tris);
+				r.stamped.add(piece.material + " (" + n + " verts)");
+				Landing l = new Landing();
+				l.material = model.getMaterialName(model.getMeshMaterialIndex(target));
+				l.base = base;
+				l.count = n;
+				r.landings.add(l);
+			} else if (donorModel != null && piece.donorMeshIndex >= 0) {
+				//FULL PATH: inject the donor's material+mesh (command config, params,
+				//texture refs ride along), then swap its buffers for just the piece
+				try {
+					String matName = uniqueMaterialName(model, piece.material);
+					byte[] injected = BchModelAppender.append(current, donorModel, piece.donorMeshIndex, matName);
+					BchMapModel im = new BchMapModel(injected);
+					int newMesh = findMeshByMaterialName(im, matName);
+					if (newMesh < 0) {
+						throw new IllegalStateException("appended mesh not found");
+					}
+					current = im.setMeshGeometry(newMesh, vtx, piece.triangles.clone());
+					r.newMaterials.add(matName);
+					for (String tex : piece.textures) {
+						if (!r.texturesNeeded.contains(tex)) {
+							r.texturesNeeded.add(tex);
+						}
+					}
+					r.stamped.add(piece.material + " (" + n + " verts, new material " + matName + ")");
+					Landing l = new Landing();
+					l.material = matName;
+					l.base = 0;
+					l.count = n;
+					r.landings.add(l);
+				} catch (RuntimeException ex) {
+					r.missingMaterials.add(piece.material + " (inject failed: " + ex.getMessage() + ")");
+					r.landings.add(null);
+				}
+			} else {
+				r.missingMaterials.add(piece.material);
+				r.landings.add(null);
 			}
-			current = model.appendGeometry(target, vtx, tris);
-			r.stamped.add(piece.material + " (" + n + " verts)");
 		}
 		r.newModel = current;
 		return r;
+	}
+
+	private String uniqueMaterialName(BchMapModel model, String base) {
+		String name = base;
+		int k = 2;
+		while (findMeshByMaterialName(model, name) >= 0 || materialNameExists(model, name)) {
+			name = base + "_p" + (k++);
+		}
+		return name;
+	}
+
+	private static boolean materialNameExists(BchMapModel model, String name) {
+		for (int i = 0; i < model.matCount; i++) {
+			if (name.equals(model.getMaterialName(i))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static int findMeshByMaterialName(BchMapModel model, String material) {
+		for (int m = 0; m < model.meshes.size(); m++) {
+			if (material.equals(model.getMaterialName(model.getMeshMaterialIndex(m)))) {
+				return m;
+			}
+		}
+		return -1;
 	}
 
 	/** Adds the prefab's collision at the anchor; returns the new layer-0 coll subfile. */
@@ -309,6 +411,21 @@ public class MapPrefab {
 			for (int t : p.triangles) {
 				o.writeInt(t);
 			}
+			//v2 per-piece
+			o.writeInt(p.donorMeshIndex);
+			o.writeInt(p.textures.size());
+			for (String t : p.textures) {
+				o.writeUTF(t);
+			}
+		}
+		//v2 donor payload (LZ11-compressed model, enables new-material stamping)
+		o.writeInt(donorArea);
+		if (donorModel != null) {
+			byte[] packed = ctrmap.formats.garc.LZ11.compress(donorModel);
+			o.writeInt(packed.length);
+			o.write(packed);
+		} else {
+			o.writeInt(0);
 		}
 		o.writeInt(collTris.size());
 		for (float[] t : collTris) {
@@ -356,7 +473,24 @@ public class MapPrefab {
 				for (int t = 0; t < piece.triangles.length; t++) {
 					piece.triangles[t] = in.readInt();
 				}
+				if (ver >= 2) {
+					piece.donorMeshIndex = in.readInt();
+					int nt = in.readInt();
+					for (int t = 0; t < nt; t++) {
+						piece.textures.add(in.readUTF());
+					}
+				}
 				p.pieces.add(piece);
+			}
+			if (ver >= 2) {
+				//v2 donor payload sits between the pieces block and the collision block
+				p.donorArea = in.readInt();
+				int dl = in.readInt();
+				if (dl > 0) {
+					byte[] packed = new byte[dl];
+					in.readFully(packed);
+					p.donorModel = ctrmap.formats.garc.LZ11.decompress(packed);
+				}
 			}
 			int nc = in.readInt();
 			for (int i = 0; i < nc; i++) {
