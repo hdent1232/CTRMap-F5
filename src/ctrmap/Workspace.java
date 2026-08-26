@@ -524,7 +524,8 @@ public class Workspace {
 				@Override
 				protected Object doInBackground() {
 					progress.setDescription("Packing - fielddata");
-					gr.packDirectory(getExtractionDirectory(ArchiveType.FIELD_DATA));
+					//a pending geometry fork appends private region copies (see GeometryForker)
+					gr.packDirectory(getExtractionDirectory(ArchiveType.FIELD_DATA), GeometryForker.consumePendingFieldOverrides());
 					progress.setBarPercent(30);
 					progress.setDescription("Packing - areadata");
 					ad.packDirectory(getExtractionDirectory(ArchiveType.AREA_DATA));
@@ -534,7 +535,8 @@ public class Workspace {
 					zo.packDirectory(getExtractionDirectory(ArchiveType.ZONE_DATA), ZoneAppender.consumePendingZoneDataOverrides());
 					progress.setBarPercent(65);
 					progress.setDescription("Packing - mapmatrix");
-					mm.packDirectory(getExtractionDirectory(ArchiveType.MAP_MATRIX));
+					//a pending geometry fork appends a rewired matrix (see GeometryForker)
+					mm.packDirectory(getExtractionDirectory(ArchiveType.MAP_MATRIX), GeometryForker.consumePendingMatrixOverrides());
 					progress.setBarPercent(70);
 					progress.setDescription("Packing - buildingmodels");
 					bm.packDirectory(getExtractionDirectory(ArchiveType.BUILDING_MODELS));
