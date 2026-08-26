@@ -193,6 +193,14 @@ public class ZoneAppender {
 		byte[] enBytes = garc.getDecompressedEntry(oldCount + 1);
 		MultiAppendPayloads p = buildMultiAppendPayloads(readAll(srcFile), masterBytes, enBytes, srcIndex, oldCount, addCount);
 
+		// Auto-fork geometry: give each REAL new zone its OWN private map so editing
+		// it does not change the zone it was cloned from (what users expect - a new
+		// zone is independent by default). Mutates p.newZos[i] (repointed header) and
+		// p.master (repointed row) in place and adds the region/matrix copies to the
+		// workspace. Spare zones (padding to a multiple of 4) keep sharing the source
+		// map until the user explicitly forks or edits them.
+		GeometryForker.forkAppendedZones(p.newZos, p.master, oldCount, newRealZones);
+
 		if (pendingZoneDataOverrides == null) {
 			pendingZoneDataOverrides = new HashMap<>();
 		}
