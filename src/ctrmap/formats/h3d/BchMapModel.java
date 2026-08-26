@@ -478,6 +478,64 @@ public class BchMapModel {
 		return out;
 	}
 
+	/**
+	 * Reads a mesh's triangle list as vertex indices (3 per face, in draw
+	 * order), or null if the mesh's index buffer cannot be located. This is the
+	 * face data for OBJ export and for in-app mesh picking.
+	 */
+	public int[] getTriangles(int meshIndex) {
+		if (meshIndex < 0 || meshIndex >= meshes.size()) {
+			return null;
+		}
+		int subPtr = meshes.get(meshIndex)[3];
+		int subCmdPtr = ptr(subPtr + 0x2C);
+		int idxCmdLoc = subCmdPtr + 0x10;
+		int elemSize = -1;
+		for (int[] ib : idxBuffers) {
+			if (ib[1] == idxCmdLoc) {
+				elemSize = ib[2];
+				break;
+			}
+		}
+		if (elemSize < 0) {
+			return null;
+		}
+		int numIdx = i32(subCmdPtr + 0x18);
+		int idxAbs = rawDataAddr + (i32(idxCmdLoc) & 0x7FFFFFFF);
+		if (numIdx < 0 || idxAbs + numIdx * elemSize > raw.length) {
+			return null;
+		}
+		int[] out = new int[numIdx];
+		for (int k = 0; k < numIdx; k++) {
+			out[k] = elemSize == 1 ? (raw[idxAbs + k] & 0xFF) : u16(idxAbs + k * 2);
+		}
+		return out;
+	}
+
+	/** The material index a mesh draws with. */
+	public int getMeshMaterialIndex(int meshIndex) {
+		return meshes.get(meshIndex)[5];
+	}
+
+	/**
+	 * Reads a material's name from the strings section (the texture/material
+	 * identifier, e.g. "lawn01" - human-meaningful labels for the editor UI).
+	 */
+	public String getMaterialName(int matIndex) {
+		if (matIndex < 0 || matIndex >= materialHeaderOffsets.size()) {
+			return null;
+		}
+		int namePtr = ptr(materialHeaderOffsets.get(matIndex) + 0x28);
+		if (namePtr <= 0) {
+			return null;
+		}
+		StringBuilder sb = new StringBuilder();
+		for (int p = namePtr; p < raw.length && raw[p] != 0; p++) {
+			sb.append((char) (raw[p] & 0xFF));
+		}
+		return sb.toString();
+	}
+
 	public byte[] translate(float dx, float dy, float dz) {
 		byte[] out = raw.clone();
 		for (MeshGeom g : geometry()) {
@@ -676,6 +734,92 @@ public class BchMapModel {
 		// (0x28 RawDataIndex8 -> 0x27 RawDataIndex16) so the loader reads 2-byte
 		// indices; the on-disk offset word stays plain (the high bit is injected
 		// at load by the relocator per the flag)
+		if (newElemSize != elemSize) {
+			int ei = relocEntryIndexFor(idxCmdLoc, 0x28);
+			if (ei >= 0) {
+				int outRelocAddr = le32(out, 28);
+				int off = outRelocAddr + ei * 4;
+				pokeInt(out, off, (le32(out, off) & 0x1FFFFFF) | (0x27 << 25));
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Replaces a mesh's ENTIRE geometry - vertex buffer and index buffer - the
+	 * re-topology primitive (an imported/Blender-edited mesh need not preserve
+	 * the original vertex or face structure). Reuses the mesh's material and
+	 * vertex format; {@code vertexBytes} must be whole strides in the mesh's
+	 * exact attribute layout. The index width adapts automatically (u8 buffers
+	 * upgrade to u16 when the new vertex count needs it, including the reloc
+	 * flag flip - same mechanics as {@link #appendGeometry}).
+	 *
+	 * @param meshIndex   the mesh to replace
+	 * @param vertexBytes the new vertex data (n * stride bytes)
+	 * @param indices     the new triangle list into those vertices (3 per face)
+	 * @return a new BCH with the replaced mesh
+	 */
+	public byte[] setMeshGeometry(int meshIndex, byte[] vertexBytes, int[] indices) {
+		List<MeshGeom> geom = geometry();
+		if (meshIndex < 0 || meshIndex >= geom.size()) {
+			throw new IllegalArgumentException("mesh index out of range");
+		}
+		MeshGeom g = geom.get(meshIndex);
+		if (!g.posOk || g.stride <= 0) {
+			throw new IllegalStateException("mesh " + meshIndex + " has no decodable geometry");
+		}
+		if (vertexBytes.length % g.stride != 0) {
+			throw new IllegalArgumentException("vertex bytes (" + vertexBytes.length
+					+ ") must be a multiple of the mesh stride (" + g.stride + ")");
+		}
+		int newVertexCount = vertexBytes.length / g.stride;
+		if (newVertexCount < 1 || indices.length < 3) {
+			throw new IllegalArgumentException("a mesh needs at least one vertex and one face");
+		}
+		int vtxCmdLoc = meshes.get(meshIndex)[1] + 0x30;
+		int subCmdPtr = ptr(meshes.get(meshIndex)[3] + 0x2C);
+		int idxCmdLoc = subCmdPtr + 0x10;
+		int numVerticesLoc = idxCmdLoc + 8;
+		int elemSize = -1;
+		for (int[] ib : idxBuffers) {
+			if (ib[1] == idxCmdLoc) {
+				elemSize = ib[2];
+				break;
+			}
+		}
+		if (elemSize < 0) {
+			throw new IllegalStateException("mesh " + meshIndex + " index buffer not located");
+		}
+		int maxIdx = 0;
+		for (int v : indices) {
+			if (v < 0) {
+				throw new IllegalArgumentException("negative vertex index");
+			}
+			maxIdx = Math.max(maxIdx, v);
+		}
+		if (maxIdx >= newVertexCount) {
+			throw new IllegalArgumentException("an index references a vertex that does not exist (max index "
+					+ maxIdx + " >= vertex count " + newVertexCount + ")");
+		}
+		if (maxIdx > 0xFFFF) {
+			throw new IllegalStateException("mesh " + meshIndex + " would exceed 16-bit indices (max index " + maxIdx + ")");
+		}
+		int newElemSize = (elemSize == 1 && maxIdx > 0xFF) ? 2 : elemSize;
+
+		byte[] newIdx = new byte[indices.length * newElemSize];
+		for (int i = 0; i < indices.length; i++) {
+			if (newElemSize == 1) {
+				newIdx[i] = (byte) indices[i];
+			} else {
+				newIdx[i * 2] = (byte) indices[i];
+				newIdx[i * 2 + 1] = (byte) (indices[i] >> 8);
+			}
+		}
+		Map<Integer, byte[]> repl = new HashMap<>();
+		repl.put(vtxCmdLoc, vertexBytes.clone());
+		repl.put(idxCmdLoc, newIdx);
+		byte[] out = rebuildRawData(repl);
+		pokeInt(out, numVerticesLoc, indices.length);
 		if (newElemSize != elemSize) {
 			int ei = relocEntryIndexFor(idxCmdLoc, 0x28);
 			if (ei >= 0) {
