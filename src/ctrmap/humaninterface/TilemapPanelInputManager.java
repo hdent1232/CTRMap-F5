@@ -14,6 +14,7 @@ import static ctrmap.CtrmapMainframe.*;
 import ctrmap.humaninterface.tools.CameraTool;
 import ctrmap.humaninterface.tools.EditTool;
 import ctrmap.humaninterface.tools.FillTool;
+import ctrmap.humaninterface.tools.GeoTool;
 import ctrmap.humaninterface.tools.NPCTool;
 import ctrmap.humaninterface.tools.PropTool;
 import ctrmap.humaninterface.tools.SetTool;
@@ -125,6 +126,10 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 			case ("trigger"):
 				CtrmapMainframe.tool = new TriggerTool();
 				currentTool.setText("Current tool: Trigger");
+				break;
+			case ("geo"):
+				CtrmapMainframe.tool = new GeoTool();
+				currentTool.setText("Current tool: Geometry");
 				break;
 		}
 	}
