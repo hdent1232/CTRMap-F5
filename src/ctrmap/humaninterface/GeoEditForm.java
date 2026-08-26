@@ -74,9 +74,14 @@ public class GeoEditForm extends JPanel {
 	private final JButton btnMove = new JButton("Move by offset");
 	private final JButton btnDup = new JButton("Duplicate at offset");
 	private final JButton btnDel = new JButton("Delete selection");
+	private final JButton btnCopyPrefab = new JButton("Copy selection as prefab...");
+	private final JButton btnStampPrefab = new JButton("Stamp prefab here...");
 	private final JButton btnUndo = new JButton("Undo");
 	private final JButton btnSave = new JButton("Save to workspace");
 	private final JLabel status = new JLabel(" ");
+
+	/** In-session prefab clipboard (survives zone switches; files survive everything). */
+	private static ctrmap.formats.h3d.MapPrefab clipboard;
 
 	public GeoEditForm() {
 		setBorder(BorderFactory.createTitledBorder("Map geometry"));
@@ -118,6 +123,10 @@ public class GeoEditForm extends JPanel {
 		c.gridy++;
 		add(btnDel, c);
 		c.gridy++;
+		add(btnCopyPrefab, c);
+		c.gridy++;
+		add(btnStampPrefab, c);
+		c.gridy++;
 		c.gridwidth = 1;
 		add(btnUndo, c);
 		c.gridx = 1;
@@ -135,9 +144,141 @@ public class GeoEditForm extends JPanel {
 		btnMove.addActionListener(e -> op("move"));
 		btnDup.addActionListener(e -> op("dup"));
 		btnDel.addActionListener(e -> op("del"));
+		btnCopyPrefab.addActionListener(e -> copyPrefab());
+		btnStampPrefab.addActionListener(e -> stampPrefab());
 		btnUndo.addActionListener(e -> undo());
 		btnSave.addActionListener(e -> save());
 		updateEnabled();
+	}
+
+	/**
+	 * Cuts the selection into a reusable prefab (geometry + collision + tiles),
+	 * keeps it on the clipboard and optionally saves a .ctrprefab file - the
+	 * "take this building" half of building maps out of the game's own pieces.
+	 */
+	private void copyPrefab() {
+		if (box == null || gr == null) {
+			return;
+		}
+		String name = JOptionPane.showInputDialog(this, "Prefab name:", "e.g. PokeCenter");
+		if (name == null || name.trim().isEmpty()) {
+			return;
+		}
+		try {
+			ctrmap.formats.h3d.MapPrefab p = ctrmap.formats.h3d.MapPrefab.extract(gr,
+					selTx0 - cellX * 40, selTy0 - cellY * 40, selTx1 - cellX * 40, selTy1 - cellY * 40, name.trim());
+			if (p == null) {
+				status.setText("Nothing inside the selection to copy.");
+				return;
+			}
+			p.sourceRegion = regionId;
+			clipboard = p;
+			StringBuilder mats = new StringBuilder();
+			for (ctrmap.formats.h3d.MapPrefab.Piece piece : p.pieces) {
+				if (mats.length() > 0) {
+					mats.append(", ");
+				}
+				mats.append(piece.material);
+			}
+			int save = JOptionPane.showConfirmDialog(this,
+					"Copied \"" + p.name + "\": " + p.pieces.size() + " pieces, " + p.collTris.size()
+					+ " collision tris, " + p.tilesW + "x" + p.tilesH + " tiles.\nMaterials: " + mats
+					+ "\n\nAlso save it as a .ctrprefab file (reusable across sessions)?",
+					"Copy prefab", JOptionPane.YES_NO_OPTION);
+			if (save == JOptionPane.YES_OPTION) {
+				javax.swing.JFileChooser fc = new javax.swing.JFileChooser();
+				fc.setSelectedFile(new java.io.File(p.name.replaceAll("[^A-Za-z0-9_-]", "_") + ".ctrprefab"));
+				if (fc.showSaveDialog(this) == javax.swing.JFileChooser.APPROVE_OPTION) {
+					p.save(fc.getSelectedFile());
+				}
+			}
+			status.setText("Prefab \"" + p.name + "\" on the clipboard - select tiles elsewhere and Stamp.");
+		} catch (Exception ex) {
+			status.setText("Copy failed: " + ex.getMessage());
+		}
+	}
+
+	/**
+	 * Stamps the clipboard prefab (or a .ctrprefab file) with its anchor at the
+	 * selection's top-left tile, using the Y offset spinner for height.
+	 */
+	private void stampPrefab() {
+		if (box == null || gr == null || currentModel == null) {
+			return;
+		}
+		ctrmap.formats.h3d.MapPrefab p = clipboard;
+		if (p == null || JOptionPane.showConfirmDialog(this,
+				(p == null ? "No prefab on the clipboard - load a .ctrprefab file?"
+						: "Stamp \"" + p.name + "\" here? (No = load a .ctrprefab file instead)"),
+				"Stamp prefab", JOptionPane.YES_NO_OPTION) == JOptionPane.NO_OPTION) {
+			javax.swing.JFileChooser fc = new javax.swing.JFileChooser();
+			if (fc.showOpenDialog(this) != javax.swing.JFileChooser.APPROVE_OPTION) {
+				return;
+			}
+			try {
+				p = ctrmap.formats.h3d.MapPrefab.load(fc.getSelectedFile());
+				clipboard = p;
+			} catch (Exception ex) {
+				status.setText("Could not load the prefab: " + ex.getMessage());
+				return;
+			}
+		}
+		if (p == null) {
+			return;
+		}
+		float fy = ((Number) dy.getValue()).floatValue();
+		int anchorX = selTx0 - cellX * 40, anchorY = selTy0 - cellY * 40;
+		setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+		try {
+			Snapshot snap = new Snapshot();
+			snap.model = currentModel;
+			snap.coll = new HashMap<>(currentColl);
+			snap.tiles = new ArrayList<>();
+
+			ctrmap.formats.h3d.MapPrefab.StampResult r = p.stampGeometry(currentModel, anchorX, anchorY, fy);
+			if (r.stamped.isEmpty()) {
+				status.setText("No piece could be stamped - this region shares no materials with the prefab."
+						+ (r.missingMaterials.isEmpty() ? "" : " Missing: " + r.missingMaterials));
+				return;
+			}
+			BchMapModel check = new BchMapModel(r.newModel);
+			if (!check.validate().isEmpty()) {
+				status.setText("Stamp failed validation - not applied.");
+				return;
+			}
+			if (chkColl.isSelected() && currentColl.containsKey(2)) {
+				currentColl.put(2, p.stampCollision(currentColl.get(2), anchorX, anchorY, fy));
+			}
+			String tileNote = "";
+			if (chkTiles.isSelected() && p.tiles != null) {
+				Tilemap tm = mTileMapPanel.getRegionForTile(selTx0, selTy0);
+				if (tm != null) {
+					for (int y = 0; y < p.tilesH; y++) {
+						for (int x = 0; x < p.tilesW; x++) {
+							int nx = anchorX + x, ny = anchorY + y;
+							if (nx >= 0 && nx < 40 && ny >= 0 && ny < 40) {
+								recordTile(snap.tiles, tm, nx, ny);
+							}
+						}
+					}
+					int nTiles = p.stampTiles(tm, anchorX, anchorY);
+					refreshTiles(tm);
+					tileNote = " +" + nTiles + " tiles";
+				}
+			}
+			undo.push(snap);
+			currentModel = r.newModel;
+			unsaved = true;
+			mTileMapPanel.reloadRegionModel(cellX, cellY, currentModel);
+			status.setText("Stamped " + r.stamped.size() + "/" + p.pieces.size() + " pieces" + tileNote
+					+ (r.missingMaterials.isEmpty() ? "" : "  (missing materials: " + r.missingMaterials + ")")
+					+ "  (unsaved)");
+		} catch (RuntimeException ex) {
+			status.setText("Stamp failed: " + ex.getMessage());
+		} finally {
+			setCursor(Cursor.getDefaultCursor());
+			updateEnabled();
+		}
 	}
 
 	/** Tool callback: a tile-rect was dragged (GLOBAL tile coords, any corner order). */
@@ -439,6 +580,8 @@ public class GeoEditForm extends JPanel {
 		btnMove.setEnabled(sel);
 		btnDup.setEnabled(sel);
 		btnDel.setEnabled(sel);
+		btnCopyPrefab.setEnabled(sel);
+		btnStampPrefab.setEnabled(sel);
 		btnUndo.setEnabled(!undo.isEmpty());
 		btnSave.setEnabled(unsaved);
 	}
