@@ -1065,10 +1065,15 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
 		JComboBox<String> dstPicker = new JComboBox<>(names);
 		dstPicker.setMaximumRowCount(20);
+		javax.swing.JCheckBox forkChk = new javax.swing.JCheckBox(
+				"Give this zone its own private map (edit it without changing the source)", true);
+		forkChk.setEnabled(Workspace.isOA());
 		Object[] form = {
 			"Source (currently loaded): " + names[srcIndex],
 			"Destination (will be overwritten):",
-			dstPicker
+			dstPicker,
+			" ",
+			forkChk
 		};
 		if (JOptionPane.showConfirmDialog(this, form, "Clone zone", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
 			return;
@@ -1078,26 +1083,50 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			JOptionPane.showMessageDialog(this, "The source and destination zones are the same.", "Clone zone", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
+		final boolean doFork = forkChk.isSelected() && Workspace.isOA();
 		int confirm = JOptionPane.showConfirmDialog(this,
 				"Zone " + dstIndex + " (" + names[dstIndex] + ") will be completely replaced by a copy of zone "
 				+ srcIndex + " (" + names[srcIndex] + "):\n"
 				+ "header, NPCs, warps, triggers, scripts.\n"
-				+ "Its wild encounters are NOT changed.\n\n"
-				+ "This is reversible only by restoring a backup.",
+				+ "Its wild encounters are NOT changed.\n"
+				+ (doFork ? "It will also get its OWN private map (independent geometry).\n" : "")
+				+ "\nThis is reversible only by restoring a backup.",
 				"Confirm zone clone", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
 		if (confirm != JOptionPane.OK_OPTION) {
 			return;
 		}
 		try {
 			ZoneCloner.cloneIntoSlot(srcIndex, dstIndex);
+			if (doFork) {
+				//give the clone its own map so editing it won't change the source (same as Add zones)
+				ctrmap.GeometryForker.forkGeometry(dstIndex);
+			}
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
 			JOptionPane.showMessageDialog(this, "Could not clone the zone:\n" + ex.getMessage(), "Clone zone", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		//reload the zone list from the workspace and open the freshly written destination
-		loadEverything(); //modal - blocks until the worker is done
-		zoneList.setSelectedIndex(dstIndex);
+		final int dst = dstIndex;
+		if (doFork) {
+			//the fork appended FieldData/MapMatrix entries - pack so they apply, then reload + open
+			Workspace.packWorkspace(new Runnable() {
+				@Override
+				public void run() {
+					loadEverything(new Runnable() {
+						@Override
+						public void run() {
+							if (dst < zoneList.getItemCount()) {
+								zoneList.setSelectedIndex(dst);
+							}
+						}
+					});
+				}
+			});
+		} else {
+			//reload the zone list from the workspace and open the freshly written destination
+			loadEverything(); //modal - blocks until the worker is done
+			zoneList.setSelectedIndex(dstIndex);
+		}
 	}
 
 	/**
@@ -1143,6 +1172,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			srcPicker,
 			" ",
 			"New zones are added after the last one; nothing existing is overwritten.",
+			"Each new zone automatically gets its OWN private map copy, so editing its",
+			"geometry will not change the zone you copied it from.",
 			"A matching code patch (code.ips) is generated - the game needs BOTH the",
 			"new ZoneData and that patch installed, or it will not boot."
 		};
@@ -1215,6 +1246,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						}
 						JOptionPane.showMessageDialog(ZoneLoadingPanel.this,
 								"Added zones " + firstNew + ".." + lastReal + " (archive now holds " + total + " zone slots).\n\n"
+								+ "Each new zone got its OWN private map (its own FieldData region + matrix),\n"
+								+ "so editing its geometry won't affect the zone you copied it from.\n\n"
 								+ (ipsSaved
 										? "code.ips saved - install it (Azahar mods exefs, or Luma titles folder) before booting.\n\n"
 										: "code.ips was NOT saved - the game will black-screen until you generate and install it.\n\n")
