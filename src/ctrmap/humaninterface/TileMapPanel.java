@@ -64,6 +64,9 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	public GRCollisionFile[][] colls;
 	public MapMatrix mm;
 	public GR mainGR;
+	//texture lists captured at load so an edited region model can be rebound live (geometry editor)
+	private List<H3DTexture> savedWorldTextures;
+	private List<H3DTexture> savedPropTextures;
 	public BufferedImage tilemapImage;// = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
 	public BufferedImage tilemapScaledImage = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
 	public BufferedImage cm2dOverlayImage = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
@@ -186,6 +189,35 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		}
 	}
 
+	/**
+	 * Swaps one region cell's visual model for freshly edited bytes and rebinds
+	 * textures/buffers exactly like the original load - the live-refresh hook of
+	 * the geometry editor (the 3D view shows the edit immediately).
+	 */
+	public void reloadRegionModel(int cellX, int cellY, byte[] modelBytes) {
+		BCHFile bch = new BCHFile(modelBytes);
+		if (bch.models.isEmpty()) {
+			return;
+		}
+		H3DModel model = bch.models.get(0);
+		if (savedWorldTextures != null) {
+			model.setMaterialTextures(savedWorldTextures);
+		}
+		if (savedPropTextures != null) {
+			model.setMaterialTextures(savedPropTextures);
+		}
+		if (mode == ViewportMode.MULTI) {
+			model.worldLocX = cellX * 720f + 360f;
+			model.worldLocZ = cellY * 720f + 360f;
+		}
+		model.makeAllBOs();
+		models[cellX][cellY] = bch;
+		if (m3DDebugPanel != null) {
+			m3DDebugPanel.repaint();
+		}
+		repaint();
+	}
+
 	public void unload() {
 		mode = ViewportMode.SINGLE;
 		loaded = false;
@@ -275,6 +307,8 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			@Override
 			protected Object doInBackground() {
 				mode = ViewportMode.MULTI;
+				savedWorldTextures = worldTextures;
+				savedPropTextures = propTextures;
 				mm = matrix;
 				width = mm.width * 40;
 				height = mm.height * 40;
