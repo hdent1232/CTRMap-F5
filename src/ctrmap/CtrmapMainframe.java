@@ -99,6 +99,12 @@ public class CtrmapMainframe {
 	public static JMenuItem tilesetWriter;
 	public static JMenuItem objconvert;
 	public static JMenuItem importMapModel;
+	public static JMenuItem exportMapObj;
+	public static JMenuItem importMapObj;
+	public static JMenuItem forkGeometry;
+	public static JMenuItem renameZone;
+	public static JMenuItem emptyZone;
+	public static JMenuItem findReusableZones;
 	public static JMenuItem wssettings;
 	public static JMenuItem wsclean;
 	public static JMenuItem isstracker;
@@ -184,6 +190,12 @@ public class CtrmapMainframe {
 		tilesetWriter = new JMenuItem("Tileset Editor");
 		objconvert = new JMenuItem("OBJ to collisions");
 		importMapModel = new JMenuItem("Import map model (.bch)...");
+		exportMapObj = new JMenuItem("Export map region to OBJ (Blender)...");
+		importMapObj = new JMenuItem("Import OBJ into map region (Blender)...");
+		forkGeometry = new JMenuItem("Fork map geometry (make zone independent)...");
+		renameZone = new JMenuItem("Rename zone (in-game name)...");
+		emptyZone = new JMenuItem("Empty zone (clear contents)...");
+		findReusableZones = new JMenuItem("Find reusable base zones...");
 		wssettings = new JMenuItem("Workspace settings");
 		wsclean = new JMenuItem("Clean workspace");
 		isstracker = new JMenuItem("Support/Issue tracker");
@@ -398,6 +410,42 @@ public class CtrmapMainframe {
 				importMapModelAction();
 			}
 		});
+		forkGeometry.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				forkGeometryAction();
+			}
+		});
+		exportMapObj.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				exportMapObjAction();
+			}
+		});
+		importMapObj.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				importMapObjAction();
+			}
+		});
+		renameZone.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				renameZoneAction();
+			}
+		});
+		emptyZone.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				emptyZoneAction();
+			}
+		});
+		findReusableZones.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				findReusableZonesAction();
+			}
+		});
 		deploymod.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -521,6 +569,12 @@ public class CtrmapMainframe {
 		toolsmenu.add(tilesetWriter);
 		toolsmenu.add(objconvert);
 		toolsmenu.add(importMapModel);
+		toolsmenu.add(exportMapObj);
+		toolsmenu.add(importMapObj);
+		toolsmenu.add(forkGeometry);
+		toolsmenu.add(renameZone);
+		toolsmenu.add(emptyZone);
+		toolsmenu.add(findReusableZones);
 		optionsmenu.add(wssettings);
 		optionsmenu.add(wsclean);
 		helpmenu.add(isstracker);
@@ -649,7 +703,7 @@ public class CtrmapMainframe {
 		ipsRow.add(ipsBrowse, java.awt.BorderLayout.EAST);
 		Object[] form = {
 			"Deploy your edits as a LayeredFS mod - only archives you actually changed are copied.",
-			"Run File > Pack Workspace first so the RomFS reflects your latest edits.",
+			"Your workspace is packed automatically first, so the latest edits always ship.",
 			" ",
 			"Title ID:", titleField,
 			"Mod folder (Azahar auto-detected; Browse to your SD card for a 3DS/Luma):", folderRow,
@@ -664,35 +718,406 @@ public class CtrmapMainframe {
 			JOptionPane.showMessageDialog(frame, "Pick a mod folder first.", "Deploy mod", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		File modRoot = new File(folder);
+		final File modRoot = new File(folder);
 		String ipsPath = ipsField.getText().trim();
-		File ips = ipsPath.isEmpty() ? null : new File(ipsPath);
-		ModDeployer.Result res = ModDeployer.deploy(modRoot, ips);
+		final File ips = ipsPath.isEmpty() ? null : new File(ipsPath);
+		// Always Pack first so the deployed RomFS reflects the LATEST edits. Deploying
+		// stale (un-packed) data is the #1 cause of "my change didn't show up" - e.g. a
+		// talking NPC whose story-text line was edited but never packed will freeze in
+		// game. packWorkspace is async (SwingWorker); deploy in its completion callback.
+		Workspace.packWorkspace(new Runnable() {
+			@Override
+			public void run() {
+				ModDeployer.Result res = ModDeployer.deploy(modRoot, ips);
+				StringBuilder sb = new StringBuilder();
+				if (res.deployed.isEmpty() && !res.codeIpsDeployed) {
+					sb.append("Nothing changed to deploy (no edits since the last deploy).\n");
+				} else {
+					sb.append("Packed and deployed to:\n  ").append(modRoot.getAbsolutePath()).append("\n\n");
+					if (!res.deployed.isEmpty()) {
+						sb.append("Archives:\n");
+						for (String d : res.deployed) {
+							sb.append("  ").append(d).append("\n");
+						}
+					}
+					if (res.codeIpsDeployed) {
+						sb.append("  exefs\\code.ips  (executable patch)\n");
+					}
+					sb.append("\n").append(res.unchanged).append(" archive(s) unchanged, skipped.\n");
+				}
+				if (!res.skipped.isEmpty()) {
+					sb.append("\nProblems:\n");
+					for (String s : res.skipped) {
+						sb.append("  ").append(s).append("\n");
+					}
+				}
+				sb.append("\nIMPORTANT: fully CLOSE and reopen the emulator before testing - it caches\n"
+						+ "the game's files, so a soft reset can still show the old data.\n");
+				sb.append("To disable the mod, delete that folder.");
+				JOptionPane.showMessageDialog(frame, sb.toString(), "Deploy to emulator", JOptionPane.INFORMATION_MESSAGE);
+			}
+		});
+	}
 
+	/**
+	 * Gives a zone its own private map geometry (see {@link GeometryForker}) so a
+	 * cloned zone can be edited without changing the town it was cloned from.
+	 * Defaults the zone picker to the currently loaded zone.
+	 */
+	private static void forkGeometryAction() {
+		if (!Workspace.valid) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Fork map geometry", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (!Workspace.isOA()) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "Forking map geometry is ORAS-only in v1.", "Fork map geometry", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		ctrmap.formats.garc.GARC zoGarc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		if (zoGarc == null) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "ZoneData archive unavailable.", "Fork map geometry", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int zoneCount = zoGarc.length - 2; //master table + EN pack occupy the last two entries
+		int def = (mZonePnl != null && mZonePnl.zoneIndex >= 0 && mZonePnl.zoneIndex < zoneCount) ? mZonePnl.zoneIndex : 0;
+		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def, 0, zoneCount - 1, 1));
+		Object[] form = {
+			"Give this zone its OWN private map geometry.",
+			"After forking, editing this zone's map no longer changes any other",
+			"zone that currently shares it (e.g. a cloned zone and the town it was",
+			"cloned from share the same 3D model until you fork).",
+			" ",
+			"Zone (GARC index - the number shown in the zone dropdown):",
+			idSpinner,
+			" ",
+			"This copies the zone's FieldData region(s) and its map matrix to new",
+			"private entries and repoints the zone at them. Pure data, no code patch."
+		};
+		if (javax.swing.JOptionPane.showConfirmDialog(frame, form, "Fork map geometry", javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.PLAIN_MESSAGE) != javax.swing.JOptionPane.OK_OPTION) {
+			return;
+		}
+		int zoneIndex = (Integer) idSpinner.getValue();
+		try {
+			GeometryForker.ForkResult r = GeometryForker.forkGeometry(zoneIndex);
+			StringBuilder sb = new StringBuilder();
+			sb.append("Zone ").append(zoneIndex).append(" now has private map geometry.\n\n");
+			sb.append("Map matrix ").append(r.oldMatrix).append(" -> ").append(r.newMatrix).append(" (private copy)\n");
+			for (int i = 0; i < r.srcRegions.length; i++) {
+				sb.append("FieldData region ").append(r.srcRegions[i]).append(" -> ").append(r.newRegions[i]).append(" (private copy)\n");
+			}
+			sb.append("\nTo change ONLY this zone's map, edit region ").append(r.newRegions[0]);
+			if (r.newRegions.length > 1) {
+				sb.append(" (and the other new regions above)");
+			}
+			sb.append(".\nThe original region(s) still belong to the source zone(s).\n\n");
+			sb.append("Now run File > Pack Workspace, then File > Deploy to emulator.\n");
+			sb.append("No new code.ips is needed - the fork is pure data.");
+			javax.swing.JOptionPane.showMessageDialog(frame, sb.toString(), "Fork map geometry", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+		} catch (Exception ex) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "Fork failed:\n" + ex.getMessage(), "Fork map geometry", javax.swing.JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	/**
+	 * Renames a zone's in-game location banner (see {@link ZoneManager#renameZone}).
+	 * Shared names are moved to a private free slot so other zones are unaffected.
+	 */
+	private static void renameZoneAction() {
+		if (!Workspace.valid) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Rename zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		ctrmap.formats.garc.GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		if (zo == null) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "ZoneData archive unavailable.", "Rename zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int zoneCount = zo.length - (Workspace.isXY() ? 1 : 2);
+		int def = (mZonePnl != null && mZonePnl.zoneIndex >= 0 && mZonePnl.zoneIndex < zoneCount) ? mZonePnl.zoneIndex : 0;
+		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def, 0, zoneCount - 1, 1));
+		javax.swing.JTextField nameField = new javax.swing.JTextField(24);
+		Object[] form = {
+			"Rename a zone's in-game location banner (the name shown on entry).",
+			"If the name is shared (a cloned zone shares the town it came from), this",
+			"zone gets its OWN name and the others are left unchanged.",
+			" ",
+			"Zone (the number shown in the zone dropdown):",
+			idSpinner,
+			"New name:",
+			nameField
+		};
+		if (javax.swing.JOptionPane.showConfirmDialog(frame, form, "Rename zone", javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.PLAIN_MESSAGE) != javax.swing.JOptionPane.OK_OPTION) {
+			return;
+		}
+		int idx = (Integer) idSpinner.getValue();
+		String name = nameField.getText().trim();
+		if (name.isEmpty()) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "Enter a name.", "Rename zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		try {
+			ZoneManager.RenameResult r = ZoneManager.renameZone(idx, name);
+			ctrmap.formats.text.LocationNames.loadFromGarc(); // refresh the dropdown name cache
+			StringBuilder sb = new StringBuilder();
+			sb.append("Zone ").append(idx).append(" renamed to \"").append(name).append("\".\n\n");
+			if (r.gaveOwnName) {
+				sb.append("It was sharing the name \"").append(r.oldName).append("\" with ").append(r.sharers)
+				  .append(" zones; it now has its own name and the others are unchanged.\n\n");
+			} else if (r.renamedSharers) {
+				sb.append("NOTE: \"").append(r.oldName).append("\" was shared by ").append(r.sharers)
+				  .append(" zones and no free name slot was available, so ALL of them were renamed.\n\n");
+			} else {
+				sb.append("The name belonged to this zone alone.\n\n");
+			}
+			sb.append("Run File > Deploy to emulator (it packs first), then fully restart the emulator.\n");
+			sb.append("Reselect the zone in the dropdown to see the new name in the editor.");
+			javax.swing.JOptionPane.showMessageDialog(frame, sb.toString(), "Rename zone", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+		} catch (Exception ex) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "Rename failed:\n" + ex.getMessage(), "Rename zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	/**
+	 * Empties a zone's placed content - NPCs, warps, triggers, props - keeping the
+	 * header and script (see {@link ZoneManager#clearZone}).
+	 */
+	private static void emptyZoneAction() {
+		if (!Workspace.valid) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Empty zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		ctrmap.formats.garc.GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		if (zo == null) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "ZoneData archive unavailable.", "Empty zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int zoneCount = zo.length - (Workspace.isXY() ? 1 : 2);
+		int def = (mZonePnl != null && mZonePnl.zoneIndex >= 0 && mZonePnl.zoneIndex < zoneCount) ? mZonePnl.zoneIndex : 0;
+		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def, 0, zoneCount - 1, 1));
+		Object[] form = {
+			"Clear a zone's placed content: NPCs, warps, triggers and props.",
+			"The header, script, and wild encounters are kept - good for redoing a zone.",
+			" ",
+			"Zone (the number shown in the zone dropdown):",
+			idSpinner
+		};
+		Object[] opts = {"Empty it", "Cancel"};
+		if (javax.swing.JOptionPane.showOptionDialog(frame, form, "Empty zone", javax.swing.JOptionPane.OK_CANCEL_OPTION,
+				javax.swing.JOptionPane.WARNING_MESSAGE, null, opts, opts[1]) != 0) {
+			return;
+		}
+		int idx = (Integer) idSpinner.getValue();
+		try {
+			int removed = ZoneManager.clearZone(idx);
+			javax.swing.JOptionPane.showMessageDialog(frame,
+					"Zone " + idx + " emptied - removed " + removed + " placed object(s).\n\n"
+					+ "Run File > Deploy to emulator (it packs first) to apply.\n"
+					+ "Reselect the zone in the dropdown to see it cleared in the editor.",
+					"Empty zone", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+		} catch (Exception ex) {
+			javax.swing.JOptionPane.showMessageDialog(frame, "Empty failed:\n" + ex.getMessage(), "Empty zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	/**
+	 * Lists base zones (index &lt; 536) that can host interactive custom content
+	 * (see {@link ZoneRepurposeScanner}) - the workaround for appended zones not
+	 * being able to run scripts.
+	 */
+	private static void findReusableZonesAction() {
+		if (!Workspace.valid) {
+			JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Find reusable zones", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (!Workspace.isOA()) {
+			JOptionPane.showMessageDialog(frame, "This is ORAS-only in v1.", "Find reusable zones", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		frame.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.WAIT_CURSOR));
+		java.util.List<ZoneRepurposeScanner.Candidate> cands;
+		try {
+			cands = ZoneRepurposeScanner.scan();
+		} finally {
+			frame.setCursor(java.awt.Cursor.getDefaultCursor());
+		}
+		int t0 = 0, t1 = 0;
+		for (ZoneRepurposeScanner.Candidate c : cands) {
+			if (c.tier == 0) {
+				t0++;
+			} else if (c.tier == 1) {
+				t1++;
+			}
+		}
 		StringBuilder sb = new StringBuilder();
-		if (res.deployed.isEmpty() && !res.codeIpsDeployed) {
-			sb.append("Nothing changed to deploy.\nDid you run Pack Workspace after editing?\n");
-		} else {
-			sb.append("Deployed to:\n  ").append(modRoot.getAbsolutePath()).append("\n\n");
-			if (!res.deployed.isEmpty()) {
-				sb.append("Archives:\n");
-				for (String d : res.deployed) {
-					sb.append("  ").append(d).append("\n");
+		sb.append("Base zones (index < 536) CAN run scripts - build interactive custom areas\n");
+		sb.append("(talking NPCs, signs, triggers) here. Appended zones (536+) can't run scripts.\n\n");
+		sb.append(t0).append(" SAFEST (placeholder/blank name, empty, no incoming warps),  ")
+		  .append(t1).append(" likely-free.\n\n");
+		sb.append("VERIFY a pick in-game first: some empty, unreferenced zones are dungeon\n");
+		sb.append("interiors reached on foot, and named ones are real areas you'd be replacing.\n\n");
+		sb.append(String.format("%-5s %-26s %-4s %-5s %-4s %s%n", "zone", "name", "NPCs", "warp", "trg", "status"));
+		sb.append("---------------------------------------------------------------------------\n");
+		for (ZoneRepurposeScanner.Candidate c : cands) {
+			String nm = c.name.length() > 25 ? c.name.substring(0, 25) : c.name;
+			sb.append(String.format("%-5d %-26s %-4d %-5d %-4d %s%n", c.index, nm, c.npcs, c.warpsOut, c.triggers, c.tierLabel()));
+		}
+		sb.append("\nWorkflow: pick a zone -> Empty zone -> Clone your template map into it\n");
+		sb.append("(keep 'own map' checked) -> Rename zone -> add your NPCs. Scripts will work.");
+		javax.swing.JTextArea ta = new javax.swing.JTextArea(sb.toString(), 28, 76);
+		ta.setEditable(false);
+		ta.setFont(new java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN, 12));
+		ta.setCaretPosition(0);
+		JOptionPane.showMessageDialog(frame, new javax.swing.JScrollPane(ta), "Find reusable base zones", JOptionPane.INFORMATION_MESSAGE);
+	}
+
+	/**
+	 * The FieldData region the loaded zone's map matrix points at (its first
+	 * grid cell), or -1 - the right default for the OBJ tools so users don't
+	 * have to know region numbers.
+	 */
+	private static int defaultRegionForLoadedZone() {
+		try {
+			if (mZonePnl == null || mZonePnl.zone == null) {
+				return -1;
+			}
+			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			if (mmFile == null) {
+				return -1;
+			}
+			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
+			int sub0 = (mm[4] & 0xFF) | ((mm[5] & 0xFF) << 8) | ((mm[6] & 0xFF) << 16) | ((mm[7] & 0xFF) << 24);
+			int w = (mm[sub0 + 4] & 0xFF) | ((mm[sub0 + 5] & 0xFF) << 8);
+			int h = (mm[sub0 + 6] & 0xFF) | ((mm[sub0 + 7] & 0xFF) << 8);
+			for (int k = 0; k < w * h; k++) {
+				int id = (mm[sub0 + 8 + k * 2] & 0xFF) | ((mm[sub0 + 9 + k * 2] & 0xFF) << 8);
+				if (id != 0xFFFF) {
+					return id;
 				}
 			}
-			if (res.codeIpsDeployed) {
-				sb.append("  exefs\\code.ips  (executable patch)\n");
-			}
-			sb.append("\n").append(res.unchanged).append(" archive(s) unchanged, skipped.\n");
+		} catch (Exception ex) {
+			//fall through - the spinner just starts at 0
 		}
-		if (!res.skipped.isEmpty()) {
-			sb.append("\nProblems:\n");
-			for (String s : res.skipped) {
-				sb.append("  ").append(s).append("\n");
-			}
+		return -1;
+	}
+
+	/** Exports a map region's 3D model to a Blender-ready OBJ (Tools menu). */
+	private static void exportMapObjAction() {
+		if (!Workspace.valid) {
+			JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Export map to OBJ", JOptionPane.ERROR_MESSAGE);
+			return;
 		}
-		sb.append("\nLaunch the game in the emulator. To disable the mod, delete that folder.");
-		JOptionPane.showMessageDialog(frame, sb.toString(), "Deploy to emulator", JOptionPane.INFORMATION_MESSAGE);
+		int fieldCount = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length;
+		int def = defaultRegionForLoadedZone();
+		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def >= 0 ? def : 0, 0, fieldCount - 1, 1));
+		Object[] form = {
+			"Export a map region's 3D model as a Wavefront OBJ for Blender.",
+			(def >= 0 ? "(Defaulted to the loaded zone's map region.)" : "Find the ID per cell in the Matrix Editor."),
+			"FieldData region ID:",
+			idSpinner,
+			" ",
+			"Edit it in Blender, keep the group names (mesh<N>_...) intact, then use",
+			"Tools > Import OBJ into map region to bring the changes back."
+		};
+		if (JOptionPane.showConfirmDialog(frame, form, "Export map to OBJ", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+			return;
+		}
+		int id = (Integer) idSpinner.getValue();
+		JFileChooser fc = new JFileChooser();
+		fc.setDialogTitle("Save OBJ");
+		fc.setSelectedFile(new File("region" + id + ".obj"));
+		if (fc.showSaveDialog(frame) != JFileChooser.APPROVE_OPTION) {
+			return;
+		}
+		try {
+			GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, id));
+			byte[] model = gr.getFile(1);
+			if (!ctrmap.formats.h3d.BchMapModel.isMapModel(model)) {
+				JOptionPane.showMessageDialog(frame, "FieldData region " + id + " has no editable map model.", "Export map to OBJ", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			ctrmap.formats.h3d.BchMapModel bmm = new ctrmap.formats.h3d.BchMapModel(model);
+			java.io.Writer w = new java.io.BufferedWriter(new java.io.FileWriter(fc.getSelectedFile()));
+			java.util.List<Integer> skipped;
+			try {
+				skipped = ctrmap.formats.h3d.MapModelObj.export(bmm, w);
+			} finally {
+				w.close();
+			}
+			JOptionPane.showMessageDialog(frame,
+					"Exported region " + id + " (" + bmm.meshes.size() + " meshes) to\n" + fc.getSelectedFile().getAbsolutePath()
+					+ (skipped.isEmpty() ? "" : "\n\n" + skipped.size() + " mesh(es) use an exotic vertex format and were skipped;\nthey stay untouched on import."),
+					"Export map to OBJ", JOptionPane.INFORMATION_MESSAGE);
+		} catch (Exception ex) {
+			JOptionPane.showMessageDialog(frame, "Export failed:\n" + ex.getMessage(), "Export map to OBJ", JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	/** Imports a (Blender-edited) OBJ back into a map region's 3D model (Tools menu). */
+	private static void importMapObjAction() {
+		if (!Workspace.valid) {
+			JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Import OBJ", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int fieldCount = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length;
+		int def = defaultRegionForLoadedZone();
+		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def >= 0 ? def : 0, 0, fieldCount - 1, 1));
+		Object[] form = {
+			"Import a Blender-edited OBJ back into a map region.",
+			"Use the SAME region you exported from" + (def >= 0 ? " (defaulted to the loaded zone's)." : "."),
+			"FieldData region ID:",
+			idSpinner,
+			" ",
+			"Groups named mesh<N>_... replace that mesh; other groups are added to",
+			"the mesh whose material matches their usemtl. Textures follow the",
+			"nearest original surface automatically."
+		};
+		if (JOptionPane.showConfirmDialog(frame, form, "Import OBJ", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+			return;
+		}
+		int id = (Integer) idSpinner.getValue();
+		JFileChooser fc = new JFileChooser();
+		fc.setDialogTitle("Pick the edited OBJ");
+		if (fc.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) {
+			return;
+		}
+		try {
+			java.util.List<ctrmap.formats.h3d.MapModelObj.ObjMesh> parsed;
+			java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(fc.getSelectedFile()));
+			try {
+				parsed = ctrmap.formats.h3d.MapModelObj.parse(r);
+			} finally {
+				r.close();
+			}
+			File grFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, id);
+			GR gr = new GR(grFile);
+			byte[] model = gr.getFile(1);
+			if (!ctrmap.formats.h3d.BchMapModel.isMapModel(model)) {
+				JOptionPane.showMessageDialog(frame, "FieldData region " + id + " has no editable map model.", "Import OBJ", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			java.util.List<ctrmap.formats.h3d.MapModelObjImporter.Outcome> outcomes = new java.util.ArrayList<>();
+			byte[] edited = ctrmap.formats.h3d.MapModelObjImporter.apply(model, parsed, outcomes);
+			//sanity: the edited model must re-parse clean before it touches the workspace
+			ctrmap.formats.h3d.BchMapModel check = new ctrmap.formats.h3d.BchMapModel(edited);
+			if (!check.validate().isEmpty()) {
+				JOptionPane.showMessageDialog(frame, "The edited model failed validation - nothing was changed:\n" + check.validate(), "Import OBJ", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			if (!gr.storeFile(1, edited)) {
+				JOptionPane.showMessageDialog(frame, "Could not write the model into the workspace.", "Import OBJ", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			Workspace.addPersist(grFile);
+			StringBuilder sb = new StringBuilder("Imported into region " + id + ":\n");
+			for (ctrmap.formats.h3d.MapModelObjImporter.Outcome oc : outcomes) {
+				sb.append("  ").append(oc.group).append(": ").append(oc.action)
+				  .append(" (").append(oc.vertices).append(" verts, ").append(oc.faces).append(" faces)\n");
+			}
+			sb.append("\nRun File > Deploy to emulator to see it in game (packs automatically).");
+			JOptionPane.showMessageDialog(frame, sb.toString(), "Import OBJ", JOptionPane.INFORMATION_MESSAGE);
+		} catch (Exception ex) {
+			JOptionPane.showMessageDialog(frame, "Import failed:\n" + ex.getMessage(), "Import OBJ", JOptionPane.ERROR_MESSAGE);
+		}
 	}
 
 	private static void importMapModelAction() {

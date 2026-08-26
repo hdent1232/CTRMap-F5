@@ -313,6 +313,17 @@ public class GARC {
 		}
 	}
 
+	/**
+	 * Whether the entry at the given index is stored LZ11-compressed (sniffed
+	 * from its first byte == 0x11 at load). Used by appenders that must store a
+	 * new entry with the SAME compression as the source entry it copies, rather
+	 * than gambling on last-entry inheritance (which misflags when the tail
+	 * entry's compression differs from the source's).
+	 */
+	public boolean isEntryCompressed(int num) {
+		return entries.get(num).compressed;
+	}
+
 	public byte[] getDecompressedEntry(int num) {
 		if (num >= entries.size()) {
 			return null;
