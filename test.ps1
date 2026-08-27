@@ -39,6 +39,7 @@ $suites = @(
     @{ n = "EncounterTable";              c = "ctrmap.tests.EncounterTableTest";     a = @($a013) },
     @{ n = "TrainerData";                 c = "ctrmap.tests.TrainerDataTest";        a = @() },
     @{ n = "GfHash (native names)";       c = "ctrmap.tests.GfHashTest";             a = @() },
+    @{ n = "SYSREQ-by-name disasm";       c = "ctrmap.tests.SysreqNameTest";         a = @($a013) },
     @{ n = "MaisonSet (opponents)";       c = "ctrmap.tests.MaisonSetTest";          a = @() },
     @{ n = "MaisonClassList (teams)";     c = "ctrmap.tests.MaisonClassListTest";    a = @() },
     @{ n = "ZoneAppend";                  c = "ctrmap.tests.ZoneAppendTest";         a = @() },
