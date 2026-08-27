@@ -137,44 +137,29 @@ public class GRCollisionFile {
 		}
 	}
 
+	/**
+	 * Writes the collision back through the RETAIL-EXACT builder ({@link GfColl}):
+	 * the in-memory triangle set (de-duplicated across the 16 legacy bucket
+	 * lists at load) is re-bucketed and re-bounded with the algorithms that
+	 * reproduce the retail bytes on every collision file in the game. The old
+	 * in-class bounds/bucketing math was PROVEN game-invalid (bounds mismatch
+	 * retail in 846/857 regions, bucketing misses whole-cell triangles in
+	 * 853/857 - guaranteed height-lookup holes) and must never be used for
+	 * writes again.
+	 */
 	public void write() {
-		bounds.updateBounds(this);
-		GRCollisionMesh[] newMeshes = computeMeshOrder();
-
-		offsets[0] = 0;
-		lengths[0] = newMeshes[0].tris.size() * 3;
-		for (int i = 1; i < 16; i++) {
-			lengths[i] = newMeshes[i].tris.size() * 3;
-			offsets[i] = offsets[i - 1] + lengths[i - 1];
+		java.util.List<float[]> tris = new java.util.ArrayList<>();
+		for (int i = 0; i < 16; i++) {
+			for (int j = 0; j < meshes[i].tris.size(); j++) {
+				Triangle t = meshes[i].tris.get(j);
+				tris.add(new float[]{
+					t.getX(0), t.getY(0), t.getZ(0),
+					t.getX(1), t.getY(1), t.getZ(1),
+					t.getX(2), t.getY(2), t.getZ(2)
+				});
+			}
 		}
-		ByteArrayOutputStream out = new ByteArrayOutputStream();
-		LittleEndianDataOutputStream dos = new LittleEndianDataOutputStream(out);
-		try {
-			dos.write4Bytes(COLL_MAGIC);
-			length = 640 /*bounds*/ + 128 /*desc*/ + (offsets[15] + lengths[15]) * 16 /*number of vertices times 16 bytes*/ + 16 /*term*/;
-			dos.writeInt(length);
-			dos.writeInt(unknown_const_0x5D8_1);
-			for (int i = 0; i < 5; i++) {
-				dos.writeInt(unknown_consts_1_3_2_1_2[i]);
-			}
-			bounds.write(dos);
-			for (int i = 0; i < 16; i++) {
-				dos.writeInt(offsets[i]);
-				dos.writeInt(lengths[i]);
-			}
-			for (int i = 0; i < 16; i++) {
-				newMeshes[i].write(dos);
-			}
-			dos.write4Bytes(TERM_MAGIC);
-			dos.writeInt(unknown_const_0x0);
-			dos.writeInt(unknown_const_0x5D8_2);
-			dos.writeInt(unknown_const_0x1);
-			//ayy padding
-			dos.flush();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		mapFile.storeFile(2, out.toByteArray());
+		mapFile.storeFile(2, GfColl.build(tris, null));
 	}
 
 	public float[] getMeshExtremes() {
