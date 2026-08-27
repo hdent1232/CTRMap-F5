@@ -1105,8 +1105,55 @@ public class CtrmapMainframe {
 				JOptionPane.showMessageDialog(frame, "FieldData region " + id + " has no editable map model.", "Import OBJ", JOptionPane.ERROR_MESSAGE);
 				return;
 			}
+			//groups whose material this map does not have can be injected as BRAND-NEW
+			//materials cloned from a template mesh (render config + texture refs)
+			byte[] templateModel = null;
+			int templateMesh = -1;
+			{
+				ctrmap.formats.h3d.BchMapModel bm = new ctrmap.formats.h3d.BchMapModel(model);
+				java.util.Set<String> have = new java.util.HashSet<>();
+				for (int mi = 0; mi < bm.matCount; mi++) {
+					String n = bm.getMaterialName(mi);
+					if (n != null) {
+						have.add(ctrmap.formats.h3d.MapModelObj.sanitize(n).toLowerCase());
+					}
+				}
+				java.util.List<String> newMats = new java.util.ArrayList<>();
+				for (ctrmap.formats.h3d.MapModelObj.ObjMesh om : parsed) {
+					if (om.meshIndex < 0 && om.material != null && !om.material.isEmpty()
+							&& !have.contains(ctrmap.formats.h3d.MapModelObj.sanitize(om.material).toLowerCase())
+							&& !newMats.contains(om.material)) {
+						newMats.add(om.material);
+					}
+				}
+				if (!newMats.isEmpty()) {
+					javax.swing.JSpinner tRegion = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(id, 0, fieldCount - 1, 1));
+					javax.swing.JSpinner tMesh = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 999, 1));
+					Object[] tForm = {
+						"These OBJ groups use materials this map does not have:",
+						"  " + newMats,
+						" ",
+						"They can be created as NEW materials by cloning a template mesh's",
+						"render setup + texture. Pick any mesh whose LOOK (texture) fits:",
+						"Template region:", tRegion,
+						"Template mesh number (see exported group names, mesh<N>_...):", tMesh,
+						" ",
+						"Cancel imports only the groups whose materials already exist."
+					};
+					if (JOptionPane.showConfirmDialog(frame, tForm, "New materials", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION) {
+						GR tgr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, (Integer) tRegion.getValue()));
+						byte[] tm = tgr.getFile(1);
+						if (ctrmap.formats.h3d.BchMapModel.isMapModel(tm)) {
+							templateModel = tm;
+							templateMesh = (Integer) tMesh.getValue();
+						} else {
+							JOptionPane.showMessageDialog(frame, "That region has no map model - new-material groups will be skipped.", "Import OBJ", JOptionPane.WARNING_MESSAGE);
+						}
+					}
+				}
+			}
 			java.util.List<ctrmap.formats.h3d.MapModelObjImporter.Outcome> outcomes = new java.util.ArrayList<>();
-			byte[] edited = ctrmap.formats.h3d.MapModelObjImporter.apply(model, parsed, outcomes);
+			byte[] edited = ctrmap.formats.h3d.MapModelObjImporter.apply(model, parsed, outcomes, templateModel, templateMesh);
 			//sanity: the edited model must re-parse clean before it touches the workspace
 			ctrmap.formats.h3d.BchMapModel check = new ctrmap.formats.h3d.BchMapModel(edited);
 			if (!check.validate().isEmpty()) {

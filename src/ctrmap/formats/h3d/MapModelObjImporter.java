@@ -7,17 +7,23 @@ import java.util.Map;
 
 /**
  * Applies a parsed OBJ (see {@link MapModelObj}) back onto a map model - the
- * import half of the Blender workflow. Each OBJ group that carries a mesh
- * identity ({@code mesh<N>_...}) REPLACES that mesh's geometry via
- * {@link BchMapModel#setMeshGeometry}; groups without an identity are appended
- * to the first mesh whose material name matches their {@code usemtl} (new
- * geometry reusing an existing material).
+ * import half of the Blender workflow, at full attribute fidelity:
+ * <ul>
+ * <li>positions come from the OBJ ({@code v});</li>
+ * <li>texture coordinates come from the OBJ ({@code vt}) when authored - THIS
+ *     is what lets a Blender-built structure carry its own UV mapping;</li>
+ * <li>normals come from the OBJ ({@code vn}) when authored;</li>
+ * <li>colors and any other buffered attribute are inherited from the ORIGINAL
+ *     surface by nearest-neighbor (vertex colors are baked lighting - the sane
+ *     default), encoded in the mesh's own format (u8/255, s8/127 - never -128).</li>
+ * </ul>
  *
- * <p>Vertex attributes beyond position (UVs, normals, colors) are inherited
- * from the ORIGINAL mesh by nearest-neighbor: a vertex that kept its position
- * keeps its exact attribute bytes; a moved/new vertex copies the nearest
- * original vertex's attributes with only the position patched. This keeps
- * texturing intact for shape edits without needing to re-author UVs.
+ * Groups with a mesh identity ({@code mesh<N>_...}) REPLACE that mesh via
+ * {@link BchMapModel#setMeshGeometry}; identity-less groups append to the mesh
+ * whose material matches their {@code usemtl}; and when a TEMPLATE donor is
+ * given, groups with a material the model does not have get a BRAND-NEW
+ * material+mesh injected via {@link BchModelAppender} (cloning the template's
+ * render config) before the geometry lands.
  */
 public class MapModelObjImporter {
 
@@ -26,17 +32,24 @@ public class MapModelObjImporter {
 
 		public String group;
 		public int meshIndex;
-		public String action;   // "replaced", "appended", "skipped: <why>"
+		public String action;   // "replaced", "appended", "new material", "skipped: <why>"
 		public int vertices;
 		public int faces;
 	}
 
+	public static byte[] apply(byte[] modelBytes, List<MapModelObj.ObjMesh> objMeshes, List<Outcome> outcomes) {
+		return apply(modelBytes, objMeshes, outcomes, null, -1);
+	}
+
 	/**
 	 * Applies the parsed meshes onto the model, returning the new BCH bytes and
-	 * filling {@code outcomes}. Never throws for a single bad group - it is
-	 * reported and skipped; throws only if NOTHING could be applied.
+	 * filling {@code outcomes}. With a template donor (any map model + a mesh
+	 * index in it), groups whose material the target lacks are created as new
+	 * material+mesh from the template. Never throws for a single bad group -
+	 * it is reported and skipped; throws only if NOTHING could be applied.
 	 */
-	public static byte[] apply(byte[] modelBytes, List<MapModelObj.ObjMesh> objMeshes, List<Outcome> outcomes) {
+	public static byte[] apply(byte[] modelBytes, List<MapModelObj.ObjMesh> objMeshes, List<Outcome> outcomes,
+			byte[] templateModel, int templateMesh) {
 		byte[] current = modelBytes;
 		int applied = 0;
 		for (MapModelObj.ObjMesh om : objMeshes) {
@@ -52,7 +65,25 @@ public class MapModelObjImporter {
 				boolean append = false;
 				if (target < 0) {
 					target = findMeshByMaterial(model, om.material);
-					append = true;
+					append = target >= 0;
+					if (target < 0 && templateModel != null && templateMesh >= 0) {
+						//NEW MATERIAL: clone the template's render config under this
+						//group's material name, then land the group's geometry in it
+						String matName = uniqueName(model, MapModelObj.sanitize(om.material));
+						current = BchModelAppender.append(current, templateModel, templateMesh, matName);
+						model = new BchMapModel(current);
+						target = findMeshByExactMaterial(model, matName);
+						if (target < 0) {
+							oc.action = "skipped: template injection did not land";
+							continue;
+						}
+						BchMapModel.MeshGeom g = model.geometry().get(target);
+						byte[] vtx = buildVertexBytes(model, g, om);
+						current = model.setMeshGeometry(target, vtx, om.triangles.clone());
+						oc.action = "new material " + matName + " (from template)";
+						applied++;
+						continue;
+					}
 					if (target < 0) {
 						oc.action = "skipped: no mesh identity and no material named '" + om.material + "'";
 						continue;
@@ -64,7 +95,7 @@ public class MapModelObjImporter {
 					continue;
 				}
 				BchMapModel.MeshGeom g = geom.get(target);
-				byte[] vtx = buildVertexBytes(model, g, om.positions);
+				byte[] vtx = buildVertexBytes(model, g, om);
 				if (append) {
 					int base = g.vertexCount;
 					int[] tris = new int[om.triangles.length];
@@ -89,29 +120,68 @@ public class MapModelObjImporter {
 	}
 
 	/**
-	 * Encodes vertices in the mesh's exact attribute layout: nearest original
-	 * vertex's bytes with the position floats patched in.
+	 * Encodes vertices in the mesh's exact attribute layout: every attribute
+	 * starts as the nearest original vertex's bytes (exact position match wins),
+	 * then position - and authored UVs/normals when the OBJ carries them and the
+	 * mesh buffers that attribute - are written over it in the mesh's format.
 	 */
-	static byte[] buildVertexBytes(BchMapModel model, BchMapModel.MeshGeom g, float[][] positions) {
+	static byte[] buildVertexBytes(BchMapModel model, BchMapModel.MeshGeom g, MapModelObj.ObjMesh om) {
 		float[][] orig = model.getVertexPositions(g.meshIndex);
-		// exact-match table (quantized) for O(1) hits on unmoved vertices
 		Map<Long, Integer> exact = new HashMap<>();
 		for (int v = 0; v < orig.length; v++) {
 			exact.putIfAbsent(key(orig[v]), v);
 		}
-		byte[] out = new byte[positions.length * g.stride];
-		for (int v = 0; v < positions.length; v++) {
-			float[] p = positions[v];
+		BchMapModel.MeshAttr uvAttr = model.findAttr(g.meshIndex, 4);
+		BchMapModel.MeshAttr nrmAttr = model.findAttr(g.meshIndex, 1);
+		byte[] out = new byte[om.positions.length * g.stride];
+		for (int v = 0; v < om.positions.length; v++) {
+			float[] p = om.positions[v];
 			Integer src = exact.get(key(p));
 			if (src == null) {
 				src = nearest(orig, p);
 			}
-			System.arraycopy(model.raw, g.vtxAbs + src * g.stride, out, v * g.stride, g.stride);
-			putFloatLE(out, v * g.stride + g.posOffset, p[0]);
-			putFloatLE(out, v * g.stride + g.posOffset + 4, p[1]);
-			putFloatLE(out, v * g.stride + g.posOffset + 8, p[2]);
+			int at = v * g.stride;
+			System.arraycopy(model.raw, g.vtxAbs + src * g.stride, out, at, g.stride);
+			putComp(out, at + g.posOffset, 3, p[0]);
+			putComp(out, at + g.posOffset + 4, 3, p[1]);
+			putComp(out, at + g.posOffset + 8, 3, p[2]);
+			if (uvAttr != null && om.uvs != null && om.uvs[v] != null) {
+				writeAttr(out, at + uvAttr.offset, uvAttr, om.uvs[v]);
+			}
+			if (nrmAttr != null && om.normals != null && om.normals[v] != null) {
+				writeAttr(out, at + nrmAttr.offset, nrmAttr, om.normals[v]);
+			}
 		}
 		return out;
+	}
+
+	/** Writes as many components as both the attribute and the value carry. */
+	private static void writeAttr(byte[] out, int at, BchMapModel.MeshAttr a, float[] val) {
+		int n = Math.min(a.elems, val.length);
+		int compSize = a.size() / a.elems;
+		for (int c = 0; c < n; c++) {
+			putComp(out, at + c * compSize, a.type, val[c]);
+		}
+	}
+
+	/** Encodes one component in a PICA format (game conventions: u8/255, s8/127 never -128). */
+	private static void putComp(byte[] b, int o, int type, float v) {
+		switch (type) {
+			case 3:
+				putFloatLE(b, o, v);
+				break;
+			case 1:
+				b[o] = (byte) Math.max(0, Math.min(255, Math.round(v * 255f)));
+				break;
+			case 0:
+				b[o] = (byte) Math.max(-127, Math.min(127, Math.round(v * 127f)));
+				break;
+			default: //s16 - not observed in map models; natural normalization for safety
+				int s = Math.max(-32767, Math.min(32767, Math.round(v * 32767f)));
+				b[o] = (byte) s;
+				b[o + 1] = (byte) (s >> 8);
+				break;
+		}
 	}
 
 	private static int nearest(float[][] orig, float[] p) {
@@ -136,22 +206,42 @@ public class MapModelObjImporter {
 		return (x << 42) | (y << 21) | z;
 	}
 
+	private static String uniqueName(BchMapModel model, String base) {
+		String name = base;
+		int k = 2;
+		outer:
+		while (true) {
+			for (int i = 0; i < model.matCount; i++) {
+				if (name.equals(model.getMaterialName(i))) {
+					name = base + "_m" + (k++);
+					continue outer;
+				}
+			}
+			return name;
+		}
+	}
+
 	private static int findMeshByMaterial(BchMapModel model, String material) {
 		if (material == null || material.isEmpty()) {
 			return -1;
 		}
-		String want = material.trim();
+		String want = MapModelObj.sanitize(material.trim());
 		for (int m = 0; m < model.meshes.size(); m++) {
 			String name = model.getMaterialName(model.getMeshMaterialIndex(m));
-			if (name != null && sanitize(name).equalsIgnoreCase(sanitize(want))) {
+			if (name != null && MapModelObj.sanitize(name).equalsIgnoreCase(want)) {
 				return m;
 			}
 		}
 		return -1;
 	}
 
-	private static String sanitize(String s) {
-		return s.replaceAll("[^A-Za-z0-9_.-]", "_");
+	private static int findMeshByExactMaterial(BchMapModel model, String material) {
+		for (int m = 0; m < model.meshes.size(); m++) {
+			if (material.equals(model.getMaterialName(model.getMeshMaterialIndex(m)))) {
+				return m;
+			}
+		}
+		return -1;
 	}
 
 	private static void putFloatLE(byte[] b, int o, float f) {
