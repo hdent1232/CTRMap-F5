@@ -21,10 +21,10 @@ import java.io.OutputStream;
  * from the data (multi-cell retail matrices prove the path), and CTRMap's map
  * view already renders multi-cell matrices.
  *
- * <p>v1 scope: hasLOD==0 matrices (all towns/interiors; LOD matrices carry
- * zone-switch grids that must grow in lockstep - later), and growing only
- * (no shrink). Full-extent camera containment entries are stretched to the new
- * extent; repulsors are left alone.
+ * <p>Both plain and LOD matrices are supported (LOD matrices grow their
+ * 4x-resolution zone-switch grid and LOD grid in lockstep; new segments join
+ * the resized zone). Growing only (no shrink). Full-extent camera containment
+ * entries are stretched to the new extent; repulsors are left alone.
  */
 public class MapResizer {
 
@@ -39,9 +39,12 @@ public class MapResizer {
 	 * Headless core: the resized matrix container. Old cells land top-left;
 	 * {@code newCellRegionIds} fill the remaining cells in row-major order.
 	 * All other subfiles are carried verbatim except full-extent camera
-	 * containment entries, which stretch to the new extent.
+	 * containment entries, which stretch to the new extent. LOD matrices grow
+	 * all three grids (main ids, the 4x-resolution zone-switch grid, and the
+	 * LOD grid); {@code primaryZone} is the zone the new regions belong to and
+	 * fills the new zone-switch segments (ignored for non-LOD matrices, pass -1).
 	 */
-	public static byte[] buildResizedMatrix(byte[] mat, int newW, int newH, int[] newCellRegionIds) {
+	public static byte[] buildResizedMatrix(byte[] mat, int newW, int newH, int[] newCellRegionIds, int primaryZone) {
 		int count = u16(mat, 2);
 		if (count < 2) {
 			throw new IllegalArgumentException("matrix container has no camera subfile");
@@ -52,26 +55,56 @@ public class MapResizer {
 		}
 		byte[] sub0 = slice(mat, offs[0], offs[1]);
 		int hasLOD = u16(sub0, 0), unk = u16(sub0, 2), w = u16(sub0, 4), h = u16(sub0, 6);
-		if (hasLOD != 0) {
-			throw new IllegalArgumentException("This map uses an LOD matrix - resizing those is not supported yet.");
-		}
 		if (newW < w || newH < h || (newW == w && newH == h)) {
 			throw new IllegalArgumentException("New size must grow the map (current " + w + "x" + h + ").");
 		}
 		if (newCellRegionIds.length != newW * newH - w * h) {
 			throw new IllegalArgumentException("Need " + (newW * newH - w * h) + " new region ids.");
 		}
-		//new grid
-		byte[] ns0 = new byte[pad4(8 + newW * newH * 2)];
-		putU16(ns0, 0, 0);
-		putU16(ns0, 2, unk);
-		putU16(ns0, 4, newW);
-		putU16(ns0, 6, newH);
+		//main ids grid (grown), tracked so LOD grids can fill by cell occupancy
+		int[] newIds = new int[newW * newH];
 		int next = 0;
 		for (int y = 0; y < newH; y++) {
 			for (int x = 0; x < newW; x++) {
-				int id = (x < w && y < h) ? u16(sub0, 8 + (y * w + x) * 2) : newCellRegionIds[next++];
-				putU16(ns0, 8 + (y * newW + x) * 2, id);
+				newIds[y * newW + x] = (x < w && y < h) ? u16(sub0, 8 + (y * w + x) * 2) : newCellRegionIds[next++];
+			}
+		}
+		int mainLen = 8 + newW * newH * 2;
+		int zoneLen = hasLOD == 1 ? newW * 4 * newH * 4 * 2 : 0;
+		int lodLen = hasLOD == 1 ? newW * newH * 2 : 0;
+		byte[] ns0 = new byte[pad4(mainLen + zoneLen + lodLen)];
+		putU16(ns0, 0, hasLOD);
+		putU16(ns0, 2, unk);
+		putU16(ns0, 4, newW);
+		putU16(ns0, 6, newH);
+		for (int k = 0; k < newW * newH; k++) {
+			putU16(ns0, 8 + k * 2, newIds[k]);
+		}
+		if (hasLOD == 1) {
+			//zone-switch grid: 4x4 segments per region. Old segments copied; new
+			//segments belong to primaryZone where a (new) region exists, else 0xFFFF void.
+			int zBase = mainLen;
+			int zw = w * 4, zh = h * 4, nzw = newW * 4, nzh = newH * 4;
+			for (int zy = 0; zy < nzh; zy++) {
+				for (int zx = 0; zx < nzw; zx++) {
+					int v;
+					if (zx < zw && zy < zh) {
+						v = u16(sub0, 8 + w * h * 2 + (zy * zw + zx) * 2);
+					} else {
+						int rid = newIds[(zy / 4) * newW + (zx / 4)];
+						v = (rid != 0xFFFF && primaryZone >= 0) ? primaryZone : 0xFFFF;
+					}
+					putU16(ns0, zBase + (zy * nzw + zx) * 2, v);
+				}
+			}
+			//LOD grid: old cells copied, new cells 0xFFFF (no LOD swap)
+			int lBase = mainLen + zoneLen;
+			int oldLodBase = 8 + w * h * 2 + zw * zh * 2;
+			for (int y = 0; y < newH; y++) {
+				for (int x = 0; x < newW; x++) {
+					int v = (x < w && y < h) ? u16(sub0, oldLodBase + (y * w + x) * 2) : 0xFFFF;
+					putU16(ns0, lBase + (y * newW + x) * 2, v);
+				}
 			}
 		}
 		//camera subfile: stretch full-extent containment entries
@@ -170,8 +203,9 @@ public class MapResizer {
 		for (int i = 0; i < newCells; i++) {
 			newIds[i] = gr.length + i;
 		}
-		//build the matrix FIRST (validates hasLOD/size before any file lands)
-		byte[] newMat = buildResizedMatrix(matBytes, newW, newH, newIds);
+		//build the matrix FIRST (validates size before any file lands); new LOD
+		//zone-switch segments belong to this zone
+		byte[] newMat = buildResizedMatrix(matBytes, newW, newH, newIds, zoneIndex);
 
 		//blank-canvas regions for the new cells
 		for (int id : newIds) {
