@@ -185,12 +185,24 @@ public class ZoneAppender {
 		if (masterBytes.length != oldCount * ZoneCloner.ZONE_HEADER_SIZE) {
 			masterBytes = garc.getDecompressedEntry(oldCount);
 		}
-		// The EN encounter pack is never edited in the zone editor, so read it
-		// straight from the GARC. A stale extraction file in the EN slot (index
-		// oldCount+1, exactly where the old single-zone append wrote the grown
-		// master) is what produced "EN pack has wrong magic"; going to the GARC
-		// makes the append self-healing against that.
-		byte[] enBytes = garc.getDecompressedEntry(oldCount + 1);
+		// EN pack source: prefer a PENDING encounter edit (persisted workspace file
+		// that validates - the encounter editor writes those), else the GARC. Never
+		// trust a non-persisted extraction file: a stale one in the EN slot (from
+		// the old reverted single-zone append) produced "EN pack has wrong magic".
+		byte[] enBytes = null;
+		File enWs = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, oldCount + 1);
+		if (enWs != null && Workspace.persist_paths.contains(enWs.getAbsolutePath())) {
+			try {
+				byte[] cand = readAll(enWs);
+				validateEN(cand, oldCount);
+				enBytes = cand;
+			} catch (RuntimeException stale) {
+				//fall through to the GARC
+			}
+		}
+		if (enBytes == null) {
+			enBytes = garc.getDecompressedEntry(oldCount + 1);
+		}
 		MultiAppendPayloads p = buildMultiAppendPayloads(readAll(srcFile), masterBytes, enBytes, srcIndex, oldCount, addCount);
 
 		// Auto-fork geometry: give each REAL new zone its OWN private map so editing

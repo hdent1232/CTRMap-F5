@@ -104,6 +104,7 @@ public class CtrmapMainframe {
 	public static JMenuItem importMapObj;
 	public static JMenuItem forkGeometry;
 	public static JMenuItem blankCanvas;
+	public static JMenuItem wildEncounters;
 	public static JMenuItem renameZone;
 	public static JMenuItem emptyZone;
 	public static JMenuItem findReusableZones;
@@ -198,6 +199,7 @@ public class CtrmapMainframe {
 		importMapObj = new JMenuItem("Import OBJ into map region (Blender)...");
 		forkGeometry = new JMenuItem("Fork map geometry (make zone independent)...");
 		blankCanvas = new JMenuItem("Blank map canvas (this zone)...");
+		wildEncounters = new JMenuItem("Edit wild encounters (this zone)...");
 		renameZone = new JMenuItem("Rename zone (in-game name)...");
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
 		findReusableZones = new JMenuItem("Find reusable base zones...");
@@ -434,6 +436,12 @@ public class CtrmapMainframe {
 				blankCanvasAction();
 			}
 		});
+		wildEncounters.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ctrmap.humaninterface.EncounterEditDialog.show(frame);
+			}
+		});
 		exportMapObj.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -591,6 +599,7 @@ public class CtrmapMainframe {
 		toolsmenu.add(importMapObj);
 		toolsmenu.add(forkGeometry);
 		toolsmenu.add(blankCanvas);
+		toolsmenu.add(wildEncounters);
 		toolsmenu.add(renameZone);
 		toolsmenu.add(emptyZone);
 		toolsmenu.add(findReusableZones);
