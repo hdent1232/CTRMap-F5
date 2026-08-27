@@ -62,6 +62,8 @@ public class Workspace {
 	public static GARC trclass;
 	public static GARC trpoke;
 	private static File trainerdataFile, trainerclassFile, trainerpokeFile;
+	//Battle Maison opponent data (ORAS-only; sniff off - 16B set records may start 0x11)
+	public static GARC maisonSetA, maisonListA, maisonSetB, maisonListB, maisonSetC;
 
 	public static String[] musicNames;
 	
@@ -275,6 +277,16 @@ public class Workspace {
 					return "/a/0/3/7";
 				case TRAINER_POKE:
 					return "/a/0/3/8";
+				case MAISON_SET_POOL_A:
+					return "/a/1/8/2";
+				case MAISON_CLASS_LIST_A:
+					return "/a/1/8/3";
+				case MAISON_SET_POOL_B:
+					return "/a/1/8/4";
+				case MAISON_CLASS_LIST_B:
+					return "/a/1/8/5";
+				case MAISON_SET_POOL_C:
+					return "/a/1/8/6";
 				case SOUND_BCSAR:
 					return "/sound/sango_sound.bcsar";
 			}
@@ -315,6 +327,11 @@ public class Workspace {
 		cleanDirectory(WORKSPACE_PATH + "/trdata", deletePersistent);
 		cleanDirectory(WORKSPACE_PATH + "/trclass", deletePersistent);
 		cleanDirectory(WORKSPACE_PATH + "/trpoke", deletePersistent);
+		cleanDirectory(WORKSPACE_PATH + "/maison_setA", deletePersistent);
+		cleanDirectory(WORKSPACE_PATH + "/maison_listA", deletePersistent);
+		cleanDirectory(WORKSPACE_PATH + "/maison_setB", deletePersistent);
+		cleanDirectory(WORKSPACE_PATH + "/maison_listB", deletePersistent);
+		cleanDirectory(WORKSPACE_PATH + "/maison_setC", deletePersistent);
 		cleanDirectory(WORKSPACE_PATH + "/temp", true);
 	}
 
@@ -333,6 +350,16 @@ public class Workspace {
 		}
 	}
 
+	/** Opens an ORAS-only GARC with compression sniffing off, or null if absent. */
+	private static GARC optionalGarc(ArchiveType type) {
+		String rel = getArchivePath(type, game);
+		if (rel == null) {
+			return null;
+		}
+		File f = new File(GAMEDIR_PATH + rel);
+		return f.exists() ? new GARC(f, false) : null;
+	}
+
 	public static GARC getArchive(ArchiveType type) {
 		switch (type) {
 			case AREA_DATA:
@@ -343,6 +370,16 @@ public class Workspace {
 				return trclass;
 			case TRAINER_POKE:
 				return trpoke;
+			case MAISON_SET_POOL_A:
+				return maisonSetA;
+			case MAISON_CLASS_LIST_A:
+				return maisonListA;
+			case MAISON_SET_POOL_B:
+				return maisonSetB;
+			case MAISON_CLASS_LIST_B:
+				return maisonListB;
+			case MAISON_SET_POOL_C:
+				return maisonSetC;
 			case FIELD_DATA:
 				return gr;
 			case MAP_MATRIX:
@@ -380,6 +417,21 @@ public class Workspace {
 				break;
 			case TRAINER_POKE:
 				sb.append("trpoke");
+				break;
+			case MAISON_SET_POOL_A:
+				sb.append("maison_setA");
+				break;
+			case MAISON_CLASS_LIST_A:
+				sb.append("maison_listA");
+				break;
+			case MAISON_SET_POOL_B:
+				sb.append("maison_setB");
+				break;
+			case MAISON_CLASS_LIST_B:
+				sb.append("maison_listB");
+				break;
+			case MAISON_SET_POOL_C:
+				sb.append("maison_setC");
 				break;
 			case MAP_MATRIX:
 				sb.append("mapmatrix");
@@ -452,6 +504,12 @@ public class Workspace {
 			} else {
 				trdata = trclass = trpoke = null;
 			}
+			//Battle Maison opponent GARCs (ORAS-only; optional)
+			maisonSetA = optionalGarc(ArchiveType.MAISON_SET_POOL_A);
+			maisonListA = optionalGarc(ArchiveType.MAISON_CLASS_LIST_A);
+			maisonSetB = optionalGarc(ArchiveType.MAISON_SET_POOL_B);
+			maisonListB = optionalGarc(ArchiveType.MAISON_CLASS_LIST_B);
+			maisonSetC = optionalGarc(ArchiveType.MAISON_SET_POOL_C);
 			snapshotOriginals();
 		}
 	}
@@ -528,6 +586,26 @@ public class Workspace {
 				}
 				if (trpoke != null) {
 					trpoke = new GARC(trpoke.file, false);
+				}
+			case MAISON_SET_POOL_A:
+			case MAISON_CLASS_LIST_A:
+			case MAISON_SET_POOL_B:
+			case MAISON_CLASS_LIST_B:
+			case MAISON_SET_POOL_C:
+				if (maisonSetA != null) {
+					maisonSetA = new GARC(maisonSetA.file, false);
+				}
+				if (maisonListA != null) {
+					maisonListA = new GARC(maisonListA.file, false);
+				}
+				if (maisonSetB != null) {
+					maisonSetB = new GARC(maisonSetB.file, false);
+				}
+				if (maisonListB != null) {
+					maisonListB = new GARC(maisonListB.file, false);
+				}
+				if (maisonSetC != null) {
+					maisonSetC = new GARC(maisonSetC.file, false);
 				}
 		}
 	}
@@ -609,6 +687,14 @@ public class Workspace {
 				if (trpoke != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.TRAINER_POKE))) {
 					trpoke.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_POKE));
 				}
+				//Battle Maison opponent pools/lists (edited-only)
+				for (ArchiveType mt : new ArchiveType[]{ArchiveType.MAISON_SET_POOL_A, ArchiveType.MAISON_CLASS_LIST_A,
+					ArchiveType.MAISON_SET_POOL_B, ArchiveType.MAISON_CLASS_LIST_B, ArchiveType.MAISON_SET_POOL_C}) {
+					GARC mg = getArchive(mt);
+					if (mg != null && hasPersistedFiles(getExtractionDirectory(mt))) {
+						mg.packDirectory(getExtractionDirectory(mt));
+					}
+				}
 				progress.setDescription("Packing - gametext");
 					//packDirectory rewrites the GARC in the game directory even with zero persisted files - only pack when text was actually edited
 					if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {
@@ -683,6 +769,11 @@ public class Workspace {
 		TRAINER_DATA,
 		TRAINER_CLASS,
 		TRAINER_POKE,
+		MAISON_SET_POOL_A,
+		MAISON_CLASS_LIST_A,
+		MAISON_SET_POOL_B,
+		MAISON_CLASS_LIST_B,
+		MAISON_SET_POOL_C,
 		MAP_MATRIX,
 		GAMETEXT,
 		STORYTEXT,
