@@ -35,6 +35,7 @@ $suites = @(
     @{ n = "Prefabs";                     c = "ctrmap.tests.MapPrefabTest";          a = @($a039, $step) },
     @{ n = "RegionFactory (blank maps)";  c = "ctrmap.tests.RegionFactoryTest";      a = @($a039, $step) },
     @{ n = "MapResizer";                  c = "ctrmap.tests.MapResizerTest";         a = @($a040) },
+    @{ n = "LZ11 codec + ratio";          c = "ctrmap.tests.LZ11Test";               a = @($a039) },
     @{ n = "EncounterTable";              c = "ctrmap.tests.EncounterTableTest";     a = @($a013) },
     @{ n = "TrainerData";                 c = "ctrmap.tests.TrainerDataTest";        a = @() },
     @{ n = "ZoneAppend";                  c = "ctrmap.tests.ZoneAppendTest";         a = @() },

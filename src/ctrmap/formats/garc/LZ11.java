@@ -86,101 +86,153 @@ public class LZ11 {
 		return outstream.toByteArray();
 	}
 
-	public static byte[] compress(byte[] data) {
-		byte[] dictionary = new byte[4096];
-		int dicOffset = 0;
-		byte[] compressed = new byte[data.length + data.length / 8 + 3];
-		int dataOffset = 0;
-		int compressedOffset = 0;
-		int bitCount = 0;
-		compressed[0] = 0x11;
-		compressed[1] = (byte) (data.length & 0xFF);
-		compressed[2] = (byte) ((data.length & 0xFF00) >> 8);
-		compressed[3] = (byte) ((data.length & 0xFF0000) >> 16);
-		compressedOffset += 4;
-		int bitsPtr = 0;
-		while (dataOffset < data.length) {
-			if (bitCount == 0) {
-				bitsPtr = compressedOffset;
-				compressedOffset++;
-				bitCount = 8;
+	// LZ11 window + match limits (must match the token forms the decoder reads)
+	private static final int WINDOW = 0x1000;       // max displacement 4096
+	private static final int MIN_MATCH = 3;
+	private static final int MAX_MATCH = 0xFFFF + 0x111; // 65808, the 4-byte form ceiling
+	private static final int HASH_BITS = 15;
+	private static final int HASH_SIZE = 1 << HASH_BITS;
+	private static final int MAX_CHAIN = 128;        // longest-match search depth (ratio vs speed)
+
+	/** Growable byte buffer with O(1) indexed patch (for rewriting flag bytes in place). */
+	private static final class Buf {
+
+		byte[] a = new byte[256];
+		int len = 0;
+
+		void w(int b) {
+			if (len == a.length) {
+				a = java.util.Arrays.copyOf(a, a.length << 1);
 			}
+			a[len++] = (byte) b;
+		}
 
-			int dicPos = 0;
-			int foundData = 0;
-			boolean compressedData = false;
-			int idx = indexOfIntArray(dictionary, data[dataOffset]);
-			if (idx != -1) {
-				while (true) {
-					int dataSize = 0;
-					for (int j = 0; j <= 15; j++) {
-						if (dataOffset + j >= data.length) {
-							break;
-						}
-						if (dictionary[(idx + j) & 0xFFF] == data[dataOffset + j]) {
-							dataSize++;
-						} 
-						else {
-							break;
-						}
-					}
-					if (dataSize >= 3) {
-						if ((idx + dataSize < dicOffset) || (idx > dicOffset + dataSize)) {
-							if (dataSize > foundData) {
-								compressedData = true;
-								foundData = dataSize;
-								dicPos = idx;
-							}
+		void set(int i, int v) {
+			a[i] = (byte) v;
+		}
 
-						}
+		byte[] toArray() {
+			return java.util.Arrays.copyOf(a, len);
+		}
+	}
 
-					}
-					idx = indexOfIntArray(dictionary, data[dataOffset], idx + 1);
-					if ((idx == -1)) {
+	/**
+	 * Greedy longest-match LZ11 encoder with hash-chained match finding. Emits
+	 * all three GF token forms (2/3/4-byte, for match lengths 3..16 / 17..272 /
+	 * 273..65808), so long runs cost a few bytes instead of one token per 15
+	 * bytes like the previous port - output is a fraction of the size and still
+	 * decodes byte-identically. Every back-reference stays within the 4096-byte
+	 * window and never references data ahead of the cursor.
+	 */
+	public static byte[] compress(byte[] data) {
+		int n = data.length;
+		Buf out = new Buf();
+		out.w(0x11);
+		out.w(n & 0xFF);
+		out.w((n >> 8) & 0xFF);
+		out.w((n >> 16) & 0xFF);
+
+		// hash chains: head[hash] = last position with that 3-byte hash; prev[p] links back
+		int[] head = new int[HASH_SIZE];
+		int[] prev = new int[n < 1 ? 1 : n];
+		java.util.Arrays.fill(head, -1);
+
+		int i = 0;
+		int flagPos = -1;
+		int flagBit = 0; // bits still free in the current flag byte
+		int flags = 0;
+		while (i < n) {
+			long m = findMatch(data, i, n, head, prev);
+			int bestLen = (int) (m >>> 32);
+			int bestDist = (int) m;
+
+			if (flagBit == 0) {
+				flagPos = out.len;
+				out.w(0);
+				flags = 0;
+				flagBit = 8;
+			}
+			flagBit--;
+			if (bestLen >= MIN_MATCH) {
+				flags |= 1 << flagBit;
+				writeMatch(out, bestLen, bestDist);
+				for (int k = 0; k < bestLen && i + k < n; k++) {
+					insert(data, i + k, head, prev);
+				}
+				i += bestLen;
+			} else {
+				out.w(data[i] & 0xFF);
+				insert(data, i, head, prev);
+				i++;
+			}
+			out.set(flagPos, flags);
+		}
+		return out.toArray();
+	}
+
+	/** Longest match for position i, packed as (len<<32)|dist; len<MIN_MATCH if none. */
+	private static long findMatch(byte[] data, int i, int n, int[] head, int[] prev) {
+		if (i + MIN_MATCH > n) {
+			return 0;
+		}
+		int hash = hash3(data, i);
+		int cand = head[hash];
+		int limit = Math.max(0, i - WINDOW);
+		int bestLen = MIN_MATCH - 1, bestDist = 0;
+		int maxLen = Math.min(MAX_MATCH, n - i);
+		int chain = MAX_CHAIN;
+		while (cand >= limit && cand >= 0 && chain-- > 0) {
+			if (data[cand + bestLen] == data[i + bestLen]) { // quick reject on the frontier byte
+				int len = 0;
+				while (len < maxLen && data[cand + len] == data[i + len]) {
+					len++;
+				}
+				if (len > bestLen) {
+					bestLen = len;
+					bestDist = i - cand;
+					if (len >= maxLen) {
 						break;
 					}
-
 				}
-
 			}
-
-			if (compressedData && ((dicPos < dataOffset) || (dataOffset > 0xFFF))) {
-				int back = dicOffset - dicPos - 1;
-				compressed[bitsPtr] = (byte)(compressed[bitsPtr] | ((byte)Math.pow(2, bitCount - 1)));
-				compressed[compressedOffset] = (byte)((((foundData - 1) & 0xF) * 0x10) + ((back & 0xF00) / 0x100));
-				compressed[compressedOffset + 1] = (byte)(back & 0xFF);
-				compressedOffset += 2;
-				for (int j = 0; j <= foundData - 1; j++) {
-					dictionary[dicOffset] = data[dataOffset];
-					dicOffset = (dicOffset + 1) & 0xFFF;
-					dataOffset++;
-				}
-
-			} else {
-				compressed[compressedOffset] = data[dataOffset];
-				dictionary[dicOffset] = compressed[compressedOffset];
-				dicOffset = (dicOffset + 1) & 0xFFF;
-				compressedOffset++;
-				dataOffset++;
-			}
-			bitCount--;
+			cand = prev[cand];
 		}
-		byte[] ret = new byte[compressedOffset];
-		System.arraycopy(compressed, 0, ret, 0, ret.length);
-		return ret;
+		return bestLen >= MIN_MATCH ? (((long) bestLen) << 32) | (bestDist & 0xFFFFFFFFL) : 0;
 	}
 
-	public static int indexOfIntArray(byte[] array, int key){
-		return indexOfIntArray(array, key, 0);
-	}
-	public static int indexOfIntArray(byte[] array, int key, int startIndex) {
-		int returnvalue = -1;
-		for (int i = startIndex; i < array.length; ++i) {
-			if (key == array[i]) {
-				returnvalue = i;
-				break;
-			}
+	private static void insert(byte[] data, int i, int[] head, int[] prev) {
+		if (i + MIN_MATCH > data.length) {
+			return;
 		}
-		return returnvalue;
+		int hash = hash3(data, i);
+		prev[i] = head[hash];
+		head[hash] = i;
+	}
+
+	private static int hash3(byte[] d, int i) {
+		int h = (d[i] & 0xFF) | ((d[i + 1] & 0xFF) << 8) | ((d[i + 2] & 0xFF) << 16);
+		h = (h * 0x9E3779B1) >>> (32 - HASH_BITS);
+		return h & (HASH_SIZE - 1);
+	}
+
+	/** Writes one match token in the appropriate GF form. */
+	private static void writeMatch(Buf out, int length, int dist) {
+		int d = dist - 1; // stored displacement is disp-1 (0..4095)
+		if (length <= 0x10) { // 2-byte form: len 3..16
+			int l = length - 1;
+			out.w((l << 4) | ((d >> 8) & 0x0F));
+			out.w(d & 0xFF);
+		} else if (length <= 0x110) { // 3-byte form: len 0x11..0x110
+			int l = length - 0x11;
+			out.w((l >> 4) & 0x0F);              // top nibble 0 selects this form
+			out.w(((l & 0x0F) << 4) | ((d >> 8) & 0x0F));
+			out.w(d & 0xFF);
+		} else { // 4-byte form: len 0x111..0x10110
+			int l = length - 0x111;
+			out.w(0x10 | ((l >> 12) & 0x0F));    // top nibble 1 selects this form
+			out.w((l >> 4) & 0xFF);
+			out.w(((l & 0x0F) << 4) | ((d >> 8) & 0x0F));
+			out.w(d & 0xFF);
+		}
 	}
 }
