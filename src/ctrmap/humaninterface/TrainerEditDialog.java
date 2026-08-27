@@ -88,8 +88,17 @@ public class TrainerEditDialog {
 			final JSpinner classSpin = new JSpinner(new SpinnerNumberModel(t.classId, 0, 279, 1));
 			final JSpinner typeSpin = new JSpinner(new SpinnerNumberModel(t.battleType, 0, 4, 1));
 			final JSpinner moneySpin = new JSpinner(new SpinnerNumberModel(t.moneyRate, 0, 255, 1));
+			final String[] classNames = classes;
+			final JLabel classNameLbl = new JLabel();
+			Runnable refreshClass = () -> {
+				int c = (Integer) classSpin.getValue();
+				classNameLbl.setText(" = " + (c < classNames.length ? classNames[c] : "#" + c) + "   ");
+			};
+			refreshClass.run();
+			classSpin.addChangeListener(e -> refreshClass.run());
 			top.add(new JLabel("Class:"));
 			top.add(classSpin);
+			top.add(classNameLbl);
 			top.add(new JLabel("Battle type (0 single, 1 double):"));
 			top.add(typeSpin);
 			top.add(new JLabel("Money rate:"));
