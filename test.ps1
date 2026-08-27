@@ -40,6 +40,8 @@ $suites = @(
     @{ n = "TrainerData";                 c = "ctrmap.tests.TrainerDataTest";        a = @() },
     @{ n = "GfHash (native names)";       c = "ctrmap.tests.GfHashTest";             a = @() },
     @{ n = "SYSREQ-by-name disasm";       c = "ctrmap.tests.SysreqNameTest";         a = @($a013) },
+    @{ n = "GiveBP script emit";          c = "ctrmap.tests.GiveBpScriptTest";       a = @($a013) },
+    @{ n = "Talker wizard dry-run";       c = "ctrmap.tests.TalkerWizardDryRunTest"; a = @() },
     @{ n = "MaisonSet (opponents)";       c = "ctrmap.tests.MaisonSetTest";          a = @() },
     @{ n = "MaisonClassList (teams)";     c = "ctrmap.tests.MaisonClassListTest";    a = @() },
     @{ n = "ZoneAppend";                  c = "ctrmap.tests.ZoneAppendTest";         a = @() },
