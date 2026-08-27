@@ -102,6 +102,13 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
 	}
 
+	/** Programmatically opens a zone, as if picked from the dropdown. */
+	public void selectZone(int index) {
+		if (index >= 0 && index < zoneList.getItemCount()) {
+			zoneList.setSelectedIndex(index);
+		}
+	}
+
 	public void loadEverything() {
 		loadEverything(null);
 	}
