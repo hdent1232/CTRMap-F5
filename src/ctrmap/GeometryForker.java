@@ -283,8 +283,24 @@ public class GeometryForker {
 		return r;
 	}
 
+	/** Registers a pending FieldData compression override (appenders other than the fork reuse this). */
+	public static void registerPendingField(int index, boolean compressed) {
+		if (pendingFieldOverrides == null) {
+			pendingFieldOverrides = new HashMap<>();
+		}
+		pendingFieldOverrides.put(index, compressed);
+	}
+
+	/** Registers a pending MapMatrix compression override (appenders other than the fork reuse this). */
+	public static void registerPendingMatrix(int index, boolean compressed) {
+		if (pendingMatrixOverrides == null) {
+			pendingMatrixOverrides = new HashMap<>();
+		}
+		pendingMatrixOverrides.put(index, compressed);
+	}
+
 	/** Repoints a zone's mapmatrixID in the master zone-header table file. */
-	private static void repointMasterRow(GARC zo, int zoneIndex, int newMatrix) throws IOException {
+	public static void repointMasterRow(GARC zo, int zoneIndex, int newMatrix) throws IOException {
 		int masterIndex = zo.length - 2;
 		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, masterIndex);
 		if (masterFile == null) {
