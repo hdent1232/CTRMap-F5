@@ -316,6 +316,73 @@ public class BchMapModel {
 	}
 
 	/**
+	 * One buffered vertex attribute of a mesh: PICA semantic, format, and byte
+	 * offset within the vertex stride. Fixed (non-buffered) attributes live as
+	 * constants in the command stream and are not listed - they take no bytes.
+	 */
+	public static final class MeshAttr {
+
+		/** PICA semantic: 0=Position, 1=Normal, 2=Tangent, 3=Color, 4=TexCoord0, 5=TexCoord1, 6=TexCoord2, 7=BoneIndex, 8=BoneWeight. */
+		public int name;
+		/** PICA format: 0=s8, 1=u8, 2=s16, 3=float. */
+		public int type;
+		/** Components, 1..4. */
+		public int elems;
+		/** Byte offset within a vertex. */
+		public int offset;
+
+		public int size() {
+			return elems * TYPE_BYTES[type];
+		}
+	}
+
+	/**
+	 * The complete buffered attribute layout of a mesh, in buffer order - the
+	 * decode/encode map for full-fidelity import/export (UVs, normals, colors).
+	 * Uses the same double-indirection walk as {@link #geometry()} (attrs64
+	 * component nibble -> perm64 semantic / fmt64 format). Returns an empty list
+	 * when the walk does not fit the stride (exotic-format meshes).
+	 */
+	public List<MeshAttr> attributes(int meshIndex) {
+		List<MeshAttr> out = new ArrayList<>();
+		if (meshIndex < 0 || meshIndex >= meshes.size()) {
+			return out;
+		}
+		int p = meshes.get(meshIndex)[1];
+		long fmt64 = u32(p + 0x28) | (u32(p + 0x2C) << 32);
+		long perm64 = u32(p + 0x10) | (u32(p + 0x18) << 32);
+		long attrs64 = u32(p + 0x34) | (u32(p + 0x38) << 32);
+		int stride = (int) ((attrs64 >>> 48) & 0xFF);
+		int bufAttrCount = (int) ((attrs64 >>> 60) & 0xF);
+		int running = 0;
+		for (int j = 0; j < bufAttrCount; j++) {
+			int permIndex = (int) ((attrs64 >>> (j * 4)) & 0xF);
+			int fmtNibble = (int) ((fmt64 >>> (permIndex * 4)) & 0xF);
+			MeshAttr a = new MeshAttr();
+			a.name = (int) ((perm64 >>> (permIndex * 4)) & 0xF);
+			a.type = fmtNibble & 3;
+			a.elems = ((fmtNibble >>> 2) & 3) + 1;
+			a.offset = running;
+			running += a.size();
+			if (running > stride) {
+				return new ArrayList<>(); //walk does not fit - unrecognized layout
+			}
+			out.add(a);
+		}
+		return out;
+	}
+
+	/** The first attribute with the given PICA semantic, or null. */
+	public MeshAttr findAttr(int meshIndex, int name) {
+		for (MeshAttr a : attributes(meshIndex)) {
+			if (a.name == name) {
+				return a;
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Decodes each mesh's vertex layout: walks the PICA attribute config in the
 	 * EnableCommands stream (buffer-attribute -> permutation index -> name/format
 	 * double indirection) to find the position attribute, and reads the submesh
