@@ -349,6 +349,11 @@ public class GARC {
 		return entries.get(num).compressed;
 	}
 
+	/** The on-disk (stored) byte length of an entry - compressed size when compressed. */
+	public int getEntryStoredLength(int num) {
+		return entries.get(num).length;
+	}
+
 	public byte[] getDecompressedEntry(int num) {
 		if (num >= entries.size()) {
 			return null;
