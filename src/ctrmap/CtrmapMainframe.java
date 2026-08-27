@@ -106,6 +106,7 @@ public class CtrmapMainframe {
 	public static JMenuItem blankCanvas;
 	public static JMenuItem resizeMap;
 	public static JMenuItem wildEncounters;
+	public static JMenuItem trainerEditor;
 	public static JMenuItem renameZone;
 	public static JMenuItem emptyZone;
 	public static JMenuItem findReusableZones;
@@ -202,6 +203,7 @@ public class CtrmapMainframe {
 		blankCanvas = new JMenuItem("Blank map canvas (this zone)...");
 		wildEncounters = new JMenuItem("Edit wild encounters (this zone)...");
 		resizeMap = new JMenuItem("Resize map (this zone)...");
+		trainerEditor = new JMenuItem("Edit trainer (party/battle)...");
 		renameZone = new JMenuItem("Rename zone (in-game name)...");
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
 		findReusableZones = new JMenuItem("Find reusable base zones...");
@@ -450,6 +452,12 @@ public class CtrmapMainframe {
 				resizeMapAction();
 			}
 		});
+		trainerEditor.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame);
+			}
+		});
 		exportMapObj.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -609,6 +617,7 @@ public class CtrmapMainframe {
 		toolsmenu.add(blankCanvas);
 		toolsmenu.add(wildEncounters);
 		toolsmenu.add(resizeMap);
+		toolsmenu.add(trainerEditor);
 		toolsmenu.add(renameZone);
 		toolsmenu.add(emptyZone);
 		toolsmenu.add(findReusableZones);
