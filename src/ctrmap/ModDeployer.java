@@ -43,7 +43,12 @@ public class ModDeployer {
 		Workspace.ArchiveType.NPC_REGISTRIES,
 		Workspace.ArchiveType.MOVE_MODELS,
 		Workspace.ArchiveType.TRAINER_DATA,
-		Workspace.ArchiveType.TRAINER_POKE
+		Workspace.ArchiveType.TRAINER_POKE,
+		Workspace.ArchiveType.MAISON_SET_POOL_A,
+		Workspace.ArchiveType.MAISON_CLASS_LIST_A,
+		Workspace.ArchiveType.MAISON_SET_POOL_B,
+		Workspace.ArchiveType.MAISON_CLASS_LIST_B,
+		Workspace.ArchiveType.MAISON_SET_POOL_C
 	};
 
 	public static class Result {
