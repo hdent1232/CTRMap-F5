@@ -32,6 +32,16 @@ public class GARC {
 	public int length;
 
 	public GARC(File f) {
+		this(f, true);
+	}
+
+	/**
+	 * Opens a GARC. The container stores NO per-entry compression flag - LZ11 is
+	 * detected by sniffing - so archives whose entries are known to be raw
+	 * (trainer data: any entry may legitimately START with 0x11) must pass
+	 * {@code allowCompression = false} or risk corruption on read.
+	 */
+	public GARC(File f, boolean allowCompression) {
 		try {
 			this.file = f;
 
@@ -86,7 +96,7 @@ public class GARC {
 						byte[] buffer = new byte[length];
 						in.read(buffer);
 
-						boolean isCompressed = buffer.length > 0 ? buffer[0] == 0x11 : false;
+						boolean isCompressed = allowCompression && sniffLZ11(buffer);
 
 						GARCEntry entry = new GARCEntry();
 						entry.offset = startOffset + dataOffset;
@@ -102,6 +112,21 @@ public class GARC {
 		} catch (IOException ex) {
 			Logger.getLogger(GARC.class.getName()).log(Level.SEVERE, null, ex);
 		}
+	}
+
+	/**
+	 * Validating LZ11 sniff: first byte 0x11 AND the declared decompressed size
+	 * (header bytes 1-3) must be plausible for the entry's stored length. A raw
+	 * entry that merely STARTS with 0x11 (measured: trclass a/0/3/7 entry 122,
+	 * which would otherwise "inflate" to 16.7 MB of garbage) almost always
+	 * declares a wild size and is rejected.
+	 */
+	private static boolean sniffLZ11(byte[] buffer) {
+		if (buffer.length < 4 || buffer[0] != 0x11) {
+			return false;
+		}
+		int declared = (buffer[1] & 0xFF) | ((buffer[2] & 0xFF) << 8) | ((buffer[3] & 0xFF) << 16);
+		return declared > 0 && declared < 0x400000 && declared <= Math.max(0x1000, buffer.length * 64);
 	}
 
 	public void packDirectory(File dir) {

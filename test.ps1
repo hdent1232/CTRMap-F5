@@ -36,6 +36,7 @@ $suites = @(
     @{ n = "RegionFactory (blank maps)";  c = "ctrmap.tests.RegionFactoryTest";      a = @($a039, $step) },
     @{ n = "MapResizer";                  c = "ctrmap.tests.MapResizerTest";         a = @($a040) },
     @{ n = "EncounterTable";              c = "ctrmap.tests.EncounterTableTest";     a = @($a013) },
+    @{ n = "TrainerData";                 c = "ctrmap.tests.TrainerDataTest";        a = @() },
     @{ n = "ZoneAppend";                  c = "ctrmap.tests.ZoneAppendTest";         a = @() },
     @{ n = "ZoneLimitPatch";              c = "ctrmap.tests.ZoneLimitPatchTest";     a = @() }
 )

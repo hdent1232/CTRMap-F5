@@ -56,6 +56,12 @@ public class Workspace {
 	public static GARC bm;
 	public static GARC npcreg;
 	public static GARC npcmm;
+	//trainer archives (ORAS-only; opened with compression sniffing DISABLED -
+	//their entries are always raw and may legitimately start with 0x11)
+	public static GARC trdata;
+	public static GARC trclass;
+	public static GARC trpoke;
+	private static File trainerdataFile, trainerclassFile, trainerpokeFile;
 
 	public static String[] musicNames;
 	
@@ -263,10 +269,17 @@ public class Workspace {
 					return "/a/1/3/7";
 				case MOVE_MODELS:
 					return "/a/0/2/1";
+				case TRAINER_DATA:
+					return "/a/0/3/6";
+				case TRAINER_CLASS:
+					return "/a/0/3/7";
+				case TRAINER_POKE:
+					return "/a/0/3/8";
 				case SOUND_BCSAR:
 					return "/sound/sango_sound.bcsar";
 			}
 		}
+		//XY trainer GARC paths are unverified - trainer editing is ORAS-only
 		return null;
 	}
 
@@ -299,6 +312,9 @@ public class Workspace {
 		cleanDirectory(WORKSPACE_PATH + "/buildingmodels", deletePersistent);
 		cleanDirectory(WORKSPACE_PATH + "/npcregistries", deletePersistent);
 		cleanDirectory(WORKSPACE_PATH + "/movemodels", deletePersistent);
+		cleanDirectory(WORKSPACE_PATH + "/trdata", deletePersistent);
+		cleanDirectory(WORKSPACE_PATH + "/trclass", deletePersistent);
+		cleanDirectory(WORKSPACE_PATH + "/trpoke", deletePersistent);
 		cleanDirectory(WORKSPACE_PATH + "/temp", true);
 	}
 
@@ -321,6 +337,12 @@ public class Workspace {
 		switch (type) {
 			case AREA_DATA:
 				return ad;
+			case TRAINER_DATA:
+				return trdata;
+			case TRAINER_CLASS:
+				return trclass;
+			case TRAINER_POKE:
+				return trpoke;
 			case FIELD_DATA:
 				return gr;
 			case MAP_MATRIX:
@@ -349,6 +371,15 @@ public class Workspace {
 				break;
 			case FIELD_DATA:
 				sb.append("fielddata");
+				break;
+			case TRAINER_DATA:
+				sb.append("trdata");
+				break;
+			case TRAINER_CLASS:
+				sb.append("trclass");
+				break;
+			case TRAINER_POKE:
+				sb.append("trpoke");
 				break;
 			case MAP_MATRIX:
 				sb.append("mapmatrix");
@@ -409,6 +440,18 @@ public class Workspace {
 			bm = new GARC(buildingmodels);
 			npcreg = new GARC(npcregistries);
 			npcmm = new GARC(movemodels);
+			//trainer archives (ORAS-only paths; optional - older partial dumps lack them)
+			String trdPath = getArchivePath(ArchiveType.TRAINER_DATA, game);
+			if (trdPath != null) {
+				trainerdataFile = new File(GAMEDIR_PATH + trdPath);
+				trainerclassFile = new File(GAMEDIR_PATH + getArchivePath(ArchiveType.TRAINER_CLASS, game));
+				trainerpokeFile = new File(GAMEDIR_PATH + getArchivePath(ArchiveType.TRAINER_POKE, game));
+				trdata = trainerdataFile.exists() ? new GARC(trainerdataFile, false) : null;
+				trclass = trainerclassFile.exists() ? new GARC(trainerclassFile, false) : null;
+				trpoke = trainerpokeFile.exists() ? new GARC(trainerpokeFile, false) : null;
+			} else {
+				trdata = trclass = trpoke = null;
+			}
 			snapshotOriginals();
 		}
 	}
@@ -472,6 +515,19 @@ public class Workspace {
 			case STORYTEXT:
 				if (storytexts != null) {
 					storytexts = new GARC(storytexts.file);
+				}
+			case TRAINER_DATA:
+			case TRAINER_CLASS:
+			case TRAINER_POKE:
+				//sniffing stays disabled - trainer entries are raw and may start with 0x11
+				if (trdata != null) {
+					trdata = new GARC(trdata.file, false);
+				}
+				if (trclass != null) {
+					trclass = new GARC(trclass.file, false);
+				}
+				if (trpoke != null) {
+					trpoke = new GARC(trpoke.file, false);
 				}
 		}
 	}
@@ -544,7 +600,16 @@ public class Workspace {
 					progress.setDescription("Packing - npcregistries");
 					npcreg.packDirectory(getExtractionDirectory(ArchiveType.NPC_REGISTRIES));
 					progress.setBarPercent(95);
-					progress.setDescription("Packing - gametext");
+					progress.setDescription("Packing - trainers");
+				//trainer archives: pack only when actually edited (rewriting them
+				//without edits would still be byte-faithful, but skip the churn)
+				if (trdata != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.TRAINER_DATA))) {
+					trdata.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_DATA));
+				}
+				if (trpoke != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.TRAINER_POKE))) {
+					trpoke.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_POKE));
+				}
+				progress.setDescription("Packing - gametext");
 					//packDirectory rewrites the GARC in the game directory even with zero persisted files - only pack when text was actually edited
 					if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {
 						texts.packDirectory(getExtractionDirectory(ArchiveType.GAMETEXT));
@@ -615,6 +680,9 @@ public class Workspace {
 	public static enum ArchiveType {
 		AREA_DATA,
 		FIELD_DATA,
+		TRAINER_DATA,
+		TRAINER_CLASS,
+		TRAINER_POKE,
 		MAP_MATRIX,
 		GAMETEXT,
 		STORYTEXT,

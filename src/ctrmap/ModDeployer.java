@@ -41,7 +41,9 @@ public class ModDeployer {
 		Workspace.ArchiveType.AREA_DATA,
 		Workspace.ArchiveType.BUILDING_MODELS,
 		Workspace.ArchiveType.NPC_REGISTRIES,
-		Workspace.ArchiveType.MOVE_MODELS
+		Workspace.ArchiveType.MOVE_MODELS,
+		Workspace.ArchiveType.TRAINER_DATA,
+		Workspace.ArchiveType.TRAINER_POKE
 	};
 
 	public static class Result {
