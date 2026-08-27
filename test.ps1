@@ -38,6 +38,8 @@ $suites = @(
     @{ n = "LZ11 codec + ratio";          c = "ctrmap.tests.LZ11Test";               a = @($a039) },
     @{ n = "EncounterTable";              c = "ctrmap.tests.EncounterTableTest";     a = @($a013) },
     @{ n = "TrainerData";                 c = "ctrmap.tests.TrainerDataTest";        a = @() },
+    @{ n = "GfHash (native names)";       c = "ctrmap.tests.GfHashTest";             a = @() },
+    @{ n = "MaisonSet (opponents)";       c = "ctrmap.tests.MaisonSetTest";          a = @() },
     @{ n = "ZoneAppend";                  c = "ctrmap.tests.ZoneAppendTest";         a = @() },
     @{ n = "ZoneLimitPatch";              c = "ctrmap.tests.ZoneLimitPatchTest";     a = @() }
 )

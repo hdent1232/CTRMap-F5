@@ -107,6 +107,7 @@ public class CtrmapMainframe {
 	public static JMenuItem resizeMap;
 	public static JMenuItem wildEncounters;
 	public static JMenuItem trainerEditor;
+	public static JMenuItem maisonEditor;
 	public static JMenuItem renameZone;
 	public static JMenuItem emptyZone;
 	public static JMenuItem findReusableZones;
@@ -204,6 +205,7 @@ public class CtrmapMainframe {
 		wildEncounters = new JMenuItem("Edit wild encounters (this zone)...");
 		resizeMap = new JMenuItem("Resize map (this zone)...");
 		trainerEditor = new JMenuItem("Edit trainer (party/battle)...");
+		maisonEditor = new JMenuItem("Edit Battle Maison opponents...");
 		renameZone = new JMenuItem("Rename zone (in-game name)...");
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
 		findReusableZones = new JMenuItem("Find reusable base zones...");
@@ -458,6 +460,12 @@ public class CtrmapMainframe {
 				ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame);
 			}
 		});
+		maisonEditor.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ctrmap.humaninterface.MaisonEditDialog.show(frame);
+			}
+		});
 		exportMapObj.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -618,6 +626,7 @@ public class CtrmapMainframe {
 		toolsmenu.add(wildEncounters);
 		toolsmenu.add(resizeMap);
 		toolsmenu.add(trainerEditor);
+		toolsmenu.add(maisonEditor);
 		toolsmenu.add(renameZone);
 		toolsmenu.add(emptyZone);
 		toolsmenu.add(findReusableZones);
