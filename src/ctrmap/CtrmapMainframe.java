@@ -104,6 +104,7 @@ public class CtrmapMainframe {
 	public static JMenuItem importMapObj;
 	public static JMenuItem forkGeometry;
 	public static JMenuItem blankCanvas;
+	public static JMenuItem resizeMap;
 	public static JMenuItem wildEncounters;
 	public static JMenuItem renameZone;
 	public static JMenuItem emptyZone;
@@ -200,6 +201,7 @@ public class CtrmapMainframe {
 		forkGeometry = new JMenuItem("Fork map geometry (make zone independent)...");
 		blankCanvas = new JMenuItem("Blank map canvas (this zone)...");
 		wildEncounters = new JMenuItem("Edit wild encounters (this zone)...");
+		resizeMap = new JMenuItem("Resize map (this zone)...");
 		renameZone = new JMenuItem("Rename zone (in-game name)...");
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
 		findReusableZones = new JMenuItem("Find reusable base zones...");
@@ -442,6 +444,12 @@ public class CtrmapMainframe {
 				ctrmap.humaninterface.EncounterEditDialog.show(frame);
 			}
 		});
+		resizeMap.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				resizeMapAction();
+			}
+		});
 		exportMapObj.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -600,6 +608,7 @@ public class CtrmapMainframe {
 		toolsmenu.add(forkGeometry);
 		toolsmenu.add(blankCanvas);
 		toolsmenu.add(wildEncounters);
+		toolsmenu.add(resizeMap);
 		toolsmenu.add(renameZone);
 		toolsmenu.add(emptyZone);
 		toolsmenu.add(findReusableZones);
@@ -1321,6 +1330,59 @@ public class CtrmapMainframe {
 			});
 		} catch (Exception ex) {
 			JOptionPane.showMessageDialog(frame, "Blank canvas failed:\n" + ex.getMessage(), "Blank map canvas", JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	/**
+	 * Grows the loaded zone's map to WxH regions ({@link MapResizer}) - new
+	 * cells become blank canvases in the zone's own area style.
+	 */
+	private static void resizeMapAction() {
+		if (!Workspace.valid || !Workspace.isOA()) {
+			JOptionPane.showMessageDialog(frame, "Load an ORAS workspace first.", "Resize map", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
+			JOptionPane.showMessageDialog(frame, "Load the zone first (Zone tab).", "Resize map", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		final int zoneIndex = mZonePnl.zoneIndex;
+		javax.swing.JSpinner wSpin = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(2, 1, 4, 1));
+		javax.swing.JSpinner hSpin = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 4, 1));
+		Object[] form = {
+			"Grow this zone's map to a grid of regions (each region = one 40x40-tile map).",
+			"Existing map cells stay; NEW cells become flat blank canvases in this",
+			"zone's own style - build on them with prefabs, the Geometry tool, or Blender.",
+			" ",
+			"Width (regions):", wSpin,
+			"Height (regions):", hSpin,
+			" ",
+			"EXPERIMENTAL: multi-region retail maps prove the engine path, but a grown",
+			"custom map has not been booted in-game yet. This packs when done."
+		};
+		if (JOptionPane.showConfirmDialog(frame, form, "Resize map", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+			return;
+		}
+		try {
+			final MapResizer.ResizeResult r = MapResizer.resize(zoneIndex, (Integer) wSpin.getValue(), (Integer) hSpin.getValue());
+			Workspace.packWorkspace(new Runnable() {
+				@Override
+				public void run() {
+					mZonePnl.loadEverything(new Runnable() {
+						@Override
+						public void run() {
+							mZonePnl.selectZone(zoneIndex);
+							JOptionPane.showMessageDialog(frame,
+									"Map grown " + r.oldW + "x" + r.oldH + " -> " + r.newW + "x" + r.newH
+									+ " (new blank region(s) " + java.util.Arrays.toString(r.newRegions) + ", matrix " + r.newMatrix + ").\n"
+									+ "Deploy to emulator to walk the new area.",
+									"Resize map", JOptionPane.INFORMATION_MESSAGE);
+						}
+					});
+				}
+			});
+		} catch (Exception ex) {
+			JOptionPane.showMessageDialog(frame, "Resize failed:\n" + ex.getMessage(), "Resize map", JOptionPane.ERROR_MESSAGE);
 		}
 	}
 
