@@ -108,6 +108,7 @@ public class CtrmapMainframe {
 	public static JMenuItem wildEncounters;
 	public static JMenuItem trainerEditor;
 	public static JMenuItem maisonEditor;
+	public static JMenuItem setupFacility;
 	public static JMenuItem renameZone;
 	public static JMenuItem emptyZone;
 	public static JMenuItem findReusableZones;
@@ -206,6 +207,7 @@ public class CtrmapMainframe {
 		resizeMap = new JMenuItem("Resize map (this zone)...");
 		trainerEditor = new JMenuItem("Edit trainer (party/battle)...");
 		maisonEditor = new JMenuItem("Edit Battle Maison opponents...");
+		setupFacility = new JMenuItem("Set up Battle facility here (clone Maison)...");
 		renameZone = new JMenuItem("Rename zone (in-game name)...");
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
 		findReusableZones = new JMenuItem("Find reusable base zones...");
@@ -466,6 +468,12 @@ public class CtrmapMainframe {
 				ctrmap.humaninterface.MaisonEditDialog.show(frame);
 			}
 		});
+		setupFacility.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				setupFacilityAction();
+			}
+		});
 		exportMapObj.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -627,6 +635,7 @@ public class CtrmapMainframe {
 		toolsmenu.add(resizeMap);
 		toolsmenu.add(trainerEditor);
 		toolsmenu.add(maisonEditor);
+		toolsmenu.add(setupFacility);
 		toolsmenu.add(renameZone);
 		toolsmenu.add(emptyZone);
 		toolsmenu.add(findReusableZones);
@@ -1348,6 +1357,88 @@ public class CtrmapMainframe {
 			});
 		} catch (Exception ex) {
 			JOptionPane.showMessageDialog(frame, "Blank canvas failed:\n" + ex.getMessage(), "Blank map canvas", JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	/** The ORAS ZoneData index of the Battle Maison lobby (Battle Resort). */
+	private static final int MAISON_LOBBY_ZONE = 517;
+	/** The ORAS ZoneData index of the Battle Institute lobby (Mauville). */
+	private static final int INSTITUTE_ZONE = 448;
+
+	/**
+	 * "Set up a Battle facility here": replaces the loaded BASE zone with a copy
+	 * of a retail Battle facility lobby (Maison or Institute) - script AND
+	 * entities verbatim, so the facility's engine logic is exactly retail - then
+	 * forks its geometry so edits stay local. The starting point for a custom
+	 * Delta-Emerald Frontier facility: reskin the opponents (Tools -> Edit Battle
+	 * Maison opponents) and the text, then deploy. Must target a base zone
+	 * (index &lt; 536) because appended zones cannot run field scripts.
+	 */
+	private static void setupFacilityAction() {
+		if (!Workspace.valid || !Workspace.isOA()) {
+			JOptionPane.showMessageDialog(frame, "Load an ORAS workspace first.", "Set up Battle facility", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (mZonePnl == null || mZonePnl.zoneIndex < 0) {
+			JOptionPane.showMessageDialog(frame, "Load the base zone to convert first (Zone tab).", "Set up Battle facility", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		final int dstIndex = mZonePnl.zoneIndex;
+		int baseZones = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2;
+		if (dstIndex >= baseZones) {
+			JOptionPane.showMessageDialog(frame,
+					"This is an appended zone (index " + dstIndex + "). Appended zones cannot run field\n"
+					+ "scripts, so a facility must go in a base zone (< " + baseZones + "). Load or repurpose a\n"
+					+ "base zone (e.g. an unused one, via Tools -> Empty zone) and try again.",
+					"Set up Battle facility", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		String[] kinds = {"Battle Maison (5 formats, Chatelaines)", "Battle Institute (single test)"};
+		Object kind = JOptionPane.showInputDialog(frame,
+				"Replace zone " + dstIndex + " with a copy of which facility?\n"
+				+ "(Its script + NPCs are copied verbatim - the engine logic is retail.\n"
+				+ "You then reskin the opponents and text.)",
+				"Set up Battle facility", JOptionPane.PLAIN_MESSAGE, null, kinds, kinds[0]);
+		if (kind == null) {
+			return;
+		}
+		final int srcIndex = kind == kinds[1] ? INSTITUTE_ZONE : MAISON_LOBBY_ZONE;
+		if (srcIndex == dstIndex) {
+			JOptionPane.showMessageDialog(frame, "That IS the source facility zone - pick a different base zone to convert.", "Set up Battle facility", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int confirm = JOptionPane.showConfirmDialog(frame,
+				"Zone " + dstIndex + " will be COMPLETELY REPLACED by a copy of the facility\n"
+				+ "lobby (zone " + srcIndex + "): its map, NPCs and script. The copy gets its own\n"
+				+ "geometry, so editing it will not change the real facility.\n\n"
+				+ "After it packs: reskin opponents with Tools -> Edit Battle Maison opponents,\n"
+				+ "edit the text, then Deploy. Continue?",
+				"Set up Battle facility", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+		if (confirm != JOptionPane.OK_OPTION) {
+			return;
+		}
+		try {
+			ctrmap.ZoneCloner.cloneIntoSlot(srcIndex, dstIndex);
+			GeometryForker.forkGeometry(dstIndex);
+			Workspace.packWorkspace(new Runnable() {
+				@Override
+				public void run() {
+					mZonePnl.loadEverything(new Runnable() {
+						@Override
+						public void run() {
+							mZonePnl.selectZone(dstIndex);
+							JOptionPane.showMessageDialog(frame,
+									"Zone " + dstIndex + " is now a copy of the facility (from zone " + srcIndex + ").\n\n"
+									+ "Next: Tools -> Edit Battle Maison opponents to set the teams,\n"
+									+ "edit the facility's text, and Deploy to try it in the emulator.\n"
+									+ "(A grown/custom facility is unproven in-game - test it.)",
+									"Set up Battle facility", JOptionPane.INFORMATION_MESSAGE);
+						}
+					});
+				}
+			});
+		} catch (Exception ex) {
+			JOptionPane.showMessageDialog(frame, "Facility setup failed:\n" + ex.getMessage(), "Set up Battle facility", JOptionPane.ERROR_MESSAGE);
 		}
 	}
 
