@@ -22,6 +22,39 @@ public class PawnInstruction {
 	public static List<Commands> cmdList = Arrays.asList(Commands.values());
 
 	public GFLPawnScript parent;
+	/**
+	 * The script whose natives table {@link #fromString} uses to resolve a
+	 * SYSREQ_N given by native NAME back to its table index. Set by the script
+	 * editor to the currently open script; null = numeric indices only.
+	 */
+	public static GFLPawnScript nativeResolver;
+
+	private static boolean isNumeric(String s) {
+		if (s.isEmpty()) {
+			return false;
+		}
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (!(Character.isDigit(c) || (i == 0 && (c == '-' || c == '+')))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** natives[] index whose registered name hash matches {@code name}, or -1. */
+	private static int resolveNativeIndex(String name) {
+		if (nativeResolver == null) {
+			return -1;
+		}
+		int hash = ctrmap.scripts.GfHash.hashForName(name);
+		for (int i = 0; i < nativeResolver.natives.size(); i++) {
+			if (nativeResolver.natives.get(i).data[1] == hash) {
+				return i;
+			}
+		}
+		return -1;
+	}
 
 	public PawnInstruction(int ptr, int[] allCommands, GFLPawnScript parent) {
 		this.parent = parent;
@@ -113,6 +146,14 @@ public class PawnInstruction {
 					try {
 						if (PawnInstruction.checkFlt(ret)) {
 							ret.argumentCells[i] = Float.floatToIntBits(Float.parseFloat(argsUnparsed[i].replaceAll("f", "")));
+						} else if (ret.getCommand() == 0x87 && i == 0 && !isNumeric(argsUnparsed[i])) {
+							// SYSREQ_N by native NAME: resolve to the natives-table index
+							// via the resolver context (the currently open script).
+							int ix = resolveNativeIndex(argsUnparsed[i]);
+							if (ix < 0) {
+								throw new NumberFormatException("unknown native '" + argsUnparsed[i] + "'");
+							}
+							ret.argumentCells[i] = ix;
 						} else {
 							ret.argumentCells[i] = Integer.parseInt(argsUnparsed[i]);
 						}
@@ -725,7 +766,10 @@ public class PawnInstruction {
 				break;
 			}
 			case 0x87: {
-				op = eA(ins);
+				// SYSREQ_N(nativeIndex, argBytes): resolve the native to its name via
+				// the registered {0, nameHash} table so a facility call reads e.g.
+				// "SYSREQ_N(PlayerSetBP, 4)" instead of a bare index.
+				op = sysreqDisasm(ins);
 				break;
 			}
 
@@ -818,6 +862,27 @@ public class PawnInstruction {
 
 	private static String eA(PawnInstruction ins) {
 		return eA(ins.getCommand(), ins);
+	}
+
+	/**
+	 * Renders a SYSREQ_N call with the native NAME when it resolves, falling back
+	 * to the bare index. Format: {@code SYSREQ_N(<name-or-index>,<argBytes>)} - the
+	 * name form is what {@link #fromString} accepts back.
+	 */
+	private static String sysreqDisasm(PawnInstruction ins) {
+		String who = null;
+		if (ins.parent != null && ins.argumentCount >= 1) {
+			int idx = ins.argumentCells[0];
+			if (idx >= 0 && idx < ins.parent.natives.size()) {
+				int hash = ins.parent.natives.get(idx).data[1];
+				who = ctrmap.scripts.GfHash.nameForHash(hash);
+			}
+		}
+		if (who == null) {
+			return eA(ins);
+		}
+		String args = ins.argumentCount >= 2 ? String.valueOf(ins.argumentCells[1]) : "";
+		return Commands.values()[ins.getCommand()].toString() + "(" + who + "," + args + ")";
 	}
 
 	private static String eA(int customCommand, PawnInstruction ins) {

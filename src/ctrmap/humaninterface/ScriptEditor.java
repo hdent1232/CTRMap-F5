@@ -78,6 +78,8 @@ public class ScriptEditor extends javax.swing.JPanel {
 	public void loadScript(GFLPawnScript scr) {
 		loaded = false;
 		script = scr;
+		//let fromString resolve SYSREQ_N native NAMES back to this script's indices
+		ctrmap.formats.scripts.PawnInstruction.nativeResolver = scr;
 		currentIdx = -1;
 		sdl.setScript(scr);
 		sdf.setScript(scr);
