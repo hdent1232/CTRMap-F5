@@ -40,6 +40,7 @@ $suites = @(
     @{ n = "TrainerData";                 c = "ctrmap.tests.TrainerDataTest";        a = @() },
     @{ n = "GfHash (native names)";       c = "ctrmap.tests.GfHashTest";             a = @() },
     @{ n = "MaisonSet (opponents)";       c = "ctrmap.tests.MaisonSetTest";          a = @() },
+    @{ n = "MaisonClassList (teams)";     c = "ctrmap.tests.MaisonClassListTest";    a = @() },
     @{ n = "ZoneAppend";                  c = "ctrmap.tests.ZoneAppendTest";         a = @() },
     @{ n = "ZoneLimitPatch";              c = "ctrmap.tests.ZoneLimitPatchTest";     a = @() }
 )
