@@ -80,10 +80,6 @@ public class TalkerScriptWizard {
 	 */
 	public static int cloneCallerSub(GFLPawnScript script, PawnInstruction wrapper, int[] pushConsts) {
 		script.decompressThis();
-		ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(script);
-		if (d == null) {
-			throw new IllegalStateException("The zone script has no script dispatch (main SWITCH/CASETBL).");
-		}
 		if (wrapper == null) {
 			throw new IllegalStateException("The zone script has no wrapper subroutine to call.");
 		}
@@ -92,6 +88,40 @@ public class TalkerScriptWizard {
 				//packed PUSH_P_C stores its argument in the upper 16 bits of the cell
 				throw new IllegalStateException("Constant " + pushConsts[i] + " does not fit a packed PUSH_P_C argument.");
 			}
+		}
+		//caller body: PROC; N x PUSH_P_C(const); CALL wrapper; ZERO_PRI; RETN
+		PawnInstruction lastIns = script.instructions.get(script.instructions.size() - 1);
+		int ptr = lastIns.pointer + 4 + (lastIns.hasCompressedArgument ? 0 : lastIns.argumentCount * 4);
+		List<PawnInstruction> body = new ArrayList<>();
+		body.add(makeIns(PawnInstruction.Commands.PROC, ptr, 0));
+		ptr += 4;
+		for (int i = 0; i < pushConsts.length; i++) {
+			body.add(makeIns(PawnInstruction.Commands.PUSH_P_C, ptr, pushConsts[i]));
+			ptr += 4;
+		}
+		body.add(makeIns(PawnInstruction.Commands.CALL, ptr, wrapper.pointer - ptr));
+		ptr += 8; //CALL carries a full argument cell
+		body.add(makeIns(PawnInstruction.Commands.ZERO_PRI, ptr, 0));
+		ptr += 4;
+		body.add(makeIns(PawnInstruction.Commands.RETN, ptr, 0));
+		return installCase(script, body);
+	}
+
+	/**
+	 * Installs {@code body} (a PROC..RETN subroutine, provisional pointers) as a
+	 * new dispatch case in the zone's main SWITCH/CASETBL and returns the new
+	 * script id an NPC can point its {@code script} field at. Shared by the
+	 * talker/sign/giver wizards and the facility/BP emitters: does the
+	 * append + CASETBL grow + full renumber + branch/public fixups atomically,
+	 * validating every pre-existing target first so a failure never leaves the
+	 * script half-mutated. The body must already carry any native-table entries
+	 * it references (append them before calling this).
+	 */
+	public static int installCase(GFLPawnScript script, List<PawnInstruction> body) {
+		script.decompressThis();
+		ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(script);
+		if (d == null) {
+			throw new IllegalStateException("The zone script has no script dispatch (main SWITCH/CASETBL).");
 		}
 		//validate every pre-existing branch target of the dispatch CASETBL before
 		//any surgery: a null case target would be silently skipped by
@@ -124,27 +154,11 @@ public class TalkerScriptWizard {
 			publicTargets[i] = script.lookupInstructionByPtr(script.publics.get(i).data[0]);
 		}
 		int oldCaseTblPtr = d.caseTbl.pointer;
+		PawnInstruction proc = body.get(0);
 
-		//append the caller sub at the end of the code section (provisional
-		//pointers - setPtrsByIndex renumbers them below)
-		PawnInstruction lastIns = script.instructions.get(script.instructions.size() - 1);
-		int ptr = lastIns.pointer + 4 + (lastIns.hasCompressedArgument ? 0 : lastIns.argumentCount * 4);
-		List<PawnInstruction> talker = new ArrayList<>();
-		PawnInstruction proc = makeIns(PawnInstruction.Commands.PROC, ptr, 0);
-		talker.add(proc);
-		ptr += 4;
-		for (int i = 0; i < pushConsts.length; i++) {
-			talker.add(makeIns(PawnInstruction.Commands.PUSH_P_C, ptr, pushConsts[i]));
-			ptr += 4;
-		}
-		talker.add(makeIns(PawnInstruction.Commands.CALL, ptr, wrapper.pointer - ptr));
-		ptr += 8; //CALL carries a full argument cell
-		talker.add(makeIns(PawnInstruction.Commands.ZERO_PRI, ptr, 0));
-		ptr += 4;
-		talker.add(makeIns(PawnInstruction.Commands.RETN, ptr, 0));
-		script.instructions.addAll(talker);
-		for (PawnInstruction ins : talker) {
-			ins.setParent(script); //gives the CALL its wrapper JumpListener
+		script.instructions.addAll(body);
+		for (PawnInstruction ins : body) {
+			ins.setParent(script); //gives any CALL/branch its JumpListener
 		}
 
 		//grow main's CASETBL by one pair, keeping the case keys sorted

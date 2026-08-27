@@ -802,7 +802,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		//pick which template to add; "Talking NPC" continues the proven flow below,
 		//the others dispatch to their own self-contained handlers
-		String[] templates = {"Talking NPC", "Sign", "Item giver", "Trainer"};
+		String[] templates = {"Talking NPC", "Sign", "Item giver", "Trainer", "Give BP"};
 		Object choice = JOptionPane.showInputDialog(frame, "What would you like to add?", "Add NPC / object",
 				JOptionPane.PLAIN_MESSAGE, null, templates, templates[0]);
 		if (choice == null) {
@@ -818,6 +818,10 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		if ("Trainer".equals(choice)) {
 			addTrainerTemplate(zone);
+			return;
+		}
+		if ("Give BP".equals(choice)) {
+			addGiveBpTemplate(zone);
 			return;
 		}
 		boolean injectWrapper = false;
@@ -1075,6 +1079,54 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		zone.s = work; //commit - the clone is the only mutation and it succeeded
 		Point pos = mTileMapPanel.getTileAtViewportCentre();
 		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), giverModel, caseId, pos.x, pos.y);
+		finishNpcAdd(zone, npc, true);
+	}
+
+	/**
+	 * "Give BP" template: an NPC that, when talked to, adds N Battle Points to
+	 * the player using the engine's own PlayerGetBP/PlayerSetBP natives (the
+	 * exact BP-grant frame the Battle Maison lobby uses). Works in any zone with
+	 * a script dispatch - no wrapper routine needed. Useful for facility rewards
+	 * and for testing BP-driven shops/facilities.
+	 */
+	private void addGiveBpTemplate(Zone zone) {
+		JSpinner amountSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(20, 1, 9999, 1));
+		ModelPicker modelPicker = new ModelPicker(-1);
+		JPanel panel = new JPanel();
+		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
+		addLabeled(panel, "Battle Points to give:", amountSpinner);
+		addLabeled(panel, "NPC model (type to search; preview below):", modelPicker);
+		JLabel hint = new JLabel("<html>The NPC adds this many BP each time it is talked to (no one-time flag yet;<br>the game caps total BP at 9999). Uses the engine's own BP natives.</html>");
+		hint.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(hint);
+		int rsl = JOptionPane.showConfirmDialog(frame, panel, "Add Give BP", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+		disposePreviews();
+		if (rsl != JOptionPane.OK_OPTION) {
+			return;
+		}
+		int model = modelPicker.getSelectedUid();
+		if (model < 0) {
+			JOptionPane.showMessageDialog(this, "Select an overworld model first.", "Add Give BP", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		GFLPawnScript work;
+		try {
+			work = new GFLPawnScript(zone.s.getScriptBytes());
+			work.decompressThis();
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add Give BP", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int caseId;
+		try {
+			caseId = ctrmap.formats.scripts.FacilityScriptWizard.addGiveBpScript(work, (Integer) amountSpinner.getValue());
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not add the Give BP script:\n" + ex.getMessage(), "Add Give BP", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		zone.s = work; //commit - the clone is the only mutation and it succeeded
+		Point pos = mTileMapPanel.getTileAtViewportCentre();
+		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
 		finishNpcAdd(zone, npc, true);
 	}
 
