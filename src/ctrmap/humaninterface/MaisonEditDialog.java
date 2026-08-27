@@ -87,11 +87,15 @@ public class MaisonEditDialog {
 		});
 
 		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+		JButton classes = new JButton("Class assignments...");
 		JButton save = new JButton("Save pool");
 		JButton close = new JButton("Close");
+		buttons.add(classes);
 		buttons.add(save);
 		buttons.add(close);
 		dlg.add(buttons, BorderLayout.SOUTH);
+
+		classes.addActionListener(e -> MaisonClassListDialog.show(dlg));
 
 		save.addActionListener(e -> {
 			try {
