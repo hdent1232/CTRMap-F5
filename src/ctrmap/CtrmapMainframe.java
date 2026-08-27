@@ -103,6 +103,7 @@ public class CtrmapMainframe {
 	public static JMenuItem exportMapObj;
 	public static JMenuItem importMapObj;
 	public static JMenuItem forkGeometry;
+	public static JMenuItem blankCanvas;
 	public static JMenuItem renameZone;
 	public static JMenuItem emptyZone;
 	public static JMenuItem findReusableZones;
@@ -196,6 +197,7 @@ public class CtrmapMainframe {
 		exportMapObj = new JMenuItem("Export map region to OBJ (Blender)...");
 		importMapObj = new JMenuItem("Import OBJ into map region (Blender)...");
 		forkGeometry = new JMenuItem("Fork map geometry (make zone independent)...");
+		blankCanvas = new JMenuItem("Blank map canvas (this zone)...");
 		renameZone = new JMenuItem("Rename zone (in-game name)...");
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
 		findReusableZones = new JMenuItem("Find reusable base zones...");
@@ -426,6 +428,12 @@ public class CtrmapMainframe {
 				forkGeometryAction();
 			}
 		});
+		blankCanvas.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				blankCanvasAction();
+			}
+		});
 		exportMapObj.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -582,6 +590,7 @@ public class CtrmapMainframe {
 		toolsmenu.add(exportMapObj);
 		toolsmenu.add(importMapObj);
 		toolsmenu.add(forkGeometry);
+		toolsmenu.add(blankCanvas);
 		toolsmenu.add(renameZone);
 		toolsmenu.add(emptyZone);
 		toolsmenu.add(findReusableZones);
@@ -1174,6 +1183,135 @@ public class CtrmapMainframe {
 			JOptionPane.showMessageDialog(frame, sb.toString(), "Import OBJ", JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
 			JOptionPane.showMessageDialog(frame, "Import failed:\n" + ex.getMessage(), "Import OBJ", JOptionPane.ERROR_MESSAGE);
+		}
+	}
+
+	/**
+	 * "Start this zone's map from scratch": forks the zone's geometry to a
+	 * private copy (base town untouched), then blanks every private region to a
+	 * flat walkable canvas in the chosen ground material. The natural first step
+	 * for building a brand-new town/facility.
+	 */
+	private static void blankCanvasAction() {
+		if (!Workspace.valid || !Workspace.isOA()) {
+			JOptionPane.showMessageDialog(frame, "Load an ORAS workspace first.", "Blank map canvas", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
+			JOptionPane.showMessageDialog(frame, "Load the zone first (Zone tab).", "Blank map canvas", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		final int zoneIndex = mZonePnl.zoneIndex;
+		//ground-material picker from the zone's first region model
+		ctrmap.formats.h3d.BchMapModel probe;
+		try {
+			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
+			int sub0 = (mm[4] & 0xFF) | ((mm[5] & 0xFF) << 8) | ((mm[6] & 0xFF) << 16) | ((mm[7] & 0xFF) << 24);
+			int w = (mm[sub0 + 4] & 0xFF) | ((mm[sub0 + 5] & 0xFF) << 8);
+			int h = (mm[sub0 + 6] & 0xFF) | ((mm[sub0 + 7] & 0xFF) << 8);
+			int rid = -1;
+			for (int k = 0; k < w * h && rid < 0; k++) {
+				int id = (mm[sub0 + 8 + k * 2] & 0xFF) | ((mm[sub0 + 9 + k * 2] & 0xFF) << 8);
+				if (id != 0xFFFF) {
+					rid = id;
+				}
+			}
+			GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, rid));
+			probe = new ctrmap.formats.h3d.BchMapModel(gr.getFile(1));
+		} catch (Exception ex) {
+			JOptionPane.showMessageDialog(frame, "Could not inspect the zone's map:\n" + ex.getMessage(), "Blank map canvas", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		java.util.List<String> items = new java.util.ArrayList<>();
+		java.util.List<Integer> meshIds = new java.util.ArrayList<>();
+		int def = 0, bestTris = -1;
+		for (ctrmap.formats.h3d.BchMapModel.MeshGeom g : probe.geometry()) {
+			if (!g.posOk) {
+				continue;
+			}
+			int tris = probe.getTriangles(g.meshIndex).length / 3;
+			items.add(probe.getMaterialName(probe.getMeshMaterialIndex(g.meshIndex)) + "  (" + tris + " faces)");
+			meshIds.add(g.meshIndex);
+			if (tris > bestTris) {
+				bestTris = tris;
+				def = items.size() - 1;
+			}
+		}
+		javax.swing.JComboBox<String> matPicker = new javax.swing.JComboBox<>(items.toArray(new String[0]));
+		matPicker.setSelectedIndex(def);
+		Object[] form = {
+			"Replace THIS ZONE's map with a flat, walkable blank canvas.",
+			"The zone gets its own private map first - the town it was cloned",
+			"from keeps its map. Then build with prefabs, the Geometry tool,",
+			"or Blender.",
+			" ",
+			"Ground material (the floor's look):",
+			matPicker,
+			" ",
+			"This packs the workspace when done."
+		};
+		if (JOptionPane.showConfirmDialog(frame, form, "Blank map canvas", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+			return;
+		}
+		final int groundMesh = meshIds.get(matPicker.getSelectedIndex());
+		try {
+			GeometryForker.ForkResult r = GeometryForker.forkGeometry(zoneIndex);
+			File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
+			for (int newRegion : r.newRegions) {
+				File f = new File(fdDir, String.valueOf(newRegion));
+				GR gr = new GR(f);
+				byte[] template = gr.getFile(1);
+				if (!ctrmap.formats.h3d.BchMapModel.isMapModel(template)) {
+					continue;
+				}
+				ctrmap.formats.h3d.BchMapModel tm = new ctrmap.formats.h3d.BchMapModel(template);
+				int gm = groundMesh;
+				if (gm >= tm.meshCount || !tm.geometry().get(gm).posOk) {
+					gm = 0;
+					int bt = -1;
+					for (ctrmap.formats.h3d.BchMapModel.MeshGeom g : tm.geometry()) {
+						if (g.posOk && tm.getTriangles(g.meshIndex).length > bt) {
+							bt = tm.getTriangles(g.meshIndex).length;
+							gm = g.meshIndex;
+						}
+					}
+				}
+				ctrmap.formats.h3d.RegionFactory.BlankContent bc = ctrmap.formats.h3d.RegionFactory.blank(template, gm);
+				gr.storeFile(1, bc.model);
+				gr.storeFile(2, bc.collision);
+				gr.storeFile(0, bc.tilemap);
+				gr.storeFile(3, bc.props);
+				//extra layers (multi-layer templates): blank them out entirely
+				if (gr.len >= 9) {
+					gr.storeFile(7, ctrmap.formats.h3d.RegionFactory.voidTilemap());
+					gr.storeFile(gr.len >= 11 ? 9 : 8, ctrmap.formats.h3d.RegionFactory.emptyCollision());
+					if (gr.len >= 11) {
+						gr.storeFile(8, ctrmap.formats.h3d.RegionFactory.voidTilemap());
+						gr.storeFile(10, ctrmap.formats.h3d.RegionFactory.emptyCollision());
+					}
+				}
+			}
+			final int zi = zoneIndex;
+			Workspace.packWorkspace(new Runnable() {
+				@Override
+				public void run() {
+					mZonePnl.loadEverything(new Runnable() {
+						@Override
+						public void run() {
+							mZonePnl.selectZone(zi);
+							JOptionPane.showMessageDialog(frame,
+									"Zone " + zi + " now has a private blank canvas (region(s) "
+									+ java.util.Arrays.toString(r.newRegions) + ").\n\n"
+									+ "Build on it with prefabs, the Geometry tool, or Blender OBJ import.\n"
+									+ "Deploy to emulator to walk on it.",
+									"Blank map canvas", JOptionPane.INFORMATION_MESSAGE);
+						}
+					});
+				}
+			});
+		} catch (Exception ex) {
+			JOptionPane.showMessageDialog(frame, "Blank canvas failed:\n" + ex.getMessage(), "Blank map canvas", JOptionPane.ERROR_MESSAGE);
 		}
 	}
 
