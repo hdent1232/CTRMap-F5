@@ -64,15 +64,23 @@ public class MaisonEditDialog {
 		jt.getColumnModel().getColumn(1).setPreferredWidth(120);
 		jt.getColumnModel().getColumn(7).setPreferredWidth(120);
 		jt.getColumnModel().getColumn(8).setPreferredWidth(80);
+		//double-click species / moves / item -> the visual picker (with preview card)
+		ctrmap.humaninterface.pokepick.PokePickers.installDoubleClickPickers(jt, col
+				-> col == 1 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.SPECIES
+				: (col >= 2 && col <= 5) ? ctrmap.humaninterface.pokepick.PokePickers.Kind.MOVE
+				: col == 7 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.ITEM : null);
 
 		final JDialog dlg = new JDialog(parent, "Battle Maison opponents", true);
 		dlg.setLayout(new BorderLayout());
+		JPanel north = new JPanel(new java.awt.GridLayout(2, 1));
 		JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
 		top.add(new JLabel("Set pool:"));
 		top.add(poolBox);
 		final JLabel usedLbl = new JLabel();
 		top.add(usedLbl);
-		dlg.add(top, BorderLayout.NORTH);
+		north.add(top);
+		north.add(new JLabel("  Double-click a Species, Move or Item to pick it visually (types, stats, move category)."));
+		dlg.add(north, BorderLayout.NORTH);
 		dlg.add(new JScrollPane(jt), BorderLayout.CENTER);
 
 		Runnable refreshUsed = () -> usedLbl.setText("   " + model.usedCount() + " / " + model.rowCount() + " sets used");
@@ -225,7 +233,7 @@ public class MaisonEditDialog {
 
 		@Override
 		public boolean isCellEditable(int r, int c) {
-			return c != 0;
+			return c == 6; //nature is typed; species/moves/item open the visual picker on double-click
 		}
 
 		@Override
