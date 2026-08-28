@@ -114,6 +114,7 @@ public class CtrmapMainframe {
 	public static JMenuItem setupFacility;
 	public static JMenuItem renameZone;
 	public static JMenuItem emptyZone;
+	public static JMenuItem removeAddedZones;
 	public static JMenuItem findReusableZones;
 	public static JMenuItem wssettings;
 	public static JMenuItem wsclean;
@@ -216,6 +217,7 @@ public class CtrmapMainframe {
 		setupFacility = new JMenuItem("Set up Battle facility here (clone Maison)...");
 		renameZone = new JMenuItem("Rename zone (in-game name)...");
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
+		removeAddedZones = new JMenuItem("Remove added zones (restore stock 536)...");
 		findReusableZones = new JMenuItem("Find reusable base zones...");
 		wssettings = new JMenuItem("Workspace settings");
 		wsclean = new JMenuItem("Clean workspace");
@@ -522,6 +524,12 @@ public class CtrmapMainframe {
 				emptyZoneAction();
 			}
 		});
+		removeAddedZones.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				removeAddedZonesAction();
+			}
+		});
 		findReusableZones.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -665,6 +673,7 @@ public class CtrmapMainframe {
 		toolsmenu.add(setupFacility);
 		toolsmenu.add(renameZone);
 		toolsmenu.add(emptyZone);
+		toolsmenu.add(removeAddedZones);
 		toolsmenu.add(findReusableZones);
 		optionsmenu.add(wssettings);
 		optionsmenu.add(wsclean);
@@ -972,6 +981,85 @@ public class CtrmapMainframe {
 	 * Empties a zone's placed content - NPCs, warps, triggers, props - keeping the
 	 * header and script (see {@link ZoneManager#clearZone}).
 	 */
+	/**
+	 * Removes all ADDED zones (index &gt;= 536), restoring the stock ZoneData
+	 * layout. Packs first (so pending edits are captured, then removed
+	 * wholesale), scans for base-zone warps that would dangle, rewrites the
+	 * archive via {@link ZoneRemover}, clears the stale extraction cache and
+	 * reloads.
+	 */
+	private static void removeAddedZonesAction() {
+		if (!Workspace.valid || !Workspace.isOA()) {
+			JOptionPane.showMessageDialog(frame, "Load an ORAS workspace first.", "Remove added zones", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		ctrmap.formats.garc.GARC zoArc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		if (zoArc == null || zoArc.length <= 538) {
+			JOptionPane.showMessageDialog(frame, "This ZoneData has no added zones (stock layout).", "Remove added zones", JOptionPane.INFORMATION_MESSAGE);
+			return;
+		}
+		final int n = zoArc.length - 538;
+		java.util.List<String> refs = ZoneRemover.referencesToAdded(zoArc);
+		StringBuilder refWarn = new StringBuilder();
+		if (!refs.isEmpty()) {
+			refWarn.append("\n\nWARNING - these base-zone warps lead into zones being removed and will dangle:");
+			for (int i = 0; i < Math.min(8, refs.size()); i++) {
+				refWarn.append("\n  ").append(refs.get(i));
+			}
+			if (refs.size() > 8) {
+				refWarn.append("\n  (+").append(refs.size() - 8).append(" more)");
+			}
+		}
+		int rsl = JOptionPane.showConfirmDialog(frame,
+				"Remove all " + n + " added zone(s) and restore the stock 536-zone layout?\n\n"
+				+ "The workspace is packed first (pending edits captured), then their content is\n"
+				+ "DELETED from ZoneData. Afterwards, delete the deployed code.ips - the stock\n"
+				+ "game no longer needs the zone-limit patch." + refWarn,
+				"Remove added zones", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+		if (rsl != JOptionPane.OK_OPTION) {
+			return;
+		}
+		Workspace.packWorkspace(new Runnable() {
+			@Override
+			public void run() {
+				try {
+					int removed = ZoneRemover.removeFromFile(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).file);
+					//drop the stale extraction cache for everything at/beyond the
+					//stock zone range (added zones + the old master/EN cache files)
+					java.io.File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA);
+					java.io.File[] fs = dir.listFiles();
+					if (fs != null) {
+						for (java.io.File f : fs) {
+							try {
+								if (Integer.parseInt(f.getName()) >= 536) {
+									Workspace.persist_paths.remove(f.getAbsolutePath());
+									f.delete();
+								}
+							} catch (NumberFormatException ignore) {
+							}
+						}
+					}
+					Workspace.reloadGARC(Workspace.ArchiveType.ZONE_DATA);
+					mZonePnl.loadEverything(new Runnable() {
+						@Override
+						public void run() {
+							JOptionPane.showMessageDialog(frame,
+									"Removed " + removed + " added zone(s) - ZoneData is back to the stock layout.\n\n"
+									+ "Remember to DELETE the deployed code.ips:\n"
+									+ "  Azahar: load/mods/<titleid>/exefs/code.ips\n"
+									+ "  Luma3DS: sdmc:/luma/titles/<titleid>/code.ips\n\n"
+									+ "Map regions forked for the removed zones remain in FieldData as unused\n"
+									+ "tail data (harmless - nothing references them).",
+									"Remove added zones", JOptionPane.INFORMATION_MESSAGE);
+						}
+					});
+				} catch (Exception ex) {
+					JOptionPane.showMessageDialog(frame, "Removal failed:\n" + ex.getMessage(), "Remove added zones", JOptionPane.ERROR_MESSAGE);
+				}
+			}
+		});
+	}
+
 	private static void emptyZoneAction() {
 		if (!Workspace.valid) {
 			javax.swing.JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Empty zone", javax.swing.JOptionPane.ERROR_MESSAGE);
