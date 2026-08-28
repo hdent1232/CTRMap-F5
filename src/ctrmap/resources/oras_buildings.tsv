@@ -31,3 +31,28 @@ TREE	Fir tree	5	8	2	11	6	15	5	-1	-1	-	-1	-1
 TREE	Palm tree	465	85	22	10	28	16	46	-1	-1	-	-1	-1
 FENCE	Iron fence (4-tile run)	38	11	18	1	18	4	0	-1	-1	-	-1	-1
 BUSH	Bush	5	8	32	27	33	27	3	-1	-1	-	-1	-1
+HOUSE	Littleroot house (mirrored)	6	8	24	7	30	12	0	2	4	t101_bm_door01	225	0
+HOUSE	Petalburg house	8	9	22	21	28	28	0	3	4	c101_bm_door01	264	0
+HOUSE	Petalburg garden house	8	9	22	21	33	28	0	3	4	c101_bm_door01	264	0
+HOUSE	Mr. Briney's cottage	12	10	6	31	13	35	0	3	4	r104_bm_door01	367	0
+HOUSE	Dewford wide house	22	10	5	2	13	7	-18	3	4	t103_bm_door01	234	0
+HOUSE	Rustboro apartment house	33	11	0	31	7	37	0	2	5	c104_bm_door01	297	0
+HOUSE	Rustboro flat-roof house	38	11	17	17	23	22	0	3	4	c104_bm_door01	294	0
+HOUSE	Rustboro two-story house	38	11	25	17	31	22	0	3	4	c104_bm_door01	290	0
+HOUSE	Route 116 rest house	35	11	7	7	14	11	0	3	3	r116_bm_door01	390	0
+HOUSE	Route 104 flower shop	39	11	23	25	30	30	0	3	4	r104_bm_door02	366	0
+HOUSE	Route 109 Seashore House	43	12	18	10	25	16	0	3	5	r109_bm_door01	368	0
+HOUSE	Verdanturf log house	54	13	28	25	34	30	0	2	4	t106_bm_door01	252	0
+HOUSE	Route 117 house	56	13	31	10	37	15	0	3	4	r117_bm_door01	391	0
+HOUSE	Route 111 Winstrate house	66	14	19	1	27	6	36	3	4	r111_bm_door01	382	0
+HOUSE	Route 113 glass workshop	72	15	10	5	19	11	54	4	4	r113_bm_door01	386	0
+HOUSE	Route 114 Lanette's house	78	15	7	24	13	29	36	3	4	r114_bm_door01	389	0
+HOUSE	Route 124 treasure cabin	104	17	24	5	30	10	0	2	4	r124_bm_door01	397	0
+HOUSE	Slateport purple-roof house	149	20	9	12	15	17	18	2	4	c102_bm_door01	271	0
+HOUSE	Slateport arch house	149	20	5	24	13	29	18	4	5	c102_bm_door02	272	0
+OTHER	Stern's Shipyard	152	20	4	5	12	9	18	3	4	c102_bm_door03	267	0
+OTHER	Slateport harbor	150	20	4	3	18	10	0	7	6	com_bm_portdoor01	275	0
+OTHER	Lilycove Contest Hall	156	23	12	1	26	8	108	7	6	c106_bm_door03	312	0
+HOUSE	Lilycove two-story house	157	23	17	33	23	38	36	3	4	c106_bm_door04	310	0
+OTHER	Safari Zone gate	230	33	17	0	21	11	0	2	10	r121_bm_door01	395	0
+OTHER	Mt. Chimney cable car station	289	50	25	15	37	22	18	6	6	r112_bm_door01	385	0
