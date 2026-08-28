@@ -319,6 +319,52 @@ public class BchTexturePack {
 	 * target unchanged (same array) when the name is already present; throws
 	 * IllegalArgumentException when the donor does not have the texture.
 	 */
+	/**
+	 * Ensures the given texture names exist in the TARGET area's packs,
+	 * importing any missing ones from the DONOR area's packs (stamped map
+	 * pieces reference their donor's textures; a missing texture hardlocks the
+	 * game). Writes through the workspace AreaData file and marks it persisted.
+	 * Returns a short human-readable note of what happened.
+	 */
+	public static String carryToArea(int donorArea, int targetArea, List<String> needed) throws Exception {
+		java.io.File tgtFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, targetArea);
+		java.io.File donFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, donorArea);
+		if (tgtFile == null || donFile == null) {
+			throw new IllegalStateException("area files unavailable");
+		}
+		ctrmap.formats.containers.AD tgt = new ctrmap.formats.containers.AD(tgtFile);
+		ctrmap.formats.containers.AD don = new ctrmap.formats.containers.AD(donFile);
+		//names already present in the target area (file 11 world pack + file 1 prop pack)
+		java.util.Set<String> have = new java.util.HashSet<>();
+		byte[] tgt11 = tgt.getFile(11), tgt1 = tgt.getFile(1);
+		for (byte[] pk : new byte[][]{tgt11, tgt1}) {
+			if (pk != null && isTexturePack(pk)) {
+				for (Texture t : parse(pk)) {
+					have.add(t.name);
+				}
+			}
+		}
+		java.util.List<String> missing = new java.util.ArrayList<>();
+		for (String n : needed) {
+			if (!have.contains(n)) {
+				missing.add(n);
+			}
+		}
+		if (missing.isEmpty()) {
+			return "  (textures already present)";
+		}
+		byte[] don11 = don.getFile(11);
+		if (don11 == null || !isTexturePack(don11)) {
+			don11 = don.getFile(1);
+		}
+		byte[] newPack = importTextures(isTexturePack(tgt11) ? tgt11 : tgt1, don11, missing);
+		if (!tgt.storeFile(isTexturePack(tgt11) ? 11 : 1, newPack)) {
+			throw new IllegalStateException("could not write area " + targetArea);
+		}
+		ctrmap.Workspace.addPersist(tgtFile);
+		return "  +" + missing.size() + " textures carried to this area";
+	}
+
 	public static byte[] importTexture(byte[] targetPack, byte[] donorPack, String textureName) {
 		List<String> one = new ArrayList<>();
 		one.add(textureName);
