@@ -83,14 +83,21 @@ Pick a Pokémon Center / Mart / Gym / 12 house styles / signs / trees / fence /
 bush from a searchable list with a live 3D preview, click the grid to place.
 Every catalog entry is offline-proven (extracts from your dump, stamps, and
 renders complete) — these checks are about the in-game result.
-- [ ] Place a **Pokémon Center** on a painted map → Apply (say YES to door
-  warps) → Deploy. Expect: the building looks complete in-game, you collide
-  with its walls, and **walking into the door warps you into the standard
-  Pokémon Center room**. (The interior's exit will take you to Oldale — that's
-  expected until you clone an interior; retarget with the Warp tool.)
-- [ ] Add the swinging-door prop (Prop Tool, the palette names it —
-  com_bm_pcdoor01 for the Center) at the door tile. Expect: the animated
-  door renders and opens.
+- [ ] **The full round trip** (the headline test): place a **Pokémon Center**
+  on a painted map → Apply → choose **"Clone private interiors"** → Deploy.
+  Expect: walk THROUGH the door (its swinging-door prop is placed
+  automatically, registry + textures handled) into your own private copy of
+  the Center room, then step on the exit mat and come back OUT onto your
+  map at the same door. The apply dialog names which zone slot the interior
+  clone used (rename it via Tools → Rename zone).
+- [ ] The "Link retail interiors" option instead: entering works, the exit
+  leads to the retail town (as the dialog warns).
+- [ ] The swinging door prop animates (opens on contact) — its registry
+  entry is cloned from retail with the animation bindings.
+- [ ] Place a **sign** and give it text when asked at Apply time (zone must
+  be based on one with signs — 69 vanilla zones have the sign routine).
+  Expect: pressing A on the sign shows your text in the sign frame style
+  you picked.
 - [ ] Place a house + a sign + trees on one map. Expect: all render with
   correct textures (auto-carried across areas), trees/signs block movement
   per their retail footprint tiles.
