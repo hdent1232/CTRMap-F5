@@ -39,6 +39,7 @@ public class PaintedRegionTest {
 		failures += check("checkerboard grass/water", checker(), null, donor);
 		failures += check("mostly void with a path", pathGrid(), null, donor);
 		failures += check("raised plateau (elevation + cliffs)", grid(TilePalette.GRASS), plateau(), donor);
+		failures += checkEdges(donor);
 
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
 		if (failures > 0) {
@@ -138,6 +139,78 @@ public class PaintedRegionTest {
 			System.out.println("FAIL " + label + ": " + ex.getMessage());
 			return 1;
 		}
+	}
+
+	/**
+	 * Edge transition strips: a clean vertical grass|path seam must add exactly
+	 * 2 edge tris per boundary segment (40 rows &rarr; 80 tris), and every edge tri
+	 * must face up. If the donor has no grass-edge material, edges must add nothing.
+	 */
+	static int checkEdges(byte[] donor) {
+		try {
+			boolean supported = PaintedRegionBuilder.donorSupportsEdges(donor);
+			TilePalette[][] g = new TilePalette[DIM][DIM];
+			for (int y = 0; y < DIM; y++) {
+				for (int x = 0; x < DIM; x++) {
+					g[y][x] = (x < 20) ? TilePalette.GRASS : TilePalette.PATH;
+				}
+			}
+			int[][] h = new int[DIM][DIM];
+			boolean[][] noramp = new boolean[DIM][DIM];
+			ctrmap.formats.tilemap.TerrainLighting L = ctrmap.formats.tilemap.TerrainLighting.daytime();
+			long trisOff = totalTris(PaintedRegionBuilder.build(donor, g, h, noramp, L, false).model);
+			RegionFactory.BlankContent withC = PaintedRegionBuilder.build(donor, g, h, noramp, L, true);
+			long delta = totalTris(withC.model) - trisOff;
+
+			if (!supported) {
+				if (delta != 0) {
+					throw new IllegalStateException("edges added " + delta + " tris but donor has no edge material");
+				}
+				System.out.println("  ok: edge strips (donor has no edge material; skipped cleanly)");
+				return 0;
+			}
+			if (delta != 80) {
+				throw new IllegalStateException("edge strip tris delta " + delta + " want 80 (40-row seam)");
+			}
+			// winding: every edge-mesh triangle must face up (+Y)
+			BchMapModel m = new BchMapModel(withC.model);
+			int em = PaintedRegionBuilder.resolveEdgeMesh(m);
+			float[][] pos = m.getVertexPositions(em);
+			int[] tri = m.getTriangles(em);
+			int up = 0, tot = 0;
+			for (int i = 0; i + 2 < tri.length; i += 3) {
+				float[] a = pos[tri[i]], b = pos[tri[i + 1]], c = pos[tri[i + 2]];
+				float ux = b[0] - a[0], uz = b[2] - a[2];
+				float vx = c[0] - a[0], vz = c[2] - a[2];
+				float ny = uz * vx - ux * vz;
+				tot++;
+				if (ny > 0) {
+					up++;
+				}
+			}
+			if (tot == 0 || up != tot) {
+				throw new IllegalStateException("edge winding: only " + up + "/" + tot + " tris face up");
+			}
+			System.out.println("  ok: edge strips (" + (delta / 2) + " segments, all " + tot + " tris face up)");
+			return 0;
+		} catch (RuntimeException ex) {
+			System.out.println("FAIL edge strips: " + ex.getMessage());
+			return 1;
+		}
+	}
+
+	static long totalTris(byte[] model) {
+		BchMapModel m = new BchMapModel(model);
+		long t = 0;
+		for (BchMapModel.MeshGeom mg : m.geometry()) {
+			if (mg.posOk) {
+				int c = m.getTriangles(mg.meshIndex).length / 3;
+				if (c > 1) {
+					t += c;
+				}
+			}
+		}
+		return t;
 	}
 
 	// ---- grids ----

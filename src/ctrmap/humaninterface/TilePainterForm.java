@@ -18,6 +18,7 @@ import java.io.File;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
@@ -68,6 +69,7 @@ public class TilePainterForm {
 		final int[][] height = new int[DIM][DIM];
 		final boolean[][] ramp = new boolean[DIM][DIM];
 		final ctrmap.formats.tilemap.TerrainLighting lighting = ctrmap.formats.tilemap.TerrainLighting.daytime();
+		final boolean[] edgeBlend = {true}; // GameFreak grass<->dirt/sand transition strips
 
 		// the region's own model = the tileset donor (materials + textures + area
 		// all correct); used for the textured previews and the generated geometry
@@ -169,8 +171,22 @@ public class TilePainterForm {
 		view3d.setFocusable(false);
 		view3d.setEnabled(donorModel != null);
 		view3d.setToolTipText("Render the painted map with CTRMap's 3D engine - how it actually looks (drag to orbit).");
-		view3d.addActionListener(e -> open3DPreview(donorModel, grid, height, ramp, lighting));
+		view3d.addActionListener(e -> open3DPreview(donorModel, grid, height, ramp, lighting, edgeBlend[0]));
 		side.add(view3d);
+
+		// GameFreak-style transition strips along grass<->dirt/sand seams (the "blend"
+		// look). Only offered if this zone's tileset actually carries an edge material.
+		boolean canEdge = donorModel != null && PaintedRegionBuilder.donorSupportsEdges(donorModel);
+		edgeBlend[0] = canEdge;
+		final JCheckBox edgeChk = new JCheckBox("Blend grass edges (GameFreak look)", canEdge);
+		edgeChk.setAlignmentX(0f);
+		edgeChk.setFocusable(false);
+		edgeChk.setEnabled(canEdge);
+		edgeChk.setToolTipText(canEdge
+				? "Lay GameFreak's soft grass-edge strips where grass meets dirt/sand. Shows in 3D preview + Apply."
+				: "This zone's tileset has no grass-edge material - start the zone from a grassy route to get edges.");
+		edgeChk.addActionListener(e -> edgeBlend[0] = edgeChk.isSelected());
+		side.add(edgeChk);
 
 		// lighting: the mood GameFreak varied per area (baked into the ground)
 		side.add(javax.swing.Box.createVerticalStrut(12));
@@ -216,9 +232,19 @@ public class TilePainterForm {
 
 		dlg.add(side, BorderLayout.WEST);
 		dlg.add(canvas, BorderLayout.CENTER);
-		JPanel north = new JPanel(new GridLayout(2, 1));
+		JPanel north = new JPanel(new GridLayout(3, 1));
 		north.add(new JLabel("  Paint terrain; Raise/Lower click a tile up/down a level (cliffs form at drops). 3D preview shows the real look. Apply, then Deploy."));
 		north.add(new JLabel("  Terrain visuals use this zone's own materials - start the zone from a grassy route (Blank map canvas) for grass/water/rock textures."));
+		// hard-to-miss water status: whether water painted here will ripple/scroll
+		final boolean waterRipples = areaAnimatesWater(mZonePnl.zone.header.areadataID);
+		JLabel waterBanner = new JLabel(waterRipples
+				? "  💧 Water ripples & scrolls in THIS zone (its area animates water) - paint water freely."
+				: "  💧 Heads up: water painted here will be STILL. For live ripples, start the zone from a surf route (Blank map canvas).");
+		waterBanner.setOpaque(true);
+		waterBanner.setBackground(waterRipples ? new Color(0xD6, 0xEF, 0xD6) : new Color(0xFF, 0xE9, 0xC2));
+		waterBanner.setForeground(new Color(0x30, 0x30, 0x30));
+		waterBanner.setFont(waterBanner.getFont().deriveFont(java.awt.Font.BOLD));
+		north.add(waterBanner);
 		dlg.add(north, BorderLayout.NORTH);
 
 		JPanel buttons = new JPanel();
@@ -259,7 +285,7 @@ public class TilePainterForm {
 				return;
 			}
 			try {
-				applyToZone(zoneIndex, grid, height, ramp, lighting);
+				applyToZone(zoneIndex, grid, height, ramp, lighting, edgeBlend[0]);
 				dlg.dispose();
 			} catch (Exception ex) {
 				JOptionPane.showMessageDialog(dlg, "Apply failed:\n" + ex.getMessage(), "Tile painter", JOptionPane.ERROR_MESSAGE);
@@ -314,9 +340,9 @@ public class TilePainterForm {
 	}
 
 	/** Generates the model from the current grid and shows it in the real 3D renderer. */
-	private static void open3DPreview(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, ctrmap.formats.tilemap.TerrainLighting lighting) {
+	private static void open3DPreview(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges) {
 		try {
-			byte[] model = PaintedRegionBuilder.build(donorModel, grid, height, ramp, lighting).model;
+			byte[] model = PaintedRegionBuilder.build(donorModel, grid, height, ramp, lighting, edges).model;
 			MapPreview3D view = new MapPreview3D();
 			view.setRegion(model, mTileMapPanel.getWorldTextures());
 			// show the zone's area fog/atmosphere in the preview
@@ -346,7 +372,7 @@ public class TilePainterForm {
 		}
 	}
 
-	private static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, boolean[][] ramp, ctrmap.formats.tilemap.TerrainLighting lighting) throws Exception {
+	private static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, boolean[][] ramp, ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges) throws Exception {
 		GeometryForker.ForkResult r = GeometryForker.forkGeometry(zoneIndex);
 		File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
 		for (int newRegion : r.newRegions) {
@@ -356,7 +382,7 @@ public class TilePainterForm {
 			if (!BchMapModel.isMapModel(donor)) {
 				continue;
 			}
-			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donor, grid, height, ramp, lighting);
+			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donor, grid, height, ramp, lighting, edges);
 			gr.storeFile(1, bc.model);
 			gr.storeFile(2, bc.collision);
 			gr.storeFile(0, bc.tilemap);
