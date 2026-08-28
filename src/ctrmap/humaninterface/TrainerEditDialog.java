@@ -81,6 +81,11 @@ public class TrainerEditDialog {
 			JTable jt = new JTable(model);
 			jt.getColumnModel().getColumn(1).setPreferredWidth(110);
 			jt.getColumnModel().getColumn(7).setPreferredWidth(100);
+			//double-click species / item / moves -> the visual picker (preview card)
+			ctrmap.humaninterface.pokepick.PokePickers.installDoubleClickPickers(jt, col
+					-> col == 0 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.SPECIES
+					: col == 6 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.ITEM
+					: (col >= 8 && col <= 11) ? ctrmap.humaninterface.pokepick.PokePickers.Kind.MOVE : null);
 
 			final JDialog dlg = new JDialog(parent, "Trainer " + tid + " - " + clName + " " + trName, true);
 			dlg.setLayout(new BorderLayout());
@@ -103,7 +108,10 @@ public class TrainerEditDialog {
 			top.add(typeSpin);
 			top.add(new JLabel("Money rate:"));
 			top.add(moneySpin);
-			dlg.add(top, BorderLayout.NORTH);
+			JPanel north = new JPanel(new java.awt.GridLayout(2, 1));
+			north.add(top);
+			north.add(new JLabel("  Double-click a Species, Item or Move cell to pick it visually (types, stats, move category)."));
+			dlg.add(north, BorderLayout.NORTH);
 			dlg.add(new JScrollPane(jt), BorderLayout.CENTER);
 
 			JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -216,7 +224,9 @@ public class TrainerEditDialog {
 
 		@Override
 		public boolean isCellEditable(int r, int c) {
-			return c != 1 && c != 7;
+			//form/level/IV/gender-ability are typed; species(0)/item(6)/moves(8-11)
+			//and the name/item display columns open the visual picker on double-click
+			return c == 2 || c == 3 || c == 4 || c == 5;
 		}
 
 		@Override
