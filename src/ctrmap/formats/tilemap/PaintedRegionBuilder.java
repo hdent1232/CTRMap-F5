@@ -53,24 +53,49 @@ public class PaintedRegionBuilder {
 		return build(donorModel, grid, null, light);
 	}
 
+	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, TerrainLighting light) {
+		return build(donorModel, grid, height, null, light);
+	}
+
 	/**
 	 * @param height per-tile elevation in levels (null = all flat at 0).
+	 * @param ramp per-tile "this is a walkable ramp" flags (null = none); a ramp
+	 *             tile slopes from its level down to a lower orthogonal neighbour
+	 *             (auto-oriented), replacing the cliff so the player walks it.
 	 */
-	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, TerrainLighting light) {
+	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, TerrainLighting light) {
 		if (height == null) {
 			height = new int[DIM][DIM];
 		}
+		if (ramp == null) {
+			ramp = new boolean[DIM][DIM];
+		}
 		RegionFactory.BlankContent out = new RegionFactory.BlankContent();
-		out.model = buildModel(donorModel, grid, height, light);
-		out.collision = buildCollision(grid, height);
+		out.model = buildModel(donorModel, grid, height, ramp, light);
+		out.collision = buildCollision(grid, height, ramp);
 		out.tilemap = buildTilemap(grid);
 		out.props = new byte[]{0, 0, 0, 0};
 		return out;
 	}
 
+	/** Descent direction (0 E,1 W,2 S,3 N) of a ramp tile toward a level-below
+	 *  neighbour, or -1 if not a ramp / no lower neighbour. */
+	static int rampDir(TilePalette[][] grid, int[][] height, boolean[][] ramp, int tx, int ty) {
+		if (!ramp[ty][tx]) {
+			return -1;
+		}
+		int h = height[ty][tx];
+		for (int d = 0; d < 4; d++) {
+			if (neighbourHeight(grid, height, tx, ty, d) == h - 1) {
+				return d;
+			}
+		}
+		return -1;
+	}
+
 	// ---- visual model -----------------------------------------------------
 
-	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid, int[][] height, TerrainLighting light) {
+	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, TerrainLighting light) {
 		BchMapModel probe = new BchMapModel(donorModel);
 		int meshCount = probe.meshCount;
 		int groundMesh = defaultGroundMesh(probe);
@@ -86,11 +111,16 @@ public class PaintedRegionBuilder {
 				}
 				int mi = terrainMesh.computeIfAbsent(t, tp -> resolveMesh(probe, tp, groundMesh));
 				int h = height[ty][tx];
+				int rd = rampDir(grid, height, ramp, tx, ty);
 				if (mi >= 0) {
-					quadsByMesh.computeIfAbsent(mi, k -> new ArrayList<>()).add(floorQuad(grid, height, tx, ty, h, t));
+					quadsByMesh.computeIfAbsent(mi, k -> new ArrayList<>()).add(floorQuad(grid, height, tx, ty, h, rd));
 				}
-				// cliffs on edges where this tile is higher than the neighbour
+				// cliffs on edges where this tile is higher than the neighbour,
+				// EXCEPT the ramp's descent edge (that side is now a walkable slope)
 				for (int dir = 0; dir < 4; dir++) {
+					if (dir == rd) {
+						continue;
+					}
 					int hn = neighbourHeight(grid, height, tx, ty, dir);
 					if (hn < h) {
 						quadsByMesh.computeIfAbsent(cliffMesh, k -> new ArrayList<>()).add(cliffQuad(tx, ty, dir, hn, h));
@@ -151,13 +181,29 @@ public class PaintedRegionBuilder {
 		return om;
 	}
 
-	/** Flat floor quad for a tile at height h; UV = world XZ; AO from corners. */
-	static Quad floorQuad(TilePalette[][] grid, int[][] height, int tx, int ty, int h, TilePalette t) {
+	/** Floor quad for a tile; flat at height h, or SLOPED when rd>=0 (a ramp
+	 *  descending toward direction rd drops that edge's 2 corners to h-1). */
+	static Quad floorQuad(TilePalette[][] grid, int[][] height, int tx, int ty, int h, int rd) {
 		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
 		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
-		float y = h * STEP;
+		float yHi = h * STEP, yLo = (h - 1) * STEP;
+		// per-corner Y (TL,TR,BL,BR); the two corners on the descent edge drop to yLo
+		float[] cy = {yHi, yHi, yHi, yHi};
+		if (rd == 0) { // east low: TR,BR
+			cy[1] = yLo;
+			cy[3] = yLo;
+		} else if (rd == 1) { // west low: TL,BL
+			cy[0] = yLo;
+			cy[2] = yLo;
+		} else if (rd == 2) { // south low: BL,BR
+			cy[2] = yLo;
+			cy[3] = yLo;
+		} else if (rd == 3) { // north low: TL,TR
+			cy[0] = yLo;
+			cy[1] = yLo;
+		}
 		Quad q = new Quad();
-		float[][] p = {{x0, y, z0}, {x1, y, z0}, {x0, y, z1}, {x1, y, z1}};
+		float[][] p = {{x0, cy[0], z0}, {x1, cy[1], z0}, {x0, cy[2], z1}, {x1, cy[3], z1}};
 		int[][] corner = {{tx, ty}, {tx + 1, ty}, {tx, ty + 1}, {tx + 1, ty + 1}};
 		for (int c = 0; c < 4; c++) {
 			q.pos[c] = p[c];
@@ -255,24 +301,29 @@ public class PaintedRegionBuilder {
 
 	// ---- collision --------------------------------------------------------
 
-	static byte[] buildCollision(TilePalette[][] grid, int[][] height) {
+	static byte[] buildCollision(TilePalette[][] grid, int[][] height, boolean[][] ramp) {
 		List<float[]> tris = new ArrayList<>();
 		for (int ty = 0; ty < DIM; ty++) {
 			for (int tx = 0; tx < DIM; tx++) {
 				TilePalette t = grid[ty][tx];
 				int h = height[ty][tx];
+				int rd = rampDir(grid, height, ramp, tx, ty);
 				float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
 				float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
-				float y = h * STEP;
 				if (t != null && t.floor) {
-					tris.add(new float[]{x0, y, z0, x0, y, z1, x1, y, z0});
-					tris.add(new float[]{x1, y, z0, x0, y, z1, x1, y, z1});
+					// walkable floor - flat, or the ramp's sloped quad
+					Quad q = floorQuad(grid, height, tx, ty, h, rd);
+					tris.add(new float[]{q.pos[0][0], q.pos[0][1], q.pos[0][2], q.pos[2][0], q.pos[2][1], q.pos[2][2], q.pos[1][0], q.pos[1][1], q.pos[1][2]});
+					tris.add(new float[]{q.pos[1][0], q.pos[1][1], q.pos[1][2], q.pos[2][0], q.pos[2][1], q.pos[2][2], q.pos[3][0], q.pos[3][1], q.pos[3][2]});
 				}
 				if (t == null || t == TilePalette.VOID) {
 					continue;
 				}
-				// cliff walls (block passage between levels)
+				// cliff walls block passage between levels - except the ramp's slope edge
 				for (int dir = 0; dir < 4; dir++) {
+					if (dir == rd) {
+						continue;
+					}
 					int hn = neighbourHeight(grid, height, tx, ty, dir);
 					if (hn < h) {
 						addCliffCollision(tris, tx, ty, dir, hn, h);
