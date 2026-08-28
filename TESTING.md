@@ -1,0 +1,84 @@
+# TESTING.md — things to verify in the emulator
+
+A running list of everything built offline that needs an in-game check.
+Ordered roughly by how much other work depends on the answer. Check items
+off (`[x]`) as you confirm them; note anything that looks wrong and I'll fix it.
+
+Every item below already passes the offline regression battery (parsers,
+byte-round-trips, renders) — these checks are about how the REAL game engine
+reacts, which can't be verified without the emulator.
+
+## Tile painter — core loop
+- [ ] **Paint & deploy**: open a zone → Tools → Tile painter → paint some
+  grass/path/rock → Apply to zone → Deploy. Walk around. Expect: you walk on
+  painted ground, rock blocks you, the map looks like the 3D preview.
+- [ ] **Tall grass**: walk through painted tall grass. Expect: rustle animation
+  + wild encounters trigger (uses the zone's encounter table).
+- [ ] **Water + surf**: paint water, surf onto it. Expect: surfable, water looks
+  like water (2-layer sea material).
+
+## Tile painter — elevation & ramps
+- [ ] **Raised plateau**: raise a block of tiles 1–2 levels. Expect: cliff walls
+  appear at the drops, you canNOT walk up/off the cliff edge.
+- [ ] **Ramp/slope**: mark ramp tiles connecting level 0 → 1 → 2 (the yellow
+  triangle tool). Expect: you walk smoothly up and down the slope, no hopping,
+  no clipping through.
+- [ ] **Ledge tiles**: paint a south-facing ledge on a cliff edge. Expect: you
+  can jump DOWN over it (Hoenn ledge hop), not up.
+
+## Tile painter — full brush catalog (one visit each)
+- [ ] **Cave floor** brush: encounters use cave slot? footstep sound differs?
+- [ ] **Ice**: sliding behavior.
+- [ ] **Deep sand**: slow trudge + footprints.
+- [ ] **Bike rail** (`60 00 00 00` deck): only passable on bike (Cycling-Road rail).
+- [ ] **Waterfall** tile placed on a cliff face next to water: usable with the
+  Waterfall HM?
+- [ ] **Door/warp tile** (`01 00 0E D4`): steps trigger a warp — NOTE it warps
+  wherever the zone's warp table entry points; without editing warps it may
+  warp somewhere odd or do nothing. Just confirm the step-on reaction.
+
+## Edge blending (NEW — grass↔dirt/sand transition strips)
+- [ ] Paint a dirt path through grass with **"Blend grass edges" ON** → Apply →
+  Deploy. Expect: GameFreak's soft grass fringe along the grass/path seam
+  (like Route 101's path edges), not a hard texture line.
+  - The offline render only shows a faint band — the fringe texture is
+    camera-projected by the game engine, so the real look needs this check.
+- [ ] Same map with the checkbox OFF → hard seam (control test).
+- [ ] Edges on a SAND beach seam (grass↔sand) — same fringe expected.
+
+## Lighting (baked) + area fog
+- [ ] **Lighting presets**: apply the same map twice — once Day, once Night
+  preset. Expect: visibly darker/tinted ground at Night.
+- [ ] **Area fog editor** (Tools → Edit area fog & lighting): push fog near/far
+  in close + strong color. Expect: in-game distance fog changes to match.
+  REMEMBER: fog is per-AREA — other zones sharing the area change too.
+- [ ] **GameFreak atmosphere picker**: copy e.g. the Sootopolis or a cave
+  zone's atmosphere onto your zone. Expect: in-game mood matches the picker's
+  live preview of YOUR zone.
+
+## Water scrolling (NEW — the splice, if I get it working this session)
+- [ ] On a zone whose banner is GREEN: painted water visibly ripples/scrolls.
+- [ ] On a landlocked zone after "Make water ripple here": water scrolls like a
+  real route's sea. Also check the area's OTHER animations still play (grass
+  wind sway on neighbouring maps in the same area) — the splice must not
+  break them.
+- [ ] Landlocked zone WITHOUT the splice: water still (matches the amber banner).
+
+## Props & furniture
+- [ ] Place a TV / PC / door prop via the Prop Tool on a painted map → Deploy.
+  Expect: visible, and interaction (PC menu) works if scripted/expected.
+
+## Earlier systems (from previous sessions, still unverified in-game)
+- [ ] **Maison opponent editor**: edit a Maison set (a/1/8), battle it in the
+  Maison. Expect: edited species/moves appear.
+- [ ] **GiveBP script**: the PlayerSetBP native script edit awards BP correctly
+  (check BP counter before/after).
+- [ ] **Trainer editor**: edited trainer team appears in battle.
+- [ ] **Encounter editor**: edited wild slots appear at expected rates.
+- [ ] **Zone-limit patch** (code.bin): game boots with the patched executable
+  and added zones load.
+
+## How to report back
+For anything that fails: say which item, what you saw vs expected, and (if it
+crashed) whether it hard-locked or errored. Screenshots help. I keep this file
+updated every time a new offline-built feature lands.
