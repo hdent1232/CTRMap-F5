@@ -532,41 +532,7 @@ public class GeoEditForm extends JPanel {
 	 * status fragment.
 	 */
 	private String carryTextures(int donorArea, int targetArea, List<String> needed) throws Exception {
-		java.io.File tgtFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, targetArea);
-		java.io.File donFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, donorArea);
-		if (tgtFile == null || donFile == null) {
-			throw new IllegalStateException("area files unavailable");
-		}
-		ctrmap.formats.containers.AD tgt = new ctrmap.formats.containers.AD(tgtFile);
-		ctrmap.formats.containers.AD don = new ctrmap.formats.containers.AD(donFile);
-		//names already present in the target area (file 11 world pack + file 1 prop pack)
-		java.util.Set<String> have = new java.util.HashSet<>();
-		byte[] tgt11 = tgt.getFile(11), tgt1 = tgt.getFile(1);
-		for (byte[] pk : new byte[][]{tgt11, tgt1}) {
-			if (pk != null && ctrmap.formats.h3d.BchTexturePack.isTexturePack(pk)) {
-				for (ctrmap.formats.h3d.BchTexturePack.Texture t : ctrmap.formats.h3d.BchTexturePack.parse(pk)) {
-					have.add(t.name);
-				}
-			}
-		}
-		java.util.List<String> missing = new java.util.ArrayList<>();
-		for (String n : needed) {
-			if (!have.contains(n)) {
-				missing.add(n);
-			}
-		}
-		if (missing.isEmpty()) {
-			return "  (textures already present)";
-		}
-		byte[] don11 = don.getFile(11);
-		if (don11 == null || !ctrmap.formats.h3d.BchTexturePack.isTexturePack(don11)) {
-			don11 = don.getFile(1);
-		}
-		byte[] newPack = ctrmap.formats.h3d.BchTexturePack.importTextures(
-				ctrmap.formats.h3d.BchTexturePack.isTexturePack(tgt11) ? tgt11 : tgt1, don11, missing);
-		tgt.storeFile(ctrmap.formats.h3d.BchTexturePack.isTexturePack(tgt11) ? 11 : 1, newPack);
-		Workspace.addPersist(tgtFile);
-		return "  +" + missing.size() + " textures carried to this area";
+		return ctrmap.formats.h3d.BchTexturePack.carryToArea(donorArea, targetArea, needed);
 	}
 
 	private void undo() {

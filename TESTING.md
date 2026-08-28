@@ -82,6 +82,22 @@ engine can prove it PLAYS. **This is the highest-priority test on the list.**
 - [ ] Place a TV / PC / door prop via the Prop Tool on a painted map → Deploy.
   Expect: visible, and interaction (PC menu) works if scripted/expected.
 
+## Shop inventories (NEW — Tools → "Edit shop inventories (Marts)...")
+Shop lists live in the executable, so this ships as a code.ips like the zone
+patch (offline: all 24 retail inventories byte-verified in your code.bin).
+- [ ] Change an easy-to-check shop (e.g. Lavaridge Herbs, or the 0-badge
+  Mart list) → Save code.ips → deploy to Azahar
+  (load/mods/&lt;titleid&gt;/exefs/code.ips) → full emulator restart → talk to the
+  clerk. Expect: your items, at their normal prices.
+- [ ] If you also use the zone-limit patch: save with MERGE when asked, then
+  confirm BOTH still work (game boots with added zones AND the shop sells
+  the edited items) — one code.ips carries both.
+
+## Interiors (Pokémon Centers, houses — just so it's on the list)
+- [ ] Load a Pokémon Center interior zone in the zone loader (interiors are
+  ordinary zones), move an NPC or prop, Apply/Deploy. Expect: the change
+  shows inside every Center that uses that interior zone.
+
 ## Earlier systems (from previous sessions, still unverified in-game)
 - [ ] **Maison opponent editor**: edit a Maison set (a/1/8), battle it in the
   Maison. Expect: edited species/moves appear.

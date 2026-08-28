@@ -110,6 +110,7 @@ public class CtrmapMainframe {
 	public static JMenuItem wildEncounters;
 	public static JMenuItem trainerEditor;
 	public static JMenuItem maisonEditor;
+	public static JMenuItem shopEditor;
 	public static JMenuItem setupFacility;
 	public static JMenuItem renameZone;
 	public static JMenuItem emptyZone;
@@ -211,6 +212,7 @@ public class CtrmapMainframe {
 		resizeMap = new JMenuItem("Resize map (this zone)...");
 		trainerEditor = new JMenuItem("Edit trainer (party/battle)...");
 		maisonEditor = new JMenuItem("Edit Battle Maison opponents...");
+		shopEditor = new JMenuItem("Edit shop inventories (Marts)...");
 		setupFacility = new JMenuItem("Set up Battle facility here (clone Maison)...");
 		renameZone = new JMenuItem("Rename zone (in-game name)...");
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
@@ -484,6 +486,12 @@ public class CtrmapMainframe {
 				ctrmap.humaninterface.MaisonEditDialog.show(frame);
 			}
 		});
+		shopEditor.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ctrmap.humaninterface.ShopEditDialog.show(frame);
+			}
+		});
 		setupFacility.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -653,6 +661,7 @@ public class CtrmapMainframe {
 		toolsmenu.add(resizeMap);
 		toolsmenu.add(trainerEditor);
 		toolsmenu.add(maisonEditor);
+		toolsmenu.add(shopEditor);
 		toolsmenu.add(setupFacility);
 		toolsmenu.add(renameZone);
 		toolsmenu.add(emptyZone);
