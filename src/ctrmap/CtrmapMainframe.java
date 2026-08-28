@@ -104,6 +104,7 @@ public class CtrmapMainframe {
 	public static JMenuItem importMapObj;
 	public static JMenuItem forkGeometry;
 	public static JMenuItem blankCanvas;
+	public static JMenuItem tilePainter;
 	public static JMenuItem resizeMap;
 	public static JMenuItem wildEncounters;
 	public static JMenuItem trainerEditor;
@@ -203,6 +204,7 @@ public class CtrmapMainframe {
 		importMapObj = new JMenuItem("Import OBJ into map region (Blender)...");
 		forkGeometry = new JMenuItem("Fork map geometry (make zone independent)...");
 		blankCanvas = new JMenuItem("Blank map canvas (this zone)...");
+		tilePainter = new JMenuItem("Paint map tiles (this zone)...");
 		wildEncounters = new JMenuItem("Edit wild encounters (this zone)...");
 		resizeMap = new JMenuItem("Resize map (this zone)...");
 		trainerEditor = new JMenuItem("Edit trainer (party/battle)...");
@@ -444,6 +446,12 @@ public class CtrmapMainframe {
 				blankCanvasAction();
 			}
 		});
+		tilePainter.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ctrmap.humaninterface.TilePainterForm.show();
+			}
+		});
 		wildEncounters.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -631,6 +639,7 @@ public class CtrmapMainframe {
 		toolsmenu.add(importMapObj);
 		toolsmenu.add(forkGeometry);
 		toolsmenu.add(blankCanvas);
+		toolsmenu.add(tilePainter);
 		toolsmenu.add(wildEncounters);
 		toolsmenu.add(resizeMap);
 		toolsmenu.add(trainerEditor);

@@ -125,7 +125,7 @@ public class MapModelObjImporter {
 	 * then position - and authored UVs/normals when the OBJ carries them and the
 	 * mesh buffers that attribute - are written over it in the mesh's format.
 	 */
-	static byte[] buildVertexBytes(BchMapModel model, BchMapModel.MeshGeom g, MapModelObj.ObjMesh om) {
+	public static byte[] buildVertexBytes(BchMapModel model, BchMapModel.MeshGeom g, MapModelObj.ObjMesh om) {
 		float[][] orig = model.getVertexPositions(g.meshIndex);
 		Map<Long, Integer> exact = new HashMap<>();
 		for (int v = 0; v < orig.length; v++) {
