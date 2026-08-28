@@ -170,7 +170,7 @@ public class BuildingPaletteDialog {
 						byte[] base = PaintedRegionBuilder.build(baseDonor, grass, null, null,
 								TerrainLighting.daytime(), false).model;
 						int ax = 20 - e.tilesW() / 2, ay = 20 - e.tilesH() / 2;
-						MapPrefab.StampResult r = p.stampGeometry(base, ax, ay, 0f);
+						MapPrefab.StampResult r = p.stampGeometry(base, ax, ay, -e.baseY);
 						previewModel = r.newModel;
 						if (baseTextures != null) {
 							texes.addAll(baseTextures);
