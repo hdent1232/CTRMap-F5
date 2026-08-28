@@ -501,19 +501,23 @@ public class TilePainterForm {
 	 * failure so a half-stamped map is never applied.
 	 */
 	private static void stampPlaced(RegionFactory.BlankContent bc, java.util.List<Placed> placed,
-			java.util.Map<Integer, java.util.Set<String>> texNeeds) {
+			int[][] height, java.util.Map<Integer, java.util.Set<String>> texNeeds) {
 		for (Placed pl : placed) {
 			ctrmap.formats.h3d.MapPrefab p = BuildingPaletteDialog.cachedPrefab(pl.e);
 			if (p == null) {
 				throw new IllegalStateException("could not cut \"" + pl.e.name + "\" from the dump");
 			}
-			ctrmap.formats.h3d.MapPrefab.StampResult r = p.stampGeometry(bc.model, pl.tx, pl.ty, 0f);
+			// plant the piece on the terrain at its anchor: donors sit at their
+			// own base height (a gym floats at -18, a palm at +46 over a beach
+			// patch), so dy re-bases them onto this tile's ground level
+			float dy = (height != null ? height[pl.ty][pl.tx] : 0) * PaintedRegionBuilder.STEP - pl.e.baseY;
+			ctrmap.formats.h3d.MapPrefab.StampResult r = p.stampGeometry(bc.model, pl.tx, pl.ty, dy);
 			if (r.stamped.isEmpty()) {
 				throw new IllegalStateException("\"" + pl.e.name + "\" could not be stamped"
 						+ (r.missingMaterials.isEmpty() ? "" : " (missing materials: " + r.missingMaterials + ")"));
 			}
 			bc.model = r.newModel;
-			bc.collision = p.stampCollision(bc.collision, pl.tx, pl.ty, 0f);
+			bc.collision = p.stampCollision(bc.collision, pl.tx, pl.ty, dy);
 			if (p.tiles != null) {
 				for (int y = 0; y < p.tilesH; y++) {
 					for (int x = 0; x < p.tilesW; x++) {
@@ -539,7 +543,7 @@ public class TilePainterForm {
 		try {
 			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donorModel, grid, height, ramp, lighting, edges);
 			if (!placed.isEmpty()) {
-				stampPlaced(bc, placed, null);
+				stampPlaced(bc, placed, height, null);
 			}
 			byte[] model = bc.model;
 			java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> texes
@@ -594,7 +598,7 @@ public class TilePainterForm {
 			}
 			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donor, grid, height, ramp, lighting, edges);
 			if (!placed.isEmpty()) {
-				stampPlaced(bc, placed, texNeeds);
+				stampPlaced(bc, placed, height, texNeeds);
 			}
 			gr.storeFile(1, bc.model);
 			gr.storeFile(2, bc.collision);
@@ -618,9 +622,24 @@ public class TilePainterForm {
 				enterable++;
 			}
 		}
+		int wired = 0;
+		if (enterable > 0) {
+			int rsl = JOptionPane.showConfirmDialog(frame,
+					enterable + " placed building(s) have doors. Add their door warps now?\n\n"
+					+ "Each door will warp into its retail interior (e.g. the standard Pokemon\n"
+					+ "Center room) - walking in works immediately. NOTE: a retail interior's\n"
+					+ "exit leads back to its own retail town; for a proper round trip, clone\n"
+					+ "the interior zone (Zone tools) and retarget with the Warp tool.",
+					"Door warps", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+			if (rsl == JOptionPane.YES_OPTION) {
+				wired = wireDoorWarps(zoneIndex, placed, height);
+			}
+		}
 		final String extras = (texNote.length() > 0 ? "\n" + texNote.toString().trim() : "")
-				+ (enterable > 0 ? "\n\n" + enterable + " placed building(s) have doors - wire each door's warp to an\n"
-						+ "interior zone (Warp tool; clone a real interior so its exit returns here)." : "");
+				+ (wired > 0 ? "\n\n" + wired + " door warp(s) added (retail door shape; retarget with the Warp tool\n"
+						+ "after cloning an interior). Place each door's swinging-door prop via the\n"
+						+ "Prop Tool (the palette names it, e.g. com_bm_pcdoor01)." : "")
+				+ (enterable > wired ? "\n\n" + (enterable - wired) + " door(s) left unwired - add warps with the Warp tool when ready." : "");
 		Workspace.packWorkspace(new Runnable() {
 			@Override
 			public void run() {
@@ -674,6 +693,12 @@ public class TilePainterForm {
 	}
 
 	private static int firstRegion() {
+		int[] c = firstRegionCell();
+		return c == null ? -1 : c[0];
+	}
+
+	/** {regionId, cellX, cellY} of the zone's first map cell (the painted one), or null. */
+	private static int[] firstRegionCell() {
 		try {
 			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
@@ -682,12 +707,63 @@ public class TilePainterForm {
 			for (int k = 0; k < w * h; k++) {
 				int id = u16(mm, sub0 + 8 + k * 2);
 				if (id != 0xFFFF) {
-					return id;
+					return new int[]{id, k % w, k / w};
 				}
 			}
 		} catch (Exception ex) {
 		}
-		return -1;
+		return null;
+	}
+
+	/**
+	 * Adds a retail-shaped door warp for every enterable placed building:
+	 * measured from all 167 retail doors - face 1, transition 3, 1x1, at
+	 * doorTile*18+9 world units, height = the door tile's terrain level,
+	 * target = the interior zone's entry warp (always warp 0 in retail).
+	 */
+	private static int wireDoorWarps(int zoneIndex, java.util.List<Placed> placed, int[][] height) throws Exception {
+		int[] cell = firstRegionCell();
+		if (cell == null) {
+			throw new IllegalStateException("could not resolve the zone's map cell for warp placement");
+		}
+		File zf = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		ctrmap.formats.containers.ZO zo = new ctrmap.formats.containers.ZO(zf);
+		ctrmap.formats.zone.ZoneEntities ent = new ctrmap.formats.zone.ZoneEntities(zo.getFile(1));
+		int added = 0;
+		for (Placed pl : placed) {
+			if (!pl.e.enterable()) {
+				continue;
+			}
+			ctrmap.formats.zone.ZoneEntities.Warp w = new ctrmap.formats.zone.ZoneEntities.Warp();
+			w.targetZone = pl.e.interiorZone;
+			w.targetWarpId = Math.max(0, pl.e.interiorWarpId);
+			w.faceDirection = 1;
+			w.transitionType = 3;
+			w.coordinateType = 0;
+			w.x = (cellX(cell) * 40 + pl.tx + pl.e.doorDX) * 18 + 9;
+			w.y = (cellY(cell) * 40 + pl.ty + pl.e.doorDY) * 18 + 9;
+			w.z = height[pl.ty][pl.tx] * 18;
+			w.w = 1;
+			w.h = 1;
+			ent.warps.add(w);
+			added++;
+		}
+		if (added > 0) {
+			ent.modified = true;
+			byte[] assembled = ent.assembleData();
+			if (assembled == null || !zo.storeFile(1, assembled)) {
+				throw new IllegalStateException("could not write the door warps to zone " + zoneIndex);
+			}
+		}
+		return added;
+	}
+
+	private static int cellX(int[] cell) {
+		return cell[1];
+	}
+
+	private static int cellY(int[] cell) {
+		return cell[2];
 	}
 
 	private static Color textOn(Color c) {
