@@ -222,17 +222,38 @@ public class TilePainterForm {
 		dlg.add(north, BorderLayout.NORTH);
 
 		JPanel buttons = new JPanel();
+		JButton objects = new JButton("Objects & furniture...");
 		JButton apply = new JButton("Apply to zone");
 		JButton close = new JButton("Close");
+		buttons.add(objects);
 		buttons.add(apply);
 		buttons.add(close);
 		dlg.add(buttons, BorderLayout.SOUTH);
 
+		objects.addActionListener(e -> JOptionPane.showMessageDialog(dlg,
+				"<html><b>Free-standing objects</b> (TVs, PCs, doors, trees, signs, boats, statues)<br>"
+				+ "are <b>props</b> - place them with the <b>Prop Tool</b> in the toolbar (the tree icon):<br>"
+				+ "it has a searchable palette (type 'tv', 'pc', 'door', 'tree'...) with a 3D preview.<br><br>"
+				+ "<b>Buildings and furniture shells</b> (Poke Center / house exteriors, beds, tables,<br>"
+				+ "counters, shelves) are part of the <b>map model</b>, not props. Build them by<br>"
+				+ "copying a real map's furniture with <b>Copy selection as prefab</b> (Geometry tool)<br>"
+				+ "or importing a model from Blender (Import map model .obj).</html>",
+				"Objects & furniture", JOptionPane.INFORMATION_MESSAGE));
+
 		apply.addActionListener(e -> {
+			// water renders correctly (2-layer material) but only SCROLLS if this
+			// zone's area animates chip_sea_b (the anim lives in AreaData, not the
+			// model) - warn if the user painted water into a non-water area
+			String waterNote = "";
+			if (usesWater(grid) && !areaAnimatesWater(mZonePnl.zone.header.areadataID)) {
+				waterNote = "\n\nNote: this area doesn't animate water, so painted water will be STILL\n"
+						+ "(it still looks like water). For rippling water, start the zone from a water\n"
+						+ "route (Blank map canvas / clone from a surf route), whose area animates it.";
+			}
 			int rsl = JOptionPane.showConfirmDialog(dlg,
 					"Build zone " + zoneIndex + "'s map from the painted tiles?\n"
 					+ "The zone gets its own private geometry first (the source is untouched),\n"
-					+ "then packs. Deploy to walk on it.",
+					+ "then packs. Deploy to walk on it." + waterNote,
 					"Tile painter", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
 			if (rsl != JOptionPane.OK_OPTION) {
 				return;
@@ -263,6 +284,33 @@ public class TilePainterForm {
 			onSet.run();
 		});
 		panel.add(b);
+	}
+
+	private static boolean usesWater(TilePalette[][] grid) {
+		for (TilePalette[] row : grid) {
+			for (TilePalette t : row) {
+				if (t == TilePalette.WATER || t == TilePalette.WATERFALL) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** True if the area's world-animation pack (AreaData subfile 2) animates chip_sea_b. */
+	private static boolean areaAnimatesWater(int areaId) {
+		try {
+			ctrmap.formats.containers.AD ad = new ctrmap.formats.containers.AD(
+					Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areaId));
+			byte[] anim = ad.getFile(2);
+			if (anim == null) {
+				return false;
+			}
+			String s = new String(anim, java.nio.charset.StandardCharsets.ISO_8859_1);
+			return s.contains("chip_sea"); // a chip_sea_* material-animation target
+		} catch (Exception ex) {
+			return true; // unknown -> don't nag
+		}
 	}
 
 	/** Generates the model from the current grid and shows it in the real 3D renderer. */
