@@ -294,13 +294,18 @@ public class TilePainterForm {
 		dlg.add(buttons, BorderLayout.SOUTH);
 
 		objects.addActionListener(e -> JOptionPane.showMessageDialog(dlg,
-				"<html><b>Free-standing objects</b> (TVs, PCs, doors, trees, signs, boats, statues)<br>"
-				+ "are <b>props</b> - place them with the <b>Prop Tool</b> in the toolbar (the tree icon):<br>"
-				+ "it has a searchable palette (type 'tv', 'pc', 'door', 'tree'...) with a 3D preview.<br><br>"
-				+ "<b>Buildings and furniture shells</b> (Poke Center / house exteriors, beds, tables,<br>"
-				+ "counters, shelves) are part of the <b>map model</b>, not props. Build them by<br>"
-				+ "copying a real map's furniture with <b>Copy selection as prefab</b> (Geometry tool)<br>"
-				+ "or importing a model from Blender (Import map model .obj).</html>",
+				"<html><b>Interactive objects</b> (doors, PCs, TVs, boats/submarines, monuments,<br>"
+				+ "gym gadgets) are <b>props</b> - place them with the <b>Prop Tool</b> in the toolbar:<br>"
+				+ "it has a searchable palette (type 'pc', 'door', 'tv', 'boat'...) with a 3D preview.<br><br>"
+				+ "<b>Everything else you can see</b> - building exteriors (Poke Centers, Marts,<br>"
+				+ "houses), sign posts, most trees, furniture (beds, tables, counters) - is baked<br>"
+				+ "into the <b>map model</b>. Build those by copying them from a real map:<br>"
+				+ "open a city/route, select the building's tiles in the <b>Geometry tool</b>, click<br>"
+				+ "<b>Copy selection as prefab</b>, then <b>Stamp prefab here</b> on your map (geometry,<br>"
+				+ "collision, tiles and textures all carry over - even across areas).<br><br>"
+				+ "To make a <b>sign readable</b>, add the interaction with Add NPC / object... &rarr; sign.<br>"
+				+ "To make a <b>door work</b>, paint the Door tile and point a warp at an interior zone<br>"
+				+ "(clone a real interior with the Zone tools so its exit leads back to your map).</html>",
 				"Objects & furniture", JOptionPane.INFORMATION_MESSAGE));
 
 		apply.addActionListener(e -> {
