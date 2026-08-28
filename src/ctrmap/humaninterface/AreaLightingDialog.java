@@ -90,6 +90,18 @@ public class AreaLightingDialog {
 		form.add(new JLabel("Ambient / light color:"));
 		form.add(ambBtn);
 
+		// refreshes the controls from the (possibly replaced) sub4 block
+		final Runnable refresh = () -> {
+			AreaEnv cur = AreaEnv.read(sub4);
+			fog[0] = rgb(cur.fogColor);
+			amb[0] = rgb(cur.ambient);
+			fogBtn.setBackground(fog[0]);
+			ambBtn.setBackground(amb[0]);
+			strength.setValue(Math.max(0, Math.min(100, Math.round(cur.fogColor[3] * 100))));
+			near.setValue((int) cur.fogNear);
+			far.setValue((int) cur.fogFar);
+		};
+
 		JPanel main = new JPanel(new BorderLayout(0, 6));
 		main.add(new JLabel("<html>Area " + areaId + " - <b>affects EVERY zone in this area</b>. "
 				+ "Routes = long blue haze; caves/rooms = short dim.</html>"), BorderLayout.NORTH);
@@ -99,11 +111,23 @@ public class AreaLightingDialog {
 		dlg.setLayout(new BorderLayout());
 		dlg.add(main, BorderLayout.CENTER);
 		JPanel buttons = new JPanel();
+		JButton copyGf = new JButton("Copy a GameFreak zone's atmosphere...");
 		JButton save = new JButton("Save");
 		JButton cancel = new JButton("Cancel");
+		buttons.add(copyGf);
 		buttons.add(save);
 		buttons.add(cancel);
 		dlg.add(buttons, BorderLayout.SOUTH);
+
+		copyGf.addActionListener(e -> {
+			byte[] src = GfEnvPicker.pick(dlg);
+			if (src != null && src.length == sub4.length) {
+				// take GameFreak's COMPLETE environment (all 736 floats: colors,
+				// light directions, hemisphere, ranges) - fine-tune on top if wanted
+				System.arraycopy(src, 0, sub4, 0, sub4.length);
+				refresh.run();
+			}
+		});
 
 		save.addActionListener(e -> {
 			env.fogColor[0] = fog[0].getRed() / 255f;
