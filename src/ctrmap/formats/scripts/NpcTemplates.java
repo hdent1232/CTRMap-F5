@@ -106,15 +106,17 @@ public class NpcTemplates {
 	public static final int ITEM_ID_MAX = 775;
 
 	/**
-	 * ORAS GAMETEXT file index of the trainer-name list (950 lines; measured
-	 * on the real ROM, tid 7 = Calvin verified against the Route 102 NPC).
+	 * GAMETEXT file index of the trainer-name list for the loaded game (on
+	 * ORAS: 950 lines; tid 7 = Calvin verified against the Route 102 NPC).
 	 */
-	public static final int GAMETEXT_TRAINER_NAMES_OA = 22;
+	public static int gametextTrainerNames() {
+		return ctrmap.Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_NAMES);
+	}
 
-	/**
-	 * ORAS GAMETEXT file index of the item-name list (776 lines).
-	 */
-	public static final int GAMETEXT_ITEM_NAMES_OA = 114;
+	/** GAMETEXT file index of the item-name list (on ORAS: 776 lines). */
+	public static int gametextItemNames() {
+		return ctrmap.Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES);
+	}
 
 	/**
 	 * Result of findSignPattern - a matched vanilla-shaped sign case.

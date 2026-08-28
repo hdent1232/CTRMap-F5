@@ -256,7 +256,8 @@ public class GfEnvPicker {
 
 	private static String[] locationNames() {
 		try {
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, 90);
+			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT,
+					ctrmap.formats.text.LocationNames.gametextIndex());
 			List<String> lines = GFMessageFile.getStrings(java.nio.file.Files.readAllBytes(f.toPath()));
 			return lines.toArray(new String[0]);
 		} catch (Exception ex) {
