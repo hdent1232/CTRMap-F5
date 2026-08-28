@@ -588,6 +588,21 @@ public class BchMapModel {
 	 * Reads a material's name from the strings section (the texture/material
 	 * identifier, e.g. "lawn01" - human-meaningful labels for the editor UI).
 	 */
+	/**
+	 * The model's internal name (e.g. "world03_02_02") - what the area's world
+	 * animations bind to (animation "&lt;name&gt;_chikei_" plays on this model).
+	 */
+	public String getModelName() {
+		if (modelNamePtr <= 0) {
+			return null;
+		}
+		StringBuilder sb = new StringBuilder();
+		for (int p = modelNamePtr; p < raw.length && raw[p] != 0; p++) {
+			sb.append((char) (raw[p] & 0xFF));
+		}
+		return sb.toString();
+	}
+
 	public String getMaterialName(int matIndex) {
 		if (matIndex < 0 || matIndex >= materialHeaderOffsets.size()) {
 			return null;
