@@ -78,6 +78,25 @@ engine can prove it PLAYS. **This is the highest-priority test on the list.**
 - [ ] Click the button on a zone in a SHARED area, then visit another zone of
   that area: it must be unaffected (the animation binds by map-cell name).
 
+## Building palette (NEW — "Buildings & decor..." in the tile painter)
+Pick a Pokémon Center / Mart / Gym / 12 house styles / signs / trees / fence /
+bush from a searchable list with a live 3D preview, click the grid to place.
+Every catalog entry is offline-proven (extracts from your dump, stamps, and
+renders complete) — these checks are about the in-game result.
+- [ ] Place a **Pokémon Center** on a painted map → Apply (say YES to door
+  warps) → Deploy. Expect: the building looks complete in-game, you collide
+  with its walls, and **walking into the door warps you into the standard
+  Pokémon Center room**. (The interior's exit will take you to Oldale — that's
+  expected until you clone an interior; retarget with the Warp tool.)
+- [ ] Add the swinging-door prop (Prop Tool, the palette names it —
+  com_bm_pcdoor01 for the Center) at the door tile. Expect: the animated
+  door renders and opens.
+- [ ] Place a house + a sign + trees on one map. Expect: all render with
+  correct textures (auto-carried across areas), trees/signs block movement
+  per their retail footprint tiles.
+- [ ] Place a building on RAISED terrain (height 1-2). Expect: it sits on the
+  plateau, not floating or buried (base-height compensation).
+
 ## Props & furniture
 - [ ] Place a TV / PC / door prop via the Prop Tool on a painted map → Deploy.
   Expect: visible, and interaction (PC menu) works if scripted/expected.

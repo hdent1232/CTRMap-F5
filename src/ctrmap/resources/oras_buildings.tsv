@@ -1,0 +1,33 @@
+# CTRMap-F5 building/decoration catalog (ORAS) - METADATA ONLY; geometry is cut
+# from the user's own pristine dump at placement time (MapPrefab.extract).
+# Mined + render-verified from the retail maps (every box proven by extracting,
+# stamping onto painted grass and inspecting the offscreen render).
+# Columns: kind name donorRegion donorArea tx0 ty0 tx1 ty1 baseY doorDX doorDY doorProp interiorZone interiorWarpId
+#  - box = region-local tiles (inclusive) in FieldData entry donorRegion
+#  - baseY = the building's floor Y in the donor region; stamp dy = targetGroundY - baseY
+#  - doorDX/DY = the enter tile relative to the box anchor (-1 = not enterable)
+#  - doorProp = the animated door prop's model (placed separately via the Prop Tool)
+#  - interiorZone/WarpId = the retail interior behind the door (entry warp is always 0)
+POKECENTER	Pokemon Center	38	11	4	3	10	9	0	3	5	com_bm_pcdoor01	228	0
+MART	Poke Mart	38	11	5	16	10	22	0	2	5	com_bm_fsdoor01	229	0
+GYM	Gym	22	10	14	23	22	28	-18	4	4	com_bm_gymdoor01	428	0
+HOUSE	Littleroot house	6	8	10	7	16	12	0	4	4	t101_bm_door01	223	0
+HOUSE	Birch Lab	6	8	12	18	20	24	0	4	5	t101_bm_door02	227	0
+HOUSE	Oldale-style house	4	8	10	11	16	16	0	2	4	t102_bm_door01	230	0
+HOUSE	Dewford shingle house	22	10	17	2	23	7	-18	2	4	t103_bm_door01	235	0
+HOUSE	Lavaridge house	59	14	24	24	28	29	72	1	4	t104_bm_door01	238	0
+HOUSE	Fallarbor house	70	15	14	26	19	30	36	2	3	t105_bm_door01	244	0
+HOUSE	Slateport Fan Club	150	20	13	25	21	30	18	4	5	c102_bm_door04	273	0
+HOUSE	Lilycove blue-roof house	156	23	19	31	25	35	36	3	3	c106_bm_door01	321	0
+HOUSE	Sootopolis dome house	162	24	23	30	27	34	108	2	4	c108_bm_door01	345	0
+HOUSE	Pacifidlog stilt hut	181	27	21	29	27	34	0	3	4	t107_bm_door01	256	0
+HOUSE	Mossdeep gold-shingle house	106	17	27	8	33	13	36	3	4	c107_bm_door01	339	0
+HOUSE	Battle Resort thatched house	485	100	22	16	28	21	18	3	4	battle_bm_door01	522	0
+SIGN	Sign post	153	21	22	24	22	24	0	-1	-1	-	-1	-1
+SIGN	Route sign	5	8	15	20	15	20	0	-1	-1	-	-1	-1
+SIGN	Billboard	38	11	10	26	11	26	0	-1	-1	-	-1	-1
+TREE	Roadside tree	5	8	5	27	7	28	5	-1	-1	-	-1	-1
+TREE	Fir tree	5	8	2	11	6	15	5	-1	-1	-	-1	-1
+TREE	Palm tree	465	85	22	10	28	16	46	-1	-1	-	-1	-1
+FENCE	Iron fence (4-tile run)	38	11	18	1	18	4	0	-1	-1	-	-1	-1
+BUSH	Bush	5	8	32	27	33	27	3	-1	-1	-	-1	-1

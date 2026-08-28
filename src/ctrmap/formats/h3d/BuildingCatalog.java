@@ -19,11 +19,12 @@ import java.util.Scanner;
  * time via {@link MapPrefab#extract}, so no game assets ship with the editor.
  *
  * <p>Resource format ({@code oras_buildings.tsv}, tab-separated, '#' comments):
- * {@code kind name donorRegion donorArea tx0 ty0 tx1 ty1 doorDX doorDY
+ * {@code kind name donorRegion donorArea tx0 ty0 tx1 ty1 baseY doorDX doorDY
  * doorProp interiorZone interiorWarpId} - box in region-local tiles
- * (inclusive); doorDX/doorDY anchor-relative door tile or -1; doorProp the
- * door prop's model name or "-"; interiorZone/-WarpId the retail interior a
- * working door warps into, or -1.
+ * (inclusive); baseY the donor floor height (stamp dy = targetY - baseY);
+ * doorDX/doorDY anchor-relative door tile or -1; doorProp the door prop's
+ * model name or "-"; interiorZone/-WarpId the retail interior a working door
+ * warps into, or -1.
  */
 public class BuildingCatalog {
 
@@ -34,6 +35,8 @@ public class BuildingCatalog {
 		public int donorRegion;
 		public int donorArea;
 		public int tx0, ty0, tx1, ty1;
+		/** The building's floor Y in the donor region (stamp dy = targetY - baseY). */
+		public int baseY;
 		public int doorDX = -1, doorDY = -1;
 		public String doorProp = "-";
 		public int interiorZone = -1;
@@ -77,7 +80,7 @@ public class BuildingCatalog {
 					continue;
 				}
 				String[] f = line.split("\t");
-				if (f.length < 13) {
+				if (f.length < 14) {
 					continue;
 				}
 				Entry e = new Entry();
@@ -89,11 +92,12 @@ public class BuildingCatalog {
 				e.ty0 = Integer.parseInt(f[5]);
 				e.tx1 = Integer.parseInt(f[6]);
 				e.ty1 = Integer.parseInt(f[7]);
-				e.doorDX = Integer.parseInt(f[8]);
-				e.doorDY = Integer.parseInt(f[9]);
-				e.doorProp = f[10];
-				e.interiorZone = Integer.parseInt(f[11]);
-				e.interiorWarpId = Integer.parseInt(f[12]);
+				e.baseY = Integer.parseInt(f[8]);
+				e.doorDX = Integer.parseInt(f[9]);
+				e.doorDY = Integer.parseInt(f[10]);
+				e.doorProp = f[11];
+				e.interiorZone = Integer.parseInt(f[12]);
+				e.interiorWarpId = Integer.parseInt(f[13]);
 				entries.add(e);
 			}
 		} catch (Exception ex) {
