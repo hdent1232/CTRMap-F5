@@ -94,10 +94,12 @@ renders complete) — these checks are about the in-game result.
   leads to the retail town (as the dialog warns).
 - [ ] The swinging door prop animates (opens on contact) — its registry
   entry is cloned from retail with the animation bindings.
-- [ ] Place a **sign** and give it text when asked at Apply time (zone must
-  be based on one with signs — 69 vanilla zones have the sign routine).
-  Expect: pressing A on the sign shows your text in the sign frame style
-  you picked.
+- [ ] Place a **sign** and give it text when asked at Apply time. If the zone
+  lacks the sign routine (467 of 536 do), the editor offers to transplant
+  the vanilla one — say yes. Expect: pressing A on the sign shows your text
+  in the frame style you picked. **This transplant is new** (same proven
+  mechanism as the talking-NPC one, offline-verified on all 467 zones) —
+  one in-game read of an injected-zone sign confirms it.
 - [ ] Place a house + a sign + trees on one map. Expect: all render with
   correct textures (auto-carried across areas), trees/signs block movement
   per their retail footprint tiles.

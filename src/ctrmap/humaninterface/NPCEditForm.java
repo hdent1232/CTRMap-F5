@@ -18,6 +18,7 @@ import ctrmap.formats.h3d.model.H3DVertex;
 import ctrmap.formats.scripts.GFLPawnScript;
 import ctrmap.formats.scripts.MsgWrapperInjector;
 import ctrmap.formats.scripts.NpcTemplates;
+import ctrmap.formats.scripts.SignWrapperInjector;
 import ctrmap.formats.scripts.TalkerScriptWizard;
 import ctrmap.formats.scripts.ZoneScriptAnalyzer;
 import ctrmap.formats.text.GFMessageFile;
@@ -713,6 +714,37 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	/**
+	 * Selects a SIGN-routine donor script (mirror of {@link #loadWrapperDonor}
+	 * for the sign transplant).
+	 *
+	 * @throws SignWrapperInjector.InjectionException when no zone validates
+	 */
+	private GFLPawnScript loadSignDonor() {
+		final GARC zoneGarc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		if (zoneGarc == null) {
+			throw new SignWrapperInjector.InjectionException("The ZoneData archive is not loaded.");
+		}
+		return SignWrapperInjector.pickDonor(new MsgWrapperInjector.ScriptSource() {
+			@Override
+			public GFLPawnScript get(int zoneIndex) {
+				File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+				if (f == null || !f.exists()) {
+					return null;
+				}
+				try {
+					InputStream in = new FileInputStream(f);
+					byte[] b = new byte[in.available()];
+					in.read(b);
+					in.close();
+					return MsgWrapperInjector.extractZoneScript(b);
+				} catch (IOException ex) {
+					return null;
+				}
+			}
+		}, zoneGarc.length);
+	}
+
+	/**
 	 * Multi-line text typed into a dialog uses real newlines; the message
 	 * files store them as the \n escape (same form the TextEditor shows).
 	 */
@@ -960,9 +992,26 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * line and drops an interactable furniture record at the view centre.
 	 */
 	private void addSignTemplate(Zone zone) {
-		if (ZoneScriptAnalyzer.findSignWrapper(zone.s) == null) {
-			JOptionPane.showMessageDialog(this, "This zone's script has no sign-display routine (69 of 536 vanilla zones have one).\nUse a Talking NPC, or pick a zone that already contains a sign.", "Add sign", JOptionPane.ERROR_MESSAGE);
-			return;
+		//zones without the sign-display routine (467 of 536) get the vanilla one
+		//transplanted first - the same proven mechanism as the message routine
+		zone.s.decompressThis();
+		boolean needsWrapper = ZoneScriptAnalyzer.findSignWrapper(zone.s) == null;
+		GFLPawnScript signDonor = null;
+		if (needsWrapper) {
+			try {
+				signDonor = loadSignDonor();
+			} catch (RuntimeException ex) {
+				JOptionPane.showMessageDialog(this, "This zone's script has no sign-display routine and none could be\ntransplanted: " + ex.getMessage(), "Add sign", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			int insCount = SignWrapperInjector.countInjectedInstructions(zone.s, signDonor);
+			if (JOptionPane.showConfirmDialog(this,
+					"This zone's script has no sign-display routine (467 of 536 vanilla zones lack it).\n"
+					+ "Inject the vanilla routine (" + insCount + " instructions) into this zone's script?\n"
+					+ "This is the same transplant that makes talking NPCs work everywhere.",
+					"Add sign", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
+				return;
+			}
 		}
 		if (Workspace.getStoryTextGARC() == null) {
 			JOptionPane.showMessageDialog(this, "The STORYTEXT archive was not found in the game directory.", "Add sign", JOptionPane.ERROR_MESSAGE);
@@ -1002,6 +1051,17 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		} catch (RuntimeException ex) {
 			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add sign", JOptionPane.ERROR_MESSAGE);
 			return;
+		}
+		if (needsWrapper) {
+			try {
+				SignWrapperInjector.injectSignWrapper(work, signDonor);
+				if (ZoneScriptAnalyzer.findSignWrapper(work) == null) {
+					throw new IllegalStateException("The injected routine did not verify.");
+				}
+			} catch (RuntimeException ex) {
+				JOptionPane.showMessageDialog(this, "Could not transplant the sign routine:\n" + ex.getMessage(), "Add sign", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
 		}
 		int newLine = msg.getLineCount();
 		int caseId;
