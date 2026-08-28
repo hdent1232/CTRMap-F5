@@ -34,10 +34,11 @@ public class PaintedRegionTest {
 			System.exit(1);
 		}
 		int failures = 0;
-		failures += check("all grass", grid(TilePalette.GRASS), donor);
-		failures += check("grass field + water pond + rock border + path", mixedGrid(), donor);
-		failures += check("checkerboard grass/water", checker(), donor);
-		failures += check("mostly void with a path", pathGrid(), donor);
+		failures += check("all grass", grid(TilePalette.GRASS), null, donor);
+		failures += check("grass field + water pond + rock border + path", mixedGrid(), null, donor);
+		failures += check("checkerboard grass/water", checker(), null, donor);
+		failures += check("mostly void with a path", pathGrid(), null, donor);
+		failures += check("raised plateau (elevation + cliffs)", grid(TilePalette.GRASS), plateau(), donor);
 
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
 		if (failures > 0) {
@@ -45,9 +46,10 @@ public class PaintedRegionTest {
 		}
 	}
 
-	static int check(String label, TilePalette[][] g, byte[] donor) {
+	static int check(String label, TilePalette[][] g, int[][] hh, byte[] donor) {
+		final int[][] height = hh == null ? new int[DIM][DIM] : hh;
 		try {
-			RegionFactory.BlankContent c = PaintedRegionBuilder.build(donor, g);
+			RegionFactory.BlankContent c = PaintedRegionBuilder.build(donor, g, height, ctrmap.formats.tilemap.TerrainLighting.daytime());
 
 			// model gates
 			BchMapModel m = new BchMapModel(c.model);
@@ -63,19 +65,32 @@ public class PaintedRegionTest {
 				throw new IllegalStateException("render parser rejected");
 			}
 
-			// collision: one flat quad (2 tris) per walkable floor tile
-			int floorTiles = 0;
+			// collision: 2 tris per walkable floor tile + 2 per cliff edge (drop)
+			int floorTiles = 0, cliffEdges = 0;
 			for (int y = 0; y < DIM; y++) {
 				for (int x = 0; x < DIM; x++) {
-					if (g[y][x] != null && g[y][x].floor) {
+					TilePalette t = g[y][x];
+					if (t != null && t.floor) {
 						floorTiles++;
+					}
+					if (t == null || t == TilePalette.VOID) {
+						continue;
+					}
+					int[][] nb = {{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}};
+					for (int[] p : nb) {
+						int hn = (p[0] < 0 || p[1] < 0 || p[0] >= DIM || p[1] >= DIM
+								|| g[p[1]][p[0]] == null || g[p[1]][p[0]] == TilePalette.VOID) ? 0 : height[p[1]][p[0]];
+						if (hn < height[y][x]) {
+							cliffEdges++;
+						}
 					}
 				}
 			}
 			GfColl coll = new GfColl(c.collision);
-			int wantTris = Math.max(1, floorTiles * 2);
+			int wantTris = Math.max(1, floorTiles * 2 + cliffEdges * 2);
 			if (coll.uniqueTris.size() != wantTris) {
-				throw new IllegalStateException("collision tris " + coll.uniqueTris.size() + " want " + wantTris);
+				throw new IllegalStateException("collision tris " + coll.uniqueTris.size() + " want " + wantTris
+						+ " (floors " + floorTiles + " cliffs " + cliffEdges + ")");
 			}
 
 			// tilemap tuples match the grid
@@ -161,6 +176,21 @@ public class PaintedRegionTest {
 			}
 		}
 		return g;
+	}
+
+	static int[][] plateau() {
+		int[][] h = new int[DIM][DIM];
+		for (int y = 0; y < DIM; y++) {
+			for (int x = 0; x < DIM; x++) {
+				if (x >= 10 && x < 26 && y >= 10 && y < 26) {
+					h[y][x] = 2;
+				}
+				if (x >= 14 && x < 22 && y >= 14 && y < 22) {
+					h[y][x] = 3;
+				}
+			}
+		}
+		return h;
 	}
 
 	static TilePalette[][] pathGrid() {
