@@ -3,6 +3,7 @@ package ctrmap.formats.pokedata;
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.GFMessageFile;
+import ctrmap.gamedef.GameProfile;
 import java.awt.Color;
 import java.io.File;
 import java.nio.file.Files;
@@ -10,9 +11,9 @@ import java.util.List;
 
 /**
  * Read-only Pokemon reference data for the editor previews: base stats, types
- * and abilities (personal GARC a/1/9/5), move type/category/power (move GARC
- * a/1/8/9), and the display names (GameText a/0/7/3: species 98, types 18,
- * abilities 37, moves 14, items 114). ORAS-only; loaded lazily from the game
+ * and abilities (the PERSONAL archive), move type/category/power (MOVE_DATA),
+ * and display names from GameText - archive locations and text-entry indices
+ * come from the active {@link GameProfile}. Loaded lazily from the game
  * directory and cached. All accessors are null/absent-safe so the editors work
  * even without the full romfs (they just fall back to id-only labels).
  */
@@ -56,14 +57,14 @@ public class PokeData {
 		}
 		loaded = true;
 		try {
-			GARC p = optional("/a/1/9/5");
+			GARC p = optional(profile().archivePath(Workspace.ArchiveType.PERSONAL));
 			if (p != null) {
 				personal = new byte[p.length][];
 				for (int i = 0; i < p.length; i++) {
 					personal[i] = p.getDecompressedEntry(i);
 				}
 			}
-			GARC mv = optional("/a/1/8/9");
+			GARC mv = optional(profile().archivePath(Workspace.ArchiveType.MOVE_DATA));
 			if (mv != null) {
 				moveMini = mv.getDecompressedEntry(0);
 				//header = 4 + (count+1) u32 offsets; count = (firstOffset-4)/4 - 1
@@ -73,14 +74,27 @@ public class PokeData {
 		} catch (Exception ex) {
 			System.err.println("PokeData: reference load failed: " + ex);
 		}
-		speciesNames = text(98);
-		abilityNames = text(37);
-		moveNames = text(14);
-		itemNames = text(114);
+		speciesNames = text(profile().textIndex(GameProfile.TextIndex.SPECIES_NAMES));
+		abilityNames = text(profile().textIndex(GameProfile.TextIndex.ABILITY_NAMES));
+		moveNames = text(profile().textIndex(GameProfile.TextIndex.MOVE_NAMES));
+		itemNames = text(profile().textIndex(GameProfile.TextIndex.ITEM_NAMES));
+	}
+
+	/** The active game's profile, or ORAS when no workspace is loaded (the
+	 *  reference-data paths are then probed against whatever dir is set). */
+	private static GameProfile profile() {
+		try {
+			return Workspace.game != null ? GameProfile.current() : GameProfile.of(Workspace.GameType.ORAS);
+		} catch (RuntimeException ex) {
+			return GameProfile.of(Workspace.GameType.ORAS);
+		}
 	}
 
 	private static GARC optional(String rel) {
 		try {
+			if (rel == null) {
+				return null;
+			}
 			File f = new File(Workspace.GAMEDIR_PATH + rel);
 			return f.exists() ? new GARC(f, false) : null;
 		} catch (Exception ex) {
@@ -93,8 +107,11 @@ public class PokeData {
 	/** Names read straight from the game dir's GameText (read-only reference). */
 	private static String[] text(int entry) {
 		try {
+			if (entry < 0) {
+				return new String[0];
+			}
 			if (gameText == null) {
-				gameText = optional("/a/0/7/3");
+				gameText = optional(profile().archivePath(Workspace.ArchiveType.GAMETEXT));
 			}
 			if (gameText == null) {
 				return new String[0];

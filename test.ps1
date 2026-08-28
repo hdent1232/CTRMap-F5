@@ -23,6 +23,7 @@ $a040 = Join-Path $pristine "a\0\4\0"
 # suite name -> {main class, args}; -Quick raises sampling steps
 $step = if ($Quick) { "60" } else { "20" }
 $suites = @(
+    @{ n = "Source seam guard (gamedef)"; c = "ctrmap.tests.SourceSeamTest";        a = @("src") },
     @{ n = "BchMapModel (engine)";        c = "ctrmap.tests.BchMapModelTest";       a = @() },
     @{ n = "OBJ export round-trip";       c = "ctrmap.tests.MapModelObjTest";        a = @($a039) },
     @{ n = "OBJ import";                  c = "ctrmap.tests.MapModelObjImportTest";  a = @($a039) },

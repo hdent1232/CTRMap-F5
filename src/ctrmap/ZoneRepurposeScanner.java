@@ -23,7 +23,7 @@ import java.util.List;
 public class ZoneRepurposeScanner {
 
 	/** Zones below this index run field scripts normally (the base game's zones). */
-	public static final int BASE_ZONES = 536;
+	public static final int BASE_ZONES = ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES;
 
 	public static class Candidate {
 		public int index;

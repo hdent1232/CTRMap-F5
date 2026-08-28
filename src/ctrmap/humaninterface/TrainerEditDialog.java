@@ -39,7 +39,7 @@ public class TrainerEditDialog {
 		}
 		if (Workspace.getArchive(Workspace.ArchiveType.TRAINER_DATA) == null
 				|| Workspace.getArchive(Workspace.ArchiveType.TRAINER_POKE) == null) {
-			JOptionPane.showMessageDialog(parent, "This dump has no trainer archives (a/0/3/6 + a/0/3/8).", "Trainer editor", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(parent, "This dump has no trainer archives.", "Trainer editor", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
 		int def = 1;
@@ -73,7 +73,12 @@ public class TrainerEditDialog {
 			byte[] d = Files.readAllBytes(Workspace.getWorkspaceFile(Workspace.ArchiveType.TRAINER_DATA, tid).toPath());
 			byte[] p = Files.readAllBytes(Workspace.getWorkspaceFile(Workspace.ArchiveType.TRAINER_POKE, tid).toPath());
 			final TrainerEntry t = TrainerEntry.read(d, p);
-			String[] species = text(98), items = text(114), moves = text(14), classes = text(21), names = text(22);
+			ctrmap.gamedef.GameProfile prof = Workspace.profile();
+			String[] species = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES)),
+					items = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES)),
+					moves = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.MOVE_NAMES)),
+					classes = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_CLASS_NAMES)),
+					names = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_NAMES));
 			String trName = tid < names.length ? names[tid] : "#" + tid;
 			String clName = t.classId < classes.length ? classes[t.classId] : "#" + t.classId;
 

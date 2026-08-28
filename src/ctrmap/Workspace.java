@@ -151,15 +151,14 @@ public class Workspace {
 			if (!basepath.exists()) {
 				errors.add("Game directory path not found");
 			} else {
-				//check for game type by finding the last arc in the romfs - a/2/9/8 for ORAS and a/2/7/0 for XY
-				File oras = new File(basepath + "/a/2/9/8");
-				File xy = new File(basepath + "/a/2/7/0");
-				if (oras.exists()) {
-					game = GameType.ORAS;
-				} else if (xy.exists()) {
-					game = GameType.XY;
-				} else {
+				//detect the game by each profile's probe file (gamedef)
+				ctrmap.gamedef.GameProfile detected = ctrmap.gamedef.GameProfile.detect(basepath);
+				if (detected == null) {
 					errors.add("Could not detect game version");
+				} else if (!detected.supports(ctrmap.gamedef.GameProfile.Feature.H3D_MAPS)) {
+					errors.add(detected.displayName() + " detected - this game is not supported yet");
+				} else {
+					game = detected.type();
 				}
 				if (game != null) {
 					//check needed archives
@@ -227,72 +226,19 @@ public class Workspace {
 		}
 	}
 
+	/**
+	 * RomFS-relative path of an archive for a game, or null when that game
+	 * lacks it (or its location is not yet verified). The per-game tables live
+	 * in {@link ctrmap.gamedef.GameProfile} and its subclasses - the single
+	 * home for game-specific constants.
+	 */
 	public static String getArchivePath(ArchiveType archiveType, GameType gameType) {
-		if (gameType == GameType.XY) {
-			switch (archiveType) {
-				case AREA_DATA:
-					return "/a/0/1/3";
-				case FIELD_DATA:
-					return "/a/0/4/1";
-				case MAP_MATRIX:
-					return "/a/0/4/2";
-				case GAMETEXT:
-					return "/a/0/7/4";
-				case STORYTEXT:
-					return "/a/0/8/2"; //pk3DS GARCReference_XY: storytext base 080 + English language offset 2
-				case ZONE_DATA:
-					return "/a/0/1/2";
-				case BUILDING_MODELS:
-					return "/a/0/2/4";
-				case NPC_REGISTRIES:
-					return "/a/1/4/9";
-				case MOVE_MODELS:
-					return "/a/0/2/1";
-				case SOUND_BCSAR:
-					return "/sound/xy_sound.bcsar";
-			}
-		} else {
-			switch (archiveType) {
-				case AREA_DATA:
-					return "/a/0/1/4";
-				case FIELD_DATA:
-					return "/a/0/3/9";
-				case MAP_MATRIX:
-					return "/a/0/4/0";
-				case GAMETEXT:
-					return "/a/0/7/3";
-				case STORYTEXT:
-					return "/a/0/8/1"; //pk3DS GARCReference_AO: storytext base 079 + English language offset 2
-				case ZONE_DATA:
-					return "/a/0/1/3";
-				case BUILDING_MODELS:
-					return "/a/0/2/3";
-				case NPC_REGISTRIES:
-					return "/a/1/3/7";
-				case MOVE_MODELS:
-					return "/a/0/2/1";
-				case TRAINER_DATA:
-					return "/a/0/3/6";
-				case TRAINER_CLASS:
-					return "/a/0/3/7";
-				case TRAINER_POKE:
-					return "/a/0/3/8";
-				case MAISON_SET_POOL_A:
-					return "/a/1/8/2";
-				case MAISON_CLASS_LIST_A:
-					return "/a/1/8/3";
-				case MAISON_SET_POOL_B:
-					return "/a/1/8/4";
-				case MAISON_CLASS_LIST_B:
-					return "/a/1/8/5";
-				case MAISON_SET_POOL_C:
-					return "/a/1/8/6";
-				case SOUND_BCSAR:
-					return "/sound/sango_sound.bcsar";
-			}
-		}
-		//XY trainer GARC paths are unverified - trainer editing is ORAS-only
-		return null;
+		return ctrmap.gamedef.GameProfile.of(gameType).archivePath(archiveType);
+	}
+
+	/** The active game's profile (paths, text indices, feature gates). */
+	public static ctrmap.gamedef.GameProfile profile() {
+		return ctrmap.gamedef.GameProfile.of(game);
 	}
 
 	public static void cleanAll() {
@@ -748,7 +694,11 @@ public class Workspace {
 
 	public static enum GameType {
 		XY,
-		ORAS
+		ORAS,
+		/** Sun/Moon (Gen 7) - detected/served via gamedef profiles; not yet supported. */
+		SM,
+		/** Ultra Sun/Ultra Moon (Gen 7) - not yet supported. */
+		USUM
 	}
 	
 	public static boolean isOA(){
@@ -756,7 +706,7 @@ public class Workspace {
 	}
 	
 	public static boolean isOADemo(){
-		return new File(GAMEDIR_PATH + "/a/3/0/0").exists();
+		return new File(GAMEDIR_PATH + ctrmap.gamedef.OrasProfile.DEMO_PROBE).exists();
 	}
 	
 	public static boolean isXY(){
@@ -781,6 +731,10 @@ public class Workspace {
 		BUILDING_MODELS,
 		NPC_REGISTRIES,
 		MOVE_MODELS,
+		/** Species base stats/types/abilities (read-only reference data). */
+		PERSONAL,
+		/** Move type/category/power mini-container (read-only reference data). */
+		MOVE_DATA,
 		SOUND_BCSAR
 	}
 
