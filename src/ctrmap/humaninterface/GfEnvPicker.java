@@ -31,6 +31,9 @@ import javax.swing.ListSelectionModel;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
+import static ctrmap.CtrmapMainframe.mTileMapPanel;
+import static ctrmap.CtrmapMainframe.mZonePnl;
+
 /**
  * "Pick GameFreak's atmosphere": browse every retail zone by name, see a LIVE
  * preview of the environment GameFreak gave it (fog/sky color, ambient, fog
@@ -70,12 +73,25 @@ public class GfEnvPicker {
 		final Map<Integer, byte[]> envCache = new HashMap<>();
 		final byte[][] result = {null};
 
+		// live preview: the USER'S CURRENT zone geometry, re-fogged per selection,
+		// so they see each atmosphere on their own map. Falls back to a card.
+		final byte[] curModel = currentZoneModel();
+		final List<ctrmap.formats.h3d.texturing.H3DTexture> curTex = mTileMapPanel == null ? null : mTileMapPanel.getWorldTextures();
+		final MapPreview3D view3d = (curModel != null) ? new MapPreview3D() : null;
+		if (view3d != null) {
+			view3d.setRegion(curModel, curTex);
+			view3d.setPreferredSize(new Dimension(420, 340));
+		}
+		final EnvPreview preview = new EnvPreview();
+		if (view3d != null) {
+			preview.setPreferredSize(new Dimension(300, 92));
+		}
+
 		final DefaultListModel<String> lm = new DefaultListModel<>();
 		final List<Integer> visible = new ArrayList<>(); // index into zones
 		final JList<String> list = new JList<>(lm);
 		list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 		final JTextField search = new JTextField();
-		final EnvPreview preview = new EnvPreview();
 
 		Runnable rebuild = () -> {
 			String q = search.getText().trim().toLowerCase();
@@ -109,7 +125,12 @@ public class GfEnvPicker {
 			}
 			int area = zones.get(visible.get(vi))[1];
 			byte[] s4 = envCache.computeIfAbsent(area, a -> areaSub4(adG, a));
-			preview.set(s4 == null ? null : AreaEnv.read(s4));
+			AreaEnv env = s4 == null ? null : AreaEnv.read(s4);
+			preview.set(env);
+			if (view3d != null && env != null) {
+				// fog the user's OWN zone with this atmosphere
+				view3d.setFog(env.fogColor[0], env.fogColor[1], env.fogColor[2], env.fogNear, env.fogFar);
+			}
 		});
 
 		final JDialog dlg = new JDialog(parent, "GameFreak atmospheres", true);
@@ -121,7 +142,26 @@ public class GfEnvPicker {
 		sp.setPreferredSize(new Dimension(280, 340));
 		left.add(sp, BorderLayout.CENTER);
 		dlg.add(left, BorderLayout.WEST);
-		dlg.add(preview, BorderLayout.CENTER);
+		if (view3d != null) {
+			// your zone in 3D (top), with the atmosphere's values card (bottom)
+			JPanel center = new JPanel(new BorderLayout(0, 6));
+			JPanel head = new JPanel(new BorderLayout());
+			head.add(new javax.swing.JLabel("Your zone under each atmosphere - drag to orbit:"), BorderLayout.WEST);
+			center.add(head, BorderLayout.NORTH);
+			center.add(view3d, BorderLayout.CENTER);
+			center.add(preview, BorderLayout.SOUTH);
+			dlg.add(center, BorderLayout.CENTER);
+		} else {
+			dlg.add(preview, BorderLayout.CENTER);
+		}
+		dlg.addWindowListener(new java.awt.event.WindowAdapter() {
+			@Override
+			public void windowClosed(java.awt.event.WindowEvent e) {
+				if (view3d != null) {
+					view3d.stop();
+				}
+			}
+		});
 		JPanel buttons = new JPanel();
 		JButton ok = new JButton("Use this atmosphere");
 		JButton cancel = new JButton("Cancel");
@@ -157,6 +197,36 @@ public class GfEnvPicker {
 		dlg.setLocationRelativeTo(parent);
 		dlg.setVisible(true);
 		return result[0];
+	}
+
+	/** The loaded zone's first region map model (for the live atmosphere preview), or null. */
+	private static byte[] currentZoneModel() {
+		try {
+			if (mZonePnl == null || mZonePnl.zone == null) {
+				return null;
+			}
+			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
+			int s0 = u32(mm, 4);
+			int w = u16(mm, s0 + 4), h = u16(mm, s0 + 6);
+			int region = -1;
+			for (int k = 0; k < w * h; k++) {
+				int id = u16(mm, s0 + 8 + k * 2);
+				if (id != 0xFFFF) {
+					region = id;
+					break;
+				}
+			}
+			if (region < 0) {
+				return null;
+			}
+			ctrmap.formats.containers.GR gr = new ctrmap.formats.containers.GR(
+					new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA), String.valueOf(region)));
+			byte[] model = gr.getFile(1);
+			return ctrmap.formats.h3d.BchMapModel.isMapModel(model) ? model : null;
+		} catch (Exception ex) {
+			return null;
+		}
 	}
 
 	/** Pristine snapshot GARC when available (true retail values), else the live one. */
