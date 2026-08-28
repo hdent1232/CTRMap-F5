@@ -36,15 +36,21 @@ public class MaisonClassListDialog {
 		Workspace.ArchiveType.MAISON_CLASS_LIST_B
 	};
 	private static final String[] TABLE_NAMES = {
-		"Table A (-> set pool A, a/1/8/3)", "Table B (-> set pool B, a/1/8/5)"
+		"Table A (-> set pool A, " + arcName(Workspace.ArchiveType.MAISON_CLASS_LIST_A) + ")",
+		"Table B (-> set pool B, " + arcName(Workspace.ArchiveType.MAISON_CLASS_LIST_B) + ")"
 	};
+
+	private static String arcName(Workspace.ArchiveType t) {
+		String p = Workspace.getArchivePath(t, Workspace.game != null ? Workspace.game : Workspace.GameType.ORAS);
+		return p == null ? "?" : p;
+	}
 
 	public static void show(Dialog parent) {
 		if (Workspace.getArchive(TABLES[0]) == null) {
-			JOptionPane.showMessageDialog(parent, "No Maison class tables (a/1/8/3,5).", "Class assignments", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(parent, "This dump has no Maison class tables.", "Class assignments", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		String[] classNames = text(21);
+		String[] classNames = text(Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_CLASS_NAMES));
 		final JComboBox<String> tableBox = new JComboBox<>(TABLE_NAMES);
 		final ListModel model = new ListModel(classNames);
 		model.loadTable(0);
