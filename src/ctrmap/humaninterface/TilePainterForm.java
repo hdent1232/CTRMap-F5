@@ -235,16 +235,53 @@ public class TilePainterForm {
 		JPanel north = new JPanel(new GridLayout(3, 1));
 		north.add(new JLabel("  Paint terrain; Raise/Lower click a tile up/down a level (cliffs form at drops). 3D preview shows the real look. Apply, then Deploy."));
 		north.add(new JLabel("  Terrain visuals use this zone's own materials - start the zone from a grassy route (Blank map canvas) for grass/water/rock textures."));
-		// hard-to-miss water status: whether water painted here will ripple/scroll
-		final boolean waterRipples = areaAnimatesWater(mZonePnl.zone.header.areadataID);
-		JLabel waterBanner = new JLabel(waterRipples
-				? "  💧 Water ripples & scrolls in THIS zone (its area animates water) - paint water freely."
-				: "  💧 Heads up: water painted here will be STILL. For live ripples, start the zone from a surf route (Blank map canvas).");
+		// hard-to-miss water status: whether water painted here will ripple/scroll,
+		// with a one-click fix (splices GameFreak's sea-scroll animation into the area)
+		final int zoneAreaId = mZonePnl.zone.header.areadataID;
+		final boolean[] ripples = {zoneWaterScrolls(zoneAreaId)};
+		final JLabel waterBanner = new JLabel();
+		final JButton makeRipple = new JButton("Make water ripple here");
 		waterBanner.setOpaque(true);
-		waterBanner.setBackground(waterRipples ? new Color(0xD6, 0xEF, 0xD6) : new Color(0xFF, 0xE9, 0xC2));
 		waterBanner.setForeground(new Color(0x30, 0x30, 0x30));
 		waterBanner.setFont(waterBanner.getFont().deriveFont(java.awt.Font.BOLD));
-		north.add(waterBanner);
+		makeRipple.setFocusable(false);
+		makeRipple.setToolTipText("Adds the retail two-layer sea-scroll animation for this zone's map cells to its area's animation data.");
+		final Runnable syncWater = () -> {
+			waterBanner.setText(ripples[0]
+					? "  💧 Water ripples & scrolls in THIS zone - paint water freely."
+					: "  💧 Heads up: water painted here will be STILL - click \"Make water ripple here\" to fix that.");
+			waterBanner.setBackground(ripples[0] ? new Color(0xD6, 0xEF, 0xD6) : new Color(0xFF, 0xE9, 0xC2));
+			makeRipple.setVisible(!ripples[0]);
+		};
+		syncWater.run();
+		makeRipple.addActionListener(e -> {
+			int rsl = JOptionPane.showConfirmDialog(dlg,
+					"Add GameFreak's sea-scroll animation for this zone's map cells to area " + zoneAreaId + "?\n\n"
+					+ "This is the exact animation retail water routes use (two water texture layers\n"
+					+ "scrolling opposite ways). It's bound by map-cell name: any map sharing this\n"
+					+ "zone's exact cells gains it too; the area's other maps are untouched.\n"
+					+ "Safe to do before or after painting water.",
+					"Make water ripple", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+			if (rsl != JOptionPane.OK_OPTION) {
+				return;
+			}
+			try {
+				int changed = enableWaterScroll(zoneAreaId);
+				ripples[0] = zoneWaterScrolls(zoneAreaId);
+				syncWater.run();
+				JOptionPane.showMessageDialog(dlg, changed > 0
+						? "Sea-scroll animation added for " + changed + " map cell(s).\nPack/Deploy, then check the water in-game (it's on the TESTING.md list)."
+						: "No map cells needed changes (the scroll was already bound).",
+						"Make water ripple", JOptionPane.INFORMATION_MESSAGE);
+			} catch (Exception ex) {
+				JOptionPane.showMessageDialog(dlg, "Could not add the animation:\n" + ex.getMessage(),
+						"Make water ripple", JOptionPane.ERROR_MESSAGE);
+			}
+		});
+		JPanel waterRow = new JPanel(new BorderLayout());
+		waterRow.add(waterBanner, BorderLayout.CENTER);
+		waterRow.add(makeRipple, BorderLayout.EAST);
+		north.add(waterRow);
 		dlg.add(north, BorderLayout.NORTH);
 
 		JPanel buttons = new JPanel();
@@ -271,10 +308,9 @@ public class TilePainterForm {
 			// zone's area animates chip_sea_b (the anim lives in AreaData, not the
 			// model) - warn if the user painted water into a non-water area
 			String waterNote = "";
-			if (usesWater(grid) && !areaAnimatesWater(mZonePnl.zone.header.areadataID)) {
-				waterNote = "\n\nNote: this area doesn't animate water, so painted water will be STILL\n"
-						+ "(it still looks like water). For rippling water, start the zone from a water\n"
-						+ "route (Blank map canvas / clone from a surf route), whose area animates it.";
+			if (usesWater(grid) && !zoneWaterScrolls(mZonePnl.zone.header.areadataID)) {
+				waterNote = "\n\nNote: painted water will be STILL here - use the \"Make water ripple\n"
+						+ "here\" button (top banner) to add GameFreak's scroll animation first.";
 			}
 			int rsl = JOptionPane.showConfirmDialog(dlg,
 					"Build zone " + zoneIndex + "'s map from the painted tiles?\n"
@@ -323,20 +359,95 @@ public class TilePainterForm {
 		return false;
 	}
 
-	/** True if the area's world-animation pack (AreaData subfile 2) animates chip_sea_b. */
-	private static boolean areaAnimatesWater(int areaId) {
+	/** Distinct internal model names of the zone's map regions (the anim binding key). */
+	private static java.util.List<String> zoneRegionModels() {
+		java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
 		try {
-			ctrmap.formats.containers.AD ad = new ctrmap.formats.containers.AD(
-					Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areaId));
-			byte[] anim = ad.getFile(2);
-			if (anim == null) {
+			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
+			int sub0 = le32(mm, 4);
+			int w = u16(mm, sub0 + 4), h = u16(mm, sub0 + 6);
+			for (int k = 0; k < w * h; k++) {
+				int id = u16(mm, sub0 + 8 + k * 2);
+				if (id == 0xFFFF) {
+					continue;
+				}
+				try {
+					byte[] model = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, id)).getFile(1);
+					if (BchMapModel.isMapModel(model)) {
+						String n = new BchMapModel(model).getModelName();
+						if (n != null && !n.isEmpty()) {
+							names.add(n);
+						}
+					}
+				} catch (Exception ignore) {
+				}
+			}
+		} catch (Exception ignore) {
+		}
+		return new java.util.ArrayList<>(names);
+	}
+
+	/** The loaded zone's LIVE areadata container when it covers this area (prop
+	 *  and camera editors write through the same instance, and its cached
+	 *  subfile offsets must stay coherent when subfile 2 grows), else a fresh one. */
+	private static ctrmap.formats.containers.AD areaContainer(int areaId) throws Exception {
+		if (mZonePnl != null && mZonePnl.zone != null && mZonePnl.zone.header != null
+				&& mZonePnl.zone.header.areadata != null && mZonePnl.zone.header.areadataID == areaId) {
+			return mZonePnl.zone.header.areadata;
+		}
+		return new ctrmap.formats.containers.AD(Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areaId));
+	}
+
+	/** True if painted water will actually scroll: every one of the zone's map
+	 *  cells has the chip_sea_b scroll pair bound in the area's animations.
+	 *  Unknown (unreadable data, no readable cells) counts as NO - the banner
+	 *  then shows the fix button, whose click surfaces the real error. */
+	private static boolean zoneWaterScrolls(int areaId) {
+		try {
+			ctrmap.formats.area.WorldAnim wa = new ctrmap.formats.area.WorldAnim(areaContainer(areaId).getFile(2));
+			java.util.List<String> models = zoneRegionModels();
+			if (models.isEmpty()) {
 				return false;
 			}
-			String s = new String(anim, java.nio.charset.StandardCharsets.ISO_8859_1);
-			return s.contains("chip_sea"); // a chip_sea_* material-animation target
+			for (String m : models) {
+				if (!wa.hasSeaScroll(m)) {
+					return false;
+				}
+			}
+			return true;
 		} catch (Exception ex) {
-			return true; // unknown -> don't nag
+			return false;
 		}
+	}
+
+	/** Splices the retail sea-scroll pair into the area's animations for each of
+	 *  the zone's map cells; validates before storing. Returns cells changed. */
+	private static int enableWaterScroll(int areaId) throws Exception {
+		ctrmap.formats.containers.AD ad = areaContainer(areaId);
+		byte[] sub2 = ad.getFile(2);
+		java.util.List<String> models = zoneRegionModels();
+		if (models.isEmpty()) {
+			throw new IllegalStateException("could not read this zone's map cells (map matrix / region models)");
+		}
+		int changed = 0;
+		for (String m : models) {
+			byte[] out = ctrmap.formats.area.WorldAnim.spliceSeaScroll(sub2, m);
+			if (out != sub2) {
+				sub2 = out;
+				changed++;
+			}
+		}
+		if (changed > 0) {
+			java.util.List<String> errs = new ctrmap.formats.area.WorldAnim(sub2).validate();
+			if (!errs.isEmpty()) {
+				throw new IllegalStateException("splice failed validation: " + errs.get(0));
+			}
+			if (!ad.storeFile(2, sub2)) {
+				throw new IllegalStateException("could not write areadata " + areaId + " (file locked or read-only?)");
+			}
+		}
+		return changed;
 	}
 
 	/** Generates the model from the current grid and shows it in the real 3D renderer. */
