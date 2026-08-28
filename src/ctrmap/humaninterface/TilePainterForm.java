@@ -23,6 +23,7 @@ import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JSlider;
 import javax.swing.JToggleButton;
 
 import static ctrmap.CtrmapMainframe.*;
@@ -64,6 +65,7 @@ public class TilePainterForm {
 
 		final TilePalette[] brush = {TilePalette.GRASS};
 		final int[] tool = {0}; // 0 paint, 1 fill
+		final ctrmap.formats.tilemap.TerrainLighting lighting = ctrmap.formats.tilemap.TerrainLighting.daytime();
 
 		// the region's own model = the tileset donor (materials + textures + area
 		// all correct); used for the textured previews and the generated geometry
@@ -149,8 +151,50 @@ public class TilePainterForm {
 		view3d.setFocusable(false);
 		view3d.setEnabled(donorModel != null);
 		view3d.setToolTipText("Render the painted map with CTRMap's 3D engine - how it actually looks (drag to orbit).");
-		view3d.addActionListener(e -> open3DPreview(donorModel, grid));
+		view3d.addActionListener(e -> open3DPreview(donorModel, grid, lighting));
 		side.add(view3d);
+
+		// lighting: the mood GameFreak varied per area (baked into the ground)
+		side.add(javax.swing.Box.createVerticalStrut(12));
+		side.add(new JLabel("Lighting (baked into the map):"));
+		final JSlider bright = new JSlider(30, 130, Math.round(lighting.brightness * 100));
+		final JSlider shadow = new JSlider(0, 90, Math.round(lighting.edgeShadow * 100));
+		final Color[] tintHolder = {lighting.tintColor()};
+		bright.setMaximumSize(new Dimension(200, 22));
+		shadow.setMaximumSize(new Dimension(200, 22));
+		bright.setAlignmentX(0f);
+		shadow.setAlignmentX(0f);
+		bright.setToolTipText("Overall brightness");
+		shadow.setToolTipText("Edge shadow (ambient occlusion near walls/water)");
+		bright.addChangeListener(e -> lighting.brightness = bright.getValue() / 100f);
+		shadow.addChangeListener(e -> lighting.edgeShadow = shadow.getValue() / 100f);
+		JPanel presets = new JPanel(new GridLayout(1, 4, 2, 0));
+		presets.setAlignmentX(0f);
+		presets.setMaximumSize(new Dimension(200, 24));
+		Runnable syncSliders = () -> {
+			bright.setValue(Math.round(lighting.brightness * 100));
+			shadow.setValue(Math.round(lighting.edgeShadow * 100));
+		};
+		addPreset(presets, "Day", 1.0f, 0xFFF6E6, 0.35f, lighting, syncSliders);
+		addPreset(presets, "Dusk", 0.85f, 0xFFC98A, 0.45f, lighting, syncSliders);
+		addPreset(presets, "Cave", 0.55f, 0x9FB0C8, 0.6f, lighting, syncSliders);
+		addPreset(presets, "Night", 0.45f, 0x8090C0, 0.5f, lighting, syncSliders);
+		side.add(presets);
+		side.add(new JLabel("  brightness"));
+		side.add(bright);
+		side.add(new JLabel("  edge shadow"));
+		side.add(shadow);
+		JButton tintBtn = new JButton("Light color...");
+		tintBtn.setAlignmentX(0f);
+		tintBtn.setFocusable(false);
+		tintBtn.addActionListener(e -> {
+			Color c = javax.swing.JColorChooser.showDialog(view3d, "Light color", lighting.tintColor());
+			if (c != null) {
+				lighting.tint = c.getRGB() & 0xFFFFFF;
+			}
+		});
+		side.add(tintBtn);
+		side.add(new JLabel("  (Preview or Apply to see the lighting.)"));
 
 		dlg.add(side, BorderLayout.WEST);
 		dlg.add(canvas, BorderLayout.CENTER);
@@ -176,7 +220,7 @@ public class TilePainterForm {
 				return;
 			}
 			try {
-				applyToZone(zoneIndex, grid);
+				applyToZone(zoneIndex, grid, lighting);
 				dlg.dispose();
 			} catch (Exception ex) {
 				JOptionPane.showMessageDialog(dlg, "Apply failed:\n" + ex.getMessage(), "Tile painter", JOptionPane.ERROR_MESSAGE);
@@ -189,10 +233,24 @@ public class TilePainterForm {
 		dlg.setVisible(true);
 	}
 
+	private static void addPreset(JPanel panel, String label, float brightness, int tint, float shadow,
+			ctrmap.formats.tilemap.TerrainLighting lighting, Runnable onSet) {
+		JButton b = new JButton(label);
+		b.setMargin(new java.awt.Insets(1, 2, 1, 2));
+		b.setFocusable(false);
+		b.addActionListener(e -> {
+			lighting.brightness = brightness;
+			lighting.tint = tint;
+			lighting.edgeShadow = shadow;
+			onSet.run();
+		});
+		panel.add(b);
+	}
+
 	/** Generates the model from the current grid and shows it in the real 3D renderer. */
-	private static void open3DPreview(byte[] donorModel, TilePalette[][] grid) {
+	private static void open3DPreview(byte[] donorModel, TilePalette[][] grid, ctrmap.formats.tilemap.TerrainLighting lighting) {
 		try {
-			byte[] model = PaintedRegionBuilder.build(donorModel, grid).model;
+			byte[] model = PaintedRegionBuilder.build(donorModel, grid, lighting).model;
 			MapPreview3D view = new MapPreview3D();
 			view.setRegion(model, mTileMapPanel.getWorldTextures());
 			view.setPreferredSize(new Dimension(640, 520));
@@ -212,7 +270,7 @@ public class TilePainterForm {
 		}
 	}
 
-	private static void applyToZone(int zoneIndex, TilePalette[][] grid) throws Exception {
+	private static void applyToZone(int zoneIndex, TilePalette[][] grid, ctrmap.formats.tilemap.TerrainLighting lighting) throws Exception {
 		GeometryForker.ForkResult r = GeometryForker.forkGeometry(zoneIndex);
 		File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
 		for (int newRegion : r.newRegions) {
@@ -222,7 +280,7 @@ public class TilePainterForm {
 			if (!BchMapModel.isMapModel(donor)) {
 				continue;
 			}
-			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donor, grid);
+			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donor, grid, lighting);
 			gr.storeFile(1, bc.model);
 			gr.storeFile(2, bc.collision);
 			gr.storeFile(0, bc.tilemap);
