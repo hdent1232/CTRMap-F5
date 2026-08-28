@@ -64,7 +64,8 @@ public class TilePainterForm {
 		loadFromRegion(region, grid); // seed from the region's current tilemap if any
 
 		final TilePalette[] brush = {TilePalette.GRASS};
-		final int[] tool = {0}; // 0 paint, 1 fill
+		final int[] tool = {0}; // 0 paint, 1 fill, 2 raise, 3 lower
+		final int[][] height = new int[DIM][DIM];
 		final ctrmap.formats.tilemap.TerrainLighting lighting = ctrmap.formats.tilemap.TerrainLighting.daytime();
 
 		// the region's own model = the tileset donor (materials + textures + area
@@ -80,7 +81,7 @@ public class TilePainterForm {
 		}
 		final byte[] donorModel = donorTmp;
 
-		final GridCanvas canvas = new GridCanvas(grid, brush, tool, terrainTex);
+		final GridCanvas canvas = new GridCanvas(grid, height, brush, tool, terrainTex);
 
 		final JDialog dlg = new JDialog(frame, "Tile painter - zone " + zoneIndex, true);
 		dlg.setLayout(new BorderLayout(8, 8));
@@ -110,17 +111,21 @@ public class TilePainterForm {
 		ButtonGroup tg = new ButtonGroup();
 		JToggleButton paint = new JToggleButton("Paint (drag)");
 		JToggleButton fill = new JToggleButton("Fill area");
+		JToggleButton raise = new JToggleButton("Raise (+level)");
+		JToggleButton lower = new JToggleButton("Lower (-level)");
 		paint.setSelected(true);
-		paint.setFocusable(false);
-		fill.setFocusable(false);
+		for (JToggleButton b : new JToggleButton[]{paint, fill, raise, lower}) {
+			b.setFocusable(false);
+			b.setAlignmentX(0f);
+			tg.add(b);
+			side.add(b);
+		}
 		paint.addActionListener(e -> tool[0] = 0);
 		fill.addActionListener(e -> tool[0] = 1);
-		tg.add(paint);
-		tg.add(fill);
-		paint.setAlignmentX(0f);
-		fill.setAlignmentX(0f);
-		side.add(paint);
-		side.add(fill);
+		raise.addActionListener(e -> tool[0] = 2);
+		lower.addActionListener(e -> tool[0] = 3);
+		raise.setToolTipText("Click tiles to raise them a level (cliffs form at drops).");
+		lower.setToolTipText("Click tiles to lower them a level.");
 		side.add(javax.swing.Box.createVerticalStrut(10));
 		JButton clearAll = new JButton("Fill all with brush");
 		clearAll.setAlignmentX(0f);
@@ -151,7 +156,7 @@ public class TilePainterForm {
 		view3d.setFocusable(false);
 		view3d.setEnabled(donorModel != null);
 		view3d.setToolTipText("Render the painted map with CTRMap's 3D engine - how it actually looks (drag to orbit).");
-		view3d.addActionListener(e -> open3DPreview(donorModel, grid, lighting));
+		view3d.addActionListener(e -> open3DPreview(donorModel, grid, height, lighting));
 		side.add(view3d);
 
 		// lighting: the mood GameFreak varied per area (baked into the ground)
@@ -199,7 +204,7 @@ public class TilePainterForm {
 		dlg.add(side, BorderLayout.WEST);
 		dlg.add(canvas, BorderLayout.CENTER);
 		JPanel north = new JPanel(new GridLayout(2, 1));
-		north.add(new JLabel("  Left-drag to paint. Fill = flood-fill the clicked area. Apply builds the region (fork + pack), then Deploy."));
+		north.add(new JLabel("  Paint terrain; Raise/Lower click a tile up/down a level (cliffs form at drops). 3D preview shows the real look. Apply, then Deploy."));
 		north.add(new JLabel("  Terrain visuals use this zone's own materials - start the zone from a grassy route (Blank map canvas) for grass/water/rock textures."));
 		dlg.add(north, BorderLayout.NORTH);
 
@@ -220,7 +225,7 @@ public class TilePainterForm {
 				return;
 			}
 			try {
-				applyToZone(zoneIndex, grid, lighting);
+				applyToZone(zoneIndex, grid, height, lighting);
 				dlg.dispose();
 			} catch (Exception ex) {
 				JOptionPane.showMessageDialog(dlg, "Apply failed:\n" + ex.getMessage(), "Tile painter", JOptionPane.ERROR_MESSAGE);
@@ -248,9 +253,9 @@ public class TilePainterForm {
 	}
 
 	/** Generates the model from the current grid and shows it in the real 3D renderer. */
-	private static void open3DPreview(byte[] donorModel, TilePalette[][] grid, ctrmap.formats.tilemap.TerrainLighting lighting) {
+	private static void open3DPreview(byte[] donorModel, TilePalette[][] grid, int[][] height, ctrmap.formats.tilemap.TerrainLighting lighting) {
 		try {
-			byte[] model = PaintedRegionBuilder.build(donorModel, grid, lighting).model;
+			byte[] model = PaintedRegionBuilder.build(donorModel, grid, height, lighting).model;
 			MapPreview3D view = new MapPreview3D();
 			view.setRegion(model, mTileMapPanel.getWorldTextures());
 			view.setPreferredSize(new Dimension(640, 520));
@@ -270,7 +275,7 @@ public class TilePainterForm {
 		}
 	}
 
-	private static void applyToZone(int zoneIndex, TilePalette[][] grid, ctrmap.formats.tilemap.TerrainLighting lighting) throws Exception {
+	private static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, ctrmap.formats.tilemap.TerrainLighting lighting) throws Exception {
 		GeometryForker.ForkResult r = GeometryForker.forkGeometry(zoneIndex);
 		File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
 		for (int newRegion : r.newRegions) {
@@ -280,7 +285,7 @@ public class TilePainterForm {
 			if (!BchMapModel.isMapModel(donor)) {
 				continue;
 			}
-			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donor, grid, lighting);
+			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donor, grid, height, lighting);
 			gr.storeFile(1, bc.model);
 			gr.storeFile(2, bc.collision);
 			gr.storeFile(0, bc.tilemap);
@@ -372,14 +377,16 @@ public class TilePainterForm {
 
 		static final int CELL = 14;
 		final TilePalette[][] grid;
+		final int[][] height;
 		final TilePalette[] brush;
 		final int[] tool;
 		final ctrmap.formats.tilemap.TerrainTextures terrainTex;
 		boolean textured = false;
 		private final java.util.Map<TilePalette, java.awt.TexturePaint> paintCache = new java.util.HashMap<>();
 
-		GridCanvas(TilePalette[][] grid, TilePalette[] brush, int[] tool, ctrmap.formats.tilemap.TerrainTextures terrainTex) {
+		GridCanvas(TilePalette[][] grid, int[][] height, TilePalette[] brush, int[] tool, ctrmap.formats.tilemap.TerrainTextures terrainTex) {
 			this.grid = grid;
+			this.height = height;
 			this.brush = brush;
 			this.tool = tool;
 			this.terrainTex = terrainTex;
@@ -406,10 +413,19 @@ public class TilePainterForm {
 			if (tx < 0 || ty < 0 || tx >= DIM || ty >= DIM) {
 				return;
 			}
-			if (tool[0] == 1) {
-				flood(tx, ty, grid[ty][tx], brush[0]);
-			} else {
-				grid[ty][tx] = brush[0];
+			switch (tool[0]) {
+				case 1:
+					flood(tx, ty, grid[ty][tx], brush[0]);
+					break;
+				case 2:
+					height[ty][tx] = Math.min(6, height[ty][tx] + 1);
+					break;
+				case 3:
+					height[ty][tx] = Math.max(0, height[ty][tx] - 1);
+					break;
+				default:
+					grid[ty][tx] = brush[0];
+					break;
 			}
 			repaint();
 		}
@@ -465,11 +481,33 @@ public class TilePainterForm {
 					g2.fillRect(tx * CELL, ty * CELL, CELL, CELL);
 				}
 			}
+			// elevation overlay: higher tiles get a brighter wash + a level number
+			for (int ty = 0; ty < DIM; ty++) {
+				for (int tx = 0; tx < DIM; tx++) {
+					int h = height[ty][tx];
+					if (h <= 0) {
+						continue;
+					}
+					g2.setPaint(new Color(255, 255, 255, Math.min(150, 28 * h)));
+					g2.fillRect(tx * CELL, ty * CELL, CELL, CELL);
+				}
+			}
 			// grid lines: faint in textured view, clearer in paint view
 			g.setColor(new Color(0, 0, 0, textured ? 22 : 40));
 			for (int i = 0; i <= DIM; i++) {
 				g.drawLine(i * CELL, 0, i * CELL, DIM * CELL);
 				g.drawLine(0, i * CELL, DIM * CELL, i * CELL);
+			}
+			// level numbers on raised tiles
+			g.setFont(getFont().deriveFont(9f));
+			for (int ty = 0; ty < DIM; ty++) {
+				for (int tx = 0; tx < DIM; tx++) {
+					int h = height[ty][tx];
+					if (h > 0) {
+						g.setColor(Color.BLACK);
+						g.drawString(String.valueOf(h), tx * CELL + 4, ty * CELL + 11);
+					}
+				}
 			}
 		}
 	}
