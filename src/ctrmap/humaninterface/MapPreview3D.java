@@ -33,6 +33,10 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 	private float pitch = 1.0f;    // radians, look-down angle (0 = horizon, PI/2 = straight down)
 	private float dist = 1300f;    // camera distance (region is 720 units wide)
 	private int lastX, lastY;
+	// per-area fog (from AreaData) so the preview shows the zone's atmosphere
+	private boolean fogOn = false;
+	private float[] fogColor = {0.53f, 0.70f, 0.92f, 1f};
+	private float fogNear = 800f, fogFar = 4000f;
 
 	public MapPreview3D() {
 		super(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
@@ -80,6 +84,14 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 		}
 	}
 
+	/** Enables the area's fog in the preview (color + near/far draw distance). */
+	public void setFog(float r, float g, float b, float near, float far) {
+		fogColor = new float[]{r, g, b, 1f};
+		fogNear = near;
+		fogFar = far;
+		fogOn = far > near && far > 0;
+	}
+
 	public void stop() {
 		if (animator.isStarted()) {
 			animator.stop();
@@ -102,6 +114,17 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 	@Override
 	public void display(GLAutoDrawable d) {
 		GL2 gl = d.getGL().getGL2();
+		if (fogOn) {
+			gl.glClearColor(fogColor[0], fogColor[1], fogColor[2], 1f); // sky = fog color
+			gl.glEnable(GL2.GL_FOG);
+			gl.glFogi(GL2.GL_FOG_MODE, GL2.GL_LINEAR);
+			gl.glFogfv(GL2.GL_FOG_COLOR, fogColor, 0);
+			gl.glFogf(GL2.GL_FOG_START, fogNear);
+			gl.glFogf(GL2.GL_FOG_END, fogFar);
+		} else {
+			gl.glClearColor(0.53f, 0.70f, 0.92f, 1f);
+			gl.glDisable(GL2.GL_FOG);
+		}
 		gl.glClear(GL2.GL_COLOR_BUFFER_BIT | GL2.GL_DEPTH_BUFFER_BIT);
 		gl.glMatrixMode(GL2.GL_MODELVIEW);
 		gl.glLoadIdentity();
