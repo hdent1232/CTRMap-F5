@@ -64,6 +64,16 @@ public class PaintedRegionBuilder {
 	 *             (auto-oriented), replacing the cliff so the player walks it.
 	 */
 	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, TerrainLighting light) {
+		return build(donorModel, grid, height, ramp, light, true);
+	}
+
+	/**
+	 * @param edges when true (and the donor carries a grass-edge material), lay
+	 *              GameFreak-style transition strips along grass&harr;dirt/sand seams
+	 *              (the projected "blend" edge). Ignored if the tileset donor has
+	 *              no edge material.
+	 */
+	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, TerrainLighting light, boolean edges) {
 		if (height == null) {
 			height = new int[DIM][DIM];
 		}
@@ -71,11 +81,16 @@ public class PaintedRegionBuilder {
 			ramp = new boolean[DIM][DIM];
 		}
 		RegionFactory.BlankContent out = new RegionFactory.BlankContent();
-		out.model = buildModel(donorModel, grid, height, ramp, light);
+		out.model = buildModel(donorModel, grid, height, ramp, light, edges);
 		out.collision = buildCollision(grid, height, ramp);
 		out.tilemap = buildTilemap(grid);
 		out.props = new byte[]{0, 0, 0, 0};
 		return out;
+	}
+
+	/** True if the tileset donor carries a grass-edge material (so edge strips are available). */
+	public static boolean donorSupportsEdges(byte[] donorModel) {
+		return resolveEdgeMesh(new BchMapModel(donorModel)) >= 0;
 	}
 
 	/** Descent direction (0 E,1 W,2 S,3 N) of a ramp tile toward a level-below
@@ -95,11 +110,12 @@ public class PaintedRegionBuilder {
 
 	// ---- visual model -----------------------------------------------------
 
-	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, TerrainLighting light) {
+	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, TerrainLighting light, boolean edges) {
 		BchMapModel probe = new BchMapModel(donorModel);
 		int meshCount = probe.meshCount;
 		int groundMesh = defaultGroundMesh(probe);
 		int cliffMesh = resolveCliffMesh(probe, groundMesh);
+		int edgeMesh = edges ? resolveEdgeMesh(probe) : -1;
 
 		Map<TilePalette, Integer> terrainMesh = new HashMap<>();
 		Map<Integer, List<Quad>> quadsByMesh = new HashMap<>();
@@ -129,6 +145,11 @@ public class PaintedRegionBuilder {
 			}
 		}
 
+		// GameFreak-style transition strips along grass<->dirt/sand seams
+		if (edgeMesh >= 0) {
+			addEdgeStrips(grid, height, quadsByMesh, edgeMesh);
+		}
+
 		byte[] current = donorModel;
 		for (int mi = 0; mi < meshCount; mi++) {
 			BchMapModel m = new BchMapModel(current);
@@ -143,7 +164,9 @@ public class PaintedRegionBuilder {
 				current = m.setMeshGeometry(mi, vtx, new int[]{0, 0, 0});
 				continue;
 			}
-			MapModelObj.ObjMesh om = meshFromQuads(m, g, quads);
+			// edge strips author their UVs directly (U along seam, V across the
+			// band); ground meshes get world-projected UVs scaled to the texture.
+			MapModelObj.ObjMesh om = meshFromQuads(m, g, quads, mi == edgeMesh);
 			byte[] vtx = MapModelObjImporter.buildVertexBytes(m, g, om);
 			bakeQuadLighting(m, g, vtx, quads, light);
 			current = m.setMeshGeometry(mi, vtx, om.triangles);
@@ -151,9 +174,121 @@ public class PaintedRegionBuilder {
 		return current;
 	}
 
-	/** Assembles an ObjMesh (positions/UVs/normals/tris) from a list of quads. */
-	static MapModelObj.ObjMesh meshFromQuads(BchMapModel model, BchMapModel.MeshGeom g, List<Quad> quads) {
-		float[] scale = measureUvScale(model, g);
+	// ---- edge transition strips (the GameFreak "blend" look) --------------
+
+	private static final int GRP_GRASS = 1, GRP_DIRT = 2;
+	/** Half-visual constants: strip reaches EDGE_W world units onto the lower
+	 *  (dirt/sand) side of a seam, lifted EDGE_LIFT above ground to overlay it. */
+	static final float EDGE_W = 9f, EDGE_LIFT = 0.6f;
+
+	/** Coarse terrain family for edge blending (0 = never edged). */
+	private static int terrainGroup(TilePalette t) {
+		if (t == null) {
+			return 0;
+		}
+		switch (t) {
+			case GRASS:
+			case TALL_GRASS:
+			case LEDGE_S:
+			case LEDGE_E:
+			case LEDGE_W:
+				return GRP_GRASS;
+			case PATH:
+			case SAND:
+			case DEEP_SAND:
+				return GRP_DIRT;
+			default:
+				return 0;
+		}
+	}
+
+	private static boolean isGrassDirt(int ga, int gb) {
+		return (ga == GRP_GRASS && gb == GRP_DIRT) || (ga == GRP_DIRT && gb == GRP_GRASS);
+	}
+
+	/** Lays a grass-edge ribbon along every same-height grass&harr;dirt/sand seam. */
+	static void addEdgeStrips(TilePalette[][] grid, int[][] height, Map<Integer, List<Quad>> quadsByMesh, int edgeMesh) {
+		List<Quad> strips = new ArrayList<>();
+		for (int ty = 0; ty < DIM; ty++) {
+			for (int tx = 0; tx < DIM; tx++) {
+				int ga = terrainGroup(grid[ty][tx]);
+				int ha = height[ty][tx];
+				if (tx + 1 < DIM && ha == height[ty][tx + 1]) {
+					int gb = terrainGroup(grid[ty][tx + 1]);
+					if (isGrassDirt(ga, gb)) {
+						strips.add(edgeQuadEW(tx, ty, ha, ga == GRP_GRASS));
+					}
+				}
+				if (ty + 1 < DIM && ha == height[ty + 1][tx]) {
+					int gb = terrainGroup(grid[ty + 1][tx]);
+					if (isGrassDirt(ga, gb)) {
+						strips.add(edgeQuadNS(tx, ty, ha, ga == GRP_GRASS));
+					}
+				}
+			}
+		}
+		if (!strips.isEmpty()) {
+			quadsByMesh.computeIfAbsent(edgeMesh, k -> new ArrayList<>()).addAll(strips);
+		}
+	}
+
+	/** Edge ribbon on a vertical (east/west) seam; strip lies on the dirt side. */
+	private static Quad edgeQuadEW(int tx, int ty, int h, boolean grassIsWest) {
+		float xs = (tx + 1) * TILE + ORIGIN;
+		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
+		float y = h * STEP + EDGE_LIFT;
+		float dirtSign = grassIsWest ? 1f : -1f;
+		float xSeam = xs, xOut = xs + dirtSign * EDGE_W;
+		Quad q = new Quad();
+		q.pos[0] = new float[]{xSeam, y, z0}; q.uv[0] = new float[]{0f, 1f};
+		q.pos[1] = new float[]{xOut, y, z0};  q.uv[1] = new float[]{0f, 0f};
+		q.pos[2] = new float[]{xSeam, y, z1}; q.uv[2] = new float[]{0.5f, 1f};
+		q.pos[3] = new float[]{xOut, y, z1};  q.uv[3] = new float[]{0.5f, 0f};
+		for (int c = 0; c < 4; c++) {
+			q.nrm[c] = new float[]{0f, 1f, 0f};
+			q.ao[c] = 1f;
+		}
+		fixWindingUp(q);
+		return q;
+	}
+
+	/** Edge ribbon on a horizontal (north/south) seam; strip lies on the dirt side. */
+	private static Quad edgeQuadNS(int tx, int ty, int h, boolean grassIsNorth) {
+		float zs = (ty + 1) * TILE + ORIGIN;
+		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
+		float y = h * STEP + EDGE_LIFT;
+		float dirtSign = grassIsNorth ? 1f : -1f;
+		float zSeam = zs, zOut = zs + dirtSign * EDGE_W;
+		Quad q = new Quad();
+		q.pos[0] = new float[]{x0, y, zSeam}; q.uv[0] = new float[]{0f, 1f};
+		q.pos[1] = new float[]{x0, y, zOut};  q.uv[1] = new float[]{0f, 0f};
+		q.pos[2] = new float[]{x1, y, zSeam}; q.uv[2] = new float[]{0.5f, 1f};
+		q.pos[3] = new float[]{x1, y, zOut};  q.uv[3] = new float[]{0.5f, 0f};
+		for (int c = 0; c < 4; c++) {
+			q.nrm[c] = new float[]{0f, 1f, 0f};
+			q.ao[c] = 1f;
+		}
+		fixWindingUp(q);
+		return q;
+	}
+
+	/** Ensures a flat quad's triangles wind so its face points +Y (up). */
+	private static void fixWindingUp(Quad q) {
+		float[] a = q.pos[0], b = q.pos[2], c = q.pos[1];
+		float ux = b[0] - a[0], uz = b[2] - a[2];
+		float vx = c[0] - a[0], vz = c[2] - a[2];
+		float ny = uz * vx - ux * vz; // y of cross(u,v)
+		if (ny < 0) {
+			float[] tp = q.pos[1]; q.pos[1] = q.pos[2]; q.pos[2] = tp;
+			float[] tu = q.uv[1]; q.uv[1] = q.uv[2]; q.uv[2] = tu;
+		}
+	}
+
+	/** Assembles an ObjMesh (positions/UVs/normals/tris) from a list of quads.
+	 *  When {@code rawUv}, the quads' authored UVs pass through unscaled (edge
+	 *  strips already carry seam-space UVs); otherwise UVs are world-projected. */
+	static MapModelObj.ObjMesh meshFromQuads(BchMapModel model, BchMapModel.MeshGeom g, List<Quad> quads, boolean rawUv) {
+		float[] scale = rawUv ? new float[]{1f, 1f} : measureUvScale(model, g);
 		MapModelObj.ObjMesh om = new MapModelObj.ObjMesh();
 		om.meshIndex = g.meshIndex;
 		int n = quads.size();
@@ -414,7 +549,7 @@ public class PaintedRegionBuilder {
 					continue;
 				}
 				String name = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
-				if (name != null && name.toLowerCase().contains(hint)) {
+				if (name != null && !isEdgeMaterial(name) && name.toLowerCase().contains(hint)) {
 					return g.meshIndex;
 				}
 			}
@@ -430,7 +565,7 @@ public class PaintedRegionBuilder {
 					continue;
 				}
 				String name = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
-				if (name != null && name.toLowerCase().contains(hint)) {
+				if (name != null && !isEdgeMaterial(name) && name.toLowerCase().contains(hint)) {
 					return g.meshIndex;
 				}
 			}
@@ -438,10 +573,35 @@ public class PaintedRegionBuilder {
 		return fallback;
 	}
 
+	/** The grass-edge overlay mesh (chip_kusa_edge / chip_grass_edge), or -1. */
+	public static int resolveEdgeMesh(BchMapModel model) {
+		for (String hint : new String[]{"kusa_edge", "grass_edge", "edge_tex", "_edge"}) {
+			for (BchMapModel.MeshGeom g : model.geometry()) {
+				if (!g.posOk) {
+					continue;
+				}
+				String name = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
+				if (name != null && name.toLowerCase().contains(hint)) {
+					return g.meshIndex;
+				}
+			}
+		}
+		return -1;
+	}
+
+	private static boolean isEdgeMaterial(String name) {
+		String n = name.toLowerCase();
+		return n.contains("_edge") || n.contains("edge_tex");
+	}
+
 	private static int defaultGroundMesh(BchMapModel model) {
 		int best = -1, bestTris = -1;
 		for (BchMapModel.MeshGeom g : model.geometry()) {
 			if (g.posOk) {
+				String name = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
+				if (name != null && isEdgeMaterial(name)) {
+					continue; // never treat the thin edge overlay as the ground
+				}
 				int tris = model.getTriangles(g.meshIndex).length;
 				if (tris > bestTris) {
 					bestTris = tris;
