@@ -65,7 +65,18 @@ public class TilePainterForm {
 		final TilePalette[] brush = {TilePalette.GRASS};
 		final int[] tool = {0}; // 0 paint, 1 fill
 
-		final GridCanvas canvas = new GridCanvas(grid, brush, tool);
+		// build the top-down textured preview from the region's own materials + the
+		// zone's loaded world textures (so grass/water/rock look like they do in-game)
+		ctrmap.formats.tilemap.TerrainTextures terrainTex = null;
+		try {
+			GR gr = new GR(new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA), String.valueOf(region)));
+			byte[] donor = gr.getFile(1);
+			terrainTex = ctrmap.formats.tilemap.TerrainTextures.build(donor, mTileMapPanel.getWorldTextures());
+		} catch (Exception ex) {
+			// no textures - the preview toggle just falls back to flat colors
+		}
+
+		final GridCanvas canvas = new GridCanvas(grid, brush, tool, terrainTex);
 
 		final JDialog dlg = new JDialog(frame, "Tile painter - zone " + zoneIndex, true);
 		dlg.setLayout(new BorderLayout(8, 8));
@@ -117,6 +128,20 @@ public class TilePainterForm {
 			canvas.repaint();
 		});
 		side.add(clearAll);
+		side.add(javax.swing.Box.createVerticalStrut(10));
+		final JToggleButton view3d = new JToggleButton("Show in-game textures");
+		view3d.setAlignmentX(0f);
+		view3d.setFocusable(false);
+		boolean canTexture = terrainTex != null && terrainTex.any();
+		view3d.setEnabled(canTexture);
+		if (!canTexture) {
+			view3d.setToolTipText("Load this zone in the map view first (its textures power the preview).");
+		}
+		view3d.addActionListener(e -> {
+			canvas.textured = view3d.isSelected();
+			canvas.repaint();
+		});
+		side.add(view3d);
 
 		dlg.add(side, BorderLayout.WEST);
 		dlg.add(canvas, BorderLayout.CENTER);
@@ -259,11 +284,15 @@ public class TilePainterForm {
 		final TilePalette[][] grid;
 		final TilePalette[] brush;
 		final int[] tool;
+		final ctrmap.formats.tilemap.TerrainTextures terrainTex;
+		boolean textured = false;
+		private final java.util.Map<TilePalette, java.awt.TexturePaint> paintCache = new java.util.HashMap<>();
 
-		GridCanvas(TilePalette[][] grid, TilePalette[] brush, int[] tool) {
+		GridCanvas(TilePalette[][] grid, TilePalette[] brush, int[] tool, ctrmap.formats.tilemap.TerrainTextures terrainTex) {
 			this.grid = grid;
 			this.brush = brush;
 			this.tool = tool;
+			this.terrainTex = terrainTex;
 			setPreferredSize(new Dimension(DIM * CELL + 1, DIM * CELL + 1));
 			MouseAdapter ma = new MouseAdapter() {
 				@Override
@@ -315,17 +344,39 @@ public class TilePainterForm {
 			}
 		}
 
+		/** A tiling paint for a terrain's texture (one repeat spans 2 cells), cached. */
+		private java.awt.TexturePaint paintFor(TilePalette t) {
+			if (terrainTex == null) {
+				return null;
+			}
+			if (paintCache.containsKey(t)) {
+				return paintCache.get(t);
+			}
+			java.awt.image.BufferedImage img = terrainTex.image(t);
+			java.awt.TexturePaint p = img == null ? null
+					: new java.awt.TexturePaint(img, new java.awt.Rectangle(0, 0, CELL * 2, CELL * 2));
+			paintCache.put(t, p);
+			return p;
+		}
+
 		@Override
 		protected void paintComponent(Graphics g) {
 			super.paintComponent(g);
+			java.awt.Graphics2D g2 = (java.awt.Graphics2D) g;
 			for (int ty = 0; ty < DIM; ty++) {
 				for (int tx = 0; tx < DIM; tx++) {
 					TilePalette t = grid[ty][tx];
-					g.setColor(t == null ? Color.DARK_GRAY : t.color());
-					g.fillRect(tx * CELL, ty * CELL, CELL, CELL);
+					java.awt.TexturePaint tp = textured ? paintFor(t) : null;
+					if (tp != null) {
+						g2.setPaint(tp);
+					} else {
+						g2.setPaint(t == null ? Color.DARK_GRAY : t.color());
+					}
+					g2.fillRect(tx * CELL, ty * CELL, CELL, CELL);
 				}
 			}
-			g.setColor(new Color(0, 0, 0, 40));
+			// grid lines: faint in textured view, clearer in paint view
+			g.setColor(new Color(0, 0, 0, textured ? 22 : 40));
 			for (int i = 0; i <= DIM; i++) {
 				g.drawLine(i * CELL, 0, i * CELL, DIM * CELL);
 				g.drawLine(0, i * CELL, DIM * CELL, i * CELL);
