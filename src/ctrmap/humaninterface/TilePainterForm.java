@@ -65,16 +65,18 @@ public class TilePainterForm {
 		final TilePalette[] brush = {TilePalette.GRASS};
 		final int[] tool = {0}; // 0 paint, 1 fill
 
-		// build the top-down textured preview from the region's own materials + the
-		// zone's loaded world textures (so grass/water/rock look like they do in-game)
+		// the region's own model = the tileset donor (materials + textures + area
+		// all correct); used for the textured previews and the generated geometry
+		byte[] donorTmp = null;
 		ctrmap.formats.tilemap.TerrainTextures terrainTex = null;
 		try {
 			GR gr = new GR(new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA), String.valueOf(region)));
-			byte[] donor = gr.getFile(1);
-			terrainTex = ctrmap.formats.tilemap.TerrainTextures.build(donor, mTileMapPanel.getWorldTextures());
+			donorTmp = gr.getFile(1);
+			terrainTex = ctrmap.formats.tilemap.TerrainTextures.build(donorTmp, mTileMapPanel.getWorldTextures());
 		} catch (Exception ex) {
 			// no textures - the preview toggle just falls back to flat colors
 		}
+		final byte[] donorModel = donorTmp;
 
 		final GridCanvas canvas = new GridCanvas(grid, brush, tool, terrainTex);
 
@@ -129,18 +131,25 @@ public class TilePainterForm {
 		});
 		side.add(clearAll);
 		side.add(javax.swing.Box.createVerticalStrut(10));
-		final JToggleButton view3d = new JToggleButton("Show in-game textures");
-		view3d.setAlignmentX(0f);
-		view3d.setFocusable(false);
 		boolean canTexture = terrainTex != null && terrainTex.any();
-		view3d.setEnabled(canTexture);
-		if (!canTexture) {
-			view3d.setToolTipText("Load this zone in the map view first (its textures power the preview).");
-		}
-		view3d.addActionListener(e -> {
-			canvas.textured = view3d.isSelected();
+		final JToggleButton texToggle = new JToggleButton("Textured (top-down)");
+		texToggle.setAlignmentX(0f);
+		texToggle.setFocusable(false);
+		texToggle.setEnabled(canTexture);
+		texToggle.setToolTipText(canTexture
+				? "Quick top-down layout with the real textures (approximate - no lighting/angle)."
+				: "Load this zone in the map view first (its textures power the preview).");
+		texToggle.addActionListener(e -> {
+			canvas.textured = texToggle.isSelected();
 			canvas.repaint();
 		});
+		side.add(texToggle);
+		final JButton view3d = new JButton("3D preview (real render)");
+		view3d.setAlignmentX(0f);
+		view3d.setFocusable(false);
+		view3d.setEnabled(donorModel != null);
+		view3d.setToolTipText("Render the painted map with CTRMap's 3D engine - how it actually looks (drag to orbit).");
+		view3d.addActionListener(e -> open3DPreview(donorModel, grid));
 		side.add(view3d);
 
 		dlg.add(side, BorderLayout.WEST);
@@ -178,6 +187,29 @@ public class TilePainterForm {
 		dlg.pack();
 		dlg.setLocationRelativeTo(frame);
 		dlg.setVisible(true);
+	}
+
+	/** Generates the model from the current grid and shows it in the real 3D renderer. */
+	private static void open3DPreview(byte[] donorModel, TilePalette[][] grid) {
+		try {
+			byte[] model = PaintedRegionBuilder.build(donorModel, grid).model;
+			MapPreview3D view = new MapPreview3D();
+			view.setRegion(model, mTileMapPanel.getWorldTextures());
+			view.setPreferredSize(new Dimension(640, 520));
+			final JDialog d = new JDialog(frame, "3D preview - how the map looks (drag to orbit, wheel to zoom)", false);
+			d.add(view, BorderLayout.CENTER);
+			d.addWindowListener(new java.awt.event.WindowAdapter() {
+				@Override
+				public void windowClosing(java.awt.event.WindowEvent e) {
+					view.stop();
+				}
+			});
+			d.pack();
+			d.setLocationRelativeTo(frame);
+			d.setVisible(true);
+		} catch (Exception ex) {
+			JOptionPane.showMessageDialog(frame, "3D preview failed:\n" + ex.getMessage(), "Tile painter", JOptionPane.ERROR_MESSAGE);
+		}
 	}
 
 	private static void applyToZone(int zoneIndex, TilePalette[][] grid) throws Exception {
