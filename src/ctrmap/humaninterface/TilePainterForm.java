@@ -364,6 +364,12 @@ public class TilePainterForm {
 			if (rsl != JOptionPane.OK_OPTION) {
 				return;
 			}
+			//the apply reads/forks the last-SAVED workspace bytes, so flush any
+			//pending on-screen edits first (same store chain as switching zones)
+			if (!(mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true)
+					&& mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && mZonePnl.store(true))) {
+				return;
+			}
 			try {
 				applyToZone(zoneIndex, grid, height, ramp, lighting, edgeBlend[0], placedBuildings);
 				dlg.dispose();
@@ -589,6 +595,10 @@ public class TilePainterForm {
 		GeometryForker.ForkResult r = GeometryForker.forkGeometry(zoneIndex);
 		File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
 		java.util.Map<Integer, java.util.Set<String>> texNeeds = new java.util.LinkedHashMap<>();
+		// the swinging-door props for placed buildings (registry + textures handled)
+		StringBuilder propNote = new StringBuilder();
+		byte[] doorProps = placed.isEmpty() ? null : buildDoorProps(placed, height, propNote);
+		boolean firstCell = true;
 		for (int newRegion : r.newRegions) {
 			File f = new File(fdDir, String.valueOf(newRegion));
 			GR gr = new GR(f);
@@ -603,7 +613,11 @@ public class TilePainterForm {
 			gr.storeFile(1, bc.model);
 			gr.storeFile(2, bc.collision);
 			gr.storeFile(0, bc.tilemap);
-			gr.storeFile(3, bc.props);
+			// door props carry ABSOLUTE world coords of the FIRST map cell (where
+			// the warps also go) - storing them into every region would stack
+			// engine-visible duplicates at that one location
+			gr.storeFile(3, (firstCell && doorProps != null) ? doorProps : bc.props);
+			firstCell = false;
 		}
 		// stamped pieces reference their donor areas' textures - carry any the
 		// zone's area lacks, or the game hardlocks on load
@@ -614,7 +628,7 @@ public class TilePainterForm {
 				continue;
 			}
 			texNote.append(ctrmap.formats.h3d.BchTexturePack.carryToArea(
-					en.getKey(), zoneArea, new java.util.ArrayList<>(en.getValue())).trim()).append('\n');
+					en.getKey(), zoneArea, new java.util.ArrayList<>(en.getValue()), areaContainer(zoneArea)).trim()).append('\n');
 		}
 		int enterable = 0;
 		for (Placed pl : placed) {
@@ -623,22 +637,32 @@ public class TilePainterForm {
 			}
 		}
 		int wired = 0;
+		StringBuilder wireNote = new StringBuilder();
 		if (enterable > 0) {
-			int rsl = JOptionPane.showConfirmDialog(frame,
-					enterable + " placed building(s) have doors. Add their door warps now?\n\n"
-					+ "Each door will warp into its retail interior (e.g. the standard Pokemon\n"
-					+ "Center room) - walking in works immediately. NOTE: a retail interior's\n"
-					+ "exit leads back to its own retail town; for a proper round trip, clone\n"
-					+ "the interior zone (Zone tools) and retarget with the Warp tool.",
-					"Door warps", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
-			if (rsl == JOptionPane.YES_OPTION) {
-				wired = wireDoorWarps(zoneIndex, placed, height);
+			String[] opts = {"Clone private interiors (recommended)", "Link retail interiors (enter-only)", "Skip"};
+			int mode = JOptionPane.showOptionDialog(frame,
+					enterable + " placed building(s) have doors. Wire them now?\n\n"
+					+ "CLONE (recommended): each door gets its OWN interior - a copy of the retail\n"
+					+ "room placed in a free base zone - and the room's exit leads BACK TO THIS MAP.\n"
+					+ "Walk in, walk out: full round trip. (Rename the interior later via Tools.)\n\n"
+					+ "RETAIL: doors warp into the shared retail rooms; entering works, but the\n"
+					+ "room's exit leads to its retail town until you retarget it.",
+					"Door warps", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, opts, opts[0]);
+			if (mode == 0 || mode == 1) {
+				wired = wireDoorWarps(zoneIndex, placed, height, mode == 0, wireNote);
 			}
 		}
-		final String extras = (texNote.length() > 0 ? "\n" + texNote.toString().trim() : "")
-				+ (wired > 0 ? "\n\n" + wired + " door warp(s) added (retail door shape; retarget with the Warp tool\n"
-						+ "after cloning an interior). Place each door's swinging-door prop via the\n"
-						+ "Prop Tool (the palette names it, e.g. com_bm_pcdoor01)." : "")
+		int signsWired = 0;
+		try {
+			signsWired = wireSigns(zoneIndex, placed);
+		} catch (Exception ex) {
+			wireNote.append("\nSign wiring failed: ").append(ex.getMessage());
+		}
+		final String extras = (signsWired > 0 ? "\n\n" + signsWired + " readable sign(s) wired (text saved; edit later via the NPC tool's dialogue section)." : "")
+				+ (texNote.length() > 0 ? "\n" + texNote.toString().trim() : "")
+				+ (doorProps != null ? "\n\nSwinging-door prop(s) placed automatically (registry + textures handled)." : "")
+				+ (propNote.length() > 0 ? propNote : "")
+				+ (wired > 0 ? "\n\n" + wired + " door warp(s) added." + wireNote : "")
 				+ (enterable > wired ? "\n\n" + (enterable - wired) + " door(s) left unwired - add warps with the Warp tool when ready." : "");
 		Workspace.packWorkspace(new Runnable() {
 			@Override
@@ -716,22 +740,174 @@ public class TilePainterForm {
 	}
 
 	/**
+	 * Builds the region's prop placements: one swinging-door prop per placed
+	 * building, at the door tile's center (retail door props sit at exactly
+	 * doorTile*18+9, Y = building base, rotation 0). Handles the area's prop
+	 * registry and texture imports; a door whose registration fails is skipped
+	 * with a note (the map itself is unaffected). Returns null when no props.
+	 */
+	private static byte[] buildDoorProps(java.util.List<Placed> placed, int[][] height, StringBuilder note) {
+		int[] cell = firstRegionCell();
+		if (cell == null) {
+			return null;
+		}
+		ctrmap.formats.propdata.GRPropData pd = new ctrmap.formats.propdata.GRPropData();
+		for (Placed pl : placed) {
+			if (pl.e.doorProp == null || pl.e.doorProp.equals("-")) {
+				continue;
+			}
+			try {
+				int uid = ensureDoorPropRegistered(pl.e.doorProp);
+				ctrmap.formats.propdata.GRProp p = new ctrmap.formats.propdata.GRProp();
+				p.uid = uid;
+				p.x = (cellX(cell) * 40 + pl.tx + pl.e.doorDX) * 18 + 9;
+				p.z = (cellY(cell) * 40 + pl.ty + pl.e.doorDY) * 18 + 9;
+				p.y = height[pl.ty][pl.tx] * PaintedRegionBuilder.STEP;
+				pd.props.add(p);
+			} catch (Exception ex) {
+				note.append("\nDoor prop for \"").append(pl.e.name).append("\" skipped: ").append(ex.getMessage());
+			}
+		}
+		return pd.props.isEmpty() ? null : pd.assemblePropData();
+	}
+
+	/**
+	 * Ensures the door prop model is usable in THIS zone's area: registry entry
+	 * (cloned from the retail template) and its textures (imported from the
+	 * best donor area) - a missing texture would hardlock the game on area
+	 * load. Writes through the zone's LIVE areadata container. Returns the
+	 * registry reference id for the GRProp uid.
+	 */
+	private static int ensureDoorPropRegistered(String propModelName) throws Exception {
+		ctrmap.formats.propdata.PropDatabase db = ctrmap.formats.propdata.PropDatabase.get();
+		if (db == null) {
+			throw new IllegalStateException("prop database unavailable");
+		}
+		ctrmap.formats.propdata.PropDatabase.PropModel pm = null;
+		for (ctrmap.formats.propdata.PropDatabase.PropModel m : db.models) {
+			if (propModelName.equals(m.name)) {
+				pm = m;
+				break;
+			}
+		}
+		if (pm == null) {
+			throw new IllegalStateException("model \"" + propModelName + "\" not in BuildingModels");
+		}
+		int areaId = mZonePnl.zone.header.areadataID;
+		ctrmap.formats.containers.AD ad = areaContainer(areaId);
+		ctrmap.formats.propdata.ADPropRegistry reg = new ctrmap.formats.propdata.ADPropRegistry(ad, null, false);
+		for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
+			if (e.model == pm.modelIndex) {
+				return e.reference; // already registered in this area
+			}
+		}
+		// textures first (all-or-nothing before any registry write)
+		byte[] modelBch = ctrmap.formats.propdata.PropDatabase.getSubfile(
+				Workspace.bm.getDecompressedEntry(pm.modelIndex), 0);
+		byte[] targetPack = ad.getFile(1);
+		java.util.Set<String> available = ctrmap.formats.propdata.PropDatabase.getTexturePackTextureNames(targetPack);
+		java.util.List<String> missing = ctrmap.formats.propdata.PropDatabase.getMissingTextureNames(modelBch, available);
+		if (!missing.isEmpty()) {
+			int donorArea = db.findDonorAreaWithTextures(pm, missing);
+			if (donorArea < 0) {
+				throw new IllegalStateException("no donor area has its textures " + missing);
+			}
+			byte[] donorPack;
+			File donorWs = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA), String.valueOf(donorArea));
+			if (donorWs.exists()) {
+				donorPack = ctrmap.formats.propdata.PropDatabase.getSubfile(java.nio.file.Files.readAllBytes(donorWs.toPath()), 1);
+			} else {
+				donorPack = ctrmap.formats.propdata.PropDatabase.getSubfile(Workspace.ad.getDecompressedEntry(donorArea), 1);
+			}
+			byte[] merged = ctrmap.formats.h3d.BchTexturePack.importTextures(targetPack, donorPack, missing);
+			if (merged != targetPack) {
+				ctrmap.formats.h3d.BCHFile check = new ctrmap.formats.h3d.BCHFile(merged);
+				if (check.errorlevel != 0) {
+					throw new IllegalStateException("merged texture pack failed verification");
+				}
+				if (!ad.storeFile(1, merged)) {
+					throw new IllegalStateException("could not write the area texture pack");
+				}
+			}
+		}
+		// registry entry: retail template when one exists (carries the door's
+		// open/close animation bindings), else a bare entry
+		ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry entry;
+		if (pm.template != null) {
+			entry = new ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry(
+					new ctrmap.LittleEndianDataInputStream(new java.io.ByteArrayInputStream(pm.template)));
+		} else {
+			entry = new ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry();
+		}
+		int ref = pm.modelIndex;
+		while (reg.entries.containsKey(ref)) {
+			ref++;
+		}
+		entry.reference = ref;
+		entry.model = pm.modelIndex;
+		reg.entries.put(ref, entry);
+		// checked store (ADPropRegistry.write() cannot report a failed write; an
+		// unwritten entry would leave the GRProp uid unresolvable in-game)
+		java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+		ctrmap.LittleEndianDataOutputStream dos = new ctrmap.LittleEndianDataOutputStream(baos);
+		dos.writeInt(reg.entries.size());
+		for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
+			e.write(dos);
+		}
+		dos.close();
+		if (!ad.storeFile(0, baos.toByteArray())) {
+			throw new IllegalStateException("could not write the area prop registry");
+		}
+		return ref;
+	}
+
+	/**
 	 * Adds a retail-shaped door warp for every enterable placed building:
 	 * measured from all 167 retail doors - face 1, transition 3, 1x1, at
 	 * doorTile*18+9 world units, height = the door tile's terrain level,
 	 * target = the interior zone's entry warp (always warp 0 in retail).
 	 */
-	private static int wireDoorWarps(int zoneIndex, java.util.List<Placed> placed, int[][] height) throws Exception {
+	private static int wireDoorWarps(int zoneIndex, java.util.List<Placed> placed, int[][] height,
+			boolean cloneInteriors, StringBuilder note) throws Exception {
 		int[] cell = firstRegionCell();
 		if (cell == null) {
 			throw new IllegalStateException("could not resolve the zone's map cell for warp placement");
 		}
-		File zf = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
-		ctrmap.formats.containers.ZO zo = new ctrmap.formats.containers.ZO(zf);
+		// free base-zone slots for private interior clones (scripts need index
+		// < 536); a slot with an in-session workspace file is NOT free even if
+		// the packed archive (which the scanner reads) still looks empty
+		java.util.List<Integer> slots = new java.util.ArrayList<>();
+		if (cloneInteriors) {
+			File zoDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA);
+			for (ctrmap.ZoneRepurposeScanner.Candidate c : ctrmap.ZoneRepurposeScanner.scan()) {
+				if (c.tier <= 1 && c.index != zoneIndex && !new File(zoDir, String.valueOf(c.index)).exists()) {
+					slots.add(c.index);
+				}
+			}
+		}
+		ctrmap.formats.containers.ZO zo = zoneContainer(zoneIndex);
 		ctrmap.formats.zone.ZoneEntities ent = new ctrmap.formats.zone.ZoneEntities(zo.getFile(1));
-		int added = 0;
-		for (Placed pl : placed) {
+
+		// PHASE A: add every door warp with its RETAIL interior target (always
+		// functional) and store, so warps exist on disk before any clone points
+		// back at them. Doors already wired by an earlier Apply are kept as-is.
+		java.util.List<int[]> newWarps = new java.util.ArrayList<>(); // {warpIdx, placedIdx}
+		for (int pi = 0; pi < placed.size(); pi++) {
+			Placed pl = placed.get(pi);
 			if (!pl.e.enterable()) {
+				continue;
+			}
+			int wx = (cellX(cell) * 40 + pl.tx + pl.e.doorDX) * 18 + 9;
+			int wy = (cellY(cell) * 40 + pl.ty + pl.e.doorDY) * 18 + 9;
+			boolean dup = false;
+			for (ctrmap.formats.zone.ZoneEntities.Warp w : ent.warps) {
+				if (w.x == wx && w.y == wy) {
+					dup = true;
+					break;
+				}
+			}
+			if (dup) {
+				note.append("\n\"").append(pl.e.name).append("\" door already wired - kept as is.");
 				continue;
 			}
 			ctrmap.formats.zone.ZoneEntities.Warp w = new ctrmap.formats.zone.ZoneEntities.Warp();
@@ -740,22 +916,56 @@ public class TilePainterForm {
 			w.faceDirection = 1;
 			w.transitionType = 3;
 			w.coordinateType = 0;
-			w.x = (cellX(cell) * 40 + pl.tx + pl.e.doorDX) * 18 + 9;
-			w.y = (cellY(cell) * 40 + pl.ty + pl.e.doorDY) * 18 + 9;
+			w.x = wx;
+			w.y = wy;
 			w.z = height[pl.ty][pl.tx] * 18;
 			w.w = 1;
 			w.h = 1;
+			newWarps.add(new int[]{ent.warps.size(), pi});
 			ent.warps.add(w);
-			added++;
 		}
-		if (added > 0) {
-			ent.modified = true;
-			byte[] assembled = ent.assembleData();
-			if (assembled == null || !zo.storeFile(1, assembled)) {
-				throw new IllegalStateException("could not write the door warps to zone " + zoneIndex);
+		if (newWarps.isEmpty()) {
+			return 0;
+		}
+		ent.modified = true;
+		byte[] assembled = ent.assembleData();
+		if (assembled == null || !zo.storeFile(1, assembled)) {
+			throw new IllegalStateException("could not write the door warps to zone " + zoneIndex);
+		}
+
+		// PHASE B: clone private interiors and retarget; a failed clone leaves
+		// that door on its (functional) retail target instead of aborting
+		if (cloneInteriors) {
+			int slotUse = 0;
+			boolean retargeted = false;
+			for (int[] nw : newWarps) {
+				Placed pl = placed.get(nw[1]);
+				if (slotUse >= slots.size()) {
+					note.append("\nNo free base zone left for \"").append(pl.e.name).append("\" - linked retail instead.");
+					continue;
+				}
+				int slot = slots.get(slotUse++); // consume on attempt - never reuse a possibly half-written slot
+				try {
+					int retailLinks = ctrmap.InteriorWirer.cloneAndWire(zoneIndex, nw[0], pl.e.interiorZone, slot);
+					ent.warps.get(nw[0]).targetZone = slot;
+					ent.warps.get(nw[0]).targetWarpId = 0;
+					retargeted = true;
+					note.append("\n\"").append(pl.e.name).append("\" interior = zone ").append(slot)
+							.append(retailLinks > 0 ? " (its upper floor still leads to the retail building)" : "");
+				} catch (Exception ex) {
+					note.append("\n\"").append(pl.e.name).append("\": interior clone failed (")
+							.append(ex.getMessage()).append(") - linked retail instead.");
+				}
+			}
+			if (retargeted) {
+				ent.modified = true;
+				assembled = ent.assembleData();
+				if (assembled == null || !zo.storeFile(1, assembled)) {
+					note.append("\nCould not save the retargeted warps - doors lead to the retail interiors.");
+				}
 			}
 		}
-		return added;
+		return newWarps.size();
 	}
 
 	private static int cellX(int[] cell) {
@@ -764,6 +974,123 @@ public class TilePainterForm {
 
 	private static int cellY(int[] cell) {
 		return cell[2];
+	}
+
+	/** The loaded zone's LIVE ZO container when it is this zone (keeps its
+	 *  cached subfile offsets coherent for the open editors), else a fresh one. */
+	private static ctrmap.formats.containers.ZO zoneContainer(int zoneIndex) throws Exception {
+		if (mZonePnl != null && mZonePnl.zone != null && mZonePnl.zoneIndex == zoneIndex && mZonePnl.zone.file != null) {
+			return mZonePnl.zone.file;
+		}
+		return new ctrmap.formats.containers.ZO(Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex));
+	}
+
+	private static String escapeTypedText(String text) {
+		return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n");
+	}
+
+	/**
+	 * Makes placed SIGN pieces readable: for each, asks for the sign's text,
+	 * appends a storytext line, clones the zone's sign script (the proven
+	 * NpcTemplates path) and drops the interactive furniture record on the
+	 * sign's tile. Signs stay pure scenery when the user cancels their dialog
+	 * or the zone's script lacks the sign-display routine.
+	 */
+	private static int wireSigns(int zoneIndex, java.util.List<Placed> placed) throws Exception {
+		java.util.List<Placed> signs = new java.util.ArrayList<>();
+		for (Placed pl : placed) {
+			if ("SIGN".equals(pl.e.kind)) {
+				signs.add(pl);
+			}
+		}
+		if (signs.isEmpty()) {
+			return 0;
+		}
+		int[] cell = firstRegionCell();
+		if (cell == null) {
+			return 0;
+		}
+		ctrmap.formats.containers.ZO zo = zoneContainer(zoneIndex);
+		ctrmap.formats.scripts.GFLPawnScript s = new ctrmap.formats.scripts.GFLPawnScript(zo.getFile(2));
+		s.decompressThis();
+		if (ctrmap.formats.scripts.ZoneScriptAnalyzer.findSignWrapper(s) == null) {
+			JOptionPane.showMessageDialog(frame, signs.size() + " sign(s) placed as scenery only: this zone's script has no\n"
+					+ "sign-display routine (69 of 536 vanilla zones have one). To make them\n"
+					+ "readable, base the zone on one that has signs, or use a Talking NPC.",
+					"Signs", JOptionPane.INFORMATION_MESSAGE);
+			return 0;
+		}
+		int textID = mZonePnl.zone.header.textID;
+		File sf = Workspace.getStoryTextGARC() != null
+				? Workspace.getWorkspaceFile(Workspace.ArchiveType.STORYTEXT, textID) : null;
+		if (sf == null || !sf.exists()) {
+			JOptionPane.showMessageDialog(frame, "Signs placed as scenery only: the STORYTEXT archive is unavailable.",
+					"Signs", JOptionPane.INFORMATION_MESSAGE);
+			return 0;
+		}
+		ctrmap.formats.text.GFMessageFile msg = new ctrmap.formats.text.GFMessageFile(
+				java.nio.file.Files.readAllBytes(sf.toPath()));
+		ctrmap.formats.zone.ZoneEntities ent = new ctrmap.formats.zone.ZoneEntities(zo.getFile(1));
+		int wired = 0;
+		for (Placed pl : signs) {
+			// a furniture record already on this tile = wired by an earlier Apply
+			int gx = cellX(cell) * 40 + pl.tx, gy = cellY(cell) * 40 + pl.ty;
+			boolean already = false;
+			for (ctrmap.formats.zone.ZoneEntities.Prop fp : ent.furniture) {
+				if (fp.x == gx && fp.y == gy) {
+					already = true;
+					break;
+				}
+			}
+			if (already) {
+				continue;
+			}
+			javax.swing.JTextArea ta = new javax.swing.JTextArea("", 5, 40);
+			ta.setLineWrap(true);
+			ta.setWrapStyleWord(true);
+			javax.swing.JComboBox<String> typeBox = new javax.swing.JComboBox<>(
+					ctrmap.formats.scripts.NpcTemplates.SIGN_TYPE_LABELS);
+			javax.swing.JPanel panel = new javax.swing.JPanel();
+			panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
+			panel.add(new JLabel("Text for the " + pl.e.name + " at tile (" + pl.tx + ", " + pl.ty + ") - Cancel = scenery only:"));
+			panel.add(new javax.swing.JScrollPane(ta));
+			panel.add(new JLabel("Sign style:"));
+			panel.add(typeBox);
+			if (JOptionPane.showConfirmDialog(frame, panel, "Sign text",
+					JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+				continue;
+			}
+			String text = escapeTypedText(ta.getText());
+			// pre-validate the text encodes cleanly BEFORE mutating anything, so
+			// one bad sign cannot discard every other sign at the final write
+			try {
+				ctrmap.formats.text.GFMessageFile.write(java.util.Arrays.asList(text));
+			} catch (RuntimeException ex) {
+				JOptionPane.showMessageDialog(frame, "This sign's text could not be encoded and was skipped:\n"
+						+ ex.getMessage(), "Sign text", JOptionPane.ERROR_MESSAGE);
+				continue;
+			}
+			int line = msg.getLineCount();
+			int caseId = ctrmap.formats.scripts.NpcTemplates.addSignScript(s, line,
+					ctrmap.formats.scripts.NpcTemplates.SIGN_TYPES[Math.max(0, typeBox.getSelectedIndex())]);
+			msg.addLine(text);
+			ent.furniture.add(ctrmap.formats.scripts.NpcTemplates.makeSignFurniture(caseId, gx, gy));
+			wired++;
+		}
+		if (wired > 0) {
+			java.nio.file.Files.write(sf.toPath(), msg.write());
+			Workspace.addPersist(sf);
+			ent.furnitureCount = ent.furniture.size();
+			ent.modified = true;
+			byte[] assembled = ent.assembleData();
+			if (assembled == null || !zo.storeFile(1, assembled)) {
+				throw new IllegalStateException("could not write the sign furniture");
+			}
+			if (!zo.storeFile(2, s.getScriptBytes())) {
+				throw new IllegalStateException("could not write the sign script");
+			}
+		}
+		return wired;
 	}
 
 	private static Color textOn(Color c) {
