@@ -35,6 +35,7 @@ $suites = @(
     @{ n = "Prefabs";                     c = "ctrmap.tests.MapPrefabTest";          a = @($a039, $step) },
     @{ n = "RegionFactory (blank maps)";  c = "ctrmap.tests.RegionFactoryTest";      a = @($a039, $step) },
     @{ n = "PaintedRegion (tile editor)"; c = "ctrmap.tests.PaintedRegionTest";       a = @($a039) },
+    @{ n = "AreaEnv (fog/ambient)";       c = "ctrmap.tests.AreaEnvTest";             a = @((Join-Path $pristine "a\0\1\4")) },
     @{ n = "MapResizer";                  c = "ctrmap.tests.MapResizerTest";         a = @($a040) },
     @{ n = "LZ11 codec + ratio";          c = "ctrmap.tests.LZ11Test";               a = @($a039) },
     @{ n = "EncounterTable";              c = "ctrmap.tests.EncounterTableTest";     a = @($a013) },
