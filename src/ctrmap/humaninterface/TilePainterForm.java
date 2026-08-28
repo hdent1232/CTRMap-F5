@@ -989,6 +989,29 @@ public class TilePainterForm {
 		return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n");
 	}
 
+	/** A validated sign-routine donor script from the workspace ZoneData. */
+	private static ctrmap.formats.scripts.GFLPawnScript paletteSignDonor() {
+		final ctrmap.formats.garc.GARC zoneGarc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		if (zoneGarc == null) {
+			throw new ctrmap.formats.scripts.SignWrapperInjector.InjectionException("The ZoneData archive is not loaded.");
+		}
+		return ctrmap.formats.scripts.SignWrapperInjector.pickDonor(new ctrmap.formats.scripts.MsgWrapperInjector.ScriptSource() {
+			@Override
+			public ctrmap.formats.scripts.GFLPawnScript get(int zoneIndex) {
+				File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+				if (f == null || !f.exists()) {
+					return null;
+				}
+				try {
+					return ctrmap.formats.scripts.MsgWrapperInjector.extractZoneScript(
+							java.nio.file.Files.readAllBytes(f.toPath()));
+				} catch (Exception ex) {
+					return null;
+				}
+			}
+		}, zoneGarc.length);
+	}
+
 	/**
 	 * Makes placed SIGN pieces readable: for each, asks for the sign's text,
 	 * appends a storytext line, clones the zone's sign script (the proven
@@ -1014,11 +1037,27 @@ public class TilePainterForm {
 		ctrmap.formats.scripts.GFLPawnScript s = new ctrmap.formats.scripts.GFLPawnScript(zo.getFile(2));
 		s.decompressThis();
 		if (ctrmap.formats.scripts.ZoneScriptAnalyzer.findSignWrapper(s) == null) {
-			JOptionPane.showMessageDialog(frame, signs.size() + " sign(s) placed as scenery only: this zone's script has no\n"
-					+ "sign-display routine (69 of 536 vanilla zones have one). To make them\n"
-					+ "readable, base the zone on one that has signs, or use a Talking NPC.",
-					"Signs", JOptionPane.INFORMATION_MESSAGE);
-			return 0;
+			//no sign routine here (467 of 536 vanilla zones) - offer the vanilla
+			//transplant, the same proven mechanism as the talking-NPC routine
+			try {
+				ctrmap.formats.scripts.GFLPawnScript donor = paletteSignDonor();
+				int insCount = ctrmap.formats.scripts.SignWrapperInjector.countInjectedInstructions(s, donor);
+				if (JOptionPane.showConfirmDialog(frame,
+						"To make the placed sign(s) readable, this zone's script needs the vanilla\n"
+						+ "sign-display routine (" + insCount + " instructions) transplanted into it.\n"
+						+ "Inject it now? (Cancel keeps the signs as scenery.)",
+						"Signs", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
+					return 0;
+				}
+				ctrmap.formats.scripts.SignWrapperInjector.injectSignWrapper(s, donor);
+				if (ctrmap.formats.scripts.ZoneScriptAnalyzer.findSignWrapper(s) == null) {
+					throw new IllegalStateException("the injected routine did not verify");
+				}
+			} catch (RuntimeException ex) {
+				JOptionPane.showMessageDialog(frame, signs.size() + " sign(s) placed as scenery only - the sign routine could not\n"
+						+ "be transplanted: " + ex.getMessage(), "Signs", JOptionPane.INFORMATION_MESSAGE);
+				return 0;
+			}
 		}
 		int textID = mZonePnl.zone.header.textID;
 		File sf = Workspace.getStoryTextGARC() != null
