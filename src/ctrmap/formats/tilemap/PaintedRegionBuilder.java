@@ -83,6 +83,7 @@ public class PaintedRegionBuilder {
 			}
 			MapModelObj.ObjMesh om = buildQuadMesh(m, g, tiles);
 			byte[] vtx = MapModelObjImporter.buildVertexBytes(m, g, om);
+			uniformLighting(m, g, vtx); // even lighting instead of inherited donor shadows
 			current = m.setMeshGeometry(mi, vtx, om.triangles);
 		}
 		return current;
@@ -120,6 +121,40 @@ public class PaintedRegionBuilder {
 			om.triangles[i] = tris.get(i);
 		}
 		return om;
+	}
+
+	/**
+	 * Sets every vertex's color attribute to full white, so painted terrain is
+	 * evenly lit rather than carrying the donor's baked per-vertex shadows
+	 * (nearest-neighbor inheritance onto a flat grid looks blotchy). No-op when
+	 * the mesh has no buffered color attribute.
+	 */
+	static void uniformLighting(BchMapModel model, BchMapModel.MeshGeom g, byte[] vtx) {
+		BchMapModel.MeshAttr col = model.findAttr(g.meshIndex, 3); // Color
+		if (col == null) {
+			return;
+		}
+		int n = vtx.length / g.stride;
+		int compSize = col.size() / Math.max(1, col.elems);
+		for (int v = 0; v < n; v++) {
+			int base = v * g.stride + col.offset;
+			for (int c = 0; c < col.elems; c++) {
+				int o = base + c * compSize;
+				if (col.type == 3) { // float: 1.0
+					putF(vtx, o, 1f);
+				} else { // u8/s8: max
+					vtx[o] = (byte) 0xFF;
+				}
+			}
+		}
+	}
+
+	private static void putF(byte[] b, int o, float f) {
+		int v = Float.floatToIntBits(f);
+		b[o] = (byte) v;
+		b[o + 1] = (byte) (v >> 8);
+		b[o + 2] = (byte) (v >> 16);
+		b[o + 3] = (byte) (v >> 24);
 	}
 
 	private static void set(MapModelObj.ObjMesh om, int i, float x, float z, float[] uvScale) {
