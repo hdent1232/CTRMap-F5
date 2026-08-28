@@ -12,34 +12,57 @@ import java.util.Map;
 
 /**
  * Builds a full map region (visual model + collision + tilemap) from a painted
- * terrain grid, on top of a "tileset" donor region whose materials/textures it
- * reuses. This is the geometry engine behind the tile painter: for every
- * material the grid uses, the donor mesh with that material is regenerated as a
- * grid of textured quads over exactly the tiles of that terrain (via the
- * validated {@link BchMapModel#setMeshGeometry} + attribute-encoding path);
- * every other donor mesh collapses to a degenerate triangle. Collision is a
- * flat floor quad per walkable tile ({@link GfColl}); the tilemap carries each
- * terrain's measured tuple (walkability / wild encounters / surf).
- *
- * <p>Frame: region = 40x40 tiles, 18 world units per tile, center origin (tile
- * (0,0) at world -360,-360), floor at Y=0 (flat; elevation is a later layer).
+ * terrain grid + per-tile ELEVATION, on top of a "tileset" donor region whose
+ * materials/textures it reuses. The geometry engine behind the tile painter:
+ * <ul>
+ * <li>each terrain material's donor mesh is regenerated as textured floor quads
+ *     over its tiles, at each tile's height;</li>
+ * <li>where a tile is higher than a neighbour (or the map edge), a vertical
+ *     CLIFF quad is emitted on the shared edge using a cliff material, so raised
+ *     ground has walls;</li>
+ * <li>collision = a floor quad per walkable tile at its height + the cliff walls
+ *     (which block passage), via the retail-exact {@link GfColl};</li>
+ * <li>the tilemap carries each terrain's measured tuple;</li>
+ * <li>lighting is baked into vertex colors (tint x brightness x edge AO).</li>
+ * </ul>
+ * Frame: 40x40 tiles, 18 world units per tile, center origin (tile (0,0) at
+ * world -360,-360); one height level = {@link #STEP} world units.
  */
 public class PaintedRegionBuilder {
 
 	public static final int DIM = 40;
 	public static final float TILE = 18f;
 	public static final float ORIGIN = -360f;
+	/** World Y per height level (one tile tall). */
+	public static final float STEP = 18f;
 
-	/** Builds the region content from a {@code DIM x DIM} terrain grid (daytime lighting). */
-	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid) {
-		return build(donorModel, grid, TerrainLighting.daytime());
+	/** A textured quad (4 corners TL/TR/BL/BR) destined for one mesh. */
+	private static final class Quad {
+
+		final float[][] pos = new float[4][];
+		final float[][] uv = new float[4][];
+		final float[][] nrm = new float[4][];
+		final float[] ao = new float[4];
 	}
 
-	/** Builds the region content with the given baked terrain lighting. */
+	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid) {
+		return build(donorModel, grid, null, TerrainLighting.daytime());
+	}
+
 	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, TerrainLighting light) {
+		return build(donorModel, grid, null, light);
+	}
+
+	/**
+	 * @param height per-tile elevation in levels (null = all flat at 0).
+	 */
+	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, TerrainLighting light) {
+		if (height == null) {
+			height = new int[DIM][DIM];
+		}
 		RegionFactory.BlankContent out = new RegionFactory.BlankContent();
-		out.model = buildModel(donorModel, grid, light);
-		out.collision = buildCollision(grid);
+		out.model = buildModel(donorModel, grid, height, light);
+		out.collision = buildCollision(grid, height);
 		out.tilemap = buildTilemap(grid);
 		out.props = new byte[]{0, 0, 0, 0};
 		return out;
@@ -47,26 +70,31 @@ public class PaintedRegionBuilder {
 
 	// ---- visual model -----------------------------------------------------
 
-	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid, TerrainLighting light) {
+	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid, int[][] height, TerrainLighting light) {
 		BchMapModel probe = new BchMapModel(donorModel);
 		int meshCount = probe.meshCount;
-
-		// resolve each terrain's material mesh once, then group tiles by mesh
-		Map<TilePalette, Integer> terrainMesh = new HashMap<>();
 		int groundMesh = defaultGroundMesh(probe);
-		Map<Integer, List<int[]>> tilesByMesh = new HashMap<>();
+		int cliffMesh = resolveCliffMesh(probe, groundMesh);
+
+		Map<TilePalette, Integer> terrainMesh = new HashMap<>();
+		Map<Integer, List<Quad>> quadsByMesh = new HashMap<>();
 		for (int ty = 0; ty < DIM; ty++) {
 			for (int tx = 0; tx < DIM; tx++) {
 				TilePalette t = grid[ty][tx];
 				if (t == null || t == TilePalette.VOID) {
 					continue;
 				}
-				if (t == TilePalette.ROCK) {
-					// rock is a visible blocked obstacle - it still needs a painted quad
-				}
 				int mi = terrainMesh.computeIfAbsent(t, tp -> resolveMesh(probe, tp, groundMesh));
+				int h = height[ty][tx];
 				if (mi >= 0) {
-					tilesByMesh.computeIfAbsent(mi, k -> new ArrayList<>()).add(new int[]{tx, ty});
+					quadsByMesh.computeIfAbsent(mi, k -> new ArrayList<>()).add(floorQuad(grid, height, tx, ty, h, t));
+				}
+				// cliffs on edges where this tile is higher than the neighbour
+				for (int dir = 0; dir < 4; dir++) {
+					int hn = neighbourHeight(grid, height, tx, ty, dir);
+					if (hn < h) {
+						quadsByMesh.computeIfAbsent(cliffMesh, k -> new ArrayList<>()).add(cliffQuad(tx, ty, dir, hn, h));
+					}
 				}
 			}
 		}
@@ -76,81 +104,111 @@ public class PaintedRegionBuilder {
 			BchMapModel m = new BchMapModel(current);
 			BchMapModel.MeshGeom g = m.geometry().get(mi);
 			if (!g.posOk) {
-				continue; // exotic mesh - leave (small decorations); it will read as-is
+				continue;
 			}
-			List<int[]> tiles = tilesByMesh.get(mi);
-			if (tiles == null || tiles.isEmpty()) {
-				// unused: degenerate so no stray donor geometry shows
+			List<Quad> quads = quadsByMesh.get(mi);
+			if (quads == null || quads.isEmpty()) {
 				byte[] vtx = new byte[g.stride];
 				System.arraycopy(m.raw, g.vtxAbs, vtx, 0, g.stride);
 				current = m.setMeshGeometry(mi, vtx, new int[]{0, 0, 0});
 				continue;
 			}
-			MapModelObj.ObjMesh om = buildQuadMesh(m, g, tiles);
+			MapModelObj.ObjMesh om = meshFromQuads(m, g, quads);
 			byte[] vtx = MapModelObjImporter.buildVertexBytes(m, g, om);
-			bakeLighting(m, g, vtx, tiles, grid, light); // even light + edge shadows, not donor's baked shadows
+			bakeQuadLighting(m, g, vtx, quads, light);
 			current = m.setMeshGeometry(mi, vtx, om.triangles);
 		}
 		return current;
 	}
 
-	/** A quad grid over {@code tiles} with tiled UVs matching the donor mesh's texture density. */
-	static MapModelObj.ObjMesh buildQuadMesh(BchMapModel model, BchMapModel.MeshGeom g, List<int[]> tiles) {
-		float[] uvScale = measureUvScale(model, g);
+	/** Assembles an ObjMesh (positions/UVs/normals/tris) from a list of quads. */
+	static MapModelObj.ObjMesh meshFromQuads(BchMapModel model, BchMapModel.MeshGeom g, List<Quad> quads) {
+		float[] scale = measureUvScale(model, g);
 		MapModelObj.ObjMesh om = new MapModelObj.ObjMesh();
 		om.meshIndex = g.meshIndex;
-		int n = tiles.size();
+		int n = quads.size();
 		om.positions = new float[n * 4][];
 		om.uvs = new float[n * 4][];
 		om.normals = new float[n * 4][];
-		List<Integer> tris = new ArrayList<>(n * 6);
+		int[] tris = new int[n * 6];
 		for (int i = 0; i < n; i++) {
-			int tx = tiles.get(i)[0], ty = tiles.get(i)[1];
-			float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
-			float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
+			Quad q = quads.get(i);
 			int b = i * 4;
-			set(om, b, x0, z0, uvScale);
-			set(om, b + 1, x1, z0, uvScale);
-			set(om, b + 2, x0, z1, uvScale);
-			set(om, b + 3, x1, z1, uvScale);
-			// winding matched to RegionFactory's validated plane
-			tris.add(b);
-			tris.add(b + 2);
-			tris.add(b + 1);
-			tris.add(b + 1);
-			tris.add(b + 2);
-			tris.add(b + 3);
+			for (int c = 0; c < 4; c++) {
+				om.positions[b + c] = q.pos[c];
+				om.uvs[b + c] = new float[]{q.uv[c][0] * scale[0], q.uv[c][1] * scale[1]};
+				om.normals[b + c] = q.nrm[c];
+			}
+			int t = i * 6;
+			tris[t] = b;
+			tris[t + 1] = b + 2;
+			tris[t + 2] = b + 1;
+			tris[t + 3] = b + 1;
+			tris[t + 4] = b + 2;
+			tris[t + 5] = b + 3;
 		}
-		om.triangles = new int[tris.size()];
-		for (int i = 0; i < tris.size(); i++) {
-			om.triangles[i] = tris.get(i);
-		}
+		om.triangles = tris;
 		return om;
 	}
 
-	/**
-	 * Bakes the map lighting into each painted vertex's color attribute: the
-	 * light tint x brightness, darkened by procedural ambient occlusion where a
-	 * tile corner touches a wall/rock tile (so boundaries read like the game's
-	 * baked edge shadows) - replacing the donor's inherited per-vertex shadows.
-	 * Vertices are grouped 4-per-tile in {@code tiles} order, corners
-	 * TL/TR/BL/BR (see {@link #buildQuadMesh}). No-op if the mesh has no color.
-	 */
-	static void bakeLighting(BchMapModel model, BchMapModel.MeshGeom g, byte[] vtx,
-			List<int[]> tiles, TilePalette[][] grid, TerrainLighting light) {
-		BchMapModel.MeshAttr col = model.findAttr(g.meshIndex, 3); // Color
+	/** Flat floor quad for a tile at height h; UV = world XZ; AO from corners. */
+	static Quad floorQuad(TilePalette[][] grid, int[][] height, int tx, int ty, int h, TilePalette t) {
+		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
+		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
+		float y = h * STEP;
+		Quad q = new Quad();
+		float[][] p = {{x0, y, z0}, {x1, y, z0}, {x0, y, z1}, {x1, y, z1}};
+		int[][] corner = {{tx, ty}, {tx + 1, ty}, {tx, ty + 1}, {tx + 1, ty + 1}};
+		for (int c = 0; c < 4; c++) {
+			q.pos[c] = p[c];
+			q.uv[c] = new float[]{p[c][0], p[c][2]};
+			q.nrm[c] = new float[]{0f, 1f, 0f};
+			q.ao[c] = cornerAO(grid, height, corner[c][0], corner[c][1], h);
+		}
+		return q;
+	}
+
+	/** Vertical cliff quad on tile edge {@code dir}, spanning heights hn..h. */
+	static Quad cliffQuad(int tx, int ty, int dir, int hn, int h) {
+		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
+		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
+		float yb = hn * STEP, yt = h * STEP;
+		// endpoints of the shared edge (a..b) + outward normal
+		float ax, az, bx, bz, nx, nz;
+		switch (dir) {
+			case 0: ax = x1; az = z0; bx = x1; bz = z1; nx = 1; nz = 0; break;   // east
+			case 1: ax = x0; az = z1; bx = x0; bz = z0; nx = -1; nz = 0; break;  // west
+			case 2: ax = x1; az = z1; bx = x0; bz = z1; nx = 0; nz = 1; break;   // south
+			default: ax = x0; az = z0; bx = x1; bz = z0; nx = 0; nz = -1; break; // north
+		}
+		Quad q = new Quad();
+		// TL=top-a, TR=top-b, BL=bottom-a, BR=bottom-b (horizontal u along edge, v = height)
+		float[][] p = {{ax, yt, az}, {bx, yt, bz}, {ax, yb, az}, {bx, yb, bz}};
+		float lenA = 0f, lenB = dist(ax, az, bx, bz);
+		float[] uPos = {0, lenB, 0, lenB};
+		float[] vPos = {yt, yt, yb, yb};
+		float[] aoTop = {0.9f, 0.9f, 0.55f, 0.55f}; // cliffs darker toward the base
+		for (int c = 0; c < 4; c++) {
+			q.pos[c] = p[c];
+			q.uv[c] = new float[]{uPos[c], vPos[c]};
+			q.nrm[c] = new float[]{nx, 0f, nz};
+			q.ao[c] = aoTop[c];
+		}
+		return q;
+	}
+
+	/** Bakes tint x brightness x per-corner AO into each quad's 4 vertex colors. */
+	static void bakeQuadLighting(BchMapModel model, BchMapModel.MeshGeom g, byte[] vtx, List<Quad> quads, TerrainLighting light) {
+		BchMapModel.MeshAttr col = model.findAttr(g.meshIndex, 3);
 		if (col == null) {
 			return;
 		}
 		int compSize = col.size() / Math.max(1, col.elems);
-		for (int t = 0; t < tiles.size(); t++) {
-			int tx = tiles.get(t)[0], ty = tiles.get(t)[1];
-			// four corners: TL(tx,ty) TR(tx+1,ty) BL(tx,ty+1) BR(tx+1,ty+1)
-			int[][] corners = {{tx, ty}, {tx + 1, ty}, {tx, ty + 1}, {tx + 1, ty + 1}};
+		for (int i = 0; i < quads.size(); i++) {
+			Quad q = quads.get(i);
 			for (int c = 0; c < 4; c++) {
-				float ao = cornerAO(grid, corners[c][0], corners[c][1]);
-				int[] rgba = light.vertexColor(ao);
-				int base = (t * 4 + c) * g.stride + col.offset;
+				int[] rgba = light.vertexColor(q.ao[c]);
+				int base = (i * 4 + c) * g.stride + col.offset;
 				for (int k = 0; k < col.elems; k++) {
 					int o = base + k * compSize;
 					if (col.type == 3) {
@@ -163,9 +221,8 @@ public class PaintedRegionBuilder {
 		}
 	}
 
-	/** Ambient-occlusion at a grid point: 1 (open) down toward 0 as the 4 tiles
-	 *  touching it are walls/rock. Gives smooth shadows along boundaries. */
-	private static float cornerAO(TilePalette[][] grid, int gx, int gy) {
+	/** AO at a grid point for a tile at {@code myHeight}: darker next to walls or taller ground. */
+	private static float cornerAO(TilePalette[][] grid, int[][] height, int gx, int gy, int myHeight) {
 		int occ = 0, total = 0;
 		for (int dy = -1; dy <= 0; dy++) {
 			for (int dx = -1; dx <= 0; dx++) {
@@ -175,32 +232,97 @@ public class PaintedRegionBuilder {
 				}
 				total++;
 				TilePalette t = grid[y][x];
-				if (t == null || !t.walkable) {
+				if (t == null || !t.walkable || height[y][x] > myHeight) {
 					occ++;
 				}
 			}
 		}
-		if (total == 0) {
-			return 1f;
+		return total == 0 ? 1f : 1f - (float) occ / total;
+	}
+
+	private static int neighbourHeight(TilePalette[][] grid, int[][] height, int tx, int ty, int dir) {
+		int nx = tx + (dir == 0 ? 1 : dir == 1 ? -1 : 0);
+		int ny = ty + (dir == 2 ? 1 : dir == 3 ? -1 : 0);
+		if (nx < 0 || ny < 0 || nx >= DIM || ny >= DIM) {
+			return 0; // map edge = drop to base
 		}
-		return 1f - (float) occ / total;
+		TilePalette t = grid[ny][nx];
+		if (t == null || t == TilePalette.VOID) {
+			return 0; // void = drop to base (so raised ground gets a wall)
+		}
+		return height[ny][nx];
 	}
 
-	private static void putF(byte[] b, int o, float f) {
-		int v = Float.floatToIntBits(f);
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
+	// ---- collision --------------------------------------------------------
+
+	static byte[] buildCollision(TilePalette[][] grid, int[][] height) {
+		List<float[]> tris = new ArrayList<>();
+		for (int ty = 0; ty < DIM; ty++) {
+			for (int tx = 0; tx < DIM; tx++) {
+				TilePalette t = grid[ty][tx];
+				int h = height[ty][tx];
+				float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
+				float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
+				float y = h * STEP;
+				if (t != null && t.floor) {
+					tris.add(new float[]{x0, y, z0, x0, y, z1, x1, y, z0});
+					tris.add(new float[]{x1, y, z0, x0, y, z1, x1, y, z1});
+				}
+				if (t == null || t == TilePalette.VOID) {
+					continue;
+				}
+				// cliff walls (block passage between levels)
+				for (int dir = 0; dir < 4; dir++) {
+					int hn = neighbourHeight(grid, height, tx, ty, dir);
+					if (hn < h) {
+						addCliffCollision(tris, tx, ty, dir, hn, h);
+					}
+				}
+			}
+		}
+		if (tris.isEmpty()) {
+			tris.add(new float[]{ORIGIN, 0, ORIGIN, ORIGIN, 0, ORIGIN + TILE, ORIGIN + TILE, 0, ORIGIN});
+		}
+		return GfColl.build(tris, null);
 	}
 
-	private static void set(MapModelObj.ObjMesh om, int i, float x, float z, float[] uvScale) {
-		om.positions[i] = new float[]{x, 0f, z};
-		om.uvs[i] = new float[]{x * uvScale[0], z * uvScale[1]};
-		om.normals[i] = new float[]{0f, 1f, 0f};
+	private static void addCliffCollision(List<float[]> tris, int tx, int ty, int dir, int hn, int h) {
+		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
+		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
+		float yb = hn * STEP, yt = h * STEP;
+		float ax, az, bx, bz;
+		switch (dir) {
+			case 0: ax = x1; az = z0; bx = x1; bz = z1; break;
+			case 1: ax = x0; az = z1; bx = x0; bz = z0; break;
+			case 2: ax = x1; az = z1; bx = x0; bz = z1; break;
+			default: ax = x0; az = z0; bx = x1; bz = z0; break;
+		}
+		tris.add(new float[]{ax, yt, az, ax, yb, az, bx, yt, bz});
+		tris.add(new float[]{bx, yt, bz, ax, yb, az, bx, yb, bz});
 	}
 
-	/** UV units per world unit for a donor mesh (preserves its texture density). */
+	// ---- tilemap ----------------------------------------------------------
+
+	static byte[] buildTilemap(TilePalette[][] grid) {
+		byte[] out = new byte[6528];
+		out[0] = (byte) DIM;
+		out[2] = (byte) DIM;
+		for (int ty = 0; ty < DIM; ty++) {
+			for (int tx = 0; tx < DIM; tx++) {
+				TilePalette t = grid[ty][tx];
+				int[] tuple = (t == null ? TilePalette.VOID : t).tuple;
+				int off = 4 + (ty * DIM + tx) * 4;
+				out[off] = (byte) tuple[0];
+				out[off + 1] = (byte) tuple[1];
+				out[off + 2] = (byte) tuple[2];
+				out[off + 3] = (byte) tuple[3];
+			}
+		}
+		return out;
+	}
+
+	// ---- material resolution + UV scale -----------------------------------
+
 	static float[] measureUvScale(BchMapModel model, BchMapModel.MeshGeom g) {
 		BchMapModel.MeshAttr uv = model.findAttr(g.meshIndex, 4);
 		float def = 1f / 36f;
@@ -224,7 +346,6 @@ public class PaintedRegionBuilder {
 		}
 		float sx = maxX - minX > 1f ? Math.abs(maxU - minU) / (maxX - minX) : def;
 		float sz = maxZ - minZ > 1f ? Math.abs(maxV - minV) / (maxZ - minZ) : def;
-		// clamp to a sane tiling range so a degenerate donor UV doesn't blow up
 		return new float[]{clampScale(sx, def), clampScale(sz, def)};
 	}
 
@@ -250,7 +371,22 @@ public class PaintedRegionBuilder {
 		return fallback;
 	}
 
-	/** The biggest editable mesh - the ground - used as the fallback material. */
+	/** The cliff material mesh (gake/cliff/rock), or the rock/ground fallback. */
+	private static int resolveCliffMesh(BchMapModel model, int fallback) {
+		for (String hint : new String[]{"gake", "cliff", "chip_rock", "rock", "iwa"}) {
+			for (BchMapModel.MeshGeom g : model.geometry()) {
+				if (!g.posOk) {
+					continue;
+				}
+				String name = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
+				if (name != null && name.toLowerCase().contains(hint)) {
+					return g.meshIndex;
+				}
+			}
+		}
+		return fallback;
+	}
+
 	private static int defaultGroundMesh(BchMapModel model) {
 		int best = -1, bestTris = -1;
 		for (BchMapModel.MeshGeom g : model.geometry()) {
@@ -265,47 +401,17 @@ public class PaintedRegionBuilder {
 		return best;
 	}
 
-	// ---- collision --------------------------------------------------------
-
-	static byte[] buildCollision(TilePalette[][] grid) {
-		List<float[]> tris = new ArrayList<>();
-		for (int ty = 0; ty < DIM; ty++) {
-			for (int tx = 0; tx < DIM; tx++) {
-				TilePalette t = grid[ty][tx];
-				if (t == null || !t.floor) {
-					continue;
-				}
-				float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
-				float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
-				tris.add(new float[]{x0, 0, z0, x0, 0, z1, x1, 0, z0});
-				tris.add(new float[]{x1, 0, z0, x0, 0, z1, x1, 0, z1});
-			}
-		}
-		if (tris.isEmpty()) {
-			// a region with no floor still needs a valid coll subfile
-			tris.add(new float[]{ORIGIN, 0, ORIGIN, ORIGIN, 0, ORIGIN + TILE, ORIGIN + TILE, 0, ORIGIN});
-		}
-		return GfColl.build(tris, null);
+	private static float dist(float ax, float az, float bx, float bz) {
+		float dx = bx - ax, dz = bz - az;
+		return (float) Math.sqrt(dx * dx + dz * dz);
 	}
 
-	// ---- tilemap ----------------------------------------------------------
-
-	static byte[] buildTilemap(TilePalette[][] grid) {
-		byte[] out = new byte[6528];
-		out[0] = (byte) DIM;
-		out[2] = (byte) DIM;
-		for (int ty = 0; ty < DIM; ty++) {
-			for (int tx = 0; tx < DIM; tx++) {
-				TilePalette t = grid[ty][tx];
-				int[] tuple = (t == null ? TilePalette.VOID : t).tuple;
-				int off = 4 + (ty * DIM + tx) * 4;
-				out[off] = (byte) tuple[0];
-				out[off + 1] = (byte) tuple[1];
-				out[off + 2] = (byte) tuple[2];
-				out[off + 3] = (byte) tuple[3];
-			}
-		}
-		return out;
+	private static void putF(byte[] b, int o, float f) {
+		int v = Float.floatToIntBits(f);
+		b[o] = (byte) v;
+		b[o + 1] = (byte) (v >> 8);
+		b[o + 2] = (byte) (v >> 16);
+		b[o + 3] = (byte) (v >> 24);
 	}
 
 	private static float f32(byte[] b, int o) {
