@@ -1,0 +1,61 @@
+package ctrmap.formats.tilemap;
+
+import java.awt.Color;
+
+/**
+ * The terrain brushes for the tile painter. Each terrain carries its measured
+ * ORAS tilemap tuple (drives walkability + wild encounters + surf), the visual
+ * material it paints with (matched by name against a "tileset" donor region -
+ * a real map rich in terrain materials, e.g. Route 101), whether it produces a
+ * walkable collision floor, and a swatch color for the paint UI.
+ *
+ * <p>Tuples measured from retail (byte order = tilemap file bytes 0..3):
+ * ground {@code 20 00 00 00}, tall grass {@code 06 00 18 3D} (wild encounters),
+ * water {@code 06 00 1A 3D} (surf), wall/void {@code 21 00 00 01},
+ * sand {@code 20 80 0A 02}.
+ */
+public enum TilePalette {
+
+	GRASS("Grass", new int[]{0x20, 0x00, 0x00, 0x00}, true, true, 0x6DBE5A,
+			new String[]{"chip_kusa", "kusa", "grass", "happa", "shiba"}),
+	TALL_GRASS("Tall grass (wild Pokemon)", new int[]{0x06, 0x00, 0x18, 0x3D}, true, true, 0x2E7D32,
+			new String[]{"kusa", "grass", "happa"}),
+	PATH("Path / dirt", new int[]{0x20, 0x00, 0x00, 0x00}, true, true, 0xC2A76A,
+			new String[]{"soil", "michi", "road", "path", "chip_wood", "wood", "dirt"}),
+	SAND("Sand / beach", new int[]{0x20, 0x80, 0x0A, 0x02}, true, true, 0xE7D6A0,
+			new String[]{"suna", "sand", "beach", "hama"}),
+	WATER("Water (surf)", new int[]{0x06, 0x00, 0x1A, 0x3D}, true, true, 0x3E74E8,
+			new String[]{"chip_sea", "sea", "umi", "water", "mizu"}),
+	ROCK("Rock / wall (blocked)", new int[]{0x21, 0x00, 0x00, 0x01}, false, false, 0x8C8C8C,
+			new String[]{"chip_rock", "rock", "iwa", "gake", "ishi", "stone"}),
+	VOID("Empty / blocked", new int[]{0x21, 0x00, 0x00, 0x01}, false, false, 0x2B2B2B,
+			new String[]{});
+
+	public final String label;
+	public final int[] tuple;
+	/** Walkable = the player (or surf) can enter; drives whether a floor is laid. */
+	public final boolean walkable;
+	/** True to emit a collision floor quad for this tile. */
+	public final boolean floor;
+	public final int rgb;
+	/** Material-name substrings (lowercased) to match in the tileset donor, best first. */
+	public final String[] matHints;
+
+	TilePalette(String label, int[] tuple, boolean walkable, boolean floor, int rgb, String[] matHints) {
+		this.label = label;
+		this.tuple = tuple;
+		this.walkable = walkable;
+		this.floor = floor;
+		this.rgb = rgb;
+		this.matHints = matHints;
+	}
+
+	public Color color() {
+		return new Color(rgb);
+	}
+
+	/** The paintable brushes (VOID is the default background, not a brush swatch). */
+	public static TilePalette[] brushes() {
+		return new TilePalette[]{GRASS, TALL_GRASS, PATH, SAND, WATER, ROCK};
+	}
+}
