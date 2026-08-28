@@ -42,6 +42,23 @@ public class TilePainterForm {
 
 	private static final int DIM = PaintedRegionBuilder.DIM;
 
+	/** A building/decoration placed on the painter grid (anchor = top-left tile). */
+	static class Placed {
+
+		final ctrmap.formats.h3d.BuildingCatalog.Entry e;
+		final int tx, ty;
+
+		Placed(ctrmap.formats.h3d.BuildingCatalog.Entry e, int tx, int ty) {
+			this.e = e;
+			this.tx = tx;
+			this.ty = ty;
+		}
+
+		boolean contains(int x, int y) {
+			return x >= tx && y >= ty && x < tx + e.tilesW() && y < ty + e.tilesH();
+		}
+	}
+
 	public static void show() {
 		if (!Workspace.valid || !Workspace.isOA()) {
 			JOptionPane.showMessageDialog(frame, "Load an ORAS workspace first.", "Tile painter", JOptionPane.ERROR_MESSAGE);
@@ -70,6 +87,8 @@ public class TilePainterForm {
 		final boolean[][] ramp = new boolean[DIM][DIM];
 		final ctrmap.formats.tilemap.TerrainLighting lighting = ctrmap.formats.tilemap.TerrainLighting.daytime();
 		final boolean[] edgeBlend = {true}; // GameFreak grass<->dirt/sand transition strips
+		final java.util.List<Placed> placedBuildings = new java.util.ArrayList<>();
+		final ctrmap.formats.h3d.BuildingCatalog.Entry[] pendingPlace = {null};
 
 		// the region's own model = the tileset donor (materials + textures + area
 		// all correct); used for the textured previews and the generated geometry
@@ -84,7 +103,7 @@ public class TilePainterForm {
 		}
 		final byte[] donorModel = donorTmp;
 
-		final GridCanvas canvas = new GridCanvas(grid, height, ramp, brush, tool, terrainTex);
+		final GridCanvas canvas = new GridCanvas(grid, height, ramp, brush, tool, terrainTex, placedBuildings, pendingPlace);
 
 		final JDialog dlg = new JDialog(frame, "Tile painter - zone " + zoneIndex, true);
 		dlg.setLayout(new BorderLayout(8, 8));
@@ -118,6 +137,26 @@ public class TilePainterForm {
 		brushScroll.setPreferredSize(new Dimension(216, 176));
 		brushScroll.setAlignmentX(0f);
 		side.add(brushScroll);
+		side.add(javax.swing.Box.createVerticalStrut(6));
+
+		// buildings & decorations: pick from the mined retail catalog, click to place
+		final JButton buildingsBtn = new JButton("Buildings & decor...");
+		final JLabel placeStatus = new JLabel(" ");
+		buildingsBtn.setAlignmentX(0f);
+		buildingsBtn.setFocusable(false);
+		buildingsBtn.setToolTipText("Pokémon Centers, Marts, houses, signs, trees - pick one and click the grid to place it. Right-click a placed one to remove it.");
+		buildingsBtn.addActionListener(e -> {
+			ctrmap.formats.h3d.BuildingCatalog.Entry pick = BuildingPaletteDialog.pick(dlg, donorModel,
+					mTileMapPanel.getWorldTextures());
+			if (pick != null) {
+				pendingPlace[0] = pick;
+				placeStatus.setText("<html><b>Placing: " + pick.name + "</b> - click the grid</html>");
+			}
+		});
+		side.add(buildingsBtn);
+		placeStatus.setAlignmentX(0f);
+		side.add(placeStatus);
+		canvas.placeStatus = placeStatus;
 		side.add(javax.swing.Box.createVerticalStrut(10));
 		side.add(new JLabel("Tool:"));
 		ButtonGroup tg = new ButtonGroup();
@@ -171,7 +210,7 @@ public class TilePainterForm {
 		view3d.setFocusable(false);
 		view3d.setEnabled(donorModel != null);
 		view3d.setToolTipText("Render the painted map with CTRMap's 3D engine - how it actually looks (drag to orbit).");
-		view3d.addActionListener(e -> open3DPreview(donorModel, grid, height, ramp, lighting, edgeBlend[0]));
+		view3d.addActionListener(e -> open3DPreview(donorModel, grid, height, ramp, lighting, edgeBlend[0], placedBuildings));
 		side.add(view3d);
 
 		// GameFreak-style transition strips along grass<->dirt/sand seams (the "blend"
@@ -326,7 +365,7 @@ public class TilePainterForm {
 				return;
 			}
 			try {
-				applyToZone(zoneIndex, grid, height, ramp, lighting, edgeBlend[0]);
+				applyToZone(zoneIndex, grid, height, ramp, lighting, edgeBlend[0], placedBuildings);
 				dlg.dispose();
 			} catch (Exception ex) {
 				JOptionPane.showMessageDialog(dlg, "Apply failed:\n" + ex.getMessage(), "Tile painter", JOptionPane.ERROR_MESSAGE);
@@ -455,12 +494,65 @@ public class TilePainterForm {
 		return changed;
 	}
 
+	/**
+	 * Stamps every placed building into a freshly built region (geometry,
+	 * collision, movement tiles - the retail footprint tuples ride along, door
+	 * tile included), collecting per-donor-area texture needs. Throws on any
+	 * failure so a half-stamped map is never applied.
+	 */
+	private static void stampPlaced(RegionFactory.BlankContent bc, java.util.List<Placed> placed,
+			java.util.Map<Integer, java.util.Set<String>> texNeeds) {
+		for (Placed pl : placed) {
+			ctrmap.formats.h3d.MapPrefab p = BuildingPaletteDialog.cachedPrefab(pl.e);
+			if (p == null) {
+				throw new IllegalStateException("could not cut \"" + pl.e.name + "\" from the dump");
+			}
+			ctrmap.formats.h3d.MapPrefab.StampResult r = p.stampGeometry(bc.model, pl.tx, pl.ty, 0f);
+			if (r.stamped.isEmpty()) {
+				throw new IllegalStateException("\"" + pl.e.name + "\" could not be stamped"
+						+ (r.missingMaterials.isEmpty() ? "" : " (missing materials: " + r.missingMaterials + ")"));
+			}
+			bc.model = r.newModel;
+			bc.collision = p.stampCollision(bc.collision, pl.tx, pl.ty, 0f);
+			if (p.tiles != null) {
+				for (int y = 0; y < p.tilesH; y++) {
+					for (int x = 0; x < p.tilesW; x++) {
+						int gx = pl.tx + x, gy = pl.ty + y;
+						if (gx < DIM && gy < DIM && p.tiles[x] != null && p.tiles[x][y] != null) {
+							System.arraycopy(p.tiles[x][y], 0, bc.tilemap, 4 + (gy * DIM + gx) * 4, 4);
+						}
+					}
+				}
+			}
+			if (texNeeds != null && !r.texturesNeeded.isEmpty()) {
+				texNeeds.computeIfAbsent(pl.e.donorArea, k -> new java.util.LinkedHashSet<>()).addAll(r.texturesNeeded);
+			}
+		}
+		java.util.List<String> errs = new BchMapModel(bc.model).validate();
+		if (!errs.isEmpty()) {
+			throw new IllegalStateException("stamped model failed validation: " + errs.get(0));
+		}
+	}
+
 	/** Generates the model from the current grid and shows it in the real 3D renderer. */
-	private static void open3DPreview(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges) {
+	private static void open3DPreview(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed) {
 		try {
-			byte[] model = PaintedRegionBuilder.build(donorModel, grid, height, ramp, lighting, edges).model;
+			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donorModel, grid, height, ramp, lighting, edges);
+			if (!placed.isEmpty()) {
+				stampPlaced(bc, placed, null);
+			}
+			byte[] model = bc.model;
+			java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> texes
+					= new java.util.ArrayList<>(mTileMapPanel.getWorldTextures());
+			java.util.Set<Integer> donorAreas = new java.util.LinkedHashSet<>();
+			for (Placed pl : placed) {
+				donorAreas.add(pl.e.donorArea);
+			}
+			for (int area : donorAreas) {
+				texes.addAll(BuildingPaletteDialog.donorTextures(area));
+			}
 			MapPreview3D view = new MapPreview3D();
-			view.setRegion(model, mTileMapPanel.getWorldTextures());
+			view.setRegion(model, texes);
 			// show the zone's area fog/atmosphere in the preview
 			try {
 				int areaId = mZonePnl.zone.header.areadataID;
@@ -488,9 +580,11 @@ public class TilePainterForm {
 		}
 	}
 
-	private static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, boolean[][] ramp, ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges) throws Exception {
+	private static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, boolean[][] ramp,
+			ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed) throws Exception {
 		GeometryForker.ForkResult r = GeometryForker.forkGeometry(zoneIndex);
 		File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
+		java.util.Map<Integer, java.util.Set<String>> texNeeds = new java.util.LinkedHashMap<>();
 		for (int newRegion : r.newRegions) {
 			File f = new File(fdDir, String.valueOf(newRegion));
 			GR gr = new GR(f);
@@ -499,11 +593,34 @@ public class TilePainterForm {
 				continue;
 			}
 			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donor, grid, height, ramp, lighting, edges);
+			if (!placed.isEmpty()) {
+				stampPlaced(bc, placed, texNeeds);
+			}
 			gr.storeFile(1, bc.model);
 			gr.storeFile(2, bc.collision);
 			gr.storeFile(0, bc.tilemap);
 			gr.storeFile(3, bc.props);
 		}
+		// stamped pieces reference their donor areas' textures - carry any the
+		// zone's area lacks, or the game hardlocks on load
+		StringBuilder texNote = new StringBuilder();
+		int zoneArea = mZonePnl.zone.header.areadataID;
+		for (java.util.Map.Entry<Integer, java.util.Set<String>> en : texNeeds.entrySet()) {
+			if (en.getKey() == zoneArea) {
+				continue;
+			}
+			texNote.append(ctrmap.formats.h3d.BchTexturePack.carryToArea(
+					en.getKey(), zoneArea, new java.util.ArrayList<>(en.getValue())).trim()).append('\n');
+		}
+		int enterable = 0;
+		for (Placed pl : placed) {
+			if (pl.e.enterable()) {
+				enterable++;
+			}
+		}
+		final String extras = (texNote.length() > 0 ? "\n" + texNote.toString().trim() : "")
+				+ (enterable > 0 ? "\n\n" + enterable + " placed building(s) have doors - wire each door's warp to an\n"
+						+ "interior zone (Warp tool; clone a real interior so its exit returns here)." : "");
 		Workspace.packWorkspace(new Runnable() {
 			@Override
 			public void run() {
@@ -513,7 +630,8 @@ public class TilePainterForm {
 						mZonePnl.selectZone(zoneIndex);
 						JOptionPane.showMessageDialog(frame,
 								"Painted map applied to zone " + zoneIndex + " (region(s) "
-								+ java.util.Arrays.toString(r.newRegions) + ").\nDeploy to emulator to walk on it.",
+								+ java.util.Arrays.toString(r.newRegions) + ").\nDeploy to emulator to walk on it."
+								+ extras,
 								"Tile painter", JOptionPane.INFORMATION_MESSAGE);
 					}
 				});
@@ -595,16 +713,23 @@ public class TilePainterForm {
 		final TilePalette[] brush;
 		final int[] tool;
 		final ctrmap.formats.tilemap.TerrainTextures terrainTex;
+		final java.util.List<Placed> placed;
+		final ctrmap.formats.h3d.BuildingCatalog.Entry[] pending;
+		JLabel placeStatus;
 		boolean textured = false;
 		private final java.util.Map<TilePalette, java.awt.TexturePaint> paintCache = new java.util.HashMap<>();
 
-		GridCanvas(TilePalette[][] grid, int[][] height, boolean[][] ramp, TilePalette[] brush, int[] tool, ctrmap.formats.tilemap.TerrainTextures terrainTex) {
+		GridCanvas(TilePalette[][] grid, int[][] height, boolean[][] ramp, TilePalette[] brush, int[] tool,
+				ctrmap.formats.tilemap.TerrainTextures terrainTex,
+				java.util.List<Placed> placed, ctrmap.formats.h3d.BuildingCatalog.Entry[] pending) {
 			this.grid = grid;
 			this.height = height;
 			this.ramp = ramp;
 			this.brush = brush;
 			this.tool = tool;
 			this.terrainTex = terrainTex;
+			this.placed = placed;
+			this.pending = pending;
 			setPreferredSize(new Dimension(DIM * CELL + 1, DIM * CELL + 1));
 			MouseAdapter ma = new MouseAdapter() {
 				@Override
@@ -629,6 +754,34 @@ public class TilePainterForm {
 				return;
 			}
 			boolean right = javax.swing.SwingUtilities.isRightMouseButton(e);
+			// building placement mode: left click drops the pending building
+			if (pending[0] != null) {
+				if (!right) {
+					int px = Math.max(0, Math.min(DIM - pending[0].tilesW(), tx));
+					int py = Math.max(0, Math.min(DIM - pending[0].tilesH(), ty));
+					placed.add(new Placed(pending[0], px, py));
+				}
+				pending[0] = null; // right click cancels
+				if (placeStatus != null) {
+					placeStatus.setText(" ");
+				}
+				repaint();
+				return;
+			}
+			// right click on a placed building removes it (ramp tool keeps its
+			// own right-click meaning: clearing ramp flags)
+			if (right && tool[0] != 4) {
+				for (int i = placed.size() - 1; i >= 0; i--) {
+					if (placed.get(i).contains(tx, ty)) {
+						if (JOptionPane.showConfirmDialog(this, "Remove \"" + placed.get(i).e.name + "\"?",
+								"Buildings", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+							placed.remove(i);
+							repaint();
+						}
+						return;
+					}
+				}
+			}
 			switch (tool[0]) {
 				case 1:
 					flood(tx, ty, grid[ty][tx], brush[0]);
@@ -735,6 +888,23 @@ public class TilePainterForm {
 						g2.drawPolygon(new int[]{cx + 2, cx + CELL - 2, cx + CELL / 2},
 								new int[]{cy + CELL - 3, cy + CELL - 3, cy + 3}, 3);
 					}
+				}
+			}
+			// placed buildings/decor: translucent footprint + name + door marker
+			for (Placed p : placed) {
+				int x = p.tx * CELL, y = p.ty * CELL;
+				int w = p.e.tilesW() * CELL, h = p.e.tilesH() * CELL;
+				g2.setColor(new Color(70, 60, 160, 70));
+				g2.fillRect(x, y, w, h);
+				g2.setColor(new Color(60, 50, 140));
+				g2.drawRect(x, y, w - 1, h - 1);
+				g2.setFont(getFont().deriveFont(java.awt.Font.BOLD, 10f));
+				g2.setColor(Color.WHITE);
+				g2.drawString(p.e.name, x + 3, y + 12);
+				if (p.e.doorDX >= 0) {
+					int dx = (p.tx + p.e.doorDX) * CELL, dy2 = (p.ty + p.e.doorDY) * CELL;
+					g2.setColor(new Color(255, 140, 40));
+					g2.fillRect(dx + 3, dy2 + 3, CELL - 6, CELL - 6);
 				}
 			}
 		}
