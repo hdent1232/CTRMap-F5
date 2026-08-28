@@ -63,10 +63,13 @@ public class EncounterEditDialog {
 		jt.getColumnModel().getColumn(0).setPreferredWidth(140);
 		jt.getColumnModel().getColumn(2).setPreferredWidth(70);
 		jt.getColumnModel().getColumn(3).setPreferredWidth(120);
+		//double-click the species column -> the visual picker (stat/type card)
+		ctrmap.humaninterface.pokepick.PokePickers.installDoubleClickPickers(jt, col
+				-> col == 2 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.SPECIES : null);
 
 		final JDialog dlg = new JDialog(parent, "Wild encounters - zone " + zoneIndex, true);
 		dlg.setLayout(new BorderLayout());
-		dlg.add(new JLabel("  Species 0 = empty slot. Rates are managed automatically (retail defaults when a method gains Pokemon)."), BorderLayout.NORTH);
+		dlg.add(new JLabel("  Double-click a Species to pick it visually (types + stats). Species 0 = empty slot. Rates are managed automatically."), BorderLayout.NORTH);
 		dlg.add(new JScrollPane(jt), BorderLayout.CENTER);
 
 		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -225,7 +228,8 @@ public class EncounterEditDialog {
 
 		@Override
 		public boolean isCellEditable(int r, int c) {
-			return c == 2 || c == 4 || c == 5 || c == 6;
+			//species (col 2) opens the visual picker on double-click; form/levels are typed
+			return c == 4 || c == 5 || c == 6;
 		}
 
 		private EncounterTable.Slot slot(int r) {
