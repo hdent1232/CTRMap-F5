@@ -53,6 +53,7 @@ $suites = @(
     @{ n = "MaisonSet (opponents)";       c = "ctrmap.tests.MaisonSetTest";          a = @() },
     @{ n = "MaisonClassList (teams)";     c = "ctrmap.tests.MaisonClassListTest";    a = @() },
     @{ n = "ZoneAppend";                  c = "ctrmap.tests.ZoneAppendTest";         a = @() },
+    @{ n = "ZoneRemove (GARC shrink)";    c = "ctrmap.tests.ZoneRemoveTest";         a = @($a013) },
     @{ n = "ZoneLimitPatch";              c = "ctrmap.tests.ZoneLimitPatchTest";     a = @() },
     @{ n = "ShopData (mart inventories)"; c = "ctrmap.tests.ShopDataTest";           a = @() }
 )
