@@ -105,6 +105,7 @@ public class CtrmapMainframe {
 	public static JMenuItem forkGeometry;
 	public static JMenuItem blankCanvas;
 	public static JMenuItem tilePainter;
+	public static JMenuItem areaLighting;
 	public static JMenuItem resizeMap;
 	public static JMenuItem wildEncounters;
 	public static JMenuItem trainerEditor;
@@ -205,6 +206,7 @@ public class CtrmapMainframe {
 		forkGeometry = new JMenuItem("Fork map geometry (make zone independent)...");
 		blankCanvas = new JMenuItem("Blank map canvas (this zone)...");
 		tilePainter = new JMenuItem("Paint map tiles (this zone)...");
+		areaLighting = new JMenuItem("Edit area fog & lighting...");
 		wildEncounters = new JMenuItem("Edit wild encounters (this zone)...");
 		resizeMap = new JMenuItem("Resize map (this zone)...");
 		trainerEditor = new JMenuItem("Edit trainer (party/battle)...");
@@ -452,6 +454,12 @@ public class CtrmapMainframe {
 				ctrmap.humaninterface.TilePainterForm.show();
 			}
 		});
+		areaLighting.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ctrmap.humaninterface.AreaLightingDialog.show(frame);
+			}
+		});
 		wildEncounters.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -640,6 +648,7 @@ public class CtrmapMainframe {
 		toolsmenu.add(forkGeometry);
 		toolsmenu.add(blankCanvas);
 		toolsmenu.add(tilePainter);
+		toolsmenu.add(areaLighting);
 		toolsmenu.add(wildEncounters);
 		toolsmenu.add(resizeMap);
 		toolsmenu.add(trainerEditor);

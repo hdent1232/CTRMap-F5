@@ -258,6 +258,16 @@ public class TilePainterForm {
 			byte[] model = PaintedRegionBuilder.build(donorModel, grid, height, lighting).model;
 			MapPreview3D view = new MapPreview3D();
 			view.setRegion(model, mTileMapPanel.getWorldTextures());
+			// show the zone's area fog/atmosphere in the preview
+			try {
+				int areaId = mZonePnl.zone.header.areadataID;
+				ctrmap.formats.containers.AD ad = new ctrmap.formats.containers.AD(
+						Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areaId));
+				ctrmap.formats.area.AreaEnv env = ctrmap.formats.area.AreaEnv.read(ad.getFile(4));
+				view.setFog(env.fogColor[0], env.fogColor[1], env.fogColor[2], env.fogNear, env.fogFar);
+			} catch (Exception ignore) {
+				// no fog data - preview just uses the plain sky
+			}
 			view.setPreferredSize(new Dimension(640, 520));
 			final JDialog d = new JDialog(frame, "3D preview - how the map looks (drag to orbit, wheel to zoom)", false);
 			d.add(view, BorderLayout.CENTER);
