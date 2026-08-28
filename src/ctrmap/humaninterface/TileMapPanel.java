@@ -67,6 +67,11 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	//texture lists captured at load so an edited region model can be rebound live (geometry editor)
 	private List<H3DTexture> savedWorldTextures;
 	private List<H3DTexture> savedPropTextures;
+
+	/** The loaded zone's decoded world textures (for the tile painter's textured preview), or null. */
+	public List<H3DTexture> getWorldTextures() {
+		return savedWorldTextures;
+	}
 	public BufferedImage tilemapImage;// = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
 	public BufferedImage tilemapScaledImage = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
 	public BufferedImage cm2dOverlayImage = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
