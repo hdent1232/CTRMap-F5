@@ -532,7 +532,12 @@ public class GeoEditForm extends JPanel {
 	 * status fragment.
 	 */
 	private String carryTextures(int donorArea, int targetArea, List<String> needed) throws Exception {
-		return ctrmap.formats.h3d.BchTexturePack.carryToArea(donorArea, targetArea, needed);
+		//pass the loaded zone's LIVE areadata when it covers the target, so its
+		//cached subfile offsets stay coherent when the pack grows
+		ctrmap.formats.containers.AD live = (mZonePnl != null && mZonePnl.zone != null
+				&& mZonePnl.zone.header != null && mZonePnl.zone.header.areadata != null
+				&& mZonePnl.zone.header.areadataID == targetArea) ? mZonePnl.zone.header.areadata : null;
+		return ctrmap.formats.h3d.BchTexturePack.carryToArea(donorArea, targetArea, needed, live);
 	}
 
 	private void undo() {

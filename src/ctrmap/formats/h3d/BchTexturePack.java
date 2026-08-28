@@ -327,12 +327,23 @@ public class BchTexturePack {
 	 * Returns a short human-readable note of what happened.
 	 */
 	public static String carryToArea(int donorArea, int targetArea, List<String> needed) throws Exception {
+		return carryToArea(donorArea, targetArea, needed, null);
+	}
+
+	/**
+	 * Variant taking the target's LIVE AD container: when a loaded zone's
+	 * areadata instance covers the target area, pass it - growing a subfile
+	 * through a separate instance would leave the live one's cached offsets
+	 * stale, and its next write would silently truncate the pack.
+	 */
+	public static String carryToArea(int donorArea, int targetArea, List<String> needed,
+			ctrmap.formats.containers.AD liveTarget) throws Exception {
 		java.io.File tgtFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, targetArea);
 		java.io.File donFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, donorArea);
 		if (tgtFile == null || donFile == null) {
 			throw new IllegalStateException("area files unavailable");
 		}
-		ctrmap.formats.containers.AD tgt = new ctrmap.formats.containers.AD(tgtFile);
+		ctrmap.formats.containers.AD tgt = liveTarget != null ? liveTarget : new ctrmap.formats.containers.AD(tgtFile);
 		ctrmap.formats.containers.AD don = new ctrmap.formats.containers.AD(donFile);
 		//names already present in the target area (file 11 world pack + file 1 prop pack)
 		java.util.Set<String> have = new java.util.HashSet<>();
