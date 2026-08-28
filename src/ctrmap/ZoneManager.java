@@ -115,8 +115,8 @@ public class ZoneManager {
 			}
 		}
 
-		// load the location-name text file (GAMETEXT 90 on ORAS retail)
-		int gtIndex = Workspace.isXY() ? 72 : (Workspace.isOADemo() ? 91 : 90);
+		// load the location-name text file (entry index from the game profile)
+		int gtIndex = ctrmap.formats.text.LocationNames.gametextIndex();
 		File gtFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, gtIndex);
 		if (gtFile == null) {
 			throw new IOException("Could not read the location-name text file (GAMETEXT " + gtIndex + ").");

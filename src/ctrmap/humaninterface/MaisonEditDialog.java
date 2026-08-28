@@ -42,7 +42,7 @@ public class MaisonEditDialog {
 		Workspace.ArchiveType.MAISON_SET_POOL_C
 	};
 	private static final String[] POOL_NAMES = {
-		"Pool A (standard, a/1/8/2)", "Pool B (+legendaries, a/1/8/4)", "Pool C (Hoenn, a/1/8/6)"
+		"Pool A (standard)", "Pool B (+legendaries)", "Pool C (Hoenn)"
 	};
 
 	public static void show(Frame parent) {
@@ -51,10 +51,13 @@ public class MaisonEditDialog {
 			return;
 		}
 		if (Workspace.getArchive(POOLS[0]) == null) {
-			JOptionPane.showMessageDialog(parent, "This dump has no Battle Maison data (a/1/8).", "Battle Maison", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(parent, "This dump has no Battle Maison data.", "Battle Maison", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		String[] species = text(98), items = text(114), moves = text(14);
+		ctrmap.gamedef.GameProfile prof = Workspace.profile();
+		String[] species = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES)),
+				items = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES)),
+				moves = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.MOVE_NAMES));
 		final String[] natures = NATURES;
 
 		final JComboBox<String> poolBox = new JComboBox<>(POOL_NAMES);

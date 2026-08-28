@@ -174,7 +174,8 @@ public class EncounterEditDialog {
 	/** Species names from GameText (entry 98; index == national dex number). */
 	private static String[] loadSpeciesNames() {
 		try {
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, 98);
+			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT,
+					Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES));
 			List<String> lines = GFMessageFile.getStrings(Files.readAllBytes(f.toPath()));
 			return lines.toArray(new String[0]);
 		} catch (Exception ex) {

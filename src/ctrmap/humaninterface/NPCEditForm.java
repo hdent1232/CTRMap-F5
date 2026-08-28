@@ -1035,7 +1035,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			JOptionPane.showMessageDialog(this, "This zone's script has no give-item routine (120 of 536 vanilla zones have one).\nPick a zone that already gives an item, or use pk3DS to place items differently.", "Add item giver", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		IdChooser itemChooser = new IdChooser(loadGameTextNames(NpcTemplates.GAMETEXT_ITEM_NAMES_OA), NpcTemplates.ITEM_ID_MAX, 1);
+		IdChooser itemChooser = new IdChooser(loadGameTextNames(NpcTemplates.gametextItemNames()), NpcTemplates.ITEM_ID_MAX, 1);
 		JSpinner countSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 99, 1));
 		ModelPicker modelPicker = new ModelPicker(-1);
 		JPanel panel = new JPanel();
@@ -1135,7 +1135,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * optional double-battle partner. No script surgery.
 	 */
 	private void addTrainerTemplate(Zone zone) {
-		IdChooser idChooser = new IdChooser(loadGameTextNames(NpcTemplates.GAMETEXT_TRAINER_NAMES_OA), NpcTemplates.TRAINER_ID_MAX, 1);
+		IdChooser idChooser = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames()), NpcTemplates.TRAINER_ID_MAX, 1);
 		ModelPicker modelPicker = new ModelPicker(-1);
 		JSpinner sightSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 8, 1));
 		javax.swing.JComboBox<String> faceBox = new javax.swing.JComboBox<>(new String[]{"Down", "Up", "Left", "Right"});
