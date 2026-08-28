@@ -124,6 +124,12 @@ patch (offline: all 24 retail inventories byte-verified in your code.bin).
   ordinary zones), move an NPC or prop, Apply/Deploy. Expect: the change
   shows inside every Center that uses that interior zone.
 
+## Zone removal (NEW — Tools → "Remove added zones (restore stock 536)...")
+Offline-proven: append-then-remove restores the pristine archive content
+byte-for-byte. The in-game check:
+- [ ] After removing added zones AND deleting code.ips, the game boots and
+  plays like stock (title screen, load save, walk around).
+
 ## Earlier systems (from previous sessions, still unverified in-game)
 - [ ] **Maison opponent editor**: edit a Maison set (a/1/8), battle it in the
   Maison. Expect: edited species/moves appear.

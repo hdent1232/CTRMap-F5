@@ -339,6 +339,25 @@ public class GARC {
 	}
 
 	/**
+	 * The entry's bytes exactly as STORED in the archive (still LZ11-compressed
+	 * when the entry is). Lets a rebuild preserve entries byte-for-byte without
+	 * a decompress/recompress round trip.
+	 */
+	public byte[] getStoredEntry(int num) {
+		try {
+			GARCEntry e = entries.get(num);
+			byte[] b = new byte[e.length];
+			InputStream in = new FileInputStream(file);
+			in.skip(e.offset);
+			in.read(b);
+			in.close();
+			return b;
+		} catch (IOException ex) {
+			return null;
+		}
+	}
+
+	/**
 	 * Whether the entry at the given index is stored LZ11-compressed (sniffed
 	 * from its first byte == 0x11 at load). Used by appenders that must store a
 	 * new entry with the SAME compression as the source entry it copies, rather
