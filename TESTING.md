@@ -56,13 +56,27 @@ reacts, which can't be verified without the emulator.
   zone's atmosphere onto your zone. Expect: in-game mood matches the picker's
   live preview of YOUR zone.
 
-## Water scrolling (NEW — the splice, if I get it working this session)
-- [ ] On a zone whose banner is GREEN: painted water visibly ripples/scrolls.
-- [ ] On a landlocked zone after "Make water ripple here": water scrolls like a
-  real route's sea. Also check the area's OTHER animations still play (grass
-  wind sway on neighbouring maps in the same area) — the splice must not
-  break them.
-- [ ] Landlocked zone WITHOUT the splice: water still (matches the amber banner).
+## Water scrolling (NEW — "Make water ripple here" is BUILT, this is its in-game check)
+The tile painter's water banner now has a one-click **"Make water ripple here"**
+button on amber zones: it splices GameFreak's exact two-layer sea-scroll
+animation (copied byte-for-byte from Route 105's) into the zone's area data,
+bound to this zone's map cells. Offline it's about as verified as possible
+(all 228 retail files re-validate, 560 test splices pass, the tree builder
+reproduces GameFreak's own serializer byte-identically) — but only the game
+engine can prove it PLAYS. **This is the highest-priority test on the list.**
+- [ ] **The big one**: on a landlocked zone, click "Make water ripple here"
+  (banner turns green) → paint water → Apply → Deploy. Expect: the water
+  scrolls in two layers exactly like a real sea route. If instead it's still,
+  or the map hard-locks on load, report which.
+- [ ] The area's OTHER animations still play after the splice: visit a
+  neighbouring map in the same area (and the same zone pre-splice-state
+  things like grass wind sway) — nothing else should have changed.
+- [ ] A zone whose banner was already GREEN: painted water ripples with no
+  button needed.
+- [ ] Landlocked zone WITHOUT clicking the button: water still (amber banner
+  told the truth).
+- [ ] Click the button on a zone in a SHARED area, then visit another zone of
+  that area: it must be unaffected (the animation binds by map-cell name).
 
 ## Props & furniture
 - [ ] Place a TV / PC / door prop via the Prop Tool on a painted map → Deploy.
