@@ -30,10 +30,15 @@ public class PaintedRegionBuilder {
 	public static final float TILE = 18f;
 	public static final float ORIGIN = -360f;
 
-	/** Builds the region content from a {@code DIM x DIM} terrain grid. */
+	/** Builds the region content from a {@code DIM x DIM} terrain grid (daytime lighting). */
 	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid) {
+		return build(donorModel, grid, TerrainLighting.daytime());
+	}
+
+	/** Builds the region content with the given baked terrain lighting. */
+	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, TerrainLighting light) {
 		RegionFactory.BlankContent out = new RegionFactory.BlankContent();
-		out.model = buildModel(donorModel, grid);
+		out.model = buildModel(donorModel, grid, light);
 		out.collision = buildCollision(grid);
 		out.tilemap = buildTilemap(grid);
 		out.props = new byte[]{0, 0, 0, 0};
@@ -42,7 +47,7 @@ public class PaintedRegionBuilder {
 
 	// ---- visual model -----------------------------------------------------
 
-	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid) {
+	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid, TerrainLighting light) {
 		BchMapModel probe = new BchMapModel(donorModel);
 		int meshCount = probe.meshCount;
 
@@ -83,7 +88,7 @@ public class PaintedRegionBuilder {
 			}
 			MapModelObj.ObjMesh om = buildQuadMesh(m, g, tiles);
 			byte[] vtx = MapModelObjImporter.buildVertexBytes(m, g, om);
-			uniformLighting(m, g, vtx); // even lighting instead of inherited donor shadows
+			bakeLighting(m, g, vtx, tiles, grid, light); // even light + edge shadows, not donor's baked shadows
 			current = m.setMeshGeometry(mi, vtx, om.triangles);
 		}
 		return current;
@@ -124,29 +129,61 @@ public class PaintedRegionBuilder {
 	}
 
 	/**
-	 * Sets every vertex's color attribute to full white, so painted terrain is
-	 * evenly lit rather than carrying the donor's baked per-vertex shadows
-	 * (nearest-neighbor inheritance onto a flat grid looks blotchy). No-op when
-	 * the mesh has no buffered color attribute.
+	 * Bakes the map lighting into each painted vertex's color attribute: the
+	 * light tint x brightness, darkened by procedural ambient occlusion where a
+	 * tile corner touches a wall/rock tile (so boundaries read like the game's
+	 * baked edge shadows) - replacing the donor's inherited per-vertex shadows.
+	 * Vertices are grouped 4-per-tile in {@code tiles} order, corners
+	 * TL/TR/BL/BR (see {@link #buildQuadMesh}). No-op if the mesh has no color.
 	 */
-	static void uniformLighting(BchMapModel model, BchMapModel.MeshGeom g, byte[] vtx) {
+	static void bakeLighting(BchMapModel model, BchMapModel.MeshGeom g, byte[] vtx,
+			List<int[]> tiles, TilePalette[][] grid, TerrainLighting light) {
 		BchMapModel.MeshAttr col = model.findAttr(g.meshIndex, 3); // Color
 		if (col == null) {
 			return;
 		}
-		int n = vtx.length / g.stride;
 		int compSize = col.size() / Math.max(1, col.elems);
-		for (int v = 0; v < n; v++) {
-			int base = v * g.stride + col.offset;
-			for (int c = 0; c < col.elems; c++) {
-				int o = base + c * compSize;
-				if (col.type == 3) { // float: 1.0
-					putF(vtx, o, 1f);
-				} else { // u8/s8: max
-					vtx[o] = (byte) 0xFF;
+		for (int t = 0; t < tiles.size(); t++) {
+			int tx = tiles.get(t)[0], ty = tiles.get(t)[1];
+			// four corners: TL(tx,ty) TR(tx+1,ty) BL(tx,ty+1) BR(tx+1,ty+1)
+			int[][] corners = {{tx, ty}, {tx + 1, ty}, {tx, ty + 1}, {tx + 1, ty + 1}};
+			for (int c = 0; c < 4; c++) {
+				float ao = cornerAO(grid, corners[c][0], corners[c][1]);
+				int[] rgba = light.vertexColor(ao);
+				int base = (t * 4 + c) * g.stride + col.offset;
+				for (int k = 0; k < col.elems; k++) {
+					int o = base + k * compSize;
+					if (col.type == 3) {
+						putF(vtx, o, (k < 3 ? rgba[k] : rgba[3]) / 255f);
+					} else {
+						vtx[o] = (byte) (k < 4 ? rgba[k] : 0xFF);
+					}
 				}
 			}
 		}
+	}
+
+	/** Ambient-occlusion at a grid point: 1 (open) down toward 0 as the 4 tiles
+	 *  touching it are walls/rock. Gives smooth shadows along boundaries. */
+	private static float cornerAO(TilePalette[][] grid, int gx, int gy) {
+		int occ = 0, total = 0;
+		for (int dy = -1; dy <= 0; dy++) {
+			for (int dx = -1; dx <= 0; dx++) {
+				int x = gx + dx, y = gy + dy;
+				if (x < 0 || y < 0 || x >= DIM || y >= DIM) {
+					continue;
+				}
+				total++;
+				TilePalette t = grid[y][x];
+				if (t == null || !t.walkable) {
+					occ++;
+				}
+			}
+		}
+		if (total == 0) {
+			return 1f;
+		}
+		return 1f - (float) occ / total;
 	}
 
 	private static void putF(byte[] b, int o, float f) {
