@@ -1,5 +1,12 @@
 # TESTING.md — things to verify in the emulator
 
+> **START HERE: [TESTZONE.md](TESTZONE.md).** A ready-made test world is
+> packed into your game data — entering May's house at the start of the
+> game warps you to a hub that exercises nearly every item on this list,
+> with a symptom→culprit table for anything that breaks. Walk that first;
+> come back to this list for the features it doesn't cover (shops, Maison,
+> trainers, encounters editing, zone removal).
+
 ## Map Painter integration (NEW — quick in-editor pass, no emulator needed)
 The painter is no longer a separate window: it is now the **Paint tool** on
 the World Editor toolbar (also Map menu → Map Painter). Its brushes,
