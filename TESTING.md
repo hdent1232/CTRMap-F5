@@ -1,5 +1,22 @@
 # TESTING.md — things to verify in the emulator
 
+## UI reorganization (NEW — quick in-editor pass, no emulator needed)
+- [ ] World Editor: two toolbar rows — tools + Undo/Redo on top, the Map
+  actions row (Paint map / Blank canvas / Resize / Fog & lighting /
+  Encounters / Fork geometry) below. Paint some tiles, then Undo/Redo
+  (buttons or Ctrl+Z / Ctrl+Y) — drags and fills undo as one step.
+- [ ] Picking a tile type from the side list with nothing selected switches
+  to the Set tool and the pick STICKS; click/drag paints it. Entries show
+  color swatches.
+- [ ] Zone Loader: zone actions bar on top (Rename / Empty / Find reusable /
+  Remove added / Battle facility).
+- [ ] New Game Data tab: Trainer / Maison / Shops / Encounters entry points.
+- [ ] Builder is gone as a tab; it opens from the Extras tab's
+  "Raw archive browser" button. Menus: Tools replaced by Map / Zone /
+  Game Data.
+- [ ] Tile painter dialog: Undo/Redo at the top of the side panel undoes
+  strokes, fills, and building placements/removals.
+
 A running list of everything built offline that needs an in-game check.
 Ordered roughly by how much other work depends on the answer. Check items
 off (`[x]`) as you confirm them; note anything that looks wrong and I'll fix it.

@@ -105,6 +105,66 @@ public class TilePainterForm {
 
 		final GridCanvas canvas = new GridCanvas(grid, height, ramp, brush, tool, terrainTex, placedBuildings, pendingPlace);
 
+		//undo/redo: one snapshot per gesture (stroke, fill, place, remove)
+		final java.util.ArrayDeque<Object[]> undoStack = new java.util.ArrayDeque<>();
+		final java.util.ArrayDeque<Object[]> redoStack = new java.util.ArrayDeque<>();
+		final java.util.function.Supplier<Object[]> copyState = () -> {
+			TilePalette[][] g2 = new TilePalette[DIM][];
+			int[][] h2 = new int[DIM][];
+			boolean[][] r2 = new boolean[DIM][];
+			for (int i = 0; i < DIM; i++) {
+				g2[i] = grid[i].clone();
+				h2[i] = height[i].clone();
+				r2[i] = ramp[i].clone();
+			}
+			return new Object[]{g2, h2, r2, new java.util.ArrayList<>(placedBuildings)};
+		};
+		final java.util.function.Consumer<Object[]> restoreState = s -> {
+			TilePalette[][] g2 = (TilePalette[][]) s[0];
+			int[][] h2 = (int[][]) s[1];
+			boolean[][] r2 = (boolean[][]) s[2];
+			for (int i = 0; i < DIM; i++) {
+				System.arraycopy(g2[i], 0, grid[i], 0, DIM);
+				System.arraycopy(h2[i], 0, height[i], 0, DIM);
+				System.arraycopy(r2[i], 0, ramp[i], 0, DIM);
+			}
+			placedBuildings.clear();
+			placedBuildings.addAll((java.util.List<Placed>) s[3]);
+			canvas.repaint();
+		};
+		final JButton undoBtn = new JButton("↶ Undo");
+		final JButton redoBtn = new JButton("↷ Redo");
+		final Runnable syncUndoBtns = () -> {
+			undoBtn.setEnabled(!undoStack.isEmpty());
+			redoBtn.setEnabled(!redoStack.isEmpty());
+		};
+		canvas.preMutate = () -> {
+			undoStack.push(copyState.get());
+			while (undoStack.size() > 100) {
+				undoStack.removeLast();
+			}
+			redoStack.clear();
+			syncUndoBtns.run();
+		};
+		undoBtn.addActionListener(e -> {
+			if (!undoStack.isEmpty()) {
+				redoStack.push(copyState.get());
+				restoreState.accept(undoStack.pop());
+				syncUndoBtns.run();
+			}
+		});
+		redoBtn.addActionListener(e -> {
+			if (!redoStack.isEmpty()) {
+				undoStack.push(copyState.get());
+				restoreState.accept(redoStack.pop());
+				syncUndoBtns.run();
+			}
+		});
+		undoBtn.setEnabled(false);
+		redoBtn.setEnabled(false);
+		undoBtn.setFocusable(false);
+		redoBtn.setFocusable(false);
+
 		final JDialog dlg = new JDialog(frame, "Tile painter - zone " + zoneIndex, true);
 		dlg.setLayout(new BorderLayout(8, 8));
 		((JPanel) dlg.getContentPane()).setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
@@ -112,6 +172,13 @@ public class TilePainterForm {
 		// brush palette (scrollable - the full tile catalog)
 		JPanel side = new JPanel();
 		side.setLayout(new javax.swing.BoxLayout(side, javax.swing.BoxLayout.Y_AXIS));
+		JPanel undoRow = new JPanel(new GridLayout(1, 2, 4, 0));
+		undoRow.setAlignmentX(0f);
+		undoRow.setMaximumSize(new Dimension(216, 26));
+		undoRow.add(undoBtn);
+		undoRow.add(redoBtn);
+		side.add(undoRow);
+		side.add(javax.swing.Box.createVerticalStrut(6));
 		side.add(new JLabel("Brush:"));
 		JPanel brushPanel = new JPanel();
 		brushPanel.setLayout(new javax.swing.BoxLayout(brushPanel, javax.swing.BoxLayout.Y_AXIS));
@@ -185,6 +252,9 @@ public class TilePainterForm {
 		clearAll.setAlignmentX(0f);
 		clearAll.setFocusable(false);
 		clearAll.addActionListener(e -> {
+			if (canvas.preMutate != null) {
+				canvas.preMutate.run();
+			}
 			for (TilePalette[] row : grid) {
 				java.util.Arrays.fill(row, brush[0]);
 			}
@@ -1158,6 +1228,8 @@ public class TilePainterForm {
 		final java.util.List<Placed> placed;
 		final ctrmap.formats.h3d.BuildingCatalog.Entry[] pending;
 		JLabel placeStatus;
+		/** Called before a mutating gesture starts (undo snapshot hook). */
+		Runnable preMutate;
 		boolean textured = false;
 		private final java.util.Map<TilePalette, java.awt.TexturePaint> paintCache = new java.util.HashMap<>();
 
@@ -1176,6 +1248,9 @@ public class TilePainterForm {
 			MouseAdapter ma = new MouseAdapter() {
 				@Override
 				public void mousePressed(MouseEvent e) {
+					if (preMutate != null) {
+						preMutate.run(); // snapshot once per gesture (drags continue it)
+					}
 					handle(e);
 				}
 

@@ -121,8 +121,11 @@ public class TileEditForm extends javax.swing.JPanel {
 							return;
 						}
 						JSpinner src = (JSpinner) e.getSource();
+						byte[] before = region.getTileData(Selector.selTileX % 40, Selector.selTileY % 40).clone();
 						region.rawTileData[Selector.selTileX % 40][Selector.selTileY % 40][src.getName().charAt(0) - '0'] = ((Integer) src.getValue()).byteValue();
 						region.modified = true;
+						TileUndo.record(region, Selector.selTileX % 40, Selector.selTileY % 40, before,
+								region.getTileData(Selector.selTileX % 40, Selector.selTileY % 40));
 						region.updateImage();
 						mTileMapPanel.scaleImage(mTileMapPanel.tilemapScale);
 						showTile(Selector.selTileX, Selector.selTileY, true);
@@ -141,14 +144,18 @@ public class TileEditForm extends javax.swing.JPanel {
 					}
 					int width = Math.abs(t.lastX - t.originX);
 					int height = Math.abs(t.lastY - t.originY);
+					TileUndo.begin(); // the whole fill = one undo step
 					for (int x = 0; x < width + 1; x++) {
 						for (int y = 0; y < height + 1; y++) {
 							Tilemap reg = mTileMapPanel.getRegionForTile(startX + x, startY + y);
 							if (reg != null){
+								byte[] before = reg.getTileData((startX + x) % 40, (startY + y) % 40).clone();
 								reg.setTileData((startX + x) % 40, (startY + y) % 40, t.actTileData);
+								TileUndo.record(reg, (startX + x) % 40, (startY + y) % 40, before, t.actTileData);
 							}
 						}
 					}
+					TileUndo.end();
 					//could have affected multiple regions, update them all
 					mTileMapPanel.updateAll();
 				}
