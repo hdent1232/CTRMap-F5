@@ -25,7 +25,9 @@ public class SetTool extends AbstractTool {
 			Selector.acqCurTile();
 		}
 		else{
+			ctrmap.humaninterface.TileUndo.begin();
 			updateTile();
+			ctrmap.humaninterface.TileUndo.end();
 		}
 	}
 
@@ -36,24 +38,29 @@ public class SetTool extends AbstractTool {
 	@Override
 	public void onTileMouseUp(MouseEvent e) {
 		CM2DNoUpdate = false;
+		ctrmap.humaninterface.TileUndo.end(); // one undo step per paint drag
 	}
 
 	@Override
 	public void onTileMouseDragged(MouseEvent e) {
 		if (!SwingUtilities.isRightMouseButton(e)){
 			CM2DNoUpdate = true;
+			ctrmap.humaninterface.TileUndo.begin();
 			updateTile();
 		}
 	}
-	
+
 	private void updateTile(){
 		if (Selector.hilightTileX != -1) {
 			Tilemap tm = mTileMapPanel.getRegionForTile(Selector.hilightTileX, Selector.hilightTileY);
 			if (tm == null){
 				return;
 			}
-			if (!Arrays.equals(tm.getTileData(Selector.hilightTileX % 40, Selector.hilightTileY % 40), actTileData)) {
-				tm.setTileData(Selector.hilightTileX % 40, Selector.hilightTileY % 40, actTileData);
+			int lx = Selector.hilightTileX % 40, ly = Selector.hilightTileY % 40;
+			if (!Arrays.equals(tm.getTileData(lx, ly), actTileData)) {
+				byte[] before = tm.getTileData(lx, ly).clone();
+				tm.setTileData(lx, ly, actTileData);
+				ctrmap.humaninterface.TileUndo.record(tm, lx, ly, before, actTileData);
 				tm.updateImage();
 				mTileMapPanel.perfScale(mTileMapPanel.tilemapScale, Selector.hilightTileX / 40, Selector.hilightTileY / 40);
 			}

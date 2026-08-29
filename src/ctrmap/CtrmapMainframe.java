@@ -124,6 +124,10 @@ public class CtrmapMainframe {
 	public static ButtonGroup toolBtnGroup;
 	public static JRadioButton btnEditTool;
 	public static JRadioButton btnSetTool;
+	public static javax.swing.JButton btnUndoTile;
+	public static javax.swing.JButton btnRedoTile;
+	public static JPanel zoneTabPnl;
+	public static JPanel extrasTabPnl;
 	public static JRadioButton btnFillTool;
 	public static JRadioButton btnCamTool;
 	public static JRadioButton btnPropTool;
@@ -266,6 +270,49 @@ public class CtrmapMainframe {
 		toolbar.add(btnGeoTool);
 		toolbar.add(currentTool);
 
+		//undo/redo for tile edits + the map actions, ON the World Editor where
+		//they belong (the menus keep shortcuts, but this is the primary home)
+		toolbar.addSeparator();
+		btnUndoTile = new javax.swing.JButton("↶ Undo");
+		btnRedoTile = new javax.swing.JButton("↷ Redo");
+		btnUndoTile.setToolTipText("Undo the last tile edit (Ctrl+Z)");
+		btnRedoTile.setToolTipText("Redo the undone tile edit (Ctrl+Y)");
+		btnUndoTile.setEnabled(false);
+		btnRedoTile.setEnabled(false);
+		btnUndoTile.setFocusable(false);
+		btnRedoTile.setFocusable(false);
+		btnUndoTile.addActionListener(e -> ctrmap.humaninterface.TileUndo.undo());
+		btnRedoTile.addActionListener(e -> ctrmap.humaninterface.TileUndo.redo());
+		toolbar.add(btnUndoTile);
+		toolbar.add(btnRedoTile);
+		javax.swing.JButton tbPaint = new javax.swing.JButton("Paint map...");
+		tbPaint.setToolTipText("The tile painter: build this zone's map from terrain brushes, buildings and decor.");
+		tbPaint.addActionListener(e -> ctrmap.humaninterface.TilePainterForm.show());
+		javax.swing.JButton tbBlank = new javax.swing.JButton("Blank canvas...");
+		tbBlank.setToolTipText("Replace this zone's map with a blank canvas cloned from a template route.");
+		tbBlank.addActionListener(e -> blankCanvasAction());
+		javax.swing.JButton tbResize = new javax.swing.JButton("Resize...");
+		tbResize.setToolTipText("Resize this zone's map (grow/shrink its region grid).");
+		tbResize.addActionListener(e -> resizeMapAction());
+		javax.swing.JButton tbFog = new javax.swing.JButton("Fog & lighting...");
+		tbFog.setToolTipText("Edit the area's fog and ambient light, or copy a GameFreak zone's atmosphere.");
+		tbFog.addActionListener(e -> ctrmap.humaninterface.AreaLightingDialog.show(frame));
+		javax.swing.JButton tbEnc = new javax.swing.JButton("Encounters...");
+		tbEnc.setToolTipText("Edit this zone's wild Pokemon encounter slots.");
+		tbEnc.addActionListener(e -> ctrmap.humaninterface.EncounterEditDialog.show(frame));
+		javax.swing.JButton tbFork = new javax.swing.JButton("Fork geometry...");
+		tbFork.setToolTipText("Give this zone its own private map so edits stop affecting the source town.");
+		tbFork.addActionListener(e -> forkGeometryAction());
+		//second toolbar row: the map-level actions (the toolbar's own row keeps
+		//the per-tile tools + undo)
+		JToolBar mapActionsBar = new JToolBar();
+		mapActionsBar.setFloatable(false);
+		mapActionsBar.add(new JLabel(" Map:  "));
+		for (javax.swing.JButton b : new javax.swing.JButton[]{tbPaint, tbBlank, tbResize, tbFog, tbEnc, tbFork}) {
+			b.setFocusable(false);
+			mapActionsBar.add(b);
+		}
+
 		tileEditMasterPnl = new JPanel(new BorderLayout());
 		collEditMasterPnl = new JPanel(new BorderLayout());
 		mtxEditMasterPnl = new JPanel(new BorderLayout());
@@ -316,30 +363,93 @@ public class CtrmapMainframe {
 		jsp3.setLeftComponent(mMtxScrollPane);
 		jsp3.setRightComponent(mMtxEditForm);
 
-		tileEditMasterPnl.add(toolbar, BorderLayout.NORTH);
+		JPanel toolbarRows = new JPanel(new java.awt.GridLayout(2, 1));
+		toolbarRows.add(toolbar);
+		toolbarRows.add(mapActionsBar);
+		tileEditMasterPnl.add(toolbarRows, BorderLayout.NORTH);
 		tileEditMasterPnl.add(jsp, BorderLayout.CENTER);
 
 		collEditMasterPnl.add(jsp2);
 
 		mtxEditMasterPnl.add(jsp3);
 
+		//Zone Loader tab = the zone panel + its lifecycle actions ON the tab
+		zoneTabPnl = new JPanel(new BorderLayout());
+		JToolBar zoneOps = new JToolBar();
+		zoneOps.setFloatable(false);
+		zoneOps.add(new JLabel(" Zone actions:  "));
+		javax.swing.JButton zbRename = new javax.swing.JButton("Rename...");
+		zbRename.setToolTipText("Rename the loaded zone's in-game location banner.");
+		zbRename.addActionListener(e -> renameZoneAction());
+		javax.swing.JButton zbEmpty = new javax.swing.JButton("Empty...");
+		zbEmpty.setToolTipText("Clear the loaded zone's NPCs, warps, triggers and furniture (keeps map + script).");
+		zbEmpty.addActionListener(e -> emptyZoneAction());
+		javax.swing.JButton zbFind = new javax.swing.JButton("Find reusable zones...");
+		zbFind.setToolTipText("Scan for unused base zones you can safely repurpose for new areas.");
+		zbFind.addActionListener(e -> findReusableZonesAction());
+		javax.swing.JButton zbRemove = new javax.swing.JButton("Remove added zones...");
+		zbRemove.setToolTipText("Delete all added zones (index 536+) and restore the stock ZoneData layout.");
+		zbRemove.addActionListener(e -> removeAddedZonesAction());
+		javax.swing.JButton zbFacility = new javax.swing.JButton("Battle facility here...");
+		zbFacility.setToolTipText("Clone the Battle Maison's scripts into this zone as the base of a custom battle facility.");
+		zbFacility.addActionListener(e -> setupFacilityAction());
+		for (javax.swing.JButton b : new javax.swing.JButton[]{zbRename, zbEmpty, zbFind, zbRemove, zbFacility}) {
+			b.setFocusable(false);
+			zoneOps.add(b);
+		}
+		zoneTabPnl.add(zoneOps, BorderLayout.NORTH);
+		zoneTabPnl.add(mZonePnl, BorderLayout.CENTER);
+
+		//Extras tab hosts the seldom-used Builder (raw archive browser)
+		extrasTabPnl = new JPanel(new BorderLayout());
+		JToolBar extrasOps = new JToolBar();
+		extrasOps.setFloatable(false);
+		javax.swing.JButton exBuilder = new javax.swing.JButton("Raw archive browser (Builder)...");
+		exBuilder.setToolTipText("Browse raw GARC entries and their subfiles - advanced, rarely needed.");
+		exBuilder.setFocusable(false);
+		exBuilder.addActionListener(e -> {
+			javax.swing.JDialog bd = new javax.swing.JDialog(frame, "Builder - raw archive browser", false);
+			bd.add(mBuilder);
+			bd.setSize(900, 600);
+			bd.setLocationRelativeTo(frame);
+			bd.setVisible(true);
+		});
+		extrasOps.add(exBuilder);
+		extrasTabPnl.add(extrasOps, BorderLayout.NORTH);
+		extrasTabPnl.add(mExtrasPnl, BorderLayout.CENTER);
+
 		tabs.add("World Editor", tileEditMasterPnl);
 		tabs.add("Collision Editor", collEditMasterPnl);
 		tabs.add("Matrix Editor", mtxEditMasterPnl);
-		tabs.add("Zone Loader", mZonePnl);
+		tabs.add("Zone Loader", zoneTabPnl);
+		tabs.add("Game Data", buildGameDataPanel());
+		tabs.add("Script Editor (experimental)", mScriptPnl);
+		tabs.add("Extras", extrasTabPnl);
+		tabs.add("Text Editor", mTextEditor);
 		tabs.setToolTipTextAt(tabs.indexOfComponent(tileEditMasterPnl),
 				"The map itself: tile BEHAVIOR (walkable/encounters/water/warps - the colored grid) plus props, NPCs, warps, triggers and cameras. Edit tool inspects a tile; Set/Fill paint tile types.");
 		tabs.setToolTipTextAt(tabs.indexOfComponent(collEditMasterPnl),
 				"The 3D collision SURFACE the player stands on (heights, slopes, stairs). Behavior bytes live in the World Editor; this shapes the physical ground. The Tile Painter edits both at once.");
 		tabs.setToolTipTextAt(tabs.indexOfComponent(mtxEditMasterPnl),
 				"How map regions tile together into the zone's world grid.");
-		tabs.setToolTipTextAt(tabs.indexOfComponent(mZonePnl), "Pick a map from the zone dropdown here - this is how zones are opened.");
-		tabs.add("Script Editor (experimental)", mScriptPnl);
-		tabs.add("Extras", mExtrasPnl);
-		tabs.add("Text Editor", mTextEditor);
-		tabs.add("Builder", mBuilder);
-		tabs.setToolTipTextAt(tabs.indexOfComponent(mBuilder),
-				"Low-level archive browser: raw GARC entries and their subfiles (advanced; everyday editing happens in the other tabs).");
+		tabs.setToolTipTextAt(tabs.indexOfComponent(zoneTabPnl), "Pick a map from the zone dropdown here - this is how zones are opened.");
+
+		//Ctrl+Z / Ctrl+Y while the World Editor tab has focus
+		javax.swing.InputMap tim = tileEditMasterPnl.getInputMap(javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
+		tim.put(javax.swing.KeyStroke.getKeyStroke("control Z"), "tileUndo");
+		tim.put(javax.swing.KeyStroke.getKeyStroke("control Y"), "tileRedo");
+		tileEditMasterPnl.getActionMap().put("tileUndo", new javax.swing.AbstractAction() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ctrmap.humaninterface.TileUndo.undo();
+			}
+		});
+		tileEditMasterPnl.getActionMap().put("tileRedo", new javax.swing.AbstractAction() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ctrmap.humaninterface.TileUndo.redo();
+			}
+		});
 
 		btnEditTool.setActionCommand("edit");
 		btnEditTool.addActionListener(mTilemapInputManager);
@@ -664,31 +774,39 @@ public class CtrmapMainframe {
 		filemenu.add(save);
 		filemenu.add(packworkspace);
 		filemenu.add(deploymod);
-		toolsmenu.add(tilesetWriter);
-		toolsmenu.add(objconvert);
-		toolsmenu.add(importMapModel);
-		toolsmenu.add(exportMapObj);
-		toolsmenu.add(importMapObj);
-		toolsmenu.add(forkGeometry);
-		toolsmenu.add(blankCanvas);
-		toolsmenu.add(tilePainter);
-		toolsmenu.add(areaLighting);
-		toolsmenu.add(wildEncounters);
-		toolsmenu.add(resizeMap);
-		toolsmenu.add(trainerEditor);
-		toolsmenu.add(maisonEditor);
-		toolsmenu.add(shopEditor);
-		toolsmenu.add(setupFacility);
-		toolsmenu.add(renameZone);
-		toolsmenu.add(emptyZone);
-		toolsmenu.add(removeAddedZones);
-		toolsmenu.add(findReusableZones);
+		//menus are SECONDARY access grouped by subject - the primary homes are
+		//the World Editor toolbar, the Zone Loader bar and the Game Data tab
+		JMenu mapMenu = new JMenu("Map");
+		mapMenu.add(tilePainter);
+		mapMenu.add(blankCanvas);
+		mapMenu.add(resizeMap);
+		mapMenu.add(areaLighting);
+		mapMenu.add(forkGeometry);
+		mapMenu.addSeparator();
+		mapMenu.add(importMapModel);
+		mapMenu.add(exportMapObj);
+		mapMenu.add(importMapObj);
+		mapMenu.add(objconvert);
+		mapMenu.add(tilesetWriter);
+		JMenu zoneMenu = new JMenu("Zone");
+		zoneMenu.add(renameZone);
+		zoneMenu.add(emptyZone);
+		zoneMenu.add(findReusableZones);
+		zoneMenu.add(removeAddedZones);
+		zoneMenu.add(setupFacility);
+		JMenu dataMenu = new JMenu("Game Data");
+		dataMenu.add(trainerEditor);
+		dataMenu.add(maisonEditor);
+		dataMenu.add(shopEditor);
+		dataMenu.add(wildEncounters);
 		optionsmenu.add(wssettings);
 		optionsmenu.add(wsclean);
 		helpmenu.add(isstracker);
 		helpmenu.add(about);
 		menubar.add(filemenu);
-		menubar.add(toolsmenu);
+		menubar.add(mapMenu);
+		menubar.add(zoneMenu);
+		menubar.add(dataMenu);
 		menubar.add(optionsmenu);
 		menubar.add(helpmenu);
 
@@ -755,8 +873,45 @@ public class CtrmapMainframe {
 	 * it. Called from Workspace.validate() so that it also fires for the first
 	 * validation that succeeds after the paths are set in Workspace settings.
 	 */
+	/**
+	 * The Game Data tab: the game-wide data editors (trainers, Maison, shops,
+	 * wild Pokemon), as big labeled entry points instead of menu items.
+	 */
+	private static JPanel buildGameDataPanel() {
+		JPanel p = new JPanel();
+		p.setLayout(new javax.swing.BoxLayout(p, javax.swing.BoxLayout.Y_AXIS));
+		p.setBorder(javax.swing.BorderFactory.createEmptyBorder(24, 32, 24, 32));
+		addGameDataEntry(p, "Trainers", "Edit any trainer's party, moves, items and battle type.",
+				"Trainer editor...", e -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame));
+		addGameDataEntry(p, "Battle Maison", "Edit the Maison's opponent Pokemon pools and trainer class assignments.",
+				"Maison opponents...", e -> ctrmap.humaninterface.MaisonEditDialog.show(frame));
+		addGameDataEntry(p, "Shops", "Change what the Poke Marts and specialty shops sell (ships as a code.ips patch).",
+				"Shop inventories...", e -> ctrmap.humaninterface.ShopEditDialog.show(frame));
+		addGameDataEntry(p, "Wild Pokemon", "Edit the loaded zone's wild encounter slots (grass, surf, fishing...).",
+				"Wild encounters (this zone)...", e -> ctrmap.humaninterface.EncounterEditDialog.show(frame));
+		p.add(javax.swing.Box.createVerticalGlue());
+		return p;
+	}
+
+	private static void addGameDataEntry(JPanel p, String title, String desc, String button, ActionListener action) {
+		JLabel t = new JLabel(title);
+		t.setFont(t.getFont().deriveFont(java.awt.Font.BOLD, 15f));
+		t.setAlignmentX(0f);
+		JLabel d = new JLabel(desc);
+		d.setForeground(java.awt.Color.DARK_GRAY);
+		d.setAlignmentX(0f);
+		javax.swing.JButton b = new javax.swing.JButton(button);
+		b.addActionListener(action);
+		b.setAlignmentX(0f);
+		p.add(t);
+		p.add(d);
+		p.add(javax.swing.Box.createVerticalStrut(6));
+		p.add(b);
+		p.add(javax.swing.Box.createVerticalStrut(22));
+	}
+
 	public static void showZoneLoadingHint() {
-		tabs.setSelectedComponent(mZonePnl);
+		tabs.setSelectedComponent(zoneTabPnl);
 		Preferences hintPrefs = Preferences.userRoot().node(CtrmapMainframe.class.getName());
 		if (!hintPrefs.getBoolean("ZONE_HINT_SHOWN", false)) {
 			hintPrefs.putBoolean("ZONE_HINT_SHOWN", true);

@@ -302,6 +302,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	}
 
 	public void loadMatrix(MapMatrix matrix, ADPropRegistry reg, List<H3DTexture> worldTextures, List<H3DTexture> propTextures) {
+		TileUndo.clear(); //a different zone's tilemaps - old history is invalid
 		LoadingDialog progress = LoadingDialog.makeDialog("Loading matrix");
 		SwingWorker worker = new SwingWorker() {
 			@Override
