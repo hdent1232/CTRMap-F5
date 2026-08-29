@@ -24,6 +24,7 @@ import javax.swing.text.DefaultFormatterFactory;
 public class TileEditForm extends javax.swing.JPanel {
 
 	private boolean isLocked = false;
+	private boolean suppressListEvents = false;
 	private DefaultListModel<String> currentListModel = new DefaultListModel<>();
 	private DefaultListModel<String>[] models = new DefaultListModel[13];
 	public EditorTileset tileset;
@@ -39,15 +40,60 @@ public class TileEditForm extends javax.swing.JPanel {
 		byte3.setName("3");
 		tileset = Workspace.getTileset();
 		tileList.addListSelectionListener((ListSelectionEvent e) -> {
-			if (tileList.getSelectedValue() == null) {
+			if (suppressListEvents || tileList.getSelectedValue() == null) {
 				return;
 			}
-			int binary = tileset.getTemplate(parseCat1(), parseCat2(), tileList.getSelectedValue()).binary;
+			TileTemplate t = tileset.getTemplate(parseCat1(), parseCat2(), tileList.getSelectedValue());
+			if (t == null) {
+				return;
+			}
+			int binary = t.binary;
+			//picking from the palette with NO tile selected = choosing a BRUSH:
+			//switch to the Set (paint) tool so the choice sticks and click/drag
+			//paints it (with the Edit tool the panel is a hover-live inspector,
+			//which used to silently discard the pick as the mouse crossed the map)
+			if (tool instanceof EditTool && Selector.selTileX == -1) {
+				String name = tileList.getSelectedValue();
+				int c1 = t.cat1, c2 = t.cat2;
+				suppressListEvents = true;
+				ctrmap.CtrmapMainframe.btnSetTool.doClick();
+				restoreCats(c1, c2);
+				showListModel();
+				tileList.setSelectedValue(name, true);
+				suppressListEvents = false;
+			}
 			byte0.setValue((binary >>> 24) & 0xFF);
 			byte1.setValue((binary >>> 16) & 0xFF);
 			byte2.setValue((binary >>> 8) & 0xFF);
 			byte3.setValue(binary & 0xFF);
 		});
+		//palette previews: each entry shows the color it paints on the map view,
+		//with the raw bytes in its tooltip
+		tileList.setCellRenderer(new javax.swing.DefaultListCellRenderer() {
+			@Override
+			public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value,
+					int index, boolean isSelected, boolean cellHasFocus) {
+				javax.swing.JLabel l = (javax.swing.JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+				TileTemplate t = tileset.getTemplate(parseCat1(), parseCat2(), String.valueOf(value));
+				if (t != null) {
+					l.setIcon(new SwatchIcon(t.color));
+					l.setToolTipText(String.format("bytes %02X %02X %02X %02X - painted in this color on the map",
+							(t.binary >>> 24) & 0xFF, (t.binary >>> 16) & 0xFF, (t.binary >>> 8) & 0xFF, t.binary & 0xFF));
+				} else {
+					l.setIcon(null);
+					l.setToolTipText(null);
+				}
+				return l;
+			}
+		});
+		javax.swing.ToolTipManager.sharedInstance().registerComponent(tileList);
+		tileList.setToolTipText("Tile types: pick one to PAINT with (switches to the Set tool when no tile is selected).");
+		btnUpdate.setText("Re-apply bytes");
+		btnUpdate.setToolTipText("Writes the byte values above again - to the selected tile (Edit tool) or into the brush (Set/Fill). Use it when a typed value did not register.");
+		byte0.setToolTipText("Byte 0 - terrain class; bit 0 set = impassable");
+		byte1.setToolTipText("Byte 1 - overlay / secret-base flag");
+		byte2.setToolTipText("Byte 2 - surface skin (footstep sound, ripples, tint)");
+		byte3.setToolTipText("Byte 3 - behavior (encounters, warps, ledges...)");
 		for (int i = 0; i < 13; i++) {
 			models[i] = new DefaultListModel<>();
 		}
@@ -148,6 +194,50 @@ public class TileEditForm extends javax.swing.JPanel {
 		}
 	}
 
+	/** Re-selects the category radios (cleared by makeTile) after a tool switch. */
+	private void restoreCats(int c1, int c2) {
+		switch (c1) {
+			case 0: normal.setSelected(true); break;
+			case 1: water.setSelected(true); break;
+			case 2: action.setSelected(true); break;
+		}
+		setCat2Texts();
+		switch (c2) {
+			case 0: cat2b1.setSelected(true); break;
+			case 1: cat2b2.setSelected(true); break;
+			case 2: cat2b3.setSelected(true); break;
+			case 3: cat2b4.setSelected(true); break;
+		}
+	}
+
+	/** A small color-swatch icon for the tile-type palette list. */
+	private static class SwatchIcon implements javax.swing.Icon {
+
+		private final java.awt.Color color;
+
+		SwatchIcon(java.awt.Color color) {
+			this.color = color;
+		}
+
+		@Override
+		public void paintIcon(java.awt.Component c, java.awt.Graphics g, int x, int y) {
+			g.setColor(color);
+			g.fillRect(x, y, 13, 13);
+			g.setColor(java.awt.Color.DARK_GRAY);
+			g.drawRect(x, y, 13, 13);
+		}
+
+		@Override
+		public int getIconWidth() {
+			return 15;
+		}
+
+		@Override
+		public int getIconHeight() {
+			return 14;
+		}
+	}
+
 	private void setCat2Enabled(boolean b) {
 		cat2b1.setEnabled(b);
 		cat2b2.setEnabled(b);
@@ -188,7 +278,11 @@ public class TileEditForm extends javax.swing.JPanel {
 		}
 		tileList.setModel(models[result]);
 		if (Selector.selTileX != -1 && result != 12) {
+			//programmatic selection (inspector display) - must not trip the
+			//pick-a-brush listener (which would switch tools on hover)
+			suppressListEvents = true;
 			tileList.setSelectedValue(tileset.getTemplate(Utils.ba2int(mTileMapPanel.getRegionForTile(Selector.selTileX, Selector.selTileY).getTileData(Selector.selTileX % 40, Selector.selTileY % 40))).name, true);
+			suppressListEvents = false;
 		}
 		return result != 12;
 	}
