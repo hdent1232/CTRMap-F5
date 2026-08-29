@@ -338,7 +338,11 @@ public class TileEditForm extends javax.swing.JPanel {
 				}
 				setCat2Texts();
 				if (showListModel() != false) {
+					//programmatic (inspector) selection - must never trip the
+					//pick-a-brush listener, which would hijack the Edit tool on hover
+					suppressListEvents = true;
 					tileList.setSelectedValue(tile.name, true);
+					suppressListEvents = false;
 				}
 			} else {
 				tileId.setText(tileId.getText() + " - Void");

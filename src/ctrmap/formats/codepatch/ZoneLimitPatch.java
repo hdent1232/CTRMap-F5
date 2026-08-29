@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * Auto-scaling code patch that lifts ORAS's hardcoded 536-zone limit so a
- * fan game (e.g. Delta Emerald) can add new map zones.
+ * fan game can add new map zones.
  *
  * <p>Reverse-engineered from Omega Ruby's decompressed executable (code.bin;
  * virtual address = file offset + 0x00100000). Stock ORAS bakes the zone layout

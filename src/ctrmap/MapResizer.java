@@ -13,7 +13,7 @@ import java.io.OutputStream;
 
 /**
  * Grows a zone's map beyond one region - the "bigger custom maps" feature
- * (a 2x1 route, a 2x2 Battle-Frontier hub...). The zone gets a NEW map matrix
+ * (a 2x1 route, a 2x2 hub area...). The zone gets a NEW map matrix
  * of the requested width/height: the old grid keeps its cells (top-left, with
  * whatever sharing they had), and every new cell is a fresh BLANK canvas region
  * (flat walkable plane in the zone's own area style, via {@link RegionFactory}).

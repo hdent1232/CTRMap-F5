@@ -848,28 +848,101 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			if (reg != null && prop != null) {
 				regentry = reg.entries.get(prop.uid);
 				if (regentry == null) {
-					int createEntry = JOptionPane.showConfirmDialog(this,
-							"The model and animation data needed for this prop\n"
-							+ "was not found in this area's registry under the model UID.\n\n"
-							+ "CTRMap can create dummy registry data for you, but keep in mind that:\n\n"
-							+ "1. If the prop model's textures aren't in the scene, the game will hardlock.\n"
-							+ "2. If you are using a custom prop, you need to set the entry's animation data\n"
-							+ "   in PRE if you want the game to use it.\n"
-							+ "3. Similarly, even if you are using one of GF's props, you still need to set\n"
-							+ "   the animation data as CTRMap can not detect the correct settings without\n"
-							+ "   iterating through every area searching other maps for clues, which would take forever.\n\n"
-							+ "Do you want to create the registry entry?", "Warning", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-					if (createEntry == JOptionPane.NO_OPTION) {
-						return;
-					}
-					ADPropRegistry.ADPropRegistryEntry failsafe = new ADPropRegistry.ADPropRegistryEntry();
-					failsafe.reference = prop.uid; //by GF's standard ref and model are always the same. They don't have to be but if the user fucks that up, it's their fault.
-					failsafe.model = prop.uid;
-					reg.entries.put(failsafe.reference, failsafe);
-					reg.modified = true;
-					regentry = failsafe;
+					//register automatically: retail template entry (carries the
+					//prop's animation bindings) + auto-imported textures
+					regentry = autoRegisterProp(prop.uid);
 				}
 			}
+		}
+	}
+
+	/**
+	 * Automatically registers a prop model in this area, the way retail data
+	 * would have it: the registry entry is cloned from the model's RETAIL
+	 * template (which carries the correct animation bindings - door open/close
+	 * etc.), and any textures the area lacks are imported from the best donor
+	 * area (a missing texture would hardlock the game). Only a model with no
+	 * retail template anywhere falls back to a bare entry, with a note.
+	 *
+	 * @return the registered entry, or null after reporting what failed
+	 */
+	private ADPropRegistry.ADPropRegistryEntry autoRegisterProp(int uid) {
+		try {
+			PropDatabase db = PropDatabase.get();
+			PropDatabase.PropModel pm = db == null ? null : db.getModel(uid);
+			ZoneHeader header = (CtrmapMainframe.mZonePnl != null && CtrmapMainframe.mZonePnl.zone != null)
+					? CtrmapMainframe.mZonePnl.zone.header : null;
+			//textures first - all-or-nothing before any registry write
+			if (pm != null && Workspace.bm != null) {
+				java.util.Set<String> available = new java.util.HashSet<>();
+				if (propTextures != null) {
+					for (H3DTexture t : propTextures) {
+						available.add(t.textureName);
+					}
+				}
+				byte[] mdlBch = PropDatabase.getSubfile(Workspace.bm.getDecompressedEntry(uid), 0);
+				java.util.List<String> missing = PropDatabase.getMissingTextureNames(mdlBch, available);
+				if (!missing.isEmpty()) {
+					int donorArea = (db != null && header != null && header.areadata != null)
+							? db.findDonorAreaWithTextures(pm, missing) : -1;
+					if (donorArea == -1) {
+						JOptionPane.showMessageDialog(this,
+								"This prop needs textures this area does not have (" + missing + ")\n"
+								+ "and no donor area contains them all - it was not registered, because\n"
+								+ "placing it would hardlock the game when the area loads.",
+								"Prop registration", JOptionPane.ERROR_MESSAGE);
+						return null;
+					}
+					byte[] targetPack = header.areadata.getFile(1);
+					byte[] donorPack;
+					File donorWs = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA), String.valueOf(donorArea));
+					if (donorWs.exists()) {
+						donorPack = PropDatabase.getSubfile(java.nio.file.Files.readAllBytes(donorWs.toPath()), 1);
+					} else {
+						donorPack = PropDatabase.getSubfile(Workspace.ad.getDecompressedEntry(donorArea), 1);
+					}
+					byte[] merged = BchTexturePack.importTextures(targetPack, donorPack, missing);
+					if (merged != targetPack) {
+						BCHFile packBch = new BCHFile(merged);
+						if (packBch.errorlevel != 0) {
+							throw new IllegalStateException("the merged texture pack failed verification");
+						}
+						if (!header.areadata.storeFile(1, merged)) {
+							throw new IllegalStateException("could not write the area's texture pack");
+						}
+						Workspace.addPersist(Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, header.areadataID));
+						for (H3DTexture t : packBch.textures) {
+							if (missing.contains(t.textureName) && propTextures != null) {
+								propTextures.add(t);
+							}
+						}
+					}
+				}
+			}
+			//registry entry: the retail template when one exists (animations ride along)
+			ADPropRegistry.ADPropRegistryEntry entry;
+			boolean fromTemplate = pm != null && pm.template != null;
+			if (fromTemplate) {
+				entry = new ADPropRegistry.ADPropRegistryEntry(new LittleEndianDataInputStream(new ByteArrayInputStream(pm.template)));
+			} else {
+				entry = new ADPropRegistry.ADPropRegistryEntry();
+			}
+			entry.reference = uid;
+			entry.model = uid;
+			reg.entries.put(entry.reference, entry);
+			reg.modified = true;
+			if (!fromTemplate) {
+				JOptionPane.showMessageDialog(this,
+						"Registered with a BARE entry: this model has no retail registry template\n"
+						+ "anywhere (custom prop?), so its animation bindings could not be copied.\n"
+						+ "Set them via \"[DANGER] Edit registry data\" if the prop should animate.",
+						"Prop registration", JOptionPane.INFORMATION_MESSAGE);
+			}
+			return entry;
+		} catch (Exception ex) {
+			JOptionPane.showMessageDialog(this, "Automatic prop registration failed:\n" + ex.getMessage(),
+					"Prop registration", JOptionPane.ERROR_MESSAGE);
+			return null;
 		}
 	}
 

@@ -47,6 +47,17 @@ public enum TilePalette {
 			new String[]{"taki", "chip_sea", "sea", "water"}),
 	DOOR("Door / warp tile", new int[]{0x01, 0x00, 0x0E, 0xD4}, true, true, 0xB05A3C,
 			new String[]{"door", "soil", "michi", "chip_wood", "path"}),
+	// interiors + structures (tuples measured across all 857 retail regions)
+	INDOOR("Indoor floor", new int[]{0x04, 0x00, 0x00, 0x00}, true, true, 0xC8B088,
+			new String[]{"yuka", "floor", "tatami", "chip_wood", "wood", "carpet"}),
+	WALKWAY("Boardwalk / walkway", new int[]{0x28, 0x00, 0x00, 0x00}, true, true, 0xA5814B,
+			new String[]{"hashi", "bridge", "deck", "chip_wood", "wood", "board"}),
+	STAIRS_Z("Stairs (north-south)", new int[]{0x20, 0x00, 0x00, 0x6C}, true, true, 0x9A9A86,
+			new String[]{"kaidan", "stairs", "step", "ishi", "stone", "chip_rock"}),
+	STAIRS_E("Stairs (climb east)", new int[]{0x20, 0x00, 0x00, 0x6A}, true, true, 0x9A9A86,
+			new String[]{"kaidan", "stairs", "step", "ishi", "stone", "chip_rock"}),
+	STAIRS_W("Stairs (climb west)", new int[]{0x20, 0x00, 0x00, 0x69}, true, true, 0x9A9A86,
+			new String[]{"kaidan", "stairs", "step", "ishi", "stone", "chip_rock"}),
 	VOID("Empty / blocked", new int[]{0x21, 0x00, 0x00, 0x01}, false, false, 0x2B2B2B,
 			new String[]{});
 
@@ -76,6 +87,7 @@ public enum TilePalette {
 	/** The paintable brushes (VOID is the default background, not a brush swatch). */
 	public static TilePalette[] brushes() {
 		return new TilePalette[]{GRASS, TALL_GRASS, PATH, SAND, WATER, ROCK,
-			CAVE, DEEP_SAND, ICE, LEDGE_S, LEDGE_E, LEDGE_W, BIKE_RAIL, WATERFALL, DOOR};
+			CAVE, DEEP_SAND, ICE, LEDGE_S, LEDGE_E, LEDGE_W, BIKE_RAIL, WATERFALL, DOOR,
+			INDOOR, WALKWAY, STAIRS_Z, STAIRS_E, STAIRS_W};
 	}
 }
