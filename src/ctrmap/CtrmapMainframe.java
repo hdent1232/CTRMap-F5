@@ -327,11 +327,19 @@ public class CtrmapMainframe {
 		tabs.add("Collision Editor", collEditMasterPnl);
 		tabs.add("Matrix Editor", mtxEditMasterPnl);
 		tabs.add("Zone Loader", mZonePnl);
+		tabs.setToolTipTextAt(tabs.indexOfComponent(tileEditMasterPnl),
+				"The map itself: tile BEHAVIOR (walkable/encounters/water/warps - the colored grid) plus props, NPCs, warps, triggers and cameras. Edit tool inspects a tile; Set/Fill paint tile types.");
+		tabs.setToolTipTextAt(tabs.indexOfComponent(collEditMasterPnl),
+				"The 3D collision SURFACE the player stands on (heights, slopes, stairs). Behavior bytes live in the World Editor; this shapes the physical ground. The Tile Painter edits both at once.");
+		tabs.setToolTipTextAt(tabs.indexOfComponent(mtxEditMasterPnl),
+				"How map regions tile together into the zone's world grid.");
 		tabs.setToolTipTextAt(tabs.indexOfComponent(mZonePnl), "Pick a map from the zone dropdown here - this is how zones are opened.");
 		tabs.add("Script Editor (experimental)", mScriptPnl);
 		tabs.add("Extras", mExtrasPnl);
 		tabs.add("Text Editor", mTextEditor);
 		tabs.add("Builder", mBuilder);
+		tabs.setToolTipTextAt(tabs.indexOfComponent(mBuilder),
+				"Low-level archive browser: raw GARC entries and their subfiles (advanced; everyday editing happens in the other tabs).");
 
 		btnEditTool.setActionCommand("edit");
 		btnEditTool.addActionListener(mTilemapInputManager);
