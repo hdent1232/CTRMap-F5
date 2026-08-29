@@ -1018,6 +1018,9 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						progress.close();
 						//show the map that was just loaded instead of leaving the user on the property form
 						tabs.setSelectedComponent(tileEditMasterPnl);
+						//forking is the safe default: a shared map means edits here
+						//would silently change other zones too
+						offerForkIfShared();
 					}
 
 					@Override
@@ -1050,6 +1053,63 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			}
 		}
     }//GEN-LAST:event_zoneListActionPerformed
+
+	private final java.util.Set<Integer> forkDeclined = new java.util.HashSet<>();
+
+	/**
+	 * Forking is the DEFAULT: when the freshly loaded zone shares its map with
+	 * other zones (same map matrix - e.g. a town and its story-event copies, or
+	 * a clone and its source), offer to give it a private copy immediately, so
+	 * the user never unknowingly edits someone else's map. Declines are
+	 * remembered per zone for the session.
+	 */
+	private void offerForkIfShared() {
+		if (zone == null || zoneIndex < 0 || !Workspace.isOA() || forkDeclined.contains(zoneIndex) || zones == null) {
+			return;
+		}
+		int mm = zone.header.mapmatrixID;
+		int sharers = 0;
+		for (int i = 0; i < zones.length; i++) {
+			if (i != zoneIndex && zones[i] != null && zones[i].header != null && zones[i].header.mapmatrixID == mm) {
+				sharers++;
+			}
+		}
+		if (sharers == 0) {
+			return;
+		}
+		int rsl = JOptionPane.showConfirmDialog(this,
+				"This zone SHARES its map with " + sharers + " other zone(s)\n"
+				+ "(a town and its story copies, or a clone and its source).\n"
+				+ "Editing the map here would change those zones too.\n\n"
+				+ "Give this zone its OWN private map now? (Recommended.\n"
+				+ "Pure data - packs the workspace when done.)",
+				"Shared map", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+		if (rsl != JOptionPane.YES_OPTION) {
+			forkDeclined.add(zoneIndex);
+			return;
+		}
+		final int idx = zoneIndex;
+		try {
+			ctrmap.GeometryForker.ForkResult r = ctrmap.GeometryForker.forkGeometry(idx);
+			Workspace.packWorkspace(new Runnable() {
+				@Override
+				public void run() {
+					loadEverything(new Runnable() {
+						@Override
+						public void run() {
+							selectZone(idx);
+							JOptionPane.showMessageDialog(ZoneLoadingPanel.this,
+									"Zone " + idx + " now has its own private map (regions "
+									+ java.util.Arrays.toString(r.newRegions) + ").\nEdits here no longer affect any other zone.",
+									"Shared map", JOptionPane.INFORMATION_MESSAGE);
+						}
+					});
+				}
+			});
+		} catch (Exception ex) {
+			JOptionPane.showMessageDialog(this, "Fork failed:\n" + ex.getMessage(), "Shared map", JOptionPane.ERROR_MESSAGE);
+		}
+	}
 
 	/**
 	 * "Clone zone into existing slot" - safe variant, both slots must already
