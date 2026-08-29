@@ -124,6 +124,8 @@ public class CtrmapMainframe {
 	public static ButtonGroup toolBtnGroup;
 	public static JRadioButton btnEditTool;
 	public static JRadioButton btnSetTool;
+	public static JRadioButton btnPaintTool;
+	public static ctrmap.humaninterface.PaintForm mPaintForm;
 	public static javax.swing.JButton btnUndoTile;
 	public static javax.swing.JButton btnRedoTile;
 	public static JPanel zoneTabPnl;
@@ -211,7 +213,7 @@ public class CtrmapMainframe {
 		importMapObj = new JMenuItem("Import OBJ into map region (Blender)...");
 		forkGeometry = new JMenuItem("Fork map geometry (make zone independent)...");
 		blankCanvas = new JMenuItem("Blank map canvas (this zone)...");
-		tilePainter = new JMenuItem("Paint map tiles (this zone)...");
+		tilePainter = new JMenuItem("Map Painter (this zone)");
 		areaLighting = new JMenuItem("Edit area fog & lighting...");
 		wildEncounters = new JMenuItem("Edit wild encounters (this zone)...");
 		resizeMap = new JMenuItem("Resize map (this zone)...");
@@ -236,6 +238,8 @@ public class CtrmapMainframe {
 		btnNPCTool = Utils.createGraphicalButton("_tool_npc");
 		btnWarpTool = Utils.createGraphicalButton("_tool_warp");
 		btnTriggerTool = Utils.createGraphicalButton("_tool_trigger");
+		btnPaintTool = new JRadioButton("Paint");
+		btnPaintTool.setToolTipText("Map Painter - build this zone's map with terrain brushes, elevation, buildings and decor, directly on the map view");
 		btnGeoTool = new JRadioButton("3D");
 		btnGeoTool.setToolTipText("Geometry tool - drag tiles, then move/duplicate/delete the 3D map geometry on them");
 		btnEditTool.setToolTipText("Edit tool - click a tile to load its settings");
@@ -258,6 +262,7 @@ public class CtrmapMainframe {
 		toolBtnGroup.add(btnNPCTool);
 		toolBtnGroup.add(btnWarpTool);
 		toolBtnGroup.add(btnTriggerTool);
+		toolBtnGroup.add(btnPaintTool);
 		toolBtnGroup.add(btnGeoTool);
 		toolbar.add(btnEditTool);
 		toolbar.add(btnSetTool);
@@ -267,6 +272,7 @@ public class CtrmapMainframe {
 		toolbar.add(btnNPCTool);
 		toolbar.add(btnWarpTool);
 		toolbar.add(btnTriggerTool);
+		toolbar.add(btnPaintTool);
 		toolbar.add(btnGeoTool);
 		toolbar.add(currentTool);
 
@@ -285,30 +291,27 @@ public class CtrmapMainframe {
 		btnRedoTile.addActionListener(e -> ctrmap.humaninterface.TileUndo.redo());
 		toolbar.add(btnUndoTile);
 		toolbar.add(btnRedoTile);
-		javax.swing.JButton tbPaint = new javax.swing.JButton("Paint map...");
-		tbPaint.setToolTipText("The tile painter: build this zone's map from terrain brushes, buildings and decor.");
-		tbPaint.addActionListener(e -> ctrmap.humaninterface.TilePainterForm.show());
-		javax.swing.JButton tbBlank = new javax.swing.JButton("Blank canvas...");
+		javax.swing.JButton tbBlank = new javax.swing.JButton("Blank canvas");
 		tbBlank.setToolTipText("Replace this zone's map with a blank canvas cloned from a template route.");
 		tbBlank.addActionListener(e -> blankCanvasAction());
-		javax.swing.JButton tbResize = new javax.swing.JButton("Resize...");
+		javax.swing.JButton tbResize = new javax.swing.JButton("Resize map");
 		tbResize.setToolTipText("Resize this zone's map (grow/shrink its region grid).");
 		tbResize.addActionListener(e -> resizeMapAction());
-		javax.swing.JButton tbFog = new javax.swing.JButton("Fog & lighting...");
-		tbFog.setToolTipText("Edit the area's fog and ambient light, or copy a GameFreak zone's atmosphere.");
+		javax.swing.JButton tbFog = new javax.swing.JButton("Fog & lighting");
+		tbFog.setToolTipText("Pick a GameFreak atmosphere with live preview, or hand-tune fog and ambient light.");
 		tbFog.addActionListener(e -> ctrmap.humaninterface.AreaLightingDialog.show(frame));
-		javax.swing.JButton tbEnc = new javax.swing.JButton("Encounters...");
+		javax.swing.JButton tbEnc = new javax.swing.JButton("Encounters");
 		tbEnc.setToolTipText("Edit this zone's wild Pokemon encounter slots.");
 		tbEnc.addActionListener(e -> ctrmap.humaninterface.EncounterEditDialog.show(frame));
-		javax.swing.JButton tbFork = new javax.swing.JButton("Fork geometry...");
+		javax.swing.JButton tbFork = new javax.swing.JButton("Fork geometry");
 		tbFork.setToolTipText("Give this zone its own private map so edits stop affecting the source town.");
 		tbFork.addActionListener(e -> forkGeometryAction());
 		//second toolbar row: the map-level actions (the toolbar's own row keeps
-		//the per-tile tools + undo)
+		//the per-tile tools + undo; the Paint TOOL toggle is the painter's home)
 		JToolBar mapActionsBar = new JToolBar();
 		mapActionsBar.setFloatable(false);
 		mapActionsBar.add(new JLabel(" Map:  "));
-		for (javax.swing.JButton b : new javax.swing.JButton[]{tbPaint, tbBlank, tbResize, tbFog, tbEnc, tbFork}) {
+		for (javax.swing.JButton b : new javax.swing.JButton[]{tbBlank, tbResize, tbFog, tbEnc, tbFork}) {
 			b.setFocusable(false);
 			mapActionsBar.add(b);
 		}
@@ -331,6 +334,7 @@ public class CtrmapMainframe {
 		mMtxScrollPane = new JScrollPane();
 		mCamScrollPane = new JScrollPane();
 		mTileEditForm = new TileEditForm();
+		mPaintForm = new ctrmap.humaninterface.PaintForm();
 		mCamEditForm = new CameraEditForm();
 		mPropEditForm = new PropEditForm();
 		mNPCEditForm = new NPCEditForm();
@@ -378,19 +382,19 @@ public class CtrmapMainframe {
 		JToolBar zoneOps = new JToolBar();
 		zoneOps.setFloatable(false);
 		zoneOps.add(new JLabel(" Zone actions:  "));
-		javax.swing.JButton zbRename = new javax.swing.JButton("Rename...");
+		javax.swing.JButton zbRename = new javax.swing.JButton("Rename");
 		zbRename.setToolTipText("Rename the loaded zone's in-game location banner.");
 		zbRename.addActionListener(e -> renameZoneAction());
-		javax.swing.JButton zbEmpty = new javax.swing.JButton("Empty...");
+		javax.swing.JButton zbEmpty = new javax.swing.JButton("Empty");
 		zbEmpty.setToolTipText("Clear the loaded zone's NPCs, warps, triggers and furniture (keeps map + script).");
 		zbEmpty.addActionListener(e -> emptyZoneAction());
-		javax.swing.JButton zbFind = new javax.swing.JButton("Find reusable zones...");
+		javax.swing.JButton zbFind = new javax.swing.JButton("Find reusable zones");
 		zbFind.setToolTipText("Scan for unused base zones you can safely repurpose for new areas.");
 		zbFind.addActionListener(e -> findReusableZonesAction());
-		javax.swing.JButton zbRemove = new javax.swing.JButton("Remove added zones...");
+		javax.swing.JButton zbRemove = new javax.swing.JButton("Remove added zones");
 		zbRemove.setToolTipText("Delete all added zones (index 536+) and restore the stock ZoneData layout.");
 		zbRemove.addActionListener(e -> removeAddedZonesAction());
-		javax.swing.JButton zbFacility = new javax.swing.JButton("Battle facility here...");
+		javax.swing.JButton zbFacility = new javax.swing.JButton("Battle facility here");
 		zbFacility.setToolTipText("Clone the Battle Maison's scripts into this zone as the base of a custom battle facility.");
 		zbFacility.addActionListener(e -> setupFacilityAction());
 		for (javax.swing.JButton b : new javax.swing.JButton[]{zbRename, zbEmpty, zbFind, zbRemove, zbFacility}) {
@@ -404,7 +408,7 @@ public class CtrmapMainframe {
 		extrasTabPnl = new JPanel(new BorderLayout());
 		JToolBar extrasOps = new JToolBar();
 		extrasOps.setFloatable(false);
-		javax.swing.JButton exBuilder = new javax.swing.JButton("Raw archive browser (Builder)...");
+		javax.swing.JButton exBuilder = new javax.swing.JButton("Raw archive browser (Builder)");
 		exBuilder.setToolTipText("Browse raw GARC entries and their subfiles - advanced, rarely needed.");
 		exBuilder.setFocusable(false);
 		exBuilder.addActionListener(e -> {
@@ -467,6 +471,8 @@ public class CtrmapMainframe {
 		btnWarpTool.addActionListener(mTilemapInputManager);
 		btnTriggerTool.setActionCommand("trigger");
 		btnTriggerTool.addActionListener(mTilemapInputManager);
+		btnPaintTool.setActionCommand("paint");
+		btnPaintTool.addActionListener(mTilemapInputManager);
 		btnGeoTool.setActionCommand("geo");
 		btnGeoTool.addActionListener(mTilemapInputManager);
 
@@ -573,7 +579,8 @@ public class CtrmapMainframe {
 		tilePainter.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				ctrmap.humaninterface.TilePainterForm.show();
+				tabs.setSelectedComponent(tileEditMasterPnl);
+				btnPaintTool.doClick(); //the painter is a World Editor tool now
 			}
 		});
 		areaLighting.addActionListener(new ActionListener() {
@@ -882,13 +889,13 @@ public class CtrmapMainframe {
 		p.setLayout(new javax.swing.BoxLayout(p, javax.swing.BoxLayout.Y_AXIS));
 		p.setBorder(javax.swing.BorderFactory.createEmptyBorder(24, 32, 24, 32));
 		addGameDataEntry(p, "Trainers", "Edit any trainer's party, moves, items and battle type.",
-				"Trainer editor...", e -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame));
+				"Trainer editor", e -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame));
 		addGameDataEntry(p, "Battle Maison", "Edit the Maison's opponent Pokemon pools and trainer class assignments.",
-				"Maison opponents...", e -> ctrmap.humaninterface.MaisonEditDialog.show(frame));
+				"Maison opponents", e -> ctrmap.humaninterface.MaisonEditDialog.show(frame));
 		addGameDataEntry(p, "Shops", "Change what the Poke Marts and specialty shops sell (ships as a code.ips patch).",
-				"Shop inventories...", e -> ctrmap.humaninterface.ShopEditDialog.show(frame));
+				"Shop inventories", e -> ctrmap.humaninterface.ShopEditDialog.show(frame));
 		addGameDataEntry(p, "Wild Pokemon", "Edit the loaded zone's wild encounter slots (grass, surf, fishing...).",
-				"Wild encounters (this zone)...", e -> ctrmap.humaninterface.EncounterEditDialog.show(frame));
+				"Wild encounters (this zone)", e -> ctrmap.humaninterface.EncounterEditDialog.show(frame));
 		p.add(javax.swing.Box.createVerticalGlue());
 		return p;
 	}

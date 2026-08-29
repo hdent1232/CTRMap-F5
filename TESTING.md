@@ -1,6 +1,20 @@
 # TESTING.md — things to verify in the emulator
 
-## UI reorganization (NEW — quick in-editor pass, no emulator needed)
+## Map Painter integration (NEW — quick in-editor pass, no emulator needed)
+The painter is no longer a separate window: it is now the **Paint tool** on
+the World Editor toolbar (also Map menu → Map Painter). Its brushes,
+buildings, lighting and Apply live in the right-side panel; painting happens
+directly ON the main map view — your painted cell draws over the zone at its
+real position (blue frame), with the map's own zoom.
+- [ ] Select the Paint tool → paint terrain on the main map, drag to stroke,
+  right-click ramp tool clears ramps, place a building (right-click removes).
+- [ ] Undo/Redo in the paint panel reverts strokes/fills/placements.
+- [ ] Apply to zone from the panel works end to end (same flow as before).
+- [ ] Fog & lighting now opens the GameFreak atmosphere picker FIRST (live
+  preview of your zone); "Custom settings" leads to the manual sliders.
+- [ ] No more "..." suffixes reading as cut-off labels.
+
+## UI reorganization (quick in-editor pass, no emulator needed)
 - [ ] World Editor: two toolbar rows — tools + Undo/Redo on top, the Map
   actions row (Paint map / Blank canvas / Resize / Fog & lighting /
   Encounters / Fork geometry) below. Paint some tiles, then Undo/Redo
