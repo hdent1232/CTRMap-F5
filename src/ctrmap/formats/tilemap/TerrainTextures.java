@@ -66,6 +66,35 @@ public class TerrainTextures {
 		return !images.isEmpty();
 	}
 
+	/**
+	 * Decoded image of the NAMED material's base texture - what that material
+	 * actually looks like in-game - or null. Used for visual pickers (e.g. the
+	 * blank-canvas ground material list).
+	 */
+	public static BufferedImage materialImage(byte[] modelBytes, List<H3DTexture> worldTextures, String materialName) {
+		try {
+			if (modelBytes == null || worldTextures == null || materialName == null) {
+				return null;
+			}
+			BCHFile bch = new BCHFile(modelBytes);
+			if (bch.errorlevel != 0 || bch.models.isEmpty()) {
+				return null;
+			}
+			for (H3DMaterial mat : bch.models.get(0).materials) {
+				if (mat != null && materialName.equals(mat.name) && mat.name0 != null) {
+					for (H3DTexture t : worldTextures) {
+						if (mat.name0.equals(t.textureName)) {
+							return toImage(t);
+						}
+					}
+				}
+			}
+		} catch (Exception ex) {
+			// no preview - the caller shows text only
+		}
+		return null;
+	}
+
 	private static H3DMaterial resolveMaterial(H3DModel model, TilePalette terrain) {
 		for (String hint : terrain.matHints) {
 			for (H3DMaterial mat : model.materials) {

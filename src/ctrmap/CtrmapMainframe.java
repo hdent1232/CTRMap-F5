@@ -213,14 +213,14 @@ public class CtrmapMainframe {
 		importMapObj = new JMenuItem("Import OBJ into map region (Blender)...");
 		forkGeometry = new JMenuItem("Fork map geometry (make zone independent)...");
 		blankCanvas = new JMenuItem("Blank map canvas (this zone)...");
-		tilePainter = new JMenuItem("Map Painter (this zone)");
+		tilePainter = new JMenuItem("Map Builder (this zone)");
 		areaLighting = new JMenuItem("Edit area fog & lighting...");
 		wildEncounters = new JMenuItem("Edit wild encounters (this zone)...");
 		resizeMap = new JMenuItem("Resize map (this zone)...");
 		trainerEditor = new JMenuItem("Edit trainer (party/battle)...");
 		maisonEditor = new JMenuItem("Edit Battle Maison opponents...");
 		shopEditor = new JMenuItem("Edit shop inventories (Marts)...");
-		setupFacility = new JMenuItem("Set up Battle facility here (clone Maison)...");
+		setupFacility = new JMenuItem("Custom battle facility here (clone the Maison systems)");
 		renameZone = new JMenuItem("Rename zone (in-game name)...");
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
 		removeAddedZones = new JMenuItem("Remove added zones (restore stock 536)...");
@@ -238,10 +238,10 @@ public class CtrmapMainframe {
 		btnNPCTool = Utils.createGraphicalButton("_tool_npc");
 		btnWarpTool = Utils.createGraphicalButton("_tool_warp");
 		btnTriggerTool = Utils.createGraphicalButton("_tool_trigger");
-		btnPaintTool = new JRadioButton("Paint");
-		btnPaintTool.setToolTipText("Map Painter - build this zone's map with terrain brushes, elevation, buildings and decor, directly on the map view");
-		btnGeoTool = new JRadioButton("3D");
-		btnGeoTool.setToolTipText("Geometry tool - drag tiles, then move/duplicate/delete the 3D map geometry on them");
+		btnPaintTool = new JRadioButton("Build map");
+		btnPaintTool.setToolTipText("Map Builder - construct this zone's map from scratch: terrain brushes, elevation, buildings and decor, directly on the map view. (The brush-icon Set tool instead paints tile TYPES onto the existing map.)");
+		btnGeoTool = new JRadioButton("Geometry");
+		btnGeoTool.setToolTipText("Geometry tool - drag a box on the map to select its 3D geometry, then move/duplicate/delete it, or copy it as a prefab and stamp it elsewhere");
 		btnEditTool.setToolTipText("Edit tool - click a tile to load its settings");
 		btnSetTool.setToolTipText("Set tool - paint the panel's settings onto tiles");
 		btnFillTool.setToolTipText("Fill tool - drag a box to fill tiles with settings");
@@ -394,8 +394,8 @@ public class CtrmapMainframe {
 		javax.swing.JButton zbRemove = new javax.swing.JButton("Remove added zones");
 		zbRemove.setToolTipText("Delete all added zones (index 536+) and restore the stock ZoneData layout.");
 		zbRemove.addActionListener(e -> removeAddedZonesAction());
-		javax.swing.JButton zbFacility = new javax.swing.JButton("Battle facility here");
-		zbFacility.setToolTipText("Clone the Battle Maison's scripts into this zone as the base of a custom battle facility.");
+		javax.swing.JButton zbFacility = new javax.swing.JButton("Custom battle facility");
+		zbFacility.setToolTipText("Clone the Battle Maison's battle/streak/reward systems into this zone as the base of ANY custom battle facility - tower, dojo, gauntlet, whatever the zone should host.");
 		zbFacility.addActionListener(e -> setupFacilityAction());
 		for (javax.swing.JButton b : new javax.swing.JButton[]{zbRename, zbEmpty, zbFind, zbRemove, zbFacility}) {
 			b.setFocusable(false);
@@ -890,7 +890,7 @@ public class CtrmapMainframe {
 		p.setBorder(javax.swing.BorderFactory.createEmptyBorder(24, 32, 24, 32));
 		addGameDataEntry(p, "Trainers", "Edit any trainer's party, moves, items and battle type.",
 				"Trainer editor", e -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame));
-		addGameDataEntry(p, "Battle Maison", "Edit the Maison's opponent Pokemon pools and trainer class assignments.",
+		addGameDataEntry(p, "Battle facilities", "Edit the Battle Maison's opponent pools and trainer assignments - the same data any Maison-cloned custom facility draws from.",
 				"Maison opponents", e -> ctrmap.humaninterface.MaisonEditDialog.show(frame));
 		addGameDataEntry(p, "Shops", "Change what the Poke Marts and specialty shops sell (ships as a code.ips patch).",
 				"Shop inventories", e -> ctrmap.humaninterface.ShopEditDialog.show(frame));
@@ -1568,7 +1568,28 @@ public class CtrmapMainframe {
 				def = items.size() - 1;
 			}
 		}
+		//visual picker: each entry shows what the material ACTUALLY looks like
+		final java.util.List<javax.swing.ImageIcon> matIcons = new java.util.ArrayList<>();
+		byte[] probeBytes = probe.raw;
+		java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> worldTex
+				= mTileMapPanel != null ? mTileMapPanel.getWorldTextures() : null;
+		for (int i = 0; i < items.size(); i++) {
+			String matName = items.get(i).substring(0, items.get(i).indexOf("  ("));
+			java.awt.image.BufferedImage img = ctrmap.formats.tilemap.TerrainTextures.materialImage(probeBytes, worldTex, matName);
+			matIcons.add(img == null ? null
+					: new javax.swing.ImageIcon(img.getScaledInstance(40, 40, java.awt.Image.SCALE_SMOOTH)));
+		}
 		javax.swing.JComboBox<String> matPicker = new javax.swing.JComboBox<>(items.toArray(new String[0]));
+		matPicker.setRenderer(new javax.swing.DefaultListCellRenderer() {
+			@Override
+			public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value,
+					int index, boolean isSelected, boolean cellHasFocus) {
+				JLabel l = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+				int idx = index >= 0 ? index : matPicker.getSelectedIndex();
+				l.setIcon(idx >= 0 && idx < matIcons.size() ? matIcons.get(idx) : null);
+				return l;
+			}
+		});
 		matPicker.setSelectedIndex(def);
 		Object[] form = {
 			"Replace THIS ZONE's map with a flat, walkable blank canvas.",
@@ -1655,7 +1676,7 @@ public class CtrmapMainframe {
 	 * of a retail Battle facility lobby (Maison or Institute) - script AND
 	 * entities verbatim, so the facility's engine logic is exactly retail - then
 	 * forks its geometry so edits stay local. The starting point for a custom
-	 * Delta-Emerald Frontier facility: reskin the opponents (Tools -> Edit Battle
+	 * custom battle facility: reskin the opponents (Game Data -> Battle
 	 * Maison opponents) and the text, then deploy. Must target a base zone
 	 * (index &lt; 536) because appended zones cannot run field scripts.
 	 */

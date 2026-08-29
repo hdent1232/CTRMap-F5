@@ -129,7 +129,7 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 				break;
 			case ("paint"):
 				CtrmapMainframe.tool = new ctrmap.humaninterface.tools.PaintTool();
-				currentTool.setText("Current tool: Map Painter");
+				currentTool.setText("Current tool: Map Builder");
 				break;
 			case ("geo"):
 				CtrmapMainframe.tool = new GeoTool();
