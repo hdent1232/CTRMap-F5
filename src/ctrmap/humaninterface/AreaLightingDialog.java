@@ -55,6 +55,33 @@ public class AreaLightingDialog {
 			return;
 		}
 
+		//VISUAL FIRST: the GameFreak atmosphere picker (live preview of this
+		//zone under each preset); hand-tuning sits behind "Custom settings..."
+		byte[] picked = GfEnvPicker.pick(parent, true);
+		if (picked == null) {
+			return;
+		}
+		if (picked != GfEnvPicker.CUSTOM) {
+			if (picked.length != sub4.length) {
+				JOptionPane.showMessageDialog(parent, "The picked atmosphere block does not match this area's format.", "Area fog & lighting", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			try {
+				System.arraycopy(picked, 0, sub4, 0, sub4.length);
+				ad.storeFile(4, sub4);
+				Workspace.addPersist(areaFile);
+				JOptionPane.showMessageDialog(parent,
+						"Atmosphere applied to area " + areaId + ". Deploy to see it in-game.\n"
+						+ "(This changed every zone that uses area " + areaId + ". Custom settings\n"
+						+ "can fine-tune it any time from the same button.)",
+						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
+			} catch (Exception ex) {
+				JOptionPane.showMessageDialog(parent, "Save failed:\n" + ex.getMessage(), "Area fog & lighting", JOptionPane.ERROR_MESSAGE);
+			}
+			return;
+		}
+		//fall through: the custom-settings form
+
 		final Color[] fog = {rgb(env.fogColor)};
 		final Color[] amb = {rgb(env.ambient)};
 		final JButton fogBtn = swatch("Fog / sky color", fog[0]);
@@ -111,7 +138,7 @@ public class AreaLightingDialog {
 		dlg.setLayout(new BorderLayout());
 		dlg.add(main, BorderLayout.CENTER);
 		JPanel buttons = new JPanel();
-		JButton copyGf = new JButton("Copy a GameFreak zone's atmosphere...");
+		JButton copyGf = new JButton("Copy a GameFreak zone's atmosphere");
 		JButton save = new JButton("Save");
 		JButton cancel = new JButton("Cancel");
 		buttons.add(copyGf);
