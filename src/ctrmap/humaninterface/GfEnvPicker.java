@@ -45,8 +45,20 @@ import static ctrmap.CtrmapMainframe.mZonePnl;
  */
 public class GfEnvPicker {
 
+	/** Returned by {@link #pick} when the user asked for the custom-settings form. */
+	public static final byte[] CUSTOM = new byte[0];
+
 	/** Opens the picker; returns the chosen zone's full 2944-byte env block, or null. */
 	public static byte[] pick(Dialog parent) {
+		return pick((java.awt.Window) parent, false);
+	}
+
+	/**
+	 * Opens the picker; returns the chosen env block, {@link #CUSTOM} when the
+	 * user pressed "Custom settings..." (offered only when {@code offerCustom}),
+	 * or null on cancel.
+	 */
+	public static byte[] pick(java.awt.Window parent, boolean offerCustom) {
 		final GARC zoG = pristineOrLive(Workspace.ArchiveType.ZONE_DATA);
 		final GARC adG = pristineOrLive(Workspace.ArchiveType.AREA_DATA);
 		if (zoG == null || adG == null) {
@@ -133,7 +145,7 @@ public class GfEnvPicker {
 			}
 		});
 
-		final JDialog dlg = new JDialog(parent, "GameFreak atmospheres", true);
+		final JDialog dlg = new JDialog(parent, "GameFreak atmospheres", Dialog.ModalityType.APPLICATION_MODAL);
 		dlg.setLayout(new BorderLayout(8, 8));
 		((JPanel) dlg.getContentPane()).setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 		JPanel left = new JPanel(new BorderLayout(0, 4));
@@ -166,6 +178,15 @@ public class GfEnvPicker {
 		JButton ok = new JButton("Use this atmosphere");
 		JButton cancel = new JButton("Cancel");
 		buttons.add(ok);
+		if (offerCustom) {
+			JButton custom = new JButton("Custom settings");
+			custom.setToolTipText("Hand-tune the fog color, strength, distances and ambient light instead.");
+			custom.addActionListener(e -> {
+				result[0] = CUSTOM;
+				dlg.dispose();
+			});
+			buttons.add(custom);
+		}
 		buttons.add(cancel);
 		dlg.add(buttons, BorderLayout.SOUTH);
 
