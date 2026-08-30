@@ -283,6 +283,88 @@ public class GeometryForker {
 		return r;
 	}
 
+	/**
+	 * How many OTHER zones use the same map matrix as this zone, per the master
+	 * zone-header table (the runtime-authoritative copy). 0 = the geometry is
+	 * already private and a fork would only orphan archive entries.
+	 */
+	public static int matrixSharers(int zoneIndex) throws IOException {
+		GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		if (zo == null) {
+			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
+		}
+		int zoneCount = zo.length - 2;
+		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneCount);
+		if (masterFile == null) {
+			throw new IOException("Could not extract the master zone-header table.");
+		}
+		byte[] master = readAll(masterFile);
+		if (master.length != zoneCount * MASTER_ROW) {
+			//a stale/foreign artifact in the workspace slot; the pristine table
+			//comes from the archive itself. If even that disagrees, report
+			//"shared" - forking needlessly is safe, skipping it is not.
+			byte[] fromGarc = zo.getDecompressedEntry(zoneCount);
+			if (fromGarc == null || fromGarc.length != zoneCount * MASTER_ROW) {
+				return 1;
+			}
+			master = fromGarc;
+		}
+		int off = zoneIndex * MASTER_ROW + 4;
+		if (off + 2 > master.length) {
+			throw new IOException("Master-table row for zone " + zoneIndex + " out of range.");
+		}
+		int mm = u16(master, off);
+		int sharers = 0;
+		for (int z = 0; z < zoneCount; z++) {
+			if (z != zoneIndex && u16(master, z * MASTER_ROW + 4) == mm) {
+				sharers++;
+			}
+		}
+		return sharers;
+	}
+
+	/**
+	 * The zone's CURRENT geometry as a no-op ForkResult (newRegions ==
+	 * srcRegions, matrix unchanged) - for callers that fork-if-shared and write
+	 * into the zone's own regions when it is already private.
+	 */
+	public static ForkResult currentGeometry(int zoneIndex) throws IOException {
+		File zoneFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		if (zoneFile == null) {
+			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
+		}
+		byte[] zoBytes = readAll(zoneFile);
+		int hdrOff = u32(zoBytes, 4);
+		int matrix = u16(zoBytes, hdrOff + 4);
+		File matFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, matrix);
+		if (matFile == null) {
+			throw new IOException("Could not extract map matrix " + matrix + " from the workspace.");
+		}
+		byte[] mat = readAll(matFile);
+		int sub0 = u32(mat, 4);
+		int w = u16(mat, sub0 + 4), h = u16(mat, sub0 + 6);
+		LinkedHashMap<Integer, Integer> seen = new LinkedHashMap<>();
+		for (int k = 0; k < w * h; k++) {
+			int id = u16(mat, sub0 + 8 + k * 2);
+			if (id != 0xFFFF && !seen.containsKey(id)) {
+				seen.put(id, id);
+			}
+		}
+		ForkResult r = new ForkResult();
+		r.zoneIndex = zoneIndex;
+		r.oldMatrix = matrix;
+		r.newMatrix = matrix;
+		r.srcRegions = new int[seen.size()];
+		r.newRegions = new int[seen.size()];
+		int i = 0;
+		for (Integer id : seen.keySet()) {
+			r.srcRegions[i] = id;
+			r.newRegions[i] = id;
+			i++;
+		}
+		return r;
+	}
+
 	/** Registers a pending FieldData compression override (appenders other than the fork reuse this). */
 	public static void registerPendingField(int index, boolean compressed) {
 		if (pendingFieldOverrides == null) {

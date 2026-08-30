@@ -38,16 +38,19 @@ import javax.swing.SwingUtilities;
  */
 public class BuildingPaletteDialog {
 
-	/** Per-session caches: extraction and donor textures are dump-backed. */
+	/** Per-session caches: extraction and donor textures are dump-backed.
+	 *  Both loaders are synchronized - the palette preview thread and the Map
+	 *  Builder's live-regen worker hit them concurrently, and the extraction
+	 *  writes fixed-named temp files. */
 	private static final Map<BuildingCatalog.Entry, MapPrefab> prefabCache = new HashMap<>();
 	private static final Map<Integer, List<H3DTexture>> donorTexCache = new HashMap<>();
 
-	public static MapPrefab cachedPrefab(BuildingCatalog.Entry e) {
+	public static synchronized MapPrefab cachedPrefab(BuildingCatalog.Entry e) {
 		return prefabCache.computeIfAbsent(e, BuildingCatalog::extract);
 	}
 
 	/** The donor area's decoded textures (world pack file 11, prop pack file 1). */
-	public static List<H3DTexture> donorTextures(int areaId) {
+	public static synchronized List<H3DTexture> donorTextures(int areaId) {
 		return donorTexCache.computeIfAbsent(areaId, id -> {
 			List<H3DTexture> out = new ArrayList<>();
 			try {

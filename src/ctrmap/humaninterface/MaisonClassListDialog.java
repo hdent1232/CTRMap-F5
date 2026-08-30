@@ -47,7 +47,7 @@ public class MaisonClassListDialog {
 
 	public static void show(Dialog parent) {
 		if (Workspace.getArchive(TABLES[0]) == null) {
-			JOptionPane.showMessageDialog(parent, "This dump has no Maison class tables.", "Class assignments", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(parent, "This dump has no facility class tables.", "Class assignments", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
 		String[] classNames = text(Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_CLASS_NAMES));
@@ -58,14 +58,33 @@ public class MaisonClassListDialog {
 		jt.getColumnModel().getColumn(1).setPreferredWidth(150);
 		jt.getColumnModel().getColumn(2).setPreferredWidth(430);
 
-		final JDialog dlg = new JDialog(parent, "Maison class assignments", true);
+		final JDialog dlg = new JDialog(parent, "Facility class assignments", true);
+		model.promptOwner = dlg;
 		dlg.setLayout(new BorderLayout());
+		JPanel north = new JPanel(new java.awt.GridLayout(2, 1));
 		JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
 		top.add(new JLabel("Table:"));
 		top.add(tableBox);
 		top.add(new JLabel("   (Set indices = comma-separated, into the paired pool)"));
-		dlg.add(top, BorderLayout.NORTH);
+		final JButton restoreRow = new JButton("Restore retail row");
+		restoreRow.setToolTipText("Put the selected class's retail set list back (from the pristine snapshot).");
+		top.add(restoreRow);
+		north.add(top);
+		north.add(new JLabel("  Every row here is ENGINE-WIDE: it chooses the teams this trainer class uses in the retail facility AND every cloned one."));
+		dlg.add(north, BorderLayout.NORTH);
 		dlg.add(new JScrollPane(jt), BorderLayout.CENTER);
+
+		restoreRow.addActionListener(e -> {
+			int r = jt.getSelectedRow();
+			if (r < 0) {
+				JOptionPane.showMessageDialog(dlg, "Select a class row first.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
+				return;
+			}
+			if (!model.restoreRetailRow(r)) {
+				JOptionPane.showMessageDialog(dlg, "No pristine snapshot is available to restore from.",
+						"Class assignments", JOptionPane.ERROR_MESSAGE);
+			}
+		});
 
 		tableBox.addActionListener(e -> {
 			if (model.dirty && !confirmDiscard(dlg)) {
@@ -126,7 +145,12 @@ public class MaisonClassListDialog {
 		final String[] classNames;
 		int tableIndex = 0;
 		MaisonClassList[] lists = new MaisonClassList[0];
+		MaisonClassList[] vanilla = null;
 		boolean dirty = false;
+		/** The one-time engine-wide disclosure was ACCEPTED in this dialog instance. */
+		boolean disclosed = false;
+		/** Owner for the disclosure prompt (the dialog itself, set in show). */
+		java.awt.Component promptOwner = null;
 
 		ListModel(String[] classNames) {
 			this.classNames = classNames;
@@ -144,8 +168,21 @@ public class MaisonClassListDialog {
 					lists[i] = new MaisonClassList();
 				}
 			}
+			vanilla = ctrmap.formats.maison.MaisonPoolGuard.readSnapshotLists(TABLES[idx]);
 			dirty = false;
 			fireTableDataChanged();
+		}
+
+		/** Puts the retail set list back into row r (snapshot-sourced). */
+		boolean restoreRetailRow(int r) {
+			if (vanilla == null || r >= vanilla.length || vanilla[r] == null) {
+				return false;
+			}
+			lists[r].setIndices.clear();
+			lists[r].setIndices.addAll(vanilla[r].setIndices);
+			dirty = true;
+			fireTableRowsUpdated(r, r);
+			return true;
 		}
 
 		void save() throws Exception {
@@ -201,6 +238,19 @@ public class MaisonClassListDialog {
 		public void setValueAt(Object v, int r, int c) {
 			if (c != 2) {
 				return;
+			}
+			if (!disclosed) {
+				//armed until the user actually accepts - a Cancel must re-prompt
+				if (JOptionPane.showConfirmDialog(promptOwner,
+						"Class assignments are ENGINE-WIDE: this row decides which team sets\n"
+						+ "EVERY facility - the retail one and every clone - draws for this trainer\n"
+						+ "class. There is no per-facility copy. (\"Restore retail row\" undoes a row.)\n\n"
+						+ "Continue editing?",
+						"Class assignments", JOptionPane.OK_CANCEL_OPTION,
+						JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION) {
+					return;
+				}
+				disclosed = true;
 			}
 			MaisonClassList l = lists[r];
 			java.util.List<Integer> parsed = new java.util.ArrayList<>();
