@@ -10,6 +10,13 @@ Everything the editor can build is in this world, and it is deliberately
 split across four zones so that **if something crashes or misbehaves, WHERE
 it happens tells us WHICH subsystem is broken** (table at the bottom).
 
+> **FULLY REBUILT 2026-08-30 (latest) — everything below was regenerated
+> through the editor's CURRENT pipeline**, including the vertex-colour fix
+> (painted tiles could render black), the ground-material fix, and material
+> import (brushes a map lacks — ice, stairs, cave — now borrow real retail
+> materials instead of falling back). If you deployed earlier today, deploy
+> again: the older build shows the pre-fix look.
+>
 > **SEALED 2026-08-30 — read this before testing.** The test world is now
 > escape-proof: its zones are ringed with impassable rock, and the Mart/house
 > doors that used to lead into RETAIL interiors (whose exits drop you in the
@@ -84,7 +91,10 @@ Near the spawn: **two signs and two NPCs** — read/talk to all of them:
   plaza; you must not be able to climb up through it.
 - **Stairs strip** (east of the ramp): the stairs walking behavior.
 - **East column, top to bottom**: cave floor, indoor floor, boardwalk,
-  **ice** (should slide), sand. One step on each.
+  **ice** (should slide), sand. One step on each. These are the stations
+  whose materials do NOT exist on a route — they were imported from other
+  maps, so also check they LOOK like cave/indoor/boardwalk/ice/sand rather
+  than like grass or a wall.
 - **South edge doors**: the WEST door leads to BUILDINGS, the EAST door to
   WATER.
 
