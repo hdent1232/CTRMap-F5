@@ -1211,20 +1211,98 @@ public class PaintedRegionBuilder {
 		return Math.max(s, 1f / 720f);
 	}
 
+	/**
+	 * The mesh a brush paints with: the first material whose name matches one of
+	 * the brush's hints, skipping edge overlays and sprite atlases - and, for
+	 * ground brushes, skipping anything that is not actually a surface.
+	 *
+	 * <p>That last filter matters more than it looks. The hints are matched by
+	 * substring and ROCK's include {@code gake}, which is Japanese for CLIFF, so
+	 * on a normal outdoor route "rock" matched the map's own cliff face:
+	 * {@code chip_gake_sea} on Route 101, {@code r105_chip_rock_c} on Route 103.
+	 * Painting rock ground then laid vertical cliff art flat on the floor. It
+	 * looked like a bad donor row in the terrain table, but the table was never
+	 * consulted - {@code ensureMaterial} returns early whenever the map already
+	 * has a matching material, and 294 regions matched a cliff this way. Most of
+	 * them held a perfectly good flat rock mesh a little further down the list.
+	 *
+	 * <p>Cliffs pass {@code wantSurface = false}: {@link #resolveCliffMesh} looks
+	 * up the same ROCK brush and genuinely wants the vertical material.
+	 */
 	private static int resolveMesh(BchMapModel model, TilePalette t, int fallback) {
+		return resolveMesh(model, t, fallback, true);
+	}
+
+	/** Fraction of a mesh's surface area that faces up; a floor ~1, a wall ~0. */
+	private static final double MIN_GROUND_FLATNESS = 0.5;
+
+	/** The mesh a ground brush resolves to natively, or -1 when nothing matches
+	 *  and the brush must import a donor instead. Exposed for the corpus sweep
+	 *  in {@link ctrmap.tests.GroundResolveTest}. */
+	public static int resolvedGroundMesh(BchMapModel model, TilePalette t) {
+		return resolveMesh(model, t, -1, true);
+	}
+
+	/** @see #flatFraction */
+	public static double meshFlatness(BchMapModel model, int meshIndex) {
+		return flatFraction(model, meshIndex);
+	}
+
+	private static int resolveMesh(BchMapModel model, TilePalette t, int fallback, boolean wantSurface) {
 		for (String hint : t.matHints) {
 			for (BchMapModel.MeshGeom g : model.geometry()) {
 				if (!g.posOk) {
 					continue;
 				}
 				String name = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
-				if (name != null && !isEdgeMaterial(name) && !isSpriteMaterial(name)
-						&& name.toLowerCase().contains(hint)) {
-					return g.meshIndex;
+				if (name == null || isEdgeMaterial(name) || isSpriteMaterial(name)
+						|| !name.toLowerCase().contains(hint)) {
+					continue;
 				}
+				double flat = flatFraction(model, g.meshIndex);
+				if (wantSurface && flat >= 0 && flat < MIN_GROUND_FLATNESS) {
+					continue; //a cliff face, not ground - keep looking
+				}
+				return g.meshIndex;
 			}
 		}
 		return fallback;
+	}
+
+	/**
+	 * Plan-view area over true surface area for a whole mesh: 1.0 for a flat
+	 * floor, ~0 for a vertical wall. Unlike {@link #upFacingArea} this is a
+	 * ratio, so it compares meshes of wildly different sizes.
+	 *
+	 * <p>Returns -1 when the mesh has no measurable surface at all, which is NOT
+	 * the same answer as 0. A freshly imported brush material arrives as an
+	 * empty placeholder - {@link TerrainCatalog#ensureMaterial} blanks it to a
+	 * single vertex, precisely so the painter can fill it - and scoring that as
+	 * "perfectly vertical" made the resolver reject the material it had just
+	 * imported, for eleven brushes on the indoor test map alone. An unmeasurable
+	 * mesh has to be given the benefit of the doubt; the filter exists to reject
+	 * cliffs it can see, not geometry it cannot.
+	 */
+	private static double flatFraction(BchMapModel model, int meshIndex) {
+		try {
+			float[][] pos = model.getVertexPositions(meshIndex);
+			int[] tris = model.getTriangles(meshIndex);
+			double plan = 0, total = 0;
+			for (int t = 0; t + 2 < tris.length; t += 3) {
+				int a = tris[t], b = tris[t + 1], c = tris[t + 2];
+				if (a >= pos.length || b >= pos.length || c >= pos.length) {
+					continue;
+				}
+				double ux = pos[b][0] - pos[a][0], uy = pos[b][1] - pos[a][1], uz = pos[b][2] - pos[a][2];
+				double vx = pos[c][0] - pos[a][0], vy = pos[c][1] - pos[a][1], vz = pos[c][2] - pos[a][2];
+				double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+				total += Math.sqrt(nx * nx + ny * ny + nz * nz);
+				plan += Math.abs(ny);
+			}
+			return total > 0 ? plan / total : -1;
+		} catch (RuntimeException ex) {
+			return -1;
+		}
 	}
 
 	/**
@@ -1336,8 +1414,10 @@ public class PaintedRegionBuilder {
 			}
 		}
 		//the map's own cliff material is a sprite (or it has none): a rock brush
-		//imported by TerrainCatalog is a real opaque wall, so prefer that
-		return resolveMesh(model, TilePalette.ROCK, fallback);
+		//imported by TerrainCatalog is a real opaque wall, so prefer that.
+		//wantSurface=false - this is a WALL, so the flatness filter that keeps
+		//ground brushes off cliff faces must not run in reverse here
+		return resolveMesh(model, TilePalette.ROCK, fallback, false);
 	}
 
 	/** The grass-edge overlay mesh (chip_kusa_edge / chip_grass_edge), or -1. */
