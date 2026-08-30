@@ -40,6 +40,7 @@ public class PaintedRegionTest {
 		failures += check("mostly void with a path", pathGrid(), null, donor);
 		failures += check("raised plateau (elevation + cliffs)", grid(TilePalette.GRASS), plateau(), donor);
 		failures += checkEdges(donor);
+		failures += checkCliffWinding(donor);
 
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
 		if (failures > 0) {
@@ -139,6 +140,95 @@ public class PaintedRegionTest {
 			System.out.println("FAIL " + label + ": " + ex.getMessage());
 			return 1;
 		}
+	}
+
+	/**
+	 * Every generated cliff wall must face OUT of the plateau it walls off.
+	 *
+	 * <p>All four edge directions used to wind inward. Most cliff materials cull
+	 * back faces, so painted elevation shipped with the plateau top drawn and
+	 * its sides invisible - and because the top looked correct, nothing about
+	 * the result said "the walls are inside out".
+	 *
+	 * <p>The plateau is two concentric raised squares, so "outward" is simply
+	 * away from their shared centre. The centre is derived from the wall
+	 * triangles themselves rather than from tile coordinates, so the check does
+	 * not depend on where the region's origin sits.
+	 */
+	static int checkCliffWinding(byte[] donor) {
+		try {
+			ctrmap.formats.tilemap.TerrainLighting L = ctrmap.formats.tilemap.TerrainLighting.daytime();
+			//A flat build must contain no walls at all. If it did, the donor's
+			//own retail cliffs would be in the sample and the check below would
+			//be measuring the wrong geometry.
+			List<float[]> flat = walls(PaintedRegionBuilder.build(
+					donor, grid(TilePalette.GRASS), new int[DIM][DIM], L).model);
+			if (!flat.isEmpty()) {
+				throw new IllegalStateException("a flat build already has " + flat.size()
+						+ " vertical triangles; the sample is not purely generated");
+			}
+			List<float[]> w = walls(PaintedRegionBuilder.build(
+					donor, grid(TilePalette.GRASS), plateau(), L).model);
+			if (w.size() < 50) {
+				throw new IllegalStateException("only " + w.size()
+						+ " cliff triangles generated; the plateau did not build");
+			}
+			float cx = 0f, cz = 0f;
+			for (float[] t : w) {
+				cx += t[0];
+				cz += t[1];
+			}
+			cx /= w.size();
+			cz /= w.size();
+			int out = 0, skipped = 0;
+			for (float[] t : w) {
+				float ox = t[0] - cx, oz = t[1] - cz;
+				if (ox * ox + oz * oz < 1f) {
+					skipped++;
+					continue;
+				}
+				if (t[2] * ox + t[3] * oz > 0) {
+					out++;
+				}
+			}
+			int judged = w.size() - skipped;
+			if (out != judged) {
+				throw new IllegalStateException("cliff winding: only " + out + "/" + judged
+						+ " walls face outward");
+			}
+			System.out.println("  ok: cliff winding (" + judged + " walls, all facing out)");
+			return 0;
+		} catch (RuntimeException ex) {
+			System.out.println("FAIL cliff winding: " + ex.getMessage());
+			return 1;
+		}
+	}
+
+	/** Near-vertical triangles as {centroidX, centroidZ, normalX, normalZ}. */
+	static List<float[]> walls(byte[] model) {
+		List<float[]> out = new java.util.ArrayList<>();
+		BchMapModel m = new BchMapModel(model);
+		for (BchMapModel.MeshGeom g : m.geometry()) {
+			if (!g.posOk) {
+				continue;
+			}
+			float[][] pos = m.getVertexPositions(g.meshIndex);
+			int[] tri = m.getTriangles(g.meshIndex);
+			for (int i = 0; i + 2 < tri.length; i += 3) {
+				float[] a = pos[tri[i]], b = pos[tri[i + 1]], c = pos[tri[i + 2]];
+				float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+				float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+				float nx = uy * vz - uz * vy;
+				float ny = uz * vx - ux * vz;
+				float nz = ux * vy - uy * vx;
+				float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+				if (len < 1e-4f || Math.abs(ny) / len > 0.3f) {
+					continue; //degenerate, or a floor rather than a wall
+				}
+				out.add(new float[]{(a[0] + b[0] + c[0]) / 3f, (a[2] + b[2] + c[2]) / 3f, nx, nz});
+			}
+		}
+		return out;
 	}
 
 	/**

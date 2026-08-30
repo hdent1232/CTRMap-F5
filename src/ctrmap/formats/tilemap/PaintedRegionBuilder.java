@@ -791,6 +791,31 @@ public class PaintedRegionBuilder {
 		return q;
 	}
 
+	/**
+	 * Ensures a vertical quad's triangles wind so its face points OUT along
+	 * {@code (nx, nz)}, not into the terrain it walls off.
+	 *
+	 * <p>Unlike {@link #fixWindingUp} this carries the per-corner AO across the
+	 * swap as well. That helper is only used on quads whose AO is uniform, so
+	 * it can leave shading alone; a cliff is deliberately darker toward its
+	 * base, and moving the positions without the shading would light the wall
+	 * upside down - a fault no geometry check would catch, because every
+	 * triangle would be facing the right way.
+	 */
+	private static void fixWindingOut(Quad q, float nx, float nz) {
+		float[] a = q.pos[0], b = q.pos[2], c = q.pos[1];
+		float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+		float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+		float gx = uy * vz - uz * vy; // x of cross(u,v)
+		float gz = ux * vy - uy * vx; // z of cross(u,v)
+		if (gx * nx + gz * nz < 0) {
+			float[] tp = q.pos[1]; q.pos[1] = q.pos[2]; q.pos[2] = tp;
+			float[] tu = q.uv[1]; q.uv[1] = q.uv[2]; q.uv[2] = tu;
+			float[] tn = q.nrm[1]; q.nrm[1] = q.nrm[2]; q.nrm[2] = tn;
+			float ta = q.ao[1]; q.ao[1] = q.ao[2]; q.ao[2] = ta;
+		}
+	}
+
 	/** Ensures a flat quad's triangles wind so its face points +Y (up). */
 	private static void fixWindingUp(Quad q) {
 		float[] a = q.pos[0], b = q.pos[2], c = q.pos[1];
@@ -894,6 +919,11 @@ public class PaintedRegionBuilder {
 			q.nrm[c] = new float[]{nx, 0f, nz};
 			q.ao[c] = aoTop[c];
 		}
+		//The corner order above winds every one of the four directions inward,
+		//so painted elevation shipped with no rim walls at all: most cliff
+		//materials cull back faces, leaving the plateau top drawn and its sides
+		//invisible. The top looked right, which is why it went unreported.
+		fixWindingOut(q, nx, nz);
 		return q;
 	}
 
