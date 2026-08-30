@@ -41,6 +41,60 @@ public class TerrainCatalog {
 		public String injectName;
 	}
 
+	private static final java.util.Map<String, float[]> uvScaleCache = new java.util.HashMap<>();
+
+	/**
+	 * The UV scale the DONOR mesh was authored at, for a material this catalog
+	 * injected - or null when the name is not one of ours, or the donor cannot
+	 * be read.
+	 *
+	 * <p>{@link #ensureMaterial} keeps the donor's material and blanks its
+	 * geometry to a single vertex, since the painter supplies the tiles. That
+	 * leaves nothing for the painter's own UV measurement to work from, so every
+	 * imported brush fell back to a fixed default of 1/36 while retail
+	 * world-projected ground is authored around 1/72 - a 2x texture-scale error
+	 * on precisely the brushes the editor adds, and the reason imported
+	 * boardwalk planks came out twice the size of the retail ones beside them.
+	 *
+	 * <p>Measured lazily from the pristine dump and cached; a null result is
+	 * cached too, so a missing snapshot costs one attempt rather than one per
+	 * painted tile.
+	 */
+	public static synchronized float[] donorUvScale(String injectName) {
+		if (injectName == null) {
+			return null;
+		}
+		if (uvScaleCache.containsKey(injectName)) {
+			return uvScaleCache.get(injectName);
+		}
+		float[] out = null;
+		for (Donor d : donors().values()) {
+			if (!injectName.equals(d.injectName)) {
+				continue;
+			}
+			try {
+				GR gr = BuildingCatalog.pristineRegion(d.donorRegion);
+				if (gr != null) {
+					byte[] dm = gr.getFile(1);
+					if (BchMapModel.isMapModel(dm)) {
+						BchMapModel m = new BchMapModel(dm);
+						if (d.donorMesh >= 0 && d.donorMesh < m.meshCount) {
+							//the donor mesh has real geometry, so this measures
+							//rather than recursing back into this method
+							out = PaintedRegionBuilder.measureUvScale(m, m.geometry().get(d.donorMesh));
+						}
+					}
+				}
+			} catch (Exception ex) {
+				System.err.println("TerrainCatalog: could not measure donor scale for "
+						+ injectName + ": " + ex);
+			}
+			break;
+		}
+		uvScaleCache.put(injectName, out);
+		return out;
+	}
+
 	/** What an import needs from the donor's AREA to render in the target. */
 	public static class ImportResult {
 

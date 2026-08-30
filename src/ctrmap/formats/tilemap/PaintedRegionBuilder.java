@@ -1182,7 +1182,16 @@ public class PaintedRegionBuilder {
 		BchMapModel.MeshAttr uv = model.findAttr(g.meshIndex, 4);
 		float def = 1f / 36f;
 		if (uv == null || uv.type != 3 || g.vertexCount < 3) {
-			return new float[]{def, def};
+			//A material this editor imported arrives blanked to a single vertex -
+			//TerrainCatalog keeps the material and throws the donor's geometry
+			//away, so there is nothing left here to measure. Every imported
+			//brush therefore painted at the 1/36 default, while retail
+			//world-projected ground is authored at about 1/72: a consistent 2x
+			//texture-scale error on exactly the brushes the editor adds. The
+			//donor still knows its own scale, so ask the catalog for it.
+			float[] donor = TerrainCatalog.donorUvScale(
+					model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex)));
+			return donor != null ? donor : new float[]{def, def};
 		}
 		float minX = Float.MAX_VALUE, maxX = -Float.MAX_VALUE, minZ = Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
 		float minU = Float.MAX_VALUE, maxU = -Float.MAX_VALUE, minV = Float.MAX_VALUE, maxV = -Float.MAX_VALUE;
@@ -1246,6 +1255,11 @@ public class PaintedRegionBuilder {
 	/** @see #flatFraction */
 	public static double meshFlatness(BchMapModel model, int meshIndex) {
 		return flatFraction(model, meshIndex);
+	}
+
+	/** @see #measureUvScale */
+	public static float[] uvScaleOf(BchMapModel model, int meshIndex) {
+		return measureUvScale(model, model.geometry().get(meshIndex));
 	}
 
 	private static int resolveMesh(BchMapModel model, TilePalette t, int fallback, boolean wantSurface) {
