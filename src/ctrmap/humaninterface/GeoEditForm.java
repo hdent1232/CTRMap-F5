@@ -537,7 +537,10 @@ public class GeoEditForm extends JPanel {
 		ctrmap.formats.containers.AD live = (mZonePnl != null && mZonePnl.zone != null
 				&& mZonePnl.zone.header != null && mZonePnl.zone.header.areadata != null
 				&& mZonePnl.zone.header.areadataID == targetArea) ? mZonePnl.zone.header.areadata : null;
-		return ctrmap.formats.h3d.BchTexturePack.carryToArea(donorArea, targetArea, needed, live);
+		//the zone being edited is the panel's loaded one here; the guard needs it
+		//so it does not read this zone's own row as another map depending on the area
+		int editingZone = mZonePnl != null ? mZonePnl.zoneIndex : -1;
+		return ctrmap.formats.h3d.BchTexturePack.carryToArea(donorArea, targetArea, needed, live, editingZone);
 	}
 
 	private void undo() {

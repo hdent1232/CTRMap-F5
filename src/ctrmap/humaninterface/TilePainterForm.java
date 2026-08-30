@@ -311,13 +311,19 @@ public class TilePainterForm {
 		// stamped pieces reference their donor areas' textures - carry any the
 		// zone's area lacks, or the game hardlocks on load
 		StringBuilder texNote = new StringBuilder();
-		int zoneArea = mZonePnl.zone.header.areadataID;
+		//Read the area from the zone we are actually painting, not from whatever
+		//zone the panel happens to have loaded. The guard below excludes this
+		//zone index, so the index and the area it is checked against have to
+		//describe the same zone; callers reach here with a seeded zone that need
+		//not be the panel's current one.
+		int zoneArea = ctrmap.AreaForker.currentArea(zoneIndex);
 		for (java.util.Map.Entry<Integer, java.util.Set<String>> en : texNeeds.entrySet()) {
 			if (en.getKey() == zoneArea) {
 				continue;
 			}
 			texNote.append(ctrmap.formats.h3d.BchTexturePack.carryToArea(
-					en.getKey(), zoneArea, new java.util.ArrayList<>(en.getValue()), areaContainer(zoneArea)).trim()).append('\n');
+					en.getKey(), zoneArea, new java.util.ArrayList<>(en.getValue()),
+					areaContainer(zoneArea), zoneIndex).trim()).append('\n');
 		}
 		int enterable = 0;
 		for (Placed pl : placed) {
