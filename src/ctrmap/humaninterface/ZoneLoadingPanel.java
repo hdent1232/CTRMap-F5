@@ -1027,6 +1027,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						if (ctrmap.CtrmapMainframe.tool instanceof ctrmap.humaninterface.tools.PaintTool) {
 							mPaintForm.activate();
 						}
+						//show this zone's own atmosphere in the 3D view
+						ctrmap.CtrmapMainframe.refreshSceneFog();
 					}
 
 					@Override

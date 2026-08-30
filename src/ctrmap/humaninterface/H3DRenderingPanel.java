@@ -42,8 +42,31 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 
 	public CM3DNavigator navi = new CM3DNavigator(this);
 	public List<CM3DRenderable> CM3DComponents = new ArrayList<>();
-	
+
 	public boolean reload = false;
+
+	//the loaded area's atmosphere - the same fog the game applies, so editing
+	//fog & lighting is visible right here instead of only in the picker
+	private boolean fogOn = false;
+	private final float[] fogColor = new float[]{0f, 0f, 0f, 1f};
+	private float fogNear = 0f, fogFar = 0f;
+
+	/** Shows the area's fog (color + near/far) in the scene. */
+	public void setFog(float r, float g, float b, float near, float far) {
+		fogColor[0] = r;
+		fogColor[1] = g;
+		fogColor[2] = b;
+		fogNear = near;
+		fogFar = far;
+		fogOn = far > near && far > 0;
+		repaint();
+	}
+
+	/** Back to the plain black backdrop (no zone / unreadable atmosphere). */
+	public void clearFog() {
+		fogOn = false;
+		repaint();
+	}
 
 	public H3DRenderingPanel(List<CM3DRenderable> slaves) {
 		super(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
@@ -92,6 +115,18 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 	public void display(GLAutoDrawable drawable) {
 		if (Workspace.valid) {
 			GL2 gl = drawable.getGL().getGL2();
+			if (fogOn) {
+				//sky takes the fog color, exactly like the engine does
+				gl.glClearColor(fogColor[0], fogColor[1], fogColor[2], 1f);
+				gl.glEnable(GL2.GL_FOG);
+				gl.glFogi(GL2.GL_FOG_MODE, GL2.GL_LINEAR);
+				gl.glFogfv(GL2.GL_FOG_COLOR, fogColor, 0);
+				gl.glFogf(GL2.GL_FOG_START, fogNear);
+				gl.glFogf(GL2.GL_FOG_END, fogFar);
+			} else {
+				gl.glClearColor(0f, 0f, 0f, 0f);
+				gl.glDisable(GL2.GL_FOG);
+			}
 			gl.glClear(GL2.GL_COLOR_BUFFER_BIT | GL2.GL_DEPTH_BUFFER_BIT);
 			gl.glLoadIdentity();
 			gl.glRotatef(rotateX, 1.0f, 0.0f, 0.0f);

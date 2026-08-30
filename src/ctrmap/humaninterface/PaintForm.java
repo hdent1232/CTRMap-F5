@@ -397,12 +397,18 @@ public class PaintForm extends JPanel {
 		if (seededZone < 0) {
 			return;
 		}
-		int areaId = mZonePnl.zone.header.areadataID;
+		//animations live in the AREA - fork a shared one first so the ripple
+		//cannot reach other zones (this is what made the water splice a
+		//game-wide edit before)
+		int areaId = AreaForkPrompt.ensurePrivate(this, mZonePnl.zoneIndex,
+				mZonePnl.zone.header.areadataID, "adding the water animation");
+		if (areaId < 0) {
+			return;
+		}
 		int rsl = JOptionPane.showConfirmDialog(this,
-				"Add GameFreak's sea-scroll animation for this zone's map cells to area " + areaId + "?\n\n"
-				+ "This is the exact animation retail water routes use. It's bound by map-cell\n"
-				+ "name: any map sharing this zone's exact cells gains it too; the area's other\n"
-				+ "maps are untouched. Safe to do before or after painting water.",
+				"Add GameFreak's sea-scroll animation for this zone's map cells?\n\n"
+				+ "This is the exact animation retail water routes use. Safe to do\n"
+				+ "before or after painting water.",
 				"Make water ripple", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
 		if (rsl != JOptionPane.OK_OPTION) {
 			return;
@@ -410,6 +416,7 @@ public class PaintForm extends JPanel {
 		try {
 			int changed = TilePainterForm.enableWaterScroll(areaId);
 			syncWater();
+			AreaForkPrompt.packIfForked(null);
 			JOptionPane.showMessageDialog(this, changed > 0
 					? "Sea-scroll animation added for " + changed + " map cell(s)."
 					: "No map cells needed changes (the scroll was already bound).",
@@ -673,7 +680,10 @@ public class PaintForm extends JPanel {
 			@Override
 			protected RegenResult doInBackground() {
 				try {
-					byte[] model = PaintedRegionBuilder.buildModelOnly(donor, coll, g2, h2, r2, t2, l2, edgesNow);
+					//the live preview paints with the same imported materials the
+					//Apply will use, so what you see is what you get
+					byte[] src = TilePainterForm.importBrushMaterials(donor, g2, t2, null);
+					byte[] model = PaintedRegionBuilder.buildModelOnly(src, coll, g2, h2, r2, t2, l2, edgesNow);
 					java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extra = null;
 					if (!p2.isEmpty()) {
 						ctrmap.formats.h3d.RegionFactory.BlankContent bc = new ctrmap.formats.h3d.RegionFactory.BlankContent();
