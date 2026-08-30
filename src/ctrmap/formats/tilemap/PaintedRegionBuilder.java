@@ -412,12 +412,8 @@ public class PaintedRegionBuilder {
 			}
 			List<Quad> quads = quadsByMesh.get(mi);
 			if (touched != null) {
-				//scenery meshes are removed whole rather than sliced - see the
-				//sprite branch in compositeMesh
-				boolean spriteMesh = isSpriteMaterial(
-						m.getMaterialName(m.getMeshMaterialIndex(mi)));
 				current = compositeMesh(m, g, mi, quads, mi == edgeMesh ? rectsEdge : rects,
-						overheadY, light, mi == edgeMesh, spriteMesh);
+						overheadY, light, mi == edgeMesh);
 				continue;
 			}
 			if (quads == null || quads.isEmpty()) {
@@ -487,8 +483,7 @@ public class PaintedRegionBuilder {
 	 * byte-identical.
 	 */
 	private static byte[] compositeMesh(BchMapModel m, BchMapModel.MeshGeom g, int mi,
-			List<Quad> quads, List<float[]> rects, float overheadY, TerrainLighting light, boolean rawUv,
-			boolean sprite) {
+			List<Quad> quads, List<float[]> rects, float overheadY, TerrainLighting light, boolean rawUv) {
 		int[] tris = m.getTriangles(mi);
 		float[][] pos = m.getVertexPositions(mi);
 		boolean anyGen = quads != null && !quads.isEmpty();
@@ -515,32 +510,56 @@ public class PaintedRegionBuilder {
 			if (a >= pos.length || b >= pos.length || c >= pos.length) {
 				continue; // malformed index - drop rather than crash
 			}
-			//overhead structures survive: the cut only applies near the ground
 			float minY = Math.min(pos[a][1], Math.min(pos[b][1], pos[c][1]));
-			if (!clippable || minY > overheadY) {
+			float[][] xz = {{pos[a][0], pos[a][2]}, {pos[b][0], pos[b][2]}, {pos[c][0], pos[c][2]}};
+			float area2 = Math.abs((xz[1][0] - xz[0][0]) * (xz[2][1] - xz[0][1])
+					- (xz[2][0] - xz[0][0]) * (xz[1][1] - xz[0][1]));
+
+			//An upright surface standing over ground that is being replaced is a
+			//thing ON that ground - a tree, a bush, a fence - not part of it, and
+			//it goes with the ground it was standing on. Judged by the shape of
+			//the triangle rather than by its material: a material name cannot
+			//tell scenery from terrain, and a texture being opaque does not stop
+			//it being a tree, which is how vegetation kept surviving in the
+			//middle of freshly painted sand.
+			//
+			//Only when the footprint's CENTRE is inside the paint. Cliff faces
+			//along the boundary stand exactly on tile edges and merely touch it;
+			//those are still cut along their run below, so the edge of the
+			//painted area keeps its walls.
+			if (clippable && area2 < 1.0f && centreInRegion(xz, rects)) {
+				anyCut = true;
+				continue;
+			}
+			//What survives above the paint is decided by SHAPE, because that is
+			//what actually separates the two cases.
+			//
+			//An upper floor, a bridge deck, a roof: flat, facing up, with no
+			//vertical extent of its own. Painting the ground under it must not
+			//delete it - that is what the overhead rule is for.
+			//
+			//A tree, a bush, a lamp post: tall, and not lying flat. It is
+			//standing ON the ground being replaced, so it goes with it.
+			//
+			//Measured on the corpus, the two do not overlap: the decoration
+			//atlas on Route 102 is 3% flat-facing-up and 91% tall, while the
+			//upper floor of a cave interior is 90% flat-facing-up and 0% tall.
+			//Height alone could not tell them apart, which is why canopies used
+			//to float over freshly painted sand - they simply started above the
+			//threshold and so counted as bridges.
+			if (!clippable || (minY > overheadY
+					&& (isSurface(pos, a, b, c) || !centreInRegion(xz, rects)))) {
 				keptOrig.add(a);
 				keptOrig.add(b);
 				keptOrig.add(c);
 				continue;
 			}
-			float[][] xz = {{pos[a][0], pos[a][2]}, {pos[b][0], pos[b][2]}, {pos[c][0], pos[c][2]}};
-			float area2 = Math.abs((xz[1][0] - xz[0][0]) * (xz[2][1] - xz[0][1])
-					- (xz[2][0] - xz[0][0]) * (xz[1][1] - xz[0][1]));
 			List<float[]> poly = new ArrayList<>(3);
 			poly.add(decodeVertex(m.raw, g.vtxAbs + a * g.stride, attrs, totalComps));
 			poly.add(decodeVertex(m.raw, g.vtxAbs + b * g.stride, attrs, totalComps));
 			poly.add(decodeVertex(m.raw, g.vtxAbs + c * g.stride, attrs, totalComps));
 			List<List<float[]>> parts;
-			if (sprite) {
-				//Scenery - a tree, a bush, a flower - is not a surface, it is an
-				//object standing ON one. Cutting it geometrically leaves the half
-				//that happened to fall outside the painted tiles: canopies with no
-				//trunk, hovering over ground that has been replaced underneath
-				//them. Whatever is rooted in a repainted tile goes entirely.
-				parts = TileClip.segmentTouchesRegion(xz, rects)
-						? java.util.Collections.<List<float[]>>emptyList()
-						: java.util.Collections.singletonList(poly);
-			} else if (area2 < 1.0f) {
+			if (area2 < 1.0f) {
 				//vertical wall / sliver: cut ALONG its run (retail walls span
 				//many tiles; boundary contact counts - cliff faces stand
 				//exactly ON tile edges)
@@ -1235,6 +1254,39 @@ public class PaintedRegionBuilder {
 			System.err.println("PaintedRegionBuilder: ground-material table unavailable: " + ex);
 		}
 		return spriteMaterials;
+	}
+
+	/**
+	 * True when a triangle is a piece of SURFACE - something laid flat that you
+	 * could stand on - rather than something standing up.
+	 *
+	 * <p>Both tests matter. Facing up alone would keep a canopy billboard that
+	 * happens to lie flat; having no height alone would keep a flat wall panel.
+	 * A floor is both at once.
+	 */
+	private static boolean isSurface(float[][] pos, int a, int b, int c) {
+		float ux = pos[b][0] - pos[a][0], uy = pos[b][1] - pos[a][1], uz = pos[b][2] - pos[a][2];
+		float vx = pos[c][0] - pos[a][0], vy = pos[c][1] - pos[a][1], vz = pos[c][2] - pos[a][2];
+		float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+		float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+		if (len < 1e-6f) {
+			return false;
+		}
+		float minY = Math.min(pos[a][1], Math.min(pos[b][1], pos[c][1]));
+		float maxY = Math.max(pos[a][1], Math.max(pos[b][1], pos[c][1]));
+		return Math.abs(ny) / len > 0.8f && maxY - minY < 1.0f;
+	}
+
+	/** True when a triangle's footprint centre lies inside the painted area. */
+	private static boolean centreInRegion(float[][] xz, List<float[]> rects) {
+		float cx = (xz[0][0] + xz[1][0] + xz[2][0]) / 3f;
+		float cz = (xz[0][1] + xz[1][1] + xz[2][1]) / 3f;
+		for (float[] r : rects) {
+			if (cx > r[0] && cx < r[2] && cz > r[1] && cz < r[3]) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** The cliff material mesh (gake/cliff/rock), or the rock/ground fallback.
