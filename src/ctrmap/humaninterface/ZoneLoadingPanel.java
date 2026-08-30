@@ -1021,6 +1021,12 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						//forking is the safe default: a shared map means edits here
 						//would silently change other zones too
 						offerForkIfShared();
+						//an active Map Builder must re-seed onto the NEW zone -
+						//otherwise its panel keeps showing (and guarding against)
+						//the previously painted zone
+						if (ctrmap.CtrmapMainframe.tool instanceof ctrmap.humaninterface.tools.PaintTool) {
+							mPaintForm.activate();
+						}
 					}
 
 					@Override

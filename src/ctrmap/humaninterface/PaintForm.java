@@ -197,19 +197,8 @@ public class PaintForm extends JPanel {
 		});
 		add(edgeChk);
 
-		final JToggleButton view3d = new JToggleButton("3D view");
-		view3d.setAlignmentX(0f);
-		view3d.setToolTipText("Show the map in 3D while you paint - your edits appear in it live. F2 returns to the top-down view, F3 opens 3D from anywhere.");
-		//the actual displayed component is the source of truth - F2/F3 switch
-		//the view too, so the toggle FLIPS the current state rather than
-		//trusting its own (possibly desynced) selection
-		view3d.addActionListener(e -> {
-			boolean to3d = jsp.getLeftComponent() != m3DDebugPanel;
-			ctrmap.Utils.setGraphicUI(to3d ? m3DDebugPanel : mTilemapScrollPane);
-			view3d.setSelected(to3d);
-		});
-		add(view3d);
-		add(gap(8));
+		//the 2D/3D switch lives on the main toolbar now (always visible, every
+		//tool); painting updates the 3D scene live either way
 
 		add(left(new JLabel("Lighting (baked into the map):")));
 		JPanel presets = new JPanel(new GridLayout(1, 4, 2, 0));
