@@ -259,6 +259,12 @@ public class TilePainterForm {
 		// the swinging-door props for placed buildings (registry + textures handled)
 		StringBuilder propNote = new StringBuilder();
 		byte[] doorProps = placed.isEmpty() ? null : buildDoorProps(placed, floorY, propNote);
+		//COMPOSITE edits exactly the zone's OWN cell. On a map shared by several
+		//zones (94 retail zones are), any other cell belongs to a neighbour -
+		//painting it would edit their ground and strand this zone's warps in
+		//their territory.
+		int[] ownCell = firstRegionCell();
+		int ownRegion = ownCell != null ? ownCell[0] : -1;
 		boolean firstCell = true;
 		for (int newRegion : r.newRegions) {
 			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, newRegion);
@@ -270,8 +276,11 @@ public class TilePainterForm {
 			if (!BchMapModel.isMapModel(donor)) {
 				continue;
 			}
-			if (composite && !firstCell) {
-				break; // the paint grid covers only the first cell - leave the rest alone
+			if (composite && ownRegion >= 0 && newRegion != ownRegion) {
+				continue; // not this zone's cell - leave it exactly as it is
+			}
+			if (composite && ownRegion < 0 && !firstCell) {
+				break; // no own cell resolvable: fall back to the old first-cell behaviour
 			}
 			//give this map a REAL material for every brush it lacks (an indoor
 			//map has no sand, a cave no grass) instead of silently painting
@@ -467,13 +476,34 @@ public class TilePainterForm {
 		return c == null ? -1 : c[0];
 	}
 
-	/** {regionId, cellX, cellY} of the zone's first map cell (the painted one), or null. */
+	/**
+	 * {regionId, cellX, cellY} of THIS ZONE'S OWN map cell - the one to paint.
+	 *
+	 * <p>Critically NOT simply the matrix's first occupied cell: 94 retail
+	 * zones share one big map matrix with their neighbours (Petalburg City and
+	 * Route 102 are both cells of matrix 2), and for those the first cell
+	 * belongs to a DIFFERENT zone. Painting there edits the neighbour's ground
+	 * and - worse - puts this zone's warps inside the neighbour's territory,
+	 * so the game reports the neighbour's name and runs its story. The zone
+	 * header carries the zone's own world position; the cell containing it is
+	 * the zone's own. The first occupied cell remains the fallback for a
+	 * header whose position lands outside the map.
+	 */
 	static int[] firstRegionCell() {
 		try {
 			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
 			int sub0 = le32(mm, 4);
 			int w = u16(mm, sub0 + 4), h = u16(mm, sub0 + 6);
+			//the zone's own position (X = world x, Y = world z), 720 units per cell
+			int ownX = mZonePnl.zone.header.X / 720;
+			int ownY = mZonePnl.zone.header.Y / 720;
+			if (ownX >= 0 && ownY >= 0 && ownX < w && ownY < h) {
+				int id = u16(mm, sub0 + 8 + (ownY * w + ownX) * 2);
+				if (id != 0xFFFF) {
+					return new int[]{id, ownX, ownY};
+				}
+			}
 			for (int k = 0; k < w * h; k++) {
 				int id = u16(mm, sub0 + 8 + k * 2);
 				if (id != 0xFFFF) {
