@@ -120,6 +120,7 @@ public class CtrmapMainframe {
 	public static JMenuItem wsclean;
 	public static JMenuItem isstracker;
 	public static JMenuItem about;
+	public static JMenuItem checkUpdates;
 	public static JToolBar toolbar;
 	/** The always-visible 2D/3D view toggle (F2/F3 keep working and sync it). */
 	public static javax.swing.JToggleButton btn3DView;
@@ -231,6 +232,7 @@ public class CtrmapMainframe {
 		wsclean = new JMenuItem("Clean workspace");
 		isstracker = new JMenuItem("Support/Issue tracker");
 		about = new JMenuItem("About");
+		checkUpdates = new JMenuItem("Check for updates...");
 		toolbar = new JToolBar();
 		btnEditTool = Utils.createGraphicalButton("_tool_edit");
 		btnSetTool = Utils.createGraphicalButton("_tool_set");
@@ -776,6 +778,12 @@ public class CtrmapMainframe {
 				}
 			}
 		});
+		checkUpdates.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ctrmap.update.UpdateUI.checkNow(frame);
+			}
+		});
 		about.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -824,6 +832,8 @@ public class CtrmapMainframe {
 		dataMenu.add(wildEncounters);
 		optionsmenu.add(wssettings);
 		optionsmenu.add(wsclean);
+		helpmenu.add(checkUpdates);
+		helpmenu.addSeparator();
 		helpmenu.add(isstracker);
 		helpmenu.add(about);
 		menubar.add(filemenu);
@@ -841,6 +851,11 @@ public class CtrmapMainframe {
 		frame.setMinimumSize(frame.getSize());
 		frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
 		frame.setVisible(true);
+
+		//an update applied by the launcher leaves its unpacked copy behind,
+		//because the JVM that applied it was running out of that folder
+		ctrmap.update.Updater.sweep(ctrmap.update.Updater.installDir());
+		ctrmap.update.UpdateUI.checkOnStartup(frame);
 
 		mTileMapPanel.addPropertyChangeListener(new PropertyChangeListener() {
 			@Override

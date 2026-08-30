@@ -38,6 +38,29 @@ New in the F5 edition (2026):
 - Command-line build (`build.ps1`), bundled JOGL, a 10-suite headless regression battery under
   `src/ctrmap/tests/`, and many crash/data-loss fixes
 
+## Installing
+
+Download the latest `CTRMap-F5-x.y.z.zip` from
+[Releases](https://github.com/hdent1232/CTRMap-F5/releases), unzip it anywhere, and run `run.bat`
+(Windows) or `run.sh` (macOS/Linux). You need a Java 8+ runtime; nothing else to install.
+
+### Updates
+
+CTRMap checks GitHub for a newer release when it starts and offers it once — you can skip a
+version or turn the check off in the dialog, and *Help → Check for updates...* asks on demand.
+
+Choosing to update downloads the release into a hidden `.ctrmap-update` folder inside the folder
+CTRMap already lives in, then applies it the next time you start the app. That means:
+
+- **there is only ever one CTRMap** — no second copy, no extra shortcut, no `.old` file to clean up;
+- **you just close it and open it again** — the launcher applies the update before the app starts,
+  which is the only moment the program's own files can safely be replaced;
+- **nothing of yours is touched** — only files the release actually ships are overwritten. Your
+  workspace, RomFS dump, notes and settings are left exactly where they are, and the previous
+  version is kept in `.ctrmap-update/backup` in case you want it back;
+- **nothing unverified is installed** — the download must match the SHA-256 GitHub published for
+  it, or it is discarded and nothing changes. There is no "install anyway".
+
 ## Building
 
 No IDE required:
@@ -46,11 +69,28 @@ No IDE required:
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-Requires any JDK 17+ (targets Java 8 bytecode). The JOGL jars are bundled in `lib/`. Run with:
+Requires any JDK 17+ (targets Java 8 bytecode). The JOGL jars are bundled in `lib/`. Run with
+`run.bat`, or directly:
 
 ```
 java -Xmx1024m -cp "build/classes;lib/jogl-all.jar;lib/gluegen-rt.jar;lib/jogl-all-natives-windows-amd64.jar;lib/gluegen-rt-natives-windows-amd64.jar" ctrmap.CtrmapMainframe
 ```
+
+A copy running from `build/classes` never self-updates — it tells you to `git pull` and rebuild
+instead, so a source checkout is never overwritten by a release.
+
+### Cutting a release
+
+```
+powershell -ExecutionPolicy Bypass -File package.ps1 -Version 1.1.0
+git commit -am "Release 1.1.0" && git tag v1.1.0 && git push --follow-tags
+gh release create v1.1.0 dist/CTRMap-F5-1.1.0.zip --title "CTRMap-F5 1.1.0" --notes "..."
+```
+
+`package.ps1` writes the version into the jar, names the zip after it and prints its SHA-256, so
+the number in the build, the asset and the tag cannot drift apart — older copies compare their
+version against the release tag, so a mismatch there is what makes an updater offer an update that
+installs the same build again.
 
 (NetBeans still works for GUI-form editing; note some F5 forms are hand-coded past the generated
 blocks.)
