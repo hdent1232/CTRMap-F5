@@ -185,6 +185,14 @@ public class CtrmapMainframe {
 	public static List<CM3DRenderable> CM3DComponents = new ArrayList<>();
 
 	public static void main(String[] args) {
+		//The Windows bundle installs an update by starting the DOWNLOADED copy
+		//with this flag as the old one closes: it holds nothing in the install
+		//folder, so it can replace all of it. Must be the first thing we do -
+		//no window, no workspace, nothing.
+		if (ctrmap.update.Updater.isApplyInvocation(args)) {
+			ctrmap.update.Updater.runApply(args);
+			return;
+		}
 		try {
 			UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
 		} catch (ClassNotFoundException | InstantiationException | IllegalAccessException
@@ -867,7 +875,9 @@ public class CtrmapMainframe {
 
 		//an update applied by the launcher leaves its unpacked copy behind,
 		//because the JVM that applied it was running out of that folder
-		ctrmap.update.Updater.sweep(ctrmap.update.Updater.installDir());
+		File installDir = ctrmap.update.Updater.installDir();
+		ctrmap.update.Updater.holdRunLock(installDir); //so an update knows when we are gone
+		ctrmap.update.Updater.sweep(installDir);
 
 		mTileMapPanel.addPropertyChangeListener(new PropertyChangeListener() {
 			@Override
@@ -886,6 +896,9 @@ public class CtrmapMainframe {
 				if (mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true) && mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && mZonePnl.store(true) && mTextEditor.store(true)) {
 					Workspace.cleanUnchanged();
 					Workspace.saveWorkspace();
+					//a staged update for the Windows bundle installs itself as we
+					//go; harmless and a no-op for every other kind of install
+					ctrmap.update.Updater.startAppImageApply(ctrmap.update.Updater.installDir());
 					System.exit(0);
 				}
 			}

@@ -852,6 +852,9 @@ public class Workspace {
 	}
 	
 	public static void saveWorkspace() {
+		if (prefs == null) {
+			return; //loadWorkspace() never ran: a headless tool, not the app
+		}
 		prefsPutNonNull("WORKSPACE_PATH", WORKSPACE_PATH);
 		prefsPutNonNull("GAMEDIR_PATH", GAMEDIR_PATH);
 		prefsPutNonNull("ESPICA_PATH", ESPICA_PATH);

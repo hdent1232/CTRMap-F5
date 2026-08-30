@@ -412,7 +412,12 @@ public class PaintedRegionBuilder {
 			}
 			List<Quad> quads = quadsByMesh.get(mi);
 			if (touched != null) {
-				current = compositeMesh(m, g, mi, quads, mi == edgeMesh ? rectsEdge : rects, overheadY, light, mi == edgeMesh);
+				//scenery meshes are removed whole rather than sliced - see the
+				//sprite branch in compositeMesh
+				boolean spriteMesh = isSpriteMaterial(
+						m.getMaterialName(m.getMeshMaterialIndex(mi)));
+				current = compositeMesh(m, g, mi, quads, mi == edgeMesh ? rectsEdge : rects,
+						overheadY, light, mi == edgeMesh, spriteMesh);
 				continue;
 			}
 			if (quads == null || quads.isEmpty()) {
@@ -482,7 +487,8 @@ public class PaintedRegionBuilder {
 	 * byte-identical.
 	 */
 	private static byte[] compositeMesh(BchMapModel m, BchMapModel.MeshGeom g, int mi,
-			List<Quad> quads, List<float[]> rects, float overheadY, TerrainLighting light, boolean rawUv) {
+			List<Quad> quads, List<float[]> rects, float overheadY, TerrainLighting light, boolean rawUv,
+			boolean sprite) {
 		int[] tris = m.getTriangles(mi);
 		float[][] pos = m.getVertexPositions(mi);
 		boolean anyGen = quads != null && !quads.isEmpty();
@@ -525,7 +531,16 @@ public class PaintedRegionBuilder {
 			poly.add(decodeVertex(m.raw, g.vtxAbs + b * g.stride, attrs, totalComps));
 			poly.add(decodeVertex(m.raw, g.vtxAbs + c * g.stride, attrs, totalComps));
 			List<List<float[]>> parts;
-			if (area2 < 1.0f) {
+			if (sprite) {
+				//Scenery - a tree, a bush, a flower - is not a surface, it is an
+				//object standing ON one. Cutting it geometrically leaves the half
+				//that happened to fall outside the painted tiles: canopies with no
+				//trunk, hovering over ground that has been replaced underneath
+				//them. Whatever is rooted in a repainted tile goes entirely.
+				parts = TileClip.segmentTouchesRegion(xz, rects)
+						? java.util.Collections.<List<float[]>>emptyList()
+						: java.util.Collections.singletonList(poly);
+			} else if (area2 < 1.0f) {
 				//vertical wall / sliver: cut ALONG its run (retail walls span
 				//many tiles; boundary contact counts - cliff faces stand
 				//exactly ON tile edges)

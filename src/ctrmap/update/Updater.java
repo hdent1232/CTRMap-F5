@@ -63,21 +63,155 @@ public class Updater {
 	}
 
 	/**
-	 * The folder CTRMap is installed in - the one holding the jar - or null when
-	 * running from loose classes (a source checkout), where there is nothing to
-	 * update and the user should pull and rebuild instead.
+	 * How this copy of CTRMap was installed. The two builds have different
+	 * shapes, different launchers and different update mechanics, and handing
+	 * one the other's download would wreck it - so the flavour decides which
+	 * release asset is even looked at.
 	 */
-	public static File installDir() {
+	public enum Flavour {
+		/** The jar + lib + run.bat zip, for people who have Java. */
+		PORTABLE("-portable.zip"),
+		/** The self-contained Windows bundle with its own runtime and .exe. */
+		APP_IMAGE("-windows-x64.zip");
+
+		public final String assetSuffix;
+
+		Flavour(String suffix) {
+			this.assetSuffix = suffix;
+		}
+	}
+
+	/** Where our own code is loaded from, or null. */
+	private static File self() {
 		try {
-			java.net.URI uri = Updater.class.getProtectionDomain().getCodeSource()
-					.getLocation().toURI();
-			File self = new File(uri);
-			if (self.isFile() && self.getName().toLowerCase().endsWith(".jar")) {
-				return self.getParentFile();
-			}
-			return null; //running from build/classes
+			return new File(Updater.class.getProtectionDomain().getCodeSource()
+					.getLocation().toURI());
 		} catch (Exception ex) {
 			return null;
+		}
+	}
+
+	/**
+	 * The root of the self-contained Windows bundle we are running inside, or
+	 * null when we are not in one.
+	 *
+	 * <p>Two independent signals. jpackage sets {@code jpackage.app-path}, which
+	 * is exact - but it is a system property anyone can set, so it is only
+	 * believed when the folder it names really has a bundle's shape. The
+	 * structural check alone covers someone running the bundled jar with their
+	 * own java.
+	 */
+	public static File appImageRoot() {
+		String appPath = System.getProperty("jpackage.app-path");
+		if (appPath != null && !appPath.isEmpty()) {
+			File root = new File(appPath).getParentFile();
+			if (looksLikeAppImage(root)) {
+				return root;
+			}
+		}
+		File self = self();
+		if (self != null && self.isFile()) {
+			File appDir = self.getParentFile();
+			if (appDir != null && "app".equalsIgnoreCase(appDir.getName())
+					&& looksLikeAppImage(appDir.getParentFile())) {
+				return appDir.getParentFile();
+			}
+		}
+		return null;
+	}
+
+	private static boolean looksLikeAppImage(File root) {
+		if (root == null || !root.isDirectory()) {
+			return false;
+		}
+		File app = new File(root, "app");
+		if (!app.isDirectory() || !new File(root, "runtime").isDirectory()) {
+			return false;
+		}
+		if (new File(app, ".jpackage.xml").isFile()) {
+			return true;
+		}
+		File[] cfg = app.listFiles(new java.io.FilenameFilter() {
+			@Override
+			public boolean accept(File dir, String name) {
+				return name.toLowerCase().endsWith(".cfg");
+			}
+		});
+		return cfg != null && cfg.length > 0;
+	}
+
+	/** Which build this is, or null when running from a source checkout. */
+	public static Flavour flavour() {
+		if (appImageRoot() != null) {
+			return Flavour.APP_IMAGE;
+		}
+		File self = self();
+		return self != null && self.isFile() && self.getName().toLowerCase().endsWith(".jar")
+				? Flavour.PORTABLE : null;
+	}
+
+	/**
+	 * The folder CTRMap is installed in, or null when running from loose classes
+	 * (a source checkout), where there is nothing to update and the user should
+	 * pull and rebuild instead.
+	 *
+	 * <p>For the Windows bundle this is the BUNDLE root, not the {@code app}
+	 * folder the jar happens to sit in - everything derived from it (the staging
+	 * folder, the apply target) would otherwise land one level too deep, and an
+	 * apply would drop a portable build's files inside a bundle.
+	 */
+	public static File installDir() {
+		File image = appImageRoot();
+		if (image != null) {
+			return image;
+		}
+		File self = self();
+		if (self != null && self.isFile() && self.getName().toLowerCase().endsWith(".jar")) {
+			return self.getParentFile();
+		}
+		return null; //running from build/classes
+	}
+
+	/** The .exe that starts a Windows bundle in {@code root}, or null. */
+	public static File launcherIn(File root) {
+		if (root == null) {
+			return null;
+		}
+		File exe = new File(root, "CTRMap-F5.exe");
+		return exe.isFile() ? exe : null;
+	}
+
+	/** The shape of an extracted tree, so a bundle is never mistaken for a portable build. */
+	public static Flavour shapeOf(File dir) {
+		if (dir == null || !dir.isDirectory()) {
+			return null;
+		}
+		if (looksLikeAppImage(dir)) {
+			return Flavour.APP_IMAGE;
+		}
+		return new File(dir, "CTRMap-F5.jar").isFile() ? Flavour.PORTABLE : null;
+	}
+
+	/**
+	 * True when we can actually write where the update would go. Checked BEFORE
+	 * downloading, because failing on permissions after fetching seventy
+	 * megabytes is a waste of the user's time and bandwidth.
+	 */
+	public static boolean isWritable(File dir) {
+		if (dir == null || !dir.isDirectory()) {
+			return false;
+		}
+		File probe = new File(dir, ".ctrmap-write-test");
+		try {
+			if (probe.exists() && !probe.delete()) {
+				return false;
+			}
+			if (!probe.createNewFile()) {
+				return false;
+			}
+			return probe.delete();
+		} catch (IOException ex) {
+			return false;
 		}
 	}
 
@@ -144,6 +278,18 @@ public class Updater {
 		if (staged.list() == null || staged.list().length == 0) {
 			throw new IOException("The downloaded package was empty.");
 		}
+		//Trust the bytes, not the file name. The two builds have different
+		//shapes, and installing one over the other would leave a half-working
+		//program - which is worse than not updating at all.
+		Flavour mine = flavour();
+		Flavour stagedShape = shapeOf(stagedPayload(installDir));
+		if (mine != null && stagedShape != mine) {
+			deleteTree(staged);
+			throw new IOException("That download is the wrong kind of package for this"
+					+ " installation, so it was discarded.\n"
+					+ "Nothing on your machine was changed. Please download the update"
+					+ " from the releases page instead.");
+		}
 
 		Properties p = new Properties();
 		p.setProperty("version", rel.version == null ? "" : rel.version);
@@ -164,7 +310,7 @@ public class Updater {
 			return;
 		}
 		File root = stageRoot(installDir);
-		File staged = new File(root, STAGED);
+		File staged = stagedPayload(installDir);
 		File backup = new File(root, BACKUP);
 		deleteTree(backup);
 		backup.mkdirs();
@@ -208,6 +354,148 @@ public class Updater {
 		new File(root, DOWNLOAD).delete();
 	}
 
+	// ---- applying an update to the self-contained Windows bundle -----------
+	//
+	// The portable build is applied by run.bat before the JVM starts, which is
+	// the only safe moment to replace a jar the JVM is about to open. A bundle
+	// has no launcher script, and its runtime deliberately ships no java.exe, so
+	// that trick is unavailable. What a bundle DOES have is the download itself:
+	// a complete, self-contained CTRMap with its own runtime and .exe, sitting
+	// in the staging folder holding nothing in the install folder. So the new
+	// version installs itself, and the old one just has to get out of the way.
+
+	/** The argument the staged copy is started with. Frozen: both sides parse it. */
+	public static final String APPLY_FLAG = "--apply-update";
+	private static final String RUN_LOCK = "run.lock";
+
+	private static java.nio.channels.FileLock runLock;
+	private static java.io.RandomAccessFile runLockFile;
+
+	/**
+	 * Takes a lock that is held for as long as this process lives.
+	 *
+	 * <p>This is how the staged copy knows we have gone. Windows drops the lock
+	 * however the process ends, including a hard kill, which a PID check or an
+	 * exit hook would not survive. It is a lock rather than a "can I write yet?"
+	 * poll because polling gives the wrong answer here: a jar held open by a live
+	 * JVM still grants a write handle while refusing to be replaced.
+	 */
+	public static void holdRunLock(File installDir) {
+		if (installDir == null || runLock != null) {
+			return;
+		}
+		try {
+			File root = stageRoot(installDir);
+			root.mkdirs();
+			runLockFile = new java.io.RandomAccessFile(new File(root, RUN_LOCK), "rw");
+			runLock = runLockFile.getChannel().tryLock();
+		} catch (Exception ex) {
+			runLock = null; //an update simply waits a little longer instead
+		}
+	}
+
+	/** True when this process was started to install a staged update. */
+	public static boolean isApplyInvocation(String[] args) {
+		return args != null && args.length >= 2 && APPLY_FLAG.equals(args[0]);
+	}
+
+	/**
+	 * Starts the staged copy so it can install itself over us, then we exit.
+	 * Returns false if anything is not right, in which case the update simply
+	 * stays staged and is tried again next time.
+	 */
+	public static boolean startAppImageApply(File installDir) {
+		try {
+			if (!isUpdateStaged(installDir) || flavour() != Flavour.APP_IMAGE) {
+				return false;
+			}
+			File staged = stagedPayload(installDir);
+			if (shapeOf(staged) != Flavour.APP_IMAGE) {
+				return false;
+			}
+			File exe = launcherIn(staged);
+			if (exe == null) {
+				return false;
+			}
+			ProcessBuilder pb = new ProcessBuilder(exe.getAbsolutePath(),
+					APPLY_FLAG, installDir.getAbsolutePath());
+			pb.directory(staged);
+			pb.redirectErrorStream(true);
+			pb.redirectOutput(new File(stageRoot(installDir), "apply.log"));
+			pb.start();
+			return true;
+		} catch (Exception ex) {
+			return false;
+		}
+	}
+
+	/**
+	 * Runs inside the STAGED copy: waits for the old CTRMap to exit, installs
+	 * this version over it, and starts it again. Never shows a window.
+	 */
+	public static void runApply(String[] args) {
+		File target = new File(args[1]);
+		System.out.println("CTRMap: waiting for the previous version to close...");
+		if (!waitForExit(target, 60000)) {
+			System.out.println("CTRMap: it is still running - leaving the update staged.");
+			return;
+		}
+		try {
+			File payload = new File(System.getProperty("user.dir"));
+			if (shapeOf(payload) != Flavour.APP_IMAGE) {
+				System.out.println("CTRMap: staged copy does not look right - nothing changed.");
+				return;
+			}
+			File backup = new File(stageRoot(target), BACKUP);
+			deleteTree(backup);
+			backup.mkdirs();
+			List<String[]> done = new ArrayList<>();
+			copyOver(payload, target, backup, "", done);
+			new File(stageRoot(target), READY).delete();
+			System.out.println("CTRMap: update applied.");
+		} catch (IOException ex) {
+			System.out.println("CTRMap: could not apply the update: " + ex.getMessage());
+			return;
+		}
+		try {
+			File exe = launcherIn(target);
+			if (exe != null) {
+				new ProcessBuilder(exe.getAbsolutePath()).directory(target).start();
+			}
+		} catch (IOException ex) {
+			//the update is installed; the user can start it themselves
+		}
+	}
+
+	/** Blocks until the run lock in {@code target} can be taken, i.e. nobody holds it. */
+	private static boolean waitForExit(File target, long timeoutMillis) {
+		File lock = new File(stageRoot(target), RUN_LOCK);
+		long deadline = System.currentTimeMillis() + timeoutMillis;
+		while (System.currentTimeMillis() < deadline) {
+			if (!lock.isFile()) {
+				return true; //no lock was ever taken
+			}
+			try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(lock, "rw");
+					java.nio.channels.FileLock got = raf.getChannel().tryLock()) {
+				if (got != null) {
+					//the image needs a moment to finish tearing down after the
+					//lock drops, so give the file handles time to close
+					Thread.sleep(400);
+					return true;
+				}
+			} catch (Exception ex) {
+				//still held, or not lockable yet
+			}
+			try {
+				Thread.sleep(200);
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+				return false;
+			}
+		}
+		return false;
+	}
+
 	/** Entry point for the launcher: {@code java -cp <staged jar> ctrmap.update.Updater --apply <installDir>}. */
 	public static void main(String[] args) {
 		if (args.length < 2 || !"--apply".equals(args[0])) {
@@ -228,6 +516,21 @@ public class Updater {
 	}
 
 	// ---- plumbing ---------------------------------------------------------
+
+	/**
+	 * The tree inside the staging folder that actually gets installed.
+	 *
+	 * <p>The portable zip has its files at the root, so the payload is the
+	 * staging folder itself. The Windows bundle zip contains a single
+	 * {@code CTRMap-F5} folder - deliberately, so that extracting it by hand
+	 * cannot spray a hundred and fifty files loose - so the payload is one level
+	 * in.
+	 */
+	static File stagedPayload(File installDir) {
+		File staged = new File(stageRoot(installDir), STAGED);
+		File nested = new File(staged, "CTRMap-F5");
+		return shapeOf(staged) == null && shapeOf(nested) != null ? nested : staged;
+	}
 
 	/** Recursive copy of {@code src} onto {@code dst}, backing up what it replaces. */
 	private static void copyOver(File src, File dst, File backup, String rel, List<String[]> done)
@@ -253,9 +556,51 @@ public class Updater {
 				} else if (target.getParentFile() != null) {
 					target.getParentFile().mkdirs();
 				}
-				Files.copy(k.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+				replace(k, target);
 			}
 		}
+	}
+
+	/**
+	 * Overwrites one file, coping with the two things Windows does that a plain
+	 * copy does not survive: jpackage marks its launcher read-only, and a file
+	 * that is still mapped by a process refuses to be overwritten but will
+	 * happily be renamed out of the way.
+	 */
+	private static void replace(File from, File to) throws IOException {
+		IOException last = null;
+		for (int attempt = 0; attempt < 8; attempt++) {
+			try {
+				if (to.exists() && !to.canWrite()) {
+					to.setWritable(true);
+				}
+				Files.copy(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING);
+				return;
+			} catch (IOException ex) {
+				last = ex;
+			}
+			try {
+				File aside = new File(to.getParentFile(),
+						to.getName() + ".old-" + Long.toHexString(System.nanoTime()));
+				Files.move(to.toPath(), aside.toPath());
+				try {
+					Files.copy(from.toPath(), to.toPath());
+					return;
+				} catch (IOException ex) {
+					Files.move(aside.toPath(), to.toPath()); //put it back, change nothing
+					last = ex;
+				}
+			} catch (IOException ex) {
+				last = ex;
+			}
+			try {
+				Thread.sleep(200);
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+				break;
+			}
+		}
+		throw new IOException(to.getName() + " could not be replaced", last);
 	}
 
 	/** Streams a URL to a file, returning its SHA-256 as lowercase hex. */
