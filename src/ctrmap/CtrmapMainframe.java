@@ -1019,16 +1019,28 @@ public class CtrmapMainframe {
 		javax.swing.JPanel ipsRow = new javax.swing.JPanel(new java.awt.BorderLayout());
 		ipsRow.add(ipsField, java.awt.BorderLayout.CENTER);
 		ipsRow.add(ipsBrowse, java.awt.BorderLayout.EAST);
+		//The mod can be switched off without deleting anything, so the user can
+		//play the untouched retail game (to get a starter, to compare against
+		//vanilla, to check whether a bug is theirs or ours) and switch back after.
+		boolean parked = azahar != null && ModDeployer.isParked(azahar);
+		String offOn = parked ? "Turn mod back ON" : "Turn mod OFF (play vanilla)";
 		Object[] form = {
 			"Deploy your edits as a LayeredFS mod - only archives you actually changed are copied.",
 			"Your workspace is packed automatically first, so the latest edits always ship.",
 			" ",
 			"Title ID:", titleField,
 			"Mod folder (Azahar auto-detected; Browse to your SD card for a 3DS/Luma):", folderRow,
-			"Code patch to install (optional - the code.ips from 'Add zones'):", ipsRow
+			"Code patch to install (optional - the code.ips from 'Add zones'):", ipsRow,
+			" ",
+			parked
+			? "The mod is currently OFF - the game boots completely stock."
+			: "\"" + offOn + "\" moves the mod out of the emulator's load path so the game boots"
+			+ " stock. Nothing is deleted and your save is untouched; switch it back any time."
 		};
-		if (JOptionPane.showConfirmDialog(frame, form, "Deploy to emulator (LayeredFS mod)",
-				JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+		String[] choices = {"Deploy", offOn, "Cancel"};
+		int pick = JOptionPane.showOptionDialog(frame, form, "Deploy to emulator (LayeredFS mod)",
+				JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, choices, choices[0]);
+		if (pick != 0 && pick != 1) {
 			return;
 		}
 		String folder = folderField.getText().trim();
@@ -1037,6 +1049,10 @@ public class CtrmapMainframe {
 			return;
 		}
 		final File modRoot = new File(folder);
+		if (pick == 1) {
+			toggleModAction(modRoot); //decides the direction from the folder's real state
+			return;
+		}
 		String ipsPath = ipsField.getText().trim();
 		final File ips = ipsPath.isEmpty() ? null : new File(ipsPath);
 		// Always Pack first so the deployed RomFS reflects the LATEST edits. Deploying
@@ -1071,10 +1087,50 @@ public class CtrmapMainframe {
 				}
 				sb.append("\nIMPORTANT: fully CLOSE and reopen the emulator before testing - it caches\n"
 						+ "the game's files, so a soft reset can still show the old data.\n");
-				sb.append("To disable the mod, delete that folder.");
+				sb.append("To play the untouched retail game, come back here and pick\n"
+						+ "\"Turn mod OFF (play vanilla)\" - it switches off without deleting anything.");
 				JOptionPane.showMessageDialog(frame, sb.toString(), "Deploy to emulator", JOptionPane.INFORMATION_MESSAGE);
 			}
 		});
+	}
+
+	/**
+	 * Switches the deployed mod off (or back on) by moving it out of / into the
+	 * emulator's load path. This is what you want when you need the untouched
+	 * retail game for a while - to play through a story section your edits are
+	 * blocking, or to tell whether a bug is the game's or ours - without losing
+	 * the mod. Nothing is deleted and save data is never touched.
+	 */
+	private static void toggleModAction(File modRoot) {
+		boolean parked = ModDeployer.isParked(modRoot);
+		try {
+			if (parked) {
+				File back = ModDeployer.enable(modRoot);
+				JOptionPane.showMessageDialog(frame,
+						"Mod is back ON:\n  " + back.getAbsolutePath()
+						+ "\n\nFully close and reopen the emulator before playing - it caches game files.",
+						"Mod switched on", JOptionPane.INFORMATION_MESSAGE);
+			} else if (ModDeployer.isDeployed(modRoot)) {
+				File parkedAt = ModDeployer.disable(modRoot);
+				JOptionPane.showMessageDialog(frame,
+						"Mod is OFF - the game now boots completely stock.\n\n"
+						+ "Your edits are safe here:\n  " + parkedAt.getAbsolutePath()
+						+ "\n\nSave data was not touched. Come back here and pick \"Turn mod back ON\"\n"
+						+ "when you want your world again.\n\n"
+						+ "Fully close and reopen the emulator before playing - it caches game files.",
+						"Playing vanilla", JOptionPane.INFORMATION_MESSAGE);
+			} else {
+				JOptionPane.showMessageDialog(frame,
+						"There is no deployed mod at:\n  " + modRoot.getAbsolutePath()
+						+ "\n\nNothing to switch off - the game already boots stock.",
+						"Nothing deployed", JOptionPane.INFORMATION_MESSAGE);
+			}
+		} catch (java.io.IOException ex) {
+			JOptionPane.showMessageDialog(frame,
+					"Could not move the mod folder:\n  " + ex.getMessage()
+					+ "\n\nClose the emulator (it may be holding the files open) and try again.",
+					"Mod switch failed", JOptionPane.ERROR_MESSAGE);
+		}
 	}
 
 	/**

@@ -130,6 +130,95 @@ public class ModDeployer {
 		return r;
 	}
 
+	/**
+	 * Where a switched-off mod is parked: a sibling of the mods folder, so the
+	 * emulator no longer sees it. Nothing is ever deleted - turning the mod back
+	 * on is a move in the other direction.
+	 */
+	public static File parkedRoot(File modRoot) {
+		File parent = modRoot.getParentFile();
+		if (parent != null && parent.getName().equalsIgnoreCase("mods")) {
+			return new File(new File(parent.getParentFile(), "mods_disabled"), modRoot.getName());
+		}
+		return new File(parent, modRoot.getName() + "__off");
+	}
+
+	/** True when the mod folder is in the emulator's load path and has files in it. */
+	public static boolean isDeployed(File modRoot) {
+		if (modRoot == null || !modRoot.isDirectory()) {
+			return false;
+		}
+		String[] kids = modRoot.list();
+		return kids != null && kids.length > 0;
+	}
+
+	/** True when a previously deployed mod is sitting parked, ready to switch back on. */
+	public static boolean isParked(File modRoot) {
+		return modRoot != null && isDeployed(parkedRoot(modRoot));
+	}
+
+	/**
+	 * Turns the mod OFF by moving it out of the emulator's load path, so the game
+	 * boots completely stock. Returns where it was parked. Reversible with
+	 * {@link #enable}; the user's save data is untouched either way.
+	 */
+	public static File disable(File modRoot) throws IOException {
+		File parked = parkedRoot(modRoot);
+		moveDir(modRoot, parked);
+		return parked;
+	}
+
+	/** Turns a parked mod back ON. Returns the mod folder it was restored to. */
+	public static File enable(File modRoot) throws IOException {
+		moveDir(parkedRoot(modRoot), modRoot);
+		return modRoot;
+	}
+
+	/** Move that falls back to copy+delete when src and dst are on different volumes. */
+	private static void moveDir(File src, File dst) throws IOException {
+		if (!src.isDirectory()) {
+			throw new IOException("not there: " + src.getAbsolutePath());
+		}
+		if (dst.exists()) {
+			throw new IOException("already exists, refusing to overwrite: " + dst.getAbsolutePath());
+		}
+		if (dst.getParentFile() != null) {
+			dst.getParentFile().mkdirs();
+		}
+		try {
+			Files.move(src.toPath(), dst.toPath(), StandardCopyOption.ATOMIC_MOVE);
+			return;
+		} catch (IOException crossVolume) {
+			//fall through to a manual copy
+		}
+		copyTree(src, dst);
+		deleteTree(src);
+	}
+
+	private static void copyTree(File src, File dst) throws IOException {
+		if (src.isDirectory()) {
+			dst.mkdirs();
+			File[] kids = src.listFiles();
+			if (kids != null) {
+				for (File k : kids) {
+					copyTree(k, new File(dst, k.getName()));
+				}
+			}
+		} else {
+			copyFile(src, dst);
+		}
+	}
+
+	private static void deleteTree(File f) {
+		File[] kids = f.listFiles();
+		if (kids != null) {
+			for (File k : kids) {
+				deleteTree(k);
+			}
+		}
+		f.delete();
+	}
+
 	/** True when two GARCs hold identical decompressed contents (ignoring container/compression bytes). */
 	public static boolean garcContentsEqual(File a, File b) {
 		GARC ga = new GARC(a);
