@@ -40,6 +40,19 @@ updates LIVE inside the main map scene (~0.2s after each stroke):
 - [ ] Switching tools puts the real (unapplied) map back — nothing painted
   leaks into the scene unless you Apply.
 
+## Shared-map zones (NEW — the Petalburg Gym bug)
+Some zones share one big map with their neighbours (Route 102 and Petalburg
+City are two zones on the same matrix; 94 retail zones are like this). The
+Map Builder used to paint the map's FIRST cell, which on those zones belongs
+to the NEIGHBOUR — so edits landed on their ground and warps put the player
+in their territory, where the game announces their name and runs their story.
+It now paints the zone's own cell.
+- [ ] Load a shared-map zone (Route 102, Petalburg City, Littleroot, Oldale,
+  Rustboro, Sootopolis...) and paint a few tiles. Expect: the edit appears
+  in THAT zone in-game, and the location banner still names the zone you
+  edited.
+- [ ] The test hub is the live check for this — see TESTZONE.md.
+
 ## Game-wide asset palette (NEW — the comprehensive catalog)
 "Buildings & decor" now holds **3,479 auto-harvested structures from every
 map in the game** (plus the 48 curated, door-wired entries pinned first):
