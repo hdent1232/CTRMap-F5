@@ -155,14 +155,37 @@ public class AreaForker {
 		if (off + 2 > master.length) {
 			throw new IOException("Master-table row for zone " + zoneIndex + " out of range.");
 		}
-		int area = u16(master, off);
-		int sharers = 0;
-		for (int z = 0; z < zoneCount; z++) {
-			if (z != zoneIndex && u16(master, z * MASTER_ROW + HDR_AREA_OFF) == area) {
-				sharers++;
+		return zonesUsingArea(master, u16(master, off), zoneIndex).size();
+	}
+
+	/**
+	 * Which zones point at an area, per a master zone-header table - excluding
+	 * one zone, normally the one being edited.
+	 *
+	 * <p>That exclusion is the whole point. "Does another map depend on this
+	 * area?" and "which rows name this area?" are different questions, and a
+	 * caller that asks the second while meaning the first will always find the
+	 * editing zone itself and conclude the area is shared. Every custom zone in
+	 * this project occupies a repurposed retail slot, so the moment one is given
+	 * a private area, its own row is the only row naming it - and a guard that
+	 * counted rows refused every texture import into it, reporting the zone as
+	 * conflicting with itself.
+	 *
+	 * <p>Pass -1 to exclude nothing. Returns empty for a null or misaligned
+	 * table; callers that must fail closed check for that themselves.
+	 */
+	public static java.util.List<Integer> zonesUsingArea(byte[] master, int area, int excludeZone) {
+		java.util.List<Integer> hits = new java.util.ArrayList<>();
+		if (master == null || master.length < MASTER_ROW) {
+			return hits;
+		}
+		int rows = master.length / MASTER_ROW;
+		for (int z = 0; z < rows; z++) {
+			if (z != excludeZone && u16(master, z * MASTER_ROW + HDR_AREA_OFF) == area) {
+				hits.add(z);
 			}
 		}
-		return sharers;
+		return hits;
 	}
 
 	/** The zone's current areadataID, straight from its container header. */

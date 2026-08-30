@@ -315,24 +315,36 @@ public class BchTexturePack {
 	}
 
 	/**
-	 * Imports one texture from a donor pack into a target pack. Returns the
-	 * target unchanged (same array) when the name is already present; throws
-	 * IllegalArgumentException when the donor does not have the texture.
+	 * Other zones that would be affected by growing {@code area}, as a readable
+	 * list, or null when none would be - so the caller may proceed.
+	 *
+	 * <p>{@code editingZone} is excluded, and excluding it is the entire
+	 * correctness of this method. The question worth asking is "would this
+	 * damage a map I am not editing?", but what the table can answer directly is
+	 * "which rows name this area?", and the editing zone's own row always names
+	 * it: {@code targetArea} is read from that zone's header, and forking writes
+	 * the new id straight into the row this reads. Counting rows therefore
+	 * reported every zone as sharing an area with itself, and refused every
+	 * texture import into a freshly forked private area. Pass -1 when the
+	 * caller genuinely does not know which zone it is acting for.
+	 *
+	 * <p>Formerly this also capped the scan at {@code BASE_ZONES} on the theory
+	 * that only zones the game shipped were worth protecting. That was wrong in
+	 * both directions: every custom zone in a project like this occupies a
+	 * repurposed retail slot (so it was "retail" and blocked), while a genuinely
+	 * appended zone sharing an area went unnoticed (so it was not protected).
+	 * What matters is whether another map depends on the area, not where its
+	 * index falls.
 	 */
-	/**
-	 * Ensures the given texture names exist in the TARGET area's packs,
-	 * importing any missing ones from the DONOR area's packs (stamped map
-	 * pieces reference their donor's textures; a missing texture hardlocks the
-	 * game). Writes through the workspace AreaData file and marks it persisted.
-	 * Returns a short human-readable note of what happened.
-	 */
-	public static String carryToArea(int donorArea, int targetArea, List<String> needed) throws Exception {
-		return carryToArea(donorArea, targetArea, needed, null);
-	}
-
-	/** Retail zones that share {@code area}, as a readable list, or null if none do. */
-	private static String retailZonesUsing(int area) {
+	private static String zonesUsingArea(int area, int editingZone) {
 		try {
+			//XY keeps its master table at a different index; the fork machinery
+			//is ORAS-only for the same reason (AreaForker.forkArea,
+			//AreaForkPrompt.ensurePrivate). Reading length-2 on XY parses an
+			//ordinary zone as the master table and invents sharers.
+			if (!ctrmap.Workspace.isOA()) {
+				return null;
+			}
 			ctrmap.formats.garc.GARC zo = ctrmap.Workspace.getArchive(ctrmap.Workspace.ArchiveType.ZONE_DATA);
 			if (zo == null) {
 				return null;
@@ -355,16 +367,7 @@ public class BchTexturePack {
 			if (master == null || master.length % 0x38 != 0) {
 				master = zo.getDecompressedEntry(zo.length - 2);
 			}
-			int rows = master.length / 0x38;
-			//zones the GAME shipped; anything past that was added by the editor
-			int retail = Math.min(rows, ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
-			List<Integer> hits = new java.util.ArrayList<>();
-			for (int z = 0; z < retail; z++) {
-				int a = (master[z * 0x38 + 2] & 0xFF) | ((master[z * 0x38 + 3] & 0xFF) << 8);
-				if (a == area) {
-					hits.add(z);
-				}
-			}
+			List<Integer> hits = ctrmap.AreaForker.zonesUsingArea(master, area, editingZone);
 			if (hits.isEmpty()) {
 				return null;
 			}
@@ -388,15 +391,15 @@ public class BchTexturePack {
 	 * stale, and its next write would silently truncate the pack.
 	 */
 	public static String carryToArea(int donorArea, int targetArea, List<String> needed,
-			ctrmap.formats.containers.AD liveTarget) throws Exception {
-		String shared = retailZonesUsing(targetArea);
+			ctrmap.formats.containers.AD liveTarget, int editingZone) throws Exception {
+		String shared = zonesUsingArea(targetArea, editingZone);
 		if (shared != null) {
 			//An area is shared. Growing one to satisfy a new map rewrites the
-			//look of every retail place that also lives in it - measured, this
+			//look of every other place that also lives in it - measured, this
 			//put 855 KB of imported textures inside Mauville City and broke its
-			//fog, and grew the area behind fifteen other retail zones. Fork the
+			//fog, and grew the area behind fifteen other zones. Fork the
 			//zone's area first (AreaForker) so it has one of its own.
-			throw new IllegalStateException("Area " + targetArea + " is shared with retail "
+			throw new IllegalStateException("Area " + targetArea + " is also used by "
 					+ shared + ".\nCarrying textures into it would change those maps."
 					+ "\nGive this zone its own area first (Map > Fork area).");
 		}
