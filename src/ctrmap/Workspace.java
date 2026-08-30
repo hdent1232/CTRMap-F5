@@ -608,7 +608,8 @@ public class Workspace {
 					gr.packDirectory(getExtractionDirectory(ArchiveType.FIELD_DATA), GeometryForker.consumePendingFieldOverrides());
 					progress.setBarPercent(30);
 					progress.setDescription("Packing - areadata");
-					ad.packDirectory(getExtractionDirectory(ArchiveType.AREA_DATA));
+					//a pending area fork appends a private area copy (see AreaForker)
+					ad.packDirectory(getExtractionDirectory(ArchiveType.AREA_DATA), AreaForker.consumePendingAreaOverrides());
 					progress.setBarPercent(60);
 					progress.setDescription("Packing - zonedata");
 					//a pending zone append needs its compression overrides exactly once (see ZoneAppender)
@@ -622,7 +623,8 @@ public class Workspace {
 					bm.packDirectory(getExtractionDirectory(ArchiveType.BUILDING_MODELS));
 					progress.setBarPercent(90);
 					progress.setDescription("Packing - npcregistries");
-					npcreg.packDirectory(getExtractionDirectory(ArchiveType.NPC_REGISTRIES));
+					//an area fork appends the matching registry entry (indexed by area id)
+					npcreg.packDirectory(getExtractionDirectory(ArchiveType.NPC_REGISTRIES), AreaForker.consumePendingNpcRegOverrides());
 					progress.setBarPercent(95);
 					progress.setDescription("Packing - trainers");
 				//trainer archives: pack only when actually edited (rewriting them

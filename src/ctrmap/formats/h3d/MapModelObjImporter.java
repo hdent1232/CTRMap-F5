@@ -165,7 +165,7 @@ public class MapModelObjImporter {
 	}
 
 	/** Encodes one component in a PICA format (game conventions: u8/255, s8/127 never -128). */
-	private static void putComp(byte[] b, int o, int type, float v) {
+	public static void putComp(byte[] b, int o, int type, float v) {
 		switch (type) {
 			case 3:
 				putFloatLE(b, o, v);

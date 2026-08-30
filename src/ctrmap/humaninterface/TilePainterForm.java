@@ -273,6 +273,10 @@ public class TilePainterForm {
 			if (composite && !firstCell) {
 				break; // the paint grid covers only the first cell - leave the rest alone
 			}
+			//give this map a REAL material for every brush it lacks (an indoor
+			//map has no sand, a cave no grass) instead of silently painting
+			//with whatever mesh happened to be biggest
+			donor = importBrushMaterials(donor, grid, touched, texNeeds);
 			RegionFactory.BlankContent bc = composite
 					? PaintedRegionBuilder.buildComposite(donor, gr.getFile(2), gr.getFile(0), grid, height, ramp, touched, lighting, edges)
 					: PaintedRegionBuilder.build(donor, grid, height, ramp, lighting, edges);
@@ -391,6 +395,37 @@ public class TilePainterForm {
 			}
 		}
 		return existing.assemblePropData();
+	}
+
+	/**
+	 * Imports a real material for every painted brush the map lacks, so any
+	 * brush works on any map. Texture needs are added to {@code texNeeds} so
+	 * the existing cross-area carry brings them along (a missing texture
+	 * hardlocks the game). Returns the (possibly grown) model.
+	 */
+	static byte[] importBrushMaterials(byte[] model, TilePalette[][] grid, boolean[][] touched,
+			java.util.Map<Integer, java.util.Set<String>> texNeeds) {
+		java.util.Set<TilePalette> used = new java.util.LinkedHashSet<>();
+		for (int y = 0; y < DIM; y++) {
+			for (int x = 0; x < DIM; x++) {
+				if (touched == null || touched[y][x]) {
+					TilePalette t = grid[y][x];
+					if (t != null && t != TilePalette.VOID) {
+						used.add(t);
+					}
+				}
+			}
+		}
+		byte[] out = model;
+		for (TilePalette t : used) {
+			ctrmap.formats.tilemap.TerrainCatalog.ImportResult r
+					= ctrmap.formats.tilemap.TerrainCatalog.ensureMaterial(out, t);
+			out = r.model;
+			if (r.injected && texNeeds != null && !r.texturesNeeded.isEmpty()) {
+				texNeeds.computeIfAbsent(r.donorArea, k -> new java.util.LinkedHashSet<>()).addAll(r.texturesNeeded);
+			}
+		}
+		return out;
 	}
 
 	/** Seeds the grid from the region's existing tilemap tuples (reverse lookup). */

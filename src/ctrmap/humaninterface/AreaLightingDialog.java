@@ -41,7 +41,13 @@ public class AreaLightingDialog {
 			JOptionPane.showMessageDialog(parent, "Load a zone first (Zone tab).", "Area fog & lighting", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		final int areaId = mZonePnl.zone.header.areadataID;
+		//this zone's atmosphere must be ITS OWN: an area shared with other zones
+		//gets forked first, so the edit cannot leak into them
+		final int areaId = AreaForkPrompt.ensurePrivate(parent, mZonePnl.zoneIndex,
+				mZonePnl.zone.header.areadataID, "changing the fog and lighting");
+		if (areaId < 0) {
+			return;
+		}
 		final File areaFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areaId);
 		final AD ad;
 		final byte[] sub4;
@@ -70,10 +76,10 @@ public class AreaLightingDialog {
 				System.arraycopy(picked, 0, sub4, 0, sub4.length);
 				ad.storeFile(4, sub4);
 				Workspace.addPersist(areaFile);
+				ctrmap.CtrmapMainframe.refreshSceneFog();
+				AreaForkPrompt.packIfForked(null);
 				JOptionPane.showMessageDialog(parent,
-						"Atmosphere applied to area " + areaId + ". Deploy to see it in-game.\n"
-						+ "(This changed every zone that uses area " + areaId + ". Custom settings\n"
-						+ "can fine-tune it any time from the same button.)",
+						"Atmosphere applied. Deploy to see it in-game - the 3D view already shows it.",
 						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
 				JOptionPane.showMessageDialog(parent, "Save failed:\n" + ex.getMessage(), "Area fog & lighting", JOptionPane.ERROR_MESSAGE);
@@ -170,10 +176,11 @@ public class AreaLightingDialog {
 				env.writeInto(sub4);
 				ad.storeFile(4, sub4);
 				Workspace.addPersist(areaFile);
+				ctrmap.CtrmapMainframe.refreshSceneFog();
+				AreaForkPrompt.packIfForked(null);
 				dlg.dispose();
 				JOptionPane.showMessageDialog(parent,
-						"Area " + areaId + " fog/lighting saved. Deploy to see it in-game.\n"
-						+ "(This changed every zone that uses area " + areaId + ".)",
+						"Fog & lighting saved. Deploy to see it in-game - the 3D view already shows it.",
 						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
 				JOptionPane.showMessageDialog(dlg, "Save failed:\n" + ex.getMessage(), "Area fog & lighting", JOptionPane.ERROR_MESSAGE);

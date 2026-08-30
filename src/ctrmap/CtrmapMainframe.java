@@ -903,6 +903,31 @@ public class CtrmapMainframe {
 	 * validation that succeeds after the paths are set in Workspace settings.
 	 */
 	/**
+	 * Pushes the loaded zone's atmosphere (AreaData subfile 4) into the 3D
+	 * scene, so fog & lighting edits are visible in the editor itself and not
+	 * only in the atmosphere picker's preview. Silent when nothing is loaded.
+	 */
+	public static void refreshSceneFog() {
+		if (m3DDebugPanel == null) {
+			return;
+		}
+		try {
+			if (!Workspace.valid || mZonePnl == null || mZonePnl.zone == null || mZonePnl.zone.header == null) {
+				m3DDebugPanel.clearFog();
+				return;
+			}
+			ctrmap.formats.containers.AD ad = mZonePnl.zone.header.areadata != null
+					? mZonePnl.zone.header.areadata
+					: new ctrmap.formats.containers.AD(Workspace.getWorkspaceFile(
+							Workspace.ArchiveType.AREA_DATA, mZonePnl.zone.header.areadataID));
+			ctrmap.formats.area.AreaEnv env = ctrmap.formats.area.AreaEnv.read(ad.getFile(4));
+			m3DDebugPanel.setFog(env.fogColor[0], env.fogColor[1], env.fogColor[2], env.fogNear, env.fogFar);
+		} catch (Exception ex) {
+			m3DDebugPanel.clearFog();
+		}
+	}
+
+	/**
 	 * The Game Data tab: the game-wide data editors (trainers, battle
 	 * facilities, shops, wild Pokemon), as big labeled entry points instead of
 	 * menu items.
