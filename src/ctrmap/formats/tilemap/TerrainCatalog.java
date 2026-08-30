@@ -131,8 +131,21 @@ public class TerrainCatalog {
 			byte[] merged = BchModelAppender.append(model, donorModel, d.donorMesh, d.injectName);
 			BchMapModel mm = new BchMapModel(merged);
 			//the append brings the donor's own terrain along - blank it, we only
-			//wanted the material; the painter fills it with the user's tiles
-			int newMesh = mm.meshCount - 1;
+			//wanted the material; the painter fills it with the user's tiles.
+			//The new mesh is NOT necessarily the last one: the appender inserts
+			//it in render-layer order, shifting the meshes after it. Find it by
+			//name, or we would blank an innocent mesh and leave a slab of the
+			//donor's map floating in this one.
+			int newMesh = -1;
+			for (int i = 0; i < mm.meshCount; i++) {
+				if (d.injectName.equals(mm.getMaterialName(mm.getMeshMaterialIndex(i)))) {
+					newMesh = i;
+					break;
+				}
+			}
+			if (newMesh < 0) {
+				return r; //the append did not produce the material we asked for
+			}
 			BchMapModel.MeshGeom g = mm.geometry().get(newMesh);
 			byte[] one = new byte[g.stride];
 			System.arraycopy(mm.raw, g.vtxAbs, one, 0, g.stride);

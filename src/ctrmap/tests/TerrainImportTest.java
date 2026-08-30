@@ -11,7 +11,9 @@ import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Proves EVERY terrain brush can paint on ANY map: for each hostile target (an
@@ -82,6 +84,9 @@ public class TerrainImportTest {
 					if (!PaintedRegionBuilder.hasMaterialFor(new BchMapModel(m2), brush)) {
 						throw new IllegalStateException("brush still does not resolve after import");
 					}
+					if (r.injected) {
+						checkImportIsInert(model, m2, brush);
+					}
 					//idempotent: a second import must change nothing
 					TerrainCatalog.ImportResult again = TerrainCatalog.ensureMaterial(m2, brush);
 					if (again.injected || !Arrays.equals(again.model, m2)) {
@@ -105,6 +110,59 @@ public class TerrainImportTest {
 		if (failures > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * An import must give the map a MATERIAL and nothing else: every material the
+	 * map already had must keep every one of its triangles, and the new material
+	 * must arrive empty.
+	 *
+	 * <p>This exists because of a real bug. The appender does not put the new mesh
+	 * last - it inserts it in render-layer order and shifts the meshes after it -
+	 * but the import blanked "the last mesh" on the assumption that it was the new
+	 * one. So it wiped an innocent retail mesh (Route 102 lost its shadow layer)
+	 * and left the donor's own terrain, 214 triangles of another map's stairs,
+	 * standing in the middle of the player's map. Everything still parsed and
+	 * rendered, so no other check noticed.
+	 */
+	private static void checkImportIsInert(byte[] before, byte[] after, TilePalette brush) {
+		Map<String, Integer> was = trisByMaterial(new BchMapModel(before));
+		Map<String, Integer> now = trisByMaterial(new BchMapModel(after));
+		for (Map.Entry<String, Integer> e : was.entrySet()) {
+			Integer n = now.get(e.getKey());
+			if (n == null) {
+				throw new IllegalStateException("import for " + brush + " removed material " + e.getKey());
+			}
+			if (!n.equals(e.getValue())) {
+				throw new IllegalStateException("import for " + brush + " changed existing material "
+						+ e.getKey() + ": " + e.getValue() + " -> " + n + " triangles");
+			}
+		}
+		for (Map.Entry<String, Integer> e : now.entrySet()) {
+			if (was.containsKey(e.getKey())) {
+				continue;
+			}
+			if (e.getValue() > 1) {
+				throw new IllegalStateException("import for " + brush + " brought the donor's geometry along: "
+						+ e.getKey() + " has " + e.getValue() + " triangles (want an empty mesh)");
+			}
+		}
+	}
+
+	/** Triangle count per material name. */
+	private static Map<String, Integer> trisByMaterial(BchMapModel m) {
+		Map<String, Integer> out = new HashMap<>();
+		for (int i = 0; i < m.meshCount; i++) {
+			String n = m.getMaterialName(m.getMeshMaterialIndex(i));
+			int t = 0;
+			try {
+				t = m.getTriangles(i).length / 3;
+			} catch (RuntimeException ignore) {
+			}
+			Integer prev = out.get(n);
+			out.put(n, prev == null ? t : prev + t);
+		}
+		return out;
 	}
 
 	/** Paints a patch and verifies the generated vertex colours decode to the
