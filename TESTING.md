@@ -214,8 +214,11 @@ trainer-battle natives (the same ones rival battles use) — fully decoupled
 from the Battle Maison engine and its shared pools. NPC tool → Add →
 "Battle challenge (own trainers)". Offline: the emitted script verifies on
 all 536 zones (dispatch, branches, switch table, natives); the trainer
-codec is byte-exact on all 949 retail trainers. In-game is the open
-question:
+codec is byte-exact on all 949 retail trainers.
+
+**A ready-made challenge NPC is already IN the test hub** (see
+TESTZONE.md) with three pre-authored competitors — walk the hub first;
+the checklist below is for when you build your own:
 - [ ] **The core test**: author a team in an unused trainer entry
   (blank-named ones — e.g. ids 51, 52, 61 — are provably dummy filler),
   add a challenge NPC with it, deploy, talk. Expect: a real trainer battle

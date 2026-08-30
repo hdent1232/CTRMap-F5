@@ -113,8 +113,17 @@ public class TrainerEditDialog {
 			top.add(typeSpin);
 			top.add(new JLabel("Money rate:"));
 			top.add(moneySpin);
-			JPanel north = new JPanel(new java.awt.GridLayout(2, 1));
+			//the displayed trainer NAME lives in the game text list - editable
+			//here so a repurposed blank slot gets a real name in one place
+			JPanel nameRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
+			final javax.swing.JTextField nameField = new javax.swing.JTextField(
+					tid < names.length && !names[tid].isEmpty() ? names[tid] : "", 16);
+			nameRow.add(new JLabel("Name (shown in battle):"));
+			nameRow.add(nameField);
+			nameRow.add(new JLabel("Blank-named slots are unused by the retail game - safe to repurpose."));
+			JPanel north = new JPanel(new java.awt.GridLayout(3, 1));
 			north.add(top);
+			north.add(nameRow);
 			north.add(new JLabel("  Double-click a Species, Item or Move cell to pick it visually (types, stats, move category)."));
 			dlg.add(north, BorderLayout.NORTH);
 			dlg.add(new JScrollPane(jt), BorderLayout.CENTER);
@@ -145,6 +154,7 @@ public class TrainerEditDialog {
 					model.fireTableDataChanged();
 				}
 			});
+			final String origName = tid < names.length ? names[tid] : "";
 			save.addActionListener(e -> {
 				try {
 					if (jt.isEditing()) {
@@ -163,6 +173,15 @@ public class TrainerEditDialog {
 					}
 					Workspace.addPersist(df);
 					Workspace.addPersist(pf);
+					String newName = nameField.getText().trim();
+					if (!newName.equals(origName.trim())) {
+						int entry = Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_NAMES);
+						File nf = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, entry);
+						GFMessageFile nmsg = new GFMessageFile(Files.readAllBytes(nf.toPath()));
+						nmsg.setLine(tid, newName);
+						Files.write(nf.toPath(), nmsg.write());
+						Workspace.addPersist(nf);
+					}
 					dlg.dispose();
 					JOptionPane.showMessageDialog(parent, "Trainer " + tid + " saved. Deploy to emulator to apply.",
 							"Trainer editor", JOptionPane.INFORMATION_MESSAGE);
