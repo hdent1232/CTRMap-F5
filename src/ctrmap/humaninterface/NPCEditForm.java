@@ -1210,8 +1210,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		whiteoutBox.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(whiteoutBox);
 		addLabeled(panel, "NPC model (type to search; preview below):", modelPicker);
-		JLabel hint = new JLabel("<html>Battles YOUR trainer entries (Game Data -> Trainers) - fully independent of the<br>"
-				+ "retail battle facilities and their shared pools; the vanilla game stays untouched.<br>"
+		JLabel hint = new JLabel("<html>The lineup takes ANY trainer entry: retail trainers (Youngsters, Ace Trainers...)<br>"
+				+ "work AS-IS and are not modified by battling them here; for custom competitors,<br>"
+				+ "repurpose a blank-named entry in Game Data -> Trainers (set its class, name and<br>"
+				+ "team there - the class gives it the Youngster/Ace Trainer/... battle identity).<br>"
+				+ "Fully independent of the retail facilities' shared pools - vanilla stays untouched.<br>"
 				+ "Each talk = one battle at the current streak. UNPROVEN IN-GAME - test it first.</html>");
 		hint.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(hint);
