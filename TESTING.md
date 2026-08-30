@@ -208,6 +208,29 @@ byte-for-byte. The in-game check:
 - [ ] After removing added zones AND deleting code.ips, the game boots and
   plays like stock (title screen, load save, walk around).
 
+## Independent battle challenge (NEW — the highest-priority battle test)
+An NPC that battles YOUR trainer entries through the game's ordinary
+trainer-battle natives (the same ones rival battles use) — fully decoupled
+from the Battle Maison engine and its shared pools. NPC tool → Add →
+"Battle challenge (own trainers)". Offline: the emitted script verifies on
+all 536 zones (dispatch, branches, switch table, natives); the trainer
+codec is byte-exact on all 949 retail trainers. In-game is the open
+question:
+- [ ] **The core test**: author a team in an unused trainer entry
+  (blank-named ones — e.g. ids 51, 52, 61 — are provably dummy filler),
+  add a challenge NPC with it, deploy, talk. Expect: a real trainer battle
+  against your team starts.
+- [ ] Win: the streak advances (talk again → next trainer in the lineup)
+  and BP appears (check the BP counter).
+- [ ] Lose: the streak resets (talk again → first trainer), and with
+  "white out on defeat" checked you warp to the last Pokémon Center.
+- [ ] The streak survives leaving the zone and saving/reloading (it lives
+  in a save-data variable).
+- [ ] Milestone: set "bonus at streak 2" with a 2-trainer lineup, win
+  twice → the bonus BP lands on the second win.
+- [ ] The retail Battle Maison still battles its normal teams (nothing
+  shared was touched).
+
 ## Battle facility opponents (UPDATED — vanilla-safe by default)
 The editor (Game Data → Facility opponents) now marks RETAIL rows grey and
 guards them: editing one offers "Copy to a free slot" first, so the shipped
