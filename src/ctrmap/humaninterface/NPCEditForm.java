@@ -834,7 +834,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		//pick which template to add; "Talking NPC" continues the proven flow below,
 		//the others dispatch to their own self-contained handlers
-		String[] templates = {"Talking NPC", "Sign", "Item giver", "Trainer", "Give BP"};
+		String[] templates = {"Talking NPC", "Sign", "Item giver", "Trainer", "Battle challenge (own trainers)", "Give BP"};
 		Object choice = JOptionPane.showInputDialog(frame, "What would you like to add?", "Add NPC / object",
 				JOptionPane.PLAIN_MESSAGE, null, templates, templates[0]);
 		if (choice == null) {
@@ -850,6 +850,10 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		if ("Trainer".equals(choice)) {
 			addTrainerTemplate(zone);
+			return;
+		}
+		if ("Battle challenge (own trainers)".equals(choice)) {
+			addChallengeTemplate(zone);
 			return;
 		}
 		if ("Give BP".equals(choice)) {
@@ -1139,6 +1143,206 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		zone.s = work; //commit - the clone is the only mutation and it succeeded
 		Point pos = mTileMapPanel.getTileAtViewportCentre();
 		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), giverModel, caseId, pos.x, pos.y);
+		finishNpcAdd(zone, npc, true);
+	}
+
+	/**
+	 * "Battle challenge" template: an NPC that battles the player's OWN trainer
+	 * entries (Game Data -> Trainers) through the generic field battle natives -
+	 * completely independent of the Battle Maison engine and its shared pools,
+	 * so the retail game's opponents stay vanilla. Each talk runs one battle:
+	 * the trainer for the current streak (a save-data work variable), BP on a
+	 * win, streak reset on a loss. See {@link GauntletScriptWizard}.
+	 */
+	private void addChallengeTemplate(Zone zone) {
+		IdChooser idChooser = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames()), NpcTemplates.TRAINER_ID_MAX, 1);
+		final javax.swing.DefaultListModel<String> listModel = new javax.swing.DefaultListModel<>();
+		final java.util.List<Integer> trainerIds = new java.util.ArrayList<>();
+		final java.util.List<String> trainerNames = loadGameTextNames(NpcTemplates.gametextTrainerNames());
+		javax.swing.JList<String> trainerList = new javax.swing.JList<>(listModel);
+		trainerList.setVisibleRowCount(5);
+		javax.swing.JButton addBtn = new javax.swing.JButton("Add to lineup");
+		javax.swing.JButton removeBtn = new javax.swing.JButton("Remove selected");
+		addBtn.addActionListener(ev -> {
+			int tid = idChooser.getId();
+			if (tid >= 1 && tid <= 949) {
+				trainerIds.add(tid);
+				listModel.addElement("#" + trainerIds.size() + "  " + tid
+						+ (tid < trainerNames.size() && trainerNames.get(tid) != null && !trainerNames.get(tid).isEmpty()
+						? " " + trainerNames.get(tid) : ""));
+			}
+		});
+		removeBtn.addActionListener(ev -> {
+			int i = trainerList.getSelectedIndex();
+			if (i >= 0) {
+				trainerIds.remove(i);
+				listModel.remove(i);
+			}
+		});
+		JSpinner bpSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(3, 0, 999, 1));
+		JSpinner milestoneSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 99, 1));
+		JSpinner bonusSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(20, 0, 9999, 1));
+		javax.swing.JCheckBox whiteoutBox = new javax.swing.JCheckBox("White out on defeat (engine loss handler)");
+		JTextArea introTa = new JTextArea("", 2, 40);
+		JTextArea winTa = new JTextArea("", 2, 40);
+		JTextArea loseTa = new JTextArea("", 2, 40);
+		javax.swing.JTextField workVarField = new javax.swing.JTextField(
+				Integer.toHexString(ctrmap.formats.scripts.GauntletScriptWizard.DEFAULT_STREAK_WORK), 6);
+		ModelPicker modelPicker = new ModelPicker(-1);
+		JPanel panel = new JPanel();
+		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
+		addLabeled(panel, "Lineup (battle 1, 2, ... - the last repeats until a loss):", idChooser);
+		JPanel listBtns = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
+		listBtns.add(addBtn);
+		listBtns.add(removeBtn);
+		listBtns.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(listBtns);
+		JScrollPane listScroll = new JScrollPane(trainerList);
+		listScroll.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(listScroll);
+		addLabeled(panel, "BP per win (0 = none):", bpSpinner);
+		addLabeled(panel, "Bonus at streak (0 = no bonus):", milestoneSpinner);
+		addLabeled(panel, "Bonus BP:", bonusSpinner);
+		addLabeled(panel, "Intro text (empty = none):", new JScrollPane(introTa));
+		addLabeled(panel, "Win text (empty = none):", new JScrollPane(winTa));
+		addLabeled(panel, "Lose text (empty = none):", new JScrollPane(loseTa));
+		addLabeled(panel, "Streak save variable (hex; script-corpus-free default):", workVarField);
+		whiteoutBox.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(whiteoutBox);
+		addLabeled(panel, "NPC model (type to search; preview below):", modelPicker);
+		JLabel hint = new JLabel("<html>Battles YOUR trainer entries (Game Data -> Trainers) - fully independent of the<br>"
+				+ "retail battle facilities and their shared pools; the vanilla game stays untouched.<br>"
+				+ "Each talk = one battle at the current streak. UNPROVEN IN-GAME - test it first.</html>");
+		hint.setAlignmentX(LEFT_ALIGNMENT);
+		panel.add(hint);
+		int rsl = JOptionPane.showConfirmDialog(frame, panel, "Add battle challenge", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+		disposePreviews();
+		if (rsl != JOptionPane.OK_OPTION) {
+			return;
+		}
+		if (trainerIds.isEmpty()) {
+			JOptionPane.showMessageDialog(this, "Add at least one trainer to the lineup.", "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int model = modelPicker.getSelectedUid();
+		if (model < 0) {
+			JOptionPane.showMessageDialog(this, "Select an overworld model first.", "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		int workVar;
+		try {
+			workVar = Integer.parseInt(workVarField.getText().trim().replace("0x", ""), 16);
+		} catch (NumberFormatException ex) {
+			JOptionPane.showMessageDialog(this, "The streak variable must be a hex number (e.g. 4020).", "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		String introText = escapeTypedText(introTa.getText());
+		String winText = escapeTypedText(winTa.getText());
+		String loseText = escapeTypedText(loseTa.getText());
+		boolean needText = !introText.isEmpty() || !winText.isEmpty() || !loseText.isEmpty();
+		java.util.List<String> newLines = new java.util.ArrayList<>();
+		GFMessageFile msg = null;
+		if (needText) {
+			for (String t : new String[]{introText, winText, loseText}) {
+				if (!t.isEmpty()) {
+					try {
+						GFMessageFile.write(java.util.Arrays.asList(t)); //validate before touching anything
+					} catch (RuntimeException ex) {
+						JOptionPane.showMessageDialog(this, "A text could not be encoded:\n" + ex.getMessage(), "Text encode error", JOptionPane.ERROR_MESSAGE);
+						return;
+					}
+				}
+			}
+			if (Workspace.getStoryTextGARC() == null) {
+				JOptionPane.showMessageDialog(this, "The STORYTEXT archive was not found in the game directory.", "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			msg = getStoryFile(zone.header.textID);
+			if (msg == null) {
+				JOptionPane.showMessageDialog(this, "Story text file " + zone.header.textID + " could not be read.", "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+		}
+		//all script surgery on a copy; the zone commits only after everything held
+		GFLPawnScript work;
+		try {
+			work = new GFLPawnScript(zone.s.getScriptBytes());
+			work.decompressThis();
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (needText && ZoneScriptAnalyzer.findMsgWrapper(work) == null) {
+			GFLPawnScript wrapperDonor;
+			try {
+				wrapperDonor = loadWrapperDonor();
+			} catch (RuntimeException ex) {
+				JOptionPane.showMessageDialog(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ex.getMessage(), "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+			int insCount = MsgWrapperInjector.countInjectedInstructions(work, wrapperDonor);
+			if (JOptionPane.showConfirmDialog(frame,
+					"This zone's script has no message-display routine.\n"
+					+ "Inject one (copied from the game's own code)?\n"
+					+ "This adds " + insCount + " instructions (about 2.4 KB) to the zone script.",
+					"Add battle challenge", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
+				return;
+			}
+			try {
+				MsgWrapperInjector.injectMsgWrapper(work, wrapperDonor);
+				if (ZoneScriptAnalyzer.findMsgWrapper(work) == null) {
+					throw new MsgWrapperInjector.InjectionException("The injected routine did not verify.");
+				}
+			} catch (RuntimeException ex) {
+				JOptionPane.showMessageDialog(this, "Could not inject the message routine:\n" + ex.getMessage(), "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
+		}
+		ctrmap.formats.scripts.GauntletScriptWizard.Config cfg = new ctrmap.formats.scripts.GauntletScriptWizard.Config();
+		cfg.trainerIds = new int[trainerIds.size()];
+		for (int i = 0; i < trainerIds.size(); i++) {
+			cfg.trainerIds[i] = trainerIds.get(i);
+		}
+		cfg.bpPerWin = (Integer) bpSpinner.getValue();
+		cfg.milestone = (Integer) milestoneSpinner.getValue();
+		cfg.milestoneBonus = (Integer) bonusSpinner.getValue();
+		cfg.streakWorkId = workVar;
+		cfg.loseWhiteout = whiteoutBox.isSelected();
+		int nextLine = msg != null ? msg.getLineCount() : 0;
+		if (!introText.isEmpty()) {
+			cfg.introLine = nextLine++;
+			newLines.add(introText);
+		}
+		if (!winText.isEmpty()) {
+			cfg.winLine = nextLine++;
+			newLines.add(winText);
+		}
+		if (!loseText.isEmpty()) {
+			cfg.loseLine = nextLine++;
+			newLines.add(loseText);
+		}
+		int caseId;
+		try {
+			caseId = ctrmap.formats.scripts.GauntletScriptWizard.addChallengeScript(work, cfg);
+		} catch (RuntimeException ex) {
+			JOptionPane.showMessageDialog(this, "Could not add the challenge script:\n" + ex.getMessage(), "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (msg != null && !newLines.isEmpty()) {
+			int firstNew = msg.getLineCount();
+			for (String t : newLines) {
+				msg.addLine(t);
+			}
+			if (!storeStoryFile(zone.header.textID, msg)) {
+				for (int i = newLines.size() - 1; i >= 0; i--) {
+					msg.removeLine(firstNew + i); //keep the cache consistent; zone.s untouched
+				}
+				return;
+			}
+		}
+		zone.s = work; //commit
+		Point pos = mTileMapPanel.getTileAtViewportCentre();
+		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
 		finishNpcAdd(zone, npc, true);
 	}
 

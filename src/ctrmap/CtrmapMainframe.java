@@ -397,7 +397,7 @@ public class CtrmapMainframe {
 		zbRemove.setToolTipText("Delete all added zones (index 536+) and restore the stock ZoneData layout.");
 		zbRemove.addActionListener(e -> removeAddedZonesAction());
 		javax.swing.JButton zbFacility = new javax.swing.JButton("Custom battle facility");
-		zbFacility.setToolTipText("Clone a retail battle facility's battle/streak/reward systems into this zone as the base of ANY custom battle facility - tower, dojo, gauntlet, whatever the zone should host.");
+		zbFacility.setToolTipText("Build a custom battle facility here: INDEPENDENT script-driven battles with your own trainers (vanilla untouched), or clone a retail facility's full engine (shared opponent pools). Tower, dojo, gauntlet - whatever the zone should host.");
 		zbFacility.addActionListener(e -> setupFacilityAction());
 		for (javax.swing.JButton b : new javax.swing.JButton[]{zbRename, zbEmpty, zbFind, zbRemove, zbFacility}) {
 			b.setFocusable(false);
@@ -1701,6 +1701,31 @@ public class CtrmapMainframe {
 					+ "scripts, so a facility must go in a base zone (< " + baseZones + "). Load or repurpose a\n"
 					+ "base zone (e.g. an unused one, via Tools -> Empty zone) and try again.",
 					"Set up Battle facility", JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		//two ways to build a facility - offer both honestly
+		String[] paths = {"Independent battles (your own trainers)", "Clone a retail facility (full engine)"};
+		int path = JOptionPane.showOptionDialog(frame,
+				"How should this facility's battles work?\n\n"
+				+ "INDEPENDENT: an NPC that battles trainer entries YOU author (Game Data ->\n"
+				+ "Trainers), with streak + BP rewards in its own script. Nothing vanilla is\n"
+				+ "touched, works in any zone, no zone replacement. (New - unproven in-game.)\n\n"
+				+ "CLONE: this zone is replaced by a copy of the Battle Maison or Institute -\n"
+				+ "the full retail engine (formats, streak saves, scoring), but its opponent\n"
+				+ "pools are ENGINE-WIDE, shared with the retail facility.",
+				"Set up Battle facility", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, paths, paths[0]);
+		if (path < 0) {
+			return;
+		}
+		if (path == 0) {
+			JOptionPane.showMessageDialog(frame,
+					"To add an independent battle NPC:\n\n"
+					+ "1. Author its opponents' teams in Game Data -> Trainers (pick unused\n"
+					+ "   trainer entries - blank-named ones are safe to repurpose).\n"
+					+ "2. On the World Editor, choose the NPC tool -> Add -> \"Battle challenge\n"
+					+ "   (own trainers)\" and build the lineup, rewards and dialogue there.\n\n"
+					+ "Each NPC is one challenge lane; place several for a multi-lane facility.",
+					"Independent battle facility", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
 		String[] kinds = {"Battle Maison (5 formats, Chatelaines)", "Battle Institute (single test)"};
