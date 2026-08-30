@@ -218,9 +218,9 @@ public class CtrmapMainframe {
 		wildEncounters = new JMenuItem("Edit wild encounters (this zone)...");
 		resizeMap = new JMenuItem("Resize map (this zone)...");
 		trainerEditor = new JMenuItem("Edit trainer (party/battle)...");
-		maisonEditor = new JMenuItem("Edit Battle Maison opponents...");
+		maisonEditor = new JMenuItem("Edit battle facility opponents...");
 		shopEditor = new JMenuItem("Edit shop inventories (Marts)...");
-		setupFacility = new JMenuItem("Custom battle facility here (clone the Maison systems)");
+		setupFacility = new JMenuItem("Custom battle facility here (clone a retail facility)");
 		renameZone = new JMenuItem("Rename zone (in-game name)...");
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
 		removeAddedZones = new JMenuItem("Remove added zones (restore stock 536)...");
@@ -238,10 +238,12 @@ public class CtrmapMainframe {
 		btnNPCTool = Utils.createGraphicalButton("_tool_npc");
 		btnWarpTool = Utils.createGraphicalButton("_tool_warp");
 		btnTriggerTool = Utils.createGraphicalButton("_tool_trigger");
-		btnPaintTool = new JRadioButton("Build map");
-		btnPaintTool.setToolTipText("Map Builder - construct this zone's map from scratch: terrain brushes, elevation, buildings and decor, directly on the map view. (The brush-icon Set tool instead paints tile TYPES onto the existing map.)");
-		btnGeoTool = new JRadioButton("Geometry");
+		btnPaintTool = Utils.createGraphicalButton("_tool_paint");
+		btnPaintTool.setToolTipText("Map Builder - edit this zone's map with terrain brushes, elevation, buildings and decor, directly on the map view. Only tiles you touch are rebuilt. (The brush-icon Set tool instead paints tile TYPES onto the existing map.)");
+		btnPaintTool.getAccessibleContext().setAccessibleName("Map Builder");
+		btnGeoTool = Utils.createGraphicalButton("_tool_geo");
 		btnGeoTool.setToolTipText("Geometry tool - drag a box on the map to select its 3D geometry, then move/duplicate/delete it, or copy it as a prefab and stamp it elsewhere");
+		btnGeoTool.getAccessibleContext().setAccessibleName("Geometry");
 		btnEditTool.setToolTipText("Edit tool - click a tile to load its settings");
 		btnSetTool.setToolTipText("Set tool - paint the panel's settings onto tiles");
 		btnFillTool.setToolTipText("Fill tool - drag a box to fill tiles with settings");
@@ -395,7 +397,7 @@ public class CtrmapMainframe {
 		zbRemove.setToolTipText("Delete all added zones (index 536+) and restore the stock ZoneData layout.");
 		zbRemove.addActionListener(e -> removeAddedZonesAction());
 		javax.swing.JButton zbFacility = new javax.swing.JButton("Custom battle facility");
-		zbFacility.setToolTipText("Clone the Battle Maison's battle/streak/reward systems into this zone as the base of ANY custom battle facility - tower, dojo, gauntlet, whatever the zone should host.");
+		zbFacility.setToolTipText("Clone a retail battle facility's battle/streak/reward systems into this zone as the base of ANY custom battle facility - tower, dojo, gauntlet, whatever the zone should host.");
 		zbFacility.addActionListener(e -> setupFacilityAction());
 		for (javax.swing.JButton b : new javax.swing.JButton[]{zbRename, zbEmpty, zbFind, zbRemove, zbFacility}) {
 			b.setFocusable(false);
@@ -881,8 +883,9 @@ public class CtrmapMainframe {
 	 * validation that succeeds after the paths are set in Workspace settings.
 	 */
 	/**
-	 * The Game Data tab: the game-wide data editors (trainers, Maison, shops,
-	 * wild Pokemon), as big labeled entry points instead of menu items.
+	 * The Game Data tab: the game-wide data editors (trainers, battle
+	 * facilities, shops, wild Pokemon), as big labeled entry points instead of
+	 * menu items.
 	 */
 	private static JPanel buildGameDataPanel() {
 		JPanel p = new JPanel();
@@ -890,8 +893,8 @@ public class CtrmapMainframe {
 		p.setBorder(javax.swing.BorderFactory.createEmptyBorder(24, 32, 24, 32));
 		addGameDataEntry(p, "Trainers", "Edit any trainer's party, moves, items and battle type.",
 				"Trainer editor", e -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame));
-		addGameDataEntry(p, "Battle facilities", "Edit the Battle Maison's opponent pools and trainer assignments - the same data any Maison-cloned custom facility draws from.",
-				"Maison opponents", e -> ctrmap.humaninterface.MaisonEditDialog.show(frame));
+		addGameDataEntry(p, "Battle facilities", "<html>Edit the opponent pools and trainer-class assignments of the battle facility engine.<br>This data is ENGINE-WIDE: the retail facility and every custom facility cloned from it draw<br>from the same pools - author your teams in FREE slots (retail rows are marked and guarded).</html>",
+				"Facility opponents", e -> ctrmap.humaninterface.MaisonEditDialog.show(frame));
 		addGameDataEntry(p, "Shops", "Change what the Poke Marts and specialty shops sell (ships as a code.ips patch).",
 				"Shop inventories", e -> ctrmap.humaninterface.ShopEditDialog.show(frame));
 		addGameDataEntry(p, "Wild Pokemon", "Edit the loaded zone's wild encounter slots (grass, surf, fishing...).",
@@ -1210,6 +1213,7 @@ public class CtrmapMainframe {
 						}
 					}
 					Workspace.reloadGARC(Workspace.ArchiveType.ZONE_DATA);
+					mZonePnl.clearForkDeclinesFrom(536); //those slots no longer exist
 					mZonePnl.loadEverything(new Runnable() {
 						@Override
 						public void run() {
@@ -1675,10 +1679,10 @@ public class CtrmapMainframe {
 	 * "Set up a Battle facility here": replaces the loaded BASE zone with a copy
 	 * of a retail Battle facility lobby (Maison or Institute) - script AND
 	 * entities verbatim, so the facility's engine logic is exactly retail - then
-	 * forks its geometry so edits stay local. The starting point for a custom
-	 * custom battle facility: reskin the opponents (Game Data -> Battle
-	 * Maison opponents) and the text, then deploy. Must target a base zone
-	 * (index &lt; 536) because appended zones cannot run field scripts.
+	 * forks its geometry so edits stay local. The starting point for ANY custom
+	 * battle facility: author opponents in the pools' free slots (Game Data ->
+	 * Facility opponents) and edit the text, then deploy. Must target a base
+	 * zone (index &lt; 536) because appended zones cannot run field scripts.
 	 */
 	private static void setupFacilityAction() {
 		if (!Workspace.valid || !Workspace.isOA()) {
@@ -1701,9 +1705,9 @@ public class CtrmapMainframe {
 		}
 		String[] kinds = {"Battle Maison (5 formats, Chatelaines)", "Battle Institute (single test)"};
 		Object kind = JOptionPane.showInputDialog(frame,
-				"Replace zone " + dstIndex + " with a copy of which facility?\n"
+				"Replace zone " + dstIndex + " with a copy of which retail facility?\n"
 				+ "(Its script + NPCs are copied verbatim - the engine logic is retail.\n"
-				+ "You then reskin the opponents and text.)",
+				+ "You then author the opponents and text.)",
 				"Set up Battle facility", JOptionPane.PLAIN_MESSAGE, null, kinds, kinds[0]);
 		if (kind == null) {
 			return;
@@ -1717,14 +1721,16 @@ public class CtrmapMainframe {
 				"Zone " + dstIndex + " will be COMPLETELY REPLACED by a copy of the facility\n"
 				+ "lobby (zone " + srcIndex + "): its map, NPCs and script. The copy gets its own\n"
 				+ "geometry, so editing it will not change the real facility.\n\n"
-				+ "After it packs: reskin opponents with Tools -> Edit Battle Maison opponents,\n"
-				+ "edit the text, then Deploy. Continue?",
+				+ "Note: opponent pools are ENGINE-WIDE (shared with the retail facility) -\n"
+				+ "author new teams in the pools' FREE slots via Game Data -> Facility opponents.\n"
+				+ "Then edit the text and Deploy. Continue?",
 				"Set up Battle facility", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
 		if (confirm != JOptionPane.OK_OPTION) {
 			return;
 		}
 		try {
 			ctrmap.ZoneCloner.cloneIntoSlot(srcIndex, dstIndex);
+			mZonePnl.clearForkDecline(dstIndex); //the slot holds a new zone now
 			GeometryForker.forkGeometry(dstIndex);
 			Workspace.packWorkspace(new Runnable() {
 				@Override
@@ -1735,7 +1741,8 @@ public class CtrmapMainframe {
 							mZonePnl.selectZone(dstIndex);
 							JOptionPane.showMessageDialog(frame,
 									"Zone " + dstIndex + " is now a copy of the facility (from zone " + srcIndex + ").\n\n"
-									+ "Next: Tools -> Edit Battle Maison opponents to set the teams,\n"
+									+ "Next: Game Data -> Facility opponents to author the teams (use the\n"
+									+ "pools' free slots - they are shared with the retail facility),\n"
 									+ "edit the facility's text, and Deploy to try it in the emulator.\n"
 									+ "(A grown/custom facility is unproven in-game - test it.)",
 									"Set up Battle facility", JOptionPane.INFORMATION_MESSAGE);
