@@ -161,14 +161,29 @@ public class BuildingCatalog {
 		}
 	}
 
-	/** Opens a region GR from the pristine snapshot (fallback: game dir). */
+	/**
+	 * Opens a region from the PRISTINE snapshot - the copy of the game as it was
+	 * before anything was edited.
+	 *
+	 * <p>Returns null when there is no snapshot, and deliberately does NOT fall
+	 * back to the live game folder. It used to, and that quietly turned editing
+	 * into a feedback loop: a building cut from a map the user had already
+	 * painted carried the paint with it, that result was written back, and the
+	 * next cut took the paint twice. Measured on a real workspace, two retail
+	 * regions had drifted this way and one of them had been captured into the
+	 * "pristine" snapshot itself.
+	 *
+	 * <p>Refusing is the safe answer. A missing snapshot means the workspace was
+	 * never validated, which the caller can fix; silently substituting edited
+	 * data cannot be detected at all.
+	 */
 	public static GR pristineRegion(int region) throws Exception {
 		String rel = Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game);
 		File garcFile = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
 		if (!garcFile.exists()) {
-			garcFile = new File(Workspace.GAMEDIR_PATH + rel);
-		}
-		if (!garcFile.exists()) {
+			System.err.println("BuildingCatalog: no pristine snapshot in this workspace ("
+					+ Workspace.originalSnapshotDir() + ") - refusing to cut a donor from"
+					+ " edited data. Load the workspace in CTRMap once to create it.");
 			return null;
 		}
 		byte[] bytes = new GARC(garcFile).getDecompressedEntry(region);

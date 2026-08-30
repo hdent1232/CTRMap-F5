@@ -38,15 +38,10 @@ Download the latest release from **[Releases](https://github.com/hdent1232/CTRMa
 | **`CTRMap-F5-x.y.z-windows-x64.zip`** | Unzip, double-click `CTRMap-F5.exe`. **No Java needed** — a runtime is included. Start here if you are not sure. |
 | **`CTRMap-F5-x.y.z-portable.zip`** | Much smaller, but needs Java 8 or newer. Run `run.bat` (Windows) or `run.sh` (macOS/Linux). |
 
-The first time you open it, a setup wizard appears.
-
-<img src="docs/img/wizard-2-game-found.png" width="620" alt="The setup wizard confirming it found Omega Ruby">
-
-It finds your unpacked game (or hunts for it), tells you which game it is, and — when you pick
-the wrong folder, which everyone does at least once — tells you *what* you picked and where the
-right one is:
-
-<img src="docs/img/wizard-2-wrong-folder.png" width="620" alt="The wizard explaining that the chosen folder is one level too high">
+The first time you open it, a setup wizard appears. It finds your unpacked game (or hunts for
+it), tells you which game it is, and — when you pick the wrong folder, which everyone does at
+least once — tells you *what* you picked and where the right one is, rather than listing missing
+archives at you.
 
 You can re-run it any time from **Options → Setup wizard**.
 

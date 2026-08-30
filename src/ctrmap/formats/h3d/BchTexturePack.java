@@ -330,6 +330,57 @@ public class BchTexturePack {
 		return carryToArea(donorArea, targetArea, needed, null);
 	}
 
+	/** Retail zones that share {@code area}, as a readable list, or null if none do. */
+	private static String retailZonesUsing(int area) {
+		try {
+			ctrmap.formats.garc.GARC zo = ctrmap.Workspace.getArchive(ctrmap.Workspace.ArchiveType.ZONE_DATA);
+			if (zo == null) {
+				return null;
+			}
+			//Prefer the WORKSPACE copy of the master table. Edits land there
+			//first and are only packed into the archive later, so reading the
+			//archive would judge this against zone-to-area assignments that have
+			//already been changed - and refuse a carry into an area the zone no
+			//longer shares with anybody.
+			byte[] master = null;
+			java.io.File mf = ctrmap.Workspace.getWorkspaceFile(
+					ctrmap.Workspace.ArchiveType.ZONE_DATA, zo.length - 2);
+			if (mf != null && mf.isFile()) {
+				try {
+					master = java.nio.file.Files.readAllBytes(mf.toPath());
+				} catch (java.io.IOException ignore) {
+					master = null;
+				}
+			}
+			if (master == null || master.length % 0x38 != 0) {
+				master = zo.getDecompressedEntry(zo.length - 2);
+			}
+			int rows = master.length / 0x38;
+			//zones the GAME shipped; anything past that was added by the editor
+			int retail = Math.min(rows, ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
+			List<Integer> hits = new java.util.ArrayList<>();
+			for (int z = 0; z < retail; z++) {
+				int a = (master[z * 0x38 + 2] & 0xFF) | ((master[z * 0x38 + 3] & 0xFF) << 8);
+				if (a == area) {
+					hits.add(z);
+				}
+			}
+			if (hits.isEmpty()) {
+				return null;
+			}
+			StringBuilder sb = new StringBuilder("zone" + (hits.size() > 1 ? "s " : " "));
+			for (int i = 0; i < Math.min(6, hits.size()); i++) {
+				sb.append(i > 0 ? ", " : "").append(hits.get(i));
+			}
+			if (hits.size() > 6) {
+				sb.append(" and ").append(hits.size() - 6).append(" more");
+			}
+			return sb.toString();
+		} catch (RuntimeException ex) {
+			return null; //never block an edit because the guard itself failed
+		}
+	}
+
 	/**
 	 * Variant taking the target's LIVE AD container: when a loaded zone's
 	 * areadata instance covers the target area, pass it - growing a subfile
@@ -338,6 +389,17 @@ public class BchTexturePack {
 	 */
 	public static String carryToArea(int donorArea, int targetArea, List<String> needed,
 			ctrmap.formats.containers.AD liveTarget) throws Exception {
+		String shared = retailZonesUsing(targetArea);
+		if (shared != null) {
+			//An area is shared. Growing one to satisfy a new map rewrites the
+			//look of every retail place that also lives in it - measured, this
+			//put 855 KB of imported textures inside Mauville City and broke its
+			//fog, and grew the area behind fifteen other retail zones. Fork the
+			//zone's area first (AreaForker) so it has one of its own.
+			throw new IllegalStateException("Area " + targetArea + " is shared with retail "
+					+ shared + ".\nCarrying textures into it would change those maps."
+					+ "\nGive this zone its own area first (Map > Fork area).");
+		}
 		java.io.File tgtFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, targetArea);
 		java.io.File donFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, donorArea);
 		if (tgtFile == null || donFile == null) {
