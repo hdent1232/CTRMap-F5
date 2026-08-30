@@ -169,6 +169,13 @@ public class TilePainterForm {
 	 */
 	static void stampPlaced(RegionFactory.BlankContent bc, java.util.List<Placed> placed,
 			int[][] height, java.util.Map<Integer, java.util.Set<String>> texNeeds) {
+		stampPlaced(bc, placed, height, null, texNeeds);
+	}
+
+	/** As above; {@code floorY} is the painted-floor frame (composite retail
+	 *  heights) so buildings sit ON the ground, not at level*STEP absolute. */
+	static void stampPlaced(RegionFactory.BlankContent bc, java.util.List<Placed> placed,
+			int[][] height, float[][] floorY, java.util.Map<Integer, java.util.Set<String>> texNeeds) {
 		for (Placed pl : placed) {
 			ctrmap.formats.h3d.MapPrefab p = BuildingPaletteDialog.cachedPrefab(pl.e);
 			if (p == null) {
@@ -177,7 +184,9 @@ public class TilePainterForm {
 			// plant the piece on the terrain at its anchor: donors sit at their
 			// own base height (a gym floats at -18, a palm at +46 over a beach
 			// patch), so dy re-bases them onto this tile's ground level
-			float dy = (height != null ? height[pl.ty][pl.tx] : 0) * PaintedRegionBuilder.STEP - pl.e.baseY;
+			float ground = floorY != null ? floorY[pl.ty][pl.tx]
+					: (height != null ? height[pl.ty][pl.tx] : 0) * PaintedRegionBuilder.STEP;
+			float dy = ground - pl.e.baseY;
 			ctrmap.formats.h3d.MapPrefab.StampResult r = p.stampGeometry(bc.model, pl.tx, pl.ty, dy);
 			if (r.stamped.isEmpty()) {
 				throw new IllegalStateException("\"" + pl.e.name + "\" could not be stamped"
@@ -205,71 +214,70 @@ public class TilePainterForm {
 		}
 	}
 
-	/** Generates the model from the current grid and shows it in the real 3D renderer. */
-	static void open3DPreview(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed) {
-		try {
-			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donorModel, grid, height, ramp, lighting, edges);
-			if (!placed.isEmpty()) {
-				stampPlaced(bc, placed, height, null);
-			}
-			byte[] model = bc.model;
-			java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> texes
-					= new java.util.ArrayList<>(mTileMapPanel.getWorldTextures());
-			java.util.Set<Integer> donorAreas = new java.util.LinkedHashSet<>();
-			for (Placed pl : placed) {
-				donorAreas.add(pl.e.donorArea);
-			}
-			for (int area : donorAreas) {
-				texes.addAll(BuildingPaletteDialog.donorTextures(area));
-			}
-			MapPreview3D view = new MapPreview3D();
-			view.setRegion(model, texes);
-			// show the zone's area fog/atmosphere in the preview
-			try {
-				int areaId = mZonePnl.zone.header.areadataID;
-				ctrmap.formats.containers.AD ad = new ctrmap.formats.containers.AD(
-						Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areaId));
-				ctrmap.formats.area.AreaEnv env = ctrmap.formats.area.AreaEnv.read(ad.getFile(4));
-				view.setFog(env.fogColor[0], env.fogColor[1], env.fogColor[2], env.fogNear, env.fogFar);
-			} catch (Exception ignore) {
-				// no fog data - preview just uses the plain sky
-			}
-			view.setPreferredSize(new Dimension(640, 520));
-			final JDialog d = new JDialog(frame, "3D preview - how the map looks (drag to orbit, wheel to zoom)", false);
-			d.add(view, BorderLayout.CENTER);
-			d.addWindowListener(new java.awt.event.WindowAdapter() {
-				@Override
-				public void windowClosing(java.awt.event.WindowEvent e) {
-					view.stop();
-				}
-			});
-			d.pack();
-			d.setLocationRelativeTo(frame);
-			d.setVisible(true);
-		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(frame, "3D preview failed:\n" + ex.getMessage(), "Tile painter", JOptionPane.ERROR_MESSAGE);
-		}
-	}
-
+	/**
+	 * Applies the painted edits to the zone. With a {@code touched} mask this is
+	 * a COMPOSITE edit: only the touched tiles of the zone's first map cell are
+	 * regenerated and the rest of the region - baked walls, fountains, props,
+	 * collision, movement bytes - is preserved; without one, the full
+	 * from-scratch rebuild is written into every region. The zone's geometry is
+	 * forked first ONLY when it is still shared (re-applying to an
+	 * already-private zone reuses its own regions instead of orphaning another
+	 * archive append).
+	 */
 	static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, boolean[][] ramp,
-			ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed) throws Exception {
-		GeometryForker.ForkResult r = GeometryForker.forkGeometry(zoneIndex);
-		File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
+			ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed,
+			boolean[][] touched) throws Exception {
+		final boolean composite = touched != null;
+		int sharers = GeometryForker.matrixSharers(zoneIndex);
+		GeometryForker.ForkResult r = sharers > 0
+				? GeometryForker.forkGeometry(zoneIndex)
+				: GeometryForker.currentGeometry(zoneIndex);
 		java.util.Map<Integer, java.util.Set<String>> texNeeds = new java.util.LinkedHashMap<>();
+		//the shared height frame for buildings/door props/warps: the painted
+		//floors' actual Y (retail-surface-relative in composite mode)
+		float[][] floorY = null;
+		if (composite) {
+			for (int newRegion : r.newRegions) {
+				File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, newRegion);
+				if (f != null) {
+					GR gr = new GR(f);
+					if (BchMapModel.isMapModel(gr.getFile(1))) {
+						floorY = PaintedRegionBuilder.floorYGrid(gr.getFile(2), height);
+						break;
+					}
+				}
+			}
+		}
+		if (floorY == null) {
+			floorY = new float[TilePainterForm.DIM][TilePainterForm.DIM];
+			for (int ty = 0; ty < TilePainterForm.DIM; ty++) {
+				for (int tx = 0; tx < TilePainterForm.DIM; tx++) {
+					floorY[ty][tx] = height[ty][tx] * PaintedRegionBuilder.STEP;
+				}
+			}
+		}
 		// the swinging-door props for placed buildings (registry + textures handled)
 		StringBuilder propNote = new StringBuilder();
-		byte[] doorProps = placed.isEmpty() ? null : buildDoorProps(placed, height, propNote);
+		byte[] doorProps = placed.isEmpty() ? null : buildDoorProps(placed, floorY, propNote);
 		boolean firstCell = true;
 		for (int newRegion : r.newRegions) {
-			File f = new File(fdDir, String.valueOf(newRegion));
+			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, newRegion);
+			if (f == null) {
+				continue;
+			}
 			GR gr = new GR(f);
 			byte[] donor = gr.getFile(1);
 			if (!BchMapModel.isMapModel(donor)) {
 				continue;
 			}
-			RegionFactory.BlankContent bc = PaintedRegionBuilder.build(donor, grid, height, ramp, lighting, edges);
+			if (composite && !firstCell) {
+				break; // the paint grid covers only the first cell - leave the rest alone
+			}
+			RegionFactory.BlankContent bc = composite
+					? PaintedRegionBuilder.buildComposite(donor, gr.getFile(2), gr.getFile(0), grid, height, ramp, touched, lighting, edges)
+					: PaintedRegionBuilder.build(donor, grid, height, ramp, lighting, edges);
 			if (!placed.isEmpty()) {
-				stampPlaced(bc, placed, height, texNeeds);
+				stampPlaced(bc, placed, height, floorY, texNeeds);
 			}
 			gr.storeFile(1, bc.model);
 			gr.storeFile(2, bc.collision);
@@ -277,7 +285,14 @@ public class TilePainterForm {
 			// door props carry ABSOLUTE world coords of the FIRST map cell (where
 			// the warps also go) - storing them into every region would stack
 			// engine-visible duplicates at that one location
-			gr.storeFile(3, (firstCell && doorProps != null) ? doorProps : bc.props);
+			if (composite) {
+				// preserve the region's existing props; only merge new door props in
+				if (firstCell && doorProps != null) {
+					gr.storeFile(3, mergeProps(gr, doorProps));
+				}
+			} else {
+				gr.storeFile(3, (firstCell && doorProps != null) ? doorProps : bc.props);
+			}
 			firstCell = false;
 		}
 		// stamped pieces reference their donor areas' textures - carry any the
@@ -310,7 +325,7 @@ public class TilePainterForm {
 					+ "room's exit leads to its retail town until you retarget it.",
 					"Door warps", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, opts, opts[0]);
 			if (mode == 0 || mode == 1) {
-				wired = wireDoorWarps(zoneIndex, placed, height, mode == 0, wireNote);
+				wired = wireDoorWarps(zoneIndex, placed, floorY, mode == 0, wireNote);
 			}
 		}
 		int signsWired = 0;
@@ -341,6 +356,41 @@ public class TilePainterForm {
 				});
 			}
 		});
+	}
+
+	/**
+	 * Merges freshly built door props into a region's EXISTING prop list
+	 * (composite apply must not wipe the retail props). Duplicates - same model
+	 * at the same spot, e.g. from a re-apply - are skipped.
+	 */
+	static byte[] mergeProps(GR gr, byte[] doorProps) {
+		ctrmap.formats.propdata.GRPropData existing = new ctrmap.formats.propdata.GRPropData(gr);
+		ctrmap.formats.propdata.GRPropData incoming = new ctrmap.formats.propdata.GRPropData();
+		try {
+			ctrmap.LittleEndianDataInputStream dis = new ctrmap.LittleEndianDataInputStream(
+					new java.io.ByteArrayInputStream(doorProps));
+			int n = dis.readInt();
+			for (int i = 0; i < n; i++) {
+				incoming.props.add(new ctrmap.formats.propdata.GRProp(dis));
+			}
+			dis.close();
+		} catch (java.io.IOException ex) {
+			return doorProps; // unparseable merge input - fall back to the new props alone
+		}
+		for (ctrmap.formats.propdata.GRProp p : incoming.props) {
+			boolean dup = false;
+			for (ctrmap.formats.propdata.GRProp e : existing.props) {
+				if (e.uid == p.uid && e.x == p.x && e.z == p.z) {
+					e.y = p.y; //same prop, possibly re-based (tile raised/lowered)
+					dup = true;
+					break;
+				}
+			}
+			if (!dup) {
+				existing.props.add(p);
+			}
+		}
+		return existing.assemblePropData();
 	}
 
 	/** Seeds the grid from the region's existing tilemap tuples (reverse lookup). */
@@ -407,7 +457,7 @@ public class TilePainterForm {
 	 * registry and texture imports; a door whose registration fails is skipped
 	 * with a note (the map itself is unaffected). Returns null when no props.
 	 */
-	static byte[] buildDoorProps(java.util.List<Placed> placed, int[][] height, StringBuilder note) {
+	static byte[] buildDoorProps(java.util.List<Placed> placed, float[][] floorY, StringBuilder note) {
 		int[] cell = firstRegionCell();
 		if (cell == null) {
 			return null;
@@ -423,7 +473,7 @@ public class TilePainterForm {
 				p.uid = uid;
 				p.x = (cellX(cell) * 40 + pl.tx + pl.e.doorDX) * 18 + 9;
 				p.z = (cellY(cell) * 40 + pl.ty + pl.e.doorDY) * 18 + 9;
-				p.y = height[pl.ty][pl.tx] * PaintedRegionBuilder.STEP;
+				p.y = floorY[pl.ty][pl.tx];
 				pd.props.add(p);
 			} catch (Exception ex) {
 				note.append("\nDoor prop for \"").append(pl.e.name).append("\" skipped: ").append(ex.getMessage());
@@ -528,7 +578,7 @@ public class TilePainterForm {
 	 * doorTile*18+9 world units, height = the door tile's terrain level,
 	 * target = the interior zone's entry warp (always warp 0 in retail).
 	 */
-	static int wireDoorWarps(int zoneIndex, java.util.List<Placed> placed, int[][] height,
+	static int wireDoorWarps(int zoneIndex, java.util.List<Placed> placed, float[][] floorY,
 			boolean cloneInteriors, StringBuilder note) throws Exception {
 		int[] cell = firstRegionCell();
 		if (cell == null) {
@@ -579,7 +629,7 @@ public class TilePainterForm {
 			w.coordinateType = 0;
 			w.x = wx;
 			w.y = wy;
-			w.z = height[pl.ty][pl.tx] * 18;
+			w.z = Math.round(floorY[pl.ty][pl.tx]);
 			w.w = 1;
 			w.h = 1;
 			newWarps.add(new int[]{ent.warps.size(), pi});
@@ -608,6 +658,7 @@ public class TilePainterForm {
 				int slot = slots.get(slotUse++); // consume on attempt - never reuse a possibly half-written slot
 				try {
 					int retailLinks = ctrmap.InteriorWirer.cloneAndWire(zoneIndex, nw[0], pl.e.interiorZone, slot);
+					mZonePnl.clearForkDecline(slot); //the slot holds a new zone now
 					ent.warps.get(nw[0]).targetZone = slot;
 					ent.warps.get(nw[0]).targetWarpId = 0;
 					retargeted = true;

@@ -40,16 +40,32 @@ public class PaintForm extends JPanel {
 	TilePalette[][] grid = new TilePalette[DIM][DIM];
 	int[][] height = new int[DIM][DIM];
 	boolean[][] ramp = new boolean[DIM][DIM];
+	/** Which tiles the user actually edited: ONLY these are rebuilt on Apply -
+	 *  everything else keeps the zone's existing geometry (walls, fountains). */
+	boolean[][] touched = new boolean[DIM][DIM];
 	final java.util.List<Placed> placed = new java.util.ArrayList<>();
 	final TerrainLighting lighting = TerrainLighting.daytime();
 	boolean edgeBlend = true;
 	byte[] donorModel;
+	byte[] donorColl; // the region's collision - the retail-height frame for composite builds
 	int cellX, cellY; // the painted cell's position in the zone's world grid
 	BuildingCatalog.Entry pendingPlace = null;
 	int ptool = 0; // 0 paint, 1 fill, 2 raise, 3 lower, 4 ramp
 
 	private final java.util.ArrayDeque<Object[]> undoStack = new java.util.ArrayDeque<>();
 	private final java.util.ArrayDeque<Object[]> redoStack = new java.util.ArrayDeque<>();
+
+	// ---- live 3D preview state (the painted cell is swapped into the main
+	// map scene, so the F3 3D view and the 2D view's GL composite show edits
+	// as they happen - no separate preview window) ---------------------------
+	private boolean toolActive = false;
+	private boolean previewInScene = false;
+	private byte[] originalModel; // the region's real bytes, restored on tool exit
+	private boolean regenRunning = false, regenQueued = false;
+	/** Bumped on Apply so an in-flight regen can never re-arm the preview
+	 *  across the pack/reload boundary. */
+	private int regenEpoch = 0;
+	private final javax.swing.Timer regenTimer = new javax.swing.Timer(200, e -> startRegen());
 
 	// ---- UI ---------------------------------------------------------------
 	private final JLabel zoneLabel = new JLabel("No zone loaded");
@@ -161,11 +177,13 @@ public class PaintForm extends JPanel {
 			add(b);
 		}
 		JButton fillAll = new JButton("Fill all with brush");
+		fillAll.setToolTipText("Paints EVERY tile of the cell - this also rebuilds the whole cell on Apply (existing walls/details are replaced).");
 		fillAll.setAlignmentX(0f);
 		fillAll.addActionListener(e -> {
 			snapshot();
-			for (TilePalette[] row : grid) {
-				java.util.Arrays.fill(row, brush());
+			for (int i = 0; i < DIM; i++) {
+				java.util.Arrays.fill(grid[i], brush());
+				java.util.Arrays.fill(touched[i], true);
 			}
 			repaintMap();
 		});
@@ -173,16 +191,22 @@ public class PaintForm extends JPanel {
 		add(gap(8));
 
 		edgeChk.setAlignmentX(0f);
-		edgeChk.addActionListener(e -> edgeBlend = edgeChk.isSelected());
+		edgeChk.addActionListener(e -> {
+			edgeBlend = edgeChk.isSelected();
+			repaintMap();
+		});
 		add(edgeChk);
 
-		JButton view3d = new JButton("3D preview (real render)");
+		final JToggleButton view3d = new JToggleButton("3D view");
 		view3d.setAlignmentX(0f);
-		view3d.setToolTipText("Render the painted map with the 3D engine - how it actually looks (drag to orbit).");
+		view3d.setToolTipText("Show the map in 3D while you paint - your edits appear in it live. F2 returns to the top-down view, F3 opens 3D from anywhere.");
+		//the actual displayed component is the source of truth - F2/F3 switch
+		//the view too, so the toggle FLIPS the current state rather than
+		//trusting its own (possibly desynced) selection
 		view3d.addActionListener(e -> {
-			if (donorModel != null) {
-				TilePainterForm.open3DPreview(donorModel, grid, height, ramp, lighting, edgeBlend, placed);
-			}
+			boolean to3d = jsp.getLeftComponent() != m3DDebugPanel;
+			ctrmap.Utils.setGraphicUI(to3d ? m3DDebugPanel : mTilemapScrollPane);
+			view3d.setSelected(to3d);
 		});
 		add(view3d);
 		add(gap(8));
@@ -197,11 +221,21 @@ public class PaintForm extends JPanel {
 		add(presets);
 		add(left(new JLabel("  brightness")));
 		fixRow(bright, 22);
-		bright.addChangeListener(e -> lighting.brightness = bright.getValue() / 100f);
+		bright.addChangeListener(e -> {
+			lighting.brightness = bright.getValue() / 100f;
+			if (!bright.getValueIsAdjusting()) {
+				schedule3DRegen();
+			}
+		});
 		add(bright);
 		add(left(new JLabel("  edge shadow")));
 		fixRow(shadow, 22);
-		shadow.addChangeListener(e -> lighting.edgeShadow = shadow.getValue() / 100f);
+		shadow.addChangeListener(e -> {
+			lighting.edgeShadow = shadow.getValue() / 100f;
+			if (!shadow.getValueIsAdjusting()) {
+				schedule3DRegen();
+			}
+		});
 		add(shadow);
 		JButton tint = new JButton("Light color");
 		tint.setAlignmentX(0f);
@@ -209,6 +243,7 @@ public class PaintForm extends JPanel {
 			Color c = javax.swing.JColorChooser.showDialog(this, "Light color", lighting.tintColor());
 			if (c != null) {
 				lighting.tint = c.getRGB() & 0xFFFFFF;
+				schedule3DRegen();
 			}
 		});
 		add(tint);
@@ -219,8 +254,9 @@ public class PaintForm extends JPanel {
 		apply.setFont(apply.getFont().deriveFont(java.awt.Font.BOLD));
 		apply.addActionListener(e -> applyAction());
 		add(apply);
-		add(left(new JLabel("<html><small>Right-click: remove a placed building /<br>clear a ramp. Apply builds the real map,<br>then Deploy to walk on it.</small></html>")));
-		setPreferredSize(new Dimension(250, 760));
+		add(left(new JLabel("<html><small>Only tiles you touch are rebuilt - the rest<br>of the map keeps its existing look.<br>Right-click: remove a placed building /<br>clear a ramp. Apply writes the real map,<br>then Deploy to walk on it.</small></html>")));
+		setPreferredSize(new Dimension(250, 780));
+		regenTimer.setRepeats(false);
 	}
 
 	private JComponentHolder holderUnused; // (no-op field to keep the form simple)
@@ -253,6 +289,7 @@ public class PaintForm extends JPanel {
 			lighting.edgeShadow = sh;
 			bright.setValue(Math.round(b * 100));
 			shadow.setValue(Math.round(sh * 100));
+			schedule3DRegen();
 		});
 		p.add(btn);
 	}
@@ -266,31 +303,58 @@ public class PaintForm extends JPanel {
 
 	/** Called when the Painter tool is selected. Seeds from the loaded zone. */
 	public void activate() {
+		toolActive = true;
 		if (!Workspace.valid || !Workspace.isOA() || mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
 			zoneLabel.setText("Load a zone first (Zone Loader tab)");
 			seededZone = -1;
 			return;
 		}
-		if (seededZone != mZonePnl.zoneIndex) {
+		if (seededZone != mZonePnl.zoneIndex || regionChangedUnderneath()) {
 			seed();
 		}
 		syncWater();
+		schedule3DRegen();
+	}
+
+	/** True when another editor (geometry tool, OBJ import, resize) rewrote the
+	 *  seeded region since we seeded - the painter document is then stale. */
+	private boolean regionChangedUnderneath() {
+		if (originalModel == null) {
+			return false;
+		}
+		try {
+			int[] cell = TilePainterForm.firstRegionCell();
+			if (cell == null) {
+				return true;
+			}
+			byte[] m = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, cell[0])).getFile(1);
+			return !java.util.Arrays.equals(m, originalModel);
+		} catch (Exception ex) {
+			return true;
+		}
 	}
 
 	public void deactivate() {
+		toolActive = false;
 		pendingPlace = null;
 		placeStatus.setText(" ");
+		regenTimer.stop();
+		restoreRealModel();
 	}
 
 	void seed() {
 		seededZone = mZonePnl.zoneIndex;
 		zoneLabel.setText("Painting zone " + seededZone);
+		//a zone switch rebuilds the whole scene, so any old preview swap is gone
+		previewInScene = false;
+		originalModel = null;
 		for (TilePalette[] row : grid) {
 			java.util.Arrays.fill(row, TilePalette.GRASS);
 		}
 		for (int i = 0; i < DIM; i++) {
 			java.util.Arrays.fill(height[i], 0);
 			java.util.Arrays.fill(ramp[i], false);
+			java.util.Arrays.fill(touched[i], false);
 		}
 		placed.clear();
 		undoStack.clear();
@@ -304,16 +368,23 @@ public class PaintForm extends JPanel {
 		cellY = cell != null ? cell[2] : 0;
 		int region = cell != null ? cell[0] : -1;
 		donorModel = null;
+		donorColl = null;
 		if (region >= 0) {
 			TilePainterForm.loadFromRegion(region, grid);
 			try {
-				byte[] m = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, region)).getFile(1);
+				GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, region));
+				byte[] m = gr.getFile(1);
 				if (BchMapModel.isMapModel(m)) {
 					donorModel = m;
+					donorColl = gr.getFile(2);
+					//elevations start at the map's REAL ground levels, so painted
+					//tiles sit level with their retail surroundings by default
+					PaintedRegionBuilder.seedHeightsFromCollision(donorColl, height);
 				}
 			} catch (Exception ignore) {
 			}
 		}
+		originalModel = donorModel;
 		boolean canEdge = donorModel != null && PaintedRegionBuilder.donorSupportsEdges(donorModel);
 		edgeChk.setEnabled(canEdge);
 		edgeChk.setSelected(canEdge);
@@ -389,12 +460,14 @@ public class PaintForm extends JPanel {
 		TilePalette[][] g2 = new TilePalette[DIM][];
 		int[][] h2 = new int[DIM][];
 		boolean[][] r2 = new boolean[DIM][];
+		boolean[][] t2 = new boolean[DIM][];
 		for (int i = 0; i < DIM; i++) {
 			g2[i] = grid[i].clone();
 			h2[i] = height[i].clone();
 			r2[i] = ramp[i].clone();
+			t2[i] = touched[i].clone();
 		}
-		return new Object[]{g2, h2, r2, new java.util.ArrayList<>(placed)};
+		return new Object[]{g2, h2, r2, new java.util.ArrayList<>(placed), t2};
 	}
 
 	@SuppressWarnings("unchecked")
@@ -402,10 +475,12 @@ public class PaintForm extends JPanel {
 		TilePalette[][] g2 = (TilePalette[][]) s[0];
 		int[][] h2 = (int[][]) s[1];
 		boolean[][] r2 = (boolean[][]) s[2];
+		boolean[][] t2 = (boolean[][]) s[4];
 		for (int i = 0; i < DIM; i++) {
 			System.arraycopy(g2[i], 0, grid[i], 0, DIM);
 			System.arraycopy(h2[i], 0, height[i], 0, DIM);
 			System.arraycopy(r2[i], 0, ramp[i], 0, DIM);
+			System.arraycopy(t2[i], 0, touched[i], 0, DIM);
 		}
 		placed.clear();
 		placed.addAll((java.util.List<Placed>) s[3]);
@@ -432,7 +507,9 @@ public class PaintForm extends JPanel {
 
 	/** Mouse-down on the map (global tile coords). */
 	public void gesturePress(int gx, int gy, boolean right) {
-		if (seededZone < 0) {
+		//the seeded document must match the DISPLAYED zone - a stroke accepted
+		//against a stale document would silently mark tiles of the wrong map
+		if (seededZone < 0 || mZonePnl == null || seededZone != mZonePnl.zoneIndex) {
 			return;
 		}
 		int lx = localX(gx), ly = localY(gy);
@@ -446,6 +523,7 @@ public class PaintForm extends JPanel {
 				int px = Math.max(0, Math.min(DIM - pendingPlace.tilesW(), lx));
 				int py = Math.max(0, Math.min(DIM - pendingPlace.tilesH(), ly));
 				placed.add(new Placed(pendingPlace, px, py));
+				touchFootprint(px, py, pendingPlace.tilesW(), pendingPlace.tilesH());
 			}
 			pendingPlace = null;
 			placeStatus.setText(" ");
@@ -460,7 +538,10 @@ public class PaintForm extends JPanel {
 					if (JOptionPane.showConfirmDialog(this, "Remove \"" + placed.get(i).e.name + "\"?",
 							"Buildings", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
 						snapshot();
-						placed.remove(i);
+						Placed rem = placed.remove(i);
+						//mark its footprint edited so an earlier Apply's stamped
+						//geometry there is cleared on the next Apply
+						touchFootprint(rem.tx, rem.ty, rem.e.tilesW(), rem.e.tilesH());
 						repaintMap();
 					}
 					return;
@@ -475,12 +556,13 @@ public class PaintForm extends JPanel {
 
 	/** Mouse-drag on the map (paint tool only; continues the open gesture). */
 	public void gestureDrag(int gx, int gy, boolean right) {
-		if (seededZone < 0 || ptool != 0 || right) {
+		if (seededZone < 0 || mZonePnl == null || seededZone != mZonePnl.zoneIndex || ptool != 0 || right) {
 			return;
 		}
 		int lx = localX(gx), ly = localY(gy);
-		if (inCell(lx, ly) && grid[ly][lx] != brush()) {
+		if (inCell(lx, ly) && (grid[ly][lx] != brush() || !touched[ly][lx])) {
 			grid[ly][lx] = brush();
+			touched[ly][lx] = true;
 			repaintMap();
 		}
 	}
@@ -503,6 +585,17 @@ public class PaintForm extends JPanel {
 				grid[ly][lx] = brush();
 				break;
 		}
+		touched[ly][lx] = true;
+	}
+
+	private void touchFootprint(int tx, int ty, int w, int h) {
+		for (int y = ty; y < ty + h && y < DIM; y++) {
+			for (int x = tx; x < tx + w && x < DIM; x++) {
+				if (x >= 0 && y >= 0) {
+					touched[y][x] = true;
+				}
+			}
+		}
 	}
 
 	private void flood(int x, int y, TilePalette from, TilePalette to) {
@@ -518,6 +611,7 @@ public class PaintForm extends JPanel {
 				continue;
 			}
 			grid[cy][cx] = to;
+			touched[cy][cx] = true;
 			q.add(new int[]{cx + 1, cy});
 			q.add(new int[]{cx - 1, cy});
 			q.add(new int[]{cx, cy + 1});
@@ -532,6 +626,128 @@ public class PaintForm extends JPanel {
 
 	private void repaintMap() {
 		mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+		schedule3DRegen();
+	}
+
+	// ---- live 3D regeneration ----------------------------------------------
+
+	/** Debounced: regenerates the painted cell's model ~200ms after the last
+	 *  edit and swaps it into the main scene (2D GL composite + F3 3D view). */
+	private void schedule3DRegen() {
+		if (seededZone < 0 || donorModel == null || !toolActive) {
+			return;
+		}
+		regenTimer.restart();
+	}
+
+	/** One regen result: the stamped model plus its extra donor textures. */
+	private static final class RegenResult {
+
+		final byte[] model;
+		final java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extraTextures;
+
+		RegenResult(byte[] model, java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extra) {
+			this.model = model;
+			this.extraTextures = extra;
+		}
+	}
+
+	private void startRegen() {
+		if (seededZone < 0 || donorModel == null || !toolActive
+				|| mZonePnl == null || seededZone != mZonePnl.zoneIndex) {
+			return;
+		}
+		if (regenRunning) {
+			regenQueued = true;
+			return;
+		}
+		regenRunning = true;
+		final int zoneAtStart = seededZone;
+		final int epochAtStart = regenEpoch;
+		final byte[] donor = donorModel;
+		final byte[] coll = donorColl;
+		final boolean edgesNow = edgeBlend;
+		//deep-copy every input on the EDT so the worker never races a stroke
+		final TilePalette[][] g2 = new TilePalette[DIM][];
+		final int[][] h2 = new int[DIM][];
+		final boolean[][] r2 = new boolean[DIM][];
+		final boolean[][] t2 = new boolean[DIM][];
+		for (int i = 0; i < DIM; i++) {
+			g2[i] = grid[i].clone();
+			h2[i] = height[i].clone();
+			r2[i] = ramp[i].clone();
+			t2[i] = touched[i].clone();
+		}
+		final java.util.List<Placed> p2 = new java.util.ArrayList<>(placed);
+		final TerrainLighting l2 = new TerrainLighting(lighting.brightness, lighting.tint, lighting.edgeShadow);
+		javax.swing.SwingWorker<RegenResult, Void> worker = new javax.swing.SwingWorker<RegenResult, Void>() {
+			@Override
+			protected RegenResult doInBackground() {
+				try {
+					byte[] model = PaintedRegionBuilder.buildModelOnly(donor, coll, g2, h2, r2, t2, l2, edgesNow);
+					java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extra = null;
+					if (!p2.isEmpty()) {
+						ctrmap.formats.h3d.RegionFactory.BlankContent bc = new ctrmap.formats.h3d.RegionFactory.BlankContent();
+						bc.model = model;
+						//throwaway carriers - only the stamped model is used
+						java.util.List<float[]> one = new java.util.ArrayList<>();
+						one.add(new float[]{0, 0, 0, 0, 0, PaintedRegionBuilder.TILE, PaintedRegionBuilder.TILE, 0, 0});
+						bc.collision = ctrmap.formats.gfcollision.GfColl.build(one, null);
+						bc.tilemap = new byte[6528];
+						bc.tilemap[0] = (byte) DIM;
+						bc.tilemap[2] = (byte) DIM;
+						bc.props = new byte[]{0, 0, 0, 0};
+						TilePainterForm.stampPlaced(bc, p2, h2, PaintedRegionBuilder.floorYGrid(coll, h2), null);
+						model = bc.model;
+						//donor-area textures load here, off the EDT (the loaders
+						//are synchronized; a GARC decompress can take a moment)
+						extra = new java.util.ArrayList<>();
+						java.util.Set<Integer> areas = new java.util.LinkedHashSet<>();
+						for (Placed pl : p2) {
+							areas.add(pl.e.donorArea);
+						}
+						for (int area : areas) {
+							try {
+								extra.addAll(BuildingPaletteDialog.donorTextures(area));
+							} catch (Exception ignore) {
+							}
+						}
+					}
+					return new RegenResult(model, extra);
+				} catch (Exception ex) {
+					return null; // keep the last good preview; painting goes on
+				}
+			}
+
+			@Override
+			protected void done() {
+				regenRunning = false;
+				try {
+					RegenResult res = get();
+					if (res != null && res.model != null && toolActive && mZonePnl != null
+							&& zoneAtStart == seededZone && seededZone == mZonePnl.zoneIndex
+							&& epochAtStart == regenEpoch && mZonePnl.zone != null) {
+						mTileMapPanel.reloadRegionModel(cellX, cellY, res.model, res.extraTextures);
+						previewInScene = true;
+					}
+				} catch (Exception ignore) {
+				}
+				if (regenQueued) {
+					regenQueued = false;
+					schedule3DRegen();
+				}
+			}
+		};
+		worker.execute();
+	}
+
+	/** Puts the region's real bytes back into the scene (tool exit). */
+	private void restoreRealModel() {
+		if (previewInScene && originalModel != null && mZonePnl != null
+				&& mZonePnl.zone != null && seededZone == mZonePnl.zoneIndex) {
+			mTileMapPanel.reloadRegionModel(cellX, cellY, originalModel);
+		}
+		previewInScene = false;
 	}
 
 	// ---- the overlay on the main map view ---------------------------------
@@ -546,7 +762,9 @@ public class PaintForm extends JPanel {
 			for (int lx = 0; lx < DIM; lx++) {
 				TilePalette t = grid[ly][lx];
 				Color c = t == null ? Color.DARK_GRAY : t.color();
-				g.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), 205));
+				//tiles you touched draw solid (they will be rebuilt); the rest
+				//stays faint - that geometry is kept exactly as it is
+				g.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), touched[ly][lx] ? 205 : 60));
 				int px = sx + (int) Math.round((ax + lx) * d);
 				int py = sy + (int) Math.round((ay + ly) * d);
 				int px2 = sx + (int) Math.round((ax + lx + 1) * d);
@@ -609,16 +827,30 @@ public class PaintForm extends JPanel {
 		if (seededZone < 0) {
 			return;
 		}
+		int touchedCount = 0;
+		for (boolean[] row : touched) {
+			for (boolean b : row) {
+				if (b) {
+					touchedCount++;
+				}
+			}
+		}
+		if (touchedCount == 0 && placed.isEmpty()) {
+			JOptionPane.showMessageDialog(this, "Nothing to apply yet - paint some tiles or place a building first.",
+					"Map Builder", JOptionPane.INFORMATION_MESSAGE);
+			return;
+		}
 		final int zoneIndex = seededZone;
 		String waterNote = "";
 		if (TilePainterForm.usesWater(grid) && !TilePainterForm.zoneWaterScrolls(mZonePnl.zone.header.areadataID)) {
 			waterNote = "\n\nNote: painted water will be STILL here - use \"Make water ripple here\" first.";
 		}
 		int rsl = JOptionPane.showConfirmDialog(this,
-				"Build zone " + zoneIndex + "'s map from the painted tiles?\n"
-				+ "The zone gets its own private geometry first (the source is untouched),\n"
-				+ "then packs. Deploy to walk on it." + waterNote,
-				"Map Painter", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+				"Apply your edits to zone " + zoneIndex + "'s map?\n"
+				+ "The " + touchedCount + " tile(s) you touched are rebuilt; the rest of the map keeps\n"
+				+ "its existing geometry. If the map is still shared with other zones, this\n"
+				+ "zone gets its own private copy first. Deploy afterwards to walk on it." + waterNote,
+				"Map Builder", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
 		if (rsl != JOptionPane.OK_OPTION) {
 			return;
 		}
@@ -628,10 +860,17 @@ public class PaintForm extends JPanel {
 			return;
 		}
 		try {
-			TilePainterForm.applyToZone(zoneIndex, grid, height, ramp, lighting, edgeBlend, placed);
+			regenTimer.stop();
+			regenEpoch++; // an in-flight regen must not re-arm across the apply
+			TilePainterForm.applyToZone(zoneIndex, grid, height, ramp, lighting, edgeBlend, placed, touched);
+			// only a SUCCESSFUL apply reaches here: the pack + reload rebuilds
+			// the scene from the applied bytes, so the preview swap is gone
+			previewInScene = false;
 			seededZone = -1; // reseed from the freshly built zone on next activate
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(this, "Apply failed:\n" + ex.getMessage(), "Map Painter", JOptionPane.ERROR_MESSAGE);
+			// the preview may still be swapped in - put the real map back
+			restoreRealModel();
+			JOptionPane.showMessageDialog(this, "Apply failed:\n" + ex.getMessage(), "Map Builder", JOptionPane.ERROR_MESSAGE);
 		}
 	}
 }
