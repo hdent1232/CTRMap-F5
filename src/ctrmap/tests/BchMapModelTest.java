@@ -21,7 +21,7 @@ import java.util.List;
 public class BchMapModelTest {
 
 	private static final String DEFAULT_GARC_PATH =
-			"../RomFS_original_garcs\\a\\0\\3\\9";
+			"../RomFS_original_garcs/a/0/3/9";
 	private static int fails = 0;
 
 	public static void main(String[] args) throws Exception {

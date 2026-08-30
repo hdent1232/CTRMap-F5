@@ -41,8 +41,8 @@ import java.util.TreeSet;
  */
 public class TexturePackImportTest {
 
-	private static final String AD_GARC_PATH = "../RomFS_original_garcs\\a\\0\\1\\4";
-	private static final String BM_GARC_PATH = "../RomFS_original_garcs\\a\\0\\2\\3";
+	private static final String AD_GARC_PATH = "../RomFS_original_garcs/a/0/1/4";
+	private static final String BM_GARC_PATH = "../RomFS_original_garcs/a/0/2/3";
 
 	private static boolean pass = true;
 

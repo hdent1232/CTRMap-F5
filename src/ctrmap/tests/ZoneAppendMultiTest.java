@@ -20,7 +20,7 @@ import java.util.Arrays;
  */
 public class ZoneAppendMultiTest {
 
-	private static final String DEFAULT_GARC = "../RomFS_original_garcs\\a\\0\\1\\3";
+	private static final String DEFAULT_GARC = "../RomFS_original_garcs/a/0/1/3";
 	private static int fails = 0;
 
 	public static void main(String[] args) throws Exception {

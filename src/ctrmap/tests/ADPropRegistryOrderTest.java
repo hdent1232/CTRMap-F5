@@ -25,7 +25,7 @@ import java.util.Arrays;
  */
 public class ADPropRegistryOrderTest {
 
-	private static final String DEFAULT_GARC_PATH = "../RomFS_original_garcs\\a\\0\\1\\4";
+	private static final String DEFAULT_GARC_PATH = "../RomFS_original_garcs/a/0/1/4";
 
 	public static void main(String[] args) throws IOException {
 		File garcFile = new File(args.length > 0 ? args[0] : DEFAULT_GARC_PATH);
