@@ -5,10 +5,9 @@
 Build towns that were never in the game. Paint terrain, stamp buildings, place people and write
 what they say, wire up doors, set the weather, edit trainers and shops — then play it.
 
-![CTRMap-F5 editing a custom map](docs/img/editor.png)
+![CTRMap-F5 with a map open](docs/img/editor.png)
 
-*The town and the walled area above do not exist in Omega Ruby. They were built with CTRMap-F5,
-on top of a real map, and this is the editor's own 3D view of them.*
+*The editor's own 3D view, live, in the same window you edit in.*
 
 CTRMap-F5 is a revival and major extension of [HelloOO7's CTRMap](https://github.com/HelloOO7)
 (2019), continued in 2026 with one goal: make Gen 6 fan games as buildable as Gen 3 ones. The
@@ -79,11 +78,7 @@ You can re-run it any time from **Options → Setup wizard**.
 - **Signs**, and **warps and doors** with full round-trip wiring between a building's exterior
   and its interior.
 - **Wild encounters**, per zone, per slot.
-- **Weather and atmosphere** — the game's own fog and lighting presets, applied per area:
-
-| Atmosphere on | Atmosphere cleared |
-|---|---|
-| ![](docs/img/custom-world.png) | ![](docs/img/custom-world-no-atmosphere.png) |
+- **Weather and atmosphere** — the game's own fog and lighting presets, applied per area.
 
 ### Game data
 
