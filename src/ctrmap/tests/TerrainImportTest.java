@@ -10,6 +10,7 @@ import ctrmap.formats.tilemap.TerrainCatalog;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -44,6 +45,23 @@ public class TerrainImportTest {
 		ctrmap.Workspace.WORKSPACE_PATH = System.getProperty("java.io.tmpdir") + "/ctrmap_terrainimport";
 		ctrmap.Workspace.temp = new File(ctrmap.Workspace.WORKSPACE_PATH, "temp");
 		ctrmap.Workspace.temp.mkdirs();
+		//Each brush's donor is cut through the workspace's PRISTINE snapshot,
+		//which refuses to fall back to live data - a donor taken from a map the
+		//user has already painted carries the paint into the next map. The dump
+		//this test was handed IS pristine, so lay it out as a snapshot rather
+		//than reaching around the runtime path: hardlink the archive into place,
+		//and copy only when the filesystem will not link it.
+		File snapshot = new File(ctrmap.Workspace.originalSnapshotDir().getAbsolutePath()
+				+ ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.FIELD_DATA,
+						ctrmap.Workspace.game));
+		if (!snapshot.isFile()) {
+			snapshot.getParentFile().mkdirs();
+			try {
+				Files.createLink(snapshot.toPath(), garcFile.toPath());
+			} catch (Exception cannotLink) {
+				Files.copy(garcFile.toPath(), snapshot.toPath());
+			}
+		}
 		int failures = 0, imported = 0, already = 0, colourChecked = 0;
 
 		if (TerrainCatalog.donors().isEmpty()) {
