@@ -10,6 +10,15 @@ Everything the editor can build is in this world, and it is deliberately
 split across four zones so that **if something crashes or misbehaves, WHERE
 it happens tells us WHICH subsystem is broken** (table at the bottom).
 
+**REBUILT 2026-08-30 on the current pipeline.** The three outdoor zones
+were regenerated through the composite edit-in-place path — the exact code
+the Map Builder runs today: the stations were painted ONTO a pristine copy
+of Route 102's real map, so **everything outside the stations is genuine
+Route 102 scenery (trees, grass, ledges) that the editor KEPT — that's the
+feature, not a leftover.** Walk off the first map cell and you'll see pure
+Route 102; that's expected too (the painter edits one cell). Heights,
+buildings, door props and warps all live in the retail-height frame.
+
 The world uses four repurposed zone slots, all verified safe for a fresh
 playthrough (two unused placeholder zones + two empty, unreferenced Sea
 Mauville floors that nothing can reach before Surf/Dive):
@@ -108,8 +117,11 @@ not invalidate the rest.
 | Game won't boot / dies before the title screen | GARC packing itself (global) — restore the backup, everything else is moot |
 | May's door just enters her normal house | Deploy didn't take — re-deploy and fully restart the emulator |
 | Crash/freeze the moment you enter May's door | Warp redirect or hub zone header (zone cloning) |
-| Hub loads but terrain is invisible / black / full of holes | Painted map geometry (the model writer) |
-| Hub looks right but you walk through walls / get stuck | Collision floor generation |
+| Hub loads but terrain is invisible / black / full of holes | Composite map geometry (clipping / the model writer) |
+| Hub looks right but you walk through walls / get stuck | Composite collision merge |
+| A station floats above or sinks below the Route 102 ground around it | Composite height frame (collision-seeded heights) |
+| Route 102 scenery pokes THROUGH a station's painted floor | Composite clipping missed geometry — the exact defect the clip fix targets |
+| A hole/see-through gap at a station's edge where a Route 102 tree or ledge used to be | Wall regeneration at cut edges |
 | A specific station misbehaves (ice doesn't slide, ledge won't jump, rail lets you walk…) | That one tile's behavior bytes — name the station |
 | Tall grass rustles but no encounters | Encounter-table binding on the cloned zone |
 | A sign does nothing when you press A | Sign script injection |
@@ -135,11 +147,15 @@ not invalidate the rest.
 
 ## Undo everything
 
-Every build step snapshotted your game data BEFORE touching it.
+Every build step snapshotted your game data BEFORE touching it. The most
+recent snapshot (before the composite rebuild) is
+`testzone_backup\1788069475407\` — restore its five files to undo just the
+rebuild.
 
-**To undo only the 2026-08-30 update** (challenge NPC + competitors + the
-Center patch): copy ALL files from `testzone_backup\1788068497503\` back
-into `RomFS\000400000011C400\` per the table below, then re-deploy.
+**To undo the whole 2026-08-30 session** (challenge NPC + competitors +
+Center patch + rebuild): copy ALL files from
+`testzone_backup\1788068497503\` back into `RomFS\000400000011C400\` per
+the table below, then re-deploy.
 
 **To remove the whole test world**: copy the five files from
 `testzone_backup\1788046535845\` (the original pre-build snapshot) AND
