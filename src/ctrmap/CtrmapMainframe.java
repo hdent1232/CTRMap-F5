@@ -117,6 +117,7 @@ public class CtrmapMainframe {
 	public static JMenuItem removeAddedZones;
 	public static JMenuItem findReusableZones;
 	public static JMenuItem wssettings;
+	public static JMenuItem setupWizard;
 	public static JMenuItem wsclean;
 	public static JMenuItem isstracker;
 	public static JMenuItem about;
@@ -228,6 +229,8 @@ public class CtrmapMainframe {
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
 		removeAddedZones = new JMenuItem("Remove added zones (restore stock 536)...");
 		findReusableZones = new JMenuItem("Find reusable base zones...");
+		setupWizard = new JMenuItem("Setup wizard...");
+		setupWizard.setToolTipText("Point CTRMap at your game, step by step.");
 		wssettings = new JMenuItem("Workspace settings");
 		wsclean = new JMenuItem("Clean workspace");
 		isstracker = new JMenuItem("Support/Issue tracker");
@@ -778,6 +781,12 @@ public class CtrmapMainframe {
 				}
 			}
 		});
+		setupWizard.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ctrmap.setup.SetupWizard.show(frame);
+			}
+		});
 		checkUpdates.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -830,6 +839,10 @@ public class CtrmapMainframe {
 		dataMenu.add(maisonEditor);
 		dataMenu.add(shopEditor);
 		dataMenu.add(wildEncounters);
+		//the wizard sits above the raw path dialog it replaces for beginners:
+		//same job, but it explains itself and checks what you picked
+		optionsmenu.add(setupWizard);
+		optionsmenu.addSeparator();
 		optionsmenu.add(wssettings);
 		optionsmenu.add(wsclean);
 		helpmenu.add(checkUpdates);
@@ -855,7 +868,6 @@ public class CtrmapMainframe {
 		//an update applied by the launcher leaves its unpacked copy behind,
 		//because the JVM that applied it was running out of that folder
 		ctrmap.update.Updater.sweep(ctrmap.update.Updater.installDir());
-		ctrmap.update.UpdateUI.checkOnStartup(frame);
 
 		mTileMapPanel.addPropertyChangeListener(new PropertyChangeListener() {
 			@Override
@@ -909,7 +921,17 @@ public class CtrmapMainframe {
 		SwingUtilities.invokeLater(() -> {
 			adjustSplitPanes();
 		});
-		Workspace.validate(frame);
+
+		//A first-time user gets the wizard, not a list of missing archive names.
+		//The update check waits until setup is out of the way, because it arrives
+		//on a background thread whenever the network answers and would otherwise
+		//throw a modal dialog over the middle of the wizard.
+		if (ctrmap.setup.SetupWizard.shouldRunOnStartup()) {
+			ctrmap.setup.SetupWizard.show(frame);
+		} else {
+			Workspace.validate(frame);
+		}
+		ctrmap.update.UpdateUI.checkOnStartup(frame);
 	}
 
 	/**

@@ -109,6 +109,17 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
 	}
 
+	/**
+	 * How many zones are actually in the dropdown.
+	 *
+	 * <p>The honest test of whether a workspace loaded. {@code Workspace.valid}
+	 * is set before the archives are read, so it reports that the paths looked
+	 * right, not that anything came of them; this reports what the user can see.
+	 */
+	public int getLoadedZoneCount() {
+		return zoneList == null ? 0 : zoneList.getItemCount();
+	}
+
 	public void loadEverything() {
 		loadEverything(null);
 	}
@@ -125,6 +136,12 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			@Override
 			protected void done() {
 				progress.close();
+				try {
+					get(); //without this, anything thrown below vanishes and the
+					//zone list is just silently empty with no error anywhere
+				} catch (Exception ex) {
+					Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, "loading zones", ex);
+				}
 				if (onDone != null) {
 					onDone.run();
 				}
@@ -152,6 +169,13 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				}
 				int totalZones = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length;
 				totalZones -= (Workspace.game == Workspace.GameType.XY) ? 1 : 2;
+				if (totalZones <= 0) {
+					//a truncated or non-ZoneData archive: without this the array
+					//size goes negative and the real problem is never reported
+					throw new IllegalStateException("The ZoneData archive holds no zones ("
+							+ Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length
+							+ " entries). The game folder is probably incomplete or damaged.");
+				}
 				zones = new Zone[totalZones]; //last file is not a ZO
 				for (int i = 0; i < totalZones; i++) {
 					ZO zo = new ZO(Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, i));

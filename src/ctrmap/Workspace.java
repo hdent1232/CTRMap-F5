@@ -106,7 +106,28 @@ public class Workspace {
 		return new EditorTileset(ResourceAccess.getStream("DefaultTileset.mets"));
 	}
 
+	/**
+	 * True when CTRMap has never been pointed at a game. Deliberately tests the
+	 * SETTINGS rather than the folders: a user whose dump lives on a drive that
+	 * happens to be unplugged has still set CTRMap up, and must not be dragged
+	 * back through first-run setup because of it.
+	 */
+	public static boolean isConfigured() {
+		return GAMEDIR_PATH != null && !GAMEDIR_PATH.trim().isEmpty()
+				&& WORKSPACE_PATH != null && !WORKSPACE_PATH.trim().isEmpty();
+	}
+
 	public static void validate(Component parent) {
+		validate(parent, true);
+	}
+
+	/**
+	 * @param showErrors when false, a failed validation returns quietly instead
+	 * of throwing a list of missing archive names at the user. The setup wizard
+	 * reports problems in its own words, and a brand-new user must never meet
+	 * the raw list before they have had a chance to do anything.
+	 */
+	public static void validate(Component parent, boolean showErrors) {
 		ArrayList<String> errors = new ArrayList<>();
 		if (WORKSPACE_PATH == null) {
 			errors.add("Workspace path not set");
@@ -115,18 +136,12 @@ public class Workspace {
 			if (!ws.exists()) {
 				errors.add("Workspace path not found");
 			} else {
-				Utils.mkDirsIfNotContains(ws, new String[]{
-					"areadata",
-					"fielddata",
-					"mapmatrix",
-					"gametext",
-					"storytext",
-					"zonedata",
-					"buildingmodels",
-					"npcregistries",
-					"movemodels",
-					"temp"
-				});
+				//every directory getExtractionDirectory() can hand out, not just the
+				//map ones. getWorkspaceFile opens a FileOutputStream without mkdirs,
+				//so a missing directory here does not throw - it logs at SEVERE and
+				//returns a File that was never written, which is how the trainer and
+				//Maison editors used to fail silently on a brand-new workspace.
+				Utils.mkDirsIfNotContains(ws, WORKSPACE_SUBDIRS);
 				temp = new File(ws + "/temp");
 				persist_config = new File(WORKSPACE_PATH + "/ctrmap_persist.txt");
 				persist_paths.clear();
@@ -188,7 +203,7 @@ public class Workspace {
 						errors.add("ZoneData GARC not found");
 					}
 					if (!buildingmodels.exists()) {
-						errors.add("ZoneData GARC not found");
+						errors.add("BuildingModels GARC not found");
 					}
 					if (!npcregistries.exists()) {
 						errors.add("NPCRegistries GARC not found");
@@ -209,12 +224,15 @@ public class Workspace {
 			CtrmapMainframe.showZoneLoadingHint();
 		} else {
 			valid = false;
+			if (!showErrors) {
+				return;
+			}
 			StringBuilder sb = new StringBuilder();
 			for (String s : errors) {
 				sb.append(s);
 				sb.append("\n");
 			}
-			sb.append("\nSet the RomFS (game directory) and workspace paths in Options > Workspace settings,\n");
+			sb.append("\nRun Options > Setup wizard to point CTRMap at your game,\n");
 			sb.append("then open a map from the zone dropdown in the \"Zone Loader\" tab.");
 			JOptionPane.showMessageDialog(parent, sb.toString(), "Setup Error", JOptionPane.ERROR_MESSAGE);
 		}
@@ -260,25 +278,26 @@ public class Workspace {
 		multiClean(false);
 	}
 
+	/**
+	 * Every per-archive extraction directory, in one place. {@link #validate}
+	 * creates all of them and {@link #multiClean} empties all of them; when the
+	 * two lists drifted apart, the directories only the second one knew about
+	 * were never created and the editors that wrote into them failed silently.
+	 * {@code _original_garcs} is deliberately absent - it is the pristine backup
+	 * and must survive cleaning.
+	 */
+	public static final String[] WORKSPACE_SUBDIRS = {
+		"areadata", "fielddata", "mapmatrix", "gametext", "storytext", "zonedata",
+		"buildingmodels", "npcregistries", "movemodels",
+		"trdata", "trclass", "trpoke",
+		"maison_setA", "maison_listA", "maison_setB", "maison_listB", "maison_setC",
+		"temp"
+	};
+
 	private static void multiClean(boolean deletePersistent) {
-		cleanDirectory(WORKSPACE_PATH + "/areadata", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/fielddata", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/gametext", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/storytext", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/mapmatrix", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/zonedata", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/buildingmodels", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/npcregistries", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/movemodels", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/trdata", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/trclass", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/trpoke", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/maison_setA", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/maison_listA", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/maison_setB", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/maison_listB", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/maison_setC", deletePersistent);
-		cleanDirectory(WORKSPACE_PATH + "/temp", true);
+		for (String dir : WORKSPACE_SUBDIRS) {
+			cleanDirectory(WORKSPACE_PATH + "/" + dir, "temp".equals(dir) || deletePersistent);
+		}
 	}
 
 	public static void cleanDirectory(String dir, boolean deletePersistent) {
@@ -466,12 +485,89 @@ public class Workspace {
 		return new File(WORKSPACE_PATH + "/_original_garcs");
 	}
 
+	/** Records which game folder a pristine snapshot was taken from. */
+	public static File originalSnapshotStamp() {
+		return new File(originalSnapshotDir(), "taken-from.txt");
+	}
+
+	/**
+	 * The game folder a workspace's pristine snapshot was taken from, or null
+	 * when there is no snapshot or it predates stamping.
+	 */
+	public static String snapshotSourcePath() {
+		File stamp = originalSnapshotStamp();
+		if (!stamp.isFile()) {
+			return null;
+		}
+		try (Scanner sc = new Scanner(stamp, "UTF-8")) {
+			while (sc.hasNextLine()) {
+				String line = sc.nextLine().trim();
+				if (line.startsWith("gamedir=")) {
+					return line.substring("gamedir=".length()).trim();
+				}
+			}
+		} catch (IOException ex) {
+			//unreadable stamp is treated as absent
+		}
+		return null;
+	}
+
+	/**
+	 * True when this workspace already holds a pristine snapshot of a DIFFERENT
+	 * game folder than the one configured.
+	 *
+	 * <p>This matters more than it looks. The snapshot is what "ship only what I
+	 * changed" diffs against, and what the building palette, the atmosphere
+	 * picker and the Maison guard read pristine data from. It is copied once and
+	 * never refreshed, and cleaning a workspace does not remove it - so pointing
+	 * an existing workspace at a second dump silently keeps the first dump's
+	 * backup forever, and every one of those consumers is quietly wrong from
+	 * then on with nothing to indicate it.
+	 */
+	public static boolean snapshotIsForeign() {
+		String taken = snapshotSourcePath();
+		if (taken == null || GAMEDIR_PATH == null) {
+			return false;
+		}
+		try {
+			return !new File(taken).getCanonicalPath()
+					.equalsIgnoreCase(new File(GAMEDIR_PATH).getCanonicalPath());
+		} catch (IOException ex) {
+			return !taken.equalsIgnoreCase(GAMEDIR_PATH);
+		}
+	}
+
+	/** Deletes the pristine snapshot so the next load re-takes it from the current game folder. */
+	public static void discardSnapshot() {
+		File snap = originalSnapshotDir();
+		deleteTree(snap);
+	}
+
+	private static void deleteTree(File f) {
+		if (f == null || !f.exists()) {
+			return;
+		}
+		File[] kids = f.listFiles();
+		if (kids != null) {
+			for (File k : kids) {
+				deleteTree(k);
+			}
+		}
+		f.delete();
+	}
+
 	/**
 	 * One-time pristine snapshot of the moddable RomFS archives. Copies each to
 	 * _original_garcs/&lt;archive path&gt; only when it is not already there, so it
 	 * captures the state at the first load and is never overwritten (later loads,
 	 * including post-pack reloads, are no-ops). Fully guarded: a snapshot failure
 	 * must never break loading a workspace.
+	 *
+	 * <p>Stamps which game folder it copied from, so {@link #snapshotIsForeign}
+	 * can catch a workspace that was later pointed at a different dump. A
+	 * snapshot taken before stamping existed has no stamp; it is left alone and
+	 * stamped in place rather than re-taken, because re-taking it against
+	 * already-edited archives would bake the edits in as "pristine".
 	 */
 	public static void snapshotOriginals() {
 		try {
@@ -491,6 +587,15 @@ public class Workspace {
 						dst.getParentFile().mkdirs();
 					}
 					java.nio.file.Files.copy(live.toPath(), dst.toPath());
+				}
+			}
+			if (snap.isDirectory() && !originalSnapshotStamp().isFile()) {
+				try (java.io.PrintWriter pw = new java.io.PrintWriter(
+						originalSnapshotStamp(), "UTF-8")) {
+					pw.println("# The game folder this pristine backup was copied from.");
+					pw.println("# CTRMap compares your edits against it to ship only what changed.");
+					pw.println("gamedir=" + new File(GAMEDIR_PATH).getAbsolutePath());
+					pw.println("game=" + game);
 				}
 			}
 		} catch (Exception ex) {
@@ -752,6 +857,14 @@ public class Workspace {
 		prefsPutNonNull("ESPICA_PATH", ESPICA_PATH);
 		prefs.putBoolean("TILESET_DEFAULT", TILESET_DEFAULT);
 		prefsPutNonNull("TILESET_PATH", TILESET_PATH);
+		try {
+			prefs.flush(); //settings survive a crash, not just a clean exit
+		} catch (java.util.prefs.BackingStoreException ex) {
+			Logger.getLogger(Workspace.class.getName()).log(Level.SEVERE, null, ex);
+		}
+		if (persist_config == null) {
+			return; //no workspace has validated yet, so there is no file to write
+		}
 		try {
 			persist_config.delete();
 			persist_config.createNewFile();
