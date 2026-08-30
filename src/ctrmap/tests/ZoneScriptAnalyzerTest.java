@@ -21,7 +21,7 @@ import java.util.List;
  */
 public class ZoneScriptAnalyzerTest {
 
-	private static final String DEFAULT_GARC_PATH = "../RomFS_original_garcs\\a\\0\\1\\3";
+	private static final String DEFAULT_GARC_PATH = "../RomFS_original_garcs/a/0/1/3";
 	private static final int ZONE_COUNT = 536;
 
 	public static void main(String[] args) throws Exception {

@@ -36,7 +36,7 @@ import java.util.HashMap;
  */
 public class ZoneAppendTest {
 
-	private static final String DEFAULT_GARC_PATH = "../RomFS_original_garcs\\a\\0\\1\\3";
+	private static final String DEFAULT_GARC_PATH = "../RomFS_original_garcs/a/0/1/3";
 	private static final int SRC = 24;
 	private static final int NEW_INDEX = 536;
 

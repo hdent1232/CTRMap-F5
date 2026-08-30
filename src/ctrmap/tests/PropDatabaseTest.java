@@ -21,8 +21,8 @@ import java.util.Set;
  */
 public class PropDatabaseTest {
 
-	private static final String BM_GARC_PATH = "../RomFS_original_garcs\\a\\0\\2\\3";
-	private static final String AD_GARC_PATH = "../RomFS_original_garcs\\a\\0\\1\\4";
+	private static final String BM_GARC_PATH = "../RomFS_original_garcs/a/0/2/3";
+	private static final String AD_GARC_PATH = "../RomFS_original_garcs/a/0/1/4";
 
 	public static void main(String[] args) {
 		File bmFile = new File(args.length > 0 ? args[0] : BM_GARC_PATH);

@@ -42,7 +42,7 @@ import java.util.Set;
  */
 public class MsgWrapperInjectTest {
 
-	private static final String DEFAULT_GARC_PATH = "../RomFS_original_garcs\\a\\0\\1\\3";
+	private static final String DEFAULT_GARC_PATH = "../RomFS_original_garcs/a/0/1/3";
 	private static final int ZONE_COUNT = 536;
 	private static final int EXPECTED_WRAPPER_ZONES = 228;
 	private static final int EXPECTED_WRAPPERLESS_ZONES = 308;
