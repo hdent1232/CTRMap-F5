@@ -144,13 +144,13 @@ public class MapPrefabTest {
 			if (l == null) {
 				continue; //missing-material/inject-refused skip
 			}
-			MapPrefab.Piece probe = new MapPrefab.Piece();
-			probe.material = l.material;
-			probe.stride = piece.stride;
-			probe.posOffset = piece.posOffset;
-			int mesh = MapPrefab.findTargetMesh(re, probe);
-			if (mesh < 0) {
-				throw new IllegalStateException(label + ": landed mesh for '" + l.material + "' not found");
+			//Use the mesh the stamper RECORDED. Re-deriving it from the material
+			//name finds the FIRST mesh carrying that name, which need not be the
+			//one the piece went into - region 540 carries wall_top01_r on four
+			//meshes, three of them at stride 36 and one at 32.
+			int mesh = l.meshIndex;
+			if (mesh < 0 || mesh >= re.meshCount) {
+				throw new IllegalStateException(label + ": landed mesh for '" + l.material + "' not recorded");
 			}
 			float[][] pos = re.getVertexPositions(mesh);
 			if (pos.length < l.base + l.count) {

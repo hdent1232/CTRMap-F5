@@ -203,6 +203,10 @@ public class MapPrefab {
 	public static class Landing {
 
 		public String material;   // the FINAL material name (unique name if injected)
+		public int meshIndex = -1; // the mesh it landed in - recorded, not re-derived:
+		                           // one material can sit on several meshes at different
+		                           // layouts, so looking it up again by name can find
+		                           // the wrong one
 		public int base;          // first vertex index of the piece within that mesh
 		public int count;         // piece vertex count
 	}
@@ -237,9 +241,18 @@ public class MapPrefab {
 		StampResult r = new StampResult();
 		float ax = tileX * 18f - 360f, az = tileY * 18f - 360f;
 		byte[] current = targetModel;
+		//parsed once, not per piece: used to check that a fast-path target really
+		//has the donor's vertex layout and not merely its stride
+		BchMapModel donor = null;
+		if (donorModel != null && BchMapModel.isMapModel(donorModel)) {
+			try {
+				donor = new BchMapModel(donorModel);
+			} catch (RuntimeException ignore) {
+			}
+		}
 		for (Piece piece : pieces) {
 			BchMapModel model = new BchMapModel(current);
-			int target = findTargetMesh(model, piece);
+			int target = findTargetMesh(model, piece, donor);
 			int n = piece.vertexBytes.length / piece.stride;
 			//rebased vertex bytes (anchor + height applied to every position)
 			byte[] vtx = piece.vertexBytes.clone();
@@ -261,6 +274,7 @@ public class MapPrefab {
 				r.stamped.add(piece.material + " (" + n + " verts)");
 				Landing l = new Landing();
 				l.material = model.getMaterialName(model.getMeshMaterialIndex(target));
+				l.meshIndex = target;
 				l.base = base;
 				l.count = n;
 				r.landings.add(l);
@@ -285,6 +299,7 @@ public class MapPrefab {
 					r.stamped.add(piece.material + " (" + n + " verts, new material " + matName + ")");
 					Landing l = new Landing();
 					l.material = matName;
+					l.meshIndex = newMesh;
 					l.base = 0;
 					l.count = n;
 					r.landings.add(l);
@@ -372,7 +387,62 @@ public class MapPrefab {
 	 * meshes with different layouts, and vertex bytes are copied whole-stride
 	 * so the layout must match exactly.
 	 */
+	/**
+	 * True when the target mesh has EXACTLY the donor mesh's vertex layout, so
+	 * the piece's bytes can be copied into it whole-stride.
+	 *
+	 * <p>{@link #findTargetMesh} matches on material name, stride and position
+	 * offset, which is not enough. PICA s8 and u8 are both one byte wide, so two
+	 * meshes can agree on all three and still disagree about what the bytes
+	 * mean. A u8 colour copied into an s8 attribute reads back negative and
+	 * renders black - which is what happened to stamped fir trees - and worse
+	 * combinations exist in the corpus, where a donor carrying a normal lands in
+	 * a target buffering a UV, so the normal's floats are read as texture
+	 * coordinates.
+	 *
+	 * <p>Returns true when there is no donor model to compare against (a v1
+	 * prefab), preserving the old behaviour rather than refusing to stamp.
+	 */
+	private static boolean layoutMatches(BchMapModel donor, Piece piece, BchMapModel model, int target) {
+		if (donor == null || piece.donorMeshIndex < 0 || piece.donorMeshIndex >= donor.meshCount) {
+			return true;
+		}
+		try {
+			List<BchMapModel.MeshAttr> a = donor.attributes(piece.donorMeshIndex);
+			List<BchMapModel.MeshAttr> b = model.attributes(target);
+			if (a == null || b == null || a.size() != b.size()) {
+				return false;
+			}
+			for (int i = 0; i < a.size(); i++) {
+				BchMapModel.MeshAttr x = a.get(i), y = b.get(i);
+				if (x.name != y.name || x.type != y.type || x.elems != y.elems || x.offset != y.offset) {
+					return false;
+				}
+			}
+			return true;
+		} catch (RuntimeException ex) {
+			return false; //cannot prove they match - take the safe path
+		}
+	}
+
 	public static int findTargetMesh(BchMapModel model, Piece piece) {
+		return findTargetMesh(model, piece, null);
+	}
+
+	/**
+	 * As above, but when a donor model is supplied the candidate must also carry
+	 * the donor's exact vertex layout.
+	 *
+	 * <p>Several meshes in a map can share a material name, and taking the first
+	 * one that merely agreed on stride was how colours ended up in the wrong
+	 * format. Note that the search continues rather than giving up on the first
+	 * candidate: a map that holds the same material at two layouts usually holds
+	 * the right one further down the list, and rejecting the whole stamp on the
+	 * first near-miss turned working stamps into hard failures - region 540's
+	 * {@code wall06_r} sits on more than one mesh, and the full path could not
+	 * take it because that donor submesh is skinned.
+	 */
+	public static int findTargetMesh(BchMapModel model, Piece piece, BchMapModel donor) {
 		if (piece.material == null) {
 			return -1;
 		}
@@ -382,9 +452,13 @@ public class MapPrefab {
 				continue;
 			}
 			BchMapModel.MeshGeom g = geom.get(m);
-			if (g.posOk && g.stride == piece.stride && g.posOffset == piece.posOffset) {
-				return m;
+			if (!(g.posOk && g.stride == piece.stride && g.posOffset == piece.posOffset)) {
+				continue;
 			}
+			if (donor != null && !layoutMatches(donor, piece, model, m)) {
+				continue; //same name and stride, different vertex format
+			}
+			return m;
 		}
 		return -1;
 	}
