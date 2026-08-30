@@ -121,6 +121,8 @@ public class CtrmapMainframe {
 	public static JMenuItem isstracker;
 	public static JMenuItem about;
 	public static JToolBar toolbar;
+	/** The always-visible 2D/3D view toggle (F2/F3 keep working and sync it). */
+	public static javax.swing.JToggleButton btn3DView;
 	public static ButtonGroup toolBtnGroup;
 	public static JRadioButton btnEditTool;
 	public static JRadioButton btnSetTool;
@@ -293,6 +295,18 @@ public class CtrmapMainframe {
 		btnRedoTile.addActionListener(e -> ctrmap.humaninterface.TileUndo.redo());
 		toolbar.add(btnUndoTile);
 		toolbar.add(btnRedoTile);
+		//the 2D/3D view switch, ALWAYS visible and valid for every tool - the
+		//displayed component is the source of truth so F2/F3 stay in sync
+		btn3DView = new javax.swing.JToggleButton("3D view");
+		btn3DView.setToolTipText("Show the map in 3D (fly with WASD + drag; the Map Builder updates it live). F2 = 2D, F3 = 3D.");
+		btn3DView.setFocusable(false);
+		btn3DView.addActionListener(e -> {
+			boolean to3d = jsp.getLeftComponent() != m3DDebugPanel;
+			Utils.setGraphicUI(to3d ? m3DDebugPanel : mTilemapScrollPane);
+			btn3DView.setSelected(to3d);
+		});
+		toolbar.addSeparator();
+		toolbar.add(btn3DView);
 		javax.swing.JButton tbBlank = new javax.swing.JButton("Blank canvas");
 		tbBlank.setToolTipText("Replace this zone's map with a blank canvas cloned from a template route.");
 		tbBlank.addActionListener(e -> blankCanvasAction());
@@ -854,6 +868,9 @@ public class CtrmapMainframe {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				Utils.setGraphicUI(mTilemapScrollPane);
+				if (btn3DView != null) {
+					btn3DView.setSelected(false);
+				}
 			}
 		});
 		frame.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("F3"), "switch3D");
@@ -861,6 +878,9 @@ public class CtrmapMainframe {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				Utils.setGraphicUI(m3DDebugPanel);
+				if (btn3DView != null) {
+					btn3DView.setSelected(true);
+				}
 			}
 		});
 		tool = new SetTool();
@@ -1557,21 +1577,28 @@ public class CtrmapMainframe {
 			JOptionPane.showMessageDialog(frame, "Could not inspect the zone's map:\n" + ex.getMessage(), "Blank map canvas", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		java.util.List<String> items = new java.util.ArrayList<>();
-		java.util.List<Integer> meshIds = new java.util.ArrayList<>();
-		int def = 0, bestTris = -1;
+		//list the zone model's materials LARGEST FIRST - the ground is almost
+		//always the biggest mesh, and small parts (doors, windows, tree bits)
+		//sink to the bottom instead of cluttering the top of the list
+		java.util.List<int[]> order = new java.util.ArrayList<>(); //{meshIndex, tris}
 		for (ctrmap.formats.h3d.BchMapModel.MeshGeom g : probe.geometry()) {
 			if (!g.posOk) {
 				continue;
 			}
-			int tris = probe.getTriangles(g.meshIndex).length / 3;
-			items.add(probe.getMaterialName(probe.getMeshMaterialIndex(g.meshIndex)) + "  (" + tris + " faces)");
-			meshIds.add(g.meshIndex);
-			if (tris > bestTris) {
-				bestTris = tris;
-				def = items.size() - 1;
-			}
+			order.add(new int[]{g.meshIndex, probe.getTriangles(g.meshIndex).length / 3});
 		}
+		order.sort((a, b) -> b[1] - a[1]);
+		java.util.List<String> items = new java.util.ArrayList<>();
+		java.util.List<Integer> meshIds = new java.util.ArrayList<>();
+		for (int[] o : order) {
+			String label = probe.getMaterialName(probe.getMeshMaterialIndex(o[0])) + "  (" + o[1] + " faces)";
+			if (items.isEmpty()) {
+				label += "  - this map's main ground";
+			}
+			items.add(label);
+			meshIds.add(o[0]);
+		}
+		int def = 0;
 		//visual picker: each entry shows what the material ACTUALLY looks like
 		final java.util.List<javax.swing.ImageIcon> matIcons = new java.util.ArrayList<>();
 		byte[] probeBytes = probe.raw;
@@ -1601,7 +1628,10 @@ public class CtrmapMainframe {
 			"from keeps its map. Then build with prefabs, the Geometry tool,",
 			"or Blender.",
 			" ",
-			"Ground material (the floor's look):",
+			"Ground material (the floor's look). These are THIS map's own",
+			"materials, largest first - the top entry is almost always the",
+			"ground. City/cave maps use texture ATLASES, so a preview can look",
+			"busy; the canvas still paints it as a clean tiled floor.",
 			matPicker,
 			" ",
 			"This packs the workspace when done."
