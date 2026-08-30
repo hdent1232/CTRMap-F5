@@ -82,23 +82,81 @@ public class UpdateChecker {
 			Release r = new Release();
 			r.version = tag.startsWith("v") || tag.startsWith("V") ? tag.substring(1) : tag;
 			r.notes = field(json, "body");
-			//the first .zip asset is the packaged app
-			int assets = json.indexOf("\"assets\"");
-			if (assets >= 0) {
-				String tail = json.substring(assets);
-				String url = field(tail, "browser_download_url");
-				String name = field(tail, "name");
-				if (url != null && url.toLowerCase().endsWith(".zip") && isGithubHttps(url)) {
+			//A release carries several files - two builds and a checksum beside
+			//each - so the asset has to be chosen, not just taken. Each asset is
+			//read as its OWN object: name, size and digest scanned independently
+			//across the whole payload could each come from a different file, and
+			//the very first one is usually a .sha256, which is not an update.
+			String want = Updater.flavour() == null ? null : Updater.flavour().assetSuffix;
+			if (want != null) {
+				for (String asset : assetObjects(json)) {
+					String name = field(asset, "name");
+					String url = field(asset, "browser_download_url");
+					if (name == null || url == null
+							|| !name.toLowerCase().endsWith(want.toLowerCase())
+							|| !isGithubHttps(url)) {
+						continue;
+					}
 					r.downloadUrl = url;
 					r.assetName = name;
-					r.assetSize = longField(tail, "size");
-					r.sha256 = sha256Of(tail);
+					r.assetSize = longField(asset, "size");
+					r.sha256 = sha256Of(asset);
+					break;
 				}
 			}
 			return r;
 		} catch (Exception ex) {
 			return null; //offline, rate-limited, or the API moved: say nothing
 		}
+	}
+
+	/**
+	 * Splits the {@code "assets": [...]} array into one string per asset.
+	 *
+	 * <p>Tracks brace depth and skips over string contents, so a stray brace in
+	 * somebody's release notes cannot shift the split and hand the updater one
+	 * asset's name with another's checksum.
+	 */
+	public static java.util.List<String> assetObjects(String json) {
+		java.util.List<String> out = new java.util.ArrayList<>();
+		int key = json.indexOf("\"assets\"");
+		if (key < 0) {
+			return out;
+		}
+		int open = json.indexOf('[', key);
+		if (open < 0) {
+			return out;
+		}
+		int depth = 0, start = -1;
+		boolean inString = false, escaped = false;
+		for (int i = open + 1; i < json.length(); i++) {
+			char c = json.charAt(i);
+			if (inString) {
+				if (escaped) {
+					escaped = false;
+				} else if (c == '\\') {
+					escaped = true;
+				} else if (c == '"') {
+					inString = false;
+				}
+				continue;
+			}
+			if (c == '"') {
+				inString = true;
+			} else if (c == '{') {
+				if (depth++ == 0) {
+					start = i;
+				}
+			} else if (c == '}') {
+				if (--depth == 0 && start >= 0) {
+					out.add(json.substring(start, i + 1));
+					start = -1;
+				}
+			} else if (c == ']' && depth == 0) {
+				break;
+			}
+		}
+		return out;
 	}
 
 	/**
