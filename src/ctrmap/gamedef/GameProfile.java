@@ -99,8 +99,24 @@ public abstract class GameProfile {
 		throw new IllegalArgumentException("no profile for " + g);
 	}
 
-	/** Detects the game in a RomFS root by probe file, or null if none match. */
+	/**
+	 * Detects the game in a RomFS root, or null if none match.
+	 *
+	 * <p>Checks each game's SOUND ARCHIVE first, then falls back to the generic
+	 * probe file. The order matters: X/Y's probe file is also present in an ORAS
+	 * dump, so probe-only detection returned whichever profile happened to come
+	 * first in the registry - correct today purely by luck of the array order,
+	 * and silently wrong the moment anyone reordered it. Each game's sound
+	 * archive is named after that game and appears in no other, so it is a real
+	 * discriminator rather than a coincidence.
+	 */
 	public static GameProfile detect(File romfsRoot) {
+		for (GameProfile p : ALL) {
+			String sound = p.archivePath(Workspace.ArchiveType.SOUND_BCSAR);
+			if (sound != null && new File(romfsRoot, sound).isFile()) {
+				return p;
+			}
+		}
 		for (GameProfile p : ALL) {
 			String probe = p.detectFile();
 			if (probe != null && new File(romfsRoot, probe).exists()) {

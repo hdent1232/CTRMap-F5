@@ -20,6 +20,11 @@ $a039 = Join-Path $pristine "a\0\3\9"
 $a013 = Join-Path $pristine "a\0\1\3"
 $a040 = Join-Path $pristine "a\0\4\0"
 
+# A COMPLETE dump, not the partial GARC set: the setup suites validate real
+# folder layouts (sound archive, the "a" folder, wrong-pick detection), so they
+# need the whole thing. Both suites skip themselves when it is not there.
+$gamedir = Join-Path (Split-Path -Parent $root) "RomFS\000400000011C400"
+
 # suite name -> {main class, args}; -Quick raises sampling steps
 $step = if ($Quick) { "60" } else { "20" }
 $suites = @(
@@ -45,6 +50,8 @@ $suites = @(
     @{ n = "MapResizer";                  c = "ctrmap.tests.MapResizerTest";         a = @($a040) },
     @{ n = "MatrixFork (zone-switch layer)"; c = "ctrmap.tests.MatrixForkTest";      a = @($a013, $a040) },
     @{ n = "Updater (in-place, lossless)"; c = "ctrmap.tests.UpdaterTest";           a = @() },
+    @{ n = "DumpCheck (setup validation)"; c = "ctrmap.tests.DumpCheckTest";         a = @($gamedir) },
+    @{ n = "SetupWizard (first run)";     c = "ctrmap.tests.SetupWizardTest";        a = @($gamedir) },
     @{ n = "LZ11 codec + ratio";          c = "ctrmap.tests.LZ11Test";               a = @($a039) },
     @{ n = "EncounterTable";              c = "ctrmap.tests.EncounterTableTest";     a = @($a013) },
     @{ n = "TrainerData";                 c = "ctrmap.tests.TrainerDataTest";        a = @() },
