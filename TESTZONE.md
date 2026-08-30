@@ -10,6 +10,19 @@ Everything the editor can build is in this world, and it is deliberately
 split across four zones so that **if something crashes or misbehaves, WHERE
 it happens tells us WHICH subsystem is broken** (table at the bottom).
 
+> **SEALED 2026-08-30 — read this before testing.** The test world is now
+> escape-proof: its zones are ringed with impassable rock, and the Mart/house
+> doors that used to lead into RETAIL interiors (whose exits drop you in the
+> real town they belong to) are removed. Previously, walking out of one of
+> those put you in Petalburg City mid-intro, which starts the Wally sequence
+> and dead-ends when you have no Pokémon.
+>
+> **Also: enter the test world AFTER you have your starter.** Several tests
+> (above all the battle challenge) need a party, and the game's opening
+> sequence is fragile until then. The other door in Littleroot leads to your
+> own custom Mauville zone 536 — that one showed glitched geometry because
+> its map matrix was corrupt; it has been repaired, so it now loads Mauville.
+
 **REBUILT 2026-08-30 on the current pipeline.** The three outdoor zones
 were regenerated through the composite edit-in-place path — the exact code
 the Map Builder runs today: the stations were painted ONTO a pristine copy
@@ -87,11 +100,10 @@ Three buildings on the north side, decor scattered around, one sign.
     REST of the room — counter, healing machine, walls, nurse — is
     completely intact. This is the new "only touched tiles change"
     pipeline running on real retail geometry.
-- **Mart (middle) and house (right)**: enter-only by design. Their rooms are
-  the retail interiors, so their exits lead to retail towns — walking out
-  somewhere else is EXPECTED, not a bug. Just confirm entering works and
-  the rooms render. (Return via the hub: the mat at the plaza's south goes
-  back to the hub.)
+- **Mart (middle) and house (right)**: scenery only now. Their doors used to
+  lead into the retail interiors, whose exits drop you into the real town
+  they belong to (Petalburg, mid-intro) — that escape is removed. The
+  Pokémon Center is the door that works, and it round-trips.
 - **Decor**: sign post, two tree types, iron fence — all should render with
   correct textures and block movement like their retail versions.
 

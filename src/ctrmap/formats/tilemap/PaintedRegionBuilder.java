@@ -280,6 +280,12 @@ public class PaintedRegionBuilder {
 		return resolveEdgeMesh(new BchMapModel(donorModel)) >= 0;
 	}
 
+	/** True when this map has a REAL material for the brush (not the fallback).
+	 *  {@link TerrainCatalog} imports one when it does not. */
+	public static boolean hasMaterialFor(BchMapModel probe, TilePalette brush) {
+		return resolveMesh(probe, brush, -1) >= 0;
+	}
+
 	/** Descent direction (0 E,1 W,2 S,3 N) of a ramp tile toward a level-below
 	 *  neighbour, or -1 if not a ramp / no lower neighbour. */
 	static int rampDir(TilePalette[][] grid, int[][] height, boolean[][] ramp, int tx, int ty) {
@@ -869,11 +875,14 @@ public class PaintedRegionBuilder {
 				int base = (i * 4 + c) * g.stride + col.offset;
 				for (int k = 0; k < col.elems; k++) {
 					int o = base + k * compSize;
-					if (col.type == 3) {
-						putF(vtx, o, (k < 3 ? rgba[k] : rgba[3]) / 255f);
-					} else {
-						vtx[o] = (byte) (k < 4 ? rgba[k] : 0xFF);
-					}
+					//encode PER ATTRIBUTE FORMAT - a color attribute may be s8
+					//(range 0..127, 1/127 scale), u8, s16 or float. Writing the
+					//raw 0..255 value into an s8 attribute overflows to a
+					//NEGATIVE byte, which the renderer shows as BLACK: measured
+					//on 60% of retail regions, and the cause of paint coming out
+					//as a dark square on maps like Mauville.
+					float unit = (k < 4 ? rgba[k] : 255) / 255f;
+					MapModelObjImporter.putComp(vtx, o, col.type, unit);
 				}
 			}
 		}
@@ -1188,22 +1197,56 @@ public class PaintedRegionBuilder {
 		return n.contains("_edge") || n.contains("edge_tex");
 	}
 
+	/** The map's main GROUND mesh: the largest FLOOR-facing surface. Scored by
+	 *  up-facing triangle area, not raw triangle count - the biggest mesh of an
+	 *  indoor map is usually a wall, and painting the floor with a wall
+	 *  material is how "sand" ended up looking like grey plaster. */
 	private static int defaultGroundMesh(BchMapModel model) {
-		int best = -1, bestTris = -1;
+		int best = -1, bestFallback = -1;
+		double bestArea = -1;
+		long bestTris = -1;
 		for (BchMapModel.MeshGeom g : model.geometry()) {
-			if (g.posOk) {
-				String name = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
-				if (name != null && isEdgeMaterial(name)) {
-					continue; // never treat the thin edge overlay as the ground
-				}
-				int tris = model.getTriangles(g.meshIndex).length;
-				if (tris > bestTris) {
-					bestTris = tris;
-					best = g.meshIndex;
-				}
+			if (!g.posOk) {
+				continue;
+			}
+			String name = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
+			if (name != null && isEdgeMaterial(name)) {
+				continue; // never treat the thin edge overlay as the ground
+			}
+			int tris = model.getTriangles(g.meshIndex).length;
+			if (tris > bestTris) {
+				bestTris = tris;
+				bestFallback = g.meshIndex;
+			}
+			double up = upFacingArea(model, g.meshIndex);
+			if (up > bestArea) {
+				bestArea = up;
+				best = g.meshIndex;
 			}
 		}
-		return best;
+		return bestArea > 0 ? best : bestFallback;
+	}
+
+	/** Plan-view area of a mesh's up-facing triangles (a floor scores high, a wall ~0). */
+	private static double upFacingArea(BchMapModel model, int meshIndex) {
+		try {
+			float[][] pos = model.getVertexPositions(meshIndex);
+			int[] tris = model.getTriangles(meshIndex);
+			double area = 0;
+			for (int t = 0; t + 2 < tris.length; t += 3) {
+				int a = tris[t], b = tris[t + 1], c = tris[t + 2];
+				if (a >= pos.length || b >= pos.length || c >= pos.length) {
+					continue;
+				}
+				//|cross(ab, ac).y| / 2 = the triangle's shadow on the ground
+				double ux = pos[b][0] - pos[a][0], uz = pos[b][2] - pos[a][2];
+				double vx = pos[c][0] - pos[a][0], vz = pos[c][2] - pos[a][2];
+				area += Math.abs(ux * vz - vx * uz) * 0.5;
+			}
+			return area;
+		} catch (RuntimeException ex) {
+			return 0;
+		}
 	}
 
 	private static float dist(float ax, float az, float bx, float bz) {
