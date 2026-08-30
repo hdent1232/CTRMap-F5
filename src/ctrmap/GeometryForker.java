@@ -81,6 +81,7 @@ public class GeometryForker {
 		public int[] newRegions;      // firstNewRegion, firstNewRegion+1, ... (parallel to srcRegions)
 		public byte[] newMatrixBytes; // source matrix, verbatim, with grid region IDs rewired
 		public byte[] newZoBytes;     // source zone ZO container, verbatim, with mapmatrixID repointed
+		public int zoneCellsRewritten; // quarter cells in the zone-switch layer repointed at the forking zone
 	}
 
 	/**
@@ -89,7 +90,8 @@ public class GeometryForker {
 	 * unique FieldData region IDs in the matrix grid, assigns them new tail
 	 * indices, and produces the rewired matrix + repointed header. No I/O.
 	 */
-	public static ForkPlan planFork(byte[] zoBytes, byte[] matBytes, int firstNewRegion, int newMatrixIndex) {
+	public static ForkPlan planFork(byte[] zoBytes, byte[] matBytes, int firstNewRegion, int newMatrixIndex,
+			int owningZone) {
 		if (zoBytes == null || zoBytes.length < 8) {
 			throw new IllegalArgumentException("Zone container too short.");
 		}
@@ -133,10 +135,40 @@ public class GeometryForker {
 				putU16(newMat, pos, nid);
 			}
 		}
+
+		//A matrix carries more than the region grid. When hasLOD == 1 a
+		//zone-switch layer follows it - one entry per QUARTER cell, (w*4)x(h*4) -
+		//that tells the engine which zone the ground under the player belongs to.
+		//Copying it verbatim hands the forked map straight back to the zone we
+		//forked away from: the engine resolves the player's tile to the DONOR
+		//zone, so the new zone never becomes current (no location banner, no
+		//music, its header ignored) and the donor's entities stay live on the new
+		//ground - retail item balls and trainers included. A private fork belongs
+		//to one zone, so every occupied quarter cell is rewritten to say so.
+		//Measured: all 61 retail zones whose matrix has this layer appear in their
+		//own layer; the forked zones scored 0 until this ran.
+		int zoneCells = 0;
+		if (u16(matBytes, sub0) == 1) {
+			int layerOff = sub0 + 8 + w * h * 2;
+			long quads = (long) (w * 4) * (h * 4);
+			if (layerOff + quads * 2 > matBytes.length) {
+				throw new IllegalArgumentException("Map matrix zone-switch layer "
+						+ (w * 4) + "x" + (h * 4) + " does not fit its subfile.");
+			}
+			for (int q = 0; q < quads; q++) {
+				int pos = layerOff + (int) q * 2;
+				if (u16(newMat, pos) != 0xFFFF) {
+					putU16(newMat, pos, owningZone);
+					zoneCells++;
+				}
+			}
+		}
+
 		byte[] newZo = zoBytes.clone();
 		putU16(newZo, hdrOff + 4, newMatrixIndex);
 
 		ForkPlan p = new ForkPlan();
+		p.zoneCellsRewritten = zoneCells;
 		p.oldMatrix = oldMatrix;
 		p.newMatrixBytes = newMat;
 		p.newZoBytes = newZo;
@@ -157,7 +189,7 @@ public class GeometryForker {
 	 * the plan (whose {@code newZoBytes} the caller writes into place). No zone
 	 * header / master-table write happens here.
 	 */
-	private static ForkPlan forkArchives(byte[] zoBytes, int firstNewRegion, int newMatrix,
+	private static ForkPlan forkArchives(byte[] zoBytes, int firstNewRegion, int newMatrix, int owningZone,
 			GARC gr, GARC mm, File fdDir, File mmDir) throws IOException {
 		int hdrOff = u32(zoBytes, 4);
 		int oldMatrix = u16(zoBytes, hdrOff + 4);
@@ -168,7 +200,7 @@ public class GeometryForker {
 		if (srcMatrixFile == null) {
 			throw new IOException("Could not extract map matrix " + oldMatrix + " from the workspace.");
 		}
-		ForkPlan plan = planFork(zoBytes, readAll(srcMatrixFile), firstNewRegion, newMatrix);
+		ForkPlan plan = planFork(zoBytes, readAll(srcMatrixFile), firstNewRegion, newMatrix, owningZone);
 
 		if (pendingFieldOverrides == null) {
 			pendingFieldOverrides = new HashMap<>();
@@ -224,7 +256,7 @@ public class GeometryForker {
 		int nextMatrix = mm.length;
 		for (int i = 0; i < newRealZones; i++) {
 			int newMatrix = nextMatrix++;
-			ForkPlan plan = forkArchives(newZos[i], nextRegion, newMatrix, gr, mm, fdDir, mmDir);
+			ForkPlan plan = forkArchives(newZos[i], nextRegion, newMatrix, oldCount + i, gr, mm, fdDir, mmDir);
 			nextRegion += plan.srcRegions.length;
 			newZos[i] = plan.newZoBytes;                              // caller writes the repointed ZO
 			int rowOff = (oldCount + i) * MASTER_ROW + 4;
@@ -266,7 +298,7 @@ public class GeometryForker {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
 		byte[] zoBytes = readAll(zoneFile);
-		ForkPlan plan = forkArchives(zoBytes, gr.length, newMatrix, gr, mm, fdDir, mmDir);
+		ForkPlan plan = forkArchives(zoBytes, gr.length, newMatrix, zoneIndex, gr, mm, fdDir, mmDir);
 
 		// repoint the ZO container header, in place
 		writeAll(zoneFile, plan.newZoBytes);

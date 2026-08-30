@@ -7,8 +7,10 @@ import ctrmap.formats.h3d.MapModelObjImporter;
 import ctrmap.formats.h3d.RegionFactory;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Builds a full map region (visual model + collision + tilemap) from a painted
@@ -1152,7 +1154,8 @@ public class PaintedRegionBuilder {
 					continue;
 				}
 				String name = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
-				if (name != null && !isEdgeMaterial(name) && name.toLowerCase().contains(hint)) {
+				if (name != null && !isEdgeMaterial(name) && !isSpriteMaterial(name)
+						&& name.toLowerCase().contains(hint)) {
 					return g.meshIndex;
 				}
 			}
@@ -1160,7 +1163,68 @@ public class PaintedRegionBuilder {
 		return fallback;
 	}
 
-	/** The cliff material mesh (gake/cliff/rock), or the rock/ground fallback. */
+	/**
+	 * Materials whose texture is mostly transparent - sprite strips, decals and
+	 * decoration atlases. Measured game-wide by
+	 * {@link ctrmap.tools.GroundMaterialAudit}; anything not listed is treated as
+	 * usable, so imported and user-supplied materials are never restricted.
+	 */
+	private static Set<String> spriteMaterials;
+
+	/**
+	 * True when this material is a sprite/decal, not a surface you can stand on.
+	 *
+	 * <p>A material NAME cannot distinguish a tiling ground texture from a sprite
+	 * atlas, and the brush hints match by substring, so the painter used to floor
+	 * a map with whatever happened to match. On Route 102 "rock" matched
+	 * {@code chip_jump_gake} - the jump-down ledge sprite, 43% opaque - and
+	 * "path" matched {@code chip_wood_b}, the decoration atlas of bushes and
+	 * flowers, 34% opaque. Painted tiles then sampled empty texels and drew
+	 * nothing, over retail ground the compositor had already clipped away: the
+	 * player stood in a black hole. Rejecting these sends the brush to
+	 * {@link TerrainCatalog}, which imports a measured-opaque donor instead.
+	 */
+	static boolean isSpriteMaterial(String name) {
+		return spriteMaterials().contains(name);
+	}
+
+	private static synchronized Set<String> spriteMaterials() {
+		if (spriteMaterials != null) {
+			return spriteMaterials;
+		}
+		spriteMaterials = new HashSet<>();
+		try (java.io.InputStream in = PaintedRegionBuilder.class.getClassLoader()
+				.getResourceAsStream("ctrmap/resources/oras_ground_materials.tsv")) {
+			if (in != null) {
+				java.util.Scanner sc = new java.util.Scanner(in, "UTF-8");
+				while (sc.hasNextLine()) {
+					String line = sc.nextLine().trim();
+					if (line.isEmpty() || line.startsWith("#")) {
+						continue;
+					}
+					String[] f = line.split("\t");
+					if (f.length < 4) {
+						continue;
+					}
+					try {
+						//measured bimodal: 638 of 788 materials are 100% opaque and
+						//everything below 95% is a sprite, decal or atlas
+						if (Double.parseDouble(f[3]) < 95.0) {
+							spriteMaterials.add(f[0]);
+						}
+					} catch (NumberFormatException ignore) {
+					}
+				}
+			}
+		} catch (Exception ex) {
+			System.err.println("PaintedRegionBuilder: ground-material table unavailable: " + ex);
+		}
+		return spriteMaterials;
+	}
+
+	/** The cliff material mesh (gake/cliff/rock), or the rock/ground fallback.
+	 *  Sprite materials are skipped: in ORAS the "gake" cliff is usually a
+	 *  see-through ledge strip, and a wall built from it is an invisible wall. */
 	private static int resolveCliffMesh(BchMapModel model, int fallback) {
 		for (String hint : new String[]{"gake", "cliff", "chip_rock", "rock", "iwa"}) {
 			for (BchMapModel.MeshGeom g : model.geometry()) {
@@ -1168,12 +1232,15 @@ public class PaintedRegionBuilder {
 					continue;
 				}
 				String name = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
-				if (name != null && !isEdgeMaterial(name) && name.toLowerCase().contains(hint)) {
+				if (name != null && !isEdgeMaterial(name) && !isSpriteMaterial(name)
+						&& name.toLowerCase().contains(hint)) {
 					return g.meshIndex;
 				}
 			}
 		}
-		return fallback;
+		//the map's own cliff material is a sprite (or it has none): a rock brush
+		//imported by TerrainCatalog is a real opaque wall, so prefer that
+		return resolveMesh(model, TilePalette.ROCK, fallback);
 	}
 
 	/** The grass-edge overlay mesh (chip_kusa_edge / chip_grass_edge), or -1. */
