@@ -10,6 +10,16 @@ Everything the editor can build is in this world, and it is deliberately
 split across four zones so that **if something crashes or misbehaves, WHERE
 it happens tells us WHICH subsystem is broken** (table at the bottom).
 
+> **THE PETALBURG GYM BUG — FIXED 2026-08-30.** Entering the hub announced
+> "Petalburg Gym" and dropped the player into half-loaded gym geometry, next
+> to the Norman/Wally story sequence. Cause: Route 102 and Petalburg City
+> SHARE one map matrix — they are two zones on one big map — and the Map
+> Builder painted (and placed its warps in) the matrix's FIRST cell, which
+> belongs to Petalburg, not to Route 102. **94 retail zones share a map this
+> way**, so this affected any of them. The painter now targets the zone's own
+> cell, derived from its world position, and the test world was rebuilt on
+> Route 102's actual cell.
+>
 > **FULLY REBUILT 2026-08-30 (latest) — everything below was regenerated
 > through the editor's CURRENT pipeline**, including the vertex-colour fix
 > (painted tiles could render black), the ground-material fix, and material
