@@ -89,8 +89,12 @@ public class UpdateUI {
 	}
 
 	private static String readyMessage(String version) {
+		//the two builds install at different moments, so say the true one
+		boolean bundle = Updater.flavour() == Updater.Flavour.APP_IMAGE;
 		return "CTRMap-F5 " + (version == null ? "" : version) + " is downloaded and ready.\n\n"
-				+ "Close CTRMap and open it again - the update is applied as it starts.\n"
+				+ (bundle
+						? "Close CTRMap and it will finish installing, then reopen itself.\n"
+						: "Close CTRMap and open it again - the update is applied as it starts.\n")
 				+ "Nothing else on your machine changes: same folder, same shortcut,\n"
 				+ "and your workspace, settings and game files are untouched.";
 	}
@@ -145,6 +149,26 @@ public class UpdateUI {
 			return;
 		}
 		if (install == null) {
+			browse(parent, UpdateChecker.RELEASES_PAGE);
+			return;
+		}
+		if (!Updater.isWritable(install)) {
+			//checked BEFORE downloading: failing on permissions after fetching
+			//seventy megabytes wastes the user's time for no reason
+			JOptionPane.showMessageDialog(parent,
+					"CTRMap cannot write to its own folder:\n  " + install.getAbsolutePath()
+					+ "\n\nIt was probably installed somewhere that needs administrator rights."
+					+ "\nMove the CTRMap folder somewhere you own - your Desktop or Documents -"
+					+ "\nand try again, or download the update yourself from the releases page.",
+					"Cannot update in place", JOptionPane.WARNING_MESSAGE);
+			browse(parent, UpdateChecker.RELEASES_PAGE);
+			return;
+		}
+		if (rel.downloadUrl == null) {
+			JOptionPane.showMessageDialog(parent,
+					"That release does not have a download for this kind of installation.\n"
+					+ "Opening the releases page so you can pick one.",
+					"No matching download", JOptionPane.INFORMATION_MESSAGE);
 			browse(parent, UpdateChecker.RELEASES_PAGE);
 			return;
 		}
