@@ -40,6 +40,34 @@ updates LIVE inside the main map scene (~0.2s after each stroke):
 - [ ] Switching tools puts the real (unapplied) map back — nothing painted
   leaks into the scene unless you Apply.
 
+## Game-wide asset palette (NEW — the comprehensive catalog)
+"Buildings & decor" now holds **3,479 auto-harvested structures from every
+map in the game** (plus the 48 curated, door-wired entries pinned first):
+houses, domes, fountains, lamps, stair blocks, bridges, trees, rocks —
+each one machine-verified to cut and stamp cleanly. Narrow by type and by
+place ("Sootopolis City", "Rustboro City"...), or search.
+- [ ] Open the palette in the Map Builder → filter to a town → previews
+  render for harvested entries.
+- [ ] Place a harvested structure (e.g. a Sootopolis dome house) on a map,
+  Apply, Deploy. Expect: it stands there with correct textures.
+- [ ] Auto entries have no door wiring (curated ones keep it) — an auto
+  building is scenery; use a curated enterable one for round trips.
+- [ ] Names are auto-generated ("<place> structure N") — report entries
+  whose cut looks wrong (bleed from neighbours, missing pieces), with the
+  name; each carries a signature we can trace.
+
+## View toggle + fixes (quick in-editor pass)
+- [ ] The **3D view** toggle now lives on the main toolbar — works with
+  every tool, stays in sync with F2/F3.
+- [ ] Load a zone while the Map Builder is active: the paint panel now
+  re-seeds to the newly loaded zone (no more stale "Painting zone N").
+- [ ] Blank canvas: the ground-material list is sorted largest-first with
+  the main ground labeled; atlas-looking previews are explained in the
+  dialog.
+- [ ] Zone 536 (custom Mauville): loads its map again (its matrix was
+  corrupt and has been rebuilt; it shows Mauville from its own private
+  copy).
+
 ## Map Painter integration (previous round — quick in-editor pass)
 The painter is the **Build map tool** on the World Editor toolbar (also Map
 menu → Map Builder). Its brushes, buildings, lighting and Apply live in the

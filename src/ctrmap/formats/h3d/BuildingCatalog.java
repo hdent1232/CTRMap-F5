@@ -41,6 +41,13 @@ public class BuildingCatalog {
 		public String doorProp = "-";
 		public int interiorZone = -1;
 		public int interiorWarpId = -1;
+		/** Where the donor lives in-game ("Rustboro City"...) - the harvested
+		 *  catalog fills this; curated entries derive nothing (empty). */
+		public String location = "";
+		/** How many times this exact structure appears in the retail game. */
+		public int retailCount = 1;
+		/** True for auto-harvested entries (curated entries stay pinned first). */
+		public boolean auto;
 
 		public int tilesW() {
 			return tx1 - tx0 + 1;
@@ -62,16 +69,22 @@ public class BuildingCatalog {
 
 	private static List<Entry> entries;
 
-	/** All catalog entries (loaded once from the resource). */
+	/** All catalog entries: the 48 hand-curated ones (door/interior wiring,
+	 *  pinned first) plus the auto-harvested game-wide sweep. */
 	public static synchronized List<Entry> entries() {
 		if (entries != null) {
 			return entries;
 		}
 		entries = new ArrayList<>();
-		try (InputStream in = BuildingCatalog.class.getClassLoader()
-				.getResourceAsStream("ctrmap/resources/oras_buildings.tsv")) {
+		load("ctrmap/resources/oras_buildings.tsv", false);
+		load("ctrmap/resources/oras_buildings_auto.tsv", true);
+		return entries;
+	}
+
+	private static void load(String resource, boolean auto) {
+		try (InputStream in = BuildingCatalog.class.getClassLoader().getResourceAsStream(resource)) {
 			if (in == null) {
-				return entries;
+				return;
 			}
 			Scanner sc = new Scanner(in, "UTF-8");
 			while (sc.hasNextLine()) {
@@ -98,12 +111,19 @@ public class BuildingCatalog {
 				e.doorProp = f[11];
 				e.interiorZone = Integer.parseInt(f[12]);
 				e.interiorWarpId = Integer.parseInt(f[13]);
+				if (f.length >= 16) {
+					e.location = f[14];
+					try {
+						e.retailCount = Integer.parseInt(f[15]);
+					} catch (NumberFormatException ignore) {
+					}
+				}
+				e.auto = auto;
 				entries.add(e);
 			}
 		} catch (Exception ex) {
-			System.err.println("BuildingCatalog: load failed: " + ex);
+			System.err.println("BuildingCatalog: load " + resource + " failed: " + ex);
 		}
-		return entries;
 	}
 
 	/** Entries of one kind, or all for null. */

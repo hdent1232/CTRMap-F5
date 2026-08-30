@@ -31,6 +31,8 @@ public class GARC {
 
 	public int length;
 
+	private final boolean allowCompression;
+
 	public GARC(File f) {
 		this(f, true);
 	}
@@ -42,8 +44,20 @@ public class GARC {
 	 * {@code allowCompression = false} or risk corruption on read.
 	 */
 	public GARC(File f, boolean allowCompression) {
+		this.allowCompression = allowCompression;
+		parse(f);
+	}
+
+	/**
+	 * (Re)reads the archive's entry table. Called by the constructor AND at the
+	 * end of every {@link #packDirectory} - a pack rewrites the file's layout,
+	 * and an instance whose entry table still described the OLD layout would
+	 * corrupt any entry it copies "unchanged" on a SECOND pack (stale offsets).
+	 */
+	private void parse(File f) {
 		try {
 			this.file = f;
+			entries.clear();
 
 			RandomAccessFile in = new RandomAccessFile(f, "r");
 
@@ -191,7 +205,11 @@ public class GARC {
 				if (changedIndices[i] > entries.size() - 1) {
 					GARCEntry add = new GARCEntry();
 					add.compressed = compressed;
-					add.offset = entries.get(entries.size() - 1).offset + entries.get(entries.size() - 1).length;
+					//pad-aligned provisional offset (the real table is re-read
+					//from the packed file at the end of this method anyway)
+					int prevEnd = entries.get(entries.size() - 1).offset + entries.get(entries.size() - 1).length;
+					int rem = prevEnd % padding;
+					add.offset = rem == 0 ? prevEnd : prevEnd + padding - rem;
 					add.length = compressedData[i].length;
 					changedIndices[i] = entries.size();
 					entries.add(add);
@@ -333,6 +351,10 @@ public class GARC {
 			dos.close();
 			old.close();
 			Files.move(newGARC.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+			//keep THIS instance coherent with the file it just wrote - a stale
+			//entry table on a repeat pack copies unchanged entries from wrong
+			//offsets and silently corrupts them
+			parse(file);
 		} catch (Exception ex) {
 			Logger.getLogger(GARC.class.getName()).log(Level.SEVERE, null, ex);
 		}

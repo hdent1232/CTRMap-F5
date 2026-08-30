@@ -46,7 +46,41 @@ public class BuildingPaletteDialog {
 	private static final Map<Integer, List<H3DTexture>> donorTexCache = new HashMap<>();
 
 	public static synchronized MapPrefab cachedPrefab(BuildingCatalog.Entry e) {
+		//bounded: the harvested catalog holds thousands of entries - browsing
+		//must not accumulate every cut prefab in memory
+		if (prefabCache.size() > 64 && !prefabCache.containsKey(e)) {
+			prefabCache.clear();
+		}
 		return prefabCache.computeIfAbsent(e, BuildingCatalog::extract);
+	}
+
+	/** Human category for the filter dropdown (curated kinds + harvested A_*). */
+	static String categoryLabel(BuildingCatalog.Entry e) {
+		switch (e.kind) {
+			case "A_TREE": return "Trees & plants";
+			case "A_ROCK": return "Rocks & cliff pieces";
+			case "A_SIGN": return "Signs";
+			case "A_FENCE": return "Fences";
+			case "A_LAMP": return "Lamps & lights";
+			case "A_STAIRS": return "Stairs";
+			case "A_BRIDGE": return "Bridges";
+			case "A_BUILDING": return "Buildings";
+			case "A_DECOR": return "Small decor";
+			case "A_STRUCT": return "Structures";
+			default:
+				break;
+		}
+		String k = e.kind.toUpperCase();
+		if (k.contains("TREE") || k.contains("BUSH")) {
+			return "Trees & plants";
+		}
+		if (k.contains("SIGN")) {
+			return "Signs";
+		}
+		if (k.contains("FENCE")) {
+			return "Fences";
+		}
+		return "Buildings";
 	}
 
 	/** The donor area's decoded textures (world pack file 11, prop pack file 1). */
@@ -101,14 +135,54 @@ public class BuildingPaletteDialog {
 		}
 
 		final JTextField search = new JTextField();
+		//category + location filters make the harvested game-wide catalog
+		//browsable: thousands of entries, narrowed in two clicks
+		final java.util.LinkedHashSet<String> cats = new java.util.LinkedHashSet<>();
+		final java.util.TreeSet<String> locs = new java.util.TreeSet<>();
+		for (BuildingCatalog.Entry e : all) {
+			cats.add(categoryLabel(e));
+			if (!e.location.isEmpty()) {
+				locs.add(e.location);
+			}
+		}
+		final javax.swing.JComboBox<String> catBox = new javax.swing.JComboBox<>();
+		catBox.addItem("All types");
+		for (String c : cats) {
+			catBox.addItem(c);
+		}
+		final javax.swing.JComboBox<String> locBox = new javax.swing.JComboBox<>();
+		locBox.addItem("Everywhere");
+		for (String l : locs) {
+			locBox.addItem(l);
+		}
 		final DefaultListModel<BuildingCatalog.Entry> model = new DefaultListModel<>();
 		final JList<BuildingCatalog.Entry> list = new JList<>(model);
 		list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+		list.setCellRenderer(new javax.swing.DefaultListCellRenderer() {
+			@Override
+			public java.awt.Component getListCellRendererComponent(JList<?> l, Object v, int i, boolean sel, boolean foc) {
+				JLabel lbl = (JLabel) super.getListCellRendererComponent(l, v, i, sel, foc);
+				BuildingCatalog.Entry en = (BuildingCatalog.Entry) v;
+				lbl.setText("<html>" + en.name + " <small>(" + en.tilesW() + "x" + en.tilesH()
+						+ (en.enterable() ? ", enterable" : "")
+						+ (en.retailCount > 1 ? ", x" + en.retailCount + " in game" : "") + ")</small></html>");
+				return lbl;
+			}
+		});
 		Runnable refilter = () -> {
 			String q = search.getText().trim().toLowerCase();
+			String cat = catBox.getSelectedIndex() > 0 ? (String) catBox.getSelectedItem() : null;
+			String loc = locBox.getSelectedIndex() > 0 ? (String) locBox.getSelectedItem() : null;
 			model.clear();
 			for (BuildingCatalog.Entry e : all) {
-				if (q.isEmpty() || e.name.toLowerCase().contains(q) || e.kind.toLowerCase().contains(q)) {
+				if (cat != null && !categoryLabel(e).equals(cat)) {
+					continue;
+				}
+				if (loc != null && !e.location.equals(loc)) {
+					continue;
+				}
+				if (q.isEmpty() || e.name.toLowerCase().contains(q) || e.kind.toLowerCase().contains(q)
+						|| e.location.toLowerCase().contains(q)) {
 					model.addElement(e);
 				}
 			}
@@ -116,6 +190,8 @@ public class BuildingPaletteDialog {
 				list.setSelectedIndex(0);
 			}
 		};
+		catBox.addActionListener(e -> refilter.run());
+		locBox.addActionListener(e -> refilter.run());
 		search.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
 			public void insertUpdate(javax.swing.event.DocumentEvent e) {
 				refilter.run();
@@ -131,11 +207,15 @@ public class BuildingPaletteDialog {
 		});
 
 		JPanel left = new JPanel(new BorderLayout(4, 4));
-		left.add(search, BorderLayout.NORTH);
+		JPanel filters = new JPanel(new java.awt.GridLayout(3, 1, 0, 2));
+		filters.add(search);
+		filters.add(catBox);
+		filters.add(locBox);
+		left.add(filters, BorderLayout.NORTH);
 		JScrollPane sp = new JScrollPane(list);
-		sp.setPreferredSize(new Dimension(280, 420));
+		sp.setPreferredSize(new Dimension(300, 420));
 		left.add(sp, BorderLayout.CENTER);
-		left.add(new JLabel("<html><small>Type to search: pokemon, mart, house, sign, tree...</small></html>"), BorderLayout.SOUTH);
+		left.add(new JLabel("<html><small>The whole game's structures are here - search, or narrow by<br>type and place. Curated entries (with door wiring) list first.</small></html>"), BorderLayout.SOUTH);
 		dlg.add(left, BorderLayout.WEST);
 
 		final MapPreview3D view = new MapPreview3D();
