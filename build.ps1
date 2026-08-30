@@ -21,10 +21,18 @@ Get-ChildItem -Recurse src -Filter *.java |
     ForEach-Object { '"' + ($_.FullName -replace '\\', '/') + '"' } |
     Out-File -Encoding ascii build\sources.txt
 
+# javac writes warnings (e.g. "Note: Some input files use unchecked...") to
+# stderr even on success, and with ErrorActionPreference=Stop PowerShell turns
+# that into a terminating error - which used to abort the build here, AFTER
+# compiling but BEFORE copying resources, silently leaving stale .tsv tables in
+# build\classes. Judge success by the exit code, not by stderr.
+$ErrorActionPreference = "Continue"
 & "$jdk\bin\javac.exe" --release 8 -encoding UTF-8 `
     -cp "lib\jogl-all.jar;lib\gluegen-rt.jar" `
     -d build\classes "@build\sources.txt"
-if ($LASTEXITCODE -ne 0) { throw "javac failed with exit code $LASTEXITCODE" }
+$javacExit = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($javacExit -ne 0) { throw "javac failed with exit code $javacExit" }
 
 Copy-Item -Recurse -Force src\ctrmap\resources build\classes\ctrmap\
 
