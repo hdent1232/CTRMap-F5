@@ -1054,38 +1054,113 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
     }//GEN-LAST:event_zoneListActionPerformed
 
-	private final java.util.Set<Integer> forkDeclined = new java.util.HashSet<>();
+	private java.util.Set<Integer> forkDeclined = null;
+	private String forkDeclinedWs = null;
+
+	/** Declined fork offers, remembered PER WORKSPACE across sessions (asking
+	 *  again on every zone load reads as nagging). Reloads when the active
+	 *  workspace changes so one workspace's declines never leak into another. */
+	private java.util.Set<Integer> forkDeclined() {
+		if (forkDeclined == null || !java.util.Objects.equals(forkDeclinedWs, Workspace.WORKSPACE_PATH)) {
+			forkDeclined = new java.util.HashSet<>();
+			forkDeclinedWs = Workspace.WORKSPACE_PATH;
+			try {
+				String csv = java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel")
+						.get("FORK_DECLINED_" + Workspace.WORKSPACE_PATH.hashCode(), "");
+				for (String tok : csv.split(",")) {
+					if (!tok.trim().isEmpty()) {
+						forkDeclined.add(Integer.parseInt(tok.trim()));
+					}
+				}
+			} catch (Exception ignore) {
+			}
+		}
+		return forkDeclined;
+	}
+
+	/** Forgets a remembered decline - call whenever a slot's OCCUPANT changes
+	 *  (clone-into-slot, facility setup): the new zone deserves a fresh offer. */
+	public void clearForkDecline(int zoneIndex) {
+		if (forkDeclined().remove(zoneIndex)) {
+			saveForkDeclined();
+		}
+	}
+
+	/** Forgets remembered declines for every zone at or above the index (the
+	 *  added-zone removal path). */
+	public void clearForkDeclinesFrom(int minIndex) {
+		boolean changed = forkDeclined().removeIf(z -> z >= minIndex);
+		if (changed) {
+			saveForkDeclined();
+		}
+	}
+
+	private void saveForkDeclined() {
+		try {
+			StringBuilder sb = new StringBuilder();
+			for (int z : forkDeclined()) {
+				if (sb.length() > 0) {
+					sb.append(',');
+				}
+				sb.append(z);
+			}
+			java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel")
+					.put("FORK_DECLINED_" + Workspace.WORKSPACE_PATH.hashCode(), sb.toString());
+		} catch (Exception ignore) {
+		}
+	}
 
 	/**
 	 * Forking is the DEFAULT: when the freshly loaded zone shares its map with
 	 * other zones (same map matrix - e.g. a town and its story-event copies, or
 	 * a clone and its source), offer to give it a private copy immediately, so
-	 * the user never unknowingly edits someone else's map. Declines are
-	 * remembered per zone for the session.
+	 * the user never unknowingly edits someone else's map. Zones created by
+	 * today's tools are private from birth; this prompt is the migration net
+	 * for zones from before auto-fork and for retail zones. Declines are
+	 * remembered per zone, per workspace.
 	 */
 	private void offerForkIfShared() {
-		if (zone == null || zoneIndex < 0 || !Workspace.isOA() || forkDeclined.contains(zoneIndex) || zones == null) {
+		if (zone == null || zoneIndex < 0 || !Workspace.isOA() || forkDeclined().contains(zoneIndex) || zones == null) {
 			return;
 		}
 		int mm = zone.header.mapmatrixID;
-		int sharers = 0;
+		int baseZones = ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES;
+		java.util.List<Integer> sharerIdx = new java.util.ArrayList<>();
 		for (int i = 0; i < zones.length; i++) {
 			if (i != zoneIndex && zones[i] != null && zones[i].header != null && zones[i].header.mapmatrixID == mm) {
-				sharers++;
+				sharerIdx.add(i);
 			}
 		}
+		int sharers = sharerIdx.size();
 		if (sharers == 0) {
 			return;
 		}
+		//name the sharers so "N other zones" is concrete; added zones (the
+		//spare padding slots of an old append) are labeled for what they are
+		StringBuilder who = new StringBuilder();
+		for (int k = 0; k < sharerIdx.size() && k < 6; k++) {
+			int i = sharerIdx.get(k);
+			who.append("  - zone ").append(i).append(" (").append(LocationNames.getLocName(zones[i].header.parentMap))
+					.append(i >= baseZones ? ", added zone" : "").append(")\n");
+		}
+		if (sharerIdx.size() > 6) {
+			who.append("  - and ").append(sharerIdx.size() - 6).append(" more\n");
+		}
+		String legacyNote = zoneIndex >= baseZones
+				? "\nThis zone was added before the editor forked new zones automatically\n"
+				+ "- newly added zones now get their own map from the start.\n"
+				: "";
 		int rsl = JOptionPane.showConfirmDialog(this,
-				"This zone SHARES its map with " + sharers + " other zone(s)\n"
-				+ "(a town and its story copies, or a clone and its source).\n"
-				+ "Editing the map here would change those zones too.\n\n"
+				"This zone SHARES its map with " + sharers + " other zone(s):\n"
+				+ who
+				+ legacyNote
+				+ "\nEditing the map here would change those zones too.\n"
 				+ "Give this zone its OWN private map now? (Recommended.\n"
 				+ "Pure data - packs the workspace when done.)",
 				"Shared map", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 		if (rsl != JOptionPane.YES_OPTION) {
-			forkDeclined.add(zoneIndex);
+			forkDeclined().add(zoneIndex);
+			saveForkDeclined();
 			return;
 		}
 		final int idx = zoneIndex;
@@ -1164,6 +1239,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
 		try {
 			ZoneCloner.cloneIntoSlot(srcIndex, dstIndex);
+			clearForkDecline(dstIndex); //the slot holds a NEW zone now
 			if (doFork) {
 				//give the clone its own map so editing it won't change the source (same as Add zones)
 				ctrmap.GeometryForker.forkGeometry(dstIndex);

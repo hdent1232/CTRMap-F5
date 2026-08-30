@@ -7,19 +7,57 @@
 > come back to this list for the features it doesn't cover (shops, Maison,
 > trainers, encounters editing, zone removal).
 
-## Map Painter integration (NEW — quick in-editor pass, no emulator needed)
-The painter is no longer a separate window: it is now the **Paint tool** on
-the World Editor toolbar (also Map menu → Map Painter). Its brushes,
-buildings, lighting and Apply live in the right-side panel; painting happens
-directly ON the main map view — your painted cell draws over the zone at its
-real position (blue frame), with the map's own zoom.
-- [ ] Select the Paint tool → paint terrain on the main map, drag to stroke,
-  right-click ramp tool clears ramps, place a building (right-click removes).
-- [ ] Undo/Redo in the paint panel reverts strokes/fills/placements.
+## Map Builder: edit-in-place + live 3D (NEW — the big behavior change)
+Two fundamentals changed after your New Mauville feedback:
+
+**1. The Map Builder now EDITS the existing map instead of replacing it.**
+Only tiles you actually touch are rebuilt — walls, fountains, and every
+baked detail on untouched tiles stay exactly as they are (offline-proven:
+an untouched apply is byte-identical; a corpus test sweeps retail regions).
+The overlay shows it: touched tiles draw solid, untouched ones faint.
+"Fill all with brush" is the explicit way to rebuild a whole cell.
+- [ ] Load a real zone (e.g. your New Mauville copy), paint a few tiles,
+  Apply, Deploy. Expect: your tiles changed IN the existing room — the
+  fountain and walls are still there.
+- [ ] Walkability follows: painted rock blocks, painted path walks, and the
+  untouched area keeps its retail collision.
+- [ ] Re-apply a second edit to the same zone. Expect: it stacks on the
+  applied map (and no "geometry fork" happens again — the zone already owns
+  its map).
+- [ ] Paint on ELEVATED retail terrain (a raised route section or plateau).
+  Expect: the painted tiles sit level with their retail surroundings — the
+  elevation grid seeds from the map's real collision heights, so you don't
+  fall into a pit where you painted.
+
+**2. The 3D preview is no longer a separate window.** The painted cell now
+updates LIVE inside the main map scene (~0.2s after each stroke):
+- [ ] The 2D view's built-in 3D underlay (the half-transparent render)
+  changes as you paint.
+- [ ] Click the **3D view** toggle in the paint panel (or press F3): the
+  full 3D view shows your edits live among the zone's real walls, props and
+  neighbor cells, with the fly camera (WASD + drag). F2 returns to 2D.
+- [ ] Buildings placed with the palette appear in 3D right after placing.
+- [ ] Switching tools puts the real (unapplied) map back — nothing painted
+  leaks into the scene unless you Apply.
+
+## Map Painter integration (previous round — quick in-editor pass)
+The painter is the **Build map tool** on the World Editor toolbar (also Map
+menu → Map Builder). Its brushes, buildings, lighting and Apply live in the
+right-side panel; painting happens directly ON the main map view — your
+painted cell draws over the zone at its real position (blue frame), with
+the map's own zoom.
+- [ ] Select the Build map tool → paint terrain on the main map, drag to
+  stroke, right-click ramp tool clears ramps, place a building
+  (right-click removes).
+- [ ] Undo/Redo in the paint panel reverts strokes/fills/placements (and
+  the faint/solid touched state follows).
 - [ ] Apply to zone from the panel works end to end (same flow as before).
 - [ ] Fog & lighting now opens the GameFreak atmosphere picker FIRST (live
   preview of your zone); "Custom settings" leads to the manual sliders.
 - [ ] No more "..." suffixes reading as cut-off labels.
+- [ ] The Build map and Geometry tools now have proper toolbar icons
+  (a terrain grid + brush; a blue wireframe mountain) matching the rest of
+  the tool row — hover for their names, selection highlights like the others.
 
 ## UI reorganization (quick in-editor pass, no emulator needed)
 - [ ] World Editor: two toolbar rows — tools + Undo/Redo on top, the Map
@@ -170,8 +208,20 @@ byte-for-byte. The in-game check:
 - [ ] After removing added zones AND deleting code.ips, the game boots and
   plays like stock (title screen, load save, walk around).
 
+## Battle facility opponents (UPDATED — vanilla-safe by default)
+The editor (Game Data → Facility opponents) now marks RETAIL rows grey and
+guards them: editing one offers "Copy to a free slot" first, so the shipped
+game's teams stay vanilla unless you explicitly choose otherwise. The pools
+are engine-wide (retail facility + every clone share them) and the dialog
+says so; "Go to first free slot" jumps to your authoring space.
+- [ ] Author a team in a FREE slot, point a class at it via Class
+  assignments (the one-time engine-wide warning appears), battle in the
+  retail Maison or your cloned facility. Expect: your team appears.
+- [ ] Without touching any grey row, the retail facility still battles its
+  normal teams ("Restore retail row" in Class assignments undoes a row).
+
 ## Earlier systems (from previous sessions, still unverified in-game)
-- [ ] **Maison opponent editor**: edit a Maison set (a/1/8), battle it in the
+- [ ] **Facility opponent editor**: edit a set (a/1/8), battle it in the
   Maison. Expect: edited species/moves appear.
 - [ ] **GiveBP script**: the PlayerSetBP native script edit awards BP correctly
   (check BP counter before/after).

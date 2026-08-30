@@ -36,7 +36,7 @@ import java.util.Map;
  * uncompressed and packDirectory writes the file verbatim; on reopen the 0x11
  * byte sniffs compressed, matching zones 0..N-1) while the master file stays
  * raw for the same reason. Only the appended EN slot (index >= original
- * count) consults the compressionOverrides map, so appendZone() registers a
+ * count) consults the compressionOverrides map, so the append registers a
  * pending {newEnIndex: false} override that Workspace.packWorkspace() hands
  * to packDirectory.
  *
@@ -65,63 +65,11 @@ public class ZoneAppender {
 		public byte[] en;
 	}
 
-	/**
-	 * Appends a new zone cloned from srcIndex to the current ORAS workspace.
-	 * Reads the source ZO, master table and EN pack through the
-	 * workspace-aware path (so prior saved edits are respected), writes the
-	 * three shifted/grown files into the zonedata pack directory, persists
-	 * them and registers the compression override for the appended EN slot.
-	 *
-	 * The GARC itself is NOT rewritten here - the caller must Pack Workspace
-	 * (which reloads the archives) immediately afterwards; GARC.length is a
-	 * constructor-only field and stays stale until then, which is also why
-	 * only ONE append is allowed per pack cycle.
-	 *
-	 * @return the index of the new zone
-	 */
-	public static int appendZone(int srcIndex) throws IOException {
-		if (!Workspace.isOA()) {
-			throw new IOException("Adding new zones is ORAS-only in v1.");
-		}
-		GARC garc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
-		if (garc == null) {
-			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
-		}
-		int newIndex = garc.length - 2; //current zone count; the master's current GARC index
-		if (srcIndex < 0 || srcIndex >= newIndex) {
-			throw new IOException("Source zone " + srcIndex + " out of range (0.." + (newIndex - 1) + ").");
-		}
-		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA);
-		File enOut = new File(dir, String.valueOf(newIndex + 2));
-		if (Workspace.persist_paths.contains(enOut.getAbsolutePath())) {
-			throw new IOException("An appended zone is already pending. Pack the workspace before adding another one.");
-		}
-		//resolve the CURRENT bytes through the workspace-aware path
-		File srcFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, srcIndex);
-		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, newIndex);
-		File enFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, newIndex + 1);
-		if (srcFile == null || masterFile == null || enFile == null) {
-			throw new IOException("Could not extract the required ZoneData files from the workspace.");
-		}
-		AppendPayloads p = buildAppendPayloads(readAll(srcFile), readAll(masterFile), readAll(enFile), srcIndex, newIndex);
-		//insert-shift: overwrite the old master slot with the new ZO, master and EN
-		//move up by one. Write DECOMPRESSED bytes so the files stay loadable in the
-		//editor (a compressed ZO would fail to parse); the pack applies the
-		//compression per the overrides below.
-		writeAll(masterFile, p.newZo); //file "newIndex" = the new zone (decompressed)
-		writeAll(enFile, p.master); //file "newIndex + 1" = grown master
-		writeAll(enOut, p.en); //file "newIndex + 2" = grown EN
-		Workspace.addPersist(masterFile);
-		Workspace.addPersist(enFile);
-		Workspace.addPersist(enOut);
-		if (pendingZoneDataOverrides == null) {
-			pendingZoneDataOverrides = new HashMap<>();
-		}
-		pendingZoneDataOverrides.put(newIndex, Boolean.TRUE);      //new ZO: LZ11 like every zone
-		pendingZoneDataOverrides.put(newIndex + 1, Boolean.FALSE); //master table: uncompressed
-		pendingZoneDataOverrides.put(newIndex + 2, Boolean.FALSE); //EN pack: uncompressed
-		return newIndex;
-	}
+	// NOTE: the legacy single-zone appendZone(int) was REMOVED (2026-08-30): it
+	// predates auto-forking and produced zones that silently SHARED their donor's
+	// map geometry (the user's zones 536-539 came from it). All appends go
+	// through appendZones(int, int) below, which forks every real zone at
+	// creation - do not resurrect a creation path that skips GeometryForker.
 
 	/**
 	 * Result of a multi-zone append: the index of the first new (real) zone, how

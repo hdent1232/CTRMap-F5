@@ -200,6 +200,21 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	 * the geometry editor (the 3D view shows the edit immediately).
 	 */
 	public void reloadRegionModel(int cellX, int cellY, byte[] modelBytes) {
+		reloadRegionModel(cellX, cellY, modelBytes, null);
+	}
+
+	/**
+	 * As {@link #reloadRegionModel(int, int, byte[])}, additionally binding
+	 * extra textures (e.g. a placed building's donor-area pack) - the Map
+	 * Builder's live-preview path. The extra list only fills name matches, so
+	 * it never disturbs the region's own bindings.
+	 */
+	public void reloadRegionModel(int cellX, int cellY, byte[] modelBytes, java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extraTextures) {
+		//bounds-guard: a stale async caller (the Map Builder's regen worker)
+		//must never write into a torn-down or reshaped scene
+		if (models == null || cellX < 0 || cellY < 0 || cellX >= models.length || cellY >= models[cellX].length) {
+			return;
+		}
 		BCHFile bch = new BCHFile(modelBytes);
 		if (bch.models.isEmpty()) {
 			return;
@@ -210,6 +225,9 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		}
 		if (savedPropTextures != null) {
 			model.setMaterialTextures(savedPropTextures);
+		}
+		if (extraTextures != null && !extraTextures.isEmpty()) {
+			model.setMaterialTextures(extraTextures);
 		}
 		if (mode == ViewportMode.MULTI) {
 			model.worldLocX = cellX * 720f + 360f;
