@@ -61,10 +61,13 @@ public class MapPrefabTest {
 				byte[] collA = grA.len > 2 ? grA.getFile(2) : null;
 				if (collA != null && GfColl.isColl(collA) && !p.collTris.isEmpty()) {
 					GfColl before = new GfColl(collA);
-					GfColl after = new GfColl(p.stampCollision(collA, 2, 2, 50f));
-					if (after.uniqueTris.size() != before.uniqueTris.size() + p.collTris.size()) {
+					MapPrefab.StampResult cr = new MapPrefab.StampResult();
+					p.stampCollision(cr, collA, 2, 2, 50f);
+					GfColl after = new GfColl(cr.newColl);
+					if (cr.collTrisAdded != p.collTris.size()
+							|| after.uniqueTris.size() != before.uniqueTris.size() + p.collTris.size()) {
 						throw new IllegalStateException("self coll stamp: expected +" + p.collTris.size()
-								+ " tris, got +" + (after.uniqueTris.size() - before.uniqueTris.size()));
+								+ " tris, reported +" + cr.collTrisAdded + ", got +" + (after.uniqueTris.size() - before.uniqueTris.size()));
 					}
 				}
 				selfOk++;
