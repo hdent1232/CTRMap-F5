@@ -569,12 +569,61 @@ public class Workspace {
 	 * stamped in place rather than re-taken, because re-taking it against
 	 * already-edited archives would bake the edits in as "pristine".
 	 */
+	/**
+	 * Archives the snapshot is supposed to hold but does not.
+	 *
+	 * <p>Non-empty means the snapshot is PARTIAL and must not be trusted as a
+	 * record of the retail game: the missing archives were never captured, and
+	 * by the time anyone noticed, the live copies had been edited.
+	 */
+	public static java.util.List<String> snapshotMissingArchives() {
+		java.util.List<String> missing = new java.util.ArrayList<>();
+		if (GAMEDIR_PATH == null || WORKSPACE_PATH == null || game == null) {
+			return missing;
+		}
+		File snap = originalSnapshotDir();
+		for (ArchiveType t : ModDeployer.MODDABLE) {
+			String rel = getArchivePath(t, game);
+			if (rel == null) {
+				continue;
+			}
+			if (new File(GAMEDIR_PATH + rel).exists()
+					&& !new File(snap.getAbsolutePath() + rel).exists()) {
+				missing.add(rel);
+			}
+		}
+		return missing;
+	}
+
+	/**
+	 * Copies the retail archives aside, once, so edits can be diffed against
+	 * what the game shipped.
+	 *
+	 * <p>Capture happens ONLY while the snapshot is still being established -
+	 * that is, before the stamp exists. Once stamped, a missing archive is left
+	 * missing and reported, never filled in.
+	 *
+	 * <p>That restriction is the whole point. This used to copy any archive it
+	 * found absent, on every load, which sounds harmless and is not: the
+	 * snapshot is built archive by archive, so one added to the moddable list
+	 * later - or one lost from the folder - was captured from a game the user
+	 * had already been editing for weeks, and recorded as pristine. Six of the
+	 * archives in the author's own workspace were contaminated exactly this
+	 * way, and the stamp still said the snapshot was legitimate, so donors were
+	 * cut from edited maps and the edits compounded.
+	 *
+	 * <p>Leaving the gap open is the safe failure. Consumers refuse to work
+	 * from an absent snapshot ({@code BuildingCatalog.pristineRegion}); none of
+	 * them can detect a present-but-wrong one.
+	 */
 	public static void snapshotOriginals() {
 		try {
 			if (GAMEDIR_PATH == null || WORKSPACE_PATH == null || game == null) {
 				return;
 			}
 			File snap = originalSnapshotDir();
+			boolean established = originalSnapshotStamp().isFile();
+			java.util.List<String> refused = new java.util.ArrayList<>();
 			for (ArchiveType t : ModDeployer.MODDABLE) {
 				String rel = getArchivePath(t, game);
 				if (rel == null) {
@@ -583,11 +632,25 @@ public class Workspace {
 				File live = new File(GAMEDIR_PATH + rel);
 				File dst = new File(snap.getAbsolutePath() + rel);
 				if (live.exists() && !dst.exists()) {
+					if (established) {
+						//the game has been in use since this snapshot was taken;
+						//whatever is in the live archive now is not evidence of
+						//what shipped
+						refused.add(rel);
+						continue;
+					}
 					if (dst.getParentFile() != null) {
 						dst.getParentFile().mkdirs();
 					}
 					java.nio.file.Files.copy(live.toPath(), dst.toPath());
 				}
+			}
+			if (!refused.isEmpty()) {
+				System.err.println("Workspace: the pristine snapshot in " + snap
+						+ " is missing " + refused.size() + " archive(s): " + refused
+						+ "\n  They will NOT be captured from the live game, which may already be"
+						+ " edited. Delete the snapshot folder and reload against an unmodified"
+						+ " game to retake it whole.");
 			}
 			if (snap.isDirectory() && !originalSnapshotStamp().isFile()) {
 				try (java.io.PrintWriter pw = new java.io.PrintWriter(
@@ -774,6 +837,13 @@ public class Workspace {
 					//the session prop database was built from the pre-pack GARCs;
 					//drop it so the next palette use rebuilds from the fresh archives
 					ctrmap.formats.propdata.PropDatabase.invalidate();
+					//The archives now on disk are what the game will load. Cross-
+					//archive references are by bare index and nothing else checks
+					//them, so an operation that grew one archive and not another
+					//leaves a dangling index that only shows up much later, as a
+					//zone that will not load. Check here, while the edit that
+					//caused it is still the last thing that happened.
+					WorkspaceIntegrity.report("packing the workspace");
 					return null;
 				}
 			};

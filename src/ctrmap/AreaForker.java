@@ -288,6 +288,11 @@ public class AreaForker {
 		r.oldArea = oldArea;
 		r.newArea = newArea;
 		r.forked = true;
+		//A fork writes an AreaData entry AND an NPC registry entry. If only one
+		//of them survives the pack, the new area exists with nothing behind it
+		//and every later load of that zone throws. That has happened; say so
+		//here, next to the fork, rather than leaving it to be found by hand.
+		WorkspaceIntegrity.report("forking area " + oldArea + " -> " + newArea);
 		return r;
 	}
 

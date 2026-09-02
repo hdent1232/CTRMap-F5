@@ -58,6 +58,10 @@ public class GARC {
 		try {
 			this.file = f;
 			entries.clear();
+			//remember the file as it was when this table was read, so a later
+			//pack can tell whether anything else has rewritten it since
+			parsedLength = f.length();
+			parsedModified = f.lastModified();
 
 			RandomAccessFile in = new RandomAccessFile(f, "r");
 
@@ -154,10 +158,44 @@ public class GARC {
 	 * original entry, unless compressionOverrides contains a Boolean for their
 	 * index (keyed by the numeric file name in the pack directory).
 	 */
+	/**
+	 * True when the archive file has been rewritten by somebody else since this
+	 * instance read its entry table.
+	 *
+	 * <p>The table is a list of offsets into the file. If another process - a
+	 * second CTRMap window, a headless tool, a restore script - repacks the
+	 * archive, every offset this instance holds now points at the wrong place,
+	 * and the next pack copies every "unchanged" entry from garbage. It is
+	 * silent: the pack succeeds and the archive is ruined.
+	 *
+	 * <p>This nearly happened for real. A CTRMap window sat open for eleven
+	 * hours while a headless tool rewrote ZoneData five times; one click on Pack
+	 * Workspace would have rebuilt the archive from an entry table describing
+	 * the file as it was that morning.
+	 */
+	public boolean isStale() {
+		return file != null && file.exists()
+				&& (file.length() != parsedLength || file.lastModified() != parsedModified);
+	}
+
+	/** File length when {@link #parse} last ran; see {@link #isStale}. */
+	private long parsedLength = -1;
+	private long parsedModified = -1;
+
 	public void packDirectory(File dir, Map<Integer, Boolean> compressionOverrides) {
 		try {
 			if (!dir.isDirectory()) {
 				return;
+			}
+			if (isStale()) {
+				//Re-reading is the right repair: the entries on disk are fine,
+				//only this instance's picture of them is out of date. Packing
+				//first and asking questions later is what corrupts the archive.
+				System.err.println("GARC: " + file.getName() + " changed on disk since it was read"
+						+ " (was " + parsedLength + "B, now " + file.length() + "B)."
+						+ " Re-reading its entry table before packing - something else is writing"
+						+ " to this archive.");
+				parse(file);
 			}
 			ArrayList<File> files = new ArrayList<>();
 			files.addAll(Arrays.asList(dir.listFiles()));
