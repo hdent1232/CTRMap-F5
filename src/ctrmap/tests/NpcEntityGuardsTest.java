@@ -62,13 +62,16 @@ public class NpcEntityGuardsTest {
 		if (garc == null) {
 			System.out.println("  skip: no ZoneData GARC at " + garcFile + " - corpus checks not run");
 		}
+		//record checks first: each refusal is also logged to stderr by
+		//assembleData, and test.ps1 shows a suite's last two lines - the
+		//corpus sweep at the end keeps the verdict, not a stack trace, there
 		nanAltitude();
 		heightLookupBounds();
 		noParallelModelList(srcRoot);
 		uidIsIndex(garc);
 		removeNpcRenumbers(garc);
-		scriptIdExists(garc);
 		entityCeiling();
+		scriptIdExists(garc);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
