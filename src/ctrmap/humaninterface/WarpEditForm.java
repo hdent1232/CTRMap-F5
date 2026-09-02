@@ -581,6 +581,14 @@ public class WarpEditForm extends javax.swing.JPanel {
 			Point defaultPos = mTileMapPanel.getTileAtViewportCentre();
 			newWarp.x = defaultPos.x * 18 + 9;
 			newWarp.y = defaultPos.y * 18 + 9;
+			//Point it back at this zone until the user chooses a destination.
+			//A new warp used to keep the constructor's zone 0, which is a real
+			//place - adding a warp and saving built a working door into the
+			//first zone in the game, with nothing marking it unconfigured. A
+			//self-warp is harmless and obviously a placeholder.
+			newWarp.targetZone = ctrmap.CtrmapMainframe.mZonePnl != null
+					? ctrmap.CtrmapMainframe.mZonePnl.zoneIndex : 0;
+			newWarp.targetWarpId = 0;
 			e.warps.add(newWarp);
 			e.warpCount++;
 			addNamedWarpEntry(newWarp, e.warpCount - 1);
