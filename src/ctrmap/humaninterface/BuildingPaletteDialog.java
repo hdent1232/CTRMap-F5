@@ -54,6 +54,21 @@ public class BuildingPaletteDialog {
 		return prefabCache.computeIfAbsent(e, BuildingCatalog::extract);
 	}
 
+	/**
+	 * What a cut actually brings, shown before it is placed: a harvested name
+	 * describes only the dominant material, so "Littleroot Town lamp" is a whole
+	 * furnished room - 27 pieces, 27 textures to import - and a "bridge" can be
+	 * a chunk of Sky Pillar reaching 464 units up.
+	 */
+	static String manifest(MapPrefab p, MapPrefab.StampResult r, BuildingCatalog.Entry e) {
+		float[] span = p.heightSpan();
+		return p.pieces.size() + " piece(s) / " + p.triangleCount() + " triangles"
+				+ (r.newMaterials.isEmpty() ? "" : ", " + r.newMaterials.size() + " new material(s) + "
+				+ r.texturesNeeded.size() + " texture(s) to import")
+				+ (p.collTris.isEmpty() ? ", no collision" : ", " + p.collTris.size() + " collision triangle(s)")
+				+ ", " + Math.round(span[0] - e.baseY) + ".." + Math.round(span[1] - e.baseY) + " above ground";
+	}
+
 	/** Human category for the filter dropdown (curated kinds + harvested A_*). */
 	static String categoryLabel(BuildingCatalog.Entry e) {
 		switch (e.kind) {
@@ -259,9 +274,10 @@ public class BuildingPaletteDialog {
 							texes.addAll(baseTextures);
 						}
 						texes.addAll(donorTextures(e.donorArea));
-						note = "  " + e.name + " - " + e.tilesW() + "x" + e.tilesH() + " tiles"
+						note = "  " + e.name + " - " + e.tilesW() + "x" + e.tilesH() + " tiles, " + manifest(p, r, e)
 								+ (e.enterable() ? ", enterable (door + interior wiring on Apply)" : "")
-								+ (r.stamped.isEmpty() ? "  [nothing stamped!]" : "");
+								+ (r.missingMaterials.isEmpty() ? "" : "  [" + r.missingMaterials.size() + " of "
+								+ p.pieces.size() + " piece(s) cannot be placed on this map: " + r.missingMaterials + "]");
 					}
 				} catch (Exception ex) {
 					note = "  Preview failed: " + ex.getMessage();
@@ -276,7 +292,7 @@ public class BuildingPaletteDialog {
 					if (fmodel != null) {
 						view.setRegion(fmodel, ftex);
 					}
-					info.setText(fnote);
+					info.setText("<html>" + fnote + "</html>"); //wraps: the manifest outgrows one line
 				});
 			}, "building-preview").start();
 		});
