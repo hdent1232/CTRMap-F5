@@ -34,7 +34,7 @@ public class NPCTool extends AbstractTool {
 				ZoneEntities.NPC npc = mNPCEditForm.e.npcs.get(i);
 				g.setColor(Color.WHITE);
 				g.fillRect(imgstartx + (int) (npc.xTile * globimgdim), imgstarty + (int) (npc.yTile * globimgdim), gidround, gidround);
-				g.setColor((mNPCEditForm.npcIndex == npc.uid) ? Color.RED : Color.BLACK);
+				g.setColor((mNPCEditForm.npcIndex == i) ? Color.RED : Color.BLACK); //the form selects by position
 				g.drawRect(imgstartx + (int) (npc.xTile * globimgdim), imgstarty + (int) (npc.yTile * globimgdim), gidround, gidround);
 				g.setColor(Color.BLACK);
 				g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, gidround));
@@ -79,7 +79,7 @@ public class NPCTool extends AbstractTool {
 		}
 		mNPCEditForm.npc.xTile = Selector.hilightTileX;
 		mNPCEditForm.npc.yTile = Selector.hilightTileY;
-		mNPCEditForm.npc.z3DCoordinate = mTileMapPanel.getHeightAtWorldLoc(mNPCEditForm.npc.xTile * 18f, mNPCEditForm.npc.yTile * 18f);
+		mNPCEditForm.npc.setYFromColl(mNPCEditForm.npc.xTile * 18f, mNPCEditForm.npc.yTile * 18f); //keeps the altitude where the mesh has no answer, instead of NaN
 		mNPCEditForm.e.modified = true;
 		mNPCEditForm.refresh();
 	}

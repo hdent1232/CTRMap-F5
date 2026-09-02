@@ -42,11 +42,20 @@ public class Zone {
 			}
 		}
 		if (entities.modified){
+			byte[] entityData;
+			try {
+				entityData = entities.assembleData();
+			} catch (IllegalStateException ex) {
+				//a refused record (an unset warp, a NaN altitude, a 256th entity)
+				//used to die on the event thread where nobody saw it
+				JOptionPane.showMessageDialog(null, ex.getMessage(), "Entity data not saved", JOptionPane.ERROR_MESSAGE);
+				return false;
+			}
 			if (dialog){
 				int result = Utils.showSaveConfirmationDialog("Entity data");
 				switch (result){
 					case JOptionPane.YES_OPTION:
-						file.storeFile(1, entities.assembleData());;
+						file.storeFile(1, entityData);
 					case JOptionPane.NO_OPTION:
 						break;
 					case JOptionPane.CANCEL_OPTION:
@@ -54,7 +63,7 @@ public class Zone {
 				}
 			}
 			else {
-				file.storeFile(1, entities.assembleData());
+				file.storeFile(1, entityData);
 			}
 			entities.modified = false;
 		}
