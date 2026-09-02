@@ -18,7 +18,12 @@ import java.util.regex.Pattern;
  * <li>the pristine-dump folder name in NON-test sources - a shared tool must
  *     never hardcode where one person keeps their dump;</li>
  * <li>an absolute path into somebody's home directory ("C:\Users\someone",
- *     "/home/someone/", "/Users/someone/") in ANY file, tests included.</li>
+ *     "/home/someone/", "/Users/someone/") in ANY file, tests included;</li>
+ * <li>System.setOut / System.setErr anywhere. The script editor once swapped
+ *     both for its output box around an assembler call with no finally; the
+ *     first assembler exception left every later diagnostic in the whole
+ *     application - pack failures, the integrity report - going into a stale
+ *     text area. Diagnostics are returned as values, never captured.</li>
  * </ul>
  *
  * <p>The last rule exists because the first two were not enough. Tests were
@@ -41,6 +46,8 @@ public class SourceSeamTest {
 	/** Somebody's home directory, on any of the three platforms. */
 	private static final Pattern HOME_PATH = Pattern.compile(
 			"(?i)[a-z]:[\\\\/]+users[\\\\/]+[^\"\\\\/\\s*<>]+|/home/[^\"/\\s*<>]+/|/Users/[^\"/\\s*<>]+/");
+	/** The JVM's diagnostic channel being pointed at a widget. */
+	private static final Pattern STREAM_HIJACK = Pattern.compile("System\\.set(Out|Err)\\(");
 	/** Text files worth scanning for home paths outside the source tree. */
 	private static final String[] TEXT_EXT = {
 		".md", ".txt", ".ps1", ".bat", ".cmd", ".sh", ".tsv", ".json", ".xml", ".properties", ".gitignore"
@@ -147,6 +154,9 @@ public class SourceSeamTest {
 				//no exemption: a test may name the dump folder, never its owner
 				if (HOME_PATH.matcher(line).find()) {
 					out.add(f.getName() + ":" + (i + 1) + " home directory in a shipped file: " + line.trim());
+				}
+				if (STREAM_HIJACK.matcher(line).find()) {
+					out.add(f.getName() + ":" + (i + 1) + " redirects System.out/err: " + line.trim());
 				}
 			}
 		}

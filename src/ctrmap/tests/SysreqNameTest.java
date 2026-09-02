@@ -2,6 +2,7 @@ package ctrmap.tests;
 
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.scripts.GFLPawnScript;
+import ctrmap.formats.scripts.PawnAssembly;
 import ctrmap.formats.scripts.PawnInstruction;
 import ctrmap.scripts.GfHash;
 import java.io.File;
@@ -62,8 +63,9 @@ public class SysreqNameTest {
 					distinctUnknown.add(hash);
 				}
 				// round-trip: parse the disassembly back, index must match
-				PawnInstruction back = PawnInstruction.fromString(ins.pointer, disasm, false);
-				if (back.getCommand() != 0x87 || back.argumentCells[0] != idx
+				PawnAssembly one = new PawnAssembly(disasm);
+				PawnInstruction back = PawnInstruction.fromString(ins.pointer, disasm, one);
+				if (!one.errors.isEmpty() || back.getCommand() != 0x87 || back.argumentCells[0] != idx
 						|| back.argumentCells[1] != ins.argumentCells[1]) {
 					rtFail++;
 					System.out.println("FAIL zone " + z + ": SYSREQ round-trip idx " + idx

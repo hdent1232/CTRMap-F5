@@ -2,7 +2,6 @@ package ctrmap.formats.scripts;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
 
 public class PawnDisassembler {
 
@@ -22,38 +21,30 @@ public class PawnDisassembler {
 		return ret;
 	}
 
-	public static List<PawnSubroutine> assembleScript(String code, boolean doOutput) {
-		if (doOutput) {
-			System.out.println("[INFO] CTRMap Pawn assembler running");
-			System.out.println("[INFO] Going to parse " + code.length() + " characters of input.");
-		}
-		long begin = System.currentTimeMillis();
-		List<PawnSubroutine> ret = new ArrayList<>();
-		Scanner scanner = new Scanner(code);
-		scanner.useDelimiter("\n");
+	/**
+	 * Assembles script text. Never throws on malformed input: whatever parsed
+	 * is in the result's subroutines and every line that did not is in its
+	 * errors, so the caller decides - the editor's live typing ignores them,
+	 * Commit refuses on them.
+	 */
+	public static PawnAssembly assembleScript(String code) {
+		PawnAssembly asm = new PawnAssembly(code);
 		int ptr = 0;
-		while (scanner.hasNextLine()) {
-			String line = scanner.nextLine().replaceAll("\t", "");
-			if (line.length() > 0) {
-				if (line.startsWith("sub_")) {
-					if (doOutput) {
-						System.out.println("[INFO] Found subroutine " + line + " at pointer 0x" + Integer.toHexString(ptr).toUpperCase());
-					}
-					PawnSubroutine newSub = PawnSubroutine.fromCode(ptr, scanner, doOutput);
-					if (newSub != null) {
-						newSub.updateDisassembly();
-						ret.add(newSub);
-						ptr += newSub.getFinalRelativePointer();
-					}
+		while (asm.hasNextLine()) {
+			String line = asm.nextLine();
+			if (line.startsWith("sub_")) {
+				asm.log.add("Found subroutine " + line + " at pointer 0x" + Integer.toHexString(ptr).toUpperCase());
+				PawnSubroutine newSub = PawnSubroutine.fromCode(ptr, asm);
+				if (newSub != null) {
+					newSub.updateDisassembly();
+					asm.subroutines.add(newSub);
+					ptr += newSub.getFinalRelativePointer();
 				}
+			} else if (line.length() > 0) {
+				asm.error("\"" + line + "\" is outside any subroutine");
 			}
 		}
-		if (doOutput) {
-			System.out.println("[INFO] All work done.");
-			System.out.println("[INFO] The assembly has finished in " + (System.currentTimeMillis() - begin) / 1000f + " seconds.");
-		}
-		scanner.close();
-		return ret;
+		return asm;
 	}
 
 	public static int[] getRawInstructions(List<PawnInstruction> ins) {

@@ -76,11 +76,7 @@ public class PawnInstruction {
 		argumentCount = argumentCells.length;
 	}
 
-	public static PawnInstruction fromString(int ptr, String instruction) {
-		return fromString(ptr, instruction, true);
-	}
-
-	public static PawnInstruction fromString(int ptr, String instruction, boolean doOutput) {
+	public static PawnInstruction fromString(int ptr, String instruction, PawnAssembly asm) {
 		PawnInstruction ret = null;
 		int lastJunk = instruction.lastIndexOf(":");
 		int idx = lastJunk + 1;
@@ -109,8 +105,14 @@ public class PawnInstruction {
 			return ret; //the subroutine disassembler will handle the rest
 		}
 
-		if (ret == null || !(instruction.contains("=>") || instruction.contains("("))) {
-			//syntax error or invalid instruction
+		//a line that does not parse is reported, never just skipped: the editor
+		//rewrites its text from the instructions, so a skipped line would vanish
+		if (ret == null) {
+			asm.error("\"" + (output.length() > 0 ? output.toString() : instruction) + "\" is not an instruction");
+			return new PawnInstruction(ptr, -1, instruction);
+		}
+		if (!(instruction.contains("=>") || instruction.contains("("))) {
+			asm.error("\"" + instruction + "\" has no argument list");
 			return new PawnInstruction(ptr, -1, instruction);
 		}
 
@@ -127,16 +129,14 @@ public class PawnInstruction {
 				jmpBldr.append(character);
 				idx++;
 			}
-			if (PawnInstruction.checkJmp(ret) && ret.argumentCells.length == 1 && jmpBldr.toString().length() > 0) {
+			if (!PawnInstruction.checkJmp(ret) || ret.argumentCells.length != 1) {
+				asm.error("\"" + instruction + "\": only jumps and calls take \"=> 0xADDRESS\"");
+			} else {
 				try {
 					ret.argumentCells[0] = Integer.parseInt(jmpBldr.toString().replaceAll("0x", ""), 16);
 				} catch (NumberFormatException ex) {
-					if (doOutput) {
-						System.err.println("[ERR] 0x" + Integer.toHexString(ptr).toUpperCase() + " : " + "Argument is not a number.");
-					}
+					asm.error("\"" + instruction + "\": \"" + jmpBldr + "\" is not a hex address");
 				}
-			} else if (doOutput) {
-				System.err.println("[ERR] 0x" + Integer.toHexString(ptr).toUpperCase() + " : " + "Jump instruction syntax on incompatible instruction.");
 			}
 		} else if (instruction.substring(idx).startsWith("(")) {
 			String allArgs = instruction.substring(idx + 1).replaceAll(" ", "").replace(")", "");
@@ -151,23 +151,22 @@ public class PawnInstruction {
 							// via the resolver context (the currently open script).
 							int ix = resolveNativeIndex(argsUnparsed[i]);
 							if (ix < 0) {
-								throw new NumberFormatException("unknown native '" + argsUnparsed[i] + "'");
+								asm.error("\"" + instruction + "\": unknown native " + argsUnparsed[i]);
+							} else {
+								ret.argumentCells[i] = ix;
 							}
-							ret.argumentCells[i] = ix;
 						} else {
 							ret.argumentCells[i] = Integer.parseInt(argsUnparsed[i]);
 						}
 					} catch (NumberFormatException e) {
-						if (doOutput) {
-							System.err.println("[ERR] 0x" + Integer.toHexString(ptr).toUpperCase() + " : " + "Argument " + i + " is not a number.");
-						}
+						asm.error("\"" + instruction + "\": argument " + i + " \"" + argsUnparsed[i] + "\" is not a decimal number");
 					}
 				}
-			} else if (doOutput) {
-				System.err.println("[ERR] 0x" + Integer.toHexString(ptr).toUpperCase() + " : " + ret.stringValue + " : " + "Source argument count doesn't match its command.");
+			} else {
+				asm.error("\"" + instruction + "\": " + cmdList.get(ret.getCommand()) + " takes " + ret.argumentCount + " argument(s), not " + argsUnparsed.length);
 			}
-		} else if (doOutput) {
-			System.err.println("[ERR] 0x" + Integer.toHexString(ptr).toUpperCase() + " : " + ret.stringValue + " : " + "Expected arguments but none found.");
+		} else {
+			asm.error("\"" + instruction + "\": expected \"(\" or \"=>\" after the instruction");
 		}
 
 		return ret;
