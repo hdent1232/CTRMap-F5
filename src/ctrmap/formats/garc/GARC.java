@@ -147,7 +147,7 @@ public class GARC {
 		return declared > 0 && declared < 0x400000 && declared <= Math.max(0x1000, buffer.length * 64);
 	}
 
-	public void packDirectory(File dir) {
+	public void packDirectory(File dir) throws IOException {
 		packDirectory(dir, null);
 	}
 
@@ -182,95 +182,102 @@ public class GARC {
 	private long parsedLength = -1;
 	private long parsedModified = -1;
 
-	public void packDirectory(File dir, Map<Integer, Boolean> compressionOverrides) {
-		try {
-			if (!dir.isDirectory()) {
-				return;
+	public void packDirectory(File dir, Map<Integer, Boolean> compressionOverrides) throws IOException {
+		if (!dir.isDirectory()) {
+			return;
+		}
+		if (isStale()) {
+			//Re-reading is the right repair: the entries on disk are fine,
+			//only this instance's picture of them is out of date. Packing
+			//first and asking questions later is what corrupts the archive.
+			System.err.println("GARC: " + file.getName() + " changed on disk since it was read"
+					+ " (was " + parsedLength + "B, now " + file.length() + "B)."
+					+ " Re-reading its entry table before packing - something else is writing"
+					+ " to this archive.");
+			parse(file);
+		}
+		ArrayList<File> files = new ArrayList<>();
+		files.addAll(Arrays.asList(dir.listFiles()));
+		for (int i = 0; i < files.size(); i++) {
+			if (!Workspace.persist_paths.contains(files.get(i).getAbsolutePath())) {
+				files.remove(i);
+				i--;
 			}
-			if (isStale()) {
-				//Re-reading is the right repair: the entries on disk are fine,
-				//only this instance's picture of them is out of date. Packing
-				//first and asking questions later is what corrupts the archive.
-				System.err.println("GARC: " + file.getName() + " changed on disk since it was read"
-						+ " (was " + parsedLength + "B, now " + file.length() + "B)."
-						+ " Re-reading its entry table before packing - something else is writing"
-						+ " to this archive.");
-				parse(file);
+		}
+		Collections.sort(files, new Comparator<File>() {
+			@Override
+			public int compare(File o1, File o2) {
+				int i1 = Integer.parseInt(o1.getName());
+				int i2 = Integer.parseInt(o2.getName());
+				return i1 - i2;
 			}
-			ArrayList<File> files = new ArrayList<>();
-			files.addAll(Arrays.asList(dir.listFiles()));
-			for (int i = 0; i < files.size(); i++) {
-				if (!Workspace.persist_paths.contains(files.get(i).getAbsolutePath())) {
-					files.remove(i);
-					i--;
-				}
+		});
+		int originalEntryCount = entries.size();
+		int[] changedIndices = new int[files.size()];
+		byte[][] compressedData = new byte[files.size()][];
+		for (int i = 0; i < files.size(); i++) {
+			changedIndices[i] = Integer.valueOf(files.get(i).getName());
+			InputStream in = new FileInputStream(files.get(i));
+			byte[] or = new byte[in.available()];
+			in.read(or);
+			in.close();
+			//an explicit override wins for ANY slot (a zone insert-shift needs to
+			//re-compress a slot whose original entry was uncompressed); otherwise
+			//existing slots keep their entry's flag and appended slots inherit the
+			//last original entry's flag
+			Boolean override = (compressionOverrides != null) ? compressionOverrides.get(changedIndices[i]) : null;
+			boolean compressed;
+			if (override != null) {
+				compressed = override;
+			} else if (changedIndices[i] < originalEntryCount) {
+				compressed = entries.get(changedIndices[i]).compressed;
+			} else {
+				compressed = entries.get(originalEntryCount - 1).compressed;
 			}
-			Collections.sort(files, new Comparator<File>() {
-				@Override
-				public int compare(File o1, File o2) {
-					int i1 = Integer.parseInt(o1.getName());
-					int i2 = Integer.parseInt(o2.getName());
-					return i1 - i2;
-				}
-			});
-			int originalEntryCount = entries.size();
-			int[] changedIndices = new int[files.size()];
-			byte[][] compressedData = new byte[files.size()][];
-			for (int i = 0; i < files.size(); i++) {
-				changedIndices[i] = Integer.valueOf(files.get(i).getName());
-				InputStream in = new FileInputStream(files.get(i));
-				byte[] or = new byte[in.available()];
-				in.read(or);
-				in.close();
-				//an explicit override wins for ANY slot (a zone insert-shift needs to
-				//re-compress a slot whose original entry was uncompressed); otherwise
-				//existing slots keep their entry's flag and appended slots inherit the
-				//last original entry's flag
-				Boolean override = (compressionOverrides != null) ? compressionOverrides.get(changedIndices[i]) : null;
-				boolean compressed;
-				if (override != null) {
-					compressed = override;
-				} else if (changedIndices[i] < originalEntryCount) {
-					compressed = entries.get(changedIndices[i]).compressed;
-				} else {
-					compressed = entries.get(originalEntryCount - 1).compressed;
-				}
-				if (compressed) {
-					compressedData[i] = LZ11.compress(or);
-				} else {
-					compressedData[i] = or;
-				}
-				if (changedIndices[i] > entries.size() - 1) {
-					GARCEntry add = new GARCEntry();
-					add.compressed = compressed;
-					//pad-aligned provisional offset (the real table is re-read
-					//from the packed file at the end of this method anyway)
-					int prevEnd = entries.get(entries.size() - 1).offset + entries.get(entries.size() - 1).length;
-					int rem = prevEnd % padding;
-					add.offset = rem == 0 ? prevEnd : prevEnd + padding - rem;
-					add.length = compressedData[i].length;
-					changedIndices[i] = entries.size();
-					entries.add(add);
-				}
+			if (compressed) {
+				compressedData[i] = LZ11.compress(or);
+			} else {
+				compressedData[i] = or;
 			}
-			File newGARC = new File(Workspace.WORKSPACE_PATH + "/" + file.getName() + "_new");
-			//get largest unpadded size
-			int maxlength = 0;
-			int[] filelengths = new int[compressedData.length];
-			int[] padlengths = new int[compressedData.length];
-			for (int i = 0; i < compressedData.length; i++) {
-				int len = compressedData[i].length;
-				filelengths[i] = len;
-				int remainder = len % padding;
-				int padLength = (remainder == 0) ? 0 : padding - remainder;
-				padlengths[i] = padLength;
-				if (len + padLength > maxlength) {
-					maxlength = len + padLength;
-				}
+			if (changedIndices[i] > entries.size() - 1) {
+				GARCEntry add = new GARCEntry();
+				add.compressed = compressed;
+				//pad-aligned provisional offset (the real table is re-read
+				//from the packed file at the end of this method anyway)
+				int prevEnd = entries.get(entries.size() - 1).offset + entries.get(entries.size() - 1).length;
+				int rem = prevEnd % padding;
+				add.offset = rem == 0 ? prevEnd : prevEnd + padding - rem;
+				add.length = compressedData[i].length;
+				changedIndices[i] = entries.size();
+				entries.add(add);
 			}
-			LittleEndianDataInputStream old = new LittleEndianDataInputStream(new FileInputStream(file));
-			newGARC.delete();
-			RandomAccessFile dos = new RandomAccessFile(newGARC, "rw");
+		}
+		File newGARC = new File(Workspace.WORKSPACE_PATH + "/" + file.getName() + "_new");
+		//get largest unpadded size
+		int maxlength = 0;
+		int[] filelengths = new int[compressedData.length];
+		int[] padlengths = new int[compressedData.length];
+		for (int i = 0; i < compressedData.length; i++) {
+			int len = compressedData[i].length;
+			filelengths[i] = len;
+			int remainder = len % padding;
+			int padLength = (remainder == 0) ? 0 : padding - remainder;
+			padlengths[i] = padLength;
+			if (len + padLength > maxlength) {
+				maxlength = len + padLength;
+			}
+		}
+		newGARC.delete();
+		//The replacement is written beside the workspace and swapped in whole.
+		//Whatever goes wrong on the way - the emulator or a virus scanner
+		//holding the archive open is the usual case - must leave the archive
+		//as it was, leave no half-written copy behind, and reach the caller.
+		//This used to log the exception and return: the progress bar filled,
+		//the game kept the old map, and the leaked streams made every retry
+		//fail the same way.
+		try (FileInputStream oldIn = new FileInputStream(file);
+				RandomAccessFile dos = new RandomAccessFile(newGARC, "rw")) {
+			LittleEndianDataInputStream old = new LittleEndianDataInputStream(oldIn);
 			//first 14 bytes of header should be unchanged - let's copy paste them
 			byte[] buf = new byte[16];
 			old.read(buf);
@@ -366,17 +373,17 @@ public class GARC {
 					}
 					processedCustomFiles++;
 				} else {
-					InputStream entryReader = new FileInputStream(file);
-					byte[] b = new byte[entries.get(i).length];
-					entryReader.skip(entries.get(i).offset);
-					entryReader.read(b);
-					dos.write(b);
-					int remainder = b.length % padding;
-					int padLength = (remainder == 0) ? 0 : padding - remainder;
-					for (int j = 0; j < padLength; j++) {
-						dos.write(0xFF);
+					try (InputStream entryReader = new FileInputStream(file)) {
+						byte[] b = new byte[entries.get(i).length];
+						entryReader.skip(entries.get(i).offset);
+						entryReader.read(b);
+						dos.write(b);
+						int remainder = b.length % padding;
+						int padLength = (remainder == 0) ? 0 : padding - remainder;
+						for (int j = 0; j < padLength; j++) {
+							dos.write(0xFF);
+						}
 					}
-					entryReader.close();
 				}
 			}
 			int totalLength = (int) dos.length();
@@ -386,16 +393,21 @@ public class GARC {
 			dos.writeInt(Integer.reverseBytes(totalLength));
 			dos.seek(dataLengthPos);
 			dos.writeInt(Integer.reverseBytes(dataLength));
-			dos.close();
-			old.close();
-			Files.move(newGARC.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
-			//keep THIS instance coherent with the file it just wrote - a stale
-			//entry table on a repeat pack copies unchanged entries from wrong
-			//offsets and silently corrupts them
-			parse(file);
-		} catch (Exception ex) {
-			Logger.getLogger(GARC.class.getName()).log(Level.SEVERE, null, ex);
+		} catch (IOException ex) {
+			newGARC.delete();
+			throw ex;
 		}
+		try {
+			Files.move(newGARC.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+		} catch (IOException ex) {
+			newGARC.delete();
+			throw new IOException("Could not replace " + file.getName() + " - is the emulator or another"
+					+ " program holding it open? (" + ex.getMessage() + ")", ex);
+		}
+		//keep THIS instance coherent with the file it just wrote - a stale
+		//entry table on a repeat pack copies unchanged entries from wrong
+		//offsets and silently corrupts them
+		parse(file);
 	}
 
 	/**
@@ -465,7 +477,7 @@ public class GARC {
 		return returnvalue;
 	}
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws IOException {
 		GARC garc = new GARC(new File("1"));
 		garc.packDirectory(new File("1_pack"));
 	}
