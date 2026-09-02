@@ -139,7 +139,7 @@ public class WorkspaceIntegrity {
 			}
 
 			//3. every matrix cell must name a region that exists
-			int badRegion = 0, firstBadMatrix = -1;
+			int badRegion = 0, firstBadMatrix = -1, scanned = 0;
 			for (int m = 0; m < mm.length; m++) {
 				byte[] mat;
 				try {
@@ -147,16 +147,23 @@ public class WorkspaceIntegrity {
 				} catch (RuntimeException ignore) {
 					continue;
 				}
-				if (mat == null || mat.length < 8) {
+				//the grid is inside subfile 0, not at the top of the container.
+				//Reading the container's own header as the grid's gave w=16 h=0
+				//for all 431 retail matrices, so every one failed the shape test
+				//below and this pass scanned nothing at all - silently, which is
+				//the one thing a check must never do.
+				byte[] grid = subfile(mat, 0);
+				if (grid == null || grid.length < 8) {
 					continue;
 				}
-				int w = u16(mat, 4), h = u16(mat, 6);
+				int w = u16(grid, 4), h = u16(grid, 6);
 				long cells = (long) w * h;
-				if (w <= 0 || h <= 0 || cells > 4096 || 8 + cells * 2 > mat.length) {
+				if (w <= 0 || h <= 0 || cells > 4096 || 8 + cells * 2 > grid.length) {
 					continue; //not a shape this check understands; leave it alone
 				}
+				scanned++;
 				for (int i = 0; i < cells; i++) {
-					int region = u16(mat, 8 + i * 2);
+					int region = u16(grid, 8 + i * 2);
 					if (region != 0xFFFF && region >= gr.length) {
 						badRegion++;
 						firstBadMatrix = firstBadMatrix < 0 ? m : firstBadMatrix;
@@ -167,6 +174,12 @@ public class WorkspaceIntegrity {
 				bad.add(badRegion + " map-matrix cell(s) name a FieldData region that does not"
 						+ " exist (first in matrix " + firstBadMatrix + "); FieldData has "
 						+ gr.length + " regions");
+			}
+			//a pass that understood no matrix at all proved nothing; say so
+			//rather than reporting a clean bill of health
+			if (mm.length > 0 && scanned == 0) {
+				bad.add("the map-matrix check could not read any of the " + mm.length
+						+ " matrices, so nothing was verified about region references");
 			}
 		} catch (Exception ex) {
 			bad.add("the integrity check itself failed: " + ex);
@@ -192,5 +205,29 @@ public class WorkspaceIntegrity {
 
 	private static int u16(byte[] b, int o) {
 		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
+	}
+
+	private static int u32(byte[] b, int o) {
+		return u16(b, o) | (u16(b, o + 2) << 16);
+	}
+
+	/**
+	 * One subfile out of a Gamefreak container: u16 magic, u16 subfile count,
+	 * then count+1 u32 offsets. Null when the bytes are not a container of that
+	 * shape, or do not hold subfile {@code i}.
+	 */
+	private static byte[] subfile(byte[] c, int i) {
+		if (c == null || c.length < 8) {
+			return null;
+		}
+		int count = u16(c, 2);
+		if (i >= count || 4 + (i + 2) * 4 > c.length) {
+			return null;
+		}
+		int from = u32(c, 4 + i * 4), to = u32(c, 4 + (i + 1) * 4);
+		if (from < 0 || to < from || to > c.length) {
+			return null;
+		}
+		return java.util.Arrays.copyOfRange(c, from, to);
 	}
 }
