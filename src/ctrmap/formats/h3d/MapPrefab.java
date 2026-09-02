@@ -2,6 +2,7 @@ package ctrmap.formats.h3d;
 
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.gfcollision.GfColl;
+import ctrmap.formats.tilemap.TilePalette;
 import ctrmap.formats.tilemap.Tilemap;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * A map PREFAB - a reusable piece of map (a building, a bridge, a patch of
@@ -24,8 +26,10 @@ import java.util.Map;
  * anchor (the min corner of the tile box it was cut from):
  * <ul>
  * <li>per-mesh geometry pieces: FULL vertex strides (UVs/normals/colors ride
- *     along) + a local triangle list + the source material name;</li>
- * <li>the collision triangles inside the box;</li>
+ *     along) + a local triangle list + the source material name - faces
+ *     crossing the box edge are left out, and counted;</li>
+ * <li>the collision triangles inside the box, those crossing its edge clipped
+ *     to it;</li>
  * <li>the 4-byte movement-tile tuples of the footprint.</li>
  * </ul>
  * Stamping appends each piece into the target region's mesh with the SAME
@@ -50,6 +54,7 @@ public class MapPrefab {
 		public int[] triangles;      // local indices, 3 per face
 		public int donorMeshIndex = -1;            // mesh in the embedded donor model (v2)
 		public final List<String> textures = new ArrayList<>();  // texture names the material references (v2)
+		public boolean skinned;      // the donor submesh is bone-dependent: it lands only where its material already exists (v2)
 	}
 
 	public String name = "prefab";
@@ -60,6 +65,8 @@ public class MapPrefab {
 	public final List<Piece> pieces = new ArrayList<>();
 	public final List<float[]> collTris = new ArrayList<>();   // float[9], anchor-relative
 	public byte[][][] tiles;              // [w][h][4] tuples, or null
+	public int facesDropped;              // faces that crossed the box edge and were left out of the cut
+	public final List<String> materialsLost = new ArrayList<>();   // materials with faces in the box but none fully inside
 
 	// ---- extraction -------------------------------------------------------
 
@@ -81,6 +88,9 @@ public class MapPrefab {
 		p.tilesH = Math.abs(ty1 - ty0) + 1;
 		float ax = box.minX, az = box.minZ; // anchor = box min corner
 
+		//per material, faces kept and faces that crossed the edge: a cut says
+		//what it left out and names any material that vanished with it
+		Map<String, int[]> perMaterial = new LinkedHashMap<>();
 		for (BchMapModel.MeshGeom g : model.geometry()) {
 			if (!g.posOk) {
 				continue;
@@ -91,23 +101,30 @@ public class MapPrefab {
 			for (int v = 0; v < pos.length; v++) {
 				in[v] = box.contains(pos[v]);
 			}
+			String material = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
+			int[] faces = perMaterial.computeIfAbsent(material, k -> new int[2]);
 			Map<Integer, Integer> remap = new LinkedHashMap<>();
 			List<Integer> localTris = new ArrayList<>();
 			for (int t = 0; t + 2 < tris.length; t += 3) {
-				if (in[tris[t]] && in[tris[t + 1]] && in[tris[t + 2]]) {
+				int inside = (in[tris[t]] ? 1 : 0) + (in[tris[t + 1]] ? 1 : 0) + (in[tris[t + 2]] ? 1 : 0);
+				if (inside == 3) {
 					for (int c = 0; c < 3; c++) {
 						localTris.add(remap.computeIfAbsent(tris[t + c], k -> remap.size()));
 					}
+					faces[0]++;
+				} else if (inside > 0) {
+					faces[1]++;
 				}
 			}
 			if (remap.isEmpty()) {
 				continue;
 			}
 			Piece piece = new Piece();
-			piece.material = model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex));
+			piece.material = material;
 			piece.stride = g.stride;
 			piece.posOffset = g.posOffset;
 			piece.donorMeshIndex = g.meshIndex;
+			piece.skinned = skinned(model, g.meshIndex);
 			//texture names from the material header slots (+0x1C/+0x20/+0x24) - what
 			//must exist in the target AREA's texture packs for the piece to render
 			int matHdr = model.matValuesPtr + model.getMeshMaterialIndex(g.meshIndex) * 0x2C;
@@ -137,6 +154,12 @@ public class MapPrefab {
 			}
 			p.pieces.add(piece);
 		}
+		for (Map.Entry<String, int[]> e : perMaterial.entrySet()) {
+			p.facesDropped += e.getValue()[1];
+			if (e.getValue()[0] == 0 && e.getValue()[1] > 0) {
+				p.materialsLost.add(e.getKey());
+			}
+		}
 		if (p.pieces.isEmpty()) {
 			return null;
 		}
@@ -144,7 +167,11 @@ public class MapPrefab {
 		//stamped as brand-new material+mesh via BchModelAppender (v2 full path)
 		p.donorModel = modelBytes;
 
-		//collision (layer 0; multi-layer regions contribute their extra layers too)
+		//collision (layer 0; multi-layer regions contribute their extra layers
+		//too), clipped to the box. ORAS collision triangles are large, and a
+		//narrow cut - a bridge, a flight of stairs - has every one of them
+		//crossing its edge; keeping only whole triangles gave such cuts no
+		//walkable surface at all.
 		for (int cs : collSubfiles(gr)) {
 			if (cs >= gr.len) {
 				continue;
@@ -153,21 +180,16 @@ public class MapPrefab {
 			if (!GfColl.isColl(cb)) {
 				continue;
 			}
-			GfColl coll = new GfColl(cb);
-			for (float[] t : coll.uniqueTris) {
-				boolean all = true;
-				for (int v = 0; v < 3 && all; v++) {
-					float x = t[v * 3], z = t[v * 3 + 2];
-					all = x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ;
+			List<float[]> clipped = new ArrayList<>();
+			for (float[] t : new GfColl(cb).uniqueTris) {
+				clipToBox(t, box, clipped);
+			}
+			for (float[] t : clipped) {
+				for (int v = 0; v < 3; v++) {
+					t[v * 3] -= ax;
+					t[v * 3 + 2] -= az;
 				}
-				if (all) {
-					float[] rel = t.clone();
-					for (int v = 0; v < 3; v++) {
-						rel[v * 3] -= ax;
-						rel[v * 3 + 2] -= az;
-					}
-					p.collTris.add(rel);
-				}
+				p.collTris.add(t);
 			}
 		}
 
@@ -195,6 +217,77 @@ public class MapPrefab {
 			return new int[]{2, 8};
 		}
 		return new int[]{2};
+	}
+
+	/**
+	 * Clips one collision triangle to the box in XZ - Sutherland-Hodgman
+	 * against its four edges, Y interpolated along every cut edge - and fans
+	 * the surviving polygon into triangles. A triangle wholly inside comes
+	 * back as itself; one wholly outside adds nothing.
+	 */
+	private static void clipToBox(float[] t, GeoBoxOps.Box box, List<float[]> out) {
+		List<float[]> poly = new ArrayList<>();
+		for (int v = 0; v < 3; v++) {
+			poly.add(new float[]{t[v * 3], t[v * 3 + 1], t[v * 3 + 2]});
+		}
+		//{axis, limit, side}: keep where side * (coord - limit) >= 0
+		float[][] edges = {{0, box.minX, 1}, {0, box.maxX, -1}, {2, box.minZ, 1}, {2, box.maxZ, -1}};
+		for (float[] e : edges) {
+			int axis = (int) e[0];
+			List<float[]> next = new ArrayList<>();
+			for (int i = 0; i < poly.size(); i++) {
+				float[] a = poly.get(i), b = poly.get((i + 1) % poly.size());
+				float da = e[2] * (a[axis] - e[1]), db = e[2] * (b[axis] - e[1]);
+				if (da >= 0) {
+					next.add(a);
+				}
+				if ((da >= 0) != (db >= 0)) {
+					float s = da / (da - db);
+					next.add(new float[]{a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s, a[2] + (b[2] - a[2]) * s});
+				}
+			}
+			poly = next;
+			if (poly.size() < 3) {
+				return;
+			}
+		}
+		for (int i = 1; i + 1 < poly.size(); i++) {
+			float[] a = poly.get(0), b = poly.get(i), c = poly.get(i + 1);
+			float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+			float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+			float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+			if (nx * nx + ny * ny + nz * nz > 1e-8f) { //a sliver of no area is not a surface
+				out.add(new float[]{a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]});
+			}
+		}
+	}
+
+	/** True when a mesh's submesh header names bones (+0 skinningMode, +2 nodeIdCount): BchModelAppender cannot inject it. */
+	private static boolean skinned(BchMapModel m, int meshIndex) {
+		int sub = m.meshes.get(meshIndex)[3];
+		return (m.raw[sub] | m.raw[sub + 1] | m.raw[sub + 2] | m.raw[sub + 3]) != 0;
+	}
+
+	/** Triangles across every piece. */
+	public int triangleCount() {
+		int n = 0;
+		for (Piece piece : pieces) {
+			n += piece.triangles.length / 3;
+		}
+		return n;
+	}
+
+	/** {lowest, highest} vertex Y across every piece, in the donor's frame. */
+	public float[] heightSpan() {
+		float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
+		for (Piece piece : pieces) {
+			for (int o = piece.posOffset + 4; o + 4 <= piece.vertexBytes.length; o += piece.stride) {
+				float y = getF(piece.vertexBytes, o);
+				lo = Math.min(lo, y);
+				hi = Math.max(hi, y);
+			}
+		}
+		return new float[]{lo, hi};
 	}
 
 	// ---- stamping ---------------------------------------------------------
@@ -226,6 +319,8 @@ public class MapPrefab {
 		public byte[] newColl;          // layer-0 collision
 		public int collTrisAdded;
 		public int tilesStamped;
+		/** Footprint tuples NOT written because the user's own tile stays: behaviour -> count (see stampFootprint). */
+		public final Map<String, Integer> tilesKept = new TreeMap<>();
 	}
 
 	/**
@@ -234,8 +329,9 @@ public class MapPrefab {
 	 * the SAME material name (full vertex strides appended, positions rebased);
 	 * pieces whose material the target lacks are reported in
 	 * {@code missingMaterials} and skipped. Collision and tiles are the
-	 * caller's follow-up via {@link #stampCollision} / {@link #stampTiles}
-	 * (kept separate so the UI can preview/confirm).
+	 * caller's follow-up via {@link #stampCollision} and {@link #stampTiles}
+	 * or {@link #stampFootprint}, filling the same result (kept separate so
+	 * the UI can preview/confirm).
 	 */
 	public StampResult stampGeometry(byte[] targetModel, int tileX, int tileY, float dy) {
 		StampResult r = new StampResult();
@@ -343,10 +439,16 @@ public class MapPrefab {
 		return -1;
 	}
 
-	/** Adds the prefab's collision at the anchor; returns the new layer-0 coll subfile. */
-	public byte[] stampCollision(byte[] collBytes, int tileX, int tileY, float dy) {
+	/**
+	 * Adds the prefab's collision at the anchor: {@code r.newColl} is the new
+	 * layer-0 coll subfile (the input itself when there is nothing to add) and
+	 * {@code r.collTrisAdded} how many triangles it gained.
+	 */
+	public void stampCollision(StampResult r, byte[] collBytes, int tileX, int tileY, float dy) {
+		r.newColl = collBytes;
+		r.collTrisAdded = 0;
 		if (collTris.isEmpty() || !GfColl.isColl(collBytes)) {
-			return collBytes;
+			return;
 		}
 		float ax = tileX * 18f - 360f, az = tileY * 18f - 360f;
 		GfColl c = new GfColl(collBytes);
@@ -360,25 +462,62 @@ public class MapPrefab {
 			}
 			tris.add(n);
 		}
-		return GfColl.build(tris, c);
+		r.newColl = GfColl.build(tris, c);
+		r.collTrisAdded = collTris.size();
 	}
 
-	/** Stamps the footprint tuples into a Tilemap at the anchor; returns tiles written. */
-	public int stampTiles(Tilemap tm, int tileX, int tileY) {
+	/**
+	 * Stamps every footprint tuple into a Tilemap at the anchor - the Geometry
+	 * tool's explicit "also update movement tiles" choice; {@code r.tilesStamped}
+	 * counts them.
+	 */
+	public void stampTiles(StampResult r, Tilemap tm, int tileX, int tileY) {
+		r.tilesStamped = 0;
 		if (tiles == null) {
-			return 0;
+			return;
 		}
-		int n = 0;
 		for (int y = 0; y < tilesH; y++) {
 			for (int x = 0; x < tilesW; x++) {
 				int dx = tileX + x, dyt = tileY + y;
 				if (dx >= 0 && dx < 40 && dyt >= 0 && dyt < 40) {
 					tm.setTileData(dx, dyt, tiles[x][y]);
-					n++;
+					r.tilesStamped++;
 				}
 			}
 		}
-		return n;
+	}
+
+	/**
+	 * Stamps the footprint over a raw tilemap subfile - the painter's own
+	 * layer - without repainting the user's map. A donor tuple is written only
+	 * where it is a wall, or at the building's door tile ({@code doorX,doorY}
+	 * anchor-relative, -1 for none); everywhere else the tile the user painted
+	 * stays, and what the donor would have made of it is counted by behaviour
+	 * in {@code r.tilesKept}. Copying the footprint whole turned 366 painted
+	 * path tiles into surf water under one Route 110 cut and wrote door tiles
+	 * that no warp backed.
+	 */
+	public void stampFootprint(StampResult r, byte[] tilemap, int tileX, int tileY, int doorX, int doorY) {
+		r.tilesStamped = 0;
+		r.tilesKept.clear();
+		if (tiles == null) {
+			return;
+		}
+		for (int y = 0; y < tilesH; y++) {
+			for (int x = 0; x < tilesW; x++) {
+				int dx = tileX + x, dyt = tileY + y;
+				if (dx < 0 || dx >= 40 || dyt < 0 || dyt >= 40) {
+					continue;
+				}
+				String behaviour = TilePalette.behaviourOf(tiles[x][y]);
+				if ("wall".equals(behaviour) || (x == doorX && y == doorY)) {
+					System.arraycopy(tiles[x][y], 0, tilemap, 4 + (dyt * 40 + dx) * 4, 4);
+					r.tilesStamped++;
+				} else {
+					r.tilesKept.merge(behaviour, 1, Integer::sum);
+				}
+			}
+		}
 	}
 
 	/**
@@ -564,6 +703,17 @@ public class MapPrefab {
 					byte[] packed = new byte[dl];
 					in.readFully(packed);
 					p.donorModel = ctrmap.formats.garc.LZ11.decompress(packed);
+				}
+				//skinning is a fact of the embedded donor, not stored: re-read it
+				if (p.donorModel != null && BchMapModel.isMapModel(p.donorModel)) {
+					try {
+						BchMapModel donor = new BchMapModel(p.donorModel);
+						for (Piece piece : p.pieces) {
+							piece.skinned = piece.donorMeshIndex >= 0 && piece.donorMeshIndex < donor.meshCount
+									&& skinned(donor, piece.donorMeshIndex);
+						}
+					} catch (RuntimeException ignore) {
+					}
 				}
 			}
 			int nc = in.readInt();

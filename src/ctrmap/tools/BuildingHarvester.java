@@ -33,8 +33,8 @@ import java.util.Map;
  * measured to reproduce the hand-curated catalog's tile boxes exactly.
  * Dedup: rotation-canonical geometry signatures collapse the same asset
  * across its hundreds of appearances. Every emitted entry passes the same
- * gate as the curated 48: cut from pristine, stamp onto a painted-grass
- * region, model validates.
+ * gate as the curated 48: cut from pristine, EVERY piece stamps onto a
+ * painted-grass region, model validates.
  *
  * <p>Emits {@code oras_buildings_auto.tsv} - metadata only (donor region +
  * tile box), no game assets, same columns as the curated TSV plus
@@ -49,7 +49,7 @@ public class BuildingHarvester {
 	static final float ELEV = 4f;       //face counts as "structure" this far above ground
 	static final int MIN_FACES = 20;
 	static final float MIN_YSPAN = 5f;
-	static final int TERRAIN_TILES = 20; //components this wide are terrain, not assets
+	public static final int TERRAIN_TILES = 20; //components this wide are terrain, not assets
 
 	public static void main(String[] args) throws Exception {
 		if (args.length < 1) {
@@ -169,7 +169,15 @@ public class BuildingHarvester {
 					continue;
 				}
 				MapPrefab.StampResult sr = p.stampGeometry(base.model, 3, 3, -c.comp.baseY);
-				if (sr.stamped.isEmpty()) {
+				//every piece, and none that lands only where its material already
+				//exists: accepting "at least one piece" let fifteen cuts of skinned
+				//regions through on the strength of the grass base's sea foam, and
+				//they placed as a few triangles under a full-size invisible wall
+				boolean whole = sr.missingMaterials.isEmpty();
+				for (MapPrefab.Piece pc : p.pieces) {
+					whole &= !pc.skinned;
+				}
+				if (!whole) {
 					dropped++;
 					continue;
 				}
@@ -211,13 +219,13 @@ public class BuildingHarvester {
 
 	// ---- detection ---------------------------------------------------------
 
-	static final class Comp {
+	public static final class Comp {
 
-		float minX = Float.MAX_VALUE, maxX = -Float.MAX_VALUE;
-		float minY = Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
-		float minZ = Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
-		int tx0, ty0, tx1, ty1, baseY;
-		boolean terrain;
+		public float minX = Float.MAX_VALUE, maxX = -Float.MAX_VALUE;
+		public float minY = Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
+		public float minZ = Float.MAX_VALUE, maxZ = -Float.MAX_VALUE;
+		public int tx0, ty0, tx1, ty1, baseY;
+		public boolean terrain;
 		final List<float[]> faces = new ArrayList<>();   //9 coords each
 		final List<String> faceMats = new ArrayList<>();
 		final Map<String, Integer> matFaces = new HashMap<>();
@@ -249,11 +257,11 @@ public class BuildingHarvester {
 			ty1 = Math.min(DIM - 1, (int) Math.floor((maxZ - ORIGIN - 0.01f) / TILE));
 		}
 
-		int tilesW() {
+		public int tilesW() {
 			return tx1 - tx0 + 1;
 		}
 
-		int tilesH() {
+		public int tilesH() {
 			return ty1 - ty0 + 1;
 		}
 
@@ -363,7 +371,7 @@ public class BuildingHarvester {
 	}
 
 	/** Per-mesh connected components of elevated faces, merged across meshes. */
-	static List<Comp> detect(byte[] modelB, byte[] collB) {
+	public static List<Comp> detect(byte[] modelB, byte[] collB) {
 		BchMapModel m = new BchMapModel(modelB);
 		float[][] ground = groundGrid(collB);
 
@@ -483,6 +491,10 @@ public class BuildingHarvester {
 							&& b.faces.size() < a.faces.size()) {
 						a.absorb(b);
 						a.computeTiles();
+						//the box just grew - a component now terrain-sized stops being
+						//an asset here as it does after a cross-mesh merge, or a fence
+						//keeps swallowing satellites until it is a 22x17 slab of road
+						a.terrain = a.tilesW() > TERRAIN_TILES || a.tilesH() > TERRAIN_TILES;
 						comps.remove(j);
 						changed = true;
 						break outer2;
@@ -500,16 +512,25 @@ public class BuildingHarvester {
 			if (c.faces.size() < MIN_FACES || (c.maxY - c.minY) < MIN_YSPAN) {
 				continue;
 			}
-			float gmin = Float.NaN;
+			//the structure's own footing: of the ground under its box, the sample
+			//nearest its lowest face that the structure actually reaches - no more
+			//than half a step below that face (a buried base, a sloped tile) and
+			//no higher than its top (a sunken floor, a wall running down a cliff
+			//edge). The lowest ground under the whole box gave a cliff-top lamp
+			//with its base at 153 a baseY of 0 - the sea at the foot of the cliff -
+			//and stamped it 153 units into the air. A structure reaching no ground
+			//at all (a bridge over a chasm, a treehouse) stands on its lowest face.
+			float footing = c.minY, nearest = Float.MAX_VALUE;
 			for (int ty = c.ty0; ty <= c.ty1; ty++) {
 				for (int tx = c.tx0; tx <= c.tx1; tx++) {
 					float gY = ground[ty][tx];
-					if (!Float.isNaN(gY) && (Float.isNaN(gmin) || gY < gmin)) {
-						gmin = gY;
+					if (!Float.isNaN(gY) && gY >= c.minY - 9 && gY <= c.maxY && Math.abs(gY - c.minY) < nearest) {
+						nearest = Math.abs(gY - c.minY);
+						footing = gY;
 					}
 				}
 			}
-			c.baseY = Math.round(Float.isNaN(gmin) ? c.minY : gmin);
+			c.baseY = Math.round(footing);
 			out.add(c);
 		}
 		return out;
