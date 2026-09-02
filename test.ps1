@@ -55,7 +55,7 @@ $suites = @(
     @{ n = "UvScale (imported brush scale)"; c = "ctrmap.tests.UvScaleTest";           a = @($a039) },
     @{ n = "PrefabColour (stamp vertex format)"; c = "ctrmap.tests.PrefabColourTest";  a = @($a039) },
     @{ n = "SnapshotIntegrity (pristine copy)"; c = "ctrmap.tests.SnapshotIntegrityTest"; a = @() },
-    @{ n = "DataSafetyGuards (stale/script/warp)"; c = "ctrmap.tests.DataSafetyGuardsTest"; a = @($a040) },
+    @{ n = "DataSafetyGuards (stale/script/warp/worker)"; c = "ctrmap.tests.DataSafetyGuardsTest"; a = @($a040, $pristine) },
     @{ n = "Integrity (cross-archive refs)"; c = "ctrmap.tests.IntegrityTest";         a = @($pristine) },
     @{ n = "Updater (in-place, lossless)"; c = "ctrmap.tests.UpdaterTest";           a = @() },
     @{ n = "DumpCheck (setup validation)"; c = "ctrmap.tests.DumpCheckTest";         a = @($gamedir) },

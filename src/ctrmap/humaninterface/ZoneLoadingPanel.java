@@ -312,7 +312,17 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 
 		mNPCEditForm.saveEntry();
 		mTriggerEditForm.saveEntry();
-		if (zone.store(dialog)) {
+		boolean stored;
+		try {
+			stored = zone.store(dialog);
+		} catch (IllegalStateException ex) {
+			//a record that refuses to serialise - a warp with no destination -
+			//used to leave here as an uncaught exception on stderr, and the
+			//caller carried on as if the zone had been saved
+			JOptionPane.showMessageDialog(this, "Zone " + zoneIndex + " was not saved.\n" + ex.getMessage(), "Save zone", JOptionPane.ERROR_MESSAGE);
+			return false;
+		}
+		if (stored) {
 			try {
 				//save to master table
 				File master = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length
@@ -1040,6 +1050,17 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 					@Override
 					protected void done() {
 						progress.close();
+						try {
+							get(); //without this, anything thrown below vanishes and a zone
+							//that failed to load looks loaded, the editors half on the last one
+						} catch (Exception ex) {
+							Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+							Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, "loading zone", cause);
+							unloadZone();
+							JOptionPane.showMessageDialog(ZoneLoadingPanel.this, "The zone did not load:\n" + cause
+									+ "\n\nPick a zone from the list to try again.", "Load zone", JOptionPane.ERROR_MESSAGE);
+							return;
+						}
 						//show the map that was just loaded instead of leaving the user on the property form
 						tabs.setSelectedComponent(tileEditMasterPnl);
 						//forking is the safe default: a shared map means edits here
@@ -1085,6 +1106,20 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			}
 		}
     }//GEN-LAST:event_zoneListActionPerformed
+
+	/**
+	 * Back to "no zone open", for a load that failed partway. The editors that
+	 * had already switched would otherwise sit on a zone store() never writes,
+	 * and the ones that had not would still hold the previous zone.
+	 */
+	private void unloadZone() {
+		zone = null;
+		zoneIndex = -1;
+		mNPCEditForm.loadFromEntities(null, null);
+		mWarpEditForm.loadFromEntities(null);
+		mTriggerEditForm.loadFromEntities(null);
+		zoneList.setSelectedIndex(-1);
+	}
 
 	private java.util.Set<Integer> forkDeclined = null;
 	private String forkDeclinedWs = null;

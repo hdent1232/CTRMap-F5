@@ -491,17 +491,18 @@ public class ZoneEntities {
 			dos.writeShort(u16);
 		}
 		
-		@Override
-		public boolean equals(Object o){
-			if (o != null && o instanceof Warp){
-				Warp w = (Warp)o;
-				return w.targetZone == targetZone && w.targetWarpId == targetWarpId
-						&& w.faceDirection == faceDirection && w.transitionType == transitionType
-						&& w.coordinateType == coordinateType && w.x == x && w.y == y && w.z == z
-						&& w.w == this.w && w.h == h && w.directionality == directionality
-						&& w.u14 == u14 && w.u16 == u16;
-			}
-			return false;
+		/**
+		 * Field-for-field comparison, for change detection only. Warps are not
+		 * value-equal: two doors on one tile with the same destination are two
+		 * doors, and an equals override here made the warp editor's list
+		 * lookups edit and delete the first of them whichever was selected.
+		 */
+		public boolean sameValues(Warp w) {
+			return w.targetZone == targetZone && w.targetWarpId == targetWarpId
+					&& w.faceDirection == faceDirection && w.transitionType == transitionType
+					&& w.coordinateType == coordinateType && w.x == x && w.y == y && w.z == z
+					&& w.w == this.w && w.h == h && w.directionality == directionality
+					&& w.u14 == u14 && w.u16 == u16;
 		}
 	}
 

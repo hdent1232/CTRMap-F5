@@ -13,6 +13,9 @@ public class WarpEditForm extends javax.swing.JPanel {
 
 	public ZoneEntities e;
 	public ZoneEntities.Warp warp;
+	//where warp sits in e.warps. Two warps on one tile are field-for-field
+	//identical, so the list is addressed by this index and never by lookup
+	private int warpIndex = -1;
 	public boolean loaded = false;
 
 	public DefaultComboBoxModel<String> transitionModel = new DefaultComboBoxModel<>();
@@ -21,6 +24,7 @@ public class WarpEditForm extends javax.swing.JPanel {
 		loaded = false;
 		this.e = e;
 		warp = null;
+		warpIndex = -1;
 		entryBox.removeAllItems();
 		tgtZone.removeAllItems();
 		if (e == null) {
@@ -29,9 +33,6 @@ public class WarpEditForm extends javax.swing.JPanel {
 		for (int i = 0; i < mZonePnl.zones.length; i++) {
 			tgtZone.addItem(i + " - " + LocationNames.getLocName(mZonePnl.zones[i].header.parentMap));
 		}
-		for (int i = 0; i < e.warpCount; i++) {
-			addNamedWarpEntry(e.warps.get(i), i);
-		}
 		transition.removeAllItems();
 		addBaseTransitions();
 		if (Workspace.isOA()) {
@@ -39,14 +40,40 @@ public class WarpEditForm extends javax.swing.JPanel {
 		} else {
 			addXYTransitions();
 		}
-		loaded = true;
-		if (entryBox.getItemCount() > 0) {
-			showEntry(0);
+		reloadEntries(e.warpCount > 0 ? 0 : -1);
+	}
+
+	/**
+	 * Rebuilds the dropdown from e.warps and selects one. Labels carry the warp
+	 * number and its destination, so a save or a removal changes them.
+	 */
+	private void reloadEntries(int select) {
+		loaded = false;
+		entryBox.removeAllItems();
+		for (int i = 0; i < e.warpCount; i++) {
+			addNamedWarpEntry(e.warps.get(i), i);
 		}
+		loaded = true;
+		entryBox.setSelectedIndex(select);
 	}
 
 	public void addNamedWarpEntry(ZoneEntities.Warp warp, int warpNumber) {
-		entryBox.addItem(warpNumber + " - " + LocationNames.getLocName(mZonePnl.zones[warp.targetZone].header.parentMap));
+		entryBox.addItem(warpNumber + " - " + targetName(warp));
+	}
+
+	/**
+	 * The destination as the dropdown names it. An unset warp says so, and a
+	 * target past the end of the zone table - a zone removed from under it -
+	 * is named rather than indexed, so the zone still opens and can be fixed.
+	 */
+	private String targetName(ZoneEntities.Warp warp) {
+		if (warp.isUnset()) {
+			return "<no destination>";
+		}
+		if (warp.targetZone >= mZonePnl.zones.length) {
+			return "zone " + warp.targetZone + " (missing)";
+		}
+		return LocationNames.getLocName(mZonePnl.zones[warp.targetZone].header.parentMap);
 	}
 
 	public WarpEditForm() {
@@ -65,9 +92,11 @@ public class WarpEditForm extends javax.swing.JPanel {
 		if (index == -1 || index >= e.warpCount) {
 			return;
 		}
+		warpIndex = index;
 		warp = e.warps.get(index);
-		tgtZone.setSelectedIndex(warp.targetZone);
-		tgtWarp.setValue(warp.targetWarpId);
+		//nothing selected for a destination that is unset or no longer exists
+		tgtZone.setSelectedIndex(warp.targetZone >= 0 && warp.targetZone < tgtZone.getItemCount() ? warp.targetZone : -1);
+		tgtWarp.setValue(warp.targetWarpId == ZoneEntities.Warp.NO_TARGET ? null : warp.targetWarpId);
 		warpType.setSelectedIndex(warp.directionality);
 		posType.setSelectedIndex(warp.coordinateType);
 		transition.setSelectedIndex(getTransitionIndex(warp.transitionType));
@@ -307,8 +336,10 @@ public class WarpEditForm extends javax.swing.JPanel {
 			return;
 		}
 		ZoneEntities.Warp warp2 = new ZoneEntities.Warp();
-		warp2.targetZone = tgtZone.getSelectedIndex();
-		warp2.targetWarpId = (Integer) tgtWarp.getValue();
+		//no zone picked or no warp id typed leaves the warp unset, and the zone
+		//refuses to save it; a stand-in destination would be a working door
+		warp2.targetZone = tgtZone.getSelectedIndex() == -1 ? ZoneEntities.Warp.NO_TARGET : tgtZone.getSelectedIndex();
+		warp2.targetWarpId = tgtWarp.getValue() == null ? ZoneEntities.Warp.NO_TARGET : (Integer) tgtWarp.getValue();
 		warp2.directionality = warpType.getSelectedIndex();
 		warp2.transitionType = getTransitionRaw(transition.getSelectedIndex());
 		warp2.coordinateType = posType.getSelectedIndex();
@@ -318,12 +349,40 @@ public class WarpEditForm extends javax.swing.JPanel {
 		warp2.w = (Integer) w.getValue();
 		warp2.h = (Integer) h.getValue();
 		warp2.faceDirection = facedir.getSelectedIndex();
-		if (!warp.equals(warp2)) {
-			int idx = e.warps.indexOf(warp);
-			warp = warp2;
-			e.warps.set(idx, warp);
+		if (!warp.sameValues(warp2)) {
+			e.warps.set(warpIndex, warp2);
+			reloadEntries(warpIndex);
 			e.modified = true;
 		}
+	}
+
+	/**
+	 * Adds a warp at a tile with no destination. It stays unset - and the zone
+	 * refuses to save - until the user picks one. It used to be pointed back at
+	 * the open zone as a placeholder, which is a working door that nothing
+	 * could tell from a finished one.
+	 */
+	public void addEntry(Point tile) {
+		ZoneEntities.Warp newWarp = new ZoneEntities.Warp();
+		newWarp.x = tile.x * 18 + 9;
+		newWarp.y = tile.y * 18 + 9;
+		e.warps.add(newWarp);
+		e.warpCount++;
+		reloadEntries(e.warpCount - 1);
+		e.modified = true;
+	}
+
+	public void removeEntry() {
+		if (warp == null) {
+			return;
+		}
+		int removed = warpIndex;
+		e.warps.remove(warpIndex);
+		e.warpCount--;
+		warp = null;
+		warpIndex = -1;
+		reloadEntries(Math.min(removed, e.warpCount - 1));
+		e.modified = true;
 	}
 
 	public void setWarp(int index) {
@@ -577,40 +636,14 @@ public class WarpEditForm extends javax.swing.JPanel {
 
     private void btnAddActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddActionPerformed
 		if (e != null) {
-			ZoneEntities.Warp newWarp = new ZoneEntities.Warp();
-			Point defaultPos = mTileMapPanel.getTileAtViewportCentre();
-			newWarp.x = defaultPos.x * 18 + 9;
-			newWarp.y = defaultPos.y * 18 + 9;
-			//Point it back at this zone until the user chooses a destination.
-			//A new warp used to keep the constructor's zone 0, which is a real
-			//place - adding a warp and saving built a working door into the
-			//first zone in the game, with nothing marking it unconfigured. A
-			//self-warp is harmless and obviously a placeholder.
-			newWarp.targetZone = ctrmap.CtrmapMainframe.mZonePnl != null
-					? ctrmap.CtrmapMainframe.mZonePnl.zoneIndex : 0;
-			newWarp.targetWarpId = 0;
-			e.warps.add(newWarp);
-			e.warpCount++;
-			addNamedWarpEntry(newWarp, e.warpCount - 1);
-			setWarp(entryBox.getItemCount() - 1);
+			addEntry(mTileMapPanel.getTileAtViewportCentre());
 			frame.repaint();
-			e.modified = true;
 		}
     }//GEN-LAST:event_btnAddActionPerformed
 
     private void btnRemoveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveActionPerformed
-		if (e != null) {
-			e.warps.remove(warp);
-			e.warpCount--;
-			entryBox.removeItemAt(entryBox.getSelectedIndex());
-			if (entryBox.getSelectedIndex() >= entryBox.getItemCount()) {
-				entryBox.setSelectedIndex(entryBox.getSelectedIndex() - 1);
-			} else {
-				entryBox.setSelectedIndex(entryBox.getSelectedIndex());
-			}
-			frame.repaint();
-			e.modified = true;
-		}
+		removeEntry();
+		frame.repaint();
     }//GEN-LAST:event_btnRemoveActionPerformed
 
 
