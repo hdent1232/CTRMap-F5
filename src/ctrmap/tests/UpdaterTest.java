@@ -177,8 +177,7 @@ public class UpdaterTest {
 	}
 
 	private static File temp(String name) throws IOException {
-		File d = new File(System.getProperty("java.io.tmpdir"),
-				"ctrmap_updater_test/" + name + "_" + System.nanoTime());
+		File d = new File(Scratch.dir("ctrmap_updater_test"), name);
 		d.mkdirs();
 		return d;
 	}

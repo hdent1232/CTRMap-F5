@@ -59,8 +59,7 @@ public class TexturePackImportTest {
 			System.exit(1);
 		}
 		//work on copies in java.io.tmpdir, never on the pristine backups
-		File tmpDir = new File(System.getProperty("java.io.tmpdir"), "ctrmap_texpack_test");
-		tmpDir.mkdirs();
+		File tmpDir = Scratch.dir("ctrmap_texpack_test");
 		File adCopy = new File(tmpDir, "areadata_garc");
 		File bmCopy = new File(tmpDir, "buildingmodels_garc");
 		Files.copy(adSrc.toPath(), adCopy.toPath(), StandardCopyOption.REPLACE_EXISTING);
