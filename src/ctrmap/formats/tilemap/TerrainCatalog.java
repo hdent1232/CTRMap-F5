@@ -31,6 +31,25 @@ import java.util.Scanner;
  */
 public class TerrainCatalog {
 
+	/**
+	 * The donor table to read, which is normally the one built into the jar.
+	 *
+	 * <p>A map's look is decided almost entirely by this table - which rock its
+	 * cliffs use, what its water is made of - and different maps want different
+	 * answers. A volcanic cave needs WATER to be molten lava and CLIFF to be
+	 * black rock with glowing cracks; a meadow emphatically does not. Pointing
+	 * {@code -Dterrain=<file>} at another table lets each design carry its own
+	 * palette instead of the two fighting over one global file.
+	 */
+	private static java.io.InputStream openCatalog() throws java.io.IOException {
+		String override = System.getProperty("terrain");
+		if (override != null && new java.io.File(override).isFile()) {
+			return new java.io.FileInputStream(override);
+		}
+		return TerrainCatalog.class.getClassLoader()
+				.getResourceAsStream("ctrmap/resources/oras_terrain.tsv");
+	}
+
 	public static class Donor {
 
 		public TilePalette brush;
@@ -39,6 +58,21 @@ public class TerrainCatalog {
 		public int donorMesh;
 		public String material;
 		public String injectName;
+		/**
+		 * Which horizontal bands of the texture the cliff face should use.
+		 *
+		 * <p>Cliff textures are not interchangeable: one is stone edge to edge,
+		 * the next bakes a grass strip into its top and blank white into its
+		 * bottom half, and a third runs the bands the other way up. Aiming the
+		 * face at the wrong band is what made a cliff come out washed-out pale.
+		 * <p>Measured off vanilla's chip-cliff atlas family (gake_hono_01,
+		 * gake_entotsu, gake_01_02, gake_01_01, d112r0103_gake1 - identical in
+		 * all five): one 18-unit elevation step is a lip bevel from vLip to
+		 * vMid, a sheer wall from vMid to vWall, and a foot bevel from vWall to
+		 * vFoot. The tiny gaps between the bands are authored guard seams
+		 * between sub-strips; keep them. Optional columns 7-10 of the row.
+		 */
+		public float vLip = 0.2483f, vMid = 0.2015f, vWall = 0.0485f, vFoot = 0.0031f;
 	}
 
 	private static final java.util.Map<String, float[]> uvScaleCache = new java.util.HashMap<>();
@@ -111,8 +145,7 @@ public class TerrainCatalog {
 			return donors;
 		}
 		donors = new LinkedHashMap<>();
-		try (InputStream in = TerrainCatalog.class.getClassLoader()
-				.getResourceAsStream("ctrmap/resources/oras_terrain.tsv")) {
+		try (InputStream in = openCatalog()) {
 			if (in == null) {
 				return donors;
 			}
@@ -132,6 +165,13 @@ public class TerrainCatalog {
 					d.donorRegion = Integer.parseInt(f[1]);
 					d.donorArea = Integer.parseInt(f[2]);
 					d.donorMesh = Integer.parseInt(f[3]);
+				//row is: BRUSH region area mesh material injectName [vLip vMid vFoot]
+				if (f.length > 9) {
+					d.vLip = Float.parseFloat(f[6]);
+					d.vMid = Float.parseFloat(f[7]);
+					d.vWall = Float.parseFloat(f[8]);
+					d.vFoot = Float.parseFloat(f[9]);
+				}
 					d.material = f[4];
 					d.injectName = f[5];
 					donors.put(d.brush, d);
@@ -147,6 +187,192 @@ public class TerrainCatalog {
 	/** True when this brush can be given to a map that lacks its material. */
 	public static boolean canImport(TilePalette brush) {
 		return donors().containsKey(brush);
+	}
+
+	private static Donor cliffDonor;
+	private static boolean cliffLoaded;
+
+	/**
+	 * The donor for generated CLIFF FACES, or null when the table has no CLIFF
+	 * row. Kept apart from {@link #donors()} because a cliff is not a brush -
+	 * nobody paints with it, the painter raises it between two elevations.
+	 *
+	 * <p>Worth having because a map's cliff is otherwise whatever its own region
+	 * happens to carry, and on most outdoor routes that is an orange chip_gake:
+	 * measured mean colour 130/59/40 on gake_hono_02 and 107/63/42 on
+	 * chip_jump_gake, against 65/55/21 for the earth-brown d112r0103_gake2 that
+	 * actually reads as a cut hillside.
+	 */
+	public static synchronized Donor cliffDonor() {
+		if (cliffLoaded) {
+			return cliffDonor;
+		}
+		cliffLoaded = true;
+		try (InputStream in = openCatalog()) {
+			if (in == null) {
+				return null;
+			}
+			Scanner sc = new Scanner(in, "UTF-8");
+			while (sc.hasNextLine()) {
+				String line = sc.nextLine().trim();
+				if (!line.startsWith("CLIFF\t")) {
+					continue;
+				}
+				String[] f = line.split("\t");
+				if (f.length < 6) {
+					continue;
+				}
+				Donor d = new Donor();
+				d.brush = null;
+				d.donorRegion = Integer.parseInt(f[1]);
+				d.donorArea = Integer.parseInt(f[2]);
+				d.donorMesh = Integer.parseInt(f[3]);
+				//row is: BRUSH region area mesh material injectName [vLip vMid vFoot]
+				if (f.length > 9) {
+					d.vLip = Float.parseFloat(f[6]);
+					d.vMid = Float.parseFloat(f[7]);
+					d.vWall = Float.parseFloat(f[8]);
+					d.vFoot = Float.parseFloat(f[9]);
+				}
+				d.material = f[4];
+				d.injectName = f[5];
+				cliffDonor = d;
+				break;
+			}
+		} catch (Exception ex) {
+			System.err.println("TerrainCatalog: cliff donor load failed: " + ex);
+		}
+		return cliffDonor;
+	}
+
+	/**
+	 * Gives a model the catalog's cliff material if it does not already carry
+	 * it. Same machinery as {@link #ensureMaterial}: the donor's geometry is
+	 * thrown away and the painter fills the empty mesh with the cliff quads it
+	 * raises between elevations.
+	 */
+	/** Why the cliff import gave up, when -Dcliffdebug is set. */
+	private static void say(String why) {
+		if (System.getProperty("cliffdebug") != null) {
+			System.out.println("  cliff import: " + why);
+		}
+	}
+
+	/**
+	 * The catalogue's LAVA_CHURN row: vanilla's additive molten overlay.
+	 *
+	 * <p>Vanilla lava is three meshes, not one - an opaque base plate, a churn
+	 * plate exactly 2.00 units above it, and a rim ribbon - and the churn plate
+	 * is ADDITIVE (srcAlpha/add/one, depth-write off). That additive layer is
+	 * the whole reason retail lava glows instead of sitting there as a flat
+	 * orange rectangle, which is exactly what ours was doing.
+	 *
+	 * <p>Rather than author blend state by hand, the row names one of retail's
+	 * own churn materials and imports it whole, blend mode and all.
+	 */
+	private static Donor churnDonor;
+	private static boolean churnLoaded;
+
+	public static synchronized Donor churnDonor() {
+		if (!churnLoaded) {
+			churnLoaded = true;
+			churnDonor = rowNamed("LAVA_CHURN");
+		}
+		return churnDonor;
+	}
+
+	/** One non-brush row of the table, read by its leading keyword. */
+	private static Donor rowNamed(String key) {
+		try (InputStream in = openCatalog()) {
+			if (in == null) {
+				return null;
+			}
+			Scanner sc = new Scanner(in, "UTF-8");
+			while (sc.hasNextLine()) {
+				String line = sc.nextLine().trim();
+				if (!line.startsWith(key + "	")) {
+					continue;
+				}
+				String[] f = line.split("	");
+				if (f.length < 6) {
+					continue;
+				}
+				Donor d = new Donor();
+				d.donorRegion = Integer.parseInt(f[1]);
+				d.donorArea = Integer.parseInt(f[2]);
+				d.donorMesh = Integer.parseInt(f[3]);
+				d.material = f[4];
+				d.injectName = f[5];
+				return d;
+			}
+		} catch (Exception ex) {
+			System.err.println("TerrainCatalog: " + key + " row unreadable: " + ex);
+		}
+		return null;
+	}
+
+	public static ImportResult ensureChurnMaterial(byte[] model) {
+		return ensureNamedMaterial(model, churnDonor());
+	}
+
+	public static ImportResult ensureCliffMaterial(byte[] model) {
+		return ensureNamedMaterial(model, cliffDonor());
+	}
+
+	private static ImportResult ensureNamedMaterial(byte[] model, Donor d) {
+		ImportResult r = new ImportResult();
+		r.model = model;
+		if (d == null) {
+			say("no CLIFF row in the catalogue");
+			return r;
+		}
+		try {
+			BchMapModel probe = new BchMapModel(model);
+			for (int i = 0; i < probe.meshCount; i++) {
+				if (d.injectName.equals(probe.getMaterialName(probe.getMeshMaterialIndex(i)))) {
+					return r; //already imported
+				}
+			}
+			GR donorGr = BuildingCatalog.pristineRegion(d.donorRegion);
+			if (donorGr == null) {
+				say("donor region " + d.donorRegion + " could not be opened");
+				return r;
+			}
+			byte[] donorModel = donorGr.getFile(1);
+			if (!BchMapModel.isMapModel(donorModel)) {
+				say("donor region " + d.donorRegion + " subfile 1 is not a map model");
+				return r;
+			}
+			byte[] merged = BchModelAppender.append(model, donorModel, d.donorMesh, d.injectName);
+			BchMapModel mm = new BchMapModel(merged);
+			int newMesh = -1;
+			for (int i = 0; i < mm.meshCount; i++) {
+				if (d.injectName.equals(mm.getMaterialName(mm.getMeshMaterialIndex(i)))) {
+					newMesh = i;
+					break;
+				}
+			}
+			if (newMesh < 0) {
+				say("append produced no mesh named " + d.injectName);
+				return r;
+			}
+			BchMapModel.MeshGeom g = mm.geometry().get(newMesh);
+			byte[] one = new byte[g.stride];
+			System.arraycopy(mm.raw, g.vtxAbs, one, 0, g.stride);
+			merged = mm.setMeshGeometry(newMesh, one, new int[]{0, 0, 0});
+			if (!new BchMapModel(merged).validate().isEmpty()) {
+				say("merged model failed validation: "
+						+ new BchMapModel(merged).validate().get(0));
+				return r;
+			}
+			r.model = merged;
+			r.injected = true;
+			r.donorArea = d.donorArea;
+			r.texturesNeeded.addAll(textureNamesOf(new BchMapModel(donorModel), d.donorMesh));
+		} catch (Exception ex) {
+			System.err.println("TerrainCatalog: cliff import failed: " + ex);
+		}
+		return r;
 	}
 
 	/**

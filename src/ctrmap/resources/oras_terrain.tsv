@@ -7,7 +7,7 @@ GRASS	460	87	2	kusa_a	ctr_chip_kusa
 TALL_GRASS	460	87	2	kusa_a	ctr_kusa
 PATH	208	31	2	soil1	ctr_soil
 SAND	44	12	14	sand	ctr_suna
-WATER	388	74	4	enkei_sea	ctr_chip_sea
+WATER	388	74	4	enkei_sea	ctr_water
 ROCK	316	205	12	rockline	ctr_chip_rock
 CAVE	365	69	5	chip_doukutsu01	ctr_doukutsu
 DEEP_SAND	44	12	14	sand	ctr_suna
@@ -23,3 +23,13 @@ WALKWAY	619	158	2	hashi_Comb17	ctr_hashi
 STAIRS_Z	303	53	4	stairs_chip_steps01a	ctr_kaidan
 STAIRS_E	303	53	4	stairs_chip_steps01a	ctr_kaidan
 STAIRS_W	303	53	4	stairs_chip_steps01a	ctr_kaidan
+# Cliff rock is now Sootopolis' c108_gake_01: pale grey rounded cobbles with a
+# bright green grass strip, measured saturation 0.093 against 0.5+ for the earth
+# and desert cliffs. It was picked by MEASURING every cliff texture in the game
+# rather than by name - the one an asset search called "grey cliff" dumped out
+# brown.
+# Not a brush: the material generated CLIFF FACES are given. A map's own
+# cliff is whatever its region happens to carry, and on most outdoor routes
+# that is an orange chip_gake (measured 130/59/40 on gake_hono_02, 107/63/42
+# on chip_jump_gake). d112r0103_gake2 is dark earth-brown, 65/55/21.
+CLIFF	364	69	5	d112r0103_gake2	ctr_gake

@@ -125,9 +125,27 @@ public class CompositeLeftoverTest {
 			if (floor == Float.MAX_VALUE) {
 				continue; //nothing landed in the painted area at all
 			}
+			//The mesh the builder writes its cliffs into is rebuilt by the
+			//builder every run, so whatever stands in it is geometry authored
+			//THIS pass - a wall at a step, a backing behind it - and never a
+			//leftover. That distinction matters because on these donor-only
+			//regions there is no imported cliff material, so the builder picks
+			//one of the donor's own cliff meshes and writes into it; judging
+			//its contents as leftovers flags terrain the painter deliberately
+			//built. Everything else - trees, rocks, houses, ground slabs -
+			//is still judged exactly as before.
+			//resolved exactly as the builder does, fallback included - without
+			//the same fallback this picks a different mesh and excludes nothing
+			BchMapModel probe = new BchMapModel(model);
+			int cliffMesh = PaintedRegionBuilder.resolveCliffMesh(
+					probe, PaintedRegionBuilder.defaultGroundMesh(probe));
+
 			int standing = 0;
 			String what = null;
 			for (int mi = 0; mi < out.meshCount; mi++) {
+				if (mi == cliffMesh) {
+					continue;
+				}
 				float[][] pos = positions(out, mi);
 				int[] tris = triangles(out, mi);
 				if (pos == null || tris == null) {

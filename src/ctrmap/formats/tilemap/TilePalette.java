@@ -24,8 +24,15 @@ public enum TilePalette {
 			new String[]{"soil", "michi", "road", "path", "chip_wood", "wood", "dirt"}),
 	SAND("Sand / beach", new int[]{0x20, 0x80, 0x0A, 0x02}, true, true, 0xE7D6A0,
 			new String[]{"suna", "sand", "beach", "hama"}),
+	//"chip_sea" and the bare "sea" are deliberately absent. They matched
+	//chip_sea_b, which is ORAS's pale shallow-water foam - measured mean colour
+	//219/237/245, a blue lead of only +26 over red, so painted rivers came out
+	//looking like white gravel. Almost every outdoor map carries it, so it won
+	//everywhere and the catalog's own donor (enkei_sea01, 63/183/249, blue lead
+	//+186) was never reached. Without those two hints a map with no genuinely
+	//blue water of its own imports one instead of settling for foam.
 	WATER("Water (surf)", new int[]{0x06, 0x00, 0x1A, 0x3D}, true, true, 0x3E74E8,
-			new String[]{"chip_sea", "sea", "umi", "water", "mizu"}),
+			new String[]{"enkei", "umi", "mizu", "water"}),
 	ROCK("Rock / wall (blocked)", new int[]{0x21, 0x00, 0x00, 0x01}, false, false, 0x8C8C8C,
 			new String[]{"chip_rock", "rock", "iwa", "gake", "ishi", "stone"}),
 	// --- expanded catalog (measured tuples; behaviour is the b3 byte) ---
@@ -43,8 +50,10 @@ public enum TilePalette {
 			new String[]{"gake", "chip_kusa", "kusa", "grass"}),
 	BIKE_RAIL("Bike rail (cycling road)", new int[]{0x60, 0x00, 0x00, 0x00}, true, true, 0xB08040,
 			new String[]{"deck", "road", "michi", "chip_wood", "wood"}),
+	//same reasoning as WATER: falling back to chip_sea turned a waterfall into
+	//foam. "taki" is the real cue (d101r_taki0, takigake02 both read blue).
 	WATERFALL("Waterfall", new int[]{0x23, 0x00, 0x1A, 0x40}, true, true, 0x5AA0F0,
-			new String[]{"taki", "chip_sea", "sea", "water"}),
+			new String[]{"taki", "water"}),
 	DOOR("Door / warp tile", new int[]{0x01, 0x00, 0x0E, 0xD4}, true, true, 0xB05A3C,
 			new String[]{"door", "soil", "michi", "chip_wood", "path"}),
 	// interiors + structures (tuples measured across all 857 retail regions)
