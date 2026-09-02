@@ -34,6 +34,14 @@ public class ZoneEntities {
 
 	public boolean modified = false;
 
+	/**
+	 * The header stores each kind's count in one byte. A 256th record used
+	 * to be written as a count of 0 with every record still in the file, so
+	 * the next load parsed the script from the wrong offset and the zone
+	 * list came up empty with nothing to say why.
+	 */
+	public static final int MAX_PER_KIND = 255;
+
 	public ZoneEntities(byte[] data) {
 		try {
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(data));
@@ -75,6 +83,17 @@ public class ZoneEntities {
 			warpCount = warps.size();
 			trigger1Count = triggers1.size();
 			trigger2Count = triggers2.size();
+			refuseAbove(furnitureCount, "props");
+			refuseAbove(NPCCount, "NPCs");
+			refuseAbove(warpCount, "warps");
+			refuseAbove(trigger1Count, "triggers");
+			refuseAbove(trigger2Count, "type-2 triggers");
+			int misnumbered = firstMisnumberedNPC();
+			if (misnumbered != -1) {
+				throw new IOException("NPC " + misnumbered + " carries uid " + npcs.get(misnumbered).uid
+						+ ", but the game keeps NPC uids equal to their position - every retail NPC does,"
+						+ " and the editor's own list assumes it. Reload the zone in the NPC editor and let it renumber them.");
+			}
 			totalLength = 8 /*header without length*/ + furnitureCount * 0x14 + NPCCount * 0x30 + warpCount * 0x18 + trigger1Count * 0x18 + trigger2Count * 0x18;
 			dos.writeInt(totalLength);
 			dos.write(furnitureCount);
@@ -112,6 +131,41 @@ public class ZoneEntities {
 			Logger.getLogger(ZoneEntities.class.getName()).log(Level.SEVERE, null, ex);
 			throw new IllegalStateException("Zone entities could not be saved: " + ex.getMessage(), ex);
 		}
+	}
+
+	private static void refuseAbove(int count, String kind) throws IOException {
+		if (count > MAX_PER_KIND) {
+			throw new IOException("This zone has " + count + " " + kind + "; the game stores at most "
+					+ MAX_PER_KIND + " of each kind. Remove some before saving.");
+		}
+	}
+
+	/** Index of the first NPC whose uid is not its position, or -1 when they all match. */
+	public int firstMisnumberedNPC() {
+		for (int i = 0; i < npcs.size(); i++) {
+			if (npcs.get(i).uid != i) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	/** Gives every NPC the uid the game expects: its position in the list. */
+	public void renumberNPCs() {
+		for (int i = 0; i < npcs.size(); i++) {
+			npcs.get(i).uid = i;
+		}
+		NPCCount = npcs.size();
+	}
+
+	/**
+	 * Removes the NPC at index and renumbers the ones after it. All 2904
+	 * retail NPCs hold uid == index and {@link #assembleData} refuses
+	 * anything else, so the hole a plain remove left could never be saved.
+	 */
+	public void removeNPC(int index) {
+		npcs.remove(index);
+		renumberNPCs();
 	}
 
 	public static class Prop {
@@ -239,6 +293,12 @@ public class ZoneEntities {
 		}
 
 		public void write(LittleEndianDataOutputStream dos) throws IOException {
+			if (Float.isNaN(z3DCoordinate) || Float.isInfinite(z3DCoordinate)) {
+				//the field is public and a NaN from a failed height lookup used to
+				//land in the file unnoticed: the NPC vanished from the viewport
+				throw new IOException("NPC " + uid + " at tile (" + xTile + "," + yTile + ") has no valid altitude ("
+						+ z3DCoordinate + "). Drag it onto the map again, or type an altitude, before saving.");
+			}
 			dos.writeShort((short) uid);
 			dos.writeShort((short) model);
 			dos.writeShort((short) movePerm1);
@@ -335,12 +395,17 @@ public class ZoneEntities {
 
 		@Override
 		public void setY(float val) {
+			if (Float.isNaN(val) || Float.isInfinite(val)) {
+				throw new IllegalArgumentException("NPC " + uid + " altitude must be a number, not " + val);
+			}
 			z3DCoordinate = val;
 		}
 
+		/** Takes the altitude from the collision mesh, keeping the current one where the mesh has no answer. */
 		public void setYFromColl(float x, float y) {
 			float newz3DCoordinate = CtrmapMainframe.mTileMapPanel.getHeightAtWorldLoc(x, y);
-			if (newz3DCoordinate != Float.NaN) {
+			//x != Float.NaN is true for every x, NaN included - the old test held nothing back
+			if (!Float.isNaN(newz3DCoordinate)) {
 				z3DCoordinate = newz3DCoordinate;
 			}
 		}

@@ -501,12 +501,24 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	}
 
 	public float getHeightAtWorldLoc(float x, float z) {
-		//decide coll mesh to be used
-		if (x / 720f >= colls.length || z / 720f >= colls.length) {
+		return getHeightAtWorldLoc(colls, x, z);
+	}
+
+	/**
+	 * Collision height at a world position, or NaN outside the loaded
+	 * matrix. colls is [width][height] and each axis is bounded by its own
+	 * side: testing both against the width returned NaN for every row past
+	 * the width on a map taller than wide (27 retail matrices), and an NPC
+	 * dragged there lost its altitude to the file.
+	 */
+	public static float getHeightAtWorldLoc(GRCollisionFile[][] colls, float x, float z) {
+		int cx = (int) (x / 720f);
+		int cz = (int) (z / 720f);
+		if (x < 0 || z < 0 || cx >= colls.length || cz >= colls[cx].length) {
 			return Float.NaN;
 			//methods using this should handle Float.NaN
 		}
-		GRCollisionFile f = colls[(int) (x / 720f)][(int) (z / 720f)];
+		GRCollisionFile f = colls[cx][cz];
 		if (f == null) {
 			return 0f;
 		}

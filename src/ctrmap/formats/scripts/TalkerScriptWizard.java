@@ -230,6 +230,21 @@ public class TalkerScriptWizard {
 		return ret;
 	}
 
+	/**
+	 * Whether an NPC may point at scriptId in this zone: 0 (no script), an
+	 * engine-reserved id, or a case the dispatch defines. A zone whose
+	 * dispatch cannot be read is not refused. Every retail NPC with a local
+	 * id satisfies this; the editor used to accept any number and show the
+	 * same "not a simple talker" note it shows for a valid advanced script.
+	 */
+	public static boolean scriptIdExists(GFLPawnScript script, int scriptId) {
+		if (scriptId == 0 || scriptId >= ENGINE_RESERVED_MIN) {
+			return true;
+		}
+		List<Integer> ids = ZoneScriptAnalyzer.listScriptIds(script);
+		return ids.isEmpty() || ids.contains(scriptId);
+	}
+
 	private static PawnInstruction makeIns(PawnInstruction.Commands cmd, int ptr, int arg) {
 		PawnInstruction ins = new PawnInstruction(ptr, cmd.ordinal(), "");
 		if (ins.argumentCells.length > 0) {

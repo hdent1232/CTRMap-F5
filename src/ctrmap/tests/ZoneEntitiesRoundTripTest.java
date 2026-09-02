@@ -108,10 +108,11 @@ public class ZoneEntitiesRoundTripTest {
 		writeShorts(dos, new int[]{0x0101, 0x0202, 0x0303, 0x0404, 5, 6, 7, 8});
 		dos.writeInt(0x0A0B0C0D);
 
-		//two NPC records, 0x30 bytes each: 22 shorts + float
+		//two NPC records, 0x30 bytes each: 22 shorts + float; uid is the
+		//position, which assembleData enforces because the game relies on it
 		for (int n = 0; n < 2; n++) {
 			writeShorts(dos, new int[]{
-				100 + n, 27, 1, 4, 0x1F0 + n, 3000 + n, 2, 5,
+				n, 27, 1, 4, 0x1F0 + n, 3000 + n, 2, 5,
 				0, 0, 4, 5, 6, 7,
 				-1, -1, -1,
 				0, 8, 9,

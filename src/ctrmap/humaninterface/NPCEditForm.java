@@ -61,7 +61,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	public NPCRegistry reg;
 	public NPCRegistry.NPCRegistryEntry regentry;
 	public int npcIndex;
-	public List<H3DModel> models = new ArrayList<>();
 	public DefaultComboBoxModel motionModel = new DefaultComboBoxModel();
 	public DefaultComboBoxModel motion2Model = new DefaultComboBoxModel();
 
@@ -78,7 +77,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	public void loadFromEntities(ZoneEntities e, NPCRegistry reg) {
-		models.clear();
 		motionModel.removeAllElements();
 		motion2Model.removeAllElements();
 		addBaseMotion();
@@ -100,11 +98,17 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			updateDialogueSection();
 			return;
 		}
+		if (e.firstMisnumberedNPC() != -1 && JOptionPane.showConfirmDialog(frame,
+				"This zone's NPC uids are not their positions (an earlier delete left a gap).\n"
+				+ "The game and this editor both number NPCs by position, and the zone\n"
+				+ "will not save until they match.\n\n"
+				+ "Renumber them now? Scripts that address these NPCs by uid will need updating.",
+				"NPC uids out of order", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION) {
+			e.renumberNPCs();
+			e.modified = true;
+		}
 		for (int i = 0; i < e.NPCCount; i++) {
 			entryBox.addItem(String.valueOf(e.npcs.get(i).uid));
-			if (reg != null) {
-				models.add(reg.getModel(e.npcs.get(i).model));
-			}
 		}
 		loaded = true;
 		if (entryBox.getItemCount() > 0) {
@@ -323,7 +327,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		regentry = null;
 		e = null;
 		npc = null;
-		models.clear();
 		entryBox.setSelectedIndex(-1);
 		entryBox.removeAllItems();
 		storyFile = null;
@@ -407,7 +410,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				}
 			}
 		}
-		updateModel(index);
 		updateH3D(index);
 		m3DDebugPanel.bindNavi(e.npcs.get(index));
 		syncScrDropdown(npc.script);
@@ -415,15 +417,25 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		loaded = true;
 	}
 
-	public void updateModel(int index) {
-		if (reg != null) {
-			models.set(index, reg.getModel(e.npcs.get(index).model));
-		}
+	/**
+	 * The MoveModel drawn for NPC index, straight from its record. The form
+	 * used to keep a List&lt;H3DModel&gt; alongside e.npcs and delete from it by
+	 * object; NPCs sharing a model share the cached instance, so a delete
+	 * took out the first slot with that model and every later NPC drew as
+	 * its neighbour.
+	 */
+	private H3DModel modelAt(int index) {
+		return reg == null ? null : reg.getModel(e.npcs.get(index).model);
 	}
 
-	public void saveEntry() {
+	/**
+	 * Commits the form to the selected NPC. Returns false, with the reason
+	 * shown, when the record would point at a script this zone does not
+	 * define - that used to save silently and the NPC did nothing in game.
+	 */
+	public boolean saveEntry() {
 		if (npc == null) {
-			return;
+			return true;
 		}
 		ZoneEntities.NPC npc2 = new ZoneEntities.NPC();
 		npc2.uid = npc.uid;
@@ -451,6 +463,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		npc2.multiZoneLink1Type = (Integer) linkID.getValue();
 
 		if (!npc2.equals(npc)) {
+			String missing = undefinedScriptProblem(npc2.script);
+			if (missing != null) {
+				JOptionPane.showMessageDialog(this, missing, "Script not defined", JOptionPane.ERROR_MESSAGE);
+				return false;
+			}
 			int idx = e.npcs.indexOf(npc);
 			npc = npc2;
 			e.npcs.set(idx, npc);
@@ -467,6 +484,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				}
 			}
 		}
+		return true;
 	}
 
 	public boolean saveRegistry(boolean dialog) {
@@ -474,6 +492,36 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return true;
 		}
 		return reg.store(dialog);
+	}
+
+	/** Tells the user when the zone already holds every record of a kind the format can count. */
+	private boolean kindFull(int count, String kind) {
+		if (count < ZoneEntities.MAX_PER_KIND) {
+			return false;
+		}
+		JOptionPane.showMessageDialog(this, "This zone already has " + count + " " + kind + ", the most the game can store.\n"
+				+ "Remove one before adding another.", "Zone full", JOptionPane.ERROR_MESSAGE);
+		return true;
+	}
+
+	/**
+	 * Why scriptId cannot go on an NPC in this zone, or null when it can. An
+	 * id with no case in the zone's dispatch is not an advanced script, it is
+	 * nothing - and the Dialogue note used to describe both the same way.
+	 */
+	private String undefinedScriptProblem(int scriptId) {
+		Zone zone = getLoadedZone();
+		if (zone == null || zone.s == null) {
+			return null;
+		}
+		zone.s.decompressThis();
+		if (TalkerScriptWizard.scriptIdExists(zone.s, scriptId)) {
+			return null;
+		}
+		return "Script " + scriptId + " is not defined in this zone's script - its dispatch only has cases\n"
+				+ ZoneScriptAnalyzer.listScriptIds(zone.s) + ".\n\n"
+				+ "The NPC keeps its previous script. Pick one from the dropdown, or add a\n"
+				+ "script with \"Add NPC / object\" first.";
 	}
 
 	/**
@@ -597,6 +645,10 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		int scriptId = npc.script;
 		if (scriptId >= TalkerScriptWizard.ENGINE_RESERVED_MIN) {
 			dlgStatus.setText("Script " + scriptId + " is in an engine-reserved range (no local dialogue).");
+			return;
+		}
+		if (!TalkerScriptWizard.scriptIdExists(zone.s, scriptId)) {
+			dlgStatus.setText("Script " + scriptId + " is not defined in this zone's script.");
 			return;
 		}
 		ZoneScriptAnalyzer.TalkerPattern tp = ZoneScriptAnalyzer.findTalkerPattern(zone.s, scriptId);
@@ -840,6 +892,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (choice == null) {
 			return;
 		}
+		if ("Sign".equals(choice) ? kindFull(e.furniture.size(), "props") : kindFull(e.npcs.size(), "NPCs")) {
+			return;
+		}
 		if ("Sign".equals(choice)) {
 			addSignTemplate(zone);
 			return;
@@ -977,9 +1032,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		newNPC.xTile = defaultPos.x;
 		newNPC.yTile = defaultPos.y;
 		e.npcs.add(newNPC);
-		if (reg != null) {
-			models.add(reg.getModel(newNPC.model));
-		}
 		e.NPCCount++;
 		entryBox.addItem(String.valueOf(newNPC.uid));
 		loaded = true;
@@ -1458,9 +1510,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private void finishNpcAdd(Zone zone, ZoneEntities.NPC newNPC, boolean saveScript) {
 		loaded = false;
 		e.npcs.add(newNPC);
-		if (reg != null) {
-			models.add(reg.getModel(newNPC.model));
-		}
 		e.NPCCount = e.npcs.size();
 		entryBox.addItem(String.valueOf(newNPC.uid));
 		loaded = true;
@@ -1802,8 +1851,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	public void setNPC(int num) {
-		if (loaded) {
-			saveEntry();
+		if (loaded && saveEntry()) { //a refused save keeps the user on the NPC that needs fixing
 			entryBox.setSelectedIndex(num);
 		}
 	}
@@ -1828,7 +1876,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	public void updateH3D(int index) {
-		H3DModel m = models.get(index);
+		H3DModel m = modelAt(index);
 		if (m == null) {
 			return;
 		}
@@ -1858,11 +1906,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	public void renderCM3D(GL2 gl) {
 		if (reg != null) {
 			for (int i = 0; i < e.NPCCount; i++) {
-				if (models.size() > i && models.get(i) != null) {
+				H3DModel m = modelAt(i);
+				if (m != null) {
 					updateH3D(i);
-					models.get(i).render(gl);
+					m.render(gl);
 					if (i == npcIndex && CtrmapMainframe.tool instanceof NPCTool) {
-						models.get(i).renderBox(gl);
+						m.renderBox(gl);
 					}
 				}
 			}
@@ -1871,18 +1920,18 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 	@Override
 	public void uploadBuffers(GL2 gl) {
-		for (int i = 0; i < models.size(); i++) {
-			if (models.get(i) != null) {
-				models.get(i).uploadAllBOs(gl);
+		if (reg != null) {
+			for (H3DModel m : reg.models.values()) {
+				m.uploadAllBOs(gl);
 			}
 		}
 	}
 
 	@Override
 	public void deleteGLInstanceBuffers(GL2 gl) {
-		for (int i = 0; i < models.size(); i++) {
-			if (models.get(i) != null) {
-				models.get(i).destroyAllBOs(gl);
+		if (reg != null) {
+			for (H3DModel m : reg.models.values()) {
+				m.destroyAllBOs(gl);
 			}
 		}
 	}
@@ -2448,6 +2497,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
     }//GEN-LAST:event_btnRegEditActionPerformed
 
     private void btnNewEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNewEntryActionPerformed
+		if (kindFull(e.npcs.size(), "NPCs")) {
+			return;
+		}
 		loaded = false;
 		ZoneEntities.NPC newNPC = new ZoneEntities.NPC();
 		int newuid = 0;
@@ -2460,9 +2512,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		newNPC.xTile = defaultPos.x;
 		newNPC.yTile = defaultPos.y;
 		e.npcs.add(newNPC);
-		if (reg != null) {
-			models.add(reg.getModel(newNPC.model));
-		}
 		e.NPCCount++;
 		entryBox.addItem(String.valueOf(newNPC.uid));
 		loaded = true;
@@ -2478,16 +2527,32 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
     }//GEN-LAST:event_btnSaveActionPerformed
 
     private void btnRemoveEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveEntryActionPerformed
-		if (reg != null) {
-			models.remove(reg.getModel(npc.model));
+		int idx = entryBox.getSelectedIndex();
+		if (npc == null || idx == -1 || idx >= e.npcs.size() || e.npcs.get(idx) != npc) {
+			return;
 		}
-		e.npcs.remove(npc);
-		e.NPCCount--;
-		entryBox.removeItemAt(entryBox.getSelectedIndex());
-		if (entryBox.getSelectedIndex() >= entryBox.getItemCount()) {
-			entryBox.setSelectedIndex(entryBox.getSelectedIndex() - 1);
+		if (idx < e.npcs.size() - 1 && JOptionPane.showConfirmDialog(frame,
+				"The NPCs after this one will be renumbered (uids " + (idx + 1) + ".." + (e.npcs.size() - 1)
+				+ " become " + idx + ".." + (e.npcs.size() - 2) + "), because the game keeps NPC uids\n"
+				+ "equal to their position. Scripts that address them by uid will need updating.\n\n"
+				+ "Remove NPC " + idx + "?",
+				"Remove NPC", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+			return;
+		}
+		loaded = false;
+		e.removeNPC(idx);
+		entryBox.removeAllItems();
+		for (int i = 0; i < e.npcs.size(); i++) {
+			entryBox.addItem(String.valueOf(e.npcs.get(i).uid)); //relabelled - the uids after idx moved down
+		}
+		loaded = true;
+		if (e.npcs.isEmpty()) {
+			npc = null;
+			npcIndex = -1;
+			m3DDebugPanel.bindNavi(null);
+			updateDialogueSection();
 		} else {
-			entryBox.setSelectedIndex(entryBox.getSelectedIndex());
+			entryBox.setSelectedIndex(Math.min(idx, e.npcs.size() - 1));
 		}
 		frame.repaint();
 		e.modified = true;
@@ -2600,14 +2665,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		double closestDist = Float.MAX_VALUE;
 		int closestIdx = -1;
 		GLUgl2 glu = new GLUgl2();
-		for (int i = 0; i < models.size(); i++) {
-			if (models.get(i) == null) {
+		for (int i = 0; reg != null && i < e.npcs.size(); i++) {
+			H3DModel m = modelAt(i);
+			if (m == null) {
 				continue;
 			}
 			ZoneEntities.NPC testNpc = e.npcs.get(i);
-			float[][] box = models.get(i).boxVectors;
+			float[][] box = m.boxVectors;
 			if (Utils.isBoxSelected(box, evt, parent, new Vec3f(testNpc.getX(), testNpc.getY(), testNpc.getZ()), new Vec3f(1f, 1f, 1f), new Vec3f(0f, get3DOrientation(testNpc.faceDirection), 0f), mvMatrix, projMatrix, view)) {
-				H3DModel m = models.get(i);
 				boolean allow = false;
 				for (int mesh = 0; mesh < m.meshes.size(); mesh++) {
 					for (int vertex = 0; vertex < m.meshes.get(mesh).vertices.size(); vertex++) {
