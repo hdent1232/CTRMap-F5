@@ -18,6 +18,8 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.swing.JComboBox;
 import javax.swing.JFormattedTextField;
 
@@ -49,9 +51,10 @@ import javax.swing.JFormattedTextField;
  *     and the zone-switch worker discarded the throw - the zone looked loaded
  *     with the previous zone's warps, triggers and script still in their
  *     editors, and edits made there were never written.</li>
- * <li>Every zone-loading SwingWorker must call get() in done(). One of the two
- *     in ZoneLoadingPanel did, with a comment saying why; the other dropped
- *     every exception on the floor.</li>
+ * <li>Every SwingWorker in src must call get() in done(). One of the two in
+ *     ZoneLoadingPanel did, with a comment saying why; the other dropped every
+ *     exception on the floor - and so did six more across Builder, TileMapPanel,
+ *     Workspace and SetupWizard once the scan looked past that one panel.</li>
  * </ol>
  *
  * Usage: java ctrmap.tests.DataSafetyGuardsTest &lt;path-to-any-garc&gt; [pristine-dump-root]
@@ -60,6 +63,8 @@ import javax.swing.JFormattedTextField;
 public class DataSafetyGuardsTest {
 
 	static int fails = 0;
+	/** A SwingWorker completion hook; the same shape whatever the class extends. */
+	private static final Pattern DONE = Pattern.compile("void done\\(\\)\\s*\\{");
 
 	public static void main(String[] args) throws Exception {
 		String garcPath = args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/4/0";
@@ -231,33 +236,56 @@ public class DataSafetyGuardsTest {
 	}
 
 	/**
-	 * Every SwingWorker in ZoneLoadingPanel must call get() in done(). A worker
-	 * that does not discards whatever doInBackground threw, and the zone-switch
-	 * worker did exactly that: the progress dialog closed, the map tab came up,
-	 * and the entity editors quietly kept the previous zone.
+	 * Every SwingWorker in src must call get() in done(). A worker that does
+	 * not discards whatever doInBackground threw, and six of them did exactly
+	 * that: the progress dialog closed and the panel carried on. A pack that
+	 * failed half-way still ran its completion callback - the one that deploys
+	 * to the emulator - a region that failed to write still let the zone
+	 * switch go on, and a map that failed to load left the previous map's
+	 * regions on screen. Scanning the whole tree, not one panel, is what stops
+	 * the next worker being added without one.
 	 */
 	static void workerErrorsSurface(File src) throws Exception {
-		File panel = new File(src, "ctrmap/humaninterface/ZoneLoadingPanel.java");
-		if (!panel.isFile()) {
-			System.out.println("  skip: no source at " + panel);
+		File root = new File(src, "ctrmap");
+		if (!root.isDirectory()) {
+			System.out.println("  skip: no source at " + root);
 			return;
 		}
-		String text = new String(Files.readAllBytes(panel.toPath()), StandardCharsets.UTF_8);
-		int workers = 0;
-		List<Integer> silent = new ArrayList<>();
-		for (int at = text.indexOf("void done()"); at != -1; at = text.indexOf("void done()", at + 1)) {
-			int open = text.indexOf('{', at), end = open, depth = 0;
-			do {
-				char ch = text.charAt(end++);
-				depth += ch == '{' ? 1 : ch == '}' ? -1 : 0;
-			} while (depth > 0);
-			workers++;
-			if (!text.substring(open, end).contains("get()")) {
-				silent.add(text.substring(0, at).split("\n", -1).length);
+		List<String> silent = new ArrayList<>();
+		int workers = silentWorkers(root, silent);
+		check(workers >= 10, workers + " done() bodies found under " + root);
+		check(silent.isEmpty(), "every done() calls get(); missing at " + silent);
+	}
+
+	/** Comments are stripped first, so a get() mentioned in one does not count. */
+	static int silentWorkers(File dir, List<String> silent) throws Exception {
+		int n = 0;
+		File[] files = dir.listFiles();
+		if (files == null) {
+			return 0;
+		}
+		for (File f : files) {
+			if (f.isDirectory()) {
+				n += silentWorkers(f, silent);
+				continue;
+			}
+			if (!f.getName().endsWith(".java")) {
+				continue;
+			}
+			String text = SourceSeamTest.stripComments(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+			for (Matcher m = DONE.matcher(text); m.find();) {
+				int open = text.indexOf('{', m.start()), end = open, depth = 0;
+				do {
+					char ch = text.charAt(end++);
+					depth += ch == '{' ? 1 : ch == '}' ? -1 : 0;
+				} while (depth > 0);
+				n++;
+				if (!text.substring(open, end).contains("get()")) {
+					silent.add(f.getName() + ":" + text.substring(0, m.start()).split("\n", -1).length);
+				}
 			}
 		}
-		check(workers >= 2, workers + " workers found in ZoneLoadingPanel");
-		check(silent.isEmpty(), "every done() calls get(); missing at line(s) " + silent);
+		return n;
 	}
 
 	static File temp(byte[] bytes) throws Exception {
