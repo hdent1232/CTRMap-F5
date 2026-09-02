@@ -18,6 +18,12 @@ import java.util.regex.Pattern;
  *     had the same shape. Scratch space comes from {@link Scratch} - the
  *     JDK's unique-name API, removed at exit - never from java.io.tmpdir plus
  *     a name, and never from createTempFile's parent folder.</li>
+ * <li>No dump path that only works beside this repo. Six suites resolved the
+ *     corpus as "../RomFS..." with no way to override it, so the battery could
+ *     not run from a worktree or a fresh clone: those six failed for a reason
+ *     that had nothing to do with the code under test, and a contributor could
+ *     not tell that from a real regression. A relative default is fine as a
+ *     fallback; it must sit behind an args[0] the runner can pass.</li>
  * </ul>
  * Comments are stripped before scanning, so only live code counts.
  *
@@ -29,6 +35,10 @@ public class BatteryHygieneTest {
 	private static final Pattern FIXED_TEMP = Pattern.compile("java\\.io\\.tmpdir");
 	/** createTempFile used only to find the temp folder, then a name of the test's own. */
 	private static final Pattern TEMP_PARENT = Pattern.compile("createTempFile\\([^;]*\\)\\s*\\.getParentFile\\(\\)");
+	/** A dump path spelled relative to the repo's parent. */
+	private static final Pattern REPO_RELATIVE_DUMP = Pattern.compile("\"\\.\\./RomFS");
+	/** Reading a path the runner passed in. */
+	private static final Pattern TAKES_ARG = Pattern.compile("args\\s*\\[\\s*0\\s*\\]|args\\s*\\.\\s*length");
 
 	static int fails = 0;
 
@@ -41,6 +51,7 @@ public class BatteryHygieneTest {
 			return;
 		}
 		fixedTempPaths(tests);
+		overridableCorpusPath(tests);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -61,6 +72,18 @@ public class BatteryHygieneTest {
 		}
 		check(sources.size() >= 50, sources.size() + " test sources scanned");
 		check(named.isEmpty(), "no suite names its own path under the temp folder; found " + named);
+	}
+
+	/** A suite that names the dump must also accept one from the runner. */
+	static void overridableCorpusPath(File tests) throws Exception {
+		List<String> stuck = new ArrayList<>();
+		for (File f : sources(tests)) {
+			String src = SourceSeamTest.stripComments(read(f));
+			if (REPO_RELATIVE_DUMP.matcher(src).find() && !TAKES_ARG.matcher(src).find()) {
+				stuck.add(f.getName());
+			}
+		}
+		check(stuck.isEmpty(), "every suite that names the dump can be pointed at one; stuck: " + stuck);
 	}
 
 	/** The .java files under dir, minus this guard: it spells the patterns out. */
