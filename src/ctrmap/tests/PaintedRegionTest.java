@@ -173,35 +173,77 @@ public class PaintedRegionTest {
 				throw new IllegalStateException("only " + w.size()
 						+ " cliff triangles generated; the plateau did not build");
 			}
-			float cx = 0f, cz = 0f;
-			for (float[] t : w) {
-				cx += t[0];
-				cz += t[1];
-			}
-			cx /= w.size();
-			cz /= w.size();
+			//Judge each face against the GROUND, not against a plateau centre.
+			//The centre rule reported 8 failures out of 384, and the plateau has
+			//exactly 8 corners - the sort of coincidence that is either the whole
+			//story or a red herring. It is a red herring only if the faces are
+			//genuinely correct, so ask the question directly: step a little way
+			//along a face's own normal and require the terrain there to be LOWER
+			//than the terrain the face rises from. A cliff pointing into the hill
+			//it belongs to fails that no matter where the map's centre is.
+			int[][] h = plateau();
 			int out = 0, skipped = 0;
+			List<String> wrong = new java.util.ArrayList<>();
 			for (float[] t : w) {
-				float ox = t[0] - cx, oz = t[1] - cz;
-				if (ox * ox + oz * oz < 1f) {
+				float nlen = (float) Math.sqrt(t[2] * t[2] + t[3] * t[3]);
+				if (nlen < 1e-3f) {
+					skipped++; //a face with no horizontal aim cannot be judged this way
+					continue;
+				}
+				float ndx = t[2] / nlen, ndz = t[3] / nlen;
+				int behindX = tileOf(t[0] - ndx * 12f), behindZ = tileOf(t[1] - ndz * 12f);
+				int aheadX = tileOf(t[0] + ndx * 12f), aheadZ = tileOf(t[1] + ndz * 12f);
+				if (!inGrid(behindX, behindZ) || !inGrid(aheadX, aheadZ)) {
 					skipped++;
 					continue;
 				}
-				if (t[2] * ox + t[3] * oz > 0) {
+				int behind = h[behindZ][behindX], ahead = h[aheadZ][aheadX];
+				//Judge EVERY face, including ones running along a contour. Calling
+				//those "ambiguous" and skipping them left 60 unchecked, and that
+				//is precisely where inward-wound faces hid - a cliff face wound
+				//inward is back-face culled, so it disappears and the background
+				//shows through as if the texture were missing. A face may point
+				//level, but never uphill.
+				if (ahead <= behind) {
 					out++;
+				} else if (wrong.size() < 6) {
+					wrong.add("tile behind (" + behindX + "," + behindZ + ")=" + behind
+							+ " ahead (" + aheadX + "," + aheadZ + ")=" + ahead);
 				}
 			}
 			int judged = w.size() - skipped;
+			//A check that examines nothing must not report success. With
+			//out == judged == 0 the comparison below is true and the suite
+			//prints a pass having looked at no geometry at all - the same way
+			//a winding check elsewhere reported "every judged triangle winds
+			//the way its normal says" while judging none, because the mesh
+			//carries no normals. Demand a real sample before believing a pass.
+			if (judged < 32) {
+				throw new IllegalStateException("cliff winding: only " + judged
+						+ " faces were judged (" + skipped + " skipped as ambiguous of "
+						+ w.size() + " walls) - too few to conclude anything, so this"
+						+ " is a failure of the test, not a pass");
+			}
 			if (out != judged) {
 				throw new IllegalStateException("cliff winding: only " + out + "/" + judged
-						+ " walls face outward");
+						+ " faces point downhill; e.g. " + wrong);
 			}
-			System.out.println("  ok: cliff winding (" + judged + " walls, all facing out)");
+			System.out.println("  ok: cliff winding (" + judged + " faces judged against the"
+					+ " terrain, all pointing downhill; " + skipped + " ambiguous)");
 			return 0;
 		} catch (RuntimeException ex) {
 			System.out.println("FAIL cliff winding: " + ex.getMessage());
 			return 1;
 		}
+	}
+
+	/** World X or Z to the tile index containing it (TILE=18, ORIGIN=-360). */
+	static int tileOf(float world) {
+		return (int) Math.floor((world + 360f) / 18f);
+	}
+
+	static boolean inGrid(int x, int y) {
+		return x >= 0 && x < DIM && y >= 0 && y < DIM;
 	}
 
 	/** Near-vertical triangles as {centroidX, centroidZ, normalX, normalZ}. */
@@ -222,8 +264,14 @@ public class PaintedRegionTest {
 				float ny = uz * vx - ux * vz;
 				float nz = ux * vy - uy * vx;
 				float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
-				if (len < 1e-4f || Math.abs(ny) / len > 0.3f) {
-					continue; //degenerate, or a floor rather than a wall
+				//A cliff face is anything meaningfully tilted, NOT just anything
+				//near-vertical. This used to require steeper than ~72 degrees,
+				//which was right when a cliff was a vertical wall and silently
+				//wrong the moment they became 40-degree slopes: the filter
+				//matched nothing, and the check reported on a stale build
+				//instead of the geometry in front of it. Floors are exactly +Y.
+				if (len < 1e-4f || Math.abs(ny) / len > 0.95f) {
+					continue; //degenerate, or flat ground rather than a face
 				}
 				out.add(new float[]{(a[0] + b[0] + c[0]) / 3f, (a[2] + b[2] + c[2]) / 3f, nx, nz});
 			}
