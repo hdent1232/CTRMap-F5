@@ -103,8 +103,14 @@ public class ZoneEntities {
 			dos.close();
 			return baos.toByteArray();
 		} catch (IOException ex) {
+			//Returning null here used to be the failure path, and Zone.store
+			//passes the result straight to storeFile - so a refused write became
+			//a null buffer handed to the container. The stream is a
+			//ByteArrayOutputStream, so the only IOExceptions that reach this are
+			//deliberate refusals from a record that will not serialise; making
+			//them loud is strictly safer than writing nothing and saying nothing.
 			Logger.getLogger(ZoneEntities.class.getName()).log(Level.SEVERE, null, ex);
-			return null;
+			throw new IllegalStateException("Zone entities could not be saved: " + ex.getMessage(), ex);
 		}
 	}
 
@@ -391,9 +397,25 @@ public class ZoneEntities {
 		public short u14;
 		public short u16;
 
+		/** No destination chosen yet - see {@link #isUnset}. */
+		public static final int NO_TARGET = -1;
+
+		/**
+		 * True while this warp has no destination.
+		 *
+		 * <p>A fresh warp used to default to zone 0, warp 0, which is a real
+		 * destination: adding one in the warp editor and saving produced a live
+		 * trapdoor into the first zone in the game, with nothing to indicate it
+		 * was never configured. Unset is now its own state, and
+		 * {@link #write} refuses to serialise it.
+		 */
+		public boolean isUnset() {
+			return targetZone == NO_TARGET || targetWarpId == NO_TARGET;
+		}
+
 		public Warp() {
-			targetZone = 0;
-			targetWarpId = 0;
+			targetZone = NO_TARGET;
+			targetWarpId = NO_TARGET;
 			directionality = 0;
 			faceDirection = 1;
 			transitionType = 3;
@@ -434,6 +456,15 @@ public class ZoneEntities {
 		}
 
 		public void write(LittleEndianDataOutputStream dos) throws IOException {
+			if (isUnset()) {
+				//Refusing is the point. Writing an unconfigured warp produces a
+				//working door to zone 0 that nothing in the editor marks as
+				//wrong; a loud failure here costs one dialog, a silent one costs
+				//a playthrough.
+				throw new IOException("A warp at tile (" + (x / 18) + "," + (y / 18)
+						+ ") has no destination. Set its target zone and warp id,"
+						+ " or delete it, before saving.");
+			}
 			dos.writeShort((short) targetZone);
 			dos.writeShort((short) targetWarpId);
 			dos.write(faceDirection);

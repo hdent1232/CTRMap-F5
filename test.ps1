@@ -54,6 +54,9 @@ $suites = @(
     @{ n = "GroundResolve (no cliffs as floor)"; c = "ctrmap.tests.GroundResolveTest"; a = @($a039) },
     @{ n = "UvScale (imported brush scale)"; c = "ctrmap.tests.UvScaleTest";           a = @($a039) },
     @{ n = "PrefabColour (stamp vertex format)"; c = "ctrmap.tests.PrefabColourTest";  a = @($a039) },
+    @{ n = "SnapshotIntegrity (pristine copy)"; c = "ctrmap.tests.SnapshotIntegrityTest"; a = @() },
+    @{ n = "DataSafetyGuards (stale/script/warp)"; c = "ctrmap.tests.DataSafetyGuardsTest"; a = @($a040) },
+    @{ n = "Integrity (cross-archive refs)"; c = "ctrmap.tests.IntegrityTest";         a = @($pristine) },
     @{ n = "Updater (in-place, lossless)"; c = "ctrmap.tests.UpdaterTest";           a = @() },
     @{ n = "DumpCheck (setup validation)"; c = "ctrmap.tests.DumpCheckTest";         a = @($gamedir) },
     @{ n = "SetupWizard (first run)";     c = "ctrmap.tests.SetupWizardTest";        a = @($gamedir) },
@@ -79,11 +82,19 @@ $suites = @(
 
 $failed = @()
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
+# A suite that writes to stderr is not a suite that failed. Under
+# PowerShell 5.1, "2>&1" on a native exe wraps every stderr line in an
+# ErrorRecord, which $ErrorActionPreference = "Stop" then treats as
+# terminating - so one warning aborts the whole run at that suite and every
+# later one silently goes unrun. The exit code below is the actual verdict.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 foreach ($s in $suites) {
     Write-Host ("--- " + $s.n) -ForegroundColor Cyan
     & "$jdk\bin\java.exe" -Xmx4g -cp "$cls;$libs" $s.c @($s.a) 2>&1 | Select-Object -Last 2 | ForEach-Object { Write-Host ("    " + $_) }
     if ($LASTEXITCODE -ne 0) { $failed += $s.n }
 }
+$ErrorActionPreference = $prevEAP
 $sw.Stop()
 Write-Host ""
 if ($failed.Count -eq 0) {
