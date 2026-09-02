@@ -61,12 +61,17 @@ public enum TilePalette {
 			new String[]{"yuka", "floor", "tatami", "chip_wood", "wood", "carpet"}),
 	WALKWAY("Boardwalk / walkway", new int[]{0x28, 0x00, 0x00, 0x00}, true, true, 0xA5814B,
 			new String[]{"hashi", "bridge", "deck", "chip_wood", "wood", "board"}),
+	//Retail stairs are not flat: measured over all 857 regions their collision
+	//rises about one 18-unit step across the tile (mean 29.7 for the
+	//north-south tuple, 28.6 and 28.8 east and west). The tuple names the
+	//axis, so the brush carries the way DOWN with it: "climb east" descends
+	//west, and a north-south stair descends toward whichever end is lower.
 	STAIRS_Z("Stairs (north-south)", new int[]{0x20, 0x00, 0x00, 0x6C}, true, true, 0x9A9A86,
-			new String[]{"kaidan", "stairs", "step", "ishi", "stone", "chip_rock"}),
+			new String[]{"kaidan", "stairs", "step", "ishi", "stone", "chip_rock"}, TilePalette.DOWN_N_OR_S),
 	STAIRS_E("Stairs (climb east)", new int[]{0x20, 0x00, 0x00, 0x6A}, true, true, 0x9A9A86,
-			new String[]{"kaidan", "stairs", "step", "ishi", "stone", "chip_rock"}),
+			new String[]{"kaidan", "stairs", "step", "ishi", "stone", "chip_rock"}, 1),
 	STAIRS_W("Stairs (climb west)", new int[]{0x20, 0x00, 0x00, 0x69}, true, true, 0x9A9A86,
-			new String[]{"kaidan", "stairs", "step", "ishi", "stone", "chip_rock"}),
+			new String[]{"kaidan", "stairs", "step", "ishi", "stone", "chip_rock"}, 0),
 	VOID("Empty / blocked", new int[]{0x21, 0x00, 0x00, 0x01}, false, false, 0x2B2B2B,
 			new String[]{});
 
@@ -79,14 +84,27 @@ public enum TilePalette {
 	public final int rgb;
 	/** Material-name substrings (lowercased) to match in the tileset donor, best first. */
 	public final String[] matHints;
+	/** The way DOWN a sloped brush - 0 E, 1 W, 2 S, 3 N - or {@link #FLAT};
+	 *  {@link #DOWN_N_OR_S} for a north-south stair, which takes the lower end. */
+	public final int descent;
+
+	/** A brush that lies flat: its slope, if any, comes from the ramp tool. */
+	public static final int FLAT = -1;
+	/** A north-south stair descends toward whichever of south and north is lower. */
+	public static final int DOWN_N_OR_S = 4;
 
 	TilePalette(String label, int[] tuple, boolean walkable, boolean floor, int rgb, String[] matHints) {
+		this(label, tuple, walkable, floor, rgb, matHints, FLAT);
+	}
+
+	TilePalette(String label, int[] tuple, boolean walkable, boolean floor, int rgb, String[] matHints, int descent) {
 		this.label = label;
 		this.tuple = tuple;
 		this.walkable = walkable;
 		this.floor = floor;
 		this.rgb = rgb;
 		this.matHints = matHints;
+		this.descent = descent;
 	}
 
 	public Color color() {

@@ -294,7 +294,7 @@ public class PaintedRegionTest {
 				}
 			}
 			int[][] h = new int[DIM][DIM];
-			boolean[][] noramp = new boolean[DIM][DIM];
+			int[][] noramp = PaintedRegionBuilder.noRamps();
 			ctrmap.formats.tilemap.TerrainLighting L = ctrmap.formats.tilemap.TerrainLighting.daytime();
 			long trisOff = totalTris(PaintedRegionBuilder.build(donor, g, h, noramp, L, false).model);
 			RegionFactory.BlankContent withC = PaintedRegionBuilder.build(donor, g, h, noramp, L, true);

@@ -39,7 +39,8 @@ public class PaintForm extends JPanel {
 	int seededZone = -1;
 	TilePalette[][] grid = new TilePalette[DIM][DIM];
 	int[][] height = new int[DIM][DIM];
-	boolean[][] ramp = new boolean[DIM][DIM];
+	/** Per-tile way DOWN a ramp (0 E, 1 W, 2 S, 3 N), or NO_RAMP. */
+	int[][] ramp = PaintedRegionBuilder.noRamps();
 	/** Which tiles the user actually edited: ONLY these are rebuilt on Apply -
 	 *  everything else keeps the zone's existing geometry (walls, fountains). */
 	boolean[][] touched = new boolean[DIM][DIM];
@@ -243,7 +244,7 @@ public class PaintForm extends JPanel {
 		apply.setFont(apply.getFont().deriveFont(java.awt.Font.BOLD));
 		apply.addActionListener(e -> applyAction());
 		add(apply);
-		add(left(new JLabel("<html><small>Only tiles you touch are rebuilt - the rest<br>of the map keeps its existing look.<br>Right-click: remove a placed building /<br>clear a ramp. Apply writes the real map,<br>then Deploy to walk on it.</small></html>")));
+		add(left(new JLabel("<html><small>Only tiles you touch are rebuilt - the rest<br>of the map keeps its existing look.<br>Ramp: the arrow points down the slope;<br>click again to turn it, right-click to clear.<br>Right-click a placed building to remove it.<br>Apply writes the real map, then Deploy<br>to walk on it.</small></html>")));
 		setPreferredSize(new Dimension(250, 780));
 		regenTimer.setRepeats(false);
 	}
@@ -342,7 +343,7 @@ public class PaintForm extends JPanel {
 		}
 		for (int i = 0; i < DIM; i++) {
 			java.util.Arrays.fill(height[i], 0);
-			java.util.Arrays.fill(ramp[i], false);
+			java.util.Arrays.fill(ramp[i], PaintedRegionBuilder.NO_RAMP);
 			java.util.Arrays.fill(touched[i], false);
 		}
 		placed.clear();
@@ -368,7 +369,11 @@ public class PaintForm extends JPanel {
 					donorColl = gr.getFile(2);
 					//elevations start at the map's REAL ground levels, so painted
 					//tiles sit level with their retail surroundings by default
-					PaintedRegionBuilder.seedHeightsFromCollision(donorColl, height);
+					int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(donorColl, height);
+					if (borrowed > 0) {
+						zoneLabel.setText("<html>Painting zone " + seededZone + "<br><small>" + borrowed
+								+ " tile(s) have no ground of their own and start<br>level with their nearest neighbour</small></html>");
+					}
 				}
 			} catch (Exception ignore) {
 			}
@@ -455,7 +460,7 @@ public class PaintForm extends JPanel {
 	private Object[] copyState() {
 		TilePalette[][] g2 = new TilePalette[DIM][];
 		int[][] h2 = new int[DIM][];
-		boolean[][] r2 = new boolean[DIM][];
+		int[][] r2 = new int[DIM][];
 		boolean[][] t2 = new boolean[DIM][];
 		for (int i = 0; i < DIM; i++) {
 			g2[i] = grid[i].clone();
@@ -470,7 +475,7 @@ public class PaintForm extends JPanel {
 	private void restoreState(Object[] s) {
 		TilePalette[][] g2 = (TilePalette[][]) s[0];
 		int[][] h2 = (int[][]) s[1];
-		boolean[][] r2 = (boolean[][]) s[2];
+		int[][] r2 = (int[][]) s[2];
 		boolean[][] t2 = (boolean[][]) s[4];
 		for (int i = 0; i < DIM; i++) {
 			System.arraycopy(g2[i], 0, grid[i], 0, DIM);
@@ -559,6 +564,7 @@ public class PaintForm extends JPanel {
 		if (inCell(lx, ly) && (grid[ly][lx] != brush() || !touched[ly][lx])) {
 			grid[ly][lx] = brush();
 			touched[ly][lx] = true;
+			settleRamps();
 			repaintMap();
 		}
 	}
@@ -575,13 +581,56 @@ public class PaintForm extends JPanel {
 				height[ly][lx] = Math.max(0, height[ly][lx] - 1);
 				break;
 			case 4:
-				ramp[ly][lx] = !right;
+				ramp[ly][lx] = right ? PaintedRegionBuilder.NO_RAMP : turnRamp(lx, ly);
 				break;
 			default:
 				grid[ly][lx] = brush();
 				break;
 		}
 		touched[ly][lx] = true;
+		settleRamps();
+	}
+
+	/**
+	 * The ramp tool's click: a first click takes the way down that the level
+	 * gradient suggests, and each click after turns the ramp to the next side
+	 * that is lower, so a corner tile can be sent whichever way the route
+	 * goes. A tile with nothing lower beside it cannot be a ramp, and says so.
+	 */
+	private int turnRamp(int lx, int ly) {
+		int cur = ramp[ly][lx];
+		if (cur == PaintedRegionBuilder.NO_RAMP) {
+			int d = PaintedRegionBuilder.steepestDescent(grid, height, lx, ly);
+			placeStatus.setText(d < 0 ? "<html>No lower ground beside that tile -<br>raise it or lower a neighbour first.</html>" : " ");
+			return d;
+		}
+		for (int k = 1; k < 4; k++) {
+			int d = (cur + k) % 4;
+			if (PaintedRegionBuilder.descends(grid, height, lx, ly, d)) {
+				return d;
+			}
+		}
+		return cur;
+	}
+
+	/**
+	 * After any edit: a ramp whose way down is no longer lower turns to the
+	 * gradient, or goes when nothing lower is left. Levels change under the
+	 * raise and lower tools, but so does the ground a ramp descends to when
+	 * a void tile beside it is painted over - void counts as the base level -
+	 * so every ramp is settled after every stroke. The arrow on the map moves
+	 * or vanishes with it, and the builder never sees a ramp that contradicts
+	 * its heights.
+	 */
+	private void settleRamps() {
+		for (int y = 0; y < DIM; y++) {
+			for (int x = 0; x < DIM; x++) {
+				if (ramp[y][x] != PaintedRegionBuilder.NO_RAMP
+						&& !PaintedRegionBuilder.descends(grid, height, x, y, ramp[y][x])) {
+					ramp[y][x] = PaintedRegionBuilder.steepestDescent(grid, height, x, y);
+				}
+			}
+		}
 	}
 
 	private void touchFootprint(int tx, int ty, int w, int h) {
@@ -666,7 +715,7 @@ public class PaintForm extends JPanel {
 		//deep-copy every input on the EDT so the worker never races a stroke
 		final TilePalette[][] g2 = new TilePalette[DIM][];
 		final int[][] h2 = new int[DIM][];
-		final boolean[][] r2 = new boolean[DIM][];
+		final int[][] r2 = new int[DIM][];
 		final boolean[][] t2 = new boolean[DIM][];
 		for (int i = 0; i < DIM; i++) {
 			g2[i] = grid[i].clone();
@@ -786,10 +835,17 @@ public class PaintForm extends JPanel {
 						g.drawString(String.valueOf(h), px + 2, py + Math.min(11, cw - 1));
 					}
 				}
-				if (ramp[ly][lx] && d >= 6) {
+				//ramps AND stair brushes, pointing DOWN the slope at the lower
+				//neighbour, so what the map will build is what the arrow says
+				int rd = d >= 6 ? PaintedRegionBuilder.rampDir(grid, height, ramp, lx, ly) : -1;
+				if (rd >= 0) {
 					g.setColor(new Color(255, 210, 40));
-					g.fillPolygon(new int[]{px + 1, px + cw - 1, px + cw / 2},
-							new int[]{py + cw - 2, py + cw - 2, py + 2}, 3);
+					int cx = px + cw / 2, cy = py + cw / 2, r = cw / 2 - 1;
+					int[] xs = rd == 0 ? new int[]{cx - r, cx - r, cx + r} : rd == 1 ? new int[]{cx + r, cx + r, cx - r}
+							: new int[]{cx - r, cx + r, cx};
+					int[] ys = rd == 0 || rd == 1 ? new int[]{cy - r, cy + r, cy}
+							: rd == 2 ? new int[]{cy - r, cy - r, cy + r} : new int[]{cy + r, cy + r, cy - r};
+					g.fillPolygon(xs, ys, 3);
 				}
 			}
 		}
