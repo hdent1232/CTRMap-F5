@@ -238,7 +238,7 @@ public class TilePainterForm {
 	 * already-private zone reuses its own regions instead of orphaning another
 	 * archive append).
 	 */
-	static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, boolean[][] ramp,
+	static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, int[][] ramp,
 			ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed,
 			boolean[][] touched) throws Exception {
 		final boolean composite = touched != null;

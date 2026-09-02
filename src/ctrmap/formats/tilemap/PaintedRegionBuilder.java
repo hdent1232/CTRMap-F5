@@ -38,6 +38,18 @@ public class PaintedRegionBuilder {
 	public static final float ORIGIN = -360f;
 	/** World Y per height level (one tile tall). */
 	public static final float STEP = 18f;
+	/** The ramp grid's value for a tile that is not a ramp; 0..3 is the way down (E, W, S, N). */
+	public static final int NO_RAMP = -1;
+	private static final String[] DIR_NAMES = {"east", "west", "south", "north"};
+
+	/** A ramp grid with no ramps on it. */
+	public static int[][] noRamps() {
+		int[][] r = new int[DIM][DIM];
+		for (int[] row : r) {
+			java.util.Arrays.fill(row, NO_RAMP);
+		}
+		return r;
+	}
 
 	/** A textured quad (4 corners TL/TR/BL/BR) destined for one mesh. */
 	private static final class Quad {
@@ -62,11 +74,12 @@ public class PaintedRegionBuilder {
 
 	/**
 	 * @param height per-tile elevation in levels (null = all flat at 0).
-	 * @param ramp per-tile "this is a walkable ramp" flags (null = none); a ramp
-	 *             tile slopes from its level down to a lower orthogonal neighbour
-	 *             (auto-oriented), replacing the cliff so the player walks it.
+	 * @param ramp per-tile ramp direction ({@link #NO_RAMP} = flat, else the way
+	 *             DOWN: 0 E, 1 W, 2 S, 3 N; null = no ramps); a ramp tile slopes
+	 *             from its level to that neighbour's floor, replacing the cliff
+	 *             so the player walks it. Stair brushes slope on their own.
 	 */
-	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, TerrainLighting light) {
+	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, int[][] ramp, TerrainLighting light) {
 		return build(donorModel, grid, height, ramp, light, true);
 	}
 
@@ -76,12 +89,12 @@ public class PaintedRegionBuilder {
 	 *              (the projected "blend" edge). Ignored if the tileset donor has
 	 *              no edge material.
 	 */
-	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp, TerrainLighting light, boolean edges) {
+	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, int[][] ramp, TerrainLighting light, boolean edges) {
 		if (height == null) {
 			height = new int[DIM][DIM];
 		}
 		if (ramp == null) {
-			ramp = new boolean[DIM][DIM];
+			ramp = noRamps();
 		}
 		RegionFactory.BlankContent out = new RegionFactory.BlankContent();
 		out.model = buildModel(donorModel, grid, height, ramp, null, null, light, edges);
@@ -110,7 +123,7 @@ public class PaintedRegionBuilder {
 	 *                       degrades to the full from-scratch {@link #build}
 	 */
 	public static RegionFactory.BlankContent buildComposite(byte[] donorModel, byte[] donorCollision, byte[] donorTilemap,
-			TilePalette[][] grid, int[][] height, boolean[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
+			TilePalette[][] grid, int[][] height, int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
 		if (touched == null) {
 			return build(donorModel, grid, height, ramp, light, edges);
 		}
@@ -118,7 +131,7 @@ public class PaintedRegionBuilder {
 			height = new int[DIM][DIM];
 		}
 		if (ramp == null) {
-			ramp = new boolean[DIM][DIM];
+			ramp = noRamps();
 		}
 		RegionFactory.BlankContent out = new RegionFactory.BlankContent();
 		boolean any = false;
@@ -148,12 +161,12 @@ public class PaintedRegionBuilder {
 	 * (collision is used only to place floors at the retail surface height).
 	 */
 	public static byte[] buildModelOnly(byte[] donorModel, byte[] donorCollision, TilePalette[][] grid, int[][] height,
-			boolean[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
+			int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
 		if (height == null) {
 			height = new int[DIM][DIM];
 		}
 		if (ramp == null) {
-			ramp = new boolean[DIM][DIM];
+			ramp = noRamps();
 		}
 		float[][] baseY = touched != null ? sampleBaseY(donorCollision) : null;
 		return buildModel(donorModel, grid, height, ramp, touched, baseY, light, edges);
@@ -170,15 +183,26 @@ public class PaintedRegionBuilder {
 	 * user leaves alone regenerates at EXACTLY its retail height (the
 	 * quantization offsets cancel), and below-zero caves or high plateaus
 	 * keep the full 0..6 editing range.
+	 *
+	 * @return how many tiles had no ground of their own and took their nearest
+	 *         neighbour's ({@link #nearestGround}). The painter tells the user,
+	 *         because those tiles start level with whatever stands beside them
+	 *         rather than at a height the map itself gave them.
 	 */
-	public static void seedHeightsFromCollision(byte[] coll, int[][] height) {
+	public static int seedHeightsFromCollision(byte[] coll, int[][] height) {
 		float[][] by = sampleBaseY(coll);
+		float[][] ground = nearestGround(by);
 		float base0 = baseFloor(by);
+		int borrowed = 0;
 		for (int ty = 0; ty < DIM; ty++) {
 			for (int tx = 0; tx < DIM; tx++) {
-				height[ty][tx] = Float.isNaN(by[ty][tx]) ? 0 : levelOf(by[ty][tx], base0);
+				height[ty][tx] = Float.isNaN(ground[ty][tx]) ? 0 : levelOf(ground[ty][tx], base0);
+				if (Float.isNaN(by[ty][tx]) && !Float.isNaN(ground[ty][tx])) {
+					borrowed++;
+				}
 			}
 		}
+		return borrowed;
 	}
 
 	/** The per-tile painted-floor Y grid for the region's CURRENT collision +
@@ -186,12 +210,56 @@ public class PaintedRegionBuilder {
 	 *  warps. An unusable collision degrades to the plain level*STEP frame. */
 	public static float[][] floorYGrid(byte[] coll, int[][] height) {
 		float[][] by = sampleBaseY(coll);
+		float[][] ground = nearestGround(by);
 		float base0 = baseFloor(by);
 		float[][] out = new float[DIM][DIM];
 		for (int ty = 0; ty < DIM; ty++) {
 			for (int tx = 0; tx < DIM; tx++) {
-				out[ty][tx] = floorYOf(by[ty][tx], height[ty][tx], base0);
+				out[ty][tx] = floorYOf(ground[ty][tx], height[ty][tx], base0);
 			}
+		}
+		return out;
+	}
+
+	/**
+	 * {@link #sampleBaseY} with its gaps filled from the nearest sampled tile,
+	 * so a tile with no collision under its centre - a wall, a cliff face, the
+	 * void past the map's edge; 44% of all retail tiles - takes the ground
+	 * BESIDE it. It used to take level 0, the region's lowest ground, so the
+	 * one grass tile painted to widen a path came out as a walled pit up to
+	 * seven tiles deep, still marked walkable, under retail scenery that hid
+	 * it. Grows ring by ring so the nearest sample wins; where two are equally
+	 * near the lower does, as the sampler itself prefers ground to what stands
+	 * over it. A region with no sample at all stays NaN throughout.
+	 */
+	static float[][] nearestGround(float[][] baseY) {
+		float[][] out = new float[DIM][];
+		for (int ty = 0; ty < DIM; ty++) {
+			out[ty] = baseY[ty].clone();
+		}
+		for (boolean grew = true; grew;) {
+			grew = false;
+			float[][] ring = new float[DIM][DIM];
+			for (int ty = 0; ty < DIM; ty++) {
+				for (int tx = 0; tx < DIM; tx++) {
+					ring[ty][tx] = out[ty][tx];
+					if (!Float.isNaN(out[ty][tx])) {
+						continue;
+					}
+					for (int d = 0; d < 4; d++) {
+						int nx = tx + (d == 0 ? 1 : d == 1 ? -1 : 0);
+						int ny = ty + (d == 2 ? 1 : d == 3 ? -1 : 0);
+						if (nx < 0 || ny < 0 || nx >= DIM || ny >= DIM || Float.isNaN(out[ny][nx])) {
+							continue;
+						}
+						if (Float.isNaN(ring[ty][tx]) || out[ny][nx] < ring[ty][tx]) {
+							ring[ty][tx] = out[ny][nx];
+							grew = true;
+						}
+					}
+				}
+			}
+			out = ring;
 		}
 		return out;
 	}
@@ -214,8 +282,9 @@ public class PaintedRegionBuilder {
 	}
 
 	/** Painted-floor Y for a tile: the retail surface plus the user's level
-	 *  offset from the seeded level; baseline + level*STEP where no surface
-	 *  exists (so uncovered tiles stay in the same frame as their neighbours). */
+	 *  offset from the seeded level; baseline + level*STEP only when the whole
+	 *  region has no surface at all (a lone unsampled tile takes its nearest
+	 *  neighbour's through {@link #nearestGround} before it gets here). */
 	static float floorYOf(float baseY, int h, float base0) {
 		if (Float.isNaN(baseY)) {
 			return base0 + h * STEP;
@@ -225,7 +294,7 @@ public class PaintedRegionBuilder {
 
 	/** Per-tile retail GROUND Y at the tile center (the LOWEST collision hit -
 	 *  overhead decks and stamped-building roofs must not count), NaN where none. */
-	static float[][] sampleBaseY(byte[] donorColl) {
+	public static float[][] sampleBaseY(byte[] donorColl) {
 		float[][] out = new float[DIM][DIM];
 		for (float[] row : out) {
 			java.util.Arrays.fill(row, Float.NaN);
@@ -289,24 +358,75 @@ public class PaintedRegionBuilder {
 		return resolveMesh(probe, brush, -1) >= 0;
 	}
 
-	/** Descent direction (0 E,1 W,2 S,3 N) of a ramp tile toward a level-below
-	 *  neighbour, or -1 if not a ramp / no lower neighbour. */
-	static int rampDir(TilePalette[][] grid, int[][] height, boolean[][] ramp, int tx, int ty) {
-		if (!ramp[ty][tx]) {
+	/**
+	 * The way down from a sloped tile - 0 E, 1 W, 2 S, 3 N - or -1 when the
+	 * tile lies flat. A ramp descends the way the ramp grid says. A stair
+	 * brush descends the way its movement tuple says, a north-south stair
+	 * toward whichever end is lower, and lies flat when that ground is not
+	 * lower: a stair painted on level ground is a texture, not a slope.
+	 *
+	 * <p>A ramp used to take the first neighbour, in E,W,S,N order, that sat
+	 * EXACTLY one level down. The one-tile notch every route uses for its way
+	 * up a hill has lower ground on three sides, so East always won and the
+	 * slope ran across the corridor instead of along it; and a hill raised
+	 * twice had no neighbour exactly one level down, so its ramp was dropped
+	 * without a word and the tile built as a 36-unit wall. The direction now
+	 * travels with the ramp, and any lower neighbour will do - the foot of
+	 * the slope already comes from that neighbour's true floor, so a deeper
+	 * drop is simply a longer slope. A ramp whose way down is not lower is a
+	 * contradiction in the input, not a wall to build quietly.
+	 */
+	public static int rampDir(TilePalette[][] grid, int[][] height, int[][] ramp, int tx, int ty) {
+		int d = ramp[ty][tx];
+		if (d != NO_RAMP) {
+			if (!descends(grid, height, tx, ty, d)) {
+				throw new IllegalStateException("the ramp at (" + tx + "," + ty + ") goes down "
+						+ DIR_NAMES[d] + " but the ground there is not lower");
+			}
+			return d;
+		}
+		TilePalette t = grid[ty][tx];
+		if (t == null || t.descent == TilePalette.FLAT) {
 			return -1;
 		}
-		int h = height[ty][tx];
+		if (t.descent == TilePalette.DOWN_N_OR_S) {
+			return descends(grid, height, tx, ty, 2) ? 2 : descends(grid, height, tx, ty, 3) ? 3 : -1;
+		}
+		return descends(grid, height, tx, ty, t.descent) ? t.descent : -1;
+	}
+
+	/** True when the ground in direction {@code dir} (0 E, 1 W, 2 S, 3 N) lies below this tile. */
+	public static boolean descends(TilePalette[][] grid, int[][] height, int tx, int ty, int dir) {
+		return neighbourHeight(grid, height, tx, ty, dir) < height[ty][tx];
+	}
+
+	/**
+	 * The way down a new ramp at (tx,ty) should take, read off the level
+	 * gradient across all four neighbours: the axis with the steepest fall
+	 * from the tile behind to the tile ahead, so a notch cut into a hillside
+	 * runs along its corridor rather than over the side. -1 when nothing
+	 * around the tile is lower. Ties keep E,W,S,N order; the painter lets the
+	 * user turn the ramp when that is not what they meant.
+	 */
+	public static int steepestDescent(TilePalette[][] grid, int[][] height, int tx, int ty) {
+		int best = -1, bestFall = Integer.MIN_VALUE;
 		for (int d = 0; d < 4; d++) {
-			if (neighbourHeight(grid, height, tx, ty, d) == h - 1) {
-				return d;
+			if (!descends(grid, height, tx, ty, d)) {
+				continue;
+			}
+			int behind = d == 0 ? 1 : d == 1 ? 0 : d == 2 ? 3 : 2;
+			int fall = neighbourHeight(grid, height, tx, ty, behind) - neighbourHeight(grid, height, tx, ty, d);
+			if (fall > bestFall) {
+				best = d;
+				bestFall = fall;
 			}
 		}
-		return -1;
+		return best;
 	}
 
 	// ---- visual model -----------------------------------------------------
 
-	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid, int[][] height, boolean[][] ramp,
+	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid, int[][] height, int[][] ramp,
 			boolean[][] touched, float[][] baseY, TerrainLighting light, boolean edges) {
 		//Give the model the catalogue's cliff material before anything looks for
 		//one. TerrainCatalog.ensureCliffMaterial existed but was never called
@@ -335,12 +455,18 @@ public class PaintedRegionBuilder {
 		List<CliffEdge> cliffEdges = new ArrayList<>();
 
 		//per-tile painted-floor Y: level*STEP from scratch, or the retail
-		//surface plus the level offset in composite mode (baseline-relative)
+		//surface plus the level offset in composite mode (baseline-relative).
+		//A painted tile with no sample of its own stands beside its nearest
+		//neighbour; the RAW sample stays the reference for walls, because an
+		//unsampled UNTOUCHED neighbour is retail geometry - a wall, a cliff
+		//face - that already stands there, and a cliff generated against a
+		//borrowed height would be a second face in the same place.
 		float base0 = baseY != null ? baseFloor(baseY) : 0f;
+		float[][] ground = baseY != null ? nearestGround(baseY) : null;
 		float[][] yTop = new float[DIM][DIM];
 		for (int ty = 0; ty < DIM; ty++) {
 			for (int tx = 0; tx < DIM; tx++) {
-				yTop[ty][tx] = baseY != null ? floorYOf(baseY[ty][tx], height[ty][tx], base0) : height[ty][tx] * STEP;
+				yTop[ty][tx] = ground != null ? floorYOf(ground[ty][tx], height[ty][tx], base0) : height[ty][tx] * STEP;
 			}
 		}
 
@@ -419,7 +545,7 @@ public class PaintedRegionBuilder {
 							ce.donorSide = true;
 						}
 						if (lx >= 0 && ly >= 0 && lx < DIM && ly < DIM) {
-							ce.tight = ramp[ly][lx] || grid[ly][lx] == TilePalette.PATH
+							ce.tight = rampDir(grid, height, ramp, lx, ly) >= 0 || grid[ly][lx] == TilePalette.PATH
 									|| grid[ly][lx] == TilePalette.SAND;
 							//Below this face is retail ground the painter never
 							//touched. It already has its own geometry, so the
@@ -443,7 +569,7 @@ public class PaintedRegionBuilder {
 						//corridor, and leaving it out was why they still buried
 						//the route after the other call site was fixed.
 						CliffEdge ce2 = cliffEdge(nx, ny, opp, myY, nY);
-						ce2.tight = ramp[ty][tx] || grid[ty][tx] == TilePalette.PATH
+						ce2.tight = rd >= 0 || grid[ty][tx] == TilePalette.PATH
 								|| grid[ty][tx] == TilePalette.SAND;
 						//This face is rebuilt from an UNTOUCHED neighbour's side
 						//- its top rests on retail ground the painter never
@@ -479,7 +605,7 @@ public class PaintedRegionBuilder {
 						int sx3 = tx + (side == 0 ? 1 : side == 1 ? -1 : 0);
 						int sy3 = ty + (side == 2 ? 1 : side == 3 ? -1 : 0);
 						if (sx3 >= 0 && sy3 >= 0 && sx3 < DIM && sy3 < DIM
-								&& ramp[sy3][sx3] && height[sy3][sx3] == h
+								&& height[sy3][sx3] == h
 								&& rampDir(grid, height, ramp, sx3, sy3) == rd) {
 							continue;   //the neighbouring lane of this same ramp
 						}
@@ -2626,7 +2752,7 @@ public class PaintedRegionBuilder {
 
 	// ---- collision --------------------------------------------------------
 
-	static byte[] buildCollision(TilePalette[][] grid, int[][] height, boolean[][] ramp) {
+	static byte[] buildCollision(TilePalette[][] grid, int[][] height, int[][] ramp) {
 		List<float[]> tris = new ArrayList<>();
 		float[][] yTop = new float[DIM][DIM];
 		for (int ty = 0; ty < DIM; ty++) {
@@ -2646,7 +2772,7 @@ public class PaintedRegionBuilder {
 	 *  vary by a few units per tile and must stay walkable; the composite
 	 *  low-side case rebuilds the untouched higher neighbour's wall. */
 	private static void addGeneratedCollision(List<float[]> tris, TilePalette[][] grid, int[][] height,
-			boolean[][] ramp, boolean[][] touched, float[][] baseY, float[][] yTop) {
+			int[][] ramp, boolean[][] touched, float[][] baseY, float[][] yTop) {
 		for (int ty = 0; ty < DIM; ty++) {
 			for (int tx = 0; tx < DIM; tx++) {
 				if (touched != null && !touched[ty][tx]) {
@@ -2665,7 +2791,11 @@ public class PaintedRegionBuilder {
 							rampLo = dY;
 						}
 					}
-					Quad q = floorQuad(grid, height, tx, ty, h, rd, myY, rampLo);
+					//Water's floor sits WATER_SINK below the ground, and so must
+					//the collision under it: sinking the mesh alone left the
+					//player surfing seven units up in the air. The walls below
+					//stay at ground level - the bank still blocks there.
+					Quad q = floorQuad(grid, height, tx, ty, h, rd, isWet(t) ? myY - WATER_SINK : myY, rampLo);
 					tris.add(new float[]{q.pos[0][0], q.pos[0][1], q.pos[0][2], q.pos[2][0], q.pos[2][1], q.pos[2][2], q.pos[1][0], q.pos[1][1], q.pos[1][2]});
 					tris.add(new float[]{q.pos[1][0], q.pos[1][1], q.pos[1][2], q.pos[2][0], q.pos[2][1], q.pos[2][2], q.pos[3][0], q.pos[3][1], q.pos[3][2]});
 				}
@@ -2716,15 +2846,17 @@ public class PaintedRegionBuilder {
 	 * generated floors/cliffs are added. Constants ride along from the donor.
 	 */
 	static byte[] buildCollisionComposite(byte[] donorColl, TilePalette[][] grid, int[][] height,
-			boolean[][] ramp, boolean[][] touched, float[][] baseY) {
+			int[][] ramp, boolean[][] touched, float[][] baseY) {
 		List<float[]> tris = new ArrayList<>();
 		List<float[]> rects = TileClip.regionRects(touched, TILE, ORIGIN, 0f);
 		float base0 = baseFloor(baseY);
+		//floors from the filled ground, walls against the raw sample - see buildModel
+		float[][] ground = nearestGround(baseY);
 		float[][] yTop = new float[DIM][DIM];
 		float touchedTop = -Float.MAX_VALUE;
 		for (int ty = 0; ty < DIM; ty++) {
 			for (int tx = 0; tx < DIM; tx++) {
-				yTop[ty][tx] = floorYOf(baseY[ty][tx], height[ty][tx], base0);
+				yTop[ty][tx] = floorYOf(ground[ty][tx], height[ty][tx], base0);
 				if (touched[ty][tx]) {
 					touchedTop = Math.max(touchedTop, yTop[ty][tx]);
 				}

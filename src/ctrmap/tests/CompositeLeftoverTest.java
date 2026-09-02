@@ -67,7 +67,7 @@ public class CompositeLeftoverTest {
 			TilePalette[][] grid = new TilePalette[DIM][DIM];
 			boolean[][] touched = new boolean[DIM][DIM];
 			int[][] height = new int[DIM][DIM];
-			boolean[][] ramp = new boolean[DIM][DIM];
+			int[][] ramp = PaintedRegionBuilder.noRamps();
 			for (TilePalette[] row : grid) {
 				Arrays.fill(row, TilePalette.GRASS);
 			}
