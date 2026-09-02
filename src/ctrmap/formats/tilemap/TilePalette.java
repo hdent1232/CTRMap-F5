@@ -93,6 +93,37 @@ public enum TilePalette {
 		return new Color(rgb);
 	}
 
+	/**
+	 * What a movement tuple does to its tile - "wall", "walkable", or the
+	 * behaviour in byte 3: "surf", "encounter", "waterfall", "stairs", "ledge",
+	 * "door". Bit 0 of byte 0 blocks free entry, but ledges, doors and
+	 * waterfalls set it too; only a tuple with that bit and no behaviour is a
+	 * plain wall. This is how a stamped footprint decides what may replace
+	 * the user's paint, and how it reports what it kept.
+	 */
+	public static String behaviourOf(byte[] t) {
+		int b0 = t[0] & 0xFF, b2 = t[2] & 0xFF, b3 = t[3] & 0xFF;
+		if (b3 == 0x3D && b2 == 0x18) {
+			return "encounter";
+		}
+		if (b3 == 0x3D && b2 == 0x1A) {
+			return "surf";
+		}
+		if (b3 == 0x40) {
+			return "waterfall";
+		}
+		if (b3 >= 0x69 && b3 <= 0x6C) {
+			return "stairs";
+		}
+		if (b3 >= 0x72 && b3 <= 0x75) {
+			return "ledge";
+		}
+		if (b3 == 0xD4) {
+			return "door";
+		}
+		return (b0 & 1) == 1 ? "wall" : "walkable";
+	}
+
 	/** The paintable brushes (VOID is the default background, not a brush swatch). */
 	public static TilePalette[] brushes() {
 		return new TilePalette[]{GRASS, TALL_GRASS, PATH, SAND, WATER, ROCK,

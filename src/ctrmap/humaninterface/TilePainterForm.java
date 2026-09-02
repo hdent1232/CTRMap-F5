@@ -43,12 +43,12 @@ public class TilePainterForm {
 	static final int DIM = PaintedRegionBuilder.DIM;
 
 	/** A building/decoration placed on the painter grid (anchor = top-left tile). */
-	static class Placed {
+	public static class Placed {
 
 		final ctrmap.formats.h3d.BuildingCatalog.Entry e;
 		final int tx, ty;
 
-		Placed(ctrmap.formats.h3d.BuildingCatalog.Entry e, int tx, int ty) {
+		public Placed(ctrmap.formats.h3d.BuildingCatalog.Entry e, int tx, int ty) {
 			this.e = e;
 			this.tx = tx;
 			this.ty = ty;
@@ -163,19 +163,23 @@ public class TilePainterForm {
 
 	/**
 	 * Stamps every placed building into a freshly built region (geometry,
-	 * collision, movement tiles - the retail footprint tuples ride along, door
-	 * tile included), collecting per-donor-area texture needs. Throws on any
-	 * failure so a half-stamped map is never applied.
+	 * collision, and the footprint's walls - plus a wired door's tile - over
+	 * the painted movement tiles), collecting per-donor-area texture needs.
+	 * Throws on any failure, a building that cannot be placed whole included,
+	 * so a half-stamped map is never applied. Returns the per-building account
+	 * Apply shows: pieces, collision added, tiles blocked, and the donor tiles
+	 * kept as painted.
 	 */
-	static void stampPlaced(RegionFactory.BlankContent bc, java.util.List<Placed> placed,
+	public static String stampPlaced(RegionFactory.BlankContent bc, java.util.List<Placed> placed,
 			int[][] height, java.util.Map<Integer, java.util.Set<String>> texNeeds) {
-		stampPlaced(bc, placed, height, null, texNeeds);
+		return stampPlaced(bc, placed, height, null, texNeeds);
 	}
 
 	/** As above; {@code floorY} is the painted-floor frame (composite retail
 	 *  heights) so buildings sit ON the ground, not at level*STEP absolute. */
-	static void stampPlaced(RegionFactory.BlankContent bc, java.util.List<Placed> placed,
+	public static String stampPlaced(RegionFactory.BlankContent bc, java.util.List<Placed> placed,
 			int[][] height, float[][] floorY, java.util.Map<Integer, java.util.Set<String>> texNeeds) {
+		StringBuilder note = new StringBuilder();
 		for (Placed pl : placed) {
 			ctrmap.formats.h3d.MapPrefab p = BuildingPaletteDialog.cachedPrefab(pl.e);
 			if (p == null) {
@@ -188,30 +192,40 @@ public class TilePainterForm {
 					: (height != null ? height[pl.ty][pl.tx] : 0) * PaintedRegionBuilder.STEP;
 			float dy = ground - pl.e.baseY;
 			ctrmap.formats.h3d.MapPrefab.StampResult r = p.stampGeometry(bc.model, pl.tx, pl.ty, dy);
-			if (r.stamped.isEmpty()) {
-				throw new IllegalStateException("\"" + pl.e.name + "\" could not be stamped"
-						+ (r.missingMaterials.isEmpty() ? "" : " (missing materials: " + r.missingMaterials + ")"));
+			// a building missing pieces is not that building: refuse rather than
+			// write a fragment. What landed of a skinned donor was a few triangles
+			// of sea foam under a full-size invisible wall, and Apply called it done.
+			if (!r.missingMaterials.isEmpty()) {
+				throw new IllegalStateException("\"" + pl.e.name + "\": " + r.missingMaterials.size() + " of "
+						+ p.pieces.size() + " piece(s) cannot be placed on this map: " + r.missingMaterials);
 			}
 			bc.model = r.newModel;
-			bc.collision = p.stampCollision(bc.collision, pl.tx, pl.ty, dy);
-			if (p.tiles != null) {
-				for (int y = 0; y < p.tilesH; y++) {
-					for (int x = 0; x < p.tilesW; x++) {
-						int gx = pl.tx + x, gy = pl.ty + y;
-						if (gx < DIM && gy < DIM && p.tiles[x] != null && p.tiles[x][y] != null) {
-							System.arraycopy(p.tiles[x][y], 0, bc.tilemap, 4 + (gy * DIM + gx) * 4, 4);
-						}
-					}
-				}
-			}
+			p.stampCollision(r, bc.collision, pl.tx, pl.ty, dy);
+			bc.collision = r.newColl;
+			p.stampFootprint(r, bc.tilemap, pl.tx, pl.ty, pl.e.doorDX, pl.e.doorDY);
 			if (texNeeds != null && !r.texturesNeeded.isEmpty()) {
 				texNeeds.computeIfAbsent(pl.e.donorArea, k -> new java.util.LinkedHashSet<>()).addAll(r.texturesNeeded);
 			}
+			note.append("\n\"").append(pl.e.name).append("\" at (").append(pl.tx).append(", ").append(pl.ty).append("): ")
+					.append(r.stamped.size()).append(" piece(s), ")
+					.append(r.collTrisAdded > 0 ? "+" + r.collTrisAdded + " collision triangle(s), " : "no collision (not walkable), ")
+					.append(r.tilesStamped).append(" tile(s) blocked");
+			if (!r.tilesKept.isEmpty()) {
+				int kept = 0;
+				StringBuilder kinds = new StringBuilder();
+				for (java.util.Map.Entry<String, Integer> k : r.tilesKept.entrySet()) {
+					kept += k.getValue();
+					kinds.append(kinds.length() > 0 ? ", " : "").append(k.getKey()).append(' ').append(k.getValue());
+				}
+				note.append("; ").append(kept).append(" donor tile(s) kept as painted (").append(kinds).append(')');
+			}
+			note.append('.');
 		}
 		java.util.List<String> errs = new BchMapModel(bc.model).validate();
 		if (!errs.isEmpty()) {
 			throw new IllegalStateException("stamped model failed validation: " + errs.get(0));
 		}
+		return note.toString().trim();
 	}
 
 	/**
@@ -266,6 +280,7 @@ public class TilePainterForm {
 		int[] ownCell = firstRegionCell();
 		int ownRegion = ownCell != null ? ownCell[0] : -1;
 		boolean firstCell = true;
+		String stampNote = "";
 		for (int newRegion : r.newRegions) {
 			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, newRegion);
 			if (f == null) {
@@ -290,7 +305,7 @@ public class TilePainterForm {
 					? PaintedRegionBuilder.buildComposite(donor, gr.getFile(2), gr.getFile(0), grid, height, ramp, touched, lighting, edges)
 					: PaintedRegionBuilder.build(donor, grid, height, ramp, lighting, edges);
 			if (!placed.isEmpty()) {
-				stampPlaced(bc, placed, height, floorY, texNeeds);
+				stampNote = stampPlaced(bc, placed, height, floorY, texNeeds);
 			}
 			gr.storeFile(1, bc.model);
 			gr.storeFile(2, bc.collision);
@@ -353,7 +368,8 @@ public class TilePainterForm {
 		} catch (Exception ex) {
 			wireNote.append("\nSign wiring failed: ").append(ex.getMessage());
 		}
-		final String extras = (signsWired > 0 ? "\n\n" + signsWired + " readable sign(s) wired (text saved; edit later via the NPC tool's dialogue section)." : "")
+		final String extras = (stampNote.isEmpty() ? "" : "\n\n" + stampNote)
+				+ (signsWired > 0 ? "\n\n" + signsWired + " readable sign(s) wired (text saved; edit later via the NPC tool's dialogue section)." : "")
 				+ (texNote.length() > 0 ? "\n" + texNote.toString().trim() : "")
 				+ (doorProps != null ? "\n\nSwinging-door prop(s) placed automatically (registry + textures handled)." : "")
 				+ (propNote.length() > 0 ? propNote : "")

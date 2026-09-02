@@ -186,6 +186,9 @@ public class GeoEditForm extends JPanel {
 			int save = JOptionPane.showConfirmDialog(this,
 					"Copied \"" + p.name + "\": " + p.pieces.size() + " pieces, " + p.collTris.size()
 					+ " collision tris, " + p.tilesW + "x" + p.tilesH + " tiles.\nMaterials: " + mats
+					+ (p.facesDropped == 0 ? "" : "\n\n" + p.facesDropped + " face(s) crossing the selection edge were left out"
+					+ (p.materialsLost.isEmpty() ? "" : " - " + p.materialsLost + " lost entirely")
+					+ ".\nWiden the selection to take them.")
 					+ "\n\nAlso save it as a .ctrprefab file (reusable across sessions)?",
 					"Copy prefab", JOptionPane.YES_NO_OPTION);
 			if (save == JOptionPane.YES_OPTION) {
@@ -250,7 +253,8 @@ public class GeoEditForm extends JPanel {
 				return;
 			}
 			if (chkColl.isSelected() && currentColl.containsKey(2)) {
-				currentColl.put(2, p.stampCollision(currentColl.get(2), anchorX, anchorY, fy));
+				p.stampCollision(r, currentColl.get(2), anchorX, anchorY, fy);
+				currentColl.put(2, r.newColl);
 			}
 			String tileNote = "";
 			if (chkTiles.isSelected() && p.tiles != null) {
@@ -264,9 +268,9 @@ public class GeoEditForm extends JPanel {
 							}
 						}
 					}
-					int nTiles = p.stampTiles(tm, anchorX, anchorY);
+					p.stampTiles(r, tm, anchorX, anchorY);
 					refreshTiles(tm);
-					tileNote = " +" + nTiles + " tiles";
+					tileNote = " +" + r.tilesStamped + " tiles";
 				}
 			}
 			//cross-area texture carry: injected materials reference the DONOR area's
@@ -285,7 +289,8 @@ public class GeoEditForm extends JPanel {
 			currentModel = r.newModel;
 			unsaved = true;
 			mTileMapPanel.reloadRegionModel(cellX, cellY, currentModel);
-			status.setText("Stamped " + r.stamped.size() + "/" + p.pieces.size() + " pieces" + tileNote + texNote
+			status.setText("Stamped " + r.stamped.size() + "/" + p.pieces.size() + " pieces"
+					+ (r.collTrisAdded > 0 ? " +" + r.collTrisAdded + " collision tris" : "") + tileNote + texNote
 					+ (r.missingMaterials.isEmpty() ? "" : "  (skipped: " + r.missingMaterials.size() + " piece(s), see log)")
 					+ "  (unsaved)");
 			if (!r.missingMaterials.isEmpty()) {

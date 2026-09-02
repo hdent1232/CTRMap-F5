@@ -15,10 +15,17 @@ import java.util.List;
 
 /**
  * Validates every building-catalog entry against the pristine dump: the box
- * extracts a non-empty prefab, the prefab stamps (geometry + collision +
+ * extracts a non-empty prefab, EVERY piece of it stamps (geometry + collision +
  * footprint tiles, at its base-height offset) onto a painted grass region,
  * the result passes the strict model validator, and door/interior metadata is
  * shaped sanely. This is the offline gate for the Building Palette.
+ *
+ * <p>Whole, not "at least one piece": the gate used to accept anything that
+ * landed a single piece, and fifteen entries cut from skinned regions got
+ * through because the ubiquitous chip_sea_b foam exists in the grass base -
+ * "Battle Resort structure 32" then placed 3 of its 36 pieces and Apply called
+ * it done. A piece whose donor submesh is skinned can only land where a map
+ * already carries its material, so such entries are not offered at all.
  *
  * Usage: java ctrmap.tests.BuildingCatalogTest &lt;path-to-a039-garc&gt;
  */
@@ -61,8 +68,15 @@ public class BuildingCatalogTest {
 				byte[] grass = PaintedRegionBuilder.build(base, g, null, null, TerrainLighting.daytime(), false).model;
 				int ax = Math.max(0, 20 - e.tilesW() / 2), ay = Math.max(0, 20 - e.tilesH() / 2);
 				MapPrefab.StampResult r = p.stampGeometry(grass, ax, ay, -e.baseY);
-				if (r.stamped.isEmpty()) {
-					throw new IllegalStateException("nothing stamped (missing materials " + r.missingMaterials + ")");
+				if (!r.missingMaterials.isEmpty()) {
+					throw new IllegalStateException(r.missingMaterials.size() + " of " + p.pieces.size()
+							+ " piece(s) cannot be placed: " + r.missingMaterials);
+				}
+				for (MapPrefab.Piece pc : p.pieces) {
+					if (pc.skinned) {
+						throw new IllegalStateException("piece " + pc.material
+								+ " is skinned - it lands only where a map already carries that material");
+					}
 				}
 				List<String> errs = new BchMapModel(r.newModel).validate();
 				if (!errs.isEmpty()) {
