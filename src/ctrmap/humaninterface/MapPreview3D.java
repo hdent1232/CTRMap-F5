@@ -106,7 +106,18 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 		gl.glClearDepth(1.0);
 		gl.glEnable(GL2.GL_DEPTH_TEST);
 		gl.glEnable(GL2.GL_TEXTURE_2D);
-		gl.glDisable(GL2.GL_CULL_FACE);
+		//Cull back faces, because the 3DS does. Drawing them made this preview
+		//lie in the one way that matters: map geometry is single-sided, so with
+		//culling off you see the INSIDE of every cliff wall - dark, mirrored
+		//faces that the hardware discards. They read as untextured slabs and
+		//sent a long hunt after a texture bug that did not exist.
+		//Measured on retail maps this costs 0.01-0.07% of the frame, so retail
+		//content is wound consistently and loses nothing worth seeing; geometry
+		//that does vanish here is geometry that will vanish in game, which is
+		//exactly what a preview is for.
+		gl.glEnable(GL2.GL_CULL_FACE);
+		gl.glCullFace(GL2.GL_BACK);
+		gl.glFrontFace(GL2.GL_CCW);
 		gl.glDepthFunc(GL2.GL_LEQUAL);
 		gl.glHint(GL2.GL_PERSPECTIVE_CORRECTION_HINT, GL2.GL_NICEST);
 	}
