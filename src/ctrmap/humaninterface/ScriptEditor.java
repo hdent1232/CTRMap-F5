@@ -2,21 +2,20 @@ package ctrmap.humaninterface;
 
 import ctrmap.CtrmapMainframe;
 import ctrmap.formats.scripts.GFLPawnScript;
+import ctrmap.formats.scripts.PawnAssembly;
 import ctrmap.formats.scripts.PawnDisassembler;
 import ctrmap.formats.scripts.PawnInstruction;
 import ctrmap.formats.scripts.PawnPrefixEntry;
 import ctrmap.formats.scripts.PawnSubroutine;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.DefaultListModel;
+import javax.swing.JOptionPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.border.MatteBorder;
@@ -145,7 +144,7 @@ public class ScriptEditor extends javax.swing.JPanel {
 						int changedLineEnd = getCountOfLineEndsInString(text, off + len);
 						//int addedLines = changedLineEnd - changedLineStart;
 						String newText = text.substring(0, offset) + text.substring(offset + length);
-						List<PawnSubroutine> reassembled = PawnDisassembler.assembleScript(newText, false);
+						List<PawnSubroutine> reassembled = PawnDisassembler.assembleScript(newText).subroutines;
 						int insCount = 0;
 						for (PawnSubroutine s : reassembled) {
 							insCount += s.instructions.size();
@@ -179,7 +178,7 @@ public class ScriptEditor extends javax.swing.JPanel {
 												}
 												int closingBkt = text.indexOf("}", idx);
 												String caseblk = text.substring(idx, closingBkt + 1);
-												PawnInstruction newIns = PawnSubroutine.caseTblFromString(i.pointer, new Scanner(caseblk));
+												PawnInstruction newIns = PawnSubroutine.caseTblFromString(i.pointer, new PawnAssembly(caseblk));
 												PawnInstruction replace = scr.lookupInstructionByPtr(i.pointer);
 												if (replace.argumentCount > newIns.argumentCount) {
 													replace.argumentCells = newIns.argumentCells;
@@ -339,7 +338,7 @@ public class ScriptEditor extends javax.swing.JPanel {
 						}
 					}
 
-					List<PawnSubroutine> reassembled = PawnDisassembler.assembleScript(text, false);
+					List<PawnSubroutine> reassembled = PawnDisassembler.assembleScript(text).subroutines;
 					int insCount = 0;
 					for (PawnSubroutine s : reassembled) {
 						insCount += s.instructions.size();
@@ -402,7 +401,7 @@ public class ScriptEditor extends javax.swing.JPanel {
 											}
 											int closingBkt = text.indexOf("}", idx);
 											String caseblk = text.substring(idx, closingBkt + 1);
-											PawnInstruction newIns = PawnSubroutine.caseTblFromString(i.pointer, new Scanner(caseblk));
+											PawnInstruction newIns = PawnSubroutine.caseTblFromString(i.pointer, new PawnAssembly(caseblk));
 											PawnInstruction replace = scr.lookupInstructionByPtr(i.pointer);
 											if (replace.argumentCount < newIns.argumentCount) {
 												replace.argumentCells = newIns.argumentCells;
@@ -945,34 +944,51 @@ public class ScriptEditor extends javax.swing.JPanel {
     }// </editor-fold>//GEN-END:initComponents
 
     private void btnSaveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSaveActionPerformed
-		if (!editData) {
-			btnTestAssemblyActionPerformed(evt);
-		} else {
+		if (editData) {
 			script.data = getDataInstructions(disassemblyArea.getText());
 			script.updateRaw();
+		} else {
+			PawnAssembly asm = assemble();
+			if (!asm.errors.isEmpty()) {
+				//store(false) shows nothing on success, so a refusal has to be the loud one
+				List<String> shown = asm.errors.subList(0, Math.min(asm.errors.size(), 8));
+				JOptionPane.showMessageDialog(this, "Not committed - " + asm.errors.size() + " line(s) did not assemble:\n"
+						+ String.join("\n", shown) + (shown.size() < asm.errors.size() ? "\n... see the assembler output for the rest" : ""),
+						"Script editor", JOptionPane.ERROR_MESSAGE);
+				return;
+			}
 		}
 		CtrmapMainframe.mZonePnl.store(false);
     }//GEN-LAST:event_btnSaveActionPerformed
 
     private void btnTestAssemblyActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnTestAssemblyActionPerformed
 		if (!editData) {
-			assemblerOutput.setText("Assembler running:\n");
-			PrintStream originalOut = System.out;
-			PrintStream originalErr = System.err;
-			PrintStream newOut = new PrintStream(new JTextAreaPrintStream(assemblerOutput));
-			System.setOut(newOut);
-			System.setErr(newOut);
-			List<PawnSubroutine> subs = PawnDisassembler.assembleScript(disassemblyArea.getText(), true);
-			script.instructions.clear();
-			for (PawnSubroutine sub : subs) {
-				script.instructions.addAll(sub.instructions);
-			}
-			script.updateRaw();
-			loadScript(script);
-			System.setOut(originalOut);
-			System.setErr(originalErr);
+			assemble();
 		}
     }//GEN-LAST:event_btnTestAssemblyActionPerformed
+
+	/**
+	 * Assembles the text into the script and reloads it, or - when any line did
+	 * not parse - refuses and leaves both untouched. loadScript rewrites the
+	 * text from the instructions, so a line the assembler dropped would be gone
+	 * for good: a mistyped PSUH_C used to vanish this way, with Commit writing
+	 * the shortened script in the same click. The verdict goes to the output box.
+	 */
+	private PawnAssembly assemble() {
+		PawnAssembly asm = PawnDisassembler.assembleScript(disassemblyArea.getText());
+		if (!asm.errors.isEmpty()) {
+			assemblerOutput.setText("Assembler refused:\n" + asm.report() + asm.errors.size() + " line(s) did not assemble. The script was not changed.");
+			return asm;
+		}
+		assemblerOutput.setText("Assembler running:\n" + asm.report() + "Assembled " + asm.getInstructionCount() + " instructions.");
+		script.instructions.clear();
+		for (PawnSubroutine sub : asm.subroutines) {
+			script.instructions.addAll(sub.instructions);
+		}
+		script.updateRaw();
+		loadScript(script);
+		return asm;
+	}
 
     private void prefixCatActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_prefixCatActionPerformed
 		if (script != null) {
@@ -1018,27 +1034,6 @@ public class ScriptEditor extends javax.swing.JPanel {
 			setPrefixCategory(getTypeForIdx(prefixCat.getSelectedIndex()));
 		}
     }//GEN-LAST:event_btnRemovePrefixEntryActionPerformed
-
-	public static class JTextAreaPrintStream extends OutputStream {
-
-		private JTextArea area;
-
-		public JTextAreaPrintStream(JTextArea area) {
-			this.area = area;
-		}
-
-		@Override
-		public void write(byte[] buffer, int offset, int length) throws IOException {
-			final String text = new String(buffer, offset, length);
-			area.append(text);
-		}
-
-		@Override
-		public void write(int b) throws IOException {
-			area.append(String.valueOf((char) b));
-		}
-
-	}
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JTextField address;
