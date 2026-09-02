@@ -28,6 +28,9 @@ public class WarpTool extends AbstractTool {
 
 	@Override
 	public void drawOverlay(Graphics g, int imgstartx, int imgstarty, double globimgdim) {
+		if (!mWarpEditForm.loaded) {
+			return;
+		}
 		int gidround = (int) Math.round(globimgdim);
 		for (int i = 0; i < mWarpEditForm.e.warpCount; i++) {
 			ZoneEntities.Warp warp = mWarpEditForm.e.warps.get(i);
