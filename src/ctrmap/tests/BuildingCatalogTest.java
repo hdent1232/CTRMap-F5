@@ -45,12 +45,11 @@ public class BuildingCatalogTest {
 			System.out.println("FAIL: catalog too small (" + entries.size() + ")");
 			fails++;
 		}
-		File tmp = File.createTempFile("bcat", null).getParentFile();
+		File rf = Scratch.file("bcat_region");
 		for (BuildingCatalog.Entry e : entries) {
 			try {
 				// extract straight from the pristine GARC (the runtime path minus Workspace)
 				byte[] regionBytes = gr.getDecompressedEntry(e.donorRegion);
-				File rf = new File(tmp, "bcat_test_region");
 				try (FileOutputStream fo = new FileOutputStream(rf)) {
 					fo.write(regionBytes);
 				}

@@ -27,8 +27,7 @@ public class MapModelImportTest {
 			System.exit(1);
 		}
 		GARC garc = new GARC(garcFile);
-		File tmp = new File(System.getProperty("java.io.tmpdir"), "ctrmap_mapimport_test");
-		tmp.mkdirs();
+		File tmp = Scratch.dir("ctrmap_mapimport_test");
 
 		//test a small, a mid and a large map region container
 		int tested = 0;
