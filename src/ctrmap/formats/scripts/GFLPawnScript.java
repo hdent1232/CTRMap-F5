@@ -215,6 +215,28 @@ public class GFLPawnScript {
 		}
 	}
 
+	/**
+	 * Recomputes the flat instruction array and the data-section boundary.
+	 *
+	 * <p><b>Do not "fix" this to recompute {@code heapStart} the way
+	 * {@link #write} does.</b> It looks stale - {@code heapStart} is carried
+	 * over from the parse while the instruction list may have grown - and
+	 * recomputing it is wrong. Tried: it moves the address
+	 * {@link ctrmap.formats.scripts.SignWrapperInjector} writes at from 0xb8 to
+	 * 0xe4, breaks injection outright on zones 534 and 535, and drops the
+	 * compose corpus (talker-then-sign and sign-then-talker over every
+	 * dual-less zone) from 289/289 to 94/289. The 467-zone injection corpus is
+	 * the authority here, and it says the parse-time {@code heapStart} is what
+	 * the injector's arithmetic is built on.
+	 *
+	 * <p>The real constraint that follows from this: <b>inject a sign wrapper
+	 * BEFORE wiring any talker or sign into the same script.</b> The injector
+	 * writes at {@code dataStart - instructionStart}, which this method moves,
+	 * so injecting after an append can land on top of the appended sub - and
+	 * the injector's own self-check still passes, because a wrapper is findable
+	 * at the address it predicted. {@code TilePainterForm.wireSigns} already
+	 * does it in that order.
+	 */
 	public void updateRaw() {
 		int[] codeIns = PawnDisassembler.getRawInstructions(instructions);
 		int[] dataIns = PawnDisassembler.getRawInstructions(data);
