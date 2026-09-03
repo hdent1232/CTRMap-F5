@@ -491,6 +491,21 @@ public class BchTexturePack {
 	}
 
 
+	/**
+	 * The only way an EDITOR path may put textures into an area: it asks the
+	 * shared-area question first. The refusal used to live in carryToArea
+	 * alone, so the door-prop registration and the prop editor - which import
+	 * straight into AD subfile 1 - walked past it, and placing any building
+	 * with a door (400 of ~535 zones sit on a shared area) silently grew an
+	 * area other maps draw from. The pack-level {@link #importTextures} stays
+	 * for the format tests, which have no area to ask about.
+	 */
+	public static byte[] importIntoArea(int targetArea, int editingZone, byte[] targetPack,
+			byte[] donorPack, List<String> textureNames) {
+		assertNotShared(targetArea, editingZone);
+		return importTextures(targetPack, donorPack, textureNames);
+	}
+
 	public static byte[] importTexture(byte[] targetPack, byte[] donorPack, String textureName) {
 		List<String> one = new ArrayList<>();
 		one.add(textureName);

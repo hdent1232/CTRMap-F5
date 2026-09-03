@@ -821,7 +821,8 @@ public class TilePainterForm {
 			} else {
 				donorPack = ctrmap.formats.propdata.PropDatabase.getSubfile(Workspace.ad.getDecompressedEntry(donorArea), 1);
 			}
-			byte[] merged = ctrmap.formats.h3d.BchTexturePack.importTextures(targetPack, donorPack, missing);
+			byte[] merged = ctrmap.formats.h3d.BchTexturePack.importIntoArea(
+					area.areaId, area.editingZone, targetPack, donorPack, missing);
 			if (merged != targetPack) {
 				ctrmap.formats.h3d.BCHFile check = new ctrmap.formats.h3d.BCHFile(merged);
 				if (check.errorlevel != 0) {
