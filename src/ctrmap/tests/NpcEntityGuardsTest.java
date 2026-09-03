@@ -10,9 +10,6 @@ import ctrmap.humaninterface.TileMapPanel;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.util.regex.Pattern;
 
 /**
  * The guards around the NPC record and the zone entity block. Each of these
@@ -31,7 +28,9 @@ import java.util.regex.Pattern;
  *     share the cached instance, so "Remove entry" took out the FIRST slot
  *     holding that model and every later NPC rendered as its neighbour. 184
  *     of 453 retail zones share a model between NPCs. There is no parallel
- *     list any more: the model is looked up from the record it belongs to.</li>
+ *     list any more: the model is looked up from the record it belongs to.
+ *     NpcEditFormGuardsTest deletes through the form and asks which model
+ *     each survivor renders; the record-level checks are here.</li>
  * <li>Deleting an NPC never renumbered the ones after it, but all 2904
  *     retail NPCs hold uid == index and the editor's own dropdown, overlay
  *     and selection all assume it: after one delete the item labelled "5"
@@ -42,14 +41,15 @@ import java.util.regex.Pattern;
  *     both the save guard and the Dialogue note treated that exactly like a
  *     valid advanced script. Every retail NPC with a local id points at a
  *     case the dispatch defines; the editor now refuses the ones that do
- *     not.</li>
+ *     not - NpcEditFormGuardsTest drives the form's Save, NPC dropdown and
+ *     Dialogue note; this suite covers the helper and the corpus.</li>
  * <li>The 256th prop, NPC, warp or trigger was written as a count byte of 0
  *     while every record stayed in the file, so the next workspace load
  *     threw parsing the script block and the zone list came up empty with
  *     no explanation. Assembling now refuses more than 255 of a kind.</li>
  * </ol>
  *
- * Usage: java ctrmap.tests.NpcEntityGuardsTest &lt;ZoneData GARC (a/0/1/3)&gt; [src-root]
+ * Usage: java ctrmap.tests.NpcEntityGuardsTest &lt;ZoneData GARC (a/0/1/3)&gt;
  */
 public class NpcEntityGuardsTest {
 
@@ -57,7 +57,6 @@ public class NpcEntityGuardsTest {
 
 	public static void main(String[] args) throws Exception {
 		File garcFile = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/1/3");
-		File srcRoot = new File(args.length > 1 ? args[1] : "src");
 		GARC garc = garcFile.isFile() ? new GARC(garcFile) : null;
 		if (garc == null) {
 			System.out.println("  skip: no ZoneData GARC at " + garcFile + " - corpus checks not run");
@@ -67,7 +66,6 @@ public class NpcEntityGuardsTest {
 		//corpus sweep at the end keeps the verdict, not a stack trace, there
 		nanAltitude();
 		heightLookupBounds();
-		noParallelModelList(srcRoot);
 		uidIsIndex(garc);
 		removeNpcRenumbers(garc);
 		entityCeiling();
@@ -120,22 +118,6 @@ public class NpcEntityGuardsTest {
 		GRCollisionFile[][] wide = new GRCollisionFile[4][2]; //matrix 8 (14x8) shape
 		check(Float.isNaN(TileMapPanel.getHeightAtWorldLoc(wide, 100f, 3 * 720f)), "wide matrix: a row past the height is NaN, not an exception");
 		check(Float.isNaN(TileMapPanel.getHeightAtWorldLoc(wide, -800f, 100f)), "a negative position is NaN, not an exception");
-	}
-
-	/**
-	 * The NPC editor must not keep a model list parallel to the NPC list.
-	 * Two lists that are only aligned by discipline drift apart on the first
-	 * remove(Object) of a shared instance; the model belongs to the record.
-	 */
-	static void noParallelModelList(File srcRoot) throws IOException {
-		File form = new File(srcRoot, "ctrmap/humaninterface/NPCEditForm.java");
-		if (!form.isFile()) {
-			System.out.println("  skip: " + form + " not found");
-			return;
-		}
-		String src = new String(Files.readAllBytes(form.toPath()), StandardCharsets.UTF_8);
-		check(!Pattern.compile("List<H3DModel>\\s+models").matcher(src).find(),
-				"NPCEditForm keeps no List<H3DModel> parallel to the NPC list");
 	}
 
 	/**
