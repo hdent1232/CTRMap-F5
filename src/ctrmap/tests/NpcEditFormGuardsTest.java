@@ -17,7 +17,9 @@ import ctrmap.humaninterface.NPCEditForm;
 import ctrmap.humaninterface.Selector;
 import ctrmap.humaninterface.TileMapPanel;
 import ctrmap.humaninterface.ZoneLoadingPanel;
+import ctrmap.humaninterface.tools.AbstractTool;
 import ctrmap.humaninterface.tools.NPCTool;
+import ctrmap.humaninterface.tools.WarpTool;
 import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.Point;
@@ -107,6 +109,7 @@ public class NpcEditFormGuardsTest {
 			softLockWarningReachesTheUser(zo);
 			addTemplateStopsAtTheCeiling(zo);
 			viewportDrawsOnlyModelledNPCs(zo, gr);
+			onlyTheEditedNPCIsBoxed(zo);
 		}
 		altitudeFromMesh();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -570,6 +573,61 @@ public class NpcEditFormGuardsTest {
 
 		e.NPCCount = 2;
 		check(form.modelledNPCs().length <= 2, "a count shorter than the NPC list draws only what it counts");
+	}
+
+	/**
+	 * Which NPC the viewport outlines, and under which tool. renderCM3D is
+	 * handed a live GL context and cannot be driven from here, so the decision
+	 * it makes once per NPC lives in boxedNPC() and is asked directly - the
+	 * same treatment modelledNPCs() and ownedModels() already have.
+	 *
+	 * <p>The outline says "this is the record the NPC tool acts on". Standing
+	 * it around the NPCs the user is NOT editing points at the wrong record;
+	 * standing it under the Warp or Camera tool promises that a click will
+	 * move an NPC when it will not.
+	 */
+	static void onlyTheEditedNPCIsBoxed(GARC zo) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		NPCEditForm form = new NPCEditForm();
+		form.loadFromEntities(e, null);
+		form.setNPC(2);
+		check(form.npcIndex == 2 && e.npcs.size() > 5, "the form is editing NPC 2 of " + e.npcs.size());
+
+		AbstractTool was = CtrmapMainframe.tool;
+		try {
+			CtrmapMainframe.tool = headlessTool();
+			int boxed = 0;
+			boolean onlyMine = true;
+			for (int i = 0; i < e.npcs.size(); i++) {
+				if (form.boxedNPC(i)) {
+					boxed++;
+					onlyMine &= i == form.npcIndex;
+				}
+			}
+			check(boxed == 1 && onlyMine, "with the NPC tool in hand exactly one NPC is outlined, and it is the one being edited (outlined: " + boxed + ")");
+
+			form.setNPC(5);
+			check(form.boxedNPC(5) && !form.boxedNPC(2), "the outline follows the selection to NPC 5");
+
+			CtrmapMainframe.tool = new WarpTool() {
+				@Override
+				public void onToolInit() {
+				}
+			};
+			boxed = 0;
+			for (int i = 0; i < e.npcs.size(); i++) {
+				if (form.boxedNPC(i)) {
+					boxed++;
+				}
+			}
+			check(boxed == 0, "under another tool nothing is outlined - a click there does not move an NPC (outlined: " + boxed + ")");
+
+			CtrmapMainframe.tool = null;
+			check(!form.boxedNPC(form.npcIndex), "and with no tool at all, nothing is outlined");
+		} finally {
+			CtrmapMainframe.tool = was;
+		}
 	}
 
 	/**

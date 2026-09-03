@@ -2024,13 +2024,28 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		return reg.models.values();
 	}
 
+	/**
+	 * Whether the viewport outlines the NPC in slot i: the one this form is
+	 * editing, and only while the NPC tool is the tool in hand. The outline
+	 * means "this is the record the NPC tool acts on", so it must not stand
+	 * around any other NPC, and must not stand at all under a tool that would
+	 * do something else with a click.
+	 *
+	 * <p>A method of its own for the same reason as {@link #modelledNPCs()}:
+	 * its only caller is handed a live GL context and no test has one. The
+	 * renderBox call stays untested; which NPC it applies to no longer is.
+	 */
+	public boolean boxedNPC(int i) {
+		return i == npcIndex && CtrmapMainframe.tool instanceof NPCTool;
+	}
+
 	@Override
 	public void renderCM3D(GL2 gl) {
 		for (int i : modelledNPCs()) {
 			updateH3D(i);
 			H3DModel m = modelAt(i);
 			m.render(gl);
-			if (i == npcIndex && CtrmapMainframe.tool instanceof NPCTool) {
+			if (boxedNPC(i)) {
 				m.renderBox(gl);
 			}
 		}
