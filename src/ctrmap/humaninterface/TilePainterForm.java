@@ -413,6 +413,10 @@ public class TilePainterForm {
 		int ownRegion = ownCell != null ? ownCell[0] : -1;
 		boolean firstCell = true;
 		String stampNote = "";
+		//painted tiles the map had no ground under: they take a walkable
+		//neighbour's, which is the difference between a patch level with its
+		//surroundings and one sunk into a pit, so the result says how many
+		int borrowedGround = 0;
 		java.util.List<StagedRegion> staged = new java.util.ArrayList<>();
 		for (int region : src.newRegions) {
 			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, region);
@@ -437,6 +441,7 @@ public class TilePainterForm {
 			RegionFactory.BlankContent bc = composite
 					? PaintedRegionBuilder.buildComposite(donor, gr.getFile(2), gr.getFile(0), grid, height, ramp, touched, lighting, edges)
 					: PaintedRegionBuilder.build(donor, grid, height, ramp, lighting, edges);
+			borrowedGround += bc.borrowedGround;
 			if (!placed.isEmpty()) {
 				stampNote = stampPlaced(bc, placed, height, floorY, texNeeds);
 			}
@@ -556,7 +561,10 @@ public class TilePainterForm {
 		} catch (Exception ex) {
 			wireNote.append("\nSign wiring failed: ").append(ex);
 		}
-		final String extras = (stampNote.isEmpty() ? "" : "\n\n" + stampNote)
+		final String extras = (borrowedGround > 0 ? "\n\n" + borrowedGround
+				+ " painted tile(s) had no ground under them and took a neighbour's"
+				+ "\n(they sit level with what stands beside them, not at a height this map gave them)." : "")
+				+ (stampNote.isEmpty() ? "" : "\n\n" + stampNote)
 				+ (signsWired > 0 ? "\n\n" + signsWired + " readable sign(s) wired (text saved; edit later via the NPC tool's dialogue section)." : "")
 				+ (texNote.length() > 0 ? "\n" + texNote.toString().trim() : "")
 				+ (doorProps != null ? "\n\nSwinging-door prop(s) placed automatically (registry + textures handled)." : "")

@@ -150,6 +150,7 @@ public class PaintedRegionBuilder {
 		}
 		float[][] baseY = sampleBaseY(donorCollision);
 		float[][] ground = nearestGround(baseY, walkableTiles(donorTilemap));
+		out.borrowedGround = borrowedGroundTiles(baseY, ground, touched);
 		out.model = buildModel(donorModel, grid, height, ramp, touched, baseY, ground, light, edges);
 		out.collision = buildCollisionComposite(donorCollision, grid, height, ramp, touched, baseY, ground);
 		out.tilemap = buildTilemapComposite(donorTilemap, grid, touched);
