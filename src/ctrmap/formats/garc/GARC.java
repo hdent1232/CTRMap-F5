@@ -235,7 +235,17 @@ public class GARC {
 				return i1 - i2;
 			}
 		});
-		int originalEntryCount = entries.size();
+		//Every appended entry goes into a table of this method's own, and the
+		//instance's table is only ever replaced by re-reading the file it just
+		//wrote. Anything that throws on the way out - a gapped append, the
+		//emulator holding the archive open - therefore leaves this instance
+		//describing the archive as it still is on disk. It used to append
+		//straight into the live table, so a refusal left the instance one or
+		//more entries ahead of the file, and the next pack wrote that table
+		//out: a real FATB entry whose bytes were copied from a provisional
+		//offset that was never in the file.
+		ArrayList<GARCEntry> working = new ArrayList<>(entries);
+		int originalEntryCount = working.size();
 		int[] changedIndices = new int[files.size()];
 		byte[][] compressedData = new byte[files.size()][];
 		for (int i = 0; i < files.size(); i++) {
@@ -253,39 +263,39 @@ public class GARC {
 			if (override != null) {
 				compressed = override;
 			} else if (changedIndices[i] < originalEntryCount) {
-				compressed = entries.get(changedIndices[i]).compressed;
+				compressed = working.get(changedIndices[i]).compressed;
 			} else {
-				compressed = entries.get(originalEntryCount - 1).compressed;
+				compressed = working.get(originalEntryCount - 1).compressed;
 			}
 			if (compressed) {
 				compressedData[i] = LZ11.compress(or);
 			} else {
 				compressedData[i] = or;
 			}
-			if (changedIndices[i] > entries.size() - 1) {
+			if (changedIndices[i] > working.size() - 1) {
 				//An archive grows only at its tail. A file named past the tail
 				//used to be renumbered to the first free slot without a word,
 				//so an area fork's "229" landed at 228 and the zone that asked
 				//for 229 could not load. The caller's number is the whole point
 				//of the file - every reference to it in the other archives is
 				//that number - so a gap is a refusal, not something to guess at.
-				if (changedIndices[i] > entries.size()) {
+				if (changedIndices[i] > working.size()) {
 					throw new IOException("Cannot pack " + files.get(i).getName() + " into "
-							+ file.getPath() + ": the archive ends at index " + (entries.size() - 1)
-							+ ", so that file would be written at index " + entries.size()
+							+ file.getPath() + ": the archive ends at index " + (working.size() - 1)
+							+ ", so that file would be written at index " + working.size()
 							+ " instead of " + changedIndices[i] + ". Whatever indexes this"
 							+ " archive would read the wrong entry. Fill indices "
-							+ entries.size() + ".." + (changedIndices[i] - 1) + " first.");
+							+ working.size() + ".." + (changedIndices[i] - 1) + " first.");
 				}
 				GARCEntry add = new GARCEntry();
 				add.compressed = compressed;
 				//pad-aligned provisional offset (the real table is re-read
 				//from the packed file at the end of this method anyway)
-				int prevEnd = entries.get(entries.size() - 1).offset + entries.get(entries.size() - 1).length;
+				int prevEnd = working.get(working.size() - 1).offset + working.get(working.size() - 1).length;
 				int rem = prevEnd % padding;
 				add.offset = rem == 0 ? prevEnd : prevEnd + padding - rem;
 				add.length = compressedData[i].length;
-				entries.add(add);
+				working.add(add);
 			}
 		}
 		File newGARC = new File(Workspace.WORKSPACE_PATH + "/" + file.getName() + "_new");
@@ -326,8 +336,8 @@ public class GARC {
 			//FATO points to FATB - is unchanged
 			//we need to read original FATO length
 			int fatoMagic = old.readInt();
-			int fatoLength = 0xC + entries.size() * 4;
-			int fatoEntries = entries.size();
+			int fatoLength = 0xC + working.size() * 4;
+			int fatoEntries = working.size();
 			old.readInt(); //FATO length
 			int oldEntries = old.readShort(); //old FATO entries and padding
 			old.readShort();
@@ -344,9 +354,9 @@ public class GARC {
 			//first we just rewrite the magic, length and entry count
 			dos.writeInt(Integer.reverseBytes(old.readInt())); //magic
 			old.readInt();
-			dos.writeInt(Integer.reverseBytes(entries.size() * 16)); //FATB length
+			dos.writeInt(Integer.reverseBytes(working.size() * 16)); //FATB length
 			int oldEntryCount = old.readInt();
-			int entryCount = entries.size();
+			int entryCount = working.size();
 			dos.writeInt(Integer.reverseBytes(entryCount)); //FATB entry count
 			FATBEntry[] fatbe = new FATBEntry[entryCount];
 			int lastOld = 0;
@@ -364,11 +374,11 @@ public class GARC {
 				fatbe[i] = new FATBEntry();
 				fatbe[i].flags = fatbe[0].flags;
 				fatbe[i].offset = baseOffset;
-				fatbe[i].endOffset = baseOffset + entries.get(i).length;
+				fatbe[i].endOffset = baseOffset + working.get(i).length;
 				if (fatbe[i].endOffset % 4 != 0) {
 					fatbe[i].endOffset += 4 - (fatbe[i].endOffset % 4); //padding
 				}
-				fatbe[i].len = entries.get(i).length;
+				fatbe[i].len = working.get(i).length;
 				baseOffset = fatbe[i].endOffset;
 			}
 			int offsetShift = 0;
@@ -410,8 +420,8 @@ public class GARC {
 					processedCustomFiles++;
 				} else {
 					try (InputStream entryReader = new FileInputStream(file)) {
-						byte[] b = new byte[entries.get(i).length];
-						entryReader.skip(entries.get(i).offset);
+						byte[] b = new byte[working.get(i).length];
+						entryReader.skip(working.get(i).offset);
 						entryReader.read(b);
 						dos.write(b);
 						int remainder = b.length % padding;
@@ -479,6 +489,16 @@ public class GARC {
 	/** The on-disk (stored) byte length of an entry - compressed size when compressed. */
 	public int getEntryStoredLength(int num) {
 		return entries.get(num).length;
+	}
+
+	/**
+	 * How many entries this instance's table describes. Equals {@link #length}
+	 * and the count in the file for an instance that has only ever parsed; the
+	 * three drifting apart is what a pack that mutated the table and then threw
+	 * used to leave behind, and the next pack wrote the drift into the archive.
+	 */
+	public int getEntryCount() {
+		return entries.size();
 	}
 
 	public byte[] getDecompressedEntry(int num) {
