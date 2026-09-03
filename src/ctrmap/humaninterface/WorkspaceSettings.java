@@ -1,6 +1,7 @@
 package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
+import ctrmap.Ui;
 import ctrmap.Workspace;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -55,10 +56,11 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 		Workspace.TILESET_DEFAULT = btnTilesetDefault.isSelected();
 		Workspace.TILESET_PATH = tilesetPath.getText();
 		if (!gameField.getText().equals(originGamePath)) { //may have switched from XY to AlphaOmega etc., so it's better to clean up to prevent injecting wrong game files
-			if (!keepOrRetakeBackup(gameField.getText())) {
+			if (!keepOrRetakeBackup(this, gameField.getText())) {
+				gameField.setText(originGamePath);
 				return; //the user would rather not move the workspace after all
 			}
-			int res = JOptionPane.showConfirmDialog(null, "Game path has been changed. To prevent cross-injecting, the workspace will be cleaned.\n"
+			int res = Ui.confirm(null, "Game path has been changed. To prevent cross-injecting, the workspace will be cleaned.\n"
 					+ "Do you wish to commit your changes to the game data beforehand? \nUncommited data will be lost on cleanup.", "State change warning", JOptionPane.YES_NO_CANCEL_OPTION);
 			switch (res) {
 				case JOptionPane.YES_OPTION:
@@ -90,12 +92,20 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 	 * and the building palette and atmosphere picker cut donors out of the
 	 * wrong game. Nothing said so, and the guard written for this
 	 * ({@link Workspace#snapshotIsForeign}) was never called from anywhere.
+	 *
+	 * <p>Static, and asking through {@link Ui}, so the decision can be driven
+	 * without a window. It used to be an instance method whose only question
+	 * was a {@code JOptionPane}, which made the whole thing unreachable from a
+	 * suite twice over - this class is a JFrame, so a headless run cannot even
+	 * construct it, and a modal confirm has no answer a test can give. Every
+	 * branch below therefore went unmeasured, including "the user said no".
+	 * Putting the caller's text field back is the caller's business now.
 	 */
-	private boolean keepOrRetakeBackup(String newGamePath) {
+	public static boolean keepOrRetakeBackup(java.awt.Component parent, String newGamePath) {
 		if (!Workspace.snapshotIsForeign(newGamePath)) {
 			return true;
 		}
-		int r = JOptionPane.showConfirmDialog(this,
+		int r = Ui.confirm(parent,
 				"This workspace holds a pristine backup of the game folder it was set up with:\n  "
 				+ Workspace.snapshotSourcePath()
 				+ "\n\nCTRMap compares your edits against that backup to work out what you"
@@ -103,9 +113,8 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 				+ "\nthe wrong answer for the folder you are switching to."
 				+ "\n\nReplace the backup with one taken from the new game folder?"
 				+ "\n(Choose No to leave the game path as it was.)",
-				"Backup belongs to another game", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+				"Backup belongs to another game", JOptionPane.YES_NO_OPTION);
 		if (r != JOptionPane.YES_OPTION) {
-			gameField.setText(originGamePath);
 			return false;
 		}
 		Workspace.discardSnapshot();
