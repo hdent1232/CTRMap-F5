@@ -101,13 +101,19 @@ public class TilePainterForm {
 
 	/** The loaded zone's LIVE areadata container when it covers this area (prop
 	 *  and camera editors write through the same instance, and its cached
-	 *  subfile offsets must stay coherent when subfile 2 grows), else a fresh one. */
+	 *  subfile offsets must stay coherent when subfile 2 grows), else a fresh one.
+	 *  Matched by FILE, not by id: forking a shared area repoints the loaded
+	 *  zone's areadataID while its container still points at the OLD area's
+	 *  file, and writing through that would grow the very area we just forked
+	 *  away from. */
 	static ctrmap.formats.containers.AD areaContainer(int areaId) throws Exception {
+		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areaId);
 		if (mZonePnl != null && mZonePnl.zone != null && mZonePnl.zone.header != null
-				&& mZonePnl.zone.header.areadata != null && mZonePnl.zone.header.areadataID == areaId) {
+				&& mZonePnl.zone.header.areadata != null && f != null
+				&& f.equals(mZonePnl.zone.header.areadata.getOriginFile())) {
 			return mZonePnl.zone.header.areadata;
 		}
-		return new ctrmap.formats.containers.AD(Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areaId));
+		return new ctrmap.formats.containers.AD(f);
 	}
 
 	/** True if painted water will actually scroll: every one of the zone's map
@@ -228,6 +234,80 @@ public class TilePainterForm {
 		return note.toString().trim();
 	}
 
+	/** One region's freshly built content, held in memory until the whole Apply
+	 *  has cleared every precondition. */
+	private static class StagedRegion {
+
+		int srcRegion;
+		boolean firstCell;
+		byte[] model, collision, tilemap, props;
+	}
+
+	/**
+	 * The zone's AreaData with an Apply's edits held in memory. The door-prop
+	 * registry, the door props' textures and the carried brush textures all
+	 * land in the same container, so they are staged together and written only
+	 * once every one of them has succeeded - and never into an area other zones
+	 * share.
+	 */
+	private static class StagedArea {
+
+		final int areaId;
+		final int editingZone;
+		final ctrmap.formats.containers.AD ad;
+		final java.util.Map<Integer, byte[]> pending = new java.util.LinkedHashMap<>();
+		private ctrmap.formats.propdata.ADPropRegistry registry;
+
+		StagedArea(int areaId, int editingZone) throws Exception {
+			this.areaId = areaId;
+			this.editingZone = editingZone;
+			this.ad = areaContainer(areaId);
+		}
+
+		/** The subfile as this Apply will leave it: staged bytes, else disk. */
+		byte[] file(int num) {
+			byte[] staged = pending.get(num);
+			return staged != null ? staged : ad.getFile(num);
+		}
+
+		void stage(int num, byte[] data) {
+			//every area write goes through here, so the shared-area rule cannot
+			//be walked around by a path that does its own storeFile
+			ctrmap.formats.h3d.BchTexturePack.assertNotShared(areaId, editingZone);
+			pending.put(num, data);
+		}
+
+		ctrmap.formats.propdata.ADPropRegistry registry() {
+			if (registry == null) {
+				registry = new ctrmap.formats.propdata.ADPropRegistry(ad, null, false);
+			}
+			return registry;
+		}
+
+		/** Re-stages the prop registry after an entry was added (its own write()
+		 *  goes straight to disk and cannot report a failure). */
+		void stageRegistry() throws java.io.IOException {
+			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+			ctrmap.LittleEndianDataOutputStream dos = new ctrmap.LittleEndianDataOutputStream(baos);
+			dos.writeInt(registry().entries.size());
+			for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : registry().entries.values()) {
+				e.write(dos);
+			}
+			dos.close();
+			stage(0, baos.toByteArray());
+		}
+
+		void commit() {
+			for (java.util.Map.Entry<Integer, byte[]> e : pending.entrySet()) {
+				if (!ad.storeFile(e.getKey(), e.getValue())) {
+					throw new IllegalStateException("could not write area " + areaId
+							+ " subfile " + e.getKey() + " (file locked or read-only?)");
+				}
+			}
+			pending.clear();
+		}
+	}
+
 	/**
 	 * Applies the painted edits to the zone. With a {@code touched} mask this is
 	 * a COMPOSITE edit: only the touched tiles of the zone's first map cell are
@@ -237,18 +317,30 @@ public class TilePainterForm {
 	 * forked first ONLY when it is still shared (re-applying to an
 	 * already-private zone reuses its own regions instead of orphaning another
 	 * archive append).
+	 *
+	 * <p>All of it or none of it. Everything is built and every precondition
+	 * cleared BEFORE the first byte is written: the regions used to be stored as
+	 * they were built and the cross-area texture carry only ran afterwards, so a
+	 * carry the shared-area guard refused left a half-applied untextured map in
+	 * the workspace behind an "Apply failed" dialog - and the next Pack
+	 * Workspace shipped it.
 	 */
-	static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, int[][] ramp,
+	public static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, int[][] ramp,
 			ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed,
 			boolean[][] touched) throws Exception {
 		final boolean composite = touched != null;
-		GeometryForker.ForkResult r = GeometryForker.ensurePrivate(zoneIndex);
+		//Build from the zone's CURRENT geometry; the private copy is made at
+		//commit time. Forking up front repointed the zone's matrix while the
+		//loaded header still named the old one, so firstRegionCell() no longer
+		//found the zone's own cell and a composite Apply on a shared map skipped
+		//every region and reported "Painted map applied" with nothing painted.
+		GeometryForker.ForkResult src = GeometryForker.currentGeometry(zoneIndex);
 		java.util.Map<Integer, java.util.Set<String>> texNeeds = new java.util.LinkedHashMap<>();
 		//the shared height frame for buildings/door props/warps: the painted
 		//floors' actual Y (retail-surface-relative in composite mode)
 		float[][] floorY = null;
 		if (composite) {
-			for (int newRegion : r.newRegions) {
+			for (int newRegion : src.newRegions) {
 				File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, newRegion);
 				if (f != null) {
 					GR gr = new GR(f);
@@ -267,9 +359,6 @@ public class TilePainterForm {
 				}
 			}
 		}
-		// the swinging-door props for placed buildings (registry + textures handled)
-		StringBuilder propNote = new StringBuilder();
-		byte[] doorProps = placed.isEmpty() ? null : buildDoorProps(placed, floorY, propNote);
 		//COMPOSITE edits exactly the zone's OWN cell. On a map shared by several
 		//zones (94 retail zones are), any other cell belongs to a neighbour -
 		//painting it would edit their ground and strand this zone's warps in
@@ -278,8 +367,9 @@ public class TilePainterForm {
 		int ownRegion = ownCell != null ? ownCell[0] : -1;
 		boolean firstCell = true;
 		String stampNote = "";
-		for (int newRegion : r.newRegions) {
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, newRegion);
+		java.util.List<StagedRegion> staged = new java.util.ArrayList<>();
+		for (int region : src.newRegions) {
+			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, region);
 			if (f == null) {
 				continue;
 			}
@@ -288,7 +378,7 @@ public class TilePainterForm {
 			if (!BchMapModel.isMapModel(donor)) {
 				continue;
 			}
-			if (composite && ownRegion >= 0 && newRegion != ownRegion) {
+			if (composite && ownRegion >= 0 && region != ownRegion) {
 				continue; // not this zone's cell - leave it exactly as it is
 			}
 			if (composite && ownRegion < 0 && !firstCell) {
@@ -304,39 +394,87 @@ public class TilePainterForm {
 			if (!placed.isEmpty()) {
 				stampNote = stampPlaced(bc, placed, height, floorY, texNeeds);
 			}
-			gr.storeFile(1, bc.model);
-			gr.storeFile(2, bc.collision);
-			gr.storeFile(0, bc.tilemap);
+			StagedRegion s = new StagedRegion();
+			s.srcRegion = region;
+			s.firstCell = firstCell;
+			s.model = bc.model;
+			s.collision = bc.collision;
+			s.tilemap = bc.tilemap;
+			s.props = bc.props;
+			staged.add(s);
+			firstCell = false;
+		}
+		//Whose area is this? Brush textures and door props go INTO it and 77% of
+		//retail zones share theirs, so the fork is offered here - once, for the
+		//whole Apply, before anything is written - instead of the carry refusing
+		//when half the map is already on disk.
+		//Read the area from the zone we are actually painting, not from whatever
+		//zone the panel happens to have loaded: the guards below exclude this
+		//zone index, so the index and the area it is checked against have to
+		//describe the same zone, and callers reach here with a seeded zone that
+		//need not be the panel's current one.
+		int zoneArea = ctrmap.AreaForker.currentArea(zoneIndex);
+		if (needsAreaWrite(zoneArea, placed, texNeeds)) {
+			int owned = AreaForkPrompt.ensurePrivate(frame, zoneIndex, zoneArea,
+					"adding this map's brush textures and door props");
+			if (owned < 0) {
+				throw new IllegalStateException("Apply cancelled - nothing was changed.");
+			}
+			zoneArea = owned;
+			String shared = ctrmap.formats.h3d.BchTexturePack.zonesUsingArea(zoneArea, zoneIndex);
+			if (shared != null) {
+				throw new IllegalStateException("Area " + zoneArea + " is also used by " + shared
+						+ ".\nThis map's textures and door props cannot go into it without changing"
+						+ "\nthose maps, so nothing was applied. Give this zone its own area"
+						+ "\n(Map > Fork area) and Apply again.");
+			}
+		}
+		StagedArea area = new StagedArea(zoneArea, zoneIndex);
+		// the swinging-door props for placed buildings (registry + textures staged)
+		StringBuilder propNote = new StringBuilder();
+		byte[] doorProps = placed.isEmpty() ? null : buildDoorProps(placed, floorY, area, propNote);
+		// stamped pieces reference their donor areas' textures - carry any the
+		// zone's area lacks, or the game hardlocks on load
+		StringBuilder texNote = new StringBuilder();
+		for (java.util.Map.Entry<Integer, java.util.Set<String>> en : texNeeds.entrySet()) {
+			if (en.getKey() == zoneArea) {
+				continue;
+			}
+			ctrmap.formats.h3d.BchTexturePack.Carry carry = ctrmap.formats.h3d.BchTexturePack.planCarry(
+					en.getKey(), zoneArea, new java.util.ArrayList<>(en.getValue()),
+					area.file(11), area.file(1), zoneIndex);
+			if (carry.pack != null) {
+				area.stage(carry.subfile, carry.pack);
+			}
+			texNote.append(carry.note.trim()).append('\n');
+		}
+		//COMMIT. Every precondition has passed, so the writing can start: the
+		//zone's map is forked here when it is still shared (re-applying to an
+		//already-private zone reuses its own regions instead of orphaning
+		//another archive append), and the staged bytes land in its own regions.
+		GeometryForker.ForkResult r = GeometryForker.ensurePrivate(zoneIndex);
+		for (StagedRegion s : staged) {
+			int dest = destRegion(r, s.srcRegion);
+			GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, dest));
+			boolean ok = gr.storeFile(1, s.model);
+			ok &= gr.storeFile(2, s.collision);
+			ok &= gr.storeFile(0, s.tilemap);
 			// door props carry ABSOLUTE world coords of the FIRST map cell (where
 			// the warps also go) - storing them into every region would stack
 			// engine-visible duplicates at that one location
 			if (composite) {
 				// preserve the region's existing props; only merge new door props in
-				if (firstCell && doorProps != null) {
-					gr.storeFile(3, mergeProps(gr, doorProps));
+				if (s.firstCell && doorProps != null) {
+					ok &= gr.storeFile(3, mergeProps(gr, doorProps));
 				}
 			} else {
-				gr.storeFile(3, (firstCell && doorProps != null) ? doorProps : bc.props);
+				ok &= gr.storeFile(3, (s.firstCell && doorProps != null) ? doorProps : s.props);
 			}
-			firstCell = false;
-		}
-		// stamped pieces reference their donor areas' textures - carry any the
-		// zone's area lacks, or the game hardlocks on load
-		StringBuilder texNote = new StringBuilder();
-		//Read the area from the zone we are actually painting, not from whatever
-		//zone the panel happens to have loaded. The guard below excludes this
-		//zone index, so the index and the area it is checked against have to
-		//describe the same zone; callers reach here with a seeded zone that need
-		//not be the panel's current one.
-		int zoneArea = ctrmap.AreaForker.currentArea(zoneIndex);
-		for (java.util.Map.Entry<Integer, java.util.Set<String>> en : texNeeds.entrySet()) {
-			if (en.getKey() == zoneArea) {
-				continue;
+			if (!ok) {
+				throw new IllegalStateException("could not write region " + dest + " (file locked or read-only?)");
 			}
-			texNote.append(ctrmap.formats.h3d.BchTexturePack.carryToArea(
-					en.getKey(), zoneArea, new java.util.ArrayList<>(en.getValue()),
-					areaContainer(zoneArea), zoneIndex).trim()).append('\n');
 		}
+		area.commit();
 		int enterable = 0;
 		for (Placed pl : placed) {
 			if (pl.e.enterable()) {
@@ -346,31 +484,42 @@ public class TilePainterForm {
 		int wired = 0;
 		StringBuilder wireNote = new StringBuilder();
 		if (enterable > 0) {
-			String[] opts = {"Clone private interiors (recommended)", "Link retail interiors (enter-only)", "Skip"};
-			int mode = JOptionPane.showOptionDialog(frame,
-					enterable + " placed building(s) have doors. Wire them now?\n\n"
-					+ "CLONE (recommended): each door gets its OWN interior - a copy of the retail\n"
-					+ "room placed in a free base zone - and the room's exit leads BACK TO THIS MAP.\n"
-					+ "Walk in, walk out: full round trip. (Rename the interior later via Tools.)\n\n"
-					+ "RETAIL: doors warp into the shared retail rooms; entering works, but the\n"
-					+ "room's exit leads to its retail town until you retarget it.",
-					"Door warps", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, opts, opts[0]);
-			if (mode == 0 || mode == 1) {
-				wired = wireDoorWarps(zoneIndex, placed, floorY, mode == 0, wireNote);
+			//Past the commit the map IS applied, so an extra that cannot run is
+			//a line in the result - never an "Apply failed" over a map that is
+			//already on disk and will ship with the next pack.
+			try {
+				String[] opts = {"Clone private interiors (recommended)", "Link retail interiors (enter-only)", "Skip"};
+				int mode = JOptionPane.showOptionDialog(frame,
+						enterable + " placed building(s) have doors. Wire them now?\n\n"
+						+ "CLONE (recommended): each door gets its OWN interior - a copy of the retail\n"
+						+ "room placed in a free base zone - and the room's exit leads BACK TO THIS MAP.\n"
+						+ "Walk in, walk out: full round trip. (Rename the interior later via Tools.)\n\n"
+						+ "RETAIL: doors warp into the shared retail rooms; entering works, but the\n"
+						+ "room's exit leads to its retail town until you retarget it.",
+						"Door warps", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, opts, opts[0]);
+				if (mode == 0 || mode == 1) {
+					wired = wireDoorWarps(zoneIndex, placed, floorY, mode == 0, wireNote);
+				}
+			} catch (Exception ex) {
+				wireNote.append("\nDoor wiring failed: ").append(ex);
 			}
 		}
 		int signsWired = 0;
 		try {
 			signsWired = wireSigns(zoneIndex, placed);
 		} catch (Exception ex) {
-			wireNote.append("\nSign wiring failed: ").append(ex.getMessage());
+			wireNote.append("\nSign wiring failed: ").append(ex);
 		}
 		final String extras = (stampNote.isEmpty() ? "" : "\n\n" + stampNote)
 				+ (signsWired > 0 ? "\n\n" + signsWired + " readable sign(s) wired (text saved; edit later via the NPC tool's dialogue section)." : "")
 				+ (texNote.length() > 0 ? "\n" + texNote.toString().trim() : "")
 				+ (doorProps != null ? "\n\nSwinging-door prop(s) placed automatically (registry + textures handled)." : "")
 				+ (propNote.length() > 0 ? propNote : "")
-				+ (wired > 0 ? "\n\n" + wired + " door warp(s) added." + wireNote : "")
+				+ (wired > 0 ? "\n\n" + wired + " door warp(s) added." : "")
+				//shown whatever happened: a wiring that FAILED reported into this
+				//and the old line only printed it when a warp had been added, so
+				//the one message about the failure was dropped for having failed
+				+ (wireNote.length() > 0 ? "\n" + wireNote.toString().trim() : "")
 				+ (enterable > wired ? "\n\n" + (enterable - wired) + " door(s) left unwired - add warps with the Warp tool when ready." : "");
 		Workspace.packWorkspace(new Runnable() {
 			@Override
@@ -388,6 +537,72 @@ public class TilePainterForm {
 				});
 			}
 		});
+	}
+
+	/** Where a staged region's bytes belong: its private copy after a fork, or
+	 *  the region itself when the zone already owned its map. */
+	static int destRegion(GeometryForker.ForkResult r, int srcRegion) {
+		for (int i = 0; i < r.srcRegions.length; i++) {
+			if (r.srcRegions[i] == srcRegion) {
+				return r.newRegions[i];
+			}
+		}
+		return srcRegion;
+	}
+
+	/**
+	 * True when applying would have to write into the zone's AreaData: a brush
+	 * texture the area does not hold, or a door prop it has not registered.
+	 * Asked before anything is written, so a shared area can be forked (or the
+	 * Apply refused) once, up front, for the whole edit.
+	 */
+	static boolean needsAreaWrite(int areaId, java.util.List<Placed> placed,
+			java.util.Map<Integer, java.util.Set<String>> texNeeds) throws Exception {
+		ctrmap.formats.containers.AD ad = areaContainer(areaId);
+		byte[] world = ad.getFile(11), prop = ad.getFile(1);
+		for (java.util.Map.Entry<Integer, java.util.Set<String>> en : texNeeds.entrySet()) {
+			if (en.getKey() != areaId && !ctrmap.formats.h3d.BchTexturePack.missingIn(
+					world, prop, new java.util.ArrayList<>(en.getValue())).isEmpty()) {
+				return true;
+			}
+		}
+		ctrmap.formats.propdata.PropDatabase db = ctrmap.formats.propdata.PropDatabase.get();
+		if (db == null) {
+			return false;
+		}
+		ctrmap.formats.propdata.ADPropRegistry reg = null;
+		for (Placed pl : placed) {
+			ctrmap.formats.propdata.PropDatabase.PropModel pm = doorPropModel(db, pl.e.doorProp);
+			if (pm == null) {
+				continue; //no door, or a model buildDoorProps will report as missing
+			}
+			if (reg == null) {
+				reg = new ctrmap.formats.propdata.ADPropRegistry(ad, null, false);
+			}
+			boolean registered = false;
+			for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
+				registered |= e.model == pm.modelIndex;
+			}
+			if (!registered) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** The BuildingModels entry a building's door prop names, or null when it
+	 *  has no door or the model is not in the dump. */
+	static ctrmap.formats.propdata.PropDatabase.PropModel doorPropModel(
+			ctrmap.formats.propdata.PropDatabase db, String propModelName) {
+		if (propModelName == null || propModelName.equals("-")) {
+			return null;
+		}
+		for (ctrmap.formats.propdata.PropDatabase.PropModel m : db.models) {
+			if (propModelName.equals(m.name)) {
+				return m;
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -430,6 +645,13 @@ public class TilePainterForm {
 	 * brush works on any map. Texture needs are added to {@code texNeeds} so
 	 * the existing cross-area carry brings them along (a missing texture
 	 * hardlocks the game). Returns the (possibly grown) model.
+	 *
+	 * <p>Needs are recorded whether or not THIS call did the importing. A map
+	 * painted once already carries the material, so gating on "injected" meant
+	 * the second Apply - the one the user makes after forking the area the
+	 * first Apply refused - asked the carry for nothing and reported success
+	 * over the same untextured floor. The carry no-ops cheaply when the
+	 * textures are already there, so asking every time costs nothing.
 	 */
 	static byte[] importBrushMaterials(byte[] model, TilePalette[][] grid, boolean[][] touched,
 			java.util.Map<Integer, java.util.Set<String>> texNeeds) {
@@ -449,11 +671,31 @@ public class TilePainterForm {
 			ctrmap.formats.tilemap.TerrainCatalog.ImportResult r
 					= ctrmap.formats.tilemap.TerrainCatalog.ensureMaterial(out, t);
 			out = r.model;
-			if (r.injected && texNeeds != null && !r.texturesNeeded.isEmpty()) {
-				texNeeds.computeIfAbsent(r.donorArea, k -> new java.util.LinkedHashSet<>()).addAll(r.texturesNeeded);
-			}
+			recordNeeds(r, texNeeds);
 		}
+		//The generated cliff faces and the lava churn overlay come from the same
+		//catalogue, but PaintedRegionBuilder imports them inside the build where
+		//nothing could see what they need - and 227 of the game's 228 areas do
+		//not hold the cliff donor's texture. Importing them here instead means
+		//the carry hears about them; the build's own calls then find the
+		//material already present and change nothing.
+		ctrmap.formats.tilemap.TerrainCatalog.ImportResult cliff
+				= ctrmap.formats.tilemap.TerrainCatalog.ensureCliffMaterial(out);
+		out = cliff.model;
+		recordNeeds(cliff, texNeeds);
+		ctrmap.formats.tilemap.TerrainCatalog.ImportResult churn
+				= ctrmap.formats.tilemap.TerrainCatalog.ensureChurnMaterial(out);
+		out = churn.model;
+		recordNeeds(churn, texNeeds);
 		return out;
+	}
+
+	/** Files a catalogue import's textures under the donor area they come from. */
+	static void recordNeeds(ctrmap.formats.tilemap.TerrainCatalog.ImportResult r,
+			java.util.Map<Integer, java.util.Set<String>> texNeeds) {
+		if (texNeeds != null && r.donorArea >= 0 && !r.texturesNeeded.isEmpty()) {
+			texNeeds.computeIfAbsent(r.donorArea, k -> new java.util.LinkedHashSet<>()).addAll(r.texturesNeeded);
+		}
 	}
 
 	/** Seeds the grid from the region's existing tilemap tuples (reverse lookup). */
@@ -541,7 +783,7 @@ public class TilePainterForm {
 	 * registry and texture imports; a door whose registration fails is skipped
 	 * with a note (the map itself is unaffected). Returns null when no props.
 	 */
-	static byte[] buildDoorProps(java.util.List<Placed> placed, float[][] floorY, StringBuilder note) {
+	static byte[] buildDoorProps(java.util.List<Placed> placed, float[][] floorY, StagedArea area, StringBuilder note) {
 		int[] cell = firstRegionCell();
 		if (cell == null) {
 			return null;
@@ -552,7 +794,7 @@ public class TilePainterForm {
 				continue;
 			}
 			try {
-				int uid = ensureDoorPropRegistered(pl.e.doorProp);
+				int uid = ensureDoorPropRegistered(pl.e.doorProp, area);
 				ctrmap.formats.propdata.GRProp p = new ctrmap.formats.propdata.GRProp();
 				p.uid = uid;
 				p.x = (cellX(cell) * 40 + pl.tx + pl.e.doorDX) * 18 + 9;
@@ -570,36 +812,31 @@ public class TilePainterForm {
 	 * Ensures the door prop model is usable in THIS zone's area: registry entry
 	 * (cloned from the retail template) and its textures (imported from the
 	 * best donor area) - a missing texture would hardlock the game on area
-	 * load. Writes through the zone's LIVE areadata container. Returns the
-	 * registry reference id for the GRProp uid.
+	 * load. Both are STAGED into the Apply's area transaction, never written
+	 * here: this used to import the textures and rewrite the registry the moment
+	 * a building was placed - before anything had asked whether other zones
+	 * share the area, and while the rest of the Apply could still fail. Returns
+	 * the registry reference id for the GRProp uid.
 	 */
-	static int ensureDoorPropRegistered(String propModelName) throws Exception {
+	static int ensureDoorPropRegistered(String propModelName, StagedArea area) throws Exception {
 		ctrmap.formats.propdata.PropDatabase db = ctrmap.formats.propdata.PropDatabase.get();
 		if (db == null) {
 			throw new IllegalStateException("prop database unavailable");
 		}
-		ctrmap.formats.propdata.PropDatabase.PropModel pm = null;
-		for (ctrmap.formats.propdata.PropDatabase.PropModel m : db.models) {
-			if (propModelName.equals(m.name)) {
-				pm = m;
-				break;
-			}
-		}
+		ctrmap.formats.propdata.PropDatabase.PropModel pm = doorPropModel(db, propModelName);
 		if (pm == null) {
 			throw new IllegalStateException("model \"" + propModelName + "\" not in BuildingModels");
 		}
-		int areaId = mZonePnl.zone.header.areadataID;
-		ctrmap.formats.containers.AD ad = areaContainer(areaId);
-		ctrmap.formats.propdata.ADPropRegistry reg = new ctrmap.formats.propdata.ADPropRegistry(ad, null, false);
+		ctrmap.formats.propdata.ADPropRegistry reg = area.registry();
 		for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
 			if (e.model == pm.modelIndex) {
 				return e.reference; // already registered in this area
 			}
 		}
-		// textures first (all-or-nothing before any registry write)
+		// textures first (all-or-nothing before any registry entry)
 		byte[] modelBch = ctrmap.formats.propdata.PropDatabase.getSubfile(
 				Workspace.bm.getDecompressedEntry(pm.modelIndex), 0);
-		byte[] targetPack = ad.getFile(1);
+		byte[] targetPack = area.file(1);
 		java.util.Set<String> available = ctrmap.formats.propdata.PropDatabase.getTexturePackTextureNames(targetPack);
 		java.util.List<String> missing = ctrmap.formats.propdata.PropDatabase.getMissingTextureNames(modelBch, available);
 		if (!missing.isEmpty()) {
@@ -614,15 +851,14 @@ public class TilePainterForm {
 			} else {
 				donorPack = ctrmap.formats.propdata.PropDatabase.getSubfile(Workspace.ad.getDecompressedEntry(donorArea), 1);
 			}
-			byte[] merged = ctrmap.formats.h3d.BchTexturePack.importTextures(targetPack, donorPack, missing);
+			byte[] merged = ctrmap.formats.h3d.BchTexturePack.importIntoArea(
+					area.areaId, area.editingZone, targetPack, donorPack, missing);
 			if (merged != targetPack) {
 				ctrmap.formats.h3d.BCHFile check = new ctrmap.formats.h3d.BCHFile(merged);
 				if (check.errorlevel != 0) {
 					throw new IllegalStateException("merged texture pack failed verification");
 				}
-				if (!ad.storeFile(1, merged)) {
-					throw new IllegalStateException("could not write the area texture pack");
-				}
+				area.stage(1, merged);
 			}
 		}
 		// registry entry: retail template when one exists (carries the door's
@@ -641,18 +877,7 @@ public class TilePainterForm {
 		entry.reference = ref;
 		entry.model = pm.modelIndex;
 		reg.entries.put(ref, entry);
-		// checked store (ADPropRegistry.write() cannot report a failed write; an
-		// unwritten entry would leave the GRProp uid unresolvable in-game)
-		java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-		ctrmap.LittleEndianDataOutputStream dos = new ctrmap.LittleEndianDataOutputStream(baos);
-		dos.writeInt(reg.entries.size());
-		for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
-			e.write(dos);
-		}
-		dos.close();
-		if (!ad.storeFile(0, baos.toByteArray())) {
-			throw new IllegalStateException("could not write the area prop registry");
-		}
+		area.stageRegistry();
 		return ref;
 	}
 

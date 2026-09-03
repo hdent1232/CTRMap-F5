@@ -1,8 +1,11 @@
 package ctrmap.formats.h3d;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -336,7 +339,7 @@ public class BchTexturePack {
 	 * What matters is whether another map depends on the area, not where its
 	 * index falls.
 	 */
-	private static String zonesUsingArea(int area, int editingZone) {
+	public static String zonesUsingArea(int area, int editingZone) {
 		try {
 			//XY keeps its master table at a different index; the fork machinery
 			//is ORAS-only for the same reason (AreaForker.forkArea,
@@ -392,53 +395,166 @@ public class BchTexturePack {
 	 */
 	public static String carryToArea(int donorArea, int targetArea, List<String> needed,
 			ctrmap.formats.containers.AD liveTarget, int editingZone) throws Exception {
+		java.io.File tgtFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, targetArea);
+		if (tgtFile == null) {
+			throw new IllegalStateException("area files unavailable");
+		}
+		ctrmap.formats.containers.AD tgt = liveTarget != null ? liveTarget : new ctrmap.formats.containers.AD(tgtFile);
+		Carry c = planCarry(donorArea, targetArea, needed, tgt.getFile(11), tgt.getFile(1), editingZone);
+		if (c.pack != null) {
+			if (!tgt.storeFile(c.subfile, c.pack)) {
+				throw new IllegalStateException("could not write area " + targetArea);
+			}
+			ctrmap.Workspace.addPersist(tgtFile);
+		}
+		return c.note;
+	}
+
+	/**
+	 * What a carry would write into the target area - nothing is written. A
+	 * caller whose edit spans several files (a painted map's regions, its door
+	 * props and its brush textures) plans every part first and commits them
+	 * together, so a refusal here leaves the whole edit undone instead of
+	 * half-applied.
+	 */
+	public static class Carry {
+
+		/** The target AD subfile the grown pack belongs in (11 world, 1 prop). */
+		public int subfile;
+		/** The grown pack, or null when the area already holds every texture. */
+		public byte[] pack;
+		/** The names this carry adds. */
+		public final List<String> imported = new ArrayList<>();
+		/** The line the user is shown for this carry. */
+		public String note = "  (textures already present)";
+	}
+
+	/**
+	 * Plans a cross-area texture carry against the target's current pack bytes.
+	 * Refuses a shared target area outright, and names any texture the target
+	 * already holds under a different picture than the donor's - importing
+	 * cannot fix that one, but the user has to be told which version they are
+	 * looking at.
+	 */
+	public static Carry planCarry(int donorArea, int targetArea, List<String> needed,
+			byte[] targetWorldPack, byte[] targetPropPack, int editingZone) throws Exception {
+		assertNotShared(targetArea, editingZone);
+		java.io.File donFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, donorArea);
+		if (donFile == null) {
+			throw new IllegalStateException("area files unavailable");
+		}
+		ctrmap.formats.containers.AD don = new ctrmap.formats.containers.AD(donFile);
+		byte[] donPack = don.getFile(11);
+		if (donPack == null || !isTexturePack(donPack)) {
+			donPack = don.getFile(1);
+		}
+		Carry c = new Carry();
+		c.subfile = isTexturePack(targetWorldPack) ? 11 : 1;
+		c.imported.addAll(missingIn(targetWorldPack, targetPropPack, needed));
+		StringBuilder note = new StringBuilder();
+		for (String clash : clashesWith(targetWorldPack, targetPropPack, donPack, needed)) {
+			note.append("  ! \"").append(clash).append("\" is already in this area under different pixels")
+					.append(" than area ").append(donorArea).append("'s - this map draws its own version\n");
+		}
+		if (c.imported.isEmpty()) {
+			note.append("  (textures already present)");
+		} else {
+			c.pack = importTextures(c.subfile == 11 ? targetWorldPack : targetPropPack, donPack, c.imported);
+			note.append("  +").append(c.imported.size()).append(" textures carried to this area");
+		}
+		c.note = note.toString();
+		return c;
+	}
+
+	/**
+	 * Refuses to grow an area other zones also use. Growing one to satisfy a
+	 * new map rewrites the look of every other place that also lives in it -
+	 * measured, this put 855 KB of imported textures inside Mauville City and
+	 * broke its fog, and grew the area behind fifteen other zones. Fork the
+	 * zone's area first (AreaForker) so it has one of its own. Every path that
+	 * writes an area's textures or prop registry goes through here, not just
+	 * the terrain carry.
+	 */
+	public static void assertNotShared(int targetArea, int editingZone) {
 		String shared = zonesUsingArea(targetArea, editingZone);
 		if (shared != null) {
-			//An area is shared. Growing one to satisfy a new map rewrites the
-			//look of every other place that also lives in it - measured, this
-			//put 855 KB of imported textures inside Mauville City and broke its
-			//fog, and grew the area behind fifteen other zones. Fork the
-			//zone's area first (AreaForker) so it has one of its own.
 			throw new IllegalStateException("Area " + targetArea + " is also used by "
 					+ shared + ".\nCarrying textures into it would change those maps."
 					+ "\nGive this zone its own area first (Map > Fork area).");
 		}
-		java.io.File tgtFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, targetArea);
-		java.io.File donFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, donorArea);
-		if (tgtFile == null || donFile == null) {
-			throw new IllegalStateException("area files unavailable");
+	}
+
+	/** True when two same-named textures are not the same picture. */
+	public static boolean differs(Texture a, Texture b) {
+		return a.format != b.format || a.dimParam != b.dimParam || !Arrays.equals(a.data, b.data);
+	}
+
+	/**
+	 * Of {@code needed}, the names the target already holds but under a
+	 * DIFFERENT picture from the donor's. Importing is a no-op for those, so
+	 * the map draws the target area's version - which is defensible (renaming
+	 * would break the material's reference) but must not be silent.
+	 */
+	public static List<String> clashesWith(byte[] worldPack, byte[] propPack, byte[] donorPack, List<String> needed) {
+		List<String> clashes = new ArrayList<>();
+		if (donorPack == null || !isTexturePack(donorPack)) {
+			return clashes;
 		}
-		ctrmap.formats.containers.AD tgt = liveTarget != null ? liveTarget : new ctrmap.formats.containers.AD(tgtFile);
-		ctrmap.formats.containers.AD don = new ctrmap.formats.containers.AD(donFile);
-		//names already present in the target area (file 11 world pack + file 1 prop pack)
-		java.util.Set<String> have = new java.util.HashSet<>();
-		byte[] tgt11 = tgt.getFile(11), tgt1 = tgt.getFile(1);
-		for (byte[] pk : new byte[][]{tgt11, tgt1}) {
+		List<Texture> donor = null;
+		for (byte[] pk : new byte[][]{worldPack, propPack}) {
+			if (pk == null || !isTexturePack(pk)) {
+				continue;
+			}
+			for (Texture t : parse(pk)) {
+				if (!needed.contains(t.name) || clashes.contains(t.name)) {
+					continue;
+				}
+				if (donor == null) {
+					donor = parse(donorPack);
+				}
+				for (Texture d : donor) {
+					if (d.name.equals(t.name) && differs(t, d)) {
+						clashes.add(t.name);
+					}
+				}
+			}
+		}
+		return clashes;
+	}
+
+	/** Of {@code needed}, the names neither of the area's packs holds. */
+	public static List<String> missingIn(byte[] worldPack, byte[] propPack, List<String> needed) {
+		Set<String> have = new HashSet<>();
+		for (byte[] pk : new byte[][]{worldPack, propPack}) {
 			if (pk != null && isTexturePack(pk)) {
 				for (Texture t : parse(pk)) {
 					have.add(t.name);
 				}
 			}
 		}
-		java.util.List<String> missing = new java.util.ArrayList<>();
+		List<String> missing = new ArrayList<>();
 		for (String n : needed) {
 			if (!have.contains(n)) {
 				missing.add(n);
 			}
 		}
-		if (missing.isEmpty()) {
-			return "  (textures already present)";
-		}
-		byte[] don11 = don.getFile(11);
-		if (don11 == null || !isTexturePack(don11)) {
-			don11 = don.getFile(1);
-		}
-		byte[] newPack = importTextures(isTexturePack(tgt11) ? tgt11 : tgt1, don11, missing);
-		if (!tgt.storeFile(isTexturePack(tgt11) ? 11 : 1, newPack)) {
-			throw new IllegalStateException("could not write area " + targetArea);
-		}
-		ctrmap.Workspace.addPersist(tgtFile);
-		return "  +" + missing.size() + " textures carried to this area";
+		return missing;
+	}
+
+
+	/**
+	 * The only way an EDITOR path may put textures into an area: it asks the
+	 * shared-area question first. The refusal used to live in carryToArea
+	 * alone, so the door-prop registration and the prop editor - which import
+	 * straight into AD subfile 1 - walked past it, and placing any building
+	 * with a door (400 of ~535 zones sit on a shared area) silently grew an
+	 * area other maps draw from. The pack-level {@link #importTextures} stays
+	 * for the format tests, which have no area to ask about.
+	 */
+	public static byte[] importIntoArea(int targetArea, int editingZone, byte[] targetPack,
+			byte[] donorPack, List<String> textureNames) {
+		assertNotShared(targetArea, editingZone);
+		return importTextures(targetPack, donorPack, textureNames);
 	}
 
 	public static byte[] importTexture(byte[] targetPack, byte[] donorPack, String textureName) {
@@ -448,23 +564,25 @@ public class BchTexturePack {
 	}
 
 	/**
-	 * Imports several textures from one donor pack in a single rebuild.
-	 * Already-present names are skipped; if nothing needs importing the target
-	 * is returned unchanged (same array). Throws IllegalArgumentException when
-	 * a requested texture is neither in the target nor in the donor.
+	 * Imports several textures from one donor pack in a single rebuild. A name
+	 * the target already holds under the SAME picture is skipped; if nothing
+	 * needs importing the target is returned unchanged (same array). Throws
+	 * IllegalArgumentException when a requested texture is neither in the
+	 * target nor in the donor, and IllegalStateException when the target holds
+	 * the name under a DIFFERENT picture - the caller asked for the donor's
+	 * pixels and would silently have got the target's, which is how a brush
+	 * came out a different shade from its own palette swatch. Renaming is not
+	 * an option (the material references the name), so refusing is.
 	 */
 	public static byte[] importTextures(byte[] targetPack, byte[] donorPack, List<String> textureNames) {
 		List<Texture> target = parse(targetPack);
-		Set<String> present = new HashSet<>();
+		Map<String, Texture> present = new HashMap<>();
 		for (Texture t : target) {
-			present.add(t.name);
+			present.put(t.name, t);
 		}
 		List<Texture> toAdd = new ArrayList<>();
 		List<Texture> donor = null;
 		for (String name : textureNames) {
-			if (present.contains(name)) {
-				continue;
-			}
 			if (donor == null) {
 				donor = parse(donorPack);
 			}
@@ -475,11 +593,19 @@ public class BchTexturePack {
 					break;
 				}
 			}
+			Texture here = present.get(name);
+			if (here != null) {
+				if (found != null && differs(here, found)) {
+					throw new IllegalStateException("texture \"" + name + "\" is already here, but it is a"
+							+ " different picture from the donor's - importing it would draw the wrong one");
+				}
+				continue;
+			}
 			if (found == null) {
 				throw new IllegalArgumentException("donor pack has no texture " + name);
 			}
 			toAdd.add(found);
-			present.add(name);
+			present.put(name, found);
 		}
 		if (toAdd.isEmpty()) {
 			return targetPack;
