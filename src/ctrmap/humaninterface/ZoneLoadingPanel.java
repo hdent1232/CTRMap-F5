@@ -319,7 +319,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			//a record that refuses to serialise - a warp with no destination -
 			//used to leave here as an uncaught exception on stderr, and the
 			//caller carried on as if the zone had been saved
-			JOptionPane.showMessageDialog(this, "Zone " + zoneIndex + " was not saved.\n" + ex.getMessage(), "Save zone", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Zone " + zoneIndex + " was not saved.\n" + ex.getMessage(), "Save zone");
 			return false;
 		}
 		if (stored) {

@@ -213,6 +213,28 @@ public class DataSafetyGuardsTest {
 		check(!entry(form, 1).endsWith("<no destination>"), "the dropdown follows the save: " + entry(form, 1));
 		check(e.warps.size() == 2 && e.warpCount == 2, "the list and its count agree");
 
+		//THE REFUSAL MUST REACH THE USER, not just happen.
+		//Every check above proves the zone refuses to save a broken record. None
+		//of them proved the user is told, and mutation testing showed why that
+		//mattered: deleting the dialog at Zone:51 and the one at
+		//ZoneLoadingPanel:322 left the entire battery green. A refusal nobody
+		//sees is the same silent failure the refusal was added to prevent - the
+		//edit looks saved and is not.
+		ZoneEntities.Warp mute = new ZoneEntities.Warp();
+		e.warps.add(mute);
+		e.warpCount++;
+		zonePnl.zones[2].entities.modified = true;
+		List<String> said = ctrmap.Ui.record();
+		try {
+			boolean saved = zonePnl.zones[2].store(false);
+			check(!saved, "a zone holding a record it cannot serialise reports that it did not save");
+			check(!said.isEmpty(), "and says so where the user can see it: " + said);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		e.warps.remove(mute);
+		e.warpCount--;
+
 		//a destination that no longer exists
 		ZoneEntities.Warp dangling = new ZoneEntities.Warp();
 		dangling.targetZone = zonePnl.zones.length;
