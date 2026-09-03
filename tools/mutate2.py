@@ -301,7 +301,7 @@ for _cid, (_b, _suites) in RESOLVED.items():
         if cls in _seen:
             continue                     # one suite guards several branches; check it once
         _seen.add(cls)
-        r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
+        r = run([JAVA, "-Xmx4g", "-Djava.awt.headless=true", "-cp", CP, cls] + a)
         if r.returncode != 0:
             raise SystemExit("baseline is RED: %s exits %s. Every mutant would score a free "
                              "kill against it. Fix the suite, then measure."
@@ -334,7 +334,7 @@ for cid, (base, suites) in RESOLVED.items():
             else:
                 verdict, detail = "SURVIVED", ""
                 for cls, a in suites:
-                    r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
+                    r = run([JAVA, "-Xmx4g", "-Djava.awt.headless=true", "-cp", CP, cls] + a)
                     if r.returncode == Hung.returncode:
                         verdict, detail = "hung", cls.split(".")[-1] + ": never finished"
                         break
