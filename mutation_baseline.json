@@ -231,15 +231,10 @@
   "sha256": "ed682d8eb745bbdd9bde634d8ecf9d6801a2bde660c4d83dd3dee16cfba0cc98"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
-  "survivors": 11,
-  "killed": 12,
+  "survivors": 10,
+  "killed": 13,
   "unmeasured": 2,
   "lines": [
-   {
-    "line": 582,
-    "kind": "negate-if",
-    "code": "if (count < ZoneEntities.MAX_PER_KIND) {"
-   },
    {
     "line": 601,
     "kind": "negate-if",
