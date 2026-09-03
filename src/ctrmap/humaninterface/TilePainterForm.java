@@ -216,14 +216,19 @@ public class TilePainterForm {
 					.append(r.stamped.size()).append(" piece(s), ")
 					.append(r.collTrisAdded > 0 ? "+" + r.collTrisAdded + " collision triangle(s), " : "no collision (not walkable), ")
 					.append(r.tilesStamped).append(" tile(s) blocked");
+			//the donor's furniture codes are solid like its walls, but they carry
+			//an interaction (a bookshelf's text, a PC) onto the user's map
+			Integer objects = r.tilesWritten.get("object");
+			if (objects != null) {
+				note.append(" (").append(objects).append(" of them carry the donor's object codes)");
+			}
 			if (!r.tilesKept.isEmpty()) {
 				int kept = 0;
-				StringBuilder kinds = new StringBuilder();
-				for (java.util.Map.Entry<String, Integer> k : r.tilesKept.entrySet()) {
-					kept += k.getValue();
-					kinds.append(kinds.length() > 0 ? ", " : "").append(k.getKey()).append(' ').append(k.getValue());
+				for (int n : r.tilesKept.values()) {
+					kept += n;
 				}
-				note.append("; ").append(kept).append(" donor tile(s) kept as painted (").append(kinds).append(')');
+				note.append("; ").append(kept).append(" donor tile(s) kept as painted (")
+						.append(ctrmap.formats.h3d.MapPrefab.StampResult.tally(r.tilesKept)).append(')');
 			}
 			note.append('.');
 		}

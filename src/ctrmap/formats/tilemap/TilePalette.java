@@ -54,7 +54,12 @@ public enum TilePalette {
 	//foam. "taki" is the real cue (d101r_taki0, takigake02 both read blue).
 	WATERFALL("Waterfall", new int[]{0x23, 0x00, 0x1A, 0x40}, true, true, 0x5AA0F0,
 			new String[]{"taki", "water"}),
-	DOOR("Door / warp tile", new int[]{0x01, 0x00, 0x0E, 0xD4}, true, true, 0xB05A3C,
+	//The tile under a retail door is the plain blocked tuple: measured across
+	//all 911 warp entities, none sits on anything else, and the warp entity
+	//does the work. 01 00 0E D4 - once painted here as the door - is the
+	//code of Littleroot's bookshelf row, impassable furniture that no warp
+	//ever backs.
+	DOOR("Door / warp tile", new int[]{0x21, 0x00, 0x00, 0x01}, false, false, 0xB05A3C,
 			new String[]{"door", "soil", "michi", "chip_wood", "path"}),
 	// interiors + structures (tuples measured across all 857 retail regions)
 	INDOOR("Indoor floor", new int[]{0x04, 0x00, 0x00, 0x00}, true, true, 0xC8B088,
@@ -112,12 +117,18 @@ public enum TilePalette {
 	}
 
 	/**
-	 * What a movement tuple does to its tile - "wall", "walkable", or the
-	 * behaviour in byte 3: "surf", "encounter", "waterfall", "stairs", "ledge",
-	 * "door". Bit 0 of byte 0 blocks free entry, but ledges, doors and
-	 * waterfalls set it too; only a tuple with that bit and no behaviour is a
-	 * plain wall. This is how a stamped footprint decides what may replace
-	 * the user's paint, and how it reports what it kept.
+	 * What a movement tuple does to its tile - "walkable", "wall", "object",
+	 * or the behaviour in byte 3: "surf", "encounter", "waterfall", "stairs",
+	 * "ledge". Bit 0 of byte 0 blocks free entry, but ledges, waterfalls and
+	 * stairs set it too, so they are read first. A blocked tuple whose code is
+	 * 0x01 or lower is a plain wall; a higher code is one of the game's
+	 * furniture and object tiles - a bookshelf, a PC, a counter - every bit as
+	 * solid, with its interaction riding along. 0xD4 used to be read here as a
+	 * door: every retail 0xD4 tile is impassable and none sits under a warp,
+	 * so a placed room left its bookshelf row as the user's walkable paint and
+	 * the dialog called the shelves doors. This is how a stamped footprint
+	 * decides what may replace the user's paint, and how it reports what it
+	 * wrote and what it kept.
 	 */
 	public static String behaviourOf(byte[] t) {
 		int b0 = t[0] & 0xFF, b2 = t[2] & 0xFF, b3 = t[3] & 0xFF;
@@ -136,10 +147,10 @@ public enum TilePalette {
 		if (b3 >= 0x72 && b3 <= 0x75) {
 			return "ledge";
 		}
-		if (b3 == 0xD4) {
-			return "door";
+		if ((b0 & 1) == 0) {
+			return "walkable";
 		}
-		return (b0 & 1) == 1 ? "wall" : "walkable";
+		return b3 <= 0x01 ? "wall" : "object";
 	}
 
 	/** The paintable brushes (VOID is the default background, not a brush swatch). */
