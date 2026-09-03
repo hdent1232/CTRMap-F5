@@ -61,6 +61,13 @@ You can re-run it any time from **Options → Setup wizard**.
   Pokémon Centers, gyms, signs, fences, doors. Search by name, preview, stamp. Textures the
   target map lacks are carried across automatically.
 - **Blank canvas** — start a map from nothing instead of from someone else's town.
+
+![An island built in the Map Builder](docs/img/floating-island.png)
+
+*Built from a blank canvas with the Map Builder: painted grass, water and cliffs, with trees, a
+bridge and a waterfall stamped from the palette. Every texture and model here is the game's own —
+CTRMap ships none of them, and cuts each one out of the copy you provide.*
+
 - **Resize maps**, **fork geometry** so a cloned zone gets its own private copy, **fork areas**
   so lighting changes do not leak into every other map that shares them.
 
