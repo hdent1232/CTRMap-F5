@@ -385,6 +385,14 @@ if BASELINE.exists():
 else:
     print("\nratchet: no baseline yet, recording this run as the starting line")
 
+# The baseline names the sources it measured. MutationBaselineTest refuses a
+# baseline whose digest is not the current build stamp's, so a fix line added
+# after the sweep - a new mutation site nobody has measured - cannot hide
+# behind an old count. This is the "denominator still matches the live source"
+# invariant, done with the stamp instead of a second site count.
+live["_meta"] = {"src": require_build.tree_digest(WT / "src"),
+                 "attempted": len(results), "survived": len(survived),
+                 "killed": tally.get("killed", 0), "unmeasured": tally.get("nocompile", 0) + tally.get("hung", 0)}
 io.open(BASELINE, "w", encoding="utf-8", newline="\n").write(json.dumps(live, indent=1))
 print("baseline written to %s" % BASELINE)
 print("  to make it the battery's gate, copy it to CTRMap/src/ctrmap/tests/mutation_baseline.json "

@@ -56,6 +56,28 @@ public class MutationBaselineTest {
 		}
 		String json = new String(Files.readAllBytes(baseline.toPath()), StandardCharsets.UTF_8);
 
+		//the baseline must be about THESE sources. The sweep records the digest
+		//of src/ it measured; build.ps1 stamps the digest of src/ it compiled.
+		//If they differ, a fix line has been added or changed since the sweep -
+		//a mutation site nobody has measured - and the counts below describe a
+		//tree that no longer exists.
+		Matcher meta = Pattern.compile("\"_meta\"\\s*:\\s*\\{[^}]*\"src\"\\s*:\\s*\"([0-9a-f]{64})\"").matcher(json);
+		if (!meta.find()) {
+			check(false, "the baseline records the source digest it measured (none found - re-run the sweep; an older baseline cannot be trusted against these sources)");
+		} else {
+			File stamp = new File(root.getParentFile() == null ? new File(".") : root.getParentFile(), "build/classes/.built-by-build-ps1");
+			String built = null;
+			if (stamp.isFile()) {
+				for (String line : Files.readAllLines(stamp.toPath(), StandardCharsets.UTF_8)) {
+					if (line.startsWith("src=")) {
+						built = line.substring(4).trim();
+					}
+				}
+			}
+			check(meta.group(1).equals(built), "the baseline was measured on the sources build.ps1 last compiled"
+					+ (built == null ? " (no build stamp found)" : meta.group(1).equals(built) ? "" : " - src/ has changed since the sweep; re-run it"));
+		}
+
 		//split the document into one block per file, in order
 		List<int[]> spans = new ArrayList<>();
 		List<String> paths = new ArrayList<>();
