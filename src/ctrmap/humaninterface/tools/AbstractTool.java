@@ -11,7 +11,9 @@ public abstract class AbstractTool {
 
 	public AbstractTool() {
 		//Always unbind navi on tool switching so that it's not persistent between e.g. an NPC editor and a prop editor with no data
-		CtrmapMainframe.m3DDebugPanel.bindNavi(null);
+		if (CtrmapMainframe.m3DDebugPanel != null) { //the guard tests build a tool with no 3D panel
+			CtrmapMainframe.m3DDebugPanel.bindNavi(null);
+		}
 		this.onToolInit();
 	}
 
