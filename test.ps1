@@ -68,7 +68,7 @@ $suites = @(
     @{ n = "GroundResolve (no cliffs as floor)"; c = "ctrmap.tests.GroundResolveTest"; a = @($a039) },
     @{ n = "UvScale (imported brush scale)"; c = "ctrmap.tests.UvScaleTest";           a = @($a039) },
     @{ n = "PrefabColour (stamp vertex format)"; c = "ctrmap.tests.PrefabColourTest";  a = @($a039) },
-    @{ n = "SnapshotIntegrity (pristine copy)"; c = "ctrmap.tests.SnapshotIntegrityTest"; a = @() },
+    @{ n = "SnapshotIntegrity (pristine copy)"; c = "ctrmap.tests.SnapshotIntegrityTest"; a = @("src") },
     @{ n = "DataSafetyGuards (stale/script/warp/worker)"; c = "ctrmap.tests.DataSafetyGuardsTest"; a = @($a040, $pristine) },
     @{ n = "NpcEntityGuards (altitude/uid/count/script)"; c = "ctrmap.tests.NpcEntityGuardsTest"; a = @($a013, "src") },
     @{ n = "ZoneEntities round-trip";      c = "ctrmap.tests.ZoneEntitiesRoundTripTest"; a = @() },
