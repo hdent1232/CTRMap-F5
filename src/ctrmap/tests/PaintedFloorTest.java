@@ -127,18 +127,22 @@ public class PaintedFloorTest {
 	 * tile that has no collision under its centre. That tile's ground is
 	 * borrowed from beside it (0 here), and the ramp must reach it - in the
 	 * collision and in the slope you can see - with no wall across its foot.
+	 * A pit at (2,2) puts the region's floor 7 units lower, so a foot placed
+	 * at "the floor plus the level" instead of the borrowed ground misses by
+	 * those 7 units and is caught.
 	 */
 	static void rampFootOnUnsampledNeighbour(byte[] donor) {
-		//a flat floor at Y=0 under every tile but (20,21)
+		//a flat floor at Y=0 under every tile but (20,21), and a pit at (2,2)
 		List<float[]> floor = new ArrayList<>();
 		for (int ty = 0; ty < DIM; ty++) {
 			for (int tx = 0; tx < DIM; tx++) {
 				if (tx == 20 && ty == 21) {
 					continue;
 				}
+				float y = tx == 2 && ty == 2 ? -7f : 0f;
 				float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE, z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
-				floor.add(new float[]{x0, 0, z0, x0, 0, z1, x1, 0, z0});
-				floor.add(new float[]{x1, 0, z0, x0, 0, z1, x1, 0, z1});
+				floor.add(new float[]{x0, y, z0, x0, y, z1, x1, y, z0});
+				floor.add(new float[]{x1, y, z0, x0, y, z1, x1, y, z1});
 			}
 		}
 		byte[] coll = GfColl.build(floor, null);
@@ -146,8 +150,8 @@ public class PaintedFloorTest {
 		tm[0] = (byte) DIM;
 		tm[2] = (byte) DIM;
 		float[][] by = PaintedRegionBuilder.sampleBaseY(coll);
-		check(Float.isNaN(by[21][20]) && by[20][20] == 0f && by[22][20] == 0f,
-				"fixture: tile (20,21) has no ground under its centre and its neighbours stand at 0");
+		check(Float.isNaN(by[21][20]) && by[20][20] == 0f && by[22][20] == 0f && by[2][2] == -7f,
+				"fixture: tile (20,21) has no ground under its centre, its neighbours stand at 0, the region's floor is -7");
 		TilePalette[][] grid = grid(TilePalette.GRASS);
 		int[][] h = new int[DIM][DIM];
 		boolean[][] touched = new boolean[DIM][DIM];
@@ -163,10 +167,10 @@ public class PaintedFloorTest {
 		GfColl out = new GfColl(c.collision);
 		float n = surface(out, 20.5f, 20.02f), s = surface(out, 20.5f, 20.98f);
 		check(walls(out, 20, 20, 2) == 0, "composite ramp toward an unsampled tile: no wall across its foot");
-		check(Math.abs(n - 2 * STEP) < STEP * 0.1f && s < STEP * 0.1f,
+		check(Math.abs(n - 2 * STEP) < STEP * 0.1f && Math.abs(s) < STEP * 0.1f,
 				"composite ramp toward an unsampled tile: the collision slopes the whole " + (2 * STEP) + " units to that tile's ground (N " + n + " S " + s + ")");
 		float[] seen = slopeSpan(new BchMapModel(c.model), 20, 20);
-		check(seen[1] > 2 * STEP - STEP * 0.1f && seen[0] < STEP * 0.1f,
+		check(seen[1] > 2 * STEP - STEP * 0.1f && Math.abs(seen[0]) < STEP * 0.1f,
 				"composite ramp toward an unsampled tile: the slope you can see reaches that ground too (" + seen[0] + ".." + seen[1] + ")");
 	}
 
@@ -234,7 +238,10 @@ public class PaintedFloorTest {
 	 * blocked, sampled, LOWER tile on another side, the cliff base a plateau
 	 * path runs along - is the sample; the floor must land beside the path
 	 * you can walk, not down at the cliff base, in the collision and in the
-	 * mesh alike, and seeding must count exactly the tiles it filled.
+	 * mesh alike, and seeding must count exactly the tiles it filled. The
+	 * path must stand off the level grid (not a whole number of steps above
+	 * the region floor): on the grid, "the floor plus the level" and the
+	 * borrowed ground coincide and a mesh built from the wrong one passes.
 	 */
 	static void unsampledTileSeedsFromItsNeighbour(GARC gr) {
 		for (int reg = 0; reg < gr.length; reg++) {
@@ -287,7 +294,9 @@ public class PaintedFloorTest {
 							lowestBlocked = Float.isNaN(lowestBlocked) ? ny : Math.min(lowestBlocked, ny);
 						}
 					}
-					if (besidePath && !Float.isNaN(lowestBlocked) && lowestBlocked < lowestWalkable - 9f) {
+					float steps = (lowestWalkable - base0) / STEP;
+					boolean offGrid = Math.abs(steps - Math.round(steps)) * STEP > 1f;
+					if (besidePath && offGrid && !Float.isNaN(lowestBlocked) && lowestBlocked < lowestWalkable - 9f) {
 						fx = x;
 						fy = y;
 						expected = lowestWalkable;
@@ -355,13 +364,24 @@ public class PaintedFloorTest {
 		return n;
 	}
 
-	/**
-	 * {lowest, highest} Y across the model triangles whose corners all stand
-	 * on a tile's own corners - the generated quad and nothing retail.
-	 */
+	/** {lowest, highest} Y across the model triangles standing on a tile's own corners. */
 	static float[] slopeSpan(BchMapModel m, int tx, int tz) {
-		float x0 = tx * TILE + ORIGIN, z0 = tz * TILE + ORIGIN;
 		float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
+		for (float[] span : cornerTriangles(m, tx, tz)) {
+			lo = Math.min(lo, span[0]);
+			hi = Math.max(hi, span[1]);
+		}
+		return new float[]{lo, hi};
+	}
+
+	/**
+	 * {lowest, highest} Y of every model triangle whose corners all stand on
+	 * a tile's own corners - the generated quads, and whatever retail
+	 * geometry happens to be tile-aligned there.
+	 */
+	static List<float[]> cornerTriangles(BchMapModel m, int tx, int tz) {
+		float x0 = tx * TILE + ORIGIN, z0 = tz * TILE + ORIGIN;
+		List<float[]> out = new ArrayList<>();
 		for (BchMapModel.MeshGeom mg : m.geometry()) {
 			if (!mg.posOk) {
 				continue;
@@ -370,25 +390,29 @@ public class PaintedFloorTest {
 			int[] t = m.getTriangles(mg.meshIndex);
 			for (int i = 0; i + 2 < t.length; i += 3) {
 				boolean onCorners = true;
+				float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
 				for (int c = 0; c < 3; c++) {
 					float dx = (p[t[i + c]][0] - x0) / TILE, dz = (p[t[i + c]][2] - z0) / TILE;
 					onCorners &= (Math.abs(dx) < 0.01f || Math.abs(dx - 1) < 0.01f) && (Math.abs(dz) < 0.01f || Math.abs(dz - 1) < 0.01f);
+					lo = Math.min(lo, p[t[i + c]][1]);
+					hi = Math.max(hi, p[t[i + c]][1]);
 				}
 				if (onCorners) {
-					for (int c = 0; c < 3; c++) {
-						lo = Math.min(lo, p[t[i + c]][1]);
-						hi = Math.max(hi, p[t[i + c]][1]);
-					}
+					out.add(new float[]{lo, hi});
 				}
 			}
 		}
-		return new float[]{lo, hi};
+		return out;
 	}
 
 	/** True when a level triangle standing on the tile's own corners - the generated quad - lies within half a unit of y. */
 	static boolean hasFloorAt(BchMapModel m, int tx, int tz, float y) {
-		float[] span = slopeSpan(m, tx, tz);
-		return span[1] - span[0] < 0.5f && Math.abs(span[0] - y) < 0.5f;
+		for (float[] span : cornerTriangles(m, tx, tz)) {
+			if (span[1] - span[0] < 0.5f && Math.abs(span[0] - y) < 0.5f) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** The lowest model triangle whose centroid lands on a tile. */
