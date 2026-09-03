@@ -631,20 +631,32 @@ public class WarpEditForm extends javax.swing.JPanel {
 
     private void btnSaveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSaveActionPerformed
 		saveEntry();
-		frame.repaint();
+		repaintFrame();
     }//GEN-LAST:event_btnSaveActionPerformed
 
     private void btnAddActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddActionPerformed
 		if (e != null) {
 			addEntry(mTileMapPanel.getTileAtViewportCentre());
-			frame.repaint();
+			repaintFrame();
 		}
     }//GEN-LAST:event_btnAddActionPerformed
 
     private void btnRemoveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveActionPerformed
 		removeEntry();
-		frame.repaint();
+		repaintFrame();
     }//GEN-LAST:event_btnRemoveActionPerformed
+
+	/**
+	 * Repaints the editor window, if there is one. Same accommodation
+	 * NPCEditForm makes: the three buttons above are otherwise unreachable
+	 * from a guard, because a headless run has no JFrame to repaint and
+	 * frame.repaint() threw before any of them could be asked what they did.
+	 */
+	private void repaintFrame() {
+		if (frame != null) {
+			frame.repaint();
+		}
+	}
 
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
