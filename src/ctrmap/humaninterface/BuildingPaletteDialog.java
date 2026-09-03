@@ -60,7 +60,7 @@ public class BuildingPaletteDialog {
 	 * furnished room - 27 pieces, 27 textures to import - and a "bridge" can be
 	 * a chunk of Sky Pillar reaching 464 units up.
 	 */
-	static String manifest(MapPrefab p, MapPrefab.StampResult r, BuildingCatalog.Entry e) {
+	public static String manifest(MapPrefab p, MapPrefab.StampResult r, BuildingCatalog.Entry e) {
 		float[] span = p.heightSpan();
 		return p.pieces.size() + " piece(s) / " + p.triangleCount() + " triangles"
 				+ (r.newMaterials.isEmpty() ? "" : ", " + r.newMaterials.size() + " new material(s) + "
