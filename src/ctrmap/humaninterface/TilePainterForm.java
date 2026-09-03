@@ -789,7 +789,7 @@ public class TilePainterForm {
 	 * the zone's own. The first occupied cell remains the fallback for a
 	 * header whose position lands outside the map.
 	 */
-	static int[] firstRegionCell() {
+	public static int[] firstRegionCell() {
 		try {
 			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
