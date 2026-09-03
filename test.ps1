@@ -127,6 +127,7 @@ $suites = @(
     @{ n = "DoorPropGuards (a door names what it will draw)"; c = "ctrmap.tests.DoorPropGuardsTest"; a = @($pristine) },
     @{ n = "ForkGuards (area/geometry forks)"; c = "ctrmap.tests.ForkGuardsTest";     a = @($pristine) },
     @{ n = "PackRollback (a refused pack keeps its table)"; c = "ctrmap.tests.PackRollbackTest"; a = @($pristine) },
+    @{ n = "PackScope (a pack writes what was edited)"; c = "ctrmap.tests.PackScopeTest"; a = @($pristine) },
     @{ n = "MisplacedRegistry (damage an old fork left)"; c = "ctrmap.tests.MisplacedRegistryTest"; a = @($pristine) }
 )
 
