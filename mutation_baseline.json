@@ -224,16 +224,10 @@
   "sha256": "acc9be08fbda1fe9971952394bbc8ccd99e92099071210b34b6f2e9669babc97"
  },
  "src/ctrmap/formats/zone/ZoneEntities.java": {
-  "survivors": 1,
-  "killed": 6,
+  "survivors": 0,
+  "killed": 7,
   "unmeasured": 3,
-  "lines": [
-   {
-    "line": 408,
-    "kind": "negate-if",
-    "code": "if (!Float.isNaN(newz3DCoordinate)) {"
-   }
-  ],
+  "lines": [],
   "sha256": "ed682d8eb745bbdd9bde634d8ecf9d6801a2bde660c4d83dd3dee16cfba0cc98"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
