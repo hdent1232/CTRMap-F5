@@ -94,6 +94,7 @@ public class DataSafetyGuardsTest {
 		scriptBoundaries();
 		unsetWarp();
 		warpEditor(dump);
+		matrixEditor(dump);
 		workerErrorsSurface(new File("src"));
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -483,6 +484,85 @@ public class DataSafetyGuardsTest {
 			}
 		}
 		f.delete();
+	}
+
+	/**
+	 * The matrix editor must refuse a region FieldData does not have. Its
+	 * "Chunk reference" field is an unbounded JFormattedTextField whose value
+	 * goes straight into the matrix on save; typed past the last region, the
+	 * cell names a file the game will fail to open. Finding 6's integrity pass
+	 * now reports such a cell after a pack, but the editor should never let it
+	 * be written in the first place - and must say why, through Ui.
+	 */
+	static void matrixEditor(File dump) throws Exception {
+		if (!dump.isDirectory()) {
+			System.out.println("  skip: no dump at " + dump);
+			return;
+		}
+		//the archives straight from the dump: the form's bound reads FieldData's
+		//length through Workspace.getArchive, so it must be loaded the way the
+		//app loads it, not opened on the side
+		Workspace.game = Workspace.GameType.ORAS;
+		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
+		String base = Workspace.GAMEDIR_PATH;
+		Workspace.areadata = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.AREA_DATA, Workspace.game));
+		Workspace.fielddata = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game));
+		Workspace.mapmatrix = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.MAP_MATRIX, Workspace.game));
+		Workspace.gametext = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.GAMETEXT, Workspace.game));
+		Workspace.zonedata = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game));
+		Workspace.buildingmodels = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.BUILDING_MODELS, Workspace.game));
+		Workspace.npcregistries = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.NPC_REGISTRIES, Workspace.game));
+		Workspace.movemodels = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.MOVE_MODELS, Workspace.game));
+		Workspace.valid = true;
+		Workspace.loadArchives();
+		GARC fd = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA);
+		GARC mmGarc = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX);
+		if (fd == null || mmGarc == null) {
+			System.out.println("  skip: the dump does not carry FieldData and MapMatrix");
+			return;
+		}
+		int regions = fd.length;
+		//a real retail matrix, regions left unresolved (no extracted workspace here)
+		boolean wasValid = Workspace.valid;
+		Workspace.valid = false;
+		ctrmap.formats.mapmatrix.MapMatrix mm = new ctrmap.formats.mapmatrix.MapMatrix(
+				new ctrmap.formats.containers.MM(temp(mmGarc.getDecompressedEntry(14))));
+		Workspace.valid = wasValid;
+		short before = mm.ids.get(0, 0);
+
+		ctrmap.humaninterface.MatrixEditForm form = new ctrmap.humaninterface.MatrixEditForm();
+		setField(form, "mm", mm);
+		setField(form, "loaded", true);
+		setField(form, "curRegX", 0);
+		setField(form, "curRegY", 0);
+		((javax.swing.JRadioButton) field(form, "btnChunkTool")).setSelected(true);
+		JFormattedTextField chunk = (JFormattedTextField) field(form, "chunkId");
+
+		//past the last region
+		chunk.setValue((short) (regions + 4000));
+		List<String> said = ctrmap.Ui.record();
+		try {
+			form.saveAll();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(mm.ids.get(0, 0) == before, "a region past the end of FieldData is not written into the matrix");
+		check(!said.isEmpty() && said.get(0).contains("" + (regions + 4000)), "and the user is told which region does not exist: " + said);
+		check(((Short) chunk.getValue()) == before, "and the field shows the cell's real value again");
+
+		//the last region there is, and the empty-cell marker, are both fine
+		chunk.setValue((short) (regions - 1));
+		form.saveAll();
+		check(mm.ids.get(0, 0) == regions - 1, "the last existing region is accepted");
+		chunk.setValue((short) -1);
+		form.saveAll();
+		check(mm.ids.get(0, 0) == -1, "an empty cell (-1) is accepted");
+	}
+
+	static void setField(Object o, String name, Object value) throws Exception {
+		Field f = o.getClass().getDeclaredField(name);
+		f.setAccessible(true);
+		f.set(o, value);
 	}
 
 	static File temp(byte[] bytes) throws Exception {

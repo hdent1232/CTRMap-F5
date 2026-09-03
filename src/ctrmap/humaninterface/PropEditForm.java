@@ -515,6 +515,15 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			if (donorPack == null || !PropDatabase.getTexturePackTextureNames(donorPack).containsAll(missing)) {
 				throw new IllegalStateException("donor area " + donorArea + " does not actually contain all the needed textures on disk");
 			}
+			//a name the area already holds under other pixels is not "missing",
+			//so it is never imported - the prop just draws the area's version.
+			//Say which, before anything is written.
+			for (String c : BchTexturePack.clashesWith(header.areadata.getFile(11), targetPack, donorPack,
+					new ArrayList<>(PropDatabase.getMaterialTextureNames(
+							PropDatabase.getSubfile(Workspace.bm.getDecompressedEntry(pm.modelIndex), 0))))) {
+				ctrmap.Ui.message(this, "This prop will draw the area's " + c + ", not its own - the two textures share a name and differ.",
+						"Prop textures", JOptionPane.INFORMATION_MESSAGE);
+			}
 			byte[] merged = BchTexturePack.importIntoArea(header.areadataID,
 					CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1,
 					targetPack, donorPack, missing);
@@ -916,6 +925,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 						donorPack = PropDatabase.getSubfile(java.nio.file.Files.readAllBytes(donorWs.toPath()), 1);
 					} else {
 						donorPack = PropDatabase.getSubfile(Workspace.ad.getDecompressedEntry(donorArea), 1);
+					}
+					for (String c : BchTexturePack.clashesWith(header.areadata.getFile(11), targetPack, donorPack,
+							new ArrayList<>(PropDatabase.getMaterialTextureNames(mdlBch)))) {
+						ctrmap.Ui.message(this, "This prop will draw the area's " + c + ", not its own - the two textures share a name and differ.",
+								"Prop textures", JOptionPane.INFORMATION_MESSAGE);
 					}
 					byte[] merged = BchTexturePack.importIntoArea(header.areadataID,
 							CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1,
