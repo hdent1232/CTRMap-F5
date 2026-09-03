@@ -31,8 +31,7 @@ public class BchMapModelTest {
 			return;
 		}
 		GARC garc = new GARC(garcFile);
-		File tmp = new File(System.getProperty("java.io.tmpdir"), "ctrmap_mapmodel_test");
-		tmp.mkdirs();
+		File tmp = Scratch.dir("ctrmap_mapmodel_test");
 
 		int tested = 0, notMapModel = 0, meshTotal = 0, matTotal = 0, lutRegions = 0;
 		long vertsTotal = 0, meshesSeen = 0, meshesDecoded = 0, meshesSkipped = 0;

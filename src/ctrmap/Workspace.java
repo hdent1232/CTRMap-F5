@@ -764,6 +764,16 @@ public class Workspace {
 				@Override
 				protected void done() {
 					progress.close();
+					try {
+						get(); //without this, a pack that threw half-way closes the dialog and
+						//onDone deploys or reloads as if every archive had been written
+					} catch (Exception ex) {
+						Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+						Logger.getLogger(Workspace.class.getName()).log(Level.SEVERE, "packing the workspace", cause);
+						JOptionPane.showMessageDialog(CtrmapMainframe.frame, "The workspace was not packed:\n" + cause
+								+ "\n\nThe game archives may be partly written. Fix the cause and pack again before deploying.", "Pack workspace", JOptionPane.ERROR_MESSAGE);
+						return;
+					}
 					if (onDone != null) {
 						onDone.run();
 					}

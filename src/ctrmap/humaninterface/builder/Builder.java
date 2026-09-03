@@ -495,6 +495,14 @@ public class Builder extends javax.swing.JPanel {
 				@Override
 				protected void done() {
 					dlg.close();
+					try {
+						get(); //without this, a pack that threw closes the dialog and the file looks added
+					} catch (Exception ex) {
+						Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+						Logger.getLogger(Builder.class.getName()).log(Level.SEVERE, "adding a file", cause);
+						JOptionPane.showMessageDialog(Builder.this, "Adding the file did not finish:\n" + cause
+								+ "\n\nReopen the archive to see what it holds now.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+					}
 				}
 
 				@Override

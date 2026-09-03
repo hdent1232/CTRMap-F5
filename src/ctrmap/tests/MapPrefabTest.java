@@ -29,8 +29,7 @@ public class MapPrefabTest {
 		File garcFile = new File(args.length > 0 ? args[0]
 				: "../RomFS_original_garcs/a/0/3/9");
 		int step = args.length > 1 ? Integer.parseInt(args[1]) : 30;
-		File scratch = new File(System.getProperty("java.io.tmpdir"), "ctrmap_prefab_test");
-		scratch.mkdirs();
+		File scratch = Scratch.dir("ctrmap_prefab_test");
 		GARC garc = new GARC(garcFile);
 		int tested = 0, selfOk = 0, crossOk = 0, crossSkipped = 0, roundtripOk = 0, failures = 0, emptyBox = 0;
 		for (int i = 0; i < garc.length; i += step) {

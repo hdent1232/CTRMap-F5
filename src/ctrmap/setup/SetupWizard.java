@@ -545,6 +545,17 @@ public class SetupWizard extends JDialog {
 			protected void done() {
 				finishBar.setIndeterminate(false);
 				finishBar.setVisible(false);
+				try {
+					get(); //without this, a backup that threw looks made and setup carries on without one
+				} catch (Exception ex) {
+					Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+					setButtonsBusy(false);
+					finishStatus.setText(BLANK);
+					JOptionPane.showMessageDialog(SetupWizard.this, "The pristine backup was not made:\n" + cause
+							+ "\n\nPick a working folder CTRMap can write to and try again.", "Backup failed", JOptionPane.ERROR_MESSAGE);
+					showStep(STEP_WORKSPACE);
+					return;
+				}
 				finishStatus.setText("Loading the zone list...");
 				completeSetup();
 			}

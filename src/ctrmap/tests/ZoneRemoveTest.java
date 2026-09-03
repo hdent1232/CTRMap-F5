@@ -33,7 +33,7 @@ public class ZoneRemoveTest {
 	public static void main(String[] args) throws Exception {
 		File pristine = new File(args.length > 0 ? args[0]
 				: "../RomFS_original_garcs/a/0/1/3");
-		File tmpDir = File.createTempFile("zrm", null).getParentFile();
+		File tmpDir = Scratch.dir("zrm");
 		File a = new File(tmpDir, "zrm_a013");
 		Files.copy(pristine.toPath(), a.toPath(), StandardCopyOption.REPLACE_EXISTING);
 		GARC pz = new GARC(pristine);
