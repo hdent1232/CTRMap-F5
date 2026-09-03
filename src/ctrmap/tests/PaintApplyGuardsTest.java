@@ -82,6 +82,7 @@ public class PaintApplyGuardsTest {
 		retryStillAsksForTheTextures();
 		sharedMatrixIsPaintedAfterTheFork();
 		paintedCliffsCarryTheirTexture();
+		anExtraThatFailsDoesNotUnsayTheApply();
 		everyAreaImportAsksTheSharedQuestion(new File(args.length > 1 ? args[1] : "src"));
 		sameNameDifferentPixelsIsNotSilent();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -259,6 +260,37 @@ public class PaintApplyGuardsTest {
 		List<String> raw = new ArrayList<>();
 		rawImports(root, raw);
 		check(raw.isEmpty(), "no editor path imports textures into an area without asking: " + raw);
+	}
+
+	/**
+	 * Past the commit point the map IS on disk, so an extra that cannot run -
+	 * the door-warp wiring, the sign wiring - is a note on a successful Apply,
+	 * never an "Apply failed" over a map that was applied. The warp step used
+	 * to throw straight out of applyToZone, and PaintForm then put the preview
+	 * back and told the user nothing had happened. Here the warp dialog itself
+	 * cannot open (headless), which is exactly the shape of that failure.
+	 */
+	static void anExtraThatFailsDoesNotUnsayTheApply() throws Exception {
+		BuildingCatalog.Entry gym = null;
+		for (BuildingCatalog.Entry e : BuildingCatalog.entries()) {
+			if ("Gym".equals(e.name)) {
+				gym = e;
+			}
+		}
+		if (gym == null) {
+			System.out.println("  skip: no Gym in the building catalogue");
+			return;
+		}
+		forget(Workspace.ArchiveType.FIELD_DATA, 153);
+		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		open(15);
+		paintSand();
+		List<TilePainterForm.Placed> placed = new ArrayList<>();
+		placed.add(new TilePainterForm.Placed(gym, 20, 20));
+		Exception stop = apply(15, placed);
+		check(stop == null, "an Apply whose door wiring cannot run still reports success (stopped by: " + stop + ")");
+		File region = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, 153);
+		check(sandTriangles(new GR(region).getFile(1)) > 0, "and the map it wrote is on disk");
 	}
 
 	/**
