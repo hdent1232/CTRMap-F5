@@ -21,6 +21,7 @@ mutator it can say so about the 38% that were silent before.
 
 Usage: python tools/mutate2.py [max-mutants-per-file]
 """
+import hashlib
 import io
 import json
 import os
@@ -435,12 +436,19 @@ else:
 # after the sweep - a new mutation site nobody has measured - cannot hide
 # behind an old count. This is the "denominator still matches the live source"
 # invariant, done with the stamp instead of a second site count.
-live["_meta"] = {"src": require_build.tree_digest(WT / "src"),
+# per measured FILE, not the whole tree: the baseline says nothing about
+# src/ctrmap/tests (the sweep never measures it), so an edit there must not
+# invalidate it - and the baseline itself has to live outside src/ or
+# committing it would change the digest it is checked against.
+for _p, _f in live.items():
+    _abs = WT / _p
+    _f["sha256"] = hashlib.sha256(_abs.read_bytes()).hexdigest() if _abs.is_file() else ""
+live["_meta"] = {"measured_at": FROZEN[:7],
                  "attempted": len(results), "survived": len(survived),
                  "killed": tally.get("killed", 0), "unmeasured": tally.get("nocompile", 0) + tally.get("hung", 0)}
 io.open(BASELINE, "w", encoding="utf-8", newline="\n").write(json.dumps(live, indent=1))
 print("baseline written to %s" % BASELINE)
-print("  to make it the battery's gate, copy it to CTRMap/src/ctrmap/tests/mutation_baseline.json "
+print("  to make it the battery's gate, copy it to CTRMap/mutation_baseline.json "
       "and commit - MutationBaselineTest reads it from there")
 if regressed:
     raise SystemExit(1)

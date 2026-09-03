@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
  * <p>The guards in this battery were themselves measured: wt/_state/mutate2.py
  * breaks one statement of a fix in a way that still compiles and asks whether
  * any suite notices. Where none does, that line is recorded in
- * src/ctrmap/tests/mutation_baseline.json as a survivor - a known hole, per
+ * mutation_baseline.json as a survivor - a known hole, per
  * file, with the exact text of the line. The sweep costs half an hour of builds
  * and cannot run on every commit; this check runs in seconds and keeps the
  * record honest between sweeps.
@@ -44,11 +44,18 @@ public class MutationBaselineTest {
 	/** "path": { ... "survivors": n, ... "lines": [ {"line": n, "kind": "...", "code": "..."} ... ] } */
 	private static final Pattern FILE = Pattern.compile("\"(src/[^\"]+\\.java)\"\\s*:\\s*\\{");
 	private static final Pattern SURVIVORS = Pattern.compile("\"survivors\"\\s*:\\s*(\\d+)");
+	private static final Pattern SHA = Pattern.compile("\"sha256\"\\s*:\\s*\"([0-9a-f]{64})\"");
 	private static final Pattern ENTRY = Pattern.compile("\\{\\s*\"line\"\\s*:\\s*(\\d+)\\s*,\\s*\"kind\"\\s*:\\s*\"([^\"]*)\"\\s*,\\s*\"code\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"\\s*\\}");
 
 	public static void main(String[] args) throws Exception {
 		File root = new File(args.length > 0 ? args[0] : "src");
-		File baseline = new File(root, "ctrmap/tests/mutation_baseline.json");
+		//beside the repo, NOT under src/: the baseline records a digest of the
+		//sources it measured, and build.ps1 stamps a digest of the sources it
+		//compiled. Filing it inside src/ would make committing it change the
+		//very digest it is checked against - the record could never agree with
+		//the tree it describes. It is data about the code, not code.
+		File repo = root.getParentFile() == null ? new File(".") : root.getParentFile();
+		File baseline = new File(repo, "mutation_baseline.json");
 		if (!baseline.isFile()) {
 			System.out.println("  skip: no baseline at " + baseline + " - run wt/_state/mutate2.py and commit its output");
 			System.out.println("ALL PASS");
@@ -56,27 +63,13 @@ public class MutationBaselineTest {
 		}
 		String json = new String(Files.readAllBytes(baseline.toPath()), StandardCharsets.UTF_8);
 
-		//the baseline must be about THESE sources. The sweep records the digest
-		//of src/ it measured; build.ps1 stamps the digest of src/ it compiled.
-		//If they differ, a fix line has been added or changed since the sweep -
-		//a mutation site nobody has measured - and the counts below describe a
-		//tree that no longer exists.
-		Matcher meta = Pattern.compile("\"_meta\"\\s*:\\s*\\{[^}]*\"src\"\\s*:\\s*\"([0-9a-f]{64})\"").matcher(json);
-		if (!meta.find()) {
-			check(false, "the baseline records the source digest it measured (none found - re-run the sweep; an older baseline cannot be trusted against these sources)");
-		} else {
-			File stamp = new File(root.getParentFile() == null ? new File(".") : root.getParentFile(), "build/classes/.built-by-build-ps1");
-			String built = null;
-			if (stamp.isFile()) {
-				for (String line : Files.readAllLines(stamp.toPath(), StandardCharsets.UTF_8)) {
-					if (line.startsWith("src=")) {
-						built = line.substring(4).trim();
-					}
-				}
-			}
-			check(meta.group(1).equals(built), "the baseline was measured on the sources build.ps1 last compiled"
-					+ (built == null ? " (no build stamp found)" : meta.group(1).equals(built) ? "" : " - src/ has changed since the sweep; re-run it"));
-		}
+		//The baseline must still describe the files it measured - each one, by
+		//its own digest. A whole-tree digest was tried first and was the wrong
+		//instrument twice over: committing the baseline changed the tree it was
+		//checked against, and editing this very file would have invalidated a
+		//record that says nothing about it. The sweep never measures test
+		//sources, so only these files can make its counts stale.
+		check(json.contains("\"measured_at\""), "the baseline records the commit it was measured at");
 
 		//split the document into one block per file, in order
 		List<int[]> spans = new ArrayList<>();
@@ -108,6 +101,26 @@ public class MutationBaselineTest {
 			}
 			check(entries.size() == survivors, path + ": lists " + entries.size()
 					+ " survivor line(s) and counts " + survivors + " - the buckets must add up");
+
+			//this file must be the one that was measured. The line texts below
+			//catch an edit ON a recorded survivor; this catches an edit anywhere
+			//else in the same file, which can add a mutation site nobody has
+			//scored while every recorded line still reads correctly.
+			Matcher hm = SHA.matcher(block);
+			File onDisk = new File(repo, path);
+			if (!hm.find()) {
+				check(false, path + ": records the digest of the file that was measured");
+			} else if (!onDisk.isFile()) {
+				check(false, path + ": the measured file still exists");
+			} else {
+				java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
+				StringBuilder hex = new StringBuilder();
+				for (byte b : sha.digest(Files.readAllBytes(onDisk.toPath()))) {
+					hex.append(String.format("%02x", b));
+				}
+				check(hex.toString().equals(hm.group(1)), path
+						+ " is unchanged since the sweep measured it (otherwise: re-run tools/mutate2.py)");
+			}
 
 			File src = new File(root.getParentFile() == null ? new File(".") : root.getParentFile(), path);
 			if (!src.isFile()) {
@@ -141,9 +154,38 @@ public class MutationBaselineTest {
 		}
 	}
 
-	/** The JSON string escapes the sweep actually emits for a line of Java. */
+	/**
+	 * JSON string escapes, in ONE left-to-right pass.
+	 *
+	 * <p>Sequential replaces cannot do this: a Java line containing a literal
+	 * backslash-n is written {@code \\n} in the file, and unescaping {@code \\}
+	 * to {@code \} first leaves {@code \n}, which the next replace turns into a
+	 * real newline. Two recorded lines compared unequal against source they
+	 * matched exactly.
+	 */
 	static String unescape(String s) {
-		return s.replace("\\\"", "\"").replace("\\\\", "\\").replace("\\n", "\n").replace("\\t", "\t");
+		StringBuilder out = new StringBuilder(s.length());
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (c != '\\' || i + 1 >= s.length()) {
+				out.append(c);
+				continue;
+			}
+			char n = s.charAt(++i);
+			switch (n) {
+				case 'n': out.append('\n'); break;
+				case 't': out.append('\t'); break;
+				case 'r': out.append('\r'); break;
+				case 'b': out.append('\b'); break;
+				case 'f': out.append('\f'); break;
+				case 'u':
+					out.append((char) Integer.parseInt(s.substring(i + 1, i + 5), 16));
+					i += 4;
+					break;
+				default: out.append(n); break;   // \" \\ \/ and anything else
+			}
+		}
+		return out.toString();
 	}
 
 	static void check(boolean ok, String what) {
