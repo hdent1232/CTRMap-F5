@@ -17,6 +17,17 @@ import java.util.Set;
  * CALL &lt;msgWrapper&gt;; ZERO_PRI; RETN, where msgLine indexes the zone's
  * STORYTEXT file (ZoneHeader.textID).
  *
+ * <p><b>A case NEVER targets the subroutine itself.</b> SWITCH/CASETBL is a
+ * JUMP, not a CALL, so every one of the 2853 case targets in the 536 retail
+ * zone scripts is instead a three-instruction trampoline living inside main's
+ * own PROC frame: {@code PUSH_P_C(0)} (the argument-byte cell the sub's
+ * terminal RETN consumes), {@code CALL <sub>} (which supplies the return
+ * address), {@code JUMP <epilogue>} (main's shared trailing
+ * {@code ZERO_PRI; RETN}). 0 of 2853 retail case targets are a PROC, and a
+ * script whose case points straight at one freezes the game when the sub
+ * returns - see {@link #describeCaseDefect} and
+ * {@link #findDispatchEpilogue}.
+ *
  * All methods expect a script that has already been decompressThis()'d and
  * never modify it (except patchTalkerLine, which edits constants in place).
  */
@@ -62,6 +73,7 @@ public class ZoneScriptAnalyzer {
 	private static final int OP_SWITCH = PawnInstruction.Commands.SWITCH.ordinal();
 	private static final int OP_CASETBL = PawnInstruction.Commands.CASETBL.ordinal();
 	private static final int OP_ZERO_PRI = PawnInstruction.Commands.ZERO_PRI.ordinal();
+	private static final int OP_JUMP = PawnInstruction.Commands.JUMP.ordinal();
 	private static final int OP_SYSREQ_N = PawnInstruction.Commands.SYSREQ_N.ordinal();
 	private static final int OP_EQ_C_PRI = PawnInstruction.Commands.EQ_C_PRI.ordinal();
 	private static final int OP_EQ_P_C_PRI = PawnInstruction.Commands.EQ_P_C_PRI.ordinal();
@@ -194,6 +206,88 @@ public class ZoneScriptAnalyzer {
 			d.cases.put(caseTbl.argumentCells[ai], script.lookupInstructionByPtr(targetPtr));
 		}
 		return d;
+	}
+
+	/**
+	 * The dispatcher's shared epilogue: the {@code ZERO_PRI} of the trailing
+	 * {@code ZERO_PRI; RETN} that ends main and that every dispatch case
+	 * trampoline JUMPs to when its subroutine has returned.
+	 *
+	 * <p>Located structurally, never at a hardcoded offset: main's first
+	 * RET/RETN, with a ZERO_PRI immediately in front of it. That holds in
+	 * 536 of 536 retail zone scripts, where it is also the last instruction
+	 * of main and sits directly after the dispatch CASETBL.
+	 *
+	 * @param script a decompressThis()'d zone script
+	 * @return the epilogue's ZERO_PRI, or null if main does not end that way
+	 */
+	public static PawnInstruction findDispatchEpilogue(GFLPawnScript script) {
+		if (script == null || script.instructions.isEmpty()) {
+			return null;
+		}
+		PawnInstruction entry = script.lookupInstructionByPtr(script.mainEntryPoint);
+		if (entry == null || entry.getCommand() != OP_PROC) {
+			return null;
+		}
+		int entryIdx = script.instructions.indexOf(entry);
+		if (entryIdx < 0) {
+			return null;
+		}
+		for (int i = entryIdx + 1; i < script.instructions.size(); i++) {
+			int cmd = script.instructions.get(i).getCommand();
+			if (cmd != OP_RET && cmd != OP_RETN) {
+				continue;
+			}
+			PawnInstruction zero = script.instructions.get(i - 1);
+			return (i - 1 > entryIdx && zero.getCommand() == OP_ZERO_PRI) ? zero : null;
+		}
+		return null;
+	}
+
+	/**
+	 * Why the dispatch case {@code caseKey} would freeze the game, or null
+	 * when its target has the retail trampoline shape (or the script has no
+	 * such case, which is not this method's business).
+	 *
+	 * <p>The one defect it reports is the one CTRMap used to emit: a case
+	 * whose target is a subroutine PROC. The engine enters it by a JUMP, so
+	 * the sub's terminal RETN pops the dispatcher's saved frame and a
+	 * data-segment offset into CIP - the VM then runs data as instructions.
+	 * The dialogue box appears normally; the game hangs when it is dismissed.
+	 */
+	public static String describeCaseDefect(GFLPawnScript script, int caseKey) {
+		Dispatch d = findDispatch(script);
+		if (d == null || !d.cases.containsKey(caseKey)) {
+			return null;
+		}
+		PawnInstruction target = d.cases.get(caseKey);
+		if (target == null) {
+			return "its dispatch case offset does not land on an instruction boundary";
+		}
+		if (target.getCommand() == OP_PROC) {
+			return "its dispatch case jumps straight into a subroutine (0x"
+					+ Integer.toHexString(target.pointer) + ") instead of calling it, "
+					+ "which freezes the game when that subroutine returns";
+		}
+		return null;
+	}
+
+	/**
+	 * The subroutine PROC a dispatch case actually runs, resolved through the
+	 * retail trampoline. Null when the case does not exist or its target is
+	 * not a trampoline that calls a subroutine.
+	 */
+	public static PawnInstruction findCaseSubEntry(GFLPawnScript script, int caseKey) {
+		Dispatch d = findDispatch(script);
+		if (d == null) {
+			return null;
+		}
+		PawnInstruction target = d.cases.get(caseKey);
+		if (target == null) {
+			return null;
+		}
+		PawnInstruction sub = resolveSubEntry(script, target);
+		return (sub != null && sub.getCommand() == OP_PROC) ? sub : null;
 	}
 
 	/**
@@ -449,13 +543,18 @@ public class ZoneScriptAnalyzer {
 	}
 
 	/**
-	 * Resolves a dispatch case target to its subroutine PROC: either the
-	 * target itself, or the CALL target of a leading PUSH-const stub.
+	 * Resolves a dispatch case target to the subroutine PROC it CALLs, by
+	 * walking the leading PUSH-const cells of its trampoline.
+	 *
+	 * <p><b>A bare PROC is refused, not resolved.</b> This used to return the
+	 * target unchanged when it was a PROC - a branch that fires on 0 of the
+	 * 2853 retail cases and existed only to accept CTRMap's own malformed
+	 * output, which is why the whole talker battery stayed green over a
+	 * frozen game. A case that targets a PROC is broken (see
+	 * {@link #describeCaseDefect}), so nothing here may quietly make sense of
+	 * it: it resolves to no subroutine and no pattern matches it.
 	 */
 	private static PawnInstruction resolveSubEntry(GFLPawnScript script, PawnInstruction target) {
-		if (target.getCommand() == OP_PROC) {
-			return target;
-		}
 		int idx = script.instructions.indexOf(target);
 		if (idx < 0) {
 			return null;
