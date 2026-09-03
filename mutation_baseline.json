@@ -185,22 +185,11 @@
   "sha256": "d0a6637aa13dd89a4d310a0bfbb25193fd27633210e6a2011f54f36a4da82980"
  },
  "src/ctrmap/humaninterface/WarpEditForm.java": {
-  "survivors": 2,
-  "killed": 3,
+  "survivors": 0,
+  "killed": 5,
   "unmeasured": 0,
-  "lines": [
-   {
-    "line": 638,
-    "kind": "negate-if",
-    "code": "if (e != null) {"
-   },
-   {
-    "line": 638,
-    "kind": "negate-if",
-    "code": "if (e != null) {"
-   }
-  ],
-  "sha256": "3fa8cf12315753a13a02477ce6da48783713ea956feac4382cf44c305dd6212a"
+  "lines": [],
+  "sha256": "0d85c8e36db1f90e1cb62ce1df236ddd605edf3320e66d15eb820b02cfa0b0e9"
  },
  "src/ctrmap/humaninterface/ZoneLoadingPanel.java": {
   "survivors": 0,
@@ -224,123 +213,25 @@
   "sha256": "acc9be08fbda1fe9971952394bbc8ccd99e92099071210b34b6f2e9669babc97"
  },
  "src/ctrmap/formats/zone/ZoneEntities.java": {
-  "survivors": 1,
-  "killed": 6,
+  "survivors": 0,
+  "killed": 7,
   "unmeasured": 3,
-  "lines": [
-   {
-    "line": 408,
-    "kind": "negate-if",
-    "code": "if (!Float.isNaN(newz3DCoordinate)) {"
-   }
-  ],
+  "lines": [],
   "sha256": "ed682d8eb745bbdd9bde634d8ecf9d6801a2bde660c4d83dd3dee16cfba0cc98"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
-  "survivors": 16,
-  "killed": 7,
+  "survivors": 0,
+  "killed": 23,
   "unmeasured": 2,
-  "lines": [
-   {
-    "line": 485,
-    "kind": "negate-if",
-    "code": "if (missing != null) {"
-   },
-   {
-    "line": 521,
-    "kind": "negate-if",
-    "code": "if (kindFull(e.npcs.size(), \"NPCs\")) {"
-   },
-   {
-    "line": 550,
-    "kind": "negate-if",
-    "code": "if (npc == null || idx == -1 || idx >= e.npcs.size() || e.npcs.get(idx) != npc) {"
-   },
-   {
-    "line": 568,
-    "kind": "negate-if",
-    "code": "if (e.npcs.isEmpty()) {"
-   },
-   {
-    "line": 582,
-    "kind": "negate-if",
-    "code": "if (count < ZoneEntities.MAX_PER_KIND) {"
-   },
-   {
-    "line": 601,
-    "kind": "negate-if",
-    "code": "if (TalkerScriptWizard.scriptIdExists(zone.s, scriptId)) {"
-   },
-   {
-    "line": 733,
-    "kind": "negate-if",
-    "code": "if (!TalkerScriptWizard.scriptIdExists(zone.s, scriptId)) {"
-   },
-   {
-    "line": 734,
-    "kind": "drop-report",
-    "code": "dlgStatus.setText(\"Script \" + scriptId + \" is not defined in this zone's script.\");"
-   },
-   {
-    "line": 978,
-    "kind": "negate-if",
-    "code": "if (\"Sign\".equals(choice) ? kindFull(e.furniture.size(), \"props\") : kindFull(e.npcs.size(), \"NPCs\")) {"
-   },
-   {
-    "line": 1963,
-    "kind": "negate-if",
-    "code": "if (m == null) {"
-   },
-   {
-    "line": 493,
-    "kind": "negate-if",
-    "code": "if (loaded) {"
-   },
-   {
-    "line": 2033,
-    "kind": "negate-if",
-    "code": "if (i == npcIndex && CtrmapMainframe.tool instanceof NPCTool) {"
-   },
-   {
-    "line": 1963,
-    "kind": "negate-if",
-    "code": "if (m == null) {"
-   },
-   {
-    "line": 2033,
-    "kind": "negate-if",
-    "code": "if (i == npcIndex && CtrmapMainframe.tool instanceof NPCTool) {"
-   },
-   {
-    "line": 1963,
-    "kind": "negate-if",
-    "code": "if (m == null) {"
-   },
-   {
-    "line": 2033,
-    "kind": "negate-if",
-    "code": "if (i == npcIndex && CtrmapMainframe.tool instanceof NPCTool) {"
-   }
-  ],
-  "sha256": "689a1e36e6d238a6002147e5ea8f6371b2bc6427ed29332f90a5d7954e876cb2"
+  "lines": [],
+  "sha256": "f901174b7f57de5f07d49853d5a65acd080c4255e3828836c4b483513bc0b090"
  },
  "src/ctrmap/humaninterface/TileMapPanel.java": {
-  "survivors": 2,
-  "killed": 1,
+  "survivors": 0,
+  "killed": 3,
   "unmeasured": 1,
-  "lines": [
-   {
-    "line": 421,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"The map did not load: \" + cause, cause);"
-   },
-   {
-    "line": 691,
-    "kind": "drop-report",
-    "code": "JOptionPane.showMessageDialog(TileMapPanel.this, \"The tilemap view was not refreshed:\\n\" + cause, \"Update tilemaps\", JOptionPane.ERROR_MESSAGE);"
-   }
-  ],
-  "sha256": "f6c49ef966e31c230ff758083c1e01ebc33442c703060904dcd87a9f4e00b686"
+  "lines": [],
+  "sha256": "81b57fd54364f3504939076305be5a934f8fc668ad59d25f8e2a9142863835c9"
  },
  "src/ctrmap/formats/scripts/PawnDisassembler.java": {
   "survivors": 0,
@@ -648,8 +539,8 @@
  },
  "_meta": {
   "attempted": 232,
-  "survived": 78,
-  "killed": 128,
+  "survived": 57,
+  "killed": 149,
   "unmeasured": 26,
   "measured_at": "5637163"
  }

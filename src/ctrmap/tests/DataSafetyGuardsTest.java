@@ -4,11 +4,13 @@ import ctrmap.CtrmapMainframe;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.ZO;
 import ctrmap.formats.garc.GARC;
+import ctrmap.formats.gfcollision.GRCollisionFile;
 import ctrmap.formats.text.LocationNames;
 import ctrmap.formats.text.TextFile;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.humaninterface.NPCEditForm;
+import ctrmap.humaninterface.TileMapPanel;
 import ctrmap.humaninterface.TriggerEditForm;
 import ctrmap.humaninterface.WarpEditForm;
 import ctrmap.humaninterface.ZoneLoadingPanel;
@@ -31,6 +33,8 @@ import java.util.regex.Pattern;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JComboBox;
 import javax.swing.JFormattedTextField;
+import javax.swing.JScrollPane;
+import javax.swing.SwingWorker;
 
 /**
  * The guards that stand between an ordinary mistake and unrecoverable game
@@ -96,6 +100,7 @@ public class DataSafetyGuardsTest {
 		warpEditor(dump);
 		matrixEditor(dump);
 		workerErrorsSurface(new File("src"));
+		mapLoadFailuresSurface();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -338,6 +343,29 @@ public class DataSafetyGuardsTest {
 		} catch (RuntimeException ex) {
 			check(false, "the warp overlay with no zone loaded threw " + ex);
 		}
+		//"New entry", the button itself, with and without a zone open. The Warp
+		//tool can be active before any zone is loaded - the overlay check above
+		//is the same situation - and pressing Add then walks straight into
+		//addEntry with no entity list to add to. The button's own test for that
+		//is all that stands between the user and a stack trace on the event
+		//thread, and nothing else in this suite presses the button: every other
+		//check calls addEntry directly and never reaches it.
+		CtrmapMainframe.mTilemapScrollPane = new JScrollPane();
+		TileMapPanel map = new TileMapPanel();
+		map.height = 40;
+		CtrmapMainframe.mTileMapPanel = map;
+		Throwable threw = pressAdd(blank);
+		check(threw == null, "New entry with no zone open does nothing at all, rather than throwing: " + threw);
+
+		int warpsBefore = e.warps.size();
+		threw = pressAdd(form);
+		check(threw == null, "New entry with a zone open does not throw: " + threw);
+		check(e.warps.size() == warpsBefore + 1 && e.warpCount == warpsBefore + 1,
+				"and adds a warp (" + warpsBefore + " -> " + e.warps.size() + ", count " + e.warpCount + ")");
+		form.setWarp(e.warps.size() - 1);
+		form.removeEntry();
+		check(e.warps.size() == warpsBefore && e.warpCount == warpsBefore, "removed again, leaving the zone as it was");
+
 		a.w = 1;
 		a.h = 1;
 		CtrmapMainframe.mWarpEditForm = form;
@@ -443,6 +471,73 @@ public class DataSafetyGuardsTest {
 		int workers = silentWorkers(root, silent);
 		check(workers >= 10, workers + " done() bodies found under " + root);
 		check(silent.isEmpty(), "every done() calls get(); missing at " + silent);
+	}
+
+	/**
+	 * What the previous check cannot see: calling get() only re-raises the
+	 * failure, and what the map panel then DOES with it is the part that keeps
+	 * a broken load from passing for a good one.
+	 *
+	 * <ul>
+	 * <li>A load whose worker failed must not return normally. It puts the
+	 *     panel back to its placeholder and throws on, naming the cause; the
+	 *     caller opens no zone. Without the throw the editor carries on with a
+	 *     window that holds no map and a zone it believes is open.</li>
+	 * <li>A failed tilemap rebuild must tell the user. The progress dialog
+	 *     closes either way, so the only thing between them and a stale picture
+	 *     they take for the current one is that sentence.</li>
+	 * </ul>
+	 *
+	 * Both live inside workers started behind a modal progress dialog, which is
+	 * why neither was reachable: each decision now sits in a method of its own,
+	 * asked here directly. Opening the dialog and rendering the map are still
+	 * untested.
+	 */
+	static void mapLoadFailuresSurface() throws Exception {
+		TileMapPanel panel = new TileMapPanel();
+		panel.loaded = true;
+		panel.width = 40;
+		panel.height = 40;
+		panel.colls = new GRCollisionFile[1][1];
+
+		SwingWorker<Object, Object> failed = new SwingWorker<Object, Object>() {
+			@Override
+			protected Object doInBackground() {
+				throw new IllegalStateException("region 3 of 12 is not a GR");
+			}
+		};
+		failed.execute();
+		String thrown = null;
+		try {
+			panel.awaitLoad(failed);
+		} catch (IllegalStateException ex) {
+			thrown = ex.getMessage();
+		}
+		check(thrown != null, "a load whose worker failed does not return as though it had loaded");
+		check(thrown != null && thrown.startsWith("The map did not load")
+				&& thrown.contains("region 3 of 12 is not a GR"), "and names what went wrong: " + thrown);
+		check(!panel.loaded && panel.colls == null, "and the panel is left showing its placeholder, not half a map");
+
+		SwingWorker<Object, Object> ok = new SwingWorker<Object, Object>() {
+			@Override
+			protected Object doInBackground() {
+				return null;
+			}
+		};
+		ok.execute();
+		panel.loaded = true;
+		panel.awaitLoad(ok);
+		check(panel.loaded, "a load that worked is left alone");
+
+		List<String> said = ctrmap.Ui.record();
+		try {
+			panel.refreshFailed(new java.io.IOException("tile image 7 could not be rebuilt"));
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).contains("was not refreshed")
+				&& said.get(0).contains("tile image 7 could not be rebuilt"),
+				"a failed tilemap rebuild tells the user the picture is not current: " + said);
 	}
 
 	/** Comments are stripped first, so a get() mentioned in one does not count. */
@@ -563,6 +658,23 @@ public class DataSafetyGuardsTest {
 		Field f = o.getClass().getDeclaredField(name);
 		f.setAccessible(true);
 		f.set(o, value);
+	}
+
+	/**
+	 * The Warp editor's "New entry" button. Whatever the handler throws comes
+	 * back as a value rather than propagating: the check is about what the
+	 * button did, and a stack trace out of the reflected call would end the
+	 * suite instead of naming which press went wrong.
+	 */
+	static Throwable pressAdd(WarpEditForm form) throws Exception {
+		java.lang.reflect.Method m = WarpEditForm.class.getDeclaredMethod("btnAddActionPerformed", java.awt.event.ActionEvent.class);
+		m.setAccessible(true);
+		try {
+			m.invoke(form, (java.awt.event.ActionEvent) null);
+			return null;
+		} catch (java.lang.reflect.InvocationTargetException ex) {
+			return ex.getCause() == null ? ex : ex.getCause();
+		}
 	}
 
 	static File temp(byte[] bytes) throws Exception {
