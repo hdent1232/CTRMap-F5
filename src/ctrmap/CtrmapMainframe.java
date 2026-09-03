@@ -185,6 +185,10 @@ public class CtrmapMainframe {
 	public static List<CM3DRenderable> CM3DComponents = new ArrayList<>();
 
 	public static void main(String[] args) {
+		//This is the application, so this is where dialogs are allowed. Ui keeps
+		//them off by default so that a test suite or a command-line tool cannot
+		//stop dead on a modal window nobody is there to click.
+		Ui.enableDialogs();
 		//The Windows bundle installs an update by starting the DOWNLOADED copy
 		//with this flag as the old one closes: it holds nothing in the install
 		//folder, so it can replace all of it. Must be the first thing we do -
