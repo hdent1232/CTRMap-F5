@@ -95,7 +95,8 @@ $suites = @(
     @{ n = "ZoneRemove (GARC shrink)";    c = "ctrmap.tests.ZoneRemoveTest";         a = @($a013) },
     @{ n = "ZoneLimitPatch";              c = "ctrmap.tests.ZoneLimitPatchTest";     a = @() },
     @{ n = "ShopData (mart inventories)"; c = "ctrmap.tests.ShopDataTest";           a = @() },
-    @{ n = "PackReport (warnings reach the user)"; c = "ctrmap.tests.PackReportTest"; a = @($pristine) }
+    @{ n = "PackReport (warnings reach the user)"; c = "ctrmap.tests.PackReportTest"; a = @($pristine) },
+    @{ n = "ForkGuards (area/geometry forks)"; c = "ctrmap.tests.ForkGuardsTest";     a = @($pristine) }
 )
 
 $failed = @()
