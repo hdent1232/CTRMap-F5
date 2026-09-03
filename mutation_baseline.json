@@ -539,8 +539,8 @@
  },
  "_meta": {
   "attempted": 232,
-  "survived": 78,
-  "killed": 128,
+  "survived": 57,
+  "killed": 149,
   "unmeasured": 26,
   "measured_at": "5637163"
  }
