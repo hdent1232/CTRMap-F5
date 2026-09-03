@@ -1,5 +1,6 @@
 package ctrmap.tests;
 
+import ctrmap.CtrmapMainframe;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.scripts.GFLPawnScript;
 import ctrmap.formats.scripts.PawnAssembly;
@@ -7,10 +8,14 @@ import ctrmap.formats.scripts.PawnDisassembler;
 import ctrmap.formats.scripts.PawnInstruction;
 import ctrmap.formats.scripts.PawnSubroutine;
 import ctrmap.humaninterface.ScriptEditor;
+import ctrmap.humaninterface.ZoneLoadingPanel;
 import java.io.File;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import javax.swing.AbstractButton;
+import javax.swing.JTextArea;
 
 /**
  * Guards the script assembler against the two silent failures the script
@@ -37,6 +42,16 @@ import java.util.List;
  * requires zero errors and identical instructions, so the strictness can never
  * lock a real script out of Commit.
  *
+ * <p>The editor half presses the editor's own buttons without a window:
+ * Commit with a typo is refused where the user can see it and leaves the
+ * script alone, Commit of a clean script says nothing and keeps every
+ * instruction, Run assembler reports either way, and Commit in data mode
+ * writes data words rather than running the assembler over them. Mutation
+ * testing had turned every one of those branches around with the battery
+ * green, because no suite had ever pressed the buttons. The lines that wait
+ * for an opening brace are held the same way: a blank line before it is
+ * nothing, a stray token is an error that names it.
+ *
  * Usage: java ctrmap.tests.ScriptAssemblerGuardTest &lt;path-to-zonedata-a013-garc&gt;
  */
 public class ScriptAssemblerGuardTest {
@@ -51,8 +66,10 @@ public class ScriptAssemblerGuardTest {
 		mistypedMnemonic();
 		badArgument();
 		strayLine();
+		linesBeforeTheBrace();
 		truncatedCasetbl();
 		corpusRoundTrip(new File(garcPath));
+		editorButtons(new File(garcPath));
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -95,6 +112,22 @@ public class ScriptAssemblerGuardTest {
 		PawnAssembly asm = PawnDisassembler.assembleScript(CLEAN + "PUSH_C(4)\n");
 		check(asm.errors.size() == 1 && asm.errors.get(0).startsWith("line 8:"),
 				"a line outside any subroutine is an error naming the line, got " + asm.errors);
+	}
+
+	/** Between a name and its brace: a blank line is nothing, anything else is named. */
+	static void linesBeforeTheBrace() {
+		PawnAssembly asm = PawnDisassembler.assembleScript("sub_0\n\n{\n\tPUSH_C(1)\n\tRETN(0)\n}\n");
+		check(asm.errors.isEmpty() && asm.getInstructionCount() == 2,
+				"a blank line between a subroutine's name and its brace is nothing: " + asm.errors);
+		asm = PawnDisassembler.assembleScript("sub_0\nSTRAY\n{\n\tPUSH_C(1)\n\tRETN(0)\n}\n");
+		check(asm.errors.size() == 1 && asm.errors.get(0).startsWith("line 2:") && asm.errors.get(0).contains("\"STRAY\""),
+				"a stray token there is an error naming the line and the token: " + asm.errors);
+		String table = "sub_0\n{\n\tCASETBL\n%s\t{\n\t\t1 => 0x20\n\t\t* => 0x30\n\t}\n\tRETN(0)\n}\n";
+		asm = PawnDisassembler.assembleScript(String.format(table, "\n"));
+		check(asm.errors.isEmpty(), "a blank line between CASETBL and its brace is nothing: " + asm.errors);
+		asm = PawnDisassembler.assembleScript(String.format(table, "\tSTRAY\n"));
+		check(asm.errors.size() == 1 && asm.errors.get(0).contains("\"STRAY\"") && asm.errors.get(0).contains("casetbl"),
+				"a stray token before the casetbl's brace is an error naming it: " + asm.errors);
 	}
 
 	/** The casetbl that used to throw out of the assembler, and with it out of the editor's stream swap. */
@@ -153,6 +186,110 @@ public class ScriptAssemblerGuardTest {
 		PawnInstruction.nativeResolver = null;
 		check(scripts > 400, "the corpus has zone scripts: " + scripts);
 		check(bad == 0, "every vanilla script's disassembly assembles back to itself (" + bad + " of " + scripts + " did not)");
+	}
+
+	/**
+	 * The editor's buttons, pressed on a real zone script with no window. The
+	 * zone panel has no zone open, so a committed script has nowhere to go
+	 * and the commit's store is a no-op that succeeds.
+	 */
+	static void editorButtons(File garc) throws Exception {
+		if (!garc.isFile()) {
+			System.out.println("  skip: no ZoneData GARC at " + garc);
+			return;
+		}
+		GARC zo = new GARC(garc);
+		GFLPawnScript s = null;
+		String text = null;
+		for (int z = 0; z < zo.length - 2 && s == null; z++) {
+			byte[] sub = SysreqNameTest.sub(zo.getDecompressedEntry(z), 2);
+			if (sub == null || sub.length < 8) {
+				continue;
+			}
+			try {
+				GFLPawnScript cand = new GFLPawnScript(sub);
+				cand.decompressThis();
+				PawnInstruction.nativeResolver = cand;
+				String t = ScriptEditor.getDisassemblyTextForArea(cand);
+				if (t.contains("PUSH_C(") && PawnDisassembler.assembleScript(t).errors.isEmpty()) {
+					s = cand;
+					text = t;
+				}
+			} catch (Exception ex) {
+			}
+		}
+		if (s == null) {
+			System.out.println("  skip: no zone script with a PUSH_C to mistype");
+			return;
+		}
+		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel();
+		ScriptEditor ed = new ScriptEditor();
+		ed.loadScript(s);
+		int[] before = PawnDisassembler.getRawInstructions(s.instructions);
+		JTextArea area = (JTextArea) field(ed, "disassemblyArea");
+		JTextArea output = (JTextArea) field(ed, "assemblerOutput");
+		AbstractButton commit = (AbstractButton) field(ed, "btnSave");
+		AbstractButton run = (AbstractButton) field(ed, "btnTestAssembly");
+
+		//Commit with one mistyped mnemonic
+		type(ed, area, text.replaceFirst("PUSH_C\\(", "PSUH_C("));
+		List<String> said = ctrmap.Ui.record();
+		try {
+			commit.doClick();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).contains("did not assemble"), "Commit with a mistyped mnemonic is refused where the user can see it: " + said);
+		check(Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)), "and the script is untouched");
+		run.doClick();
+		check(output.getText().startsWith("Assembler refused") && Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)),
+				"Run assembler with the typo reports the refusal and leaves the script alone: " + firstLine(output));
+
+		//Commit the clean text
+		type(ed, area, text);
+		said = ctrmap.Ui.record();
+		try {
+			commit.doClick();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.isEmpty() && Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)),
+				"Commit of a clean script says nothing and keeps every instruction: " + said);
+		run.doClick();
+		check(output.getText().contains("Assembled " + s.instructions.size() + " instructions"),
+				"Run assembler on a clean script reports what it assembled: " + firstLine(output));
+
+		//Commit in data mode writes data words, not the assembler's verdict
+		int words = s.data.size();
+		((AbstractButton) field(ed, "btnIsDataEdit")).doClick();
+		said = ctrmap.Ui.record();
+		try {
+			commit.doClick();
+			check(said.isEmpty() && s.data.size() == words, "Commit in data mode writes the " + words + " data word(s) with nothing to say: " + said);
+		} catch (RuntimeException ex) {
+			check(false, "Commit in data mode threw " + ex);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+	}
+
+	/** Replaces the editor's text the way a paste does, without the live per-keystroke hooks. */
+	static void type(ScriptEditor ed, JTextArea area, String text) {
+		ed.loaded = false;
+		area.setText(text);
+		ed.loaded = true;
+	}
+
+	static String firstLine(JTextArea area) {
+		String t = area.getText();
+		int nl = t.indexOf('\n');
+		return nl < 0 ? t : t.substring(0, nl);
+	}
+
+	static Object field(Object o, String name) throws Exception {
+		Field f = o.getClass().getDeclaredField(name);
+		f.setAccessible(true);
+		return f.get(o);
 	}
 
 	static List<PawnInstruction> instructions(PawnAssembly asm) {

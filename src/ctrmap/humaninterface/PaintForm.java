@@ -77,6 +77,7 @@ public class PaintForm extends JPanel {
 	private final JButton makeRipple = new JButton("Make water ripple here");
 	private final JButton undoBtn = new JButton("Undo");
 	private final JButton redoBtn = new JButton("Redo");
+	private final JButton fillAll = new JButton("Fill all with brush");
 	private final javax.swing.JList<TilePalette> brushList = new javax.swing.JList<>(TilePalette.brushes());
 	private final JLabel placeStatus = new JLabel(" ");
 	private final JCheckBox edgeChk = new JCheckBox("Blend grass edges (GameFreak look)", true);
@@ -182,7 +183,6 @@ public class PaintForm extends JPanel {
 			tg.add(b);
 			add(b);
 		}
-		JButton fillAll = new JButton("Fill all with brush");
 		fillAll.setToolTipText("Paints EVERY tile of the cell - this also rebuilds the whole cell on Apply (existing walls/details are replaced).");
 		fillAll.setAlignmentX(0f);
 		fillAll.addActionListener(e -> {
@@ -677,7 +677,10 @@ public class PaintForm extends JPanel {
 	}
 
 	private void repaintMap() {
-		mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+		//no map view - a headless test drives the document without one
+		if (mTileMapPanel != null) {
+			mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+		}
 		schedule3DRegen();
 	}
 
