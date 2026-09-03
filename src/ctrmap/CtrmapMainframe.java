@@ -715,10 +715,7 @@ public class CtrmapMainframe {
 				jfc.showOpenDialog(frame);
 				if (jfc.getSelectedFile() != null) {
 					prefs.put("LAST_DIR", jfc.getSelectedFile().getParent());
-					try {
-						mTileMapPanel.loadMatrix(new MapMatrix(new MM(jfc.getSelectedFile())), null, null, null);
-					} catch (RuntimeException ex) {
-						JOptionPane.showMessageDialog(frame, ex.getMessage(), "Open MapMatrix", JOptionPane.ERROR_MESSAGE);
+					if (!openMapMatrixFile(jfc.getSelectedFile())) {
 						return;
 					}
 					mTileMapPanel.scaleImage(1);
@@ -1232,42 +1229,83 @@ public class CtrmapMainframe {
 		int zoneIndex = (Integer) idSpinner.getValue();
 		try {
 			GeometryForker.ForkResult r = GeometryForker.ensurePrivate(zoneIndex);
-			if (!r.forked) {
-				//forking again would append another copy of every region and
-				//orphan the ones the zone is using
-				javax.swing.JOptionPane.showMessageDialog(frame, "Zone " + zoneIndex
-						+ " already has its own map geometry (map matrix " + r.oldMatrix
-						+ ", region(s) " + java.util.Arrays.toString(r.srcRegions) + ").\n\n"
-						+ "Nothing was changed - editing its map already affects no other zone.",
-						"Fork map geometry", javax.swing.JOptionPane.INFORMATION_MESSAGE);
-				return;
-			}
-			StringBuilder sb = new StringBuilder();
-			sb.append("Zone ").append(zoneIndex).append(" now has private map geometry.\n\n");
-			sb.append("Map matrix ").append(r.oldMatrix).append(" -> ").append(r.newMatrix).append(" (private copy)\n");
-			for (int i = 0; i < r.srcRegions.length; i++) {
-				sb.append("FieldData region ").append(r.srcRegions[i]).append(" -> ").append(r.newRegions[i]).append(" (private copy)\n");
-			}
-			sb.append("\nTo change ONLY this zone's map, edit region ").append(r.newRegions[0]);
-			if (r.newRegions.length > 1) {
-				sb.append(" (and the other new regions above)");
-			}
-			sb.append(".\nThe original region(s) still belong to the source zone(s).\n\n");
-			if (r.otherZones.length > 0) {
-				//their ground was copied along with the map and still carries
-				//their names - relabelling it to this zone would silently take
-				//their banner, music and entities away
-				sb.append("This map also carries ground belonging to zone(s) ")
-						.append(java.util.Arrays.toString(r.otherZones))
-						.append(".\nYour copy keeps their labels, so walking there still reports them,\n")
-						.append("but edits you make to that ground now show only in this zone.\n\n");
-			}
-			sb.append("Now run File > Pack Workspace, then File > Deploy to emulator.\n");
-			sb.append("No new code.ips is needed - the fork is pure data.");
-			javax.swing.JOptionPane.showMessageDialog(frame, sb.toString(), "Fork map geometry", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+			Ui.message(frame, forkGeometryReport(zoneIndex, r), "Fork map geometry",
+					javax.swing.JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
 			javax.swing.JOptionPane.showMessageDialog(frame, "Fork failed:\n" + ex.getMessage(), "Fork map geometry", javax.swing.JOptionPane.ERROR_MESSAGE);
 		}
+	}
+
+	/**
+	 * What the user is told a geometry fork did, which is the only way they can
+	 * know. Two of the three sentences it can produce report something they
+	 * cannot see any other way: that nothing was forked because the zone
+	 * already owned its map, and that the private copy still carries another
+	 * zone's ground.
+	 *
+	 * <p>Separate from the action, and returning the text rather than showing
+	 * it, because the action is only reachable through a modal confirm and both
+	 * branches therefore went unmeasured. Getting either one backwards is
+	 * silent and expensive: "nothing was changed" over a fork that DID append
+	 * copies sends the user to fork again, which orphans the regions the zone
+	 * is using, and a missing ground warning means they relabel ground that
+	 * belongs to other zones and take those zones' banner, music and entities
+	 * away without being told.
+	 */
+	public static String forkGeometryReport(int zoneIndex, GeometryForker.ForkResult r) {
+		if (!r.forked) {
+			//forking again would append another copy of every region and
+			//orphan the ones the zone is using
+			return "Zone " + zoneIndex
+					+ " already has its own map geometry (map matrix " + r.oldMatrix
+					+ ", region(s) " + java.util.Arrays.toString(r.srcRegions) + ").\n\n"
+					+ "Nothing was changed - editing its map already affects no other zone.";
+		}
+		StringBuilder sb = new StringBuilder();
+		sb.append("Zone ").append(zoneIndex).append(" now has private map geometry.\n\n");
+		sb.append("Map matrix ").append(r.oldMatrix).append(" -> ").append(r.newMatrix).append(" (private copy)\n");
+		for (int i = 0; i < r.srcRegions.length; i++) {
+			sb.append("FieldData region ").append(r.srcRegions[i]).append(" -> ").append(r.newRegions[i]).append(" (private copy)\n");
+		}
+		sb.append("\nTo change ONLY this zone's map, edit region ").append(r.newRegions[0]);
+		if (r.newRegions.length > 1) {
+			sb.append(" (and the other new regions above)");
+		}
+		sb.append(".\nThe original region(s) still belong to the source zone(s).\n\n");
+		if (r.otherZones.length > 0) {
+			//their ground was copied along with the map and still carries
+			//their names - relabelling it to this zone would silently take
+			//their banner, music and entities away
+			sb.append("This map also carries ground belonging to zone(s) ")
+					.append(java.util.Arrays.toString(r.otherZones))
+					.append(".\nYour copy keeps their labels, so walking there still reports them,\n")
+					.append("but edits you make to that ground now show only in this zone.\n\n");
+		}
+		sb.append("Now run File > Pack Workspace, then File > Deploy to emulator.\n");
+		sb.append("No new code.ips is needed - the fork is pure data.");
+		return sb.toString();
+	}
+
+	/**
+	 * Loads a .mm file the user picked into the matrix panel. False means it
+	 * could not be read and the user has been told why.
+	 *
+	 * <p>Split out of the menu action, and saying so through {@link Ui},
+	 * because the action is only reachable through a file chooser: the one
+	 * sentence that distinguishes "that file is not a map matrix" from "the
+	 * editor ignored my click" could be deleted with nothing noticing.
+	 */
+	public static boolean openMapMatrixFile(File f) {
+		try {
+			mTileMapPanel.loadMatrix(new MapMatrix(new MM(f)), null, null, null);
+		} catch (RuntimeException ex) {
+			//a container that is not a map matrix usually fails on a bare
+			//dereference, whose getMessage() is null - "null" in a dialog is
+			//indistinguishable from the editor ignoring the click
+			Ui.error(frame, ex.getMessage() != null ? ex.getMessage() : ex.toString(), "Open MapMatrix");
+			return false;
+		}
+		return true;
 	}
 
 	/**
