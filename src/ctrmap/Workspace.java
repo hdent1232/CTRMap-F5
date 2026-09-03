@@ -616,14 +616,14 @@ public class Workspace {
 	 * from an absent snapshot ({@code BuildingCatalog.pristineRegion}); none of
 	 * them can detect a present-but-wrong one.
 	 */
-	public static void snapshotOriginals() {
+	public static java.util.List<String> snapshotOriginals() {
+		java.util.List<String> refused = new java.util.ArrayList<>();
 		try {
 			if (GAMEDIR_PATH == null || WORKSPACE_PATH == null || game == null) {
-				return;
+				return refused;
 			}
 			File snap = originalSnapshotDir();
 			boolean established = originalSnapshotStamp().isFile();
-			java.util.List<String> refused = new java.util.ArrayList<>();
 			for (ArchiveType t : ModDeployer.MODDABLE) {
 				String rel = getArchivePath(t, game);
 				if (rel == null) {
@@ -664,6 +664,7 @@ public class Workspace {
 		} catch (Exception ex) {
 			System.err.println("Original-archive snapshot failed (non-fatal): " + ex);
 		}
+		return refused;
 	}
 	
 	public static void reloadGARC(ArchiveType arc){
@@ -765,8 +766,17 @@ public class Workspace {
 	 * the edits stay staged in the workspace and marked pending, so the next
 	 * pack carries them. The failure used to be swallowed inside the archive
 	 * writer, and the progress bar filled while the game kept the old map.
+	 *
+	 * <p>Returns everything the pack found wrong, as sentences meant for the
+	 * user: a cross-archive reference that will stop a zone loading, an archive
+	 * a second program is writing to, a pristine backup with holes in it. All
+	 * three used to be printed to stderr, and the shipped build has no console,
+	 * so a pack that could see the game was broken still ended in the success
+	 * dialog alone.
 	 */
-	public static void packArchives(PackProgress progress) throws IOException {
+	public static java.util.List<String> packArchives(PackProgress progress) throws IOException {
+		//leftovers from a pack that threw are not this pack's news
+		GARC.drainPackWarnings();
 		progress.at(0, "Packing - fielddata");
 		//a pending geometry fork appends private region copies (see GeometryForker)
 		gr.packDirectory(getExtractionDirectory(ArchiveType.FIELD_DATA), GeometryForker.consumePendingFieldOverrides());
@@ -831,7 +841,55 @@ public class Workspace {
 		//leaves a dangling index that only shows up much later, as a
 		//zone that will not load. Check here, while the edit that
 		//caused it is still the last thing that happened.
-		WorkspaceIntegrity.report("packing the workspace");
+		java.util.List<String> warnings = new ArrayList<>();
+		warnings.addAll(WorkspaceIntegrity.report("packing the workspace"));
+		warnings.addAll(GARC.drainPackWarnings());
+		java.util.List<String> missing = snapshotMissingArchives();
+		if (!missing.isEmpty()) {
+			warnings.add("the pristine backup in " + originalSnapshotDir() + " is missing "
+					+ missing.size() + " archive(s): " + missing + ". They will NOT be captured"
+					+ " from the game as it is now, which may already be edited - so Deploy"
+					+ " cannot tell what you changed in them, and donor buildings cut from them"
+					+ " are unavailable. Delete the backup folder and reload against an"
+					+ " unmodified game to retake it whole.");
+		}
+		return warnings;
+	}
+
+	/**
+	 * Puts what a pack found wrong in front of the user, through the dialog
+	 * they already get when the pack finishes.
+	 *
+	 * <p>Separate from the pack itself on purpose: the pack runs on a worker
+	 * with an application-modal progress dialog on screen, and a message shown
+	 * from there would sit behind it, unreachable. This runs on the EDT once
+	 * that dialog has closed.
+	 */
+	public static void reportPackWarnings(Component parent, java.util.List<String> warnings) {
+		if (warnings == null || warnings.isEmpty()) {
+			return;
+		}
+		StringBuilder sb = new StringBuilder("The workspace was packed, but the archives it wrote"
+				+ " do not add up:\n");
+		for (String w : warnings) {
+			sb.append('\n').append(wrap(w));
+		}
+		sb.append("\nFix this before deploying - the game may not load.");
+		Ui.error(parent, sb.toString(), "Pack workspace");
+	}
+
+	/** One warning, broken at spaces so the dialog does not grow off the screen. */
+	private static String wrap(String s) {
+		StringBuilder out = new StringBuilder("  - ");
+		int lineStart = 0;
+		for (String word : s.split(" ")) {
+			if (out.length() - lineStart + word.length() > 92) {
+				out.append("\n    ");
+				lineStart = out.length();
+			}
+			out.append(word).append(' ');
+		}
+		return out.append('\n').toString();
 	}
 
 	/**
@@ -845,6 +903,7 @@ public class Workspace {
 	public static void packWorkspace(final Runnable onDone) {
 		if (valid) {
 			LoadingDialog progress = LoadingDialog.makeDialog("Packing");
+			final java.util.List<String> warnings = new ArrayList<>();
 			SwingWorker worker = new SwingWorker() {
 				@Override
 				protected void done() {
@@ -867,15 +926,18 @@ public class Workspace {
 				@Override
 				protected Object doInBackground() throws Exception {
 					//a failure here must reach done() and the user, not the log
-					packArchives((percent, what) -> {
+					warnings.addAll(packArchives((percent, what) -> {
 						progress.setBarPercent(percent);
 						progress.setDescription(what);
-					});
+					}));
 					return null;
 				}
 			};
 			worker.execute();
 			progress.showDialog();
+			//showDialog returns on the EDT once done() has closed the progress
+			//dialog, so this is the first moment anything else can be seen
+			reportPackWarnings(CtrmapMainframe.frame, warnings);
 		}
 	}
 	

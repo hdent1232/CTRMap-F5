@@ -182,6 +182,27 @@ public class GARC {
 	private long parsedLength = -1;
 	private long parsedModified = -1;
 
+	/**
+	 * What packing had to warn about, waiting for whoever packed to say it out
+	 * loud.
+	 *
+	 * <p>A pack that finds the archive rewritten underneath it carries on - the
+	 * repair is to re-read the entry table, and that is what happens - but the
+	 * user has to be told that a second program is writing to their game. That
+	 * sentence used to go to stderr, and the shipped build has no console to
+	 * put it on, so nobody ever saw it. Collecting it here lets
+	 * {@link Workspace#packArchives} hand it to the dialog that reports the
+	 * pack, whichever archives the pack happened to touch.
+	 */
+	private static final ArrayList<String> packWarnings = new ArrayList<>();
+
+	/** Takes everything packing has warned about since the last call. */
+	public static ArrayList<String> drainPackWarnings() {
+		ArrayList<String> out = new ArrayList<>(packWarnings);
+		packWarnings.clear();
+		return out;
+	}
+
 	public void packDirectory(File dir, Map<Integer, Boolean> compressionOverrides) throws IOException {
 		if (!dir.isDirectory()) {
 			return;
@@ -190,10 +211,12 @@ public class GARC {
 			//Re-reading is the right repair: the entries on disk are fine,
 			//only this instance's picture of them is out of date. Packing
 			//first and asking questions later is what corrupts the archive.
-			System.err.println("GARC: " + file.getName() + " changed on disk since it was read"
+			String warning = file.getPath() + " changed on disk since it was read"
 					+ " (was " + parsedLength + "B, now " + file.length() + "B)."
-					+ " Re-reading its entry table before packing - something else is writing"
-					+ " to this archive.");
+					+ " Its entry table was re-read before packing - something else is writing"
+					+ " to this archive.";
+			System.err.println("GARC: " + warning);
+			packWarnings.add(warning);
 			parse(file);
 		}
 		ArrayList<File> files = new ArrayList<>();
