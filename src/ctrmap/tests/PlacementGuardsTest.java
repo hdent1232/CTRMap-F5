@@ -82,7 +82,7 @@ public class PlacementGuardsTest {
 		//point a throwaway workspace's snapshot at the dump
 		Workspace.game = Workspace.GameType.ORAS;
 		Workspace.GAMEDIR_PATH = garcFile.getParentFile().getParentFile().getParentFile().getParentFile().getAbsolutePath();
-		Workspace.WORKSPACE_PATH = System.getProperty("java.io.tmpdir") + "/ctrmap_placement_guards";
+		Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_placement_guards").getAbsolutePath();
 		Workspace.temp = new File(Workspace.WORKSPACE_PATH, "temp");
 		Workspace.temp.mkdirs();
 		File snap = new File(Workspace.originalSnapshotDir().getAbsolutePath()

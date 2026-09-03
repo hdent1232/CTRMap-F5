@@ -26,8 +26,7 @@ public class GfCollLegacyBridgeTest {
 		File garcFile = new File(args.length > 0 ? args[0]
 				: "../RomFS_original_garcs/a/0/3/9");
 		int step = args.length > 1 ? Integer.parseInt(args[1]) : 1;
-		File scratch = new File(System.getProperty("java.io.tmpdir"), "ctrmap_collbridge");
-		scratch.mkdirs();
+		File scratch = Scratch.dir("ctrmap_collbridge");
 		GARC garc = new GARC(garcFile);
 		int tested = 0, ok = 0, failures = 0;
 		long collapsedDupes = 0;

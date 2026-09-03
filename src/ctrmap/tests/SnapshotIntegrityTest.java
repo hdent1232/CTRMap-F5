@@ -32,8 +32,7 @@ public class SnapshotIntegrityTest {
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
-		File tmp = new File(System.getProperty("java.io.tmpdir"), "ctrmap_snapshot_test");
-		deleteTree(tmp);
+		File tmp = Scratch.dir("ctrmap_snapshot_test");
 		File gamedir = new File(tmp, "game");
 		File wsdir = new File(tmp, "ws");
 		gamedir.mkdirs();
