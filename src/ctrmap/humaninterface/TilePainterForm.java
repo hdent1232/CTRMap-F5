@@ -384,7 +384,7 @@ public class TilePainterForm {
 				if (f != null) {
 					GR gr = new GR(f);
 					if (BchMapModel.isMapModel(gr.getFile(1))) {
-						floorY = PaintedRegionBuilder.floorYGrid(gr.getFile(2), height);
+						floorY = PaintedRegionBuilder.floorYGrid(gr.getFile(2), gr.getFile(0), height);
 						break;
 					}
 				}
