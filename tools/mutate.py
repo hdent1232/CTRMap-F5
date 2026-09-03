@@ -109,7 +109,7 @@ for cid, (base, suites) in CLUSTERS.items():
         else:
             verdict, detail = "UNGUARDED", ""
             for cls, a in suites:
-                r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
+                r = run([JAVA, "-Xmx4g", "-Djava.awt.headless=true", "-cp", CP, cls] + a)
                 if r.returncode != 0:
                     tail = [l for l in (r.stdout or "").strip().splitlines() if l.strip()]
                     verdict, detail = "CAUGHT", cls.split(".")[-1] + ": " + (tail[-1][:110] if tail else "")
