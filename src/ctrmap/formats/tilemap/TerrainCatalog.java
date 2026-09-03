@@ -1,5 +1,6 @@
 package ctrmap.formats.tilemap;
 
+import ctrmap.Ui;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.BchModelAppender;
@@ -101,6 +102,11 @@ public class TerrainCatalog {
 		if (uvScaleCache.containsKey(injectName)) {
 			return uvScaleCache.get(injectName);
 		}
+		if (!BuildingCatalog.canCutDonor()) {
+			//too early to measure anything; NOT cached, so the first call made
+			//with a workspace open still gets a real answer
+			return null;
+		}
 		float[] out = null;
 		for (Donor d : donors().values()) {
 			if (!injectName.equals(d.injectName)) {
@@ -120,8 +126,10 @@ public class TerrainCatalog {
 					}
 				}
 			} catch (Exception ex) {
-				System.err.println("TerrainCatalog: could not measure donor scale for "
-						+ injectName + ": " + ex);
+				Ui.error(null, "Could not measure the donor texture scale for \"" + injectName
+						+ "\" in the pristine copy of region " + d.donorRegion + ".\n"
+						+ "Tiles painted with this brush may come out at the wrong size.\n" + ex,
+						"Terrain import");
 			}
 			break;
 		}
@@ -179,7 +187,8 @@ public class TerrainCatalog {
 				}
 			}
 		} catch (Exception ex) {
-			System.err.println("TerrainCatalog: load failed: " + ex);
+			Ui.error(null, "The terrain donor table could not be read, so no brush can be"
+					+ " given to a map that lacks its material.\n" + ex, "Terrain import");
 		}
 		return donors;
 	}
@@ -240,7 +249,9 @@ public class TerrainCatalog {
 				break;
 			}
 		} catch (Exception ex) {
-			System.err.println("TerrainCatalog: cliff donor load failed: " + ex);
+			Ui.error(null, "The CLIFF row of the terrain donor table could not be read;"
+					+ " generated cliffs will keep whatever rock the map already has.\n" + ex,
+					"Terrain import");
 		}
 		return cliffDonor;
 	}
@@ -306,7 +317,8 @@ public class TerrainCatalog {
 				return d;
 			}
 		} catch (Exception ex) {
-			System.err.println("TerrainCatalog: " + key + " row unreadable: " + ex);
+			Ui.error(null, "The " + key + " row of the terrain donor table could not be read.\n" + ex,
+					"Terrain import");
 		}
 		return null;
 	}
@@ -324,6 +336,13 @@ public class TerrainCatalog {
 		r.model = model;
 		if (d == null) {
 			say("no CLIFF row in the catalogue");
+			return r;
+		}
+		if (!BuildingCatalog.canCutDonor()) {
+			//no workspace open yet, so there is no pristine snapshot to cut the
+			//donor out of. Asking anyway is what printed "cliff import failed"
+			//on every single build; the painter's own fallback covers it.
+			say("no pristine snapshot to cut " + d.injectName + " from");
 			return r;
 		}
 		try {
@@ -374,7 +393,10 @@ public class TerrainCatalog {
 			r.donorArea = d.donorArea;
 			r.texturesNeeded.addAll(textureNamesOf(new BchMapModel(donorModel), d.donorMesh));
 		} catch (Exception ex) {
-			System.err.println("TerrainCatalog: cliff import failed: " + ex);
+			Ui.error(null, "Could not import the terrain material \"" + d.injectName
+					+ "\" from the pristine copy of region " + d.donorRegion + ".\n"
+					+ "This map keeps the material it already had, which may be the wrong rock.\n" + ex,
+					"Terrain import failed");
 		}
 		return r;
 	}
@@ -416,6 +438,9 @@ public class TerrainCatalog {
 			if (d == null) {
 				return r;
 			}
+			if (!BuildingCatalog.canCutDonor()) {
+				return r; //no snapshot to cut from yet - see ensureNamedMaterial
+			}
 			GR donorGr = BuildingCatalog.pristineRegion(d.donorRegion);
 			if (donorGr == null) {
 				return r;
@@ -454,7 +479,9 @@ public class TerrainCatalog {
 			r.donorArea = d.donorArea;
 			r.texturesNeeded.addAll(textureNamesOf(new BchMapModel(donorModel), d.donorMesh));
 		} catch (Exception ex) {
-			System.err.println("TerrainCatalog: import for " + brush + " failed: " + ex);
+			Ui.error(null, "Could not import a " + brush + " material into this map.\n"
+					+ "Painting with that brush will fall back to a material the map already has.\n" + ex,
+					"Terrain import failed");
 		}
 		return r;
 	}
@@ -470,6 +497,9 @@ public class TerrainCatalog {
 			return cached;
 		}
 		List<String> names = new ArrayList<>();
+		if (!BuildingCatalog.canCutDonor()) {
+			return names; //not cached - a later call with a workspace may do better
+		}
 		try {
 			GR donorGr = BuildingCatalog.pristineRegion(d.donorRegion);
 			byte[] donorModel = donorGr == null ? null : donorGr.getFile(1);
@@ -477,7 +507,9 @@ public class TerrainCatalog {
 				names = textureNamesOf(new BchMapModel(donorModel), d.donorMesh);
 			}
 		} catch (Exception ex) {
-			System.err.println("TerrainCatalog: donor region " + d.donorRegion + " textures unreadable: " + ex);
+			Ui.error(null, "Could not read the textures the \"" + d.injectName + "\" material needs"
+					+ " from the pristine copy of region " + d.donorRegion + ".\n"
+					+ "Painted tiles using it may come out white.\n" + ex, "Terrain import failed");
 			return names; //not cached - a later call with a workspace may do better
 		}
 		donorTextureCache.put(key, names);
