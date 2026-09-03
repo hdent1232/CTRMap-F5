@@ -24,6 +24,13 @@ import java.util.regex.Pattern;
  *     that had nothing to do with the code under test, and a contributor could
  *     not tell that from a real regression. A relative default is fine as a
  *     fallback; it must sit behind an args[0] the runner can pass.</li>
+ * <li>...and the runner must actually pass it. The rule above only made the
+ *     argument POSSIBLE, and two suites were still registered in test.ps1
+ *     with none: BchMapModelTest fell back to its relative default and
+ *     printed SKIP from every worktree, and MaisonClassListTest printed
+ *     ALL PASS having round-tripped nought of nought entries. Both looked
+ *     like a passing battery. A suite whose source names the dump must be
+ *     registered with a path.</li>
  * </ul>
  * Comments are stripped before scanning, so only live code counts.
  *
@@ -39,6 +46,10 @@ public class BatteryHygieneTest {
 	private static final Pattern REPO_RELATIVE_DUMP = Pattern.compile("\"\\.\\./RomFS");
 	/** Reading a path the runner passed in. */
 	private static final Pattern TAKES_ARG = Pattern.compile("args\\s*\\[\\s*0\\s*\\]|args\\s*\\.\\s*length");
+	/** A suite's registration line in the battery runner. */
+	private static final Pattern REGISTERED = Pattern.compile("c\\s*=\\s*\"ctrmap\\.tests\\.(\\w+)\"");
+	/** ...registered with nothing at all to point it at a dump. */
+	private static final Pattern NO_ARGS = Pattern.compile("a\\s*=\\s*@\\(\\s*\\)");
 
 	static int fails = 0;
 
@@ -56,6 +67,7 @@ public class BatteryHygieneTest {
 		//every script the battery or a harness executes, not just the runner: the
 		//same heredoc trap that put NUL bytes into test.ps1 put them into
 		//tools/mutate2.py an hour later - inside the comment describing the trap
+		registeredWithItsCorpus(new File(repo, "test.ps1"), tests);
 		runnerIsPlainText(new File(repo, "test.ps1"));
 		runnerIsPlainText(new File(repo, "build.ps1"));
 		runnerIsPlainText(new File(repo, "stamp.ps1"));
@@ -101,6 +113,39 @@ public class BatteryHygieneTest {
 			}
 		}
 		check(stuck.isEmpty(), "every suite that names the dump can be pointed at one; stuck: " + stuck);
+	}
+
+	/**
+	 * A suite that names the dump must be REGISTERED with one.
+	 *
+	 * <p>{@link #overridableCorpusPath} only made the argument possible, and
+	 * that was the hole two suites fell through: registered with {@code a = @()},
+	 * they fell back to their repo-relative default, and from a worktree
+	 * BchMapModelTest printed SKIP while MaisonClassListTest printed ALL PASS
+	 * over nought entries. Neither showed up as a failure, so the battery
+	 * reported green on suites it had not run.
+	 */
+	static void registeredWithItsCorpus(File runner, File tests) throws Exception {
+		if (!runner.isFile()) {
+			System.out.println("  skip: no runner at " + runner);
+			return;
+		}
+		List<String> starved = new ArrayList<>();
+		int registered = 0;
+		for (String line : Files.readAllLines(runner.toPath(), StandardCharsets.UTF_8)) {
+			java.util.regex.Matcher m = REGISTERED.matcher(line);
+			if (!m.find()) {
+				continue;
+			}
+			registered++;
+			File src = new File(tests, m.group(1) + ".java");
+			if (NO_ARGS.matcher(line).find() && src.isFile()
+					&& REPO_RELATIVE_DUMP.matcher(SourceSeamTest.stripComments(read(src))).find()) {
+				starved.add(m.group(1));
+			}
+		}
+		check(registered >= 50, registered + " suites registered in the battery");
+		check(starved.isEmpty(), "every suite that names the dump is registered with one; starved: " + starved);
 	}
 
 	/**

@@ -177,6 +177,29 @@ public class BuildingCatalog {
 	 * never validated, which the caller can fix; silently substituting edited
 	 * data cannot be detected at all.
 	 */
+	/**
+	 * Whether {@link #pristineRegion} can be asked at all right now.
+	 *
+	 * <p>The snapshot's path is resolved through the OPEN WORKSPACE's game
+	 * profile, so a call made before any workspace exists has nothing to
+	 * resolve against and can only throw. Callers on the map-build path asked
+	 * anyway and swallowed the throw into a stderr line, so every single
+	 * painted-region build printed "cliff import failed: no profile for null" -
+	 * noise nobody read, and, being constant, noise that hid the one build
+	 * where the import really did fail.
+	 *
+	 * <p>A workspace whose snapshot is missing answers false too, rather than
+	 * nagging once per Apply: {@link ctrmap.Workspace}'s validation already
+	 * tells the user their pristine backup is gone, which is where that belongs.
+	 */
+	public static boolean canCutDonor() {
+		if (Workspace.game == null) {
+			return false;
+		}
+		String rel = Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game);
+		return new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel).exists();
+	}
+
 	public static GR pristineRegion(int region) throws Exception {
 		String rel = Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game);
 		File garcFile = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
