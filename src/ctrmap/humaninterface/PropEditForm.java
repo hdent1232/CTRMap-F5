@@ -476,6 +476,20 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					"Missing textures", JOptionPane.ERROR_MESSAGE);
 			return false;
 		}
+		//An area other zones use is not this prop's to grow. Asked BEFORE the
+		//import dialog, so the user is not talked into an import that the
+		//shared-area rule then refuses.
+		String shared = BchTexturePack.zonesUsingArea(header.areadataID,
+				CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1);
+		if (shared != null) {
+			JOptionPane.showMessageDialog(this,
+					"This prop needs textures this area does not have (" + inline + "),\n"
+					+ "but " + getAreaDisplayName(header.areadataID) + " is also used by " + shared + ".\n"
+					+ "Importing them would change those maps too, so the prop was not placed.\n\n"
+					+ "Give this zone its own area first (Map > Fork area).",
+					"Shared area", JOptionPane.ERROR_MESSAGE);
+			return false;
+		}
 		int rsl = JOptionPane.showConfirmDialog(this,
 				"This prop's textures (" + inline + ") are not in this area.\n"
 				+ "Import them from " + getAreaDisplayName(donorArea) + "?\n\n"
@@ -501,7 +515,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			if (donorPack == null || !PropDatabase.getTexturePackTextureNames(donorPack).containsAll(missing)) {
 				throw new IllegalStateException("donor area " + donorArea + " does not actually contain all the needed textures on disk");
 			}
-			byte[] merged = BchTexturePack.importTextures(targetPack, donorPack, missing);
+			byte[] merged = BchTexturePack.importIntoArea(header.areadataID,
+					CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1,
+					targetPack, donorPack, missing);
 			if (merged != targetPack) { //already-present names are a no-op (same array returned)
 				//decode and verify the merged pack BEFORE storing anything
 				BCHFile packBch = new BCHFile(merged);
@@ -901,7 +917,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					} else {
 						donorPack = PropDatabase.getSubfile(Workspace.ad.getDecompressedEntry(donorArea), 1);
 					}
-					byte[] merged = BchTexturePack.importTextures(targetPack, donorPack, missing);
+					byte[] merged = BchTexturePack.importIntoArea(header.areadataID,
+							CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1,
+							targetPack, donorPack, missing);
 					if (merged != targetPack) {
 						BCHFile packBch = new BCHFile(merged);
 						if (packBch.errorlevel != 0) {
