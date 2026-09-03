@@ -123,6 +123,7 @@ public class PlacementGuardsTest {
 		paintKeptUnderDonorBehaviour();
 		collisionCrossingTheBoxIsKept();
 		facesCrossingTheBoxAreCounted();
+		cutLossSurvivesSaveAndReload();
 		passengersAreNamed();
 		baseYIsTheFooting(step);
 		catalogueBoxesAreAssets();
@@ -339,6 +340,60 @@ public class PlacementGuardsTest {
 			check(ex.getMessage().contains(crossing + " face(s)") && ex.getMessage().contains("none lies inside"),
 					"the refusal counts the crossing faces and says why: " + ex.getMessage());
 		}
+	}
+
+	/**
+	 * What a cut left behind is part of the prefab, not of the moment it was
+	 * made. Both counts were computed at cut time and written nowhere, so a
+	 * prefab saved to a .ctrprefab file and loaded in the next session reported
+	 * a clean cut - Route 101's 10..19 box loses 135 faces and two materials
+	 * entirely, and the reloaded prefab said none - and the copy dialog's
+	 * warning could never be shown again. The block is appended after
+	 * everything an older build reads, and only when there is loss to record,
+	 * so a file this build writes is byte-for-byte the file the old one wrote
+	 * plus a trailer, and a file the old one wrote still loads.
+	 */
+	static void cutLossSurvivesSaveAndReload() throws Exception {
+		GR gr = region(1);
+		MapPrefab p = MapPrefab.extract(gr, 10, 10, 19, 19, "route 101");
+		check(p != null && p.facesDropped > 0 && !p.materialsLost.isEmpty(),
+				"fixture: the cut loses " + (p == null ? 0 : p.facesDropped) + " face(s) and the materials "
+				+ (p == null ? null : p.materialsLost));
+		if (p == null) {
+			return;
+		}
+		File pf = new File(scratch, "loss.ctrprefab");
+		p.save(pf);
+		MapPrefab back = MapPrefab.load(pf);
+		check(back.facesDropped == p.facesDropped, "the reloaded prefab still counts the faces the cut left out: "
+				+ back.facesDropped + " vs " + p.facesDropped);
+		check(back.materialsLost.equals(p.materialsLost), "and still names the materials that vanished: "
+				+ back.materialsLost + " vs " + p.materialsLost);
+		check(back.cutReport().equals(p.cutReport()),
+				"so the copy dialog's warning can be shown again: " + back.cutReport().replace('\n', ' '));
+
+		//exactly what the old writer produced: the same cut with nothing to
+		//record. The loss block is the only difference between the two files.
+		MapPrefab bare = MapPrefab.extract(gr, 10, 10, 19, 19, "route 101");
+		bare.facesDropped = 0;
+		bare.materialsLost.clear();
+		File old = new File(scratch, "loss_v2.ctrprefab");
+		bare.save(old);
+		byte[] oldBytes = java.nio.file.Files.readAllBytes(old.toPath());
+		byte[] newBytes = java.nio.file.Files.readAllBytes(pf.toPath());
+		check(newBytes.length > oldBytes.length
+				&& Arrays.equals(oldBytes, Arrays.copyOf(newBytes, oldBytes.length)),
+				"the loss block is appended, so a build without it reads the file it always did ("
+				+ oldBytes.length + " of " + newBytes.length + " bytes unchanged)");
+		check(new java.io.DataInputStream(new java.io.ByteArrayInputStream(newBytes, 4, 4)).readInt() == MapPrefab.VERSION
+				&& MapPrefab.VERSION == 2,
+				"and the version is unchanged, so an older build does not refuse the file outright");
+		MapPrefab backOld = MapPrefab.load(old);
+		check(backOld.pieces.size() == p.pieces.size() && backOld.collTris.size() == p.collTris.size(),
+				"an old-format prefab still loads whole: " + backOld.pieces.size() + " piece(s), "
+				+ backOld.collTris.size() + " collision tri(s)");
+		check(backOld.facesDropped == 0 && backOld.materialsLost.isEmpty(),
+				"and reports no loss, because it records none");
 	}
 
 	/**
