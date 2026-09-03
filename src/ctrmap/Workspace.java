@@ -525,15 +525,23 @@ public class Workspace {
 	 * then on with nothing to indicate it.
 	 */
 	public static boolean snapshotIsForeign() {
+		return snapshotIsForeign(GAMEDIR_PATH);
+	}
+
+	/**
+	 * The same question about a folder the workspace is about to be pointed at,
+	 * so the settings dialog can ask BEFORE it repoints anything.
+	 */
+	public static boolean snapshotIsForeign(String gameDir) {
 		String taken = snapshotSourcePath();
-		if (taken == null || GAMEDIR_PATH == null) {
+		if (taken == null || gameDir == null) {
 			return false;
 		}
 		try {
 			return !new File(taken).getCanonicalPath()
-					.equalsIgnoreCase(new File(GAMEDIR_PATH).getCanonicalPath());
+					.equalsIgnoreCase(new File(gameDir).getCanonicalPath());
 		} catch (IOException ex) {
-			return !taken.equalsIgnoreCase(GAMEDIR_PATH);
+			return !taken.equalsIgnoreCase(gameDir);
 		}
 	}
 
@@ -624,6 +632,23 @@ public class Workspace {
 			}
 			File snap = originalSnapshotDir();
 			boolean established = originalSnapshotStamp().isFile();
+			//A backup of one game folder says nothing about another. Repointing
+			//a workspace at a second dump keeps the first one's backup - the
+			//clean deliberately spares it - so Deploy diffs the new game
+			//against the old one and ships archives nobody touched, and every
+			//donor the palette cuts comes from the wrong game. The check for
+			//this was written, with a javadoc describing exactly this failure,
+			//and never called from anywhere.
+			if (established && snapshotIsForeign()) {
+				Ui.error(frame, "This workspace holds a pristine backup of a different game folder:\n  "
+						+ snapshotSourcePath()
+						+ "\n\nCTRMap compares your edits against that backup to work out what you"
+						+ "\nchanged, and cuts donor buildings out of it, so both are now wrong for"
+						+ "\n  " + GAMEDIR_PATH
+						+ "\n\nDelete the backup folder\n  " + snap
+						+ "\nand reload, against an unmodified game, to take a new one.",
+						"Backup belongs to another game");
+			}
 			for (ArchiveType t : ModDeployer.MODDABLE) {
 				String rel = getArchivePath(t, game);
 				if (rel == null) {
