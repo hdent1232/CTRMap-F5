@@ -68,6 +68,13 @@ import javax.swing.JSpinner;
  *     finished because somebody was at the machine to click them. Each is
  *     driven here through ctrmap.Ui: the question must be asked, and the
  *     answer must be the one that is acted on.</li>
+ * <li>Five mutants the sweep could only record as survivors, because each
+ *     lived behind something a suite cannot have: the zone-full refusal
+ *     behind the modal "Add NPC / object" chooser, and the four null tests
+ *     inside methods handed a live GL context. The chooser is answerable now;
+ *     the GL decisions moved out of the GL calls into modelledNPCs() and
+ *     ownedModels(), which are asked here directly. Rendering itself is still
+ *     untested - only what it would render is.</li>
  * </ol>
  *
  * Usage: java ctrmap.tests.NpcEditFormGuardsTest &lt;pristine dump root&gt;
@@ -99,6 +106,7 @@ public class NpcEditFormGuardsTest {
 			missingRegistryEntryAsksFirst(zo);
 			softLockWarningReachesTheUser(zo);
 			addTemplateStopsAtTheCeiling(zo);
+			viewportDrawsOnlyModelledNPCs(zo, gr);
 		}
 		altitudeFromMesh();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -512,6 +520,47 @@ public class NpcEditFormGuardsTest {
 		}
 		check(said.size() == 2 && said.get(1).contains("255 props"), "a full prop list is refused against the prop count, not the NPC one: " + said);
 		check(e.furniture.size() == ZoneEntities.MAX_PER_KIND, "and nothing was added");
+	}
+
+	/**
+	 * What the viewport would draw, and whose GL buffers this form owns. The
+	 * mutation sweep recorded the null tests inside renderCM3D, uploadBuffers,
+	 * deleteGLInstanceBuffers and the click test as survivors, all for the
+	 * same reason: each sits in a method handed a live GL context, which no
+	 * suite has. The decision itself is plain logic and is asked here.
+	 */
+	static void viewportDrawsOnlyModelledNPCs(GARC zo, GARC gr) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		NPCEditForm form = new NPCEditForm();
+		form.loadFromEntities(e, null);
+		check(form.modelledNPCs().length == 0, "with no registry the viewport draws nothing");
+		check(form.ownedModels().isEmpty(), "and the form owns no GL buffers to upload or delete");
+
+		NPCRegistry reg = registryFor(e, gr);
+		form.loadFromEntities(e, reg);
+		check(form.modelledNPCs().length == e.npcs.size(), "every NPC with a registered model is drawn");
+		check(reg.models.size() > 1 && form.ownedModels().size() == reg.models.size(), "and the form owns every model in the registry");
+
+		int gone = e.npcs.get(0).model;
+		reg.models.remove(gone); //a MoveModel that failed to load
+		int expected = 0;
+		for (ZoneEntities.NPC npc : e.npcs) {
+			if (npc.model != gone) {
+				expected++;
+			}
+		}
+		int[] drawn = form.modelledNPCs();
+		check(expected < e.npcs.size() && drawn.length == expected, "an NPC whose model is missing is skipped, not drawn as its neighbour");
+		boolean ownSlots = true;
+		for (int i = 0; i < drawn.length; i++) {
+			ownSlots &= drawn[i] < e.npcs.size() && (i == 0 || drawn[i] > drawn[i - 1]) && e.npcs.get(drawn[i]).model != gone;
+		}
+		check(ownSlots, "and the drawn slots are the survivors' own, in order");
+		check(form.ownedModels().size() == reg.models.size(), "the owned buffers follow the registry");
+
+		e.NPCCount = 2;
+		check(form.modelledNPCs().length <= 2, "a count shorter than the NPC list draws only what it counts");
 	}
 
 	/** The "Add NPC / object" button, which the form keeps to itself. */
