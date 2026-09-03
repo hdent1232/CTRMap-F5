@@ -142,15 +142,10 @@
   "sha256": "9298ff605b3506fa2ab4caffbe3ea30ad72bf1976096c208198d3b3dc053a907"
  },
  "src/ctrmap/humaninterface/PaintForm.java": {
-  "survivors": 3,
-  "killed": 3,
+  "survivors": 2,
+  "killed": 4,
   "unmeasured": 3,
   "lines": [
-   {
-    "line": 620,
-    "kind": "negate-if",
-    "code": "if (PaintedRegionBuilder.descends(grid, height, lx, ly, d)) {"
-   },
    {
     "line": 856,
     "kind": "negate-if",
