@@ -81,6 +81,7 @@ public class PaintApplyGuardsTest {
 		appliedMapCarriesItsTextures();
 		retryStillAsksForTheTextures();
 		sharedMatrixIsPaintedAfterTheFork();
+		paintedCliffsCarryTheirTexture();
 		everyAreaImportAsksTheSharedQuestion(new File(args.length > 1 ? args[1] : "src"));
 		sameNameDifferentPixelsIsNotSilent();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -258,6 +259,37 @@ public class PaintApplyGuardsTest {
 		List<String> raw = new ArrayList<>();
 		rawImports(root, raw);
 		check(raw.isEmpty(), "no editor path imports textures into an area without asking: " + raw);
+	}
+
+	/**
+	 * A painted slope's cliff faces are a catalogue import like any brush, but
+	 * PaintedRegionBuilder makes them INSIDE the build, where Apply could not
+	 * see what they needed - and 227 of the game's 228 areas do not hold the
+	 * cliff donor's texture. Every map painted with a height change therefore
+	 * shipped a material pointing at a texture its area does not have, which is
+	 * the condition this editor's own prop code calls a hardlock on area load.
+	 */
+	static void paintedCliffsCarryTheirTexture() throws Exception {
+		List<String> needed = TerrainCatalog.donorTextures(TerrainCatalog.cliffDonor());
+		check(!needed.isEmpty(), "the generated cliff faces need the donor's texture(s) " + needed);
+		forget(Workspace.ArchiveType.FIELD_DATA, 153);
+		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		open(15);
+		paintSand();
+		//a raised plateau, so the build really has cliff faces to generate
+		for (int y = 16; y < 24; y++) {
+			for (int x = 16; x < 24; x++) {
+				height[y][x] = 1;
+			}
+		}
+		Exception stop = apply(15, new ArrayList<TilePainterForm.Placed>());
+		for (int[] row : height) {
+			Arrays.fill(row, 0);
+		}
+		check(stop == null, "a map with a slope applies (stopped by: " + stop + ")");
+		File area = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, 21);
+		check(!needed.isEmpty() && areaTextures(Files.readAllBytes(area.toPath())).containsAll(needed),
+				"and its area now holds the cliff texture(s) " + needed);
 	}
 
 	/**

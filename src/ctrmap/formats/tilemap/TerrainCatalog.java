@@ -463,7 +463,7 @@ public class TerrainCatalog {
 
 	/** The textures a donor's material references, cached: a caller that only
 	 *  wants to know what to carry must not pay for a region read every time. */
-	static synchronized List<String> donorTextures(Donor d) {
+	public static synchronized List<String> donorTextures(Donor d) {
 		String key = d.donorRegion + ":" + d.donorMesh;
 		List<String> cached = donorTextureCache.get(key);
 		if (cached != null) {
