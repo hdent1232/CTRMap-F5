@@ -142,19 +142,14 @@
   "sha256": "9298ff605b3506fa2ab4caffbe3ea30ad72bf1976096c208198d3b3dc053a907"
  },
  "src/ctrmap/humaninterface/PaintForm.java": {
-  "survivors": 2,
-  "killed": 4,
+  "survivors": 1,
+  "killed": 5,
   "unmeasured": 3,
   "lines": [
    {
     "line": 856,
     "kind": "negate-if",
     "code": "if (rd >= 0) {"
-   },
-   {
-    "line": 685,
-    "kind": "negate-if",
-    "code": "if (mTileMapPanel != null) {"
    }
   ],
   "sha256": "d0a6637aa13dd89a4d310a0bfbb25193fd27633210e6a2011f54f36a4da82980"
