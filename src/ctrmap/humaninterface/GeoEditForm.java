@@ -224,6 +224,13 @@ public class GeoEditForm extends JPanel {
 			try {
 				p = ctrmap.formats.h3d.MapPrefab.load(fc.getSelectedFile());
 				clipboard = p;
+				//what the cut left out is a property of the prefab: the file
+				//carries it now, so the warning the copy dialog gave once is
+				//given again to whoever stamps it in a later session
+				if (p.facesDropped > 0) {
+					ctrmap.Ui.message(this, "Loaded \"" + p.name + "\".\n\n" + p.cutReport(),
+							"Stamp prefab", JOptionPane.WARNING_MESSAGE);
+				}
 			} catch (Exception ex) {
 				status.setText("Could not load the prefab: " + ex.getMessage());
 				return;
