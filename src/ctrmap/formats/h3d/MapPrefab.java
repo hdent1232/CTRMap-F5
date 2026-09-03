@@ -321,6 +321,8 @@ public class MapPrefab {
 		public int tilesStamped;
 		/** Footprint tuples NOT written because the user's own tile stays: behaviour -> count (see stampFootprint). */
 		public final Map<String, Integer> tilesKept = new TreeMap<>();
+		/** Every tuple a verbatim copy wrote, by behaviour (see stampTiles). */
+		public final Map<String, Integer> tilesWritten = new TreeMap<>();
 	}
 
 	/**

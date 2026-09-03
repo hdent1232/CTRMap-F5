@@ -12,6 +12,8 @@ import ctrmap.formats.h3d.RegionFactory;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.formats.tilemap.Tilemap;
+import ctrmap.humaninterface.BuildingPaletteDialog;
 import ctrmap.humaninterface.TilePainterForm;
 import ctrmap.tools.BuildingHarvester;
 import java.io.File;
@@ -38,10 +40,12 @@ import java.util.TreeSet;
  *     of it could not be placed.</li>
  * <li>The donor's movement tuples were copied over the user's paint wholesale.
  *     "Route 110 fence 2" turned 366 painted path tiles into surf water; a
- *     Littleroot interior wrote 16 door tiles that no warp backs; a Rustboro tree
- *     planted two jump-down ledges. Only the donor's walls (and the door tile of
- *     a wired building) may replace the paint now, and Apply reports what it
- *     kept.</li>
+ *     Rustboro tree planted two jump-down ledges. Only the donor's solid tiles
+ *     (and the door tile of a wired building) may replace the paint now, and
+ *     Apply reports what it kept. The first fix read the 0xD4 tuple as a door
+ *     and kept it as paint: every retail 0xD4 tile is an impassable piece of
+ *     furniture (Littleroot's bookshelf row), so a placed room had 16 shelves
+ *     the player walked through, and the dialog called them doors.</li>
  * <li>Collision that crossed the cut box was dropped, so bridges and stairs
  *     arrived with no walkable surface ("Shoal Cave bridge 6": 0 of 20 crossing
  *     triangles kept) and the player walked through the deck at ground height.
@@ -129,10 +133,11 @@ public class PlacementGuardsTest {
 				"a refused building leaves the map untouched");
 	}
 
-	/** Only the donor's walls may replace the user's paint; everything else is reported as kept. */
+	/** Only the donor's solid tiles may replace the user's paint; everything else is reported as kept. */
 	static void paintKeptUnderDonorBehaviour() throws Exception {
 		//a Cycling Road slab (366 surf tiles in its footprint) and a Littleroot
-		//interior (16 door tiles, 2 walkable) over a map painted entirely as path
+		//interior (16 bookshelf tiles on the 0xD4 object code, 14 more on its
+		//siblings, 2 walkable) over a map painted entirely as path
 		BuildingCatalog.Entry[] donors = {
 			entry("cycling road slab", 186, 28, 0, 1, 21, 17, -9),
 			entry("littleroot interior", 510, 114, 6, 6, 22, 22, 0)
@@ -140,8 +145,9 @@ public class PlacementGuardsTest {
 		for (BuildingCatalog.Entry e : donors) {
 			RegionFactory.BlankContent bc = paintedPath();
 			byte[] before = bc.tilemap.clone();
+			MapPrefab p = BuildingPaletteDialog.cachedPrefab(e);
 			String note = TilePainterForm.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null);
-			int walls = 0;
+			int walls = 0, objects = 0, solidLost = 0;
 			Map<String, Integer> leaked = new TreeMap<>();
 			for (int y = 0; y < DIM; y++) {
 				for (int x = 0; x < DIM; x++) {
@@ -149,16 +155,48 @@ public class PlacementGuardsTest {
 						String b = behaviour(tile(bc.tilemap, x, y));
 						if ("wall".equals(b)) {
 							walls++;
+						} else if ("object".equals(b)) {
+							objects++;
 						} else {
 							leaked.merge(b, 1, Integer::sum);
 						}
 					}
 				}
 			}
+			//what is solid in the donor - plain walls and its furniture codes
+			//alike - must be solid on the map; the room's prefab carries only two
+			//collision triangles, so nothing else stops the player
+			for (int y = 0; y < p.tilesH; y++) {
+				for (int x = 0; x < p.tilesW; x++) {
+					String donor = behaviour(p.tiles[x][y]);
+					if (("wall".equals(donor) || "object".equals(donor)) && (tile(bc.tilemap, 5 + x, 5 + y)[0] & 1) == 0) {
+						solidLost++;
+					}
+				}
+			}
 			check(walls > 0, e.name + ": the footprint's walls block the paint (" + walls + " tiles)");
 			check(leaked.isEmpty(), e.name + ": no painted tile changed behaviour under the footprint " + leaked);
+			check(solidLost == 0, e.name + ": every tile solid in the donor is solid on the map (" + solidLost + " came out walkable)");
 			check(note.contains("kept as painted"), e.name + ": Apply reports the donor tiles it withheld: " + note.trim());
+			if (objects > 0) {
+				check(note.contains(objects + " of them"), e.name + ": Apply says how many blocked tiles carry the donor's object codes ("
+						+ objects + "): " + note.trim());
+			}
 		}
+		//the Geometry tool's explicit "also update movement tiles" copies every
+		//tuple; its status line used to say "+N tiles" and nothing about what
+		//kinds - the same silence, one tool over
+		MapPrefab room = BuildingPaletteDialog.cachedPrefab(donors[1]);
+		Map<String, Integer> kinds = new TreeMap<>();
+		for (int y = 0; y < room.tilesH; y++) {
+			for (int x = 0; x < room.tilesW; x++) {
+				kinds.merge(behaviour(room.tiles[x][y]), 1, Integer::sum);
+			}
+		}
+		MapPrefab.StampResult r = new MapPrefab.StampResult();
+		room.stampTiles(r, new Tilemap(region(510)), 5, 5);
+		check(r.tilesStamped == room.tilesW * room.tilesH && kinds.equals(r.tilesWritten),
+				"a verbatim tile copy accounts for every tuple by behaviour: wrote " + r.tilesWritten + ", the donor holds " + kinds);
 	}
 
 	/** Collision crossing the box is clipped to it, keeps the donor's heights, and reaches the map. */
@@ -424,7 +462,8 @@ public class PlacementGuardsTest {
 		return new byte[]{tilemap[o], tilemap[o + 1], tilemap[o + 2], tilemap[o + 3]};
 	}
 
-	/** This test's own reading of a movement tuple (behaviour is byte 3; bit 0 of byte 0 blocks). */
+	/** This test's own reading of a movement tuple (behaviour is byte 3; bit 0 of byte 0 blocks;
+	 *  a blocked tile whose code is above 0x01 is one of the game's furniture/object tiles). */
 	static String behaviour(byte[] t) {
 		int b0 = t[0] & 0xFF, b2 = t[2] & 0xFF, b3 = t[3] & 0xFF;
 		if (b2 == 0x18 && b3 == 0x3D) {
@@ -442,10 +481,10 @@ public class PlacementGuardsTest {
 		if (b3 >= 0x72 && b3 <= 0x75) {
 			return "ledge";
 		}
-		if (b3 == 0xD4) {
-			return "door";
+		if ((b0 & 1) == 0) {
+			return "walkable";
 		}
-		return (b0 & 1) == 1 ? "wall" : "walkable";
+		return b3 <= 0x01 ? "wall" : "object";
 	}
 
 	static void check(boolean ok, String what) {
