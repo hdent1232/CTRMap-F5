@@ -449,12 +449,12 @@
   "unmeasured": 1,
   "lines": [
    {
-    "line": 510,
+    "line": 689,
     "kind": "negate-if",
     "code": "if (Workspace.snapshotIsForeign(gamePath)) {"
    }
   ],
-  "sha256": "1794cc131c8af8f75fd681a1165579ad0169504bc8ef7ebe26a3a41a468dae97"
+  "sha256": "762b4853bd6dfdabb848bd990d7cae28ccc8b0ad80d9b00da076d70f6886a154"
  },
  "src/ctrmap/Ui.java": {
   "survivors": 2,
@@ -549,27 +549,27 @@
   "unmeasured": 0,
   "lines": [
    {
-    "line": 58,
+    "line": 59,
     "kind": "negate-if",
-    "code": "if (!keepOrRetakeBackup(gameField.getText())) {"
+    "code": "if (!keepOrRetakeBackup(this, gameField.getText())) {"
    },
    {
-    "line": 95,
+    "line": 105,
     "kind": "negate-if",
     "code": "if (!Workspace.snapshotIsForeign(newGamePath)) {"
    },
    {
-    "line": 107,
+    "line": 117,
     "kind": "negate-if",
     "code": "if (r != JOptionPane.YES_OPTION) {"
    },
    {
-    "line": 109,
+    "line": 118,
     "kind": "flip-return",
     "code": "return false;"
    }
   ],
-  "sha256": "d75ad29acd530bf09b4d26c2ab73e1021264fdbdc1df2cb39e43a580fbf6e2c4"
+  "sha256": "019b667499609d2a28689ac303f886c44260b258432eaa05e7ace9cec6b1f901"
  },
  "src/ctrmap/formats/h3d/BchTexturePack.java": {
   "survivors": 4,
