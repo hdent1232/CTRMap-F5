@@ -1,15 +1,9 @@
 {
  "src/ctrmap/formats/h3d/MapPrefab.java": {
-  "survivors": 1,
-  "killed": 16,
+  "survivors": 0,
+  "killed": 17,
   "unmeasured": 1,
-  "lines": [
-   {
-    "line": 908,
-    "kind": "negate-if",
-    "code": "if (p.donorModel != null && BchMapModel.isMapModel(p.donorModel)) {"
-   }
-  ],
+  "lines": [],
   "sha256": "9acc753a7a137ec9f8b7d154b8d5e723f8a483e1c2f7ecf39954130c9fd95d66"
  },
  "src/ctrmap/formats/tilemap/TilePalette.java": {

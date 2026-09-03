@@ -19,7 +19,14 @@ import java.util.List;
  * - stamping: appended geometry lands EXACTLY at anchor+relative positions,
  *   result re-parses clean in BOTH parsers (BchMapModel + the render parser);
  * - collision stamp: exact triangle-count growth, rebuilt file valid;
- * - save/load: byte-faithful prefab file round-trip.
+ * - save/load: byte-faithful prefab file round-trip, skinning included.
+ *
+ * <p>The skinning flag is the one field the file does NOT store: the load
+ * re-reads it from the embedded donor. Nothing noticed when that re-read was
+ * turned off, and a prefab that comes back claiming nothing is skinned is a
+ * prefab {@link ctrmap.tools.BuildingHarvester} will file in the catalogue -
+ * accepting them once let fifteen skinned cuts through, and each placed as a
+ * few triangles under a full-size invisible wall.
  *
  * Usage: java ctrmap.tests.MapPrefabTest <path-to-a039-garc> [sampleStep]
  */
@@ -32,6 +39,7 @@ public class MapPrefabTest {
 		File scratch = Scratch.dir("ctrmap_prefab_test");
 		GARC garc = new GARC(garcFile);
 		int tested = 0, selfOk = 0, crossOk = 0, crossSkipped = 0, roundtripOk = 0, failures = 0, emptyBox = 0;
+		int skinnedSeen = 0;
 		for (int i = 0; i < garc.length; i += step) {
 			try {
 				GR grA = tempGR(scratch, garc, i);
@@ -58,6 +66,19 @@ public class MapPrefabTest {
 				if (p2.pieces.size() != p.pieces.size() || p2.collTris.size() != p.collTris.size()
 						|| !java.util.Arrays.equals(p2.pieces.get(0).vertexBytes, p.pieces.get(0).vertexBytes)) {
 					throw new IllegalStateException("save/load mismatch");
+				}
+				//the skinning flag is not written to the file - the load re-reads
+				//it from the embedded donor, and a prefab that comes back with it
+				//cleared is one the harvester will accept and the catalogue will
+				//place as an invisible wall
+				for (int pi = 0; pi < p.pieces.size(); pi++) {
+					boolean cut = p.pieces.get(pi).skinned, back = p2.pieces.get(pi).skinned;
+					if (cut != back) {
+						throw new IllegalStateException("save/load lost the skinning of piece " + pi
+								+ " (" + p.pieces.get(pi).material + "): the cut says " + cut
+								+ ", the reloaded file says " + back);
+					}
+					skinnedSeen += cut ? 1 : 0;
 				}
 				roundtripOk++;
 
@@ -115,9 +136,16 @@ public class MapPrefabTest {
 				}
 			}
 		}
+		//a round-trip over cuts that are all unskinned would prove nothing about
+		//the flag, so the sample must have met at least one skinned piece
+		if (skinnedSeen == 0 && roundtripOk > 0) {
+			failures++;
+			System.out.println("FAIL fixture: no sampled cut carried a skinned piece, so the"
+					+ " save/load skinning check above asserted nothing - lower the sample step");
+		}
 		System.out.println("\nMapPrefab: tested=" + tested + " (emptyBox=" + emptyBox + ")  self=" + selfOk
 				+ "  cross=" + crossOk + " (no-shared-mats " + crossSkipped + ")  saveload=" + roundtripOk
-				+ "  failures=" + failures);
+				+ " (skinned pieces round-tripped " + skinnedSeen + ")  failures=" + failures);
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (failures > 0) {
 			System.exit(1);
