@@ -86,47 +86,11 @@
   "sha256": "4d05cec24b80e98abfd393603112c0751b151a58831f7dad5008d1450878f537"
  },
  "src/ctrmap/tools/BuildingHarvester.java": {
-  "survivors": 7,
-  "killed": 0,
+  "survivors": 0,
+  "killed": 7,
   "unmeasured": 0,
-  "lines": [
-   {
-    "line": 180,
-    "kind": "negate-if",
-    "code": "if (!whole) {"
-   },
-   {
-    "line": 571,
-    "kind": "negate-if",
-    "code": "if (!Float.isNaN(gY) && gY >= c.minY - 9 && gY <= c.maxY && Math.abs(gY - c.minY) < nearest) {"
-   },
-   {
-    "line": 316,
-    "kind": "negate-if",
-    "code": "if (familyOf(e.getKey()) == family) {"
-   },
-   {
-    "line": 327,
-    "kind": "negate-if",
-    "code": "if (familyOf(e.getKey()) == null && e.getValue() > most) {"
-   },
-   {
-    "line": 350,
-    "kind": "negate-if",
-    "code": "if (faces > bestFaces) {"
-   },
-   {
-    "line": 355,
-    "kind": "negate-if",
-    "code": "if (best != null && bestFaces > biggestUnnamed()) {"
-   },
-   {
-    "line": 386,
-    "kind": "negate-if",
-    "code": "if (ml.contains(family[k])) {"
-   }
-  ],
-  "sha256": "d1db32b011eacb3f967efec35ed399445ea10187801bba4ed64137c2453fe6e5"
+  "lines": [],
+  "sha256": "3b56a80fe981822a3bcbd90b82e68e8f0595c6b57affedee5f60e568fad5b7a3"
  },
  "src/ctrmap/formats/tilemap/PaintedRegionBuilder.java": {
   "survivors": 2,
@@ -572,31 +536,10 @@
   "sha256": "d75ad29acd530bf09b4d26c2ab73e1021264fdbdc1df2cb39e43a580fbf6e2c4"
  },
  "src/ctrmap/formats/h3d/BchTexturePack.java": {
-  "survivors": 4,
-  "killed": 9,
+  "survivors": 0,
+  "killed": 13,
   "unmeasured": 1,
-  "lines": [
-   {
-    "line": 399,
-    "kind": "negate-if",
-    "code": "if (tgtFile == null) {"
-   },
-   {
-    "line": 404,
-    "kind": "negate-if",
-    "code": "if (c.pack != null) {"
-   },
-   {
-    "line": 405,
-    "kind": "negate-if",
-    "code": "if (!tgt.storeFile(c.subfile, c.pack)) {"
-   },
-   {
-    "line": 406,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"could not write area \" + targetArea);"
-   }
-  ],
+  "lines": [],
   "sha256": "3f70a626e78fd65f3ea625bb3f47c2d971472e94d301829d8eeb82cdd1bcef97"
  },
  "src/ctrmap/formats/tilemap/TerrainCatalog.java": {
@@ -634,22 +577,16 @@
   "sha256": "7d941930a872401353f3b010233652d9d00902abf7c774c5c42f704be7a794ca"
  },
  "src/ctrmap/formats/h3d/BuildingCatalog.java": {
-  "survivors": 1,
-  "killed": 1,
+  "survivors": 0,
+  "killed": 2,
   "unmeasured": 0,
-  "lines": [
-   {
-    "line": 197,
-    "kind": "flip-return",
-    "code": "return false;"
-   }
-  ],
+  "lines": [],
   "sha256": "a7dcdbbbadb74c389cac310040f9b77e4635ada42d2a5d32a04cb9fc309867eb"
  },
  "_meta": {
   "attempted": 232,
-  "survived": 78,
-  "killed": 128,
+  "survived": 66,
+  "killed": 140,
   "unmeasured": 26,
   "measured_at": "5637163"
  }
