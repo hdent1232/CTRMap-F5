@@ -10,6 +10,7 @@ import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.npcreg.NPCRegistry;
+import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.humaninterface.NPCEditForm;
@@ -25,10 +26,12 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import javax.swing.JComboBox;
 import javax.swing.JFormattedTextField;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JSpinner;
 
 /**
@@ -57,6 +60,21 @@ import javax.swing.JSpinner;
  *     and the drag tool assigned the collision height raw - NaN on the lower
  *     half of a map taller than wide. The box must follow position, and a
  *     drag where the mesh has no answer keeps the altitude.</li>
+ * <li>Three of the form's own dialogues were still bare JOptionPanes: the
+ *     out-of-order-uid question, the missing-registry-entry question and the
+ *     soft-lock warning. A bare dialog is unassertable AND unreachable
+ *     headless, and on a desktop it is worse than that - foreign-snapshot
+ *     warnings of exactly this shape appeared mid-battery and the run only
+ *     finished because somebody was at the machine to click them. Each is
+ *     driven here through ctrmap.Ui: the question must be asked, and the
+ *     answer must be the one that is acted on.</li>
+ * <li>Five mutants the sweep could only record as survivors, because each
+ *     lived behind something a suite cannot have: the zone-full refusal
+ *     behind the modal "Add NPC / object" chooser, and the four null tests
+ *     inside methods handed a live GL context. The chooser is answerable now;
+ *     the GL decisions moved out of the GL calls into modelledNPCs() and
+ *     ownedModels(), which are asked here directly. Rendering itself is still
+ *     untested - only what it would render is.</li>
  * </ol>
  *
  * Usage: java ctrmap.tests.NpcEditFormGuardsTest &lt;pristine dump root&gt;
@@ -84,6 +102,11 @@ public class NpcEditFormGuardsTest {
 			newEntryStopsAtTheCeiling(zo);
 			overlayFollowsPosition(zo);
 			dragKeepsAltitudeOffTheMesh(zo);
+			misnumberedUidsAskFirst(zo);
+			missingRegistryEntryAsksFirst(zo);
+			softLockWarningReachesTheUser(zo);
+			addTemplateStopsAtTheCeiling(zo);
+			viewportDrawsOnlyModelledNPCs(zo, gr);
 		}
 		altitudeFromMesh();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -345,6 +368,219 @@ public class NpcEditFormGuardsTest {
 		check(npc.z3DCoordinate == 12.5f, "and keeps the altitude past its edge, where the lookup is NaN");
 	}
 
+	/**
+	 * A zone whose NPC uids are not their positions. Opening it must ask
+	 * before renumbering, and the question must be answerable without a
+	 * screen: as a bare JOptionPane it threw headless and blocked a desktop.
+	 */
+	static void misnumberedUidsAskFirst(GARC zo) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		e.npcs.get(3).uid = 99;
+		check(e.firstMisnumberedNPC() == 3, "zone " + ZONE + " NPC 3 carries uid 99 - the gap an earlier delete left");
+
+		List<String> said = ctrmap.Ui.record(JOptionPane.NO_OPTION);
+		try {
+			new NPCEditForm().loadFromEntities(e, null);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).contains("Renumber them now?"), "opening the zone asks first: " + said);
+		check(e.npcs.get(3).uid == 99 && e.firstMisnumberedNPC() == 3 && !e.modified, "No leaves the uids as they were");
+
+		said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
+		try {
+			new NPCEditForm().loadFromEntities(e, null);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1, "it asks again on the next open");
+		check(e.firstMisnumberedNPC() == -1 && e.npcs.get(3).uid == 3 && e.modified, "and Yes renumbers them by position");
+	}
+
+	/**
+	 * An NPC whose MoveModel has no registry entry. The form offers to write
+	 * dummy registry data, which is a change to the area's registry - so it
+	 * must ask, through ctrmap.Ui, and act on the answer it is given.
+	 */
+	static void missingRegistryEntryAsksFirst(GARC zo) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		NPCRegistry reg = new NPCRegistry(temp(new byte[0]));
+		check(reg.entries.isEmpty(), "an empty registry has no entry for NPC 0's MoveModel");
+
+		NPCEditForm form = new NPCEditForm();
+		List<String> said = ctrmap.Ui.record(JOptionPane.NO_OPTION);
+		try {
+			form.loadFromEntities(zone.entities, reg);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).contains("create the registry entry"), "the form asks before writing registry data: " + said);
+		check(reg.entries.isEmpty() && !reg.modified && form.regentry == null, "No writes no registry data");
+		check(form.loaded, "and the form is usable afterwards");
+
+		said = ctrmap.Ui.record(); //no answer: the same as closing the question
+		try {
+			new NPCEditForm().loadFromEntities(zone.entities, reg);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && reg.entries.isEmpty() && !reg.modified, "closing the question writes none either");
+
+		//Yes, against a registry that is already at capacity: the answer is
+		//acted on (it gets past the No branch) and the refusal is the reason
+		for (int uid = 1000; uid < 1000 + NPCRegistry.MAX_ENTRIES; uid++) {
+			NPCRegistry.NPCRegistryEntry filler = new NPCRegistry.NPCRegistryEntry();
+			filler.uid = uid;
+			filler.model = uid;
+			reg.entries.put(uid, filler);
+		}
+		said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
+		try {
+			new NPCEditForm().loadFromEntities(zone.entities, reg);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 2 && said.get(1).contains("maximum capacity"), "Yes on a full registry says why it could not: " + said);
+		check(reg.entries.size() == NPCRegistry.MAX_ENTRIES && !reg.modified, "and no entry was invented over the cap");
+	}
+
+	/**
+	 * Saving an NPC onto a talker script whose message line does not exist.
+	 * The save goes through - the record is legal - but the user must be told
+	 * the NPC will freeze the game, and that warning was a bare JOptionPane.
+	 */
+	static void softLockWarningReachesTheUser(GARC zo) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		NPCEditForm form = new NPCEditForm();
+		form.loadFromEntities(e, null);
+		//zone 24's script 8 is a talker on message line 8; a story file of one
+		//empty line has no line 8, which is the soft-lock exactly
+		withStoryFile(form, zo, zone.header.textID, "");
+		((JSpinner) field(form, "scr")).setValue(8);
+		List<String> said = ctrmap.Ui.record();
+		boolean saved;
+		try {
+			saved = form.saveEntry();
+		} finally {
+			ctrmap.Ui.stopRecording();
+			Workspace.storytexts = null;
+		}
+		check(saved && e.npcs.get(0).script == 8, "the save goes through - a missing message is a warning, not a refusal");
+		check(said.size() == 1 && said.get(0).contains("soft-lock"), "and the user is warned: " + said);
+	}
+
+	/**
+	 * "Add NPC / object" on a zone that already holds every record the format
+	 * can count. The chooser was a modal JOptionPane, so nothing after it -
+	 * including this refusal, the one thing standing between the user and an
+	 * unloadable zone - could be reached from a guard at all. Both arms are
+	 * driven: an NPC template against 255 NPCs, a Sign against 255 props.
+	 */
+	static void addTemplateStopsAtTheCeiling(GARC zo) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		NPCEditForm form = new NPCEditForm();
+		form.loadFromEntities(e, null);
+
+		List<String> said = ctrmap.Ui.record(); //no answer: the same as cancelling the chooser
+		try {
+			addTemplate(form);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).contains("What would you like to add?"), "the chooser is asked through Ui: " + said);
+		check(e.npcs.size() == 9 && e.furniture.size() == 2, "and cancelling it adds nothing");
+
+		while (e.npcs.size() < ZoneEntities.MAX_PER_KIND) {
+			ZoneEntities.NPC filler = new ZoneEntities.NPC();
+			filler.uid = e.npcs.size();
+			e.npcs.add(filler);
+		}
+		e.NPCCount = e.npcs.size();
+		said = ctrmap.Ui.record("Talking NPC");
+		try {
+			addTemplate(form);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 2 && said.get(1).contains("255 NPCs"), "a full NPC list is refused, and said so: " + said);
+		check(e.npcs.size() == ZoneEntities.MAX_PER_KIND, "and nothing was added");
+
+		while (e.furniture.size() < ZoneEntities.MAX_PER_KIND) {
+			e.furniture.add(new ZoneEntities.Prop());
+		}
+		e.furnitureCount = e.furniture.size();
+		said = ctrmap.Ui.record("Sign");
+		try {
+			addTemplate(form);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 2 && said.get(1).contains("255 props"), "a full prop list is refused against the prop count, not the NPC one: " + said);
+		check(e.furniture.size() == ZoneEntities.MAX_PER_KIND, "and nothing was added");
+	}
+
+	/**
+	 * What the viewport would draw, and whose GL buffers this form owns. The
+	 * mutation sweep recorded the null tests inside renderCM3D, uploadBuffers,
+	 * deleteGLInstanceBuffers and the click test as survivors, all for the
+	 * same reason: each sits in a method handed a live GL context, which no
+	 * suite has. The decision itself is plain logic and is asked here.
+	 */
+	static void viewportDrawsOnlyModelledNPCs(GARC zo, GARC gr) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		NPCEditForm form = new NPCEditForm();
+		form.loadFromEntities(e, null);
+		check(form.modelledNPCs().length == 0, "with no registry the viewport draws nothing");
+		check(form.ownedModels().isEmpty(), "and the form owns no GL buffers to upload or delete");
+
+		NPCRegistry reg = registryFor(e, gr);
+		form.loadFromEntities(e, reg);
+		check(form.modelledNPCs().length == e.npcs.size(), "every NPC with a registered model is drawn");
+		check(reg.models.size() > 1 && form.ownedModels().size() == reg.models.size(), "and the form owns every model in the registry");
+
+		int gone = e.npcs.get(0).model;
+		reg.models.remove(gone); //a MoveModel that failed to load
+		int expected = 0;
+		for (ZoneEntities.NPC npc : e.npcs) {
+			if (npc.model != gone) {
+				expected++;
+			}
+		}
+		int[] drawn = form.modelledNPCs();
+		check(expected < e.npcs.size() && drawn.length == expected, "an NPC whose model is missing is skipped, not drawn as its neighbour");
+		boolean ownSlots = true;
+		for (int i = 0; i < drawn.length; i++) {
+			ownSlots &= drawn[i] < e.npcs.size() && (i == 0 || drawn[i] > drawn[i - 1]) && e.npcs.get(drawn[i]).model != gone;
+		}
+		check(ownSlots, "and the drawn slots are the survivors' own, in order");
+		check(form.ownedModels().size() == reg.models.size(), "the owned buffers follow the registry");
+
+		e.NPCCount = 2;
+		check(form.modelledNPCs().length <= 2, "a count shorter than the NPC list draws only what it counts");
+	}
+
+	/** The "Add NPC / object" button, which the form keeps to itself. */
+	static void addTemplate(NPCEditForm form) throws Exception {
+		java.lang.reflect.Method m = form.getClass().getDeclaredMethod("btnAddTalkerActionPerformed", java.awt.event.ActionEvent.class);
+		m.setAccessible(true);
+		m.invoke(form, (java.awt.event.ActionEvent) null);
+	}
+
+	/**
+	 * Hands the form a story-text file without a STORYTEXT archive: the
+	 * pristine set has none, and the form's own cache is what the soft-lock
+	 * check reads once the archive is known to exist.
+	 */
+	static void withStoryFile(NPCEditForm form, GARC anyGarc, int textID, String... lines) throws Exception {
+		Workspace.storytexts = anyGarc; //only ever null-checked on this path
+		setField(form, "storyFile", new GFMessageFile(GFMessageFile.write(Arrays.asList(lines))));
+		setField(form, "storyFileTextID", textID);
+	}
+
 	/** A map panel over a 2 wide, 4 tall matrix; null cells read height 0, past the edge reads NaN. */
 	static TileMapPanel tallMatrix() {
 		TileMapPanel map = new TileMapPanel();
@@ -418,6 +654,12 @@ public class NpcEditFormGuardsTest {
 		Field f = o.getClass().getDeclaredField(name);
 		f.setAccessible(true);
 		return f.get(o);
+	}
+
+	static void setField(Object o, String name, Object value) throws Exception {
+		Field f = o.getClass().getDeclaredField(name);
+		f.setAccessible(true);
+		f.set(o, value);
 	}
 
 	static File temp(byte[] bytes) throws Exception {

@@ -35,6 +35,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
@@ -98,12 +100,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			updateDialogueSection();
 			return;
 		}
-		if (e.firstMisnumberedNPC() != -1 && JOptionPane.showConfirmDialog(frame,
+		if (e.firstMisnumberedNPC() != -1 && ctrmap.Ui.confirm(frame,
 				"This zone's NPC uids are not their positions (an earlier delete left a gap).\n"
 				+ "The game and this editor both number NPCs by position, and the zone\n"
 				+ "will not save until they match.\n\n"
 				+ "Renumber them now? Scripts that address these NPCs by uid will need updating.",
-				"NPC uids out of order", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION) {
+				"NPC uids out of order", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
 			e.renumberNPCs();
 			e.modified = true;
 		}
@@ -385,14 +387,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (reg != null) {
 			regentry = reg.entries.get(npc.model);
 			if (regentry == null) {
-				int createEntry = JOptionPane.showConfirmDialog(frame,
+				int createEntry = ctrmap.Ui.confirm(frame,
 						"This NPC's MoveModel properties could not be found\n"
 						+ "in this area's MoveModel registry under the model UID.\n\n"
 						+ "CTRMap can create dummy registry data for you using the\n"
 						+ "most compatible settings for the majority of NPCs.\n\n"
 						+ "You may need to change collision properties in NRE.\n\n"
-						+ "Do you want to create the registry entry?", "Warning", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-				if (createEntry == JOptionPane.NO_OPTION) {
+						+ "Do you want to create the registry entry?", "Warning", JOptionPane.YES_NO_OPTION);
+				if (createEntry != JOptionPane.YES_OPTION) { //closing the question is not consent to write registry data
 					loaded = true;
 					return;
 				}
@@ -405,8 +407,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					reg.modified = true;
 					regentry = failsafe;
 				} else {
-					JOptionPane.showMessageDialog(this, "The registry's maximum capacity of 31 unique NPCs has been reached.\n"
-							+ "Please free up space in the registry editor and try again.", "Could not create registry entry", JOptionPane.ERROR_MESSAGE);
+					ctrmap.Ui.error(this, "The registry's maximum capacity of 31 unique NPCs has been reached.\n"
+							+ "Please free up space in the registry editor and try again.", "Could not create registry entry");
 				}
 			}
 		}
@@ -491,7 +493,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			if (loaded) {
 				String problem = talkerMessageProblem(npc2.script);
 				if (problem != null) {
-					JOptionPane.showMessageDialog(this,
+					ctrmap.Ui.message(this,
 							"Heads up: this NPC runs a talking script, but " + problem + ".\n\n"
 							+ "Talking to it in-game will FREEZE the game - there is no message box to close.\n\n"
 							+ "Give it text with the \"Edit dialogue\" button, or set its Script to a\n"
@@ -968,8 +970,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		//pick which template to add; "Talking NPC" continues the proven flow below,
 		//the others dispatch to their own self-contained handlers
 		String[] templates = {"Talking NPC", "Sign", "Item giver", "Trainer", "Battle challenge (own trainers)", "Give BP"};
-		Object choice = JOptionPane.showInputDialog(frame, "What would you like to add?", "Add NPC / object",
-				JOptionPane.PLAIN_MESSAGE, null, templates, templates[0]);
+		Object choice = ctrmap.Ui.input(frame, "What would you like to add?", "Add NPC / object",
+				JOptionPane.PLAIN_MESSAGE, templates, templates[0]);
 		if (choice == null) {
 			return;
 		}
@@ -1983,37 +1985,68 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
+	/**
+	 * The NPC slots this form has a model for, in order. The viewport draws
+	 * exactly these and the click test walks exactly these, so the two cannot
+	 * disagree and land a click on an NPC that was never drawn; with no
+	 * registry, or no zone, there is nothing to draw at all.
+	 *
+	 * <p>It is a method of its own because both callers hold a live GL context
+	 * and no test can. The GL calls stay untested; which NPCs they apply to
+	 * does not have to be, and as an inline condition it was a mutation
+	 * survivor in all three of them.
+	 */
+	public int[] modelledNPCs() {
+		if (reg == null || e == null) {
+			return new int[0];
+		}
+		//a count past the end of the list is a corrupt zone, not a reason to throw mid-frame
+		int[] hits = new int[Math.min(e.NPCCount, e.npcs.size())];
+		int n = 0;
+		for (int i = 0; i < hits.length; i++) {
+			if (modelAt(i) != null) {
+				hits[n++] = i;
+			}
+		}
+		return Arrays.copyOf(hits, n);
+	}
+
+	/**
+	 * The models whose GL buffers this form owns - the registry's, or none
+	 * without a registry. Same reason as {@link #modelledNPCs()}: uploading
+	 * and deleting differ only in the GL call made on each, so the decision
+	 * they share is the only part a guard can hold.
+	 */
+	public Collection<H3DModel> ownedModels() {
+		if (reg == null) {
+			return Collections.emptyList();
+		}
+		return reg.models.values();
+	}
+
 	@Override
 	public void renderCM3D(GL2 gl) {
-		if (reg != null) {
-			for (int i = 0; i < e.NPCCount; i++) {
-				H3DModel m = modelAt(i);
-				if (m != null) {
-					updateH3D(i);
-					m.render(gl);
-					if (i == npcIndex && CtrmapMainframe.tool instanceof NPCTool) {
-						m.renderBox(gl);
-					}
-				}
+		for (int i : modelledNPCs()) {
+			updateH3D(i);
+			H3DModel m = modelAt(i);
+			m.render(gl);
+			if (i == npcIndex && CtrmapMainframe.tool instanceof NPCTool) {
+				m.renderBox(gl);
 			}
 		}
 	}
 
 	@Override
 	public void uploadBuffers(GL2 gl) {
-		if (reg != null) {
-			for (H3DModel m : reg.models.values()) {
-				m.uploadAllBOs(gl);
-			}
+		for (H3DModel m : ownedModels()) {
+			m.uploadAllBOs(gl);
 		}
 	}
 
 	@Override
 	public void deleteGLInstanceBuffers(GL2 gl) {
-		if (reg != null) {
-			for (H3DModel m : reg.models.values()) {
-				m.destroyAllBOs(gl);
-			}
+		for (H3DModel m : ownedModels()) {
+			m.destroyAllBOs(gl);
 		}
 	}
 
@@ -2698,11 +2731,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		double closestDist = Float.MAX_VALUE;
 		int closestIdx = -1;
 		GLUgl2 glu = new GLUgl2();
-		for (int i = 0; reg != null && i < e.npcs.size(); i++) {
+		for (int i : modelledNPCs()) {
 			H3DModel m = modelAt(i);
-			if (m == null) {
-				continue;
-			}
 			ZoneEntities.NPC testNpc = e.npcs.get(i);
 			float[][] box = m.boxVectors;
 			if (Utils.isBoxSelected(box, evt, parent, new Vec3f(testNpc.getX(), testNpc.getY(), testNpc.getZ()), new Vec3f(1f, 1f, 1f), new Vec3f(0f, get3DOrientation(testNpc.faceDirection), 0f), mvMatrix, projMatrix, view)) {
