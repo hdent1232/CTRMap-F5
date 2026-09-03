@@ -185,22 +185,11 @@
   "sha256": "d0a6637aa13dd89a4d310a0bfbb25193fd27633210e6a2011f54f36a4da82980"
  },
  "src/ctrmap/humaninterface/WarpEditForm.java": {
-  "survivors": 2,
-  "killed": 3,
+  "survivors": 0,
+  "killed": 5,
   "unmeasured": 0,
-  "lines": [
-   {
-    "line": 638,
-    "kind": "negate-if",
-    "code": "if (e != null) {"
-   },
-   {
-    "line": 638,
-    "kind": "negate-if",
-    "code": "if (e != null) {"
-   }
-  ],
-  "sha256": "3fa8cf12315753a13a02477ce6da48783713ea956feac4382cf44c305dd6212a"
+  "lines": [],
+  "sha256": "0d85c8e36db1f90e1cb62ce1df236ddd605edf3320e66d15eb820b02cfa0b0e9"
  },
  "src/ctrmap/humaninterface/ZoneLoadingPanel.java": {
   "survivors": 0,
