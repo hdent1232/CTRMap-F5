@@ -485,13 +485,15 @@ public class NpcEditFormGuardsTest {
 		form.loadFromEntities(e, null);
 
 		List<String> said = ctrmap.Ui.record(); //no answer: the same as cancelling the chooser
+		Throwable ran;
 		try {
-			addTemplate(form);
+			ran = addTemplate(form);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
 		check(said.size() == 1 && said.get(0).contains("What would you like to add?"), "the chooser is asked through Ui: " + said);
 		check(e.npcs.size() == 9 && e.furniture.size() == 2, "and cancelling it adds nothing");
+		check(ran == null, "and the handler ends there: " + ran);
 
 		while (e.npcs.size() < ZoneEntities.MAX_PER_KIND) {
 			ZoneEntities.NPC filler = new ZoneEntities.NPC();
@@ -501,12 +503,18 @@ public class NpcEditFormGuardsTest {
 		e.NPCCount = e.npcs.size();
 		said = ctrmap.Ui.record("Talking NPC");
 		try {
-			addTemplate(form);
+			ran = addTemplate(form);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
 		check(said.size() == 2 && said.get(1).contains("255 NPCs"), "a full NPC list is refused, and said so: " + said);
 		check(e.npcs.size() == ZoneEntities.MAX_PER_KIND, "and nothing was added");
+		//the refusal has to END the handler. Telling the user the zone is full
+		//and then walking them through the dialogue-entry flow anyway is the
+		//half-refusal this ceiling exists to prevent, and it is not visible in
+		//the counts above: everything past this point asks its questions
+		//through dialogs this suite cannot see.
+		check(ran == null, "and the handler stopped where it refused, instead of carrying on into the talker flow: " + ran);
 
 		while (e.furniture.size() < ZoneEntities.MAX_PER_KIND) {
 			e.furniture.add(new ZoneEntities.Prop());
@@ -514,12 +522,13 @@ public class NpcEditFormGuardsTest {
 		e.furnitureCount = e.furniture.size();
 		said = ctrmap.Ui.record("Sign");
 		try {
-			addTemplate(form);
+			ran = addTemplate(form);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
 		check(said.size() == 2 && said.get(1).contains("255 props"), "a full prop list is refused against the prop count, not the NPC one: " + said);
 		check(e.furniture.size() == ZoneEntities.MAX_PER_KIND, "and nothing was added");
+		check(ran == null, "and the Sign arm stopped where it refused too: " + ran);
 	}
 
 	/**
@@ -563,11 +572,23 @@ public class NpcEditFormGuardsTest {
 		check(form.modelledNPCs().length <= 2, "a count shorter than the NPC list draws only what it counts");
 	}
 
-	/** The "Add NPC / object" button, which the form keeps to itself. */
-	static void addTemplate(NPCEditForm form) throws Exception {
+	/**
+	 * The "Add NPC / object" button, which the form keeps to itself. Whatever
+	 * the handler throws comes back as a value instead of ending the run: a
+	 * handler that walks past its own refusal carries on into the talker
+	 * flow's remaining bare JOptionPanes and dies headless, and that has to
+	 * read as the check below failing - naming what went wrong - rather than
+	 * as the suite stopping four checks early with a stack trace.
+	 */
+	static Throwable addTemplate(NPCEditForm form) throws Exception {
 		java.lang.reflect.Method m = form.getClass().getDeclaredMethod("btnAddTalkerActionPerformed", java.awt.event.ActionEvent.class);
 		m.setAccessible(true);
-		m.invoke(form, (java.awt.event.ActionEvent) null);
+		try {
+			m.invoke(form, (java.awt.event.ActionEvent) null);
+			return null;
+		} catch (java.lang.reflect.InvocationTargetException ex) {
+			return ex.getCause() == null ? ex : ex.getCause();
+		}
 	}
 
 	/**
