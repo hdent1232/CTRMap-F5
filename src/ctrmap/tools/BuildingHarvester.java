@@ -304,26 +304,56 @@ public class BuildingHarvester {
 			return best;
 		}
 
-		/** Triangles of this component whose material names any keyword of the family. */
-		public int facesOf(String[] family) {
+		/** This component's triangles per material name - what its geometry is made of. */
+		public Map<String, Integer> materialTriangles() {
+			return java.util.Collections.unmodifiableMap(matFaces);
+		}
+
+		/** Triangles of this component's materials that belong to the family. */
+		int facesOf(String[] family) {
 			int n = 0;
 			for (Map.Entry<String, Integer> e : matFaces.entrySet()) {
-				String ml = e.getKey().toLowerCase();
-				for (int k = 1; k < family.length; k++) {
-					if (ml.contains(family[k])) {
-						n += e.getValue();
-						break;
-					}
+				if (familyOf(e.getKey()) == family) {
+					n += e.getValue();
 				}
 			}
 			return n;
 		}
 
-		String hint() {
-			for (String[] family : HINT_FAMILIES) {
-				if (facesOf(family) > 0) {
-					return family[0];
+		/** Triangles of the biggest single material no family recognises. */
+		int biggestUnnamed() {
+			int most = 0;
+			for (Map.Entry<String, Integer> e : matFaces.entrySet()) {
+				if (familyOf(e.getKey()) == null && e.getValue() > most) {
+					most = e.getValue();
 				}
+			}
+			return most;
+		}
+
+		/**
+		 * What this component is: the keyword family owning the MOST of its
+		 * triangles, and only when that beats the biggest single part no family
+		 * recognises. It used to be the first family in the list that matched
+		 * anything at all, so the smallest recognisable piece named the whole
+		 * cut: "Littleroot Town lamp" is a furnished room of 4,733 triangles
+		 * whose only family material is 12 triangles of lamp glass, against 924
+		 * of bookshelf alone - and 127 catalogue entries were filed under a
+		 * family another family outweighed. A component nothing recognises is
+		 * named for its size, as it always was. A tie keeps the earlier family.
+		 */
+		String hint() {
+			int bestFaces = 0;
+			String[] best = null;
+			for (String[] family : HINT_FAMILIES) {
+				int faces = facesOf(family);
+				if (faces > bestFaces) {
+					bestFaces = faces;
+					best = family;
+				}
+			}
+			if (best != null && bestFaces > biggestUnnamed()) {
+				return best[0];
 			}
 			return tilesW() <= 2 && tilesH() <= 2 ? "decor" : "structure";
 		}
@@ -347,6 +377,19 @@ public class BuildingHarvester {
 		{"building", "pokecen", "friend", "shop", "gym", "yane", "roof", "kabe", "mado", "door", "house"},
 		{"rock", "iwa", "rock", "gake", "ishi"}
 	};
+
+	/** The family a material name belongs to - the first that claims it - or null. */
+	public static String[] familyOf(String material) {
+		String ml = material.toLowerCase();
+		for (String[] family : HINT_FAMILIES) {
+			for (int k = 1; k < family.length; k++) {
+				if (ml.contains(family[k])) {
+					return family;
+				}
+			}
+		}
+		return null;
+	}
 
 	/** The catalogue kind a hint is filed under. */
 	public static String categoryOf(String hint) {
