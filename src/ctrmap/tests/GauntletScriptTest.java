@@ -14,7 +14,10 @@ import java.util.List;
  * zone script: append a 3-trainer challenge (streak + BP + milestone; messages
  * where the zone has a msg wrapper), reserialize, re-parse, and assert:
  * (a) the script still parses and its dispatch resolves; (b) the new case id
- * is registered and every pre-existing case still resolves; (c) the body's
+ * is registered, every pre-existing case still resolves, and the new case
+ * target is the retail trampoline rather than the emitted PROC (a case is
+ * reached by a JUMP, so a PROC there freezes the game when it returns -
+ * DispatchTrampolineTest is the full corpus guard); (c) the body's
  * SYSREQ_N set covers _CallTrainerBattleCore / _BattleGetResult / WorkGet /
  * WorkSet / PlayerGetBP / PlayerSetBP; (d) the body's SWITCH resolves to its
  * CASETBL, every CASETBL arm and the default land on instruction boundaries
@@ -91,7 +94,7 @@ public class GauntletScriptTest {
 						throw new IllegalStateException("case " + c.getKey() + " no longer resolves");
 					}
 				}
-				verifyBody(re, d.cases.get(newId), mustCall, TRAINERS);
+				verifyBody(re, caseSub(re, d, newId), mustCall, TRAINERS);
 				ok++;
 
 				//one big-emission bound: 30 trainers through the same zone
@@ -112,7 +115,7 @@ public class GauntletScriptTest {
 					if (d2 == null || d2.cases.get(bigId) == null) {
 						throw new IllegalStateException("30-trainer emission failed");
 					}
-					verifyBody(re2, d2.cases.get(bigId), new int[]{mustCall[0], mustCall[1]}, big.trainerIds);
+					verifyBody(re2, caseSub(re2, d2, bigId), new int[]{mustCall[0], mustCall[1]}, big.trainerIds);
 				}
 			} catch (RuntimeException ex) {
 				failures++;
@@ -133,6 +136,27 @@ public class GauntletScriptTest {
 
 	/** Walks the case body to its final RETN, asserting natives, branch and
 	 *  CASETBL integrity, and the trainer-id push constants. */
+	/**
+	 * The subroutine a new dispatch case runs, asserting on the way that the
+	 * case is entered the way the engine requires: its target is the retail
+	 * trampoline (PUSH_P_C(0); CALL sub; JUMP epilogue), never the emitted PROC
+	 * itself, which the engine reaches by a JUMP and cannot return from.
+	 */
+	static PawnInstruction caseSub(GFLPawnScript re, ZoneScriptAnalyzer.Dispatch d, int caseKey) {
+		PawnInstruction target = d.cases.get(caseKey);
+		if (target == null) {
+			throw new IllegalStateException("case " + caseKey + " does not resolve");
+		}
+		if (target.getCommand() == PawnInstruction.Commands.PROC.ordinal()) {
+			throw new IllegalStateException("case " + caseKey + " jumps straight into a PROC");
+		}
+		PawnInstruction sub = ZoneScriptAnalyzer.findCaseSubEntry(re, caseKey);
+		if (sub == null) {
+			throw new IllegalStateException("case " + caseKey + " does not reach a subroutine through its trampoline");
+		}
+		return sub;
+	}
+
 	static void verifyBody(GFLPawnScript re, PawnInstruction start, int[] mustCall, int[] trainerIds) {
 		int gi = idxOf(re.instructions, start);
 		if (gi < 0) {

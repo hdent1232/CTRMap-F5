@@ -13,10 +13,16 @@ import java.util.List;
  * Dry-run gate for the GiveBP script emitter, over every ORAS zone script:
  * append a "give N BP" case, reserialize with getScriptBytes(), re-parse, and
  * assert (a) the script still parses and its dispatch still resolves, (b) the
- * new case id appears in the dispatch, (c) its body contains SYSREQ_N calls to
- * PlayerGetBP and PlayerSetBP with the amount constant, (d) every pre-existing
- * case still resolves to an instruction boundary (no corruption). Structural
- * only - in-game behavior is the user's gate.
+ * new case id appears in the dispatch, (c) the case target is the retail
+ * trampoline rather than the emitted PROC and the subroutine it CALLs contains
+ * SYSREQ_N calls to PlayerGetBP and PlayerSetBP with the amount constant,
+ * (d) every pre-existing case still resolves to an instruction boundary (no
+ * corruption). Structural only - in-game behavior is the user's gate.
+ *
+ * <p>(c) used to walk forward from the case target itself, which asserted the
+ * shape the emitter produced instead of the one the engine requires and so
+ * stayed green while every emitted case froze the game. DispatchTrampolineTest
+ * is the full corpus guard for that.
  *
  * Usage: java ctrmap.tests.GiveBpScriptTest <path-to-zonedata-a013-garc>
  */
@@ -70,8 +76,18 @@ public class GiveBpScriptTest {
 						throw new IllegalStateException("case " + c.getKey() + " no longer resolves");
 					}
 				}
+				// the case target is the retail trampoline, NOT the sub: the
+				// engine reaches a case by a JUMP, so a case pointing straight
+				// at a PROC freezes the game when that PROC returns
+				PawnInstruction tramp = d.cases.get(newId);
+				if (tramp.getCommand() == PawnInstruction.Commands.PROC.ordinal()) {
+					throw new IllegalStateException("new case jumps straight into a PROC");
+				}
+				PawnInstruction start = ZoneScriptAnalyzer.findCaseSubEntry(re, newId);
+				if (start == null) {
+					throw new IllegalStateException("new case does not resolve to a subroutine through its trampoline");
+				}
 				// walk the new case body: must call GetBP then SetBP, and hold AMOUNT
-				PawnInstruction start = d.cases.get(newId);
 				int gi = idxOf(re.instructions, start);
 				boolean sawGet = false, sawSet = false, sawAmt = false, sawRetn = false;
 				for (int i = gi; i < re.instructions.size() && i < gi + 12; i++) {

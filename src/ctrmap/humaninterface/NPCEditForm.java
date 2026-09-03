@@ -736,7 +736,13 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		ZoneScriptAnalyzer.TalkerPattern tp = ZoneScriptAnalyzer.findTalkerPattern(zone.s, scriptId);
 		if (tp == null) {
-			dlgStatus.setText("Script " + scriptId + " is not a simple talker script.");
+			//a malformed case is not merely "not a talker" - say what is wrong
+			//with it, or it reads as an ordinary advanced script right up until
+			//the game freezes on it
+			String defect = ZoneScriptAnalyzer.describeCaseDefect(zone.s, scriptId);
+			dlgStatus.setText(defect != null
+					? "Script " + scriptId + " is broken: " + defect + "."
+					: "Script " + scriptId + " is not a simple talker script.");
 			return;
 		}
 		if (Workspace.getStoryTextGARC() == null) {
