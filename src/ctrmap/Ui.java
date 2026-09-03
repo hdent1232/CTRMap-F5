@@ -35,14 +35,39 @@ public final class Ui {
 	}
 
 	private static Sink sink;
+	private static boolean dialogsEnabled;
 
 	private Ui() {
+	}
+
+	/**
+	 * Lets this program open real dialogs. ONLY the application calls it.
+	 *
+	 * <p>Dialogs are off until something asks for them, rather than on until
+	 * something suppresses them, because the failure is silent and one-sided: a
+	 * suite that reaches a message path it did not wrap in {@link #record()}
+	 * puts a modal window on the developer's screen and blocks until somebody
+	 * clicks it. Several appeared during a battery run - a foreign-snapshot
+	 * warning from three suites that build a scratch game - and the battery only
+	 * finished because the owner happened to be at the machine to dismiss them.
+	 * Unattended, it would have waited forever, and a run that never ends
+	 * reports nothing at all.
+	 *
+	 * <p>With dialogs off the message still goes somewhere it can be read, so a
+	 * suite that trips one is visible in the log rather than lost.
+	 */
+	public static void enableDialogs() {
+		dialogsEnabled = true;
 	}
 
 	/** Tells the user something, through a dialog or through a test's sink. */
 	public static void message(Component parent, String text, String title, int type) {
 		if (sink != null) {
 			sink.message(parent, text, title, type);
+			return;
+		}
+		if (!dialogsEnabled) {
+			System.out.println("[Ui] " + title + ": " + text.replace("\n", " | "));
 			return;
 		}
 		JOptionPane.showMessageDialog(parent, text, title, type);

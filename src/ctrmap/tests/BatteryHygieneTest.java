@@ -68,6 +68,7 @@ public class BatteryHygieneTest {
 			}
 		}
 		builtByTheBattery(repo);
+		noDialogsUnderTest(new File(root, "ctrmap"));
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -158,6 +159,32 @@ public class BatteryHygieneTest {
 				"src/ is what build.ps1 last compiled (otherwise: rebuild before measuring anything)");
 		check(treeDigest(classes, ".built-by-build-ps1").equals(kv.get("classes")),
 				"build/classes is exactly what build.ps1 produced (a file added, removed or replaced since fails this)");
+	}
+
+	/**
+	 * A suite must not be able to open a modal dialog. Ui shows a real window
+	 * only after {@link ctrmap.Ui#enableDialogs()}, which only the application
+	 * calls; anything else prints. Several foreign-snapshot warnings appeared on
+	 * the owner's desktop during a battery run and it finished only because
+	 * somebody was there to dismiss them - unattended, a modal dialog waits
+	 * forever and the run reports nothing.
+	 *
+	 * <p>Checks both halves: dialogs are off right now (this IS a suite), and no
+	 * file outside the application's entry point turns them on.
+	 */
+	static void noDialogsUnderTest(File srcRoot) throws Exception {
+		java.lang.reflect.Field f = ctrmap.Ui.class.getDeclaredField("dialogsEnabled");
+		f.setAccessible(true);
+		check(!((Boolean) f.get(null)), "a suite runs with dialogs off, so no message can block it");
+
+		List<String> callers = new ArrayList<>();
+		for (File src : sources(srcRoot)) {
+			if (SourceSeamTest.stripComments(read(src)).contains("Ui.enableDialogs()")) {
+				callers.add(src.getName());
+			}
+		}
+		check(callers.equals(java.util.Collections.singletonList("CtrmapMainframe.java")),
+				"only the application enables dialogs; found " + callers);
 	}
 
 	/** stamp.ps1's digest: sorted "relpath:sha256" lines, sha256 of the manifest. */
