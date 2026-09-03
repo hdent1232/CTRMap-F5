@@ -124,19 +124,14 @@
   "sha256": "d1db32b011eacb3f967efec35ed399445ea10187801bba4ed64137c2453fe6e5"
  },
  "src/ctrmap/formats/tilemap/PaintedRegionBuilder.java": {
-  "survivors": 2,
-  "killed": 9,
+  "survivors": 1,
+  "killed": 10,
   "unmeasured": 1,
   "lines": [
    {
     "line": 642,
     "kind": "negate-if",
     "code": "if (rd >= 0) {"
-   },
-   {
-    "line": 244,
-    "kind": "negate-if",
-    "code": "if ((touched == null || touched[ty][tx]) && Float.isNaN(baseY[ty][tx]) && !Float.isNaN(ground[ty][tx])) {"
    }
   ],
   "sha256": "9298ff605b3506fa2ab4caffbe3ea30ad72bf1976096c208198d3b3dc053a907"
