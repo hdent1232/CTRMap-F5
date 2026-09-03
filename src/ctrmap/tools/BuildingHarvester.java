@@ -304,62 +304,63 @@ public class BuildingHarvester {
 			return best;
 		}
 
-		String dominantHintOf(String[] keys) {
-			int bestN = 0;
-			String best = null;
+		/** Triangles of this component whose material names any keyword of the family. */
+		public int facesOf(String[] family) {
+			int n = 0;
 			for (Map.Entry<String, Integer> e : matFaces.entrySet()) {
 				String ml = e.getKey().toLowerCase();
-				for (String k : keys) {
-					if (ml.contains(k) && e.getValue() > bestN) {
-						bestN = e.getValue();
-						best = k;
+				for (int k = 1; k < family.length; k++) {
+					if (ml.contains(family[k])) {
+						n += e.getValue();
+						break;
 					}
 				}
 			}
-			return best;
+			return n;
 		}
 
 		String hint() {
-			if (dominantHintOf(new String[]{"platan", "tree", "happa", "leaf", "yashi"}) != null) {
-				return "tree";
-			}
-			if (dominantHintOf(new String[]{"kanban"}) != null) {
-				return "sign";
-			}
-			if (dominantHintOf(new String[]{"saku", "fence"}) != null) {
-				return "fence";
-			}
-			if (dominantHintOf(new String[]{"lamp", "light", "toudai"}) != null) {
-				return "lamp";
-			}
-			if (dominantHintOf(new String[]{"kaidan", "step"}) != null) {
-				return "stairs";
-			}
-			if (dominantHintOf(new String[]{"hashi", "bridge"}) != null) {
-				return "bridge";
-			}
-			if (dominantHintOf(new String[]{"pokecen", "friend", "shop", "gym", "yane", "roof", "kabe", "mado", "door", "house"}) != null) {
-				return "building";
-			}
-			if (dominantHintOf(new String[]{"iwa", "rock", "gake", "ishi"}) != null) {
-				return "rock";
+			for (String[] family : HINT_FAMILIES) {
+				if (facesOf(family) > 0) {
+					return family[0];
+				}
 			}
 			return tilesW() <= 2 && tilesH() <= 2 ? "decor" : "structure";
 		}
 
 		String category() {
-			switch (hint()) {
-				case "tree": return "A_TREE";
-				case "sign": return "A_SIGN";
-				case "fence": return "A_FENCE";
-				case "lamp": return "A_LAMP";
-				case "stairs": return "A_STAIRS";
-				case "bridge": return "A_BRIDGE";
-				case "building": return "A_BUILDING";
-				case "rock": return "A_ROCK";
-				case "decor": return "A_DECOR";
-				default: return "A_STRUCT";
-			}
+			return categoryOf(hint());
+		}
+	}
+
+	/**
+	 * What a component is called, by the words its materials use: {hint, then
+	 * the keywords that suggest it}. The order is the tie-break order.
+	 */
+	public static final String[][] HINT_FAMILIES = {
+		{"tree", "platan", "tree", "happa", "leaf", "yashi"},
+		{"sign", "kanban"},
+		{"fence", "saku", "fence"},
+		{"lamp", "lamp", "light", "toudai"},
+		{"stairs", "kaidan", "step"},
+		{"bridge", "hashi", "bridge"},
+		{"building", "pokecen", "friend", "shop", "gym", "yane", "roof", "kabe", "mado", "door", "house"},
+		{"rock", "iwa", "rock", "gake", "ishi"}
+	};
+
+	/** The catalogue kind a hint is filed under. */
+	public static String categoryOf(String hint) {
+		switch (hint) {
+			case "tree": return "A_TREE";
+			case "sign": return "A_SIGN";
+			case "fence": return "A_FENCE";
+			case "lamp": return "A_LAMP";
+			case "stairs": return "A_STAIRS";
+			case "bridge": return "A_BRIDGE";
+			case "building": return "A_BUILDING";
+			case "rock": return "A_ROCK";
+			case "decor": return "A_DECOR";
+			default: return "A_STRUCT";
 		}
 	}
 
