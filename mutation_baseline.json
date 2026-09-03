@@ -507,17 +507,11 @@
   "sha256": "fef7bd12f9eb30abf01b638d8f171e070cadee16cb55df06909427aa2c0d12bf"
  },
  "src/ctrmap/humaninterface/PropEditForm.java": {
-  "survivors": 1,
-  "killed": 0,
+  "survivors": 0,
+  "killed": 1,
   "unmeasured": 0,
-  "lines": [
-   {
-    "line": 484,
-    "kind": "negate-if",
-    "code": "if (shared != null) {"
-   }
-  ],
-  "sha256": "6ba0b56ff9c29f2aa6d9f9701b5583405ea6e2ec7fab25188757f405b7e85dbc"
+  "lines": [],
+  "sha256": "7a88d959b368d7f05e71f90135620dbb503645ac4bc84ad749865b9a63ae4e63"
  },
  "src/ctrmap/formats/tilemap/Tilemap.java": {
   "survivors": 0,
