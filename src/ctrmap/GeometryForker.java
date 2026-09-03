@@ -15,7 +15,7 @@ import java.util.Map;
  * Gives a zone its OWN private map geometry so that editing its map no longer
  * changes every other zone that shares it. This runs AUTOMATICALLY for every new
  * zone created by {@link ZoneAppender} (a fresh zone is independent by default,
- * which is what users expect); {@link #forkGeometry(int)} is the manual entry
+ * which is what users expect); {@link #ensurePrivate(int)} is the manual entry
  * point for zones that already existed before auto-fork, or for giving an
  * existing base-game zone its own map.
  *
@@ -67,6 +67,10 @@ public class GeometryForker {
 		public int newMatrix;
 		public int[] srcRegions;   // the shared regions the zone used
 		public int[] newRegions;   // their new private copies (parallel to srcRegions)
+		/** Zones whose ground the private copy still carries; empty when it is the zone's alone. */
+		public int[] otherZones = new int[0];
+		/** False when the zone already owned its map and nothing was appended. */
+		public boolean forked;
 	}
 
 	/**
@@ -82,6 +86,7 @@ public class GeometryForker {
 		public byte[] newMatrixBytes; // source matrix, verbatim, with grid region IDs rewired
 		public byte[] newZoBytes;     // source zone ZO container, verbatim, with mapmatrixID repointed
 		public int zoneCellsRewritten; // quarter cells in the zone-switch layer repointed at the forking zone
+		public int[] otherZones;      // zones whose ground the private copy still carries (empty when it claimed the map)
 	}
 
 	/**
@@ -89,9 +94,17 @@ public class GeometryForker {
 	 * Derives the zone's current mapmatrixID from the header, enumerates the
 	 * unique FieldData region IDs in the matrix grid, assigns them new tail
 	 * indices, and produces the rewired matrix + repointed header. No I/O.
+	 *
+	 * @param claimEveryCell true when the map is being cloned for a BRAND-NEW
+	 *                       zone: the copy belongs entirely to it, so every
+	 *                       occupied quarter cell of the zone-switch layer is
+	 *                       relabelled or the new zone never becomes current.
+	 *                       False when an EXISTING zone is taking its own map
+	 *                       away from one it shares - then only the cells that
+	 *                       already said this zone may move.
 	 */
 	public static ForkPlan planFork(byte[] zoBytes, byte[] matBytes, int firstNewRegion, int newMatrixIndex,
-			int owningZone) {
+			int owningZone, boolean claimEveryCell) {
 		if (zoBytes == null || zoBytes.length < 8) {
 			throw new IllegalArgumentException("Zone container too short.");
 		}
@@ -139,15 +152,23 @@ public class GeometryForker {
 		//A matrix carries more than the region grid. When hasLOD == 1 a
 		//zone-switch layer follows it - one entry per QUARTER cell, (w*4)x(h*4) -
 		//that tells the engine which zone the ground under the player belongs to.
-		//Copying it verbatim hands the forked map straight back to the zone we
-		//forked away from: the engine resolves the player's tile to the DONOR
-		//zone, so the new zone never becomes current (no location banner, no
-		//music, its header ignored) and the donor's entities stay live on the new
-		//ground - retail item balls and trainers included. A private fork belongs
-		//to one zone, so every occupied quarter cell is rewritten to say so.
-		//Measured: all 61 retail zones whose matrix has this layer appear in their
-		//own layer; the forked zones scored 0 until this ran.
+		//For a brand-new zone cloned from a donor, copying it verbatim hands the
+		//map straight back to the donor: the new zone never becomes current (no
+		//location banner, no music, its header ignored) and the donor's entities
+		//stay live on the new ground - retail item balls and trainers included.
+		//Measured: all 61 retail zones whose matrix has this layer appear in
+		//their own layer; the appended zones scored 0 until this ran.
+		//
+		//For an EXISTING zone leaving a map it SHARES, claiming every cell does
+		//the same damage in reverse. 19 retail matrices host several zones: on
+		//matrix 8 the blanket rewrite turned {Fallarbor 16, Route 111 64,
+		//Route 112 16, Route 113 64, Route 114 128} into {Fallarbor 288}, so
+		//inside the forked map those four routes' ground resolved to Fallarbor
+		//Town and their banner, music, header and entities stopped applying.
+		//Only cells that already said this zone may move; the rest stay as they
+		//are, and the caller tells the user whose ground came along.
 		int zoneCells = 0;
+		java.util.List<Integer> others = new java.util.ArrayList<>();
 		if (u16(matBytes, sub0) == 1) {
 			int layerOff = sub0 + 8 + w * h * 2;
 			long quads = (long) (w * 4) * (h * 4);
@@ -157,9 +178,15 @@ public class GeometryForker {
 			}
 			for (int q = 0; q < quads; q++) {
 				int pos = layerOff + (int) q * 2;
-				if (u16(newMat, pos) != 0xFFFF) {
+				int cell = u16(newMat, pos);
+				if (cell == 0xFFFF) {
+					continue;
+				}
+				if (claimEveryCell || cell == owningZone) {
 					putU16(newMat, pos, owningZone);
 					zoneCells++;
+				} else if (!others.contains(cell)) {
+					others.add(cell);
 				}
 			}
 		}
@@ -169,6 +196,10 @@ public class GeometryForker {
 
 		ForkPlan p = new ForkPlan();
 		p.zoneCellsRewritten = zoneCells;
+		p.otherZones = new int[others.size()];
+		for (int k = 0; k < others.size(); k++) {
+			p.otherZones[k] = others.get(k);
+		}
 		p.oldMatrix = oldMatrix;
 		p.newMatrixBytes = newMat;
 		p.newZoBytes = newZo;
@@ -190,7 +221,7 @@ public class GeometryForker {
 	 * header / master-table write happens here.
 	 */
 	private static ForkPlan forkArchives(byte[] zoBytes, int firstNewRegion, int newMatrix, int owningZone,
-			GARC gr, GARC mm, File fdDir, File mmDir) throws IOException {
+			boolean claimEveryCell, GARC gr, GARC mm, File fdDir, File mmDir) throws IOException {
 		int hdrOff = u32(zoBytes, 4);
 		int oldMatrix = u16(zoBytes, hdrOff + 4);
 		if (oldMatrix < 0 || oldMatrix >= mm.length) {
@@ -200,7 +231,8 @@ public class GeometryForker {
 		if (srcMatrixFile == null) {
 			throw new IOException("Could not extract map matrix " + oldMatrix + " from the workspace.");
 		}
-		ForkPlan plan = planFork(zoBytes, readAll(srcMatrixFile), firstNewRegion, newMatrix, owningZone);
+		ForkPlan plan = planFork(zoBytes, readAll(srcMatrixFile), firstNewRegion, newMatrix, owningZone,
+				claimEveryCell);
 
 		if (pendingFieldOverrides == null) {
 			pendingFieldOverrides = new HashMap<>();
@@ -256,7 +288,8 @@ public class GeometryForker {
 		int nextMatrix = mm.length;
 		for (int i = 0; i < newRealZones; i++) {
 			int newMatrix = nextMatrix++;
-			ForkPlan plan = forkArchives(newZos[i], nextRegion, newMatrix, oldCount + i, gr, mm, fdDir, mmDir);
+			//a brand-new zone's map is a copy of the donor's and belongs to it alone
+			ForkPlan plan = forkArchives(newZos[i], nextRegion, newMatrix, oldCount + i, true, gr, mm, fdDir, mmDir);
 			nextRegion += plan.srcRegions.length;
 			newZos[i] = plan.newZoBytes;                              // caller writes the repointed ZO
 			int rowOff = (oldCount + i) * MASTER_ROW + 4;
@@ -268,10 +301,34 @@ public class GeometryForker {
 	}
 
 	/**
-	 * Manually forks the given (already-existing) zone's map geometry to a
-	 * private copy in the current ORAS workspace. Pack Workspace afterwards.
+	 * Makes sure the zone owns its map, and is the ONLY way in: it forks when
+	 * the map is still shared and does nothing when it is already private.
+	 * Pack Workspace afterwards. {@link ForkResult#forked} says which happened,
+	 * so the caller can report honestly.
+	 *
+	 * <p>Four of the five callers used to fork unconditionally. A fork appends
+	 * a copy of every region in the zone's matrix plus a new matrix, so running
+	 * one on a zone that was already private - iterating on a test zone does
+	 * that every cycle - added another set and orphaned the previous one, which
+	 * nothing ever reclaims (ZoneRemover leaves them as harmless tail data).
+	 * Measured: four forks of one already-private zone grew FieldData by
+	 * 1.17 MB and left three matrices referenced by no zone at all, every run
+	 * reporting "now has private map geometry" as though it had been needed.
+	 * The worst matrix in the game carries 23 regions and 3.2 MB.
 	 */
-	public static ForkResult forkGeometry(int zoneIndex) throws IOException {
+	public static ForkResult ensurePrivate(int zoneIndex) throws IOException {
+		if (matrixSharers(zoneIndex) > 0) {
+			return forkGeometry(zoneIndex);
+		}
+		return currentGeometry(zoneIndex);
+	}
+
+	/**
+	 * Forks the given (already-existing) zone's map geometry to a private copy
+	 * in the current ORAS workspace. Private because a fork that was not needed
+	 * is pure waste and cannot be undone - go through {@link #ensurePrivate}.
+	 */
+	private static ForkResult forkGeometry(int zoneIndex) throws IOException {
 		if (!Workspace.isOA()) {
 			throw new IOException("Geometry fork is ORAS-only in v1.");
 		}
@@ -298,7 +355,8 @@ public class GeometryForker {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
 		byte[] zoBytes = readAll(zoneFile);
-		ForkPlan plan = forkArchives(zoBytes, gr.length, newMatrix, zoneIndex, gr, mm, fdDir, mmDir);
+		//an existing zone keeps its own cells and leaves its neighbours' alone
+		ForkPlan plan = forkArchives(zoBytes, gr.length, newMatrix, zoneIndex, false, gr, mm, fdDir, mmDir);
 
 		// repoint the ZO container header, in place
 		writeAll(zoneFile, plan.newZoBytes);
@@ -312,6 +370,8 @@ public class GeometryForker {
 		r.newMatrix = newMatrix;
 		r.srcRegions = plan.srcRegions;
 		r.newRegions = plan.newRegions;
+		r.otherZones = plan.otherZones;
+		r.forked = true;
 		return r;
 	}
 

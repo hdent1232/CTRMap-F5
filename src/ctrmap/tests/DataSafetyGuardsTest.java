@@ -12,11 +12,14 @@ import ctrmap.humaninterface.WarpEditForm;
 import ctrmap.humaninterface.ZoneLoadingPanel;
 import java.awt.Point;
 import java.io.File;
+import java.io.RandomAccessFile;
 import java.lang.reflect.Field;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -55,6 +58,12 @@ import javax.swing.JFormattedTextField;
  *     ZoneLoadingPanel did, with a comment saying why; the other dropped every
  *     exception on the floor - and so did six more across Builder, TileMapPanel,
  *     Workspace and SetupWizard once the scan looked past that one panel.</li>
+ * <li>A pack that cannot rewrite the archive must fail loudly. When the
+ *     emulator, an antivirus scanner or Explorer held the archive open,
+ *     packDirectory logged the IOException and returned normally: the
+ *     progress bar filled, Deploy reported "nothing changed", the game showed
+ *     the old map, and a half-written &lt;archive&gt;_new sat in the workspace.
+ *     The user concluded the editor did not save.</li>
  * </ol>
  *
  * Usage: java ctrmap.tests.DataSafetyGuardsTest &lt;path-to-any-garc&gt; [pristine-dump-root]
@@ -70,6 +79,7 @@ public class DataSafetyGuardsTest {
 		String garcPath = args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/4/0";
 		File dump = new File(args.length > 1 ? args[1] : "../RomFS_original_garcs");
 		staleArchive(new File(garcPath));
+		lockedArchive(new File(garcPath));
 		scriptBoundaries();
 		unsetWarp();
 		warpEditor(dump);
@@ -105,6 +115,56 @@ public class DataSafetyGuardsTest {
 		GARC g2 = new GARC(tmp);
 		check(!g2.isStale(), "re-reading clears the staleness");
 		tmp.delete();
+	}
+
+	/**
+	 * A pack against an archive another process is holding must throw, leave
+	 * the archive exactly as it was, leave no half-written copy behind, and
+	 * keep the edit pending for the next pack.
+	 */
+	static void lockedArchive(File src) throws Exception {
+		if (!src.isFile()) {
+			System.out.println("  skip: no GARC at " + src);
+			return;
+		}
+		File root = Files.createTempDirectory("ctrmap_lock").toFile();
+		File archive = new File(new File(root, "game"), src.getName());
+		archive.getParentFile().mkdirs();
+		Files.copy(src.toPath(), archive.toPath());
+		byte[] before = Files.readAllBytes(archive.toPath());
+		Workspace.WORKSPACE_PATH = new File(root, "ws").getAbsolutePath();
+		File dir = new File(Workspace.WORKSPACE_PATH, "mapmatrix");
+		dir.mkdirs();
+
+		//the user edits entry 3 and saves
+		GARC g = new GARC(archive);
+		byte[] edited = g.getDecompressedEntry(3).clone();
+		edited[edited.length - 1] ^= 0x5A;
+		File staged = new File(dir, "3");
+		Files.write(staged.toPath(), edited);
+		Workspace.addPersist(staged);
+
+		//the emulator has the archive open
+		try (RandomAccessFile holder = new RandomAccessFile(archive, "rw");
+				FileLock lock = holder.getChannel().lock()) {
+			try {
+				g.packDirectory(dir);
+				check(false, "a pack against a locked archive throws");
+			} catch (Exception ex) {
+				check(true, "a pack against a locked archive throws (" + ex.getMessage() + ")");
+			}
+		}
+		check(Arrays.equals(before, Files.readAllBytes(archive.toPath())), "the archive on disk is untouched");
+		check(!new File(Workspace.WORKSPACE_PATH, archive.getName() + "_new").exists(),
+				"no half-written <archive>_new is left in the workspace");
+		check(Workspace.persist_paths.contains(staged.getAbsolutePath()), "the edit is still pending");
+
+		//and once the archive is released the same pack goes through
+		g.packDirectory(dir);
+		check(Arrays.equals(new GARC(archive).getDecompressedEntry(3), edited),
+				"the pack goes through once the archive is released, carrying the edit");
+		Workspace.persist_paths.remove(staged.getAbsolutePath());
+		deleteTree(root);
 	}
 
 	/**
@@ -341,6 +401,16 @@ public class DataSafetyGuardsTest {
 			}
 		}
 		return n;
+	}
+
+	static void deleteTree(File f) {
+		File[] kids = f.listFiles();
+		if (kids != null) {
+			for (File k : kids) {
+				deleteTree(k);
+			}
+		}
+		f.delete();
 	}
 
 	static File temp(byte[] bytes) throws Exception {

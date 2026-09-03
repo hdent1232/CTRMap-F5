@@ -242,10 +242,7 @@ public class TilePainterForm {
 			ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed,
 			boolean[][] touched) throws Exception {
 		final boolean composite = touched != null;
-		int sharers = GeometryForker.matrixSharers(zoneIndex);
-		GeometryForker.ForkResult r = sharers > 0
-				? GeometryForker.forkGeometry(zoneIndex)
-				: GeometryForker.currentGeometry(zoneIndex);
+		GeometryForker.ForkResult r = GeometryForker.ensurePrivate(zoneIndex);
 		java.util.Map<Integer, java.util.Set<String>> texNeeds = new java.util.LinkedHashMap<>();
 		//the shared height frame for buildings/door props/warps: the painted
 		//floors' actual Y (retail-surface-relative in composite mode)
