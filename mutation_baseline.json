@@ -27,19 +27,14 @@
   "sha256": "196026387288228fc7273694818c962f0926e0bf7c21b5fea6df0a3cb9734815"
  },
  "src/ctrmap/humaninterface/TilePainterForm.java": {
-  "survivors": 3,
-  "killed": 22,
+  "survivors": 2,
+  "killed": 23,
   "unmeasured": 4,
   "lines": [
    {
     "line": 551,
     "kind": "negate-if",
     "code": "if (mode == 0 || mode == 1) {"
-   },
-   {
-    "line": 633,
-    "kind": "negate-if",
-    "code": "if (reg == null) {"
    },
    {
     "line": 640,
