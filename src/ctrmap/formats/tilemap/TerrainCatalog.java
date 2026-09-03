@@ -330,7 +330,11 @@ public class TerrainCatalog {
 			BchMapModel probe = new BchMapModel(model);
 			for (int i = 0; i < probe.meshCount; i++) {
 				if (d.injectName.equals(probe.getMaterialName(probe.getMeshMaterialIndex(i)))) {
-					return r; //already imported
+					//already imported - but its textures still belong to the
+					//donor's area, which this model cannot vouch for
+					r.donorArea = d.donorArea;
+					r.texturesNeeded.addAll(donorTextures(d));
+					return r;
 				}
 			}
 			GR donorGr = BuildingCatalog.pristineRegion(d.donorRegion);
@@ -380,25 +384,37 @@ public class TerrainCatalog {
 	 * Returns the (possibly unchanged) model plus what the caller must carry
 	 * from the donor's area. Never throws for a missing donor - the painter
 	 * simply keeps its old fallback behaviour then.
+	 *
+	 * <p>A model that ALREADY carries the donor's material still reports that
+	 * donor's textures. They live in the area, which this model cannot vouch
+	 * for: after an Apply whose carry was refused, the material is on disk and
+	 * the texture is not, and an early return that said "nothing needed" made
+	 * the retry paint the same white floor and call it done.
 	 */
 	public static ImportResult ensureMaterial(byte[] model, TilePalette brush) {
 		ImportResult r = new ImportResult();
 		r.model = model;
 		try {
 			BchMapModel probe = new BchMapModel(model);
-			if (PaintedRegionBuilder.hasMaterialFor(probe, brush)) {
-				return r; //the map already paints this brush with a real material
-			}
 			Donor d = donors().get(brush);
+			//already imported by an earlier paint? (idempotent by exact name)
+			//Checked BEFORE the has-a-material test, which the imported material
+			//itself satisfies - the two are only distinguishable by name.
+			if (d != null) {
+				for (int i = 0; i < probe.meshCount; i++) {
+					String n = probe.getMaterialName(probe.getMeshMaterialIndex(i));
+					if (d.injectName.equals(n)) {
+						r.donorArea = d.donorArea;
+						r.texturesNeeded.addAll(donorTextures(d));
+						return r;
+					}
+				}
+			}
+			if (PaintedRegionBuilder.hasMaterialFor(probe, brush)) {
+				return r; //the map paints this brush with its OWN material - nothing to carry
+			}
 			if (d == null) {
 				return r;
-			}
-			//already imported by an earlier paint? (idempotent by exact name)
-			for (int i = 0; i < probe.meshCount; i++) {
-				String n = probe.getMaterialName(probe.getMeshMaterialIndex(i));
-				if (d.injectName.equals(n)) {
-					return r;
-				}
 			}
 			GR donorGr = BuildingCatalog.pristineRegion(d.donorRegion);
 			if (donorGr == null) {
@@ -441,6 +457,31 @@ public class TerrainCatalog {
 			System.err.println("TerrainCatalog: import for " + brush + " failed: " + ex);
 		}
 		return r;
+	}
+
+	private static final Map<String, List<String>> donorTextureCache = new LinkedHashMap<>();
+
+	/** The textures a donor's material references, cached: a caller that only
+	 *  wants to know what to carry must not pay for a region read every time. */
+	public static synchronized List<String> donorTextures(Donor d) {
+		String key = d.donorRegion + ":" + d.donorMesh;
+		List<String> cached = donorTextureCache.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		List<String> names = new ArrayList<>();
+		try {
+			GR donorGr = BuildingCatalog.pristineRegion(d.donorRegion);
+			byte[] donorModel = donorGr == null ? null : donorGr.getFile(1);
+			if (donorModel != null && BchMapModel.isMapModel(donorModel)) {
+				names = textureNamesOf(new BchMapModel(donorModel), d.donorMesh);
+			}
+		} catch (Exception ex) {
+			System.err.println("TerrainCatalog: donor region " + d.donorRegion + " textures unreadable: " + ex);
+			return names; //not cached - a later call with a workspace may do better
+		}
+		donorTextureCache.put(key, names);
+		return names;
 	}
 
 	/** The texture names a donor mesh's material references (header slots). */
