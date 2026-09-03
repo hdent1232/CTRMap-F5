@@ -152,12 +152,13 @@ public class BuildingCatalogTest {
 	static final Map<Integer, Map<String, String>> dominantByRegion = new HashMap<>();
 
 	/**
-	 * The kind the cut itself asks for: over the component the box holds, the
-	 * keyword family owning the most triangles. The dominance is worked out
-	 * here rather than asked of the harvester, so a harvester that names the
-	 * wrong part - or a catalogue built by one that did - is caught rather than
-	 * agreed with. Null when the box is no longer a component the harvester
-	 * cuts.
+	 * The kind the cut itself asks for, worked out here from the component's
+	 * raw material/triangle tally rather than asked of the harvester, so a
+	 * harvester that names the wrong part - or a catalogue built by one that
+	 * did - is caught rather than agreed with: the keyword family owning the
+	 * most triangles, and only when it beats the biggest single part no family
+	 * recognises; otherwise the component is named for its size. Null when the
+	 * box is no longer a component the harvester cuts.
 	 */
 	static String dominantKind(GR region, BuildingCatalog.Entry e) {
 		Map<String, String> byBox = dominantByRegion.get(e.donorRegion);
@@ -168,22 +169,45 @@ public class BuildingCatalogTest {
 				if (c.terrain) {
 					continue;
 				}
-				int bestTris = 0;
-				String[] best = null;
-				for (String[] family : BuildingHarvester.HINT_FAMILIES) {
-					int tris = c.facesOf(family);
-					if (tris > bestTris) {   //ties keep the earlier family, as the harvester does
-						bestTris = tris;
-						best = family;
+				Map<String, Integer> perFamily = new HashMap<>();
+				int biggestUnnamed = 0;
+				for (Map.Entry<String, Integer> m : c.materialTriangles().entrySet()) {
+					String[] family = familyOf(m.getKey());
+					if (family == null) {
+						biggestUnnamed = Math.max(biggestUnnamed, m.getValue());
+					} else {
+						perFamily.merge(family[0], m.getValue(), Integer::sum);
 					}
 				}
-				String hint = best != null ? best[0]
+				String best = null;
+				int bestTris = 0;
+				for (String[] family : BuildingHarvester.HINT_FAMILIES) {   //ties keep the earlier family
+					int tris = perFamily.getOrDefault(family[0], 0);
+					if (tris > bestTris) {
+						bestTris = tris;
+						best = family[0];
+					}
+				}
+				String hint = best != null && bestTris > biggestUnnamed ? best
 						: (c.tilesW() <= 2 && c.tilesH() <= 2 ? "decor" : "structure");
 				byBox.put(box(c.tx0, c.ty0, c.tx1, c.ty1), BuildingHarvester.categoryOf(hint));
 			}
 			dominantByRegion.put(e.donorRegion, byBox);
 		}
 		return byBox.get(box(e.tx0, e.ty0, e.tx1, e.ty1));
+	}
+
+	/** This test's own reading of which family a material name belongs to. */
+	static String[] familyOf(String material) {
+		String ml = material.toLowerCase();
+		for (String[] family : BuildingHarvester.HINT_FAMILIES) {
+			for (int k = 1; k < family.length; k++) {
+				if (ml.contains(family[k])) {
+					return family;
+				}
+			}
+		}
+		return null;
 	}
 
 	static String box(int tx0, int ty0, int tx1, int ty1) {
