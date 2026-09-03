@@ -3,7 +3,9 @@ package ctrmap.tests;
 import ctrmap.GeometryForker;
 import ctrmap.formats.garc.GARC;
 import java.io.File;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -23,14 +25,17 @@ import java.util.Set;
  * balls, trainers with line of sight) live on the new ground. Picking up one of
  * those inherited item balls froze the game.
  *
- * <p>Two checks:
+ * <p>Three checks:
  * <ol>
  * <li><b>Retail invariant</b> - every zone whose matrix carries a zone layer
  * appears in its own layer. Retail scores 61/61 with no exceptions, which is
  * what makes it safe to assert on our own output.</li>
- * <li><b>Fork invariant</b> - after {@link GeometryForker#planFork} the layer
- * names the forking zone and nothing else, the region grid is still remapped,
- * and the entry's byte length is unchanged.</li>
+ * <li><b>Fork invariant</b> - after {@link GeometryForker#planFork} for a
+ * brand-new zone the layer names that zone and nothing else, the region grid is
+ * still remapped, and the entry's byte length is unchanged.</li>
+ * <li><b>Shared-map invariant</b> - forking an EXISTING zone off a matrix it
+ * shares must leave every other zone's cell count exactly as it was. 19 retail
+ * matrices host several zones.</li>
  * </ol>
  *
  * <p>Args: path to the ZoneData GARC (a/0/1/3) and the MapMatrix GARC (a/0/4/0).
@@ -57,12 +62,12 @@ public class MatrixForkTest {
 				continue;
 			}
 			byte[] mat = mm.getDecompressedEntry(matIdx);
-			Set<Integer> zones = layerZones(mat);
+			Map<Integer, Integer> zones = layerZones(mat);
 			if (zones == null) {
 				continue; //no zone layer on this matrix
 			}
 			withLayer++;
-			if (zones.contains(zone)) {
+			if (zones.containsKey(zone)) {
 				ownIdPresent++;
 			} else {
 				failures++;
@@ -96,11 +101,11 @@ public class MatrixForkTest {
 					throw new IllegalStateException("fork changed the matrix entry length "
 							+ mat.length + " -> " + out.length);
 				}
-				Set<Integer> after = layerZones(out);
+				Map<Integer, Integer> after = layerZones(out);
 				if (after == null) {
 					throw new IllegalStateException("fork dropped the zone layer");
 				}
-				if (after.size() != 1 || !after.contains(newZone)) {
+				if (after.size() != 1 || !after.containsKey(newZone)) {
 					throw new IllegalStateException("forked map's zone layer names " + after
 							+ ", want only [" + newZone + "]");
 				}
@@ -123,14 +128,65 @@ public class MatrixForkTest {
 			}
 		}
 		System.out.println("  forks checked: " + forked);
+
+		//An EXISTING zone taking its own map away from one it SHARES is a
+		//different job from cloning a donor map for a brand-new zone, and the
+		//blanket rewrite above is wrong for it: 19 retail matrices host several
+		//zones, and 139 of 536 zones sit on one, so the fork prompt fires for
+		//them. Rewriting every cell hands Route 111's, 112's, 113's and 114's
+		//ground to Fallarbor Town - their banner, music and zone header stop
+		//applying there and their item balls and trainers stop loading, with
+		//nothing said. Only the forking zone's own cells may move.
+		int shared = 0, intact = 0;
+		Set<Integer> sharedMatrices = new LinkedHashSet<>();
+		for (int zone = 0; zone < zoneCount && failures <= 10; zone++) {
+			int matIdx = u16(master, zone * MASTER_ROW + 4);
+			if (matIdx >= mm.length) {
+				continue;
+			}
+			byte[] mat = mm.getDecompressedEntry(matIdx);
+			Map<Integer, Integer> before = layerZones(mat);
+			if (before == null || before.size() < 2) {
+				continue; //this map belongs to one zone; nothing to take from anybody
+			}
+			shared++;
+			sharedMatrices.add(matIdx);
+			Map<Integer, Integer> after = layerZones(GeometryForker.planFork(
+					zo.getDecompressedEntry(zone), mat, mm.length, mm.length, zone).newMatrixBytes);
+			boolean ok = true;
+			for (Map.Entry<Integer, Integer> e : before.entrySet()) {
+				if (e.getKey() == zone) {
+					continue;
+				}
+				if (!e.getValue().equals(after.get(e.getKey()))) {
+					ok = false;
+					if (failures <= 10) {
+						System.out.println("FAIL forking zone " + zone + " off shared matrix " + matIdx
+								+ " took zone " + e.getKey() + "'s ground: " + before + " -> " + after);
+					}
+				}
+			}
+			if (ok) {
+				intact++;
+			} else {
+				failures++;
+			}
+		}
+		System.out.println("  shared maps: " + shared + " zone(s) on " + sharedMatrices.size()
+				+ " matrices, other zones' ground left alone in " + intact);
+
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
 		if (failures > 0) {
 			System.exit(1);
 		}
 	}
 
-	/** The distinct zone ids named by a matrix's zone-switch layer, or null when it has none. */
-	private static Set<Integer> layerZones(byte[] mat) {
+	/**
+	 * How many quarter cells each zone owns in a matrix's zone-switch layer, or
+	 * null when it has none. The counts matter: a fork that steals another
+	 * zone's ground shows up here as its count moving, not as a name appearing.
+	 */
+	private static Map<Integer, Integer> layerZones(byte[] mat) {
 		if (mat == null || mat.length < 12) {
 			return null;
 		}
@@ -150,11 +206,12 @@ public class MatrixForkTest {
 		if (off + quads * 2 > mat.length) {
 			return null;
 		}
-		Set<Integer> out = new LinkedHashSet<>();
+		Map<Integer, Integer> out = new LinkedHashMap<>();
 		for (int q = 0; q < quads; q++) {
 			int v = u16(mat, off + q * 2);
 			if (v != 0xFFFF) {
-				out.add(v);
+				Integer had = out.get(v);
+				out.put(v, had == null ? 1 : had + 1);
 			}
 		}
 		return out;
