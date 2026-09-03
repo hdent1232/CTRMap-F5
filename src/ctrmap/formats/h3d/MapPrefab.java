@@ -268,6 +268,20 @@ public class MapPrefab {
 		return (m.raw[sub] | m.raw[sub + 1] | m.raw[sub + 2] | m.raw[sub + 3]) != 0;
 	}
 
+	/**
+	 * What the copy dialog says about the faces the cut left out: the count,
+	 * any material that vanished with them, and what to do - or nothing when
+	 * every overlapping face was taken.
+	 */
+	public String cutReport() {
+		if (facesDropped == 0) {
+			return "";
+		}
+		return facesDropped + " face(s) crossing the selection edge were left out"
+				+ (materialsLost.isEmpty() ? "" : " - " + materialsLost + " lost entirely")
+				+ ".\nWiden the selection to take them.";
+	}
+
 	/** Triangles across every piece. */
 	public int triangleCount() {
 		int n = 0;
