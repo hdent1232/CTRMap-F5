@@ -18,6 +18,7 @@ import ctrmap.humaninterface.TilePainterForm;
 import ctrmap.tools.BuildingHarvester;
 import java.awt.geom.Area;
 import java.awt.geom.Path2D;
+import java.awt.geom.PathIterator;
 import java.awt.geom.Rectangle2D;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -60,8 +61,9 @@ import java.util.TreeSet;
  *     terrain guard, so a 22x17 slab of Cycling Road (sea plane, deck and all)
  *     was offered as a fence.</li>
  * <li>"Copy selection as prefab" discarded every face crossing the selection
- *     edge without counting it: Route 101's 10..19 box loses 250 of 1091 faces
- *     and two materials entirely, and the dialog listed only what survived.
+ *     edge without counting it: Route 101's 10..19 box loses 135 faces that
+ *     lie across it and two materials entirely, and the dialog listed only what
+ *     survived.
  *     The first count saw only faces with a corner inside the box, so a ground
  *     quad lying across it with every corner outside was dropped uncounted and
  *     its material vanished unnamed (region 7's chip_kusa_a); and a selection
@@ -335,7 +337,8 @@ public class PlacementGuardsTest {
 
 	/**
 	 * This test's own reading of a cut: per material, {faces taken whole,
-	 * faces lost}. A face is lost when its XZ footprint overlaps the box and
+	 * faces lost}. A face is lost when its XZ footprint overlaps the box - by
+	 * a real area, not a corner resting on or a hair past the box edge - and
 	 * not all three corners lie inside it.
 	 */
 	static Map<String, int[]> cutTally(GR gr, GeoBoxOps.Box box) {
@@ -367,12 +370,34 @@ public class PlacementGuardsTest {
 				tri.closePath();
 				Area overlap = new Area(tri);
 				overlap.intersect(rect);
-				if (!overlap.isEmpty()) {
+				if (areaOf(overlap) > 0.01) {
 					kd[1]++;
 				}
 			}
 		}
 		return perMat;
+	}
+
+	/** The area a polygonal shape encloses (Area keeps zero-width slivers, so isEmpty is not enough). */
+	static double areaOf(Area shape) {
+		double area2 = 0, sx = 0, sy = 0, px = 0, py = 0;
+		double[] c = new double[6];
+		for (PathIterator it = shape.getPathIterator(null, 0.01); !it.isDone(); it.next()) {
+			int seg = it.currentSegment(c);
+			if (seg == PathIterator.SEG_MOVETO) {
+				sx = px = c[0];
+				sy = py = c[1];
+			} else if (seg == PathIterator.SEG_LINETO) {
+				area2 += px * c[1] - c[0] * py;
+				px = c[0];
+				py = c[1];
+			} else if (seg == PathIterator.SEG_CLOSE) {
+				area2 += px * sy - sx * py;
+				px = sx;
+				py = sy;
+			}
+		}
+		return Math.abs(area2) / 2;
 	}
 
 	/**
