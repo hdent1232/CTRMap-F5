@@ -485,31 +485,42 @@ public class TilePainterForm {
 		int wired = 0;
 		StringBuilder wireNote = new StringBuilder();
 		if (enterable > 0) {
-			String[] opts = {"Clone private interiors (recommended)", "Link retail interiors (enter-only)", "Skip"};
-			int mode = JOptionPane.showOptionDialog(frame,
-					enterable + " placed building(s) have doors. Wire them now?\n\n"
-					+ "CLONE (recommended): each door gets its OWN interior - a copy of the retail\n"
-					+ "room placed in a free base zone - and the room's exit leads BACK TO THIS MAP.\n"
-					+ "Walk in, walk out: full round trip. (Rename the interior later via Tools.)\n\n"
-					+ "RETAIL: doors warp into the shared retail rooms; entering works, but the\n"
-					+ "room's exit leads to its retail town until you retarget it.",
-					"Door warps", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, opts, opts[0]);
-			if (mode == 0 || mode == 1) {
-				wired = wireDoorWarps(zoneIndex, placed, floorY, mode == 0, wireNote);
+			//Past the commit the map IS applied, so an extra that cannot run is
+			//a line in the result - never an "Apply failed" over a map that is
+			//already on disk and will ship with the next pack.
+			try {
+				String[] opts = {"Clone private interiors (recommended)", "Link retail interiors (enter-only)", "Skip"};
+				int mode = JOptionPane.showOptionDialog(frame,
+						enterable + " placed building(s) have doors. Wire them now?\n\n"
+						+ "CLONE (recommended): each door gets its OWN interior - a copy of the retail\n"
+						+ "room placed in a free base zone - and the room's exit leads BACK TO THIS MAP.\n"
+						+ "Walk in, walk out: full round trip. (Rename the interior later via Tools.)\n\n"
+						+ "RETAIL: doors warp into the shared retail rooms; entering works, but the\n"
+						+ "room's exit leads to its retail town until you retarget it.",
+						"Door warps", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, opts, opts[0]);
+				if (mode == 0 || mode == 1) {
+					wired = wireDoorWarps(zoneIndex, placed, floorY, mode == 0, wireNote);
+				}
+			} catch (Exception ex) {
+				wireNote.append("\nDoor wiring failed: ").append(ex);
 			}
 		}
 		int signsWired = 0;
 		try {
 			signsWired = wireSigns(zoneIndex, placed);
 		} catch (Exception ex) {
-			wireNote.append("\nSign wiring failed: ").append(ex.getMessage());
+			wireNote.append("\nSign wiring failed: ").append(ex);
 		}
 		final String extras = (stampNote.isEmpty() ? "" : "\n\n" + stampNote)
 				+ (signsWired > 0 ? "\n\n" + signsWired + " readable sign(s) wired (text saved; edit later via the NPC tool's dialogue section)." : "")
 				+ (texNote.length() > 0 ? "\n" + texNote.toString().trim() : "")
 				+ (doorProps != null ? "\n\nSwinging-door prop(s) placed automatically (registry + textures handled)." : "")
 				+ (propNote.length() > 0 ? propNote : "")
-				+ (wired > 0 ? "\n\n" + wired + " door warp(s) added." + wireNote : "")
+				+ (wired > 0 ? "\n\n" + wired + " door warp(s) added." : "")
+				//shown whatever happened: a wiring that FAILED reported into this
+				//and the old line only printed it when a warp had been added, so
+				//the one message about the failure was dropped for having failed
+				+ (wireNote.length() > 0 ? "\n" + wireNote.toString().trim() : "")
 				+ (enterable > wired ? "\n\n" + (enterable - wired) + " door(s) left unwired - add warps with the Warp tool when ready." : "");
 		Workspace.packWorkspace(new Runnable() {
 			@Override

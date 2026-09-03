@@ -923,9 +923,14 @@ public class PaintForm extends JPanel {
 			previewInScene = false;
 			seededZone = -1; // reseed from the freshly built zone on next activate
 		} catch (Exception ex) {
-			// the preview may still be swapped in - put the real map back
+			// the preview may still be swapped in - put the real map back. Apply
+			// clears every precondition before it writes anything, so the
+			// workspace really is untouched and the dialog can say so - it used
+			// to read as "nothing happened" over a half-applied map.
 			restoreRealModel();
-			JOptionPane.showMessageDialog(this, "Apply failed:\n" + ex.getMessage(), "Map Builder", JOptionPane.ERROR_MESSAGE);
+			JOptionPane.showMessageDialog(this, "Apply failed:\n" + ex.getMessage()
+					+ "\n\nNothing was written - the map is exactly as it was.",
+					"Map Builder", JOptionPane.ERROR_MESSAGE);
 		}
 	}
 }
