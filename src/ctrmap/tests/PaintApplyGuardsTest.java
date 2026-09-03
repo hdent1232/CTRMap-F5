@@ -59,6 +59,8 @@ public class PaintApplyGuardsTest {
 	static final int DIM = PaintedRegionBuilder.DIM;
 
 	static int fails = 0;
+	/** What the last {@link #apply} told the user, or null when it was stopped. */
+	static String report;
 	static GARC ad, gr, zo;
 	static TilePalette[][] grid = new TilePalette[DIM][DIM];
 	static boolean[][] touched = new boolean[DIM][DIM];
@@ -85,6 +87,7 @@ public class PaintApplyGuardsTest {
 		anExtraThatFailsDoesNotUnsayTheApply();
 		everyAreaImportAsksTheSharedQuestion(new File(args.length > 1 ? args[1] : "src"));
 		sameNameDifferentPixelsIsNotSilent();
+		applyCountsTilesThatTookANeighboursGround();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -440,6 +443,30 @@ public class PaintApplyGuardsTest {
 		}
 	}
 
+	/**
+	 * 44% of retail tiles carry no collision sample under their centre, and a
+	 * painted one takes its ground from the nearest walkable neighbour rather
+	 * than sinking to the region's floor. Apply never said how many did: the
+	 * seed-time label counts them when the painter opens, but the "Painted map
+	 * applied" dialog - the one account of what the edit actually did - was
+	 * silent, so a patch standing on ground borrowed from beside it looked
+	 * exactly like one the map itself gave a height to. Zone 17 (area 22, its
+	 * own; region 154) has 39 such tiles under the guards' 12x12 sand patch.
+	 */
+	static void applyCountsTilesThatTookANeighboursGround() throws Exception {
+		forget(Workspace.ArchiveType.FIELD_DATA, 154);
+		forget(Workspace.ArchiveType.AREA_DATA, 22);
+		open(17);
+		paintSand();
+		GR region = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, 154));
+		int borrowed = PaintedRegionBuilder.borrowedGroundTiles(region.getFile(2), region.getFile(0), touched);
+		check(borrowed > 0, "fixture: the painted tiles include " + borrowed + " with no ground of their own");
+		Exception stop = apply(17, new ArrayList<TilePainterForm.Placed>());
+		check(stop == null, "the Apply went through (stopped by: " + stop + ")");
+		check(report != null && report.contains(borrowed + " painted tile(s) had no ground under them"),
+				"and says the " + borrowed + " tiles took a neighbour's ground: " + report);
+	}
+
 	//--- fixtures -------------------------------------------------------------
 
 	static void openWorkspace(File dump) throws Exception {
@@ -507,9 +534,10 @@ public class PaintApplyGuardsTest {
 	/** One click of Apply: the exception that stopped it, or null. */
 	static Exception apply(int zoneIndex, List<TilePainterForm.Placed> placed) {
 		try {
-			TilePainterForm.applyToZone(zoneIndex, grid, height, ramp, TerrainLighting.daytime(), false, placed, touched);
+			report = TilePainterForm.applyToZone(zoneIndex, grid, height, ramp, TerrainLighting.daytime(), false, placed, touched);
 			return null;
 		} catch (Exception ex) {
+			report = null;
 			return ex;
 		}
 	}

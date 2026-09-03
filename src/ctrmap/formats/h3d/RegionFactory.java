@@ -31,6 +31,10 @@ public class RegionFactory {
 		public byte[] collision;
 		public byte[] tilemap;
 		public byte[] props;
+		/** Painted tiles that had no ground under them and took a walkable
+		 *  neighbour's, counted by the composite builder that did it, so what
+		 *  Apply reports cannot drift from what was actually built. */
+		public int borrowedGround;
 	}
 
 	/**
