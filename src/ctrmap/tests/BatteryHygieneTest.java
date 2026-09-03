@@ -52,6 +52,9 @@ public class BatteryHygieneTest {
 		}
 		fixedTempPaths(tests);
 		overridableCorpusPath(tests);
+		File repo = root.getParentFile() == null ? new File(".") : root.getParentFile();
+		runnerIsPlainText(new File(repo, "test.ps1"));
+		builtByTheBattery(repo);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -84,6 +87,97 @@ public class BatteryHygieneTest {
 			}
 		}
 		check(stuck.isEmpty(), "every suite that names the dump can be pointed at one; stuck: " + stuck);
+	}
+
+	/**
+	 * The runner must be plain text. Five NUL bytes reached test.ps1 through an
+	 * edit that spelled an archive path as "a\0\1\4" in a shell heredoc, which
+	 * stripped a backslash before Python read the octal escapes. Three suites'
+	 * arguments then held control bytes in place of their path, the battery
+	 * would have handed them garbage on its next run, and nothing in the repo
+	 * was looking. A byte below 0x20 that is not tab, CR or LF has no business
+	 * in a PowerShell script.
+	 */
+	static void runnerIsPlainText(File runner) throws Exception {
+		if (!runner.isFile()) {
+			System.out.println("  skip: no runner at " + runner);
+			return;
+		}
+		byte[] b = Files.readAllBytes(runner.toPath());
+		List<String> bad = new ArrayList<>();
+		int line = 1;
+		for (int i = 0; i < b.length; i++) {
+			if (b[i] == '\n') {
+				line++;
+			} else if ((b[i] & 0xFF) < 0x20 && b[i] != '\t' && b[i] != '\r') {
+				bad.add("line " + line + " byte 0x" + Integer.toHexString(b[i] & 0xFF));
+			}
+		}
+		check(bad.isEmpty(), runner.getName() + " holds no control bytes; found " + bad);
+	}
+
+	/**
+	 * These classes must be the ones build.ps1 made from these sources. A
+	 * verification harness once compiled the tree with bare javac, which copies
+	 * no resources, and measured a build/classes whose catalogue was stale: a
+	 * guard suite failed there and passed everywhere else, and the harness
+	 * reported confidently about a tree the battery never runs. build.ps1 now
+	 * stamps what it built (stamp.ps1); this recomputes the two digests - the
+	 * sources, and everything under build/classes - and fails on any difference,
+	 * so the battery itself cannot run against a hand-built or half-built tree.
+	 * The algorithm is stamp.ps1's; keep the three copies identical.
+	 */
+	static void builtByTheBattery(File repo) throws Exception {
+		File classes = new File(repo, "build/classes");
+		File stamp = new File(classes, ".built-by-build-ps1");
+		if (!stamp.isFile()) {
+			check(false, "build/classes carries a build.ps1 stamp (none found - it was not produced by build.ps1)");
+			return;
+		}
+		java.util.Map<String, String> kv = new java.util.HashMap<>();
+		for (String line : Files.readAllLines(stamp.toPath(), StandardCharsets.UTF_8)) {
+			int eq = line.indexOf('=');
+			if (eq > 0) {
+				kv.put(line.substring(0, eq), line.substring(eq + 1));
+			}
+		}
+		check(treeDigest(new File(repo, "src"), "").equals(kv.get("src")),
+				"src/ is what build.ps1 last compiled (otherwise: rebuild before measuring anything)");
+		check(treeDigest(classes, ".built-by-build-ps1").equals(kv.get("classes")),
+				"build/classes is exactly what build.ps1 produced (a file added, removed or replaced since fails this)");
+	}
+
+	/** stamp.ps1's digest: sorted "relpath:sha256" lines, sha256 of the manifest. */
+	static String treeDigest(File root, String exclude) throws Exception {
+		java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
+		List<String> lines = new ArrayList<>();
+		java.nio.file.Path base = root.toPath();
+		try (java.util.stream.Stream<java.nio.file.Path> walk = Files.walk(base)) {
+			for (java.nio.file.Path p : (Iterable<java.nio.file.Path>) walk::iterator) {
+				if (!Files.isRegularFile(p)) {
+					continue;
+				}
+				String rel = base.relativize(p).toString().replace('\\', '/');
+				if (rel.equals(exclude)) {
+					continue;
+				}
+				lines.add(rel + ":" + hex(sha.digest(Files.readAllBytes(p))) + "\n");
+			}
+		}
+		java.util.Collections.sort(lines);
+		StringBuilder manifest = new StringBuilder();
+		for (String l : lines) {
+			manifest.append(l);
+		}
+		return hex(sha.digest(manifest.toString().getBytes(StandardCharsets.UTF_8)));
+	}
+
+	static String hex(byte[] d) {
+		StringBuilder sb = new StringBuilder();
+		for (byte b : d) {
+			sb.append(String.format("%02x", b));
+		}
+		return sb.toString();
 	}
 
 	/** The .java files under dir, minus this guard: it spells the patterns out. */

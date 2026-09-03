@@ -5,6 +5,7 @@
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
+. (Join-Path $root "stamp.ps1")
 
 $jdk = $env:CTRMAP_JDK
 if (-not $jdk) {
@@ -35,6 +36,11 @@ $ErrorActionPreference = "Stop"
 if ($javacExit -ne 0) { throw "javac failed with exit code $javacExit" }
 
 Copy-Item -Recurse -Force src\ctrmap\resources build\classes\ctrmap\
+
+# Sign what was just built. test.ps1, the mutation sweeps and BatteryHygieneTest
+# all recompute this and refuse a build\classes that is not exactly this
+# script's output from exactly these sources - see stamp.ps1 for why.
+Write-BuildStamp $root
 
 Write-Host "Build OK -> build\classes  (run with run.bat or:"
 Write-Host "  java -Xmx1024m -cp `"build/classes;lib/jogl-all.jar;lib/gluegen-rt.jar;lib/jogl-all-natives-windows-amd64.jar;lib/gluegen-rt-natives-windows-amd64.jar`" ctrmap.CtrmapMainframe )"
