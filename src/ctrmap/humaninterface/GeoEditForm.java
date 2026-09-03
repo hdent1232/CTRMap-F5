@@ -205,6 +205,27 @@ public class GeoEditForm extends JPanel {
 	}
 
 	/**
+	 * Loads a .ctrprefab file, warning again about the faces its cut left out.
+	 *
+	 * <p>What the cut left out is a property of the prefab: the file carries it
+	 * now, so the warning the copy dialog gave once is given again to whoever
+	 * stamps it in a later session - it is the only place that session hears
+	 * that the shape it is about to stamp is missing pieces.
+	 *
+	 * <p>A method of its own because behind the file chooser that leads here
+	 * nothing could ever see the warning: a headless suite cannot open a
+	 * chooser, so deleting the line left the whole battery green.
+	 */
+	public static ctrmap.formats.h3d.MapPrefab loadPrefabFile(java.awt.Component parent, java.io.File f) throws Exception {
+		ctrmap.formats.h3d.MapPrefab p = ctrmap.formats.h3d.MapPrefab.load(f);
+		if (p.facesDropped > 0) {
+			ctrmap.Ui.message(parent, "Loaded \"" + p.name + "\".\n\n" + p.cutReport(),
+					"Stamp prefab", JOptionPane.WARNING_MESSAGE);
+		}
+		return p;
+	}
+
+	/**
 	 * Stamps the clipboard prefab (or a .ctrprefab file) with its anchor at the
 	 * selection's top-left tile, using the Y offset spinner for height.
 	 */
@@ -222,15 +243,8 @@ public class GeoEditForm extends JPanel {
 				return;
 			}
 			try {
-				p = ctrmap.formats.h3d.MapPrefab.load(fc.getSelectedFile());
+				p = loadPrefabFile(this, fc.getSelectedFile());
 				clipboard = p;
-				//what the cut left out is a property of the prefab: the file
-				//carries it now, so the warning the copy dialog gave once is
-				//given again to whoever stamps it in a later session
-				if (p.facesDropped > 0) {
-					ctrmap.Ui.message(this, "Loaded \"" + p.name + "\".\n\n" + p.cutReport(),
-							"Stamp prefab", JOptionPane.WARNING_MESSAGE);
-				}
 			} catch (Exception ex) {
 				status.setText("Could not load the prefab: " + ex.getMessage());
 				return;

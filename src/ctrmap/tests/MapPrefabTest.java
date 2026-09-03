@@ -19,7 +19,8 @@ import java.util.List;
  * - stamping: appended geometry lands EXACTLY at anchor+relative positions,
  *   result re-parses clean in BOTH parsers (BchMapModel + the render parser);
  * - collision stamp: exact triangle-count growth, rebuilt file valid;
- * - save/load: byte-faithful prefab file round-trip, skinning included.
+ * - save/load: byte-faithful prefab file round-trip, skinning included, and
+ *   the warning the loading session gets about the faces the cut left out.
  *
  * <p>The skinning flag is the one field the file does NOT store: the load
  * re-reads it from the embedded donor. Nothing noticed when that re-read was
@@ -40,6 +41,7 @@ public class MapPrefabTest {
 		GARC garc = new GARC(garcFile);
 		int tested = 0, selfOk = 0, crossOk = 0, crossSkipped = 0, roundtripOk = 0, failures = 0, emptyBox = 0;
 		int skinnedSeen = 0;
+		boolean warnedSeen = false, silentSeen = false;
 		for (int i = 0; i < garc.length; i += step) {
 			try {
 				GR grA = tempGR(scratch, garc, i);
@@ -81,6 +83,14 @@ public class MapPrefabTest {
 					skinnedSeen += cut ? 1 : 0;
 				}
 				roundtripOk++;
+				//and what the prefab FILE tells the session that opens it
+				if (p.facesDropped > 0 && !warnedSeen) {
+					warnedSeen = true;
+					loadWarnsAboutTheCut(pf, p, true);
+				} else if (p.facesDropped == 0 && !silentSeen) {
+					silentSeen = true;
+					loadWarnsAboutTheCut(pf, p, false);
+				}
 
 				// SELF-stamp at tile (2,2): all materials must match; verify positions
 				verifyStamp(p, grA.getFile(1), 2, 2, 50f, true, "self");
@@ -143,12 +153,51 @@ public class MapPrefabTest {
 			System.out.println("FAIL fixture: no sampled cut carried a skinned piece, so the"
 					+ " save/load skinning check above asserted nothing - lower the sample step");
 		}
+		if (roundtripOk > 0 && !(warnedSeen && silentSeen)) {
+			failures++;
+			System.out.println("FAIL fixture: the sample had no cut that dropped faces (" + warnedSeen
+					+ ") or none that dropped none (" + silentSeen + "), so the load warning was"
+					+ " only half checked - lower the sample step");
+		}
+		failures += loadWarnFails;
 		System.out.println("\nMapPrefab: tested=" + tested + " (emptyBox=" + emptyBox + ")  self=" + selfOk
 				+ "  cross=" + crossOk + " (no-shared-mats " + crossSkipped + ")  saveload=" + roundtripOk
 				+ " (skinned pieces round-tripped " + skinnedSeen + ")  failures=" + failures);
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (failures > 0) {
 			System.exit(1);
+		}
+	}
+
+	static int loadWarnFails = 0;
+
+	/**
+	 * A prefab is opened again in a session that never saw the cut, so the file
+	 * has to say what the cut left out. The editor warns on load - and only
+	 * when there is something to warn about; a warning on every prefab is a
+	 * warning nobody reads.
+	 *
+	 * <p>That line sits behind a file chooser, where no suite could reach it:
+	 * deleting it, or firing it on the prefabs that lost nothing, left the
+	 * whole battery green. It is driven here through the load method the
+	 * chooser calls, with {@link ctrmap.Ui} collecting what the user was told.
+	 */
+	static void loadWarnsAboutTheCut(File pf, MapPrefab p, boolean expectWarning) throws Exception {
+		List<String> said = ctrmap.Ui.record();
+		try {
+			ctrmap.humaninterface.GeoEditForm.loadPrefabFile(null, pf);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		String only = said.isEmpty() ? "" : said.get(0);
+		boolean ok = expectWarning
+				? said.size() == 1 && only.contains(p.facesDropped + " face(s) crossing the selection edge were left out")
+				: said.isEmpty();
+		if (!ok) {
+			loadWarnFails++;
+			System.out.println("FAIL loading " + pf.getName() + " (" + p.facesDropped + " face(s) dropped): "
+					+ (expectWarning ? "the warning naming them was not given" : "warned about nothing")
+					+ " - said " + said);
 		}
 	}
 
