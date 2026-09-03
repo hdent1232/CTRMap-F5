@@ -486,14 +486,7 @@ public class PaintedRegionBuilder {
 				int rd = rampDir(grid, height, ramp, tx, ty);
 				float myY = yTop[ty][tx];
 				if (mi >= 0) {
-					//a ramp's foot lands on the descent neighbour's ACTUAL floor
-					float rampLo = myY - STEP;
-					if (rd >= 0) {
-						Float dY = neighbourTopY(grid, yTop, baseY, touched, tx, ty, rd);
-						if (dY != null) {
-							rampLo = dY;
-						}
-					}
+					float rampLo = rd >= 0 ? rampFoot(grid, yTop, baseY, touched, tx, ty, rd, myY) : myY - STEP;
 					//Sink the water. Painted flat, the river sat exactly level with
 				//its banks - a blue carpet laid in the lawn, with no channel
 				//and nothing to tell the eye it was lower than the grass. A
@@ -815,6 +808,30 @@ public class PaintedRegionBuilder {
 			}
 			float b = baseY != null ? baseY[ny][nx] : Float.NaN;
 			return Float.isNaN(b) ? 0f : b;
+		}
+		return yTop[ny][nx];
+	}
+
+	/**
+	 * Where a ramp's slope lands: the descent neighbour's top - its painted
+	 * floor, or its retail surface when it is untouched. An untouched
+	 * neighbour with no collision under its centre has no surface to answer
+	 * with, and the slope used to fall back to one step down: a two-level
+	 * ramp toward such a tile - 1.2% of retail tiles border one - ended 18
+	 * units in the air with no wall and no word, and Apply reported success.
+	 * Its foot is now the ground that tile borrows from beside it, the same
+	 * floor the painter seeded its level from. Off the map: one step down.
+	 */
+	private static float rampFoot(TilePalette[][] grid, float[][] yTop, float[][] baseY, boolean[][] touched,
+			int tx, int ty, int dir, float myY) {
+		Float top = neighbourTopY(grid, yTop, baseY, touched, tx, ty, dir);
+		if (top != null) {
+			return top;
+		}
+		int nx = tx + (dir == 0 ? 1 : dir == 1 ? -1 : 0);
+		int ny = ty + (dir == 2 ? 1 : dir == 3 ? -1 : 0);
+		if (nx < 0 || ny < 0 || nx >= DIM || ny >= DIM) {
+			return myY - STEP;
 		}
 		return yTop[ny][nx];
 	}
@@ -2784,13 +2801,7 @@ public class PaintedRegionBuilder {
 				float myY = yTop[ty][tx];
 				if (t != null && t.floor) {
 					// walkable floor - flat, or the ramp's sloped quad
-					float rampLo = myY - STEP;
-					if (rd >= 0) {
-						Float dY = neighbourTopY(grid, yTop, baseY, touched, tx, ty, rd);
-						if (dY != null) {
-							rampLo = dY;
-						}
-					}
+					float rampLo = rd >= 0 ? rampFoot(grid, yTop, baseY, touched, tx, ty, rd, myY) : myY - STEP;
 					//Water's floor sits WATER_SINK below the ground, and so must
 					//the collision under it: sinking the mesh alone left the
 					//player surfing seven units up in the air. The walls below
