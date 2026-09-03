@@ -82,6 +82,7 @@ public class PaintApplyGuardsTest {
 		retryStillAsksForTheTextures();
 		sharedMatrixIsPaintedAfterTheFork();
 		everyAreaImportAsksTheSharedQuestion(new File(args.length > 1 ? args[1] : "src"));
+		sameNameDifferentPixelsIsNotSilent();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -257,6 +258,85 @@ public class PaintApplyGuardsTest {
 		List<String> raw = new ArrayList<>();
 		rawImports(root, raw);
 		check(raw.isEmpty(), "no editor path imports textures into an area without asking: " + raw);
+	}
+
+	/**
+	 * 358 of the game's 2,274 texture names carry different pixels in different
+	 * areas, and the import treated presence as a matter of NAME alone: a brush
+	 * or a building whose donor texture shares a name with one the target area
+	 * already holds was quietly drawn in the target's version. PATH's
+	 * chip_soil_a has four versions and 22 areas hold one that differs from the
+	 * palette's donor - mean RGB 227,202,118 against 208,174,99, a visibly
+	 * different soil. The paint came out a different shade from the swatch and
+	 * from the same brush on the next map, and the carry said "(textures
+	 * already present)". Asking for a name the target holds differently is now
+	 * refused, and a carry that meets one says so in the Apply dialog.
+	 */
+	static void sameNameDifferentPixelsIsNotSilent() throws Exception {
+		String name = null;
+		int holder = -1, other = -1;
+		java.util.Map<String, int[]> first = new java.util.LinkedHashMap<>(); //name -> {area, contentKey}
+		for (int area = 0; area < ad.length && name == null; area++) {
+			byte[] c = ad.getDecompressedEntry(area);
+			if (c == null || c.length < 8 || c[0] != 'A' || c[1] != 'D') {
+				continue;
+			}
+			for (int sub : new int[]{11, 1}) {
+				byte[] pk = PropDatabase.getSubfile(c, sub);
+				if (pk == null || !BchTexturePack.isTexturePack(pk)) {
+					continue;
+				}
+				for (BchTexturePack.Texture t : BchTexturePack.parse(pk)) {
+					int key = Arrays.hashCode(t.data) * 31 + t.format * 7 + t.dimParam;
+					int[] seen = first.get(t.name);
+					if (seen == null) {
+						first.put(t.name, new int[]{area, key});
+					} else if (seen[1] != key && seen[0] != area && privateAreaZone(seen[0]) >= 0) {
+						name = t.name;
+						holder = seen[0];
+						other = area;
+						break;
+					}
+				}
+			}
+		}
+		check(name != null, "the dump has a same-name different-pixel texture (\"" + name
+				+ "\" in areas " + holder + " and " + other + ")");
+		if (name == null) {
+			return;
+		}
+		List<String> one = new ArrayList<>();
+		one.add(name);
+		Exception stop = null;
+		try {
+			BchTexturePack.importTextures(areaPack(holder), areaPack(other), one);
+		} catch (Exception ex) {
+			stop = ex;
+		}
+		check(stop != null && stop.getMessage() != null && stop.getMessage().contains(name),
+				"importing a name the target already holds with different pixels is refused: " + stop);
+		int zone = privateAreaZone(holder);
+		BchTexturePack.Carry carry = BchTexturePack.planCarry(other, holder, one,
+				areaPack(holder), PropDatabase.getSubfile(ad.getDecompressedEntry(holder), 1), zone);
+		check(carry.note.contains(name) && carry.note.contains(String.valueOf(other)),
+				"a carry that meets one reports it, naming the texture and both areas: " + carry.note.trim());
+	}
+
+	/** A zone whose area is exactly this one and nobody else's, or -1. */
+	static int privateAreaZone(int area) throws Exception {
+		for (int z = 0; z < zo.length - 2; z++) {
+			if (ctrmap.AreaForker.currentArea(z) == area && BchTexturePack.zonesUsingArea(area, z) == null) {
+				return z;
+			}
+		}
+		return -1;
+	}
+
+	/** An area's world texture pack, or its prop pack when it has no world one. */
+	static byte[] areaPack(int area) {
+		byte[] c = ad.getDecompressedEntry(area);
+		byte[] p11 = PropDatabase.getSubfile(c, 11);
+		return BchTexturePack.isTexturePack(p11) ? p11 : PropDatabase.getSubfile(c, 1);
 	}
 
 	/** What assertNotShared does to the zone's area, or null when it allows it. */
