@@ -227,16 +227,10 @@
   "sha256": "f901174b7f57de5f07d49853d5a65acd080c4255e3828836c4b483513bc0b090"
  },
  "src/ctrmap/humaninterface/TileMapPanel.java": {
-  "survivors": 1,
-  "killed": 2,
+  "survivors": 0,
+  "killed": 3,
   "unmeasured": 1,
-  "lines": [
-   {
-    "line": 707,
-    "kind": "drop-report",
-    "code": "ctrmap.Ui.error(this, \"The tilemap view was not refreshed:\\n\" + cause, \"Update tilemaps\");"
-   }
-  ],
+  "lines": [],
   "sha256": "81b57fd54364f3504939076305be5a934f8fc668ad59d25f8e2a9142863835c9"
  },
  "src/ctrmap/formats/scripts/PawnDisassembler.java": {
