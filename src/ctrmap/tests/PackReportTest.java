@@ -70,11 +70,10 @@ public class PackReportTest {
 		Files.write(Workspace.mapmatrix.toPath(), longer);
 
 		String said = pack().toString();
-		check(said.contains("area " + DANGLING_AREA),
-				"the pack names the zone it can see will not load: " + said);
-		check(said.contains(rel), "the pack names the archive missing from the pristine backup: " + said);
-		check(said.contains("changed on disk"),
-				"the pack says an archive was rewritten underneath it: " + said);
+		System.out.println("  the user is shown: " + said);
+		check(said.contains("area " + DANGLING_AREA), "the pack names the zone it can see will not load");
+		check(said.contains(rel), "the pack names the archive missing from the pristine backup");
+		check(said.contains("changed on disk"), "the pack says an archive was rewritten underneath it");
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -82,12 +81,17 @@ public class PackReportTest {
 		}
 	}
 
-	/** Packs the way the app does, and returns everything the user was told. */
+	/**
+	 * Packs and reports the way the app does - packArchives hands back what it
+	 * found, reportPackWarnings puts it on screen - and returns what the user
+	 * was actually told. Both halves matter: a report nobody shows is the same
+	 * silent failure as no report at all.
+	 */
 	static List<String> pack() throws Exception {
 		List<String> said = Ui.record();
 		try {
-			Workspace.packArchives((percent, what) -> {
-			});
+			Workspace.reportPackWarnings(null, Workspace.packArchives((percent, what) -> {
+			}));
 		} finally {
 			Ui.stopRecording();
 		}

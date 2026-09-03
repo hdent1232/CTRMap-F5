@@ -188,19 +188,27 @@ public class WorkspaceIntegrity {
 	}
 
 	/**
-	 * Runs the shallow check and prints anything wrong. Called after packing so
-	 * an inconsistency is reported next to the edit that made it, not hours
-	 * later when a zone refuses to load.
+	 * Runs the shallow check and RETURNS anything wrong, so the caller can put
+	 * it in front of the user. Called after packing so an inconsistency is
+	 * reported next to the edit that made it, not hours later when a zone
+	 * refuses to load.
+	 *
+	 * <p>This used to only print. The shipped build is a windowed app-image
+	 * with no console attached, so "that zone cannot load" was written to a
+	 * handle that goes nowhere and the user saw the success dialog alone. The
+	 * stderr line is still written - it is useful when running from a terminal -
+	 * but the returned list is the channel that reaches anybody.
 	 */
-	public static void report(String after) {
+	public static List<String> report(String after) {
 		List<String> bad = check(false);
 		if (bad.isEmpty()) {
-			return;
+			return bad;
 		}
 		System.err.println("Workspace integrity problems after " + after + ":");
 		for (String b : bad) {
 			System.err.println("  - " + b);
 		}
+		return bad;
 	}
 
 	private static int u16(byte[] b, int o) {
