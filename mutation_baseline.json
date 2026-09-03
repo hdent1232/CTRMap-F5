@@ -27,15 +27,10 @@
   "sha256": "196026387288228fc7273694818c962f0926e0bf7c21b5fea6df0a3cb9734815"
  },
  "src/ctrmap/humaninterface/TilePainterForm.java": {
-  "survivors": 5,
-  "killed": 20,
+  "survivors": 4,
+  "killed": 21,
   "unmeasured": 4,
   "lines": [
-   {
-    "line": 472,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"Apply cancelled - nothing was changed.\");"
-   },
    {
     "line": 525,
     "kind": "drop-throw",
