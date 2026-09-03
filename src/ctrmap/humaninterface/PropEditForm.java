@@ -446,6 +446,33 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * @return true when the textures are available afterwards, false when the
 	 * user cancelled or the import failed (nothing was modified either way)
 	 */
+	/**
+	 * The refusal an area other zones use earns before the import is offered,
+	 * so the user is not talked into one the shared-area rule then turns down.
+	 * True when it was refused - and the user told which maps stood in the way.
+	 *
+	 * <p>It is a method of its own because the branch IS the guard, and nothing
+	 * could reach it where it stood: three modal dialogs lead here, and a
+	 * headless suite gets a HeadlessException from the first of them, so
+	 * inverting this test left the whole battery green. Inverted, a prop grows
+	 * an area fifteen other maps read - the finding this check exists for - and
+	 * every prop on a zone's OWN area is refused with a message naming nobody.
+	 */
+	public static boolean refuseSharedArea(java.awt.Component parent, int areaId, int zoneIndex,
+			String areaName, String inlineTextures) {
+		String shared = BchTexturePack.zonesUsingArea(areaId, zoneIndex);
+		if (shared != null) {
+			ctrmap.Ui.error(parent,
+					"This prop needs textures this area does not have (" + inlineTextures + "),\n"
+					+ "but " + areaName + " is also used by " + shared + ".\n"
+					+ "Importing them would change those maps too, so the prop was not placed.\n\n"
+					+ "Give this zone its own area first (Map > Fork area).",
+					"Shared area");
+			return true;
+		}
+		return false;
+	}
+
 	private boolean offerTextureImport(PropDatabase.PropModel pm, List<String> missing) {
 		StringBuilder list = new StringBuilder();
 		StringBuilder inline = new StringBuilder();
@@ -479,15 +506,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		//An area other zones use is not this prop's to grow. Asked BEFORE the
 		//import dialog, so the user is not talked into an import that the
 		//shared-area rule then refuses.
-		String shared = BchTexturePack.zonesUsingArea(header.areadataID,
-				CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1);
-		if (shared != null) {
-			JOptionPane.showMessageDialog(this,
-					"This prop needs textures this area does not have (" + inline + "),\n"
-					+ "but " + getAreaDisplayName(header.areadataID) + " is also used by " + shared + ".\n"
-					+ "Importing them would change those maps too, so the prop was not placed.\n\n"
-					+ "Give this zone its own area first (Map > Fork area).",
-					"Shared area", JOptionPane.ERROR_MESSAGE);
+		if (refuseSharedArea(this, header.areadataID,
+				CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1,
+				getAreaDisplayName(header.areadataID), inline.toString())) {
 			return false;
 		}
 		int rsl = JOptionPane.showConfirmDialog(this,
