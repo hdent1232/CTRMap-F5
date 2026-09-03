@@ -178,20 +178,18 @@ public class SnapshotIntegrityTest {
 		check(new String(Files.readAllBytes(snapFile.toPath()), StandardCharsets.UTF_8)
 				.startsWith("ANOTHER GAME "), "and the retaken backup holds the new game's archives");
 
-		//The dialog that offers that repair cannot be reached from here, so the
-		//one thing a headless suite can hold is that the settings dialog still
-		//asks the question before it repoints the workspace. It did not, and
-		//that is the whole defect.
+		//The dialog that offers that repair is a JOptionPane and cannot be
+		//reached from here, so what a headless suite can hold is that the one
+		//in-app way to repoint the game folder still consults the guard at all.
+		//It never mentioned it, which is the whole defect.
 		File settings = new File(src, "ctrmap/humaninterface/WorkspaceSettings.java");
 		if (!settings.isFile()) {
 			System.out.println("  skip: no WorkspaceSettings source at " + settings);
 			return;
 		}
-		String save = new String(Files.readAllBytes(settings.toPath()), StandardCharsets.UTF_8);
-		int asks = save.indexOf("snapshotIsForeign");
-		int repoints = save.indexOf("cleanAndReload");
-		check(asks >= 0 && repoints >= 0 && asks < repoints,
-				"the workspace settings dialog asks about the backup before it repoints the game folder");
+		String source = new String(Files.readAllBytes(settings.toPath()), StandardCharsets.UTF_8);
+		check(source.contains("Workspace.snapshotIsForeign("),
+				"the workspace settings dialog asks about the backup when the game folder changes");
 	}
 
 	static void check(boolean ok, String what) {

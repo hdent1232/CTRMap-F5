@@ -55,6 +55,9 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 		Workspace.TILESET_DEFAULT = btnTilesetDefault.isSelected();
 		Workspace.TILESET_PATH = tilesetPath.getText();
 		if (!gameField.getText().equals(originGamePath)) { //may have switched from XY to AlphaOmega etc., so it's better to clean up to prevent injecting wrong game files
+			if (!keepOrRetakeBackup(gameField.getText())) {
+				return; //the user would rather not move the workspace after all
+			}
 			int res = JOptionPane.showConfirmDialog(null, "Game path has been changed. To prevent cross-injecting, the workspace will be cleaned.\n"
 					+ "Do you wish to commit your changes to the game data beforehand? \nUncommited data will be lost on cleanup.", "State change warning", JOptionPane.YES_NO_CANCEL_OPTION);
 			switch (res) {
@@ -75,6 +78,38 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 		originTilesetPath = (btnTilesetDefault.isSelected() ? "Default" : tilesetPath.getText());
 		mTileEditForm.tileset = Workspace.getTileset();
 		mTileMapPanel.updateAll();
+	}
+
+	/**
+	 * Settles what happens to the pristine backup before the workspace moves to
+	 * another game folder. False means leave the game path alone.
+	 *
+	 * <p>Cleaning the workspace deliberately spares the backup, so repointing
+	 * used to keep the first dump's copy forever: Deploy then diffed the new
+	 * game against the old one and shipped archives the user had never touched,
+	 * and the building palette and atmosphere picker cut donors out of the
+	 * wrong game. Nothing said so, and the guard written for this
+	 * ({@link Workspace#snapshotIsForeign}) was never called from anywhere.
+	 */
+	private boolean keepOrRetakeBackup(String newGamePath) {
+		if (!Workspace.snapshotIsForeign(newGamePath)) {
+			return true;
+		}
+		int r = JOptionPane.showConfirmDialog(this,
+				"This workspace holds a pristine backup of the game folder it was set up with:\n  "
+				+ Workspace.snapshotSourcePath()
+				+ "\n\nCTRMap compares your edits against that backup to work out what you"
+				+ "\nchanged, and cuts donor buildings out of it, so keeping it would give"
+				+ "\nthe wrong answer for the folder you are switching to."
+				+ "\n\nReplace the backup with one taken from the new game folder?"
+				+ "\n(Choose No to leave the game path as it was.)",
+				"Backup belongs to another game", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+		if (r != JOptionPane.YES_OPTION) {
+			gameField.setText(originGamePath);
+			return false;
+		}
+		Workspace.discardSnapshot();
+		return true;
 	}
 
 	/**
