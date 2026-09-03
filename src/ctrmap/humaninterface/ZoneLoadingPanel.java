@@ -1242,7 +1242,12 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 							selectZone(idx);
 							JOptionPane.showMessageDialog(ZoneLoadingPanel.this,
 									"Zone " + idx + " now has its own private map (regions "
-									+ java.util.Arrays.toString(r.newRegions) + ").\nEdits here no longer affect any other zone.",
+									+ java.util.Arrays.toString(r.newRegions) + ").\nEdits here no longer affect any other zone."
+									+ (r.otherZones.length == 0 ? ""
+											: "\n\nThe map also carries ground belonging to zone(s) "
+											+ java.util.Arrays.toString(r.otherZones)
+											+ ".\nYour copy keeps their labels, so walking there still reports them,"
+											+ "\nbut edits you make to that ground now show only in this zone."),
 									"Shared map", JOptionPane.INFORMATION_MESSAGE);
 						}
 					});

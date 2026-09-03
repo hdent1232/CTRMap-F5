@@ -1249,6 +1249,15 @@ public class CtrmapMainframe {
 				sb.append(" (and the other new regions above)");
 			}
 			sb.append(".\nThe original region(s) still belong to the source zone(s).\n\n");
+			if (r.otherZones.length > 0) {
+				//their ground was copied along with the map and still carries
+				//their names - relabelling it to this zone would silently take
+				//their banner, music and entities away
+				sb.append("This map also carries ground belonging to zone(s) ")
+						.append(java.util.Arrays.toString(r.otherZones))
+						.append(".\nYour copy keeps their labels, so walking there still reports them,\n")
+						.append("but edits you make to that ground now show only in this zone.\n\n");
+			}
 			sb.append("Now run File > Pack Workspace, then File > Deploy to emulator.\n");
 			sb.append("No new code.ips is needed - the fork is pure data.");
 			javax.swing.JOptionPane.showMessageDialog(frame, sb.toString(), "Fork map geometry", javax.swing.JOptionPane.INFORMATION_MESSAGE);

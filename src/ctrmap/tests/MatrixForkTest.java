@@ -95,7 +95,7 @@ public class MatrixForkTest {
 			byte[] zoBytes = zo.getDecompressedEntry(zone);
 			int newZone = zoneCount + 7; //a plausible appended slot
 			try {
-				GeometryForker.ForkPlan p = GeometryForker.planFork(zoBytes, mat, mm.length, mm.length, newZone);
+				GeometryForker.ForkPlan p = GeometryForker.planFork(zoBytes, mat, mm.length, mm.length, newZone, true);
 				byte[] out = p.newMatrixBytes;
 				if (out.length != mat.length) {
 					throw new IllegalStateException("fork changed the matrix entry length "
@@ -151,8 +151,9 @@ public class MatrixForkTest {
 			}
 			shared++;
 			sharedMatrices.add(matIdx);
-			Map<Integer, Integer> after = layerZones(GeometryForker.planFork(
-					zo.getDecompressedEntry(zone), mat, mm.length, mm.length, zone).newMatrixBytes);
+			GeometryForker.ForkPlan p = GeometryForker.planFork(
+					zo.getDecompressedEntry(zone), mat, mm.length, mm.length, zone, false);
+			Map<Integer, Integer> after = layerZones(p.newMatrixBytes);
 			boolean ok = true;
 			for (Map.Entry<Integer, Integer> e : before.entrySet()) {
 				if (e.getKey() == zone) {
@@ -165,6 +166,17 @@ public class MatrixForkTest {
 								+ " took zone " + e.getKey() + "'s ground: " + before + " -> " + after);
 					}
 				}
+			}
+			if (!before.get(zone).equals(after.get(zone))) {
+				ok = false;
+				System.out.println("FAIL forking zone " + zone + " off shared matrix " + matIdx
+						+ " lost its own ground: " + before + " -> " + after);
+			}
+			if (p.otherZones.length != before.size() - 1) {
+				ok = false;
+				System.out.println("FAIL forking zone " + zone + " off shared matrix " + matIdx
+						+ " reported " + java.util.Arrays.toString(p.otherZones)
+						+ " as the other zones on the map, but the layer holds " + before);
 			}
 			if (ok) {
 				intact++;
