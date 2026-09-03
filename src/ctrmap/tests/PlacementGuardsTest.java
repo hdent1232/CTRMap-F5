@@ -449,6 +449,19 @@ public class PlacementGuardsTest {
 		String note = TilePainterForm.stampPlaced(paintedPath(), at(room, 5, 5), new int[DIM][DIM], null);
 		check(note.contains(tris + " triangles") && note.contains("rides along") && note.contains("shadow"),
 				"Apply's account of a placed building repeats the count and names the passengers: " + note.trim());
+		//and the confirmation before it lists the same manifest
+		String summary = TilePainterForm.placedSummary(at(room, 5, 5));
+		check(summary.contains(room.name) && summary.contains(tris + " triangles") && summary.contains("rides along"),
+				"Apply's confirmation lists each building's manifest: " + summary);
+		//the palette's checkbox: the passengers stay behind, and the account says so
+		int riders = p.passengers().size();
+		check(riders > 0 && p.withoutPassengers().pieces.size() == p.pieces.size() - riders,
+				"leaving the passengers behind drops exactly them (" + riders + " of " + p.pieces.size() + " pieces)");
+		java.util.List<TilePainterForm.Placed> alone = new ArrayList<>();
+		alone.add(new TilePainterForm.Placed(room, 5, 5, false));
+		String left = TilePainterForm.stampPlaced(paintedPath(), alone, new int[DIM][DIM], null);
+		check(left.contains((p.pieces.size() - riders) + " piece(s)") && left.contains("left behind") && left.contains("shadow"),
+				"a building placed without its passengers stamps the structure alone and says what stayed: " + left.trim());
 	}
 
 	/**
