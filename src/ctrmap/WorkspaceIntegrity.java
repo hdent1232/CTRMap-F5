@@ -3,6 +3,8 @@ package ctrmap;
 import ctrmap.formats.garc.GARC;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Cross-archive invariants: the things that must stay in lockstep, checked in
@@ -21,7 +23,10 @@ import java.util.List;
  *     so loading the new area threw and rendering the zone was impossible;</li>
  * <li>a zone fork rewired a map matrix at a region index the FieldData archive
  *     did not yet have;</li>
- * <li>a pack from a stale entry table wrote offsets into a file that had moved.</li>
+ * <li>a pack from a stale entry table wrote offsets into a file that had moved;</li>
+ * <li>an area fork from an older build wrote the new area's NPC registry one
+ *     slot early, so the counts matched, every id was in range, and the forked
+ *     zone loaded a different area's NPCs.</li>
  * </ul>
  * Each was found by hand, after the damage. A check is cheap - it reads five
  * entry counts and a master table - and it turns a silent inconsistency into a
@@ -75,6 +80,8 @@ public class WorkspaceIntegrity {
 			//areadataID 229 against 229 registries (index 229 missing, and the
 			//zone would not load).
 			int maxAreaInUse = -1, maxAreaZone = -1;
+			//forked area id -> the first zone that names it, for check 4 below
+			Map<Integer, Integer> forkedAreaZone = new TreeMap<>();
 			byte[] masterTable = zo.getDecompressedEntry(zo.length - 2);
 			if (masterTable != null && masterTable.length % MASTER_ROW == 0) {
 				int n = Math.min(masterTable.length / MASTER_ROW, zo.length - 2);
@@ -83,6 +90,9 @@ public class WorkspaceIntegrity {
 					if (a > maxAreaInUse) {
 						maxAreaInUse = a;
 						maxAreaZone = z;
+					}
+					if (a >= AreaForker.AD_GLOBAL_TABLE && !forkedAreaZone.containsKey(a)) {
+						forkedAreaZone.put(a, z);
 					}
 				}
 			}
@@ -96,6 +106,65 @@ public class WorkspaceIntegrity {
 			if (maxAreaInUse >= ad.length) {
 				bad.add("zone " + maxAreaZone + " uses area " + maxAreaInUse
 						+ ", but AreaData only has indices 0.." + (ad.length - 1));
+			}
+
+			//4. A REGISTRY NOTHING CAN READ, which is what the OLD area fork
+			//   left behind and what check 1 is blind to.
+			//
+			//The fork appends the new area's registry at the new area's own id.
+			//The pre-fix build named a file past the end of the archive and the
+			//packer renumbered it to the first free slot, so the clone made for
+			//area 229 landed at 228 - AreaData's per-area TABLE, not an area,
+			//and an id planFork refuses, so no zone can ever name it. A later
+			//fork back-filled 229 with a different area's clone. The result has
+			//AreaData and NPCRegistries the same length and every id in range,
+			//so check 1 passes and the game loads the wrong NPCs.
+			//
+			//Detected by the one thing that cannot be innocent: a NON-EMPTY
+			//registry at an id at or past the per-area table that no zone
+			//names. Retail stops at 227 and never reaches these indices, and
+			//the fixed fork writes its own filler slots EMPTY, so a healthy
+			//workspace has nothing here. Deliberately not "the clone still
+			//matches its source" - forking exists so the copy can be edited,
+			//and that check would fire on every fork the user actually used.
+			if (Workspace.isOA() && np.length > AreaForker.AD_GLOBAL_TABLE) {
+				List<Integer> stranded = new ArrayList<>();
+				for (int i = AreaForker.AD_GLOBAL_TABLE; i < np.length; i++) {
+					if (forkedAreaZone.containsKey(i)) {
+						continue;
+					}
+					byte[] reg;
+					try {
+						reg = np.getDecompressedEntry(i);
+					} catch (RuntimeException ignore) {
+						continue; //unreadable is a different complaint
+					}
+					if (reg != null && reg.length > 0) {
+						stranded.add(i);
+					}
+				}
+				if (!stranded.isEmpty()) {
+					StringBuilder forked = new StringBuilder();
+					for (Map.Entry<Integer, Integer> e : forkedAreaZone.entrySet()) {
+						forked.append(forked.length() == 0 ? "" : ", ")
+								.append("zone ").append(e.getValue())
+								.append(" on area ").append(e.getKey());
+					}
+					bad.add("NPC registry " + stranded + " holds real NPCs, but nothing will ever"
+							+ " read it: AreaData " + AreaForker.AD_GLOBAL_TABLE + " is the engine's"
+							+ " per-area table rather than an area, and no zone names any of these"
+							+ " ids. An area fork made by an older build wrote the new area's"
+							+ " registry one slot early and leaves exactly this"
+							+ (forked.length() == 0 ? ", with the area it was cloned for since gone"
+									: ", while the forked " + forked + " reads whatever now sits at"
+									+ " its own id - somebody else's NPCs")
+							+ ". This is NOT repaired automatically, because the right repair is not"
+							+ " unambiguous: any registry from " + stranded.get(0) + " upwards may"
+							+ " have been edited since the fork, and shifting one into place"
+							+ " overwrites the next. Either re-fork the affected zone(s) on a clean"
+							+ " copy of the game, or move the numbered files in the workspace's"
+							+ " npcregistries folder into the right slots by hand and pack again.");
+				}
 			}
 
 			if (!deep) {
