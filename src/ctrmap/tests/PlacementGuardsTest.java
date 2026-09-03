@@ -59,7 +59,12 @@ import java.util.TreeSet;
  *     and stamped 153 units into the air; Fortree's treehouses did the same.</li>
  * <li>Satellite absorption grew a component's box without re-running the
  *     terrain guard, so a 22x17 slab of Cycling Road (sea plane, deck and all)
- *     was offered as a fence.</li>
+ *     was offered as a fence. The box was fixed; what rides inside a box was
+ *     not: "Littleroot Town lamp" is a furnished room - four floors, a baked
+ *     shadow, 27 textures - and "Route 110 fence 2" brings a sea plane and a
+ *     road deck 240 units up, and the palette's manifest gave numbers only, so
+ *     the user could not tell a scene from a lamp except by inference, and
+ *     Apply repeated none of it.</li>
  * <li>"Copy selection as prefab" discarded every face crossing the selection
  *     edge without counting it: Route 101's 10..19 box loses 135 faces that
  *     lie across it and two materials entirely, and the dialog listed only what
@@ -118,6 +123,7 @@ public class PlacementGuardsTest {
 		paintKeptUnderDonorBehaviour();
 		collisionCrossingTheBoxIsKept();
 		facesCrossingTheBoxAreCounted();
+		passengersAreNamed();
 		baseYIsTheFooting(step);
 		catalogueBoxesAreAssets();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -398,6 +404,51 @@ public class PlacementGuardsTest {
 			}
 		}
 		return Math.abs(area2) / 2;
+	}
+
+	/**
+	 * What rides along inside a cut is named where the user decides - the
+	 * palette's manifest before placing, Apply's account after - by material
+	 * class, not counted into a triangle total; and the counts the manifest
+	 * does give are the prefab's own.
+	 */
+	static void passengersAreNamed() throws Exception {
+		BuildingCatalog.Entry room = entry("Littleroot Town lamp", 510, 114, 6, 6, 22, 22, 0);
+		BuildingCatalog.Entry fence = entry("Route 110 fence 2", 185, 28, 15, 11, 19, 18, -9);
+		MapPrefab p = BuildingPaletteDialog.cachedPrefab(room);
+		check(p != null && p.pieces.size() > 20, "fixture: the \"lamp\" is a room of " + (p == null ? 0 : p.pieces.size()) + " pieces");
+		if (p == null) {
+			return;
+		}
+		//the manifest's numbers, recounted from the pieces themselves
+		int tris = 0;
+		float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
+		for (MapPrefab.Piece piece : p.pieces) {
+			tris += piece.triangles.length / 3;
+			for (int v = 0; v * piece.stride < piece.vertexBytes.length; v++) {
+				int o = v * piece.stride + piece.posOffset + 4;
+				float y = Float.intBitsToFloat((piece.vertexBytes[o] & 0xFF) | ((piece.vertexBytes[o + 1] & 0xFF) << 8)
+						| ((piece.vertexBytes[o + 2] & 0xFF) << 16) | ((piece.vertexBytes[o + 3] & 0xFF) << 24));
+				lo = Math.min(lo, y);
+				hi = Math.max(hi, y);
+			}
+		}
+		check(p.triangleCount() == tris, "the manifest's triangle count is the pieces' own: " + p.triangleCount() + " vs " + tris);
+		check(p.heightSpan()[0] == lo && p.heightSpan()[1] == hi, "the manifest's height span is the pieces' own: "
+				+ Arrays.toString(p.heightSpan()) + " vs " + lo + ".." + hi);
+		RegionFactory.BlankContent base = paintedPath();
+		String manifest = BuildingPaletteDialog.manifest(p, p.stampGeometry(base.model, 5, 5, 0), room);
+		check(manifest.contains(tris + " triangles") && manifest.contains(Math.round(hi) + " above ground"),
+				"the palette's manifest carries the count and the span: " + manifest);
+		check(manifest.contains("rides along") && manifest.contains("shadow") && manifest.contains("floor"),
+				"the palette names the room's passengers - its shadow decal and floors - by class: " + manifest);
+		MapPrefab pf = BuildingPaletteDialog.cachedPrefab(fence);
+		String fenceManifest = pf == null ? "" : BuildingPaletteDialog.manifest(pf, pf.stampGeometry(base.model, 5, 5, 9), fence);
+		check(fenceManifest.contains("sea/water"), "the palette names the fence's sea plane: " + fenceManifest);
+		//Apply's own account repeats it
+		String note = TilePainterForm.stampPlaced(paintedPath(), at(room, 5, 5), new int[DIM][DIM], null);
+		check(note.contains(tris + " triangles") && note.contains("rides along") && note.contains("shadow"),
+				"Apply's account of a placed building repeats the count and names the passengers: " + note.trim());
 	}
 
 	/**
