@@ -8,7 +8,9 @@ import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Where the tile painter puts a floor and which way it slopes. Five live
@@ -20,7 +22,11 @@ import java.util.Arrays;
  *     route uses for its path up a hill - lower ground on three sides - ran
  *     east across the corridor and the way through stayed walled.</li>
  * <li>A ramp on a two-level hill matched no neighbour at all and was dropped
- *     without a word: a 36-unit wall stood where the arrow was drawn.</li>
+ *     without a word: a 36-unit wall stood where the arrow was drawn. Fixed
+ *     from scratch, it still failed on the painter's own path: a composite
+ *     ramp toward an untouched retail tile with no collision under its centre
+ *     found no foot, took one step down instead, and ended 18 units in the
+ *     air with no wall and no message.</li>
  * <li>The stair brushes carried a tuple and a material but no slope, so every
  *     step was a flat tile behind an 18-unit wall.</li>
  * <li>Painted water sank its visible surface seven units but not its
@@ -59,6 +65,7 @@ public class PaintedFloorTest {
 		}
 		rampRunsAlongTheCorridor(donor);
 		rampSpansAnyDrop(donor);
+		rampFootOnUnsampledNeighbour(donor);
 		stairsSlope(donor);
 		waterCollisionSinksWithTheMesh(donor);
 		unsampledTileSeedsFromItsNeighbour(gr);
@@ -107,6 +114,55 @@ public class PaintedFloorTest {
 			check(Math.abs(n - lvl * STEP) < STEP * 0.1f && s < STEP * 0.1f,
 					"level-" + lvl + " hill: the ramp slopes the whole " + (lvl * STEP) + " units (N " + n + " S " + s + ")");
 		}
+	}
+
+	/**
+	 * The painter's real path: a composite edit on retail ground, a 3x2 block
+	 * raised two levels with its edge tile ramped south toward an untouched
+	 * tile that has no collision under its centre. That tile's ground is
+	 * borrowed from beside it (0 here), and the ramp must reach it - in the
+	 * collision and in the slope you can see - with no wall across its foot.
+	 */
+	static void rampFootOnUnsampledNeighbour(byte[] donor) {
+		//a flat floor at Y=0 under every tile but (20,21)
+		List<float[]> floor = new ArrayList<>();
+		for (int ty = 0; ty < DIM; ty++) {
+			for (int tx = 0; tx < DIM; tx++) {
+				if (tx == 20 && ty == 21) {
+					continue;
+				}
+				float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE, z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
+				floor.add(new float[]{x0, 0, z0, x0, 0, z1, x1, 0, z0});
+				floor.add(new float[]{x1, 0, z0, x0, 0, z1, x1, 0, z1});
+			}
+		}
+		byte[] coll = GfColl.build(floor, null);
+		byte[] tm = new byte[6528];
+		tm[0] = (byte) DIM;
+		tm[2] = (byte) DIM;
+		float[][] by = PaintedRegionBuilder.sampleBaseY(coll);
+		check(Float.isNaN(by[21][20]) && by[20][20] == 0f && by[22][20] == 0f,
+				"fixture: tile (20,21) has no ground under its centre and its neighbours stand at 0");
+		TilePalette[][] grid = grid(TilePalette.GRASS);
+		int[][] h = new int[DIM][DIM];
+		boolean[][] touched = new boolean[DIM][DIM];
+		for (int y = 19; y <= 20; y++) {
+			for (int x = 19; x <= 21; x++) {
+				h[y][x] = 2;
+				touched[y][x] = true;
+			}
+		}
+		int[][] ramp = PaintedRegionBuilder.noRamps();
+		ramp[20][20] = 2;
+		RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(donor, coll, tm, grid, h, ramp, touched, L, false);
+		GfColl out = new GfColl(c.collision);
+		float n = surface(out, 20.5f, 20.02f), s = surface(out, 20.5f, 20.98f);
+		check(walls(out, 20, 20, 2) == 0, "composite ramp toward an unsampled tile: no wall across its foot");
+		check(Math.abs(n - 2 * STEP) < STEP * 0.1f && s < STEP * 0.1f,
+				"composite ramp toward an unsampled tile: the collision slopes the whole " + (2 * STEP) + " units to that tile's ground (N " + n + " S " + s + ")");
+		float[] seen = slopeSpan(new BchMapModel(c.model), 20, 20);
+		check(seen[1] > 2 * STEP - STEP * 0.1f && seen[0] < STEP * 0.1f,
+				"composite ramp toward an unsampled tile: the slope you can see reaches that ground too (" + seen[0] + ".." + seen[1] + ")");
 	}
 
 	/** A three-step north-south run up to a plateau, then the east-west brushes. */
@@ -278,6 +334,36 @@ public class PaintedFloorTest {
 			}
 		}
 		return n;
+	}
+
+	/**
+	 * {lowest, highest} Y across the model triangles whose corners all stand
+	 * on a tile's own corners - the generated quad and nothing retail.
+	 */
+	static float[] slopeSpan(BchMapModel m, int tx, int tz) {
+		float x0 = tx * TILE + ORIGIN, z0 = tz * TILE + ORIGIN;
+		float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
+		for (BchMapModel.MeshGeom mg : m.geometry()) {
+			if (!mg.posOk) {
+				continue;
+			}
+			float[][] p = m.getVertexPositions(mg.meshIndex);
+			int[] t = m.getTriangles(mg.meshIndex);
+			for (int i = 0; i + 2 < t.length; i += 3) {
+				boolean onCorners = true;
+				for (int c = 0; c < 3; c++) {
+					float dx = (p[t[i + c]][0] - x0) / TILE, dz = (p[t[i + c]][2] - z0) / TILE;
+					onCorners &= (Math.abs(dx) < 0.01f || Math.abs(dx - 1) < 0.01f) && (Math.abs(dz) < 0.01f || Math.abs(dz - 1) < 0.01f);
+				}
+				if (onCorners) {
+					for (int c = 0; c < 3; c++) {
+						lo = Math.min(lo, p[t[i + c]][1]);
+						hi = Math.max(hi, p[t[i + c]][1]);
+					}
+				}
+			}
+		}
+		return new float[]{lo, hi};
 	}
 
 	/** The lowest model triangle whose centroid lands on a tile. */
