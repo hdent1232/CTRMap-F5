@@ -52,7 +52,7 @@ import java.util.TreeSet;
  * dialog on the path is the shared-area prompt; a headless JVM makes it throw,
  * which is a refusal like any other and must have written nothing.
  *
- * Usage: java ctrmap.tests.PaintApplyGuardsTest &lt;pristine-dump-root&gt;
+ * Usage: java ctrmap.tests.PaintApplyGuardsTest &lt;pristine-dump-root&gt; [src]
  */
 public class PaintApplyGuardsTest {
 
@@ -81,6 +81,7 @@ public class PaintApplyGuardsTest {
 		appliedMapCarriesItsTextures();
 		retryStillAsksForTheTextures();
 		sharedMatrixIsPaintedAfterTheFork();
+		everyAreaImportAsksTheSharedQuestion(new File(args.length > 1 ? args[1] : "src"));
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -224,6 +225,75 @@ public class PaintApplyGuardsTest {
 			}
 		}
 		check(painted != null, "the zone's private copy of the region carries the painted sand floor");
+	}
+
+	/**
+	 * The shared-area rule lived inside carryToArea alone, so the door-prop and
+	 * prop-editor imports walked straight past it: placing any building with a
+	 * door - 400 of ~535 zones are on a shared area - imported its textures and
+	 * rewrote the prop registry of an area fifteen other maps could be using,
+	 * with no prompt and no line in the result dialog. Every production import
+	 * into an area now goes through BchTexturePack.importIntoArea, which asks
+	 * the question first; the raw pack-level importTextures is for the format
+	 * tests, which have no area at all.
+	 */
+	static void everyAreaImportAsksTheSharedQuestion(File src) throws Exception {
+		int shared = -1, own = -1;
+		for (int z = 0; z < zo.length - 2 && (shared < 0 || own < 0); z++) {
+			int area = ctrmap.AreaForker.currentArea(z);
+			boolean many = BchTexturePack.zonesUsingArea(area, z) != null;
+			shared = many && shared < 0 ? z : shared;
+			own = !many && own < 0 ? z : own;
+		}
+		check(shared >= 0 && refusal(shared) != null && refusal(shared).getMessage().contains("also used by"),
+				"an area other zones use is refused, and the refusal names them (" + refusal(shared) + ")");
+		check(own >= 0 && refusal(own) == null, "a zone's own private area is not refused");
+
+		File root = new File(src, "ctrmap");
+		if (!root.isDirectory()) {
+			System.out.println("  skip: no source at " + root);
+			return;
+		}
+		List<String> raw = new ArrayList<>();
+		rawImports(root, raw);
+		check(raw.isEmpty(), "no editor path imports textures into an area without asking: " + raw);
+	}
+
+	/** What assertNotShared does to the zone's area, or null when it allows it. */
+	static Exception refusal(int zoneIndex) throws Exception {
+		try {
+			BchTexturePack.assertNotShared(ctrmap.AreaForker.currentArea(zoneIndex), zoneIndex);
+			return null;
+		} catch (Exception ex) {
+			return ex;
+		}
+	}
+
+	/** Production files calling the pack-level import instead of importIntoArea. */
+	static void rawImports(File dir, List<String> hits) throws Exception {
+		File[] files = dir.listFiles();
+		if (files == null) {
+			return;
+		}
+		for (File f : files) {
+			if (f.isDirectory()) {
+				if (!f.getName().equals("tests")) {
+					rawImports(f, hits);
+				}
+				continue;
+			}
+			if (!f.getName().endsWith(".java") || f.getName().equals("BchTexturePack.java")) {
+				continue;
+			}
+			String text = SourceSeamTest.stripComments(new String(
+					Files.readAllBytes(f.toPath()), java.nio.charset.StandardCharsets.UTF_8));
+			for (String call : new String[]{"importTextures(", "importTexture("}) {
+				int at = text.indexOf(call);
+				if (at >= 0) {
+					hits.add(f.getName() + ":" + text.substring(0, at).split("\n", -1).length);
+				}
+			}
+		}
 	}
 
 	//--- fixtures -------------------------------------------------------------
