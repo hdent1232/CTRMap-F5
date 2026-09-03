@@ -231,15 +231,10 @@
   "sha256": "ed682d8eb745bbdd9bde634d8ecf9d6801a2bde660c4d83dd3dee16cfba0cc98"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
-  "survivors": 8,
-  "killed": 15,
+  "survivors": 7,
+  "killed": 16,
   "unmeasured": 2,
   "lines": [
-   {
-    "line": 734,
-    "kind": "drop-report",
-    "code": "dlgStatus.setText(\"Script \" + scriptId + \" is not defined in this zone's script.\");"
-   },
    {
     "line": 978,
     "kind": "negate-if",
