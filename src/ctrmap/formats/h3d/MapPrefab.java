@@ -338,8 +338,11 @@ public class MapPrefab {
 		return n;
 	}
 
-	/** {lowest, highest} vertex Y across every piece, in the donor's frame. */
+	/** {lowest, highest} vertex Y across every piece, in the donor's frame; {0, 0} with no pieces. */
 	public float[] heightSpan() {
+		if (pieces.isEmpty()) {
+			return new float[]{0, 0};
+		}
 		float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
 		for (Piece piece : pieces) {
 			for (int o = piece.posOffset + 4; o + 4 <= piece.vertexBytes.length; o += piece.stride) {
@@ -349,6 +352,103 @@ public class MapPrefab {
 			}
 		}
 		return new float[]{lo, hi};
+	}
+
+	/** The size of the thing as the user reads it: "27 piece(s) / 5775 triangles, -9..65 above ground". */
+	public String summary(float baseY) {
+		float[] span = heightSpan();
+		return pieces.size() + " piece(s) / " + triangleCount() + " triangles, "
+				+ Math.round(span[0] - baseY) + ".." + Math.round(span[1] - baseY) + " above ground";
+	}
+
+	// ---- passengers ---------------------------------------------------------
+
+	/** A piece that rides along with the cut: the class of thing it is, and the piece. */
+	public static final class Passenger {
+
+		public final String kind;
+		public final Piece piece;
+
+		Passenger(String kind, Piece piece) {
+			this.kind = kind;
+			this.piece = piece;
+		}
+	}
+
+	/** Material-name cues for the classes of thing that ride along inside a box: {kind, cues...}. */
+	private static final String[][] PASSENGER_CUES = {
+		{"sea/water", "sea", "umi", "mizu", "water", "wave"},
+		{"shadow", "shadow", "kage"},
+		{"floor", "yuka", "floor", "tatami"},
+		{"terrain", "chip_"}
+	};
+
+	/**
+	 * The class a material name flags a piece as - a sea/water plane, a shadow
+	 * decal, a floor, a terrain chip - or null for a piece of the structure
+	 * itself. A cut takes every face inside its box, so a lamp on a pier
+	 * brings the sea under it and a lamp in a room brings the room's floors
+	 * and its baked shadow; the harvested name comes from the dominant
+	 * material and says nothing of them, so the palette and Apply do.
+	 */
+	public static String passengerKind(String material) {
+		String m = material == null ? "" : material.toLowerCase();
+		for (String[] cues : PASSENGER_CUES) {
+			for (int i = 1; i < cues.length; i++) {
+				if (m.contains(cues[i])) {
+					return cues[0];
+				}
+			}
+		}
+		return null;
+	}
+
+	/** The pieces that ride along, in piece order. */
+	public List<Passenger> passengers() {
+		List<Passenger> out = new ArrayList<>();
+		for (Piece piece : pieces) {
+			String kind = passengerKind(piece.material);
+			if (kind != null) {
+				out.add(new Passenger(kind, piece));
+			}
+		}
+		return out;
+	}
+
+	/** The passengers as the user reads them - "shadow shadow_a (413 tris), floor yuka1 (24 tris)" - or "" with none. */
+	public String passengerNote() {
+		StringBuilder sb = new StringBuilder();
+		for (Passenger r : passengers()) {
+			sb.append(sb.length() > 0 ? ", " : "").append(r.kind).append(' ').append(r.piece.material)
+					.append(" (").append(r.piece.triangles.length / 3).append(" tris)");
+		}
+		return sb.toString();
+	}
+
+	/**
+	 * This prefab with its passengers left behind - the palette's checkbox.
+	 * The collision and movement tiles are the structure's and stay: a deck's
+	 * floor mesh can be left out, but the fence standing on it still needs
+	 * something to stand on, and the Apply note says what was left.
+	 */
+	public MapPrefab withoutPassengers() {
+		MapPrefab p = new MapPrefab();
+		p.name = name;
+		p.sourceRegion = sourceRegion;
+		p.donorArea = donorArea;
+		p.donorModel = donorModel;
+		p.tilesW = tilesW;
+		p.tilesH = tilesH;
+		p.tiles = tiles;
+		p.collTris.addAll(collTris);
+		p.facesDropped = facesDropped;
+		p.materialsLost.addAll(materialsLost);
+		for (Piece piece : pieces) {
+			if (passengerKind(piece.material) == null) {
+				p.pieces.add(piece);
+			}
+		}
+		return p;
 	}
 
 	// ---- stamping ---------------------------------------------------------

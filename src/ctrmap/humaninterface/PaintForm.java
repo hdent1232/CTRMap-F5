@@ -51,6 +51,8 @@ public class PaintForm extends JPanel {
 	byte[] donorColl; // the region's collision - the retail-height frame for composite builds
 	int cellX, cellY; // the painted cell's position in the zone's world grid
 	BuildingCatalog.Entry pendingPlace = null;
+	/** Whether the pending building brings its passengers (the palette's checkbox). */
+	boolean pendingPassengers = true;
 	int ptool = 0; // 0 paint, 1 fill, 2 raise, 3 lower, 4 ramp
 
 	private final java.util.ArrayDeque<Object[]> undoStack = new java.util.ArrayDeque<>();
@@ -152,10 +154,12 @@ public class PaintForm extends JPanel {
 		buildings.setAlignmentX(0f);
 		buildings.setToolTipText("Pokemon Centers, Marts, houses, signs, trees - pick one, then click the map to place it. Right-click a placed one to remove it.");
 		buildings.addActionListener(e -> {
-			BuildingCatalog.Entry pick = BuildingPaletteDialog.pick(null, donorModel, mTileMapPanel.getWorldTextures());
+			BuildingPaletteDialog.Pick pick = BuildingPaletteDialog.pick(null, donorModel, mTileMapPanel.getWorldTextures());
 			if (pick != null) {
-				pendingPlace = pick;
-				placeStatus.setText("<html><b>Placing: " + pick.name + "</b> - click the map</html>");
+				pendingPlace = pick.entry;
+				pendingPassengers = pick.passengers;
+				placeStatus.setText("<html><b>Placing: " + pick.entry.name + "</b>"
+						+ (pick.passengers ? "" : " (passengers left behind)") + " - click the map</html>");
 			}
 		});
 		add(buildings);
@@ -523,7 +527,7 @@ public class PaintForm extends JPanel {
 				snapshot();
 				int px = Math.max(0, Math.min(DIM - pendingPlace.tilesW(), lx));
 				int py = Math.max(0, Math.min(DIM - pendingPlace.tilesH(), ly));
-				placed.add(new Placed(pendingPlace, px, py));
+				placed.add(new Placed(pendingPlace, px, py, pendingPassengers));
 				touchFootprint(px, py, pendingPlace.tilesW(), pendingPlace.tilesH());
 			}
 			pendingPlace = null;
@@ -900,11 +904,13 @@ public class PaintForm extends JPanel {
 		if (TilePainterForm.usesWater(grid) && !TilePainterForm.zoneWaterScrolls(mZonePnl.zone.header.areadataID)) {
 			waterNote = "\n\nNote: painted water will be STILL here - use \"Make water ripple here\" first.";
 		}
+		//what each building really is, at the moment of the decision
+		String buildingsNote = placed.isEmpty() ? "" : "\n\nBuildings to place:\n" + TilePainterForm.placedSummary(placed);
 		int rsl = JOptionPane.showConfirmDialog(this,
 				"Apply your edits to zone " + zoneIndex + "'s map?\n"
 				+ "The " + touchedCount + " tile(s) you touched are rebuilt; the rest of the map keeps\n"
 				+ "its existing geometry. If the map is still shared with other zones, this\n"
-				+ "zone gets its own private copy first. Deploy afterwards to walk on it." + waterNote,
+				+ "zone gets its own private copy first. Deploy afterwards to walk on it." + waterNote + buildingsNote,
 				"Map Builder", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
 		if (rsl != JOptionPane.OK_OPTION) {
 			return;
