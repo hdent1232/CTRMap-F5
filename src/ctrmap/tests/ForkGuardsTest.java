@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.AreaForker;
+import ctrmap.GeometryForker;
 import ctrmap.Workspace;
 import ctrmap.WorkspaceIntegrity;
 import java.io.File;
@@ -32,12 +33,20 @@ import java.util.List;
  * <p>Runs three consecutive forks, each followed by a real pack, because the
  * damage only showed on the second and third.
  *
+ * <p>A GEOMETRY fork had the opposite problem: no guard against being run on a
+ * zone that already owns its map, so every run appended another copy of every
+ * region and orphaned the last one, silently, while reporting success.
+ *
  * Usage: java ctrmap.tests.ForkGuardsTest &lt;romfs-root&gt;
  */
 public class ForkGuardsTest {
 
 	/** Zones with three different retail areas; any three would do. */
 	private static final int[] ZONES = {15, 20, 30};
+	/** Mauville: its map matrix is already its own in the retail game. */
+	private static final int PRIVATE_ZONE = 15;
+	/** Fallarbor Town: shares matrix 8 with Routes 111, 112, 113 and 114. */
+	private static final int SHARED_ZONE = 10;
 
 	static int fails = 0;
 
@@ -50,6 +59,7 @@ public class ForkGuardsTest {
 		}
 		ScratchGame.open(dump);
 		areaForkKeepsTheRegistryAligned();
+		geometryForkOnlyRunsWhenItIsNeeded();
 		gappedAppendIsRefused();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -84,6 +94,45 @@ public class ForkGuardsTest {
 			check(bad.isEmpty(), "fork " + (pass + 1) + ": the packed game passes every"
 					+ " cross-archive invariant " + bad);
 		}
+	}
+
+	/**
+	 * A geometry fork on a zone that already owns its map must do nothing.
+	 *
+	 * <p>Every run appended a fresh copy of every region in the zone's matrix
+	 * plus a new matrix and reported "Zone N now has private map geometry" as
+	 * if it had been needed, orphaning the previous copies - nothing ever
+	 * reclaims them. Measured: four forks of zone 15, whose map is ALREADY
+	 * private in the retail game, grew FieldData from 857 to 861 regions and by
+	 * 1.17 MB, and three of the four appended matrices were referenced by no
+	 * zone at all. Iterating on a test zone does this every cycle.
+	 */
+	static void geometryForkOnlyRunsWhenItIsNeeded() throws Exception {
+		check(GeometryForker.matrixSharers(PRIVATE_ZONE) == 0,
+				"zone " + PRIVATE_ZONE + "'s map is already its own in the retail game");
+		int regions = Workspace.gr.length, matrices = Workspace.mm.length;
+		GeometryForker.forkGeometry(PRIVATE_ZONE);
+		pack();
+		check(Workspace.gr.length == regions && Workspace.mm.length == matrices,
+				"giving an already-private zone its own map appends nothing (FieldData "
+				+ regions + " -> " + Workspace.gr.length + ", MapMatrix " + matrices + " -> "
+				+ Workspace.mm.length + ")");
+
+		check(GeometryForker.matrixSharers(SHARED_ZONE) > 0,
+				"zone " + SHARED_ZONE + " shares its map with other zones");
+		GeometryForker.forkGeometry(SHARED_ZONE);
+		pack();
+		check(Workspace.gr.length > regions, "a zone that shares its map does get a private copy");
+		check(GeometryForker.matrixSharers(SHARED_ZONE) == 0, "and stops sharing");
+
+		regions = Workspace.gr.length;
+		matrices = Workspace.mm.length;
+		GeometryForker.forkGeometry(SHARED_ZONE);
+		pack();
+		check(Workspace.gr.length == regions && Workspace.mm.length == matrices,
+				"forking the same zone a second time appends nothing (FieldData " + regions
+				+ " -> " + Workspace.gr.length + ", MapMatrix " + matrices + " -> "
+				+ Workspace.mm.length + ")");
 	}
 
 	/**
