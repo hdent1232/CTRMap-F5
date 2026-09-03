@@ -238,11 +238,15 @@ public class AreaForker {
 			throw new IOException("No area ids left: the engine indexes areas with 8 bits, so "
 					+ MAX_AREA_ID + " is the last usable id.");
 		}
-		//the engine indexes the NPC registry by area id - the two archives must
-		//stay aligned (AreaData carries one extra entry: the global table)
-		if (np.length != newArea - 1) {
-			throw new IOException("AreaData (" + ad.length + " entries) and the NPC registry ("
-					+ np.length + ") are out of step; an area fork would desynchronise them.");
+		//The engine indexes the NPC registry by area id, so the archive has to
+		//REACH the new id - a count relationship is not the same thing. Retail
+		//ships 229 AreaData entries (228 of them areas, plus the per-area table
+		//at index 228) against 228 registries, so the first forked id, 229, is
+		//two past the end of the registry archive. The gap is filled below.
+		if (np.length > newArea + 1) {
+			throw new IOException("The NPC registry (" + np.length + " entries) already reaches"
+					+ " past the new area id " + newArea + "; it and AreaData (" + ad.length
+					+ " entries) are out of step, and an area fork would not repair that.");
 		}
 		File adDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA);
 		File npDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
@@ -270,8 +274,22 @@ public class AreaForker {
 		Workspace.addPersist(adOut);
 		registerPendingArea(newArea, ad.isEntryCompressed(oldArea));
 
-		File npOut = new File(npDir, String.valueOf(newArea));
 		npDir.mkdirs();
+		//An archive can only grow at its tail: a file named past the end lands
+		//at the first free slot instead, which is how the clone of area 21 came
+		//to sit at index 228 while the zone asked for 229. Every index between
+		//the registry's end and the new id gets an entry of its own first, so
+		//the clone lands where the engine will look for it. They are empty, and
+		//an empty registry is a real thing - 36 retail areas ship one - and no
+		//zone can name them anyway: the only id skipped this way is 228, the
+		//per-area table's slot, which planFork refuses as an area.
+		for (int filler = np.length; filler < newArea; filler++) {
+			File fillOut = new File(npDir, String.valueOf(filler));
+			writeAll(fillOut, new byte[0]);
+			Workspace.addPersist(fillOut);
+			registerPendingNpcReg(filler, false);
+		}
+		File npOut = new File(npDir, String.valueOf(newArea));
 		writeAll(npOut, plan.newNpcBytes);
 		Workspace.addPersist(npOut);
 		registerPendingNpcReg(newArea, np.length > 0 && np.isEntryCompressed(Math.min(oldArea, np.length - 1)));
@@ -290,9 +308,10 @@ public class AreaForker {
 		r.forked = true;
 		//A fork writes an AreaData entry AND an NPC registry entry. If only one
 		//of them survives the pack, the new area exists with nothing behind it
-		//and every later load of that zone throws. That has happened; say so
-		//here, next to the fork, rather than leaving it to be found by hand.
-		WorkspaceIntegrity.report("forking area " + oldArea + " -> " + newArea);
+		//and every later load of that zone throws. That check used to run here,
+		//before the pack, when the archives on disk still held none of this and
+		//it could only ever report clean; Workspace.packArchives runs it after
+		//the writes instead, and shows what it finds.
 		return r;
 	}
 

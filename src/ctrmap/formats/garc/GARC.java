@@ -263,6 +263,20 @@ public class GARC {
 				compressedData[i] = or;
 			}
 			if (changedIndices[i] > entries.size() - 1) {
+				//An archive grows only at its tail. A file named past the tail
+				//used to be renumbered to the first free slot without a word,
+				//so an area fork's "229" landed at 228 and the zone that asked
+				//for 229 could not load. The caller's number is the whole point
+				//of the file - every reference to it in the other archives is
+				//that number - so a gap is a refusal, not something to guess at.
+				if (changedIndices[i] > entries.size()) {
+					throw new IOException("Cannot pack " + files.get(i).getName() + " into "
+							+ file.getPath() + ": the archive ends at index " + (entries.size() - 1)
+							+ ", so that file would be written at index " + entries.size()
+							+ " instead of " + changedIndices[i] + ". Whatever indexes this"
+							+ " archive would read the wrong entry. Fill indices "
+							+ entries.size() + ".." + (changedIndices[i] - 1) + " first.");
+				}
 				GARCEntry add = new GARCEntry();
 				add.compressed = compressed;
 				//pad-aligned provisional offset (the real table is re-read
@@ -271,7 +285,6 @@ public class GARC {
 				int rem = prevEnd % padding;
 				add.offset = rem == 0 ? prevEnd : prevEnd + padding - rem;
 				add.length = compressedData[i].length;
-				changedIndices[i] = entries.size();
 				entries.add(add);
 			}
 		}
