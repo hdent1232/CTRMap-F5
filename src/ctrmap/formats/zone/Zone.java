@@ -48,7 +48,7 @@ public class Zone {
 			} catch (IllegalStateException ex) {
 				//a refused record (an unset warp, a NaN altitude, a 256th entity)
 				//used to die on the event thread where nobody saw it
-				JOptionPane.showMessageDialog(null, ex.getMessage(), "Entity data not saved", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(null, ex.getMessage(), "Entity data not saved");
 				return false;
 			}
 			if (dialog){
