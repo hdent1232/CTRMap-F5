@@ -38,6 +38,16 @@ import java.util.List;
  * precondition, breaks the import for real, and fails unless the user is told
  * through {@link Ui}.
  *
+ * <p>Half three pins the precondition itself -
+ * {@link ctrmap.formats.h3d.BuildingCatalog#canCutDonor()} answering false with
+ * no workspace open. Half one only measures stderr, and the noise this whole
+ * suite exists to stop no longer goes there: with the precondition inverted the
+ * import runs anyway, throws "no profile for null", and the catch hands that to
+ * {@link Ui#error} - which with no workspace and no dialogs is a stdout line
+ * half one does not read, and in the running application is a modal error box
+ * on every painted-region build. So the third check asks the question the user
+ * feels: before there is a workspace, the cliff import must tell them nothing.
+ *
  * Usage: java ctrmap.tests.TerrainImportNoiseTest &lt;path-to-a039-garc&gt;
  */
 public class TerrainImportNoiseTest {
@@ -57,6 +67,7 @@ public class TerrainImportNoiseTest {
 			return;
 		}
 		buildIsQuiet(new File(args[0]));
+		tooEarlyTellsNobody();
 		realFailureReachesTheUser();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -89,6 +100,31 @@ public class TerrainImportNoiseTest {
 		p.waitFor();
 		check(out.contains("built"), "the child JVM really built two painted regions; it said " + out);
 		check(err.isEmpty(), "a painted-region build with no workspace open writes nothing to stderr; it said " + err);
+	}
+
+	/**
+	 * With no workspace open the cliff import must say NOTHING - not to stderr,
+	 * and not to the user either.
+	 *
+	 * <p>The model handed in is deliberately not a model, so the only thing
+	 * standing between this call and the "Terrain import failed" dialog is
+	 * {@link ctrmap.formats.h3d.BuildingCatalog#canCutDonor()} refusing to try.
+	 * If it ever answers yes with no game profile to resolve the snapshot path
+	 * against, every painted-region build made before a workspace is open ends
+	 * in an error box the user can do nothing about.
+	 */
+	static void tooEarlyTellsNobody() {
+		Workspace.GameType prevGame = Workspace.game;
+		List<String> said = new ArrayList<>();
+		try {
+			Workspace.game = null;
+			said = Ui.record();
+			TerrainCatalog.ensureCliffMaterial(new byte[]{'B'});
+		} finally {
+			Ui.stopRecording();
+			Workspace.game = prevGame;
+		}
+		check(said.isEmpty(), "with no workspace open the cliff import tells the user nothing; it said " + said);
 	}
 
 	/**
