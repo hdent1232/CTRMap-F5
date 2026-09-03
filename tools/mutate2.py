@@ -275,7 +275,14 @@ def build():
 
 
 results, t0 = [], time.time()
+# Freeze the tree under measurement at ONE commit and reset to that, never to
+# the branch name. A run that reset to "silent-failures" between clusters had
+# the branch move underneath it - a merge landed mid-sweep - so its later
+# clusters were scored against a tree its baseline had never seen. A sweep must
+# measure one tree or it measures none.
 run(["git", "reset", "--hard", "silent-failures"])
+FROZEN = run(["git", "rev-parse", "HEAD"]).stdout.strip()
+print("measuring %s (frozen; the branch may move without affecting this run)" % FROZEN[:7], flush=True)
 # resolved AFTER the reset, so the suites and arguments come from the tree
 # about to be measured, not whatever test.ps1 the worktree held before
 RESOLVED = resolve_clusters()
@@ -347,7 +354,7 @@ for cid, (base, suites) in RESOLVED.items():
                                 code=original.splitlines()[i].strip()[:160]))
             (WT / path).write_text(original, encoding="utf-8", newline="")
 
-    run(["git", "reset", "--hard", "silent-failures"])
+    run(["git", "reset", "--hard", FROZEN])
 
 build()
 io.open(BASE / "wt/_state/mutation_semantic.json", "w", encoding="utf-8", newline="\n").write(
