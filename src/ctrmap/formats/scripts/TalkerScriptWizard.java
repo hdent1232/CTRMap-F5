@@ -2,6 +2,7 @@ package ctrmap.formats.scripts;
 
 import ctrmap.humaninterface.ScriptEditor;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -112,16 +113,36 @@ public class TalkerScriptWizard {
 	 * new dispatch case in the zone's main SWITCH/CASETBL and returns the new
 	 * script id an NPC can point its {@code script} field at. Shared by the
 	 * talker/sign/giver wizards and the facility/BP emitters: does the
-	 * append + CASETBL grow + full renumber + branch/public fixups atomically,
-	 * validating every pre-existing target first so a failure never leaves the
-	 * script half-mutated. The body must already carry any native-table entries
-	 * it references (append them before calling this).
+	 * append + trampoline + CASETBL grow + full renumber + branch/public fixups
+	 * atomically, validating every pre-existing target first so a failure never
+	 * leaves the script half-mutated. The body must already carry any
+	 * native-table entries it references (append them before calling this).
+	 *
+	 * <p><b>The case pair points at a trampoline, never at {@code body}'s
+	 * PROC.</b> SWITCH/CASETBL is a JUMP, not a CALL, so a subroutine entered
+	 * straight from a case has no return address and no argument-byte cell: its
+	 * terminal RETN pops the dispatcher's own saved frame, pops a data-segment
+	 * offset into CIP and displaces STK by a code address, and the VM runs data
+	 * as instructions. That is a hard freeze of the game - and a quiet one,
+	 * because the sub's own CALL unwinds cleanly first, so the dialogue box
+	 * appears normally and the hang lands when the player dismisses it. Retail
+	 * never does it: 0 of the 2853 case targets in the 536 retail zone scripts
+	 * are a PROC, and all 2853 are the three-instruction trampoline this method
+	 * emits into main's own PROC frame -
+	 * {@code PUSH_P_C(0); CALL <body>; JUMP <epilogue>}.
 	 */
 	public static int installCase(GFLPawnScript script, List<PawnInstruction> body) {
 		script.decompressThis();
 		ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(script);
 		if (d == null) {
 			throw new IllegalStateException("The zone script has no script dispatch (main SWITCH/CASETBL).");
+		}
+		//the trampoline hands control back to the dispatcher's shared epilogue
+		//when the sub returns, exactly as every retail case does, so the
+		//dispatcher must have one (536 of 536 retail zones do)
+		PawnInstruction epilogue = ZoneScriptAnalyzer.findDispatchEpilogue(script);
+		if (epilogue == null) {
+			throw new IllegalStateException("The zone script's dispatch does not end in the shared \"ZERO_PRI; RETN\" a script case returns through.");
 		}
 		//validate every pre-existing branch target of the dispatch CASETBL before
 		//any surgery: a null case target would be silently skipped by
@@ -134,6 +155,12 @@ public class TalkerScriptWizard {
 		}
 		if (script.lookupInstructionByPtr(d.caseTbl.pointer + 4 + d.caseTbl.argumentCells[1]) == null) {
 			throw new IllegalStateException("The dispatch CASETBL default target does not resolve to an instruction boundary.");
+		}
+		//retail puts every trampoline between the SWITCH and the CASETBL, so
+		//the new one goes in immediately before the table (536 of 536 zones)
+		int tblIdx = script.instructions.indexOf(d.caseTbl);
+		if (tblIdx < 0) {
+			throw new IllegalStateException("The dispatch CASETBL is not part of the script's instruction list.");
 		}
 		int newId = 1;
 		for (Integer key : d.cases.keySet()) {
@@ -161,6 +188,26 @@ public class TalkerScriptWizard {
 			ins.setParent(script); //gives any CALL/branch its JumpListener
 		}
 
+		//the retail trampoline, built on the provisional pointer space that
+		//still follows the appended body so setParent resolves both operands to
+		//the right instructions; the renumber below re-fixes them for real
+		PawnInstruction tail = script.instructions.get(script.instructions.size() - 1);
+		int tPtr = tail.pointer + 4 + (tail.hasCompressedArgument ? 0 : tail.argumentCount * 4);
+		PawnInstruction trampPush = makeIns(PawnInstruction.Commands.PUSH_P_C, tPtr, 0);
+		tPtr += 4;
+		PawnInstruction trampCall = makeIns(PawnInstruction.Commands.CALL, tPtr, proc.pointer - tPtr);
+		tPtr += 8; //CALL carries a full argument cell
+		PawnInstruction trampJump = makeIns(PawnInstruction.Commands.JUMP, tPtr, epilogue.pointer - tPtr);
+		List<PawnInstruction> trampoline = Arrays.asList(trampPush, trampCall, trampJump);
+		int trampolineBytes = 0;
+		for (PawnInstruction ins : trampoline) {
+			trampolineBytes += 4 + (ins.hasCompressedArgument ? 0 : ins.argumentCount * 4);
+		}
+		script.instructions.addAll(tblIdx, trampoline);
+		for (PawnInstruction ins : trampoline) {
+			ins.setParent(script); //gives the CALL and the JUMP their JumpListener
+		}
+
 		//grow main's CASETBL by one pair, keeping the case keys sorted
 		PawnInstruction ct = d.caseTbl;
 		int[] oldArgs = ct.argumentCells;
@@ -184,22 +231,53 @@ public class TalkerScriptWizard {
 		ScriptEditor.setPtrsByIndex(script.instructions);
 		script.callInstructionListeners();
 		//the CaseListener snapshot predates the insertion, so it only fixes
-		//the pre-existing keys - point the new pair at the new sub manually
-		//(same address math as PawnInstruction.CaseListener)
-		newArgs[insertAi + 1] = proc.pointer - (ct.pointer + insertAi * 4) - 4;
+		//the pre-existing keys - point the new pair at the new TRAMPOLINE
+		//manually (same address math as PawnInstruction.CaseListener)
+		newArgs[insertAi + 1] = trampPush.pointer - (ct.pointer + insertAi * 4) - 4;
 		ct.updateDisassembly();
 		for (int i = 0; i < publicTargets.length; i++) {
 			if (publicTargets[i] != null) {
 				script.publics.get(i).data[0] = publicTargets[i].pointer;
 			} else if (script.publics.get(i).data[0] > oldCaseTblPtr) {
-				script.publics.get(i).data[0] += 8; //one new case pair
+				//an address no instruction owns only gets the raw byte shift:
+				//the trampoline went in AT the old CASETBL address, and the
+				//table it now precedes grew by one case pair
+				script.publics.get(i).data[0] += trampolineBytes + 8;
+			} else if (script.publics.get(i).data[0] == oldCaseTblPtr) {
+				script.publics.get(i).data[0] += trampolineBytes;
 			}
 		}
 		//write() takes the entry point from the dummy, but keep the field in
 		//sync so analyzer calls on the live script keep working
 		script.mainEntryPoint = script.mainEntryPointDummy.argumentCells[0];
+		verifyCaseInstalled(script, newId, trampPush, trampCall, trampJump, proc, epilogue);
 		script.updateRaw();
 		return newId;
+	}
+
+	/**
+	 * Post-condition of {@link #installCase}: the new case resolves to its
+	 * trampoline, the trampoline's CALL enters the appended subroutine and its
+	 * JUMP returns to the dispatcher's epilogue.
+	 *
+	 * <p>A failure here is a bug in this class rather than a property of the
+	 * zone, and it arrives after the mutation - but the alternative to raising
+	 * it is handing the player a script that freezes the game, so the emitter
+	 * refuses out loud instead of shipping one. Callers work on a copy and only
+	 * commit the zone script once this has returned.
+	 */
+	private static void verifyCaseInstalled(GFLPawnScript script, int newId, PawnInstruction trampPush,
+			PawnInstruction trampCall, PawnInstruction trampJump, PawnInstruction proc, PawnInstruction epilogue) {
+		ZoneScriptAnalyzer.Dispatch check = ZoneScriptAnalyzer.findDispatch(script);
+		if (check == null || check.cases.get(newId) != trampPush) {
+			throw new IllegalStateException("Internal error: dispatch case " + newId + " does not point at its trampoline.");
+		}
+		if (script.lookupInstructionByPtr(trampCall.pointer + trampCall.argumentCells[0]) != proc) {
+			throw new IllegalStateException("Internal error: the case trampoline does not call the new subroutine.");
+		}
+		if (script.lookupInstructionByPtr(trampJump.pointer + trampJump.argumentCells[0]) != epilogue) {
+			throw new IllegalStateException("Internal error: the case trampoline does not return to the dispatch epilogue.");
+		}
 	}
 
 	/**
