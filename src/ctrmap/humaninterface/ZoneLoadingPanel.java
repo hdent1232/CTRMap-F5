@@ -1232,7 +1232,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
 		final int idx = zoneIndex;
 		try {
-			ctrmap.GeometryForker.ForkResult r = ctrmap.GeometryForker.forkGeometry(idx);
+			ctrmap.GeometryForker.ForkResult r = ctrmap.GeometryForker.ensurePrivate(idx);
 			Workspace.packWorkspace(new Runnable() {
 				@Override
 				public void run() {
@@ -1309,7 +1309,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			clearForkDecline(dstIndex); //the slot holds a NEW zone now
 			if (doFork) {
 				//give the clone its own map so editing it won't change the source (same as Add zones)
-				ctrmap.GeometryForker.forkGeometry(dstIndex);
+				ctrmap.GeometryForker.ensurePrivate(dstIndex);
 			}
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
