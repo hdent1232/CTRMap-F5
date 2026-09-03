@@ -231,15 +231,10 @@
   "sha256": "ed682d8eb745bbdd9bde634d8ecf9d6801a2bde660c4d83dd3dee16cfba0cc98"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
-  "survivors": 10,
-  "killed": 13,
+  "survivors": 9,
+  "killed": 14,
   "unmeasured": 2,
   "lines": [
-   {
-    "line": 601,
-    "kind": "negate-if",
-    "code": "if (TalkerScriptWizard.scriptIdExists(zone.s, scriptId)) {"
-   },
    {
     "line": 733,
     "kind": "negate-if",
