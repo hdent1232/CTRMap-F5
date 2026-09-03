@@ -111,7 +111,7 @@ public class CompositeBuildTest {
 	static int erase(String label, byte[][] reg, int x0, int y0, int x1, int y1) {
 		try {
 			TilePalette[][] g = grid(TilePalette.GRASS);
-			int[][] h = seededHeights(reg[1]);
+			int[][] h = seededHeights(reg[1], reg[2]);
 			boolean[][] touched = new boolean[DIM][DIM];
 			for (int y = y0; y <= y1; y++) {
 				for (int x = x0; x <= x1; x++) {
@@ -184,7 +184,7 @@ public class CompositeBuildTest {
 	static int lShape(String label, byte[][] reg) {
 		try {
 			TilePalette[][] g = grid(TilePalette.GRASS);
-			int[][] h = seededHeights(reg[1]);
+			int[][] h = seededHeights(reg[1], reg[2]);
 			boolean[][] touched = new boolean[DIM][DIM];
 			for (int x = 5; x <= 14; x++) {
 				g[5][x] = TilePalette.PATH;
@@ -218,7 +218,7 @@ public class CompositeBuildTest {
 	static int reapply(String label, byte[][] reg) {
 		try {
 			TilePalette[][] g = grid(TilePalette.GRASS);
-			int[][] h = seededHeights(reg[1]);
+			int[][] h = seededHeights(reg[1], reg[2]);
 			boolean[][] t1 = new boolean[DIM][DIM];
 			for (int y = 5; y <= 9; y++) {
 				for (int x = 5; x <= 9; x++) {
@@ -233,7 +233,7 @@ public class CompositeBuildTest {
 			//second edit: repaint part of the same block + extend it
 			byte[][] reg2 = {first.model, first.collision, first.tilemap};
 			TilePalette[][] g2 = grid(TilePalette.GRASS);
-			int[][] h2 = seededHeights(first.collision);
+			int[][] h2 = seededHeights(first.collision, first.tilemap);
 			boolean[][] t2 = new boolean[DIM][DIM];
 			for (int y = 7; y <= 11; y++) {
 				for (int x = 7; x <= 11; x++) {
@@ -279,7 +279,7 @@ public class CompositeBuildTest {
 
 	static void paintCore(byte[][] reg, int x0, int y0, int x1, int y1, boolean deep) {
 		TilePalette[][] g = grid(TilePalette.GRASS);
-		int[][] h = seededHeights(reg[1]);
+		int[][] h = seededHeights(reg[1], reg[2]);
 		boolean[][] touched = new boolean[DIM][DIM];
 		for (int y = y0; y <= y1; y++) {
 			for (int x = x0; x <= x1; x++) {
@@ -462,9 +462,9 @@ public class CompositeBuildTest {
 		return triY(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], px, pz) != null;
 	}
 
-	static int[][] seededHeights(byte[] coll) {
+	static int[][] seededHeights(byte[] coll, byte[] tm) {
 		int[][] h = new int[DIM][DIM];
-		PaintedRegionBuilder.seedHeightsFromCollision(coll, h);
+		PaintedRegionBuilder.seedHeightsFromCollision(coll, tm, h);
 		return h;
 	}
 

@@ -47,11 +47,18 @@ public class TilePainterForm {
 
 		final ctrmap.formats.h3d.BuildingCatalog.Entry e;
 		final int tx, ty;
+		/** False leaves the cut's passengers - sea planes, shadow decals, floors, terrain chips - behind. */
+		final boolean passengers;
 
 		public Placed(ctrmap.formats.h3d.BuildingCatalog.Entry e, int tx, int ty) {
+			this(e, tx, ty, true);
+		}
+
+		public Placed(ctrmap.formats.h3d.BuildingCatalog.Entry e, int tx, int ty, boolean passengers) {
 			this.e = e;
 			this.tx = tx;
 			this.ty = ty;
+			this.passengers = passengers;
 		}
 
 		boolean contains(int x, int y) {
@@ -173,8 +180,9 @@ public class TilePainterForm {
 	 * the painted movement tiles), collecting per-donor-area texture needs.
 	 * Throws on any failure, a building that cannot be placed whole included,
 	 * so a half-stamped map is never applied. Returns the per-building account
-	 * Apply shows: pieces, collision added, tiles blocked, and the donor tiles
-	 * kept as painted.
+	 * Apply shows: pieces and triangles, height span, collision added, tiles
+	 * blocked, the donor tiles kept as painted, and what rode along with the
+	 * cut - or was left behind.
 	 */
 	public static String stampPlaced(RegionFactory.BlankContent bc, java.util.List<Placed> placed,
 			int[][] height, java.util.Map<Integer, java.util.Set<String>> texNeeds) {
@@ -187,9 +195,15 @@ public class TilePainterForm {
 			int[][] height, float[][] floorY, java.util.Map<Integer, java.util.Set<String>> texNeeds) {
 		StringBuilder note = new StringBuilder();
 		for (Placed pl : placed) {
-			ctrmap.formats.h3d.MapPrefab p = BuildingPaletteDialog.cachedPrefab(pl.e);
-			if (p == null) {
+			ctrmap.formats.h3d.MapPrefab whole = BuildingPaletteDialog.cachedPrefab(pl.e);
+			if (whole == null) {
 				throw new IllegalStateException("could not cut \"" + pl.e.name + "\" from the dump");
+			}
+			String riders = whole.passengerNote();
+			ctrmap.formats.h3d.MapPrefab p = pl.passengers || riders.isEmpty() ? whole : whole.withoutPassengers();
+			if (p.pieces.isEmpty()) {
+				throw new IllegalStateException("\"" + pl.e.name + "\" is nothing but passengers (" + riders
+						+ ") - place it with them, or pick something else");
 			}
 			// plant the piece on the terrain at its anchor: donors sit at their
 			// own base height (a gym floats at -18, a palm at +46 over a beach
@@ -213,17 +227,25 @@ public class TilePainterForm {
 				texNeeds.computeIfAbsent(pl.e.donorArea, k -> new java.util.LinkedHashSet<>()).addAll(r.texturesNeeded);
 			}
 			note.append("\n\"").append(pl.e.name).append("\" at (").append(pl.tx).append(", ").append(pl.ty).append("): ")
-					.append(r.stamped.size()).append(" piece(s), ")
+					.append(p.summary(pl.e.baseY)).append(", ")
 					.append(r.collTrisAdded > 0 ? "+" + r.collTrisAdded + " collision triangle(s), " : "no collision (not walkable), ")
 					.append(r.tilesStamped).append(" tile(s) blocked");
+			//the donor's furniture codes are solid like its walls, but they carry
+			//an interaction (a bookshelf's text, a PC) onto the user's map
+			Integer objects = r.tilesWritten.get("object");
+			if (objects != null) {
+				note.append(" (").append(objects).append(" of them carry the donor's object codes)");
+			}
 			if (!r.tilesKept.isEmpty()) {
 				int kept = 0;
-				StringBuilder kinds = new StringBuilder();
-				for (java.util.Map.Entry<String, Integer> k : r.tilesKept.entrySet()) {
-					kept += k.getValue();
-					kinds.append(kinds.length() > 0 ? ", " : "").append(k.getKey()).append(' ').append(k.getValue());
+				for (int n : r.tilesKept.values()) {
+					kept += n;
 				}
-				note.append("; ").append(kept).append(" donor tile(s) kept as painted (").append(kinds).append(')');
+				note.append("; ").append(kept).append(" donor tile(s) kept as painted (")
+						.append(ctrmap.formats.h3d.MapPrefab.StampResult.tally(r.tilesKept)).append(')');
+			}
+			if (!riders.isEmpty()) {
+				note.append(pl.passengers ? "; rides along: " : "; left behind: ").append(riders);
 			}
 			note.append('.');
 		}
@@ -232,6 +254,23 @@ public class TilePainterForm {
 			throw new IllegalStateException("stamped model failed validation: " + errs.get(0));
 		}
 		return note.toString().trim();
+	}
+
+	/**
+	 * The buildings an Apply is about to place, as its confirmation lists
+	 * them: each one's manifest, so the size of the thing is on the screen at
+	 * the moment of the decision - the palette's own label arrives after a
+	 * preview thread and nothing stopped a quick "Place" from beating it.
+	 */
+	public static String placedSummary(java.util.List<Placed> placed) {
+		StringBuilder sb = new StringBuilder();
+		for (Placed pl : placed) {
+			ctrmap.formats.h3d.MapPrefab p = BuildingPaletteDialog.cachedPrefab(pl.e);
+			sb.append(sb.length() > 0 ? "\n" : "").append('"').append(pl.e.name).append("\" at (").append(pl.tx).append(", ").append(pl.ty).append("): ")
+					.append(p == null ? "could not be cut from the dump" : BuildingPaletteDialog.manifest(p, null, pl.e)
+					+ (pl.passengers || p.passengers().isEmpty() ? "" : " - passengers left behind"));
+		}
+		return sb.toString();
 	}
 
 	/** One region's freshly built content, held in memory until the whole Apply
@@ -345,7 +384,7 @@ public class TilePainterForm {
 				if (f != null) {
 					GR gr = new GR(f);
 					if (BchMapModel.isMapModel(gr.getFile(1))) {
-						floorY = PaintedRegionBuilder.floorYGrid(gr.getFile(2), height);
+						floorY = PaintedRegionBuilder.floorYGrid(gr.getFile(2), gr.getFile(0), height);
 						break;
 					}
 				}
@@ -750,7 +789,7 @@ public class TilePainterForm {
 	 * the zone's own. The first occupied cell remains the fallback for a
 	 * header whose position lands outside the map.
 	 */
-	static int[] firstRegionCell() {
+	public static int[] firstRegionCell() {
 		try {
 			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());

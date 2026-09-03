@@ -97,6 +97,10 @@ public class Tilemap {
 	}
 
 	public void updateImage() {
+		//no editor window - a headless test holds the data without its picture
+		if (CtrmapMainframe.mTileEditForm == null) {
+			return;
+		}
 		for (int x = 0; x < 40; x++) {
 			for (int y = 0; y < 40; y++) {
 				g.setColor(CtrmapMainframe.mTileEditForm.tileset.getSimpleColor(Utils.ba2int(rawTileData[x][y])));

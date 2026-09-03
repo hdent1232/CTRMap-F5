@@ -71,7 +71,7 @@ public class CompositeLeftoverTest {
 			for (TilePalette[] row : grid) {
 				Arrays.fill(row, TilePalette.GRASS);
 			}
-			PaintedRegionBuilder.seedHeightsFromCollision(coll, height);
+			PaintedRegionBuilder.seedHeightsFromCollision(coll, tm, height);
 			//Only paint where "replace this ground" has one obvious meaning.
 			//Flattening a slab across a staircase or a two-storey cave leaves the
 			//upper level standing above the new floor, and it SHOULD - that is

@@ -58,15 +58,30 @@ public class BuildingPaletteDialog {
 	 * What a cut actually brings, shown before it is placed: a harvested name
 	 * describes only the dominant material, so "Littleroot Town lamp" is a whole
 	 * furnished room - 27 pieces, 27 textures to import - and a "bridge" can be
-	 * a chunk of Sky Pillar reaching 464 units up.
+	 * a chunk of Sky Pillar reaching 464 units up. The numbers alone could not
+	 * tell that room from a large lamp, so the passengers - the floors, the
+	 * shadow decal, a sea plane under a pier - are named by class. {@code r}
+	 * is the preview stamp, or null when only the cut itself is known.
 	 */
-	static String manifest(MapPrefab p, MapPrefab.StampResult r, BuildingCatalog.Entry e) {
-		float[] span = p.heightSpan();
-		return p.pieces.size() + " piece(s) / " + p.triangleCount() + " triangles"
-				+ (r.newMaterials.isEmpty() ? "" : ", " + r.newMaterials.size() + " new material(s) + "
+	public static String manifest(MapPrefab p, MapPrefab.StampResult r, BuildingCatalog.Entry e) {
+		String riders = p.passengerNote();
+		return p.summary(e.baseY)
+				+ (r == null || r.newMaterials.isEmpty() ? "" : ", " + r.newMaterials.size() + " new material(s) + "
 				+ r.texturesNeeded.size() + " texture(s) to import")
 				+ (p.collTris.isEmpty() ? ", no collision" : ", " + p.collTris.size() + " collision triangle(s)")
-				+ ", " + Math.round(span[0] - e.baseY) + ".." + Math.round(span[1] - e.baseY) + " above ground";
+				+ (riders.isEmpty() ? "" : ", rides along: " + riders);
+	}
+
+	/** What the palette hands back: the entry, and whether its passengers come along. */
+	public static final class Pick {
+
+		public final BuildingCatalog.Entry entry;
+		public final boolean passengers;
+
+		Pick(BuildingCatalog.Entry entry, boolean passengers) {
+			this.entry = entry;
+			this.passengers = passengers;
+		}
 	}
 
 	/** Human category for the filter dropdown (curated kinds + harvested A_*). */
@@ -132,12 +147,12 @@ public class BuildingPaletteDialog {
 	}
 
 	/**
-	 * Shows the palette; returns the chosen entry or null. {@code baseDonor} is
-	 * the current zone's region model (the grass base the preview stamps onto).
+	 * Shows the palette; returns the choice or null. {@code baseDonor} is the
+	 * current zone's region model (the grass base the preview stamps onto).
 	 */
-	public static BuildingCatalog.Entry pick(Dialog parent, byte[] baseDonor, List<H3DTexture> baseTextures) {
+	public static Pick pick(Dialog parent, byte[] baseDonor, List<H3DTexture> baseTextures) {
 		List<BuildingCatalog.Entry> all = BuildingCatalog.entries();
-		final BuildingCatalog.Entry[] result = {null};
+		final Pick[] result = {null};
 		final JDialog dlg = new JDialog(parent, "Building palette", true);
 		dlg.setLayout(new BorderLayout(8, 8));
 		((JPanel) dlg.getContentPane()).setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
@@ -236,9 +251,15 @@ public class BuildingPaletteDialog {
 		final MapPreview3D view = new MapPreview3D();
 		view.setPreferredSize(new Dimension(520, 420));
 		final JLabel info = new JLabel(" ");
+		final javax.swing.JCheckBox leave = new javax.swing.JCheckBox(
+				"Leave the passengers behind (sea planes, shadow decals, floors, terrain chips)");
+		leave.setToolTipText("The structure's collision and movement tiles come along either way.");
+		JPanel under = new JPanel(new BorderLayout());
+		under.add(info, BorderLayout.NORTH);
+		under.add(leave, BorderLayout.SOUTH);
 		JPanel center = new JPanel(new BorderLayout(4, 4));
 		center.add(view, BorderLayout.CENTER);
-		center.add(info, BorderLayout.SOUTH);
+		center.add(under, BorderLayout.SOUTH);
 		dlg.add(center, BorderLayout.CENTER);
 
 		final int[] previewSeq = {0};
@@ -303,17 +324,18 @@ public class BuildingPaletteDialog {
 		buttons.add(place);
 		buttons.add(cancel);
 		dlg.add(buttons, BorderLayout.SOUTH);
-		place.addActionListener(ev -> {
-			result[0] = list.getSelectedValue();
+		Runnable choose = () -> {
+			BuildingCatalog.Entry chosen = list.getSelectedValue();
+			result[0] = chosen == null ? null : new Pick(chosen, !leave.isSelected());
 			dlg.dispose();
-		});
+		};
+		place.addActionListener(ev -> choose.run());
 		cancel.addActionListener(ev -> dlg.dispose());
 		list.addMouseListener(new java.awt.event.MouseAdapter() {
 			@Override
 			public void mouseClicked(java.awt.event.MouseEvent e) {
 				if (e.getClickCount() == 2) {
-					result[0] = list.getSelectedValue();
-					dlg.dispose();
+					choose.run();
 				}
 			}
 		});
