@@ -270,7 +270,8 @@ public class GeoEditForm extends JPanel {
 					}
 					p.stampTiles(r, tm, anchorX, anchorY);
 					refreshTiles(tm);
-					tileNote = " +" + r.tilesStamped + " tiles";
+					//every tuple, whatever it does: say what kinds went in
+					tileNote = " +" + r.tilesStamped + " tiles (" + ctrmap.formats.h3d.MapPrefab.StampResult.tally(r.tilesWritten) + ")";
 				}
 			}
 			//cross-area texture carry: injected materials reference the DONOR area's

@@ -321,8 +321,18 @@ public class MapPrefab {
 		public int tilesStamped;
 		/** Footprint tuples NOT written because the user's own tile stays: behaviour -> count (see stampFootprint). */
 		public final Map<String, Integer> tilesKept = new TreeMap<>();
-		/** Every tuple a verbatim copy wrote, by behaviour (see stampTiles). */
+		/** Every tuple written, by behaviour - the whole footprint for {@link #stampTiles},
+		 *  the solid part of it for {@link #stampFootprint}. */
 		public final Map<String, Integer> tilesWritten = new TreeMap<>();
+
+		/** A tally as the user reads it: "wall 12, object 16". */
+		public static String tally(Map<String, Integer> counts) {
+			StringBuilder sb = new StringBuilder();
+			for (Map.Entry<String, Integer> k : counts.entrySet()) {
+				sb.append(sb.length() > 0 ? ", " : "").append(k.getKey()).append(' ').append(k.getValue());
+			}
+			return sb.toString();
+		}
 	}
 
 	/**
@@ -471,10 +481,13 @@ public class MapPrefab {
 	/**
 	 * Stamps every footprint tuple into a Tilemap at the anchor - the Geometry
 	 * tool's explicit "also update movement tiles" choice; {@code r.tilesStamped}
-	 * counts them.
+	 * counts them and {@code r.tilesWritten} says what kinds they were, because
+	 * "+374 tiles" was all the status line said of a copy that had just turned
+	 * 366 of them into surf water.
 	 */
 	public void stampTiles(StampResult r, Tilemap tm, int tileX, int tileY) {
 		r.tilesStamped = 0;
+		r.tilesWritten.clear();
 		if (tiles == null) {
 			return;
 		}
@@ -484,6 +497,7 @@ public class MapPrefab {
 				if (dx >= 0 && dx < 40 && dyt >= 0 && dyt < 40) {
 					tm.setTileData(dx, dyt, tiles[x][y]);
 					r.tilesStamped++;
+					r.tilesWritten.merge(TilePalette.behaviourOf(tiles[x][y]), 1, Integer::sum);
 				}
 			}
 		}
@@ -492,16 +506,19 @@ public class MapPrefab {
 	/**
 	 * Stamps the footprint over a raw tilemap subfile - the painter's own
 	 * layer - without repainting the user's map. A donor tuple is written only
-	 * where it is a wall, or at the building's door tile ({@code doorX,doorY}
-	 * anchor-relative, -1 for none); everywhere else the tile the user painted
-	 * stays, and what the donor would have made of it is counted by behaviour
-	 * in {@code r.tilesKept}. Copying the footprint whole turned 366 painted
-	 * path tiles into surf water under one Route 110 cut and wrote door tiles
-	 * that no warp backed.
+	 * where it is solid - a plain wall or one of the game's object tiles, which
+	 * the building's own geometry stands on - or at the building's door tile
+	 * ({@code doorX,doorY} anchor-relative, -1 for none); everywhere else the
+	 * tile the user painted stays, and what the donor would have made of it is
+	 * counted by behaviour in {@code r.tilesKept}, what was written in
+	 * {@code r.tilesWritten}. Copying the footprint whole turned 366 painted
+	 * path tiles into surf water under one Route 110 cut; keeping everything
+	 * but plain walls left a placed room's bookshelves walkable.
 	 */
 	public void stampFootprint(StampResult r, byte[] tilemap, int tileX, int tileY, int doorX, int doorY) {
 		r.tilesStamped = 0;
 		r.tilesKept.clear();
+		r.tilesWritten.clear();
 		if (tiles == null) {
 			return;
 		}
@@ -512,9 +529,10 @@ public class MapPrefab {
 					continue;
 				}
 				String behaviour = TilePalette.behaviourOf(tiles[x][y]);
-				if ("wall".equals(behaviour) || (x == doorX && y == doorY)) {
+				if ("wall".equals(behaviour) || "object".equals(behaviour) || (x == doorX && y == doorY)) {
 					System.arraycopy(tiles[x][y], 0, tilemap, 4 + (dyt * 40 + dx) * 4, 4);
 					r.tilesStamped++;
+					r.tilesWritten.merge(behaviour, 1, Integer::sum);
 				} else {
 					r.tilesKept.merge(behaviour, 1, Integer::sum);
 				}
