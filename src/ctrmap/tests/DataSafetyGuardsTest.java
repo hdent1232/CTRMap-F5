@@ -9,6 +9,7 @@ import ctrmap.formats.text.TextFile;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.humaninterface.NPCEditForm;
+import ctrmap.humaninterface.TileMapPanel;
 import ctrmap.humaninterface.TriggerEditForm;
 import ctrmap.humaninterface.WarpEditForm;
 import ctrmap.humaninterface.ZoneLoadingPanel;
@@ -31,6 +32,7 @@ import java.util.regex.Pattern;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JComboBox;
 import javax.swing.JFormattedTextField;
+import javax.swing.JScrollPane;
 
 /**
  * The guards that stand between an ordinary mistake and unrecoverable game
@@ -338,6 +340,29 @@ public class DataSafetyGuardsTest {
 		} catch (RuntimeException ex) {
 			check(false, "the warp overlay with no zone loaded threw " + ex);
 		}
+		//"New entry", the button itself, with and without a zone open. The Warp
+		//tool can be active before any zone is loaded - the overlay check above
+		//is the same situation - and pressing Add then walks straight into
+		//addEntry with no entity list to add to. The button's own test for that
+		//is all that stands between the user and a stack trace on the event
+		//thread, and nothing else in this suite presses the button: every other
+		//check calls addEntry directly and never reaches it.
+		CtrmapMainframe.mTilemapScrollPane = new JScrollPane();
+		TileMapPanel map = new TileMapPanel();
+		map.height = 40;
+		CtrmapMainframe.mTileMapPanel = map;
+		Throwable threw = pressAdd(blank);
+		check(threw == null, "New entry with no zone open does nothing at all, rather than throwing: " + threw);
+
+		int warpsBefore = e.warps.size();
+		threw = pressAdd(form);
+		check(threw == null, "New entry with a zone open does not throw: " + threw);
+		check(e.warps.size() == warpsBefore + 1 && e.warpCount == warpsBefore + 1,
+				"and adds a warp (" + warpsBefore + " -> " + e.warps.size() + ", count " + e.warpCount + ")");
+		form.setWarp(e.warps.size() - 1);
+		form.removeEntry();
+		check(e.warps.size() == warpsBefore && e.warpCount == warpsBefore, "removed again, leaving the zone as it was");
+
 		a.w = 1;
 		a.h = 1;
 		CtrmapMainframe.mWarpEditForm = form;
@@ -563,6 +588,23 @@ public class DataSafetyGuardsTest {
 		Field f = o.getClass().getDeclaredField(name);
 		f.setAccessible(true);
 		f.set(o, value);
+	}
+
+	/**
+	 * The Warp editor's "New entry" button. Whatever the handler throws comes
+	 * back as a value rather than propagating: the check is about what the
+	 * button did, and a stack trace out of the reflected call would end the
+	 * suite instead of naming which press went wrong.
+	 */
+	static Throwable pressAdd(WarpEditForm form) throws Exception {
+		java.lang.reflect.Method m = WarpEditForm.class.getDeclaredMethod("btnAddActionPerformed", java.awt.event.ActionEvent.class);
+		m.setAccessible(true);
+		try {
+			m.invoke(form, (java.awt.event.ActionEvent) null);
+			return null;
+		} catch (java.lang.reflect.InvocationTargetException ex) {
+			return ex.getCause() == null ? ex : ex.getCause();
+		}
 	}
 
 	static File temp(byte[] bytes) throws Exception {
