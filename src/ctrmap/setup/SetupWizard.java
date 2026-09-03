@@ -2,6 +2,7 @@ package ctrmap.setup;
 
 import ctrmap.CtrmapMainframe;
 import ctrmap.ModDeployer;
+import ctrmap.Ui;
 import ctrmap.Workspace;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
@@ -507,21 +508,9 @@ public class SetupWizard extends JDialog {
 		//a workspace carrying a pristine backup of a DIFFERENT game folder would
 		//silently mis-report what the user has changed, forever
 		Workspace.WORKSPACE_PATH = wsPath;
-		if (Workspace.snapshotIsForeign(gamePath)) {
-			int r = JOptionPane.showConfirmDialog(this,
-					"That working folder already holds a backup of a different game folder:\n  "
-					+ shorten(Workspace.snapshotSourcePath())
-					+ "\n\nCTRMap compares your edits against that backup to work out"
-					+ "\nwhat you changed, so keeping it would give the wrong answer."
-					+ "\n\nReplace the backup with one taken from your current game folder?"
-					+ "\n(Choose No to go back and pick a different working folder.)",
-					"This folder belongs to another game", JOptionPane.YES_NO_OPTION,
-					JOptionPane.WARNING_MESSAGE);
-			if (r != JOptionPane.YES_OPTION) {
-				showStep(STEP_WORKSPACE);
-				return;
-			}
-			Workspace.discardSnapshot();
+		if (!backupBelongsHere(this, gamePath)) {
+			showStep(STEP_WORKSPACE);
+			return;
 		}
 
 		setButtonsBusy(true);
@@ -677,6 +666,41 @@ public class SetupWizard extends JDialog {
 
 	private static String shorten(String path) {
 		return path == null ? "" : path; //the summary wraps, so show the whole path
+	}
+
+	/**
+	 * Whether setup may go ahead with the pristine backup already sitting in
+	 * the chosen working folder. False means the user would rather pick another
+	 * folder, and setup must go back a step without touching anything.
+	 *
+	 * <p>A backup taken from a DIFFERENT game folder is worse than no backup:
+	 * CTRMap works out what the user changed by diffing against it, and cuts
+	 * donor buildings out of it, so both answers come from the wrong game and
+	 * nothing ever says so.
+	 *
+	 * <p>Static, and asking through {@link Ui}, so the decision can be driven
+	 * without a window. It lived inside {@link #doFinish}, which needs the
+	 * whole wizard - a JDialog, a card layout, a SwingWorker - and asked with a
+	 * modal {@code JOptionPane} that no test can answer. Both branches went
+	 * unmeasured; keeping the foreign backup is silent, and discarding a good
+	 * one throws away the only record of what the game shipped with.
+	 */
+	public static boolean backupBelongsHere(java.awt.Component parent, String gamePath) {
+		if (Workspace.snapshotIsForeign(gamePath)) {
+			int r = Ui.confirm(parent,
+					"That working folder already holds a backup of a different game folder:\n  "
+					+ shorten(Workspace.snapshotSourcePath())
+					+ "\n\nCTRMap compares your edits against that backup to work out"
+					+ "\nwhat you changed, so keeping it would give the wrong answer."
+					+ "\n\nReplace the backup with one taken from your current game folder?"
+					+ "\n(Choose No to go back and pick a different working folder.)",
+					"This folder belongs to another game", JOptionPane.YES_NO_OPTION);
+			if (r != JOptionPane.YES_OPTION) {
+				return false;
+			}
+			Workspace.discardSnapshot();
+		}
+		return true;
 	}
 
 	private static String esc(String s) {
