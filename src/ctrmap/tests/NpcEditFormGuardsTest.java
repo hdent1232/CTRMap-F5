@@ -31,6 +31,7 @@ import java.util.List;
 import javax.swing.JComboBox;
 import javax.swing.JFormattedTextField;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JSpinner;
 
 /**
@@ -368,14 +369,24 @@ public class NpcEditFormGuardsTest {
 		ZoneEntities e = zone.entities;
 		e.npcs.get(3).uid = 99;
 		check(e.firstMisnumberedNPC() == 3, "zone " + ZONE + " NPC 3 carries uid 99 - the gap an earlier delete left");
-		NPCEditForm form = new NPCEditForm();
-		List<String> said = ctrmap.Ui.record();
+
+		List<String> said = ctrmap.Ui.record(JOptionPane.NO_OPTION);
 		try {
-			form.loadFromEntities(e, null);
+			new NPCEditForm().loadFromEntities(e, null);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
 		check(said.size() == 1 && said.get(0).contains("Renumber them now?"), "opening the zone asks first: " + said);
+		check(e.npcs.get(3).uid == 99 && e.firstMisnumberedNPC() == 3 && !e.modified, "No leaves the uids as they were");
+
+		said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
+		try {
+			new NPCEditForm().loadFromEntities(e, null);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1, "it asks again on the next open");
+		check(e.firstMisnumberedNPC() == -1 && e.npcs.get(3).uid == 3 && e.modified, "and Yes renumbers them by position");
 	}
 
 	/**
@@ -387,14 +398,42 @@ public class NpcEditFormGuardsTest {
 		Zone zone = openZone(zo, ZONE);
 		NPCRegistry reg = new NPCRegistry(temp(new byte[0]));
 		check(reg.entries.isEmpty(), "an empty registry has no entry for NPC 0's MoveModel");
+
 		NPCEditForm form = new NPCEditForm();
-		List<String> said = ctrmap.Ui.record();
+		List<String> said = ctrmap.Ui.record(JOptionPane.NO_OPTION);
 		try {
 			form.loadFromEntities(zone.entities, reg);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
-		check(!said.isEmpty() && said.get(0).contains("create the registry entry"), "the form asks before writing registry data: " + said);
+		check(said.size() == 1 && said.get(0).contains("create the registry entry"), "the form asks before writing registry data: " + said);
+		check(reg.entries.isEmpty() && !reg.modified && form.regentry == null, "No writes no registry data");
+		check(form.loaded, "and the form is usable afterwards");
+
+		said = ctrmap.Ui.record(); //no answer: the same as closing the question
+		try {
+			new NPCEditForm().loadFromEntities(zone.entities, reg);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && reg.entries.isEmpty() && !reg.modified, "closing the question writes none either");
+
+		//Yes, against a registry that is already at capacity: the answer is
+		//acted on (it gets past the No branch) and the refusal is the reason
+		for (int uid = 1000; uid < 1000 + NPCRegistry.MAX_ENTRIES; uid++) {
+			NPCRegistry.NPCRegistryEntry filler = new NPCRegistry.NPCRegistryEntry();
+			filler.uid = uid;
+			filler.model = uid;
+			reg.entries.put(uid, filler);
+		}
+		said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
+		try {
+			new NPCEditForm().loadFromEntities(zone.entities, reg);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 2 && said.get(1).contains("maximum capacity"), "Yes on a full registry says why it could not: " + said);
+		check(reg.entries.size() == NPCRegistry.MAX_ENTRIES && !reg.modified, "and no entry was invented over the cap");
 	}
 
 	/**

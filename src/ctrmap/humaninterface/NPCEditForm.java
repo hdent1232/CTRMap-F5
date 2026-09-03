@@ -98,12 +98,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			updateDialogueSection();
 			return;
 		}
-		if (e.firstMisnumberedNPC() != -1 && JOptionPane.showConfirmDialog(frame,
+		if (e.firstMisnumberedNPC() != -1 && ctrmap.Ui.confirm(frame,
 				"This zone's NPC uids are not their positions (an earlier delete left a gap).\n"
 				+ "The game and this editor both number NPCs by position, and the zone\n"
 				+ "will not save until they match.\n\n"
 				+ "Renumber them now? Scripts that address these NPCs by uid will need updating.",
-				"NPC uids out of order", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION) {
+				"NPC uids out of order", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
 			e.renumberNPCs();
 			e.modified = true;
 		}
@@ -385,14 +385,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (reg != null) {
 			regentry = reg.entries.get(npc.model);
 			if (regentry == null) {
-				int createEntry = JOptionPane.showConfirmDialog(frame,
+				int createEntry = ctrmap.Ui.confirm(frame,
 						"This NPC's MoveModel properties could not be found\n"
 						+ "in this area's MoveModel registry under the model UID.\n\n"
 						+ "CTRMap can create dummy registry data for you using the\n"
 						+ "most compatible settings for the majority of NPCs.\n\n"
 						+ "You may need to change collision properties in NRE.\n\n"
-						+ "Do you want to create the registry entry?", "Warning", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-				if (createEntry == JOptionPane.NO_OPTION) {
+						+ "Do you want to create the registry entry?", "Warning", JOptionPane.YES_NO_OPTION);
+				if (createEntry != JOptionPane.YES_OPTION) { //closing the question is not consent to write registry data
 					loaded = true;
 					return;
 				}
@@ -405,8 +405,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					reg.modified = true;
 					regentry = failsafe;
 				} else {
-					JOptionPane.showMessageDialog(this, "The registry's maximum capacity of 31 unique NPCs has been reached.\n"
-							+ "Please free up space in the registry editor and try again.", "Could not create registry entry", JOptionPane.ERROR_MESSAGE);
+					ctrmap.Ui.error(this, "The registry's maximum capacity of 31 unique NPCs has been reached.\n"
+							+ "Please free up space in the registry editor and try again.", "Could not create registry entry");
 				}
 			}
 		}
@@ -491,7 +491,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			if (loaded) {
 				String problem = talkerMessageProblem(npc2.script);
 				if (problem != null) {
-					JOptionPane.showMessageDialog(this,
+					ctrmap.Ui.message(this,
 							"Heads up: this NPC runs a talking script, but " + problem + ".\n\n"
 							+ "Talking to it in-game will FREEZE the game - there is no message box to close.\n\n"
 							+ "Give it text with the \"Edit dialogue\" button, or set its Script to a\n"
