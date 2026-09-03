@@ -952,9 +952,9 @@ public class ScriptEditor extends javax.swing.JPanel {
 			if (!asm.errors.isEmpty()) {
 				//store(false) shows nothing on success, so a refusal has to be the loud one
 				List<String> shown = asm.errors.subList(0, Math.min(asm.errors.size(), 8));
-				JOptionPane.showMessageDialog(this, "Not committed - " + asm.errors.size() + " line(s) did not assemble:\n"
+				ctrmap.Ui.error(this, "Not committed - " + asm.errors.size() + " line(s) did not assemble:\n"
 						+ String.join("\n", shown) + (shown.size() < asm.errors.size() ? "\n... see the assembler output for the rest" : ""),
-						"Script editor", JOptionPane.ERROR_MESSAGE);
+						"Script editor");
 				return;
 			}
 		}
