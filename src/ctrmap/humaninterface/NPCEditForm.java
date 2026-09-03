@@ -411,7 +411,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 		}
 		updateH3D(index);
-		m3DDebugPanel.bindNavi(e.npcs.get(index));
+		bindNavi(e.npcs.get(index));
 		syncScrDropdown(npc.script);
 		updateDialogueSection();
 		loaded = true;
@@ -426,6 +426,22 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	private H3DModel modelAt(int index) {
 		return reg == null ? null : reg.getModel(e.npcs.get(index).model);
+	}
+
+	/**
+	 * The 3D navi gizmo follows the selected NPC. The guard tests drive this
+	 * form with no 3D panel and no window, so both are optional here.
+	 */
+	private void bindNavi(MapObject o) {
+		if (m3DDebugPanel != null) {
+			m3DDebugPanel.bindNavi(o);
+		}
+	}
+
+	private void repaintFrame() {
+		if (frame != null) {
+			frame.repaint();
+		}
 	}
 
 	/**
@@ -465,7 +481,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (!npc2.equals(npc)) {
 			String missing = undefinedScriptProblem(npc2.script);
 			if (missing != null) {
-				JOptionPane.showMessageDialog(this, missing, "Script not defined", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, missing, "Script not defined");
 				return false;
 			}
 			int idx = e.npcs.indexOf(npc);
@@ -494,13 +510,78 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		return reg.store(dialog);
 	}
 
+	/**
+	 * What "New entry" does: a fresh NPC on tile, selected in the form.
+	 * Refuses, and says so, when the zone already holds every NPC the format
+	 * can count - the 256th used to be written as a count byte of 0.
+	 */
+	public void addEntry(Point tile) {
+		if (kindFull(e.npcs.size(), "NPCs")) {
+			return;
+		}
+		loaded = false;
+		ZoneEntities.NPC newNPC = new ZoneEntities.NPC();
+		int newuid = 0;
+		for (int i = 0; i < e.npcs.size(); i++) {
+			newuid = Math.max(e.npcs.get(i).uid + 1, newuid); //get first free UID but don't pollute free spaces if any
+		}
+		newNPC.uid = newuid;
+		newNPC.model = (npc != null) ? npc.model : 0;
+		newNPC.xTile = tile.x;
+		newNPC.yTile = tile.y;
+		e.npcs.add(newNPC);
+		e.NPCCount++;
+		entryBox.addItem(String.valueOf(newNPC.uid));
+		loaded = true;
+		setNPC(entryBox.getItemCount() - 1);
+		repaintFrame();
+		e.modified = true;
+	}
+
+	/**
+	 * What "Remove entry" does: drops the selected NPC and renumbers the ones
+	 * after it, because the game keeps NPC uids equal to their position.
+	 * Asks first when any NPC will move.
+	 */
+	public void removeEntry() {
+		int idx = entryBox.getSelectedIndex();
+		if (npc == null || idx == -1 || idx >= e.npcs.size() || e.npcs.get(idx) != npc) {
+			return;
+		}
+		if (idx < e.npcs.size() - 1 && JOptionPane.showConfirmDialog(frame,
+				"The NPCs after this one will be renumbered (uids " + (idx + 1) + ".." + (e.npcs.size() - 1)
+				+ " become " + idx + ".." + (e.npcs.size() - 2) + "), because the game keeps NPC uids\n"
+				+ "equal to their position. Scripts that address them by uid will need updating.\n\n"
+				+ "Remove NPC " + idx + "?",
+				"Remove NPC", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+			return;
+		}
+		loaded = false;
+		e.removeNPC(idx);
+		entryBox.removeAllItems();
+		for (int i = 0; i < e.npcs.size(); i++) {
+			entryBox.addItem(String.valueOf(e.npcs.get(i).uid)); //relabelled - the uids after idx moved down
+		}
+		loaded = true;
+		if (e.npcs.isEmpty()) {
+			npc = null;
+			npcIndex = -1;
+			bindNavi(null);
+			updateDialogueSection();
+		} else {
+			entryBox.setSelectedIndex(Math.min(idx, e.npcs.size() - 1));
+		}
+		repaintFrame();
+		e.modified = true;
+	}
+
 	/** Tells the user when the zone already holds every record of a kind the format can count. */
 	private boolean kindFull(int count, String kind) {
 		if (count < ZoneEntities.MAX_PER_KIND) {
 			return false;
 		}
-		JOptionPane.showMessageDialog(this, "This zone already has " + count + " " + kind + ", the most the game can store.\n"
-				+ "Remove one before adding another.", "Zone full", JOptionPane.ERROR_MESSAGE);
+		ctrmap.Ui.error(this, "This zone already has " + count + " " + kind + ", the most the game can store.\n"
+				+ "Remove one before adding another.", "Zone full");
 		return true;
 	}
 
@@ -1040,7 +1121,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		setNPC(entryBox.getItemCount() - 1);
 		mZonePnl.store(false); //same path ScriptEditor uses to save the zone script
 		mScriptPnl.loadScript(zone.s);
-		frame.repaint();
+		repaintFrame();
 	}
 
 	/**
@@ -1139,7 +1220,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		e.modified = true;
 		saveZoneScript(zone);
 		JOptionPane.showMessageDialog(this, "Sign added at tile (" + pos.x + ", " + pos.y + "). Adjust its position with the Prop tool.", "Add sign", JOptionPane.INFORMATION_MESSAGE);
-		frame.repaint();
+		repaintFrame();
 	}
 
 	/**
@@ -1499,7 +1580,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			JOptionPane.showMessageDialog(this, "Could not add the trainer:\n" + ex.getMessage(), "Add trainer", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		frame.repaint();
+		repaintFrame();
 	}
 
 	/**
@@ -2483,7 +2564,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
     private void entryBoxActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_entryBoxActionPerformed
 		if (loaded && entryBox.getSelectedIndex() != -1) {
 			showEntry(entryBox.getSelectedIndex());
-			frame.repaint();
+			repaintFrame();
 		}
     }//GEN-LAST:event_entryBoxActionPerformed
 
@@ -2497,65 +2578,17 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
     }//GEN-LAST:event_btnRegEditActionPerformed
 
     private void btnNewEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNewEntryActionPerformed
-		if (kindFull(e.npcs.size(), "NPCs")) {
-			return;
-		}
-		loaded = false;
-		ZoneEntities.NPC newNPC = new ZoneEntities.NPC();
-		int newuid = 0;
-		for (int i = 0; i < e.npcs.size(); i++) {
-			newuid = Math.max(e.npcs.get(i).uid + 1, newuid); //get first free UID but don't pollute free spaces if any
-		}
-		newNPC.uid = newuid;
-		newNPC.model = (npc != null) ? npc.model : 0;
-		Point defaultPos = mTileMapPanel.getTileAtViewportCentre();
-		newNPC.xTile = defaultPos.x;
-		newNPC.yTile = defaultPos.y;
-		e.npcs.add(newNPC);
-		e.NPCCount++;
-		entryBox.addItem(String.valueOf(newNPC.uid));
-		loaded = true;
-		setNPC(entryBox.getItemCount() - 1);
-		frame.repaint();
-		e.modified = true;
+		addEntry(mTileMapPanel.getTileAtViewportCentre());
     }//GEN-LAST:event_btnNewEntryActionPerformed
 
     private void btnSaveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSaveActionPerformed
 		saveEntry();
 		updateDialogueSection(); //the NPC's script may have just been re-assigned
-		frame.repaint();
+		repaintFrame();
     }//GEN-LAST:event_btnSaveActionPerformed
 
     private void btnRemoveEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveEntryActionPerformed
-		int idx = entryBox.getSelectedIndex();
-		if (npc == null || idx == -1 || idx >= e.npcs.size() || e.npcs.get(idx) != npc) {
-			return;
-		}
-		if (idx < e.npcs.size() - 1 && JOptionPane.showConfirmDialog(frame,
-				"The NPCs after this one will be renumbered (uids " + (idx + 1) + ".." + (e.npcs.size() - 1)
-				+ " become " + idx + ".." + (e.npcs.size() - 2) + "), because the game keeps NPC uids\n"
-				+ "equal to their position. Scripts that address them by uid will need updating.\n\n"
-				+ "Remove NPC " + idx + "?",
-				"Remove NPC", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
-			return;
-		}
-		loaded = false;
-		e.removeNPC(idx);
-		entryBox.removeAllItems();
-		for (int i = 0; i < e.npcs.size(); i++) {
-			entryBox.addItem(String.valueOf(e.npcs.get(i).uid)); //relabelled - the uids after idx moved down
-		}
-		loaded = true;
-		if (e.npcs.isEmpty()) {
-			npc = null;
-			npcIndex = -1;
-			m3DDebugPanel.bindNavi(null);
-			updateDialogueSection();
-		} else {
-			entryBox.setSelectedIndex(Math.min(idx, e.npcs.size() - 1));
-		}
-		frame.repaint();
-		e.modified = true;
+		removeEntry();
     }//GEN-LAST:event_btnRemoveEntryActionPerformed
 
     private void mdlStateChanged(javax.swing.event.ChangeEvent evt) {//GEN-FIRST:event_mdlStateChanged
