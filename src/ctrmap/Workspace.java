@@ -639,9 +639,15 @@ public class Workspace {
 			//donor the palette cuts comes from the wrong game. The check for
 			//this was written, with a javadoc describing exactly this failure,
 			//and never called from anywhere.
-			if (established && snapshotIsForeign()) {
+			//read the stamp ONCE: this decided from one read of it and worded the
+			//message from another, so a warning that only fires when the recorded
+			//path is known still managed to print "null" as that path. Whatever
+			//the two reads disagreed about, the user was shown a folder name that
+			//was not the reason they were being warned.
+			String takenFrom = snapshotSourcePath();
+			if (established && takenFrom != null && snapshotIsForeign()) {
 				Ui.error(frame, "This workspace holds a pristine backup of a different game folder:\n  "
-						+ snapshotSourcePath()
+						+ takenFrom
 						+ "\n\nCTRMap compares your edits against that backup to work out what you"
 						+ "\nchanged, and cuts donor buildings out of it, so both are now wrong for"
 						+ "\n  " + GAMEDIR_PATH
