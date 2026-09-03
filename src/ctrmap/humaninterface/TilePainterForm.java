@@ -661,11 +661,31 @@ public class TilePainterForm {
 			ctrmap.formats.tilemap.TerrainCatalog.ImportResult r
 					= ctrmap.formats.tilemap.TerrainCatalog.ensureMaterial(out, t);
 			out = r.model;
-			if (texNeeds != null && !r.texturesNeeded.isEmpty()) {
-				texNeeds.computeIfAbsent(r.donorArea, k -> new java.util.LinkedHashSet<>()).addAll(r.texturesNeeded);
-			}
+			recordNeeds(r, texNeeds);
 		}
+		//The generated cliff faces and the lava churn overlay come from the same
+		//catalogue, but PaintedRegionBuilder imports them inside the build where
+		//nothing could see what they need - and 227 of the game's 228 areas do
+		//not hold the cliff donor's texture. Importing them here instead means
+		//the carry hears about them; the build's own calls then find the
+		//material already present and change nothing.
+		ctrmap.formats.tilemap.TerrainCatalog.ImportResult cliff
+				= ctrmap.formats.tilemap.TerrainCatalog.ensureCliffMaterial(out);
+		out = cliff.model;
+		recordNeeds(cliff, texNeeds);
+		ctrmap.formats.tilemap.TerrainCatalog.ImportResult churn
+				= ctrmap.formats.tilemap.TerrainCatalog.ensureChurnMaterial(out);
+		out = churn.model;
+		recordNeeds(churn, texNeeds);
 		return out;
+	}
+
+	/** Files a catalogue import's textures under the donor area they come from. */
+	static void recordNeeds(ctrmap.formats.tilemap.TerrainCatalog.ImportResult r,
+			java.util.Map<Integer, java.util.Set<String>> texNeeds) {
+		if (texNeeds != null && r.donorArea >= 0 && !r.texturesNeeded.isEmpty()) {
+			texNeeds.computeIfAbsent(r.donorArea, k -> new java.util.LinkedHashSet<>()).addAll(r.texturesNeeded);
+		}
 	}
 
 	/** Seeds the grid from the region's existing tilemap tuples (reverse lookup). */
