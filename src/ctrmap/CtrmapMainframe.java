@@ -1227,7 +1227,17 @@ public class CtrmapMainframe {
 		}
 		int zoneIndex = (Integer) idSpinner.getValue();
 		try {
-			GeometryForker.ForkResult r = GeometryForker.forkGeometry(zoneIndex);
+			GeometryForker.ForkResult r = GeometryForker.ensurePrivate(zoneIndex);
+			if (!r.forked) {
+				//forking again would append another copy of every region and
+				//orphan the ones the zone is using
+				javax.swing.JOptionPane.showMessageDialog(frame, "Zone " + zoneIndex
+						+ " already has its own map geometry (map matrix " + r.oldMatrix
+						+ ", region(s) " + java.util.Arrays.toString(r.srcRegions) + ").\n\n"
+						+ "Nothing was changed - editing its map already affects no other zone.",
+						"Fork map geometry", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+				return;
+			}
 			StringBuilder sb = new StringBuilder();
 			sb.append("Zone ").append(zoneIndex).append(" now has private map geometry.\n\n");
 			sb.append("Map matrix ").append(r.oldMatrix).append(" -> ").append(r.newMatrix).append(" (private copy)\n");
@@ -1777,7 +1787,9 @@ public class CtrmapMainframe {
 		}
 		final int groundMesh = meshIds.get(matPicker.getSelectedIndex());
 		try {
-			GeometryForker.ForkResult r = GeometryForker.forkGeometry(zoneIndex);
+			//a re-run paints over the zone's own private regions instead of
+			//appending another set beside them
+			GeometryForker.ForkResult r = GeometryForker.ensurePrivate(zoneIndex);
 			File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
 			for (int newRegion : r.newRegions) {
 				File f = new File(fdDir, String.valueOf(newRegion));
@@ -1922,7 +1934,7 @@ public class CtrmapMainframe {
 		try {
 			ctrmap.ZoneCloner.cloneIntoSlot(srcIndex, dstIndex);
 			mZonePnl.clearForkDecline(dstIndex); //the slot holds a new zone now
-			GeometryForker.forkGeometry(dstIndex);
+			GeometryForker.ensurePrivate(dstIndex);
 			Workspace.packWorkspace(new Runnable() {
 				@Override
 				public void run() {

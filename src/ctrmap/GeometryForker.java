@@ -15,7 +15,7 @@ import java.util.Map;
  * Gives a zone its OWN private map geometry so that editing its map no longer
  * changes every other zone that shares it. This runs AUTOMATICALLY for every new
  * zone created by {@link ZoneAppender} (a fresh zone is independent by default,
- * which is what users expect); {@link #forkGeometry(int)} is the manual entry
+ * which is what users expect); {@link #ensurePrivate(int)} is the manual entry
  * point for zones that already existed before auto-fork, or for giving an
  * existing base-game zone its own map.
  *
@@ -67,6 +67,8 @@ public class GeometryForker {
 		public int newMatrix;
 		public int[] srcRegions;   // the shared regions the zone used
 		public int[] newRegions;   // their new private copies (parallel to srcRegions)
+		/** False when the zone already owned its map and nothing was appended. */
+		public boolean forked;
 	}
 
 	/**
@@ -268,10 +270,34 @@ public class GeometryForker {
 	}
 
 	/**
-	 * Manually forks the given (already-existing) zone's map geometry to a
-	 * private copy in the current ORAS workspace. Pack Workspace afterwards.
+	 * Makes sure the zone owns its map, and is the ONLY way in: it forks when
+	 * the map is still shared and does nothing when it is already private.
+	 * Pack Workspace afterwards. {@link ForkResult#forked} says which happened,
+	 * so the caller can report honestly.
+	 *
+	 * <p>Four of the five callers used to fork unconditionally. A fork appends
+	 * a copy of every region in the zone's matrix plus a new matrix, so running
+	 * one on a zone that was already private - iterating on a test zone does
+	 * that every cycle - added another set and orphaned the previous one, which
+	 * nothing ever reclaims (ZoneRemover leaves them as harmless tail data).
+	 * Measured: four forks of one already-private zone grew FieldData by
+	 * 1.17 MB and left three matrices referenced by no zone at all, every run
+	 * reporting "now has private map geometry" as though it had been needed.
+	 * The worst matrix in the game carries 23 regions and 3.2 MB.
 	 */
-	public static ForkResult forkGeometry(int zoneIndex) throws IOException {
+	public static ForkResult ensurePrivate(int zoneIndex) throws IOException {
+		if (matrixSharers(zoneIndex) > 0) {
+			return forkGeometry(zoneIndex);
+		}
+		return currentGeometry(zoneIndex);
+	}
+
+	/**
+	 * Forks the given (already-existing) zone's map geometry to a private copy
+	 * in the current ORAS workspace. Private because a fork that was not needed
+	 * is pure waste and cannot be undone - go through {@link #ensurePrivate}.
+	 */
+	private static ForkResult forkGeometry(int zoneIndex) throws IOException {
 		if (!Workspace.isOA()) {
 			throw new IOException("Geometry fork is ORAS-only in v1.");
 		}
@@ -312,6 +338,7 @@ public class GeometryForker {
 		r.newMatrix = newMatrix;
 		r.srcRegions = plan.srcRegions;
 		r.newRegions = plan.newRegions;
+		r.forked = true;
 		return r;
 	}
 

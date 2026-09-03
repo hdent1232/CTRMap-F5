@@ -111,8 +111,9 @@ public class ForkGuardsTest {
 		check(GeometryForker.matrixSharers(PRIVATE_ZONE) == 0,
 				"zone " + PRIVATE_ZONE + "'s map is already its own in the retail game");
 		int regions = Workspace.gr.length, matrices = Workspace.mm.length;
-		GeometryForker.forkGeometry(PRIVATE_ZONE);
+		GeometryForker.ForkResult r = GeometryForker.ensurePrivate(PRIVATE_ZONE);
 		pack();
+		check(!r.forked, "so it reports that it forked nothing");
 		check(Workspace.gr.length == regions && Workspace.mm.length == matrices,
 				"giving an already-private zone its own map appends nothing (FieldData "
 				+ regions + " -> " + Workspace.gr.length + ", MapMatrix " + matrices + " -> "
@@ -120,19 +121,22 @@ public class ForkGuardsTest {
 
 		check(GeometryForker.matrixSharers(SHARED_ZONE) > 0,
 				"zone " + SHARED_ZONE + " shares its map with other zones");
-		GeometryForker.forkGeometry(SHARED_ZONE);
+		r = GeometryForker.ensurePrivate(SHARED_ZONE);
 		pack();
-		check(Workspace.gr.length > regions, "a zone that shares its map does get a private copy");
+		check(r.forked && Workspace.gr.length > regions,
+				"a zone that shares its map does get a private copy");
 		check(GeometryForker.matrixSharers(SHARED_ZONE) == 0, "and stops sharing");
 
 		regions = Workspace.gr.length;
 		matrices = Workspace.mm.length;
-		GeometryForker.forkGeometry(SHARED_ZONE);
+		r = GeometryForker.ensurePrivate(SHARED_ZONE);
 		pack();
-		check(Workspace.gr.length == regions && Workspace.mm.length == matrices,
+		check(!r.forked && Workspace.gr.length == regions && Workspace.mm.length == matrices,
 				"forking the same zone a second time appends nothing (FieldData " + regions
 				+ " -> " + Workspace.gr.length + ", MapMatrix " + matrices + " -> "
 				+ Workspace.mm.length + ")");
+		check(Arrays.equals(r.srcRegions, r.newRegions),
+				"and hands back the regions the zone is already using");
 	}
 
 	/**
