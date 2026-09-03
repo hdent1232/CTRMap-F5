@@ -272,6 +272,15 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 									@Override
 									protected void done() {
 										progress.close();
+										try {
+											get(); //without this, a region that failed to write closes the dialog and
+											//the zone switch goes on without it
+										} catch (Exception ex) {
+											Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+											Logger.getLogger(TileMapPanel.class.getName()).log(Level.SEVERE, "saving matrix", cause);
+											JOptionPane.showMessageDialog(TileMapPanel.this, "The region data was not saved:\n" + cause
+													+ "\n\nWhat did not write is still marked modified - fix the cause and save again.", "Save region data", JOptionPane.ERROR_MESSAGE);
+										}
 									}
 
 									@Override
@@ -281,8 +290,8 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 												if (mm.regions.get(j, i) == null) {
 													continue;
 												}
-												tilemaps[j][i].modified = false; //prevent save dialog popping up until changed again
 												mm.regions.get(j, i).storeFile(0, tilemaps[j][i].assembleTilemap());
+												tilemaps[j][i].modified = false; //prevent save dialog popping up until changed again
 												progress.setBarPercent((int) (((i * mm.width + j) / (float) (mm.width * mm.height)) * 100));
 											}
 										}
@@ -296,7 +305,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 								try {
 									worker.get();
 								} catch (InterruptedException | ExecutionException ex) {
-									Logger.getLogger(TileMapPanel.class.getName()).log(Level.SEVERE, null, ex);
+									return false; //the save failed and done() has said so; leaving now would drop what did not write
 								}
 								return true; //save as normal
 							case JOptionPane.NO_OPTION:
@@ -326,6 +335,12 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			@Override
 			protected void done() {
 				progress.close();
+				try {
+					get(); //without this, a map that failed half-way closes the dialog and the
+					//zone comes up over the previous map's regions
+				} catch (Exception ex) {
+					Logger.getLogger(TileMapPanel.class.getName()).log(Level.SEVERE, "loading matrix", ex.getCause() != null ? ex.getCause() : ex);
+				}
 			}
 
 			@Override
@@ -401,8 +416,9 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		try {
 			worker.get();
 		} catch (InterruptedException | ExecutionException ex) {
-			Logger.getLogger(TileMapPanel.class
-					.getName()).log(Level.SEVERE, null, ex);
+			Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+			unload(); //the placeholder, not half of a map
+			throw new IllegalStateException("The map did not load: " + cause, cause);
 		}
 	}
 
@@ -666,6 +682,14 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			@Override
 			protected void done() {
 				progress.close();
+				try {
+					get(); //without this, a tile image that failed to rebuild closes the dialog and
+					//the old picture stays up as if it were current
+				} catch (Exception ex) {
+					Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+					Logger.getLogger(TileMapPanel.class.getName()).log(Level.SEVERE, "updating tilemaps", cause);
+					JOptionPane.showMessageDialog(TileMapPanel.this, "The tilemap view was not refreshed:\n" + cause, "Update tilemaps", JOptionPane.ERROR_MESSAGE);
+				}
 			}
 
 			@Override
@@ -687,12 +711,6 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		};
 		worker.execute();
 		progress.showDialog();
-		try {
-			worker.get();
-		} catch (InterruptedException | ExecutionException ex) {
-			Logger.getLogger(TileMapPanel.class
-					.getName()).log(Level.SEVERE, null, ex);
-		}
 	}
 
 	public void scaleImage(double scale) {

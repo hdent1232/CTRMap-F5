@@ -1,7 +1,14 @@
 # CTRMap-F5 regression battery - runs every corpus-validated test suite
 # against the pristine RomFS dumps. All suites must print ALL PASS / PASS.
 # Usage: powershell -ExecutionPolicy Bypass -File test.ps1 [-Quick]
-param([switch]$Quick)
+#                                   [-Pristine <dump>] [-GameDir <romfs title>]
+#
+# -Pristine and -GameDir point the battery at a dump anywhere on disk. Without
+# them it looks beside the repo, as it always has - which is why the battery
+# could not run from a worktree or a fresh clone: six suites resolved the dump
+# relative to the repo's parent and failed for a reason that had nothing to do
+# with the code under test.
+param([switch]$Quick, [string]$Pristine, [string]$GameDir)
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -15,7 +22,7 @@ if (-not $jdk) {
 }
 $cls = "build\classes"
 $libs = "lib\jogl-all.jar;lib\gluegen-rt.jar"
-$pristine = Join-Path (Split-Path -Parent $root) "RomFS_original_garcs"
+$pristine = if ($Pristine) { $Pristine } else { Join-Path (Split-Path -Parent $root) "RomFS_original_garcs" }
 $a039 = Join-Path $pristine "a\0\3\9"
 $a013 = Join-Path $pristine "a\0\1\3"
 $a040 = Join-Path $pristine "a\0\4\0"
@@ -23,12 +30,17 @@ $a040 = Join-Path $pristine "a\0\4\0"
 # A COMPLETE dump, not the partial GARC set: the setup suites validate real
 # folder layouts (sound archive, the "a" folder, wrong-pick detection), so they
 # need the whole thing. Both suites skip themselves when it is not there.
-$gamedir = Join-Path (Split-Path -Parent $root) "RomFS\000400000011C400"
+$gamedir = if ($GameDir) { $GameDir } else { Join-Path (Split-Path -Parent $root) "RomFS\000400000011C400" }
+
+if (-not (Test-Path $pristine)) {
+    Write-Host "No dump at $pristine - pass -Pristine <path>." -ForegroundColor Yellow
+}
 
 # suite name -> {main class, args}; -Quick raises sampling steps
 $step = if ($Quick) { "60" } else { "20" }
 $suites = @(
     @{ n = "Source seam guard (gamedef)"; c = "ctrmap.tests.SourceSeamTest";        a = @("src") },
+    @{ n = "Battery hygiene (temp paths, corpus args)"; c = "ctrmap.tests.BatteryHygieneTest"; a = @("src") },
     @{ n = "BchMapModel (engine)";        c = "ctrmap.tests.BchMapModelTest";       a = @() },
     @{ n = "OBJ export round-trip";       c = "ctrmap.tests.MapModelObjTest";        a = @($a039) },
     @{ n = "OBJ import";                  c = "ctrmap.tests.MapModelObjImportTest";  a = @($a039) },
@@ -66,20 +78,20 @@ $suites = @(
     @{ n = "SetupWizard (first run)";     c = "ctrmap.tests.SetupWizardTest";        a = @($gamedir) },
     @{ n = "LZ11 codec + ratio";          c = "ctrmap.tests.LZ11Test";               a = @($a039) },
     @{ n = "EncounterTable";              c = "ctrmap.tests.EncounterTableTest";     a = @($a013) },
-    @{ n = "TrainerData";                 c = "ctrmap.tests.TrainerDataTest";        a = @() },
+    @{ n = "TrainerData";                 c = "ctrmap.tests.TrainerDataTest";        a = @($gamedir) },
     @{ n = "GfHash (native names)";       c = "ctrmap.tests.GfHashTest";             a = @() },
     @{ n = "SYSREQ-by-name disasm";       c = "ctrmap.tests.SysreqNameTest";         a = @($a013) },
     @{ n = "ScriptAssembler (refuse/report)"; c = "ctrmap.tests.ScriptAssemblerGuardTest"; a = @($a013) },
     @{ n = "GiveBP script emit";          c = "ctrmap.tests.GiveBpScriptTest";       a = @($a013) },
     @{ n = "Gauntlet script emit";        c = "ctrmap.tests.GauntletScriptTest";     a = @($a013) },
-    @{ n = "Talker wizard dry-run";       c = "ctrmap.tests.TalkerWizardDryRunTest"; a = @() },
+    @{ n = "Talker wizard dry-run";       c = "ctrmap.tests.TalkerWizardDryRunTest"; a = @($a013) },
     @{ n = "SignWrapperInject (corpus)";  c = "ctrmap.tests.SignWrapperInjectTest";  a = @($a013) },
     @{ n = "Facility clone source";       c = "ctrmap.tests.FacilitySourceTest";     a = @($a013) },
-    @{ n = "PokeData (preview data)";      c = "ctrmap.tests.PokeDataTest";           a = @() },
-    @{ n = "MaisonSet (opponents)";       c = "ctrmap.tests.MaisonSetTest";          a = @() },
+    @{ n = "PokeData (preview data)";      c = "ctrmap.tests.PokeDataTest";           a = @($gamedir) },
+    @{ n = "MaisonSet (opponents)";       c = "ctrmap.tests.MaisonSetTest";          a = @($gamedir) },
     @{ n = "MaisonClassList (teams)";     c = "ctrmap.tests.MaisonClassListTest";    a = @() },
     @{ n = "MaisonPoolGuard (vanilla-safe)"; c = "ctrmap.tests.MaisonPoolGuardTest"; a = @() },
-    @{ n = "ZoneAppend";                  c = "ctrmap.tests.ZoneAppendTest";         a = @() },
+    @{ n = "ZoneAppend";                  c = "ctrmap.tests.ZoneAppendTest";         a = @($a013) },
     @{ n = "ZoneRemove (GARC shrink)";    c = "ctrmap.tests.ZoneRemoveTest";         a = @($a013) },
     @{ n = "ZoneLimitPatch";              c = "ctrmap.tests.ZoneLimitPatchTest";     a = @() },
     @{ n = "ShopData (mart inventories)"; c = "ctrmap.tests.ShopDataTest";           a = @() }

@@ -107,7 +107,7 @@ public class SetupWizardTest {
 		wsField.setText(new File(dump, "inside-the-game").getAbsolutePath());
 		revalidateWs.invoke(w);
 		check("a working folder inside the game is refused", !next.isEnabled());
-		wsField.setText(new File(System.getProperty("java.io.tmpdir"), "ctrmap_ws_probe").getAbsolutePath());
+		wsField.setText(Scratch.dir("ctrmap_ws_probe").getAbsolutePath());
 		revalidateWs.invoke(w);
 		check("a sensible working folder is accepted", next.isEnabled());
 		shot(w, shots, "wizard-3-workspace");
