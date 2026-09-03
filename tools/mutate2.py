@@ -44,6 +44,12 @@ if not JDK:
 JAVAC, JAVA = JDK + r"\bin\javac.exe", JDK + r"\bin\java.exe"
 CP = "build/classes;lib/jogl-all.jar;lib/gluegen-rt.jar"
 
+# The branch the fixes were merged INTO. Configurable because it moved once
+# already: the campaign merged into silent-failures, that was fast-forwarded
+# into master, and a sweep still naming the old branch would have measured a
+# tree 82 commits stale while looking perfectly healthy.
+MAINLINE = os.environ.get("CTRMAP_MAINLINE", "master")
+
 # Every fix branch that has been merged, with the guard suites that are supposed
 # to catch its regressions. The base of each is taken from git at run time and
 # the suites' arguments from test.ps1, so this table cannot drift from the
@@ -143,7 +149,7 @@ def resolve_clusters():
     for branch, suites in CLUSTERS.items():
         before, tip = merge_parents(branch)
         if not before:
-            print("  skip %s: no merge of sf/%s on silent-failures" % (branch, branch))
+            print("  skip %s: no merge of sf/%s on %s" % (branch, branch, MAINLINE))
             continue
         base = (before, tip)
         picked = []
@@ -192,7 +198,7 @@ def merge_parents(branch):
     silent-failures into themselves first.
     """
     m = run(["git", "log", "--merges", "--first-parent", "--format=%H",
-             "--grep=Merge branch 'sf/%s'" % branch, "silent-failures"]).stdout.split()
+             "--grep=Merge branch 'sf/%s'" % branch, MAINLINE]).stdout.split()
     if not m:
         return None, None
     # resolved to real shas so the log names the two trees, not one merge twice
@@ -282,13 +288,23 @@ def build():
     return ok
 
 
+if not (WT / ".git").exists():
+    # say what is wrong, rather than throwing NotADirectoryError from inside
+    # subprocess three frames down: the worktree is routinely removed during
+    # cleanup, and the first symptom was a traceback that named neither it nor
+    # the fix.
+    raise SystemExit(
+        "No worktree at %s - the sweep needs its own checkout.\n"
+        "  git -C \"%s\" worktree add -b <branch> \"%s\" silent-failures"
+        % (WT, (BASE / "CTRMap"), WT))
+
 results, t0 = [], time.time()
 # Freeze the tree under measurement at ONE commit and reset to that, never to
-# the branch name. A run that reset to "silent-failures" between clusters had
+# the branch name. A run that reset to MAINLINE between clusters had
 # the branch move underneath it - a merge landed mid-sweep - so its later
 # clusters were scored against a tree its baseline had never seen. A sweep must
 # measure one tree or it measures none.
-run(["git", "reset", "--hard", "silent-failures"])
+run(["git", "reset", "--hard", MAINLINE])
 FROZEN = run(["git", "rev-parse", "HEAD"]).stdout.strip()
 print("measuring %s (frozen; the branch may move without affecting this run)" % FROZEN[:7], flush=True)
 # resolved AFTER the reset, so the suites and arguments come from the tree
