@@ -289,7 +289,7 @@ public class TilePainterForm {
 	 * once every one of them has succeeded - and never into an area other zones
 	 * share.
 	 */
-	private static class StagedArea {
+	public static class StagedArea {
 
 		final int areaId;
 		final int editingZone;
@@ -297,7 +297,7 @@ public class TilePainterForm {
 		final java.util.Map<Integer, byte[]> pending = new java.util.LinkedHashMap<>();
 		private ctrmap.formats.propdata.ADPropRegistry registry;
 
-		StagedArea(int areaId, int editingZone) throws Exception {
+		public StagedArea(int areaId, int editingZone) throws Exception {
 			this.areaId = areaId;
 			this.editingZone = editingZone;
 			this.ad = areaContainer(areaId);
@@ -833,7 +833,7 @@ public class TilePainterForm {
 				continue;
 			}
 			try {
-				int uid = ensureDoorPropRegistered(pl.e.doorProp, area);
+				int uid = ensureDoorPropRegistered(pl.e.doorProp, area, note);
 				ctrmap.formats.propdata.GRProp p = new ctrmap.formats.propdata.GRProp();
 				p.uid = uid;
 				p.x = (cellX(cell) * 40 + pl.tx + pl.e.doorDX) * 18 + 9;
@@ -857,7 +857,14 @@ public class TilePainterForm {
 	 * share the area, and while the rest of the Apply could still fail. Returns
 	 * the registry reference id for the GRProp uid.
 	 */
-	static int ensureDoorPropRegistered(String propModelName, StagedArea area) throws Exception {
+	/** An area's prop texture pack as this workspace holds it: the extracted file when there is one, else the archive's. */
+	static byte[] propPackOf(int area) throws Exception {
+		File ws = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA), String.valueOf(area));
+		byte[] entry = ws.exists() ? java.nio.file.Files.readAllBytes(ws.toPath()) : Workspace.ad.getDecompressedEntry(area);
+		return ctrmap.formats.propdata.PropDatabase.getSubfile(entry, 1);
+	}
+
+	public static int ensureDoorPropRegistered(String propModelName, StagedArea area, StringBuilder note) throws Exception {
 		ctrmap.formats.propdata.PropDatabase db = ctrmap.formats.propdata.PropDatabase.get();
 		if (db == null) {
 			throw new IllegalStateException("prop database unavailable");
@@ -878,18 +885,23 @@ public class TilePainterForm {
 		byte[] targetPack = area.file(1);
 		java.util.Set<String> available = ctrmap.formats.propdata.PropDatabase.getTexturePackTextureNames(targetPack);
 		java.util.List<String> missing = ctrmap.formats.propdata.PropDatabase.getMissingTextureNames(modelBch, available);
+		//the finding's other half: a name this area ALREADY holds under other
+		//pixels. Nothing is missing, so no donor is consulted and the door draws
+		//the area's version - "Littleroot house" on area 4 draws area 4's
+		//chip_mado - with no line anywhere. Compare against the prop's home.
+		if (note != null && !pm.donorAreas.isEmpty() && pm.donorAreas.get(0) != area.areaId) {
+			java.util.List<String> all = new java.util.ArrayList<>(ctrmap.formats.propdata.PropDatabase.getMaterialTextureNames(modelBch));
+			for (String c : ctrmap.formats.h3d.BchTexturePack.clashesWith(area.file(11), targetPack, propPackOf(pm.donorAreas.get(0)), all)) {
+				note.append("\n").append(propModelName).append(" will draw this area's ").append(c)
+						.append(", not its own: the two textures share a name and differ.");
+			}
+		}
 		if (!missing.isEmpty()) {
 			int donorArea = db.findDonorAreaWithTextures(pm, missing);
 			if (donorArea < 0) {
 				throw new IllegalStateException("no donor area has its textures " + missing);
 			}
-			byte[] donorPack;
-			File donorWs = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA), String.valueOf(donorArea));
-			if (donorWs.exists()) {
-				donorPack = ctrmap.formats.propdata.PropDatabase.getSubfile(java.nio.file.Files.readAllBytes(donorWs.toPath()), 1);
-			} else {
-				donorPack = ctrmap.formats.propdata.PropDatabase.getSubfile(Workspace.ad.getDecompressedEntry(donorArea), 1);
-			}
+			byte[] donorPack = propPackOf(donorArea);
 			byte[] merged = ctrmap.formats.h3d.BchTexturePack.importIntoArea(
 					area.areaId, area.editingZone, targetPack, donorPack, missing);
 			if (merged != targetPack) {
