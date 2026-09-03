@@ -53,7 +53,20 @@ public class BatteryHygieneTest {
 		fixedTempPaths(tests);
 		overridableCorpusPath(tests);
 		File repo = root.getParentFile() == null ? new File(".") : root.getParentFile();
+		//every script the battery or a harness executes, not just the runner: the
+		//same heredoc trap that put NUL bytes into test.ps1 put them into
+		//tools/mutate2.py an hour later - inside the comment describing the trap
 		runnerIsPlainText(new File(repo, "test.ps1"));
+		runnerIsPlainText(new File(repo, "build.ps1"));
+		runnerIsPlainText(new File(repo, "stamp.ps1"));
+		File[] tools = new File(repo, "tools").listFiles();
+		if (tools != null) {
+			for (File t : tools) {
+				if (t.getName().endsWith(".py") || t.getName().endsWith(".ps1")) {
+					runnerIsPlainText(t);
+				}
+			}
+		}
 		builtByTheBattery(repo);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {

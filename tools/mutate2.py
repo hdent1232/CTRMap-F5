@@ -78,10 +78,41 @@ def suite_args():
     """{short class name: [args]} read from test.ps1's $suites, as the battery runs them."""
     text = (WT / "test.ps1").read_text(encoding="utf-8", errors="replace")
     out = {}
-    for m in re.finditer(r'c\s*=\s*"ctrmap\.tests\.(\w+)"\s*;\s*a\s*=\s*@\(([^)]*(?:\([^)]*\)[^)]*)*)\)', text):
-        cls, raw = m.group(1), m.group(2).strip()
+    # Balanced-paren scan, not a regex: @((Join-Path $p "a-0-1-4"), (Join-Path ...))
+    # has two nested groups and the first version's regex stopped at the first
+    # ")", handing TexturePackImportTest one argument. It then defaulted the
+    # other to a path relative to the worktree, failed unmutated, and the sweep
+    # refused - the third time its own refusal has found a real defect.
+    entries = []
+    pos = 0
+    while True:
+        i = text.find('c = "ctrmap.tests.', pos)
+        if i < 0:
+            break
+        cls = text[i + len('c = "ctrmap.tests.'):text.index('"', i + len('c = "ctrmap.tests.'))]
+        j = text.index('a = @(', i) + len('a = @(')
+        depth, k = 1, j
+        while depth and k < len(text):
+            depth += {'(': 1, ')': -1}.get(text[k], 0)
+            k += 1
+        inner = text[j:k - 1]
+        toks, cur, d = [], '', 0
+        for ch in inner:
+            if ch == '(':
+                d += 1
+            elif ch == ')':
+                d -= 1
+            if ch == ',' and d == 0:
+                toks.append(cur)
+                cur = ''
+            else:
+                cur += ch
+        toks.append(cur)
+        entries.append((cls, [t.strip() for t in toks if t.strip()]))
+        pos = k
+    for cls, raw_tokens in entries:
         args = []
-        for tok in [t.strip() for t in raw.split(",") if t.strip()]:
+        for tok in raw_tokens:
             # the outer @( ... ) capture keeps the inner group's opening paren
             # but not always its closing one, so accept either
             jp = re.match(r'\(?Join-Path\s+(\$\w+)\s+"([^"]+)"\)?', tok)
