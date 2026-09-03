@@ -525,15 +525,23 @@ public class Workspace {
 	 * then on with nothing to indicate it.
 	 */
 	public static boolean snapshotIsForeign() {
+		return snapshotIsForeign(GAMEDIR_PATH);
+	}
+
+	/**
+	 * The same question about a folder the workspace is about to be pointed at,
+	 * so the settings dialog can ask BEFORE it repoints anything.
+	 */
+	public static boolean snapshotIsForeign(String gameDir) {
 		String taken = snapshotSourcePath();
-		if (taken == null || GAMEDIR_PATH == null) {
+		if (taken == null || gameDir == null) {
 			return false;
 		}
 		try {
 			return !new File(taken).getCanonicalPath()
-					.equalsIgnoreCase(new File(GAMEDIR_PATH).getCanonicalPath());
+					.equalsIgnoreCase(new File(gameDir).getCanonicalPath());
 		} catch (IOException ex) {
-			return !taken.equalsIgnoreCase(GAMEDIR_PATH);
+			return !taken.equalsIgnoreCase(gameDir);
 		}
 	}
 
@@ -616,14 +624,31 @@ public class Workspace {
 	 * from an absent snapshot ({@code BuildingCatalog.pristineRegion}); none of
 	 * them can detect a present-but-wrong one.
 	 */
-	public static void snapshotOriginals() {
+	public static java.util.List<String> snapshotOriginals() {
+		java.util.List<String> refused = new java.util.ArrayList<>();
 		try {
 			if (GAMEDIR_PATH == null || WORKSPACE_PATH == null || game == null) {
-				return;
+				return refused;
 			}
 			File snap = originalSnapshotDir();
 			boolean established = originalSnapshotStamp().isFile();
-			java.util.List<String> refused = new java.util.ArrayList<>();
+			//A backup of one game folder says nothing about another. Repointing
+			//a workspace at a second dump keeps the first one's backup - the
+			//clean deliberately spares it - so Deploy diffs the new game
+			//against the old one and ships archives nobody touched, and every
+			//donor the palette cuts comes from the wrong game. The check for
+			//this was written, with a javadoc describing exactly this failure,
+			//and never called from anywhere.
+			if (established && snapshotIsForeign()) {
+				Ui.error(frame, "This workspace holds a pristine backup of a different game folder:\n  "
+						+ snapshotSourcePath()
+						+ "\n\nCTRMap compares your edits against that backup to work out what you"
+						+ "\nchanged, and cuts donor buildings out of it, so both are now wrong for"
+						+ "\n  " + GAMEDIR_PATH
+						+ "\n\nDelete the backup folder\n  " + snap
+						+ "\nand reload, against an unmodified game, to take a new one.",
+						"Backup belongs to another game");
+			}
 			for (ArchiveType t : ModDeployer.MODDABLE) {
 				String rel = getArchivePath(t, game);
 				if (rel == null) {
@@ -664,6 +689,7 @@ public class Workspace {
 		} catch (Exception ex) {
 			System.err.println("Original-archive snapshot failed (non-fatal): " + ex);
 		}
+		return refused;
 	}
 	
 	public static void reloadGARC(ArchiveType arc){
@@ -749,6 +775,148 @@ public class Workspace {
 		packWorkspace(null);
 	}
 
+	/** Progress sink for {@link #packArchives}: the dialog in the app, nothing in a headless test. */
+	public interface PackProgress {
+
+		void at(int percent, String what);
+	}
+
+	/**
+	 * Packs every edited archive back into the game directory, in one fixed
+	 * order, and reloads them. Synchronous and headless: the app runs it on a
+	 * worker and the tests run it directly, so the two cannot pack differently.
+	 *
+	 * <p>Throws on the first archive that cannot be rewritten - the emulator
+	 * or a virus scanner holding it open is the usual cause. Nothing is lost:
+	 * the edits stay staged in the workspace and marked pending, so the next
+	 * pack carries them. The failure used to be swallowed inside the archive
+	 * writer, and the progress bar filled while the game kept the old map.
+	 *
+	 * <p>Returns everything the pack found wrong, as sentences meant for the
+	 * user: a cross-archive reference that will stop a zone loading, an archive
+	 * a second program is writing to, a pristine backup with holes in it. All
+	 * three used to be printed to stderr, and the shipped build has no console,
+	 * so a pack that could see the game was broken still ended in the success
+	 * dialog alone.
+	 */
+	public static java.util.List<String> packArchives(PackProgress progress) throws IOException {
+		//leftovers from a pack that threw are not this pack's news
+		GARC.drainPackWarnings();
+		progress.at(0, "Packing - fielddata");
+		//a pending geometry fork appends private region copies (see GeometryForker)
+		gr.packDirectory(getExtractionDirectory(ArchiveType.FIELD_DATA), GeometryForker.consumePendingFieldOverrides());
+		progress.at(30, "Packing - areadata");
+		//a pending area fork appends a private area copy (see AreaForker)
+		ad.packDirectory(getExtractionDirectory(ArchiveType.AREA_DATA), AreaForker.consumePendingAreaOverrides());
+		progress.at(60, "Packing - zonedata");
+		//a pending zone append needs its compression overrides exactly once (see ZoneAppender)
+		zo.packDirectory(getExtractionDirectory(ArchiveType.ZONE_DATA), ZoneAppender.consumePendingZoneDataOverrides());
+		progress.at(65, "Packing - mapmatrix");
+		//a pending geometry fork appends a rewired matrix (see GeometryForker)
+		mm.packDirectory(getExtractionDirectory(ArchiveType.MAP_MATRIX), GeometryForker.consumePendingMatrixOverrides());
+		progress.at(70, "Packing - buildingmodels");
+		bm.packDirectory(getExtractionDirectory(ArchiveType.BUILDING_MODELS));
+		progress.at(90, "Packing - npcregistries");
+		//an area fork appends the matching registry entry (indexed by area id)
+		npcreg.packDirectory(getExtractionDirectory(ArchiveType.NPC_REGISTRIES), AreaForker.consumePendingNpcRegOverrides());
+		progress.at(95, "Packing - trainers");
+		//trainer archives: pack only when actually edited (rewriting them
+		//without edits would still be byte-faithful, but skip the churn)
+		if (trdata != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.TRAINER_DATA))) {
+			trdata.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_DATA));
+		}
+		if (trpoke != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.TRAINER_POKE))) {
+			trpoke.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_POKE));
+		}
+		//Battle Maison opponent pools/lists (edited-only)
+		for (ArchiveType mt : new ArchiveType[]{ArchiveType.MAISON_SET_POOL_A, ArchiveType.MAISON_CLASS_LIST_A,
+			ArchiveType.MAISON_SET_POOL_B, ArchiveType.MAISON_CLASS_LIST_B, ArchiveType.MAISON_SET_POOL_C}) {
+			GARC mg = getArchive(mt);
+			if (mg != null && hasPersistedFiles(getExtractionDirectory(mt))) {
+				mg.packDirectory(getExtractionDirectory(mt));
+			}
+		}
+		progress.at(95, "Packing - gametext");
+		//packDirectory rewrites the GARC in the game directory even with zero persisted files - only pack when text was actually edited
+		if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {
+			texts.packDirectory(getExtractionDirectory(ArchiveType.GAMETEXT));
+		}
+		progress.at(97, "Packing - storytext");
+		//storytext is lazy-loaded and huge - only pack when dialogue was actually edited
+		GARC storyGarc = getStoryTextGARC();
+		if (storyGarc != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.STORYTEXT))) {
+			storyGarc.packDirectory(getExtractionDirectory(ArchiveType.STORYTEXT));
+			reloadGARC(ArchiveType.STORYTEXT);
+		}
+		progress.at(100, "Done, updating GARCs");
+		//the GARC indices may have changed and as such we need to reload them
+		reloadGARC(ArchiveType.AREA_DATA);
+		reloadGARC(ArchiveType.FIELD_DATA);
+		reloadGARC(ArchiveType.ZONE_DATA);
+		reloadGARC(ArchiveType.MAP_MATRIX);
+		reloadGARC(ArchiveType.BUILDING_MODELS);
+		reloadGARC(ArchiveType.NPC_REGISTRIES);
+		reloadGARC(ArchiveType.GAMETEXT);
+		//the session prop database was built from the pre-pack GARCs;
+		//drop it so the next palette use rebuilds from the fresh archives
+		ctrmap.formats.propdata.PropDatabase.invalidate();
+		//The archives now on disk are what the game will load. Cross-
+		//archive references are by bare index and nothing else checks
+		//them, so an operation that grew one archive and not another
+		//leaves a dangling index that only shows up much later, as a
+		//zone that will not load. Check here, while the edit that
+		//caused it is still the last thing that happened.
+		java.util.List<String> warnings = new ArrayList<>();
+		warnings.addAll(WorkspaceIntegrity.report("packing the workspace"));
+		warnings.addAll(GARC.drainPackWarnings());
+		java.util.List<String> missing = snapshotMissingArchives();
+		if (!missing.isEmpty()) {
+			warnings.add("the pristine backup in " + originalSnapshotDir() + " is missing "
+					+ missing.size() + " archive(s): " + missing + ". They will NOT be captured"
+					+ " from the game as it is now, which may already be edited - so Deploy"
+					+ " cannot tell what you changed in them, and donor buildings cut from them"
+					+ " are unavailable. Delete the backup folder and reload against an"
+					+ " unmodified game to retake it whole.");
+		}
+		return warnings;
+	}
+
+	/**
+	 * Puts what a pack found wrong in front of the user, through the dialog
+	 * they already get when the pack finishes.
+	 *
+	 * <p>Separate from the pack itself on purpose: the pack runs on a worker
+	 * with an application-modal progress dialog on screen, and a message shown
+	 * from there would sit behind it, unreachable. This runs on the EDT once
+	 * that dialog has closed.
+	 */
+	public static void reportPackWarnings(Component parent, java.util.List<String> warnings) {
+		if (warnings == null || warnings.isEmpty()) {
+			return;
+		}
+		StringBuilder sb = new StringBuilder("The workspace was packed, but the archives it wrote"
+				+ " do not add up:\n");
+		for (String w : warnings) {
+			sb.append('\n').append(wrap(w));
+		}
+		sb.append("\nFix this before deploying - the game may not load.");
+		Ui.error(parent, sb.toString(), "Pack workspace");
+	}
+
+	/** One warning, broken at spaces so the dialog does not grow off the screen. */
+	private static String wrap(String s) {
+		StringBuilder out = new StringBuilder("  - ");
+		int lineStart = 0;
+		for (String word : s.split(" ")) {
+			if (out.length() - lineStart + word.length() > 92) {
+				out.append("\n    ");
+				lineStart = out.length();
+			}
+			out.append(word).append(' ');
+		}
+		return out.append('\n').toString();
+	}
+
 	/**
 	 * Packs the workspace back into the game archives on a background worker.
 	 * Because the pack is asynchronous (and only finishes reloading the GARCs -
@@ -760,6 +928,7 @@ public class Workspace {
 	public static void packWorkspace(final Runnable onDone) {
 		if (valid) {
 			LoadingDialog progress = LoadingDialog.makeDialog("Packing");
+			final java.util.List<String> warnings = new ArrayList<>();
 			SwingWorker worker = new SwingWorker() {
 				@Override
 				protected void done() {
@@ -780,85 +949,20 @@ public class Workspace {
 				}
 
 				@Override
-				protected Object doInBackground() {
-					progress.setDescription("Packing - fielddata");
-					//a pending geometry fork appends private region copies (see GeometryForker)
-					gr.packDirectory(getExtractionDirectory(ArchiveType.FIELD_DATA), GeometryForker.consumePendingFieldOverrides());
-					progress.setBarPercent(30);
-					progress.setDescription("Packing - areadata");
-					//a pending area fork appends a private area copy (see AreaForker)
-					ad.packDirectory(getExtractionDirectory(ArchiveType.AREA_DATA), AreaForker.consumePendingAreaOverrides());
-					progress.setBarPercent(60);
-					progress.setDescription("Packing - zonedata");
-					//a pending zone append needs its compression overrides exactly once (see ZoneAppender)
-					zo.packDirectory(getExtractionDirectory(ArchiveType.ZONE_DATA), ZoneAppender.consumePendingZoneDataOverrides());
-					progress.setBarPercent(65);
-					progress.setDescription("Packing - mapmatrix");
-					//a pending geometry fork appends a rewired matrix (see GeometryForker)
-					mm.packDirectory(getExtractionDirectory(ArchiveType.MAP_MATRIX), GeometryForker.consumePendingMatrixOverrides());
-					progress.setBarPercent(70);
-					progress.setDescription("Packing - buildingmodels");
-					bm.packDirectory(getExtractionDirectory(ArchiveType.BUILDING_MODELS));
-					progress.setBarPercent(90);
-					progress.setDescription("Packing - npcregistries");
-					//an area fork appends the matching registry entry (indexed by area id)
-					npcreg.packDirectory(getExtractionDirectory(ArchiveType.NPC_REGISTRIES), AreaForker.consumePendingNpcRegOverrides());
-					progress.setBarPercent(95);
-					progress.setDescription("Packing - trainers");
-				//trainer archives: pack only when actually edited (rewriting them
-				//without edits would still be byte-faithful, but skip the churn)
-				if (trdata != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.TRAINER_DATA))) {
-					trdata.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_DATA));
-				}
-				if (trpoke != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.TRAINER_POKE))) {
-					trpoke.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_POKE));
-				}
-				//Battle Maison opponent pools/lists (edited-only)
-				for (ArchiveType mt : new ArchiveType[]{ArchiveType.MAISON_SET_POOL_A, ArchiveType.MAISON_CLASS_LIST_A,
-					ArchiveType.MAISON_SET_POOL_B, ArchiveType.MAISON_CLASS_LIST_B, ArchiveType.MAISON_SET_POOL_C}) {
-					GARC mg = getArchive(mt);
-					if (mg != null && hasPersistedFiles(getExtractionDirectory(mt))) {
-						mg.packDirectory(getExtractionDirectory(mt));
-					}
-				}
-				progress.setDescription("Packing - gametext");
-					//packDirectory rewrites the GARC in the game directory even with zero persisted files - only pack when text was actually edited
-					if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {
-						texts.packDirectory(getExtractionDirectory(ArchiveType.GAMETEXT));
-					}
-					progress.setBarPercent(97);
-					progress.setDescription("Packing - storytext");
-					//storytext is lazy-loaded and huge - only pack when dialogue was actually edited
-					GARC storyGarc = getStoryTextGARC();
-					if (storyGarc != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.STORYTEXT))) {
-						storyGarc.packDirectory(getExtractionDirectory(ArchiveType.STORYTEXT));
-						reloadGARC(ArchiveType.STORYTEXT);
-					}
-					progress.setBarPercent(100);
-					progress.setDescription("Done, updating GARCs");
-					//the GARC indices may have changed and as such we need to reload them
-					reloadGARC(ArchiveType.AREA_DATA);
-					reloadGARC(ArchiveType.FIELD_DATA);
-					reloadGARC(ArchiveType.ZONE_DATA);
-					reloadGARC(ArchiveType.MAP_MATRIX);
-					reloadGARC(ArchiveType.BUILDING_MODELS);
-					reloadGARC(ArchiveType.NPC_REGISTRIES);
-					reloadGARC(ArchiveType.GAMETEXT);
-					//the session prop database was built from the pre-pack GARCs;
-					//drop it so the next palette use rebuilds from the fresh archives
-					ctrmap.formats.propdata.PropDatabase.invalidate();
-					//The archives now on disk are what the game will load. Cross-
-					//archive references are by bare index and nothing else checks
-					//them, so an operation that grew one archive and not another
-					//leaves a dangling index that only shows up much later, as a
-					//zone that will not load. Check here, while the edit that
-					//caused it is still the last thing that happened.
-					WorkspaceIntegrity.report("packing the workspace");
+				protected Object doInBackground() throws Exception {
+					//a failure here must reach done() and the user, not the log
+					warnings.addAll(packArchives((percent, what) -> {
+						progress.setBarPercent(percent);
+						progress.setDescription(what);
+					}));
 					return null;
 				}
 			};
 			worker.execute();
 			progress.showDialog();
+			//showDialog returns on the EDT once done() has closed the progress
+			//dialog, so this is the first moment anything else can be seen
+			reportPackWarnings(CtrmapMainframe.frame, warnings);
 		}
 	}
 	

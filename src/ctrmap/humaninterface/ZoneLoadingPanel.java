@@ -1232,7 +1232,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
 		final int idx = zoneIndex;
 		try {
-			ctrmap.GeometryForker.ForkResult r = ctrmap.GeometryForker.forkGeometry(idx);
+			ctrmap.GeometryForker.ForkResult r = ctrmap.GeometryForker.ensurePrivate(idx);
 			Workspace.packWorkspace(new Runnable() {
 				@Override
 				public void run() {
@@ -1242,7 +1242,12 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 							selectZone(idx);
 							JOptionPane.showMessageDialog(ZoneLoadingPanel.this,
 									"Zone " + idx + " now has its own private map (regions "
-									+ java.util.Arrays.toString(r.newRegions) + ").\nEdits here no longer affect any other zone.",
+									+ java.util.Arrays.toString(r.newRegions) + ").\nEdits here no longer affect any other zone."
+									+ (r.otherZones.length == 0 ? ""
+											: "\n\nThe map also carries ground belonging to zone(s) "
+											+ java.util.Arrays.toString(r.otherZones)
+											+ ".\nYour copy keeps their labels, so walking there still reports them,"
+											+ "\nbut edits you make to that ground now show only in this zone."),
 									"Shared map", JOptionPane.INFORMATION_MESSAGE);
 						}
 					});
@@ -1309,7 +1314,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			clearForkDecline(dstIndex); //the slot holds a NEW zone now
 			if (doFork) {
 				//give the clone its own map so editing it won't change the source (same as Add zones)
-				ctrmap.GeometryForker.forkGeometry(dstIndex);
+				ctrmap.GeometryForker.ensurePrivate(dstIndex);
 			}
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);

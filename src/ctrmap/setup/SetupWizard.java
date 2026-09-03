@@ -507,11 +507,11 @@ public class SetupWizard extends JDialog {
 		//a workspace carrying a pristine backup of a DIFFERENT game folder would
 		//silently mis-report what the user has changed, forever
 		Workspace.WORKSPACE_PATH = wsPath;
-		String taken = Workspace.snapshotSourcePath();
-		if (taken != null && !samePath(taken, gamePath)) {
+		if (Workspace.snapshotIsForeign(gamePath)) {
 			int r = JOptionPane.showConfirmDialog(this,
 					"That working folder already holds a backup of a different game folder:\n  "
-					+ shorten(taken) + "\n\nCTRMap compares your edits against that backup to work out"
+					+ shorten(Workspace.snapshotSourcePath())
+					+ "\n\nCTRMap compares your edits against that backup to work out"
 					+ "\nwhat you changed, so keeping it would give the wrong answer."
 					+ "\n\nReplace the backup with one taken from your current game folder?"
 					+ "\n(Choose No to go back and pick a different working folder.)",
@@ -667,14 +667,6 @@ public class SetupWizard extends JDialog {
 			return c.equalsIgnoreCase(p) || c.toLowerCase().startsWith(p.toLowerCase() + File.separator);
 		} catch (Exception ex) {
 			return false;
-		}
-	}
-
-	private static boolean samePath(String a, String b) {
-		try {
-			return new File(a).getCanonicalPath().equalsIgnoreCase(new File(b).getCanonicalPath());
-		} catch (Exception ex) {
-			return a.equalsIgnoreCase(b);
 		}
 	}
 
