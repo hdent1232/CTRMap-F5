@@ -79,6 +79,7 @@ $suites = @(
     @{ n = "AreaEnv (fog/ambient)";       c = "ctrmap.tests.AreaEnvTest";             a = @((Join-Path $pristine "a\0\1\4")) },
     @{ n = "AnimSplice (water scroll)";   c = "ctrmap.tests.AnimSpliceTest";          a = @((Join-Path $pristine "a\0\1\4")) },
     @{ n = "TexturePackImport (carry/clash)"; c = "ctrmap.tests.TexturePackImportTest"; a = @((Join-Path $pristine "a\0\1\4"), (Join-Path $pristine "a\0\2\3")) },
+    @{ n = "TextureCarryGuards (a carry that says it wrote, wrote)"; c = "ctrmap.tests.TextureCarryGuardsTest"; a = @($pristine) },
     @{ n = "MapResizer";                  c = "ctrmap.tests.MapResizerTest";         a = @($a040) },
     @{ n = "MatrixFork (zone-switch layer)"; c = "ctrmap.tests.MatrixForkTest";      a = @($a013, $a040) },
     @{ n = "AreaShareGuard (self-conflict)"; c = "ctrmap.tests.AreaShareGuardTest";  a = @($a013) },
