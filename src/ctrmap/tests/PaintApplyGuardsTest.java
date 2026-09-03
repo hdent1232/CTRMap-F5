@@ -79,6 +79,7 @@ public class PaintApplyGuardsTest {
 		doorPropWaitsForTheAreaDecision();
 		failedCarryLeavesRegionsAlone();
 		appliedMapCarriesItsTextures();
+		retryStillAsksForTheTextures();
 		sharedMatrixIsPaintedAfterTheFork();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -174,6 +175,33 @@ public class PaintApplyGuardsTest {
 		check(newlyPersisted(before).contains(area.getAbsolutePath()), "area 21 was written");
 		check(!needed.isEmpty() && areaTextures(Files.readAllBytes(area.toPath())).containsAll(needed),
 				"and it now holds the sand texture(s) " + needed);
+	}
+
+	/**
+	 * The retry after a refused carry, which is what the user does next. Zone
+	 * 15's region now carries the SAND brush's imported material from the apply
+	 * above, and its area is put back the way a REFUSED carry leaves it -
+	 * without the texture. Applying again must notice and carry it: reporting
+	 * "Painted map applied" over the same white floor, with no message at all
+	 * this time, is how the user found out in the emulator instead.
+	 */
+	static void retryStillAsksForTheTextures() throws Exception {
+		byte[] painted = new GR(Workspace.getWorkspaceFile(
+				Workspace.ArchiveType.FIELD_DATA, 153)).getFile(1);
+		List<String> needed = TerrainCatalog.ensureMaterial(PropDatabase.getSubfile(
+				gr.getDecompressedEntry(153), 1), TilePalette.SAND).texturesNeeded;
+		TerrainCatalog.ImportResult again = TerrainCatalog.ensureMaterial(painted, TilePalette.SAND);
+		check(!again.injected && again.texturesNeeded.equals(needed),
+				"a map that already carries the brush's material still reports its textures "
+				+ again.texturesNeeded + " (the donor's are " + needed + ")");
+		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		open(15);
+		paintSand();
+		Exception stop = apply(15, new ArrayList<TilePainterForm.Placed>());
+		check(stop == null, "the retry applies (stopped by: " + stop + ")");
+		File area = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, 21);
+		check(!needed.isEmpty() && areaTextures(Files.readAllBytes(area.toPath())).containsAll(needed),
+				"and it carries the sand texture(s) " + needed + " the refused carry never delivered");
 	}
 
 	/**
