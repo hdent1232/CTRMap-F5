@@ -70,6 +70,7 @@ $suites = @(
     @{ n = "CompositeBuild (edit-in-place)"; c = "ctrmap.tests.CompositeBuildTest";   a = @($a039) },
     @{ n = "Composite leftovers (nothing left standing)"; c = "ctrmap.tests.CompositeLeftoverTest"; a = @($a039) },
     @{ n = "TerrainImport (any brush anywhere)"; c = "ctrmap.tests.TerrainImportTest"; a = @($a039) },
+    @{ n = "TerrainImportNoise (quiet when early, loud when broken)"; c = "ctrmap.tests.TerrainImportNoiseTest"; a = @($a039) },
     @{ n = "BuildingCatalog (palette)";   c = "ctrmap.tests.BuildingCatalogTest";     a = @($a039) },
     @{ n = "PlacementGuards (what a placed building did)"; c = "ctrmap.tests.PlacementGuardsTest"; a = @($a039, $step) },
     @{ n = "PaintApplyGuards (Apply writes nothing it cannot finish)"; c = "ctrmap.tests.PaintApplyGuardsTest"; a = @($pristine, "src") },
