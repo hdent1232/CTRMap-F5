@@ -35,7 +35,7 @@ public class IntegrityTest {
 
 		Workspace.game = Workspace.GameType.ORAS;
 		Workspace.GAMEDIR_PATH = gamedir.getAbsolutePath();
-		Workspace.WORKSPACE_PATH = System.getProperty("java.io.tmpdir") + "/ctrmap_integrity";
+		Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_integrity").getAbsolutePath();
 		Workspace.temp = new File(Workspace.WORKSPACE_PATH, "temp");
 		Workspace.temp.mkdirs();
 		String base = Workspace.GAMEDIR_PATH;

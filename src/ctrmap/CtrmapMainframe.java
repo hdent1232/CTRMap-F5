@@ -711,7 +711,12 @@ public class CtrmapMainframe {
 				jfc.showOpenDialog(frame);
 				if (jfc.getSelectedFile() != null) {
 					prefs.put("LAST_DIR", jfc.getSelectedFile().getParent());
-					mTileMapPanel.loadMatrix(new MapMatrix(new MM(jfc.getSelectedFile())), null, null, null);
+					try {
+						mTileMapPanel.loadMatrix(new MapMatrix(new MM(jfc.getSelectedFile())), null, null, null);
+					} catch (RuntimeException ex) {
+						JOptionPane.showMessageDialog(frame, ex.getMessage(), "Open MapMatrix", JOptionPane.ERROR_MESSAGE);
+						return;
+					}
 					mTileMapPanel.scaleImage(1);
 				}
 			}

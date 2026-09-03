@@ -35,7 +35,7 @@ public class UvScaleTest {
 		ctrmap.Workspace.game = ctrmap.Workspace.GameType.ORAS;
 		ctrmap.Workspace.GAMEDIR_PATH = garcFile.getParentFile().getParentFile()
 				.getParentFile().getParentFile().getAbsolutePath();
-		ctrmap.Workspace.WORKSPACE_PATH = System.getProperty("java.io.tmpdir") + "/ctrmap_uvscale";
+		ctrmap.Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_uvscale").getAbsolutePath();
 		ctrmap.Workspace.temp = new File(ctrmap.Workspace.WORKSPACE_PATH, "temp");
 		ctrmap.Workspace.temp.mkdirs();
 		File snap = new File(ctrmap.Workspace.originalSnapshotDir().getAbsolutePath()

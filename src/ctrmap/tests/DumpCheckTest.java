@@ -52,8 +52,7 @@ public class DumpCheckTest {
 				in.suggestion != null && sameFile(in.suggestion, dump), in);
 		System.out.println("  a/         -> " + in.headline + "  [-> " + in.suggestion + "]");
 
-		File tmp = new File(System.getProperty("java.io.tmpdir"),
-				"ctrmap_dumpcheck/" + System.nanoTime());
+		File tmp = Scratch.dir("ctrmap_dumpcheck");
 
 		//a packed ROM they never unpacked
 		File rom = new File(tmp, "Pokemon Omega Ruby.3ds");
