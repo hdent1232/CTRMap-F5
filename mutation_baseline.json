@@ -142,15 +142,10 @@
   "sha256": "9298ff605b3506fa2ab4caffbe3ea30ad72bf1976096c208198d3b3dc053a907"
  },
  "src/ctrmap/humaninterface/PaintForm.java": {
-  "survivors": 4,
-  "killed": 2,
+  "survivors": 3,
+  "killed": 3,
   "unmeasured": 3,
   "lines": [
-   {
-    "line": 615,
-    "kind": "drop-report",
-    "code": "placeStatus.setText(d < 0 ? \"<html>No lower ground beside that tile -<br>raise it or lower a neighbour first.</html>\" : \" \");"
-   },
    {
     "line": 620,
     "kind": "negate-if",
