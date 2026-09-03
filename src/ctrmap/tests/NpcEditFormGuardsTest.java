@@ -98,6 +98,7 @@ public class NpcEditFormGuardsTest {
 			misnumberedUidsAskFirst(zo);
 			missingRegistryEntryAsksFirst(zo);
 			softLockWarningReachesTheUser(zo);
+			addTemplateStopsAtTheCeiling(zo);
 		}
 		altitudeFromMesh();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -460,6 +461,64 @@ public class NpcEditFormGuardsTest {
 		}
 		check(saved && e.npcs.get(0).script == 8, "the save goes through - a missing message is a warning, not a refusal");
 		check(said.size() == 1 && said.get(0).contains("soft-lock"), "and the user is warned: " + said);
+	}
+
+	/**
+	 * "Add NPC / object" on a zone that already holds every record the format
+	 * can count. The chooser was a modal JOptionPane, so nothing after it -
+	 * including this refusal, the one thing standing between the user and an
+	 * unloadable zone - could be reached from a guard at all. Both arms are
+	 * driven: an NPC template against 255 NPCs, a Sign against 255 props.
+	 */
+	static void addTemplateStopsAtTheCeiling(GARC zo) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		NPCEditForm form = new NPCEditForm();
+		form.loadFromEntities(e, null);
+
+		List<String> said = ctrmap.Ui.record(); //no answer: the same as cancelling the chooser
+		try {
+			addTemplate(form);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).contains("What would you like to add?"), "the chooser is asked through Ui: " + said);
+		check(e.npcs.size() == 9 && e.furniture.size() == 2, "and cancelling it adds nothing");
+
+		while (e.npcs.size() < ZoneEntities.MAX_PER_KIND) {
+			ZoneEntities.NPC filler = new ZoneEntities.NPC();
+			filler.uid = e.npcs.size();
+			e.npcs.add(filler);
+		}
+		e.NPCCount = e.npcs.size();
+		said = ctrmap.Ui.record("Talking NPC");
+		try {
+			addTemplate(form);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 2 && said.get(1).contains("255 NPCs"), "a full NPC list is refused, and said so: " + said);
+		check(e.npcs.size() == ZoneEntities.MAX_PER_KIND, "and nothing was added");
+
+		while (e.furniture.size() < ZoneEntities.MAX_PER_KIND) {
+			e.furniture.add(new ZoneEntities.Prop());
+		}
+		e.furnitureCount = e.furniture.size();
+		said = ctrmap.Ui.record("Sign");
+		try {
+			addTemplate(form);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 2 && said.get(1).contains("255 props"), "a full prop list is refused against the prop count, not the NPC one: " + said);
+		check(e.furniture.size() == ZoneEntities.MAX_PER_KIND, "and nothing was added");
+	}
+
+	/** The "Add NPC / object" button, which the form keeps to itself. */
+	static void addTemplate(NPCEditForm form) throws Exception {
+		java.lang.reflect.Method m = form.getClass().getDeclaredMethod("btnAddTalkerActionPerformed", java.awt.event.ActionEvent.class);
+		m.setAccessible(true);
+		m.invoke(form, (java.awt.event.ActionEvent) null);
 	}
 
 	/**
