@@ -27,15 +27,10 @@
   "sha256": "196026387288228fc7273694818c962f0926e0bf7c21b5fea6df0a3cb9734815"
  },
  "src/ctrmap/humaninterface/TilePainterForm.java": {
-  "survivors": 6,
-  "killed": 19,
+  "survivors": 5,
+  "killed": 20,
   "unmeasured": 4,
   "lines": [
-   {
-    "line": 468,
-    "kind": "negate-if",
-    "code": "if (needsAreaWrite(zoneArea, placed, texNeeds)) {"
-   },
    {
     "line": 472,
     "kind": "drop-throw",
@@ -62,7 +57,7 @@
     "code": "if (!registered) {"
    }
   ],
-  "sha256": "4d05cec24b80e98abfd393603112c0751b151a58831f7dad5008d1450878f537"
+  "sha256": "d731013d540a9161b1d33c3da9bc8be8aee6e6fd08e3746f3f54e1ef8ca8e281"
  },
  "src/ctrmap/tools/BuildingHarvester.java": {
   "survivors": 7,
