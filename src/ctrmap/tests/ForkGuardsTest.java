@@ -4,6 +4,8 @@ import ctrmap.AreaForker;
 import ctrmap.Workspace;
 import ctrmap.WorkspaceIntegrity;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.List;
 
@@ -48,6 +50,7 @@ public class ForkGuardsTest {
 		}
 		ScratchGame.open(dump);
 		areaForkKeepsTheRegistryAligned();
+		gappedAppendIsRefused();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -81,6 +84,32 @@ public class ForkGuardsTest {
 			check(bad.isEmpty(), "fork " + (pass + 1) + ": the packed game passes every"
 					+ " cross-archive invariant " + bad);
 		}
+	}
+
+	/**
+	 * The mechanism underneath, in isolation: a file named past the end of an
+	 * archive must be refused, not quietly written somewhere else. This is what
+	 * turned the fork's one-slot mistake into a game that would not load, and
+	 * it would do the same to any other appender.
+	 */
+	static void gappedAppendIsRefused() throws Exception {
+		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
+		int before = Workspace.npcreg.length;
+		int past = before + 1;
+		File gapped = new File(dir, String.valueOf(past));
+		Files.write(gapped.toPath(), new byte[]{1, 2, 3, 4});
+		Workspace.addPersist(gapped);
+		try {
+			pack();
+			check(false, "packing a file named past the end of the archive is refused");
+		} catch (IOException ex) {
+			check(ex.getMessage().contains(String.valueOf(past)),
+					"packing a file named past the end of the archive is refused: " + ex.getMessage());
+		}
+		check(Workspace.npcreg.length == before,
+				"and the archive did not grow into the slot it would have been renumbered to");
+		Workspace.persist_paths.remove(gapped.getAbsolutePath());
+		gapped.delete();
 	}
 
 	/** The bytes the engine would read as the registry for an area id. */
