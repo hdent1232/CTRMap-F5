@@ -73,7 +73,18 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			mm.hasLOD = (short) (allowExtended.isSelected() ? 1 : 0);
 			if (curRegX != -1) {
 				if (btnChunkTool.isSelected()) {
-					mm.ids.set(curRegX, curRegY, (Short) chunkId.getValue());
+					short id = (Short) chunkId.getValue();
+					ctrmap.formats.garc.GARC fd = ctrmap.Workspace.getArchive(ctrmap.Workspace.ArchiveType.FIELD_DATA);
+					if (fd != null && (id < -1 || id >= fd.length)) {
+						//typed past the last region, the cell would name a file the
+						//game cannot open; the integrity pass would catch it after a
+						//pack, but it should never be written. Say so, keep the cell.
+						ctrmap.Ui.error(this, "Region " + id + " does not exist - FieldData has regions 0.." + (fd.length - 1)
+								+ " (-1 for an empty cell). The cell keeps " + mm.ids.get(curRegX, curRegY) + ".", "Chunk reference");
+						chunkId.setValue(mm.ids.get(curRegX, curRegY));
+					} else {
+						mm.ids.set(curRegX, curRegY, id);
+					}
 					if (mm.hasLOD == 1) {
 						mm.LOD.set(curRegX, curRegY, (Short) chunkLod.getValue());
 					}

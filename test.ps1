@@ -123,6 +123,7 @@ $suites = @(
     @{ n = "GFMessageFile hostile input"; c = "ctrmap.tests.GFMessageFileHostileTest"; a = @() },
     @{ n = "GFMessageFile round-trip"; c = "ctrmap.tests.GFMessageFileRoundTripTest"; a = @() }
     @{ n = "PackReport (warnings reach the user)"; c = "ctrmap.tests.PackReportTest"; a = @($pristine) },
+    @{ n = "DoorPropGuards (a door names what it will draw)"; c = "ctrmap.tests.DoorPropGuardsTest"; a = @($pristine) },
     @{ n = "ForkGuards (area/geometry forks)"; c = "ctrmap.tests.ForkGuardsTest";     a = @($pristine) }
 )
 

@@ -75,6 +75,27 @@ public class PackReportTest {
 		check(said.contains(rel), "the pack names the archive missing from the pristine backup");
 		check(said.contains("changed on disk"), "the pack says an archive was rewritten underneath it");
 
+		//A MATRIX CELL NAMING A REGION THAT DOES NOT EXIST must reach the user
+		//too. Finding 6's fix made the region pass read the grid correctly, but
+		//report() called check(false), which returns before that pass - so the
+		//only place it ever ran was IntegrityTest. Verification re-ran the
+		//original repro against the fixed build: the archive held region 5000,
+		//check(true) named it, and the Pack dialog said "(nothing)". Typed into
+		//the matrix editor, a dangling region loads as a missing file in game.
+		int matrix = 14;
+		File matFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, matrix);
+		byte[] grid = Files.readAllBytes(matFile.toPath());
+		int sub0 = (grid[4] & 0xFF) | ((grid[5] & 0xFF) << 8) | ((grid[6] & 0xFF) << 16) | ((grid[7] & 0xFF) << 24);
+		int cell0 = sub0 + 8; //hasLOD, unknown, width, height, then the ids
+		grid[cell0] = (byte) (5000 & 0xFF);
+		grid[cell0 + 1] = (byte) (5000 >> 8);
+		Files.write(matFile.toPath(), grid);
+		Workspace.addPersist(matFile);
+		said = pack().toString();
+		System.out.println("  after a dangling region, the user is shown: " + said);
+		check(said.contains("FieldData region that does not exist"), "the pack names a matrix cell whose region FieldData does not have");
+		check(said.contains("matrix " + matrix), "and says which matrix");
+
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);

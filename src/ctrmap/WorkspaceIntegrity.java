@@ -200,7 +200,11 @@ public class WorkspaceIntegrity {
 	 * but the returned list is the channel that reaches anybody.
 	 */
 	public static List<String> report(String after) {
-		List<String> bad = check(false);
+		//deep: the region pass was fixed to read every matrix and then never
+		//ran outside IntegrityTest, because this called check(false), which
+		//returns before it. A dangling region typed into the matrix editor
+		//reached the archive and the Pack dialog said nothing. One 224 KB read.
+		List<String> bad = check(true);
 		if (bad.isEmpty()) {
 			return bad;
 		}
