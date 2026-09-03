@@ -10,6 +10,7 @@ import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.npcreg.NPCRegistry;
+import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.humaninterface.NPCEditForm;
@@ -25,6 +26,7 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import javax.swing.JComboBox;
 import javax.swing.JFormattedTextField;
@@ -57,6 +59,14 @@ import javax.swing.JSpinner;
  *     and the drag tool assigned the collision height raw - NaN on the lower
  *     half of a map taller than wide. The box must follow position, and a
  *     drag where the mesh has no answer keeps the altitude.</li>
+ * <li>Three of the form's own dialogues were still bare JOptionPanes: the
+ *     out-of-order-uid question, the missing-registry-entry question and the
+ *     soft-lock warning. A bare dialog is unassertable AND unreachable
+ *     headless, and on a desktop it is worse than that - foreign-snapshot
+ *     warnings of exactly this shape appeared mid-battery and the run only
+ *     finished because somebody was at the machine to click them. Each is
+ *     driven here through ctrmap.Ui: the question must be asked, and the
+ *     answer must be the one that is acted on.</li>
  * </ol>
  *
  * Usage: java ctrmap.tests.NpcEditFormGuardsTest &lt;pristine dump root&gt;
@@ -84,6 +94,9 @@ public class NpcEditFormGuardsTest {
 			newEntryStopsAtTheCeiling(zo);
 			overlayFollowsPosition(zo);
 			dragKeepsAltitudeOffTheMesh(zo);
+			misnumberedUidsAskFirst(zo);
+			missingRegistryEntryAsksFirst(zo);
+			softLockWarningReachesTheUser(zo);
 		}
 		altitudeFromMesh();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -345,6 +358,82 @@ public class NpcEditFormGuardsTest {
 		check(npc.z3DCoordinate == 12.5f, "and keeps the altitude past its edge, where the lookup is NaN");
 	}
 
+	/**
+	 * A zone whose NPC uids are not their positions. Opening it must ask
+	 * before renumbering, and the question must be answerable without a
+	 * screen: as a bare JOptionPane it threw headless and blocked a desktop.
+	 */
+	static void misnumberedUidsAskFirst(GARC zo) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		e.npcs.get(3).uid = 99;
+		check(e.firstMisnumberedNPC() == 3, "zone " + ZONE + " NPC 3 carries uid 99 - the gap an earlier delete left");
+		NPCEditForm form = new NPCEditForm();
+		List<String> said = ctrmap.Ui.record();
+		try {
+			form.loadFromEntities(e, null);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).contains("Renumber them now?"), "opening the zone asks first: " + said);
+	}
+
+	/**
+	 * An NPC whose MoveModel has no registry entry. The form offers to write
+	 * dummy registry data, which is a change to the area's registry - so it
+	 * must ask, through ctrmap.Ui, and act on the answer it is given.
+	 */
+	static void missingRegistryEntryAsksFirst(GARC zo) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		NPCRegistry reg = new NPCRegistry(temp(new byte[0]));
+		check(reg.entries.isEmpty(), "an empty registry has no entry for NPC 0's MoveModel");
+		NPCEditForm form = new NPCEditForm();
+		List<String> said = ctrmap.Ui.record();
+		try {
+			form.loadFromEntities(zone.entities, reg);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(!said.isEmpty() && said.get(0).contains("create the registry entry"), "the form asks before writing registry data: " + said);
+	}
+
+	/**
+	 * Saving an NPC onto a talker script whose message line does not exist.
+	 * The save goes through - the record is legal - but the user must be told
+	 * the NPC will freeze the game, and that warning was a bare JOptionPane.
+	 */
+	static void softLockWarningReachesTheUser(GARC zo) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		NPCEditForm form = new NPCEditForm();
+		form.loadFromEntities(e, null);
+		//zone 24's script 8 is a talker on message line 8; a story file of one
+		//empty line has no line 8, which is the soft-lock exactly
+		withStoryFile(form, zo, zone.header.textID, "");
+		((JSpinner) field(form, "scr")).setValue(8);
+		List<String> said = ctrmap.Ui.record();
+		boolean saved;
+		try {
+			saved = form.saveEntry();
+		} finally {
+			ctrmap.Ui.stopRecording();
+			Workspace.storytexts = null;
+		}
+		check(saved && e.npcs.get(0).script == 8, "the save goes through - a missing message is a warning, not a refusal");
+		check(said.size() == 1 && said.get(0).contains("soft-lock"), "and the user is warned: " + said);
+	}
+
+	/**
+	 * Hands the form a story-text file without a STORYTEXT archive: the
+	 * pristine set has none, and the form's own cache is what the soft-lock
+	 * check reads once the archive is known to exist.
+	 */
+	static void withStoryFile(NPCEditForm form, GARC anyGarc, int textID, String... lines) throws Exception {
+		Workspace.storytexts = anyGarc; //only ever null-checked on this path
+		setField(form, "storyFile", new GFMessageFile(GFMessageFile.write(Arrays.asList(lines))));
+		setField(form, "storyFileTextID", textID);
+	}
+
 	/** A map panel over a 2 wide, 4 tall matrix; null cells read height 0, past the edge reads NaN. */
 	static TileMapPanel tallMatrix() {
 		TileMapPanel map = new TileMapPanel();
@@ -418,6 +507,12 @@ public class NpcEditFormGuardsTest {
 		Field f = o.getClass().getDeclaredField(name);
 		f.setAccessible(true);
 		return f.get(o);
+	}
+
+	static void setField(Object o, String name, Object value) throws Exception {
+		Field f = o.getClass().getDeclaredField(name);
+		f.setAccessible(true);
+		f.set(o, value);
 	}
 
 	static File temp(byte[] bytes) throws Exception {
