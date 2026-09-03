@@ -481,6 +481,16 @@ public class GARC {
 		return entries.get(num).length;
 	}
 
+	/**
+	 * How many entries this instance's table describes. Equals {@link #length}
+	 * and the count in the file for an instance that has only ever parsed; the
+	 * three drifting apart is what a pack that mutated the table and then threw
+	 * used to leave behind, and the next pack wrote the drift into the archive.
+	 */
+	public int getEntryCount() {
+		return entries.size();
+	}
+
 	public byte[] getDecompressedEntry(int num) {
 		if (num >= entries.size()) {
 			return null;
