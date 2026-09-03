@@ -186,9 +186,7 @@ public class GeoEditForm extends JPanel {
 			int save = JOptionPane.showConfirmDialog(this,
 					"Copied \"" + p.name + "\": " + p.pieces.size() + " pieces, " + p.collTris.size()
 					+ " collision tris, " + p.tilesW + "x" + p.tilesH + " tiles.\nMaterials: " + mats
-					+ (p.facesDropped == 0 ? "" : "\n\n" + p.facesDropped + " face(s) crossing the selection edge were left out"
-					+ (p.materialsLost.isEmpty() ? "" : " - " + p.materialsLost + " lost entirely")
-					+ ".\nWiden the selection to take them.")
+					+ (p.facesDropped == 0 ? "" : "\n\n" + p.cutReport())
 					+ "\n\nAlso save it as a .ctrprefab file (reusable across sessions)?",
 					"Copy prefab", JOptionPane.YES_NO_OPTION);
 			if (save == JOptionPane.YES_OPTION) {
@@ -200,7 +198,9 @@ public class GeoEditForm extends JPanel {
 			}
 			status.setText("Prefab \"" + p.name + "\" on the clipboard - select tiles elsewhere and Stamp.");
 		} catch (Exception ex) {
-			status.setText("Copy failed: " + ex.getMessage());
+			//a refused cut - faces across the selection, none inside - is the
+			//answer to the click, not a footnote for the status bar
+			ctrmap.Ui.error(this, "Copy failed: " + ex.getMessage(), "Copy prefab");
 		}
 	}
 
@@ -270,7 +270,8 @@ public class GeoEditForm extends JPanel {
 					}
 					p.stampTiles(r, tm, anchorX, anchorY);
 					refreshTiles(tm);
-					tileNote = " +" + r.tilesStamped + " tiles";
+					//every tuple, whatever it does: say what kinds went in
+					tileNote = " +" + r.tilesStamped + " tiles (" + ctrmap.formats.h3d.MapPrefab.StampResult.tally(r.tilesWritten) + ")";
 				}
 			}
 			//cross-area texture carry: injected materials reference the DONOR area's

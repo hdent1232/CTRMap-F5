@@ -28,6 +28,18 @@ public class WarpTool extends AbstractTool {
 
 	@Override
 	public void drawOverlay(Graphics g, int imgstartx, int imgstarty, double globimgdim) {
+		paintWarps(g, imgstartx, imgstarty, globimgdim);
+	}
+
+	/**
+	 * Draws every warp of the loaded zone as a numbered box, the selected one
+	 * framed red. Nothing while the warp form has no zone: the tool can be
+	 * active before a zone is open, and drawing then threw on the event
+	 * thread and left the map view blank. A static, because the tool itself
+	 * cannot be constructed without the whole window and this is the part a
+	 * test needs to see.
+	 */
+	public static void paintWarps(Graphics g, int imgstartx, int imgstarty, double globimgdim) {
 		if (!mWarpEditForm.loaded) {
 			return;
 		}

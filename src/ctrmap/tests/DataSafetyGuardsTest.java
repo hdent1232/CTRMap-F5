@@ -8,9 +8,14 @@ import ctrmap.formats.text.LocationNames;
 import ctrmap.formats.text.TextFile;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.humaninterface.NPCEditForm;
+import ctrmap.humaninterface.TriggerEditForm;
 import ctrmap.humaninterface.WarpEditForm;
 import ctrmap.humaninterface.ZoneLoadingPanel;
+import ctrmap.humaninterface.tools.WarpTool;
+import java.awt.Color;
 import java.awt.Point;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.RandomAccessFile;
 import java.lang.reflect.Field;
@@ -23,6 +28,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JComboBox;
 import javax.swing.JFormattedTextField;
 
@@ -64,6 +70,11 @@ import javax.swing.JFormattedTextField;
  *     progress bar filled, Deploy reported "nothing changed", the game showed
  *     the old map, and a half-written &lt;archive&gt;_new sat in the workspace.
  *     The user concluded the editor did not save.</li>
+ * <li>The zone panel's own Save must answer false, and say so, when the zone
+ *     refuses to serialise - and true when it does not; the warp dropdown
+ *     must list each warp once after a load; and the warp overlay must draw
+ *     nothing before a zone is open and every warp once one is. Mutation
+ *     testing turned each of these around with the battery green.</li>
  * </ol>
  *
  * Usage: java ctrmap.tests.DataSafetyGuardsTest &lt;path-to-any-garc&gt; [pristine-dump-root]
@@ -311,6 +322,27 @@ public class DataSafetyGuardsTest {
 		form.loadFromEntities(e);
 		form.saveEntry();
 		check(e.warps.size() == 2 && e.warps.get(0) == a, "Save before anything is selected writes nothing");
+		check(((JComboBox<?>) field(form, "entryBox")).getItemCount() == e.warpCount,
+				"the dropdown lists each warp exactly once after a load (" + ((JComboBox<?>) field(form, "entryBox")).getItemCount() + " for " + e.warpCount + ")");
+		//The map overlay: nothing while no zone is loaded (the tool can be
+		//active before one is open, and drawing then threw on the event
+		//thread), every warp once one is.
+		BufferedImage img = new BufferedImage(40 * 12, 40 * 12, BufferedImage.TYPE_INT_RGB);
+		WarpEditForm blank = new WarpEditForm();
+		blank.loadFromEntities(null);
+		CtrmapMainframe.mWarpEditForm = blank;
+		try {
+			WarpTool.paintWarps(img.getGraphics(), 0, 0, 12);
+			check(true, "the warp overlay draws nothing while no zone is loaded");
+		} catch (RuntimeException ex) {
+			check(false, "the warp overlay with no zone loaded threw " + ex);
+		}
+		a.w = 1;
+		a.h = 1;
+		CtrmapMainframe.mWarpEditForm = form;
+		WarpTool.paintWarps(img.getGraphics(), 0, 0, 12);
+		int bx = (int) Math.round(12 * ((a.x - 9f) / 18f)), by = (int) Math.round(12 * ((a.y - 9f) / 18f));
+		check(new Color(img.getRGB(bx + 10, by + 2)).equals(Color.WHITE), "and draws the loaded zone's warp as a box on its tile");
 		//THE REFUSAL MUST REACH THE USER, not just happen.
 		//Every check above proves the zone refuses to save a broken record. None
 		//of them proved the user is told, and mutation testing showed why that
@@ -330,8 +362,48 @@ public class DataSafetyGuardsTest {
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
+		//The zone panel's own Save, the button the user presses. It reads the
+		//header fields back from the form, so the zone is loaded into it
+		//first - its dropdowns filled the way the zone loader fills them, one
+		//town-map group per zone slot; the entity forms it saves through are
+		//empty and save nothing.
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm();
+		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm();
+		fill(zonePnl, "tmg", 600);
+		fill(zonePnl, "type", 8);
+		fill(zonePnl, "weather", 32);
+		zonePnl.loadZone(zonePnl.zones[2]);
+		said = ctrmap.Ui.record();
+		try {
+			boolean saved = zonePnl.store(false);
+			check(!saved, "the zone panel's Save answers false when the zone refuses to serialise");
+			check(!said.isEmpty(), "and the user is told: " + said);
+		} catch (RuntimeException ex) {
+			check(false, "the zone panel's Save threw on a zone that refuses to serialise: " + ex);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
 		e.warps.remove(mute);
 		e.warpCount--;
+		//and true once every warp has a destination - the master table lives
+		//in a scratch workspace holding the pristine archive
+		a.targetZone = 1;
+		a.targetWarpId = 0;
+		File ws = Scratch.dir("ctrmap_data_safety");
+		Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
+		ctrmap.Utils.mkDirsIfNotContains(ws, Workspace.WORKSPACE_SUBDIRS);
+		Workspace.zo = zo;
+		zonePnl.zones[2].entities.modified = true;
+		said = ctrmap.Ui.record();
+		try {
+			boolean saved = zonePnl.store(false);
+			check(saved, "the zone panel's Save answers true once every record serialises");
+			check(said.isEmpty(), "and has nothing to complain about: " + said);
+		} catch (RuntimeException ex) {
+			check(false, "the zone panel's Save threw on a zone that serialises: " + ex);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
 
 		//a destination that no longer exists
 		ZoneEntities.Warp dangling = new ZoneEntities.Warp();
@@ -424,6 +496,16 @@ public class DataSafetyGuardsTest {
 		Field f = o.getClass().getDeclaredField(name);
 		f.setAccessible(true);
 		return f.get(o);
+	}
+
+	/** Gives one of the zone panel's dropdowns n generic entries, so a header can be shown in it. */
+	@SuppressWarnings("unchecked")
+	static void fill(ZoneLoadingPanel pnl, String box, int n) throws Exception {
+		String[] items = new String[n];
+		for (int i = 0; i < n; i++) {
+			items[i] = box + " " + i;
+		}
+		((JComboBox<String>) field(pnl, box)).setModel(new DefaultComboBoxModel<>(items));
 	}
 
 	static String entry(WarpEditForm form, int index) throws Exception {

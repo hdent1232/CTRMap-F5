@@ -49,8 +49,11 @@ public class PaintForm extends JPanel {
 	boolean edgeBlend = true;
 	byte[] donorModel;
 	byte[] donorColl; // the region's collision - the retail-height frame for composite builds
+	byte[] donorTilemap; // the region's movement tiles - which ground is walkable, for filling unsampled tiles
 	int cellX, cellY; // the painted cell's position in the zone's world grid
 	BuildingCatalog.Entry pendingPlace = null;
+	/** Whether the pending building brings its passengers (the palette's checkbox). */
+	boolean pendingPassengers = true;
 	int ptool = 0; // 0 paint, 1 fill, 2 raise, 3 lower, 4 ramp
 
 	private final java.util.ArrayDeque<Object[]> undoStack = new java.util.ArrayDeque<>();
@@ -74,6 +77,7 @@ public class PaintForm extends JPanel {
 	private final JButton makeRipple = new JButton("Make water ripple here");
 	private final JButton undoBtn = new JButton("Undo");
 	private final JButton redoBtn = new JButton("Redo");
+	private final JButton fillAll = new JButton("Fill all with brush");
 	private final javax.swing.JList<TilePalette> brushList = new javax.swing.JList<>(TilePalette.brushes());
 	private final JLabel placeStatus = new JLabel(" ");
 	private final JCheckBox edgeChk = new JCheckBox("Blend grass edges (GameFreak look)", true);
@@ -152,10 +156,12 @@ public class PaintForm extends JPanel {
 		buildings.setAlignmentX(0f);
 		buildings.setToolTipText("Pokemon Centers, Marts, houses, signs, trees - pick one, then click the map to place it. Right-click a placed one to remove it.");
 		buildings.addActionListener(e -> {
-			BuildingCatalog.Entry pick = BuildingPaletteDialog.pick(null, donorModel, mTileMapPanel.getWorldTextures());
+			BuildingPaletteDialog.Pick pick = BuildingPaletteDialog.pick(null, donorModel, mTileMapPanel.getWorldTextures());
 			if (pick != null) {
-				pendingPlace = pick;
-				placeStatus.setText("<html><b>Placing: " + pick.name + "</b> - click the map</html>");
+				pendingPlace = pick.entry;
+				pendingPassengers = pick.passengers;
+				placeStatus.setText("<html><b>Placing: " + pick.entry.name + "</b>"
+						+ (pick.passengers ? "" : " (passengers left behind)") + " - click the map</html>");
 			}
 		});
 		add(buildings);
@@ -177,7 +183,6 @@ public class PaintForm extends JPanel {
 			tg.add(b);
 			add(b);
 		}
-		JButton fillAll = new JButton("Fill all with brush");
 		fillAll.setToolTipText("Paints EVERY tile of the cell - this also rebuilds the whole cell on Apply (existing walls/details are replaced).");
 		fillAll.setAlignmentX(0f);
 		fillAll.addActionListener(e -> {
@@ -186,6 +191,10 @@ public class PaintForm extends JPanel {
 				java.util.Arrays.fill(grid[i], brush());
 				java.util.Arrays.fill(touched[i], true);
 			}
+			//void counts as the base level, so filling it in can leave a ramp
+			//with nothing lower on its way down - and the next repaint would
+			//throw out of the event thread over it
+			settleRamps();
 			repaintMap();
 		});
 		add(fillAll);
@@ -359,6 +368,7 @@ public class PaintForm extends JPanel {
 		int region = cell != null ? cell[0] : -1;
 		donorModel = null;
 		donorColl = null;
+		donorTilemap = null;
 		if (region >= 0) {
 			TilePainterForm.loadFromRegion(region, grid);
 			try {
@@ -367,9 +377,10 @@ public class PaintForm extends JPanel {
 				if (BchMapModel.isMapModel(m)) {
 					donorModel = m;
 					donorColl = gr.getFile(2);
+					donorTilemap = gr.getFile(0);
 					//elevations start at the map's REAL ground levels, so painted
 					//tiles sit level with their retail surroundings by default
-					int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(donorColl, height);
+					int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(donorColl, donorTilemap, height);
 					if (borrowed > 0) {
 						zoneLabel.setText("<html>Painting zone " + seededZone + "<br><small>" + borrowed
 								+ " tile(s) have no ground of their own and start<br>level with their nearest neighbour</small></html>");
@@ -523,7 +534,7 @@ public class PaintForm extends JPanel {
 				snapshot();
 				int px = Math.max(0, Math.min(DIM - pendingPlace.tilesW(), lx));
 				int py = Math.max(0, Math.min(DIM - pendingPlace.tilesH(), ly));
-				placed.add(new Placed(pendingPlace, px, py));
+				placed.add(new Placed(pendingPlace, px, py, pendingPassengers));
 				touchFootprint(px, py, pendingPlace.tilesW(), pendingPlace.tilesH());
 			}
 			pendingPlace = null;
@@ -670,7 +681,10 @@ public class PaintForm extends JPanel {
 	}
 
 	private void repaintMap() {
-		mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+		//no map view - a headless test drives the document without one
+		if (mTileMapPanel != null) {
+			mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+		}
 		schedule3DRegen();
 	}
 
@@ -711,6 +725,7 @@ public class PaintForm extends JPanel {
 		final int epochAtStart = regenEpoch;
 		final byte[] donor = donorModel;
 		final byte[] coll = donorColl;
+		final byte[] tmap = donorTilemap;
 		final boolean edgesNow = edgeBlend;
 		//deep-copy every input on the EDT so the worker never races a stroke
 		final TilePalette[][] g2 = new TilePalette[DIM][];
@@ -732,7 +747,7 @@ public class PaintForm extends JPanel {
 					//the live preview paints with the same imported materials the
 					//Apply will use, so what you see is what you get
 					byte[] src = TilePainterForm.importBrushMaterials(donor, g2, t2, null);
-					byte[] model = PaintedRegionBuilder.buildModelOnly(src, coll, g2, h2, r2, t2, l2, edgesNow);
+					byte[] model = PaintedRegionBuilder.buildModelOnly(src, coll, tmap, g2, h2, r2, t2, l2, edgesNow);
 					java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extra = null;
 					if (!p2.isEmpty()) {
 						ctrmap.formats.h3d.RegionFactory.BlankContent bc = new ctrmap.formats.h3d.RegionFactory.BlankContent();
@@ -745,7 +760,7 @@ public class PaintForm extends JPanel {
 						bc.tilemap[0] = (byte) DIM;
 						bc.tilemap[2] = (byte) DIM;
 						bc.props = new byte[]{0, 0, 0, 0};
-						TilePainterForm.stampPlaced(bc, p2, h2, PaintedRegionBuilder.floorYGrid(coll, h2), null);
+						TilePainterForm.stampPlaced(bc, p2, h2, PaintedRegionBuilder.floorYGrid(coll, tmap, h2), null);
 						model = bc.model;
 						//donor-area textures load here, off the EDT (the loaders
 						//are synchronized; a GARC decompress can take a moment)
@@ -900,11 +915,13 @@ public class PaintForm extends JPanel {
 		if (TilePainterForm.usesWater(grid) && !TilePainterForm.zoneWaterScrolls(mZonePnl.zone.header.areadataID)) {
 			waterNote = "\n\nNote: painted water will be STILL here - use \"Make water ripple here\" first.";
 		}
+		//what each building really is, at the moment of the decision
+		String buildingsNote = placed.isEmpty() ? "" : "\n\nBuildings to place:\n" + TilePainterForm.placedSummary(placed);
 		int rsl = JOptionPane.showConfirmDialog(this,
 				"Apply your edits to zone " + zoneIndex + "'s map?\n"
 				+ "The " + touchedCount + " tile(s) you touched are rebuilt; the rest of the map keeps\n"
 				+ "its existing geometry. If the map is still shared with other zones, this\n"
-				+ "zone gets its own private copy first. Deploy afterwards to walk on it." + waterNote,
+				+ "zone gets its own private copy first. Deploy afterwards to walk on it." + waterNote + buildingsNote,
 				"Map Builder", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
 		if (rsl != JOptionPane.OK_OPTION) {
 			return;

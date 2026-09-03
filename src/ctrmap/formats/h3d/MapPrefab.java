@@ -26,8 +26,9 @@ import java.util.TreeMap;
  * anchor (the min corner of the tile box it was cut from):
  * <ul>
  * <li>per-mesh geometry pieces: FULL vertex strides (UVs/normals/colors ride
- *     along) + a local triangle list + the source material name - faces
- *     crossing the box edge are left out, and counted;</li>
+ *     along) + a local triangle list + the source material name - a face
+ *     whose footprint overlaps the box but does not lie wholly inside it is
+ *     left out, and counted;</li>
  * <li>the collision triangles inside the box, those crossing its edge clipped
  *     to it;</li>
  * <li>the 4-byte movement-tile tuples of the footprint.</li>
@@ -65,15 +66,18 @@ public class MapPrefab {
 	public final List<Piece> pieces = new ArrayList<>();
 	public final List<float[]> collTris = new ArrayList<>();   // float[9], anchor-relative
 	public byte[][][] tiles;              // [w][h][4] tuples, or null
-	public int facesDropped;              // faces that crossed the box edge and were left out of the cut
-	public final List<String> materialsLost = new ArrayList<>();   // materials with faces in the box but none fully inside
+	public int facesDropped;              // faces overlapping the box that were left out of the cut
+	public final List<String> materialsLost = new ArrayList<>();   // materials with faces overlapping the box but none fully inside
 
 	// ---- extraction -------------------------------------------------------
 
 	/**
 	 * Cuts a prefab out of a region: every face fully inside the tile box
-	 * (region-local tiles, inclusive), all layers. Returns null if the box
-	 * contains no geometry.
+	 * (region-local tiles, inclusive), all layers. Returns null if nothing
+	 * touches the box; refuses, naming the count, when faces overlap the box
+	 * but none lies wholly inside it - a single-tile selection on most maps -
+	 * because answering null there let the status bar call the selection
+	 * empty while 60 faces lay across it.
 	 */
 	public static MapPrefab extract(GR gr, int tx0, int ty0, int tx1, int ty1, String name) {
 		GeoBoxOps.Box box = GeoBoxOps.Box.ofTiles(tx0, ty0, tx1, ty1);
@@ -88,8 +92,12 @@ public class MapPrefab {
 		p.tilesH = Math.abs(ty1 - ty0) + 1;
 		float ax = box.minX, az = box.minZ; // anchor = box min corner
 
-		//per material, faces kept and faces that crossed the edge: a cut says
-		//what it left out and names any material that vanished with it
+		//per material, faces kept and faces left out: a cut says what it left
+		//out and names any material that vanished with it. A face is left out
+		//when its footprint overlaps the box and it was not taken - counting
+		//only faces with a corner inside missed the ground quads that lie
+		//across a box with every corner outside, and a material whose only
+		//faces in the box were of that kind vanished unnamed.
 		Map<String, int[]> perMaterial = new LinkedHashMap<>();
 		for (BchMapModel.MeshGeom g : model.geometry()) {
 			if (!g.posOk) {
@@ -112,7 +120,7 @@ public class MapPrefab {
 						localTris.add(remap.computeIfAbsent(tris[t + c], k -> remap.size()));
 					}
 					faces[0]++;
-				} else if (inside > 0) {
+				} else if (overlapsBox(pos[tris[t]], pos[tris[t + 1]], pos[tris[t + 2]], box)) {
 					faces[1]++;
 				}
 			}
@@ -161,6 +169,10 @@ public class MapPrefab {
 			}
 		}
 		if (p.pieces.isEmpty()) {
+			if (p.facesDropped > 0) {
+				throw new IllegalStateException(p.facesDropped + " face(s) cross the selection edge but none lies inside it"
+						+ " - widen the selection to take them");
+			}
 			return null;
 		}
 		//embed the donor model so pieces with materials the target lacks can be
@@ -230,6 +242,24 @@ public class MapPrefab {
 		for (int v = 0; v < 3; v++) {
 			poly.add(new float[]{t[v * 3], t[v * 3 + 1], t[v * 3 + 2]});
 		}
+		poly = clipXZ(poly, box);
+		for (int i = 1; i + 1 < poly.size(); i++) {
+			float[] a = poly.get(0), b = poly.get(i), c = poly.get(i + 1);
+			float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+			float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+			float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+			if (nx * nx + ny * ny + nz * nz > 1e-8f) { //a sliver of no area is not a surface
+				out.add(new float[]{a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]});
+			}
+		}
+	}
+
+	/**
+	 * The part of an XYZ polygon that lies inside the box in XZ -
+	 * Sutherland-Hodgman against its four edges, Y interpolated along every
+	 * cut edge. Empty when nothing is left.
+	 */
+	private static List<float[]> clipXZ(List<float[]> poly, GeoBoxOps.Box box) {
 		//{axis, limit, side}: keep where side * (coord - limit) >= 0
 		float[][] edges = {{0, box.minX, 1}, {0, box.maxX, -1}, {2, box.minZ, 1}, {2, box.maxZ, -1}};
 		for (float[] e : edges) {
@@ -248,24 +278,55 @@ public class MapPrefab {
 			}
 			poly = next;
 			if (poly.size() < 3) {
-				return;
+				return new ArrayList<>();
 			}
 		}
-		for (int i = 1; i + 1 < poly.size(); i++) {
-			float[] a = poly.get(0), b = poly.get(i), c = poly.get(i + 1);
-			float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-			float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-			float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-			if (nx * nx + ny * ny + nz * nz > 1e-8f) { //a sliver of no area is not a surface
-				out.add(new float[]{a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]});
-			}
+		return poly;
+	}
+
+	/**
+	 * True when a face's footprint covers some of the box - a corner on the
+	 * box edge with the rest outside covers none of it, and a ground quad
+	 * lying across the box with every corner outside covers most of it. A
+	 * sliver under a hundredth of a square unit is a vertex a hair past the
+	 * edge, not a face the cut loses.
+	 */
+	private static boolean overlapsBox(float[] a, float[] b, float[] c, GeoBoxOps.Box box) {
+		if (Math.max(a[0], Math.max(b[0], c[0])) <= box.minX || Math.min(a[0], Math.min(b[0], c[0])) >= box.maxX
+				|| Math.max(a[2], Math.max(b[2], c[2])) <= box.minZ || Math.min(a[2], Math.min(b[2], c[2])) >= box.maxZ) {
+			return false;
 		}
+		List<float[]> poly = new ArrayList<>();
+		poly.add(a);
+		poly.add(b);
+		poly.add(c);
+		poly = clipXZ(poly, box);
+		double area2 = 0;
+		for (int i = 0; i < poly.size(); i++) {
+			float[] p = poly.get(i), q = poly.get((i + 1) % poly.size());
+			area2 += (double) p[0] * q[2] - (double) q[0] * p[2];
+		}
+		return Math.abs(area2) > 0.02;
 	}
 
 	/** True when a mesh's submesh header names bones (+0 skinningMode, +2 nodeIdCount): BchModelAppender cannot inject it. */
 	private static boolean skinned(BchMapModel m, int meshIndex) {
 		int sub = m.meshes.get(meshIndex)[3];
 		return (m.raw[sub] | m.raw[sub + 1] | m.raw[sub + 2] | m.raw[sub + 3]) != 0;
+	}
+
+	/**
+	 * What the copy dialog says about the faces the cut left out: the count,
+	 * any material that vanished with them, and what to do - or nothing when
+	 * every overlapping face was taken.
+	 */
+	public String cutReport() {
+		if (facesDropped == 0) {
+			return "";
+		}
+		return facesDropped + " face(s) crossing the selection edge were left out"
+				+ (materialsLost.isEmpty() ? "" : " - " + materialsLost + " lost entirely")
+				+ ".\nWiden the selection to take them.";
 	}
 
 	/** Triangles across every piece. */
@@ -277,8 +338,11 @@ public class MapPrefab {
 		return n;
 	}
 
-	/** {lowest, highest} vertex Y across every piece, in the donor's frame. */
+	/** {lowest, highest} vertex Y across every piece, in the donor's frame; {0, 0} with no pieces. */
 	public float[] heightSpan() {
+		if (pieces.isEmpty()) {
+			return new float[]{0, 0};
+		}
 		float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
 		for (Piece piece : pieces) {
 			for (int o = piece.posOffset + 4; o + 4 <= piece.vertexBytes.length; o += piece.stride) {
@@ -288,6 +352,103 @@ public class MapPrefab {
 			}
 		}
 		return new float[]{lo, hi};
+	}
+
+	/** The size of the thing as the user reads it: "27 piece(s) / 5775 triangles, -9..65 above ground". */
+	public String summary(float baseY) {
+		float[] span = heightSpan();
+		return pieces.size() + " piece(s) / " + triangleCount() + " triangles, "
+				+ Math.round(span[0] - baseY) + ".." + Math.round(span[1] - baseY) + " above ground";
+	}
+
+	// ---- passengers ---------------------------------------------------------
+
+	/** A piece that rides along with the cut: the class of thing it is, and the piece. */
+	public static final class Passenger {
+
+		public final String kind;
+		public final Piece piece;
+
+		Passenger(String kind, Piece piece) {
+			this.kind = kind;
+			this.piece = piece;
+		}
+	}
+
+	/** Material-name cues for the classes of thing that ride along inside a box: {kind, cues...}. */
+	private static final String[][] PASSENGER_CUES = {
+		{"sea/water", "sea", "umi", "mizu", "water", "wave"},
+		{"shadow", "shadow", "kage"},
+		{"floor", "yuka", "floor", "tatami"},
+		{"terrain", "chip_"}
+	};
+
+	/**
+	 * The class a material name flags a piece as - a sea/water plane, a shadow
+	 * decal, a floor, a terrain chip - or null for a piece of the structure
+	 * itself. A cut takes every face inside its box, so a lamp on a pier
+	 * brings the sea under it and a lamp in a room brings the room's floors
+	 * and its baked shadow; the harvested name comes from the dominant
+	 * material and says nothing of them, so the palette and Apply do.
+	 */
+	public static String passengerKind(String material) {
+		String m = material == null ? "" : material.toLowerCase();
+		for (String[] cues : PASSENGER_CUES) {
+			for (int i = 1; i < cues.length; i++) {
+				if (m.contains(cues[i])) {
+					return cues[0];
+				}
+			}
+		}
+		return null;
+	}
+
+	/** The pieces that ride along, in piece order. */
+	public List<Passenger> passengers() {
+		List<Passenger> out = new ArrayList<>();
+		for (Piece piece : pieces) {
+			String kind = passengerKind(piece.material);
+			if (kind != null) {
+				out.add(new Passenger(kind, piece));
+			}
+		}
+		return out;
+	}
+
+	/** The passengers as the user reads them - "shadow shadow_a (413 tris), floor yuka1 (24 tris)" - or "" with none. */
+	public String passengerNote() {
+		StringBuilder sb = new StringBuilder();
+		for (Passenger r : passengers()) {
+			sb.append(sb.length() > 0 ? ", " : "").append(r.kind).append(' ').append(r.piece.material)
+					.append(" (").append(r.piece.triangles.length / 3).append(" tris)");
+		}
+		return sb.toString();
+	}
+
+	/**
+	 * This prefab with its passengers left behind - the palette's checkbox.
+	 * The collision and movement tiles are the structure's and stay: a deck's
+	 * floor mesh can be left out, but the fence standing on it still needs
+	 * something to stand on, and the Apply note says what was left.
+	 */
+	public MapPrefab withoutPassengers() {
+		MapPrefab p = new MapPrefab();
+		p.name = name;
+		p.sourceRegion = sourceRegion;
+		p.donorArea = donorArea;
+		p.donorModel = donorModel;
+		p.tilesW = tilesW;
+		p.tilesH = tilesH;
+		p.tiles = tiles;
+		p.collTris.addAll(collTris);
+		p.facesDropped = facesDropped;
+		p.materialsLost.addAll(materialsLost);
+		for (Piece piece : pieces) {
+			if (passengerKind(piece.material) == null) {
+				p.pieces.add(piece);
+			}
+		}
+		return p;
 	}
 
 	// ---- stamping ---------------------------------------------------------
@@ -321,6 +482,18 @@ public class MapPrefab {
 		public int tilesStamped;
 		/** Footprint tuples NOT written because the user's own tile stays: behaviour -> count (see stampFootprint). */
 		public final Map<String, Integer> tilesKept = new TreeMap<>();
+		/** Every tuple written, by behaviour - the whole footprint for {@link #stampTiles},
+		 *  the solid part of it for {@link #stampFootprint}. */
+		public final Map<String, Integer> tilesWritten = new TreeMap<>();
+
+		/** A tally as the user reads it: "wall 12, object 16". */
+		public static String tally(Map<String, Integer> counts) {
+			StringBuilder sb = new StringBuilder();
+			for (Map.Entry<String, Integer> k : counts.entrySet()) {
+				sb.append(sb.length() > 0 ? ", " : "").append(k.getKey()).append(' ').append(k.getValue());
+			}
+			return sb.toString();
+		}
 	}
 
 	/**
@@ -469,10 +642,13 @@ public class MapPrefab {
 	/**
 	 * Stamps every footprint tuple into a Tilemap at the anchor - the Geometry
 	 * tool's explicit "also update movement tiles" choice; {@code r.tilesStamped}
-	 * counts them.
+	 * counts them and {@code r.tilesWritten} says what kinds they were, because
+	 * "+374 tiles" was all the status line said of a copy that had just turned
+	 * 366 of them into surf water.
 	 */
 	public void stampTiles(StampResult r, Tilemap tm, int tileX, int tileY) {
 		r.tilesStamped = 0;
+		r.tilesWritten.clear();
 		if (tiles == null) {
 			return;
 		}
@@ -482,6 +658,7 @@ public class MapPrefab {
 				if (dx >= 0 && dx < 40 && dyt >= 0 && dyt < 40) {
 					tm.setTileData(dx, dyt, tiles[x][y]);
 					r.tilesStamped++;
+					r.tilesWritten.merge(TilePalette.behaviourOf(tiles[x][y]), 1, Integer::sum);
 				}
 			}
 		}
@@ -490,16 +667,19 @@ public class MapPrefab {
 	/**
 	 * Stamps the footprint over a raw tilemap subfile - the painter's own
 	 * layer - without repainting the user's map. A donor tuple is written only
-	 * where it is a wall, or at the building's door tile ({@code doorX,doorY}
-	 * anchor-relative, -1 for none); everywhere else the tile the user painted
-	 * stays, and what the donor would have made of it is counted by behaviour
-	 * in {@code r.tilesKept}. Copying the footprint whole turned 366 painted
-	 * path tiles into surf water under one Route 110 cut and wrote door tiles
-	 * that no warp backed.
+	 * where it is solid - a plain wall or one of the game's object tiles, which
+	 * the building's own geometry stands on - or at the building's door tile
+	 * ({@code doorX,doorY} anchor-relative, -1 for none); everywhere else the
+	 * tile the user painted stays, and what the donor would have made of it is
+	 * counted by behaviour in {@code r.tilesKept}, what was written in
+	 * {@code r.tilesWritten}. Copying the footprint whole turned 366 painted
+	 * path tiles into surf water under one Route 110 cut; keeping everything
+	 * but plain walls left a placed room's bookshelves walkable.
 	 */
 	public void stampFootprint(StampResult r, byte[] tilemap, int tileX, int tileY, int doorX, int doorY) {
 		r.tilesStamped = 0;
 		r.tilesKept.clear();
+		r.tilesWritten.clear();
 		if (tiles == null) {
 			return;
 		}
@@ -510,9 +690,10 @@ public class MapPrefab {
 					continue;
 				}
 				String behaviour = TilePalette.behaviourOf(tiles[x][y]);
-				if ("wall".equals(behaviour) || (x == doorX && y == doorY)) {
+				if ("wall".equals(behaviour) || "object".equals(behaviour) || (x == doorX && y == doorY)) {
 					System.arraycopy(tiles[x][y], 0, tilemap, 4 + (dyt * 40 + dx) * 4, 4);
 					r.tilesStamped++;
+					r.tilesWritten.merge(behaviour, 1, Integer::sum);
 				} else {
 					r.tilesKept.merge(behaviour, 1, Integer::sum);
 				}

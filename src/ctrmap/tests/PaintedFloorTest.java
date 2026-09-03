@@ -8,7 +8,9 @@ import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Where the tile painter puts a floor and which way it slopes. Five live
@@ -20,7 +22,11 @@ import java.util.Arrays;
  *     route uses for its path up a hill - lower ground on three sides - ran
  *     east across the corridor and the way through stayed walled.</li>
  * <li>A ramp on a two-level hill matched no neighbour at all and was dropped
- *     without a word: a 36-unit wall stood where the arrow was drawn.</li>
+ *     without a word: a 36-unit wall stood where the arrow was drawn. Fixed
+ *     from scratch, it still failed on the painter's own path: a composite
+ *     ramp toward an untouched retail tile with no collision under its centre
+ *     found no foot, took one step down instead, and ended 18 units in the
+ *     air with no wall and no message.</li>
  * <li>The stair brushes carried a tuple and a material but no slope, so every
  *     step was a flat tile behind an 18-unit wall.</li>
  * <li>Painted water sank its visible surface seven units but not its
@@ -28,7 +34,12 @@ import java.util.Arrays;
  * <li>A painted tile with no collision under its centre - 44% of all retail
  *     tiles - was seeded at level 0, the region's lowest ground. One grass tile
  *     painted beside a path to widen it came out as a walled pit up to seven
- *     tiles deep, still marked walkable, under retail scenery that hid it.</li>
+ *     tiles deep, still marked walkable, under retail scenery that hid it.
+ *     Filling from the nearest sample closed most of them, but the fill took
+ *     the lowest of equally-near samples with no regard to walkability, so a
+ *     tile between a plateau path and the cliff base beside it still borrowed
+ *     the cliff base - 276 such tiles in 58 retail regions, up to 7 tiles
+ *     deep - and the seed-time count of borrowed tiles was asserted by nobody.</li>
  * </ol>
  *
  * Usage: java ctrmap.tests.PaintedFloorTest &lt;path-to-a039-garc&gt;
@@ -59,6 +70,7 @@ public class PaintedFloorTest {
 		}
 		rampRunsAlongTheCorridor(donor);
 		rampSpansAnyDrop(donor);
+		rampFootOnUnsampledNeighbour(donor);
 		stairsSlope(donor);
 		waterCollisionSinksWithTheMesh(donor);
 		unsampledTileSeedsFromItsNeighbour(gr);
@@ -107,6 +119,59 @@ public class PaintedFloorTest {
 			check(Math.abs(n - lvl * STEP) < STEP * 0.1f && s < STEP * 0.1f,
 					"level-" + lvl + " hill: the ramp slopes the whole " + (lvl * STEP) + " units (N " + n + " S " + s + ")");
 		}
+	}
+
+	/**
+	 * The painter's real path: a composite edit on retail ground, a 3x2 block
+	 * raised two levels with its edge tile ramped south toward an untouched
+	 * tile that has no collision under its centre. That tile's ground is
+	 * borrowed from beside it (0 here), and the ramp must reach it - in the
+	 * collision and in the slope you can see - with no wall across its foot.
+	 * A pit at (2,2) puts the region's floor 7 units lower, so a foot placed
+	 * at "the floor plus the level" instead of the borrowed ground misses by
+	 * those 7 units and is caught.
+	 */
+	static void rampFootOnUnsampledNeighbour(byte[] donor) {
+		//a flat floor at Y=0 under every tile but (20,21), and a pit at (2,2)
+		List<float[]> floor = new ArrayList<>();
+		for (int ty = 0; ty < DIM; ty++) {
+			for (int tx = 0; tx < DIM; tx++) {
+				if (tx == 20 && ty == 21) {
+					continue;
+				}
+				float y = tx == 2 && ty == 2 ? -7f : 0f;
+				float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE, z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
+				floor.add(new float[]{x0, y, z0, x0, y, z1, x1, y, z0});
+				floor.add(new float[]{x1, y, z0, x0, y, z1, x1, y, z1});
+			}
+		}
+		byte[] coll = GfColl.build(floor, null);
+		byte[] tm = new byte[6528];
+		tm[0] = (byte) DIM;
+		tm[2] = (byte) DIM;
+		float[][] by = PaintedRegionBuilder.sampleBaseY(coll);
+		check(Float.isNaN(by[21][20]) && by[20][20] == 0f && by[22][20] == 0f && by[2][2] == -7f,
+				"fixture: tile (20,21) has no ground under its centre, its neighbours stand at 0, the region's floor is -7");
+		TilePalette[][] grid = grid(TilePalette.GRASS);
+		int[][] h = new int[DIM][DIM];
+		boolean[][] touched = new boolean[DIM][DIM];
+		for (int y = 19; y <= 20; y++) {
+			for (int x = 19; x <= 21; x++) {
+				h[y][x] = 2;
+				touched[y][x] = true;
+			}
+		}
+		int[][] ramp = PaintedRegionBuilder.noRamps();
+		ramp[20][20] = 2;
+		RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(donor, coll, tm, grid, h, ramp, touched, L, false);
+		GfColl out = new GfColl(c.collision);
+		float n = surface(out, 20.5f, 20.02f), s = surface(out, 20.5f, 20.98f);
+		check(walls(out, 20, 20, 2) == 0, "composite ramp toward an unsampled tile: no wall across its foot");
+		check(Math.abs(n - 2 * STEP) < STEP * 0.1f && Math.abs(s) < STEP * 0.1f,
+				"composite ramp toward an unsampled tile: the collision slopes the whole " + (2 * STEP) + " units to that tile's ground (N " + n + " S " + s + ")");
+		float[] seen = slopeSpan(new BchMapModel(c.model), 20, 20);
+		check(seen[1] > 2 * STEP - STEP * 0.1f && Math.abs(seen[0]) < STEP * 0.1f,
+				"composite ramp toward an unsampled tile: the slope you can see reaches that ground too (" + seen[0] + ".." + seen[1] + ")");
 	}
 
 	/** A three-step north-south run up to a plateau, then the east-west brushes. */
@@ -169,8 +234,14 @@ public class PaintedFloorTest {
 	/**
 	 * The plain user story: paint ONE grass tile beside retail ground to widen
 	 * the way, on a tile that has no collision under its centre. The first
-	 * region with such a tile beside raised walkable ground is the sample; the
-	 * floor must land beside that ground, not at the region's lowest.
+	 * region with such a tile beside raised walkable ground - and with a
+	 * blocked, sampled, LOWER tile on another side, the cliff base a plateau
+	 * path runs along - is the sample; the floor must land beside the path
+	 * you can walk, not down at the cliff base, in the collision and in the
+	 * mesh alike, and seeding must count exactly the tiles it filled. The
+	 * path must stand off the level grid (not a whole number of steps above
+	 * the region floor): on the grid, "the floor plus the level" and the
+	 * borrowed ground coincide and a mesh built from the wrong one passes.
 	 */
 	static void unsampledTileSeedsFromItsNeighbour(GARC gr) {
 		for (int reg = 0; reg < gr.length; reg++) {
@@ -196,30 +267,40 @@ public class PaintedFloorTest {
 			if (Float.isNaN(base0)) {
 				continue;
 			}
-			int fx = -1, fy = -1;
-			float expected = Float.NaN;
-			for (int y = 1; y < DIM - 1 && fx < 0; y++) {
-				for (int x = 1; x < DIM - 1 && fx < 0; x++) {
+			int fx = -1, fy = -1, unsampled = 0;
+			float expected = Float.NaN, cliffBase = Float.NaN;
+			for (int y = 0; y < DIM; y++) {
+				for (int x = 0; x < DIM; x++) {
 					if (!Float.isNaN(by[y][x])) {
 						continue;
 					}
+					unsampled++;
+					if (fx >= 0 || x == 0 || y == 0 || x == DIM - 1 || y == DIM - 1) {
+						continue;
+					}
 					boolean besidePath = false;
-					float nearest = Float.NaN;
+					float lowestWalkable = Float.NaN, lowestBlocked = Float.NaN;
 					int[][] nb = {{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}};
 					for (int[] p : nb) {
 						float ny = by[p[1]][p[0]];
 						if (Float.isNaN(ny)) {
 							continue;
 						}
-						nearest = Float.isNaN(nearest) ? ny : Math.min(nearest, ny);
 						int off = 4 + (p[1] * DIM + p[0]) * 4;
-						boolean walkable = (tm[off] & 1) == 0;
-						besidePath |= walkable && ny - base0 > 30f;
+						if ((tm[off] & 1) == 0) {
+							lowestWalkable = Float.isNaN(lowestWalkable) ? ny : Math.min(lowestWalkable, ny);
+							besidePath |= ny - base0 > 30f;
+						} else {
+							lowestBlocked = Float.isNaN(lowestBlocked) ? ny : Math.min(lowestBlocked, ny);
+						}
 					}
-					if (besidePath) {
+					float steps = (lowestWalkable - base0) / STEP;
+					boolean offGrid = Math.abs(steps - Math.round(steps)) * STEP > 1f;
+					if (besidePath && offGrid && !Float.isNaN(lowestBlocked) && lowestBlocked < lowestWalkable - 9f) {
 						fx = x;
 						fy = y;
-						expected = nearest;
+						expected = lowestWalkable;
+						cliffBase = lowestBlocked;
 					}
 				}
 			}
@@ -227,16 +308,19 @@ public class PaintedFloorTest {
 				continue;
 			}
 			int[][] h = new int[DIM][DIM];
-			int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(coll, h);
-			check(borrowed > 0, "region " + reg + ": seeding reports the tiles that took a neighbour's ground (" + borrowed + ")");
+			int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(coll, tm, h);
+			check(borrowed == unsampled, "region " + reg + ": seeding reports exactly the tiles that took a neighbour's ground ("
+					+ borrowed + " reported, " + unsampled + " have no ground of their own)");
 			TilePalette[][] grid = grid(TilePalette.GRASS);
 			boolean[][] touched = new boolean[DIM][DIM];
 			touched[fy][fx] = true;
 			RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(model, coll, tm, grid, h, null, touched, L, false);
 			float got = surface(new GfColl(c.collision), fx + 0.5f, fy + 0.5f);
 			check(Math.abs(got - expected) < 0.5f, "region " + reg + ": one grass tile painted at (" + fx + "," + fy
-					+ ") with no ground under it lands beside its neighbour at Y=" + expected
-					+ " (built at " + got + "; the region's lowest ground is " + base0 + ")");
+					+ ") with no ground under it lands beside the path you can walk at Y=" + expected
+					+ " (built at " + got + "; the blocked cliff base beside it is at " + cliffBase + ", the region's lowest ground " + base0 + ")");
+			check(hasFloorAt(new BchMapModel(c.model), fx, fy, expected), "region " + reg
+					+ ": and the floor you can see is there too, at Y=" + expected);
 			return;
 		}
 		System.out.println("  skip: no region has an unsampled tile beside raised walkable ground");
@@ -278,6 +362,57 @@ public class PaintedFloorTest {
 			}
 		}
 		return n;
+	}
+
+	/** {lowest, highest} Y across the model triangles standing on a tile's own corners. */
+	static float[] slopeSpan(BchMapModel m, int tx, int tz) {
+		float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
+		for (float[] span : cornerTriangles(m, tx, tz)) {
+			lo = Math.min(lo, span[0]);
+			hi = Math.max(hi, span[1]);
+		}
+		return new float[]{lo, hi};
+	}
+
+	/**
+	 * {lowest, highest} Y of every model triangle whose corners all stand on
+	 * a tile's own corners - the generated quads, and whatever retail
+	 * geometry happens to be tile-aligned there.
+	 */
+	static List<float[]> cornerTriangles(BchMapModel m, int tx, int tz) {
+		float x0 = tx * TILE + ORIGIN, z0 = tz * TILE + ORIGIN;
+		List<float[]> out = new ArrayList<>();
+		for (BchMapModel.MeshGeom mg : m.geometry()) {
+			if (!mg.posOk) {
+				continue;
+			}
+			float[][] p = m.getVertexPositions(mg.meshIndex);
+			int[] t = m.getTriangles(mg.meshIndex);
+			for (int i = 0; i + 2 < t.length; i += 3) {
+				boolean onCorners = true;
+				float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
+				for (int c = 0; c < 3; c++) {
+					float dx = (p[t[i + c]][0] - x0) / TILE, dz = (p[t[i + c]][2] - z0) / TILE;
+					onCorners &= (Math.abs(dx) < 0.01f || Math.abs(dx - 1) < 0.01f) && (Math.abs(dz) < 0.01f || Math.abs(dz - 1) < 0.01f);
+					lo = Math.min(lo, p[t[i + c]][1]);
+					hi = Math.max(hi, p[t[i + c]][1]);
+				}
+				if (onCorners) {
+					out.add(new float[]{lo, hi});
+				}
+			}
+		}
+		return out;
+	}
+
+	/** True when a level triangle standing on the tile's own corners - the generated quad - lies within half a unit of y. */
+	static boolean hasFloorAt(BchMapModel m, int tx, int tz, float y) {
+		for (float[] span : cornerTriangles(m, tx, tz)) {
+			if (span[1] - span[0] < 0.5f && Math.abs(span[0] - y) < 0.5f) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** The lowest model triangle whose centroid lands on a tile. */

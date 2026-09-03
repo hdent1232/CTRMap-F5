@@ -12,8 +12,14 @@ import ctrmap.formats.h3d.RegionFactory;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.formats.tilemap.Tilemap;
+import ctrmap.humaninterface.BuildingPaletteDialog;
 import ctrmap.humaninterface.TilePainterForm;
 import ctrmap.tools.BuildingHarvester;
+import java.awt.geom.Area;
+import java.awt.geom.Path2D;
+import java.awt.geom.PathIterator;
+import java.awt.geom.Rectangle2D;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
@@ -38,10 +44,12 @@ import java.util.TreeSet;
  *     of it could not be placed.</li>
  * <li>The donor's movement tuples were copied over the user's paint wholesale.
  *     "Route 110 fence 2" turned 366 painted path tiles into surf water; a
- *     Littleroot interior wrote 16 door tiles that no warp backs; a Rustboro tree
- *     planted two jump-down ledges. Only the donor's walls (and the door tile of
- *     a wired building) may replace the paint now, and Apply reports what it
- *     kept.</li>
+ *     Rustboro tree planted two jump-down ledges. Only the donor's solid tiles
+ *     (and the door tile of a wired building) may replace the paint now, and
+ *     Apply reports what it kept. The first fix read the 0xD4 tuple as a door
+ *     and kept it as paint: every retail 0xD4 tile is an impassable piece of
+ *     furniture (Littleroot's bookshelf row), so a placed room had 16 shelves
+ *     the player walked through, and the dialog called them doors.</li>
  * <li>Collision that crossed the cut box was dropped, so bridges and stairs
  *     arrived with no walkable surface ("Shoal Cave bridge 6": 0 of 20 crossing
  *     triangles kept) and the player walked through the deck at ground height.
@@ -51,10 +59,21 @@ import java.util.TreeSet;
  *     and stamped 153 units into the air; Fortree's treehouses did the same.</li>
  * <li>Satellite absorption grew a component's box without re-running the
  *     terrain guard, so a 22x17 slab of Cycling Road (sea plane, deck and all)
- *     was offered as a fence.</li>
+ *     was offered as a fence. The box was fixed; what rides inside a box was
+ *     not: "Littleroot Town lamp" is a furnished room - four floors, a baked
+ *     shadow, 27 textures - and "Route 110 fence 2" brings a sea plane and a
+ *     road deck 240 units up, and the palette's manifest gave numbers only, so
+ *     the user could not tell a scene from a lamp except by inference, and
+ *     Apply repeated none of it.</li>
  * <li>"Copy selection as prefab" discarded every face crossing the selection
- *     edge without counting it: Route 101's 10..19 box loses 249 of 1090 faces
- *     and two materials entirely, and the dialog listed only what survived.</li>
+ *     edge without counting it: Route 101's 10..19 box loses 135 faces that
+ *     lie across it and two materials entirely, and the dialog listed only what
+ *     survived.
+ *     The first count saw only faces with a corner inside the box, so a ground
+ *     quad lying across it with every corner outside was dropped uncounted and
+ *     its material vanished unnamed (region 7's chip_kusa_a); and a selection
+ *     with no face fully inside - most single-tile selections - returned
+ *     nothing at all, and the status bar called it empty.</li>
  * </ol>
  *
  * Usage: java ctrmap.tests.PlacementGuardsTest &lt;path-to-a039-garc&gt; [sampleStep]
@@ -104,6 +123,7 @@ public class PlacementGuardsTest {
 		paintKeptUnderDonorBehaviour();
 		collisionCrossingTheBoxIsKept();
 		facesCrossingTheBoxAreCounted();
+		passengersAreNamed();
 		baseYIsTheFooting(step);
 		catalogueBoxesAreAssets();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -129,10 +149,11 @@ public class PlacementGuardsTest {
 				"a refused building leaves the map untouched");
 	}
 
-	/** Only the donor's walls may replace the user's paint; everything else is reported as kept. */
+	/** Only the donor's solid tiles may replace the user's paint; everything else is reported as kept. */
 	static void paintKeptUnderDonorBehaviour() throws Exception {
 		//a Cycling Road slab (366 surf tiles in its footprint) and a Littleroot
-		//interior (16 door tiles, 2 walkable) over a map painted entirely as path
+		//interior (16 bookshelf tiles on the 0xD4 object code, 14 more on its
+		//siblings, 2 walkable) over a map painted entirely as path
 		BuildingCatalog.Entry[] donors = {
 			entry("cycling road slab", 186, 28, 0, 1, 21, 17, -9),
 			entry("littleroot interior", 510, 114, 6, 6, 22, 22, 0)
@@ -140,8 +161,9 @@ public class PlacementGuardsTest {
 		for (BuildingCatalog.Entry e : donors) {
 			RegionFactory.BlankContent bc = paintedPath();
 			byte[] before = bc.tilemap.clone();
+			MapPrefab p = BuildingPaletteDialog.cachedPrefab(e);
 			String note = TilePainterForm.stampPlaced(bc, at(e, 5, 5), new int[DIM][DIM], null);
-			int walls = 0;
+			int walls = 0, objects = 0, solidLost = 0;
 			Map<String, Integer> leaked = new TreeMap<>();
 			for (int y = 0; y < DIM; y++) {
 				for (int x = 0; x < DIM; x++) {
@@ -149,16 +171,48 @@ public class PlacementGuardsTest {
 						String b = behaviour(tile(bc.tilemap, x, y));
 						if ("wall".equals(b)) {
 							walls++;
+						} else if ("object".equals(b)) {
+							objects++;
 						} else {
 							leaked.merge(b, 1, Integer::sum);
 						}
 					}
 				}
 			}
+			//what is solid in the donor - plain walls and its furniture codes
+			//alike - must be solid on the map; the room's prefab carries only two
+			//collision triangles, so nothing else stops the player
+			for (int y = 0; y < p.tilesH; y++) {
+				for (int x = 0; x < p.tilesW; x++) {
+					String donor = behaviour(p.tiles[x][y]);
+					if (("wall".equals(donor) || "object".equals(donor)) && (tile(bc.tilemap, 5 + x, 5 + y)[0] & 1) == 0) {
+						solidLost++;
+					}
+				}
+			}
 			check(walls > 0, e.name + ": the footprint's walls block the paint (" + walls + " tiles)");
 			check(leaked.isEmpty(), e.name + ": no painted tile changed behaviour under the footprint " + leaked);
+			check(solidLost == 0, e.name + ": every tile solid in the donor is solid on the map (" + solidLost + " came out walkable)");
 			check(note.contains("kept as painted"), e.name + ": Apply reports the donor tiles it withheld: " + note.trim());
+			if (objects > 0) {
+				check(note.contains(objects + " of them"), e.name + ": Apply says how many blocked tiles carry the donor's object codes ("
+						+ objects + "): " + note.trim());
+			}
 		}
+		//the Geometry tool's explicit "also update movement tiles" copies every
+		//tuple; its status line used to say "+N tiles" and nothing about what
+		//kinds - the same silence, one tool over
+		MapPrefab room = BuildingPaletteDialog.cachedPrefab(donors[1]);
+		Map<String, Integer> kinds = new TreeMap<>();
+		for (int y = 0; y < room.tilesH; y++) {
+			for (int x = 0; x < room.tilesW; x++) {
+				kinds.merge(behaviour(room.tiles[x][y]), 1, Integer::sum);
+			}
+		}
+		MapPrefab.StampResult r = new MapPrefab.StampResult();
+		room.stampTiles(r, new Tilemap(region(510)), 5, 5);
+		check(r.tilesStamped == room.tilesW * room.tilesH && kinds.equals(r.tilesWritten),
+				"a verbatim tile copy accounts for every tuple by behaviour: wrote " + r.tilesWritten + ", the donor holds " + kinds);
 	}
 
 	/** Collision crossing the box is clipped to it, keeps the donor's heights, and reaches the map. */
@@ -234,12 +288,68 @@ public class PlacementGuardsTest {
 		return false;
 	}
 
-	/** A copy counts the faces it left out and names the materials that vanished with them. */
+	/**
+	 * A copy counts every face it left out and names the materials that
+	 * vanished with them. A face is lost when its footprint overlaps the box
+	 * and it was not taken - whether or not a corner of it lies inside.
+	 */
 	static void facesCrossingTheBoxAreCounted() throws Exception {
 		GR gr = region(1);
-		GeoBoxOps.Box box = GeoBoxOps.Box.ofTiles(10, 10, 19, 19);
-		BchMapModel m = new BchMapModel(gr.getFile(1));
+		Map<String, int[]> perMat = cutTally(gr, GeoBoxOps.Box.ofTiles(10, 10, 19, 19));
 		int straddling = 0;
+		TreeSet<String> lost = new TreeSet<>();
+		for (Map.Entry<String, int[]> en : perMat.entrySet()) {
+			straddling += en.getValue()[1];
+			if (en.getValue()[0] == 0 && en.getValue()[1] > 0) {
+				lost.add(en.getKey());
+			}
+		}
+		MapPrefab p = MapPrefab.extract(gr, 10, 10, 19, 19, "route 101");
+		check(straddling > 0 && !lost.isEmpty() && p != null,
+				"fixture: Route 101's 10..19 box is crossed by " + straddling + " faces and loses " + lost);
+		check(p != null && p.facesDropped == straddling, "the copy counts the faces it left out: reports "
+				+ (p == null ? 0 : p.facesDropped) + ", the box loses " + straddling);
+		check(p != null && new TreeSet<>(p.materialsLost).equals(lost), "the copy names the materials that vanished: "
+				+ (p == null ? null : p.materialsLost) + " vs " + lost);
+		String report = p == null ? "" : p.cutReport();
+		check(report.contains(straddling + " face(s)") && report.contains(lost.toString()),
+				"the copy dialog's report carries the count and the names: " + report.replace('\n', ' '));
+		//a ground quad lying across the box with every corner outside: the
+		//only faces of chip_kusa_a in region 7's 30,2..38,12 box are of that kind
+		GR gr7 = region(7);
+		Map<String, int[]> perMat7 = cutTally(gr7, GeoBoxOps.Box.ofTiles(30, 2, 38, 12));
+		int[] kusa = perMat7.get("chip_kusa_a");
+		MapPrefab p7 = MapPrefab.extract(gr7, 30, 2, 38, 12, "grass edge");
+		check(kusa != null && kusa[0] == 0 && kusa[1] > 0, "fixture: chip_kusa_a lies across region 7's box with no corner inside ("
+				+ (kusa == null ? "absent" : kusa[1] + " faces") + ")");
+		check(p7 != null && p7.materialsLost.contains("chip_kusa_a"), "a material whose faces overlap the box with no corner inside is named as lost: "
+				+ (p7 == null ? null : p7.materialsLost));
+		//one tile of region 686: 60 faces cross it, none lies inside. The copy
+		//used to answer null and the status bar said there was nothing to copy.
+		int crossing = 0;
+		for (int[] kd : cutTally(region(686), GeoBoxOps.Box.ofTiles(20, 20, 20, 20)).values()) {
+			crossing += kd[1];
+		}
+		check(crossing > 0, "fixture: region 686's tile (20,20) is crossed by " + crossing + " faces");
+		try {
+			MapPrefab p686 = MapPrefab.extract(region(686), 20, 20, 20, 20, "one tile");
+			check(false, "a selection with faces across it but none inside is refused, not answered with "
+					+ (p686 == null ? "null" : p686.pieces.size() + " piece(s)"));
+		} catch (IllegalStateException ex) {
+			check(ex.getMessage().contains(crossing + " face(s)") && ex.getMessage().contains("none lies inside"),
+					"the refusal counts the crossing faces and says why: " + ex.getMessage());
+		}
+	}
+
+	/**
+	 * This test's own reading of a cut: per material, {faces taken whole,
+	 * faces lost}. A face is lost when its XZ footprint overlaps the box - by
+	 * a real area, not a corner resting on or a hair past the box edge - and
+	 * not all three corners lie inside it.
+	 */
+	static Map<String, int[]> cutTally(GR gr, GeoBoxOps.Box box) {
+		BchMapModel m = new BchMapModel(gr.getFile(1));
+		Area rect = new Area(new Rectangle2D.Float(box.minX, box.minZ, box.maxX - box.minX, box.maxZ - box.minZ));
 		Map<String, int[]> perMat = new TreeMap<>();
 		for (BchMapModel.MeshGeom g : m.geometry()) {
 			if (!g.posOk) {
@@ -257,25 +367,101 @@ public class PlacementGuardsTest {
 				}
 				if (in == 3) {
 					kd[0]++;
-				} else if (in > 0) {
+					continue;
+				}
+				Path2D.Float tri = new Path2D.Float();
+				tri.moveTo(pos[tris[t]][0], pos[tris[t]][2]);
+				tri.lineTo(pos[tris[t + 1]][0], pos[tris[t + 1]][2]);
+				tri.lineTo(pos[tris[t + 2]][0], pos[tris[t + 2]][2]);
+				tri.closePath();
+				Area overlap = new Area(tri);
+				overlap.intersect(rect);
+				if (areaOf(overlap) > 0.01) {
 					kd[1]++;
-					straddling++;
 				}
 			}
 		}
-		TreeSet<String> lost = new TreeSet<>();
-		for (Map.Entry<String, int[]> en : perMat.entrySet()) {
-			if (en.getValue()[0] == 0 && en.getValue()[1] > 0) {
-				lost.add(en.getKey());
+		return perMat;
+	}
+
+	/** The area a polygonal shape encloses (Area keeps zero-width slivers, so isEmpty is not enough). */
+	static double areaOf(Area shape) {
+		double area2 = 0, sx = 0, sy = 0, px = 0, py = 0;
+		double[] c = new double[6];
+		for (PathIterator it = shape.getPathIterator(null, 0.01); !it.isDone(); it.next()) {
+			int seg = it.currentSegment(c);
+			if (seg == PathIterator.SEG_MOVETO) {
+				sx = px = c[0];
+				sy = py = c[1];
+			} else if (seg == PathIterator.SEG_LINETO) {
+				area2 += px * c[1] - c[0] * py;
+				px = c[0];
+				py = c[1];
+			} else if (seg == PathIterator.SEG_CLOSE) {
+				area2 += px * sy - sx * py;
+				px = sx;
+				py = sy;
 			}
 		}
-		MapPrefab p = MapPrefab.extract(gr, 10, 10, 19, 19, "route 101");
-		check(straddling > 0 && !lost.isEmpty() && p != null,
-				"fixture: Route 101's 10..19 box is crossed by " + straddling + " faces and loses " + lost);
-		check(p != null && p.facesDropped == straddling, "the copy counts the faces it left out: reports "
-				+ (p == null ? 0 : p.facesDropped) + ", the box loses " + straddling);
-		check(p != null && new TreeSet<>(p.materialsLost).equals(lost), "the copy names the materials that vanished: "
-				+ (p == null ? null : p.materialsLost) + " vs " + lost);
+		return Math.abs(area2) / 2;
+	}
+
+	/**
+	 * What rides along inside a cut is named where the user decides - the
+	 * palette's manifest before placing, Apply's account after - by material
+	 * class, not counted into a triangle total; and the counts the manifest
+	 * does give are the prefab's own.
+	 */
+	static void passengersAreNamed() throws Exception {
+		BuildingCatalog.Entry room = entry("Littleroot Town lamp", 510, 114, 6, 6, 22, 22, 0);
+		BuildingCatalog.Entry fence = entry("Route 110 fence 2", 185, 28, 15, 11, 19, 18, -9);
+		MapPrefab p = BuildingPaletteDialog.cachedPrefab(room);
+		check(p != null && p.pieces.size() > 20, "fixture: the \"lamp\" is a room of " + (p == null ? 0 : p.pieces.size()) + " pieces");
+		if (p == null) {
+			return;
+		}
+		//the manifest's numbers, recounted from the pieces themselves
+		int tris = 0;
+		float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
+		for (MapPrefab.Piece piece : p.pieces) {
+			tris += piece.triangles.length / 3;
+			for (int v = 0; v * piece.stride < piece.vertexBytes.length; v++) {
+				int o = v * piece.stride + piece.posOffset + 4;
+				float y = Float.intBitsToFloat((piece.vertexBytes[o] & 0xFF) | ((piece.vertexBytes[o + 1] & 0xFF) << 8)
+						| ((piece.vertexBytes[o + 2] & 0xFF) << 16) | ((piece.vertexBytes[o + 3] & 0xFF) << 24));
+				lo = Math.min(lo, y);
+				hi = Math.max(hi, y);
+			}
+		}
+		check(p.triangleCount() == tris, "the manifest's triangle count is the pieces' own: " + p.triangleCount() + " vs " + tris);
+		check(p.heightSpan()[0] == lo && p.heightSpan()[1] == hi, "the manifest's height span is the pieces' own: "
+				+ Arrays.toString(p.heightSpan()) + " vs " + lo + ".." + hi);
+		RegionFactory.BlankContent base = paintedPath();
+		String manifest = BuildingPaletteDialog.manifest(p, p.stampGeometry(base.model, 5, 5, 0), room);
+		check(manifest.contains(tris + " triangles") && manifest.contains(Math.round(hi) + " above ground"),
+				"the palette's manifest carries the count and the span: " + manifest);
+		check(manifest.contains("rides along") && manifest.contains("shadow") && manifest.contains("floor"),
+				"the palette names the room's passengers - its shadow decal and floors - by class: " + manifest);
+		MapPrefab pf = BuildingPaletteDialog.cachedPrefab(fence);
+		String fenceManifest = pf == null ? "" : BuildingPaletteDialog.manifest(pf, pf.stampGeometry(base.model, 5, 5, 9), fence);
+		check(fenceManifest.contains("sea/water"), "the palette names the fence's sea plane: " + fenceManifest);
+		//Apply's own account repeats it
+		String note = TilePainterForm.stampPlaced(paintedPath(), at(room, 5, 5), new int[DIM][DIM], null);
+		check(note.contains(tris + " triangles") && note.contains("rides along") && note.contains("shadow"),
+				"Apply's account of a placed building repeats the count and names the passengers: " + note.trim());
+		//and the confirmation before it lists the same manifest
+		String summary = TilePainterForm.placedSummary(at(room, 5, 5));
+		check(summary.contains(room.name) && summary.contains(tris + " triangles") && summary.contains("rides along"),
+				"Apply's confirmation lists each building's manifest: " + summary);
+		//the palette's checkbox: the passengers stay behind, and the account says so
+		int riders = p.passengers().size();
+		check(riders > 0 && p.withoutPassengers().pieces.size() == p.pieces.size() - riders,
+				"leaving the passengers behind drops exactly them (" + riders + " of " + p.pieces.size() + " pieces)");
+		java.util.List<TilePainterForm.Placed> alone = new ArrayList<>();
+		alone.add(new TilePainterForm.Placed(room, 5, 5, false));
+		String left = TilePainterForm.stampPlaced(paintedPath(), alone, new int[DIM][DIM], null);
+		check(left.contains((p.pieces.size() - riders) + " piece(s)") && left.contains("left behind") && left.contains("shadow"),
+				"a building placed without its passengers stamps the structure alone and says what stayed: " + left.trim());
 	}
 
 	/**
@@ -424,7 +610,8 @@ public class PlacementGuardsTest {
 		return new byte[]{tilemap[o], tilemap[o + 1], tilemap[o + 2], tilemap[o + 3]};
 	}
 
-	/** This test's own reading of a movement tuple (behaviour is byte 3; bit 0 of byte 0 blocks). */
+	/** This test's own reading of a movement tuple (behaviour is byte 3; bit 0 of byte 0 blocks;
+	 *  a blocked tile whose code is above 0x01 is one of the game's furniture/object tiles). */
 	static String behaviour(byte[] t) {
 		int b0 = t[0] & 0xFF, b2 = t[2] & 0xFF, b3 = t[3] & 0xFF;
 		if (b2 == 0x18 && b3 == 0x3D) {
@@ -442,10 +629,10 @@ public class PlacementGuardsTest {
 		if (b3 >= 0x72 && b3 <= 0x75) {
 			return "ledge";
 		}
-		if (b3 == 0xD4) {
-			return "door";
+		if ((b0 & 1) == 0) {
+			return "walkable";
 		}
-		return (b0 & 1) == 1 ? "wall" : "walkable";
+		return b3 <= 0x01 ? "wall" : "object";
 	}
 
 	static void check(boolean ok, String what) {
