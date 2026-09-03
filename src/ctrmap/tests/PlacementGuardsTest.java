@@ -16,6 +16,9 @@ import ctrmap.formats.tilemap.Tilemap;
 import ctrmap.humaninterface.BuildingPaletteDialog;
 import ctrmap.humaninterface.TilePainterForm;
 import ctrmap.tools.BuildingHarvester;
+import java.awt.geom.Area;
+import java.awt.geom.Path2D;
+import java.awt.geom.Rectangle2D;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
@@ -57,8 +60,13 @@ import java.util.TreeSet;
  *     terrain guard, so a 22x17 slab of Cycling Road (sea plane, deck and all)
  *     was offered as a fence.</li>
  * <li>"Copy selection as prefab" discarded every face crossing the selection
- *     edge without counting it: Route 101's 10..19 box loses 249 of 1090 faces
- *     and two materials entirely, and the dialog listed only what survived.</li>
+ *     edge without counting it: Route 101's 10..19 box loses 250 of 1091 faces
+ *     and two materials entirely, and the dialog listed only what survived.
+ *     The first count saw only faces with a corner inside the box, so a ground
+ *     quad lying across it with every corner outside was dropped uncounted and
+ *     its material vanished unnamed (region 7's chip_kusa_a); and a selection
+ *     with no face fully inside - most single-tile selections - returned
+ *     nothing at all, and the status bar called it empty.</li>
  * </ol>
  *
  * Usage: java ctrmap.tests.PlacementGuardsTest &lt;path-to-a039-garc&gt; [sampleStep]
@@ -272,12 +280,67 @@ public class PlacementGuardsTest {
 		return false;
 	}
 
-	/** A copy counts the faces it left out and names the materials that vanished with them. */
+	/**
+	 * A copy counts every face it left out and names the materials that
+	 * vanished with them. A face is lost when its footprint overlaps the box
+	 * and it was not taken - whether or not a corner of it lies inside.
+	 */
 	static void facesCrossingTheBoxAreCounted() throws Exception {
 		GR gr = region(1);
-		GeoBoxOps.Box box = GeoBoxOps.Box.ofTiles(10, 10, 19, 19);
-		BchMapModel m = new BchMapModel(gr.getFile(1));
+		Map<String, int[]> perMat = cutTally(gr, GeoBoxOps.Box.ofTiles(10, 10, 19, 19));
 		int straddling = 0;
+		TreeSet<String> lost = new TreeSet<>();
+		for (Map.Entry<String, int[]> en : perMat.entrySet()) {
+			straddling += en.getValue()[1];
+			if (en.getValue()[0] == 0 && en.getValue()[1] > 0) {
+				lost.add(en.getKey());
+			}
+		}
+		MapPrefab p = MapPrefab.extract(gr, 10, 10, 19, 19, "route 101");
+		check(straddling > 0 && !lost.isEmpty() && p != null,
+				"fixture: Route 101's 10..19 box is crossed by " + straddling + " faces and loses " + lost);
+		check(p != null && p.facesDropped == straddling, "the copy counts the faces it left out: reports "
+				+ (p == null ? 0 : p.facesDropped) + ", the box loses " + straddling);
+		check(p != null && new TreeSet<>(p.materialsLost).equals(lost), "the copy names the materials that vanished: "
+				+ (p == null ? null : p.materialsLost) + " vs " + lost);
+		String report = p == null ? "" : p.cutReport();
+		check(report.contains(straddling + " face(s)") && report.contains(lost.toString()),
+				"the copy dialog's report carries the count and the names: " + report.replace('\n', ' '));
+		//a ground quad lying across the box with every corner outside: the
+		//only faces of chip_kusa_a in region 7's 30,2..38,12 box are of that kind
+		GR gr7 = region(7);
+		Map<String, int[]> perMat7 = cutTally(gr7, GeoBoxOps.Box.ofTiles(30, 2, 38, 12));
+		int[] kusa = perMat7.get("chip_kusa_a");
+		MapPrefab p7 = MapPrefab.extract(gr7, 30, 2, 38, 12, "grass edge");
+		check(kusa != null && kusa[0] == 0 && kusa[1] > 0, "fixture: chip_kusa_a lies across region 7's box with no corner inside ("
+				+ (kusa == null ? "absent" : kusa[1] + " faces") + ")");
+		check(p7 != null && p7.materialsLost.contains("chip_kusa_a"), "a material whose faces overlap the box with no corner inside is named as lost: "
+				+ (p7 == null ? null : p7.materialsLost));
+		//one tile of region 686: 60 faces cross it, none lies inside. The copy
+		//used to answer null and the status bar said there was nothing to copy.
+		int crossing = 0;
+		for (int[] kd : cutTally(region(686), GeoBoxOps.Box.ofTiles(20, 20, 20, 20)).values()) {
+			crossing += kd[1];
+		}
+		check(crossing > 0, "fixture: region 686's tile (20,20) is crossed by " + crossing + " faces");
+		try {
+			MapPrefab p686 = MapPrefab.extract(region(686), 20, 20, 20, 20, "one tile");
+			check(false, "a selection with faces across it but none inside is refused, not answered with "
+					+ (p686 == null ? "null" : p686.pieces.size() + " piece(s)"));
+		} catch (IllegalStateException ex) {
+			check(ex.getMessage().contains(crossing + " face(s)") && ex.getMessage().contains("none lies inside"),
+					"the refusal counts the crossing faces and says why: " + ex.getMessage());
+		}
+	}
+
+	/**
+	 * This test's own reading of a cut: per material, {faces taken whole,
+	 * faces lost}. A face is lost when its XZ footprint overlaps the box and
+	 * not all three corners lie inside it.
+	 */
+	static Map<String, int[]> cutTally(GR gr, GeoBoxOps.Box box) {
+		BchMapModel m = new BchMapModel(gr.getFile(1));
+		Area rect = new Area(new Rectangle2D.Float(box.minX, box.minZ, box.maxX - box.minX, box.maxZ - box.minZ));
 		Map<String, int[]> perMat = new TreeMap<>();
 		for (BchMapModel.MeshGeom g : m.geometry()) {
 			if (!g.posOk) {
@@ -295,25 +358,21 @@ public class PlacementGuardsTest {
 				}
 				if (in == 3) {
 					kd[0]++;
-				} else if (in > 0) {
+					continue;
+				}
+				Path2D.Float tri = new Path2D.Float();
+				tri.moveTo(pos[tris[t]][0], pos[tris[t]][2]);
+				tri.lineTo(pos[tris[t + 1]][0], pos[tris[t + 1]][2]);
+				tri.lineTo(pos[tris[t + 2]][0], pos[tris[t + 2]][2]);
+				tri.closePath();
+				Area overlap = new Area(tri);
+				overlap.intersect(rect);
+				if (!overlap.isEmpty()) {
 					kd[1]++;
-					straddling++;
 				}
 			}
 		}
-		TreeSet<String> lost = new TreeSet<>();
-		for (Map.Entry<String, int[]> en : perMat.entrySet()) {
-			if (en.getValue()[0] == 0 && en.getValue()[1] > 0) {
-				lost.add(en.getKey());
-			}
-		}
-		MapPrefab p = MapPrefab.extract(gr, 10, 10, 19, 19, "route 101");
-		check(straddling > 0 && !lost.isEmpty() && p != null,
-				"fixture: Route 101's 10..19 box is crossed by " + straddling + " faces and loses " + lost);
-		check(p != null && p.facesDropped == straddling, "the copy counts the faces it left out: reports "
-				+ (p == null ? 0 : p.facesDropped) + ", the box loses " + straddling);
-		check(p != null && new TreeSet<>(p.materialsLost).equals(lost), "the copy names the materials that vanished: "
-				+ (p == null ? null : p.materialsLost) + " vs " + lost);
+		return perMat;
 	}
 
 	/**
