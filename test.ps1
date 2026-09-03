@@ -130,6 +130,7 @@ $suites = @(
     @{ n = "PackRollback (a refused pack keeps its table)"; c = "ctrmap.tests.PackRollbackTest"; a = @($pristine) },
     @{ n = "PackScope (a pack writes what was edited)"; c = "ctrmap.tests.PackScopeTest"; a = @($pristine) },
     @{ n = "WorkspaceRepoint (the backup when the game folder changes)"; c = "ctrmap.tests.WorkspaceRepointTest"; a = @($pristine) },
+    @{ n = "MainframeReports (what the main window says it did)"; c = "ctrmap.tests.MainframeReportsTest"; a = @($pristine) },
     @{ n = "MisplacedRegistry (damage an old fork left)"; c = "ctrmap.tests.MisplacedRegistryTest"; a = @($pristine) }
 )
 
