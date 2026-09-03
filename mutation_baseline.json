@@ -231,8 +231,8 @@
   "sha256": "ed682d8eb745bbdd9bde634d8ecf9d6801a2bde660c4d83dd3dee16cfba0cc98"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
-  "survivors": 15,
-  "killed": 8,
+  "survivors": 14,
+  "killed": 9,
   "unmeasured": 2,
   "lines": [
    {
@@ -279,11 +279,6 @@
     "line": 1963,
     "kind": "negate-if",
     "code": "if (m == null) {"
-   },
-   {
-    "line": 493,
-    "kind": "negate-if",
-    "code": "if (loaded) {"
    },
    {
     "line": 2033,
