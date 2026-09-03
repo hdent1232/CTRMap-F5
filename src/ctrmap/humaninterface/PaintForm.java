@@ -191,6 +191,10 @@ public class PaintForm extends JPanel {
 				java.util.Arrays.fill(grid[i], brush());
 				java.util.Arrays.fill(touched[i], true);
 			}
+			//void counts as the base level, so filling it in can leave a ramp
+			//with nothing lower on its way down - and the next repaint would
+			//throw out of the event thread over it
+			settleRamps();
 			repaintMap();
 		});
 		add(fillAll);
