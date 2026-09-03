@@ -26,8 +26,9 @@ import java.util.TreeMap;
  * anchor (the min corner of the tile box it was cut from):
  * <ul>
  * <li>per-mesh geometry pieces: FULL vertex strides (UVs/normals/colors ride
- *     along) + a local triangle list + the source material name - faces
- *     crossing the box edge are left out, and counted;</li>
+ *     along) + a local triangle list + the source material name - a face
+ *     whose footprint overlaps the box but does not lie wholly inside it is
+ *     left out, and counted;</li>
  * <li>the collision triangles inside the box, those crossing its edge clipped
  *     to it;</li>
  * <li>the 4-byte movement-tile tuples of the footprint.</li>
@@ -65,15 +66,18 @@ public class MapPrefab {
 	public final List<Piece> pieces = new ArrayList<>();
 	public final List<float[]> collTris = new ArrayList<>();   // float[9], anchor-relative
 	public byte[][][] tiles;              // [w][h][4] tuples, or null
-	public int facesDropped;              // faces that crossed the box edge and were left out of the cut
-	public final List<String> materialsLost = new ArrayList<>();   // materials with faces in the box but none fully inside
+	public int facesDropped;              // faces overlapping the box that were left out of the cut
+	public final List<String> materialsLost = new ArrayList<>();   // materials with faces overlapping the box but none fully inside
 
 	// ---- extraction -------------------------------------------------------
 
 	/**
 	 * Cuts a prefab out of a region: every face fully inside the tile box
-	 * (region-local tiles, inclusive), all layers. Returns null if the box
-	 * contains no geometry.
+	 * (region-local tiles, inclusive), all layers. Returns null if nothing
+	 * touches the box; refuses, naming the count, when faces overlap the box
+	 * but none lies wholly inside it - a single-tile selection on most maps -
+	 * because answering null there let the status bar call the selection
+	 * empty while 60 faces lay across it.
 	 */
 	public static MapPrefab extract(GR gr, int tx0, int ty0, int tx1, int ty1, String name) {
 		GeoBoxOps.Box box = GeoBoxOps.Box.ofTiles(tx0, ty0, tx1, ty1);
@@ -88,8 +92,12 @@ public class MapPrefab {
 		p.tilesH = Math.abs(ty1 - ty0) + 1;
 		float ax = box.minX, az = box.minZ; // anchor = box min corner
 
-		//per material, faces kept and faces that crossed the edge: a cut says
-		//what it left out and names any material that vanished with it
+		//per material, faces kept and faces left out: a cut says what it left
+		//out and names any material that vanished with it. A face is left out
+		//when its footprint overlaps the box and it was not taken - counting
+		//only faces with a corner inside missed the ground quads that lie
+		//across a box with every corner outside, and a material whose only
+		//faces in the box were of that kind vanished unnamed.
 		Map<String, int[]> perMaterial = new LinkedHashMap<>();
 		for (BchMapModel.MeshGeom g : model.geometry()) {
 			if (!g.posOk) {
@@ -112,7 +120,7 @@ public class MapPrefab {
 						localTris.add(remap.computeIfAbsent(tris[t + c], k -> remap.size()));
 					}
 					faces[0]++;
-				} else if (inside > 0) {
+				} else if (overlapsBox(pos[tris[t]], pos[tris[t + 1]], pos[tris[t + 2]], box)) {
 					faces[1]++;
 				}
 			}
@@ -161,6 +169,10 @@ public class MapPrefab {
 			}
 		}
 		if (p.pieces.isEmpty()) {
+			if (p.facesDropped > 0) {
+				throw new IllegalStateException(p.facesDropped + " face(s) cross the selection edge but none lies inside it"
+						+ " - widen the selection to take them");
+			}
 			return null;
 		}
 		//embed the donor model so pieces with materials the target lacks can be
@@ -230,6 +242,24 @@ public class MapPrefab {
 		for (int v = 0; v < 3; v++) {
 			poly.add(new float[]{t[v * 3], t[v * 3 + 1], t[v * 3 + 2]});
 		}
+		poly = clipXZ(poly, box);
+		for (int i = 1; i + 1 < poly.size(); i++) {
+			float[] a = poly.get(0), b = poly.get(i), c = poly.get(i + 1);
+			float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+			float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+			float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+			if (nx * nx + ny * ny + nz * nz > 1e-8f) { //a sliver of no area is not a surface
+				out.add(new float[]{a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]});
+			}
+		}
+	}
+
+	/**
+	 * The part of an XYZ polygon that lies inside the box in XZ -
+	 * Sutherland-Hodgman against its four edges, Y interpolated along every
+	 * cut edge. Empty when nothing is left.
+	 */
+	private static List<float[]> clipXZ(List<float[]> poly, GeoBoxOps.Box box) {
 		//{axis, limit, side}: keep where side * (coord - limit) >= 0
 		float[][] edges = {{0, box.minX, 1}, {0, box.maxX, -1}, {2, box.minZ, 1}, {2, box.maxZ, -1}};
 		for (float[] e : edges) {
@@ -248,18 +278,35 @@ public class MapPrefab {
 			}
 			poly = next;
 			if (poly.size() < 3) {
-				return;
+				return new ArrayList<>();
 			}
 		}
-		for (int i = 1; i + 1 < poly.size(); i++) {
-			float[] a = poly.get(0), b = poly.get(i), c = poly.get(i + 1);
-			float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-			float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-			float nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-			if (nx * nx + ny * ny + nz * nz > 1e-8f) { //a sliver of no area is not a surface
-				out.add(new float[]{a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]});
-			}
+		return poly;
+	}
+
+	/**
+	 * True when a face's footprint covers some of the box - a corner on the
+	 * box edge with the rest outside covers none of it, and a ground quad
+	 * lying across the box with every corner outside covers most of it. A
+	 * sliver under a hundredth of a square unit is a vertex a hair past the
+	 * edge, not a face the cut loses.
+	 */
+	private static boolean overlapsBox(float[] a, float[] b, float[] c, GeoBoxOps.Box box) {
+		if (Math.max(a[0], Math.max(b[0], c[0])) <= box.minX || Math.min(a[0], Math.min(b[0], c[0])) >= box.maxX
+				|| Math.max(a[2], Math.max(b[2], c[2])) <= box.minZ || Math.min(a[2], Math.min(b[2], c[2])) >= box.maxZ) {
+			return false;
 		}
+		List<float[]> poly = new ArrayList<>();
+		poly.add(a);
+		poly.add(b);
+		poly.add(c);
+		poly = clipXZ(poly, box);
+		double area2 = 0;
+		for (int i = 0; i < poly.size(); i++) {
+			float[] p = poly.get(i), q = poly.get((i + 1) % poly.size());
+			area2 += (double) p[0] * q[2] - (double) q[0] * p[2];
+		}
+		return Math.abs(area2) > 0.02;
 	}
 
 	/** True when a mesh's submesh header names bones (+0 skinningMode, +2 nodeIdCount): BchModelAppender cannot inject it. */

@@ -38,7 +38,13 @@ public class MapPrefabTest {
 				if (grA == null || !BchMapModel.isMapModel(grA.getFile(1))) {
 					continue;
 				}
-				MapPrefab p = MapPrefab.extract(grA, 12, 12, 27, 27, "test");
+				MapPrefab p;
+				try {
+					p = MapPrefab.extract(grA, 12, 12, 27, 27, "test");
+				} catch (IllegalStateException crossingOnly) {
+					//faces across the box, none inside: a refusal, not a prefab
+					p = null;
+				}
 				if (p == null) {
 					emptyBox++;
 					continue;
