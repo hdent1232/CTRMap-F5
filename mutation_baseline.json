@@ -231,34 +231,19 @@
   "sha256": "ed682d8eb745bbdd9bde634d8ecf9d6801a2bde660c4d83dd3dee16cfba0cc98"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
-  "survivors": 6,
-  "killed": 17,
+  "survivors": 3,
+  "killed": 20,
   "unmeasured": 2,
   "lines": [
    {
-    "line": 1963,
-    "kind": "negate-if",
-    "code": "if (m == null) {"
-   },
-   {
     "line": 2033,
     "kind": "negate-if",
     "code": "if (i == npcIndex && CtrmapMainframe.tool instanceof NPCTool) {"
    },
    {
-    "line": 1963,
-    "kind": "negate-if",
-    "code": "if (m == null) {"
-   },
-   {
     "line": 2033,
     "kind": "negate-if",
     "code": "if (i == npcIndex && CtrmapMainframe.tool instanceof NPCTool) {"
-   },
-   {
-    "line": 1963,
-    "kind": "negate-if",
-    "code": "if (m == null) {"
    },
    {
     "line": 2033,
