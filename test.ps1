@@ -94,6 +94,8 @@ $suites = @(
     @{ n = "MaisonPoolGuard (vanilla-safe)"; c = "ctrmap.tests.MaisonPoolGuardTest"; a = @() },
     @{ n = "ZoneAppend";                  c = "ctrmap.tests.ZoneAppendTest";         a = @($a013) },
     @{ n = "ZoneRemove (GARC shrink)";    c = "ctrmap.tests.ZoneRemoveTest";         a = @($a013) },
+    @{ n = "ZoneCloner (fork a whole zone)"; c = "ctrmap.tests.ZoneClonerTest";     a = @($a013) },
+    @{ n = "ZoneAppendMulti (several at once)"; c = "ctrmap.tests.ZoneAppendMultiTest"; a = @($a013) },
     @{ n = "ZoneLimitPatch";              c = "ctrmap.tests.ZoneLimitPatchTest";     a = @() },
     @{ n = "ShopData (mart inventories)"; c = "ctrmap.tests.ShopDataTest";           a = @() },
     @{ n = "PackReport (warnings reach the user)"; c = "ctrmap.tests.PackReportTest"; a = @($pristine) },
