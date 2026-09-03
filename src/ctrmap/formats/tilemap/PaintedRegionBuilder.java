@@ -150,6 +150,7 @@ public class PaintedRegionBuilder {
 		}
 		float[][] baseY = sampleBaseY(donorCollision);
 		float[][] ground = nearestGround(baseY, walkableTiles(donorTilemap));
+		out.borrowedGround = borrowedGroundTiles(baseY, ground, touched);
 		out.model = buildModel(donorModel, grid, height, ramp, touched, baseY, ground, light, edges);
 		out.collision = buildCollisionComposite(donorCollision, grid, height, ramp, touched, baseY, ground);
 		out.tilemap = buildTilemapComposite(donorTilemap, grid, touched);
@@ -198,16 +199,12 @@ public class PaintedRegionBuilder {
 		float[][] by = sampleBaseY(coll);
 		float[][] ground = nearestGround(by, walkableTiles(tilemap));
 		float base0 = baseFloor(by);
-		int borrowed = 0;
 		for (int ty = 0; ty < DIM; ty++) {
 			for (int tx = 0; tx < DIM; tx++) {
 				height[ty][tx] = Float.isNaN(ground[ty][tx]) ? 0 : levelOf(ground[ty][tx], base0);
-				if (Float.isNaN(by[ty][tx]) && !Float.isNaN(ground[ty][tx])) {
-					borrowed++;
-				}
 			}
 		}
-		return borrowed;
+		return borrowedGroundTiles(by, ground, null);
 	}
 
 	/** The per-tile painted-floor Y grid for the region's CURRENT collision and
@@ -224,6 +221,32 @@ public class PaintedRegionBuilder {
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * How many of the {@code touched} tiles have no collision sample of their
+	 * own and are therefore built on ground borrowed from the nearest walkable
+	 * neighbour ({@link #nearestGround}). A tile with no sample anywhere in the
+	 * region borrows nothing and is not counted. Apply reports this, because a
+	 * patch standing on ground taken from beside it is level with its
+	 * surroundings rather than at a height the map itself gave it.
+	 */
+	public static int borrowedGroundTiles(byte[] coll, byte[] tilemap, boolean[][] touched) {
+		float[][] by = sampleBaseY(coll);
+		return borrowedGroundTiles(by, nearestGround(by, walkableTiles(tilemap)), touched);
+	}
+
+	/** {@link #borrowedGroundTiles(byte[], byte[], boolean[][])} over grids the builder already has. */
+	static int borrowedGroundTiles(float[][] baseY, float[][] ground, boolean[][] touched) {
+		int borrowed = 0;
+		for (int ty = 0; ty < DIM; ty++) {
+			for (int tx = 0; tx < DIM; tx++) {
+				if ((touched == null || touched[ty][tx]) && Float.isNaN(baseY[ty][tx]) && !Float.isNaN(ground[ty][tx])) {
+					borrowed++;
+				}
+			}
+		}
+		return borrowed;
 	}
 
 	/** Per-tile walkability from a tilemap subfile (bit 0 of byte 0 clear), or null without a usable tilemap. */

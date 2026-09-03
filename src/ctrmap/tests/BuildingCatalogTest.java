@@ -8,10 +8,13 @@ import ctrmap.formats.h3d.MapPrefab;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.tools.BuildingHarvester;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Validates every building-catalog entry against the pristine dump: the box
@@ -26,6 +29,13 @@ import java.util.List;
  * "Battle Resort structure 32" then placed 3 of its 36 pieces and Apply called
  * it done. A piece whose donor submesh is skinned can only land where a map
  * already carries its material, so such entries are not offered at all.
+ *
+ * <p>And the name has to describe the cut. The harvester asked its keyword
+ * families in a fixed order and took the first that matched anything at all,
+ * so one lamp-post material in a furnished room named the whole room "lamp":
+ * "Littleroot Town lamp" is four floors, walls, a roof and a baked shadow,
+ * 5,775 triangles of which the lamp is a handful. Every auto entry's kind must
+ * name the family that owns the most triangles of its cut.
  *
  * Usage: java ctrmap.tests.BuildingCatalogTest &lt;path-to-a039-garc&gt;
  */
@@ -45,6 +55,8 @@ public class BuildingCatalogTest {
 			System.out.println("FAIL: catalog too small (" + entries.size() + ")");
 			fails++;
 		}
+		int misnamed = 0, unmatched = 0;
+		String misnamedExample = null;
 		File rf = Scratch.file("bcat_region");
 		for (BuildingCatalog.Entry e : entries) {
 			try {
@@ -85,6 +97,20 @@ public class BuildingCatalogTest {
 				if (p.tiles == null) {
 					throw new IllegalStateException("no footprint tiles");
 				}
+				// the name has to describe what dominates the cut, not its
+				// smallest recognisable part
+				if (e.auto) {
+					String dominant = dominantKind(new GR(rf), e);
+					if (dominant == null) {
+						unmatched++;
+					} else if (!dominant.equals(e.kind)) {
+						misnamed++;
+						if (misnamedExample == null) {
+							misnamedExample = "\"" + e.name + "\" is filed as " + e.kind + ", but " + dominant
+									+ " owns the most triangles of the cut";
+						}
+					}
+				}
 				// door metadata sanity
 				if (e.doorDX >= 0) {
 					if (e.doorDX >= e.tilesW() || e.doorDY >= e.tilesH()) {
@@ -104,11 +130,88 @@ public class BuildingCatalogTest {
 				fails++;
 			}
 		}
+		if (misnamed > 0) {
+			System.out.println("FAIL: " + misnamed + " entries are named after a part smaller than another in the same cut, e.g. "
+					+ misnamedExample);
+			fails++;
+		} else {
+			System.out.println("  ok: every auto entry's kind names the family that owns the most triangles of its cut");
+		}
+		if (unmatched > 0) {
+			System.out.println("FAIL: " + unmatched + " auto entries name a box the harvester no longer cuts (stale catalogue?)");
+			fails++;
+		}
 		System.out.println("catalog: " + entries.size() + " entries, " + fails + " failure(s)");
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/** Per donor region, the kind each cut box asks for; the components are read once and dropped. */
+	static final Map<Integer, Map<String, String>> dominantByRegion = new HashMap<>();
+
+	/**
+	 * The kind the cut itself asks for, worked out here from the component's
+	 * raw material/triangle tally rather than asked of the harvester, so a
+	 * harvester that names the wrong part - or a catalogue built by one that
+	 * did - is caught rather than agreed with: the keyword family owning the
+	 * most triangles, and only when it beats the biggest single part no family
+	 * recognises; otherwise the component is named for its size. Null when the
+	 * box is no longer a component the harvester cuts.
+	 */
+	static String dominantKind(GR region, BuildingCatalog.Entry e) {
+		Map<String, String> byBox = dominantByRegion.get(e.donorRegion);
+		if (byBox == null) {
+			byBox = new HashMap<>();
+			for (BuildingHarvester.Comp c : BuildingHarvester.detect(region.getFile(1),
+					region.len > 2 ? region.getFile(2) : null)) {
+				if (c.terrain) {
+					continue;
+				}
+				Map<String, Integer> perFamily = new HashMap<>();
+				int biggestUnnamed = 0;
+				for (Map.Entry<String, Integer> m : c.materialTriangles().entrySet()) {
+					String[] family = familyOf(m.getKey());
+					if (family == null) {
+						biggestUnnamed = Math.max(biggestUnnamed, m.getValue());
+					} else {
+						perFamily.merge(family[0], m.getValue(), Integer::sum);
+					}
+				}
+				String best = null;
+				int bestTris = 0;
+				for (String[] family : BuildingHarvester.HINT_FAMILIES) {   //ties keep the earlier family
+					int tris = perFamily.getOrDefault(family[0], 0);
+					if (tris > bestTris) {
+						bestTris = tris;
+						best = family[0];
+					}
+				}
+				String hint = best != null && bestTris > biggestUnnamed ? best
+						: (c.tilesW() <= 2 && c.tilesH() <= 2 ? "decor" : "structure");
+				byBox.put(box(c.tx0, c.ty0, c.tx1, c.ty1), BuildingHarvester.categoryOf(hint));
+			}
+			dominantByRegion.put(e.donorRegion, byBox);
+		}
+		return byBox.get(box(e.tx0, e.ty0, e.tx1, e.ty1));
+	}
+
+	/** This test's own reading of which family a material name belongs to. */
+	static String[] familyOf(String material) {
+		String ml = material.toLowerCase();
+		for (String[] family : BuildingHarvester.HINT_FAMILIES) {
+			for (int k = 1; k < family.length; k++) {
+				if (ml.contains(family[k])) {
+					return family;
+				}
+			}
+		}
+		return null;
+	}
+
+	static String box(int tx0, int ty0, int tx1, int ty1) {
+		return tx0 + "," + ty0 + "," + tx1 + "," + ty1;
 	}
 
 	static byte[] sub(byte[] c, int i) {

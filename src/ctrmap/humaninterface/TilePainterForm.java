@@ -363,8 +363,15 @@ public class TilePainterForm {
 	 * carry the shared-area guard refused left a half-applied untextured map in
 	 * the workspace behind an "Apply failed" dialog - and the next Pack
 	 * Workspace shipped it.
+	 *
+	 * @return exactly what the "Painted map applied" dialog says. The dialog is
+	 *         the only account of what an Apply did - which extras ran, which
+	 *         did not - and it was built inline inside the pack's callback,
+	 *         where no suite can reach it: a headless battery never packs, so
+	 *         every sentence in it was unassertable. Handing the text back makes
+	 *         what the user is told a fact a guard can read.
 	 */
-	public static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, int[][] ramp,
+	public static String applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, int[][] ramp,
 			ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed,
 			boolean[][] touched) throws Exception {
 		final boolean composite = touched != null;
@@ -406,6 +413,10 @@ public class TilePainterForm {
 		int ownRegion = ownCell != null ? ownCell[0] : -1;
 		boolean firstCell = true;
 		String stampNote = "";
+		//painted tiles the map had no ground under: they take a walkable
+		//neighbour's, which is the difference between a patch level with its
+		//surroundings and one sunk into a pit, so the result says how many
+		int borrowedGround = 0;
 		java.util.List<StagedRegion> staged = new java.util.ArrayList<>();
 		for (int region : src.newRegions) {
 			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, region);
@@ -430,6 +441,7 @@ public class TilePainterForm {
 			RegionFactory.BlankContent bc = composite
 					? PaintedRegionBuilder.buildComposite(donor, gr.getFile(2), gr.getFile(0), grid, height, ramp, touched, lighting, edges)
 					: PaintedRegionBuilder.build(donor, grid, height, ramp, lighting, edges);
+			borrowedGround += bc.borrowedGround;
 			if (!placed.isEmpty()) {
 				stampNote = stampPlaced(bc, placed, height, floorY, texNeeds);
 			}
@@ -549,7 +561,10 @@ public class TilePainterForm {
 		} catch (Exception ex) {
 			wireNote.append("\nSign wiring failed: ").append(ex);
 		}
-		final String extras = (stampNote.isEmpty() ? "" : "\n\n" + stampNote)
+		final String extras = (borrowedGround > 0 ? "\n\n" + borrowedGround
+				+ " painted tile(s) had no ground under them and took a neighbour's"
+				+ "\n(they sit level with what stands beside them, not at a height this map gave them)." : "")
+				+ (stampNote.isEmpty() ? "" : "\n\n" + stampNote)
 				+ (signsWired > 0 ? "\n\n" + signsWired + " readable sign(s) wired (text saved; edit later via the NPC tool's dialogue section)." : "")
 				+ (texNote.length() > 0 ? "\n" + texNote.toString().trim() : "")
 				+ (doorProps != null ? "\n\nSwinging-door prop(s) placed automatically (registry + textures handled)." : "")
@@ -560,6 +575,9 @@ public class TilePainterForm {
 				//the one message about the failure was dropped for having failed
 				+ (wireNote.length() > 0 ? "\n" + wireNote.toString().trim() : "")
 				+ (enterable > wired ? "\n\n" + (enterable - wired) + " door(s) left unwired - add warps with the Warp tool when ready." : "");
+		final String report = "Painted map applied to zone " + zoneIndex + " (region(s) "
+				+ java.util.Arrays.toString(r.newRegions) + ").\nDeploy to emulator to walk on it."
+				+ extras;
 		Workspace.packWorkspace(new Runnable() {
 			@Override
 			public void run() {
@@ -567,15 +585,12 @@ public class TilePainterForm {
 					@Override
 					public void run() {
 						mZonePnl.selectZone(zoneIndex);
-						JOptionPane.showMessageDialog(frame,
-								"Painted map applied to zone " + zoneIndex + " (region(s) "
-								+ java.util.Arrays.toString(r.newRegions) + ").\nDeploy to emulator to walk on it."
-								+ extras,
-								"Tile painter", JOptionPane.INFORMATION_MESSAGE);
+						ctrmap.Ui.message(frame, report, "Tile painter", JOptionPane.INFORMATION_MESSAGE);
 					}
 				});
 			}
 		});
+		return report;
 	}
 
 	/** Where a staged region's bytes belong: its private copy after a fork, or

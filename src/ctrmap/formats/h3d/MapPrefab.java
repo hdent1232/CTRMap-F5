@@ -45,6 +45,14 @@ public class MapPrefab {
 
 	public static final int MAGIC = 0x434D5046; // CMPF
 	public static final int VERSION = 2;
+	/**
+	 * Tag of the trailing block that records what the cut left behind
+	 * ({@link #facesDropped}, {@link #materialsLost}). It sits AFTER every
+	 * block a v2 reader knows, and is written only when there is loss to
+	 * record, so the version stays 2 and a build without this block reads the
+	 * file exactly as it always did and stops exactly where it always stopped.
+	 */
+	public static final int LOSS_TAG = 0x434D504C; // CMPL
 
 	public static class Piece {
 
@@ -835,6 +843,17 @@ public class MapPrefab {
 				}
 			}
 		}
+		//what the cut left behind - a property of the prefab, not of the moment
+		//it was made. Without it a saved prefab came back claiming a clean cut
+		//and the copy dialog's warning could never be shown again.
+		if (facesDropped > 0 || !materialsLost.isEmpty()) {
+			o.writeInt(LOSS_TAG);
+			o.writeInt(facesDropped);
+			o.writeInt(materialsLost.size());
+			for (String m : materialsLost) {
+				o.writeUTF(m);
+			}
+		}
 		o.flush();
 		try (FileOutputStream fos = new FileOutputStream(f)) {
 			fos.write(baos.toByteArray());
@@ -912,6 +931,18 @@ public class MapPrefab {
 						in.readFully(p.tiles[x][y]);
 					}
 				}
+			}
+			//the optional loss block. A prefab written before it existed, or one
+			//whose cut lost nothing, simply ends here.
+			try {
+				if (in.readInt() == LOSS_TAG) {
+					p.facesDropped = in.readInt();
+					int nl = in.readInt();
+					for (int i = 0; i < nl; i++) {
+						p.materialsLost.add(in.readUTF());
+					}
+				}
+			} catch (java.io.EOFException fileEndsWhereItAlwaysDid) {
 			}
 			return p;
 		}

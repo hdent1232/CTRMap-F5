@@ -304,62 +304,106 @@ public class BuildingHarvester {
 			return best;
 		}
 
-		String dominantHintOf(String[] keys) {
-			int bestN = 0;
-			String best = null;
-			for (Map.Entry<String, Integer> e : matFaces.entrySet()) {
-				String ml = e.getKey().toLowerCase();
-				for (String k : keys) {
-					if (ml.contains(k) && e.getValue() > bestN) {
-						bestN = e.getValue();
-						best = k;
-					}
-				}
-			}
-			return best;
+		/** This component's triangles per material name - what its geometry is made of. */
+		public Map<String, Integer> materialTriangles() {
+			return java.util.Collections.unmodifiableMap(matFaces);
 		}
 
+		/** Triangles of this component's materials that belong to the family. */
+		int facesOf(String[] family) {
+			int n = 0;
+			for (Map.Entry<String, Integer> e : matFaces.entrySet()) {
+				if (familyOf(e.getKey()) == family) {
+					n += e.getValue();
+				}
+			}
+			return n;
+		}
+
+		/** Triangles of the biggest single material no family recognises. */
+		int biggestUnnamed() {
+			int most = 0;
+			for (Map.Entry<String, Integer> e : matFaces.entrySet()) {
+				if (familyOf(e.getKey()) == null && e.getValue() > most) {
+					most = e.getValue();
+				}
+			}
+			return most;
+		}
+
+		/**
+		 * What this component is: the keyword family owning the MOST of its
+		 * triangles, and only when that beats the biggest single part no family
+		 * recognises. It used to be the first family in the list that matched
+		 * anything at all, so the smallest recognisable piece named the whole
+		 * cut: "Littleroot Town lamp" is a furnished room of 4,733 triangles
+		 * whose only family material is 12 triangles of lamp glass, against 924
+		 * of bookshelf alone - and 127 catalogue entries were filed under a
+		 * family another family outweighed. A component nothing recognises is
+		 * named for its size, as it always was. A tie keeps the earlier family.
+		 */
 		String hint() {
-			if (dominantHintOf(new String[]{"platan", "tree", "happa", "leaf", "yashi"}) != null) {
-				return "tree";
+			int bestFaces = 0;
+			String[] best = null;
+			for (String[] family : HINT_FAMILIES) {
+				int faces = facesOf(family);
+				if (faces > bestFaces) {
+					bestFaces = faces;
+					best = family;
+				}
 			}
-			if (dominantHintOf(new String[]{"kanban"}) != null) {
-				return "sign";
-			}
-			if (dominantHintOf(new String[]{"saku", "fence"}) != null) {
-				return "fence";
-			}
-			if (dominantHintOf(new String[]{"lamp", "light", "toudai"}) != null) {
-				return "lamp";
-			}
-			if (dominantHintOf(new String[]{"kaidan", "step"}) != null) {
-				return "stairs";
-			}
-			if (dominantHintOf(new String[]{"hashi", "bridge"}) != null) {
-				return "bridge";
-			}
-			if (dominantHintOf(new String[]{"pokecen", "friend", "shop", "gym", "yane", "roof", "kabe", "mado", "door", "house"}) != null) {
-				return "building";
-			}
-			if (dominantHintOf(new String[]{"iwa", "rock", "gake", "ishi"}) != null) {
-				return "rock";
+			if (best != null && bestFaces > biggestUnnamed()) {
+				return best[0];
 			}
 			return tilesW() <= 2 && tilesH() <= 2 ? "decor" : "structure";
 		}
 
 		String category() {
-			switch (hint()) {
-				case "tree": return "A_TREE";
-				case "sign": return "A_SIGN";
-				case "fence": return "A_FENCE";
-				case "lamp": return "A_LAMP";
-				case "stairs": return "A_STAIRS";
-				case "bridge": return "A_BRIDGE";
-				case "building": return "A_BUILDING";
-				case "rock": return "A_ROCK";
-				case "decor": return "A_DECOR";
-				default: return "A_STRUCT";
+			return categoryOf(hint());
+		}
+	}
+
+	/**
+	 * What a component is called, by the words its materials use: {hint, then
+	 * the keywords that suggest it}. The order is the tie-break order.
+	 */
+	public static final String[][] HINT_FAMILIES = {
+		{"tree", "platan", "tree", "happa", "leaf", "yashi"},
+		{"sign", "kanban"},
+		{"fence", "saku", "fence"},
+		{"lamp", "lamp", "light", "toudai"},
+		{"stairs", "kaidan", "step"},
+		{"bridge", "hashi", "bridge"},
+		{"building", "pokecen", "friend", "shop", "gym", "yane", "roof", "kabe", "mado", "door", "house"},
+		{"rock", "iwa", "rock", "gake", "ishi"}
+	};
+
+	/** The family a material name belongs to - the first that claims it - or null. */
+	public static String[] familyOf(String material) {
+		String ml = material.toLowerCase();
+		for (String[] family : HINT_FAMILIES) {
+			for (int k = 1; k < family.length; k++) {
+				if (ml.contains(family[k])) {
+					return family;
+				}
 			}
+		}
+		return null;
+	}
+
+	/** The catalogue kind a hint is filed under. */
+	public static String categoryOf(String hint) {
+		switch (hint) {
+			case "tree": return "A_TREE";
+			case "sign": return "A_SIGN";
+			case "fence": return "A_FENCE";
+			case "lamp": return "A_LAMP";
+			case "stairs": return "A_STAIRS";
+			case "bridge": return "A_BRIDGE";
+			case "building": return "A_BUILDING";
+			case "rock": return "A_ROCK";
+			case "decor": return "A_DECOR";
+			default: return "A_STRUCT";
 		}
 	}
 

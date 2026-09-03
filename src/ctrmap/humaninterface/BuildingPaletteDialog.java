@@ -56,12 +56,12 @@ public class BuildingPaletteDialog {
 
 	/**
 	 * What a cut actually brings, shown before it is placed: a harvested name
-	 * describes only the dominant material, so "Littleroot Town lamp" is a whole
-	 * furnished room - 27 pieces, 27 textures to import - and a "bridge" can be
-	 * a chunk of Sky Pillar reaching 464 units up. The numbers alone could not
-	 * tell that room from a large lamp, so the passengers - the floors, the
-	 * shadow decal, a sea plane under a pier - are named by class. {@code r}
-	 * is the preview stamp, or null when only the cut itself is known.
+	 * describes only what dominates the cut, so a "structure" can be a whole
+	 * furnished room - 27 pieces, 27 textures to import - and a "bridge" a chunk
+	 * of Sky Pillar reaching 464 units up. The numbers alone could not tell that
+	 * room from a large lamp, so the passengers - the floors, the shadow decal,
+	 * a sea plane under a pier - are named by class. {@code r} is the preview
+	 * stamp, or null when only the cut itself is known.
 	 */
 	public static String manifest(MapPrefab p, MapPrefab.StampResult r, BuildingCatalog.Entry e) {
 		String riders = p.passengerNote();
