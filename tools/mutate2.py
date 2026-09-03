@@ -66,6 +66,13 @@ CLUSTERS = {
                      "ScriptAssemblerGuardTest", "DataSafetyGuardsTest", "PaintApplyGuardsTest"],
     "guards-npc":   ["NpcEditFormGuardsTest", "NpcEntityGuardsTest", "DataSafetyGuardsTest",
                      "ZoneScriptAnalyzerTest", "NpcTemplatesTest"],
+    "gap2":         ["PackReportTest", "DataSafetyGuardsTest", "DoorPropGuardsTest"],
+    "uifix":        ["BatteryHygieneTest", "DataSafetyGuardsTest"],
+    "d1":           ["TerrainImportNoiseTest", "BatteryHygieneTest", "BchMapModelTest"],
+    "d2":           ["NpcEditFormGuardsTest", "BatteryHygieneTest"],
+    "d3":           ["PackRollbackTest", "MisplacedRegistryTest", "IntegrityTest", "ForkGuardsTest"],
+    "d4":           ["PaintApplyGuardsTest", "PlacementGuardsTest", "BuildingCatalogTest",
+                     "MapPrefabTest"],
 }
 
 SUBST = {
