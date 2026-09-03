@@ -413,15 +413,9 @@ public class PaintApplyGuardsTest {
 	static void openWorkspace(File dump) throws Exception {
 		Workspace.game = Workspace.GameType.ORAS;
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
-		Workspace.WORKSPACE_PATH = System.getProperty("java.io.tmpdir") + "/ctrmap_paint_apply_guards";
-		File ws = new File(Workspace.WORKSPACE_PATH);
-		ws.mkdirs();
+		File ws = Scratch.dir("ctrmap_paint_apply_guards");
+		Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
 		ctrmap.Utils.mkDirsIfNotContains(ws, Workspace.WORKSPACE_SUBDIRS);
-		for (String sub : Workspace.WORKSPACE_SUBDIRS) {
-			for (File f : new File(ws, sub).listFiles()) {
-				f.delete();
-			}
-		}
 		Workspace.temp = new File(ws, "temp");
 		Workspace.persist_paths.clear();
 		//the brush donors are cut through the workspace's pristine snapshot;
