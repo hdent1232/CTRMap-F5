@@ -92,7 +92,7 @@ public class ADPropRegistryOrderTest {
 			return false;
 		}
 
-		File tmp = new File(System.getProperty("java.io.tmpdir"), "ctrmap_ADPropRegistryOrderTest_ad" + index);
+		File tmp = Scratch.file("ctrmap_ADPropRegistryOrderTest_ad" + index);
 		OutputStream os = new FileOutputStream(tmp);
 		os.write(adBytes);
 		os.close();

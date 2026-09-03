@@ -42,7 +42,7 @@ public class TerrainImportTest {
 		//a/0/3/9 -> up four levels is the romfs root the archive paths hang off
 		ctrmap.Workspace.GAMEDIR_PATH = garcFile.getParentFile().getParentFile()
 				.getParentFile().getParentFile().getAbsolutePath();
-		ctrmap.Workspace.WORKSPACE_PATH = System.getProperty("java.io.tmpdir") + "/ctrmap_terrainimport";
+		ctrmap.Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_terrainimport").getAbsolutePath();
 		ctrmap.Workspace.temp = new File(ctrmap.Workspace.WORKSPACE_PATH, "temp");
 		ctrmap.Workspace.temp.mkdirs();
 		//Each brush's donor is cut through the workspace's PRISTINE snapshot,
