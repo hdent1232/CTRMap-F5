@@ -540,14 +540,18 @@ public class TilePainterForm {
 			//already on disk and will ship with the next pack.
 			try {
 				String[] opts = {"Clone private interiors (recommended)", "Link retail interiors (enter-only)", "Skip"};
-				int mode = JOptionPane.showOptionDialog(frame,
+				//through Ui: a bare option dialog is a wall no test can answer,
+				//so everything past it - including whether Skip really skips -
+				//was unreachable code. No answer at all means Skip, never wiring.
+				Object pick = ctrmap.Ui.input(frame,
 						enterable + " placed building(s) have doors. Wire them now?\n\n"
 						+ "CLONE (recommended): each door gets its OWN interior - a copy of the retail\n"
 						+ "room placed in a free base zone - and the room's exit leads BACK TO THIS MAP.\n"
 						+ "Walk in, walk out: full round trip. (Rename the interior later via Tools.)\n\n"
 						+ "RETAIL: doors warp into the shared retail rooms; entering works, but the\n"
 						+ "room's exit leads to its retail town until you retarget it.",
-						"Door warps", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, opts, opts[0]);
+						"Door warps", JOptionPane.QUESTION_MESSAGE, opts, opts[0]);
+				int mode = java.util.Arrays.asList(opts).indexOf(pick);
 				if (mode == 0 || mode == 1) {
 					wired = wireDoorWarps(zoneIndex, placed, floorY, mode == 0, wireNote);
 				}
@@ -610,7 +614,7 @@ public class TilePainterForm {
 	 * Asked before anything is written, so a shared area can be forked (or the
 	 * Apply refused) once, up front, for the whole edit.
 	 */
-	static boolean needsAreaWrite(int areaId, java.util.List<Placed> placed,
+	public static boolean needsAreaWrite(int areaId, java.util.List<Placed> placed,
 			java.util.Map<Integer, java.util.Set<String>> texNeeds) throws Exception {
 		ctrmap.formats.containers.AD ad = areaContainer(areaId);
 		byte[] world = ad.getFile(11), prop = ad.getFile(1);
