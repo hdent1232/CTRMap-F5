@@ -299,7 +299,7 @@ public class PaintedFloorTest {
 				continue;
 			}
 			int[][] h = new int[DIM][DIM];
-			int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(coll, h);
+			int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(coll, tm, h);
 			check(borrowed == unsampled, "region " + reg + ": seeding reports exactly the tiles that took a neighbour's ground ("
 					+ borrowed + " reported, " + unsampled + " have no ground of their own)");
 			TilePalette[][] grid = grid(TilePalette.GRASS);
@@ -385,26 +385,10 @@ public class PaintedFloorTest {
 		return new float[]{lo, hi};
 	}
 
-	/** True when a level model triangle with its centroid on the tile stands within half a unit of y. */
+	/** True when a level triangle standing on the tile's own corners - the generated quad - lies within half a unit of y. */
 	static boolean hasFloorAt(BchMapModel m, int tx, int tz, float y) {
-		for (BchMapModel.MeshGeom mg : m.geometry()) {
-			if (!mg.posOk) {
-				continue;
-			}
-			float[][] p = m.getVertexPositions(mg.meshIndex);
-			int[] t = m.getTriangles(mg.meshIndex);
-			for (int i = 0; i + 2 < t.length; i += 3) {
-				float cx = (p[t[i]][0] + p[t[i + 1]][0] + p[t[i + 2]][0]) / 3f;
-				float cz = (p[t[i]][2] + p[t[i + 1]][2] + p[t[i + 2]][2]) / 3f;
-				float lo = Math.min(p[t[i]][1], Math.min(p[t[i + 1]][1], p[t[i + 2]][1]));
-				float hi = Math.max(p[t[i]][1], Math.max(p[t[i + 1]][1], p[t[i + 2]][1]));
-				if ((int) Math.floor((cx - ORIGIN) / TILE) == tx && (int) Math.floor((cz - ORIGIN) / TILE) == tz
-						&& hi - lo < 0.5f && Math.abs(lo - y) < 0.5f) {
-					return true;
-				}
-			}
-		}
-		return false;
+		float[] span = slopeSpan(m, tx, tz);
+		return span[1] - span[0] < 0.5f && Math.abs(span[0] - y) < 0.5f;
 	}
 
 	/** The lowest model triangle whose centroid lands on a tile. */

@@ -49,6 +49,7 @@ public class PaintForm extends JPanel {
 	boolean edgeBlend = true;
 	byte[] donorModel;
 	byte[] donorColl; // the region's collision - the retail-height frame for composite builds
+	byte[] donorTilemap; // the region's movement tiles - which ground is walkable, for filling unsampled tiles
 	int cellX, cellY; // the painted cell's position in the zone's world grid
 	BuildingCatalog.Entry pendingPlace = null;
 	/** Whether the pending building brings its passengers (the palette's checkbox). */
@@ -363,6 +364,7 @@ public class PaintForm extends JPanel {
 		int region = cell != null ? cell[0] : -1;
 		donorModel = null;
 		donorColl = null;
+		donorTilemap = null;
 		if (region >= 0) {
 			TilePainterForm.loadFromRegion(region, grid);
 			try {
@@ -371,9 +373,10 @@ public class PaintForm extends JPanel {
 				if (BchMapModel.isMapModel(m)) {
 					donorModel = m;
 					donorColl = gr.getFile(2);
+					donorTilemap = gr.getFile(0);
 					//elevations start at the map's REAL ground levels, so painted
 					//tiles sit level with their retail surroundings by default
-					int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(donorColl, height);
+					int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(donorColl, donorTilemap, height);
 					if (borrowed > 0) {
 						zoneLabel.setText("<html>Painting zone " + seededZone + "<br><small>" + borrowed
 								+ " tile(s) have no ground of their own and start<br>level with their nearest neighbour</small></html>");
@@ -715,6 +718,7 @@ public class PaintForm extends JPanel {
 		final int epochAtStart = regenEpoch;
 		final byte[] donor = donorModel;
 		final byte[] coll = donorColl;
+		final byte[] tmap = donorTilemap;
 		final boolean edgesNow = edgeBlend;
 		//deep-copy every input on the EDT so the worker never races a stroke
 		final TilePalette[][] g2 = new TilePalette[DIM][];
@@ -736,7 +740,7 @@ public class PaintForm extends JPanel {
 					//the live preview paints with the same imported materials the
 					//Apply will use, so what you see is what you get
 					byte[] src = TilePainterForm.importBrushMaterials(donor, g2, t2, null);
-					byte[] model = PaintedRegionBuilder.buildModelOnly(src, coll, g2, h2, r2, t2, l2, edgesNow);
+					byte[] model = PaintedRegionBuilder.buildModelOnly(src, coll, tmap, g2, h2, r2, t2, l2, edgesNow);
 					java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extra = null;
 					if (!p2.isEmpty()) {
 						ctrmap.formats.h3d.RegionFactory.BlankContent bc = new ctrmap.formats.h3d.RegionFactory.BlankContent();
@@ -749,7 +753,7 @@ public class PaintForm extends JPanel {
 						bc.tilemap[0] = (byte) DIM;
 						bc.tilemap[2] = (byte) DIM;
 						bc.props = new byte[]{0, 0, 0, 0};
-						TilePainterForm.stampPlaced(bc, p2, h2, PaintedRegionBuilder.floorYGrid(coll, h2), null);
+						TilePainterForm.stampPlaced(bc, p2, h2, PaintedRegionBuilder.floorYGrid(coll, tmap, h2), null);
 						model = bc.model;
 						//donor-area textures load here, off the EDT (the loaders
 						//are synchronized; a GARC decompress can take a moment)

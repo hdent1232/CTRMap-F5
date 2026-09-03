@@ -97,7 +97,7 @@ public class PaintedRegionBuilder {
 			ramp = noRamps();
 		}
 		RegionFactory.BlankContent out = new RegionFactory.BlankContent();
-		out.model = buildModel(donorModel, grid, height, ramp, null, null, light, edges);
+		out.model = buildModel(donorModel, grid, height, ramp, null, null, null, light, edges);
 		out.collision = buildCollision(grid, height, ramp);
 		out.tilemap = buildTilemap(grid);
 		out.props = new byte[]{0, 0, 0, 0};
@@ -149,8 +149,9 @@ public class PaintedRegionBuilder {
 			return out;
 		}
 		float[][] baseY = sampleBaseY(donorCollision);
-		out.model = buildModel(donorModel, grid, height, ramp, touched, baseY, light, edges);
-		out.collision = buildCollisionComposite(donorCollision, grid, height, ramp, touched, baseY);
+		float[][] ground = nearestGround(baseY, walkableTiles(donorTilemap));
+		out.model = buildModel(donorModel, grid, height, ramp, touched, baseY, ground, light, edges);
+		out.collision = buildCollisionComposite(donorCollision, grid, height, ramp, touched, baseY, ground);
 		out.tilemap = buildTilemapComposite(donorTilemap, grid, touched);
 		out.props = new byte[]{0, 0, 0, 0};
 		return out;
@@ -158,10 +159,11 @@ public class PaintedRegionBuilder {
 
 	/**
 	 * The visual model alone, composite-aware - the live 3D preview's path
-	 * (collision is used only to place floors at the retail surface height).
+	 * (collision is used only to place floors at the retail surface height,
+	 * the tilemap only to fill unsampled tiles from walkable ground).
 	 */
-	public static byte[] buildModelOnly(byte[] donorModel, byte[] donorCollision, TilePalette[][] grid, int[][] height,
-			int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
+	public static byte[] buildModelOnly(byte[] donorModel, byte[] donorCollision, byte[] donorTilemap, TilePalette[][] grid,
+			int[][] height, int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
 		if (height == null) {
 			height = new int[DIM][DIM];
 		}
@@ -169,7 +171,8 @@ public class PaintedRegionBuilder {
 			ramp = noRamps();
 		}
 		float[][] baseY = touched != null ? sampleBaseY(donorCollision) : null;
-		return buildModel(donorModel, grid, height, ramp, touched, baseY, light, edges);
+		float[][] ground = baseY != null ? nearestGround(baseY, walkableTiles(donorTilemap)) : null;
+		return buildModel(donorModel, grid, height, ramp, touched, baseY, ground, light, edges);
 	}
 
 	// ---- retail surface heights (composite frame) -------------------------
@@ -184,14 +187,16 @@ public class PaintedRegionBuilder {
 	 * quantization offsets cancel), and below-zero caves or high plateaus
 	 * keep the full 0..6 editing range.
 	 *
+	 * @param tilemap the region's movement tiles, so a tile with no ground of
+	 *                its own takes it from walkable ground first
 	 * @return how many tiles had no ground of their own and took their nearest
 	 *         neighbour's ({@link #nearestGround}). The painter tells the user,
 	 *         because those tiles start level with whatever stands beside them
 	 *         rather than at a height the map itself gave them.
 	 */
-	public static int seedHeightsFromCollision(byte[] coll, int[][] height) {
+	public static int seedHeightsFromCollision(byte[] coll, byte[] tilemap, int[][] height) {
 		float[][] by = sampleBaseY(coll);
-		float[][] ground = nearestGround(by);
+		float[][] ground = nearestGround(by, walkableTiles(tilemap));
 		float base0 = baseFloor(by);
 		int borrowed = 0;
 		for (int ty = 0; ty < DIM; ty++) {
@@ -205,17 +210,31 @@ public class PaintedRegionBuilder {
 		return borrowed;
 	}
 
-	/** The per-tile painted-floor Y grid for the region's CURRENT collision +
-	 *  a level grid - the shared frame for floors, buildings, door props and
-	 *  warps. An unusable collision degrades to the plain level*STEP frame. */
-	public static float[][] floorYGrid(byte[] coll, int[][] height) {
+	/** The per-tile painted-floor Y grid for the region's CURRENT collision and
+	 *  tilemap + a level grid - the shared frame for floors, buildings, door
+	 *  props and warps. An unusable collision degrades to the plain level*STEP frame. */
+	public static float[][] floorYGrid(byte[] coll, byte[] tilemap, int[][] height) {
 		float[][] by = sampleBaseY(coll);
-		float[][] ground = nearestGround(by);
+		float[][] ground = nearestGround(by, walkableTiles(tilemap));
 		float base0 = baseFloor(by);
 		float[][] out = new float[DIM][DIM];
 		for (int ty = 0; ty < DIM; ty++) {
 			for (int tx = 0; tx < DIM; tx++) {
 				out[ty][tx] = floorYOf(ground[ty][tx], height[ty][tx], base0);
+			}
+		}
+		return out;
+	}
+
+	/** Per-tile walkability from a tilemap subfile (bit 0 of byte 0 clear), or null without a usable tilemap. */
+	public static boolean[][] walkableTiles(byte[] tilemap) {
+		if (tilemap == null || tilemap.length < 4 + DIM * DIM * 4) {
+			return null;
+		}
+		boolean[][] out = new boolean[DIM][DIM];
+		for (int ty = 0; ty < DIM; ty++) {
+			for (int tx = 0; tx < DIM; tx++) {
+				out[ty][tx] = (tilemap[4 + (ty * DIM + tx) * 4] & 1) == 0;
 			}
 		}
 		return out;
@@ -228,21 +247,32 @@ public class PaintedRegionBuilder {
 	 * BESIDE it. It used to take level 0, the region's lowest ground, so the
 	 * one grass tile painted to widen a path came out as a walled pit up to
 	 * seven tiles deep, still marked walkable, under retail scenery that hid
-	 * it. Grows ring by ring so the nearest sample wins; where two are equally
-	 * near the lower does, as the sampler itself prefers ground to what stands
-	 * over it. A region with no sample at all stays NaN throughout.
+	 * it. Grows ring by ring so the nearest sample wins. Among equally near
+	 * samples, one under a walkable tile beats one under a blocked tile, and
+	 * the lower of a kind wins after that, as the sampler itself prefers
+	 * ground to what stands over it: taking the lowest regardless borrowed the
+	 * cliff base a plateau path runs along, and 276 tiles in 58 retail regions
+	 * still came out as walled pits up to seven tiles deep. {@code walkable}
+	 * is per-tile walkability, or null when there is no tilemap to read it
+	 * from. A region with no sample at all stays NaN throughout.
 	 */
-	static float[][] nearestGround(float[][] baseY) {
+	static float[][] nearestGround(float[][] baseY, boolean[][] walkable) {
 		float[][] out = new float[DIM][];
+		boolean[][] onFoot = new boolean[DIM][DIM];
 		for (int ty = 0; ty < DIM; ty++) {
 			out[ty] = baseY[ty].clone();
+			for (int tx = 0; tx < DIM; tx++) {
+				onFoot[ty][tx] = walkable != null && walkable[ty][tx] && !Float.isNaN(baseY[ty][tx]);
+			}
 		}
 		for (boolean grew = true; grew;) {
 			grew = false;
 			float[][] ring = new float[DIM][DIM];
+			boolean[][] ringFoot = new boolean[DIM][DIM];
 			for (int ty = 0; ty < DIM; ty++) {
 				for (int tx = 0; tx < DIM; tx++) {
 					ring[ty][tx] = out[ty][tx];
+					ringFoot[ty][tx] = onFoot[ty][tx];
 					if (!Float.isNaN(out[ty][tx])) {
 						continue;
 					}
@@ -252,14 +282,19 @@ public class PaintedRegionBuilder {
 						if (nx < 0 || ny < 0 || nx >= DIM || ny >= DIM || Float.isNaN(out[ny][nx])) {
 							continue;
 						}
-						if (Float.isNaN(ring[ty][tx]) || out[ny][nx] < ring[ty][tx]) {
+						boolean better = Float.isNaN(ring[ty][tx])
+								|| (onFoot[ny][nx] && !ringFoot[ty][tx])
+								|| (onFoot[ny][nx] == ringFoot[ty][tx] && out[ny][nx] < ring[ty][tx]);
+						if (better) {
 							ring[ty][tx] = out[ny][nx];
+							ringFoot[ty][tx] = onFoot[ny][nx];
 							grew = true;
 						}
 					}
 				}
 			}
 			out = ring;
+			onFoot = ringFoot;
 		}
 		return out;
 	}
@@ -426,8 +461,10 @@ public class PaintedRegionBuilder {
 
 	// ---- visual model -----------------------------------------------------
 
+	/** {@code baseY} is the raw per-tile sample and {@code ground} its filled
+	 *  copy ({@link #nearestGround}); both null for a from-scratch build. */
 	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid, int[][] height, int[][] ramp,
-			boolean[][] touched, float[][] baseY, TerrainLighting light, boolean edges) {
+			boolean[][] touched, float[][] baseY, float[][] ground, TerrainLighting light, boolean edges) {
 		//Give the model the catalogue's cliff material before anything looks for
 		//one. TerrainCatalog.ensureCliffMaterial existed but was never called
 		//from anywhere, so the whole CLIFF row was inert: resolveCliffMesh fell
@@ -462,7 +499,6 @@ public class PaintedRegionBuilder {
 		//face - that already stands there, and a cliff generated against a
 		//borrowed height would be a second face in the same place.
 		float base0 = baseY != null ? baseFloor(baseY) : 0f;
-		float[][] ground = baseY != null ? nearestGround(baseY) : null;
 		float[][] yTop = new float[DIM][DIM];
 		for (int ty = 0; ty < DIM; ty++) {
 			for (int tx = 0; tx < DIM; tx++) {
@@ -2857,12 +2893,11 @@ public class PaintedRegionBuilder {
 	 * generated floors/cliffs are added. Constants ride along from the donor.
 	 */
 	static byte[] buildCollisionComposite(byte[] donorColl, TilePalette[][] grid, int[][] height,
-			int[][] ramp, boolean[][] touched, float[][] baseY) {
+			int[][] ramp, boolean[][] touched, float[][] baseY, float[][] ground) {
 		List<float[]> tris = new ArrayList<>();
 		List<float[]> rects = TileClip.regionRects(touched, TILE, ORIGIN, 0f);
 		float base0 = baseFloor(baseY);
 		//floors from the filled ground, walls against the raw sample - see buildModel
-		float[][] ground = nearestGround(baseY);
 		float[][] yTop = new float[DIM][DIM];
 		float touchedTop = -Float.MAX_VALUE;
 		for (int ty = 0; ty < DIM; ty++) {
