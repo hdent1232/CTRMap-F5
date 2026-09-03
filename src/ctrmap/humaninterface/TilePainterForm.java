@@ -363,8 +363,15 @@ public class TilePainterForm {
 	 * carry the shared-area guard refused left a half-applied untextured map in
 	 * the workspace behind an "Apply failed" dialog - and the next Pack
 	 * Workspace shipped it.
+	 *
+	 * @return exactly what the "Painted map applied" dialog says. The dialog is
+	 *         the only account of what an Apply did - which extras ran, which
+	 *         did not - and it was built inline inside the pack's callback,
+	 *         where no suite can reach it: a headless battery never packs, so
+	 *         every sentence in it was unassertable. Handing the text back makes
+	 *         what the user is told a fact a guard can read.
 	 */
-	public static void applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, int[][] ramp,
+	public static String applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, int[][] ramp,
 			ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed,
 			boolean[][] touched) throws Exception {
 		final boolean composite = touched != null;
@@ -560,6 +567,9 @@ public class TilePainterForm {
 				//the one message about the failure was dropped for having failed
 				+ (wireNote.length() > 0 ? "\n" + wireNote.toString().trim() : "")
 				+ (enterable > wired ? "\n\n" + (enterable - wired) + " door(s) left unwired - add warps with the Warp tool when ready." : "");
+		final String report = "Painted map applied to zone " + zoneIndex + " (region(s) "
+				+ java.util.Arrays.toString(r.newRegions) + ").\nDeploy to emulator to walk on it."
+				+ extras;
 		Workspace.packWorkspace(new Runnable() {
 			@Override
 			public void run() {
@@ -567,15 +577,12 @@ public class TilePainterForm {
 					@Override
 					public void run() {
 						mZonePnl.selectZone(zoneIndex);
-						JOptionPane.showMessageDialog(frame,
-								"Painted map applied to zone " + zoneIndex + " (region(s) "
-								+ java.util.Arrays.toString(r.newRegions) + ").\nDeploy to emulator to walk on it."
-								+ extras,
-								"Tile painter", JOptionPane.INFORMATION_MESSAGE);
+						ctrmap.Ui.message(frame, report, "Tile painter", JOptionPane.INFORMATION_MESSAGE);
 					}
 				});
 			}
 		});
+		return report;
 	}
 
 	/** Where a staged region's bytes belong: its private copy after a fork, or
