@@ -635,6 +635,13 @@ public class TilePainterForm {
 	 * brush works on any map. Texture needs are added to {@code texNeeds} so
 	 * the existing cross-area carry brings them along (a missing texture
 	 * hardlocks the game). Returns the (possibly grown) model.
+	 *
+	 * <p>Needs are recorded whether or not THIS call did the importing. A map
+	 * painted once already carries the material, so gating on "injected" meant
+	 * the second Apply - the one the user makes after forking the area the
+	 * first Apply refused - asked the carry for nothing and reported success
+	 * over the same untextured floor. The carry no-ops cheaply when the
+	 * textures are already there, so asking every time costs nothing.
 	 */
 	static byte[] importBrushMaterials(byte[] model, TilePalette[][] grid, boolean[][] touched,
 			java.util.Map<Integer, java.util.Set<String>> texNeeds) {
@@ -654,7 +661,7 @@ public class TilePainterForm {
 			ctrmap.formats.tilemap.TerrainCatalog.ImportResult r
 					= ctrmap.formats.tilemap.TerrainCatalog.ensureMaterial(out, t);
 			out = r.model;
-			if (r.injected && texNeeds != null && !r.texturesNeeded.isEmpty()) {
+			if (texNeeds != null && !r.texturesNeeded.isEmpty()) {
 				texNeeds.computeIfAbsent(r.donorArea, k -> new java.util.LinkedHashSet<>()).addAll(r.texturesNeeded);
 			}
 		}
