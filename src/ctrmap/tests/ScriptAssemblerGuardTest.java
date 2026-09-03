@@ -230,46 +230,49 @@ public class ScriptAssemblerGuardTest {
 		JTextArea output = (JTextArea) field(ed, "assemblerOutput");
 		AbstractButton commit = (AbstractButton) field(ed, "btnSave");
 		AbstractButton run = (AbstractButton) field(ed, "btnTestAssembly");
-
-		//Commit with one mistyped mnemonic
-		type(ed, area, text.replaceFirst("PUSH_C\\(", "PSUH_C("));
-		List<String> said = ctrmap.Ui.record();
+		//a button that throws is a button that failed; without a window the
+		//throw has nowhere to go but here
 		try {
-			commit.doClick();
-		} finally {
-			ctrmap.Ui.stopRecording();
-		}
-		check(said.size() == 1 && said.get(0).contains("did not assemble"), "Commit with a mistyped mnemonic is refused where the user can see it: " + said);
-		check(Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)), "and the script is untouched");
-		run.doClick();
-		check(output.getText().startsWith("Assembler refused") && Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)),
-				"Run assembler with the typo reports the refusal and leaves the script alone: " + firstLine(output));
+			//Commit with one mistyped mnemonic
+			type(ed, area, text.replaceFirst("PUSH_C\\(", "PSUH_C("));
+			List<String> said = ctrmap.Ui.record();
+			try {
+				commit.doClick();
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			check(said.size() == 1 && said.get(0).contains("did not assemble"), "Commit with a mistyped mnemonic is refused where the user can see it: " + said);
+			check(Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)), "and the script is untouched");
+			run.doClick();
+			check(output.getText().startsWith("Assembler refused") && Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)),
+					"Run assembler with the typo reports the refusal and leaves the script alone: " + firstLine(output));
 
-		//Commit the clean text
-		type(ed, area, text);
-		said = ctrmap.Ui.record();
-		try {
-			commit.doClick();
-		} finally {
-			ctrmap.Ui.stopRecording();
-		}
-		check(said.isEmpty() && Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)),
-				"Commit of a clean script says nothing and keeps every instruction: " + said);
-		run.doClick();
-		check(output.getText().contains("Assembled " + s.instructions.size() + " instructions"),
-				"Run assembler on a clean script reports what it assembled: " + firstLine(output));
+			//Commit the clean text
+			type(ed, area, text);
+			said = ctrmap.Ui.record();
+			try {
+				commit.doClick();
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			check(said.isEmpty() && Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)),
+					"Commit of a clean script says nothing and keeps every instruction: " + said);
+			run.doClick();
+			check(output.getText().contains("Assembled " + s.instructions.size() + " instructions"),
+					"Run assembler on a clean script reports what it assembled: " + firstLine(output));
 
-		//Commit in data mode writes data words, not the assembler's verdict
-		int words = s.data.size();
-		((AbstractButton) field(ed, "btnIsDataEdit")).doClick();
-		said = ctrmap.Ui.record();
-		try {
-			commit.doClick();
+			//Commit in data mode writes data words, not the assembler's verdict
+			int words = s.data.size();
+			((AbstractButton) field(ed, "btnIsDataEdit")).doClick();
+			said = ctrmap.Ui.record();
+			try {
+				commit.doClick();
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
 			check(said.isEmpty() && s.data.size() == words, "Commit in data mode writes the " + words + " data word(s) with nothing to say: " + said);
 		} catch (RuntimeException ex) {
-			check(false, "Commit in data mode threw " + ex);
-		} finally {
-			ctrmap.Ui.stopRecording();
+			check(false, "an editor button threw " + ex);
 		}
 	}
 
