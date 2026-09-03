@@ -413,6 +413,21 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		};
 		worker.execute();
 		progress.showDialog();
+		awaitLoad(worker);
+	}
+
+	/**
+	 * Waits for a load worker and refuses to return normally when it failed:
+	 * the panel goes back to its placeholder rather than keeping half a map,
+	 * and the failure is thrown on so the caller cannot carry on as though a
+	 * zone were open. Dropping that throw is what let a failed load present
+	 * itself as a loaded one.
+	 *
+	 * <p>Its own method because the only caller starts its worker behind a
+	 * modal progress dialog, and a guard with no display cannot open one. What
+	 * a failed load leaves behind does not have to go untested for that.
+	 */
+	public void awaitLoad(SwingWorker<?, ?> worker) {
 		try {
 			worker.get();
 		} catch (InterruptedException | ExecutionException ex) {
@@ -676,6 +691,22 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		}
 	}
 
+	/**
+	 * What a failed tilemap rebuild owes the user: the picture on screen is not
+	 * the map any more, and only this sentence says so - the progress dialog
+	 * closes either way, so without it the stale image simply stays up looking
+	 * current.
+	 *
+	 * <p>Its own method, and through {@link ctrmap.Ui}, for two reasons: it
+	 * runs inside a worker started behind a modal progress dialog that a
+	 * headless guard cannot open, and as a bare JOptionPane "the user was told"
+	 * was not a fact any test could check.
+	 */
+	public void refreshFailed(Throwable cause) {
+		Logger.getLogger(TileMapPanel.class.getName()).log(Level.SEVERE, "updating tilemaps", cause);
+		ctrmap.Ui.error(this, "The tilemap view was not refreshed:\n" + cause, "Update tilemaps");
+	}
+
 	public void updateAll() {
 		LoadingDialog progress = LoadingDialog.makeDialog("Updating tilemap(s)");
 		SwingWorker worker = new SwingWorker() {
@@ -686,9 +717,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 					get(); //without this, a tile image that failed to rebuild closes the dialog and
 					//the old picture stays up as if it were current
 				} catch (Exception ex) {
-					Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-					Logger.getLogger(TileMapPanel.class.getName()).log(Level.SEVERE, "updating tilemaps", cause);
-					JOptionPane.showMessageDialog(TileMapPanel.this, "The tilemap view was not refreshed:\n" + cause, "Update tilemaps", JOptionPane.ERROR_MESSAGE);
+					refreshFailed(ex.getCause() != null ? ex.getCause() : ex);
 				}
 			}
 
