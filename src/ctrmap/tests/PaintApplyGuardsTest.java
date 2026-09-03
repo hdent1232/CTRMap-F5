@@ -276,6 +276,27 @@ public class PaintApplyGuardsTest {
 		List<String> raw = new ArrayList<>();
 		rawImports(root, raw);
 		check(raw.isEmpty(), "no editor path imports textures into an area without asking: " + raw);
+
+		//The prop editor asks the same question, one step earlier: a prop whose
+		//textures are missing must not even be OFFERED an import into an area
+		//other zones read. Its refusal stood behind three modal dialogs, so
+		//inverting it - importing into the shared area, refusing every private
+		//one with a message naming nobody - was invisible to the battery.
+		List<String> said = ctrmap.Ui.record();
+		boolean refusedShared, refusedOwn;
+		try {
+			refusedShared = shared < 0 || ctrmap.humaninterface.PropEditForm.refuseSharedArea(
+					null, ctrmap.AreaForker.currentArea(shared), shared, "Area", "chip_mado");
+			refusedOwn = own >= 0 && ctrmap.humaninterface.PropEditForm.refuseSharedArea(
+					null, ctrmap.AreaForker.currentArea(own), own, "Area", "chip_mado");
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(refusedShared && said(said, "is also used by"),
+				"a prop needing textures is refused on zone " + shared + "'s shared area, and told which maps"
+				+ " stand in the way: " + said);
+		check(!refusedOwn, "and is not refused on zone " + own + "'s own area");
+		check(said.size() == 1, "the private area was not warned about anything: " + said);
 	}
 
 	/**

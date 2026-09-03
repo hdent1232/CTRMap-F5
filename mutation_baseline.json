@@ -14,17 +14,11 @@
   "sha256": "c7266008436fbf191c7c3a27b230c9b77e1683ef6c7d27466364b03ce4b9dca8"
  },
  "src/ctrmap/humaninterface/GeoEditForm.java": {
-  "survivors": 1,
-  "killed": 0,
+  "survivors": 0,
+  "killed": 1,
   "unmeasured": 1,
-  "lines": [
-   {
-    "line": 230,
-    "kind": "negate-if",
-    "code": "if (p.facesDropped > 0) {"
-   }
-  ],
-  "sha256": "196026387288228fc7273694818c962f0926e0bf7c21b5fea6df0a3cb9734815"
+  "lines": [],
+  "sha256": "a43ddf179ca88b26771fe8474c67bcaa0c8eee065f2809e33d1aafb64f74f3c0"
  },
  "src/ctrmap/humaninterface/TilePainterForm.java": {
   "survivors": 0,
