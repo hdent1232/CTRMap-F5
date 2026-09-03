@@ -88,6 +88,11 @@ public class PaintApplyGuardsTest {
 		everyAreaImportAsksTheSharedQuestion(new File(args.length > 1 ? args[1] : "src"));
 		sameNameDifferentPixelsIsNotSilent();
 		applyCountsTilesThatTookANeighboursGround();
+		aRegionThatCannotBeWrittenStopsTheApply();
+		aDoorPropTheAreaHasNotRegisteredIsAnAreaWrite();
+		//these two fork zone 74's area, so nothing above may run after them
+		cancellingTheSharedAreaQuestionWritesNothing();
+		acceptingTheForkPaintsTheZone();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -465,6 +470,184 @@ public class PaintApplyGuardsTest {
 		check(stop == null, "the Apply went through (stopped by: " + stop + ")");
 		check(report != null && report.contains(borrowed + " painted tile(s) had no ground under them"),
 				"and says the " + borrowed + " tiles took a neighbour's ground: " + report);
+	}
+
+	/**
+	 * The last thing Apply does is write the regions, and it checks that each
+	 * one landed. A workspace file the editor cannot open for writing - the
+	 * region is read-only, or something else has it open - makes storeFile
+	 * return false, and without the refusal that follows, Apply carries on:
+	 * the area is committed with this map's new textures, "Painted map applied"
+	 * is reported, and the map itself is still the old one. That is the exact
+	 * shape of finding 0, arrived at from the other end.
+	 */
+	static void aRegionThatCannotBeWrittenStopsTheApply() throws Exception {
+		forget(Workspace.ArchiveType.FIELD_DATA, 153);
+		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		open(15);
+		paintSand();
+		//getWorkspaceFile extracts it from the archive, so there is a file to lock
+		File region = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, 153);
+		byte[] was = Files.readAllBytes(region.toPath());
+		check(region.setWritable(false) && !region.canWrite(), "fixture: region 153's workspace file is read-only");
+		Exception stop;
+		try {
+			stop = apply(15, new ArrayList<TilePainterForm.Placed>());
+		} finally {
+			region.setWritable(true);
+		}
+		check(stop != null && String.valueOf(stop.getMessage()).contains("could not write region 153"),
+				"a region the workspace cannot write stops the Apply and names it (stopped by: " + stop + ")");
+		check(Arrays.equals(Files.readAllBytes(region.toPath()), was), "the region is exactly as it was");
+		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 21),
+				"and its area was not committed either - no textures for a map that was never written");
+	}
+
+	/**
+	 * The other half of the "does this Apply have to write the area?" question,
+	 * which is what decides whether the user is asked to fork a shared one: a
+	 * placed building whose door prop the area has not registered.
+	 *
+	 * <p>Driven directly, because the end-to-end path cannot separate it. The
+	 * texture half is true for practically every area in the game - the cliff
+	 * faces every painted slope generates come from area 69 and only zone 125
+	 * sits on that area, privately - so a shared area always needs a texture
+	 * write too, and an area that needs none is by definition one nobody
+	 * shares, where the question is not asked either way. The prop half is
+	 * still the whole reason a door was ever registered behind fifteen other
+	 * maps' backs, so it is asserted where it can be seen: with every texture
+	 * already in place (the state a re-apply is in - see
+	 * {@link #retryStillAsksForTheTextures()}), the answer must turn on the
+	 * door prop alone.
+	 */
+	static void aDoorPropTheAreaHasNotRegisteredIsAnAreaWrite() throws Exception {
+		PropDatabase db = PropDatabase.get();
+		BuildingCatalog.Entry door = null;
+		int model = -1;
+		for (BuildingCatalog.Entry e : BuildingCatalog.entries()) {
+			if (e.doorProp == null || "-".equals(e.doorProp)) {
+				continue;
+			}
+			for (PropDatabase.PropModel m : db.models) {
+				if (e.doorProp.equals(m.name) && door == null) {
+					door = e;
+					model = m.modelIndex;
+				}
+			}
+		}
+		check(door != null, "fixture: a catalogue building whose door prop is in the dump ("
+				+ (door == null ? "none" : door.name + ", prop " + door.doorProp + " = model " + model) + ")");
+		if (door == null) {
+			return;
+		}
+		int registered = -1, unregistered = -1;
+		for (int area = 0; area < ad.length && (registered < 0 || unregistered < 0); area++) {
+			byte[] c = ad.getDecompressedEntry(area);
+			if (c == null || c.length < 8 || c[0] != 'A' || c[1] != 'D') {
+				continue;
+			}
+			boolean has = registersProp(area, model);
+			registered = has && registered < 0 ? area : registered;
+			unregistered = !has && unregistered < 0 ? area : unregistered;
+		}
+		check(registered >= 0 && unregistered >= 0, "fixture: area " + registered + " registers model "
+				+ model + " and area " + unregistered + " does not");
+		if (registered < 0 || unregistered < 0) {
+			return;
+		}
+		//nothing left to carry: every texture this paint needs is already there
+		java.util.Map<Integer, Set<String>> carried = new java.util.LinkedHashMap<>();
+		List<TilePainterForm.Placed> none = new ArrayList<>();
+		List<TilePainterForm.Placed> one = new ArrayList<>();
+		one.add(new TilePainterForm.Placed(door, 20, 20));
+		check(!needsAreaWrite(unregistered, none, carried),
+				"an Apply that places nothing and carries nothing does not have to write the area");
+		check(needsAreaWrite(unregistered, one, carried),
+				"placing \"" + door.name + "\" on area " + unregistered + ", which has not registered its door,"
+				+ " does have to write the area (so a shared one is offered the fork first)");
+		check(!needsAreaWrite(registered, one, carried),
+				"and placing it on area " + registered + ", which already registers that door, does not");
+	}
+
+	/** needsAreaWrite, reporting a throw as the failed check it is. */
+	static boolean needsAreaWrite(int area, List<TilePainterForm.Placed> placed,
+			java.util.Map<Integer, Set<String>> texNeeds) {
+		try {
+			return TilePainterForm.needsAreaWrite(area, placed, texNeeds);
+		} catch (Exception ex) {
+			check(false, "needsAreaWrite(" + area + ", " + placed.size() + " placed) threw " + ex);
+			return false;
+		}
+	}
+
+	/** True when an area's prop registry already carries a model index. */
+	static boolean registersProp(int area, int model) throws Exception {
+		ctrmap.formats.propdata.ADPropRegistry reg = new ctrmap.formats.propdata.ADPropRegistry(
+				new ctrmap.formats.containers.AD(Workspace.getWorkspaceFile(
+						Workspace.ArchiveType.AREA_DATA, area)), null, false);
+		for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
+			if (e.model == model) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Zone 74's area is zones 72 and 73's too. Apply asks before it writes one,
+	 * and Cancel means nothing happens - the answer the dialog gives when
+	 * nobody is there to click, which is also what a headless battery gets.
+	 * With the refusal that follows the cancel deleted, the Apply carried on
+	 * into area -1 and the user was told the map had been painted.
+	 */
+	static void cancellingTheSharedAreaQuestionWritesNothing() throws Exception {
+		open(74);
+		paintSand();
+		List<String> before = new ArrayList<>(Workspace.persist_paths);
+		List<String> said = ctrmap.Ui.record("Cancel");
+		Exception stop;
+		try {
+			stop = apply(74, new ArrayList<TilePainterForm.Placed>());
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said(said, "SHARES its area"), "painting a zone whose area other zones use asks first: " + said);
+		check(stop != null && String.valueOf(stop.getMessage()).contains("Apply cancelled - nothing was changed."),
+				"cancelling that question stops the Apply and says so (stopped by: " + stop + ")");
+		check(newlyPersisted(before).isEmpty(), "nothing was written by the cancelled Apply: " + newlyPersisted(before));
+		check(pristine(Workspace.ArchiveType.FIELD_DATA, gr, 272), "region 272 is byte-identical to the archive");
+		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 43), "area 43 is byte-identical to the archive");
+	}
+
+	/** The other answer: the fork is taken, and the paint lands in the copy. */
+	static void acceptingTheForkPaintsTheZone() throws Exception {
+		open(74);
+		paintSand();
+		List<String> said = ctrmap.Ui.record("Give this zone its own area");
+		Exception stop;
+		try {
+			stop = apply(74, new ArrayList<TilePainterForm.Placed>());
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said(said, "SHARES its area"), "the same question is asked: " + said);
+		check(stop == null, "accepting the fork applies the paint (stopped by: " + stop + ")");
+		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 43),
+				"and zones 72 and 73's area 43 is still byte-identical to the archive");
+		int now = ctrmap.AreaForker.currentArea(74);
+		check(now != 43, "zone 74 now has an area of its own (" + now + ")");
+		check(sandTriangles(new GR(Workspace.getWorkspaceFile(
+				Workspace.ArchiveType.FIELD_DATA, 272)).getFile(1)) > 0, "and its map carries the painted sand floor");
+	}
+
+	/** True when one of the messages the program gave contains the text. */
+	static boolean said(List<String> said, String text) {
+		for (String s : said) {
+			if (s.contains(text)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	//--- fixtures -------------------------------------------------------------

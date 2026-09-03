@@ -16,6 +16,15 @@ import static ctrmap.CtrmapMainframe.*;
  * <p>Fork-at-the-edit rather than fork-at-zone-load: a shared area is only a
  * problem when something is about to be written, and prompting on every zone
  * load would nag constantly.
+ *
+ * <p>The question goes through {@link ctrmap.Ui} rather than straight to
+ * JOptionPane. It is the last thing standing between a paint and 400-odd maps
+ * it was never meant to touch, and while it was a bare option dialog nothing on
+ * the far side of it could be tested at all: a headless suite got a
+ * HeadlessException instead of an answer, so "the user cancelled and nothing
+ * was written" was unreachable code, and deleting the refusal it leads to left
+ * the whole battery green. Ui also answers "nobody is there" with CLOSED, which
+ * is why a null pick below means cancel and never consent.
  */
 public class AreaForkPrompt {
 
@@ -43,17 +52,17 @@ public class AreaForkPrompt {
 			return currentArea; //already this zone's own area
 		}
 		String[] opts = {"Give this zone its own area", "Edit the shared area anyway", "Cancel"};
-		int pick = JOptionPane.showOptionDialog(parent,
+		Object pick = ctrmap.Ui.input(parent,
 				"This zone SHARES its area with " + sharers + " other zone(s)" + namedSharers(zoneIndex, currentArea) + ".\n"
 				+ "An area holds the atmosphere (fog/lighting), water animations, prop\n"
 				+ "registry and NPC models - so " + whatEdit + " here would change those zones too.\n\n"
 				+ "Give this zone its OWN private area first? (Recommended. Pure data -\n"
 				+ "the copy starts identical, so nothing looks different until you edit it.)",
-				"Shared area", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, opts, opts[0]);
-		if (pick == 2 || pick == JOptionPane.CLOSED_OPTION) {
-			return -1;
+				"Shared area", JOptionPane.QUESTION_MESSAGE, opts, opts[0]);
+		if (pick == null || opts[2].equals(pick)) {
+			return -1; //cancelled, or nobody there to answer
 		}
-		if (pick == 1) {
+		if (opts[1].equals(pick)) {
 			return currentArea; //deliberate game-wide edit
 		}
 		try {
@@ -66,10 +75,10 @@ public class AreaForkPrompt {
 			}
 			return r.newArea;
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(parent,
+			ctrmap.Ui.error(parent,
 					"Could not give this zone its own area:\n" + ex.getMessage()
 					+ "\n\nThe edit was not applied.",
-					"Shared area", JOptionPane.ERROR_MESSAGE);
+					"Shared area");
 			return -1;
 		}
 	}

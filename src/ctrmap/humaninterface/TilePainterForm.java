@@ -610,7 +610,7 @@ public class TilePainterForm {
 	 * Asked before anything is written, so a shared area can be forked (or the
 	 * Apply refused) once, up front, for the whole edit.
 	 */
-	static boolean needsAreaWrite(int areaId, java.util.List<Placed> placed,
+	public static boolean needsAreaWrite(int areaId, java.util.List<Placed> placed,
 			java.util.Map<Integer, java.util.Set<String>> texNeeds) throws Exception {
 		ctrmap.formats.containers.AD ad = areaContainer(areaId);
 		byte[] world = ad.getFile(11), prop = ad.getFile(1);
