@@ -342,7 +342,7 @@ public class BuildingHarvester {
 		 * family another family outweighed. A component nothing recognises is
 		 * named for its size, as it always was. A tie keeps the earlier family.
 		 */
-		String hint() {
+		public String hint() {
 			int bestFaces = 0;
 			String[] best = null;
 			for (String[] family : HINT_FAMILIES) {
