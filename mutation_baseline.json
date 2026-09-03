@@ -27,15 +27,10 @@
   "sha256": "196026387288228fc7273694818c962f0926e0bf7c21b5fea6df0a3cb9734815"
  },
  "src/ctrmap/humaninterface/TilePainterForm.java": {
-  "survivors": 4,
-  "killed": 21,
+  "survivors": 3,
+  "killed": 22,
   "unmeasured": 4,
   "lines": [
-   {
-    "line": 525,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"could not write region \" + dest + \" (file locked or read-only?)\");"
-   },
    {
     "line": 551,
     "kind": "negate-if",
