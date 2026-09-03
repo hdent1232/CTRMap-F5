@@ -1,8 +1,11 @@
 package ctrmap.formats.h3d;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -428,17 +431,14 @@ public class BchTexturePack {
 
 	/**
 	 * Plans a cross-area texture carry against the target's current pack bytes.
-	 * Refuses a shared target area outright.
+	 * Refuses a shared target area outright, and names any texture the target
+	 * already holds under a different picture than the donor's - importing
+	 * cannot fix that one, but the user has to be told which version they are
+	 * looking at.
 	 */
 	public static Carry planCarry(int donorArea, int targetArea, List<String> needed,
 			byte[] targetWorldPack, byte[] targetPropPack, int editingZone) throws Exception {
 		assertNotShared(targetArea, editingZone);
-		Carry c = new Carry();
-		c.subfile = isTexturePack(targetWorldPack) ? 11 : 1;
-		c.imported.addAll(missingIn(targetWorldPack, targetPropPack, needed));
-		if (c.imported.isEmpty()) {
-			return c;
-		}
 		java.io.File donFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, donorArea);
 		if (donFile == null) {
 			throw new IllegalStateException("area files unavailable");
@@ -448,8 +448,21 @@ public class BchTexturePack {
 		if (donPack == null || !isTexturePack(donPack)) {
 			donPack = don.getFile(1);
 		}
-		c.pack = importTextures(c.subfile == 11 ? targetWorldPack : targetPropPack, donPack, c.imported);
-		c.note = "  +" + c.imported.size() + " textures carried to this area";
+		Carry c = new Carry();
+		c.subfile = isTexturePack(targetWorldPack) ? 11 : 1;
+		c.imported.addAll(missingIn(targetWorldPack, targetPropPack, needed));
+		StringBuilder note = new StringBuilder();
+		for (String clash : clashesWith(targetWorldPack, targetPropPack, donPack, needed)) {
+			note.append("  ! \"").append(clash).append("\" is already in this area under different pixels")
+					.append(" than area ").append(donorArea).append("'s - this map draws its own version\n");
+		}
+		if (c.imported.isEmpty()) {
+			note.append("  (textures already present)");
+		} else {
+			c.pack = importTextures(c.subfile == 11 ? targetWorldPack : targetPropPack, donPack, c.imported);
+			note.append("  +").append(c.imported.size()).append(" textures carried to this area");
+		}
+		c.note = note.toString();
 		return c;
 	}
 
@@ -469,6 +482,44 @@ public class BchTexturePack {
 					+ shared + ".\nCarrying textures into it would change those maps."
 					+ "\nGive this zone its own area first (Map > Fork area).");
 		}
+	}
+
+	/** True when two same-named textures are not the same picture. */
+	public static boolean differs(Texture a, Texture b) {
+		return a.format != b.format || a.dimParam != b.dimParam || !Arrays.equals(a.data, b.data);
+	}
+
+	/**
+	 * Of {@code needed}, the names the target already holds but under a
+	 * DIFFERENT picture from the donor's. Importing is a no-op for those, so
+	 * the map draws the target area's version - which is defensible (renaming
+	 * would break the material's reference) but must not be silent.
+	 */
+	public static List<String> clashesWith(byte[] worldPack, byte[] propPack, byte[] donorPack, List<String> needed) {
+		List<String> clashes = new ArrayList<>();
+		if (donorPack == null || !isTexturePack(donorPack)) {
+			return clashes;
+		}
+		List<Texture> donor = null;
+		for (byte[] pk : new byte[][]{worldPack, propPack}) {
+			if (pk == null || !isTexturePack(pk)) {
+				continue;
+			}
+			for (Texture t : parse(pk)) {
+				if (!needed.contains(t.name) || clashes.contains(t.name)) {
+					continue;
+				}
+				if (donor == null) {
+					donor = parse(donorPack);
+				}
+				for (Texture d : donor) {
+					if (d.name.equals(t.name) && differs(t, d)) {
+						clashes.add(t.name);
+					}
+				}
+			}
+		}
+		return clashes;
 	}
 
 	/** Of {@code needed}, the names neither of the area's packs holds. */
@@ -513,23 +564,25 @@ public class BchTexturePack {
 	}
 
 	/**
-	 * Imports several textures from one donor pack in a single rebuild.
-	 * Already-present names are skipped; if nothing needs importing the target
-	 * is returned unchanged (same array). Throws IllegalArgumentException when
-	 * a requested texture is neither in the target nor in the donor.
+	 * Imports several textures from one donor pack in a single rebuild. A name
+	 * the target already holds under the SAME picture is skipped; if nothing
+	 * needs importing the target is returned unchanged (same array). Throws
+	 * IllegalArgumentException when a requested texture is neither in the
+	 * target nor in the donor, and IllegalStateException when the target holds
+	 * the name under a DIFFERENT picture - the caller asked for the donor's
+	 * pixels and would silently have got the target's, which is how a brush
+	 * came out a different shade from its own palette swatch. Renaming is not
+	 * an option (the material references the name), so refusing is.
 	 */
 	public static byte[] importTextures(byte[] targetPack, byte[] donorPack, List<String> textureNames) {
 		List<Texture> target = parse(targetPack);
-		Set<String> present = new HashSet<>();
+		Map<String, Texture> present = new HashMap<>();
 		for (Texture t : target) {
-			present.add(t.name);
+			present.put(t.name, t);
 		}
 		List<Texture> toAdd = new ArrayList<>();
 		List<Texture> donor = null;
 		for (String name : textureNames) {
-			if (present.contains(name)) {
-				continue;
-			}
 			if (donor == null) {
 				donor = parse(donorPack);
 			}
@@ -540,11 +593,19 @@ public class BchTexturePack {
 					break;
 				}
 			}
+			Texture here = present.get(name);
+			if (here != null) {
+				if (found != null && differs(here, found)) {
+					throw new IllegalStateException("texture \"" + name + "\" is already here, but it is a"
+							+ " different picture from the donor's - importing it would draw the wrong one");
+				}
+				continue;
+			}
 			if (found == null) {
 				throw new IllegalArgumentException("donor pack has no texture " + name);
 			}
 			toAdd.add(found);
-			present.add(name);
+			present.put(name, found);
 		}
 		if (toAdd.isEmpty()) {
 			return targetPack;
