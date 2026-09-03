@@ -46,11 +46,18 @@ import java.util.TreeSet;
  *     loaded header still named the old matrix), so a composite Apply on a
  *     shared matrix skipped every region and reported "Painted map applied"
  *     with nothing painted.</li>
+ * <li>A region the workspace could not open for writing was reported as
+ *     applied: every storeFile returned false, the area was committed with the
+ *     new map's textures, and the map on disk was still the retail one.</li>
  * </ol>
  *
- * Runs headless in a throwaway workspace over the pristine dump. The only
- * dialog on the path is the shared-area prompt; a headless JVM makes it throw,
- * which is a refusal like any other and must have written nothing.
+ * Runs headless in a throwaway workspace over the pristine dump. The two
+ * questions on the path - fork this shared area? wire these doors? - go
+ * through {@link ctrmap.Ui}, so the suite answers them and reads what was
+ * asked. While they were bare option dialogs a headless JVM answered both with
+ * a HeadlessException, and everything past them was unreachable: cancelling
+ * the fork, skipping the wiring, and both refusals in between could be deleted
+ * without a single suite noticing.
  *
  * Usage: java ctrmap.tests.PaintApplyGuardsTest &lt;pristine-dump-root&gt; [src]
  */
@@ -85,6 +92,7 @@ public class PaintApplyGuardsTest {
 		sharedMatrixIsPaintedAfterTheFork();
 		paintedCliffsCarryTheirTexture();
 		anExtraThatFailsDoesNotUnsayTheApply();
+		theDoorWarpAnswerIsObeyed();
 		everyAreaImportAsksTheSharedQuestion(new File(args.length > 1 ? args[1] : "src"));
 		sameNameDifferentPixelsIsNotSilent();
 		applyCountsTilesThatTookANeighboursGround();
@@ -275,18 +283,12 @@ public class PaintApplyGuardsTest {
 	 * the door-warp wiring, the sign wiring - is a note on a successful Apply,
 	 * never an "Apply failed" over a map that was applied. The warp step used
 	 * to throw straight out of applyToZone, and PaintForm then put the preview
-	 * back and told the user nothing had happened. Here the warp dialog itself
-	 * cannot open (headless), which is exactly the shape of that failure.
+	 * back and told the user nothing had happened. Here the wiring is asked for
+	 * and the zone's own file cannot be written, which is that failure exactly.
 	 */
 	static void anExtraThatFailsDoesNotUnsayTheApply() throws Exception {
-		BuildingCatalog.Entry gym = null;
-		for (BuildingCatalog.Entry e : BuildingCatalog.entries()) {
-			if ("Gym".equals(e.name)) {
-				gym = e;
-			}
-		}
+		BuildingCatalog.Entry gym = gym();
 		if (gym == null) {
-			System.out.println("  skip: no Gym in the building catalogue");
 			return;
 		}
 		forget(Workspace.ArchiveType.FIELD_DATA, 153);
@@ -295,10 +297,81 @@ public class PaintApplyGuardsTest {
 		paintSand();
 		List<TilePainterForm.Placed> placed = new ArrayList<>();
 		placed.add(new TilePainterForm.Placed(gym, 20, 20));
-		Exception stop = apply(15, placed);
+		File zone = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, 15);
+		check(zone.setWritable(false) && !zone.canWrite(), "fixture: zone 15's own file cannot be written");
+		Exception stop;
+		ctrmap.Ui.record("Link retail interiors (enter-only)");
+		try {
+			stop = apply(15, placed);
+		} finally {
+			ctrmap.Ui.stopRecording();
+			zone.setWritable(true);
+		}
 		check(stop == null, "an Apply whose door wiring cannot run still reports success (stopped by: " + stop + ")");
 		File region = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, 153);
 		check(sandTriangles(new GR(region).getFile(1)) > 0, "and the map it wrote is on disk");
+		check(report != null && report.contains("Door wiring failed"),
+				"and the wiring that failed is a line in the result, not a lost message: " + report);
+	}
+
+	/**
+	 * The door-warp question, and the answer being obeyed. Skip has to mean
+	 * skip: wiring warps the user declined edits the zone's entities and, in
+	 * clone mode, spends a free base zone on an interior nobody asked for.
+	 * Nothing had ever run past this question - it was a bare option dialog, so
+	 * a headless suite got a HeadlessException instead of an answer and the
+	 * branch below it was unreachable code.
+	 */
+	static void theDoorWarpAnswerIsObeyed() throws Exception {
+		BuildingCatalog.Entry gym = gym();
+		if (gym == null) {
+			return;
+		}
+		List<TilePainterForm.Placed> placed = new ArrayList<>();
+		placed.add(new TilePainterForm.Placed(gym, 20, 20));
+
+		forget(Workspace.ArchiveType.FIELD_DATA, 153);
+		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		open(15);
+		paintSand();
+		List<String> said = ctrmap.Ui.record("Skip");
+		Exception stop;
+		try {
+			stop = apply(15, placed);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said(said, "have doors. Wire them now?"), "a placed building with a door asks whether to wire it: " + said);
+		check(stop == null, "the Apply goes through (stopped by: " + stop + ")");
+		check(report != null && !report.contains("door warp(s) added") && !report.contains("Door wiring failed"),
+				"Skip wires nothing at all - not even an attempt: " + report);
+		check(report != null && report.contains("door(s) left unwired"),
+				"and the result says the door is still unwired: " + report);
+
+		forget(Workspace.ArchiveType.FIELD_DATA, 153);
+		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		open(15);
+		paintSand();
+		ctrmap.Ui.record("Link retail interiors (enter-only)");
+		try {
+			stop = apply(15, placed);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(stop == null, "asking for retail interiors applies too (stopped by: " + stop + ")");
+		check(report != null && report.contains("door warp(s) added"),
+				"and that answer really wires the door: " + report);
+	}
+
+	/** The catalogue's Gym, or null with a printed skip. */
+	static BuildingCatalog.Entry gym() throws Exception {
+		for (BuildingCatalog.Entry e : BuildingCatalog.entries()) {
+			if ("Gym".equals(e.name)) {
+				return e;
+			}
+		}
+		System.out.println("  skip: no Gym in the building catalogue");
+		return null;
 	}
 
 	/**
