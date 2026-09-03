@@ -288,11 +288,21 @@ public class TexturePackImportTest {
 		{
 			int tArea = areas.get(0);
 			byte[] target = packs.get(tArea);
-			String existing = parsed.get(tArea).get(0).name;
-			//donor also has to be valid; use any other pack (name need not exist there - present names are skipped before the donor is consulted)
 			byte[] donor = packs.get(areas.get(1));
-			byte[] res = BchTexturePack.importTexture(target, donor, existing);
-			if (res != target) {
+			//A name present under the SAME picture is the no-op case. Present
+			//under a different one is refused instead - deliberately, so a
+			//brush cannot be drawn in the wrong version of its own texture -
+			//and PaintApplyGuardsTest is what holds that.
+			String existing = null;
+			for (BchTexturePack.Texture t : parsed.get(tArea)) {
+				if (BchTexturePack.clashesWith(target, null, donor, Arrays.asList(t.name)).isEmpty()) {
+					existing = t.name;
+					break;
+				}
+			}
+			if (existing == null) {
+				fail("area " + tArea + " and area " + areas.get(1) + " disagree about every shared texture name");
+			} else if (BchTexturePack.importTexture(target, donor, existing) != target) {
 				fail("importing already-present texture must return the target unchanged (no-op semantics)");
 			} else {
 				System.out.println("IDEMPOTENCE: already-present import is a no-op (same array returned)");
