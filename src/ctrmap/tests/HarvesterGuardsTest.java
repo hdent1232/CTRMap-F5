@@ -1,11 +1,21 @@
 package ctrmap.tests;
 
 import ctrmap.Workspace;
+import ctrmap.formats.containers.GR;
 import ctrmap.formats.garc.GARC;
+import ctrmap.formats.garc.GarcRebuilder;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.BuildingCatalog;
+import ctrmap.formats.h3d.MapPrefab;
+import ctrmap.formats.tilemap.PaintedRegionBuilder;
+import ctrmap.formats.tilemap.TerrainLighting;
+import ctrmap.formats.tilemap.TilePalette;
 import ctrmap.tools.BuildingHarvester;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -41,6 +51,13 @@ import java.util.Set;
  *     building-family material, where building owns more of it.</li>
  * <li>...and only when the winning family beats the biggest single material no
  *     family recognises, otherwise the cut is named for its size.</li>
+ * <li>Only WHOLE cuts are catalogued. The live defect: the gate accepted a cut
+ *     that landed at least ONE piece, so fifteen cuts of skinned regions got in
+ *     on the strength of the grass base's sea foam and placed three of their
+ *     thirty-six pieces under a full-size invisible wall. That is not a
+ *     function's answer but a decision the sweep makes about each candidate,
+ *     so the harvester is RUN - on a dump cut down to the regions swept above -
+ *     and every row it emits has to place whole.</li>
  * <li>A structure's baseY is its own footing. The live defect: the LOWEST
  *     ground under the whole box gave a cliff-top lamp standing at 153 a baseY
  *     of 0 - the sea at the foot of the cliff - and the palette stamped it 153
@@ -87,11 +104,13 @@ public class HarvesterGuardsTest {
 		materialFamiliesAreRead();
 
 		GARC gr = new GARC(garcFile);
-		List<BuildingHarvester.Comp> comps = sweep(gr, wanted);
+		Set<Integer> regions = donorRegions(wanted);
+		List<BuildingHarvester.Comp> comps = sweep(gr, regions);
 		check(comps.size() > 20, "the sweep found " + comps.size() + " structures to judge");
 		aCutIsNamedAfterWhatDominatesIt(comps);
 		anUnrecognisedCutIsNamedForItsSize(comps);
 		aStructureStandsOnItsOwnFooting(comps);
+		onlyWholeCutsAreCatalogued(dump, gr, regions);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -224,8 +243,111 @@ public class HarvesterGuardsTest {
 				+ (wrong.isEmpty() ? "" : " - " + wrong));
 	}
 
-	/** Non-terrain components of the first donor regions the catalogue uses. */
-	static List<BuildingHarvester.Comp> sweep(GARC gr, int wanted) {
+	/**
+	 * Runs the harvester for real and requires every row it emits to place
+	 * whole.
+	 *
+	 * <p>The gate that decides this is a statement inside the sweep, not a
+	 * function anything can call, so the only honest way to measure it is to
+	 * sweep. The dump is cut down first: a FieldData archive holding only the
+	 * regions swept above (plus region 1, the harvester's own grass base),
+	 * every other slot a four-byte stub the sweep skips as "not a map model".
+	 * The zone, matrix and gametext archives are the real ones, so the regions
+	 * still resolve to the areas and place names they really have. Nothing
+	 * under the dump is opened for writing.
+	 */
+	static void onlyWholeCutsAreCatalogued(File dump, GARC gr, Set<Integer> regions) throws Exception {
+		Set<Integer> keep = new LinkedHashSet<>(regions);
+		keep.add(1);                       //the base the harvester stamps candidates onto
+		//...and a contiguous block of the dump's own first regions, catalogued
+		//or not: the catalogue's donor regions are by construction regions
+		//whose cuts PASSED, and a candidate pool made only of those is a pool
+		//chosen by the very gate under test.
+		for (int r = 0; r < 24; r++) {
+			keep.add(r);
+		}
+		File romfs = Scratch.dir("ctrmap_harvest_dump");
+		for (Workspace.ArchiveType t : new Workspace.ArchiveType[]{
+			Workspace.ArchiveType.ZONE_DATA, Workspace.ArchiveType.MAP_MATRIX, Workspace.ArchiveType.GAMETEXT}) {
+			String rel = Workspace.getArchivePath(t, Workspace.GameType.ORAS);
+			File dst = new File(romfs.getAbsolutePath() + rel);
+			dst.getParentFile().mkdirs();
+			Files.copy(new File(dump.getAbsolutePath() + rel).toPath(), dst.toPath(),
+					StandardCopyOption.REPLACE_EXISTING);
+		}
+		int n = 0;
+		for (int r : keep) {
+			n = Math.max(n, r + 1);
+		}
+		List<byte[]> stored = new ArrayList<>();
+		for (int i = 0; i < n; i++) {
+			stored.add(keep.contains(i) ? gr.getStoredEntry(i) : new byte[]{0, 0, 0, 0});
+		}
+		File field = new File(romfs.getAbsolutePath()
+				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.GameType.ORAS));
+		field.getParentFile().mkdirs();
+		GarcRebuilder.write(gr.file, field, stored);
+
+		File tsv = Scratch.file("harvest_tsv");
+		BuildingHarvester.main(new String[]{romfs.getAbsolutePath(), tsv.getAbsolutePath()});
+
+		List<String> rows = new ArrayList<>();
+		for (String line : Files.readAllLines(tsv.toPath(), StandardCharsets.UTF_8)) {
+			if (!line.startsWith("#") && !line.trim().isEmpty()) {
+				rows.add(line);
+			}
+		}
+		check(!rows.isEmpty(), "the harvester catalogued " + rows.size() + " cuts out of "
+				+ keep.size() + " regions");
+
+		int dim = PaintedRegionBuilder.DIM;
+		TilePalette[][] grid = new TilePalette[dim][dim];
+		for (TilePalette[] row : grid) {
+			Arrays.fill(row, TilePalette.GRASS);
+		}
+		byte[] base = PaintedRegionBuilder.build(sub(gr.getDecompressedEntry(1), 1), grid, null, null,
+				TerrainLighting.daytime(), false).model;
+		File rf = Scratch.file("harvest_row_region");
+		List<String> broken = new ArrayList<>();
+		for (String row : rows) {
+			String[] f = row.split("\t");
+			String name = f[1];
+			int region = Integer.parseInt(f[2]);
+			int tx0 = Integer.parseInt(f[4]), ty0 = Integer.parseInt(f[5]);
+			int tx1 = Integer.parseInt(f[6]), ty1 = Integer.parseInt(f[7]);
+			int baseY = Integer.parseInt(f[8]);
+			try (FileOutputStream fo = new FileOutputStream(rf)) {
+				fo.write(gr.getDecompressedEntry(region));
+			}
+			String why = null;
+			MapPrefab p = MapPrefab.extract(new GR(rf), tx0, ty0, tx1, ty1, "check");
+			if (p == null || p.pieces.isEmpty()) {
+				why = "no geometry in the box";
+			} else {
+				MapPrefab.StampResult sr = p.stampGeometry(base, 3, 3, -baseY);
+				if (!sr.missingMaterials.isEmpty()) {
+					why = sr.missingMaterials.size() + " of " + p.pieces.size()
+							+ " pieces cannot be placed: " + sr.missingMaterials;
+				}
+				for (MapPrefab.Piece pc : p.pieces) {
+					if (pc.skinned) {
+						why = "piece " + pc.material + " is skinned - it lands only where a map"
+								+ " already carries that material";
+						break;
+					}
+				}
+			}
+			if (why != null && broken.size() < 3) {
+				broken.add("\"" + name + "\" (region " + region + " " + tx0 + "," + ty0 + ".." + tx1 + "," + ty1
+						+ "): " + why);
+			}
+		}
+		check(broken.isEmpty(), "every cut the harvester catalogued places whole on a painted map"
+				+ (broken.isEmpty() ? "" : " - " + broken));
+	}
+
+	/** The first donor regions the shipped catalogue cuts from - regions with things in them. */
+	static Set<Integer> donorRegions(int wanted) {
 		Set<Integer> regions = new LinkedHashSet<>();
 		for (BuildingCatalog.Entry e : BuildingCatalog.entries()) {
 			if (regions.size() >= wanted) {
@@ -233,6 +355,11 @@ public class HarvesterGuardsTest {
 			}
 			regions.add(e.donorRegion);
 		}
+		return regions;
+	}
+
+	/** Non-terrain components of those regions. */
+	static List<BuildingHarvester.Comp> sweep(GARC gr, Set<Integer> regions) {
 		List<BuildingHarvester.Comp> out = new ArrayList<>();
 		for (int r : regions) {
 			byte[] rc = gr.getDecompressedEntry(r);
