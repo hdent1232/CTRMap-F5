@@ -124,16 +124,10 @@
   "sha256": "d1db32b011eacb3f967efec35ed399445ea10187801bba4ed64137c2453fe6e5"
  },
  "src/ctrmap/formats/tilemap/PaintedRegionBuilder.java": {
-  "survivors": 1,
-  "killed": 10,
+  "survivors": 0,
+  "killed": 11,
   "unmeasured": 1,
-  "lines": [
-   {
-    "line": 642,
-    "kind": "negate-if",
-    "code": "if (rd >= 0) {"
-   }
-  ],
+  "lines": [],
   "sha256": "9298ff605b3506fa2ab4caffbe3ea30ad72bf1976096c208198d3b3dc053a907"
  },
  "src/ctrmap/humaninterface/PaintForm.java": {
