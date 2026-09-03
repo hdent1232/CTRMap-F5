@@ -218,6 +218,40 @@ public class DataSafetyGuardsTest {
 		check(!entry(form, 1).endsWith("<no destination>"), "the dropdown follows the save: " + entry(form, 1));
 		check(e.warps.size() == 2 && e.warpCount == 2, "the list and its count agree");
 
+		//Save on an empty destination field. Every check above saves a warp
+		//whose destination IS filled in, and on that path the hardened code and
+		//the old code agree - mutation testing reverted saveEntry's empty-field
+		//handling and the whole battery still passed. Cleared fields reach
+		//saveEntry whenever the user blanks one before pressing Save, and the
+		//old cast of a null Integer threw out of the button handler.
+		form.addEntry(new Point(21, 21));
+		form.setWarp(2);
+		((JComboBox<?>) field(form, "tgtZone")).setSelectedIndex(-1);
+		((JFormattedTextField) field(form, "tgtWarp")).setValue(null);
+		try {
+			form.saveEntry();
+			check(e.warps.get(2).isUnset(), "Save with the destination fields cleared leaves the warp unset");
+			try {
+				e.assembleData();
+				System.out.println("  FAIL: a zone saved a warp whose destination was never chosen");
+				fails++;
+			} catch (IllegalStateException ex) {
+				System.out.println("  ok: and the zone still refuses to save it");
+			}
+		} catch (RuntimeException ex) {
+			System.out.println("  FAIL: Save with the destination fields cleared threw " + ex);
+			fails++;
+		}
+		form.setWarp(2);
+		form.removeEntry();
+
+		//Save straight after a reload, with no entry selected. warpIndex is
+		//kept across loads, so a stale one from the previous zone would write
+		//this zone's warp into whatever slot was selected in the last one.
+		form.loadFromEntities(e);
+		form.saveEntry();
+		check(e.warps.size() == 2 && e.warps.get(0) == a, "Save before anything is selected writes nothing");
+
 		//a destination that no longer exists
 		ZoneEntities.Warp dangling = new ZoneEntities.Warp();
 		dangling.targetZone = zonePnl.zones.length;
