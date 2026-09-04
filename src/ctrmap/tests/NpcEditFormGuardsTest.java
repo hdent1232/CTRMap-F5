@@ -1,5 +1,6 @@
 package ctrmap.tests;
 
+import com.jogamp.opengl.GL2;
 import ctrmap.CtrmapMainframe;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
@@ -8,6 +9,7 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.gfcollision.GRCollisionFile;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.BchMapModel;
+import ctrmap.formats.h3d.RandomAccessBAIS;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.npcreg.NPCRegistry;
 import ctrmap.formats.text.GFMessageFile;
@@ -24,6 +26,7 @@ import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
@@ -75,8 +78,15 @@ import javax.swing.JSpinner;
  *     behind the modal "Add NPC / object" chooser, and the four null tests
  *     inside methods handed a live GL context. The chooser is answerable now;
  *     the GL decisions moved out of the GL calls into modelledNPCs() and
- *     ownedModels(), which are asked here directly. Rendering itself is still
- *     untested - only what it would render is.</li>
+ *     ownedModels(), which are asked here directly.</li>
+ * <li>Asking the decision was not enough for the outline. {@code boxedNPC(i)}
+ *     was asserted, but its one call site - the {@code if} inside renderCM3D -
+ *     was not, and inverting that line kept every check above green while the
+ *     red box moved to every NPC EXCEPT the one being edited. The outline is
+ *     the only thing on screen that says which record the NPC tool acts on, so
+ *     a user would drag the boxed neighbour and watch a different NPC move.
+ *     The frame is now drawn against a recording GL2 and the outline's world
+ *     position is read back out of it.</li>
  * </ol>
  *
  * Usage: java ctrmap.tests.NpcEditFormGuardsTest &lt;pristine dump root&gt;
@@ -110,6 +120,7 @@ public class NpcEditFormGuardsTest {
 			addTemplateStopsAtTheCeiling(zo);
 			viewportDrawsOnlyModelledNPCs(zo, gr);
 			onlyTheEditedNPCIsBoxed(zo);
+			theFrameOutlinesTheEditedNPC(zo, gr);
 		}
 		altitudeFromMesh();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -628,6 +639,79 @@ public class NpcEditFormGuardsTest {
 		} finally {
 			CtrmapMainframe.tool = was;
 		}
+	}
+
+	/**
+	 * The outline as the frame actually draws it, not as the decision behind it
+	 * answers. {@link #onlyTheEditedNPCIsBoxed} asks {@code boxedNPC} directly;
+	 * the {@code if} that consults it inside renderCM3D is a line of its own,
+	 * and with that line inverted every check in this suite still passed while
+	 * the red box stood around every NPC except the edited one.
+	 *
+	 * <p>No GL context exists here, and none is needed: the frame is drawn with
+	 * models that record what they were asked to draw instead of drawing it, so
+	 * the GL2 handed down is never touched. Every model in the registry is one
+	 * of them, so "which NPC was outlined" is answered by position - the same
+	 * world position updateH3D puts the model at.
+	 */
+	static void theFrameOutlinesTheEditedNPC(GARC zo, GARC gr) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		NPCRegistry reg = registryFor(e, gr);
+		List<float[]> drawn = new ArrayList<>();
+		List<float[]> outlined = new ArrayList<>();
+		byte[] bch = mapModel(gr);
+		for (Integer uid : new ArrayList<>(reg.models.keySet())) {
+			reg.models.put(uid, recordingModel(bch, drawn, outlined));
+		}
+		NPCEditForm form = new NPCEditForm();
+		form.loadFromEntities(e, reg);
+		form.setNPC(5);
+		AbstractTool was = CtrmapMainframe.tool;
+		try {
+			CtrmapMainframe.tool = headlessTool();
+			check(form.modelledNPCs().length > 2 && form.npcIndex == 5,
+					"fixture: the frame draws " + form.modelledNPCs().length + " NPCs and the form is editing NPC 5");
+			form.renderCM3D(null);
+			ZoneEntities.NPC npc = e.npcs.get(5);
+			float wx = npc.xTile * 18f + 9f;
+			float wz = npc.yTile * 18f + 9f;
+			check(drawn.size() == form.modelledNPCs().length, "the frame drew every modelled NPC (" + drawn.size() + ")");
+			check(outlined.size() == 1, "and outlined exactly one of them (" + outlined.size() + ")");
+			float[] at = outlined.isEmpty() ? null : outlined.get(0);
+			check(at != null && at[0] == wx && at[1] == wz,
+					"the outline stands on the NPC being edited, at (" + wx + ", " + wz + ") - drawn at "
+					+ (at == null ? "nowhere" : "(" + at[0] + ", " + at[1] + ")"));
+		} finally {
+			CtrmapMainframe.tool = was;
+		}
+	}
+
+	/**
+	 * A MoveModel that remembers what it was asked to draw. It is parsed from
+	 * real BCH bytes the way {@link ctrmap.formats.h3d.BCHFile} parses model 0,
+	 * because H3DModel has no constructor that does not parse one; the buffer is
+	 * taken from the BCHFile that already relocated it, which is why that field
+	 * is read reflectively rather than cloned again from the source bytes.
+	 */
+	static H3DModel recordingModel(byte[] bch, final List<float[]> drawn, final List<float[]> outlined) throws Exception {
+		BCHFile f = new BCHFile(bch);
+		Field bufField = BCHFile.class.getDeclaredField("buf");
+		bufField.setAccessible(true);
+		byte[] buf = (byte[]) bufField.get(f);
+		RandomAccessBAIS in = new RandomAccessBAIS(new ByteArrayInputStream(buf));
+		in.seek(f.contentHeader.modelsPointerTableOffset);
+		return new H3DModel(in, buf, f.header) {
+			@Override
+			public void render(GL2 gl) {
+				drawn.add(new float[]{worldLocX, worldLocZ});
+			}
+
+			@Override
+			public void renderBox(GL2 gl) {
+				outlined.add(new float[]{worldLocX, worldLocZ});
+			}
+		};
 	}
 
 	/**
