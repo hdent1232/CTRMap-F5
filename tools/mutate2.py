@@ -914,8 +914,23 @@ def compare_to_baseline(live, old):
                 regressed.append(where + " - the baseline recorded this line KILLED")
             else:
                 fresh.append(where + " - not in the baseline at all (newly measured)")
+        # A survivor that has left the survivor list is not automatically a
+        # survivor that got asserted. It can have been EXCLUDED by hand, or
+        # found unmutable, or simply not measured this time - and reporting any
+        # of those as "now asserted" credits the battery with a kill nobody
+        # made. Ui.java:84 and :87 were reported fixed on the very run that
+        # excluded them.
+        killed_now = set((e["line"], e["kind"]) for e in cur.get("killed_lines", []))
+        excluded_now = set(e["line"] for e in cur.get("excluded", []))
         for key in sorted(old_s - now_s):
-            fixed.append("%s:%d %s is now asserted" % (f, key[0], key[1]))
+            if key in killed_now:
+                why = "is now asserted - a suite kills it"
+            elif key[0] in excluded_now:
+                why = ("is now EXCLUDED from the measurement by hand - NOT asserted; it counts "
+                       "in neither the numerator nor the denominator")
+            else:
+                why = "is no longer measured at all - check why before reading it as progress"
+            fixed.append("%s:%d %s %s" % (f, key[0], key[1], why))
     return regressed, fresh, fixed, had_killed_lines
 
 
@@ -1116,7 +1131,8 @@ def selftest():
 
     # DEFECT 2: the ratchet compares LINES against LINES, so a line measured for
     # the first time is new coverage and only a line that WAS killed is a break.
-    live = build_live([rec("c1", 10, "SURVIVED"), rec("c1", 40, "SURVIVED")])
+    live = build_live([rec("c1", 10, "SURVIVED"), rec("c1", 40, "SURVIVED"),
+                       rec("c1", 30, "killed")])
     live["src/F.java"]["sha256"] = "abc"
     old = {"src/F.java": {"survivors": 1, "killed": 1, "sha256": "abc",
                           "lines": [{"line": 30, "kind": "negate-if", "code": "if (y) {"}],
@@ -1126,7 +1142,15 @@ def selftest():
           "a line the baseline recorded KILLED that now survives breaks the ratchet, by name")
     check(len(fresh) == 1 and ":40" in fresh[0],
           "a line never measured before is NEW COVERAGE, not a regression")
-    check(len(fixed) == 1 and ":30" in fixed[0], "a survivor that is now asserted is reported fixed")
+    check(len(fixed) == 1 and ":30" in fixed[0] and "is now asserted" in fixed[0],
+          "a survivor a suite now kills is reported fixed")
+    # ...and a survivor that merely left the list is NOT credited as a kill
+    gone = build_live([rec("c1", 40, "SURVIVED")])
+    gone["src/F.java"]["sha256"] = "abc"
+    gone["src/F.java"]["excluded"] = [{"line": 30, "reason": "x" * 60}]
+    _, _, fixed2, _ = compare_to_baseline(gone, old)
+    check(len(fixed2) == 1 and "EXCLUDED" in fixed2[0] and "NOT asserted" in fixed2[0],
+          "a survivor that was EXCLUDED by hand is not reported as one the battery now asserts")
     check(had, "the baseline is recognised as carrying line-level kill records")
     moved = {"src/F.java": dict(old["src/F.java"], sha256="different")}
     r2, f2, _, _ = compare_to_baseline(live, moved)
