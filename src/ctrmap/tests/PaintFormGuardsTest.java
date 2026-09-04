@@ -54,6 +54,7 @@ public class PaintFormGuardsTest {
 	public static void main(String[] args) throws Exception {
 		System.setProperty("java.awt.headless", "true");
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
+		aDocumentWithNoMapView();
 		rampToolTurnsAndSays();
 		dragSettlesRamps();
 		fillAllSettlesRamps();
@@ -90,6 +91,25 @@ public class PaintFormGuardsTest {
 		}
 		height[19][20] = 1;
 		return form;
+	}
+
+	/**
+	 * The document driven with no map view. Every check below is one, because
+	 * these tests have no window, so the null test in repaintMap is what makes
+	 * the rest of this suite possible at all - and that made it an accident of
+	 * the fixture rather than something anything says. Dropping it does not
+	 * make a check fail; it kills the run with a NullPointerException four
+	 * checks in, and a stack trace is not a sentence about what broke. Said
+	 * once, first, in its own words.
+	 */
+	static void aDocumentWithNoMapView() throws Exception {
+		PaintForm form = document();
+		try {
+			form.gesturePress(5, 5, false);
+			check(true, "a gesture on a document with no map view repaints nothing, and throws nothing");
+		} catch (RuntimeException ex) {
+			check(false, "a gesture on a document with no map view threw " + ex);
+		}
 	}
 
 	static void rampToolTurnsAndSays() throws Exception {
