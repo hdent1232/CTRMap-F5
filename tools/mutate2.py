@@ -84,28 +84,47 @@ MAINLINE = os.environ.get("CTRMAP_MAINLINE", "master")
 # battery the way a hand-typed one did: the first version named only batch one's
 # five branches, and a sweep run on the final tree would have reported a
 # baseline that quietly said nothing about the other eight.
+#
+# A SUITE NAMED BY NO CLUSTER CAN NEVER KILL ANYTHING. FILE_SUITES below is a
+# union of these lists and nothing else, so a suite the battery runs but this
+# table does not name is invisible to the sweep however much it asserts. That is
+# not a hypothetical: PaintFormGuards, TextureCarryGuards, ZoneAppend and
+# PackScope were all registered in test.ps1 and named here by nobody, and the
+# baseline recorded 13 lines as survivors that those four demonstrably kill -
+# every one of them verified by hand, mutant built and suite run. A hole in the
+# record reads exactly like a hole in the coverage, and sends the next person to
+# write a guard for a line that already has one. When a suite is added to
+# test.ps1, add it to the cluster whose files it guards.
 CLUSTERS = {
     "c1":           ["PlacementGuardsTest", "MapPrefabTest"],
     "c3":           ["PaintedFloorTest", "PaintedRegionTest"],
     "c5a":          ["DataSafetyGuardsTest"],
-    "c5b":          ["NpcEntityGuardsTest", "ZoneScriptAnalyzerTest", "NpcTemplatesTest"],
+    #NpcEditFormGuards is what kills ZoneEntities' altitude lookup (setYFromColl)
+    "c5b":          ["NpcEntityGuardsTest", "ZoneScriptAnalyzerTest", "NpcTemplatesTest",
+                     "NpcEditFormGuardsTest"],
     "c6":           ["ScriptAssemblerGuardTest"],
     "c8":           ["DataSafetyGuardsTest", "BatteryHygieneTest"],
     "gap-warp":     ["DataSafetyGuardsTest"],
     "seam":         ["DataSafetyGuardsTest"],
+    #PackScope is what kills Workspace's pack-only-what-was-edited decisions
     "c47":          ["ForkGuardsTest", "MatrixForkTest", "IntegrityTest", "PackReportTest",
-                     "SnapshotIntegrityTest", "DataSafetyGuardsTest"],
+                     "SnapshotIntegrityTest", "DataSafetyGuardsTest", "PackScopeTest"],
+    #TextureCarryGuards is the only suite that calls BchTexturePack.carryToArea
     "c2":           ["PaintApplyGuardsTest", "TexturePackImportTest", "TerrainImportTest",
-                     "AreaShareGuardTest"],
+                     "AreaShareGuardTest", "TextureCarryGuardsTest"],
+    #PaintFormGuards is the only suite that constructs PaintForm
     "guards-paint": ["PaintedFloorTest", "PlacementGuardsTest", "MapPrefabTest",
-                     "ScriptAssemblerGuardTest", "DataSafetyGuardsTest", "PaintApplyGuardsTest"],
+                     "ScriptAssemblerGuardTest", "DataSafetyGuardsTest", "PaintApplyGuardsTest",
+                     "PaintFormGuardsTest"],
     "guards-npc":   ["NpcEditFormGuardsTest", "NpcEntityGuardsTest", "DataSafetyGuardsTest",
                      "ZoneScriptAnalyzerTest", "NpcTemplatesTest"],
     "gap2":         ["PackReportTest", "DataSafetyGuardsTest", "DoorPropGuardsTest"],
     "uifix":        ["BatteryHygieneTest", "DataSafetyGuardsTest"],
     "d1":           ["TerrainImportNoiseTest", "BatteryHygieneTest", "BchMapModelTest"],
     "d2":           ["NpcEditFormGuardsTest", "BatteryHygieneTest"],
-    "d3":           ["PackRollbackTest", "MisplacedRegistryTest", "IntegrityTest", "ForkGuardsTest"],
+    #ZoneAppend runs the real GARC.packDirectory and reads the header back
+    "d3":           ["PackRollbackTest", "MisplacedRegistryTest", "IntegrityTest", "ForkGuardsTest",
+                     "ZoneAppendTest"],
     "d4":           ["PaintApplyGuardsTest", "PlacementGuardsTest", "BuildingCatalogTest",
                      "MapPrefabTest"],
     "m1":           ["NpcEditFormGuardsTest", "NpcEntityGuardsTest", "DataSafetyGuardsTest",
