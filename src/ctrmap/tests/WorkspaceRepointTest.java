@@ -3,10 +3,15 @@ package ctrmap.tests;
 import ctrmap.Ui;
 import ctrmap.Workspace;
 import ctrmap.humaninterface.WorkspaceSettings;
+import ctrmap.setup.DumpCheck;
 import ctrmap.setup.SetupWizard;
+import java.awt.Frame;
 import java.io.File;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.List;
+import java.util.prefs.Preferences;
 import javax.swing.JOptionPane;
 import javax.swing.JTextField;
 
@@ -31,9 +36,10 @@ import javax.swing.JTextField;
  * the question is not consent, and saying yes actually discards the wrong
  * game's backup rather than pretending to.
  *
- * <p>{@link #theSaveThatWasRefused} needs the settings window itself and so
- * needs a display; it prints a skip without one. The battery runner passes no
- * headless flag, so it runs there.
+ * <p>{@link #theSaveThatWasRefused} and {@link #theFinishThatWasRefused} need
+ * the settings window and the wizard themselves and so need a display; they
+ * print a skip without one. The battery runner passes no headless flag, so they
+ * run there.
  *
  * Usage: java ctrmap.tests.WorkspaceRepointTest &lt;romfs-root&gt;
  */
@@ -57,6 +63,7 @@ public class WorkspaceRepointTest {
 		settingsDialog(own, other);
 		firstRunWizard(own, other);
 		theSaveThatWasRefused(own, other);
+		theFinishThatWasRefused(own, other);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -136,6 +143,15 @@ public class WorkspaceRepointTest {
 		check(!go, "wizard: and answering no sends setup back to pick a different folder");
 		check(haveBackup(), "wizard: and nothing is thrown away on the way back");
 
+		said = Ui.record(); //nothing answered - the user closed the window
+		try {
+			go = SetupWizard.backupBelongsHere(null, other);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(!go, "wizard: closing the question is not consent to replace the backup");
+		check(haveBackup(), "wizard: and closing it destroys nothing");
+
 		said = Ui.record(JOptionPane.YES_OPTION);
 		try {
 			go = SetupWizard.backupBelongsHere(null, other);
@@ -186,6 +202,69 @@ public class WorkspaceRepointTest {
 		}
 	}
 
+	/**
+	 * Finishing the first-run wizard after refusing to replace another game's
+	 * backup must stop right there.
+	 *
+	 * <p>The refusal is one line in {@code doFinish} - the same line, in the
+	 * other window that can point a workspace at a game folder, as the one
+	 * {@link #theSaveThatWasRefused} covers. Without it the wizard walks past
+	 * the answer and sets up anyway: it keeps a pristine backup taken from a
+	 * DIFFERENT game folder, which is the one state the user had just declined,
+	 * and from then on every "what did I change" answer and every donor
+	 * building is cut out of the wrong game with nothing saying so.
+	 *
+	 * <p>The question is left CLOSED rather than answered No, because closed is
+	 * the answer nobody-is-there gives and it is the reading that is easiest to
+	 * lose: a later edit that tests for the option it skips instead of the one
+	 * it acts on turns "the user walked away" into consent to throw the backup
+	 * out. Both readings must refuse.
+	 */
+	static void theFinishThatWasRefused(String own, String other) throws Exception {
+		if (java.awt.GraphicsEnvironment.isHeadless()) {
+			System.out.println("  skip: no display, and the wizard is a JDialog");
+			return;
+		}
+		freshBackupOf(own);
+		//the wizard's constructor and step machine are private because nothing
+		//but the app should drive it; SetupWizardTest reaches them the same way
+		Constructor<SetupWizard> ctor = SetupWizard.class.getDeclaredConstructor(Frame.class);
+		ctor.setAccessible(true);
+		SetupWizard w = ctor.newInstance((Frame) null);
+		//doFinish writes the wizard's "do not show this again" preference, which
+		//belongs to whoever owns this machine and not to a test run
+		Preferences prefs = Preferences.userRoot().node("ctrmap.setup");
+		boolean suppressed = prefs.getBoolean("SKIP_SETUP_ON_STARTUP", false);
+		try {
+			//a dump the wizard would accept, so the run reaches the decision
+			DumpCheck.Result usable = new DumpCheck.Result();
+			usable.status = DumpCheck.Status.VALID;
+			usable.game = Workspace.GameType.ORAS;
+			set(w, "gameResult", usable);
+			WorkspaceRepointTest.<JTextField>field(w, "gameField").setText(other);
+			WorkspaceRepointTest.<JTextField>field(w, "wsField").setText(Workspace.WORKSPACE_PATH);
+			call(w, "showStep", new Class<?>[]{int.class}, constant("STEP_FINISH"));
+
+			List<String> said = Ui.record(); //closed, not answered
+			try {
+				call(w, "doFinish", new Class<?>[0]);
+			} finally {
+				Ui.stopRecording();
+			}
+			check(said.size() == 1 && said.get(0).contains("another game"),
+					"finish: setting up on a working folder that holds another game's backup asks about it: " + said);
+			int step = field(w, "step");
+			check(step == constant("STEP_WORKSPACE"),
+					"finish: closing that question sends the wizard back to the working-folder step"
+					+ " instead of setting up anyway (it is on step " + step + ")");
+			check(haveBackup(), "finish: and the backup is still there");
+			check(sameFolder(own), "finish: and it still belongs to " + own + ", the folder it was taken from");
+		} finally {
+			prefs.putBoolean("SKIP_SETUP_ON_STARTUP", suppressed);
+			w.dispose();
+		}
+	}
+
 	/** Retakes the pristine backup so it belongs to the given game folder. */
 	static void freshBackupOf(String gameDir) {
 		Workspace.GAMEDIR_PATH = gameDir;
@@ -206,6 +285,25 @@ public class WorkspaceRepointTest {
 		Field f = o.getClass().getDeclaredField(name);
 		f.setAccessible(true);
 		return (T) f.get(o);
+	}
+
+	static void set(Object o, String name, Object value) throws Exception {
+		Field f = o.getClass().getDeclaredField(name);
+		f.setAccessible(true);
+		f.set(o, value);
+	}
+
+	static void call(Object o, String name, Class<?>[] sig, Object... args) throws Exception {
+		Method m = o.getClass().getDeclaredMethod(name, sig);
+		m.setAccessible(true);
+		m.invoke(o, args);
+	}
+
+	/** One of the wizard's private step numbers, read rather than copied. */
+	static int constant(String name) throws Exception {
+		Field f = SetupWizard.class.getDeclaredField(name);
+		f.setAccessible(true);
+		return f.getInt(null);
 	}
 
 	static void check(boolean ok, String what) {
