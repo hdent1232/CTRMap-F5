@@ -107,6 +107,7 @@ $suites = @(
     @{ n = "Gauntlet script emit";        c = "ctrmap.tests.GauntletScriptTest";     a = @($a013) },
     @{ n = "Talker wizard dry-run";       c = "ctrmap.tests.TalkerWizardDryRunTest"; a = @($a013) },
     @{ n = "DispatchTrampoline (a case the engine can return from)"; c = "ctrmap.tests.DispatchTrampolineTest"; a = @($a013) },
+    @{ n = "DispatchGuards (the freeze guards refuse)"; c = "ctrmap.tests.DispatchGuardsTest"; a = @($a013) },
     @{ n = "SignWrapperInject (corpus)";  c = "ctrmap.tests.SignWrapperInjectTest";  a = @($a013) },
     @{ n = "Facility clone source";       c = "ctrmap.tests.FacilitySourceTest";     a = @($a013) },
     @{ n = "PokeData (preview data)";      c = "ctrmap.tests.PokeDataTest";           a = @($gamedir) },
