@@ -137,41 +137,10 @@
   "sha256": "c4ab382d4881ae7538ac7f6e10e91132277d96efabd5f4d1499aa47aa247f427"
  },
  "src/ctrmap/formats/scripts/TalkerScriptWizard.java": {
-  "survivors": 6,
-  "killed": 7,
+  "survivors": 0,
+  "killed": 13,
   "unmeasured": 0,
-  "lines": [
-   {
-    "line": 145,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"The zone script's dispatch does not end in the shared \\\"ZERO_PRI; RETN\\\" a script case returns through.\");"
-   },
-   {
-    "line": 163,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"The dispatch CASETBL is not part of the script's instruction list.\");"
-   },
-   {
-    "line": 246,
-    "kind": "negate-if",
-    "code": "} else if (script.publics.get(i).data[0] == oldCaseTblPtr) {"
-   },
-   {
-    "line": 273,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"Internal error: dispatch case \" + newId + \" does not point at its trampoline.\");"
-   },
-   {
-    "line": 276,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not call the new subroutine.\");"
-   },
-   {
-    "line": 279,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not return to the dispatch epilogue.\");"
-   }
-  ],
+  "lines": [],
   "sha256": "4931838a3d3031bd716f68746f75361b5f7565ed73f9fce3fe6856df77373f37"
  },
  "src/ctrmap/formats/zone/ZoneEntities.java": {
@@ -517,28 +486,18 @@
   "sha256": "4a238d2dedd832ff0a301684476a4d36040ee58ecb07f0d3766f4fc486cbc364"
  },
  "src/ctrmap/formats/scripts/ZoneScriptAnalyzer.java": {
-  "survivors": 2,
-  "killed": 2,
+  "survivors": 0,
+  "killed": 4,
   "unmeasured": 0,
-  "lines": [
-   {
-    "line": 260,
-    "kind": "negate-if",
-    "code": "if (d == null || !d.cases.containsKey(caseKey)) {"
-   },
-   {
-    "line": 267,
-    "kind": "negate-if",
-    "code": "if (target.getCommand() == OP_PROC) {"
-   }
-  ],
+  "lines": [],
   "sha256": "423434792b8487e5411369961d8981f46a179ecf1286299c972f4b05ae074004"
  },
  "_meta": {
   "measured_at": "da985c2",
   "attempted": 267,
-  "survived": 54,
-  "killed": 185,
-  "unmeasured": 28
+  "survived": 46,
+  "killed": 193,
+  "unmeasured": 28,
+  "hand_verified": "The 8 dispatch-freeze guards in formats/scripts (TalkerScriptWizard 145, 163, 246, 273, 276, 279 and ZoneScriptAnalyzer 260, 267) moved from survived to killed WITHOUT a new sweep. Each was mutated by hand exactly as the sweep would, rebuilt with build.ps1, seen to fail ctrmap.tests.DispatchGuardsTest, and restored; both files hash to the same digest the sweep measured, so neither record is stale."
  }
 }
