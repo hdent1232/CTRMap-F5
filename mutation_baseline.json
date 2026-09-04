@@ -1,46 +1,1509 @@
 {
+ "src/ctrmap/AreaForker.java": {
+  "survivors": 2,
+  "killed": 1,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 247,
+    "kind": "drop-throw",
+    "code": "throw new IOException(\"The NPC registry (\" + np.length + \" entries) already reaches\""
+   },
+   {
+    "line": 247,
+    "kind": "swallow-throw",
+    "code": "throw new IOException(\"The NPC registry (\" + np.length + \" entries) already reaches\""
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 246,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "b46dbafb672292883767c8d5ff61f47cb5446922404b2e7d1af5f17c2167405d"
+ },
+ "src/ctrmap/CtrmapMainframe.java": {
+  "survivors": 5,
+  "killed": 0,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 718,
+    "kind": "negate-if",
+    "code": "if (!openMapMatrixFile(jfc.getSelectedFile())) {"
+   },
+   {
+    "line": 1256,
+    "kind": "negate-if",
+    "code": "if (!r.forked) {"
+   },
+   {
+    "line": 1271,
+    "kind": "negate-if",
+    "code": "if (r.newRegions.length > 1) {"
+   },
+   {
+    "line": 1275,
+    "kind": "negate-if",
+    "code": "if (r.otherZones.length > 0) {"
+   },
+   {
+    "line": 1306,
+    "kind": "flip-return",
+    "code": "return false;"
+   }
+  ],
+  "killed_lines": [],
+  "excluded": [],
+  "sha256": "69a55e7a3f1d6c17edb42db8c43d4ff172ef99d265e4d250460ff8e8194b3734"
+ },
+ "src/ctrmap/GeometryForker.java": {
+  "survivors": 0,
+  "killed": 4,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [],
+  "killed_lines": [
+   {
+    "line": 182,
+    "kind": "negate-if"
+   },
+   {
+    "line": 185,
+    "kind": "negate-if"
+   },
+   {
+    "line": 188,
+    "kind": "negate-if"
+   },
+   {
+    "line": 320,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "067021fc49f5124ad26e6d010e3315e72d5ede69d4fd7adbd3147942c05146f8"
+ },
+ "src/ctrmap/Ui.java": {
+  "survivors": 0,
+  "killed": 0,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 2,
+  "lines": [],
+  "killed_lines": [],
+  "excluded": [
+   {
+    "line": 84,
+    "reason": "this line IS the channel a suite reads a Ui message through when no sink is installed. A test asserting on it would be asserting its own instrument, and deleting the line makes any such assertion vacuously true - the mutant would be scored killed by a check that had stopped checking anything."
+   },
+   {
+    "line": 87,
+    "reason": "unreachable in a headless suite by construction: dialogs stay off unless the app's own main calls Ui.enableDialogs(), which no suite does and none may - that is the entire reason this seam exists. Nothing a headless test can observe distinguishes this line from its absence."
+   }
+  ],
+  "sha256": "c60886bdbb8a9d6095f8fc70353cd283a65fa4f8e9e3eb129937826ffbf2a96c"
+ },
+ "src/ctrmap/Workspace.java": {
+  "survivors": 2,
+  "killed": 9,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 847,
+    "kind": "negate-if",
+    "code": "if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {"
+   },
+   {
+    "line": 948,
+    "kind": "drop-report",
+    "code": "JOptionPane.showMessageDialog(CtrmapMainframe.frame, \"The workspace was not packed:\\n\" + cause"
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 537,
+    "kind": "negate-if"
+   },
+   {
+    "line": 648,
+    "kind": "negate-if"
+   },
+   {
+    "line": 831,
+    "kind": "negate-if"
+   },
+   {
+    "line": 834,
+    "kind": "negate-if"
+   },
+   {
+    "line": 841,
+    "kind": "negate-if"
+   },
+   {
+    "line": 853,
+    "kind": "negate-if"
+   },
+   {
+    "line": 879,
+    "kind": "negate-if"
+   },
+   {
+    "line": 900,
+    "kind": "negate-if"
+   },
+   {
+    "line": 917,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "0c5a1c1b91a20c16cb3439a8af81a3ea5f352015e00cd38ee102bbf2a9b1baa7"
+ },
+ "src/ctrmap/WorkspaceIntegrity.java": {
+  "survivors": 1,
+  "killed": 12,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 250,
+    "kind": "drop-report",
+    "code": "bad.add(\"the map-matrix check could not read any of the \" + mm.length"
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 94,
+    "kind": "negate-if"
+   },
+   {
+    "line": 130,
+    "kind": "negate-if"
+   },
+   {
+    "line": 133,
+    "kind": "negate-if"
+   },
+   {
+    "line": 142,
+    "kind": "negate-if"
+   },
+   {
+    "line": 146,
+    "kind": "negate-if"
+   },
+   {
+    "line": 153,
+    "kind": "drop-report"
+   },
+   {
+    "line": 225,
+    "kind": "negate-if"
+   },
+   {
+    "line": 230,
+    "kind": "negate-if"
+   },
+   {
+    "line": 249,
+    "kind": "negate-if"
+   },
+   {
+    "line": 301,
+    "kind": "negate-if"
+   },
+   {
+    "line": 305,
+    "kind": "negate-if"
+   },
+   {
+    "line": 309,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "c54778b4781d6dff8d7472bd730d13d4592ff4420ffa34473fc60749a21f9dfd"
+ },
+ "src/ctrmap/formats/garc/GARC.java": {
+  "survivors": 3,
+  "killed": 10,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 312,
+    "kind": "negate-if",
+    "code": "if (len + padLength > maxlength) {"
+   },
+   {
+    "line": 450,
+    "kind": "drop-throw",
+    "code": "throw new IOException(\"Could not replace \" + file.getName() + \" - is the emulator or another\""
+   },
+   {
+    "line": 450,
+    "kind": "swallow-throw",
+    "code": "throw new IOException(\"Could not replace \" + file.getName() + \" - is the emulator or another\""
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 207,
+    "kind": "negate-if"
+   },
+   {
+    "line": 210,
+    "kind": "negate-if"
+   },
+   {
+    "line": 225,
+    "kind": "negate-if"
+   },
+   {
+    "line": 263,
+    "kind": "negate-if"
+   },
+   {
+    "line": 265,
+    "kind": "negate-if"
+   },
+   {
+    "line": 270,
+    "kind": "negate-if"
+   },
+   {
+    "line": 275,
+    "kind": "negate-if"
+   },
+   {
+    "line": 282,
+    "kind": "negate-if"
+   },
+   {
+    "line": 283,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 283,
+    "kind": "swallow-throw"
+   }
+  ],
+  "excluded": [],
+  "sha256": "ad6ee8568a3750b8645bd7b5ae9c53ccf7e79122cb86217744a25e56ec517b11"
+ },
+ "src/ctrmap/formats/h3d/BchTexturePack.java": {
+  "survivors": 5,
+  "killed": 11,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 399,
+    "kind": "negate-if",
+    "code": "if (tgtFile == null) {"
+   },
+   {
+    "line": 404,
+    "kind": "negate-if",
+    "code": "if (c.pack != null) {"
+   },
+   {
+    "line": 405,
+    "kind": "negate-if",
+    "code": "if (!tgt.storeFile(c.subfile, c.pack)) {"
+   },
+   {
+    "line": 406,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"could not write area \" + targetArea);"
+   },
+   {
+    "line": 406,
+    "kind": "swallow-throw",
+    "code": "throw new IllegalStateException(\"could not write area \" + targetArea);"
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 443,
+    "kind": "negate-if"
+   },
+   {
+    "line": 448,
+    "kind": "negate-if"
+   },
+   {
+    "line": 459,
+    "kind": "negate-if"
+   },
+   {
+    "line": 500,
+    "kind": "negate-if"
+   },
+   {
+    "line": 505,
+    "kind": "negate-if"
+   },
+   {
+    "line": 509,
+    "kind": "negate-if"
+   },
+   {
+    "line": 516,
+    "kind": "negate-if"
+   },
+   {
+    "line": 597,
+    "kind": "negate-if"
+   },
+   {
+    "line": 598,
+    "kind": "negate-if"
+   },
+   {
+    "line": 599,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 599,
+    "kind": "swallow-throw"
+   }
+  ],
+  "excluded": [],
+  "sha256": "3f70a626e78fd65f3ea625bb3f47c2d971472e94d301829d8eeb82cdd1bcef97"
+ },
+ "src/ctrmap/formats/h3d/BuildingCatalog.java": {
+  "survivors": 0,
+  "killed": 2,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [],
+  "killed_lines": [
+   {
+    "line": 196,
+    "kind": "negate-if"
+   },
+   {
+    "line": 197,
+    "kind": "flip-return"
+   }
+  ],
+  "excluded": [],
+  "sha256": "a7dcdbbbadb74c389cac310040f9b77e4635ada42d2a5d32a04cb9fc309867eb"
+ },
  "src/ctrmap/formats/h3d/MapPrefab.java": {
   "survivors": 0,
-  "killed": 17,
-  "unmeasured": 1,
+  "killed": 19,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
   "lines": [],
+  "killed_lines": [
+   {
+    "line": 126,
+    "kind": "negate-if"
+   },
+   {
+    "line": 131,
+    "kind": "negate-if"
+   },
+   {
+    "line": 175,
+    "kind": "negate-if"
+   },
+   {
+    "line": 180,
+    "kind": "negate-if"
+   },
+   {
+    "line": 181,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 181,
+    "kind": "swallow-throw"
+   },
+   {
+    "line": 279,
+    "kind": "negate-if"
+   },
+   {
+    "line": 282,
+    "kind": "negate-if"
+   },
+   {
+    "line": 288,
+    "kind": "negate-if"
+   },
+   {
+    "line": 332,
+    "kind": "negate-if"
+   },
+   {
+    "line": 351,
+    "kind": "negate-if"
+   },
+   {
+    "line": 406,
+    "kind": "negate-if"
+   },
+   {
+    "line": 419,
+    "kind": "negate-if"
+   },
+   {
+    "line": 455,
+    "kind": "negate-if"
+   },
+   {
+    "line": 697,
+    "kind": "negate-if"
+   },
+   {
+    "line": 701,
+    "kind": "negate-if"
+   },
+   {
+    "line": 849,
+    "kind": "negate-if"
+   },
+   {
+    "line": 908,
+    "kind": "negate-if"
+   },
+   {
+    "line": 938,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
   "sha256": "9acc753a7a137ec9f8b7d154b8d5e723f8a483e1c2f7ecf39954130c9fd95d66"
+ },
+ "src/ctrmap/formats/scripts/PawnDisassembler.java": {
+  "survivors": 0,
+  "killed": 3,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [],
+  "killed_lines": [
+   {
+    "line": 35,
+    "kind": "negate-if"
+   },
+   {
+    "line": 38,
+    "kind": "negate-if"
+   },
+   {
+    "line": 43,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "00227c7e99b8848f18c0c68536d70226fea8e842f3755b31ad97f628f989590b"
+ },
+ "src/ctrmap/formats/scripts/PawnInstruction.java": {
+  "survivors": 0,
+  "killed": 3,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [],
+  "killed_lines": [
+   {
+    "line": 110,
+    "kind": "negate-if"
+   },
+   {
+    "line": 114,
+    "kind": "negate-if"
+   },
+   {
+    "line": 132,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "d7d65de7e712927d39e113a0b81ceff55cf40ba7f9e77b6ff8756329ed8e193e"
+ },
+ "src/ctrmap/formats/scripts/PawnSubroutine.java": {
+  "survivors": 0,
+  "killed": 5,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [],
+  "killed_lines": [
+   {
+    "line": 54,
+    "kind": "negate-if"
+   },
+   {
+    "line": 75,
+    "kind": "negate-if"
+   },
+   {
+    "line": 101,
+    "kind": "negate-if"
+   },
+   {
+    "line": 108,
+    "kind": "negate-if"
+   },
+   {
+    "line": 117,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "0bc7a98df226d055deed59974cdc23384471a5ed298b81b294aec35beda7f1cf"
+ },
+ "src/ctrmap/formats/scripts/TalkerScriptWizard.java": {
+  "survivors": 11,
+  "killed": 7,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 145,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"The zone script's dispatch does not end in the shared \\\"ZERO_PRI; RETN\\\" a script case returns through.\");"
+   },
+   {
+    "line": 145,
+    "kind": "swallow-throw",
+    "code": "throw new IllegalStateException(\"The zone script's dispatch does not end in the shared \\\"ZERO_PRI; RETN\\\" a script case returns through.\");"
+   },
+   {
+    "line": 163,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"The dispatch CASETBL is not part of the script's instruction list.\");"
+   },
+   {
+    "line": 163,
+    "kind": "swallow-throw",
+    "code": "throw new IllegalStateException(\"The dispatch CASETBL is not part of the script's instruction list.\");"
+   },
+   {
+    "line": 246,
+    "kind": "negate-if",
+    "code": "} else if (script.publics.get(i).data[0] == oldCaseTblPtr) {"
+   },
+   {
+    "line": 273,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"Internal error: dispatch case \" + newId + \" does not point at its trampoline.\");"
+   },
+   {
+    "line": 273,
+    "kind": "swallow-throw",
+    "code": "throw new IllegalStateException(\"Internal error: dispatch case \" + newId + \" does not point at its trampoline.\");"
+   },
+   {
+    "line": 276,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not call the new subroutine.\");"
+   },
+   {
+    "line": 276,
+    "kind": "swallow-throw",
+    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not call the new subroutine.\");"
+   },
+   {
+    "line": 279,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not return to the dispatch epilogue.\");"
+   },
+   {
+    "line": 279,
+    "kind": "swallow-throw",
+    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not return to the dispatch epilogue.\");"
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 144,
+    "kind": "negate-if"
+   },
+   {
+    "line": 162,
+    "kind": "negate-if"
+   },
+   {
+    "line": 272,
+    "kind": "negate-if"
+   },
+   {
+    "line": 275,
+    "kind": "negate-if"
+   },
+   {
+    "line": 278,
+    "kind": "negate-if"
+   },
+   {
+    "line": 319,
+    "kind": "negate-if"
+   },
+   {
+    "line": 320,
+    "kind": "flip-return"
+   }
+  ],
+  "excluded": [],
+  "sha256": "4931838a3d3031bd716f68746f75361b5f7565ed73f9fce3fe6856df77373f37"
+ },
+ "src/ctrmap/formats/scripts/ZoneScriptAnalyzer.java": {
+  "survivors": 2,
+  "killed": 2,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 260,
+    "kind": "negate-if",
+    "code": "if (d == null || !d.cases.containsKey(caseKey)) {"
+   },
+   {
+    "line": 267,
+    "kind": "negate-if",
+    "code": "if (target.getCommand() == OP_PROC) {"
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 233,
+    "kind": "negate-if"
+   },
+   {
+    "line": 238,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "423434792b8487e5411369961d8981f46a179ecf1286299c972f4b05ae074004"
+ },
+ "src/ctrmap/formats/tilemap/PaintedRegionBuilder.java": {
+  "survivors": 2,
+  "killed": 11,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 441,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"the ramp at (\" + tx + \",\" + ty + \") goes down \""
+   },
+   {
+    "line": 441,
+    "kind": "swallow-throw",
+    "code": "throw new IllegalStateException(\"the ramp at (\" + tx + \",\" + ty + \") goes down \""
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 244,
+    "kind": "negate-if"
+   },
+   {
+    "line": 254,
+    "kind": "negate-if"
+   },
+   {
+    "line": 299,
+    "kind": "negate-if"
+   },
+   {
+    "line": 305,
+    "kind": "negate-if"
+   },
+   {
+    "line": 311,
+    "kind": "negate-if"
+   },
+   {
+    "line": 439,
+    "kind": "negate-if"
+   },
+   {
+    "line": 447,
+    "kind": "negate-if"
+   },
+   {
+    "line": 450,
+    "kind": "negate-if"
+   },
+   {
+    "line": 477,
+    "kind": "negate-if"
+   },
+   {
+    "line": 642,
+    "kind": "negate-if"
+   },
+   {
+    "line": 887,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "9298ff605b3506fa2ab4caffbe3ea30ad72bf1976096c208198d3b3dc053a907"
+ },
+ "src/ctrmap/formats/tilemap/TerrainCatalog.java": {
+  "survivors": 0,
+  "killed": 4,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [],
+  "killed_lines": [
+   {
+    "line": 425,
+    "kind": "negate-if"
+   },
+   {
+    "line": 428,
+    "kind": "negate-if"
+   },
+   {
+    "line": 496,
+    "kind": "negate-if"
+   },
+   {
+    "line": 506,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "fef7bd12f9eb30abf01b638d8f171e070cadee16cb55df06909427aa2c0d12bf"
  },
  "src/ctrmap/formats/tilemap/TilePalette.java": {
   "survivors": 0,
   "killed": 6,
   "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
   "lines": [],
+  "killed_lines": [
+   {
+    "line": 135,
+    "kind": "negate-if"
+   },
+   {
+    "line": 138,
+    "kind": "negate-if"
+   },
+   {
+    "line": 141,
+    "kind": "negate-if"
+   },
+   {
+    "line": 144,
+    "kind": "negate-if"
+   },
+   {
+    "line": 147,
+    "kind": "negate-if"
+   },
+   {
+    "line": 150,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
   "sha256": "c7266008436fbf191c7c3a27b230c9b77e1683ef6c7d27466364b03ce4b9dca8"
  },
- "src/ctrmap/humaninterface/GeoEditForm.java": {
+ "src/ctrmap/formats/tilemap/Tilemap.java": {
   "survivors": 0,
-  "killed": 4,
-  "unmeasured": 1,
+  "killed": 1,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
   "lines": [],
+  "killed_lines": [
+   {
+    "line": 101,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "9df4256bcc4765c64a6accdd0299a9992c1e657e369945f1b3e2a917cb582eef"
+ },
+ "src/ctrmap/formats/zone/ZoneEntities.java": {
+  "survivors": 1,
+  "killed": 13,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 408,
+    "kind": "negate-if",
+    "code": "if (!Float.isNaN(newz3DCoordinate)) {"
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 92,
+    "kind": "negate-if"
+   },
+   {
+    "line": 93,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 93,
+    "kind": "swallow-throw"
+   },
+   {
+    "line": 137,
+    "kind": "negate-if"
+   },
+   {
+    "line": 138,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 138,
+    "kind": "swallow-throw"
+   },
+   {
+    "line": 146,
+    "kind": "negate-if"
+   },
+   {
+    "line": 296,
+    "kind": "negate-if"
+   },
+   {
+    "line": 299,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 299,
+    "kind": "swallow-throw"
+   },
+   {
+    "line": 398,
+    "kind": "negate-if"
+   },
+   {
+    "line": 399,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 399,
+    "kind": "swallow-throw"
+   }
+  ],
+  "excluded": [],
+  "sha256": "ed682d8eb745bbdd9bde634d8ecf9d6801a2bde660c4d83dd3dee16cfba0cc98"
+ },
+ "src/ctrmap/humaninterface/AreaForkPrompt.java": {
+  "survivors": 0,
+  "killed": 2,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [],
+  "killed_lines": [
+   {
+    "line": 62,
+    "kind": "negate-if"
+   },
+   {
+    "line": 65,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "4a238d2dedd832ff0a301684476a4d36040ee58ecb07f0d3766f4fc486cbc364"
+ },
+ "src/ctrmap/humaninterface/GeoEditForm.java": {
+  "survivors": 1,
+  "killed": 1,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 314,
+    "kind": "drop-report",
+    "code": "status.setText(\"Stamped \" + r.stamped.size() + \"/\" + p.pieces.size() + \" pieces\""
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 221,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
   "sha256": "a43ddf179ca88b26771fe8474c67bcaa0c8eee065f2809e33d1aafb64f74f3c0"
  },
- "src/ctrmap/humaninterface/TilePainterForm.java": {
+ "src/ctrmap/humaninterface/MatrixEditForm.java": {
   "survivors": 0,
-  "killed": 24,
-  "unmeasured": 5,
+  "killed": 1,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
   "lines": [],
+  "killed_lines": [
+   {
+    "line": 78,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "7d941930a872401353f3b010233652d9d00902abf7c774c5c42f704be7a794ca"
+ },
+ "src/ctrmap/humaninterface/NPCEditForm.java": {
+  "survivors": 3,
+  "killed": 15,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 743,
+    "kind": "drop-report",
+    "code": "dlgStatus.setText(defect != null"
+   },
+   {
+    "line": 1907,
+    "kind": "drop-report",
+    "code": "JOptionPane.showMessageDialog(this,"
+   },
+   {
+    "line": 2054,
+    "kind": "negate-if",
+    "code": "if (boxedNPC(i)) {"
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 438,
+    "kind": "negate-if"
+   },
+   {
+    "line": 444,
+    "kind": "negate-if"
+   },
+   {
+    "line": 485,
+    "kind": "negate-if"
+   },
+   {
+    "line": 493,
+    "kind": "negate-if"
+   },
+   {
+    "line": 521,
+    "kind": "negate-if"
+   },
+   {
+    "line": 550,
+    "kind": "negate-if"
+   },
+   {
+    "line": 568,
+    "kind": "negate-if"
+   },
+   {
+    "line": 582,
+    "kind": "negate-if"
+   },
+   {
+    "line": 601,
+    "kind": "negate-if"
+   },
+   {
+    "line": 733,
+    "kind": "negate-if"
+   },
+   {
+    "line": 734,
+    "kind": "drop-report"
+   },
+   {
+    "line": 984,
+    "kind": "negate-if"
+   },
+   {
+    "line": 1969,
+    "kind": "negate-if"
+   },
+   {
+    "line": 2006,
+    "kind": "negate-if"
+   },
+   {
+    "line": 2013,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "706f1eaf33f11a25df187dc0121baf472bafb4129a5a97982d42e888a6a697d3"
+ },
+ "src/ctrmap/humaninterface/PaintForm.java": {
+  "survivors": 8,
+  "killed": 0,
+  "unmeasured": 0,
+  "unmutable": 1,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 163,
+    "kind": "drop-report",
+    "code": "placeStatus.setText(\"<html><b>Placing: \" + pick.entry.name + \"</b>\""
+   },
+   {
+    "line": 384,
+    "kind": "negate-if",
+    "code": "if (borrowed > 0) {"
+   },
+   {
+    "line": 613,
+    "kind": "negate-if",
+    "code": "if (cur == PaintedRegionBuilder.NO_RAMP) {"
+   },
+   {
+    "line": 615,
+    "kind": "drop-report",
+    "code": "placeStatus.setText(d < 0 ? \"<html>No lower ground beside that tile -<br>raise it or lower a neighbour first.</html>\" : \" \");"
+   },
+   {
+    "line": 620,
+    "kind": "negate-if",
+    "code": "if (PaintedRegionBuilder.descends(grid, height, lx, ly, d)) {"
+   },
+   {
+    "line": 685,
+    "kind": "negate-if",
+    "code": "if (mTileMapPanel != null) {"
+   },
+   {
+    "line": 856,
+    "kind": "negate-if",
+    "code": "if (rd >= 0) {"
+   },
+   {
+    "line": 948,
+    "kind": "drop-report",
+    "code": "JOptionPane.showMessageDialog(this, \"Apply failed:\\n\" + ex.getMessage()"
+   }
+  ],
+  "killed_lines": [],
+  "excluded": [],
+  "sha256": "d0a6637aa13dd89a4d310a0bfbb25193fd27633210e6a2011f54f36a4da82980"
+ },
+ "src/ctrmap/humaninterface/PropEditForm.java": {
+  "survivors": 0,
+  "killed": 1,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [],
+  "killed_lines": [
+   {
+    "line": 464,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "7a88d959b368d7f05e71f90135620dbb503645ac4bc84ad749865b9a63ae4e63"
+ },
+ "src/ctrmap/humaninterface/ScriptEditor.java": {
+  "survivors": 0,
+  "killed": 1,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [],
+  "killed_lines": [
+   {
+    "line": 947,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "43fbcba96eb43f26215b829aa40f7724d6d8c72cd3bf1cf4517751cd0d96aecf"
+ },
+ "src/ctrmap/humaninterface/TileMapPanel.java": {
+  "survivors": 1,
+  "killed": 3,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 281,
+    "kind": "drop-report",
+    "code": "JOptionPane.showMessageDialog(TileMapPanel.this, \"The region data was not saved:\\n\" + cause"
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 436,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 436,
+    "kind": "swallow-throw"
+   },
+   {
+    "line": 548,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "81b57fd54364f3504939076305be5a934f8fc668ad59d25f8e2a9142863835c9"
+ },
+ "src/ctrmap/humaninterface/TilePainterForm.java": {
+  "survivors": 6,
+  "killed": 29,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 205,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"\\\"\" + pl.e.name + \"\\\" is nothing but passengers (\" + riders"
+   },
+   {
+    "line": 205,
+    "kind": "swallow-throw",
+    "code": "throw new IllegalStateException(\"\\\"\" + pl.e.name + \"\\\" is nothing but passengers (\" + riders"
+   },
+   {
+    "line": 342,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"could not write area \" + areaId"
+   },
+   {
+    "line": 342,
+    "kind": "swallow-throw",
+    "code": "throw new IllegalStateException(\"could not write area \" + areaId"
+   },
+   {
+    "line": 477,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"Area \" + zoneArea + \" is also used by \" + shared"
+   },
+   {
+    "line": 477,
+    "kind": "swallow-throw",
+    "code": "throw new IllegalStateException(\"Area \" + zoneArea + \" is also used by \" + shared"
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 199,
+    "kind": "negate-if"
+   },
+   {
+    "line": 204,
+    "kind": "negate-if"
+   },
+   {
+    "line": 218,
+    "kind": "negate-if"
+   },
+   {
+    "line": 219,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 219,
+    "kind": "swallow-throw"
+   },
+   {
+    "line": 236,
+    "kind": "negate-if"
+   },
+   {
+    "line": 239,
+    "kind": "negate-if"
+   },
+   {
+    "line": 247,
+    "kind": "negate-if"
+   },
+   {
+    "line": 320,
+    "kind": "negate-if"
+   },
+   {
+    "line": 341,
+    "kind": "negate-if"
+   },
+   {
+    "line": 431,
+    "kind": "negate-if"
+   },
+   {
+    "line": 468,
+    "kind": "negate-if"
+   },
+   {
+    "line": 471,
+    "kind": "negate-if"
+   },
+   {
+    "line": 472,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 472,
+    "kind": "swallow-throw"
+   },
+   {
+    "line": 476,
+    "kind": "negate-if"
+   },
+   {
+    "line": 497,
+    "kind": "negate-if"
+   },
+   {
+    "line": 518,
+    "kind": "negate-if"
+   },
+   {
+    "line": 524,
+    "kind": "negate-if"
+   },
+   {
+    "line": 525,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 525,
+    "kind": "swallow-throw"
+   },
+   {
+    "line": 555,
+    "kind": "negate-if"
+   },
+   {
+    "line": 604,
+    "kind": "negate-if"
+   },
+   {
+    "line": 637,
+    "kind": "negate-if"
+   },
+   {
+    "line": 644,
+    "kind": "negate-if"
+   },
+   {
+    "line": 655,
+    "kind": "negate-if"
+   },
+   {
+    "line": 659,
+    "kind": "negate-if"
+   },
+   {
+    "line": 754,
+    "kind": "negate-if"
+   },
+   {
+    "line": 911,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
   "sha256": "ab8e8975a4ffc1296424e3b8d67d03954db2842ce7c3114d27f9090a30378e58"
+ },
+ "src/ctrmap/humaninterface/WarpEditForm.java": {
+  "survivors": 0,
+  "killed": 5,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [],
+  "killed_lines": [
+   {
+    "line": 70,
+    "kind": "negate-if"
+   },
+   {
+    "line": 73,
+    "kind": "negate-if"
+   },
+   {
+    "line": 352,
+    "kind": "negate-if"
+   },
+   {
+    "line": 638,
+    "kind": "negate-if"
+   },
+   {
+    "line": 656,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "0d85c8e36db1f90e1cb62ce1df236ddd605edf3320e66d15eb820b02cfa0b0e9"
+ },
+ "src/ctrmap/humaninterface/WorkspaceSettings.java": {
+  "survivors": 4,
+  "killed": 0,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 59,
+    "kind": "negate-if",
+    "code": "if (!keepOrRetakeBackup(this, gameField.getText())) {"
+   },
+   {
+    "line": 105,
+    "kind": "negate-if",
+    "code": "if (!Workspace.snapshotIsForeign(newGamePath)) {"
+   },
+   {
+    "line": 117,
+    "kind": "negate-if",
+    "code": "if (r != JOptionPane.YES_OPTION) {"
+   },
+   {
+    "line": 118,
+    "kind": "flip-return",
+    "code": "return false;"
+   }
+  ],
+  "killed_lines": [],
+  "excluded": [],
+  "sha256": "019b667499609d2a28689ac303f886c44260b258432eaa05e7ace9cec6b1f901"
+ },
+ "src/ctrmap/humaninterface/ZoneLoadingPanel.java": {
+  "survivors": 1,
+  "killed": 1,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 1060,
+    "kind": "drop-report",
+    "code": "JOptionPane.showMessageDialog(ZoneLoadingPanel.this, \"The zone did not load:\\n\" + cause"
+   }
+  ],
+  "killed_lines": [
+   {
+    "line": 325,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "497de08a9e79654d12ecd8f050282c533646dfb84e5b025bd9c796d367ac1957"
+ },
+ "src/ctrmap/humaninterface/builder/Builder.java": {
+  "survivors": 1,
+  "killed": 0,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 503,
+    "kind": "drop-report",
+    "code": "JOptionPane.showMessageDialog(Builder.this, \"Adding the file did not finish:\\n\" + cause"
+   }
+  ],
+  "killed_lines": [],
+  "excluded": [],
+  "sha256": "0adb16ad8d546f029ffa0aa3c39740331d1f2b12428589f9ab80f0be4ae18237"
+ },
+ "src/ctrmap/humaninterface/tools/WarpTool.java": {
+  "survivors": 0,
+  "killed": 1,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [],
+  "killed_lines": [
+   {
+    "line": 43,
+    "kind": "negate-if"
+   }
+  ],
+  "excluded": [],
+  "sha256": "c4ab382d4881ae7538ac7f6e10e91132277d96efabd5f4d1499aa47aa247f427"
+ },
+ "src/ctrmap/setup/SetupWizard.java": {
+  "survivors": 5,
+  "killed": 0,
+  "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
+  "lines": [
+   {
+    "line": 511,
+    "kind": "negate-if",
+    "code": "if (!backupBelongsHere(this, gamePath)) {"
+   },
+   {
+    "line": 543,
+    "kind": "drop-report",
+    "code": "JOptionPane.showMessageDialog(SetupWizard.this, \"The pristine backup was not made:\\n\" + cause"
+   },
+   {
+    "line": 689,
+    "kind": "negate-if",
+    "code": "if (Workspace.snapshotIsForeign(gamePath)) {"
+   },
+   {
+    "line": 698,
+    "kind": "negate-if",
+    "code": "if (r != JOptionPane.YES_OPTION) {"
+   },
+   {
+    "line": 703,
+    "kind": "flip-return",
+    "code": "return true;"
+   }
+  ],
+  "killed_lines": [],
+  "excluded": [],
+  "sha256": "762b4853bd6dfdabb848bd990d7cae28ccc8b0ad80d9b00da076d70f6886a154"
  },
  "src/ctrmap/tools/BuildingHarvester.java": {
   "survivors": 7,
   "killed": 0,
   "unmeasured": 0,
+  "unmutable": 0,
+  "excluded_count": 0,
   "lines": [
    {
     "line": 180,
     "kind": "negate-if",
     "code": "if (!whole) {"
-   },
-   {
-    "line": 571,
-    "kind": "negate-if",
-    "code": "if (!Float.isNaN(gY) && gY >= c.minY - 9 && gY <= c.maxY && Math.abs(gY - c.minY) < nearest) {"
    },
    {
     "line": 316,
@@ -66,479 +1529,29 @@
     "line": 386,
     "kind": "negate-if",
     "code": "if (ml.contains(family[k])) {"
+   },
+   {
+    "line": 571,
+    "kind": "negate-if",
+    "code": "if (!Float.isNaN(gY) && gY >= c.minY - 9 && gY <= c.maxY && Math.abs(gY - c.minY) < nearest) {"
    }
   ],
+  "killed_lines": [],
+  "excluded": [],
   "sha256": "3b56a80fe981822a3bcbd90b82e68e8f0595c6b57affedee5f60e568fad5b7a3"
  },
- "src/ctrmap/formats/tilemap/PaintedRegionBuilder.java": {
-  "survivors": 0,
-  "killed": 11,
-  "unmeasured": 1,
-  "lines": [],
-  "sha256": "9298ff605b3506fa2ab4caffbe3ea30ad72bf1976096c208198d3b3dc053a907"
- },
- "src/ctrmap/humaninterface/PaintForm.java": {
-  "survivors": 6,
-  "killed": 0,
-  "unmeasured": 3,
-  "lines": [
-   {
-    "line": 384,
-    "kind": "negate-if",
-    "code": "if (borrowed > 0) {"
-   },
-   {
-    "line": 613,
-    "kind": "negate-if",
-    "code": "if (cur == PaintedRegionBuilder.NO_RAMP) {"
-   },
-   {
-    "line": 615,
-    "kind": "drop-report",
-    "code": "placeStatus.setText(d < 0 ? \"<html>No lower ground beside that tile -<br>raise it or lower a neighbour first.</html>\" : \" \");"
-   },
-   {
-    "line": 620,
-    "kind": "negate-if",
-    "code": "if (PaintedRegionBuilder.descends(grid, height, lx, ly, d)) {"
-   },
-   {
-    "line": 856,
-    "kind": "negate-if",
-    "code": "if (rd >= 0) {"
-   },
-   {
-    "line": 685,
-    "kind": "negate-if",
-    "code": "if (mTileMapPanel != null) {"
-   }
-  ],
-  "sha256": "d0a6637aa13dd89a4d310a0bfbb25193fd27633210e6a2011f54f36a4da82980"
- },
- "src/ctrmap/humaninterface/WarpEditForm.java": {
-  "survivors": 0,
-  "killed": 6,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "0d85c8e36db1f90e1cb62ce1df236ddd605edf3320e66d15eb820b02cfa0b0e9"
- },
- "src/ctrmap/humaninterface/ZoneLoadingPanel.java": {
-  "survivors": 0,
-  "killed": 1,
-  "unmeasured": 1,
-  "lines": [],
-  "sha256": "497de08a9e79654d12ecd8f050282c533646dfb84e5b025bd9c796d367ac1957"
- },
- "src/ctrmap/humaninterface/tools/WarpTool.java": {
-  "survivors": 0,
-  "killed": 1,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "c4ab382d4881ae7538ac7f6e10e91132277d96efabd5f4d1499aa47aa247f427"
- },
- "src/ctrmap/formats/scripts/TalkerScriptWizard.java": {
-  "survivors": 6,
-  "killed": 7,
-  "unmeasured": 0,
-  "lines": [
-   {
-    "line": 145,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"The zone script's dispatch does not end in the shared \\\"ZERO_PRI; RETN\\\" a script case returns through.\");"
-   },
-   {
-    "line": 163,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"The dispatch CASETBL is not part of the script's instruction list.\");"
-   },
-   {
-    "line": 246,
-    "kind": "negate-if",
-    "code": "} else if (script.publics.get(i).data[0] == oldCaseTblPtr) {"
-   },
-   {
-    "line": 273,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"Internal error: dispatch case \" + newId + \" does not point at its trampoline.\");"
-   },
-   {
-    "line": 276,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not call the new subroutine.\");"
-   },
-   {
-    "line": 279,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not return to the dispatch epilogue.\");"
-   }
-  ],
-  "sha256": "4931838a3d3031bd716f68746f75361b5f7565ed73f9fce3fe6856df77373f37"
- },
- "src/ctrmap/formats/zone/ZoneEntities.java": {
-  "survivors": 1,
-  "killed": 6,
-  "unmeasured": 3,
-  "lines": [
-   {
-    "line": 408,
-    "kind": "negate-if",
-    "code": "if (!Float.isNaN(newz3DCoordinate)) {"
-   }
-  ],
-  "sha256": "ed682d8eb745bbdd9bde634d8ecf9d6801a2bde660c4d83dd3dee16cfba0cc98"
- },
- "src/ctrmap/humaninterface/NPCEditForm.java": {
-  "survivors": 1,
-  "killed": 20,
-  "unmeasured": 3,
-  "lines": [
-   {
-    "line": 2054,
-    "kind": "negate-if",
-    "code": "if (boxedNPC(i)) {"
-   }
-  ],
-  "sha256": "706f1eaf33f11a25df187dc0121baf472bafb4129a5a97982d42e888a6a697d3"
- },
- "src/ctrmap/humaninterface/TileMapPanel.java": {
-  "survivors": 0,
-  "killed": 2,
-  "unmeasured": 1,
-  "lines": [],
-  "sha256": "81b57fd54364f3504939076305be5a934f8fc668ad59d25f8e2a9142863835c9"
- },
- "src/ctrmap/formats/scripts/PawnDisassembler.java": {
-  "survivors": 0,
-  "killed": 3,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "00227c7e99b8848f18c0c68536d70226fea8e842f3755b31ad97f628f989590b"
- },
- "src/ctrmap/formats/scripts/PawnInstruction.java": {
-  "survivors": 0,
-  "killed": 3,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "d7d65de7e712927d39e113a0b81ceff55cf40ba7f9e77b6ff8756329ed8e193e"
- },
- "src/ctrmap/formats/scripts/PawnSubroutine.java": {
-  "survivors": 0,
-  "killed": 5,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "0bc7a98df226d055deed59974cdc23384471a5ed298b81b294aec35beda7f1cf"
- },
- "src/ctrmap/humaninterface/ScriptEditor.java": {
-  "survivors": 0,
-  "killed": 1,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "43fbcba96eb43f26215b829aa40f7724d6d8c72cd3bf1cf4517751cd0d96aecf"
- },
- "src/ctrmap/Workspace.java": {
-  "survivors": 2,
-  "killed": 13,
-  "unmeasured": 1,
-  "lines": [
-   {
-    "line": 847,
-    "kind": "negate-if",
-    "code": "if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {"
-   },
-   {
-    "line": 847,
-    "kind": "negate-if",
-    "code": "if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {"
-   }
-  ],
-  "sha256": "0c5a1c1b91a20c16cb3439a8af81a3ea5f352015e00cd38ee102bbf2a9b1baa7"
- },
- "src/ctrmap/humaninterface/builder/Builder.java": {
-  "survivors": 0,
-  "killed": 0,
-  "unmeasured": 1,
-  "lines": [],
-  "sha256": "0adb16ad8d546f029ffa0aa3c39740331d1f2b12428589f9ab80f0be4ae18237"
- },
- "src/ctrmap/setup/SetupWizard.java": {
-  "survivors": 7,
-  "killed": 0,
-  "unmeasured": 1,
-  "lines": [
-   {
-    "line": 689,
-    "kind": "negate-if",
-    "code": "if (Workspace.snapshotIsForeign(gamePath)) {"
-   },
-   {
-    "line": 511,
-    "kind": "negate-if",
-    "code": "if (!backupBelongsHere(this, gamePath)) {"
-   },
-   {
-    "line": 689,
-    "kind": "negate-if",
-    "code": "if (Workspace.snapshotIsForeign(gamePath)) {"
-   },
-   {
-    "line": 698,
-    "kind": "negate-if",
-    "code": "if (r != JOptionPane.YES_OPTION) {"
-   },
-   {
-    "line": 703,
-    "kind": "flip-return",
-    "code": "return true;"
-   },
-   {
-    "line": 689,
-    "kind": "negate-if",
-    "code": "if (Workspace.snapshotIsForeign(gamePath)) {"
-   },
-   {
-    "line": 698,
-    "kind": "negate-if",
-    "code": "if (r != JOptionPane.YES_OPTION) {"
-   }
-  ],
-  "sha256": "762b4853bd6dfdabb848bd990d7cae28ccc8b0ad80d9b00da076d70f6886a154"
- },
- "src/ctrmap/Ui.java": {
-  "survivors": 2,
-  "killed": 0,
-  "unmeasured": 0,
-  "lines": [
-   {
-    "line": 87,
-    "kind": "drop-report",
-    "code": "JOptionPane.showMessageDialog(parent, text, title, type);"
-   },
-   {
-    "line": 84,
-    "kind": "drop-report",
-    "code": "System.out.println(\"[Ui] \" + title + \": \" + text.replace(\"\\n\", \" | \"));"
-   }
-  ],
-  "sha256": "c60886bdbb8a9d6095f8fc70353cd283a65fa4f8e9e3eb129937826ffbf2a96c"
- },
- "src/ctrmap/AreaForker.java": {
-  "survivors": 0,
-  "killed": 1,
-  "unmeasured": 1,
-  "lines": [],
-  "sha256": "b46dbafb672292883767c8d5ff61f47cb5446922404b2e7d1af5f17c2167405d"
- },
- "src/ctrmap/CtrmapMainframe.java": {
-  "survivors": 10,
-  "killed": 0,
-  "unmeasured": 0,
-  "lines": [
-   {
-    "line": 1256,
-    "kind": "negate-if",
-    "code": "if (!r.forked) {"
-   },
-   {
-    "line": 1275,
-    "kind": "negate-if",
-    "code": "if (r.otherZones.length > 0) {"
-   },
-   {
-    "line": 718,
-    "kind": "negate-if",
-    "code": "if (!openMapMatrixFile(jfc.getSelectedFile())) {"
-   },
-   {
-    "line": 1256,
-    "kind": "negate-if",
-    "code": "if (!r.forked) {"
-   },
-   {
-    "line": 1271,
-    "kind": "negate-if",
-    "code": "if (r.newRegions.length > 1) {"
-   },
-   {
-    "line": 1275,
-    "kind": "negate-if",
-    "code": "if (r.otherZones.length > 0) {"
-   },
-   {
-    "line": 1306,
-    "kind": "flip-return",
-    "code": "return false;"
-   },
-   {
-    "line": 1256,
-    "kind": "negate-if",
-    "code": "if (!r.forked) {"
-   },
-   {
-    "line": 1271,
-    "kind": "negate-if",
-    "code": "if (r.newRegions.length > 1) {"
-   },
-   {
-    "line": 1275,
-    "kind": "negate-if",
-    "code": "if (r.otherZones.length > 0) {"
-   }
-  ],
-  "sha256": "69a55e7a3f1d6c17edb42db8c43d4ff172ef99d265e4d250460ff8e8194b3734"
- },
- "src/ctrmap/GeometryForker.java": {
-  "survivors": 0,
-  "killed": 4,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "067021fc49f5124ad26e6d010e3315e72d5ede69d4fd7adbd3147942c05146f8"
- },
- "src/ctrmap/WorkspaceIntegrity.java": {
-  "survivors": 0,
-  "killed": 11,
-  "unmeasured": 2,
-  "lines": [],
-  "sha256": "c54778b4781d6dff8d7472bd730d13d4592ff4420ffa34473fc60749a21f9dfd"
- },
- "src/ctrmap/formats/garc/GARC.java": {
-  "survivors": 2,
-  "killed": 14,
-  "unmeasured": 2,
-  "lines": [
-   {
-    "line": 312,
-    "kind": "negate-if",
-    "code": "if (len + padLength > maxlength) {"
-   },
-   {
-    "line": 312,
-    "kind": "negate-if",
-    "code": "if (len + padLength > maxlength) {"
-   }
-  ],
-  "sha256": "ad6ee8568a3750b8645bd7b5ae9c53ccf7e79122cb86217744a25e56ec517b11"
- },
- "src/ctrmap/humaninterface/WorkspaceSettings.java": {
-  "survivors": 4,
-  "killed": 0,
-  "unmeasured": 0,
-  "lines": [
-   {
-    "line": 105,
-    "kind": "negate-if",
-    "code": "if (!Workspace.snapshotIsForeign(newGamePath)) {"
-   },
-   {
-    "line": 117,
-    "kind": "negate-if",
-    "code": "if (r != JOptionPane.YES_OPTION) {"
-   },
-   {
-    "line": 118,
-    "kind": "flip-return",
-    "code": "return false;"
-   },
-   {
-    "line": 59,
-    "kind": "negate-if",
-    "code": "if (!keepOrRetakeBackup(this, gameField.getText())) {"
-   }
-  ],
-  "sha256": "019b667499609d2a28689ac303f886c44260b258432eaa05e7ace9cec6b1f901"
- },
- "src/ctrmap/formats/h3d/BchTexturePack.java": {
-  "survivors": 4,
-  "killed": 9,
-  "unmeasured": 1,
-  "lines": [
-   {
-    "line": 399,
-    "kind": "negate-if",
-    "code": "if (tgtFile == null) {"
-   },
-   {
-    "line": 404,
-    "kind": "negate-if",
-    "code": "if (c.pack != null) {"
-   },
-   {
-    "line": 405,
-    "kind": "negate-if",
-    "code": "if (!tgt.storeFile(c.subfile, c.pack)) {"
-   },
-   {
-    "line": 406,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"could not write area \" + targetArea);"
-   }
-  ],
-  "sha256": "3f70a626e78fd65f3ea625bb3f47c2d971472e94d301829d8eeb82cdd1bcef97"
- },
- "src/ctrmap/formats/tilemap/TerrainCatalog.java": {
-  "survivors": 0,
-  "killed": 4,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "fef7bd12f9eb30abf01b638d8f171e070cadee16cb55df06909427aa2c0d12bf"
- },
- "src/ctrmap/humaninterface/PropEditForm.java": {
-  "survivors": 0,
-  "killed": 4,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "7a88d959b368d7f05e71f90135620dbb503645ac4bc84ad749865b9a63ae4e63"
- },
- "src/ctrmap/formats/tilemap/Tilemap.java": {
-  "survivors": 0,
-  "killed": 1,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "9df4256bcc4765c64a6accdd0299a9992c1e657e369945f1b3e2a917cb582eef"
- },
- "src/ctrmap/humaninterface/MatrixEditForm.java": {
-  "survivors": 0,
-  "killed": 1,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "7d941930a872401353f3b010233652d9d00902abf7c774c5c42f704be7a794ca"
- },
- "src/ctrmap/formats/h3d/BuildingCatalog.java": {
-  "survivors": 0,
-  "killed": 2,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "a7dcdbbbadb74c389cac310040f9b77e4635ada42d2a5d32a04cb9fc309867eb"
- },
- "src/ctrmap/humaninterface/AreaForkPrompt.java": {
-  "survivors": 0,
-  "killed": 2,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "4a238d2dedd832ff0a301684476a4d36040ee58ecb07f0d3766f4fc486cbc364"
- },
- "src/ctrmap/formats/scripts/ZoneScriptAnalyzer.java": {
-  "survivors": 2,
-  "killed": 2,
-  "unmeasured": 0,
-  "lines": [
-   {
-    "line": 260,
-    "kind": "negate-if",
-    "code": "if (d == null || !d.cases.containsKey(caseKey)) {"
-   },
-   {
-    "line": 267,
-    "kind": "negate-if",
-    "code": "if (target.getCommand() == OP_PROC) {"
-   }
-  ],
-  "sha256": "423434792b8487e5411369961d8981f46a179ecf1286299c972f4b05ae074004"
- },
  "_meta": {
-  "measured_at": "da985c2",
-  "attempted": 267,
-  "survived": 54,
-  "killed": 185,
-  "unmeasured": 28
+  "measured_at": "fabcbe0",
+  "measurements": 290,
+  "distinct": 257,
+  "attempted": 254,
+  "survived": 71,
+  "killed": 183,
+  "killed_by_flood": 1,
+  "hung": 0,
+  "nocompile": 0,
+  "unmeasured": 0,
+  "unmutable": 1,
+  "excluded": 2
  }
 }
