@@ -80,6 +80,18 @@ CLUSTERS = {
     "d3":           ["PackRollbackTest", "MisplacedRegistryTest", "IntegrityTest", "ForkGuardsTest"],
     "d4":           ["PaintApplyGuardsTest", "PlacementGuardsTest", "BuildingCatalogTest",
                      "MapPrefabTest"],
+    "m1":           ["NpcEditFormGuardsTest", "NpcEntityGuardsTest", "DataSafetyGuardsTest",
+                     "ZoneEntitiesRoundTripTest"],
+    "m2":           ["PaintApplyGuardsTest", "PaintFormGuardsTest", "PaintedFloorTest",
+                     "PlacementGuardsTest", "MapPrefabTest"],
+    "m3":           ["PackReportTest", "PackRollbackTest", "IntegrityTest", "MisplacedRegistryTest",
+                     "SnapshotIntegrityTest", "ForkGuardsTest", "DataSafetyGuardsTest",
+                     "SetupWizardTest", "BatteryHygieneTest"],
+    "m4":           ["BuildingCatalogTest", "PlacementGuardsTest", "TexturePackImportTest",
+                     "DoorPropGuardsTest"],
+    "talkerfix":    ["DispatchTrampolineTest", "TalkerWizardDryRunTest", "GiveBpScriptTest",
+                     "GauntletScriptTest", "ZoneScriptAnalyzerTest", "NpcTemplatesTest",
+                     "SignWrapperInjectTest", "MsgWrapperInjectTest"],
 }
 
 SUBST = {
@@ -332,6 +344,23 @@ for _cid, (_b, _suites) in RESOLVED.items():
                              % (cls, r.returncode))
 print("  ok: every guard suite passes unmutated\n", flush=True)
 
+# A mutant is judged by every suite that guards its FILE, not only by the list
+# of the branch that happens to have introduced the line. The per-branch lists
+# are hand-maintained and drifted: NPCEditForm:485 is attributed to c5b, whose
+# list does not name NpcEditFormGuardsTest - the suite that actually kills it -
+# so a run reported 59 survivors the battery demonstrably kills. Union them.
+FILE_SUITES = {}
+for _cid, (_base, _suites) in RESOLVED.items():
+    _before, _tip = _base
+    for _path in added_lines(_before, _tip):
+        _have = FILE_SUITES.setdefault(_path, [])
+        for _s in _suites:
+            if _s not in _have:
+                _have.append(_s)
+print("suite union: %d file(s), %.1f suites each on average"
+      % (len(FILE_SUITES), sum(len(v) for v in FILE_SUITES.values()) / max(1, len(FILE_SUITES))),
+      flush=True)
+
 for cid, (base, suites) in RESOLVED.items():
     before, tip = base
     print("\n=== %s (merged from %s onto %s)" % (cid, tip[:7], before[:7]), flush=True)
@@ -357,7 +386,11 @@ for cid, (base, suites) in RESOLVED.items():
                 verdict, detail = "nocompile", ""
             else:
                 verdict, detail = "SURVIVED", ""
-                for cls, a in suites:
+                # the branch's own suites first - they are the most specific and
+                # usually the killer, so a kill still costs one or two runs;
+                # only a true survivor pays for the whole union
+                ordered = suites + [x for x in FILE_SUITES.get(path, []) if x not in suites]
+                for cls, a in ordered:
                     r = run([JAVA, "-Xmx4g", "-Djava.awt.headless=true", "-cp", CP, cls] + a)
                     if r.returncode == Hung.returncode:
                         verdict, detail = "hung", cls.split(".")[-1] + ": never finished"
