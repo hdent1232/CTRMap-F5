@@ -55,6 +55,7 @@ public class MainframeReportsTest {
 
 		aForkThatDidNothingSaysSo();
 		aForkThatWorkedSaysWhatItDid();
+		everyRegionTheForkMadeIsAccountedFor();
 		groundBelongingToOtherZonesIsNamed();
 		aFileThatIsNotAMapMatrixSaysSo();
 
@@ -89,6 +90,36 @@ public class MainframeReportsTest {
 				"and which region to edit (" + r.srcRegions[0] + " -> " + r.newRegions[0] + ")");
 		check(!said.contains("already has its own map geometry"),
 				"and is NOT told nothing was changed");
+	}
+
+	/**
+	 * A zone whose map is several regions gets several private copies, and the
+	 * report names ONE of them as the place to edit. It has to say the rest are
+	 * listed above it.
+	 *
+	 * <p>Zone 10 above forks eighteen regions. Told to "edit region 857" and
+	 * nothing else, the user edits an eighteenth of their own map and reads the
+	 * silence about the other seventeen as the fork having half worked - the
+	 * likeliest next move being to fork again, which appends another eighteen
+	 * copies and orphans the ones the zone is now using. Said the other way
+	 * round, a one-region fork sends them looking above for regions that were
+	 * never made.
+	 */
+	static void everyRegionTheForkMadeIsAccountedFor() {
+		GeometryForker.ForkResult many = forked();
+		many.srcRegions = new int[]{200, 201, 202};
+		many.newRegions = new int[]{857, 858, 859};
+		String said = CtrmapMainframe.forkGeometryReport(9, many);
+		check(said.contains("edit region 857 (and the other new regions above)"),
+				"a fork of 3 regions points at the first and says the rest are above it: " + tail(said));
+		check(said.contains("FieldData region 202 -> 859"),
+				"and the ones above it are really listed, so \"above\" names something");
+
+		GeometryForker.ForkResult one = forked();   //newRegions = {857}
+		String single = CtrmapMainframe.forkGeometryReport(9, one);
+		check(!single.contains("and the other new regions above"),
+				"and a fork of ONE region does not send them hunting for regions that were never made: "
+				+ tail(single));
 	}
 
 	/**
