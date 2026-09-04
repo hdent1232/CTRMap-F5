@@ -1374,12 +1374,61 @@ MENTIONS = _mentions()
 
 
 def suites_for(path, first):
-    """Every registered suite, likeliest killer first, `first` before all of them."""
+    """Every suite that may judge a mutant, likeliest killer first.
+
+    `first` is the branch's own list and is filtered too - a suite that cannot
+    decide a mutant cannot decide it by being named early either.
+    """
+    ok = {c for c, _ in JUDGES}
+    first = [x for x in first if x[0] in ok]
     simple = path.split("/")[-1][:-len(".java")]
     seen = {c for c, _ in first}
-    named = [x for x in ALL_SUITES if x[0] in MENTIONS.get(simple, ()) and x[0] not in seen]
+    named = [x for x in JUDGES if x[0] in MENTIONS.get(simple, ()) and x[0] not in seen]
     seen |= {c for c, _ in named}
-    return first + named + [x for x in ALL_SUITES if x[0] not in seen]
+    return first + named + [x for x in JUDGES if x[0] not in seen]
+
+def _judges():
+    """ALL_SUITES minus every suite that fails merely because a source file changed.
+
+    Not every suite judges the PROGRAM. MutationBaselineTest hashes the sources
+    the baseline recorded, so any mutation to one of those files fails it - and
+    once a survivor is made to face every registered suite, that turns into a
+    kill for a line nothing actually asserts. It happened: the first merged run
+    credited it with 13 of its first 124 kills before this existed.
+
+    Which suites those are is measured, not listed. A list would be one more
+    thing to remember, and this file has just been through what that costs. So:
+    change a source file in a way that alters its bytes and nothing else, build,
+    and ask. Whatever fails is asserting something about the repository rather
+    than about the program, and cannot be allowed to judge a mutant.
+    """
+    probe = "src/ctrmap/formats/garc/GARC.java"      # a file the baseline records
+    original = read_src(probe)
+    write_src(probe, original.rstrip("\r\n") + "\r\n//mutate2 probe: bytes changed, behaviour not\r\n")
+    try:
+        if not build():
+            raise SystemExit("the source-sensitivity probe did not compile - that is this "
+                             "script's defect, not the tree's")
+        out = []
+        for cls, a in ALL_SUITES:
+            r = run([JAVA, "-Xmx4g", "-Djava.awt.headless=true", "-cp", CP, cls] + a)
+            if r.returncode == 0:
+                out.append((cls, a))
+            else:
+                print("  not a judge: %s fails on a source edit that changes no behaviour"
+                      % cls.split(".")[-1], flush=True)
+    finally:
+        write_src(probe, original)
+        build()
+    print("judges: %d of %d registered suite(s) can decide a mutant"
+          % (len(out), len(ALL_SUITES)), flush=True)
+    if not out:
+        raise SystemExit("no suite survived the probe - refusing to sweep, every verdict "
+                         "would be meaningless")
+    return out
+
+
+JUDGES = _judges()
 
 for cid, (base, suites) in RESOLVED.items():
     before, tip = base
