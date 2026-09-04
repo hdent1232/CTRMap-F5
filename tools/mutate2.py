@@ -272,14 +272,16 @@ class Ran(object):
 
 
 class Tail(object):
-    """Last TAIL_BYTES of a stream, and how many bytes went past."""
+    """Last `limit` bytes of a stream, and how many bytes went past. limit=None keeps all."""
 
     def __init__(self, limit=TAIL_BYTES):
         self.limit, self.buf, self.total = limit, b"", 0
 
     def add(self, chunk):
         self.total += len(chunk)
-        self.buf = (self.buf + chunk)[-self.limit:]
+        self.buf = self.buf + chunk
+        if self.limit is not None:
+            self.buf = self.buf[-self.limit:]
 
     def text(self):
         return self.buf.decode("utf-8", "replace")
@@ -302,7 +304,16 @@ def _drain(stream, sink):
             pass
 
 
-def run(cmd, timeout=900):
+def run(cmd, timeout=900, keep=TAIL_BYTES):
+    # keep=None means the CALLER PARSES THE WHOLE OUTPUT and must not be handed
+    # a sample of it. Every git call does. The first cut of this fix bounded
+    # every run at a 256 KB tail, and c1's merge diff is 376 KB: its head was
+    # dropped, added_lines parsed from the middle of a hunk, and the sweep went
+    # from 43 measured files to 35 before a single mutant ran. Truncating output
+    # that is about to be parsed is not a smaller version of the same defect -
+    # it is a new one, and a quieter one. So: a tail for suites, whose last line
+    # is all the verdict reads; everything for anything that is parsed.
+    #
     # A hang must never be scored as a kill. A mutant that makes a suite loop
     # forever has not been detected by that suite; counting it killed inflates
     # the score in the one direction this measurement must never drift. The
@@ -321,7 +332,7 @@ def run(cmd, timeout=900):
     # non-zero exit.
     proc = subprocess.Popen(cmd, cwd=str(WT), stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, bufsize=0)
-    out, err = Tail(), Tail()
+    out, err = Tail(keep), Tail(keep)
     threads = [threading.Thread(target=_drain, args=(proc.stdout, out)),
                threading.Thread(target=_drain, args=(proc.stderr, err))]
     for t in threads:
@@ -334,7 +345,9 @@ def run(cmd, timeout=900):
             break
         except subprocess.TimeoutExpired:
             pass
-        if out.total + err.total > FLOOD_BYTES:
+        # no flood cut when the whole output is wanted: cutting it would be the
+        # same silent truncation, just triggered later
+        if keep is not None and out.total + err.total > FLOOD_BYTES:
             flooded = True
             _kill(proc)
             break
@@ -359,6 +372,11 @@ def _kill(proc):
         pass
 
 
+def git(*args):
+    """A git call, with its whole output. Everything git says here is parsed."""
+    return run(["git"] + list(args), keep=None)
+
+
 def merge_parents(branch):
     """(before, branch tip) of the merge that brought sf/<branch> into silent-failures.
 
@@ -369,13 +387,31 @@ def merge_parents(branch):
     what that merge introduced - including for c47 and c2, which had merged
     silent-failures into themselves first.
     """
-    m = run(["git", "log", "--merges", "--first-parent", "--format=%H",
-             "--grep=Merge branch 'sf/%s'" % branch, MAINLINE]).stdout.split()
+    m = git("log", "--merges", "--first-parent", "--format=%H",
+            "--grep=Merge branch 'sf/%s'" % branch, MAINLINE).stdout.split()
     if not m:
         return None, None
     # resolved to real shas so the log names the two trees, not one merge twice
-    return (run(["git", "rev-parse", m[-1] + "^1"]).stdout.strip(),
-            run(["git", "rev-parse", m[-1] + "^2"]).stdout.strip())
+    return (git("rev-parse", m[-1] + "^1").stdout.strip(),
+            git("rev-parse", m[-1] + "^2").stdout.strip())
+
+
+def whole_diff_or_refuse(diff, before="", tip=""):
+    """Refuse a diff that does not start where a diff starts.
+
+    The only way to be handed a partial diff is for something to have sampled
+    it, and a partial diff does not announce itself: it parses perfectly, names
+    fewer files, and the sweep reports a smaller measurement that looks entirely
+    healthy. That happened - a 256 KB output cap ate the head of c1's 376 KB
+    merge diff and eight files silently left the sweep. Two characters of check
+    make it loud instead.
+    """
+    if diff and not diff.startswith("diff --git"):
+        raise SystemExit(
+            "TRUNCATED DIFF for %s..%s - it does not begin with 'diff --git' but with:\n    %s\n"
+            "Something sampled output that is parsed in full. Every git call must go through "
+            "git(), which passes keep=None." % (before[:7], tip[:7], diff[:120]))
+    return diff
 
 
 def added_lines(before, tip):
@@ -386,8 +422,9 @@ def added_lines(before, tip):
     tree since. Each line is relocated by its text in the current file before
     it is mutated, and skipped when that text is not unique there.
     """
-    diff = run(["git", "diff", "-U0", before + ".." + tip, "--", "src",
-                ":!src/ctrmap/tests"]).stdout
+    diff = git("diff", "-U0", before + ".." + tip, "--", "src",
+               ":!src/ctrmap/tests").stdout
+    whole_diff_or_refuse(diff, before, tip)
     out, path = {}, None
     for line in diff.splitlines():
         if line.startswith("+++ b/"):
@@ -989,7 +1026,7 @@ public class T {
 def selftest():
     import shutil
     import tempfile
-    global WT
+    global WT, run
     fails = [0]
 
     def check(ok, what):
@@ -1119,6 +1156,40 @@ def selftest():
           "(%d bytes kept of %d)" % (len(r.stdout), getattr(r, "out_bytes", 0)))
     check(time.time() - t < 100, "and it is cut off promptly rather than left to the timeout")
 
+    # ...and the tail must never reach output that is PARSED rather than sampled.
+    # The first cut of the flood fix bounded every run at 256 KB, and c1's merge
+    # diff is 376 KB: eight files left the sweep silently before a mutant ran.
+    big = 400000
+    r = run([py, "-u", "-c", "import sys; sys.stdout.write('D'*%d)" % big], timeout=120, keep=None)
+    check(len(r.stdout) == big,
+          "output a caller parses in full is kept in full, not sampled (%d of %d)"
+          % (len(r.stdout), big))
+    r = run([py, "-u", "-c", "import sys; sys.stdout.write('D'*%d)" % big], timeout=120)
+    check(len(r.stdout) == TAIL_BYTES, "while a suite's output is still bounded to its tail")
+    try:
+        whole_diff_or_refuse("@@ -1,0 +1,2 @@\n+something", "aaaaaaa", "bbbbbbb")
+        check(False, "a diff that does not start with 'diff --git' is refused, loudly")
+    except SystemExit as e:
+        check("TRUNCATED DIFF" in str(e),
+              "a diff that does not start with 'diff --git' is refused, loudly")
+    check(whole_diff_or_refuse("diff --git a/x b/x\n@@\n+y") .startswith("diff --git"),
+          "...and a whole one passes through untouched")
+    # and the rule has to hold at the call site, not just be available there:
+    # a git() that forgot keep=None would pass every check above
+    real_run, seen = run, {}
+
+    def spy(cmd, timeout=900, keep=TAIL_BYTES):
+        seen["keep"] = keep
+        return Ran(0, "", "", False, 0)
+
+    run = spy
+    try:
+        git("rev-parse", "HEAD")
+    finally:
+        run = real_run
+    check(seen.get("keep", TAIL_BYTES) is None,
+          "every git call asks for the whole output - git output is parsed, never sampled")
+
     print("ALL PASS" if not fails[0] else "FAILURES PRESENT (%d)" % fails[0])
     return 1 if fails[0] else 0
 
@@ -1146,8 +1217,8 @@ results, t0 = [], time.time()
 # the branch move underneath it - a merge landed mid-sweep - so its later
 # clusters were scored against a tree its baseline had never seen. A sweep must
 # measure one tree or it measures none.
-run(["git", "reset", "--hard", MAINLINE])
-FROZEN = run(["git", "rev-parse", "HEAD"]).stdout.strip()
+git("reset", "--hard", MAINLINE)
+FROZEN = git("rev-parse", "HEAD").stdout.strip()
 print("measuring %s (frozen; the branch may move without affecting this run)" % FROZEN[:7], flush=True)
 # resolved AFTER the reset, so the suites and arguments come from the tree
 # about to be measured, not whatever test.ps1 the worktree held before
@@ -1278,7 +1349,7 @@ for cid, (base, suites) in RESOLVED.items():
                                 code=original.splitlines()[i].strip()[:160]))
             write_src(path, original)
 
-    run(["git", "reset", "--hard", FROZEN])
+    git("reset", "--hard", FROZEN)
 
 build()
 io.open(BASE / "wt/_state/mutation_semantic.json", "w", encoding="utf-8", newline="\n").write(
