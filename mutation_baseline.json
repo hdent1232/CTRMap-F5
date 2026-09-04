@@ -1,7 +1,7 @@
 {
  "src/ctrmap/formats/h3d/MapPrefab.java": {
   "survivors": 0,
-  "killed": 16,
+  "killed": 17,
   "unmeasured": 1,
   "lines": [],
   "sha256": "9acc753a7a137ec9f8b7d154b8d5e723f8a483e1c2f7ecf39954130c9fd95d66"
@@ -15,42 +15,109 @@
  },
  "src/ctrmap/humaninterface/GeoEditForm.java": {
   "survivors": 0,
-  "killed": 0,
+  "killed": 4,
   "unmeasured": 1,
   "lines": [],
   "sha256": "a43ddf179ca88b26771fe8474c67bcaa0c8eee065f2809e33d1aafb64f74f3c0"
  },
  "src/ctrmap/humaninterface/TilePainterForm.java": {
   "survivors": 0,
-  "killed": 16,
-  "unmeasured": 4,
+  "killed": 24,
+  "unmeasured": 5,
   "lines": [],
   "sha256": "ab8e8975a4ffc1296424e3b8d67d03954db2842ce7c3114d27f9090a30378e58"
  },
  "src/ctrmap/tools/BuildingHarvester.java": {
-  "survivors": 0,
+  "survivors": 7,
   "killed": 0,
   "unmeasured": 0,
-  "lines": [],
+  "lines": [
+   {
+    "line": 180,
+    "kind": "negate-if",
+    "code": "if (!whole) {"
+   },
+   {
+    "line": 571,
+    "kind": "negate-if",
+    "code": "if (!Float.isNaN(gY) && gY >= c.minY - 9 && gY <= c.maxY && Math.abs(gY - c.minY) < nearest) {"
+   },
+   {
+    "line": 316,
+    "kind": "negate-if",
+    "code": "if (familyOf(e.getKey()) == family) {"
+   },
+   {
+    "line": 327,
+    "kind": "negate-if",
+    "code": "if (familyOf(e.getKey()) == null && e.getValue() > most) {"
+   },
+   {
+    "line": 350,
+    "kind": "negate-if",
+    "code": "if (faces > bestFaces) {"
+   },
+   {
+    "line": 355,
+    "kind": "negate-if",
+    "code": "if (best != null && bestFaces > biggestUnnamed()) {"
+   },
+   {
+    "line": 386,
+    "kind": "negate-if",
+    "code": "if (ml.contains(family[k])) {"
+   }
+  ],
   "sha256": "3b56a80fe981822a3bcbd90b82e68e8f0595c6b57affedee5f60e568fad5b7a3"
  },
  "src/ctrmap/formats/tilemap/PaintedRegionBuilder.java": {
   "survivors": 0,
-  "killed": 9,
+  "killed": 11,
   "unmeasured": 1,
   "lines": [],
   "sha256": "9298ff605b3506fa2ab4caffbe3ea30ad72bf1976096c208198d3b3dc053a907"
  },
  "src/ctrmap/humaninterface/PaintForm.java": {
-  "survivors": 0,
+  "survivors": 6,
   "killed": 0,
   "unmeasured": 3,
-  "lines": [],
+  "lines": [
+   {
+    "line": 384,
+    "kind": "negate-if",
+    "code": "if (borrowed > 0) {"
+   },
+   {
+    "line": 613,
+    "kind": "negate-if",
+    "code": "if (cur == PaintedRegionBuilder.NO_RAMP) {"
+   },
+   {
+    "line": 615,
+    "kind": "drop-report",
+    "code": "placeStatus.setText(d < 0 ? \"<html>No lower ground beside that tile -<br>raise it or lower a neighbour first.</html>\" : \" \");"
+   },
+   {
+    "line": 620,
+    "kind": "negate-if",
+    "code": "if (PaintedRegionBuilder.descends(grid, height, lx, ly, d)) {"
+   },
+   {
+    "line": 856,
+    "kind": "negate-if",
+    "code": "if (rd >= 0) {"
+   },
+   {
+    "line": 685,
+    "kind": "negate-if",
+    "code": "if (mTileMapPanel != null) {"
+   }
+  ],
   "sha256": "d0a6637aa13dd89a4d310a0bfbb25193fd27633210e6a2011f54f36a4da82980"
  },
  "src/ctrmap/humaninterface/WarpEditForm.java": {
   "survivors": 0,
-  "killed": 3,
+  "killed": 6,
   "unmeasured": 0,
   "lines": [],
   "sha256": "0d85c8e36db1f90e1cb62ce1df236ddd605edf3320e66d15eb820b02cfa0b0e9"
@@ -70,29 +137,72 @@
   "sha256": "c4ab382d4881ae7538ac7f6e10e91132277d96efabd5f4d1499aa47aa247f427"
  },
  "src/ctrmap/formats/scripts/TalkerScriptWizard.java": {
-  "survivors": 0,
-  "killed": 2,
+  "survivors": 6,
+  "killed": 7,
   "unmeasured": 0,
-  "lines": [],
-  "sha256": "acc9be08fbda1fe9971952394bbc8ccd99e92099071210b34b6f2e9669babc97"
+  "lines": [
+   {
+    "line": 145,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"The zone script's dispatch does not end in the shared \\\"ZERO_PRI; RETN\\\" a script case returns through.\");"
+   },
+   {
+    "line": 163,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"The dispatch CASETBL is not part of the script's instruction list.\");"
+   },
+   {
+    "line": 246,
+    "kind": "negate-if",
+    "code": "} else if (script.publics.get(i).data[0] == oldCaseTblPtr) {"
+   },
+   {
+    "line": 273,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"Internal error: dispatch case \" + newId + \" does not point at its trampoline.\");"
+   },
+   {
+    "line": 276,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not call the new subroutine.\");"
+   },
+   {
+    "line": 279,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not return to the dispatch epilogue.\");"
+   }
+  ],
+  "sha256": "4931838a3d3031bd716f68746f75361b5f7565ed73f9fce3fe6856df77373f37"
  },
  "src/ctrmap/formats/zone/ZoneEntities.java": {
-  "survivors": 0,
+  "survivors": 1,
   "killed": 6,
   "unmeasured": 3,
-  "lines": [],
+  "lines": [
+   {
+    "line": 408,
+    "kind": "negate-if",
+    "code": "if (!Float.isNaN(newz3DCoordinate)) {"
+   }
+  ],
   "sha256": "ed682d8eb745bbdd9bde634d8ecf9d6801a2bde660c4d83dd3dee16cfba0cc98"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
-  "survivors": 0,
-  "killed": 7,
-  "unmeasured": 2,
-  "lines": [],
-  "sha256": "f901174b7f57de5f07d49853d5a65acd080c4255e3828836c4b483513bc0b090"
+  "survivors": 1,
+  "killed": 20,
+  "unmeasured": 3,
+  "lines": [
+   {
+    "line": 2054,
+    "kind": "negate-if",
+    "code": "if (boxedNPC(i)) {"
+   }
+  ],
+  "sha256": "706f1eaf33f11a25df187dc0121baf472bafb4129a5a97982d42e888a6a697d3"
  },
  "src/ctrmap/humaninterface/TileMapPanel.java": {
   "survivors": 0,
-  "killed": 1,
+  "killed": 2,
   "unmeasured": 1,
   "lines": [],
   "sha256": "81b57fd54364f3504939076305be5a934f8fc668ad59d25f8e2a9142863835c9"
@@ -125,18 +235,22 @@
   "lines": [],
   "sha256": "43fbcba96eb43f26215b829aa40f7724d6d8c72cd3bf1cf4517751cd0d96aecf"
  },
- "src/ctrmap/CtrmapMainframe.java": {
-  "survivors": 0,
-  "killed": 0,
-  "unmeasured": 0,
-  "lines": [],
-  "sha256": "69a55e7a3f1d6c17edb42db8c43d4ff172ef99d265e4d250460ff8e8194b3734"
- },
  "src/ctrmap/Workspace.java": {
-  "survivors": 0,
-  "killed": 8,
+  "survivors": 2,
+  "killed": 13,
   "unmeasured": 1,
-  "lines": [],
+  "lines": [
+   {
+    "line": 847,
+    "kind": "negate-if",
+    "code": "if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {"
+   },
+   {
+    "line": 847,
+    "kind": "negate-if",
+    "code": "if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {"
+   }
+  ],
   "sha256": "0c5a1c1b91a20c16cb3439a8af81a3ea5f352015e00cd38ee102bbf2a9b1baa7"
  },
  "src/ctrmap/humaninterface/builder/Builder.java": {
@@ -147,17 +261,64 @@
   "sha256": "0adb16ad8d546f029ffa0aa3c39740331d1f2b12428589f9ab80f0be4ae18237"
  },
  "src/ctrmap/setup/SetupWizard.java": {
-  "survivors": 0,
+  "survivors": 7,
   "killed": 0,
   "unmeasured": 1,
-  "lines": [],
+  "lines": [
+   {
+    "line": 689,
+    "kind": "negate-if",
+    "code": "if (Workspace.snapshotIsForeign(gamePath)) {"
+   },
+   {
+    "line": 511,
+    "kind": "negate-if",
+    "code": "if (!backupBelongsHere(this, gamePath)) {"
+   },
+   {
+    "line": 689,
+    "kind": "negate-if",
+    "code": "if (Workspace.snapshotIsForeign(gamePath)) {"
+   },
+   {
+    "line": 698,
+    "kind": "negate-if",
+    "code": "if (r != JOptionPane.YES_OPTION) {"
+   },
+   {
+    "line": 703,
+    "kind": "flip-return",
+    "code": "return true;"
+   },
+   {
+    "line": 689,
+    "kind": "negate-if",
+    "code": "if (Workspace.snapshotIsForeign(gamePath)) {"
+   },
+   {
+    "line": 698,
+    "kind": "negate-if",
+    "code": "if (r != JOptionPane.YES_OPTION) {"
+   }
+  ],
   "sha256": "762b4853bd6dfdabb848bd990d7cae28ccc8b0ad80d9b00da076d70f6886a154"
  },
  "src/ctrmap/Ui.java": {
-  "survivors": 0,
+  "survivors": 2,
   "killed": 0,
   "unmeasured": 0,
-  "lines": [],
+  "lines": [
+   {
+    "line": 87,
+    "kind": "drop-report",
+    "code": "JOptionPane.showMessageDialog(parent, text, title, type);"
+   },
+   {
+    "line": 84,
+    "kind": "drop-report",
+    "code": "System.out.println(\"[Ui] \" + title + \": \" + text.replace(\"\\n\", \" | \"));"
+   }
+  ],
   "sha256": "c60886bdbb8a9d6095f8fc70353cd283a65fa4f8e9e3eb129937826ffbf2a96c"
  },
  "src/ctrmap/AreaForker.java": {
@@ -166,6 +327,64 @@
   "unmeasured": 1,
   "lines": [],
   "sha256": "b46dbafb672292883767c8d5ff61f47cb5446922404b2e7d1af5f17c2167405d"
+ },
+ "src/ctrmap/CtrmapMainframe.java": {
+  "survivors": 10,
+  "killed": 0,
+  "unmeasured": 0,
+  "lines": [
+   {
+    "line": 1256,
+    "kind": "negate-if",
+    "code": "if (!r.forked) {"
+   },
+   {
+    "line": 1275,
+    "kind": "negate-if",
+    "code": "if (r.otherZones.length > 0) {"
+   },
+   {
+    "line": 718,
+    "kind": "negate-if",
+    "code": "if (!openMapMatrixFile(jfc.getSelectedFile())) {"
+   },
+   {
+    "line": 1256,
+    "kind": "negate-if",
+    "code": "if (!r.forked) {"
+   },
+   {
+    "line": 1271,
+    "kind": "negate-if",
+    "code": "if (r.newRegions.length > 1) {"
+   },
+   {
+    "line": 1275,
+    "kind": "negate-if",
+    "code": "if (r.otherZones.length > 0) {"
+   },
+   {
+    "line": 1306,
+    "kind": "flip-return",
+    "code": "return false;"
+   },
+   {
+    "line": 1256,
+    "kind": "negate-if",
+    "code": "if (!r.forked) {"
+   },
+   {
+    "line": 1271,
+    "kind": "negate-if",
+    "code": "if (r.newRegions.length > 1) {"
+   },
+   {
+    "line": 1275,
+    "kind": "negate-if",
+    "code": "if (r.otherZones.length > 0) {"
+   }
+  ],
+  "sha256": "69a55e7a3f1d6c17edb42db8c43d4ff172ef99d265e4d250460ff8e8194b3734"
  },
  "src/ctrmap/GeometryForker.java": {
   "survivors": 0,
@@ -182,24 +401,77 @@
   "sha256": "c54778b4781d6dff8d7472bd730d13d4592ff4420ffa34473fc60749a21f9dfd"
  },
  "src/ctrmap/formats/garc/GARC.java": {
-  "survivors": 0,
-  "killed": 8,
+  "survivors": 2,
+  "killed": 14,
   "unmeasured": 2,
-  "lines": [],
+  "lines": [
+   {
+    "line": 312,
+    "kind": "negate-if",
+    "code": "if (len + padLength > maxlength) {"
+   },
+   {
+    "line": 312,
+    "kind": "negate-if",
+    "code": "if (len + padLength > maxlength) {"
+   }
+  ],
   "sha256": "ad6ee8568a3750b8645bd7b5ae9c53ccf7e79122cb86217744a25e56ec517b11"
  },
  "src/ctrmap/humaninterface/WorkspaceSettings.java": {
-  "survivors": 0,
+  "survivors": 4,
   "killed": 0,
   "unmeasured": 0,
-  "lines": [],
+  "lines": [
+   {
+    "line": 105,
+    "kind": "negate-if",
+    "code": "if (!Workspace.snapshotIsForeign(newGamePath)) {"
+   },
+   {
+    "line": 117,
+    "kind": "negate-if",
+    "code": "if (r != JOptionPane.YES_OPTION) {"
+   },
+   {
+    "line": 118,
+    "kind": "flip-return",
+    "code": "return false;"
+   },
+   {
+    "line": 59,
+    "kind": "negate-if",
+    "code": "if (!keepOrRetakeBackup(this, gameField.getText())) {"
+   }
+  ],
   "sha256": "019b667499609d2a28689ac303f886c44260b258432eaa05e7ace9cec6b1f901"
  },
  "src/ctrmap/formats/h3d/BchTexturePack.java": {
-  "survivors": 0,
+  "survivors": 4,
   "killed": 9,
   "unmeasured": 1,
-  "lines": [],
+  "lines": [
+   {
+    "line": 399,
+    "kind": "negate-if",
+    "code": "if (tgtFile == null) {"
+   },
+   {
+    "line": 404,
+    "kind": "negate-if",
+    "code": "if (c.pack != null) {"
+   },
+   {
+    "line": 405,
+    "kind": "negate-if",
+    "code": "if (!tgt.storeFile(c.subfile, c.pack)) {"
+   },
+   {
+    "line": 406,
+    "kind": "drop-throw",
+    "code": "throw new IllegalStateException(\"could not write area \" + targetArea);"
+   }
+  ],
   "sha256": "3f70a626e78fd65f3ea625bb3f47c2d971472e94d301829d8eeb82cdd1bcef97"
  },
  "src/ctrmap/formats/tilemap/TerrainCatalog.java": {
@@ -211,7 +483,7 @@
  },
  "src/ctrmap/humaninterface/PropEditForm.java": {
   "survivors": 0,
-  "killed": 0,
+  "killed": 4,
   "unmeasured": 0,
   "lines": [],
   "sha256": "7a88d959b368d7f05e71f90135620dbb503645ac4bc84ad749865b9a63ae4e63"
@@ -232,17 +504,41 @@
  },
  "src/ctrmap/formats/h3d/BuildingCatalog.java": {
   "survivors": 0,
-  "killed": 1,
+  "killed": 2,
   "unmeasured": 0,
   "lines": [],
   "sha256": "a7dcdbbbadb74c389cac310040f9b77e4635ada42d2a5d32a04cb9fc309867eb"
  },
+ "src/ctrmap/humaninterface/AreaForkPrompt.java": {
+  "survivors": 0,
+  "killed": 2,
+  "unmeasured": 0,
+  "lines": [],
+  "sha256": "4a238d2dedd832ff0a301684476a4d36040ee58ecb07f0d3766f4fc486cbc364"
+ },
+ "src/ctrmap/formats/scripts/ZoneScriptAnalyzer.java": {
+  "survivors": 2,
+  "killed": 2,
+  "unmeasured": 0,
+  "lines": [
+   {
+    "line": 260,
+    "kind": "negate-if",
+    "code": "if (d == null || !d.cases.containsKey(caseKey)) {"
+   },
+   {
+    "line": 267,
+    "kind": "negate-if",
+    "code": "if (target.getCommand() == OP_PROC) {"
+   }
+  ],
+  "sha256": "423434792b8487e5411369961d8981f46a179ecf1286299c972f4b05ae074004"
+ },
  "_meta": {
-  "measured_at": "5637163",
-  "reconciled_at": "this merge",
-  "attempted": 232,
-  "killed": 206,
-  "survived": 0,
-  "unmeasured": 26
+  "measured_at": "da985c2",
+  "attempted": 267,
+  "survived": 54,
+  "killed": 185,
+  "unmeasured": 28
  }
 }
