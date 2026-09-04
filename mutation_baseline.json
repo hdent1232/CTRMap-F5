@@ -78,41 +78,10 @@
   "sha256": "9298ff605b3506fa2ab4caffbe3ea30ad72bf1976096c208198d3b3dc053a907"
  },
  "src/ctrmap/humaninterface/PaintForm.java": {
-  "survivors": 6,
-  "killed": 0,
+  "survivors": 0,
+  "killed": 6,
   "unmeasured": 3,
-  "lines": [
-   {
-    "line": 384,
-    "kind": "negate-if",
-    "code": "if (borrowed > 0) {"
-   },
-   {
-    "line": 613,
-    "kind": "negate-if",
-    "code": "if (cur == PaintedRegionBuilder.NO_RAMP) {"
-   },
-   {
-    "line": 615,
-    "kind": "drop-report",
-    "code": "placeStatus.setText(d < 0 ? \"<html>No lower ground beside that tile -<br>raise it or lower a neighbour first.</html>\" : \" \");"
-   },
-   {
-    "line": 620,
-    "kind": "negate-if",
-    "code": "if (PaintedRegionBuilder.descends(grid, height, lx, ly, d)) {"
-   },
-   {
-    "line": 856,
-    "kind": "negate-if",
-    "code": "if (rd >= 0) {"
-   },
-   {
-    "line": 685,
-    "kind": "negate-if",
-    "code": "if (mTileMapPanel != null) {"
-   }
-  ],
+  "lines": [],
   "sha256": "d0a6637aa13dd89a4d310a0bfbb25193fd27633210e6a2011f54f36a4da82980"
  },
  "src/ctrmap/humaninterface/WarpEditForm.java": {
@@ -175,29 +144,17 @@
   "sha256": "4931838a3d3031bd716f68746f75361b5f7565ed73f9fce3fe6856df77373f37"
  },
  "src/ctrmap/formats/zone/ZoneEntities.java": {
-  "survivors": 1,
-  "killed": 6,
+  "survivors": 0,
+  "killed": 7,
   "unmeasured": 3,
-  "lines": [
-   {
-    "line": 408,
-    "kind": "negate-if",
-    "code": "if (!Float.isNaN(newz3DCoordinate)) {"
-   }
-  ],
+  "lines": [],
   "sha256": "ed682d8eb745bbdd9bde634d8ecf9d6801a2bde660c4d83dd3dee16cfba0cc98"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
-  "survivors": 1,
-  "killed": 20,
+  "survivors": 0,
+  "killed": 21,
   "unmeasured": 3,
-  "lines": [
-   {
-    "line": 2054,
-    "kind": "negate-if",
-    "code": "if (boxedNPC(i)) {"
-   }
-  ],
+  "lines": [],
   "sha256": "706f1eaf33f11a25df187dc0121baf472bafb4129a5a97982d42e888a6a697d3"
  },
  "src/ctrmap/humaninterface/TileMapPanel.java": {
@@ -236,21 +193,10 @@
   "sha256": "43fbcba96eb43f26215b829aa40f7724d6d8c72cd3bf1cf4517751cd0d96aecf"
  },
  "src/ctrmap/Workspace.java": {
-  "survivors": 2,
-  "killed": 13,
+  "survivors": 0,
+  "killed": 15,
   "unmeasured": 1,
-  "lines": [
-   {
-    "line": 847,
-    "kind": "negate-if",
-    "code": "if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {"
-   },
-   {
-    "line": 847,
-    "kind": "negate-if",
-    "code": "if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {"
-   }
-  ],
+  "lines": [],
   "sha256": "0c5a1c1b91a20c16cb3439a8af81a3ea5f352015e00cd38ee102bbf2a9b1baa7"
  },
  "src/ctrmap/humaninterface/builder/Builder.java": {
@@ -401,21 +347,10 @@
   "sha256": "c54778b4781d6dff8d7472bd730d13d4592ff4420ffa34473fc60749a21f9dfd"
  },
  "src/ctrmap/formats/garc/GARC.java": {
-  "survivors": 2,
-  "killed": 14,
+  "survivors": 0,
+  "killed": 16,
   "unmeasured": 2,
-  "lines": [
-   {
-    "line": 312,
-    "kind": "negate-if",
-    "code": "if (len + padLength > maxlength) {"
-   },
-   {
-    "line": 312,
-    "kind": "negate-if",
-    "code": "if (len + padLength > maxlength) {"
-   }
-  ],
+  "lines": [],
   "sha256": "ad6ee8568a3750b8645bd7b5ae9c53ccf7e79122cb86217744a25e56ec517b11"
  },
  "src/ctrmap/humaninterface/WorkspaceSettings.java": {
@@ -447,31 +382,10 @@
   "sha256": "019b667499609d2a28689ac303f886c44260b258432eaa05e7ace9cec6b1f901"
  },
  "src/ctrmap/formats/h3d/BchTexturePack.java": {
-  "survivors": 4,
-  "killed": 9,
+  "survivors": 0,
+  "killed": 13,
   "unmeasured": 1,
-  "lines": [
-   {
-    "line": 399,
-    "kind": "negate-if",
-    "code": "if (tgtFile == null) {"
-   },
-   {
-    "line": 404,
-    "kind": "negate-if",
-    "code": "if (c.pack != null) {"
-   },
-   {
-    "line": 405,
-    "kind": "negate-if",
-    "code": "if (!tgt.storeFile(c.subfile, c.pack)) {"
-   },
-   {
-    "line": 406,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"could not write area \" + targetArea);"
-   }
-  ],
+  "lines": [],
   "sha256": "3f70a626e78fd65f3ea625bb3f47c2d971472e94d301829d8eeb82cdd1bcef97"
  },
  "src/ctrmap/formats/tilemap/TerrainCatalog.java": {
@@ -537,8 +451,10 @@
  "_meta": {
   "measured_at": "da985c2",
   "attempted": 267,
-  "survived": 54,
-  "killed": 185,
-  "unmeasured": 28
+  "survived": 38,
+  "killed": 201,
+  "unmeasured": 28,
+  "remeasured_by_hand": 16,
+  "remeasured_note": "Fourteen lines the sweep could only record as survivors because the cluster table named none of the suites that kill them. Each was mutated, rebuilt and run by hand: PaintForm by PaintFormGuardsTest, BchTexturePack by TextureCarryGuardsTest, GARC by ZoneAppendTest, Workspace by PackScopeTest, ZoneEntities and NPCEditForm by NpcEditFormGuardsTest (whose theFrameOutlinesTheEditedNPC is new: the boxedNPC call site inside renderCM3D was the one target here that really was asserted by nothing)."
  }
 }
