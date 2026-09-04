@@ -225,6 +225,7 @@ public class ScriptAssemblerGuardTest {
 		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel();
 		ScriptEditor ed = new ScriptEditor();
 		ed.loadScript(s);
+		flush();
 		int[] before = PawnDisassembler.getRawInstructions(s.instructions);
 		JTextArea area = (JTextArea) field(ed, "disassemblyArea");
 		JTextArea output = (JTextArea) field(ed, "assemblerOutput");
@@ -238,12 +239,14 @@ public class ScriptAssemblerGuardTest {
 			List<String> said = ctrmap.Ui.record();
 			try {
 				commit.doClick();
+				flush();
 			} finally {
 				ctrmap.Ui.stopRecording();
 			}
 			check(said.size() == 1 && said.get(0).contains("did not assemble"), "Commit with a mistyped mnemonic is refused where the user can see it: " + said);
 			check(Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)), "and the script is untouched");
 			run.doClick();
+			flush();
 			check(output.getText().startsWith("Assembler refused") && Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)),
 					"Run assembler with the typo reports the refusal and leaves the script alone: " + firstLine(output));
 
@@ -252,12 +255,14 @@ public class ScriptAssemblerGuardTest {
 			said = ctrmap.Ui.record();
 			try {
 				commit.doClick();
+				flush();
 			} finally {
 				ctrmap.Ui.stopRecording();
 			}
 			check(said.isEmpty() && Arrays.equals(before, PawnDisassembler.getRawInstructions(s.instructions)),
 					"Commit of a clean script says nothing and keeps every instruction: " + said);
 			run.doClick();
+			flush();
 			check(output.getText().contains("Assembled " + s.instructions.size() + " instructions"),
 					"Run assembler on a clean script reports what it assembled: " + firstLine(output));
 
@@ -267,6 +272,7 @@ public class ScriptAssemblerGuardTest {
 			said = ctrmap.Ui.record();
 			try {
 				commit.doClick();
+				flush();
 			} finally {
 				ctrmap.Ui.stopRecording();
 			}
@@ -277,10 +283,25 @@ public class ScriptAssemblerGuardTest {
 	}
 
 	/** Replaces the editor's text the way a paste does, without the live per-keystroke hooks. */
-	static void type(ScriptEditor ed, JTextArea area, String text) {
+	static void type(ScriptEditor ed, JTextArea area, String text) throws Exception {
+		//Drain the EDT first. ScriptEditor.updateDocument posts
+		//disassemblyArea.setText through invokeLater, so text typed while that
+		//is still queued gets overwritten by it - the editor then assembles the
+		//OLD text, the expected error never appears, and two checks fail. This
+		//suite lost that race about once in fifty runs and lost it in the
+		//battery, which is worse than a bug: a guard nobody can trust gets
+		//switched off.
+		flush();
 		ed.loaded = false;
 		area.setText(text);
 		ed.loaded = true;
+		flush();
+	}
+
+	/** Waits for everything already queued on the event thread to finish. */
+	static void flush() throws Exception {
+		java.awt.EventQueue.invokeAndWait(() -> {
+		});
 	}
 
 	static String firstLine(JTextArea area) {
