@@ -74,6 +74,7 @@ $suites = @(
     @{ n = "TerrainImportNoise (quiet when early, loud when broken)"; c = "ctrmap.tests.TerrainImportNoiseTest"; a = @($a039) },
     @{ n = "BuildingCatalog (palette)";   c = "ctrmap.tests.BuildingCatalogTest";     a = @($a039) },
     @{ n = "HarvesterGuards (naming rule, footing)"; c = "ctrmap.tests.HarvesterGuardsTest"; a = @($pristine) },
+    @{ n = "HarvesterRanking (what a cut is called)"; c = "ctrmap.tests.HarvesterRankingTest"; a = @() },
     @{ n = "PlacementGuards (what a placed building did)"; c = "ctrmap.tests.PlacementGuardsTest"; a = @($a039, $step) },
     @{ n = "PaintApplyGuards (Apply writes nothing it cannot finish)"; c = "ctrmap.tests.PaintApplyGuardsTest"; a = @($pristine, "src") },
     @{ n = "PaintFormGuards (the painter's document)"; c = "ctrmap.tests.PaintFormGuardsTest"; a = @($pristine) },
