@@ -302,7 +302,7 @@ public class DispatchGuardsTest {
 				+ "refusal under test is the epilogue one)");
 
 		String msg = refusalMessage(s);
-		check(msg != null, "installCase refuses a dispatch with no shared epilogue");
+		check(isRefusal(msg), "installCase refuses a dispatch with no shared epilogue, got: " + msg);
 		check(msg != null && msg.contains("does not end in the shared"),
 				"the refusal names the missing epilogue, got: " + msg);
 	}
@@ -326,7 +326,7 @@ public class DispatchGuardsTest {
 		check(s.instructions.indexOf(d.caseTbl) < 0, "the detached table is no longer in the instruction list");
 
 		String msg = refusalMessage(s);
-		check(msg != null, "installCase refuses a CASETBL that is not in the instruction list");
+		check(isRefusal(msg), "installCase refuses a CASETBL that is not in the instruction list, got: " + msg);
 		check(msg != null && msg.contains("not part of the script's instruction list"),
 				"the refusal names the detached table, got: " + msg);
 	}
@@ -484,6 +484,15 @@ public class DispatchGuardsTest {
 		} catch (RuntimeException ex) {
 			return "UNEXPECTED " + ex;
 		}
+	}
+
+	/**
+	 * Whether the emit actually REFUSED, rather than not refusing at all or
+	 * blowing up some other way. A dropped guard turns into an NPE or an index
+	 * blowup a few lines later, and that must not read as a refusal.
+	 */
+	private static boolean isRefusal(String msg) {
+		return msg != null && !msg.startsWith("UNEXPECTED");
 	}
 
 	/** The CASETBL argument index of a case key, or -1. */
