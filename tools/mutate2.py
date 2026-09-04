@@ -253,6 +253,21 @@ def resolve_clusters():
                                  "a suite the battery does not run guards nothing" % (branch, s))
             picked.append(("ctrmap.tests." + s, known[s]))
         resolved[branch] = (base[:7], picked)
+    # How many suites this table cannot see. Measured, not asserted: when this
+    # check was first written as a refusal it named 48 of the 85 suites test.ps1
+    # registers - more than half the battery, invisible to the sweep. That is
+    # why the survivor counts were wrong, and it is also why the answer is not
+    # "go and name all 48". A table somebody has to remember to update is the
+    # defect, not an incomplete instance of it. Correctness now comes from
+    # ALL_SUITES, which no one has to maintain; this table only decides what
+    # order to try things in, so a gap here costs time and never truth. Printed
+    # every run so the cost stays visible.
+    unnamed = sorted(set(known) - {s for ss in CLUSTERS.values() for s in ss})
+    if unnamed:
+        print("  note: %d of %d registered suite(s) are named by no cluster, so a kill by one of\n"
+              "        them costs a full pass rather than one run. Correctness does not depend on\n"
+              "        this table - see ALL_SUITES - only speed does.\n"
+              "        %s" % (len(unnamed), len(known), ", ".join(unnamed)), flush=True)
     return resolved
 
 THROW = re.compile(r"^\s*throw\s+new\s+\w")
@@ -1314,6 +1329,29 @@ print("suite union: %d file(s), %.1f suites each on average"
       % (len(FILE_SUITES), sum(len(v) for v in FILE_SUITES.values()) / max(1, len(FILE_SUITES))),
       flush=True)
 
+# NOTHING BUT THE WHOLE BATTERY MAY CALL A LINE A SURVIVOR.
+#
+# The two rules above - a cluster's own suites, then every suite that guards the
+# file - are both derived from CLUSTERS, which is maintained by hand. When it
+# drifted, the sweep did not slow down or complain; it printed "NOTHING ASSERTS
+# THIS LINE" about 30 lines that the battery kills every single run, and two
+# agents were dispatched to write guards that already existed.
+#
+# The refusal in resolve_clusters stops that table from going stale again. This
+# stops a stale table from being able to manufacture a survivor even so, because
+# a guard that depends on someone remembering something is not a guard. A
+# survivor now has to get past EVERY suite the battery registers, so the claim
+# is about the battery rather than about the table.
+#
+# It is not expensive where it would hurt. The ordering is unchanged, so a kill
+# still stops at the first suite that catches it - one or two runs, as before.
+# Only a line that is about to be recorded as unasserted pays for the rest, and
+# that is exactly the verdict worth paying for: a wrong "killed" costs a rerun,
+# a wrong "SURVIVED" costs somebody a day writing a duplicate guard.
+ALL_SUITES = [("ctrmap.tests." + s, a) for s, a in sorted(suite_args().items())]
+print("last resort: %d registered suite(s), run only for a line about to be called a survivor"
+      % len(ALL_SUITES), flush=True)
+
 for cid, (base, suites) in RESOLVED.items():
     before, tip = base
     print("\n=== %s (merged from %s onto %s)" % (cid, tip[:7], before[:7]), flush=True)
@@ -1363,6 +1401,8 @@ for cid, (base, suites) in RESOLVED.items():
                 # usually the killer, so a kill still costs one or two runs;
                 # only a true survivor pays for the whole union
                 ordered = suites + [x for x in FILE_SUITES.get(path, []) if x not in suites]
+                seen = {c for c, _ in ordered}
+                ordered = ordered + [x for x in ALL_SUITES if x[0] not in seen]
                 for cls, a in ordered:
                     r = run([JAVA, "-Xmx4g", "-Djava.awt.headless=true", "-cp", CP, cls] + a)
                     if r.returncode == HUNG_RC:
