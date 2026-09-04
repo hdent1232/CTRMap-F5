@@ -54,10 +54,22 @@ def require_build(root):
         raise SystemExit("REFUSING TO MEASURE %s: %s" % (root, problem))
 
 
-def build_with_battery(root):
-    """The battery's build - build.ps1 - and nothing else; then prove it stamped."""
+def build_with_battery_verbose(root):
+    """(ok, everything the build said) - the battery's build, keeping the compiler's words.
+
+    A caller that only learns "it did not build" cannot tell a mutation that is
+    malformed - the harness's own defect - from one that has no legal form at
+    all, such as deleting a throw that is its method's only exit. javac already
+    knows which; discarding what it said threw that away.
+    """
     r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "build.ps1"],
                        cwd=str(root), capture_output=True, text=True)
+    out = (r.stdout or "") + (r.stderr or "")
     if r.returncode != 0 or "Build OK" not in (r.stdout or ""):
-        return False
-    return stamp_problem(root) is None
+        return False, out
+    return stamp_problem(root) is None, out
+
+
+def build_with_battery(root):
+    """The battery's build - build.ps1 - and nothing else; then prove it stamped."""
+    return build_with_battery_verbose(root)[0]

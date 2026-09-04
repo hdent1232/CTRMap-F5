@@ -27,9 +27,17 @@ import java.util.regex.Pattern;
  *     sweep and commit the new baseline.</li>
  * <li>A file whose buckets do not add back up - survivors listed but not
  *     counted, or counted but not listed. The sweep's own accounting asserts
- *     killed + survived + nocompile + hung == attempted; this asserts the
- *     record kept that shape. An unmeasured mutant is a fact about the
- *     measurement, and must not be hidden by omission.</li>
+ *     killed + survived + hung + nocompile == attempted, plus unmutable and
+ *     excluded to reach the candidate lines; this asserts the record kept that
+ *     shape. An unmeasured mutant is a fact about the measurement, and must not
+ *     be hidden by omission.</li>
+ * <li>An excluded line with no reason written against it, or more of them than
+ *     the ceiling allows. A line the sweep scores in neither the numerator nor
+ *     the denominator is a line nobody is watching on purpose. Two exist -
+ *     Ui.java's dialog call, which cannot execute in a headless suite at all,
+ *     and its System.out fallback, which is the channel the suites read Ui
+ *     messages THROUGH, so a test asserting on it would be asserting its own
+ *     instrument. Both stay visible here so the list cannot grow quietly.</li>
  * </ul>
  * The survivor count itself may only fall, but that is the sweep's ratchet to
  * enforce: proving a count went down means re-measuring, which is the expensive
@@ -46,6 +54,16 @@ public class MutationBaselineTest {
 	private static final Pattern SURVIVORS = Pattern.compile("\"survivors\"\\s*:\\s*(\\d+)");
 	private static final Pattern SHA = Pattern.compile("\"sha256\"\\s*:\\s*\"([0-9a-f]{64})\"");
 	private static final Pattern ENTRY = Pattern.compile("\\{\\s*\"line\"\\s*:\\s*(\\d+)\\s*,\\s*\"kind\"\\s*:\\s*\"([^\"]*)\"\\s*,\\s*\"code\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"\\s*\\}");
+	/** An excluded line: {@code {"line": n, "reason": "..."}} - no "kind", so ENTRY cannot match it. */
+	private static final Pattern EXCLUDED = Pattern.compile("\\{\\s*\"line\"\\s*:\\s*(\\d+)\\s*,\\s*\"reason\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"\\s*\\}");
+	private static final Pattern EXCLUDED_COUNT = Pattern.compile("\"excluded_count\"\\s*:\\s*(\\d+)");
+
+	/**
+	 * How many lines the whole tree may exclude from the measurement. Mirrors
+	 * EXCLUSION_CEILING in tools/mutate2.py; raising either without the other is
+	 * the drift this check exists to catch.
+	 */
+	private static final int EXCLUSION_CEILING = 4;
 
 	public static void main(String[] args) throws Exception {
 		File root = new File(args.length > 0 ? args[0] : "src");
@@ -80,7 +98,7 @@ public class MutationBaselineTest {
 			spans.add(new int[]{fm.end()});
 		}
 		check(!paths.isEmpty(), paths.size() + " file(s) recorded in the baseline");
-		int filesChecked = 0, linesChecked = 0;
+		int filesChecked = 0, linesChecked = 0, excludedTotal = 0;
 		for (int i = 0; i < paths.size(); i++) {
 			int from = spans.get(i)[0];
 			int to = i + 1 < spans.size() ? spans.get(i + 1)[0] : json.length();
@@ -101,6 +119,29 @@ public class MutationBaselineTest {
 			}
 			check(entries.size() == survivors, path + ": lists " + entries.size()
 					+ " survivor line(s) and counts " + survivors + " - the buckets must add up");
+
+			//A line the sweep scores in neither the numerator nor the
+			//denominator has to say why, in the record, where it is read rather
+			//than in a comment in the harness. An exclusion with no reason is
+			//indistinguishable from a line quietly dropped because it was
+			//inconvenient - which is the one thing this whole measurement is
+			//supposed to make impossible.
+			List<int[]> excludedLines = new ArrayList<>();
+			Matcher xm = EXCLUDED.matcher(block);
+			while (xm.find()) {
+				excludedLines.add(new int[]{Integer.parseInt(xm.group(1))});
+				String reason = unescape(xm.group(2)).trim();
+				check(reason.length() >= 60, path + ":" + xm.group(1)
+						+ " is excluded from the measurement and says why (" + reason.length()
+						+ " chars): " + (reason.length() > 70 ? reason.substring(0, 70) + "..." : reason));
+			}
+			excludedTotal += excludedLines.size();
+			Matcher xc = EXCLUDED_COUNT.matcher(block);
+			if (xc.find()) {
+				check(Integer.parseInt(xc.group(1)) == excludedLines.size(), path + ": lists "
+						+ excludedLines.size() + " excluded line(s) and counts " + xc.group(1)
+						+ " - the buckets must add up");
+			}
 
 			//this file must be the one that was measured. The line texts below
 			//catch an edit ON a recorded survivor; this catches an edit anywhere
@@ -147,6 +188,9 @@ public class MutationBaselineTest {
 			filesChecked++;
 		}
 		check(filesChecked > 0, filesChecked + " file(s) and " + linesChecked + " recorded survivor line(s) still match the source");
+		check(excludedTotal <= EXCLUSION_CEILING, excludedTotal + " line(s) excluded from the "
+				+ "measurement, ceiling " + EXCLUSION_CEILING + " - every one is a line nobody is "
+				+ "watching on purpose, so growing the list is a decision for a human");
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
