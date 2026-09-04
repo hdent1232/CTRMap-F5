@@ -1352,6 +1352,35 @@ ALL_SUITES = [("ctrmap.tests." + s, a) for s, a in sorted(suite_args().items())]
 print("last resort: %d registered suite(s), run only for a line about to be called a survivor"
       % len(ALL_SUITES), flush=True)
 
+
+def _mentions():
+    """{simple class name: [fqcn of every suite whose source names it]}, read from the suites."""
+    # Which suites guard a file, DERIVED rather than declared. CLUSTERS says so
+    # by hand and was wrong about 48 of 86; a suite that exercises a class very
+    # nearly always names it, and where this guesses wrong it costs ordering, not
+    # truth, because the full pass runs either way. This is only about reaching
+    # the killer early: without it a survivor pays 86 runs in alphabetical order,
+    # and the suite that actually catches it is as likely to be last as first.
+    out = {}
+    for f in sorted((WT / "src/ctrmap/tests").glob("*Test.java")):
+        fq = "ctrmap.tests." + f.stem
+        text = f.read_text(encoding="utf-8", errors="replace")
+        for name in set(re.findall(r"\b([A-Z]\w{2,})\b", text)):
+            out.setdefault(name, []).append(fq)
+    return out
+
+
+MENTIONS = _mentions()
+
+
+def suites_for(path, first):
+    """Every registered suite, likeliest killer first, `first` before all of them."""
+    simple = path.split("/")[-1][:-len(".java")]
+    seen = {c for c, _ in first}
+    named = [x for x in ALL_SUITES if x[0] in MENTIONS.get(simple, ()) and x[0] not in seen]
+    seen |= {c for c, _ in named}
+    return first + named + [x for x in ALL_SUITES if x[0] not in seen]
+
 for cid, (base, suites) in RESOLVED.items():
     before, tip = base
     print("\n=== %s (merged from %s onto %s)" % (cid, tip[:7], before[:7]), flush=True)
@@ -1401,8 +1430,7 @@ for cid, (base, suites) in RESOLVED.items():
                 # usually the killer, so a kill still costs one or two runs;
                 # only a true survivor pays for the whole union
                 ordered = suites + [x for x in FILE_SUITES.get(path, []) if x not in suites]
-                seen = {c for c, _ in ordered}
-                ordered = ordered + [x for x in ALL_SUITES if x[0] not in seen]
+                ordered = suites_for(path, ordered)
                 for cls, a in ordered:
                     r = run([JAVA, "-Xmx4g", "-Djava.awt.headless=true", "-cp", CP, cls] + a)
                     if r.returncode == HUNG_RC:
