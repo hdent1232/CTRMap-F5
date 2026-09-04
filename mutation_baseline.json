@@ -27,8 +27,8 @@
   "sha256": "b46dbafb672292883767c8d5ff61f47cb5446922404b2e7d1af5f17c2167405d"
  },
  "src/ctrmap/CtrmapMainframe.java": {
-  "survivors": 5,
-  "killed": 0,
+  "survivors": 1,
+  "killed": 4,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
@@ -37,29 +37,26 @@
     "line": 718,
     "kind": "negate-if",
     "code": "if (!openMapMatrixFile(jfc.getSelectedFile())) {"
-   },
+   }
+  ],
+  "killed_lines": [
    {
     "line": 1256,
-    "kind": "negate-if",
-    "code": "if (!r.forked) {"
+    "kind": "negate-if"
    },
    {
     "line": 1271,
-    "kind": "negate-if",
-    "code": "if (r.newRegions.length > 1) {"
+    "kind": "negate-if"
    },
    {
     "line": 1275,
-    "kind": "negate-if",
-    "code": "if (r.otherZones.length > 0) {"
+    "kind": "negate-if"
    },
    {
     "line": 1306,
-    "kind": "flip-return",
-    "code": "return false;"
+    "kind": "flip-return"
    }
   ],
-  "killed_lines": [],
   "excluded": [],
   "sha256": "69a55e7a3f1d6c17edb42db8c43d4ff172ef99d265e4d250460ff8e8194b3734"
  },
@@ -112,17 +109,12 @@
   "sha256": "c60886bdbb8a9d6095f8fc70353cd283a65fa4f8e9e3eb129937826ffbf2a96c"
  },
  "src/ctrmap/Workspace.java": {
-  "survivors": 2,
-  "killed": 9,
+  "survivors": 1,
+  "killed": 10,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
   "lines": [
-   {
-    "line": 847,
-    "kind": "negate-if",
-    "code": "if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {"
-   },
    {
     "line": 948,
     "kind": "drop-report",
@@ -148,6 +140,10 @@
    },
    {
     "line": 841,
+    "kind": "negate-if"
+   },
+   {
+    "line": 847,
     "kind": "negate-if"
    },
    {
@@ -237,17 +233,12 @@
   "sha256": "c54778b4781d6dff8d7472bd730d13d4592ff4420ffa34473fc60749a21f9dfd"
  },
  "src/ctrmap/formats/garc/GARC.java": {
-  "survivors": 3,
-  "killed": 10,
+  "survivors": 2,
+  "killed": 11,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
   "lines": [
-   {
-    "line": 312,
-    "kind": "negate-if",
-    "code": "if (len + padLength > maxlength) {"
-   },
    {
     "line": 450,
     "kind": "drop-throw",
@@ -299,45 +290,43 @@
    {
     "line": 283,
     "kind": "swallow-throw"
+   },
+   {
+    "line": 312,
+    "kind": "negate-if"
    }
   ],
   "excluded": [],
   "sha256": "ad6ee8568a3750b8645bd7b5ae9c53ccf7e79122cb86217744a25e56ec517b11"
  },
  "src/ctrmap/formats/h3d/BchTexturePack.java": {
-  "survivors": 5,
-  "killed": 11,
+  "survivors": 0,
+  "killed": 16,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
+  "lines": [],
+  "killed_lines": [
    {
     "line": 399,
-    "kind": "negate-if",
-    "code": "if (tgtFile == null) {"
+    "kind": "negate-if"
    },
    {
     "line": 404,
-    "kind": "negate-if",
-    "code": "if (c.pack != null) {"
+    "kind": "negate-if"
    },
    {
     "line": 405,
-    "kind": "negate-if",
-    "code": "if (!tgt.storeFile(c.subfile, c.pack)) {"
+    "kind": "negate-if"
    },
    {
     "line": 406,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"could not write area \" + targetArea);"
+    "kind": "drop-throw"
    },
    {
     "line": 406,
-    "kind": "swallow-throw",
-    "code": "throw new IllegalStateException(\"could not write area \" + targetArea);"
-   }
-  ],
-  "killed_lines": [
+    "kind": "swallow-throw"
+   },
    {
     "line": 443,
     "kind": "negate-if"
@@ -575,75 +564,39 @@
   "sha256": "0bc7a98df226d055deed59974cdc23384471a5ed298b81b294aec35beda7f1cf"
  },
  "src/ctrmap/formats/scripts/TalkerScriptWizard.java": {
-  "survivors": 11,
-  "killed": 7,
+  "survivors": 0,
+  "killed": 18,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
-   {
-    "line": 145,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"The zone script's dispatch does not end in the shared \\\"ZERO_PRI; RETN\\\" a script case returns through.\");"
-   },
-   {
-    "line": 145,
-    "kind": "swallow-throw",
-    "code": "throw new IllegalStateException(\"The zone script's dispatch does not end in the shared \\\"ZERO_PRI; RETN\\\" a script case returns through.\");"
-   },
-   {
-    "line": 163,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"The dispatch CASETBL is not part of the script's instruction list.\");"
-   },
-   {
-    "line": 163,
-    "kind": "swallow-throw",
-    "code": "throw new IllegalStateException(\"The dispatch CASETBL is not part of the script's instruction list.\");"
-   },
-   {
-    "line": 246,
-    "kind": "negate-if",
-    "code": "} else if (script.publics.get(i).data[0] == oldCaseTblPtr) {"
-   },
-   {
-    "line": 273,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"Internal error: dispatch case \" + newId + \" does not point at its trampoline.\");"
-   },
-   {
-    "line": 273,
-    "kind": "swallow-throw",
-    "code": "throw new IllegalStateException(\"Internal error: dispatch case \" + newId + \" does not point at its trampoline.\");"
-   },
-   {
-    "line": 276,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not call the new subroutine.\");"
-   },
-   {
-    "line": 276,
-    "kind": "swallow-throw",
-    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not call the new subroutine.\");"
-   },
-   {
-    "line": 279,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not return to the dispatch epilogue.\");"
-   },
-   {
-    "line": 279,
-    "kind": "swallow-throw",
-    "code": "throw new IllegalStateException(\"Internal error: the case trampoline does not return to the dispatch epilogue.\");"
-   }
-  ],
+  "lines": [],
   "killed_lines": [
    {
     "line": 144,
     "kind": "negate-if"
    },
    {
+    "line": 145,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 145,
+    "kind": "swallow-throw"
+   },
+   {
     "line": 162,
+    "kind": "negate-if"
+   },
+   {
+    "line": 163,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 163,
+    "kind": "swallow-throw"
+   },
+   {
+    "line": 246,
     "kind": "negate-if"
    },
    {
@@ -651,12 +604,36 @@
     "kind": "negate-if"
    },
    {
+    "line": 273,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 273,
+    "kind": "swallow-throw"
+   },
+   {
     "line": 275,
     "kind": "negate-if"
    },
    {
+    "line": 276,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 276,
+    "kind": "swallow-throw"
+   },
+   {
     "line": 278,
     "kind": "negate-if"
+   },
+   {
+    "line": 279,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 279,
+    "kind": "swallow-throw"
    },
    {
     "line": 319,
@@ -671,23 +648,12 @@
   "sha256": "4931838a3d3031bd716f68746f75361b5f7565ed73f9fce3fe6856df77373f37"
  },
  "src/ctrmap/formats/scripts/ZoneScriptAnalyzer.java": {
-  "survivors": 2,
-  "killed": 2,
+  "survivors": 0,
+  "killed": 4,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
-   {
-    "line": 260,
-    "kind": "negate-if",
-    "code": "if (d == null || !d.cases.containsKey(caseKey)) {"
-   },
-   {
-    "line": 267,
-    "kind": "negate-if",
-    "code": "if (target.getCommand() == OP_PROC) {"
-   }
-  ],
+  "lines": [],
   "killed_lines": [
    {
     "line": 233,
@@ -695,6 +661,14 @@
    },
    {
     "line": 238,
+    "kind": "negate-if"
+   },
+   {
+    "line": 260,
+    "kind": "negate-if"
+   },
+   {
+    "line": 267,
     "kind": "negate-if"
    }
   ],
@@ -849,18 +823,12 @@
   "sha256": "9df4256bcc4765c64a6accdd0299a9992c1e657e369945f1b3e2a917cb582eef"
  },
  "src/ctrmap/formats/zone/ZoneEntities.java": {
-  "survivors": 1,
-  "killed": 13,
+  "survivors": 0,
+  "killed": 14,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
-   {
-    "line": 408,
-    "kind": "negate-if",
-    "code": "if (!Float.isNaN(newz3DCoordinate)) {"
-   }
-  ],
+  "lines": [],
   "killed_lines": [
    {
     "line": 92,
@@ -913,6 +881,10 @@
    {
     "line": 399,
     "kind": "swallow-throw"
+   },
+   {
+    "line": 408,
+    "kind": "negate-if"
    }
   ],
   "excluded": [],
@@ -977,8 +949,8 @@
   "sha256": "7d941930a872401353f3b010233652d9d00902abf7c774c5c42f704be7a794ca"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
-  "survivors": 3,
-  "killed": 15,
+  "survivors": 2,
+  "killed": 16,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
@@ -992,11 +964,6 @@
     "line": 1907,
     "kind": "drop-report",
     "code": "JOptionPane.showMessageDialog(this,"
-   },
-   {
-    "line": 2054,
-    "kind": "negate-if",
-    "code": "if (boxedNPC(i)) {"
    }
   ],
   "killed_lines": [
@@ -1059,14 +1026,18 @@
    {
     "line": 2013,
     "kind": "negate-if"
+   },
+   {
+    "line": 2054,
+    "kind": "negate-if"
    }
   ],
   "excluded": [],
   "sha256": "706f1eaf33f11a25df187dc0121baf472bafb4129a5a97982d42e888a6a697d3"
  },
  "src/ctrmap/humaninterface/PaintForm.java": {
-  "survivors": 8,
-  "killed": 0,
+  "survivors": 2,
+  "killed": 6,
   "unmeasured": 0,
   "unmutable": 1,
   "excluded_count": 0,
@@ -1077,42 +1048,37 @@
     "code": "placeStatus.setText(\"<html><b>Placing: \" + pick.entry.name + \"</b>\""
    },
    {
-    "line": 384,
-    "kind": "negate-if",
-    "code": "if (borrowed > 0) {"
-   },
-   {
-    "line": 613,
-    "kind": "negate-if",
-    "code": "if (cur == PaintedRegionBuilder.NO_RAMP) {"
-   },
-   {
-    "line": 615,
-    "kind": "drop-report",
-    "code": "placeStatus.setText(d < 0 ? \"<html>No lower ground beside that tile -<br>raise it or lower a neighbour first.</html>\" : \" \");"
-   },
-   {
-    "line": 620,
-    "kind": "negate-if",
-    "code": "if (PaintedRegionBuilder.descends(grid, height, lx, ly, d)) {"
-   },
-   {
-    "line": 685,
-    "kind": "negate-if",
-    "code": "if (mTileMapPanel != null) {"
-   },
-   {
-    "line": 856,
-    "kind": "negate-if",
-    "code": "if (rd >= 0) {"
-   },
-   {
     "line": 948,
     "kind": "drop-report",
     "code": "JOptionPane.showMessageDialog(this, \"Apply failed:\\n\" + ex.getMessage()"
    }
   ],
-  "killed_lines": [],
+  "killed_lines": [
+   {
+    "line": 384,
+    "kind": "negate-if"
+   },
+   {
+    "line": 613,
+    "kind": "negate-if"
+   },
+   {
+    "line": 615,
+    "kind": "drop-report"
+   },
+   {
+    "line": 620,
+    "kind": "negate-if"
+   },
+   {
+    "line": 685,
+    "kind": "negate-if"
+   },
+   {
+    "line": 856,
+    "kind": "negate-if"
+   }
+  ],
   "excluded": [],
   "sha256": "d0a6637aa13dd89a4d310a0bfbb25193fd27633210e6a2011f54f36a4da82980"
  },
@@ -1370,8 +1336,8 @@
   "sha256": "0d85c8e36db1f90e1cb62ce1df236ddd605edf3320e66d15eb820b02cfa0b0e9"
  },
  "src/ctrmap/humaninterface/WorkspaceSettings.java": {
-  "survivors": 4,
-  "killed": 0,
+  "survivors": 1,
+  "killed": 3,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
@@ -1380,24 +1346,22 @@
     "line": 59,
     "kind": "negate-if",
     "code": "if (!keepOrRetakeBackup(this, gameField.getText())) {"
-   },
+   }
+  ],
+  "killed_lines": [
    {
     "line": 105,
-    "kind": "negate-if",
-    "code": "if (!Workspace.snapshotIsForeign(newGamePath)) {"
+    "kind": "negate-if"
    },
    {
     "line": 117,
-    "kind": "negate-if",
-    "code": "if (r != JOptionPane.YES_OPTION) {"
+    "kind": "negate-if"
    },
    {
     "line": 118,
-    "kind": "flip-return",
-    "code": "return false;"
+    "kind": "flip-return"
    }
   ],
-  "killed_lines": [],
   "excluded": [],
   "sha256": "019b667499609d2a28689ac303f886c44260b258432eaa05e7ace9cec6b1f901"
  },
@@ -1457,8 +1421,8 @@
   "sha256": "c4ab382d4881ae7538ac7f6e10e91132277d96efabd5f4d1499aa47aa247f427"
  },
  "src/ctrmap/setup/SetupWizard.java": {
-  "survivors": 5,
-  "killed": 0,
+  "survivors": 2,
+  "killed": 3,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
@@ -1472,81 +1436,72 @@
     "line": 543,
     "kind": "drop-report",
     "code": "JOptionPane.showMessageDialog(SetupWizard.this, \"The pristine backup was not made:\\n\" + cause"
-   },
+   }
+  ],
+  "killed_lines": [
    {
     "line": 689,
-    "kind": "negate-if",
-    "code": "if (Workspace.snapshotIsForeign(gamePath)) {"
+    "kind": "negate-if"
    },
    {
     "line": 698,
-    "kind": "negate-if",
-    "code": "if (r != JOptionPane.YES_OPTION) {"
+    "kind": "negate-if"
    },
    {
     "line": 703,
-    "kind": "flip-return",
-    "code": "return true;"
+    "kind": "flip-return"
    }
   ],
-  "killed_lines": [],
   "excluded": [],
   "sha256": "762b4853bd6dfdabb848bd990d7cae28ccc8b0ad80d9b00da076d70f6886a154"
  },
  "src/ctrmap/tools/BuildingHarvester.java": {
-  "survivors": 7,
-  "killed": 0,
+  "survivors": 0,
+  "killed": 7,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
+  "lines": [],
+  "killed_lines": [
    {
     "line": 180,
-    "kind": "negate-if",
-    "code": "if (!whole) {"
+    "kind": "negate-if"
    },
    {
     "line": 316,
-    "kind": "negate-if",
-    "code": "if (familyOf(e.getKey()) == family) {"
+    "kind": "negate-if"
    },
    {
     "line": 327,
-    "kind": "negate-if",
-    "code": "if (familyOf(e.getKey()) == null && e.getValue() > most) {"
+    "kind": "negate-if"
    },
    {
     "line": 350,
-    "kind": "negate-if",
-    "code": "if (faces > bestFaces) {"
+    "kind": "negate-if"
    },
    {
     "line": 355,
-    "kind": "negate-if",
-    "code": "if (best != null && bestFaces > biggestUnnamed()) {"
+    "kind": "negate-if"
    },
    {
     "line": 386,
-    "kind": "negate-if",
-    "code": "if (ml.contains(family[k])) {"
+    "kind": "negate-if"
    },
    {
     "line": 571,
-    "kind": "negate-if",
-    "code": "if (!Float.isNaN(gY) && gY >= c.minY - 9 && gY <= c.maxY && Math.abs(gY - c.minY) < nearest) {"
+    "kind": "negate-if"
    }
   ],
-  "killed_lines": [],
   "excluded": [],
   "sha256": "3b56a80fe981822a3bcbd90b82e68e8f0595c6b57affedee5f60e568fad5b7a3"
  },
  "_meta": {
-  "measured_at": "fabcbe0",
+  "measured_at": "696423e",
   "measurements": 290,
   "distinct": 257,
   "attempted": 254,
-  "survived": 71,
-  "killed": 183,
+  "survived": 26,
+  "killed": 228,
   "killed_by_flood": 1,
   "hung": 0,
   "nocompile": 0,
