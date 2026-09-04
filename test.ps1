@@ -151,6 +151,25 @@ foreach ($s in $suites) {
     & "$jdk\bin\java.exe" -Xmx4g -cp "$cls;$libs" $s.c @($s.a) 2>&1 | Select-Object -Last 2 | ForEach-Object { Write-Host ("    " + $_) }
     if ($LASTEXITCODE -ne 0) { $failed += $s.n }
 }
+
+# The mutation harness's own guard, and it is Python because the harness is.
+# `python tools/mutate2.py --selftest` re-runs, against synthetic input in
+# seconds, the four defects the 2026-09-03 sweep shipped with: survivors counted
+# once per branch instead of once, a ratchet that cried wolf off those
+# duplicates, an output flood misreported as a hang, and a missing operator that
+# left 27 lines unmeasured. A four-hour sweep is not a place to discover any of
+# them. Skipped rather than failed where python is absent - the battery must
+# still run on a machine that has only the JDK.
+$hname = "Mutation harness selftest"
+Write-Host ("--- " + $hname) -ForegroundColor Cyan
+$py = Get-Command python -ErrorAction SilentlyContinue
+if (-not $py) {
+    Write-Host "    skip: no python on PATH - run 'python tools/mutate2.py --selftest' by hand"
+} else {
+    & $py.Source (Join-Path $root "tools\mutate2.py") --selftest |
+        Select-Object -Last 2 | ForEach-Object { Write-Host ("    " + $_) }
+    if ($LASTEXITCODE -ne 0) { $failed += $hname }
+}
 $ErrorActionPreference = $prevEAP
 $sw.Stop()
 Write-Host ""
