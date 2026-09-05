@@ -55,9 +55,16 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 		Workspace.ESPICA_PATH = spicaField.getText();
 		Workspace.TILESET_DEFAULT = btnTilesetDefault.isSelected();
 		Workspace.TILESET_PATH = tilesetPath.getText();
-		if (!repointGameDir(this, gameField, originGamePath)) {
-			return; //the user would rather not move the workspace after all
-		}
+		repointGameDir(this, gameField, originGamePath, new Runnable() {
+			@Override
+			public void run() {
+				applySettings();
+			}
+		});
+	}
+
+	/** The rest of the save, once the game folder has been settled. */
+	private void applySettings() {
 		Workspace.validate(this);
 		originWSPath = wsPathField.getText();
 		originGamePath = gameField.getText();
@@ -68,45 +75,48 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 	}
 
 	/**
-	 * Settles a changed game folder before the rest of the save runs. False
-	 * means the save must stop, because the user declined either the backup or
-	 * the cleanup; when they declined the backup the game field has been put
-	 * back to the folder it named before.
+	 * Settles a changed game folder, then lets the rest of the save run - or
+	 * does not, when the user declined either the backup or the cleanup. A
+	 * declined backup also puts the game field back to the folder it named
+	 * before.
 	 *
-	 * <p>Word for word what {@code save()} used to do inline. It is out here,
-	 * static, and takes the field it puts back, because {@code save()} belongs
-	 * to a JFrame that a headless suite cannot build: {@link
-	 * #keepOrRetakeBackup} was reachable, but nothing could reach the caller
-	 * ACTING on its answer, and a mutation sweep proved it - inverting the
-	 * refusal, so that saying no repointed the workspace anyway and left the
-	 * old game's backup in place, left the whole battery green.
+	 * <p>Word for word what {@code save()} used to do inline, down to which
+	 * answers stop it. It is out here, static, and takes both the field it puts
+	 * back and the rest of the save, because {@code save()} belongs to a JFrame
+	 * that a headless suite cannot build: {@link #keepOrRetakeBackup} was
+	 * reachable, but nothing could reach the caller ACTING on its answer, and a
+	 * mutation sweep proved it - inverting the refusal, so that saying no
+	 * repointed the workspace anyway and left the old game's backup in place,
+	 * left the whole battery green. Handing the rest of the save in rather than
+	 * returning a flag keeps that decision out here whole: a flag would leave
+	 * the window holding an {@code if} of its own, in the same unreachable
+	 * place, deciding the same thing.
 	 *
 	 * <p>Answering the second question does real work - it packs or cleans the
 	 * workspace - so a test drives this with that question left closed, which
 	 * is what {@link Ui} answers when nobody is there.
 	 */
-	public static boolean repointGameDir(java.awt.Component parent, javax.swing.text.JTextComponent gameField, String originGamePath) {
-		if (gameField.getText().equals(originGamePath)) {
-			return true; //the folder did not move; there is nothing to settle
+	public static void repointGameDir(java.awt.Component parent, javax.swing.text.JTextComponent gameField,
+			String originGamePath, Runnable restOfTheSave) {
+		if (!gameField.getText().equals(originGamePath)) { //may have switched from XY to AlphaOmega etc., so it's better to clean up to prevent injecting wrong game files
+			if (!keepOrRetakeBackup(parent, gameField.getText())) {
+				gameField.setText(originGamePath);
+				return; //the user would rather not move the workspace after all
+			}
+			int res = Ui.confirm(null, "Game path has been changed. To prevent cross-injecting, the workspace will be cleaned.\n"
+					+ "Do you wish to commit your changes to the game data beforehand? \nUncommited data will be lost on cleanup.", "State change warning", JOptionPane.YES_NO_CANCEL_OPTION);
+			switch (res) {
+				case JOptionPane.YES_OPTION:
+					Workspace.packWorkspace();
+				case JOptionPane.NO_OPTION:
+					Workspace.GAMEDIR_PATH = gameField.getText();
+					Workspace.cleanAndReload();
+					break;
+				case JOptionPane.CANCEL_OPTION:
+					return; //interrupt the saving process
+			}
 		}
-		//may have switched from XY to AlphaOmega etc., so it's better to clean up to prevent injecting wrong game files
-		if (!keepOrRetakeBackup(parent, gameField.getText())) {
-			gameField.setText(originGamePath);
-			return false; //the user would rather not move the workspace after all
-		}
-		int res = Ui.confirm(null, "Game path has been changed. To prevent cross-injecting, the workspace will be cleaned.\n"
-				+ "Do you wish to commit your changes to the game data beforehand? \nUncommited data will be lost on cleanup.", "State change warning", JOptionPane.YES_NO_CANCEL_OPTION);
-		switch (res) {
-			case JOptionPane.YES_OPTION:
-				Workspace.packWorkspace();
-			case JOptionPane.NO_OPTION:
-				Workspace.GAMEDIR_PATH = gameField.getText();
-				Workspace.cleanAndReload();
-				break;
-			case JOptionPane.CANCEL_OPTION:
-				return false; //interrupt the saving process
-		}
-		return true;
+		restOfTheSave.run();
 	}
 
 	/**

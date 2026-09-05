@@ -508,15 +508,21 @@ public class SetupWizard extends JDialog {
 		//a workspace carrying a pristine backup of a DIFFERENT game folder would
 		//silently mis-report what the user has changed, forever
 		Workspace.WORKSPACE_PATH = wsPath;
-		if (!backupSettled(this, gamePath, new Runnable() {
+		settleBackup(this, gamePath, new Runnable() {
 			@Override
 			public void run() {
 				showStep(STEP_WORKSPACE);
 			}
-		})) {
-			return;
-		}
+		}, new Runnable() {
+			@Override
+			public void run() {
+				makeBackupAndFinish(gamePath, wsPath);
+			}
+		});
+	}
 
+	/** Takes the pristine backup off the UI thread, then loads the game. */
+	private void makeBackupAndFinish(final String gamePath, final String wsPath) {
 		setButtonsBusy(true);
 		finishBar.setVisible(true);
 		finishBar.setIndeterminate(true);
@@ -673,28 +679,33 @@ public class SetupWizard extends JDialog {
 	}
 
 	/**
-	 * Whether the finish may carry on past the backup question, and what it
-	 * does when it may not: sends the user back to pick another working folder
-	 * and stops, having touched nothing.
+	 * Settles the pristine backup, then sets up - or does not, when the user
+	 * would rather keep the backup they have and pick another working folder,
+	 * in which case setup goes back a step having touched nothing.
 	 *
 	 * <p>Word for word what {@link #doFinish} used to do inline. It is out
-	 * here, static, and takes the going-back as something it can be handed,
-	 * because {@code doFinish} needs the whole wizard - a JDialog a headless
-	 * suite cannot build, a card layout, a SwingWorker. {@link
-	 * #backupBelongsHere} was reachable, but nothing could reach the finish
-	 * ACTING on its answer, and a mutation sweep proved it: inverting the
-	 * refusal, so that a wizard told to leave the other game's backup alone set
-	 * up on it anyway, left the whole battery green.
+	 * here, static, and takes both sides as things it can be handed, because
+	 * {@code doFinish} needs the whole wizard - a JDialog a headless suite
+	 * cannot build, a card layout, a SwingWorker. {@link #backupBelongsHere}
+	 * was reachable, but nothing could reach the finish ACTING on its answer,
+	 * and a mutation sweep proved it: inverting the refusal, so that a wizard
+	 * told to leave the other game's backup alone set up on it anyway, left the
+	 * whole battery green. Handing the setting-up in rather than returning a
+	 * flag keeps that decision out here whole: a flag would leave the wizard
+	 * holding an {@code if} of its own, in the same unreachable place, deciding
+	 * the same thing.
 	 *
 	 * @param goBackAndPickAnother what to do instead of setting up - in the
 	 * wizard, returning to the working-folder step
+	 * @param setUp what to do once the backup question is settled - in the
+	 * wizard, taking the pristine backup and loading the game
 	 */
-	public static boolean backupSettled(java.awt.Component parent, String gamePath, Runnable goBackAndPickAnother) {
+	public static void settleBackup(java.awt.Component parent, String gamePath, Runnable goBackAndPickAnother, Runnable setUp) {
 		if (!backupBelongsHere(parent, gamePath)) {
 			goBackAndPickAnother.run();
-			return false;
+			return;
 		}
-		return true;
+		setUp.run();
 	}
 
 	/**

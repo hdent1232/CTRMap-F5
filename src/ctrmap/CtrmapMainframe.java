@@ -1297,6 +1297,19 @@ public class CtrmapMainframe {
 	 * sentence that distinguishes "that file is not a map matrix" from "the
 	 * editor ignored my click" could be deleted with nothing noticing.
 	 */
+	public static boolean openMapMatrixFile(File f) {
+		try {
+			mTileMapPanel.loadMatrix(new MapMatrix(new MM(f)), null, null, null);
+		} catch (RuntimeException ex) {
+			//a container that is not a map matrix usually fails on a bare
+			//dereference, whose getMessage() is null - "null" in a dialog is
+			//indistinguishable from the editor ignoring the click
+			Ui.error(frame, ex.getMessage() != null ? ex.getMessage() : ex.toString(), "Open MapMatrix");
+			return false;
+		}
+		return true;
+	}
+
 	/**
 	 * What Open MapMatrix does with the file the user picked: read it, and fit
 	 * the view to it only if it read.
@@ -1318,19 +1331,6 @@ public class CtrmapMainframe {
 			return;
 		}
 		fitViewToMap.run();
-	}
-
-	public static boolean openMapMatrixFile(File f) {
-		try {
-			mTileMapPanel.loadMatrix(new MapMatrix(new MM(f)), null, null, null);
-		} catch (RuntimeException ex) {
-			//a container that is not a map matrix usually fails on a bare
-			//dereference, whose getMessage() is null - "null" in a dialog is
-			//indistinguishable from the editor ignoring the click
-			Ui.error(frame, ex.getMessage() != null ? ex.getMessage() : ex.toString(), "Open MapMatrix");
-			return false;
-		}
-		return true;
 	}
 
 	/**
