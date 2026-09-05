@@ -140,10 +140,18 @@ public class PaintApplyGuardsTest {
 	 * texture-pack guard closes it, naming the zones that stopped it and the
 	 * menu item that fixes it.
 	 *
-	 * <p>It is the only path to that refusal - Cancel throws before it, and a
-	 * fork walks past it into a private area - and without the refusal the
-	 * Apply carries straight into zones 72 and 73's area 43 and reports the map
-	 * painted.
+	 * <p>It is the only path to that refusal: Cancel throws before it, and a
+	 * fork walks past it into a private area.
+	 *
+	 * <p>The wording is asserted, not just the refusal, because there is a
+	 * second guard behind this one - {@code BchTexturePack.assertNotShared},
+	 * on the way into the staged area - which catches the same case with a
+	 * sentence about carrying textures. Deleting Apply's own refusal therefore
+	 * does not let the paint through; it swaps the Apply's account of what
+	 * happened ("nothing was applied... and Apply again") for the texture
+	 * layer's, which tells the user neither of those things. Requiring only
+	 * "it threw" would score the neighbour as this line, which is exactly the
+	 * mistake this measurement exists to avoid.
 	 */
 	static void editingTheSharedAreaAnywayIsStillRefused() throws Exception {
 		open(74);
@@ -158,11 +166,11 @@ public class PaintApplyGuardsTest {
 		}
 		check(said(said, "SHARES its area"), "the shared-area question was asked: " + said);
 		String why = stop == null ? "(nothing was thrown)" : String.valueOf(stop.getMessage());
-		check(stop instanceof IllegalStateException && why.contains("Area 43 is also used by zones 72, 73"),
-				"answering \"edit the shared area anyway\" does not get this map's textures into"
-				+ " zones 72 and 73's area - the Apply stops and names them (stopped by: " + stop + ")");
-		check(why.contains("nothing was applied") && why.contains("Map > Fork area"),
-				"and the refusal says nothing was applied, and what to do instead: " + why);
+		check(stop instanceof IllegalStateException && why.contains("Area 43 is also used by zones 72, 73")
+				&& why.contains("nothing was applied") && why.contains("(Map > Fork area) and Apply again"),
+				"answering \"edit the shared area anyway\" does not get this map's textures into zones 72"
+				+ " and 73's area: the Apply refuses in its own words, naming them, saying nothing was"
+				+ " applied and what to do instead (stopped by: " + stop + ")");
 		check(newlyPersisted(before).isEmpty(), "nothing was written by it: " + newlyPersisted(before));
 		check(pristine(Workspace.ArchiveType.FIELD_DATA, gr, 272), "region 272 is byte-identical to the archive");
 		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 43), "area 43 is byte-identical to the archive");
