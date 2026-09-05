@@ -72,6 +72,7 @@ public class VaultGuardsTest {
 			restoresOneFileWithoutTouchingOthers(dump);
 			labelsAnUnverifiedDumpAndKeepsTheLabel(dump);
 			aTruncatedManifestIsRefused(dump);
+			flowAsksAndNeverAssumesConsent(scratch);
 		} finally {
 			deleteTree(scratch);
 		}
@@ -200,6 +201,67 @@ public class VaultGuardsTest {
 				+ firstOf(drift));
 		writeRaw(man, good);
 		check(Vault.verify(entry, true).isEmpty(), "and it is fine again once whole");
+	}
+
+	static void flowAsksAndNeverAssumesConsent(File scratch) throws IOException {
+		System.out.println("--- the user-facing flow: a closed dialog is never consent");
+		File dump = new File(scratch, "000400000011C402");
+		buildFakeDump(dump);
+		File entry = ctrmap.vault.Vault.entryDir(dump, null);
+
+		//1. offered, and declined by closing the dialog - nothing is written
+		java.util.List<String> said = ctrmap.Ui.record();          // no answers => CLOSED/null
+		try {
+			ctrmap.vault.VaultUi.offer(null, dump, 4);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(!ctrmap.vault.Vault.isSealed(entry),
+				"closing the size question backs nothing up - silence is not a yes");
+		check(!said.isEmpty() && said.get(0).contains("pristine copy"),
+				"and the user was actually asked" + (said.isEmpty() ? " (nothing was said)" : ""));
+
+		//2. offered and accepted - it seals, and says where
+		said = ctrmap.Ui.record(ctrmap.vault.VaultUi.label(ctrmap.vault.Vault.Scope.FULL_RAW, 4));
+		try {
+			ctrmap.vault.VaultUi.offer(null, dump, 4);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(ctrmap.vault.Vault.isSealed(entry), "picking a size does back the game up");
+		check(lastOf(said).contains("Backup kept") || lastOf(said).contains("has been kept"),
+				"and the user is told it worked [" + lastOf(said) + "]");
+
+		//3. a whole-game restore must never proceed on a dismissed dialog: it
+		//   would silently discard every edit since the backup was taken
+		write(new File(dump, "a/0/1/4"), "hours of the user's work");
+		said = ctrmap.Ui.record();                                  // closed
+		boolean did;
+		try {
+			did = ctrmap.vault.VaultUi.restoreEverything(null, entry, dump);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(!did, "a dismissed restore prompt does NOT restore");
+		check("hours of the user's work".equals(str(read(new File(dump, "a/0/1/4")))),
+				"so the user's later edits are still there");
+		check(!said.isEmpty() && said.get(0).contains("EVERY CHANGE"),
+				"and the prompt said plainly what it would cost before asking");
+
+		//4. and confirming it really does put everything back
+		said = ctrmap.Ui.record(Integer.valueOf(javax.swing.JOptionPane.YES_OPTION));
+		try {
+			did = ctrmap.vault.VaultUi.restoreEverything(null, entry, dump);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(did, "confirming it restores");
+		check("area data".equals(str(read(new File(dump, "a/0/1/4")))),
+				"and the file is what was sealed");
+	}
+
+	static String lastOf(java.util.List<String> xs) {
+		return xs.isEmpty() ? "" : xs.get(xs.size() - 1);
 	}
 
 	// ---- helpers -----------------------------------------------------------
