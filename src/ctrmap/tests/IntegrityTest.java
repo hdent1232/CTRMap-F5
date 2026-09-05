@@ -82,6 +82,7 @@ public class IntegrityTest {
 		check(needsMore(229, 229), "an area id past the last registry IS reported");
 
 		danglingRegionIsFound(mats, regions);
+		aPassThatUnderstoodNoMatrixSaysSo();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -124,6 +125,55 @@ public class IntegrityTest {
 				"a matrix cell naming region " + dangling + " of " + regions + " is reported: " + bad);
 		check(bad.contains("matrix " + last),
 				"and the pass reached the last matrix (" + last + ") to find it");
+	}
+
+	/**
+	 * The check reporting its own blindness. When MapMatrix holds entries but
+	 * the region pass could make sense of none of them, it must SAY that
+	 * nothing was verified rather than fall through to a clean bill of health.
+	 *
+	 * <p>This is not hypothetical: the pass read the grid's width and height
+	 * out of the container header instead of subfile 0, measured every one of
+	 * the 431 retail matrices as 16x0, scanned nothing at all, and reported
+	 * clean - for however long it took somebody to notice. That is the worst
+	 * failure available to a checker, because an integrity check that reports
+	 * nothing is indistinguishable from one that found nothing wrong, and the
+	 * whole point of running it is to be able to tell those apart.
+	 *
+	 * <p>The sentence at WorkspaceIntegrity:250 is the guard, and nothing
+	 * asserted it. Here MapMatrix is swapped for the same archive with every
+	 * entry coming back as four bytes that are no container at all - the same
+	 * state the original defect produced, reached without waiting for another
+	 * header to be misread - and the report has to name it. Then the real
+	 * archive goes back and the sentence has to be gone.
+	 */
+	static void aPassThatUnderstoodNoMatrixSaysSo() throws Exception {
+		ctrmap.formats.garc.GARC real = Workspace.mm;
+		String legible = WorkspaceIntegrity.check(true).toString();
+		check(!legible.contains("could not read any of the"),
+				"with matrices it can read, the check does not claim it read none of them: " + legible);
+
+		Workspace.mm = new ctrmap.formats.garc.GARC(real.file) {
+			@Override
+			public byte[] getDecompressedEntry(int num) {
+				return new byte[]{0, 0, 0, 0}; //no Gamefreak container, so no grid: unreadable
+			}
+		};
+		String blind;
+		try {
+			blind = WorkspaceIntegrity.check(true).toString();
+		} finally {
+			Workspace.mm = real;
+		}
+		check(blind.contains("could not read any of the " + real.length + " matrices"),
+				"a region pass that understood no matrix at all says so, and how many it gave up on: " + blind);
+		check(blind.contains("nothing was verified"),
+				"and says what that costs the user: " + blind);
+		check(!blind.contains("FieldData region that does not exist"),
+				"and does not also report the dangling region it never got to read: " + blind);
+		check(!WorkspaceIntegrity.check(true).toString().contains("could not read any of the"),
+				"with the real archive back, the check stops saying it: it is a report about"
+				+ " THIS pass, not a line that is always printed");
 	}
 
 	private static int u32(byte[] b, int o) {
