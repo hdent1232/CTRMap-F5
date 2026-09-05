@@ -676,23 +676,12 @@
   "sha256": "423434792b8487e5411369961d8981f46a179ecf1286299c972f4b05ae074004"
  },
  "src/ctrmap/formats/tilemap/PaintedRegionBuilder.java": {
-  "survivors": 2,
-  "killed": 11,
+  "survivors": 0,
+  "killed": 13,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
-   {
-    "line": 441,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"the ramp at (\" + tx + \",\" + ty + \") goes down \""
-   },
-   {
-    "line": 441,
-    "kind": "swallow-throw",
-    "code": "throw new IllegalStateException(\"the ramp at (\" + tx + \",\" + ty + \") goes down \""
-   }
-  ],
+  "lines": [],
   "killed_lines": [
    {
     "line": 244,
@@ -717,6 +706,14 @@
    {
     "line": 439,
     "kind": "negate-if"
+   },
+   {
+    "line": 441,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 441,
+    "kind": "swallow-throw"
    },
    {
     "line": 447,
@@ -911,26 +908,24 @@
   "sha256": "4a238d2dedd832ff0a301684476a4d36040ee58ecb07f0d3766f4fc486cbc364"
  },
  "src/ctrmap/humaninterface/GeoEditForm.java": {
-  "survivors": 1,
-  "killed": 1,
+  "survivors": 0,
+  "killed": 2,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
-   {
-    "line": 314,
-    "kind": "drop-report",
-    "code": "status.setText(\"Stamped \" + r.stamped.size() + \"/\" + p.pieces.size() + \" pieces\""
-   }
-  ],
+  "lines": [],
   "killed_lines": [
    {
     "line": 221,
     "kind": "negate-if"
+   },
+   {
+    "line": 336,
+    "kind": "drop-report"
    }
   ],
   "excluded": [],
-  "sha256": "a43ddf179ca88b26771fe8474c67bcaa0c8eee065f2809e33d1aafb64f74f3c0"
+  "sha256": "6aa4a37a79452bb5cb054ca9dac261af35f0e7773fdf6368b41a8f57179d9da8"
  },
  "src/ctrmap/humaninterface/MatrixEditForm.java": {
   "survivors": 0,
@@ -1036,51 +1031,48 @@
   "sha256": "706f1eaf33f11a25df187dc0121baf472bafb4129a5a97982d42e888a6a697d3"
  },
  "src/ctrmap/humaninterface/PaintForm.java": {
-  "survivors": 2,
-  "killed": 6,
+  "survivors": 0,
+  "killed": 8,
   "unmeasured": 0,
   "unmutable": 1,
   "excluded_count": 0,
-  "lines": [
-   {
-    "line": 163,
-    "kind": "drop-report",
-    "code": "placeStatus.setText(\"<html><b>Placing: \" + pick.entry.name + \"</b>\""
-   },
-   {
-    "line": 948,
-    "kind": "drop-report",
-    "code": "JOptionPane.showMessageDialog(this, \"Apply failed:\\n\" + ex.getMessage()"
-   }
-  ],
+  "lines": [],
   "killed_lines": [
    {
-    "line": 384,
+    "line": 381,
     "kind": "negate-if"
    },
    {
-    "line": 613,
-    "kind": "negate-if"
-   },
-   {
-    "line": 615,
+    "line": 535,
     "kind": "drop-report"
    },
    {
-    "line": 620,
+    "line": 632,
     "kind": "negate-if"
    },
    {
-    "line": 685,
+    "line": 634,
+    "kind": "drop-report"
+   },
+   {
+    "line": 639,
     "kind": "negate-if"
    },
    {
-    "line": 856,
+    "line": 704,
     "kind": "negate-if"
+   },
+   {
+    "line": 875,
+    "kind": "negate-if"
+   },
+   {
+    "line": 985,
+    "kind": "drop-report"
    }
   ],
   "excluded": [],
-  "sha256": "d0a6637aa13dd89a4d310a0bfbb25193fd27633210e6a2011f54f36a4da82980"
+  "sha256": "2441b1aff4e45d79d21e6890f02e51770facb4d546ee444fd55a51d8de9b0647"
  },
  "src/ctrmap/humaninterface/PropEditForm.java": {
   "survivors": 0,
@@ -1115,73 +1107,40 @@
   "sha256": "43fbcba96eb43f26215b829aa40f7724d6d8c72cd3bf1cf4517751cd0d96aecf"
  },
  "src/ctrmap/humaninterface/TileMapPanel.java": {
-  "survivors": 1,
-  "killed": 3,
+  "survivors": 0,
+  "killed": 4,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
-   {
-    "line": 281,
-    "kind": "drop-report",
-    "code": "JOptionPane.showMessageDialog(TileMapPanel.this, \"The region data was not saved:\\n\" + cause"
-   }
-  ],
+  "lines": [],
   "killed_lines": [
    {
-    "line": 436,
+    "line": 433,
     "kind": "drop-throw"
    },
    {
-    "line": 436,
+    "line": 433,
     "kind": "swallow-throw"
    },
    {
-    "line": 548,
+    "line": 545,
     "kind": "negate-if"
+   },
+   {
+    "line": 725,
+    "kind": "drop-report"
    }
   ],
   "excluded": [],
-  "sha256": "81b57fd54364f3504939076305be5a934f8fc668ad59d25f8e2a9142863835c9"
+  "sha256": "ea64cc599cd6faeb2ee0ecc2fcd7c3bfce1a63274631c2f1fde0ac7c6cdb6e9f"
  },
  "src/ctrmap/humaninterface/TilePainterForm.java": {
-  "survivors": 6,
-  "killed": 29,
+  "survivors": 0,
+  "killed": 35,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
-   {
-    "line": 205,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"\\\"\" + pl.e.name + \"\\\" is nothing but passengers (\" + riders"
-   },
-   {
-    "line": 205,
-    "kind": "swallow-throw",
-    "code": "throw new IllegalStateException(\"\\\"\" + pl.e.name + \"\\\" is nothing but passengers (\" + riders"
-   },
-   {
-    "line": 342,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"could not write area \" + areaId"
-   },
-   {
-    "line": 342,
-    "kind": "swallow-throw",
-    "code": "throw new IllegalStateException(\"could not write area \" + areaId"
-   },
-   {
-    "line": 477,
-    "kind": "drop-throw",
-    "code": "throw new IllegalStateException(\"Area \" + zoneArea + \" is also used by \" + shared"
-   },
-   {
-    "line": 477,
-    "kind": "swallow-throw",
-    "code": "throw new IllegalStateException(\"Area \" + zoneArea + \" is also used by \" + shared"
-   }
-  ],
+  "lines": [],
   "killed_lines": [
    {
     "line": 199,
@@ -1190,6 +1149,14 @@
    {
     "line": 204,
     "kind": "negate-if"
+   },
+   {
+    "line": 205,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 205,
+    "kind": "swallow-throw"
    },
    {
     "line": 218,
@@ -1224,6 +1191,14 @@
     "kind": "negate-if"
    },
    {
+    "line": 342,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 342,
+    "kind": "swallow-throw"
+   },
+   {
     "line": 431,
     "kind": "negate-if"
    },
@@ -1246,6 +1221,14 @@
    {
     "line": 476,
     "kind": "negate-if"
+   },
+   {
+    "line": 477,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 477,
+    "kind": "swallow-throw"
    },
    {
     "line": 497,
@@ -1500,8 +1483,8 @@
   "measurements": 290,
   "distinct": 257,
   "attempted": 254,
-  "survived": 26,
-  "killed": 228,
+  "survived": 14,
+  "killed": 240,
   "killed_by_flood": 1,
   "hung": 0,
   "nocompile": 0,
