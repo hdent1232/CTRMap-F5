@@ -91,6 +91,15 @@ public class DataSafetyGuardsTest {
 	private static final Pattern DONE = Pattern.compile("void done\\(\\)\\s*\\{");
 
 	public static void main(String[] args) throws Exception {
+		//FIRST statement, before any AWT class is loaded. Two checks below
+		//drive a real LoadingDialog, and the application always opens one from
+		//the EDT - inside the modal pump the worker's done() then runs in. A
+		//test cannot do that (done() would need the EDT this thread is holding),
+		//so it calls in from here instead, and with a screen attached a worker
+		//that finished first would dispose the window before setVisible(true)
+		//showed it - a modal window nothing can ever close. Headless, the
+		//dialog is the same object without the window and the ordering holds.
+		System.setProperty("java.awt.headless", "true");
 		String garcPath = args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/4/0";
 		File dump = new File(args.length > 1 ? args[1] : "../RomFS_original_garcs");
 		staleArchive(new File(garcPath));
