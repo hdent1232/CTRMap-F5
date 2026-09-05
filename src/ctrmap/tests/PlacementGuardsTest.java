@@ -125,6 +125,7 @@ public class PlacementGuardsTest {
 		facesCrossingTheBoxAreCounted();
 		cutLossSurvivesSaveAndReload();
 		passengersAreNamed();
+		nothingButPassengersIsRefused();
 		baseYIsTheFooting(step);
 		catalogueBoxesAreAssets();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -517,6 +518,63 @@ public class PlacementGuardsTest {
 		String left = TilePainterForm.stampPlaced(paintedPath(), alone, new int[DIM][DIM], null);
 		check(left.contains((p.pieces.size() - riders) + " piece(s)") && left.contains("left behind") && left.contains("shadow"),
 				"a building placed without its passengers stamps the structure alone and says what stayed: " + left.trim());
+	}
+
+	/**
+	 * A cut that is NOTHING but passengers, placed with the palette's
+	 * passengers box cleared, has nothing left to stamp - and is refused
+	 * rather than placed as an empty building.
+	 *
+	 * <p>The box is not a mistake anyone has to make on purpose: a harvested
+	 * component's box is grown by satellite absorption, and out on the water a
+	 * component is a piece of sea and nothing else. Region 40's (4,24)-(11,31)
+	 * is one - a single 98-triangle "water1" plane, classed sea/water, so
+	 * leaving the passengers behind leaves zero pieces. Without the refusal
+	 * that Apply stamps no geometry at all, writes the 64 encounter tiles the
+	 * donor carried, and reports "1 piece(s)... 0 triangles" as a placed
+	 * building: an invisible thing you can walk into, on a map the dialog said
+	 * was applied.
+	 *
+	 * <p>The same entry placed WITH its passengers must still stamp, so what is
+	 * being asserted is the refusal of an empty placement and not a blanket
+	 * dislike of this donor.
+	 */
+	static void nothingButPassengersIsRefused() throws Exception {
+		BuildingCatalog.Entry sea = entry("open sea patch", 40, 0, 4, 24, 11, 31, 0);
+		MapPrefab p = BuildingPaletteDialog.cachedPrefab(sea);
+		check(p != null && !p.pieces.isEmpty() && p.passengers().size() == p.pieces.size(),
+				"fixture: region 40's (4,24)-(11,31) cut is nothing but passengers ("
+				+ (p == null ? "no cut" : p.passengers().size() + " of " + p.pieces.size()
+				+ " pieces: " + p.passengerNote()) + ")");
+		if (p == null || p.pieces.isEmpty()) {
+			return;
+		}
+		//with them: a real stamp, so the donor itself is placeable
+		java.util.List<TilePainterForm.Placed> with = new ArrayList<>();
+		with.add(new TilePainterForm.Placed(sea, 5, 5, true));
+		RegionFactory.BlankContent kept = paintedPath();
+		byte[] beforeModel = kept.model;
+		String note = TilePainterForm.stampPlaced(kept, with, new int[DIM][DIM], null);
+		check(kept.model != beforeModel && note.contains(p.triangleCount() + " triangles"),
+				"placed WITH its passengers the sea patch stamps its " + p.triangleCount()
+				+ " triangles: " + note.trim());
+
+		//without them: nothing to place, and the map is left exactly as it was
+		java.util.List<TilePainterForm.Placed> without = new ArrayList<>();
+		without.add(new TilePainterForm.Placed(sea, 5, 5, false));
+		RegionFactory.BlankContent bc = paintedPath();
+		byte[] model = bc.model, coll = bc.collision, tiles = bc.tilemap.clone();
+		try {
+			String applied = TilePainterForm.stampPlaced(bc, without, new int[DIM][DIM], null);
+			check(false, "a building with every piece left behind was placed anyway: " + applied.trim());
+		} catch (IllegalStateException ex) {
+			String m = String.valueOf(ex.getMessage());
+			check(m.contains("\"" + sea.name + "\" is nothing but passengers")
+					&& m.contains("water1") && m.contains("place it with them"),
+					"an all-passenger cut placed without them is refused, named, and says what to do: " + m);
+		}
+		check(bc.model == model && bc.collision == coll && Arrays.equals(bc.tilemap, tiles),
+				"and the refused placement left the map untouched - no geometry, no donor tiles");
 	}
 
 	/**

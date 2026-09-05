@@ -20,7 +20,10 @@ import java.util.List;
  *   result re-parses clean in BOTH parsers (BchMapModel + the render parser);
  * - collision stamp: exact triangle-count growth, rebuilt file valid;
  * - save/load: byte-faithful prefab file round-trip, skinning included, and
- *   the warning the loading session gets about the faces the cut left out.
+ *   the warning the loading session gets about the faces the cut left out;
+ * - and what the Geometry tool SAYS a stamp did: how many of the prefab's
+ *   pieces landed out of how many, which is the only place a fragment differs
+ *   from a whole building on screen.
  *
  * <p>The skinning flag is the one field the file does NOT store: the load
  * re-reads it from the embedded donor. Nothing noticed when that re-read was
@@ -146,6 +149,7 @@ public class MapPrefabTest {
 				}
 			}
 		}
+		failures += stampSaysWhatLanded(scratch, garc);
 		//a round-trip over cuts that are all unskinned would prove nothing about
 		//the flag, so the sample must have met at least one skinned piece
 		if (skinnedSeen == 0 && roundtripOk > 0) {
@@ -199,6 +203,92 @@ public class MapPrefabTest {
 					+ (expectWarning ? "the warning naming them was not given" : "warned about nothing")
 					+ " - said " + said);
 		}
+	}
+
+	/**
+	 * The Geometry tool's own account of a stamp: how many of the prefab's
+	 * pieces landed, out of how many.
+	 *
+	 * <p>A stamp is partial whenever the target region has no material for one
+	 * of the pieces and injection cannot supply it - every skinned donor, which
+	 * region 490 is throughout. What lands then is a fragment, and it lands
+	 * inside the same footprint the whole thing would have, so the map looks
+	 * edited exactly as it would have if the stamp had worked. "Stamped 3/36
+	 * pieces (skipped: 33 piece(s), see log)" is the only place that difference
+	 * is stated; a complete stamp says "36/36" and nothing about skipping. With
+	 * the line deleted, or writing the same thing both times, a fragment and a
+	 * building read the same, and the missing pieces are found later as an
+	 * invisible wall in the emulator.
+	 *
+	 * <p>Both are asserted through the form, not through StampResult, because
+	 * StampResult was always countable - it is the status line that nothing
+	 * could see, sitting behind a modal confirm and a file chooser.
+	 */
+	static int stampSaysWhatLanded(File scratch, GARC garc) throws Exception {
+		GR target = tempGR(scratch, garc, 1);
+		GR skinned = garc.length > 490 ? tempGR(scratch, garc, 490) : null;
+		if (target == null || skinned == null || !BchMapModel.isMapModel(target.getFile(1))) {
+			System.out.println("  skip stamp report: regions 1 and 490 are not both in this dump");
+			return 0;
+		}
+		MapPrefab whole = MapPrefab.extract(target, 12, 12, 27, 27, "self cut");
+		MapPrefab fragment = MapPrefab.extract(skinned, 8, 9, 19, 21, "skinned donor");
+		if (whole == null || fragment == null) {
+			System.out.println("FAIL stamp report: fixture cuts did not come out (" + whole + ", " + fragment + ")");
+			return 1;
+		}
+		int fails = 0;
+		//region 1's own cut, back into region 1: every material is already there
+		String complete = stampInto(target, whole);
+		if (!(complete.contains("Stamped " + whole.pieces.size() + "/" + whole.pieces.size() + " pieces")
+				&& !complete.contains("skipped") && complete.contains("(unsaved)"))) {
+			System.out.println("FAIL stamp report: a complete stamp of " + whole.pieces.size()
+					+ " pieces did not say so, or claimed something was skipped: " + complete);
+			fails++;
+		} else {
+			System.out.println("  ok: a complete stamp says every piece landed, and that it is unsaved: " + complete);
+		}
+		//region 490's cut into region 1: skinned pieces cannot be injected
+		String partial = stampInto(target, fragment);
+		java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+				"Stamped (\\d+)/(\\d+) pieces").matcher(partial);
+		int landed = -1, of = -1;
+		if (m.find()) {
+			landed = Integer.parseInt(m.group(1));
+			of = Integer.parseInt(m.group(2));
+		}
+		if (!(landed > 0 && of == fragment.pieces.size() && landed < of
+				&& partial.contains("(skipped: " + (of - landed) + " piece(s), see log)"))) {
+			System.out.println("FAIL stamp report: a stamp that lost pieces of " + fragment.pieces.size()
+					+ " did not say how many landed and how many were skipped: " + partial);
+			fails++;
+		} else {
+			System.out.println("  ok: a partial stamp says " + landed + " of " + of
+					+ " landed and names the shortfall: " + partial);
+		}
+		if (fails == 0 && complete.equals(partial)) {
+			System.out.println("FAIL stamp report: a fragment and a whole building read identically: " + partial);
+			fails++;
+		}
+		return fails;
+	}
+
+	/**
+	 * Drives the Geometry tool over one region: select tiles (2,2)-(5,5), stamp
+	 * the prefab there, and hand back what the status line says. A fresh form
+	 * and panel each time, so one stamp never lands on another's model.
+	 */
+	private static String stampInto(GR region, MapPrefab p) throws Exception {
+		ctrmap.humaninterface.TileMapPanel panel = new ctrmap.humaninterface.TileMapPanel();
+		panel.mainGR = region;
+		ctrmap.CtrmapMainframe.mTileMapPanel = panel;
+		ctrmap.CtrmapMainframe.mZonePnl = null;
+		ctrmap.humaninterface.GeoEditForm form = new ctrmap.humaninterface.GeoEditForm();
+		form.setSelection(2, 2, 5, 5);
+		form.stampHere(p);
+		java.lang.reflect.Field f = ctrmap.humaninterface.GeoEditForm.class.getDeclaredField("status");
+		f.setAccessible(true);
+		return ((javax.swing.JLabel) f.get(form)).getText();
 	}
 
 	/** Stamps and verifies every stamped piece's geometry position-exactly. */

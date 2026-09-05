@@ -3,6 +3,7 @@ package ctrmap.tests;
 import ctrmap.CtrmapMainframe;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
+import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TilePalette;
 import ctrmap.humaninterface.PaintForm;
@@ -14,6 +15,7 @@ import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.List;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 
@@ -39,6 +41,11 @@ import javax.swing.JLabel;
  * <li>The overlay draws the arrow on ramp tiles and nowhere else.</li>
  * <li>Seeding names the tiles that had no ground of their own and took a
  *     neighbour's - a fact the label alone carries.</li>
+ * <li>Picking a building out of the palette says which one is about to be
+ *     placed, and whether its passengers are coming - the second having no
+ *     other trace once the palette has closed.</li>
+ * <li>A refused Apply names what stopped it, promises the map is untouched,
+ *     and takes the painted preview back out of the 3D scene.</li>
  * </ol>
  *
  * Usage: java ctrmap.tests.PaintFormGuardsTest &lt;pristine-dump-root&gt;
@@ -60,6 +67,8 @@ public class PaintFormGuardsTest {
 		fillAllSettlesRamps();
 		undoRestoresRamps();
 		overlayMarksRampsOnly();
+		pickingABuildingArmsTheNextClick();
+		aRefusedApplySaysSoAndPutsTheMapBack();
 		seedLabelCountsBorrowedTiles(dump);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -198,6 +207,103 @@ public class PaintFormGuardsTest {
 			}
 		}
 		check(stray == 0, "and on no other tile (" + stray + " stray arrows)");
+	}
+
+	/**
+	 * Picking a building out of the palette arms the next map click, and the
+	 * label says which building - and whether its passengers are coming.
+	 *
+	 * <p>Nothing else on screen distinguishes "the next click places a Pokemon
+	 * Center" from "the next click paints grass", and the passengers answer has
+	 * no other trace at all: it is made in a modal dialog that is gone by the
+	 * time the building lands, and a room placed without its floors looks like
+	 * a room until you walk into it. Both halves are checked against a click
+	 * that really places the entry, so the label is tied to what the form will
+	 * actually do rather than being a sentence of its own.
+	 */
+	static void pickingABuildingArmsTheNextClick() throws Exception {
+		PaintForm form = document();
+		JLabel status = (JLabel) get(form, "placeStatus");
+		BuildingCatalog.Entry house = new BuildingCatalog.Entry();
+		house.kind = "A_BUILDING";
+		house.name = "Littleroot house";
+		house.donorRegion = 510;
+		house.donorArea = 114;
+		house.tx0 = 6;
+		house.ty0 = 6;
+		house.tx1 = 12;
+		house.ty1 = 12;
+
+		@SuppressWarnings("unchecked")
+		List<TilePainterForm.Placed> placed = (List<TilePainterForm.Placed>) get(form, "placed");
+
+		form.beginPlacing(house, true);
+		String withRiders = status.getText();
+		check(withRiders.contains("Placing: " + house.name) && withRiders.contains("click the map"),
+				"picking a building says which one, and what to do next: " + withRiders);
+		check(!withRiders.contains("passengers"), "and says nothing about passengers when they are coming: " + withRiders);
+		form.gesturePress(3, 4, false);
+		check(placed.size() == 1 && get(placed.get(0), "e") == house && Boolean.TRUE.equals(get(placed.get(0), "passengers")),
+				"and the next click really places that building, passengers and all (" + placed + ")");
+		check(status.getText().trim().isEmpty(), "after which the label is clear again: \"" + status.getText() + "\"");
+
+		placed.clear();
+		form.beginPlacing(house, false);
+		String without = status.getText();
+		check(without.contains("Placing: " + house.name) && without.contains("passengers left behind"),
+				"picking it with the passengers box cleared says they are staying: " + without);
+		form.gesturePress(3, 4, false);
+		check(placed.size() == 1 && Boolean.FALSE.equals(get(placed.get(0), "passengers")),
+				"and the click places it without them (" + placed + ")");
+	}
+
+	/**
+	 * An Apply that was refused tells the user why, promises the map is
+	 * untouched, and takes the painted preview back out of the 3D scene.
+	 *
+	 * <p>The preview swaps the painted model into the scene while the tool is
+	 * open. Leaving it there after a refusal shows a map that is not on disk
+	 * and never was - the user's next look at the 3D view is of their own
+	 * paint, over a zone that still holds the retail one. And "Nothing was
+	 * written" is a promise Apply can only make because it clears every
+	 * precondition before the first byte: without that sentence a refusal reads
+	 * as "something happened, unclear what", which is the difference between
+	 * trying again and going to look at what shipped.
+	 *
+	 * <p>Everything above this in applyAction is a modal dialog, so the path
+	 * has no headless route; the report is asked for directly, with
+	 * {@link ctrmap.Ui} collecting it.
+	 */
+	static void aRefusedApplySaysSoAndPutsTheMapBack() throws Exception {
+		PaintForm form = document();
+		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel();
+		set(form, "previewInScene", true);
+		set(form, "originalModel", new byte[]{1, 2, 3, 4});
+		List<String> said = ctrmap.Ui.record();
+		try {
+			form.applyFailed(new IllegalStateException("Area 43 is also used by zones 72, 73"));
+		} finally {
+			ctrmap.Ui.stopRecording();
+			CtrmapMainframe.mTileMapPanel = null;
+		}
+		check(said.size() == 1 && said.get(0).contains("Apply failed")
+				&& said.get(0).contains("Area 43 is also used by zones 72, 73")
+				&& said.get(0).contains("Nothing was written - the map is exactly as it was"),
+				"a refused Apply names what stopped it and promises the map is untouched: " + said);
+		check(Boolean.FALSE.equals(get(form, "previewInScene")),
+				"and the painted preview is out of the 3D scene again, so the view is the map on disk");
+
+		//a second, different refusal must read differently - the sentence
+		//carries the reason, it is not a fixed "Apply failed"
+		List<String> other = ctrmap.Ui.record();
+		try {
+			form.applyFailed(new java.io.IOException("could not write region 153 (file locked or read-only?)"));
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(other.size() == 1 && other.get(0).contains("could not write region 153")
+				&& !other.get(0).equals(said.get(0)),
+				"and a different refusal says a different thing: " + other);
 	}
 
 	/**
