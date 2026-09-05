@@ -928,7 +928,7 @@ def compare_to_baseline(live, old):
     a line that WAS killed and now survives (a regression) from one that was
     never measured before (new coverage, and not the gate's business).
     """
-    regressed, fresh, fixed = [], [], []
+    regressed, fresh, fixed, lost = [], [], [], []
     had_killed_lines = any(isinstance(v, dict) and v.get("killed_lines")
                            for k, v in old.items() if k != "_meta")
     for f, cur in sorted(live.items()):
@@ -956,6 +956,17 @@ def compare_to_baseline(live, old):
         # excluded them.
         killed_now = set((e["line"], e["kind"]) for e in cur.get("killed_lines", []))
         excluded_now = set(e["line"] for e in cur.get("excluded", []))
+        # Killed before, and now neither killed nor surviving: it was not
+        # measured. That is lost coverage, and it reads as innocent because
+        # the SCORE can go up - hung, nocompile and unmutable all leave the
+        # denominator. Only flagged when the file has not moved, since line
+        # numbers are not comparable across an edit.
+        if not moved:
+            for key in sorted(old_k - killed_now - now_s):
+                if key[0] in excluded_now:
+                    continue                 # deliberately out of the measurement
+                lost.append("%s:%d %s - the baseline recorded this line KILLED, and this "
+                            "run did not measure it at all" % (f, key[0], key[1]))
         for key in sorted(old_s - now_s):
             if key in killed_now:
                 why = "is now asserted - a suite kills it"
@@ -965,7 +976,7 @@ def compare_to_baseline(live, old):
             else:
                 why = "is no longer measured at all - check why before reading it as progress"
             fixed.append("%s:%d %s %s" % (f, key[0], key[1], why))
-    return regressed, fresh, fixed, had_killed_lines
+    return regressed, fresh, fixed, lost, had_killed_lines
 
 
 import require_build
@@ -1171,7 +1182,7 @@ def selftest():
     old = {"src/F.java": {"survivors": 1, "killed": 1, "sha256": "abc",
                           "lines": [{"line": 30, "kind": "negate-if", "code": "if (y) {"}],
                           "killed_lines": [{"line": 10, "kind": "negate-if"}]}}
-    regressed, fresh, fixed, had = compare_to_baseline(live, old)
+    regressed, fresh, fixed, lost, had = compare_to_baseline(live, old)
     check(len(regressed) == 1 and ":10" in regressed[0],
           "a line the baseline recorded KILLED that now survives breaks the ratchet, by name")
     check(len(fresh) == 1 and ":40" in fresh[0],
@@ -1182,12 +1193,12 @@ def selftest():
     gone = build_live([rec("c1", 40, "SURVIVED")])
     gone["src/F.java"]["sha256"] = "abc"
     gone["src/F.java"]["excluded"] = [{"line": 30, "reason": "x" * 60}]
-    _, _, fixed2, _ = compare_to_baseline(gone, old)
+    _, _, fixed2, _, _ = compare_to_baseline(gone, old)
     check(len(fixed2) == 1 and "EXCLUDED" in fixed2[0] and "NOT asserted" in fixed2[0],
           "a survivor that was EXCLUDED by hand is not reported as one the battery now asserts")
     check(had, "the baseline is recognised as carrying line-level kill records")
     moved = {"src/F.java": dict(old["src/F.java"], sha256="different")}
-    r2, f2, _, _ = compare_to_baseline(live, moved)
+    r2, f2, _, _, _ = compare_to_baseline(live, moved)
     check(not r2 and len(f2) == 2,
           "and when the file has changed since the baseline, its line numbers are not compared")
 
@@ -1483,8 +1494,18 @@ for cid, (base, suites) in RESOLVED.items():
                 for cls, a in ordered:
                     r = run([JAVA, "-Xmx4g", "-Djava.awt.headless=true", "-cp", CP, cls] + a)
                     if r.returncode == HUNG_RC:
-                        verdict, detail = "hung", cls.split(".")[-1] + ": never finished"
-                        break
+                        # A hang is still never a kill - but it must not stop the
+                        # OTHER suites from trying. Measured: GARC.java:207 and :225
+                        # were recorded killed, and once suite ordering changed so
+                        # ForkGuardsTest ran first for that file, both came back
+                        # "hung" and so unmeasured. The mutants had not become
+                        # undetectable; a suite that hangs on them merely got in
+                        # front of the one that kills them. Remember the hang, keep
+                        # going, and report it only if nothing else decides.
+                        if verdict == "SURVIVED":
+                            verdict = "hung"
+                            detail = cls.split(".")[-1] + ": never finished"
+                        continue
                     if r.flooded:
                         # checked BEFORE the exit code, because killing a flood
                         # leaves a non-zero code that would read as an ordinary
@@ -1599,7 +1620,7 @@ for _p, _f in live.items():
 regressed, fresh_holes = [], []
 if BASELINE.exists():
     old = json.load(io.open(BASELINE, encoding="utf-8"))
-    regressed, fresh_holes, fixed, had_killed_lines = compare_to_baseline(live, old)
+    regressed, fresh_holes, fixed, lost, had_killed_lines = compare_to_baseline(live, old)
     for line in fixed:
         print("  fixed: " + line)
     print("\nratchet: %d file(s) measured against the recorded baseline" % len(live))
@@ -1607,6 +1628,10 @@ if BASELINE.exists():
         print("  note: the recorded baseline predates line-level kill records, so a line that "
               "regressed cannot be told from one measured for the first time. This run "
               "re-establishes the ratchet; the next one can break on a regression.")
+    if lost:
+        print("  COVERAGE LOST - killed in the baseline, not measured in this run:")
+        for r in lost:
+            print("     " + r)
     if regressed:
         print("  RATCHET BROKEN - these lines were killed before and survive now:")
         for r in regressed:
