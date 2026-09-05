@@ -91,6 +91,15 @@ public class DataSafetyGuardsTest {
 	private static final Pattern DONE = Pattern.compile("void done\\(\\)\\s*\\{");
 
 	public static void main(String[] args) throws Exception {
+		//FIRST statement, before any AWT class is loaded. Two checks below
+		//drive a real LoadingDialog, and the application always opens one from
+		//the EDT - inside the modal pump the worker's done() then runs in. A
+		//test cannot do that (done() would need the EDT this thread is holding),
+		//so it calls in from here instead, and with a screen attached a worker
+		//that finished first would dispose the window before setVisible(true)
+		//showed it - a modal window nothing can ever close. Headless, the
+		//dialog is the same object without the window and the ordering holds.
+		System.setProperty("java.awt.headless", "true");
 		String garcPath = args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/4/0";
 		File dump = new File(args.length > 1 ? args[1] : "../RomFS_original_garcs");
 		staleArchive(new File(garcPath));
@@ -101,6 +110,8 @@ public class DataSafetyGuardsTest {
 		matrixEditor(dump);
 		workerErrorsSurface(new File("src"));
 		mapLoadFailuresSurface();
+		builderAddFileFailureSurfaces(dump);
+		zoneThatDidNotLoadSaysSo(dump);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -573,6 +584,163 @@ public class DataSafetyGuardsTest {
 				"and a different failure reads differently, and not as the refresh's: " + otherSaid);
 	}
 
+	/**
+	 * "Add file to GARC" in the Builder, against an archive something else is
+	 * holding open.
+	 *
+	 * <p>The new file is written into the workspace BEFORE the pack, so the
+	 * Builder's own list shows it whether the pack worked or not. The archive
+	 * the game reads is the only place it matters, and when the pack throws,
+	 * that is where it is missing. The progress dialog closes either way, so
+	 * the one sentence in done() is the whole difference between "the file is
+	 * in the archive" and "the file is in your workspace and nowhere else".
+	 *
+	 * <p>It was a bare JOptionPane behind a modal progress dialog: unreachable
+	 * without a screen and unreadable by a guard even with one. It goes through
+	 * {@link ctrmap.Ui} now. The archive is packed twice - once held open, once
+	 * not - because "the archive did not grow" is also true of a Builder that
+	 * cannot add a file at all.
+	 */
+	static void builderAddFileFailureSurfaces(File dump) throws Exception {
+		if (!dump.isDirectory()) {
+			System.out.println("  skip: no dump at " + dump);
+			return;
+		}
+		scratchGameOnce(dump);
+		ctrmap.humaninterface.builder.Builder builder = new ctrmap.humaninterface.builder.Builder();
+		setField(builder, "currentGARC", Workspace.ArchiveType.MAP_MATRIX);
+		java.lang.reflect.Method addFile = builder.getClass()
+				.getDeclaredMethod("btnAddFileToGARCActionPerformed", java.awt.event.ActionEvent.class);
+		addFile.setAccessible(true);
+		File archive = Workspace.mm.file;
+		int before = new GARC(archive).length;
+
+		List<String> said;
+		try (java.io.FileInputStream somethingElse = new java.io.FileInputStream(archive)) {
+			said = ctrmap.Ui.record();
+			try {
+				addFile.invoke(builder, (Object) null);
+				javax.swing.SwingUtilities.invokeAndWait(() -> {
+				});
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+		}
+		System.out.println("  a failed add tells the user: " + said);
+		check(said.size() == 1 && said.get(0).contains("Adding the file did not finish"),
+				"a file the pack could not write is reported as not added: " + said);
+		check(said.size() == 1 && said.get(0).contains("Reopen the archive"),
+				"and the user is told the Builder's list is not the archive: " + said);
+		check(new GARC(archive).length == before,
+				"and the archive really did not gain it (" + before + " -> " + new GARC(archive).length + ")");
+
+		said = ctrmap.Ui.record();
+		try {
+			addFile.invoke(builder, (Object) null);
+			javax.swing.SwingUtilities.invokeAndWait(() -> {
+			});
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.isEmpty(), "adding a file that does go in says nothing: " + said);
+		check(new GARC(archive).length == before + 1,
+				"and the archive gained exactly one entry (" + before + " -> " + new GARC(archive).length + ")");
+	}
+
+	/**
+	 * Picking a zone from the list that then fails to load.
+	 *
+	 * <p>{@link #mapLoadFailuresSurface} asks the map panel's decision
+	 * directly, because it lives behind a modal progress dialog. This is the
+	 * zone panel's own version of that path, driven the way the user drives it
+	 * - a selection in the zone dropdown - now that the progress dialog exists
+	 * without a screen.
+	 *
+	 * <p>done() puts the editors back to "no zone open" and then says so. The
+	 * sentence is the half that has never been asserted, and it is the half the
+	 * user needs: the dialog closes on failure exactly as on success, and the
+	 * dropdown has already moved to the zone they asked for. Without it, they
+	 * are looking at an editor that is showing nothing and has said nothing,
+	 * and the obvious reading is that the zone is empty.
+	 *
+	 * <p>The zone is broken the way a real one breaks - its header names an
+	 * area that does not exist, which is what a bad fork or a hand-edited
+	 * master table leaves behind - so the load fails inside fetchArchives,
+	 * where it fails in the field.
+	 */
+	static void zoneThatDidNotLoadSaysSo(File dump) throws Exception {
+		if (!dump.isDirectory()) {
+			System.out.println("  skip: no dump at " + dump);
+			return;
+		}
+		scratchGameOnce(dump);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
+		CtrmapMainframe.mZonePnl = pnl;
+		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm();
+		CtrmapMainframe.mTileMapPanel = new TileMapPanel();
+		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm();
+		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm();
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm();
+		CtrmapMainframe.mWarpEditForm = new WarpEditForm();
+		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm();
+		//PropEditForm's generated initComponents builds a CustomH3DPreview,
+		//whose constructor starts an FPSAnimator on a NON-daemon thread. Left
+		//running it holds the JVM open after main returns: the suite prints
+		//ALL PASS and then never exits, which reads as a battery that hangs
+		//rather than one that fails - the one outcome a runner cannot report.
+		ctrmap.humaninterface.CustomH3DPreview propPreview
+				= (ctrmap.humaninterface.CustomH3DPreview) field(CtrmapMainframe.mPropEditForm, "PropPreview");
+		try {
+
+			//a real zone, then the damage: an area id AreaData does not have
+			int noSuchArea = Workspace.ad.length + 21;
+			Zone broken = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+			broken.header.areadataID = noSuchArea;
+			//the same failure, reproduced here, so the report can be required to
+			//carry what actually went wrong rather than a fixed sentence
+			Zone probe = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+			probe.header.areadataID = noSuchArea;
+			String cause = "";
+			try {
+				probe.header.fetchArchives();
+			} catch (Throwable t) {
+				cause = String.valueOf(t);
+			}
+			check(!cause.isEmpty(), "a zone header naming area " + noSuchArea
+					+ " cannot fetch its archives: " + cause);
+			pnl.zones = new Zone[]{null, broken};
+			fill(pnl, "zoneList", 2);
+			//the editors are showing the zone the user had open
+			Zone open = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+			CtrmapMainframe.mNPCEditForm.loadFromEntities(open.entities, null);
+			check(CtrmapMainframe.mNPCEditForm.loaded, "the NPC editor is showing a zone before the failed load");
+			setField(pnl, "loaded", true);
+
+			List<String> said = ctrmap.Ui.record();
+			try {
+				((JComboBox<?>) field(pnl, "zoneList")).setSelectedIndex(1);
+				javax.swing.SwingUtilities.invokeAndWait(() -> {
+				});
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			System.out.println("  a zone that did not load tells the user: " + said);
+			check(said.size() == 1 && said.get(0).startsWith("Load zone: The zone did not load:"),
+					"a zone that failed to load says so, once: " + said);
+			check(said.size() == 1 && !cause.isEmpty() && said.get(0).contains(cause),
+					"carrying what actually went wrong (" + cause + ") rather than a fixed sentence: " + said);
+			check(said.size() == 1 && said.get(0).contains("Pick a zone from the list"),
+					"and telling the user the dropdown is still theirs to use: " + said);
+			check(pnl.zone == null && pnl.zoneIndex == -1,
+					"and the panel is not left believing a zone is open (zone " + pnl.zone
+					+ ", index " + pnl.zoneIndex + ")");
+			check(!CtrmapMainframe.mNPCEditForm.loaded,
+					"nor are the editors left on the zone that was there before");
+		} finally {
+			propPreview.stop();
+		}
+	}
+
 	/** Comments are stripped first, so a get() mentioned in one does not count. */
 	static int silentWorkers(File dir, List<String> silent) throws Exception {
 		int n = 0;
@@ -707,6 +875,20 @@ public class DataSafetyGuardsTest {
 			return null;
 		} catch (java.lang.reflect.InvocationTargetException ex) {
 			return ex.getCause() == null ? ex : ex.getCause();
+		}
+	}
+
+	private static boolean scratchOpen = false;
+
+	/**
+	 * The throwaway game the last two checks write into, copied once. Copying
+	 * it is a few hundred megabytes; two checks needing a workspace is not a
+	 * reason to do that twice in one run.
+	 */
+	static void scratchGameOnce(File dump) throws Exception {
+		if (!scratchOpen) {
+			ScratchGame.open(dump);
+			scratchOpen = true;
 		}
 	}
 
