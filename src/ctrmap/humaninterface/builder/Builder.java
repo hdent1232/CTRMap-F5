@@ -500,8 +500,11 @@ public class Builder extends javax.swing.JPanel {
 					} catch (Exception ex) {
 						Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
 						Logger.getLogger(Builder.class.getName()).log(Level.SEVERE, "adding a file", cause);
-						JOptionPane.showMessageDialog(Builder.this, "Adding the file did not finish:\n" + cause
-								+ "\n\nReopen the archive to see what it holds now.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+						//through Ui: the workspace file exists either way, so this
+						//sentence is the only thing that says the ARCHIVE does
+						//not have it - and a bare dialog is not assertable
+						ctrmap.Ui.error(Builder.this, "Adding the file did not finish:\n" + cause
+								+ "\n\nReopen the archive to see what it holds now.", "Builder alert");
 					}
 				}
 
