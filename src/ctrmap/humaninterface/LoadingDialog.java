@@ -2,10 +2,24 @@ package ctrmap.humaninterface;
 
 import ctrmap.CtrmapMainframe;
 import java.awt.Dialog;
+import java.awt.GraphicsEnvironment;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import javax.swing.JDialog;
 
 /**
  * Modal dialog with a progress bar suitable for SwingWorkers.
+ *
+ * <p>With no screen there is no window - {@code new JDialog()} throws
+ * HeadlessException - but the work behind the bar is not progress UI, it is the
+ * pack, the zone load and the archive rewrite themselves, and every report
+ * those make on failure lives on the far side of this dialog. Refusing to
+ * exist without a display put all of them out of reach of any guard: a suite
+ * could not so much as enter {@link ctrmap.Workspace#packWorkspace}. So a
+ * headless instance keeps the bar and the label (plain Swing components, which
+ * need no peer) and drops only the window, and {@link #showDialog} still waits
+ * for {@link #close} the way a modal dialog does, so the order of what happens
+ * is the same either way. With a display, nothing here behaves differently.
  */
 public class LoadingDialog extends javax.swing.JPanel {
 
@@ -13,6 +27,9 @@ public class LoadingDialog extends javax.swing.JPanel {
 	 * Creates new form LoadingDialog
 	 */
 	private JDialog dlg;
+
+	/** Stands in for the modal window's blocking when there is no window. */
+	private final CountDownLatch closed = new CountDownLatch(1);
 
 	public LoadingDialog() {
 		initComponents();
@@ -27,24 +44,44 @@ public class LoadingDialog extends javax.swing.JPanel {
 	}
 
 	public void close() {
+		closed.countDown();
+		if (dlg == null) {
+			return;
+		}
 		dlg.dispose();
 		dlg.setVisible(false);
 	}
 
 	public static LoadingDialog makeDialog(String desc) {
 		LoadingDialog ret = new LoadingDialog();
-		ret.dlg = new JDialog();
-		ret.dlg.add(ret);
+		if (!GraphicsEnvironment.isHeadless()) {
+			ret.dlg = new JDialog();
+			ret.dlg.add(ret);
+		}
 		ret.setDescription(desc);
 		ret.setBarPercent(0);
-		ret.dlg.setUndecorated(true);
-		ret.dlg.setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-		ret.dlg.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-		ret.dlg.pack();
+		if (ret.dlg != null) {
+			ret.dlg.setUndecorated(true);
+			ret.dlg.setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
+			ret.dlg.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+			ret.dlg.pack();
+		}
 		return ret;
 	}
 
 	public void showDialog() {
+		if (dlg == null) {
+			//the caller expects to be held here until the worker's done() has
+			//closed this, because everything it does next assumes that. The
+			//timeout is a backstop against a worker that never finishes: a test
+			//run that stops is a result, one that hangs is not.
+			try {
+				closed.await(2, TimeUnit.MINUTES);
+			} catch (InterruptedException ex) {
+				Thread.currentThread().interrupt();
+			}
+			return;
+		}
 		if (CtrmapMainframe.frame != null) {
 			dlg.setLocationRelativeTo(CtrmapMainframe.frame);
 		}
