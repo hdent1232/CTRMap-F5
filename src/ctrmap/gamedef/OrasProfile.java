@@ -50,6 +50,8 @@ public class OrasProfile extends GameProfile {
 			case MAISON_SET_POOL_C: return "/a/1/8/6";
 			case PERSONAL: return "/a/1/9/5";
 			case MOVE_DATA: return "/a/1/8/9";
+			//measured on a retail dump: 776 entries of 36 bytes, all round-tripping
+			case ITEM_DATA: return "/a/1/9/7";
 			case SOUND_BCSAR: return "/sound/sango_sound.bcsar";
 			default: return null;
 		}
@@ -64,6 +66,7 @@ public class OrasProfile extends GameProfile {
 			case TYPE_NAMES: return 18;
 			case ABILITY_NAMES: return 37;
 			case ITEM_NAMES: return 114;
+			case ITEM_DESCRIPTIONS: return 117;
 			case TRAINER_CLASS_NAMES: return 21;
 			case TRAINER_NAMES: return 22;
 			default: return -1;

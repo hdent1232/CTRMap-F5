@@ -38,8 +38,15 @@ import java.util.Map;
  */
 public class ItemDataTest {
 
-	/** ORAS. A profile answers this per game; the suite takes the ORAS path directly. */
-	private static final String ITEM_ARCHIVE = "/a/1/9/7";
+	//Where the item table lives is a PER-GAME fact, so it comes from the gamedef
+	//seam rather than being written here. SourceSeamTest enforces that no RomFS
+	//path lives outside that package, and a suite is not exempt from the rule it
+	//exists to protect.
+	private static String itemArchive() {
+		String p = ctrmap.gamedef.GameProfile.of(ctrmap.Workspace.GameType.ORAS)
+				.archivePath(ctrmap.Workspace.ArchiveType.ITEM_DATA);
+		return p == null ? "" : p;
+	}
 
 	private static final int ULTRA_BALL = 2, RARE_CANDY = 50, HP_UP = 45, LIFE_ORB = 270;
 
@@ -60,7 +67,7 @@ public class ItemDataTest {
 			System.out.println("ALL PASS");
 			return;
 		}
-		File garcFile = new File(args[0] + ITEM_ARCHIVE);
+		File garcFile = new File(args[0] + itemArchive());
 		if (!garcFile.isFile()) {
 			System.out.println("  skip: no item archive at " + garcFile);
 			System.out.println("ALL PASS");
@@ -69,7 +76,7 @@ public class ItemDataTest {
 
 		GARC g = new GARC(garcFile);
 		int n = g.getEntryCount();
-		System.out.println("--- " + n + " item record(s) in " + ITEM_ARCHIVE);
+		System.out.println("--- " + n + " item record(s) in " + itemArchive());
 
 		roundTrip(g, n);
 		fieldsMeanWhatTheyAreNamed(g);

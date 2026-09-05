@@ -36,6 +36,10 @@ public class XyProfile extends GameProfile {
 			case BUILDING_MODELS: return "/a/0/2/4";
 			case NPC_REGISTRIES: return "/a/1/4/9";
 			case MOVE_MODELS: return "/a/0/2/1";
+			//GARC 220 - pk3DS GARCReference_XY. NOT measured against an XY dump
+			//here; it is a cited reference, which the profile contract allows so
+			//long as it says so. Verify before anything writes through it.
+			case ITEM_DATA: return "/a/2/2/0";
 			case SOUND_BCSAR: return "/sound/xy_sound.bcsar";
 			//TRAINER_*/MAISON_*/PERSONAL/MOVE_DATA: locations not yet verified
 			//for XY - measure from a dump before adding (do NOT copy from pk3DS

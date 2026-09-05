@@ -112,6 +112,10 @@ public class SnapshotIntegrityTest {
 		pointedAtAnotherGame(new File(tmp, "game2"),
 				args.length > 0 ? new File(args[0]) : new File("src"));
 
+		//last: it deliberately makes an archive uncapturable, so it must not
+		//leave the fixture in that state for anything after it
+		aPartialSnapshotIsReported();
+
 		deleteTree(tmp);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -192,6 +196,62 @@ public class SnapshotIntegrityTest {
 				"the workspace settings dialog asks about the backup when the game folder changes");
 	}
 
+	/**
+	 * A backup that could not be taken whole says so somewhere a user will see.
+	 *
+	 * <p>Both failure paths in {@code snapshotOriginals} used to print to
+	 * {@code System.err} and nothing else. The shipped jpackage app-image has no
+	 * console, so in the built program a PARTIAL backup - one whose stamp still
+	 * says it is legitimate - was reported to nobody at all. Both callers throw
+	 * the returned list away, and the setup wizard has a catch that looks like it
+	 * handles this but cannot be reached, because the method never throws.
+	 *
+	 * <p>That is the silent-failure class this whole battery exists for, sitting
+	 * in the one thing every other guard depends on being right.
+	 */
+	static void aPartialSnapshotIsReported() throws Exception {
+		System.out.println("--- a backup that could not be taken whole says so");
+		Workspace.resetSnapshotProblemReporting();
+
+		//make one archive uncapturable, the way real use does
+		String rel = Workspace.getArchivePath(ModDeployer.MODDABLE[0], Workspace.game);
+		File snapFile = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
+		File liveFile = new File(Workspace.GAMEDIR_PATH + rel);
+		byte[] liveWas = liveFile.isFile() ? Files.readAllBytes(liveFile.toPath()) : null;
+		//only the SNAPSHOT copy goes. refused fires on live-present/snapshot-absent
+		//with the stamp already established: the game has been in use since the
+		//backup was taken, so the live archive is no longer evidence of what shipped
+		//and must NOT be adopted as pristine - it is left out, and that gap is the
+		//thing the user has to be told about.
+		snapFile.delete();
+
+		java.util.List<String> said = ctrmap.Ui.record();
+		try {
+			Workspace.snapshotOriginals();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(!said.isEmpty(), "an incomplete backup is reported to the user, not only to stderr");
+		String all = said.toString();
+		check(all.contains(rel) || all.contains("Missing archive"),
+				"and it names what is missing rather than saying something went wrong "
+				+ "[" + (said.isEmpty() ? "nothing said" : said.get(0)) + "]");
+
+		//once per session, because a dialog on every load trains the user to
+		//dismiss it unread - which is the same silence by another route
+		java.util.List<String> again = ctrmap.Ui.record();
+		try {
+			Workspace.snapshotOriginals();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(again.isEmpty(), "and it is said once, not on every single load");
+
+		if (liveWas != null) {
+			Files.write(liveFile.toPath(), liveWas);
+		}
+		Workspace.resetSnapshotProblemReporting();
+	}
 	static void check(boolean ok, String what) {
 		if (ok) {
 			System.out.println("  ok: " + what);
