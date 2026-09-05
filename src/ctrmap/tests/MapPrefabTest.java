@@ -20,7 +20,10 @@ import java.util.List;
  *   result re-parses clean in BOTH parsers (BchMapModel + the render parser);
  * - collision stamp: exact triangle-count growth, rebuilt file valid;
  * - save/load: byte-faithful prefab file round-trip, skinning included, and
- *   the warning the loading session gets about the faces the cut left out.
+ *   the warning the loading session gets about the faces the cut left out;
+ * - and what the Geometry tool SAYS a stamp did: how many of the prefab's
+ *   pieces landed out of how many, which is the only place a fragment differs
+ *   from a whole building on screen.
  *
  * <p>The skinning flag is the one field the file does NOT store: the load
  * re-reads it from the embedded donor. Nothing noticed when that re-read was
