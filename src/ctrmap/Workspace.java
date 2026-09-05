@@ -624,6 +624,37 @@ public class Workspace {
 	 * from an absent snapshot ({@code BuildingCatalog.pristineRegion}); none of
 	 * them can detect a present-but-wrong one.
 	 */
+	/** True once a snapshot problem has been shown this session; see {@link #reportSnapshotProblem}. */
+	private static boolean snapshotProblemShown;
+
+	/**
+	 * Says a backup went wrong, somewhere the user can actually see it.
+	 *
+	 * <p>Both failure paths in {@link #snapshotOriginals} used to print to
+	 * {@code System.err} and nothing else. The shipped jpackage app-image has no
+	 * console, so in the built program a backup that failed - or, worse, one that
+	 * came out PARTIAL while its stamp still says it is legitimate - was reported
+	 * to nobody. Both call sites discard the returned list, so the return value
+	 * was not covering it either. The wizard has a catch that looks like it
+	 * handles this and is unreachable, because this method cannot throw.
+	 *
+	 * <p>Once per session: a partial snapshot is re-detected on every load, and a
+	 * dialog on every load would train the user to dismiss it unread, which is
+	 * the same silence by another route.
+	 */
+	static void reportSnapshotProblem(String text) {
+		if (snapshotProblemShown) {
+			return;
+		}
+		snapshotProblemShown = true;
+		ctrmap.Ui.error(CtrmapMainframe.frame, text, "Pristine backup");
+	}
+
+	/** Lets a suite exercise more than one snapshot problem in one JVM. */
+	public static void resetSnapshotProblemReporting() {
+		snapshotProblemShown = false;
+	}
+
 	public static java.util.List<String> snapshotOriginals() {
 		java.util.List<String> refused = new java.util.ArrayList<>();
 		try {
@@ -677,6 +708,13 @@ public class Workspace {
 				}
 			}
 			if (!refused.isEmpty()) {
+				reportSnapshotProblem("Some of the pristine backup could not be taken."
+						+ "\n\nMissing archive(s): " + refused
+						+ "\n\nCTRMap compares your edits against that backup to work out what you"
+						+ "\nchanged, and cuts donor buildings out of it, so a backup that is missing"
+						+ "\npieces gives the wrong answer for them - silently."
+						+ "\n\nDelete the snapshot folder and reload against an unmodified game to"
+						+ "\nretake it whole.");
 				System.err.println("Workspace: the pristine snapshot in " + snap
 						+ " is missing " + refused.size() + " archive(s): " + refused
 						+ "\n  They will NOT be captured from the live game, which may already be"
@@ -693,6 +731,12 @@ public class Workspace {
 				}
 			}
 		} catch (Exception ex) {
+			reportSnapshotProblem("The pristine backup of your game could not be taken."
+					+ "\n\n" + ex
+					+ "\n\nYou can carry on working, but CTRMap has no unmodified copy to"
+					+ "\ncompare against - so \"ship only what I changed\" cannot work, and if"
+					+ "\nthis game folder is damaged later you will need to dump it from your"
+					+ "\nconsole again.");
 			System.err.println("Original-archive snapshot failed (non-fatal): " + ex);
 		}
 		return refused;
@@ -1035,6 +1079,8 @@ public class Workspace {
 		PERSONAL,
 		/** Move type/category/power mini-container (read-only reference data). */
 		MOVE_DATA,
+		/** Item records - 776 x 36 bytes in Gen 6, id == entry index. */
+		ITEM_DATA,
 		SOUND_BCSAR
 	}
 

@@ -16,7 +16,7 @@ model with no part library and a *different, smaller skeleton*. See
 the scope doc feared.
 
 Everything below was measured against the owner's dump at
-`C:/Users/flami/Desktop/Claude/sessions/3DS Editor/RomFS/000400000011C400/a/`
+`<romfs>/a/`
 using CTRMap's own `ctrmap.formats.garc.GARC`, `ctrmap.formats.h3d.BCHFile` and
 `ctrmap.formats.text.GFMessageFile` (no hand-written container parsing — the
 earlier FATB drift is exactly why). All 298 non-empty GARCs were enumerated and
@@ -330,7 +330,7 @@ field skeleton.
 ## Reproducing this
 
 Probes are in
-`C:/Users/flami/Desktop/Claude/sessions/3DS Editor/wt/_state/queue1/assets/probe/`
+`wt/_state/queue1/assets/probe/`
 (`Enum1`, `Names1`, `Scan1`, `Ctx1`, `One`, `Hex1`, `Bch1`, `Skel1`, `Mm1`,
 `Txt1`, `Line1`), compiled against
 `CTRMap/build/classes` plus `CTRMap/lib/*.jar`:

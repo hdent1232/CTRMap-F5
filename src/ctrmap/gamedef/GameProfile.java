@@ -37,6 +37,7 @@ public abstract class GameProfile {
 		TYPE_NAMES,
 		ABILITY_NAMES,
 		ITEM_NAMES,
+		ITEM_DESCRIPTIONS,
 		TRAINER_CLASS_NAMES,
 		TRAINER_NAMES
 	}
