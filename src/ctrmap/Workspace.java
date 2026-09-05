@@ -945,8 +945,11 @@ public class Workspace {
 					} catch (Exception ex) {
 						Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
 						Logger.getLogger(Workspace.class.getName()).log(Level.SEVERE, "packing the workspace", cause);
-						JOptionPane.showMessageDialog(CtrmapMainframe.frame, "The workspace was not packed:\n" + cause
-								+ "\n\nThe game archives may be partly written. Fix the cause and pack again before deploying.", "Pack workspace", JOptionPane.ERROR_MESSAGE);
+						//through Ui: this sentence is the only difference between
+						//a pack that failed and one that worked, and a bare
+						//dialog is not something a guard can see
+						Ui.error(CtrmapMainframe.frame, "The workspace was not packed:\n" + cause
+								+ "\n\nThe game archives may be partly written. Fix the cause and pack again before deploying.", "Pack workspace");
 						return;
 					}
 					if (onDone != null) {
