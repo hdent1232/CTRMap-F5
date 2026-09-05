@@ -250,7 +250,29 @@ public class GeoEditForm extends JPanel {
 				return;
 			}
 		}
-		if (p == null) {
+		stampHere(p);
+	}
+
+	/**
+	 * Stamps a prefab the user has already chosen, and says what landed.
+	 *
+	 * <p>What it says is the whole account of the edit. A stamp is partial
+	 * whenever the target region has no material for one of the prefab's
+	 * pieces - which is most cross-region stamps - and a building missing half
+	 * its pieces still occupies its whole footprint, so the map looks edited
+	 * either way. "Stamped 3/36 pieces" is the only place the difference
+	 * appears; without it a stamp that lost everything but the sea foam reads
+	 * exactly like one that worked, and the pieces that did not land are found
+	 * later, in the emulator, as an invisible wall. The same line carries the
+	 * collision and tiles that went with it and the (unsaved) that says none of
+	 * this is on disk yet.
+	 *
+	 * <p>Its own method because the only way in is a modal confirm and a file
+	 * chooser, which a headless guard cannot open: behind them the status line
+	 * could be deleted and the whole battery stayed green.
+	 */
+	public void stampHere(ctrmap.formats.h3d.MapPrefab p) {
+		if (p == null || box == null || gr == null || currentModel == null) {
 			return;
 		}
 		float fy = ((Number) dy.getValue()).floatValue();
