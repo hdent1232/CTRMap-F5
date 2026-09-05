@@ -39,7 +39,13 @@ import javax.swing.JTextField;
  * <p>{@link #theSaveThatWasRefused} and {@link #theFinishThatWasRefused} need
  * the settings window and the wizard themselves and so need a display; they
  * print a skip without one. The battery runner passes no headless flag, so they
- * run there.
+ * run there. Every mutation run is headless, though, so for a long time the
+ * lines they cover - the caller ACTING on the answer, as opposed to the answer
+ * itself - were measured by nothing at all: both survived a sweep. {@link
+ * #theSaveThatActsOnTheAnswer} and {@link #theFinishThatActsOnTheAnswer} assert
+ * the same consequences with no window, against the two decisions now lifted
+ * out of the windows ({@link WorkspaceSettings#repointGameDir} and {@link
+ * SetupWizard#backupSettled}).
  *
  * Usage: java ctrmap.tests.WorkspaceRepointTest &lt;romfs-root&gt;
  */
@@ -62,6 +68,8 @@ public class WorkspaceRepointTest {
 
 		settingsDialog(own, other);
 		firstRunWizard(own, other);
+		theSaveThatActsOnTheAnswer(own, other);
+		theFinishThatActsOnTheAnswer(own, other);
 		theSaveThatWasRefused(own, other);
 		theFinishThatWasRefused(own, other);
 
@@ -160,6 +168,139 @@ public class WorkspaceRepointTest {
 		}
 		check(go, "wizard: answering yes finishes setup");
 		check(!haveBackup(), "wizard: and the other game's backup is actually discarded");
+	}
+
+	/**
+	 * What the settings save DOES with the answer, without needing the window.
+	 *
+	 * <p>{@link #theSaveThatWasRefused} asserts the same thing through the real
+	 * dialog, and skips wherever there is no display - which is every mutation
+	 * run, so the line that acts on the answer went on being unmeasured. It is
+	 * now {@link WorkspaceSettings#repointGameDir}, which needs only the text
+	 * field it puts back, so the refusal can be driven with nothing on screen.
+	 *
+	 * <p>The second question is deliberately left unanswered: it packs or
+	 * cleans the workspace, and it must never be reached at all when the first
+	 * one was refused. "Nothing else was asked" is therefore also the assertion
+	 * that the save stopped where it said it did.
+	 */
+	static void theSaveThatActsOnTheAnswer(String own, String other) {
+		freshBackupOf(own);
+		Workspace.GAMEDIR_PATH = own;
+		JTextField gameField = new JTextField(own);
+
+		List<String> said = Ui.record();
+		boolean go;
+		try {
+			go = WorkspaceSettings.repointGameDir(null, gameField, own);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(go, "save: leaving the game folder alone saves without a word");
+		check(said.isEmpty(), "save: and asks nothing, since nothing moved; said " + said);
+
+		//the user closed the question rather than answering it
+		gameField.setText(other);
+		said = Ui.record();
+		try {
+			go = WorkspaceSettings.repointGameDir(null, gameField, own);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(!go, "save: closing the backup question stops the save instead of repointing anyway");
+		check(said.size() == 1 && said.get(0).contains("another game"),
+				"save: and the workspace is never asked to clean itself for a move that was not agreed to;"
+				+ " the user was asked " + said.size() + ": " + said);
+		check(own.equals(gameField.getText()),
+				"save: and the game folder is put back to " + own + " (it reads " + gameField.getText() + ")");
+		check(own.equals(Workspace.GAMEDIR_PATH),
+				"save: and the workspace still points at the game it was set up with");
+		check(haveBackup() && sameFolder(own),
+				"save: and the pristine backup is still the one taken from " + own);
+
+		//answered No. The second answer is only ever reached if the refusal was
+		//ignored, and CANCEL makes that harmless rather than destructive
+		gameField.setText(other);
+		said = Ui.record(JOptionPane.NO_OPTION, JOptionPane.CANCEL_OPTION);
+		try {
+			go = WorkspaceSettings.repointGameDir(null, gameField, own);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(!go, "save: answering no stops the save");
+		check(said.size() == 1, "save: with no further questions; the user was asked " + said.size() + ": " + said);
+		check(own.equals(gameField.getText()),
+				"save: and the game folder is put back (it reads " + gameField.getText() + ")");
+		check(haveBackup() && sameFolder(own), "save: and the backup is untouched");
+
+		//answered Yes: the switch is agreed to, so the wrong game's backup goes
+		gameField.setText(other);
+		said = Ui.record(JOptionPane.YES_OPTION);
+		try {
+			go = WorkspaceSettings.repointGameDir(null, gameField, own);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(go, "save: agreeing to retake the backup lets the save carry on");
+		check(other.equals(gameField.getText()),
+				"save: and the folder the user chose stays in the field (it reads " + gameField.getText() + ")");
+		check(!haveBackup(), "save: and the old game's backup really is discarded, not just promised");
+	}
+
+	/**
+	 * What the wizard's finish DOES with the answer, without needing the window.
+	 *
+	 * <p>Same story as {@link #theSaveThatActsOnTheAnswer}: {@link
+	 * #theFinishThatWasRefused} drives the real wizard and so skips without a
+	 * display, leaving the line that acts on the answer unmeasured everywhere
+	 * it was ever measured from. {@link SetupWizard#backupSettled} takes the
+	 * going-back as something a test can watch happen.
+	 */
+	static void theFinishThatActsOnTheAnswer(String own, String other) {
+		freshBackupOf(own);
+		Workspace.GAMEDIR_PATH = own;
+		final boolean[] wentBack = {false};
+		Runnable goBack = new Runnable() {
+			@Override
+			public void run() {
+				wentBack[0] = true;
+			}
+		};
+
+		List<String> said = Ui.record(); //closed, not answered
+		boolean go;
+		try {
+			go = SetupWizard.backupSettled(null, other, goBack);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(!go, "finish: closing the question does not set up on another game's backup");
+		check(wentBack[0], "finish: and setup goes back to pick a different working folder");
+		check(said.size() == 1 && said.get(0).contains("another game"),
+				"finish: having said why: " + said);
+		check(haveBackup() && sameFolder(own),
+				"finish: and the backup taken from " + own + " is still there, still belonging to it");
+
+		wentBack[0] = false;
+		said = Ui.record(JOptionPane.NO_OPTION);
+		try {
+			go = SetupWizard.backupSettled(null, other, goBack);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(!go && wentBack[0], "finish: answering no sends setup back a step instead of finishing");
+		check(haveBackup() && sameFolder(own), "finish: and throws nothing away on the way back");
+
+		wentBack[0] = false;
+		said = Ui.record(JOptionPane.YES_OPTION);
+		try {
+			go = SetupWizard.backupSettled(null, other, goBack);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(go, "finish: agreeing to replace the backup carries on with setup");
+		check(!wentBack[0], "finish: and does not send the user back a step after they said yes");
+		check(!haveBackup(), "finish: and the other game's backup really is discarded");
 	}
 
 	/**

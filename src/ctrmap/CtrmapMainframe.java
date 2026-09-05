@@ -715,10 +715,12 @@ public class CtrmapMainframe {
 				jfc.showOpenDialog(frame);
 				if (jfc.getSelectedFile() != null) {
 					prefs.put("LAST_DIR", jfc.getSelectedFile().getParent());
-					if (!openMapMatrixFile(jfc.getSelectedFile())) {
-						return;
-					}
-					mTileMapPanel.scaleImage(1);
+					openChosenMapMatrix(jfc.getSelectedFile(), new Runnable() {
+						@Override
+						public void run() {
+							mTileMapPanel.scaleImage(1);
+						}
+					});
 				}
 			}
 		});
@@ -1295,6 +1297,29 @@ public class CtrmapMainframe {
 	 * sentence that distinguishes "that file is not a map matrix" from "the
 	 * editor ignored my click" could be deleted with nothing noticing.
 	 */
+	/**
+	 * What Open MapMatrix does with the file the user picked: read it, and fit
+	 * the view to it only if it read.
+	 *
+	 * <p>Word for word what the menu action used to do inline. {@link
+	 * #openMapMatrixFile} was already out here so its refusal could be
+	 * asserted, but the caller acting on that refusal was still buried in an
+	 * anonymous listener behind a modal chooser, and a mutation sweep proved
+	 * nothing watched it: inverted, a file that could not be read went on to
+	 * refit the view as though a map had loaded - the editor reporting an error
+	 * and then behaving as if there had been none - and the whole battery
+	 * stayed green.
+	 *
+	 * @param fitViewToMap what to do once a map really is loaded - in the main
+	 * window, rescaling the tilemap panel to it
+	 */
+	public static void openChosenMapMatrix(File chosen, Runnable fitViewToMap) {
+		if (!openMapMatrixFile(chosen)) {
+			return;
+		}
+		fitViewToMap.run();
+	}
+
 	public static boolean openMapMatrixFile(File f) {
 		try {
 			mTileMapPanel.loadMatrix(new MapMatrix(new MM(f)), null, null, null);
