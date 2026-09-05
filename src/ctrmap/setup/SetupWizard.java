@@ -508,8 +508,12 @@ public class SetupWizard extends JDialog {
 		//a workspace carrying a pristine backup of a DIFFERENT game folder would
 		//silently mis-report what the user has changed, forever
 		Workspace.WORKSPACE_PATH = wsPath;
-		if (!backupBelongsHere(this, gamePath)) {
-			showStep(STEP_WORKSPACE);
+		if (!backupSettled(this, gamePath, new Runnable() {
+			@Override
+			public void run() {
+				showStep(STEP_WORKSPACE);
+			}
+		})) {
 			return;
 		}
 
@@ -666,6 +670,31 @@ public class SetupWizard extends JDialog {
 
 	private static String shorten(String path) {
 		return path == null ? "" : path; //the summary wraps, so show the whole path
+	}
+
+	/**
+	 * Whether the finish may carry on past the backup question, and what it
+	 * does when it may not: sends the user back to pick another working folder
+	 * and stops, having touched nothing.
+	 *
+	 * <p>Word for word what {@link #doFinish} used to do inline. It is out
+	 * here, static, and takes the going-back as something it can be handed,
+	 * because {@code doFinish} needs the whole wizard - a JDialog a headless
+	 * suite cannot build, a card layout, a SwingWorker. {@link
+	 * #backupBelongsHere} was reachable, but nothing could reach the finish
+	 * ACTING on its answer, and a mutation sweep proved it: inverting the
+	 * refusal, so that a wizard told to leave the other game's backup alone set
+	 * up on it anyway, left the whole battery green.
+	 *
+	 * @param goBackAndPickAnother what to do instead of setting up - in the
+	 * wizard, returning to the working-folder step
+	 */
+	public static boolean backupSettled(java.awt.Component parent, String gamePath, Runnable goBackAndPickAnother) {
+		if (!backupBelongsHere(parent, gamePath)) {
+			goBackAndPickAnother.run();
+			return false;
+		}
+		return true;
 	}
 
 	/**
