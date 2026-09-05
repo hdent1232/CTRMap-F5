@@ -158,10 +158,7 @@ public class PaintForm extends JPanel {
 		buildings.addActionListener(e -> {
 			BuildingPaletteDialog.Pick pick = BuildingPaletteDialog.pick(null, donorModel, mTileMapPanel.getWorldTextures());
 			if (pick != null) {
-				pendingPlace = pick.entry;
-				pendingPassengers = pick.passengers;
-				placeStatus.setText("<html><b>Placing: " + pick.entry.name + "</b>"
-						+ (pick.passengers ? "" : " (passengers left behind)") + " - click the map</html>");
+				beginPlacing(pick.entry, pick.passengers);
 			}
 		});
 		add(buildings);
@@ -515,6 +512,28 @@ public class PaintForm extends JPanel {
 			redoBtn.setEnabled(!redoStack.isEmpty());
 			undoBtn.setEnabled(true);
 		}
+	}
+
+	/**
+	 * Arms the next map click to place {@code entry}, and says so.
+	 *
+	 * <p>The label is the only thing that distinguishes this state from the
+	 * ordinary painting one: the cursor does not change, and the next click on
+	 * the map drops a building instead of painting a tile. It also carries the
+	 * half of the palette's answer that has no other trace - whether the
+	 * passengers came along - because that choice is made in a dialog which is
+	 * gone by the time the building lands, and a room placed without its floors
+	 * looks like a room until you walk into it.
+	 *
+	 * <p>Its own method because the palette that leads here is modal: behind it
+	 * nothing could see the label at all, so deleting the sentence, or writing
+	 * the same one whatever was picked, left the whole battery green.
+	 */
+	public void beginPlacing(BuildingCatalog.Entry entry, boolean passengers) {
+		pendingPlace = entry;
+		pendingPassengers = passengers;
+		placeStatus.setText("<html><b>Placing: " + entry.name + "</b>"
+				+ (passengers ? "" : " (passengers left behind)") + " - click the map</html>");
 	}
 
 	/** Mouse-down on the map (global tile coords). */
@@ -940,14 +959,30 @@ public class PaintForm extends JPanel {
 			previewInScene = false;
 			seededZone = -1; // reseed from the freshly built zone on next activate
 		} catch (Exception ex) {
-			// the preview may still be swapped in - put the real map back. Apply
-			// clears every precondition before it writes anything, so the
-			// workspace really is untouched and the dialog can say so - it used
-			// to read as "nothing happened" over a half-applied map.
-			restoreRealModel();
-			JOptionPane.showMessageDialog(this, "Apply failed:\n" + ex.getMessage()
-					+ "\n\nNothing was written - the map is exactly as it was.",
-					"Map Builder", JOptionPane.ERROR_MESSAGE);
+			applyFailed(ex);
 		}
+	}
+
+	/**
+	 * What a refused Apply owes the user: why it stopped, and that the map is
+	 * untouched - plus the map itself, put back.
+	 *
+	 * <p>Both halves matter and both are this one path's job. The preview swaps
+	 * the painted model into the 3D scene while the tool is open, so a failed
+	 * Apply that left it there would show the user a map that is not on disk
+	 * and never was. And Apply clears every precondition before it writes
+	 * anything, which is why the sentence can promise nothing was written -
+	 * that promise used to be a bare "Apply failed" over a half-applied map,
+	 * and it is the difference between "try again" and "check what shipped".
+	 *
+	 * <p>Its own method, and through {@link ctrmap.Ui}, because everything
+	 * above it in applyAction is a modal dialog: with no display this path was
+	 * unreachable, and as a bare JOptionPane "the user was told" was not
+	 * something any test could see.
+	 */
+	public void applyFailed(Exception why) {
+		restoreRealModel();
+		ctrmap.Ui.error(this, "Apply failed:\n" + why.getMessage()
+				+ "\n\nNothing was written - the map is exactly as it was.", "Map Builder");
 	}
 }
