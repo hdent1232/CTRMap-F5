@@ -16,7 +16,9 @@ import java.util.List;
  * (Route 101 region 1): several painted grids must produce a model that passes
  * both parsers and the strict verifier, collision that parses with the exact
  * walkable-tile triangle count, and a tilemap whose tuples match the grid. Also
- * checks that painted meshes actually carry the painted tiles' geometry.
+ * checks that painted meshes actually carry the painted tiles' geometry, and
+ * that a ramp pointing at ground which is not lower is refused rather than
+ * built as a wall.
  *
  * Usage: java ctrmap.tests.PaintedRegionTest <path-to-a039-garc>
  */
@@ -41,6 +43,7 @@ public class PaintedRegionTest {
 		failures += check("raised plateau (elevation + cliffs)", grid(TilePalette.GRASS), plateau(), donor);
 		failures += checkEdges(donor);
 		failures += checkCliffWinding(donor);
+		failures += checkContradictoryRampIsRefused(donor);
 
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
 		if (failures > 0) {
@@ -235,6 +238,86 @@ public class PaintedRegionTest {
 			System.out.println("FAIL cliff winding: " + ex.getMessage());
 			return 1;
 		}
+	}
+
+	/**
+	 * A ramp whose way down is not lower is a contradiction in the painted
+	 * document, and the builder REFUSES it - it does not quietly build
+	 * something else.
+	 *
+	 * <p>That refusal is the whole reason the ramp grid carries a direction at
+	 * all. A ramp used to take the first neighbour that happened to be lower,
+	 * and a tile with none simply came out as a 36-unit wall across the
+	 * corridor the user was cutting: the map built, the dialog said it was
+	 * applied, and the wall was only found by walking into it in the emulator.
+	 * The tile and the way it claims to descend are named because a 40x40 grid
+	 * has 1,600 places to look for the one that disagrees.
+	 *
+	 * <p>Asserted through {@link PaintedRegionBuilder#build}, not through
+	 * rampDir alone: what matters is that the whole region comes back refused
+	 * rather than built. Both halves are checked, because a refusal that also
+	 * refuses the legitimate ramp beside it is not a guard, it is a broken
+	 * builder - the same grid with the ground actually lower must build, and
+	 * the tile must really be a slope.
+	 */
+	static int checkContradictoryRampIsRefused(byte[] donor) {
+		ctrmap.formats.tilemap.TerrainLighting L = ctrmap.formats.tilemap.TerrainLighting.daytime();
+		TilePalette[][] g = grid(TilePalette.GRASS);
+		int[][] flat = new int[DIM][DIM];
+		int[][] ramp = new int[DIM][DIM];
+		for (int[] row : ramp) {
+			java.util.Arrays.fill(row, PaintedRegionBuilder.NO_RAMP);
+		}
+		ramp[20][20] = 0; // east
+		int failures = 0;
+
+		//the contradiction: (20,20) says it goes down east, and (21,20) is level with it
+		String refusal = null;
+		RegionFactory.BlankContent built = null;
+		try {
+			built = PaintedRegionBuilder.build(donor, g, flat, ramp, L, false);
+		} catch (IllegalStateException ex) {
+			refusal = ex.getMessage();
+		} catch (RuntimeException ex) {
+			System.out.println("FAIL contradictory ramp: refused with " + ex.getClass().getName()
+					+ " (" + ex.getMessage() + ") - a half-built region throwing on its way out is not a refusal");
+			return 1;
+		}
+		if (refusal == null) {
+			System.out.println("FAIL contradictory ramp: a ramp at (20,20) going down east onto ground"
+					+ " that is not lower was built anyway (" + (built == null ? "null" : built.model.length
+					+ " model bytes") + ") - the wall is silent again");
+			failures++;
+		} else if (!(refusal.contains("(20,20)") && refusal.contains("east")
+				&& refusal.contains("not lower"))) {
+			System.out.println("FAIL contradictory ramp: refused without naming the tile, its way down,"
+					+ " and what is wrong with it: " + refusal);
+			failures++;
+		} else {
+			System.out.println("  ok: a ramp whose way down is not lower is refused, named: " + refusal);
+		}
+
+		//the control: raise the ramp tile so east really is lower, and the same
+		//grid must build - and that tile must come out a slope, not a wall
+		int[][] raised = new int[DIM][DIM];
+		raised[20][20] = 1;
+		try {
+			int dir = PaintedRegionBuilder.rampDir(g, raised, ramp, 20, 20);
+			RegionFactory.BlankContent ok = PaintedRegionBuilder.build(donor, g, raised, ramp, L, false);
+			if (dir != 0) {
+				System.out.println("FAIL contradictory ramp control: the ramp descends " + dir + ", not east");
+				failures++;
+			} else if (ok == null || !new BchMapModel(ok.model).validate().isEmpty()) {
+				System.out.println("FAIL contradictory ramp control: the legitimate ramp did not build");
+				failures++;
+			} else {
+				System.out.println("  ok: the same ramp with the ground actually lower builds, descending east");
+			}
+		} catch (RuntimeException ex) {
+			System.out.println("FAIL contradictory ramp control: a legitimate ramp was refused too: " + ex);
+			failures++;
+		}
+		return failures;
 	}
 
 	/** World X or Z to the tile index containing it (TILE=18, ORIGIN=-360). */

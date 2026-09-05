@@ -85,6 +85,7 @@ public class PaintApplyGuardsTest {
 		openWorkspace(dump);
 
 		refusedCarryWritesNothing();
+		editingTheSharedAreaAnywayIsStillRefused();
 		doorPropWaitsForTheAreaDecision();
 		failedCarryLeavesRegionsAlone();
 		appliedMapCarriesItsTextures();
@@ -97,6 +98,7 @@ public class PaintApplyGuardsTest {
 		sameNameDifferentPixelsIsNotSilent();
 		applyCountsTilesThatTookANeighboursGround();
 		aRegionThatCannotBeWrittenStopsTheApply();
+		anAreaThatCannotBeWrittenStopsTheApply();
 		aDoorPropTheAreaHasNotRegisteredIsAnAreaWrite();
 		//these two fork zone 74's area, so nothing above may run after them
 		cancellingTheSharedAreaQuestionWritesNothing();
@@ -120,6 +122,56 @@ public class PaintApplyGuardsTest {
 		Exception stop = apply(74, new ArrayList<TilePainterForm.Placed>());
 		check(stop != null, "Apply on a shared-area zone does not report success (stopped by: " + stop + ")");
 		check(newlyPersisted(before).isEmpty(), "nothing was persisted by the refused Apply: " + newlyPersisted(before));
+		check(pristine(Workspace.ArchiveType.FIELD_DATA, gr, 272), "region 272 is byte-identical to the archive");
+		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 43), "area 43 is byte-identical to the archive");
+	}
+
+	/**
+	 * The user answers the shared-area question with "Edit the shared area
+	 * anyway" - the deliberate game-wide edit - and the Apply STILL refuses,
+	 * because this particular edit cannot be made game-wide.
+	 *
+	 * <p>That answer is not the same as consent to this. Forking is offered
+	 * because atmosphere and prop registries are shared, and there are real
+	 * edits a user means to make to all of them at once; adding a map's brush
+	 * textures and door props is not one, because the other zones on the area
+	 * do not have this map's geometry and their packs would grow with textures
+	 * nothing on their maps draws. So the answer opens the door and the
+	 * texture-pack guard closes it, naming the zones that stopped it and the
+	 * menu item that fixes it.
+	 *
+	 * <p>It is the only path to that refusal: Cancel throws before it, and a
+	 * fork walks past it into a private area.
+	 *
+	 * <p>The wording is asserted, not just the refusal, because there is a
+	 * second guard behind this one - {@code BchTexturePack.assertNotShared},
+	 * on the way into the staged area - which catches the same case with a
+	 * sentence about carrying textures. Deleting Apply's own refusal therefore
+	 * does not let the paint through; it swaps the Apply's account of what
+	 * happened ("nothing was applied... and Apply again") for the texture
+	 * layer's, which tells the user neither of those things. Requiring only
+	 * "it threw" would score the neighbour as this line, which is exactly the
+	 * mistake this measurement exists to avoid.
+	 */
+	static void editingTheSharedAreaAnywayIsStillRefused() throws Exception {
+		open(74);
+		paintSand();
+		List<String> before = new ArrayList<>(Workspace.persist_paths);
+		List<String> said = ctrmap.Ui.record("Edit the shared area anyway");
+		Exception stop;
+		try {
+			stop = apply(74, new ArrayList<TilePainterForm.Placed>());
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said(said, "SHARES its area"), "the shared-area question was asked: " + said);
+		String why = stop == null ? "(nothing was thrown)" : String.valueOf(stop.getMessage());
+		check(stop instanceof IllegalStateException && why.contains("Area 43 is also used by zones 72, 73")
+				&& why.contains("nothing was applied") && why.contains("(Map > Fork area) and Apply again"),
+				"answering \"edit the shared area anyway\" does not get this map's textures into zones 72"
+				+ " and 73's area: the Apply refuses in its own words, naming them, saying nothing was"
+				+ " applied and what to do instead (stopped by: " + stop + ")");
+		check(newlyPersisted(before).isEmpty(), "nothing was written by it: " + newlyPersisted(before));
 		check(pristine(Workspace.ArchiveType.FIELD_DATA, gr, 272), "region 272 is byte-identical to the archive");
 		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 43), "area 43 is byte-identical to the archive");
 	}
@@ -595,6 +647,48 @@ public class PaintApplyGuardsTest {
 		check(Arrays.equals(Files.readAllBytes(region.toPath()), was), "the region is exactly as it was");
 		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 21),
 				"and its area was not committed either - no textures for a map that was never written");
+	}
+
+	/**
+	 * The other half of the write: the AreaData container the staged textures
+	 * and prop registry go into. Everything an Apply changes in an area is held
+	 * in memory until the end and then committed in one go, and each subfile is
+	 * checked as it lands.
+	 *
+	 * <p>Without that check, an area the workspace cannot open for writing is
+	 * indistinguishable from one that was written: every storeFile returns
+	 * false, commit finishes quietly, and "Painted map applied" is reported
+	 * over a map whose materials name textures the area does not hold - the
+	 * condition the prop code calls a hardlock. It is the same failure as
+	 * region 153's, one container along, and it reaches the user in the worse
+	 * shape of the two: the map on disk IS the new one, so nothing looks wrong
+	 * until the game loads it.
+	 *
+	 * <p>Zone 15's area 21 is its own (no other zone sits on it), so the
+	 * shared-area question is never asked and what stops the Apply can only be
+	 * the write itself.
+	 */
+	static void anAreaThatCannotBeWrittenStopsTheApply() throws Exception {
+		forget(Workspace.ArchiveType.FIELD_DATA, 153);
+		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		open(15);
+		paintSand();
+		//extract it first, so there is a file to make read-only
+		File area = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, 21);
+		byte[] was = Files.readAllBytes(area.toPath());
+		check(area.setWritable(false) && !area.canWrite(), "fixture: area 21's workspace file is read-only");
+		Exception stop;
+		try {
+			stop = apply(15, new ArrayList<TilePainterForm.Placed>());
+		} finally {
+			area.setWritable(true);
+		}
+		String why = stop == null ? "(nothing was thrown)" : String.valueOf(stop.getMessage());
+		check(stop instanceof IllegalStateException && why.contains("could not write area 21 subfile"),
+				"an area the workspace cannot write stops the Apply and names it (stopped by: " + stop + ")");
+		check(Arrays.equals(Files.readAllBytes(area.toPath()), was),
+				"and area 21 is exactly as it was - no half-written texture pack");
+		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 21), "which is the archive's own copy of it");
 	}
 
 	/**
