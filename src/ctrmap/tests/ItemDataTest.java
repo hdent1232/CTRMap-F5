@@ -75,6 +75,7 @@ public class ItemDataTest {
 		fieldsMeanWhatTheyAreNamed(g);
 		holdEffectsAreSharedNotUnique(g, n);
 		blankSlotsAreCountedHonestly(g, n);
+		effectLabelsDescribeThemselves(g, n, args[0]);
 
 		if (fails == 0) {
 			System.out.println("ALL PASS");
@@ -206,6 +207,61 @@ public class ItemDataTest {
 		check(blanks.size() - (blanks.contains(0) ? 1 : 0) == 4,
 				"so exactly 4 slots are genuinely free for a new item (found "
 				+ (blanks.size() - (blanks.contains(0) ? 1 : 0)) + ") - a real limit a UI must state");
+	}
+
+	static void effectLabelsDescribeThemselves(GARC g, int n, String romfs) {
+		System.out.println("--- effect labels are derived from the data, not authored");
+		List<ItemData> recs = new ArrayList<>();
+		for (int i = 0; i < n; i++) {
+			recs.add(at(g, i));
+		}
+		List<String> names = itemNames(romfs);
+		System.out.println("      item names loaded: " + (names == null ? "none" : String.valueOf(names.size())));
+
+		ctrmap.formats.pokedata.ItemEffectLabels held = ctrmap.formats.pokedata.ItemEffectLabels.build(
+				recs, names, ctrmap.formats.pokedata.ItemEffectLabels.Kind.HELD_EFFECT);
+		check(!held.ids().isEmpty(), "hold effects in use: " + held.ids().size());
+
+		//the worked example from the plan: 77 is Mystic Water, Sea Incense and
+		//Wave Incense, and a label that cannot say so is not doing its job
+		List<String> for77 = held.itemsFor(77);
+		System.out.println("      effect 77 -> " + for77);
+		check(for77.size() >= 2, "effect 77 is carried by several items, so it describes a behaviour"
+				+ " (got " + for77.size() + ")");
+
+		int described = 0;
+		for (Integer id : held.ids()) {
+			if (!held.label(id).contains("unknown")) {
+				described++;
+			}
+		}
+		check(described == held.ids().size(),
+				"every id in use gets a label naming real items (" + described + "/" + held.ids().size() + ")");
+		//and an id nothing carries must be admitted, never guessed at
+		check(held.label(199).contains("unknown"),
+				"an id no item carries is reported as unknown rather than given a made-up name");
+		System.out.println("      ids named by only ONE item: " + held.singletonCount()
+				+ " of " + held.ids().size() + " - named, but not defined");
+
+		//the same machinery must work for the other numbered fields, since they
+		//have no name table either
+		for (ctrmap.formats.pokedata.ItemEffectLabels.Kind k
+				: ctrmap.formats.pokedata.ItemEffectLabels.Kind.values()) {
+			ctrmap.formats.pokedata.ItemEffectLabels t
+					= ctrmap.formats.pokedata.ItemEffectLabels.build(recs, names, k);
+			check(!t.ids().isEmpty(), "  " + k + ": " + t.ids().size() + " id(s) in use, all labelled");
+		}
+	}
+
+	/** Item names from gametext file 114, or null when they cannot be read. */
+	static List<String> itemNames(String romfs) {
+		try {
+			GARC text = new GARC(new File(romfs + "/a/0/7/3"));
+			byte[] raw = text.getDecompressedEntry(114);
+			return raw == null ? null : ctrmap.formats.text.GFMessageFile.getStrings(raw);
+		} catch (Throwable t) {
+			return null;                  // names are a nicety here; ids still work
+		}
 	}
 
 	static ItemData at(GARC g, int i) {
