@@ -486,12 +486,17 @@ public class DataSafetyGuardsTest {
 	 * <li>A failed tilemap rebuild must tell the user. The progress dialog
 	 *     closes either way, so the only thing between them and a stale picture
 	 *     they take for the current one is that sentence.</li>
+	 * <li>A failed matrix SAVE must tell the user too, and the same dialog
+	 *     closes on the way out. The save clears each region's modified flag as
+	 *     it writes it, so a run that throws part-way leaves the rest still
+	 *     flagged - which is worth saying, because it is what the editor still
+	 *     knows about a map that is only half on disk.</li>
 	 * </ul>
 	 *
-	 * Both live inside workers started behind a modal progress dialog, which is
-	 * why neither was reachable: each decision now sits in a method of its own,
-	 * asked here directly. Opening the dialog and rendering the map are still
-	 * untested.
+	 * All three live inside workers started behind a modal progress dialog,
+	 * which is why none was reachable: each decision now sits in a method of
+	 * its own, asked here directly. Opening the dialog and rendering the map
+	 * are still untested.
 	 */
 	static void mapLoadFailuresSurface() throws Exception {
 		TileMapPanel panel = new TileMapPanel();
@@ -538,6 +543,34 @@ public class DataSafetyGuardsTest {
 		check(said.size() == 1 && said.get(0).contains("was not refreshed")
 				&& said.get(0).contains("tile image 7 could not be rebuilt"),
 				"a failed tilemap rebuild tells the user the picture is not current: " + said);
+
+		//The matrix save is the same shape and the worse outcome: the save
+		//clears each region's modified flag as it writes it, so a run that
+		//throws part-way leaves the rest still flagged, and the progress dialog
+		//closes exactly as it does on success. This sentence is the whole
+		//difference between "saved" and "some of your map is not on disk".
+		List<String> saveSaid = ctrmap.Ui.record();
+		try {
+			panel.regionSaveFailed(new java.io.IOException("region 153 is read-only"));
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(saveSaid.size() == 1 && saveSaid.get(0).contains("The region data was not saved")
+				&& saveSaid.get(0).contains("region 153 is read-only")
+				&& saveSaid.get(0).contains("still marked modified"),
+				"a failed matrix save names the failure and says what is still unwritten: " + saveSaid);
+		//and it is the failure's own words, not a fixed sentence - the two
+		//reports must not be interchangeable either
+		List<String> otherSaid = ctrmap.Ui.record();
+		try {
+			panel.regionSaveFailed(new IllegalStateException("region 8 of 12 is not a GR"));
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(otherSaid.size() == 1 && otherSaid.get(0).contains("region 8 of 12 is not a GR")
+				&& !otherSaid.get(0).equals(saveSaid.get(0))
+				&& !otherSaid.get(0).equals(said.get(0)),
+				"and a different failure reads differently, and not as the refresh's: " + otherSaid);
 	}
 
 	/** Comments are stripped first, so a get() mentioned in one does not count. */
