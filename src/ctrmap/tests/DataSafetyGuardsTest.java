@@ -650,51 +650,62 @@ public class DataSafetyGuardsTest {
 		CtrmapMainframe.mNPCEditForm = new NPCEditForm();
 		CtrmapMainframe.mWarpEditForm = new WarpEditForm();
 		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm();
-
-		//a real zone, then the damage: an area id AreaData does not have
-		int noSuchArea = Workspace.ad.length + 21;
-		Zone broken = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
-		broken.header.areadataID = noSuchArea;
-		//the same failure, reproduced here, so the report can be required to
-		//carry what actually went wrong rather than a fixed sentence
-		Zone probe = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
-		probe.header.areadataID = noSuchArea;
-		String cause = "";
+		//PropEditForm's generated initComponents builds a CustomH3DPreview,
+		//whose constructor starts an FPSAnimator on a NON-daemon thread. Left
+		//running it holds the JVM open after main returns: the suite prints
+		//ALL PASS and then never exits, which reads as a battery that hangs
+		//rather than one that fails - the one outcome a runner cannot report.
+		ctrmap.humaninterface.CustomH3DPreview propPreview
+				= (ctrmap.humaninterface.CustomH3DPreview) field(CtrmapMainframe.mPropEditForm, "PropPreview");
 		try {
-			probe.header.fetchArchives();
-		} catch (Throwable t) {
-			cause = String.valueOf(t);
-		}
-		check(!cause.isEmpty(), "a zone header naming area " + noSuchArea
-				+ " cannot fetch its archives: " + cause);
-		pnl.zones = new Zone[]{null, broken};
-		fill(pnl, "zoneList", 2);
-		//the editors are showing the zone the user had open
-		Zone open = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
-		CtrmapMainframe.mNPCEditForm.loadFromEntities(open.entities, null);
-		check(CtrmapMainframe.mNPCEditForm.loaded, "the NPC editor is showing a zone before the failed load");
-		setField(pnl, "loaded", true);
 
-		List<String> said = ctrmap.Ui.record();
-		try {
-			((JComboBox<?>) field(pnl, "zoneList")).setSelectedIndex(1);
-			javax.swing.SwingUtilities.invokeAndWait(() -> {
-			});
+			//a real zone, then the damage: an area id AreaData does not have
+			int noSuchArea = Workspace.ad.length + 21;
+			Zone broken = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+			broken.header.areadataID = noSuchArea;
+			//the same failure, reproduced here, so the report can be required to
+			//carry what actually went wrong rather than a fixed sentence
+			Zone probe = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+			probe.header.areadataID = noSuchArea;
+			String cause = "";
+			try {
+				probe.header.fetchArchives();
+			} catch (Throwable t) {
+				cause = String.valueOf(t);
+			}
+			check(!cause.isEmpty(), "a zone header naming area " + noSuchArea
+					+ " cannot fetch its archives: " + cause);
+			pnl.zones = new Zone[]{null, broken};
+			fill(pnl, "zoneList", 2);
+			//the editors are showing the zone the user had open
+			Zone open = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+			CtrmapMainframe.mNPCEditForm.loadFromEntities(open.entities, null);
+			check(CtrmapMainframe.mNPCEditForm.loaded, "the NPC editor is showing a zone before the failed load");
+			setField(pnl, "loaded", true);
+
+			List<String> said = ctrmap.Ui.record();
+			try {
+				((JComboBox<?>) field(pnl, "zoneList")).setSelectedIndex(1);
+				javax.swing.SwingUtilities.invokeAndWait(() -> {
+				});
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			System.out.println("  a zone that did not load tells the user: " + said);
+			check(said.size() == 1 && said.get(0).startsWith("Load zone: The zone did not load:"),
+					"a zone that failed to load says so, once: " + said);
+			check(said.size() == 1 && !cause.isEmpty() && said.get(0).contains(cause),
+					"carrying what actually went wrong (" + cause + ") rather than a fixed sentence: " + said);
+			check(said.size() == 1 && said.get(0).contains("Pick a zone from the list"),
+					"and telling the user the dropdown is still theirs to use: " + said);
+			check(pnl.zone == null && pnl.zoneIndex == -1,
+					"and the panel is not left believing a zone is open (zone " + pnl.zone
+					+ ", index " + pnl.zoneIndex + ")");
+			check(!CtrmapMainframe.mNPCEditForm.loaded,
+					"nor are the editors left on the zone that was there before");
 		} finally {
-			ctrmap.Ui.stopRecording();
+			propPreview.stop();
 		}
-		System.out.println("  a zone that did not load tells the user: " + said);
-		check(said.size() == 1 && said.get(0).startsWith("Load zone: The zone did not load:"),
-				"a zone that failed to load says so, once: " + said);
-		check(said.size() == 1 && !cause.isEmpty() && said.get(0).contains(cause),
-				"carrying what actually went wrong (" + cause + ") rather than a fixed sentence: " + said);
-		check(said.size() == 1 && said.get(0).contains("Pick a zone from the list"),
-				"and telling the user the dropdown is still theirs to use: " + said);
-		check(pnl.zone == null && pnl.zoneIndex == -1,
-				"and the panel is not left believing a zone is open (zone " + pnl.zone
-				+ ", index " + pnl.zoneIndex + ")");
-		check(!CtrmapMainframe.mNPCEditForm.loaded,
-				"nor are the editors left on the zone that was there before");
 	}
 
 	/** Comments are stripped first, so a get() mentioned in one does not count. */
