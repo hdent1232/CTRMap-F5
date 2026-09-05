@@ -102,6 +102,7 @@ public class DataSafetyGuardsTest {
 		workerErrorsSurface(new File("src"));
 		mapLoadFailuresSurface();
 		builderAddFileFailureSurfaces(dump);
+		zoneThatDidNotLoadSaysSo(dump);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -563,7 +564,7 @@ public class DataSafetyGuardsTest {
 			System.out.println("  skip: no dump at " + dump);
 			return;
 		}
-		ScratchGame.open(dump);
+		scratchGameOnce(dump);
 		ctrmap.humaninterface.builder.Builder builder = new ctrmap.humaninterface.builder.Builder();
 		setField(builder, "currentGARC", Workspace.ArchiveType.MAP_MATRIX);
 		java.lang.reflect.Method addFile = builder.getClass()
@@ -602,6 +603,89 @@ public class DataSafetyGuardsTest {
 		check(said.isEmpty(), "adding a file that does go in says nothing: " + said);
 		check(new GARC(archive).length == before + 1,
 				"and the archive gained exactly one entry (" + before + " -> " + new GARC(archive).length + ")");
+	}
+
+	/**
+	 * Picking a zone from the list that then fails to load.
+	 *
+	 * <p>{@link #mapLoadFailuresSurface} asks the map panel's decision
+	 * directly, because it lives behind a modal progress dialog. This is the
+	 * zone panel's own version of that path, driven the way the user drives it
+	 * - a selection in the zone dropdown - now that the progress dialog exists
+	 * without a screen.
+	 *
+	 * <p>done() puts the editors back to "no zone open" and then says so. The
+	 * sentence is the half that has never been asserted, and it is the half the
+	 * user needs: the dialog closes on failure exactly as on success, and the
+	 * dropdown has already moved to the zone they asked for. Without it, they
+	 * are looking at an editor that is showing nothing and has said nothing,
+	 * and the obvious reading is that the zone is empty.
+	 *
+	 * <p>The zone is broken the way a real one breaks - its header names an
+	 * area that does not exist, which is what a bad fork or a hand-edited
+	 * master table leaves behind - so the load fails inside fetchArchives,
+	 * where it fails in the field.
+	 */
+	static void zoneThatDidNotLoadSaysSo(File dump) throws Exception {
+		if (!dump.isDirectory()) {
+			System.out.println("  skip: no dump at " + dump);
+			return;
+		}
+		scratchGameOnce(dump);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
+		CtrmapMainframe.mZonePnl = pnl;
+		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm();
+		CtrmapMainframe.mTileMapPanel = new TileMapPanel();
+		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm();
+		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm();
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm();
+		CtrmapMainframe.mWarpEditForm = new WarpEditForm();
+		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm();
+
+		//a real zone, then the damage: an area id AreaData does not have
+		int noSuchArea = Workspace.ad.length + 21;
+		Zone broken = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+		broken.header.areadataID = noSuchArea;
+		//the same failure, reproduced here, so the report can be required to
+		//carry what actually went wrong rather than a fixed sentence
+		Zone probe = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+		probe.header.areadataID = noSuchArea;
+		String cause = "";
+		try {
+			probe.header.fetchArchives();
+		} catch (Throwable t) {
+			cause = String.valueOf(t);
+		}
+		check(!cause.isEmpty(), "a zone header naming area " + noSuchArea
+				+ " cannot fetch its archives: " + cause);
+		pnl.zones = new Zone[]{null, broken};
+		fill(pnl, "zoneList", 2);
+		//the editors are showing the zone the user had open
+		Zone open = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+		CtrmapMainframe.mNPCEditForm.loadFromEntities(open.entities, null);
+		check(CtrmapMainframe.mNPCEditForm.loaded, "the NPC editor is showing a zone before the failed load");
+		setField(pnl, "loaded", true);
+
+		List<String> said = ctrmap.Ui.record();
+		try {
+			((JComboBox<?>) field(pnl, "zoneList")).setSelectedIndex(1);
+			javax.swing.SwingUtilities.invokeAndWait(() -> {
+			});
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		System.out.println("  a zone that did not load tells the user: " + said);
+		check(said.size() == 1 && said.get(0).startsWith("Load zone: The zone did not load:"),
+				"a zone that failed to load says so, once: " + said);
+		check(said.size() == 1 && !cause.isEmpty() && said.get(0).contains(cause),
+				"carrying what actually went wrong (" + cause + ") rather than a fixed sentence: " + said);
+		check(said.size() == 1 && said.get(0).contains("Pick a zone from the list"),
+				"and telling the user the dropdown is still theirs to use: " + said);
+		check(pnl.zone == null && pnl.zoneIndex == -1,
+				"and the panel is not left believing a zone is open (zone " + pnl.zone
+				+ ", index " + pnl.zoneIndex + ")");
+		check(!CtrmapMainframe.mNPCEditForm.loaded,
+				"nor are the editors left on the zone that was there before");
 	}
 
 	/** Comments are stripped first, so a get() mentioned in one does not count. */
@@ -738,6 +822,20 @@ public class DataSafetyGuardsTest {
 			return null;
 		} catch (java.lang.reflect.InvocationTargetException ex) {
 			return ex.getCause() == null ? ex : ex.getCause();
+		}
+	}
+
+	private static boolean scratchOpen = false;
+
+	/**
+	 * The throwaway game the last two checks write into, copied once. Copying
+	 * it is a few hundred megabytes; two checks needing a workspace is not a
+	 * reason to do that twice in one run.
+	 */
+	static void scratchGameOnce(File dump) throws Exception {
+		if (!scratchOpen) {
+			ScratchGame.open(dump);
+			scratchOpen = true;
 		}
 	}
 
