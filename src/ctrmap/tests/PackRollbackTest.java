@@ -3,8 +3,10 @@ package ctrmap.tests;
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.Arrays;
 
 /**
  * A pack that refuses to run must leave the archive object describing the
@@ -44,6 +46,7 @@ public class PackRollbackTest {
 		}
 		ScratchGame.open(dump);
 		refusedPackLeavesTheTableAsTheFileHasIt();
+		anArchiveSomethingElseHoldsOpenIsRefusedOutLoud();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -99,6 +102,78 @@ public class PackRollbackTest {
 		check(Workspace.npcreg.length == before,
 				"and a later pack that stages nothing does not grow the archive by the entry the"
 				+ " refused one had taken in (" + before + " -> " + Workspace.npcreg.length + ")");
+	}
+
+	/**
+	 * The archive is written beside the workspace and swapped in whole, and on
+	 * Windows that swap fails outright while anything else holds the target
+	 * open - the emulator with the game loaded, or a virus scanner. The pack
+	 * has to REFUSE, name the archive, and say what is doing it.
+	 *
+	 * <p>Delete that sentence and a failed pack is indistinguishable from a
+	 * good one: {@code parse(file)} runs on the unchanged archive, the progress
+	 * bar fills, the success dialog appears, and the user deploys a game with
+	 * none of their edits in it. This project has already lost a day to a stale
+	 * pack, so the sentence is the whole guard - the rollback either side of it
+	 * is worth nothing if nobody is told there was anything to roll back.
+	 *
+	 * <p>Holds a second handle on the archive and asks for the same pack twice:
+	 * once while it is held, once after. The first must throw and change
+	 * nothing; the second must write. Asserting only the first would pass on an
+	 * archive that simply cannot be packed at all.
+	 */
+	static void anArchiveSomethingElseHoldsOpenIsRefusedOutLoud() throws Exception {
+		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
+		File archive = Workspace.npcreg.file;
+		//a real edit, staged the way the editor stages one, so that a pack
+		//which ran would visibly change the file. Retail ships empty registries
+		//at the front of the archive, and flipping a byte of nothing changes
+		//nothing - so the entry edited here is the first one with any bytes in
+		//it, and the test says which.
+		File staged = null;
+		byte[] edited = null;
+		for (int i = 0; i < Workspace.npcreg.length && staged == null; i++) {
+			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.NPC_REGISTRIES, i);
+			byte[] b = (f == null || !f.isFile()) ? new byte[0] : Files.readAllBytes(f.toPath());
+			if (b.length > 0) {
+				staged = f;
+				edited = b;
+			}
+		}
+		check(staged != null, "the registry archive has an entry with bytes in it to edit");
+		if (staged == null) {
+			return;
+		}
+		System.out.println("  editing NPC registry " + staged.getName() + " (" + edited.length + " bytes)");
+		edited[edited.length - 1] ^= 0x5A;
+		Files.write(staged.toPath(), edited);
+		Workspace.addPersist(staged);
+
+		byte[] before = Files.readAllBytes(archive.toPath());
+		File halfWritten = new File(Workspace.WORKSPACE_PATH + "/" + archive.getName() + "_new");
+		Throwable thrown = null;
+		try (FileInputStream somethingElse = new FileInputStream(archive)) {
+			try {
+				Workspace.npcreg.packDirectory(dir);
+			} catch (Throwable t) {
+				thrown = t;
+			}
+		}
+		check(thrown instanceof IOException,
+				"a pack that cannot replace the archive is refused, as an IOException: " + thrown);
+		String said = thrown == null ? "" : String.valueOf(thrown.getMessage());
+		check(said.contains("Could not replace " + archive.getName()),
+				"the refusal names the archive it could not replace: " + said);
+		check(said.contains("holding it open"),
+				"and tells the user what to go and look for: " + said);
+		check(Arrays.equals(before, Files.readAllBytes(archive.toPath())),
+				"the archive in the game folder is byte-for-byte what it was");
+		check(!halfWritten.exists(),
+				"and no half-written copy is left beside the workspace (" + halfWritten.getName() + ")");
+
+		Workspace.npcreg.packDirectory(dir);
+		check(!Arrays.equals(before, Files.readAllBytes(archive.toPath())),
+				"...and the very same pack does write the archive once nothing holds it open");
 	}
 
 	static void pack() throws Exception {
