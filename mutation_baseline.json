@@ -27,18 +27,12 @@
   "sha256": "b46dbafb672292883767c8d5ff61f47cb5446922404b2e7d1af5f17c2167405d"
  },
  "src/ctrmap/CtrmapMainframe.java": {
-  "survivors": 1,
-  "killed": 4,
+  "survivors": 0,
+  "killed": 5,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
-   {
-    "line": 718,
-    "kind": "negate-if",
-    "code": "if (!openMapMatrixFile(jfc.getSelectedFile())) {"
-   }
-  ],
+  "lines": [],
   "killed_lines": [
    {
     "line": 1256,
@@ -55,10 +49,14 @@
    {
     "line": 1306,
     "kind": "flip-return"
+   },
+   {
+    "line": 1330,
+    "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "69a55e7a3f1d6c17edb42db8c43d4ff172ef99d265e4d250460ff8e8194b3734"
+  "sha256": "19f120c3c5f67bdcc272f304ad84ac8192cf3327cab3fee40d9d78d15dbaa222"
  },
  "src/ctrmap/GeometryForker.java": {
   "survivors": 0,
@@ -1336,18 +1334,12 @@
   "sha256": "0d85c8e36db1f90e1cb62ce1df236ddd605edf3320e66d15eb820b02cfa0b0e9"
  },
  "src/ctrmap/humaninterface/WorkspaceSettings.java": {
-  "survivors": 1,
-  "killed": 3,
+  "survivors": 0,
+  "killed": 4,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
-   {
-    "line": 59,
-    "kind": "negate-if",
-    "code": "if (!keepOrRetakeBackup(this, gameField.getText())) {"
-   }
-  ],
+  "lines": [],
   "killed_lines": [
    {
     "line": 105,
@@ -1360,10 +1352,14 @@
    {
     "line": 118,
     "kind": "flip-return"
+   },
+   {
+    "line": 102,
+    "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "019b667499609d2a28689ac303f886c44260b258432eaa05e7ace9cec6b1f901"
+  "sha256": "60a84530c1d4a5d559b02cfa13d029a594b6b990e6355e5b05d427ff09e66328"
  },
  "src/ctrmap/humaninterface/ZoneLoadingPanel.java": {
   "survivors": 1,
@@ -1421,19 +1417,14 @@
   "sha256": "c4ab382d4881ae7538ac7f6e10e91132277d96efabd5f4d1499aa47aa247f427"
  },
  "src/ctrmap/setup/SetupWizard.java": {
-  "survivors": 2,
-  "killed": 3,
+  "survivors": 1,
+  "killed": 4,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
   "lines": [
    {
-    "line": 511,
-    "kind": "negate-if",
-    "code": "if (!backupBelongsHere(this, gamePath)) {"
-   },
-   {
-    "line": 543,
+    "line": 553,
     "kind": "drop-report",
     "code": "JOptionPane.showMessageDialog(SetupWizard.this, \"The pristine backup was not made:\\n\" + cause"
    }
@@ -1450,10 +1441,14 @@
    {
     "line": 703,
     "kind": "flip-return"
+   },
+   {
+    "line": 704,
+    "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "762b4853bd6dfdabb848bd990d7cae28ccc8b0ad80d9b00da076d70f6886a154"
+  "sha256": "bc9d365ce3c4c9d23be7fb8f88ee6a768cc20bb93507312d111f38d8bfd3dce4"
  },
  "src/ctrmap/tools/BuildingHarvester.java": {
   "survivors": 0,
