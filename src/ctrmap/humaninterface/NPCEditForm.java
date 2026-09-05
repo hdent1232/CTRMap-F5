@@ -1904,10 +1904,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 			int uid = (reg != null) ? reg.registerModel(en[1]) : -1;
 			if (uid < 0) {
-				JOptionPane.showMessageDialog(this,
+				//through Ui, not JOptionPane: this is the only thing that
+				//distinguishes "the model you picked is now on the NPC" from
+				//"nothing happened", and a bare dialog is neither reachable nor
+				//observable from a guard
+				ctrmap.Ui.error(this,
 						"This area's NPC registry is full (max " + NPCRegistry.MAX_ENTRIES + " unique models).\n"
 						+ "Remove an unused model in the NPC registry editor and try again.",
-						"Registry full", JOptionPane.ERROR_MESSAGE);
+						"Registry full");
 			}
 			return uid;
 		}
