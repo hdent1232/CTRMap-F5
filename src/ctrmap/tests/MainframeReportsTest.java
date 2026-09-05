@@ -58,6 +58,7 @@ public class MainframeReportsTest {
 		everyRegionTheForkMadeIsAccountedFor();
 		groundBelongingToOtherZonesIsNamed();
 		aFileThatIsNotAMapMatrixSaysSo();
+		aFileThatIsNotAMapMatrixLeavesTheViewAlone();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -182,6 +183,44 @@ public class MainframeReportsTest {
 				"with something in it a person can act on: " + said);
 		check(!said.isEmpty() && !said.get(0).contains("mTileMapPanel"),
 				"and the refusal came from reading the file, not from a panel this suite never built");
+	}
+
+	/**
+	 * ...and the editor must not then carry on as though a map had loaded.
+	 *
+	 * <p>Saying so and then acting as if nothing had gone wrong is worse than
+	 * saying nothing: the message goes away and the view is left refitted to
+	 * whatever was on screen before, so what the user is looking at no longer
+	 * matches what they think they opened. The menu action's decision - open,
+	 * and fit the view only if it opened - is
+	 * {@link CtrmapMainframe#openChosenMapMatrix}, so it can be driven with the
+	 * fitting handed in as something this suite can watch for.
+	 *
+	 * <p>Only the refusal is driven here: succeeding needs the tilemap panel,
+	 * and building one asks JOGL for a GL profile that the battery has no
+	 * natives for. That is enough to pin the decision down - getting it
+	 * backwards fits the view to a map that never loaded, which is what this
+	 * asserts cannot happen.
+	 */
+	static void aFileThatIsNotAMapMatrixLeavesTheViewAlone() throws Exception {
+		File notAMatrix = Scratch.file("ctrmap_not_a_matrix");
+		Files.write(notAMatrix.toPath(), new byte[]{'M', 'M'});
+		final boolean[] viewRefitted = {false};
+		List<String> said = Ui.record();
+		try {
+			CtrmapMainframe.openChosenMapMatrix(notAMatrix, new Runnable() {
+				@Override
+				public void run() {
+					viewRefitted[0] = true;
+				}
+			});
+		} finally {
+			Ui.stopRecording();
+		}
+		check(!viewRefitted[0],
+				"a file that could not be read does not go on to fit the view to a map that never loaded");
+		check(!said.isEmpty() && said.get(0).startsWith("Open MapMatrix:"),
+				"and what the user gets instead is the reason it was not read: " + said);
 	}
 
 	static String firstLine(String s) {

@@ -55,8 +55,51 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 		Workspace.ESPICA_PATH = spicaField.getText();
 		Workspace.TILESET_DEFAULT = btnTilesetDefault.isSelected();
 		Workspace.TILESET_PATH = tilesetPath.getText();
+		repointGameDir(this, gameField, originGamePath, new Runnable() {
+			@Override
+			public void run() {
+				applySettings();
+			}
+		});
+	}
+
+	/** The rest of the save, once the game folder has been settled. */
+	private void applySettings() {
+		Workspace.validate(this);
+		originWSPath = wsPathField.getText();
+		originGamePath = gameField.getText();
+		originSpicaPath = spicaField.getText();
+		originTilesetPath = (btnTilesetDefault.isSelected() ? "Default" : tilesetPath.getText());
+		mTileEditForm.tileset = Workspace.getTileset();
+		mTileMapPanel.updateAll();
+	}
+
+	/**
+	 * Settles a changed game folder, then lets the rest of the save run - or
+	 * does not, when the user declined either the backup or the cleanup. A
+	 * declined backup also puts the game field back to the folder it named
+	 * before.
+	 *
+	 * <p>Word for word what {@code save()} used to do inline, down to which
+	 * answers stop it. It is out here, static, and takes both the field it puts
+	 * back and the rest of the save, because {@code save()} belongs to a JFrame
+	 * that a headless suite cannot build: {@link #keepOrRetakeBackup} was
+	 * reachable, but nothing could reach the caller ACTING on its answer, and a
+	 * mutation sweep proved it - inverting the refusal, so that saying no
+	 * repointed the workspace anyway and left the old game's backup in place,
+	 * left the whole battery green. Handing the rest of the save in rather than
+	 * returning a flag keeps that decision out here whole: a flag would leave
+	 * the window holding an {@code if} of its own, in the same unreachable
+	 * place, deciding the same thing.
+	 *
+	 * <p>Answering the second question does real work - it packs or cleans the
+	 * workspace - so a test drives this with that question left closed, which
+	 * is what {@link Ui} answers when nobody is there.
+	 */
+	public static void repointGameDir(java.awt.Component parent, javax.swing.text.JTextComponent gameField,
+			String originGamePath, Runnable restOfTheSave) {
 		if (!gameField.getText().equals(originGamePath)) { //may have switched from XY to AlphaOmega etc., so it's better to clean up to prevent injecting wrong game files
-			if (!keepOrRetakeBackup(this, gameField.getText())) {
+			if (!keepOrRetakeBackup(parent, gameField.getText())) {
 				gameField.setText(originGamePath);
 				return; //the user would rather not move the workspace after all
 			}
@@ -73,13 +116,7 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 					return; //interrupt the saving process
 			}
 		}
-		Workspace.validate(this);
-		originWSPath = wsPathField.getText();
-		originGamePath = gameField.getText();
-		originSpicaPath = spicaField.getText();
-		originTilesetPath = (btnTilesetDefault.isSelected() ? "Default" : tilesetPath.getText());
-		mTileEditForm.tileset = Workspace.getTileset();
-		mTileMapPanel.updateAll();
+		restOfTheSave.run();
 	}
 
 	/**
