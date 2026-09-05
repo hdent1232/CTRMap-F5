@@ -75,16 +75,27 @@ XY / ORAS / SM / USUM all take the same path.
   7. SEALED after writing. Same rule RomFS_original_garcs follows today: the
      vault is read-only to everything except the sealing step.
 
-## Size choice — ship all three, ask once at setup, default compressed-full
+## Size choice - MEASURED 2026-09-04, and it overturns the default
 
-  compressed full     ~0.8-1.2 GB est   complete; slower to seal and restore
-  uncompressed full    1.8 GB measured  fastest, browsable in Explorer
-  moddable + code.bin  ~200 MB est      covers everything CTRMap or an IPS patch
-                                        can alter; not damage from outside CTRMap
+The plan originally guessed compressed-full at 0.8-1.2 GB and made it the
+default. Measured on the real dump - 1.87 GB across 655 files, deflate level 6
+over the six largest plus a random 40 others:
 
-Measured on this machine: RomFS/000400000011C400 = 1.8 GB,
-RomFS_original_garcs = 161 MB. The compressed figure is an ESTIMATE and must be
-measured before the setup wizard quotes a number to anyone.
+    FULL_RAW          1.87 GB
+    FULL_COMPRESSED   1.62 GB    ratio 0.862 - it saves 13.8%, not half
+    MODDABLE          ~167 MB    161 MB of archives + a 5.4 MB code.bin
+
+Compression buys almost nothing here because the data is ALREADY compressed:
+the GARCs are LZ11-packed and the textures and models inside them are
+compressed again. Deflating a second time costs time at both ends to save an
+eighth of the space.
+
+So the default is now FULL_RAW, and FULL_COMPRESSED is offered for a genuinely
+tight disk rather than recommended. This is exactly why the plan said to measure
+before the wizard quotes a number to anyone.
+
+Do NOT reuse these figures for another game without measuring it. A Gen 7 dump
+is a different size and may pack differently.
 
 ## UI placement (standing rule: features live in their main UI area)
 
