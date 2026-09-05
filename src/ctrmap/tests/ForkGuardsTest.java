@@ -61,6 +61,7 @@ public class ForkGuardsTest {
 		areaForkKeepsTheRegistryAligned();
 		geometryForkOnlyRunsWhenItIsNeeded();
 		gappedAppendIsRefused();
+		aRegistryAlreadyPastTheNewAreaIdIsRefusedOutLoud();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -163,6 +164,72 @@ public class ForkGuardsTest {
 				"and the archive did not grow into the slot it would have been renumbered to");
 		Workspace.persist_paths.remove(gapped.getAbsolutePath());
 		gapped.delete();
+	}
+
+	/**
+	 * A fork onto an area id the NPC registry archive ALREADY reaches past must
+	 * be refused, out loud, having staged nothing.
+	 *
+	 * <p>The engine indexes the registry by area id, so the two archives have
+	 * to stay in step: AreaData ends one past the last area (index 228 is the
+	 * per-area table), and the registry archive ends at the last area. When the
+	 * registry runs further than that, the two are already out of step and a
+	 * fork cannot repair it - the clone would land at an id something else
+	 * already occupies. The guard at AreaForker:247 says exactly that.
+	 *
+	 * <p>Nothing asserted the sentence. Deleting the throw, or swallowing it
+	 * into a benign return, both left the battery green - and the first of them
+	 * is worse than no guard at all: the fork carries on, writes a private area
+	 * over an id the registry archive has already used, repoints the zone at
+	 * it, and reports success. The user gets a zone quietly wearing somebody
+	 * else's NPCs.
+	 *
+	 * <p>Pushes the registry archive two entries past AreaData with ordinary
+	 * legal tail appends - the archive itself refuses a gap, so this is the
+	 * only way to build the state - and then asks for a fork.
+	 */
+	static void aRegistryAlreadyPastTheNewAreaIdIsRefusedOutLoud() throws Exception {
+		final int ZONE = 40; //not one of ZONES above, so it has never been forked here
+		File npDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
+		while (Workspace.npcreg.length <= Workspace.ad.length + 1) {
+			File tail = new File(npDir, String.valueOf(Workspace.npcreg.length));
+			Files.write(tail.toPath(), new byte[]{0, 0, 0, 0}); //a registry naming no models
+			Workspace.addPersist(tail);
+			pack();
+		}
+		int areas = Workspace.ad.length, regs = Workspace.npcreg.length;
+		check(regs > areas + 1, "the archives are out of step: AreaData " + areas
+				+ ", NPCRegistries " + regs + " (the registry reaches past the id a fork would use)");
+
+		int areaBefore = AreaForker.currentArea(ZONE);
+		File adOut = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA),
+				String.valueOf(areas));
+		AreaForker.ForkResult r = null;
+		Throwable thrown = null;
+		try {
+			r = AreaForker.forkArea(ZONE);
+		} catch (Throwable t) {
+			thrown = t;
+		}
+		check(thrown instanceof IOException,
+				"forking onto an id the registry already reaches past is refused, as an"
+				+ " IOException: " + thrown);
+		String said = thrown == null ? "" : String.valueOf(thrown.getMessage());
+		check(said.contains("already reaches past the new area id " + areas),
+				"the refusal names the id it would have used: " + said);
+		check(said.contains("out of step"), "and says the two archives disagree: " + said);
+		check(r == null, "and hands back no fork: " + r);
+
+		//and the damage did not happen: nothing staged, nothing repointed
+		check(!adOut.exists(), "no private area copy was written for the refused fork ("
+				+ adOut.getName() + ")");
+		check(!Workspace.persist_paths.contains(adOut.getAbsolutePath()),
+				"and nothing was marked pending for it");
+		check(AreaForker.currentArea(ZONE) == areaBefore,
+				"and zone " + ZONE + " still points at area " + areaBefore
+				+ " (now " + AreaForker.currentArea(ZONE) + ")");
+		check(Workspace.ad.length == areas, "and AreaData did not grow (" + areas + " -> "
+				+ Workspace.ad.length + ")");
 	}
 
 	/** The bytes the engine would read as the registry for an area id. */
