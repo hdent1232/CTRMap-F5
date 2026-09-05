@@ -117,6 +117,7 @@ public class CtrmapMainframe {
 	public static JMenuItem removeAddedZones;
 	public static JMenuItem findReusableZones;
 	public static JMenuItem wssettings;
+	public static JMenuItem restoreFromVault;
 	public static JMenuItem setupWizard;
 	public static JMenuItem wsclean;
 	public static JMenuItem isstracker;
@@ -244,6 +245,9 @@ public class CtrmapMainframe {
 		setupWizard = new JMenuItem("Setup wizard...");
 		setupWizard.setToolTipText("Point CTRMap at your game, step by step.");
 		wssettings = new JMenuItem("Workspace settings");
+		restoreFromVault = new JMenuItem("Restore from pristine backup...");
+		restoreFromVault.setToolTipText("Put the whole game, or one damaged archive, "
+				+ "back as it was when CTRMap first copied it.");
 		wsclean = new JMenuItem("Clean workspace");
 		isstracker = new JMenuItem("Support/Issue tracker");
 		about = new JMenuItem("About");
@@ -724,6 +728,12 @@ public class CtrmapMainframe {
 				}
 			}
 		});
+		restoreFromVault.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				restoreFromVaultAction();
+			}
+		});
 		wssettings.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -860,6 +870,7 @@ public class CtrmapMainframe {
 		optionsmenu.add(setupWizard);
 		optionsmenu.addSeparator();
 		optionsmenu.add(wssettings);
+		optionsmenu.add(restoreFromVault);
 		optionsmenu.add(wsclean);
 		helpmenu.add(checkUpdates);
 		helpmenu.addSeparator();
@@ -1403,6 +1414,69 @@ public class CtrmapMainframe {
 	 * archive via {@link ZoneRemover}, clears the stale extraction cache and
 	 * reloads.
 	 */
+	/**
+	 * Puts the game back from its pristine vault - all of it, or one archive.
+	 *
+	 * <p>Whole-game and single-archive are offered as one choice rather than two
+	 * menu items because they are not interchangeable and the difference is the
+	 * whole point: restoring everything discards every edit made to the game
+	 * folder since the backup, and a stale pack once damaged a SINGLE archive
+	 * here (zone 536) and needed a hand repair. Someone reaching for this menu is
+	 * already having a bad day; the safer option has to be in front of them, not
+	 * one level down.
+	 */
+	private static void restoreFromVaultAction() {
+		java.io.File dump = Workspace.GAMEDIR_PATH == null ? null : new java.io.File(Workspace.GAMEDIR_PATH);
+		if (dump == null || !dump.isDirectory()) {
+			Ui.error(frame, "There is no game folder loaded to restore into.", "Restore");
+			return;
+		}
+		java.io.File entry = ctrmap.vault.Vault.entryDir(dump, null);
+		if (!ctrmap.vault.Vault.isSealed(entry)) {
+			Ui.error(frame, ctrmap.vault.Vault.isInterrupted(entry)
+					? "The pristine backup of this game was never finished, so it cannot be\n"
+					+ "restored from. Re-run the setup wizard to take a fresh one."
+					: "There is no pristine backup of this game to restore from.\n\n"
+					+ "Re-run the setup wizard against an unmodified dump to take one.",
+					"Nothing to restore");
+			return;
+		}
+		Object[] options = {"Restore ONE archive", "Restore the WHOLE game", "Cancel"};
+		Object picked = Ui.input(frame,
+				"What should be put back?\n\n"
+				+ "ONE archive keeps everything else you have done - use this when a single\n"
+				+ "file is damaged, which is the usual case.\n\n"
+				+ "The WHOLE game discards every change made to the game folder since the\n"
+				+ "backup was taken. Edits kept in your workspace are not affected.",
+				"Restore from pristine backup", JOptionPane.QUESTION_MESSAGE, options, options[0]);
+		if (picked == null || options[2].equals(picked)) {
+			return;
+		}
+		if (options[1].equals(picked)) {
+			ctrmap.vault.VaultUi.restoreEverything(frame, entry, dump);
+			return;
+		}
+		//the example comes from the loaded game's profile, not from a literal:
+		//archive paths differ per game, and SourceSeamTest exists to stop one
+		//game's path being written into code every game shares. It also means
+		//the dialog shows the RIGHT path for whatever is loaded.
+		ctrmap.gamedef.GameProfile prof = ctrmap.gamedef.GameProfile.current();
+		String example = prof == null ? null
+				: prof.archivePath(Workspace.ArchiveType.ZONE_DATA);
+		Object rel = Ui.input(frame,
+				"Which file should be put back?\n\n"
+				+ (example == null
+						? "Archives are named the way the game names them. Everything else in\n"
+						: "Archives are named the way the game names them, e.g. " + example
+						+ " is\nthis game's zone table. Everything else in\n")
+				+ "the game folder is left alone.",
+				"Restore one archive", JOptionPane.QUESTION_MESSAGE, null, example);
+		if (rel == null || String.valueOf(rel).trim().isEmpty()) {
+			return;
+		}
+		ctrmap.vault.VaultUi.restoreOne(frame, entry, String.valueOf(rel).trim(), dump);
+	}
+
 	private static void removeAddedZonesAction() {
 		if (!Workspace.valid || !Workspace.isOA()) {
 			JOptionPane.showMessageDialog(frame, "Load an ORAS workspace first.", "Remove added zones", JOptionPane.ERROR_MESSAGE);

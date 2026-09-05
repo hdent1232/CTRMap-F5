@@ -90,3 +90,37 @@ Both failures produce *plausible* empty results, which is the dangerous kind.
 The check that caught it was asking a question with a known answer: how many of
 the 14,894 natives in the corpus resolve to any known name at all. Zero was
 obviously wrong, where "no party-param calls" was not obviously wrong.
+
+## A method that did NOT work — recorded so it is not retried
+
+Route 1 above ("read what the surrounding script does with the result") was
+tried, twice, and does not identify the fields. Written down because it is a
+plausible idea that costs an afternoon.
+
+The reasoning was sound: a script that reads a parameter compares it against
+something, and the RANGE of those comparisons should name the field — 25 values
+means Nature, 3 means an ability slot, 32 an IV, 253 an EV, 100 a level.
+
+Attempt 1 counted every constant in the 25 instructions after each call. Far too
+wide: it swept up the next call's arguments and message ids, so selectors 36-40
+each came back with a "range" of 260-264, which are sequential text ids and not
+comparisons at all.
+
+Attempt 2 narrowed to comparison opcodes only (`EQ*`, `JEQ*`, `SLESS*`, `SGRTR*`,
+`SLEQ*`, `SGEQ*`). Almost every selector then reported no constants whatsoever —
+the busiest two, selector 8 (42 calls) and selector 2 (22 calls), both came back
+empty. The VM does not carry the compared constant in the operand this reads;
+the value goes through PRI/ALT and a stack slot first, so a static scan of one
+instruction window cannot see it.
+
+Making this work would mean tracking PRI/ALT and stack slots through the
+disassembly — a small dataflow pass, not a scan. That is real work and it is not
+obviously cheaper than the other route.
+
+**So the remaining route is the binary.** `code.bin` is decompressed and not
+stripped, VA = file offset + 0x100000, and the native's 32-bit name hash is
+`E5AB2CFA`. Find its implementation and the switch over the selector is the
+table this whole question is asking for.
+
+Until then, no UI may offer "change nature": it would be guessing at which byte
+it writes into a player's save.

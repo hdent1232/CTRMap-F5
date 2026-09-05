@@ -555,6 +555,23 @@ public class SetupWizard extends JDialog {
 					showStep(STEP_WORKSPACE);
 					return;
 				}
+				//Offered here, after the dump is accepted and the workspace exists,
+				//and BEFORE the zone list loads - this is the last moment the game
+				//folder is known to be untouched by this editor. The existing
+				//snapshot covers only the archives CTRMap writes; the vault is the
+				//whole game, outside the workspace, verifiable, and restorable one
+				//file at a time. It never blocks setup: a workspace with no vault is
+				//still a usable workspace, and the user is told if it did not happen.
+				try {
+					java.io.File dump = new java.io.File(gamePath);
+					ctrmap.vault.VaultUi.offer(SetupWizard.this, dump, dirSize(dump));
+				} catch (RuntimeException vex) {
+					//a vault that blew up must not cost the user their finished setup
+					ctrmap.Ui.error(SetupWizard.this,
+							"The pristine copy could not be kept:\n" + vex
+							+ "\n\nSetup itself finished - you can carry on working.",
+							"Backup not kept");
+				}
 				finishStatus.setText("Loading the zone list...");
 				completeSetup();
 			}
@@ -741,6 +758,24 @@ public class SetupWizard extends JDialog {
 			Workspace.discardSnapshot();
 		}
 		return true;
+	}
+
+	/** Bytes under a folder, for the vault's size question. Never throws. */
+	static long dirSize(java.io.File f) {
+		if (f == null || !f.exists()) {
+			return 0;
+		}
+		if (f.isFile()) {
+			return f.length();
+		}
+		long n = 0;
+		java.io.File[] kids = f.listFiles();
+		if (kids != null) {
+			for (java.io.File k : kids) {
+				n += dirSize(k);
+			}
+		}
+		return n;
 	}
 
 	private static String esc(String s) {
