@@ -12,6 +12,9 @@ import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.RandomAccessBAIS;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.npcreg.NPCRegistry;
+import ctrmap.formats.scripts.PawnInstruction;
+import ctrmap.formats.scripts.TalkerScriptWizard;
+import ctrmap.formats.scripts.ZoneScriptAnalyzer;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
@@ -28,11 +31,14 @@ import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import javax.swing.JComboBox;
 import javax.swing.JFormattedTextField;
 import javax.swing.JLabel;
@@ -118,6 +124,8 @@ public class NpcEditFormGuardsTest {
 			missingRegistryEntryAsksFirst(zo);
 			softLockWarningReachesTheUser(zo);
 			addTemplateStopsAtTheCeiling(zo);
+			dialogueNoteTellsABrokenScriptFromAPlainOne(zo);
+			aFullRegistryRefusesTheModelAndSaysSo(zo);
 			viewportDrawsOnlyModelledNPCs(zo, gr);
 			onlyTheEditedNPCIsBoxed(zo);
 			theFrameOutlinesTheEditedNPC(zo, gr);
@@ -731,6 +739,207 @@ public class NpcEditFormGuardsTest {
 		} catch (java.lang.reflect.InvocationTargetException ex) {
 			return ex.getCause() == null ? ex : ex.getCause();
 		}
+	}
+
+	/**
+	 * The Dialogue note has to tell a BROKEN script from one that is merely
+	 * not a talker, and say which.
+	 *
+	 * <p>Both live on one line, either side of a ternary, and both mean
+	 * something different to whoever is reading the form. "not a simple talker
+	 * script" is ordinary - most scripts are not talkers, and there is nothing
+	 * to do about it. "is broken: its dispatch case jumps straight into a
+	 * subroutine, which freezes the game when that subroutine returns" is the
+	 * shape that shipped and hard-froze ORAS, and it reads as an ordinary
+	 * advanced script right up until the player dismisses the textbox.
+	 *
+	 * <p>Deleting the line leaves whatever the note last said - so an NPC on a
+	 * game-freezing script shows the previous NPC's dialogue preview, which is
+	 * worse than a blank. So both texts are asserted, and the DIFFERENCE
+	 * between them: one script, driven through the form twice, clean and then
+	 * malformed the way the old case installer malformed it.
+	 */
+	static void dialogueNoteTellsABrokenScriptFromAPlainOne(GARC zo) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		NPCEditForm form = new NPCEditForm();
+		form.loadFromEntities(e, null);
+		JLabel note = (JLabel) field(form, "dlgStatus");
+
+		zone.s.decompressThis();
+		ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(zone.s);
+		check(d != null, "zone " + ZONE + " has a script dispatch");
+		if (d == null) {
+			return;
+		}
+		//a case this zone really defines, that is not a talker and is not
+		//already broken - the ordinary arm of the ternary
+		int key = Integer.MIN_VALUE;
+		for (Map.Entry<Integer, PawnInstruction> c : d.cases.entrySet()) {
+			int k = c.getKey();
+			if (k < 0 || k >= TalkerScriptWizard.ENGINE_RESERVED_MIN || c.getValue() == null) {
+				continue;
+			}
+			if (ZoneScriptAnalyzer.findTalkerPattern(zone.s, k) == null
+					&& ZoneScriptAnalyzer.describeCaseDefect(zone.s, k) == null) {
+				key = k;
+				break;
+			}
+		}
+		check(key != Integer.MIN_VALUE, "zone " + ZONE + " defines a case that is neither a talker nor broken");
+		if (key == Integer.MIN_VALUE) {
+			return;
+		}
+		e.npcs.get(0).script = key;
+		form.refresh();
+		check(note.getText().equals("Script " + key + " is not a simple talker script."),
+				"a defined, non-talker, undamaged script reads as exactly that: " + note.getText());
+
+		//now the shape that froze the game: the case points straight at a
+		//subroutine PROC instead of at its trampoline
+		PawnInstruction proc = null;
+		for (PawnInstruction ins : zone.s.instructions) {
+			if (ins.getCommand() == PawnInstruction.Commands.PROC.ordinal()) {
+				proc = ins;
+				break;
+			}
+		}
+		check(proc != null, "the zone has a subroutine PROC to point the case at");
+		if (proc == null) {
+			return;
+		}
+		int ai = -1;
+		for (int k = 0; k < d.caseTbl.argumentCells[0] && ai < 0; k++) {
+			int at = 2 + 2 * k;
+			if (at + 1 < d.caseTbl.argumentCells.length && d.caseTbl.argumentCells[at] == key) {
+				ai = at;
+			}
+		}
+		check(ai > 0, "case " + key + " is in the CASETBL");
+		if (ai <= 0) {
+			return;
+		}
+		d.caseTbl.argumentCells[ai + 1] = proc.pointer - (d.caseTbl.pointer + ai * 4) - 4;
+		check(ZoneScriptAnalyzer.describeCaseDefect(zone.s, key) != null,
+				"the case now has the defect that freezes the game");
+
+		form.refresh();
+		String broken = note.getText();
+		check(broken.startsWith("Script " + key + " is broken: "),
+				"and the note says the script is broken, not merely not a talker: " + broken);
+		check(broken.contains("jumps straight into a subroutine"), "naming the defect: " + broken);
+		check(broken.contains("freezes the game"), "and what it costs the player: " + broken);
+		check(!broken.equals("Script " + key + " is not a simple talker script."),
+				"the two cases do not read the same");
+	}
+
+	/**
+	 * The model picker on an area whose NPC registry is already at its cap.
+	 *
+	 * <p>{@code registerModel} returns -1 and the pick does nothing. Without
+	 * the message that is completely silent: the user clicks a model in the
+	 * browser, the dialog closes, and the NPC still wears the model it had -
+	 * with no way to tell that from having picked the same one back. The
+	 * message is the only thing that says the registry is what stopped them,
+	 * and what to do about it.
+	 *
+	 * <p>It was a bare JOptionPane, so a guard could neither reach it nor read
+	 * it; it goes through {@link ctrmap.Ui} now, like the form's other five.
+	 * The picker's global pool needs the MoveModels archive, which the pristine
+	 * set does not carry, so one pool entry is put there by hand - everything
+	 * downstream of it (the filter, the visible list, the selection) is the
+	 * picker's own.
+	 */
+	@SuppressWarnings("unchecked")
+	static void aFullRegistryRefusesTheModelAndSaysSo(GARC zo) throws Exception {
+		final int GLOBAL_MODEL = 5; //not one of the fillers below, so it is not already registered
+		Zone zone = openZone(zo, ZONE);
+		NPCRegistry full = new NPCRegistry(temp(new byte[0]));
+		for (int uid = 1000; uid < 1000 + NPCRegistry.MAX_ENTRIES; uid++) {
+			NPCRegistry.NPCRegistryEntry filler = new NPCRegistry.NPCRegistryEntry();
+			filler.uid = uid;
+			filler.model = uid;
+			full.entries.put(uid, filler);
+		}
+		NPCEditForm form = new NPCEditForm();
+		ctrmap.Ui.record(JOptionPane.NO_OPTION); //the form asks about the NPCs with no entry; not this test's business
+		try {
+			form.loadFromEntities(zone.entities, full);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(form.reg == full && full.entries.size() == NPCRegistry.MAX_ENTRIES,
+				"the form is on a registry that is already full (" + full.entries.size()
+				+ " of " + NPCRegistry.MAX_ENTRIES + ")");
+
+		Constructor<?> ctor = Class.forName("ctrmap.humaninterface.NPCEditForm$ModelPicker")
+				.getDeclaredConstructor(NPCEditForm.class, int.class);
+		ctor.setAccessible(true);
+		Object picker = ctor.newInstance(form, -1);
+		try {
+			((List<int[]>) field(picker, "poolExtra")).add(new int[]{1, GLOBAL_MODEL});
+			((List<String>) field(picker, "poolExtraLabels")).add("[+] model " + GLOBAL_MODEL);
+			setField(picker, "poolLoaded", true);
+			((javax.swing.JCheckBox) field(picker, "showAll")).setSelected(true);
+			invoke(picker, "buildEntries");
+			invoke(picker, "rebuild");
+
+			List<int[]> visible = (List<int[]>) field(picker, "visibleEntries");
+			javax.swing.JList<String> list = (javax.swing.JList<String>) field(picker, "list");
+			int global = -1, registered = -1;
+			for (int k = 0; k < visible.size(); k++) {
+				if (visible.get(k)[0] == 1 && global < 0) {
+					global = k;
+				}
+				if (visible.get(k)[0] == 0 && registered < 0) {
+					registered = k;
+				}
+			}
+			check(global >= 0 && registered >= 0,
+					"the browser offers both a model this area already has and one it does not");
+			if (global < 0 || registered < 0) {
+				return;
+			}
+
+			list.setSelectedIndex(global);
+			List<String> said = ctrmap.Ui.record();
+			int uid;
+			try {
+				uid = (Integer) invoke(picker, "getSelectedUid");
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			check(uid < 0, "picking a model the full registry cannot take hands back no uid: " + uid);
+			check(said.size() == 1 && said.get(0).contains("registry is full"),
+					"and the user is told the registry is what stopped them: " + said);
+			check(said.size() == 1 && said.get(0).contains(String.valueOf(NPCRegistry.MAX_ENTRIES)),
+					"naming the cap they have hit: " + said);
+			check(said.size() == 1 && said.get(0).contains("NPC registry editor"),
+					"and what to do about it: " + said);
+			check(full.entries.size() == NPCRegistry.MAX_ENTRIES && !full.modified,
+					"and nothing was written over the cap");
+
+			//the difference: a model this area already has needs no registration
+			//at all, so the same picker must say nothing
+			list.setSelectedIndex(registered);
+			said = ctrmap.Ui.record();
+			try {
+				uid = (Integer) invoke(picker, "getSelectedUid");
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			check(uid >= 0 && said.isEmpty(),
+					"picking a model the area already has hands back uid " + uid + " and says nothing: " + said);
+		} finally {
+			invoke(form, "disposePreviews"); //the preview runs an animator thread
+		}
+	}
+
+	/** Calls a private no-argument method. */
+	static Object invoke(Object o, String name) throws Exception {
+		Method m = o.getClass().getDeclaredMethod(name);
+		m.setAccessible(true);
+		return m.invoke(o);
 	}
 
 	/**
