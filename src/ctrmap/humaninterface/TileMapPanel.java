@@ -276,10 +276,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 											get(); //without this, a region that failed to write closes the dialog and
 											//the zone switch goes on without it
 										} catch (Exception ex) {
-											Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-											Logger.getLogger(TileMapPanel.class.getName()).log(Level.SEVERE, "saving matrix", cause);
-											JOptionPane.showMessageDialog(TileMapPanel.this, "The region data was not saved:\n" + cause
-													+ "\n\nWhat did not write is still marked modified - fix the cause and save again.", "Save region data", JOptionPane.ERROR_MESSAGE);
+											regionSaveFailed(ex.getCause() != null ? ex.getCause() : ex);
 										}
 									}
 
@@ -705,6 +702,29 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	public void refreshFailed(Throwable cause) {
 		Logger.getLogger(TileMapPanel.class.getName()).log(Level.SEVERE, "updating tilemaps", cause);
 		ctrmap.Ui.error(this, "The tilemap view was not refreshed:\n" + cause, "Update tilemaps");
+	}
+
+	/**
+	 * What a failed matrix save owes the user: which failure stopped it, and
+	 * that the regions it did not get to are still marked modified.
+	 *
+	 * <p>The save marks each region unmodified as it writes it, so a run that
+	 * throws part-way leaves the rest still flagged - and saying so is what
+	 * turns "the dialog closed" into "some of your map is not on disk, and the
+	 * editor still knows which". Without it the progress dialog closes exactly
+	 * as it does on success and the zone switch carries on, which is how a
+	 * half-saved matrix used to leave the building.
+	 *
+	 * <p>Its own method, and through {@link ctrmap.Ui}, for the same two
+	 * reasons as {@link #refreshFailed}: it runs inside a worker started behind
+	 * a modal progress dialog a headless guard cannot open, and a bare
+	 * JOptionPane is not something a test can read.
+	 */
+	public void regionSaveFailed(Throwable cause) {
+		Logger.getLogger(TileMapPanel.class.getName()).log(Level.SEVERE, "saving matrix", cause);
+		ctrmap.Ui.error(this, "The region data was not saved:\n" + cause
+				+ "\n\nWhat did not write is still marked modified - fix the cause and save again.",
+				"Save region data");
 	}
 
 	public void updateAll() {
