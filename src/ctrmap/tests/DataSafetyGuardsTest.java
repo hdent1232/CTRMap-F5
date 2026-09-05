@@ -101,6 +101,7 @@ public class DataSafetyGuardsTest {
 		matrixEditor(dump);
 		workerErrorsSurface(new File("src"));
 		mapLoadFailuresSurface();
+		builderAddFileFailureSurfaces(dump);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -538,6 +539,69 @@ public class DataSafetyGuardsTest {
 		check(said.size() == 1 && said.get(0).contains("was not refreshed")
 				&& said.get(0).contains("tile image 7 could not be rebuilt"),
 				"a failed tilemap rebuild tells the user the picture is not current: " + said);
+	}
+
+	/**
+	 * "Add file to GARC" in the Builder, against an archive something else is
+	 * holding open.
+	 *
+	 * <p>The new file is written into the workspace BEFORE the pack, so the
+	 * Builder's own list shows it whether the pack worked or not. The archive
+	 * the game reads is the only place it matters, and when the pack throws,
+	 * that is where it is missing. The progress dialog closes either way, so
+	 * the one sentence in done() is the whole difference between "the file is
+	 * in the archive" and "the file is in your workspace and nowhere else".
+	 *
+	 * <p>It was a bare JOptionPane behind a modal progress dialog: unreachable
+	 * without a screen and unreadable by a guard even with one. It goes through
+	 * {@link ctrmap.Ui} now. The archive is packed twice - once held open, once
+	 * not - because "the archive did not grow" is also true of a Builder that
+	 * cannot add a file at all.
+	 */
+	static void builderAddFileFailureSurfaces(File dump) throws Exception {
+		if (!dump.isDirectory()) {
+			System.out.println("  skip: no dump at " + dump);
+			return;
+		}
+		ScratchGame.open(dump);
+		ctrmap.humaninterface.builder.Builder builder = new ctrmap.humaninterface.builder.Builder();
+		setField(builder, "currentGARC", Workspace.ArchiveType.MAP_MATRIX);
+		java.lang.reflect.Method addFile = builder.getClass()
+				.getDeclaredMethod("btnAddFileToGARCActionPerformed", java.awt.event.ActionEvent.class);
+		addFile.setAccessible(true);
+		File archive = Workspace.mm.file;
+		int before = new GARC(archive).length;
+
+		List<String> said;
+		try (java.io.FileInputStream somethingElse = new java.io.FileInputStream(archive)) {
+			said = ctrmap.Ui.record();
+			try {
+				addFile.invoke(builder, (Object) null);
+				javax.swing.SwingUtilities.invokeAndWait(() -> {
+				});
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+		}
+		System.out.println("  a failed add tells the user: " + said);
+		check(said.size() == 1 && said.get(0).contains("Adding the file did not finish"),
+				"a file the pack could not write is reported as not added: " + said);
+		check(said.size() == 1 && said.get(0).contains("Reopen the archive"),
+				"and the user is told the Builder's list is not the archive: " + said);
+		check(new GARC(archive).length == before,
+				"and the archive really did not gain it (" + before + " -> " + new GARC(archive).length + ")");
+
+		said = ctrmap.Ui.record();
+		try {
+			addFile.invoke(builder, (Object) null);
+			javax.swing.SwingUtilities.invokeAndWait(() -> {
+			});
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.isEmpty(), "adding a file that does go in says nothing: " + said);
+		check(new GARC(archive).length == before + 1,
+				"and the archive gained exactly one entry (" + before + " -> " + new GARC(archive).length + ")");
 	}
 
 	/** Comments are stripped first, so a get() mentioned in one does not count. */
