@@ -59,16 +59,33 @@ import java.util.zip.ZipOutputStream;
  */
 public final class Vault {
 
-	/** How much of a dump to keep. The user picks once, at setup. */
+	/**
+	 * How much of a dump to keep. The user picks once, at setup.
+	 *
+	 * <p>MEASURED on a retail ORAS dump, 1.87 GB across 655 files, deflate
+	 * level 6 over the six largest files and a random 40 others:
+	 * <pre>
+	 *   FULL_RAW          1.87 GB
+	 *   FULL_COMPRESSED   1.62 GB   ratio 0.862 - it saves 13.8%
+	 *   MODDABLE          ~167 MB   (161 MB of archives + a 5.4 MB code.bin)
+	 * </pre>
+	 * Compression buys far less here than it would anywhere else, because the
+	 * data is already compressed: the GARCs are LZ11-packed and the textures
+	 * and models inside them are compressed again. Deflating a second time
+	 * costs both seal and restore time to save an eighth of the space. So
+	 * FULL_RAW is the sensible default despite being the largest, and
+	 * FULL_COMPRESSED is kept for a genuinely tight disk rather than
+	 * recommended. Do not quote these numbers for another game without
+	 * measuring it - a Gen 7 dump is a different size and may pack differently.
+	 */
 	public enum Scope {
+		/** Everything, file for file. Fastest to seal and restore, and browsable in Explorer. */
+		FULL_RAW,
 		/**
-		 * Everything, deflated into one archive. The default: a complete copy
-		 * at roughly half the disk cost of RAW, at the price of slower sealing
-		 * and restoring.
+		 * Everything, deflated into one archive. Saves about an eighth of the
+		 * space and costs time at both ends - worth it only on a tight disk.
 		 */
 		FULL_COMPRESSED,
-		/** Everything, file for file. Fastest to seal and restore, browsable. */
-		FULL_RAW,
 		/**
 		 * The archives this editor can write, plus the executable. Covers every
 		 * way CTRMap or an IPS patch can alter the game - and nothing else, so
