@@ -1057,8 +1057,12 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 							Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
 							Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, "loading zone", cause);
 							unloadZone();
-							JOptionPane.showMessageDialog(ZoneLoadingPanel.this, "The zone did not load:\n" + cause
-									+ "\n\nPick a zone from the list to try again.", "Load zone", JOptionPane.ERROR_MESSAGE);
+							//through Ui: the progress dialog closes on failure
+							//exactly as on success and the dropdown has already
+							//moved, so this sentence is all that separates a
+							//zone that would not open from one that is empty
+							ctrmap.Ui.error(ZoneLoadingPanel.this, "The zone did not load:\n" + cause
+									+ "\n\nPick a zone from the list to try again.", "Load zone");
 							return;
 						}
 						//show the map that was just loaded instead of leaving the user on the property form

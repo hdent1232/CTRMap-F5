@@ -38,6 +38,15 @@ public class PackReportTest {
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
+		//FIRST statement, before any AWT class is loaded. The last check drives
+		//a real LoadingDialog, and the application always opens one from the
+		//EDT - inside the modal pump the worker's done() then runs in. A test
+		//cannot do that (done() would need the EDT this thread is holding), so
+		//it calls in from here instead, and with a screen attached a worker
+		//that finished first would dispose the window before setVisible(true)
+		//showed it - a modal window nothing can ever close. Headless, the
+		//dialog is the same object without the window and the ordering holds.
+		System.setProperty("java.awt.headless", "true");
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
 			System.out.println("  skip: no dump at " + dump);
@@ -96,10 +105,90 @@ public class PackReportTest {
 		check(said.contains("FieldData region that does not exist"), "the pack names a matrix cell whose region FieldData does not have");
 		check(said.contains("matrix " + matrix), "and says which matrix");
 
+		aPackThatFailedSaysSoAndStopsThere();
+
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * A pack that THREW has to say so, and must not run the work that was
+	 * queued behind it.
+	 *
+	 * <p>The checks above go through {@code packArchives} directly. This one
+	 * goes through {@link Workspace#packWorkspace}, which is what every menu
+	 * item in the application actually calls: it packs on a worker and, on the
+	 * far side, either tells the user it failed or runs the caller's onDone -
+	 * deploy, reload, open the zone that was just appended. That report was a
+	 * bare JOptionPane, unreadable by any guard and unreachable without a
+	 * screen, so nothing asserted the one sentence separating a failed pack
+	 * from a good one. Delete it and the progress bar fills, the dialog closes,
+	 * and the user goes on to deploy archives that were never written.
+	 *
+	 * <p>Fails the pack the way the archive writer itself refuses one - a
+	 * staged file named past the end of NPCRegistries - then removes it and
+	 * asks for the same pack again, because "it never runs onDone" would also
+	 * be true of a pack that could not work at all.
+	 */
+	static void aPackThatFailedSaysSoAndStopsThere() throws Exception {
+		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
+		File gapped = new File(dir, String.valueOf(Workspace.npcreg.length + 1));
+		Files.write(gapped.toPath(), new byte[]{1, 2, 3, 4});
+		Workspace.addPersist(gapped);
+
+		final boolean[] after = {false};
+		List<String> told = packThroughTheApp(() -> after[0] = true);
+		System.out.println("  a failed pack tells the user: " + told);
+		check(!after[0], "a pack that failed does not run the work that was waiting on it");
+		check(contains(told, "The workspace was not packed"),
+				"and the user is told the pack did not happen: " + told);
+		check(contains(told, "Cannot pack " + gapped.getName()),
+				"naming what stopped it: " + told);
+		check(contains(told, "before deploying"),
+				"and warning them off the one thing that would ship the damage: " + told);
+
+		Workspace.persist_paths.remove(gapped.getAbsolutePath());
+		gapped.delete();
+		after[0] = false;
+		told = packThroughTheApp(() -> after[0] = true);
+		check(after[0], "a pack that worked does run it");
+		check(!contains(told, "The workspace was not packed"),
+				"and says nothing about a pack that did not happen: " + told);
+	}
+
+	/**
+	 * packWorkspace as the application calls it, and everything the user was
+	 * told on the way.
+	 *
+	 * <p>Called off the EDT on purpose: with no screen the progress dialog
+	 * holds this thread until the worker's done() closes it, which is the first
+	 * thing done() does - so the rest of done(), including the report, may
+	 * still be running on the EDT when packWorkspace returns. In the
+	 * application that cannot happen (showDialog is called ON the EDT, inside
+	 * the modal pump done() itself runs in), so the wait below restores the
+	 * order the application has rather than inventing one.
+	 */
+	static List<String> packThroughTheApp(Runnable onDone) throws Exception {
+		List<String> said = Ui.record();
+		try {
+			Workspace.packWorkspace(onDone);
+			javax.swing.SwingUtilities.invokeAndWait(() -> {
+			});
+		} finally {
+			Ui.stopRecording();
+		}
+		return said;
+	}
+
+	static boolean contains(List<String> said, String text) {
+		for (String s : said) {
+			if (s.contains(text)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
