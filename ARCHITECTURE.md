@@ -18,6 +18,7 @@ the other games can be added without untangling anything.
 │   Gen 6 (BCH/"H3D", shared by XY+ORAS):                    │
 │     formats/h3d (models) · formats/tilemap (painter)       │
 │     formats/area (fog, world animations) · gfcollision     │
+│     formats/dressup (player part index: slots, designs)    │
 │   Gen 7 (GFModel/GFMotion — DOES NOT EXIST YET):           │
 │     to be built when SM/USUM work starts                   │
 ├────────────────────────────────────────────────────────────┤
