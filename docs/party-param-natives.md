@@ -302,6 +302,18 @@ its own javadoc. The scripts are in the queue-2 scratch directory
 (`find_table.py`, `table.py`, `armdis.py`, `cases.py`, `imports.py`,
 `globalscan.py`, `allnatives.py`, `checks.py`).
 
+The offsets above were read off the listings by hand. An automatic re-tracer was
+written afterwards (`verify_all.py`) to diff its own trace against
+`PartyParam.java`. It is **not** a clean audit and its header says so: it does
+not carry the sub-index through a second dispatcher, so it resolves only the
+selectors whose handler is a single flat function. On those it agrees with the
+table everywhere - selectors 1, 13, 22, 44, 46, 47, 48, 50, 53, and Set 1007 -
+and it independently reproduces the handler address of all 54 Get and all 20 Set
+cases. The two "mismatches" it prints, for selectors 2 and 3, are its own
+artifact: it follows the compute fallback rather than the cached path, where the
+real instructions are `E1D050B8 ldrh r5,[r0,#8]` at `code.bin +0x531A8` and
+`E1D050BA ldrh r5,[r0,#0xA]` at `+0x53288`, both after `ldr r0,[r4,#4]`.
+
 
 ## A trap this probe fell into, recorded so nobody repeats it
 
