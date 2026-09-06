@@ -26,17 +26,24 @@ import java.util.TreeMap;
  *
  * <ul>
  * <li><b>slot agrees with the name</b>: every part model whose name carries a
- * slot word (_tops_, _btms_, _hat_, _shoes_, _hair_, ...) lands in the same
- * category as every other part with that word, and no category mixes two
- * words. This is the check the whole exercise exists for: guessing the slot
- * from the name prefix is exactly what must NOT be trusted, so the decoded
- * table and the names are made to agree or the suite fails.</li>
+ * slot word (tops, btms, hat, shoes, hair, ...) lands in the same category as
+ * every other part with that word, no category means two different words, and
+ * no part lands in a slot its own name does not justify. This is the check the
+ * whole exercise exists for: guessing the slot from the name is exactly what
+ * must NOT be trusted, so the decoded table and the names are made to agree or
+ * the suite fails.</li>
  * <li><b>the relation is stored twice and agrees</b>: section 6 says which
  * items a part renders, section 2 says which parts an item uses. Every pair
  * must appear in both.</li>
- * <li><b>texture ids resolve</b>: every texture id in every design names a
- * subfile that really holds a texture, and section 7's per-part texture ids
- * name a texture that part's own materials really bind.</li>
+ * <li><b>texture ids resolve, and to the right texture</b>: every id names a
+ * subfile that really holds a texture; every design texture belongs to its own
+ * item's family; and section 7's per-part ids name a texture that part's own
+ * materials really bind. The first of those three is weak on its own - every
+ * subfile in the range holds a texture, so reading the record one word out of
+ * step still "resolves". Measured: that mutation survived until the other two
+ * were added.</li>
+ * <li><b>a design's flag word</b> is its texture count minus one, in every
+ * record of both sets.</li>
  * <li><b>the make-up trailer</b>: the ids it carries name make-up textures,
  * and the hero's tail block names face paints.</li>
  * <li><b>the reader refuses rubbish</b> rather than returning an empty index.</li>
@@ -338,6 +345,23 @@ public class DressUpIndexTest {
 			fails += check(tag + ": section-7 texture ids name a texture the model itself binds ("
 					+ selfOk + " ok, " + selfBad + " bad) " + selfMiss, selfBad == 0 && selfOk > 0);
 
+			// A design's leading word is one less than its texture count in
+			// every record of both sets. That is a field with a meaning, and a
+			// reader that mistook it for a texture id would break it.
+			int flagOk = 0, flagBad = 0;
+			for (DressUpIndex.Design d : ix.designs) {
+				if (d.textures.length == 0) {
+					continue;
+				}
+				if (d.flag == d.textures.length - 1) {
+					flagOk++;
+				} else {
+					flagBad++;
+				}
+			}
+			fails += check(tag + ": a design's flag word is its texture count minus one ("
+					+ flagOk + " ok, " + flagBad + " bad)", flagBad == 0 && flagOk > 0);
+
 			// ---- the make-up trailer -------------------------------------
 			int mkOk = 0, mkBad = 0;
 			for (int t : ix.makeUpTextures) {
@@ -350,6 +374,20 @@ public class DressUpIndexTest {
 			}
 			fails += check(tag + ": make-up trailer names make-up textures ("
 					+ mkOk + " ok, " + mkBad + " bad)", mkBad == 0 && mkOk > 0);
+			// the slot the id sits in is the face layer it draws into, which
+			// the texture's own "_0"/"_1" suffix names independently
+			int layOk = 0, layBad = 0;
+			for (int k = 0; k < ix.makeUpTextures.length; k++) {
+				String tn = textureName.get(s.textureSubfile(ix.makeUpTextures[k]));
+				int layer = k < ix.makeUpLayers.length ? ix.makeUpLayers[k] : -1;
+				if (tn != null && tn.endsWith("_" + layer)) {
+					layOk++;
+				} else {
+					layBad++;
+				}
+			}
+			fails += check(tag + ": each make-up texture's layer matches its own name suffix ("
+					+ layOk + " ok, " + layBad + " bad)", layBad == 0 && layOk > 0);
 			int fpOk = 0, fpBad = 0;
 			for (int t : ix.facePaintTextures) {
 				String tn = textureName.get(s.textureSubfile(t));

@@ -171,6 +171,14 @@ public class DressUpIndex {
 	public final Part[] parts;
 	/** Make-up texture ids from the section-7 trailer; empty when it has none. */
 	public final int[] makeUpTextures;
+	/**
+	 * Which face layer each make-up texture composites into, parallel to
+	 * {@link #makeUpTextures}. Measured: it is the position (0..2) of the id
+	 * among the record's three {@code u16} slots, and it matches the texture's
+	 * own "_0"/"_1" suffix in all 11 records of both sets - so 0 is the
+	 * {@code nb*_face_on_0} target and 1 is {@code nb*_face_on_1}.
+	 */
+	public final int[] makeUpLayers;
 	/** Face-paint texture ids from the trailer's tail block; empty when absent. */
 	public final int[] facePaintTextures;
 	/** The section-7 trailer, verbatim - not every field in it is decoded. */
@@ -180,7 +188,7 @@ public class DressUpIndex {
 
 	private DressUpIndex(String magic, MasterRow[] master, Item[] items, Design[] designs,
 			int[] faceItems, TextureSet[] faceTextures, int[] hairItems, TextureSet[] hairTextures,
-			Part[] parts, int[] makeUp, int[] facePaint, byte[] trailer) {
+			Part[] parts, int[] makeUp, int[] makeUpLayer, int[] facePaint, byte[] trailer) {
 		this.magic = magic;
 		this.master = master;
 		this.items = items;
@@ -191,6 +199,7 @@ public class DressUpIndex {
 		this.hairTextures = hairTextures;
 		this.parts = parts;
 		this.makeUpTextures = makeUp;
+		this.makeUpLayers = makeUpLayer;
 		this.facePaintTextures = facePaint;
 		this.trailer = trailer;
 		this.itemCategory = new int[items.length];
@@ -357,7 +366,8 @@ public class DressUpIndex {
 
 		int mk = makeUpStart(tail);
 		return new DressUpIndex(mg, master, items, designs, faceItems, faceTex,
-				hairItems, hairTex, parts, makeUp(tail, mk), facePaint(tail, mk), tail);
+				hairItems, hairTex, parts, makeUp(tail, mk, 0), makeUp(tail, mk, 1),
+				facePaint(tail, mk), tail);
 	}
 
 	/** True when the blob looks like one of these containers - magic and a sane section table. */
@@ -562,16 +572,17 @@ public class DressUpIndex {
 	}
 
 	/**
-	 * Make-up texture ids. Each 28-byte record carries exactly one real
-	 * texture id across three {@code u16} slots, the other two being 0xFFFF;
-	 * only that id is decoded, the rest of the record is not.
+	 * Make-up texture ids ({@code want} 0) or the face layer each draws into
+	 * ({@code want} 1). Each 28-byte record carries exactly one real texture
+	 * id across three {@code u16} slots, the other two being 0xFFFF; the slot
+	 * it sits in is the layer. The rest of the record is not decoded.
 	 */
-	private static int[] makeUp(byte[] t, int start) {
+	private static int[] makeUp(byte[] t, int start, int want) {
 		int n = makeUpCount(t, start);
 		List<Integer> out = new ArrayList<>();
 		for (int i = 0; i < n; i++) {
 			int p = start + i * MAKEUP_RECORD;
-			int found = -1;
+			int found = -1, layer = -1;
 			for (int s = 0; s < 3; s++) {
 				int v = u16(t, p + 5 + 2 * s);
 				if (v != 0xFFFF) {
@@ -580,12 +591,13 @@ public class DressUpIndex {
 						break; // ambiguous: report nothing rather than a guess
 					}
 					found = v;
+					layer = s;
 				}
 			}
 			if (found == -1) {
 				return new int[0];
 			}
-			out.add(found);
+			out.add(want == 0 ? found : layer);
 		}
 		return toIntArray(out);
 	}
