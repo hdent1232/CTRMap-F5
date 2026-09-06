@@ -61,7 +61,19 @@ public abstract class GameProfile {
 		/** Script disassembly with named natives (a natives table exists). */
 		SCRIPT_NATIVES,
 		/** code.bin patches (addresses known for this game's executable). */
-		CODE_PATCHES
+		CODE_PATCHES,
+		/**
+		 * Item records: reading and WRITING the item table.
+		 *
+		 * <p>Gated separately from the archive path on purpose. XY's item
+		 * archive is a CITED location (pk3DS's GARCReference_XY) that nobody
+		 * has measured against an XY dump here, and the profile says so - so a
+		 * path exists that is good enough to look at and not good enough to
+		 * write through. This flag is the difference. It is what the item
+		 * editor asks before it opens, so an unverified game gets a sentence
+		 * saying why rather than a writer poking 36 bytes into a guess.
+		 */
+		ITEM_EDITING
 	}
 
 	public abstract Workspace.GameType type();

@@ -71,7 +71,14 @@ public final class RecordSchema {
 		this.recordCount = recordCount;
 		this.stride = stride;
 		this.fields = Collections.unmodifiableList(new ArrayList<>(fields));
+		Set<String> keys = new LinkedHashSet<>();
 		for (RecordField f : fields) {
+			if (!keys.add(f.key())) {
+				throw new IllegalArgumentException(name + ": two fields answer to \"" + f.key()
+						+ "\". Names may repeat between groups - an item has an Attack stat stage"
+						+ " and an Attack EV - but nothing can ADDRESS a field whose key is shared,"
+						+ " so a control would be wired to whichever came first.");
+			}
 			if (f.endByte() > stride) {
 				throw new IllegalArgumentException(name + ": field " + f
 						+ " runs past the end of a " + stride + "-byte record. A field that"

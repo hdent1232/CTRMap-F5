@@ -35,9 +35,7 @@ public final class RecordField {
 		 * - see {@link ctrmap.formats.pokedata.ItemEffectLabels}. The field
 		 * names which derivation to use through {@link #effectKind}.
 		 */
-		EFFECT,
-		/** A number that is an item id, so the editor can show the item's name. */
-		ITEM_ID
+		EFFECT
 	}
 
 	private final String name;
@@ -100,11 +98,6 @@ public final class RecordField {
 	public static RecordField effect(String group, String name, int off, int bits,
 			ctrmap.formats.pokedata.ItemEffectLabels.Kind effectKind, String help) {
 		return new RecordField(name, help, group, off, 0, bits, false, Kind.EFFECT, effectKind, true);
-	}
-
-	/** An item id, shown with the item's name. */
-	public static RecordField itemId(String group, String name, int off, int bits, String help) {
-		return new RecordField(name, help, group, off, 0, bits, false, Kind.ITEM_ID, null, true);
 	}
 
 	/**
@@ -199,6 +192,23 @@ public final class RecordField {
 
 	public String name() {
 		return name;
+	}
+
+	/**
+	 * A name unique within the schema: the group and the field.
+	 *
+	 * <p>Names alone are not unique and should not be. An item record has an
+	 * "Attack" under the in-battle stat stages and another under the EV changes,
+	 * and both are called Attack because that is what they are - the group
+	 * heading is what tells them apart on screen. Anything that has to ADDRESS
+	 * one of them, though - a control looking up its field, a guard driving that
+	 * control - needs the pair. Measured the hard way: a guard that keyed
+	 * controls by name alone silently drove the stat-stage widget while
+	 * asserting about the EV field, and reported five fields "not taking their
+	 * value" when the form was fine.
+	 */
+	public String key() {
+		return group + " / " + name;
 	}
 
 	public String help() {

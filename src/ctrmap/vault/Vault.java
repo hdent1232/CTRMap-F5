@@ -380,7 +380,10 @@ public final class Vault {
 		}
 		if (scope == Scope.MODDABLE) {
 			if (profile != null) {
-				for (Workspace.ArchiveType t : ModDeployer.MODDABLE) {
+				//everything the editor can WRITE, not only what it repacks: the
+				//item archive is written in place and would otherwise be missing
+				//from a backup whose whole purpose is putting the game back
+				for (Workspace.ArchiveType t : ModDeployer.allWritableArchives()) {
 					String rel = profile.archivePath(t);
 					//a profile returning null means "not present or not verified
 					//for this game" - absence, never a guess. Skip it rather
