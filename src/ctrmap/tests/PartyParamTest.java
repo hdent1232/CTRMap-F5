@@ -179,10 +179,13 @@ public class PartyParamTest {
 				unnamedUsed.add(sel);
 			}
 		}
-		// 45 is the one selector retail uses that was traced but not named.
-		if (!unnamedUsed.equals(java.util.Arrays.asList(45))) {
-			fails.add("unnamed Get selectors used by retail changed: expected [45], got " + unnamedUsed);
+		if (!unnamedUsed.isEmpty()) {
+			fails.add("retail reads Get selector(s) " + unnamedUsed + " that the table does not name");
 		}
+		// the table's size is locked too, so dropping a name for a selector retail
+		// happens not to use is caught as well
+		expect(fails, "named Get selectors", 51, PartyParam.getTable().size());
+		expect(fails, "named Set selectors", 20, PartyParam.setTable().size());
 
 		for (String f : fails) {
 			System.out.println("  FAIL: " + f);
@@ -205,8 +208,8 @@ public class PartyParamTest {
 			if (!getNames.add(p.name)) {
 				fails.add("Get table names " + p.name + " twice");
 			}
-			if (p.pk6Offset != -1 && (p.pk6Offset < 0 || p.pk6Offset > 0xE7)) {
-				fails.add(p.name + ": PK6 offset " + p.pk6Offset + " is outside the 232-byte record");
+			if (p.pk6Offset != -1 && (p.pk6Offset < 0 || p.pk6Offset > 0x103)) {
+				fails.add(p.name + ": PK6 offset " + p.pk6Offset + " is outside the 260-byte party record");
 			}
 			if (p.evidence == null || p.evidence.isEmpty()) {
 				fails.add(p.name + ": named with no evidence recorded");
@@ -219,8 +222,8 @@ public class PartyParamTest {
 			if (!setNames.add(p.name)) {
 				fails.add("Set table names " + p.name + " twice");
 			}
-			if (p.pk6Offset != -1 && (p.pk6Offset < 0 || p.pk6Offset > 0xE7)) {
-				fails.add(p.name + ": PK6 offset " + p.pk6Offset + " is outside the 232-byte record");
+			if (p.pk6Offset != -1 && (p.pk6Offset < 0 || p.pk6Offset > 0x103)) {
+				fails.add(p.name + ": PK6 offset " + p.pk6Offset + " is outside the 260-byte party record");
 			}
 			// a setter with no confirmed reading must never be writable
 			if (p.certainty != PartyParam.Certainty.CONFIRMED && PartyParam.isSafeToWrite(p.selector)) {
