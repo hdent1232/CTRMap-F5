@@ -1081,12 +1081,6 @@ public class Workspace {
 		MOVE_DATA,
 		/** Item records - 776 x 36 bytes in Gen 6, id == entry index. */
 		ITEM_DATA,
-		/**
-		 * Player dress-up parts: the swappable clothing/hair models, their
-		 * textures, and the index tables that say which slot each part fills.
-		 * Read with ctrmap.formats.dressup.DressUpArchive.
-		 */
-		DRESSUP_PARTS,
 		SOUND_BCSAR
 	}
 
