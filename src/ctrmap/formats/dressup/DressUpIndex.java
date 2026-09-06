@@ -443,6 +443,10 @@ public class DressUpIndex {
 		Item[] out = new Item[off.length - 1];
 		for (int i = 0; i < out.length; i++) {
 			int p = off[i], end = off[i + 1];
+			if (end - p < 4) {
+				throw new IllegalArgumentException("item record " + i + " is " + (end - p)
+						+ " bytes, too short for its own header");
+			}
 			int nDesigns = b[p] & 0xFF;
 			int nParts = b[p + 1] & 0xFF;
 			int kind = u16(b, p + 2);
