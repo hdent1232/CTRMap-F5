@@ -460,7 +460,7 @@ public class DressUpIndex {
 		int[] off = offsets(b, 0);
 		Design[] out = new Design[off.length - 1];
 		for (int i = 0; i < out.length; i++) {
-			out[i] = flagged(b, off[i], off[i + 1], i, true);
+			out[i] = flagged(b, off[i], off[i + 1], i);
 		}
 		return out;
 	}
@@ -469,14 +469,14 @@ public class DressUpIndex {
 		int[] off = offsets(b, start);
 		TextureSet[] out = new TextureSet[off.length - 1];
 		for (int i = 0; i < out.length; i++) {
-			Design d = flagged(b, off[i], off[i + 1], i, true);
+			Design d = flagged(b, off[i], off[i + 1], i);
 			out[i] = new TextureSet(i, d.flag, d.textures);
 		}
 		return out;
 	}
 
 	/** A record shaped {@code u16 flag, u16 rest[]}. */
-	private static Design flagged(byte[] b, int p, int end, int index, boolean unused) {
+	private static Design flagged(byte[] b, int p, int end, int index) {
 		if (end <= p) {
 			return new Design(index, -1, new int[0]);
 		}
