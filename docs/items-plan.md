@@ -133,9 +133,20 @@ natives, already listed in CTRMap's own `src/ctrmap/resources/oras_natives.tsv`,
 and 4 retail zone scripts respectively. With `CallPokeSelect` to pick the Pokémon and
 `CallBag`/`ItemGetNum` to charge an item, that is an NPC — no code patch, no new UI.
 
-One bounded blocker: nobody has established which integer means Nature, Ability, IV_HP, EV_Atk.
-Recover it by disassembling those 22 retail scripts with CTRMap's existing `PawnDisassembler` and
-recording the constants pushed before each SYSREQ. Roughly a focused day.
+**Settled, 2026-09-06** (`docs/party-param-natives.md`, `PartyParam.java`). Read out of the ARM
+code, not from script usage: both natives are dense jump tables on argument 2 - 54 cases for Get,
+20 based at 1000 for Set - and every case bottoms out at a named offset of the PK6 record. IVs are
+Get 16-21 / Set 1000-1005, EVs Get 23-28 / Set 1008-1013, ability Get 22, plus ribbons, friendship,
+contest conditions, battle stats, level, gender and shininess.
+
+The part that changes the plan: **nature cannot be read or written through either native, and
+ability can be read but not written.** The accessors exist in the executable but no case of either
+switch reaches them. So "an NPC, no code patch" holds for IVs, EVs, ribbons and friendship, and
+does NOT hold for the nature/ability change the owner asked for - that needs a `code.bin` patch,
+which is a different job with a different risk profile. No UI may offer it on a guessed selector;
+`PartyParam.isSafeToWrite` is the gate and `PartyParamTest` enforces it.
+
+Also corrected there: the retail figures are 29 and 5 zones, not 22 and 4.
 
 And EV/IV display already ships in the game: the IV Judge is storytext entry 246 (four tiers plus
 a best-stat line) and Super Training is the EV readout. Re-siting the Judge into another zone is
