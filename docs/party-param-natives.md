@@ -262,13 +262,19 @@ asked for by name.
   ability setter at `code.bin +0x4F25C` has **no veneer in `DllField.cro`**, so
   no field-script native calls it.
 
-All 4079 of `DllField.cro`'s external patches are type 2 - absolute 32-bit data
-patches - and 2914 of them sit immediately after a `ldr pc, [pc, #-4]`, so the
-veneer sweep covers every call site. (The other 1165 are data pointers -
-vtables, literal pools - and were not individually chased; a function whose
-address is only ever taken, never called through a veneer, would escape the
-sweep. Both switches were enumerated case by case regardless, which is the
-stronger evidence.)
+The veneer sweep is stronger than it sounds. All 4079 of `DllField.cro`'s
+external patches are type 2 - absolute 32-bit data patches - and 2914 of them
+sit immediately after a `ldr pc, [pc, #-4]`, so every cross-module CALL goes
+through a veneer the sweep can see. The obvious gap is a veneer pointing at a
+thin `ldr r0,[r0,#0xC]; b <setter>` adapter rather than at the setter itself,
+so those were enumerated too: `code.bin` holds 17 such adapters for the three
+accessors, and **none of them has a veneer either**. The one veneer that does
+exist, `seg0+0x4178`, reaches the nature GETTER adapter at `code.bin +0x3D2510`
+and is called from two places in `DllField.cro` nowhere near these natives.
+(The remaining 1165 patches are data pointers - vtables, literal pools - and a
+function whose address is only ever taken, never called, would still escape.
+Both switches were enumerated case by case regardless, which is the primary
+evidence; the sweep is corroboration.)
 
 **So: an NPC can hand out IVs, EVs, ribbons, friendship and contest conditions,
 and can read out nature-adjusted stats, IVs, EVs, ability, gender, shininess
