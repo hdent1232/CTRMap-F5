@@ -32,24 +32,24 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 1269,
+    "line": 1282,
     "kind": "negate-if"
    },
    {
-    "line": 1284,
+    "line": 1297,
     "kind": "negate-if"
    },
    {
-    "line": 1288,
+    "line": 1301,
     "kind": "negate-if"
    },
    {
-    "line": 1319,
+    "line": 1332,
     "kind": "flip-return"
    }
   ],
   "excluded": [],
-  "sha256": "d05fdd241883626585548f14cc0823fc73c570fc0b7af8b6843e39f6effdf19b"
+  "sha256": "618dd56c03088ebbbe23b1abb3b73ff2cf4408145a831f31624fcbba8bd7f7e7"
  },
  "src/ctrmap/GeometryForker.java": {
   "survivors": 0,
@@ -217,14 +217,22 @@
  },
  "src/ctrmap/formats/garc/GARC.java": {
   "survivors": 0,
-  "killed": 11,
-  "unmeasured": 2,
+  "killed": 13,
+  "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
   "lines": [],
   "killed_lines": [
    {
+    "line": 207,
+    "kind": "negate-if"
+   },
+   {
     "line": 210,
+    "kind": "negate-if"
+   },
+   {
+    "line": 225,
     "kind": "negate-if"
    },
    {
@@ -269,7 +277,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "ad6ee8568a3750b8645bd7b5ae9c53ccf7e79122cb86217744a25e56ec517b11"
+  "sha256": "b9ef7fbbf979b358dec94d01bc8e280ca907cea0dcc5ef6406d988d42911badd"
  },
  "src/ctrmap/formats/h3d/BchTexturePack.java": {
   "survivors": 0,
@@ -1398,16 +1406,16 @@
   "sha256": "3b56a80fe981822a3bcbd90b82e68e8f0595c6b57affedee5f60e568fad5b7a3"
  },
  "_meta": {
-  "measured_at": "23013aa",
+  "measured_at": "8b6f5ef",
   "measurements": 279,
   "distinct": 247,
   "attempted": 244,
   "survived": 1,
-  "killed": 241,
+  "killed": 243,
   "killed_by_flood": 1,
-  "hung": 2,
+  "hung": 0,
   "nocompile": 0,
-  "unmeasured": 2,
+  "unmeasured": 0,
   "unmutable": 1,
   "excluded": 2
  }
