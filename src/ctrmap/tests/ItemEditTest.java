@@ -84,8 +84,9 @@ public class ItemEditTest {
 		refusesWhatWouldLandWrong(work, baseline);
 		fourSlotsAreFreeAndNotFive(work, args[0]);
 		theBaselineIsTakenOnceAndNeverRetaken(tmp, src);
-		//last: it repoints the Workspace statics at a scratch game
+		//last two: they repoint the Workspace statics at a scratch game
 		deployShipsItOnlyWhenItWasEdited(tmp, src);
+		theEditorRefusesBeforeItBuildsAnything();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -395,6 +396,45 @@ public class ItemEditTest {
 		} finally {
 			Workspace.GAMEDIR_PATH = oldGame;
 			Workspace.WORKSPACE_PATH = oldWs;
+			Workspace.game = oldType;
+		}
+	}
+
+	/**
+	 * The editor's refusals must happen BEFORE it builds a window.
+	 *
+	 * <p>Two things at once, and the second is why this runs headless. A user
+	 * with no workspace, or with a game whose item table was never verified,
+	 * must get a sentence - not a stack trace, and not a half-built dialog. A
+	 * headless JVM cannot construct a window at all, so if either check ever
+	 * moves below the first {@code new JDialog(...)} this suite stops passing
+	 * and starts throwing HeadlessException. The ordering is the assertion.
+	 */
+	static void theEditorRefusesBeforeItBuildsAnything() {
+		System.out.println("--- the editor refuses with a sentence, before it builds a window");
+		boolean oldValid = Workspace.valid;
+		Workspace.GameType oldType = Workspace.game;
+		try {
+			Workspace.valid = false;
+			List<String> said = ctrmap.Ui.record();
+			ctrmap.humaninterface.ItemEditDialog.show(null);
+			ctrmap.Ui.stopRecording();
+			check(said.size() == 1 && said.get(0).contains("workspace"),
+					"with no workspace loaded it says so and returns (" + said + ")");
+
+			Workspace.valid = true;
+			Workspace.game = Workspace.GameType.XY;
+			said = ctrmap.Ui.record();
+			ctrmap.humaninterface.ItemEditDialog.show(null);
+			ctrmap.Ui.stopRecording();
+			check(said.size() == 1 && said.get(0).contains("VERIFIED"),
+					"and for a game whose item table was never measured it says THAT, rather than"
+					+ " opening a form over a cited offset");
+		} catch (Throwable t) {
+			ctrmap.Ui.stopRecording();
+			check(false, "it returned without throwing - got " + t);
+		} finally {
+			Workspace.valid = oldValid;
 			Workspace.game = oldType;
 		}
 	}
