@@ -88,8 +88,11 @@ Slot naming is `b1_<slot>_<style>`; every one anchors to `tr0001_00_ba`
 
 `_mae` = the front-hair half of a hairstyle (mae = 前, "front"), so the
 hairstyles ship as back+front pairs. **Six** pairs, not seven: the index offers
-`bob, long, midi, pony, short, twin`, and `b1_hair_shortmae` (subfile 35) is a
-stray duplicate of `b1_hair_short_mae` (34) that the index never points at.
+`bob, long, midi, pony, short, twin`. `b1_hair_shortmae` (subfile 35) is a
+seventh short-hair model the index never points at — not a copy of
+`b1_hair_short_mae` (34): different size (36,908 vs 38,748 bytes) and a single
+mesh oddly named `b1_hair_long` where 34 has `hair` + `nohat`. Leftover work,
+not a wearable.
 
 ### The hero part models (subfiles 456–494)
 
@@ -374,8 +377,8 @@ b2_standbag01  b2_standhead01  b2_tops_pajama  bt0002_00
 
 So of the 101 swappable part models, **86 are actually wearable** (55 heroine,
 31 hero). The pyjama set and the display-stand props are modelled but not in
-the wardrobe, `b1_hair_shortmae` is a duplicate of `b1_hair_short_mae` that
-nothing points at, and the two `bt*_00` entries are the assembled defaults.
+the wardrobe, `b1_hair_shortmae` is the odd seventh short-hair model described
+above, and the two `bt*_00` entries are the assembled defaults.
 
 ### A GARC reading defect found on the way
 
