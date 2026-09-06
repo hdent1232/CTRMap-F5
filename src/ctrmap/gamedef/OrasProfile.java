@@ -52,6 +52,9 @@ public class OrasProfile extends GameProfile {
 			case MOVE_DATA: return "/a/1/8/9";
 			//measured on a retail dump: 776 entries of 36 bytes, all round-tripping
 			case ITEM_DATA: return "/a/1/9/7";
+			//measured: 741 subfiles, two dress-up index containers ("DB", "DA")
+			//and their 64 + 39 part models, decoded by ctrmap.formats.dressup
+			case DRESSUP_PARTS: return "/a/0/8/8";
 			case SOUND_BCSAR: return "/sound/sango_sound.bcsar";
 			default: return null;
 		}
