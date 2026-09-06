@@ -274,6 +274,50 @@ public class DressUpIndexTest {
 			fails += check(tag + ": every design texture id resolves to a texture subfile ("
 					+ texOk + " ok, " + texBad + " bad)", texBad == 0 && texOk > 0);
 
+			// Resolving to SOME texture is a weak claim - every subfile in that
+			// range holds one. The sharp claim is that an item's designs are
+			// all textures of that item: b1_tops_tshirt's designs are all
+			// b1_topstshirt_*. An index read one word out of step still
+			// resolves, but starts pulling in a neighbour's texture or a
+			// shared lookup table, and that is what this catches.
+			int famOk = 0, famBad = 0;
+			List<String> famMiss = new ArrayList<>();
+			for (DressUpIndex.Item it : ix.items) {
+				List<String> names = new ArrayList<>();
+				for (int d : designsOfItem(ix, it)) {
+					for (int t : ix.designs[d].textures) {
+						String tn = textureName.get(s.textureSubfile(t));
+						names.add(tn == null ? "<none>" : tn);
+					}
+				}
+				if (names.size() < 3) {
+					continue;
+				}
+				Map<String, Integer> tally = new LinkedHashMap<>();
+				for (String nm : names) {
+					String k = nm.length() >= 7 ? nm.substring(0, 7) : nm;
+					tally.merge(k, 1, Integer::sum);
+				}
+				String modal = null;
+				for (Map.Entry<String, Integer> e : tally.entrySet()) {
+					if (modal == null || e.getValue() > tally.get(modal)) {
+						modal = e.getKey();
+					}
+				}
+				for (String nm : names) {
+					if (nm.startsWith(modal)) {
+						famOk++;
+					} else {
+						famBad++;
+						if (famMiss.size() < 6) {
+							famMiss.add("item " + it.index + " " + modal + "* got " + nm);
+						}
+					}
+				}
+			}
+			fails += check(tag + ": every design texture belongs to its own item's family ("
+					+ famOk + " ok, " + famBad + " bad) " + famMiss, famBad == 0 && famOk > 0);
+
 			int selfOk = 0, selfBad = 0;
 			List<String> selfMiss = new ArrayList<>();
 			for (int p = 0; p < ix.parts.length; p++) {
@@ -381,6 +425,17 @@ public class DressUpIndexTest {
 		Set<Integer> both = new LinkedHashSet<>(a);
 		both.retainAll(b);
 		return both.isEmpty();
+	}
+
+	/** Design ids of an item, markers dropped and out-of-range ids dropped. */
+	private static List<Integer> designsOfItem(DressUpIndex ix, DressUpIndex.Item it) {
+		List<Integer> out = new ArrayList<>();
+		for (int d : it.designs) {
+			if (d < DressUpIndex.DESIGN_MARKER_MIN && d < ix.designs.length) {
+				out.add(d);
+			}
+		}
+		return out;
 	}
 
 	private static boolean refuses(byte[] blob) {
