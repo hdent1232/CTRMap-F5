@@ -500,11 +500,25 @@ rstr0001_00_fi   8 meshes, 8,403 verts, 5 materials, 50 bones
   textures  projection_dummy, rstr0001_00_fi_body(128x128),
             _fi_face(256x128), _fi_head(128x128), _fi_sw_parts(128x64)
 rstr0002_00_fi   8 meshes, 8,358 verts, 5 materials, 50 bones
+  meshes    bag, face, head, sw_parts01..05   (the hero's second mesh is
+            named `head`, not `etc`, and its skeleton carries Bag1 +
+            Bagbelt1..3 and a `Cap` bone where the heroine has Bag,
+            L/RHair and L/RRibbon)
 ```
 
-The `sw_parts01..05` meshes/bones are a five-slot swap rig on the field model,
-but they share two materials on a single 128×64 texture — that is a small fixed
-prop set (bag/bracelet-scale), not a wardrobe. No `b1_`/`b2_` part, no
+The `sw_parts01..05` meshes/bones are a five-slot swap rig on the field model —
+a small fixed prop set (bag/bracelet-scale), not a wardrobe.
+
+*Corrected 2026-09-06:* they do **not** share two materials on a single 128×64
+texture. Measured per mesh: three materials over two textures — `sw_parts01`
+(118 tris, weighted to `LHandEX` alone) and `sw_parts02` (128 tris, to the
+feet/legs) use the **body** material and the 128×128 body sheet; `sw_parts03`
+(268 tris) and `sw_parts04` (340 tris) use `_sw_parts_02` and `sw_parts05`
+(136 tris, feet/legs) uses `_sw_parts`, both on the 128×64 sw_parts sheet.
+990 triangles in all. They are addressed by name at runtime: `DllField.cro`,
+`DllSequence.cro` and `DllSkyTrip.cro` each carry the literal name table
+`sw_parts01` .. `sw_parts05`, NUL-separated. See `customization-scope.md` for the full
+per-slot table. No `b1_`/`b2_` part, no
 `loc_acchat`, no `_btms_`/`_tops_` model exists anywhere outside `a/0/8/8` and
 `a/1/3/3`.
 
@@ -562,21 +576,33 @@ field skeleton.
 
 ## What is still open
 
-- **Runtime loading is not proven.** Everything above proves the assets are
-  present, complete, indexed and rigged. Proving the shipped executable actually
-  opens `a/0/8/8` needs either the `DressUpResourceManager` call sites traced in
-  `code.bin` or an emulator file-access log. Neither was done here.
-- ~~The index tables are not decoded.~~ **Settled** — see "The seven index
+- ~~**Runtime loading is not proven.**~~ **SETTLED — CONFIRMED.** The
+  `ArcFile` call sites inside `xy_system::dress_up` were traced: `0x0049506C`
+  and `0x004950E4` open `gfl::fs::ArcFile` with an id taken from the two-entry
+  tables at `0x00580B70`/`0x00580B78`, both `{ 87, 88 }`, indexed by the
+  field/battle context byte. Battle takes 88 = `a/0/8/8`; field takes
+  87 = `a/0/8/7`, **the only zero-byte archive in the whole ORAS RomFS**.
+  Full chain in `customization-scope.md`. A successful *read* is still
+  unobserved — no emulator trace was taken.
+- ~~**The index tables are not decoded.**~~ **SETTLED** — see "The seven index
   tables, decoded". What remains open inside them is small and named there:
   the make-up trailer's own header, the two leading fields of each 28-byte
   make-up record, and *why* the three face items carry their own `kind`.
-- **Whether this is XY's complete catalogue** cannot be established from an ORAS
-  dump alone — there is no XY dump here to diff against. What is established is
-  that ORAS ships 101 swappable part models (86 of them actually offered by the
-  index) and 570 part textures, across 14 dress-up slots for the heroine and 13
-  for the hero.
-- **Whether the field dress-up path in `code.bin` is reachable** — the
-  `DressUpField*` classes are linked, but no call site was traced.
+- ~~**Whether the field dress-up path in `code.bin` is reachable**~~ —
+  **SETTLED.** It is reachable, and it is the *same code* as the battle path:
+  `DressUpFieldHeroCore` and `DressUpBattleHeroCore` have identical vtables
+  except their destructors, as do the Field/Battle Resource pairs. They differ
+  in exactly one thing, the archive id they open. `field::mmodel` calls into
+  `xy_system::dress_up` at four sites to compare and clone `DressUpParam`
+  (a 0x40-byte, 32-slot part-id block). Still unproven: that anything at
+  runtime sets the context byte to 0 — and with `a/0/8/7` empty, nothing
+  would load if it did.
+- **Whether this is XY's complete catalogue** cannot be established from an
+  ORAS dump alone — there is no XY dump here to diff against. What IS
+  established: ORAS ships 101 swappable part models (86 of them actually
+  offered by the index) and 570 part textures, across 14 dress-up slots for
+  the heroine and 13 for the hero.
+
 
 ## Reproducing this
 
