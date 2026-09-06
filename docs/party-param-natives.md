@@ -78,6 +78,11 @@ it writes essentially one thing.
 Identical in all five calls: `(1, 0, 32780, 1)`. 32780 = 0x800C, which looks
 like a flag word rather than a count.
 
+Note the column correction above applies here too: this tuple is printed in the
+old, reversed order, so the value shown LAST is argument 1. Nobody has since
+re-measured `CallPokeSelect`, and its arguments were not traced in the
+executable, so treat the ordering of this one line as unverified.
+
 ## ANSWERED, 2026-09-06: what the selectors are
 
 The question is settled from the retail ARM code. The machine-readable answer
