@@ -8,7 +8,7 @@
 # could not run from a worktree or a fresh clone: six suites resolved the dump
 # relative to the repo's parent and failed for a reason that had nothing to do
 # with the code under test.
-param([switch]$Quick, [string]$Pristine, [string]$GameDir)
+param([switch]$Quick, [string]$Pristine, [string]$GameDir, [string]$Code)
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -44,6 +44,20 @@ $a040 = Join-Path $pristine "a\0\4\0"
 # need the whole thing. Both suites skip themselves when it is not there.
 $gamedir = if ($GameDir) { $GameDir } else { Join-Path (Split-Path -Parent $root) "RomFS\000400000011C400" }
 
+# The decompressed code.bin, for the suites that check the executable patches.
+# Two candidates because the repo is checked out in two shapes: beside the dump
+# (the author's layout) and one level deeper in a worktree. Registering the
+# suites with a path is what stops them printing SKIP from a worktree and being
+# counted as green - the hole BatteryHygieneTest exists to catch.
+$code = if ($Code) { $Code } else {
+    $c1 = Join-Path (Split-Path -Parent $root) "code.bin"
+    $c2 = Join-Path (Split-Path -Parent (Split-Path -Parent $root)) "code.bin"
+    if (Test-Path $c1) { $c1 } elseif (Test-Path $c2) { $c2 } else { $c1 }
+}
+if (-not (Test-Path $code)) {
+    Write-Host "No decompressed code.bin at $code - the executable-patch suites will skip." -ForegroundColor Yellow
+}
+
 if (-not (Test-Path $pristine)) {
     Write-Host "No dump at $pristine - pass -Pristine <path>." -ForegroundColor Yellow
 }
@@ -54,6 +68,9 @@ $suites = @(
     @{ n = "Source seam guard (gamedef)"; c = "ctrmap.tests.SourceSeamTest";        a = @("src") },
     @{ n = "VaultGuards (a pristine copy that can be put back)"; c = "ctrmap.tests.VaultGuardsTest"; a = @() },
     @{ n = "ItemData (776 retail records round-trip)"; c = "ctrmap.tests.ItemDataTest"; a = @($gamedir) },
+    @{ n = "RecordSchema (the registry reads what ItemData reads)"; c = "ctrmap.tests.RecordSchemaTest"; a = @($gamedir) },
+    @{ n = "ItemEdit (in place, four free slots)"; c = "ctrmap.tests.ItemEditTest"; a = @($gamedir) },
+    @{ n = "ItemIconPatch (code.bin, zero slack)"; c = "ctrmap.tests.ItemIconPatchTest"; a = @($code) },
     @{ n = "Battery hygiene (temp paths, corpus args)"; c = "ctrmap.tests.BatteryHygieneTest"; a = @("src") },
     @{ n = "Ui output paths (printed, and shown)"; c = "ctrmap.tests.UiOutputTest";           a = @() },
     @{ n = "Mutation baseline (guards still measured)"; c = "ctrmap.tests.MutationBaselineTest"; a = @("src") },
@@ -124,7 +141,7 @@ $suites = @(
     @{ n = "ZoneCloner (fork a whole zone)"; c = "ctrmap.tests.ZoneClonerTest";     a = @($a013) },
     @{ n = "ZoneAppendMulti (several at once)"; c = "ctrmap.tests.ZoneAppendMultiTest"; a = @($a013) },
     @{ n = "ZoneLimitPatch";              c = "ctrmap.tests.ZoneLimitPatchTest";     a = @() },
-    @{ n = "ShopData (mart inventories)"; c = "ctrmap.tests.ShopDataTest";           a = @() },
+    @{ n = "ShopData (mart inventories)"; c = "ctrmap.tests.ShopDataTest";           a = @($code) },
     @{ n = "ADPropRegistryOrder (prop registry order)"; c = "ctrmap.tests.ADPropRegistryOrderTest"; a = @((Join-Path $pristine "a\0\1\4")) },
     @{ n = "MapModelImport (BCH map import)"; c = "ctrmap.tests.MapModelImportTest"; a = @($a039) },
     @{ n = "MsgWrapperInject (corpus)"; c = "ctrmap.tests.MsgWrapperInjectTest"; a = @($a013) },
