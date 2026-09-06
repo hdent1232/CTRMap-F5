@@ -1,8 +1,30 @@
 # Plan: item and behaviour editing
 
-Status: **written, not started.** Grounded in three read-only investigations of the retail
-game (2026-09-03); every offset and count below was measured, not assumed. Raw findings:
-`wt/_state/items_feasibility.json`.
+Status: **steps 1-6 built; nothing checked in the emulator yet.** Grounded in three read-only
+investigations of the retail game (2026-09-03); every offset and count below was measured, not
+assumed. Raw findings: `wt/_state/items_feasibility.json`.
+
+What shipped, and where:
+
+| step | where it lives | its guard |
+|---|---|---|
+| 1 archive + text indices | `gamedef/OrasProfile` (`ITEM_DATA`, `ITEM_DESCRIPTIONS`) | `SourceSeamTest` |
+| 2 the 36-byte record | `formats/pokedata/ItemData` | `ItemDataTest` - all 776 round-trip |
+| 3 derived effect labels | `formats/pokedata/ItemEffectLabels` | `ItemDataTest` |
+| 4 schema registry + generic form | `formats/recordschema/*`, `humaninterface/RecordEditPanel` | `RecordSchemaTest` |
+| 4 the writer | `formats/pokedata/ItemTable` | `ItemEditTest` |
+| 5 icon table (tier 2) | `formats/codepatch/ItemIconTable` | `ItemIconPatchTest` |
+| 6 new items | the editor's "New item", four slots | `ItemEditTest` |
+
+Two corrections the build made to what is written below:
+
+- The blank records are **0, 113, 114, 115 and 126 - five**, not four. Id 0 is the "no item"
+  sentinel every empty held-item slot in the game points at, so **four** slots are usable. The
+  editor computes this from the archive rather than trusting the number.
+- The icon archive holds **631** entries, so valid indices run 0..630. The highest any retail
+  item uses is 629; 630 exists and nothing points at it. The editor offers it.
+
+Not attempted, deliberately: raising 776, and anything that authors a new behaviour.
 
 ## The one thing that decides the design
 
