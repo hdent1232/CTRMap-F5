@@ -39,17 +39,17 @@ named bones.
 
 | range | contents |
 |---|---|
-| 0–6 | seven raw index tables (see below) |
+| 0–6 | the heroine's index set, seven raw tables (decoded below) |
 | 7–70 | **64 BCH part models, heroine (`b1_`)**; 70 = assembled default `bt0001_00` |
 | 71–76 | `Bchara_hight00/01`, `Bchara_hlight00..03` toon/highlight lookup textures |
 | 77–449 | heroine part textures (design/colour variants) |
-| 450–455 | small binary blobs |
+| 450–455 | the hero's index set — SIX tables; his master table is only in 725 |
 | 456–494 | **39 BCH part models, hero (`b2_`)**; 494 = assembled default `bt0002_00` |
 | 495–498 | highlight textures |
 | 499–720 | hero part textures |
 | 721–723 | `paintl`, `paintr`, `star` textures |
-| 724 | `DB` container that re-packs the same seven tables as subfiles 0–6 |
-| 725 | `DA` container |
+| 724 | `DB` container: the heroine's whole index set, 8 sections |
+| 725 | `DA` container: the hero's whole index set, master table included |
 | 726–739 | hairstyle and skirt physics animations |
 | 731, 734, 737, 740 | empty (0 bytes) |
 
@@ -86,8 +86,10 @@ Slot naming is `b1_<slot>_<style>`; every one anchors to `tr0001_00_ba`
 70 bt0001_00  (assembled default: 11 meshes, 12,198 verts, 76 bones)
 ```
 
-`_mae` = the front-hair half of a hairstyle (mae = 前, "front"), so the seven
-hairstyles ship as back+front pairs.
+`_mae` = the front-hair half of a hairstyle (mae = 前, "front"), so the
+hairstyles ship as back+front pairs. **Six** pairs, not seven: the index offers
+`bob, long, midi, pony, short, twin`, and `b1_hair_shortmae` (36) is a stray
+duplicate of `b1_hair_short_mae` (35) that nothing points at.
 
 ### The hero part models (subfiles 456–494)
 
@@ -108,9 +110,9 @@ Anchored to `tr0002_00_ba`.
 494 bt0002_00  (assembled default: 10 meshes, 13,161 verts, 70 bones)
 ```
 
-### The slot list, read off the assembled model
+### The composite render targets, read off the assembled model
 
-`bt0001_00`'s eleven meshes ARE the eleven dress-up slots:
+`bt0001_00` has eleven `nb1_*` names:
 
 ```
 nb1_tops   nb1_bottoms   nb1_shoes   nb1_socks_none   nb1_hat01
@@ -121,6 +123,21 @@ nb1_bangle   nb1_accehat02
 `bt0002_00` has the hero's ten equivalents (`nb2_topsjer`, `nb2_btmsskin`,
 `nb2_shoessboots`, `nb2_hathun`, `nb2_hair01_on`, `nb2_face_on_0/1`,
 `nb2_bagbag`, `nb2_bangle01`, `nb2_pointglasses`).
+
+**Two corrections to what an earlier pass wrote here**, both measured:
+
+1. These are the assembled model's **material** names, not its mesh names.
+   `bt0001_00`'s eleven *meshes* are `bag, body, bottom, face01, face01, hair,
+   kutu, kutusita, pc_g_hat, ring, sunglass`. The same eleven `nb1_*` names are
+   also real textures, at subfiles **435–445** (`nb2_*` at **711–720**), and
+   the index points every part model at them — they are the surfaces the
+   dress-up system composites into.
+2. They are **not the slot list**. The slot list is in the index tables, and
+   there are **14** slots for the heroine and **13** for the hero, not 11 and
+   10 — see "The seven index tables, decoded" below. Eleven is the number of
+   composite targets, which is smaller because the two hair slots share one
+   target, the two shop display-stand slots have no target at all, and the
+   one-piece slot writes into the tops and bottoms targets.
 
 ### 544 part textures — the colour/pattern half of the wardrobe
 
@@ -147,15 +164,213 @@ b2_paint_tape  b2_paint_tearful   b2_paint_whisker
 
 ### The archive carries its own index tables
 
-Subfiles 0–6 are raw, uncompressed tables, not models. Table 0 (1,380 bytes) is
-6-byte records `u16 id, u16 ?, u16 group`, ids 0x00–0x1D across four groups
-(11 + 6 + 6 + 7). Table 1 (1,064 bytes) opens with a 0x70-byte array of `u16`
-offsets and then per-group id lists. Subfile 724 is a `DB` container whose eight
-section offsets carve out lengths 1380 / 1064 / 1432 / 100 / 112 / 376 / 500 —
-byte-for-byte the lengths of subfiles 0–6, with section 0's bytes matching
-subfile 0. So the archive is **self-describing**: whatever indexes parts by id
-has its table shipped alongside the parts. Decoding those tables fully is
-follow-up work, not a blocker.
+Subfiles 0–6 are raw, uncompressed tables, not models. Subfile 724 is a `DB`
+container whose eight section offsets carve out lengths 1380 / 1064 / 1432 /
+100 / 112 / 376 / 500 — byte-for-byte the lengths of subfiles 0–6, with section
+0's bytes matching subfile 0. So the archive is **self-describing**: whatever
+indexes parts by id has its table shipped alongside the parts.
+
+They are now decoded. See the next section.
+
+## The seven index tables, decoded
+
+**All seven are decoded.** They are not seven tables — they are **one index set
+of seven tables, and there are two of them**, one per player character. Both
+ship twice over: the heroine's as loose subfiles 0–6, the hero's as loose
+subfiles 450–455, and each set again *whole* inside a container (`DB` at 724
+for the heroine, `DA` at 725 for the hero).
+
+The counting that made this look like seven tables rather than 2 × 7 is worth
+stating, because it is the trap: the hero's **master table exists only inside
+the `DA` container** and has no loose subfile of its own. Subfiles 450–455 are
+six tables, not seven. Reading the containers is therefore the only way to get
+a complete set, and `DressUpIndex` reads the containers.
+
+Read with `ctrmap.formats.dressup.DressUpArchive` / `DressUpIndex`; guarded by
+`ctrmap.tests.DressUpIndexTest`.
+
+### The shape they share
+
+Sections 2–7 are **self-describing offset arrays**: the first `u16` is the byte
+offset of the first record and therefore also the size of the offset array
+itself, so `count = first / 2 - 1` and no separate count field exists. Sections
+4 and 5 put a `u16 n, u16 item[n]` prefix in front of that array, naming which
+items they carry textures for. That one rule parses six of the seven; the
+master table is a flat array of 6-byte rows.
+
+### Table by table
+
+| # | subfile (heroine / hero) | bytes | records | what it is | status |
+|---|---|---|---|---|---|
+| 1 | 0 / *DA section 1 only* | 1380 / 744 | 230 / 124 | **master** — the wearable list in menu order | DECODED |
+| 2 | 1 / 450 | 1064 / 608 | 55 / 36 | **items** — a style, its designs, the models that draw it | DECODED |
+| 3 | 2 / 451 | 1432 / 764 | 217 / 114 | **designs** — one colour/pattern variant, its textures | DECODED |
+| 4 | 3 / 452 | 100 / 100 | 8 / 8 | **face texture sets** | DECODED |
+| 5 | 4 / 453 | 112 / 76 | 12 / 8 | **hair texture sets** | DECODED |
+| 6 | 5 / 454 | 376 / 212 | 64 / 39 | **parts** — one record per part model | DECODED |
+| 7 | 6 / 455 | 500 / 356 | 64 / 39 + trailer | **part textures**, then the **make-up** table | DECODED; the make-up record's leading fields PARTIAL |
+
+**Master** — `u16 category, u16 item, u16 design`, 6 bytes flat. The category is
+the dress-up slot. 230 rows for the heroine, 124 for the hero.
+
+**Items** — `u8 nDesigns, u8 nParts, u16 kind, u16 design[nDesigns],
+{u16 partModel, u16 flag}[nParts]`. The record's own two count bytes must
+reproduce its length exactly, which is what makes a mis-parse loud instead of
+plausible. A design id `>= 0xFF00` is a marker meaning "this item's textures
+live in the face or hair table" — `0xFFFE` for hair, `0xFFFD` for face,
+`0xFFFC` for one shoe entry.
+
+**Designs** — `u16 flag, u16 textureId[]`. Usually one or two ids: the base
+texture and its `_m` mask.
+
+**Face / hair texture sets** — `u16 flag, u16 textureId[]`, with the prefix
+naming the items they belong to. The heroine's face table's prefix is
+`{4, 12, 13, 14, 15}` — four items, and 12..15 are exactly the master table's
+four face items. Its eight records are the four faces × `on`/`off`:
+`b1_face01_on_0, _on_0m, _on_1, _on_1m` and the `off` equivalents. The hair
+table's twelve are six hairstyles × `on`/`off`, each `b1_hairbob_on` +
+`b1_hairbob_on_h`.
+
+**Parts** — one record per part model **in archive order**, so record *i* is the
+*i*th part model. `u16 item[]` then a terminator word `0xFF00 | flag`. An empty
+record means the archive ships that model but the index never offers it.
+
+**Part textures** — one `u16 textureId[]` per part model, again in archive
+order: the toon/highlight lookup that part's own material binds. Then a
+trailer holding the make-up table.
+
+### The two bases, and why they are not guessed
+
+A texture id is an index into the set's own texture block, and
+
+```
+textureId 0  ==  the first subfile after that set's part models
+```
+
+so heroine texture id 0 is subfile **71** and hero texture id 0 is subfile
+**495** — in both cases `modelBase + partCount` (7 + 64, 456 + 39). `DressUpArchive`
+measures both by finding the runs of consecutive model-bearing subfiles and
+matching a run's length against the set's own part count, and reports `-1` when
+it cannot. Off-by-one here is not academic: base 70 also "resolves" every id to
+a real texture, and only the names show it is wrong — which is why the guard
+checks names, not resolvability.
+
+### The slots
+
+The master table's category *is* the slot. There is **no name for it anywhere
+in the data**; the labels below are read off the part models the slot contains,
+and the guard suite asserts that reading is consistent — every part whose name
+carries a slot word lands in that word's slot and nowhere else.
+
+| heroine | rows | slot | hero | rows |
+|---|---|---|---|---|
+| 0 | 31 | hats | 0 | 23 |
+| 1 | 2 | hair pairing (worn with a hat / without) | 1 | 1 |
+| 2 | 6 | hairstyle | 2 | 4 |
+| 3 | 4 | face | 3 | 4 |
+| 4 | 35 | tops | 4 | 35 |
+| 5 | 45 | bottoms | 5 | 17 |
+| 6 | 10 | **one-piece / body** (heroine only) | — | — |
+| 7 | 27 | socks / legs | 6 | 5 |
+| 8 | 27 | shoes | 7 | 13 |
+| 9 | 16 | bag | 8 | 7 |
+| 10 | 1 | bangle | 9 | 1 |
+| 11 | 24 | hat accessory (`b1_point_*`) | 10 | 12 |
+| 12 | 1 | shop display stand — head | 11 | 1 |
+| 13 | 1 | shop display stand — bag | 12 | 1 |
+
+14 slots for the heroine, 13 for the hero: the hero has no one-piece slot, and
+after it every hero slot number is one lower. **Slot numbers are per-character
+ordinals, not a shared enum** — an editor must not carry a number from one set
+to the other.
+
+Slots 12 and 13 (11 and 12) have no part model at all; their single design is
+`b1_standhead_d01` / `b1_standbag_d01`, the boutique's display stand.
+
+Two parts sit in more than one slot, both legitimately: a hairstyle is listed
+under both its style slot and the hat-pairing slot, and `b1_shoes_shoes_socks`
+— shoes with the socks baked into the same mesh — is in both shoes and socks.
+
+### The part flag: footwear compatibility
+
+The low byte of a part record's terminator, same values in both sets:
+
+| flag | meaning | seen on |
+|---|---|---|
+| 0x01 | cut for boots | `*_btms_lpants_lboots`, `*_btms_skinny_lboots` |
+| 0x02 | cut for shoes | `*_btms_lpants_shoes`, `*_btms_skinny_shoes` |
+| 0x04 | socks worn under boots | `b1_socks_lboots`, `b2_leg_sboots` |
+| 0x05 | socks worn under shoes | `b1_socks_shoes`, `b2_leg_shoes` |
+| 0x06 | the footwear is boots | `b1_shoes_lboots`, `b2_shoes_sboots` |
+| 0x07 | the footwear is shoes | `b1_shoes_shoes`, `b2_shoes_shoes` |
+| 0xFF | none | everything else (45 heroine, 23 hero) |
+
+**This is the thing name-guessing gets wrong.** A model name is
+`<prefix>_<slot>_<style>[_<compat>]`, and the trailing word is this flag, not a
+slot: `b1_btms_lpants_shoes` is leggings *cut for shoes*, and it is in the
+bottoms slot, not the shoes slot. The index says so; a name prefix read
+carelessly does not.
+
+### The relation is stored twice, and it agrees
+
+The parts table says which items a model renders; the items table says which
+models an item uses. Every pair appears in both directions — **68 pairs for the
+heroine, 35 for the hero, zero one-way** — which is the strongest evidence the
+decoding is right, because a wrong field offset breaks the agreement rather
+than merely looking odd. `DressUpIndexTest` asserts it.
+
+### Make-up and face paint
+
+The trailer after section 7's records is the make-up table: 28-byte records
+each carrying one texture id in one of three `u16` slots. It resolves to the
+**7 heroine make-up textures** (`b1_make_face01_cheek_1`, `contact_0`,
+`eyeshadow_0`, `freckles_1`, `lip_1`, `mas_01_0`, `mas_02_0`) and the **4 hero
+ones** (`baron_1`, `contact_0`, `freckles_1`, `mustache_1`). The hero's trailer
+then has a tail block — `u32 length`, then `{u8, u8, u16 textureId}` — holding
+the **7 face paints** (`b2_paint_ball, eyeblack, hoppe, naughty, tape, tearful,
+whisker`). The heroine has no such block; her `paintl`/`paintr` are reached
+through her `b1_face00` part-texture record instead.
+
+What is **not** decoded in that trailer: its own header, and the two leading
+`u16` fields of each 28-byte record (a constant 13 / 12, then an index 0..n
+that is not in ascending order). Only the texture id is read, and the reader
+locates the record run by pattern rather than by a guessed header length.
+
+### What the index says is unused
+
+Nine heroine part models and eight hero ones have an empty parts record — the
+archive ships them, the index never offers them:
+
+```
+b1_base  b1_btms_pajama  b1_face00  b1_hair_shortmae  b1_shoes00
+b1_standbag01  b1_standhead01  b1_tops_pajama  bt0001_00
+b2_base  b2_btms_pajama  b2_face00  b2_shoes_pajama
+b2_standbag01  b2_standhead01  b2_tops_pajama  bt0002_00
+```
+
+So of the 101 swappable part models, **86 are actually wearable** (55 heroine,
+31 hero). The pyjama set and the display-stand props are modelled but not in
+the wardrobe, `b1_hair_shortmae` is a duplicate of `b1_hair_short_mae` that
+nothing points at, and the two `bt*_00` entries are the assembled defaults.
+
+### A GARC reading defect found on the way
+
+`GARC.sniffLZ11` refuses to treat an entry as compressed when its declared size
+exceeds 64× its stored size. **697 entries across the dump fail that test while
+being genuinely LZ11-compressed** — measured, by decompressing them and getting
+exactly the declared length back. In this archive that is 46 subfiles, the `_m`
+mask textures, which come back to a caller as raw bytes. `DressUpIndexTest`
+decompresses them itself and says how many it had to. Fixing the sniff touches
+the packing path as well as the reading path, so it is filed separately rather
+than done here.
+
+### Not wired into `GameProfile.archivePath` yet
+
+`DressUpArchive` takes a `GARC`, and nothing in `ctrmap.gamedef` names this
+archive. Adding an `ArchiveType` constant means editing `Workspace.java`, which
+`mutation_baseline.json` has measured; touching it requires re-running
+`tools/mutate2.py`, a mainline sweep. The path belongs in `OrasProfile` when
+that sweep next runs.
 
 ## The decisive measurement: the parts share the model's skeleton
 
@@ -318,12 +533,15 @@ field skeleton.
   present, complete, indexed and rigged. Proving the shipped executable actually
   opens `a/0/8/8` needs either the `DressUpResourceManager` call sites traced in
   `code.bin` or an emulator file-access log. Neither was done here.
-- **The index tables in subfiles 0–6 / 724 are not decoded** past their record
-  shape and grouping.
+- ~~The index tables are not decoded.~~ **Settled** — see "The seven index
+  tables, decoded". What remains open inside them is small and named there:
+  the make-up trailer's own header, the two leading fields of each 28-byte
+  make-up record, and the meaning of the `kind` word on an item record.
 - **Whether this is XY's complete catalogue** cannot be established from an ORAS
   dump alone — there is no XY dump here to diff against. What is established is
-  that ORAS ships 101 swappable part models and 544 part textures, across the 11
-  mesh slots of `bt0001_00` and the 10 of `bt0002_00`.
+  that ORAS ships 101 swappable part models (86 of them actually offered by the
+  index) and 544 part textures, across 14 dress-up slots for the heroine and 13
+  for the hero.
 - **Whether the field dress-up path in `code.bin` is reachable** — the
   `DressUpField*` classes are linked, but no call site was traced.
 
@@ -342,5 +560,17 @@ $jdk = (Get-ChildItem "C:\Program Files\Eclipse Adoptium" -Directory |
 & "$jdk\bin\java.exe" -cp "<classes>;<libs>;<probe>" `
     Skel1 "<romfs>\a\0\8\8" 70 25 27 31 36 59 63 66 69
 ```
+
+The index decoding has its own reader and suite in the tree, so it needs no
+probe:
+
+```powershell
+& "$jdk\bin\java.exe" -Djava.awt.headless=true `
+    -cp "build\classes;lib\jogl-all.jar;lib\gluegen-rt.jar" `
+    ctrmap.tests.DressUpIndexTest "<romfs-root>"
+```
+
+It prints every slot and the part models in it, for both characters, and fails
+if any of that stops agreeing with the models' own names.
 
 Game data was read only; nothing under `RomFS/` was written.
