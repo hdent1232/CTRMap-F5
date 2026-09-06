@@ -378,12 +378,18 @@ nothing points at, and the two `bt*_00` entries are the assembled defaults.
 
 `GARC.sniffLZ11` refuses to treat an entry as compressed when its declared size
 exceeds 64× its stored size. **697 entries across the dump fail that test while
-being genuinely LZ11-compressed** — measured, by decompressing them and getting
-exactly the declared length back. In this archive that is 46 subfiles, the `_m`
-mask textures, which come back to a caller as raw bytes. `DressUpIndexTest`
-decompresses them itself and says how many it had to. Fixing the sniff touches
-the packing path as well as the reading path, so it is filed separately rather
-than done here.
+being genuinely LZ11-compressed** — measured, by decompressing every one of
+them: 691 come back at exactly the declared length and the other 6 within 11
+bytes of it (a partial trailing block), so all 697 really are compressed. A run
+of identical bytes beats 64:1 easily, which is why the cap is wrong in
+principle as well as in fact — `a/1/6/0` has 62-byte entries that expand to
+262,184.
+
+In this archive that is 46 subfiles, the `_m` mask textures, which reach a
+caller as raw bytes. `DressUpIndexTest` decompresses them itself and reports
+how many it had to; `DressUpArchive` does not depend on it. Fixing the sniff
+touches the packing path as well as the reading path, so it is filed separately
+rather than done here.
 
 ### Not wired into `GameProfile.archivePath` yet
 
