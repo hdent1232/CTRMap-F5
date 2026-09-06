@@ -153,19 +153,30 @@ without being aimed at: `ldrh [blockA+0]` = 0x08 species, `ldrb [blockA+0x15]
 >> 3` = 0x1D AltForm, `[blockB+0x34]` = 0x74 as a u32 of six consecutive 5-bit
 fields plus two flag bits.
 
+The handlers that return a party member's level and battle stats reach them
+through a second pointer, `[coreParam+4]`, which is null for a boxed Pokemon
+and makes those handlers fall back to computing the value. That structure lines
+up the same way against PK6's party block at 0xE8: `+0` is the u32 at 0xE8,
+`+4` the level byte at 0xEC, `+8` and `+0xA` the two HP halfwords at 0xF0 and
+0xF2, then `+0xC`, `+0xE`, `+0x10`, `+0x12`, `+0x14` for the remaining stats at
+0xF4..0xFC. Five consecutive fields of the right widths in the right order is
+not a coincidence, and it is what pins selectors 2, 3, 14 and 30-35.
+
 ### CONFIRMED - handler traced to a load or store at a named PK6 offset
 
 | Get | meaning | evidence |
 |----:|---------|----------|
 | 0  | Species | `ldrh [blockA+0]` = PK6 0x08 (returns a constant instead when the mon is an egg) |
 | 1  | Form | `ldrb [blockA+0x15] >> 3` = PK6 0x1D bits 3-7 |
-| 3  | Max HP | same handler as selector 30, i.e. `GetPower(HP)` |
+| 2  | Current HP | `ldrh [partyExt+8]` = PK6 0xF0 |
+| 3  | Max HP | `ldrh [partyExt+0xA]` = PK6 0xF2; the same handler as selector 30, i.e. `GetPower(HP)` |
 | 4  | Move PP, slot in arg3 | `ldrb [blockB+0x22+arg3]` = PK6 0x62+arg3, arg3 forced < 4 |
 | 8  | Is egg | `(IV32 bit 30) OR runtime egg flag`; PK6 0x74 bit 30 is PKHeX `IsEgg` |
 | 10 | Friendship | `ldrb [blockC+0x1A]` = PK6 0x92, or the handler's byte when `CurrentHandler != 0` |
 | 11 | EV total | the six EV getters called with 0..5 and summed |
 | 12 | Held item | `ldrh [blockA+2]` = PK6 0x0A |
 | 13 | Ribbon, id in arg3 | tests bit arg3 of `[blockA+0x28]` = PK6 0x30 (0x34 for bits 32..63) |
+| 14 | Level | `ldrb [partyExt+4]` = PK6 0xEC |
 | 15 | Met level | `ldrb [blockC+0x2D] & 0x7F` = PK6 0xA5 bits 0-6 |
 | 16 | **IV HP** | `IV32 & 0x1F` |
 | 17 | **IV Attack** | `IV32 lsl 22, lsr 27` (bits 5-9) |
@@ -181,7 +192,7 @@ fields plus two flag bits.
 | 27 | **EV Sp. Defense** | PK6 0x23 |
 | 28 | **EV Speed** | PK6 0x21 |
 | 29 | Gender | egg-guarded, then `ldrb [blockA+0x15] lsl 29, lsr 30` = PK6 0x1D bits 1-2 |
-| 30-35 | Battle stats HP/Atk/Def/SpA/SpD/Spe | `GetPower(0..5)`; every case but HP calls the nature getter |
+| 30-35 | Battle stats HP/Atk/Def/SpA/SpD/Spe | `GetPower(0..5)` -> `partyExt` +0xA, +0xC, +0xE, +0x12, +0x14, +0x10 = PK6 0xF2, 0xF4, 0xF6, 0xFA, 0xFC, 0xF8; every case but HP calls the nature getter |
 | 36-41 | Contest Cool/Beauty/Cute/Smart/Tough/Sheen | `ldrb [blockA+0x1C..0x21]` = PK6 0x24..0x29 |
 | 49 | Shininess | `TID ^ SID ^ PIDlow ^ PIDhigh`, from PK6 0x0C and 0x18 |
 | 50 | Is nicknamed | `IV32 >> 31` = PK6 0x74 bit 31 |
@@ -205,6 +216,7 @@ encodings agree on the same permutation:
     IV  index 3 -> IV32 bits 20-24 (Sp. Atk)   index 5 -> bits 15-19 (Speed)
     EV  index 3 -> PK6 0x22 (Sp. Atk)          index 5 -> PK6 0x21 (Speed)
     IV setter index 3 -> mask 0x1F00000        index 5 -> mask 0xF8000
+    stat cache  index 3 -> PK6 0xFA (Sp. Atk)  index 5 -> PK6 0xF8 (Speed)
 
 Getting this backwards would silently swap a Pokemon's Speed and Sp. Attack.
 It is the single easiest thing to get wrong here.
@@ -213,12 +225,11 @@ It is the single easiest thing to get wrong here.
 
 | Get | meaning | why only probable |
 |----:|---------|-------------------|
-| 2  | Current HP | reads the u16 at party-extension +8, the halfword below the one selector 3 (max HP) reads; the pair and the order match PK6 0xF0/0xF2, but neither offset was named directly |
 | 5  | Max PP of move arg3 | combines `GetWaza(arg3)` with `GetPPUp(arg3)`; the arithmetic was not followed to the PP table |
 | 6, 7 | Type 1, Type 2 | species+form lookup with an explicit species 493 / ability 121 (Arceus, Multitype) special case, which is what type resolution does and little else would |
 | 9  | Is egg, strict | `(IV32 bit 30) AND NOT runtime flag`, the third mode of the same three-way |
-| 14 | Level | the function the stat handlers call for level; falls back to species+form+EXP when there is no party data |
 | 44 | Fateful encounter | offset confirmed (PK6 0x1D bit 0); the PKHeX name for that bit is the only inference |
+| 45 | Has a status condition | `(u32 at partyExt+0) & 0xFF` tested nonzero; the offset is PK6 0xE8, and `Status_Condition` is PKHeX's name for it |
 | 46, 47 | Super Training unlocked / complete | offsets confirmed (PK6 0x72 bits 0 and 1); names from PKHeX |
 | 48 | Affection | `ldrb [blockC+0x1B]` = PK6 0x93, gated on whether the player is the OT |
 | 51 | Has default name | reads the 13-character nickname and compares it with the species' default name |
@@ -229,10 +240,8 @@ It is the single easiest thing to get wrong here.
 * **42, 43, 52** discard the Pokemon entirely. Each loads a global manager
   pointer and calls into it with a constant (37, 38, 21). Whatever they return,
   it is not a party parameter.
-* **45** is a nonzero test on a byte of the party extension. Retail uses it
-  twice. Not enough to name.
 
-`PartyParam.get()` returns null for all four. Null means "not established" and
+`PartyParam.get()` returns null for all three. Null means "not established" and
 callers must treat it as absence, not as an invitation to guess.
 
 ## Nature and ability cannot be changed from a script

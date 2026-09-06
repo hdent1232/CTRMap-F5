@@ -31,7 +31,11 @@ import java.util.Map;
  * decrypted 232-byte Pokemon record. Those offsets are the evidence: the
  * record is PKHeX's documented Gen 6 PK6 layout - four shuffled 56-byte blocks
  * at 0x08/0x40/0x78/0xB0, block order {@code (PID &gt;&gt; 13) &amp; 0x1F}
- * mod 24 - and the accessor offsets land exactly on its documented fields.
+ * mod 24 - and the accessor offsets land exactly on its documented fields. The
+ * handlers that read a party member's cached level and battle stats reach them
+ * through a second pointer, and that structure's fields line up the same way
+ * against PK6's party block at 0xE8 (level at 0xEC, current and maximum HP at
+ * 0xF0 and 0xF2, then the five other stats).
  *
  * <p>{@link Certainty#CONFIRMED} means the handler was followed to a load or
  * store at a named PK6 offset (or to an arithmetic identity as unambiguous as
@@ -82,9 +86,10 @@ public final class PartyParam {
 		public final String name;
 		public final Certainty certainty;
 		/**
-		 * Byte offset of the field in the decrypted 232-byte PK6 record, or -1
-		 * when the value is not one stored field (a computed stat, a sum, a
-		 * value cached in the party extension).
+		 * Byte offset of the field in the decrypted PK6 record - 0x00..0xE7 for
+		 * the stored 232-byte core, 0xE8..0x103 for the party block that only a
+		 * party member carries - or -1 when the value is not one stored field
+		 * (a sum, a comparison, a value the handler computes).
 		 */
 		public final int pk6Offset;
 		/** Where in the retail code this was read, and what it does there. */
@@ -124,10 +129,10 @@ public final class PartyParam {
 				"case 0 -> ldrh [blockA+0] = PK6 0x08; guarded by the egg test, returns a constant for an egg");
 		g(1, "FORM", Certainty.CONFIRMED, 0x1D, false,
 				"case 1 -> ldrb [blockA+0x15] >> 3 = PK6 0x1D bits 3-7 (AltForm)");
-		g(2, "HP_CURRENT", Certainty.PROBABLE, -1, false,
-				"case 2 -> u16 at party-extension +8, the halfword below the one selector 3 reads");
-		g(3, "HP_MAX", Certainty.CONFIRMED, -1, false,
-				"case 3 -> the same handler as selector 30, which is GetPower(HP): u16 at party-extension +0xA, else computed");
+		g(2, "HP_CURRENT", Certainty.CONFIRMED, 0xF0, false,
+				"case 2 -> ldrh [partyExt+8] = PK6 0xF0, else computed when there is no party block");
+		g(3, "HP_MAX", Certainty.CONFIRMED, 0xF2, false,
+				"case 3 -> the same handler as selector 30, GetPower(HP): ldrh [partyExt+0xA] = PK6 0xF2, else computed");
 		g(4, "MOVE_PP", Certainty.CONFIRMED, 0x62, true,
 				"case 4 -> ldrb [blockB+0x22+arg3] = PK6 0x62+arg3, arg3 clamped to < 4");
 		g(5, "MOVE_PP_MAX", Certainty.PROBABLE, -1, true,
@@ -148,8 +153,9 @@ public final class PartyParam {
 				"case 12 -> ldrh [blockA+2] = PK6 0x0A");
 		g(13, "RIBBON", Certainty.CONFIRMED, 0x30, true,
 				"case 13 -> tests bit arg3 of the u32 at [blockA+0x28] = PK6 0x30 (with 0x34 for bits 32..63)");
-		g(14, "LEVEL", Certainty.PROBABLE, -1, false,
-				"case 14 -> the same function the computed-stat handlers call for level; falls back to species+form+EXP");
+		g(14, "LEVEL", Certainty.CONFIRMED, 0xEC, false,
+				"case 14 -> ldrb [partyExt+4] = PK6 0xEC; falls back to species+form+EXP when there is no party block."
+				+ " Also the function the computed-stat handlers call for level");
 		g(15, "MET_LEVEL", Certainty.CONFIRMED, 0xA5, false,
 				"case 15 -> sub-case 9 of the met-data family: ldrb [blockC+0x2D] & 0x7F = PK6 0xA5 bits 0-6");
 		// IVs: the six-way family at code.bin +0x3D28B8, indexed 0..5, each case
@@ -174,12 +180,13 @@ public final class PartyParam {
 		// Computed battle stats: the six-way family at code.bin +0x3D2EC0. Every
 		// case but HP calls the nature getter, which is what a stat calculation
 		// does and what pins this family to the calculated stats.
-		g(30, "STAT_HP", Certainty.CONFIRMED, -1, false, "GetPower(0); the one case that does NOT apply nature");
-		g(31, "STAT_ATK", Certainty.CONFIRMED, -1, false, "GetPower(1)");
-		g(32, "STAT_DEF", Certainty.CONFIRMED, -1, false, "GetPower(2)");
-		g(33, "STAT_SPATK", Certainty.CONFIRMED, -1, false, "GetPower(3)");
-		g(34, "STAT_SPDEF", Certainty.CONFIRMED, -1, false, "GetPower(4)");
-		g(35, "STAT_SPEED", Certainty.CONFIRMED, -1, false, "GetPower(5)");
+		g(30, "STAT_HP", Certainty.CONFIRMED, 0xF2, false,
+				"GetPower(0) -> ldrh [partyExt+0xA] = PK6 0xF2; the one case that does NOT apply nature");
+		g(31, "STAT_ATK", Certainty.CONFIRMED, 0xF4, false, "GetPower(1) -> ldrh [partyExt+0xC]");
+		g(32, "STAT_DEF", Certainty.CONFIRMED, 0xF6, false, "GetPower(2) -> ldrh [partyExt+0xE]");
+		g(33, "STAT_SPATK", Certainty.CONFIRMED, 0xFA, false, "GetPower(3) -> ldrh [partyExt+0x12]");
+		g(34, "STAT_SPDEF", Certainty.CONFIRMED, 0xFC, false, "GetPower(4) -> ldrh [partyExt+0x14]");
+		g(35, "STAT_SPEED", Certainty.CONFIRMED, 0xF8, false, "GetPower(5) -> ldrh [partyExt+0x10]");
 		// Contest conditions: the six-way family at code.bin +0x3D267C, six
 		// consecutive bytes, in storage order.
 		g(36, "CONTEST_COOL", Certainty.CONFIRMED, 0x24, false, "ldrb [blockA+0x1C]");
@@ -192,7 +199,8 @@ public final class PartyParam {
 		// global manager with a constant (37, 38, 21). Not party parameters; not named.
 		g(44, "FATEFUL_ENCOUNTER", Certainty.PROBABLE, 0x1D, false,
 				"case 44 -> ldrb [blockA+0x15] & 1 = PK6 0x1D bit 0");
-		// 45: traced to a nonzero test on a party-extension byte; not named.
+		g(45, "HAS_STATUS_CONDITION", Certainty.PROBABLE, 0xE8, false,
+				"case 45 -> (u32 at partyExt+0 = PK6 0xE8) & 0xFF, tested nonzero; offset confirmed, the name is PKHeX's");
 		g(46, "SUPER_TRAINING_UNLOCKED", Certainty.PROBABLE, 0x72, false,
 				"case 46 -> ldrb [blockB+0x32] & 1 = PK6 0x72 bit 0");
 		g(47, "SUPER_TRAINING_COMPLETE", Certainty.PROBABLE, 0x72, false,
