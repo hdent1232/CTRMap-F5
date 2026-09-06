@@ -51,6 +51,37 @@ public class ModDeployer {
 		Workspace.ArchiveType.MAISON_SET_POOL_C
 	};
 
+	/**
+	 * Archives the editor writes IN PLACE - a seek and a fixed-size record -
+	 * rather than by extracting and repacking.
+	 *
+	 * <p>WHY THIS IS A SEPARATE LIST AND NOT MORE OF {@link #MODDABLE}. That
+	 * list is also the pristine snapshot's contract, and the snapshot refuses to
+	 * complete itself from a game that has been in use ({@link
+	 * Workspace#snapshotOriginals}) - deliberately, after six archives in the
+	 * author's own workspace were captured from an already-edited game and
+	 * recorded as retail. So an archive added to MODDABLE today can never be
+	 * captured into a workspace stamped yesterday: every existing workspace
+	 * would report a permanently partial backup, on every pack, and be advised
+	 * to delete it - which for an already-edited game is the worst advice this
+	 * program could give.
+	 *
+	 * <p>These archives carry their own pre-edit copy instead, taken at the last
+	 * moment it is provably retail: the first time the editor writes to them
+	 * ({@link ctrmap.formats.pokedata.ItemTable#baselineArchive}). Deploy diffs
+	 * against that, so it ships them when they were edited and not otherwise.
+	 */
+	public static final Workspace.ArchiveType[] MODDABLE_IN_PLACE = {
+		Workspace.ArchiveType.ITEM_DATA
+	};
+
+	/** Every archive the editor can write, however it writes it - for a backup that must be whole. */
+	public static List<Workspace.ArchiveType> allWritableArchives() {
+		List<Workspace.ArchiveType> out = new ArrayList<>(Arrays.asList(MODDABLE));
+		out.addAll(Arrays.asList(MODDABLE_IN_PLACE));
+		return out;
+	}
+
 	public static class Result {
 		public final List<String> deployed = new ArrayList<>();
 		public int unchanged = 0;
@@ -117,6 +148,23 @@ public class ModDeployer {
 				r.deployed.add(rel);
 			} catch (IOException ex) {
 				r.skipped.add(rel + " (copy failed: " + ex.getMessage() + ")");
+			}
+		}
+		//The in-place archives are diffed against the copy the editor took
+		//before its FIRST write, not against the pristine snapshot, because
+		//they are deliberately not part of the snapshot's contract (see
+		//MODDABLE_IN_PLACE). No copy means the editor has never written the
+		//archive, so there is nothing of the user's in it and nothing to ship.
+		if (ctrmap.formats.pokedata.ItemTable.changedSinceBaseline()) {
+			String rel = Workspace.getArchivePath(Workspace.ArchiveType.ITEM_DATA, Workspace.game);
+			File live = ctrmap.formats.pokedata.ItemTable.archiveFile();
+			if (rel != null && live != null) {
+				try {
+					copyFile(live, new File(romfsOut.getAbsolutePath() + rel));
+					r.deployed.add(rel);
+				} catch (IOException ex) {
+					r.skipped.add(rel + " (copy failed: " + ex.getMessage() + ")");
+				}
 			}
 		}
 		if (codeIps != null && codeIps.exists()) {

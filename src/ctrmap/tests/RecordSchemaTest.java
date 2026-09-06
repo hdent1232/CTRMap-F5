@@ -7,6 +7,8 @@ import ctrmap.formats.recordschema.RecordSchema;
 import ctrmap.formats.recordschema.SchemaRegistry;
 import java.io.File;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -62,6 +64,7 @@ public class RecordSchemaTest {
 			File garcFile = new File(args[0] + itemArchive());
 			if (garcFile.isFile()) {
 				agreesWithItemData(new GARC(garcFile, false));
+				theGeneratedFormCarriesTheRecordFaithfully(new GARC(garcFile, false));
 			} else {
 				System.out.println("  skip: no item archive at " + garcFile
 						+ " - the cross-check against real records did NOT run");
@@ -127,20 +130,17 @@ public class RecordSchemaTest {
 						firstBad = f + " wrote " + v + " and read " + f.get(rec);
 					}
 				}
-				//every byte the field does not claim must be untouched: this is
-				//what makes "an edit changes only what you changed" true one
-				//field at a time
-				for (int i = 0; i < rec.length; i++) {
-					if ((i < f.byteOffset() || i >= f.endByte()) && rec[i] != before[i]) {
-						spilled++;
-					}
-				}
+				//every BIT the field does not claim must be untouched. Bits, not
+				//bytes: four of these fields are nibbles that share a byte with
+				//another field, and a write that clobbered its neighbour's half
+				//would leave the byte comparison perfectly happy.
+				spilled += bitsOutsideField(f, before, rec);
 				checked++;
 			}
 		}
 		check(bad == 0, checked + " set/get round trips over the full range of every field"
 				+ (bad == 0 ? "" : " - " + bad + " wrong, first: " + firstBad));
-		check(spilled == 0, "and none of them wrote outside its own bytes"
+		check(spilled == 0, "and none of them wrote outside its own bits"
 				+ (spilled == 0 ? "" : " (" + spilled + " did)"));
 
 		//the signed fields are the ones a careless reader gets wrong, so prove
@@ -290,6 +290,185 @@ public class RecordSchemaTest {
 		check(compared > 0, compared + " field readings compared across " + n + " retail records");
 		check(disagreed == 0, "the schema and ItemData agree on every one"
 				+ (disagreed == 0 ? "" : " - " + disagreed + " disagreed, first: " + first));
+	}
+
+	/**
+	 * The GENERATED form must carry a record without changing it, and each
+	 * control must write its own field and nobody else's.
+	 *
+	 * <p>This is the assertion a generic editor most needs and least often
+	 * gets. A hand-built form is wrong visibly - the wrong label, the wrong box.
+	 * A generated one is wrong invisibly: a control that writes the neighbouring
+	 * nibble looks entirely correct on screen, and the damage appears later, in
+	 * a record the user never opened. So every retail record is loaded into the
+	 * real panel and read back, and then every editable control is DRIVEN the
+	 * way a person drives it - a spinner set, a box clicked, a dropdown picked -
+	 * and the bytes outside that field must not move.
+	 *
+	 * <p>Runs headless; the panel is built and driven but never shown.
+	 */
+	static void theGeneratedFormCarriesTheRecordFaithfully(GARC g) {
+		System.out.println("--- the generated form carries a record without changing it");
+		final RecordSchema s = SchemaRegistry.items();
+		final List<ItemData> recs = new ArrayList<>();
+		for (int i = 0; i < g.getEntryCount(); i++) {
+			byte[] b = g.getDecompressedEntry(i);
+			recs.add(b != null && b.length == ItemData.SIZE ? new ItemData(b) : null);
+		}
+		final Map<ctrmap.formats.pokedata.ItemEffectLabels.Kind,
+				ctrmap.formats.pokedata.ItemEffectLabels> byKind
+				= new java.util.EnumMap<>(ctrmap.formats.pokedata.ItemEffectLabels.Kind.class);
+		for (ctrmap.formats.pokedata.ItemEffectLabels.Kind k
+				: ctrmap.formats.pokedata.ItemEffectLabels.Kind.values()) {
+			byKind.put(k, ctrmap.formats.pokedata.ItemEffectLabels.build(recs, null, k));
+		}
+		ctrmap.humaninterface.RecordEditPanel panel
+				= new ctrmap.humaninterface.RecordEditPanel(s,
+						new ctrmap.humaninterface.RecordEditPanel.Labels() {
+					@Override
+					public String label(RecordField f, int value) {
+						ctrmap.formats.pokedata.ItemEffectLabels l = byKind.get(f.effectKind());
+						return l == null ? String.valueOf(value) : l.label(value);
+					}
+
+					@Override
+					public List<Integer> choices(RecordField f) {
+						List<Integer> out = new ArrayList<>();
+						for (int i = Math.max(0, f.min()); i <= Math.min(f.max(), 255); i++) {
+							out.add(i);
+						}
+						return out;
+					}
+				});
+
+		int loaded = 0, changed = 0;
+		String firstChanged = "";
+		for (int i = 0; i < g.getEntryCount(); i++) {
+			byte[] b = g.getDecompressedEntry(i);
+			if (b == null || b.length != ItemData.SIZE) {
+				continue;
+			}
+			panel.setRecord(b);
+			byte[] back = panel.record();
+			loaded++;
+			if (!java.util.Arrays.equals(b, back)) {
+				changed++;
+				if (firstChanged.isEmpty()) {
+					firstChanged = " (item " + i + ")";
+				}
+			}
+		}
+		check(loaded > 700, loaded + " retail records loaded into the real form");
+		check(changed == 0, "and every one reads back byte for byte" + firstChanged);
+
+		//now drive each control the way a person would
+		java.util.Map<String, java.awt.Component> byName = new java.util.HashMap<>();
+		collect(panel, byName);
+		int driven = 0, spilled = 0, notFound = 0, noEffect = 0;
+		String firstSpill = "";
+		for (RecordField f : s.fields()) {
+			if (!f.editable()) {
+				continue;
+			}
+			java.awt.Component c = byName.get(f.key());
+			if (c == null) {
+				notFound++;
+				continue;
+			}
+			byte[] start = g.getDecompressedEntry(2);
+			panel.setRecord(start);
+			int was = f.get(start);
+			int want = was == f.max() ? f.min() : was + 1;
+			if (c instanceof javax.swing.JCheckBox) {
+				((javax.swing.JCheckBox) c).doClick();
+				want = was == 0 ? 1 : 0;
+			} else if (c instanceof javax.swing.JComboBox) {
+				((javax.swing.JComboBox<?>) c).setSelectedIndex(want);
+			} else if (c instanceof javax.swing.JSpinner) {
+				((javax.swing.JSpinner) c).setValue(want);
+			} else {
+				notFound++;
+				continue;
+			}
+			byte[] after = panel.record();
+			driven++;
+			if (f.get(after) != want) {
+				noEffect++;
+				if (firstSpill.isEmpty()) {
+					firstSpill = f.name() + " did not take the value " + want;
+				}
+			}
+			int bled = bitsOutsideField(f, start, after);
+			if (bled > 0) {
+				spilled += bled;
+				if (firstSpill.isEmpty()) {
+					firstSpill = f.key() + " also changed " + bled + " bit(s) it does not own";
+				}
+			}
+		}
+		check(notFound == 0, "every editable field has a control (" + notFound + " missing)");
+		check(driven > 30, driven + " controls driven as a person would drive them");
+		check(noEffect == 0, "each one changed its own field"
+				+ (noEffect == 0 ? "" : " - " + noEffect + " did not: " + firstSpill));
+		check(spilled == 0, "and none of them touched a bit belonging to another field"
+				+ (spilled == 0 ? "" : " - " + firstSpill));
+
+		//and undo puts the record back exactly
+		byte[] start = g.getDecompressedEntry(2);
+		panel.setRecord(start);
+		java.awt.Component c = byName.get(fieldNamedIn(s, "Sort index").key());
+		((javax.swing.JSpinner) c).setValue(99);
+		check(!java.util.Arrays.equals(panel.record(), start), "an edit through a control sticks");
+		panel.undo();
+		check(java.util.Arrays.equals(panel.record(), start),
+				"and Undo puts every byte of the record back");
+		panel.redo();
+		check(SchemaRegistry.items().fields().get(0) != null
+				&& fieldNamedIn(s, "Sort index").get(panel.record()) == 99,
+				"and Redo puts the edit back");
+	}
+
+	/**
+	 * How many bits changed that the field does not own.
+	 *
+	 * <p>Counted in BITS because half of these fields are nibbles sharing a
+	 * byte with another field: a write that took the whole byte would clobber
+	 * its neighbour, and a byte-level comparison would call that untouched.
+	 */
+	static int bitsOutsideField(RecordField f, byte[] before, byte[] after) {
+		int bled = 0;
+		for (int i = 0; i < before.length; i++) {
+			int diff = (before[i] ^ after[i]) & 0xFF;
+			for (int b = 0; b < 8; b++) {
+				if ((diff & (1 << b)) == 0) {
+					continue;
+				}
+				int rel = (i - f.byteOffset()) * 8 + b - f.bitOffset();
+				if (rel < 0 || rel >= f.bitCount()) {
+					bled++;
+				}
+			}
+		}
+		return bled;
+	}
+
+	static RecordField fieldNamedIn(RecordSchema s, String name) {
+		RecordField f = field(s, name);
+		if (f == null) {
+			throw new IllegalStateException("no field " + name);
+		}
+		return f;
+	}
+
+	static void collect(java.awt.Container c, java.util.Map<String, java.awt.Component> out) {
+		for (java.awt.Component k : c.getComponents()) {
+			if (k.getName() != null && !out.containsKey(k.getName())) {
+				out.put(k.getName(), k);
+			}
+			if (k instanceof java.awt.Container) {
+				collect((java.awt.Container) k, out);
+			}
+		}
 	}
 
 	static RecordField field(RecordSchema s, String name) {

@@ -1,5 +1,7 @@
 package ctrmap.tests;
 
+import ctrmap.ModDeployer;
+import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.pokedata.ItemData;
 import ctrmap.formats.pokedata.ItemTable;
@@ -10,6 +12,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -81,6 +84,8 @@ public class ItemEditTest {
 		refusesWhatWouldLandWrong(work, baseline);
 		fourSlotsAreFreeAndNotFive(work, args[0]);
 		theBaselineIsTakenOnceAndNeverRetaken(tmp, src);
+		//last: it repoints the Workspace statics at a scratch game
+		deployShipsItOnlyWhenItWasEdited(tmp, src);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -300,6 +305,98 @@ public class ItemEditTest {
 		check(refused, "the next write REFUSES rather than capturing the edited archive as retail"
 				+ " - the mistake that contaminated six archives in this project once already");
 		check(!copy.isFile(), "and nothing was written into the baseline folder");
+	}
+
+	/**
+	 * Deploy must carry the item archive when it was edited, and must not
+	 * disturb the pristine-snapshot contract to do it.
+	 *
+	 * <p>The second half is the part worth pinning. Adding the item archive to
+	 * {@code MODDABLE} would have been the obvious move and is the wrong one:
+	 * that list is also the snapshot's contract, and the snapshot refuses to
+	 * complete itself from a game that has been in use - so every workspace
+	 * already stamped would report a permanently partial backup, on every pack,
+	 * and be told to delete it. This asserts the two lists stay separate, and
+	 * that a backup which must be whole still gets both.
+	 */
+	static void deployShipsItOnlyWhenItWasEdited(File tmp, File pristine) throws Exception {
+		System.out.println("--- deploy ships the item archive when it changed, and only then");
+		List<Workspace.ArchiveType> moddable = Arrays.asList(ModDeployer.MODDABLE);
+		check(!moddable.contains(Workspace.ArchiveType.ITEM_DATA),
+				"the item archive is NOT in MODDABLE - that list is the pristine snapshot's"
+				+ " contract, and an archive added to it after a workspace was stamped can never"
+				+ " be captured, so every existing workspace would report a partial backup forever");
+		check(Arrays.asList(ModDeployer.MODDABLE_IN_PLACE).contains(Workspace.ArchiveType.ITEM_DATA),
+				"it is in MODDABLE_IN_PLACE instead");
+		List<Workspace.ArchiveType> all = ModDeployer.allWritableArchives();
+		check(all.containsAll(moddable) && all.contains(Workspace.ArchiveType.ITEM_DATA),
+				"and a backup that must be whole gets both lists (" + all.size() + " archives)");
+		check(new java.util.HashSet<>(all).size() == all.size(),
+				"with nothing counted twice");
+
+		//now the decision itself, against a scratch game and a scratch workspace
+		File game = new File(tmp, "game");
+		File ws = new File(tmp, "ws");
+		String rel = ctrmap.gamedef.GameProfile.of(Workspace.GameType.ORAS)
+				.archivePath(Workspace.ArchiveType.ITEM_DATA);
+		File live = new File(game.getAbsolutePath() + rel);
+		live.getParentFile().mkdirs();
+		ws.mkdirs();
+		Files.copy(pristine.toPath(), live.toPath(), StandardCopyOption.REPLACE_EXISTING);
+
+		String oldGame = Workspace.GAMEDIR_PATH, oldWs = Workspace.WORKSPACE_PATH;
+		Workspace.GameType oldType = Workspace.game;
+		try {
+			Workspace.game = Workspace.GameType.ORAS;
+			Workspace.GAMEDIR_PATH = game.getAbsolutePath();
+			Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
+
+			check(ItemTable.archiveFile() != null, "the editor finds the archive through the profile");
+			check(ItemTable.openWorkspace() != null,
+					"and opens it for ORAS, where the location was measured");
+			//A path that is only CITED is not a path this editor may write
+			//through. XY's item archive comes from pk3DS's reference tables and
+			//has never been measured against an XY dump here, so the editor
+			//must refuse it - a 36-byte poke into a probably-right offset is the
+			//kind of confident wrong answer this project keeps paying for.
+			//The XY archive is PUT THERE first, so the only possible reason to
+			//refuse is the verification gate. Without this the check passed
+			//while the gate was deleted, because the file simply was not there -
+			//a guard answering a question nobody asked.
+			String xyRel = ctrmap.gamedef.GameProfile.of(Workspace.GameType.XY)
+					.archivePath(Workspace.ArchiveType.ITEM_DATA);
+			File xyLive = new File(game.getAbsolutePath() + xyRel);
+			xyLive.getParentFile().mkdirs();
+			Files.copy(pristine.toPath(), xyLive.toPath(), StandardCopyOption.REPLACE_EXISTING);
+			Workspace.game = Workspace.GameType.XY;
+			boolean xyPresent = ItemTable.archiveFile() != null;
+			boolean xyRefused = ItemTable.openWorkspace() == null;
+			Workspace.game = Workspace.GameType.ORAS;
+			check(xyPresent, "the XY item archive is present in the fixture, so a refusal can only"
+					+ " come from the verification gate");
+			check(xyRefused, "and REFUSES a game whose item table is only cited, never measured"
+					+ " - XY has a path from pk3DS and no verification, so the editor will not"
+					+ " write through it");
+			check(!ItemTable.changedSinceBaseline(),
+					"a workspace that has never edited items ships nothing - no pre-edit copy"
+					+ " means nothing of the user's is in there");
+
+			ItemTable t = ItemTable.openWorkspace();
+			byte[] rec = t.raw(ULTRA_BALL);
+			byte[] original = rec.clone();
+			fieldNamed("Price / 10").set(rec, 7);
+			t.writeRecord(ULTRA_BALL, rec);
+			check(ItemTable.changedSinceBaseline(), "after an edit, deploy ships it");
+
+			t.writeRecord(ULTRA_BALL, original);
+			check(!ItemTable.changedSinceBaseline(),
+					"and putting the bytes back makes it stop shipping - the test is the CONTENT,"
+					+ " not whether the editor was ever opened");
+		} finally {
+			Workspace.GAMEDIR_PATH = oldGame;
+			Workspace.WORKSPACE_PATH = oldWs;
+			Workspace.game = oldType;
+		}
 	}
 
 	static RecordField fieldNamed(String name) {

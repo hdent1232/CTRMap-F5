@@ -87,8 +87,23 @@ public final class ItemTable {
 		return new File(Workspace.WORKSPACE_PATH, BASELINE_DIR);
 	}
 
-	/** Opens the loaded workspace's item table, or null when there is none to open. */
+	/**
+	 * Opens the loaded workspace's item table, or null when there is none this
+	 * editor is allowed to write.
+	 *
+	 * <p>Gated on {@link ctrmap.gamedef.GameProfile.Feature#ITEM_EDITING} and
+	 * not merely on the path existing. XY's item archive is a location CITED
+	 * from pk3DS that nobody has measured against an XY dump here, and the
+	 * profile says so in a comment - a path good enough to look at and not good
+	 * enough to poke 36 bytes into. Null here becomes a sentence in the editor
+	 * rather than a write through a guess.
+	 */
 	public static ItemTable openWorkspace() throws IOException {
+		if (Workspace.game == null
+				|| !Workspace.profile().supports(
+						ctrmap.gamedef.GameProfile.Feature.ITEM_EDITING)) {
+			return null;
+		}
 		File f = archiveFile();
 		return f == null ? null : open(f, baselineDir());
 	}
