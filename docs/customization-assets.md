@@ -214,7 +214,7 @@ master table is a flat array of 6-byte rows.
 | 4 | 3 / 452 | 100 / 100 | 8 / 8 | **face texture sets** | DECODED |
 | 5 | 4 / 453 | 112 / 76 | 12 / 8 | **hair texture sets** | DECODED |
 | 6 | 5 / 454 | 376 / 212 | 64 / 39 | **parts** — one record per part model | DECODED |
-| 7 | 6 / 455 | 500 / 356 | 64 / 39 + trailer | **part textures**, then the **make-up** table | DECODED; the make-up record's leading fields PARTIAL |
+| 7 | 6 / 455 | 500 / 356 | 64 / 39 + trailer | **part textures**, then the **make-up** table | DECODED; the trailer's own header and two per-record fields PARTIAL |
 
 **Master** — `u16 category, u16 item, u16 design`, 6 bytes flat. The category is
 the dress-up slot. 230 rows for the heroine, 124 for the hero.
@@ -248,8 +248,11 @@ table's twelve are six hairstyles × `on`/`off`, each `b1_hairbob_on` +
 record means the archive ships that model but the index never offers it.
 
 **Part textures** — one `u16 textureId[]` per part model, again in archive
-order: the toon/highlight lookup that part's own material binds. Then a
-trailer holding the make-up table.
+order: the toon/highlight lookup that part's own material binds. 136 of the
+138 ids name a texture that model's materials really do bind. Two records are
+longer and are not junk: the `*_face00` record adds the `paintl`/`paintr` face
+paints, and the assembled model's record lists all eleven (ten) `nb*_`
+composite render targets. Then a trailer holding the make-up table.
 
 ### The two bases, and why they are not guessed
 
