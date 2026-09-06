@@ -220,8 +220,14 @@ plausible. A design id `>= 0xFF00` is a marker meaning "this item's textures
 live in the face or hair table" — `0xFFFE` for hair, `0xFFFD` for face,
 `0xFFFC` for one shoe entry.
 
-**Designs** — `u16 flag, u16 textureId[]`. Usually one or two ids: the base
-texture and its `_m` mask.
+**Designs** — `u16 flag, u16 textureId[]`. The flag is **one less than the
+texture count**, in every record of both sets: 0 for a design that is a single
+texture, 1 for a texture plus its `_m` mask. 151 + 75 of the former, 65 + 39 of
+the latter, no exceptions. Guarded.
+
+**Item `kind`** — 0 for every item with no part model, 2 for exactly the three
+face items, 1 for everything else. Described, not understood: why the faces are
+their own kind is not established.
 
 **Face / hair texture sets** — `u16 flag, u16 textureId[]`, with the prefix
 naming the items they belong to. The heroine's face table's prefix is
@@ -331,10 +337,18 @@ the **7 face paints** (`b2_paint_ball, eyeblack, hoppe, naughty, tape, tearful,
 whisker`). The heroine has no such block; her `paintl`/`paintr` are reached
 through her `b1_face00` part-texture record instead.
 
+The **slot** the id sits in among those three `u16`s is the face layer the
+make-up composites into: slot 0 for every texture whose name ends `_0` and slot
+1 for every `_1`, 11 records out of 11 across both sets. Those are the
+`nb*_face_on_0` and `nb*_face_on_1` composite targets. Exposed as
+`makeUpLayers`, and guarded against the names.
+
 What is **not** decoded in that trailer: its own header, and the two leading
-`u16` fields of each 28-byte record (a constant 13 / 12, then an index 0..n
-that is not in ascending order). Only the texture id is read, and the reader
-locates the record run by pattern rather than by a guessed header length.
+`u16` fields plus one byte of each 28-byte record (a constant 13 / 12, then an
+index 0..n that is not in ascending order, then a byte that groups mascara and
+eyeshadow apart from the rest). The reader locates the record run by pattern
+rather than by a guessed header length, so a header it does not understand
+cannot silently shift it.
 
 ### What the index says is unused
 
@@ -536,7 +550,7 @@ field skeleton.
 - ~~The index tables are not decoded.~~ **Settled** — see "The seven index
   tables, decoded". What remains open inside them is small and named there:
   the make-up trailer's own header, the two leading fields of each 28-byte
-  make-up record, and the meaning of the `kind` word on an item record.
+  make-up record, and *why* the three face items carry their own `kind`.
 - **Whether this is XY's complete catalogue** cannot be established from an ORAS
   dump alone — there is no XY dump here to diff against. What is established is
   that ORAS ships 101 swappable part models (86 of them actually offered by the
