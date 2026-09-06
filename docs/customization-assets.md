@@ -6,7 +6,7 @@ Settles the "deciding unknown" left open by `customization-scope.md`.
 Adding player customization to ORAS is reverse-engineering work, not a 3D asset
 production project. The wardrobe is in **`a/0/8/8`** — 741 subfiles, 6,610,088
 bytes — and it holds 103 BCH model subfiles (101 swappable parts plus the two
-assembled default player models), 544 part textures, its own part index tables,
+assembled default player models), 570 part textures, its own part index tables,
 and the hair/skirt physics animations.
 
 One important qualification, measured and stated up front: the surviving part
@@ -88,8 +88,8 @@ Slot naming is `b1_<slot>_<style>`; every one anchors to `tr0001_00_ba`
 
 `_mae` = the front-hair half of a hairstyle (mae = 前, "front"), so the
 hairstyles ship as back+front pairs. **Six** pairs, not seven: the index offers
-`bob, long, midi, pony, short, twin`, and `b1_hair_shortmae` (36) is a stray
-duplicate of `b1_hair_short_mae` (35) that nothing points at.
+`bob, long, midi, pony, short, twin`, and `b1_hair_shortmae` (subfile 35) is a
+stray duplicate of `b1_hair_short_mae` (34) that the index never points at.
 
 ### The hero part models (subfiles 456–494)
 
@@ -139,9 +139,15 @@ nb1_bangle   nb1_accehat02
    target, the two shop display-stand slots have no target at all, and the
    one-piece slot writes into the tops and bottoms targets.
 
-### 544 part textures — the colour/pattern half of the wardrobe
+### 570 part textures — the colour/pattern half of the wardrobe
 
-544 distinct texture names in the texture blocks, in the naming
+**570** distinct part-texture names — re-counted. An earlier pass here said
+544; that was an undercount, because 46 texture subfiles are LZ11-compressed
+above `GARC`'s 64:1 sniff cap and came back as raw blobs (see "A GARC reading
+defect found on the way"). Counting properly: 607 subfiles hold at least one
+texture, 600 distinct names, of which 570 are part textures once the shared
+lookups, the `nb*_` composite targets and `paintl/paintr/star` are set aside.
+The naming is
 `b1_<slot><style>_d<design><colour><nn>`. Sample spreads:
 
 - `b1_btmslpan_d01b01 … d01b07, d02b01 …` — 22 leggings textures
@@ -555,7 +561,7 @@ field skeleton.
 - **Whether this is XY's complete catalogue** cannot be established from an ORAS
   dump alone — there is no XY dump here to diff against. What is established is
   that ORAS ships 101 swappable part models (86 of them actually offered by the
-  index) and 544 part textures, across 14 dress-up slots for the heroine and 13
+  index) and 570 part textures, across 14 dress-up slots for the heroine and 13
   for the hero.
 - **Whether the field dress-up path in `code.bin` is reachable** — the
   `DressUpField*` classes are linked, but no call site was traced.

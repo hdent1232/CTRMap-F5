@@ -420,6 +420,16 @@ public class DressUpIndexTest {
 
 		fails += check("most parts carry a slot word to check against (" + totalNamed
 				+ " of " + totalParts + ")", totalNamed * 2 > totalParts);
+		// The per-set face-paint check passes on an empty list, and only one
+		// of the two sets has that block - so on its own it would go green if
+		// the decoder found nothing at all, for either. This is the assertion
+		// that stops a confident empty result.
+		int facePaintTotal = 0;
+		for (DressUpArchive.Set s : da.sets()) {
+			facePaintTotal += s.index.facePaintTextures.length;
+		}
+		fails += check("at least one set's face-paint block decoded (" + facePaintTotal
+				+ " textures)", facePaintTotal > 0);
 		System.out.println("  " + lateDecompressed + " subfiles were LZ11 above GARC's 64:1 sniff cap"
 				+ " and had to be decompressed here (see the GARC sniff note)");
 

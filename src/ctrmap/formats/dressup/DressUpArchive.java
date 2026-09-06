@@ -16,6 +16,13 @@ import java.util.List;
  * ids from the first subfile past the models. A set whose block cannot be
  * identified reports -1 for both, and a caller must treat that as absence, not
  * as zero.
+ *
+ * <p>One dependency worth knowing: a model subfile that {@link GARC}'s
+ * compression sniff hands back still compressed would not look like a model
+ * and would split the run. That does not happen in the archive measured here -
+ * the 46 subfiles the sniff misses are all textures - and if it ever did, the
+ * run length would stop matching the part count and the base would come back
+ * -1 rather than come back wrong.
  */
 public class DressUpArchive {
 
