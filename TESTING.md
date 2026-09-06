@@ -238,6 +238,41 @@ patch (offline: all 24 retail inventories byte-verified in your code.bin).
   confirm BOTH still work (game boots with added zones AND the shop sells
   the edited items) — one code.ips carries both.
 
+## Items (NEW — Game Data tab → "Item editor")
+Two tiers, and they install differently. **Tier 1 (the record, the name, the
+description) is plain data**: it saves straight into your game folder, Deploy
+ships it, no patch. **Tier 2 is the icon only** — that word lives in the
+executable and needs a code.ips, exactly like the shop and zone patches.
+Offline-proven: all 776 retail records round-trip byte-for-byte, an edit
+changes only the bytes of the field you changed (43 KB archive compared byte
+by byte, container header included), and the icon patch refuses a code.bin
+whose stock bytes do not read as recorded.
+
+What this **cannot** do, so don't test for it: invent a new effect. The 183
+held-effect ids are all taken, and some behaviour (Exp. Share, Ability
+Capsule) is keyed on the item id in code and is not in the record at all.
+Reassigning an existing effect to a different item is the whole trick.
+
+- [ ] Pick an item you will meet early (e.g. a Potion), change its **price**,
+  Save item, Deploy, restart the emulator, and buy one. Expect: the new
+  price at the counter, and the sell price at half of it.
+- [ ] Give a held item a different **held effect** — e.g. point a Potion at
+  the effect the dropdown labels with Life Orb — and battle with it held.
+  Expect: that behaviour, on that item.
+- [ ] Change an item's **name and description**, then Pack Workspace and
+  Deploy. Expect: both show in the bag. (Name/description go through the
+  workspace like every other text edit; the record does not.)
+- [ ] **New item**: press "New item", take one of the four slots, give it a
+  name, description and a record copied from something real. Get it in-game
+  (a script `ItemGetNum`, or put it in a shop with the shop editor) and check
+  the bag shows your name and the item works.
+- [ ] **Icon** (needs the patch): "Load code.bin...", set an icon (or "Use
+  another item's icon..."), "Save code.ips...", MERGE if asked, deploy,
+  restart. Expect: the new icon in the bag, and the zone and shop patches
+  still working — one code.ips carries all three.
+- [ ] **Revert**: change an item, save, then "Revert to pre-edit copy" and
+  save again. Expect: the item is exactly as it shipped.
+
 ## Interiors (Pokémon Centers, houses — just so it's on the list)
 - [ ] Load a Pokémon Center interior zone in the zone loader (interiors are
   ordinary zones), move an NPC or prop, Apply/Deploy. Expect: the change

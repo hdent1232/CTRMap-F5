@@ -492,6 +492,26 @@ public class GARC {
 	}
 
 	/**
+	 * Absolute file offset where this entry's stored bytes begin.
+	 *
+	 * <p>For an editor that changes a FIXED-SIZE record and nothing else. Every
+	 * other write path here rebuilds the container from a directory, which is
+	 * the right thing when lengths change and the wrong thing when they cannot:
+	 * a rebuild rewrites the offset table, and this project has already paid
+	 * once for a pack that wrote a stale one (zone 536, repaired by hand). A
+	 * caller that knows its record is exactly as long as the one it replaces can
+	 * seek here and poke the bytes, leaving the header, the offset table and
+	 * every other entry untouched by construction rather than by hope.
+	 *
+	 * <p>Only safe for an UNCOMPRESSED entry whose replacement is exactly
+	 * {@link #getEntryStoredLength} bytes; the caller must check both, because
+	 * this method cannot tell what is about to be written.
+	 */
+	public int getEntryFileOffset(int num) {
+		return entries.get(num).offset;
+	}
+
+	/**
 	 * How many entries this instance's table describes. Equals {@link #length}
 	 * and the count in the file for an instance that has only ever parsed; the
 	 * three drifting apart is what a pack that mutated the table and then threw

@@ -111,6 +111,7 @@ public class CtrmapMainframe {
 	public static JMenuItem trainerEditor;
 	public static JMenuItem maisonEditor;
 	public static JMenuItem shopEditor;
+	public static JMenuItem itemEditor;
 	public static JMenuItem setupFacility;
 	public static JMenuItem renameZone;
 	public static JMenuItem emptyZone;
@@ -237,6 +238,7 @@ public class CtrmapMainframe {
 		trainerEditor = new JMenuItem("Edit trainer (party/battle)...");
 		maisonEditor = new JMenuItem("Edit battle facility opponents...");
 		shopEditor = new JMenuItem("Edit shop inventories (Marts)...");
+		itemEditor = new JMenuItem("Edit items (price, effects, name)...");
 		setupFacility = new JMenuItem("Custom battle facility here (clone a retail facility)");
 		renameZone = new JMenuItem("Rename zone (in-game name)...");
 		emptyZone = new JMenuItem("Empty zone (clear contents)...");
@@ -656,6 +658,12 @@ public class CtrmapMainframe {
 				ctrmap.humaninterface.ShopEditDialog.show(frame);
 			}
 		});
+		itemEditor.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ctrmap.humaninterface.ItemEditDialog.show(frame);
+			}
+		});
 		setupFacility.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -864,6 +872,7 @@ public class CtrmapMainframe {
 		dataMenu.add(trainerEditor);
 		dataMenu.add(maisonEditor);
 		dataMenu.add(shopEditor);
+		dataMenu.add(itemEditor);
 		dataMenu.add(wildEncounters);
 		//the wizard sits above the raw path dialog it replaces for beginners:
 		//same job, but it explains itself and checks what you picked
@@ -1011,6 +1020,10 @@ public class CtrmapMainframe {
 				"Facility opponents", e -> ctrmap.humaninterface.MaisonEditDialog.show(frame));
 		addGameDataEntry(p, "Shops", "Change what the Poke Marts and specialty shops sell (ships as a code.ips patch).",
 				"Shop inventories", e -> ctrmap.humaninterface.ShopEditDialog.show(frame));
+		addGameDataEntry(p, "Items", "<html>Edit any item's price, held effect, use routines, EV changes, name and description.<br>"
+				+ "Effects are REASSIGNED from the ones the game already implements - the editor cannot author a new one.<br>"
+				+ "Four empty ids can hold a new item; the icon is the one part that needs a code.ips patch.</html>",
+				"Item editor", e -> ctrmap.humaninterface.ItemEditDialog.show(frame));
 		addGameDataEntry(p, "Wild Pokemon", "Edit the loaded zone's wild encounter slots (grass, surf, fishing...).",
 				"Wild encounters (this zone)", e -> ctrmap.humaninterface.EncounterEditDialog.show(frame));
 		p.add(javax.swing.Box.createVerticalGlue());
