@@ -263,10 +263,11 @@ checks names, not resolvability.
 
 ### The slots
 
-The master table's category *is* the slot. There is **no name for it anywhere
-in the data**; the labels below are read off the part models the slot contains,
-and the guard suite asserts that reading is consistent — every part whose name
-carries a slot word lands in that word's slot and nowhere else.
+The master table's category *is* the slot. The slot has **no name in the data**
+— measured: across all seven tables of both sets there is not one printable run
+of four characters or more. The labels below are read off the part models each
+slot contains, and the guard suite asserts that reading is consistent: every
+part whose name carries a slot word lands in that word's slot and nowhere else.
 
 | heroine | rows | slot | hero | rows |
 |---|---|---|---|---|
