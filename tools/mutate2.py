@@ -1208,12 +1208,17 @@ def selftest():
         del SKIPPED_AMBIGUOUS[:]
         del SKIPPED_GONE[:]
 
-        # DEFECT 5: an exclusion that has drifted onto another line is refused
-        (tmp / "src/ctrmap").mkdir(parents=True)
-        io.open(tmp / "src/ctrmap/Ui.java", "w", encoding="utf-8", newline="").write(
-            u"\n".join(["// not the real Ui"] * 90))
+        # DEFECT 5: an exclusion that has drifted onto another line is refused.
+        # The excluded (path, line) pairs come from EXCLUSIONS rather than being
+        # written here, because this check hardcoded 84 and 87 and then FAILED
+        # the moment the reporting-seam work moved those lines to 119 and 122 -
+        # the exact drift it exists to catch, in the test itself.
+        _ex_path, _ex_line = sorted(EXCLUSIONS)[0]
+        (tmp / _ex_path).parent.mkdir(parents=True, exist_ok=True)
+        io.open(tmp / _ex_path, "w", encoding="utf-8", newline="").write(
+            u"\n".join(["// not the real file"] * (_ex_line + 8)))
         try:
-            mutants_for("src/ctrmap/Ui.java", [84, 87])
+            mutants_for(_ex_path, [_ex_line])
             check(False, "a stale exclusion is refused rather than applied to whatever line it lands on")
         except SystemExit as e:
             check("STALE EXCLUSION" in str(e),
