@@ -3553,6 +3553,54 @@ public class PaintedRegionBuilder {
 	 *                  range and unreadable are both answered by the fallback
 	 * @return a mesh index, or -1 if the model has no readable geometry
 	 */
+	/**
+	 * The order to OFFER a map's meshes in when asking the user which one is
+	 * the ground: the ground first, then everything else biggest first.
+	 *
+	 * <p>Biggest-first on its own is a good browsing order - doors, windows and
+	 * tree parts sink to the bottom instead of crowding the top - and it was
+	 * being used to answer a different question as well: whatever came first
+	 * was labelled the map's ground and pre-selected. Over the first 400 retail
+	 * regions those are not the same mesh 312 times, so the label was wrong more
+	 * often than right and a user who accepted the default floored their new map
+	 * in a fence.
+	 *
+	 * <p>Putting {@link #defaultGroundMesh} at the front costs the browsing
+	 * order nothing - it moves exactly one entry - and makes the first entry an
+	 * answer to the question actually being asked.
+	 *
+	 * @return every mesh with readable positions, each exactly once; empty if
+	 *         the model has none
+	 */
+	public static int[] groundFirstMeshOrder(BchMapModel model) {
+		List<int[]> bySize = new ArrayList<>();   //{meshIndex, triangles}
+		for (BchMapModel.MeshGeom g : model.geometry()) {
+			if (g.posOk) {
+				bySize.add(new int[]{g.meshIndex, model.getTriangles(g.meshIndex).length});
+			}
+		}
+		bySize.sort((a, b) -> b[1] - a[1]);
+		//defaultGroundMesh skips edge overlays, so on a map that is nothing but
+		//those it answers -1 and there is no entry to promote
+		int ground = defaultGroundMesh(model);
+		boolean hasGround = false;
+		for (int[] e : bySize) {
+			hasGround |= e[0] == ground;
+		}
+		int[] out = new int[bySize.size()];
+		int at = 0;
+		if (hasGround) {
+			out[at++] = ground;
+		}
+		for (int[] e : bySize) {
+			if (hasGround && e[0] == ground) {
+				continue;
+			}
+			out[at++] = e[0];
+		}
+		return out;
+	}
+
 	public static int groundMeshOr(BchMapModel model, int preferred) {
 		if (preferred >= 0 && preferred < model.meshCount) {
 			List<BchMapModel.MeshGeom> g = model.geometry();
