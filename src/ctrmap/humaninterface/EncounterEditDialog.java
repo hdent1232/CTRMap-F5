@@ -85,7 +85,7 @@ public class EncounterEditDialog {
 
 		final byte[] packRef = pack;
 		copyFrom.addActionListener(e -> {
-			String s = JOptionPane.showInputDialog(dlg, "Copy encounters from which zone number? (e.g. 23 = Route 101)");
+			String s = (String) ctrmap.Ui.input(dlg, "Copy encounters from which zone number? (e.g. 23 = Route 101)", "Input", JOptionPane.QUESTION_MESSAGE, null, null);
 			if (s == null) {
 				return;
 			}

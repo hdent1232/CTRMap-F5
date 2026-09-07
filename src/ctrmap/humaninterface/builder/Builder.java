@@ -394,13 +394,13 @@ public class Builder extends javax.swing.JPanel {
 		final AbstractGamefreakContainer persistentContainerReference = currentAGFC;
 		if (index != -1) {
 			if (currentFiles.get(index).type == ContentType.H3D_MODEL && Workspace.isOA()) {
-				int rsl = JOptionPane.showConfirmDialog(this, "The file selected is a model file. Do you want to import it as OBJ?", "Builder alert", JOptionPane.YES_NO_OPTION);
+				int rsl = ctrmap.Ui.confirm(this, "The file selected is a model file. Do you want to import it as OBJ?", "Builder alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 				if (rsl == JOptionPane.YES_OPTION) {
 					File f = openFileDialog("Open a model file");
 					if (f != null) {
 						File donor = ResourceAccess.copyToTemp("DummyBCH3DModel.bch");
 						File output = new File(Workspace.temp + "/espica_model_" + UUID.randomUUID().toString() + ".bch");
-						int textures = JOptionPane.showConfirmDialog(this, "Do you want to embed the model's textures into the output BCH?", "Converter alert", JOptionPane.YES_NO_OPTION);
+						int textures = ctrmap.Ui.confirm(this, "Do you want to embed the model's textures into the output BCH?", "Converter alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 						String[] extra = (textures == JOptionPane.YES_OPTION) ? new String[0] : new String[]{"-notextures"};
 						ESPICAControl.ESPICAProcess proc = new ESPICAControl.ESPICAProcess(ESPICAControl.ESPICAFunctionMode.MODEL_CONVERT, f, donor, output, extra);
 						runESPICA(proc, () -> {
@@ -415,7 +415,7 @@ public class Builder extends javax.swing.JPanel {
 					importGeneric(persistentContainerReference, index);
 				}
 			} else if (currentFiles.get(index).type == ContentType.H3D_TEXTURE_PACK) {
-				int rsl = JOptionPane.showConfirmDialog(this, "The file selected is a texture pack. Do you want to merge a MTL file with it?", "Builder alert", JOptionPane.YES_NO_OPTION);
+				int rsl = ctrmap.Ui.confirm(this, "The file selected is a texture pack. Do you want to merge a MTL file with it?", "Builder alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 				if (rsl == JOptionPane.YES_OPTION) {
 					File f = openFileDialog("Open a material description file");
 					if (f != null) {
@@ -540,7 +540,7 @@ public class Builder extends javax.swing.JPanel {
     private void btnFADummyActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnFADummyActionPerformed
 		int index = contFileList.getSelectedIndex();
 		if (index != -1 && currentAGFC != null) {
-			int rsl = JOptionPane.showConfirmDialog(this, "This will replace the selected file with a dummy. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION);
+			int rsl = ctrmap.Ui.confirm(this, "This will replace the selected file with a dummy. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 			if (rsl == JOptionPane.YES_OPTION) {
 				if (currentAGFC.storeFile(index, new byte[0])) {
 					Workspace.addPersist(currentAGFC.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
@@ -554,7 +554,7 @@ public class Builder extends javax.swing.JPanel {
 
     private void btnNewContainerActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNewContainerActionPerformed
 		if (currentAGFC != null) {
-			int rsl = JOptionPane.showConfirmDialog(this, "This will replace the container with a blank one. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION);
+			int rsl = ctrmap.Ui.confirm(this, "This will replace the container with a blank one. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 			if (rsl == JOptionPane.YES_OPTION) {
 				File target = currentAGFC.getOriginFile();
 				if (currentAGFC instanceof GR) {
@@ -573,7 +573,7 @@ public class Builder extends javax.swing.JPanel {
 
     private void btnClearContainerActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnClearContainerActionPerformed
 		if (currentAGFC != null) {
-			int rsl = JOptionPane.showConfirmDialog(this, "This will clear all files in the container. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION);
+			int rsl = ctrmap.Ui.confirm(this, "This will clear all files in the container. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 			if (rsl == JOptionPane.YES_OPTION) {
 				boolean allOk = true;
 				for (int i = 0; i < currentAGFC.len; i++) {

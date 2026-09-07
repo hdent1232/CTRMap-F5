@@ -119,10 +119,10 @@ public class ShopEditDialog {
 				File out = fc.getSelectedFile();
 				String note = "";
 				if (out.exists()) {
-					int rsl = JOptionPane.showConfirmDialog(dlg,
+					int rsl = ctrmap.Ui.confirm(dlg,
 							"code.ips already exists (e.g. the zone-limit patch).\n"
 							+ "MERGE the shop changes into it? (No = overwrite with shops only)",
-							"Shop editor", JOptionPane.YES_NO_CANCEL_OPTION);
+							"Shop editor", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
 					if (rsl == JOptionPane.CANCEL_OPTION) {
 						return;
 					}

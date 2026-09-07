@@ -170,8 +170,8 @@ public class MaisonEditDialog {
 	}
 
 	private static boolean confirmDiscard(java.awt.Component c) {
-		return JOptionPane.showConfirmDialog(c, "Discard unsaved changes to this pool?", "Battle facility opponents",
-				JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION;
+		return ctrmap.Ui.confirm(c, "Discard unsaved changes to this pool?", "Battle facility opponents",
+				JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION;
 	}
 
 	private static String[] text(int entry) {
@@ -336,12 +336,12 @@ public class MaisonEditDialog {
 			int row = r;
 			if (isRetail(r) && !allowVanillaEdits) {
 				String[] opts = {"Copy to a free slot", "Edit the retail data", "Cancel"};
-				int pick = JOptionPane.showOptionDialog(table,
+				int pick = ctrmap.Ui.option(table,
 						"Set #" + r + " is RETAIL data - the retail facility (and every cloned\n"
 						+ "facility) battles with it. Editing it changes the shipped game.\n\n"
 						+ "Copy this set to a free slot and put your edit there instead?",
 						"Battle facility opponents", JOptionPane.DEFAULT_OPTION,
-						JOptionPane.WARNING_MESSAGE, null, opts, opts[0]);
+						JOptionPane.WARNING_MESSAGE, opts, opts[0]);
 				if (pick == 0) {
 					int free = copyToFreeSlot(r);
 					if (free < 0) {

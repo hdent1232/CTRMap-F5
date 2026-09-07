@@ -1221,7 +1221,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				? "\nThis zone was added before the editor forked new zones automatically\n"
 				+ "- newly added zones now get their own map from the start.\n"
 				: "";
-		int rsl = JOptionPane.showConfirmDialog(this,
+		int rsl = ctrmap.Ui.confirm(this,
 				"This zone SHARES its map with " + sharers + " other zone(s):\n"
 				+ who
 				+ legacyNote
@@ -1302,7 +1302,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			return;
 		}
 		final boolean doFork = forkChk.isSelected() && Workspace.isOA();
-		int confirm = JOptionPane.showConfirmDialog(this,
+		int confirm = ctrmap.Ui.confirm(this,
 				"Zone " + dstIndex + " (" + names[dstIndex] + ") will be completely replaced by a copy of zone "
 				+ srcIndex + " (" + names[srcIndex] + "):\n"
 				+ "header, NPCs, warps, triggers, scripts.\n"
@@ -1405,7 +1405,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		int spares = m - baseCount - realZones;
 		//strong warning, Cancel is the default option
 		Object[] options = {"Continue", "Cancel"};
-		int confirm = JOptionPane.showOptionDialog(this,
+		int confirm = ctrmap.Ui.option(this,
 				"Adding " + realZones + " new zone(s): indices " + baseCount + ".." + (baseCount + realZones - 1) + ".\n\n"
 				+ "The game's zone table must stay 4-aligned, so the total is rounded up to " + m + "\n"
 				+ "(" + realZones + " real + " + spares + " spare, never-visited slot(s)).\n\n"
@@ -1418,7 +1418,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				+ "Continue?",
 				"Add new zones (lift zone limit)",
 				JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE,
-				null, options, options[1]);
+				options, options[1]);
 		if (confirm != 0) {
 			return;
 		}

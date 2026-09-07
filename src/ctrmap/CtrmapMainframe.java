@@ -1512,7 +1512,7 @@ public class CtrmapMainframe {
 				refWarn.append("\n  (+").append(refs.size() - 8).append(" more)");
 			}
 		}
-		int rsl = JOptionPane.showConfirmDialog(frame,
+		int rsl = Ui.confirm(frame,
 				"Remove all " + n + " added zone(s) and restore the stock 536-zone layout?\n\n"
 				+ "The workspace is packed first (pending edits captured), then their content is\n"
 				+ "DELETED from ZoneData. Afterwards, delete the deployed code.ips - the stock\n"
@@ -2046,7 +2046,7 @@ public class CtrmapMainframe {
 		}
 		//two ways to build a facility - offer both honestly
 		String[] paths = {"Independent battles (your own trainers)", "Clone a retail facility (full engine)"};
-		int path = JOptionPane.showOptionDialog(frame,
+		int path = Ui.option(frame,
 				"How should this facility's battles work?\n\n"
 				+ "INDEPENDENT: an NPC that battles trainer entries YOU author (Game Data ->\n"
 				+ "Trainers), with streak + BP rewards in its own script. Nothing vanilla is\n"
@@ -2054,7 +2054,7 @@ public class CtrmapMainframe {
 				+ "CLONE: this zone is replaced by a copy of the Battle Maison or Institute -\n"
 				+ "the full retail engine (formats, streak saves, scoring), but its opponent\n"
 				+ "pools are ENGINE-WIDE, shared with the retail facility.",
-				"Set up Battle facility", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, paths, paths[0]);
+				"Set up Battle facility", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, paths, paths[0]);
 		if (path < 0) {
 			return;
 		}
@@ -2070,11 +2070,11 @@ public class CtrmapMainframe {
 			return;
 		}
 		String[] kinds = {"Battle Maison (5 formats, Chatelaines)", "Battle Institute (single test)"};
-		Object kind = JOptionPane.showInputDialog(frame,
+		Object kind = Ui.input(frame,
 				"Replace zone " + dstIndex + " with a copy of which retail facility?\n"
 				+ "(Its script + NPCs are copied verbatim - the engine logic is retail.\n"
 				+ "You then author the opponents and text.)",
-				"Set up Battle facility", JOptionPane.PLAIN_MESSAGE, null, kinds, kinds[0]);
+				"Set up Battle facility", JOptionPane.PLAIN_MESSAGE, kinds, kinds[0]);
 		if (kind == null) {
 			return;
 		}
@@ -2083,7 +2083,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, "That IS the source facility zone - pick a different base zone to convert.", "Set up Battle facility");
 			return;
 		}
-		int confirm = JOptionPane.showConfirmDialog(frame,
+		int confirm = Ui.confirm(frame,
 				"Zone " + dstIndex + " will be COMPLETELY REPLACED by a copy of the facility\n"
 				+ "lobby (zone " + srcIndex + "): its map, NPCs and script. The copy gets its own\n"
 				+ "geometry, so editing it will not change the real facility.\n\n"
@@ -2226,7 +2226,7 @@ public class CtrmapMainframe {
 		}
 
 		Object[] warnOpts = {"Continue", "Cancel"};
-		int confirm = javax.swing.JOptionPane.showOptionDialog(frame,
+		int confirm = Ui.option(frame,
 				"EXPERIMENTAL - untested on real hardware.\n\n"
 				+ "This replaces the visual model of FieldData region " + id + " with your\n"
 				+ ".bch. The archive rebuild is byte-faithful for every other region and\n"
@@ -2234,7 +2234,7 @@ public class CtrmapMainframe {
 				+ "yet verified. Keep a RomFS backup and test in Citra before hardware.\n\n"
 				+ "Continue?",
 				"Import map model", javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.WARNING_MESSAGE,
-				null, warnOpts, warnOpts[1]);
+				warnOpts, warnOpts[1]);
 		if (confirm != 0) {
 			return;
 		}

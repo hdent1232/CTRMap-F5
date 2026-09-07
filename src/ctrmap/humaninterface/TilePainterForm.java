@@ -1133,7 +1133,7 @@ public class TilePainterForm {
 			try {
 				ctrmap.formats.scripts.GFLPawnScript donor = paletteSignDonor();
 				int insCount = ctrmap.formats.scripts.SignWrapperInjector.countInjectedInstructions(s, donor);
-				if (JOptionPane.showConfirmDialog(frame,
+				if (ctrmap.Ui.confirm(frame,
 						"To make the placed sign(s) readable, this zone's script needs the vanilla\n"
 						+ "sign-display routine (" + insCount + " instructions) transplanted into it.\n"
 						+ "Inject it now? (Cancel keeps the signs as scenery.)",

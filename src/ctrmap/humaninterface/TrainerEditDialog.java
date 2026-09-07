@@ -51,9 +51,9 @@ public class TrainerEditDialog {
 				def = s - 5000;
 			}
 		}
-		String in = JOptionPane.showInputDialog(parent,
+		String in = (String) ctrmap.Ui.input(parent,
 				"Trainer ID (1..949). A map NPC with script 3000+ID battles that trainer;\n"
-				+ "the selected NPC's trainer is pre-filled when it is one.", def);
+				+ "the selected NPC's trainer is pre-filled when it is one.", "Input", JOptionPane.QUESTION_MESSAGE, null, def);
 		if (in == null) {
 			return;
 		}

@@ -649,9 +649,9 @@ public class SetupWizard extends JDialog {
 					revalidateGame();
 					return;
 				}
-				Object pick = JOptionPane.showInputDialog(SetupWizard.this,
+				Object pick = Ui.input(SetupWizard.this,
 						"CTRMap found more than one unpacked game. Which one?",
-						"Choose your game", JOptionPane.QUESTION_MESSAGE, null,
+						"Choose your game", JOptionPane.QUESTION_MESSAGE,
 						hits.toArray(), hits.get(0));
 				if (pick != null) {
 					gameField.setText(pick.toString());
