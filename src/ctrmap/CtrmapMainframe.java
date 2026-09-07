@@ -1422,7 +1422,7 @@ public class CtrmapMainframe {
 			return;
 		}
 		try {
-			ZoneManager.RenameResult r = ZoneManager.renameZone(idx, name);
+			ZoneManager.RenameResult r = ZoneManager.renameZone(Workspace.session(), idx, name);
 			ctrmap.formats.text.LocationNames.loadFromGarc(); // refresh the dropdown name cache
 			//Both halves of this line were improved independently and both are
 			//kept: the text is built by renameZoneReport, which a suite can call
@@ -1641,7 +1641,7 @@ public class CtrmapMainframe {
 		}
 		int idx = (Integer) idSpinner.getValue();
 		try {
-			int removed = ZoneManager.clearZone(idx);
+			int removed = ZoneManager.clearZone(Workspace.session(), idx);
 			Ui.message(frame,
 					"Zone " + idx + " emptied - removed " + removed + " placed object(s).\n\n"
 					+ "Run File > Deploy to emulator (it packs first) to apply.\n"
