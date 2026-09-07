@@ -74,7 +74,7 @@ public class WorkspaceSessionTest {
 	 * raise it without saying in the commit message which file went back to
 	 * the global and why it had to.
 	 */
-	private static final int FILES_REACHING_WORKSPACE = 59; //GARC, WorkspaceIntegrity, ZoneManager handed what they read
+	private static final int FILES_REACHING_WORKSPACE = 58; //GARC, WorkspaceIntegrity, ZoneManager, MapResizer handed what they read
 
 	static int fails = 0;
 
