@@ -250,10 +250,34 @@ public class GARC {
 		return out;
 	}
 
+	/**
+	 * Packs the staged files of one extraction directory back into this
+	 * archive, in four steps that a reader can take one at a time:
+	 * {@link #rereadIfStale} (the table on disk may not be the one in
+	 * memory), {@link #filesToPack} (which staged files count),
+	 * {@link #plan} (what the archive will hold - the table as it will be,
+	 * the entries replaced, their stored bytes; the gap refusal lives here),
+	 * {@link #writeRepacked} (the bytes, beside the workspace) and
+	 * {@link #replaceWith} (the swap, then a re-read so this instance
+	 * describes what it just wrote). Nothing here touches the live archive
+	 * until the replacement is complete.
+	 */
 	public void packDirectory(File dir, Map<Integer, Boolean> compressionOverrides) throws IOException {
 		if (!dir.isDirectory()) {
 			return;
 		}
+		rereadIfStale();
+		PackPlan plan = plan(filesToPack(dir), compressionOverrides);
+		File newGARC = new File(Workspace.WORKSPACE_PATH + "/" + file.getName() + "_new");
+		writeRepacked(newGARC, plan);
+		replaceWith(newGARC);
+	}
+
+	/**
+	 * Re-reads the entry table when the archive was rewritten underneath
+	 * this instance, and records the warning for whoever packed.
+	 */
+	private void rereadIfStale() {
 		if (isStale()) {
 			//Re-reading is the right repair: the entries on disk are fine,
 			//only this instance's picture of them is out of date. Packing
@@ -266,6 +290,15 @@ public class GARC {
 			packWarnings.add(warning);
 			parse(file);
 		}
+	}
+
+	/**
+	 * The staged files a pack takes from an extraction directory: only the
+	 * ones the workspace lists as edited - the directory holds every entry
+	 * ever opened - in entry order, which is numeric ("10" sorts before "2"
+	 * as text).
+	 */
+	public static ArrayList<File> filesToPack(File dir) {
 		ArrayList<File> files = new ArrayList<>();
 		files.addAll(Arrays.asList(dir.listFiles()));
 		for (int i = 0; i < files.size(); i++) {
@@ -282,17 +315,55 @@ public class GARC {
 				return i1 - i2;
 			}
 		});
-		//Every appended entry goes into a table of this method's own, and the
-		//instance's table is only ever replaced by re-reading the file it just
-		//wrote. Anything that throws on the way out - a gapped append, the
-		//emulator holding the archive open - therefore leaves this instance
-		//describing the archive as it still is on disk. It used to append
-		//straight into the live table, so a refusal left the instance one or
-		//more entries ahead of the file, and the next pack wrote that table
-		//out: a real FATB entry whose bytes were copied from a provisional
-		//offset that was never in the file.
+		return files;
+	}
+
+	/**
+	 * How an entry will be stored: an explicit override wins for ANY slot (a
+	 * zone insert-shift needs to re-compress a slot whose original entry was
+	 * uncompressed); otherwise an existing slot keeps its entry's flag and an
+	 * appended slot inherits the last entry's.
+	 */
+	public boolean storedCompressed(Boolean override, int slot) {
+		if (override != null) {
+			return override;
+		}
+		if (slot < entries.size()) {
+			return entries.get(slot).compressed;
+		}
+		return entries.get(entries.size() - 1).compressed;
+	}
+
+	/** What one pack will write: the table as it will be, which slots are replaced, and their stored bytes. */
+	private static final class PackPlan {
+
+		final ArrayList<GARCEntry> working;
+		final int[] changedIndices;
+		final byte[][] compressedData;
+
+		PackPlan(ArrayList<GARCEntry> working, int[] changedIndices, byte[][] compressedData) {
+			this.working = working;
+			this.changedIndices = changedIndices;
+			this.compressedData = compressedData;
+		}
+	}
+
+	/**
+	 * Reads and compresses each staged file and works out the table the
+	 * archive will have afterwards. Refuses a file named past the tail.
+	 *
+	 * <p>Every appended entry goes into a table of this plan's own, and the
+	 * instance's table is only ever replaced by re-reading the file it just
+	 * wrote. Anything that throws on the way out - a gapped append, the
+	 * emulator holding the archive open - therefore leaves this instance
+	 * describing the archive as it still is on disk. It used to append
+	 * straight into the live table, so a refusal left the instance one or
+	 * more entries ahead of the file, and the next pack wrote that table
+	 * out: a real FATB entry whose bytes were copied from a provisional
+	 * offset that was never in the file.
+	 */
+	private PackPlan plan(ArrayList<File> files, Map<Integer, Boolean> compressionOverrides) throws IOException {
 		ArrayList<GARCEntry> working = new ArrayList<>(entries);
-		int originalEntryCount = working.size();
 		int[] changedIndices = new int[files.size()];
 		byte[][] compressedData = new byte[files.size()][];
 		for (int i = 0; i < files.size(); i++) {
@@ -301,19 +372,8 @@ public class GARC {
 			byte[] or = new byte[in.available()];
 			in.read(or);
 			in.close();
-			//an explicit override wins for ANY slot (a zone insert-shift needs to
-			//re-compress a slot whose original entry was uncompressed); otherwise
-			//existing slots keep their entry's flag and appended slots inherit the
-			//last original entry's flag
 			Boolean override = (compressionOverrides != null) ? compressionOverrides.get(changedIndices[i]) : null;
-			boolean compressed;
-			if (override != null) {
-				compressed = override;
-			} else if (changedIndices[i] < originalEntryCount) {
-				compressed = working.get(changedIndices[i]).compressed;
-			} else {
-				compressed = working.get(originalEntryCount - 1).compressed;
-			}
+			boolean compressed = storedCompressed(override, changedIndices[i]);
 			if (compressed) {
 				compressedData[i] = LZ11.compress(or);
 			} else {
@@ -337,7 +397,7 @@ public class GARC {
 				GARCEntry add = new GARCEntry();
 				add.compressed = compressed;
 				//pad-aligned provisional offset (the real table is re-read
-				//from the packed file at the end of this method anyway)
+				//from the packed file at the end of the pack anyway)
 				int prevEnd = working.get(working.size() - 1).offset + working.get(working.size() - 1).length;
 				int rem = prevEnd % padding;
 				add.offset = rem == 0 ? prevEnd : prevEnd + padding - rem;
@@ -345,7 +405,19 @@ public class GARC {
 				working.add(add);
 			}
 		}
-		File newGARC = new File(Workspace.WORKSPACE_PATH + "/" + file.getName() + "_new");
+		return new PackPlan(working, changedIndices, compressedData);
+	}
+
+	/**
+	 * Writes the repacked archive to {@code newGARC}: the old header with its
+	 * sizes patched, a FATO/FATB rebuilt from the plan's table with every
+	 * offset shifted past the replaced entries, then the FIMB data - staged
+	 * bytes for replaced entries, the old file's bytes for the rest.
+	 */
+	private void writeRepacked(File newGARC, PackPlan plan) throws IOException {
+		ArrayList<GARCEntry> working = plan.working;
+		int[] changedIndices = plan.changedIndices;
+		byte[][] compressedData = plan.compressedData;
 		//get largest unpadded size
 		int maxlength = 0;
 		int[] filelengths = new int[compressedData.length];
@@ -490,6 +562,15 @@ public class GARC {
 			newGARC.delete();
 			throw ex;
 		}
+	}
+
+	/**
+	 * Swaps the written replacement in over the live archive, then re-reads
+	 * it, so THIS instance stays coherent with the file it just wrote - a
+	 * stale entry table on a repeat pack copies unchanged entries from wrong
+	 * offsets and silently corrupts them.
+	 */
+	private void replaceWith(File newGARC) throws IOException {
 		try {
 			Files.move(newGARC.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
 		} catch (IOException ex) {
@@ -497,9 +578,6 @@ public class GARC {
 			throw new IOException("Could not replace " + file.getName() + " - is the emulator or another"
 					+ " program holding it open? (" + ex.getMessage() + ")", ex);
 		}
-		//keep THIS instance coherent with the file it just wrote - a stale
-		//entry table on a repeat pack copies unchanged entries from wrong
-		//offsets and silently corrupts them
 		parse(file);
 	}
 
