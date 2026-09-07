@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import static ctrmap.formats.LittleEndian.u16;
 import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Cross-archive invariants: the things that must stay in lockstep, checked in
@@ -291,18 +292,4 @@ public class WorkspaceIntegrity {
 	 * then count+1 u32 offsets. Null when the bytes are not a container of that
 	 * shape, or do not hold subfile {@code i}.
 	 */
-	private static byte[] subfile(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = u16(c, 2);
-		if (i >= count || 4 + (i + 2) * 4 > c.length) {
-			return null;
-		}
-		int from = i32(c, 4 + i * 4), to = i32(c, 4 + (i + 1) * 4);
-		if (from < 0 || to < from || to > c.length) {
-			return null;
-		}
-		return java.util.Arrays.copyOfRange(c, from, to);
-	}
 }

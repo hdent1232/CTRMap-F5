@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import static ctrmap.formats.LittleEndian.u16;
 import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Cut a kit of reusable TERRAIN out of the retail maps.
@@ -76,7 +77,7 @@ public class TerrainHarvester {
 		for (int region = 0; region < fd.length; region++) {
 			byte[] raw;
 			try {
-				raw = sub(fd.getDecompressedEntry(region), 1);
+				raw = subfile(fd.getDecompressedEntry(region), 1);
 			} catch (RuntimeException ex) {
 				continue;
 			}
@@ -447,20 +448,5 @@ public class TerrainHarvester {
 			}
 		}
 		return owner;
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int cnt = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= cnt) {
-			return null;
-		}
-		int o0 = i32(c, 4 + i * 4), o1 = i32(c, 4 + (i + 1) * 4);
-		if (o1 <= o0 || o1 > c.length) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, o0, o1);
 	}
 }

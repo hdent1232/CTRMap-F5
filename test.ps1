@@ -102,6 +102,7 @@ $suites = @(
     @{ n = "Ui output paths (printed, and shown)"; c = "ctrmap.tests.UiOutputTest";           a = @() },
     @{ n = "Dialog seam (only Ui opens one)"; c = "ctrmap.tests.DialogSeamTest";     a = @("src") },
     @{ n = "LittleEndian (the one byte[] codec)"; c = "ctrmap.tests.LittleEndianTest"; a = @() },
+    @{ n = "ContainerBytes (the one in-memory mini-pack reader)"; c = "ctrmap.tests.ContainerBytesTest"; a = @() },
     @{ n = "Mutation baseline (guards still measured)"; c = "ctrmap.tests.MutationBaselineTest"; a = @("src") },
     @{ n = "BchMapModel (engine)";        c = "ctrmap.tests.BchMapModelTest";       a = @($a039) },
     @{ n = "OBJ export round-trip";       c = "ctrmap.tests.MapModelObjTest";        a = @($a039) },

@@ -35,6 +35,7 @@ import static ctrmap.CtrmapMainframe.mTileMapPanel;
 import static ctrmap.CtrmapMainframe.mZonePnl;
 import static ctrmap.formats.LittleEndian.u16;
 import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * "Pick GameFreak's atmosphere": browse every retail zone by name, see a LIVE
@@ -73,7 +74,7 @@ public class GfEnvPicker {
 		final List<String> labels = new ArrayList<>();
 		int zoneCount = zoG.length - 2;
 		for (int z = 0; z < zoneCount; z++) {
-			byte[] hdr = sub(zoG.getDecompressedEntry(z), 0);
+			byte[] hdr = subfile(zoG.getDecompressedEntry(z), 0);
 			if (hdr == null || hdr.length < 0x20) {
 				continue;
 			}
@@ -270,7 +271,7 @@ public class GfEnvPicker {
 	private static byte[] areaSub4(GARC adG, int area) {
 		try {
 			byte[] entry = adG.getDecompressedEntry(area);
-			byte[] s4 = sub(entry, 4);
+			byte[] s4 = subfile(entry, 4);
 			return s4 != null && s4.length == AreaEnv.SUB4_LEN ? s4 : null;
 		} catch (Exception ex) {
 			return null;
@@ -363,16 +364,5 @@ public class GfEnvPicker {
 					(int) (a.getGreen() * (1 - t) + b.getGreen() * t),
 					(int) (a.getBlue() * (1 - t) + b.getBlue() * t));
 		}
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int st = i32(c, 4 + 4 * i), en = i32(c, 4 + 4 * (i + 1));
-		if (st < 0 || en > c.length || en < st) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, st, en);
 	}
 }
