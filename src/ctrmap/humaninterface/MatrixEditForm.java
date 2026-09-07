@@ -11,7 +11,6 @@ import java.awt.Graphics;
 import java.awt.event.MouseEvent;
 import java.util.Arrays;
 import javax.swing.JFormattedTextField;
-import javax.swing.JOptionPane;
 import javax.swing.text.NumberFormatter;
 
 public class MatrixEditForm extends javax.swing.JPanel {
@@ -111,18 +110,11 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			saveAll();
 			byte[] newCamData = mm.assembleCamData();
 			if (!Arrays.equals(mm.file.getFile(0), mm.assembleData()) || !Arrays.equals(Arrays.copyOf(mm.file.getFile(1), newCamData.length), newCamData)) {
-				if (dialog) {
-					int rsl = Utils.showSaveConfirmationDialog("Map matrix");
-					switch (rsl) {
-						case JOptionPane.YES_OPTION:
-							break;
-						case JOptionPane.NO_OPTION:
-							return true;
-						//closing the dialog means cancel, not "write it anyway"
-						case JOptionPane.CLOSED_OPTION:
-						case JOptionPane.CANCEL_OPTION:
-							return false;
-					}
+				switch (Utils.askToKeep(dialog, "Map matrix")) {
+					case DISCARD:
+						return true;
+					case CANCEL:
+						return false;
 				}
 				mm.write();
 			}
