@@ -310,31 +310,7 @@ public class TileEditForm extends javax.swing.JPanel {
 					cat1BtnGroup.clearSelection();
 					cat2BtnGroup.clearSelection();
 				} else {
-					switch (tile.cat1) {
-						case 0:
-							normal.setSelected(true);
-							break;
-						case 1:
-							water.setSelected(true);
-							break;
-						case 2:
-							action.setSelected(true);
-							break;
-					}
-					switch (tile.cat2) {
-						case 0:
-							cat2b1.setSelected(true);
-							break;
-						case 1:
-							cat2b2.setSelected(true);
-							break;
-						case 2:
-							cat2b3.setSelected(true);
-							break;
-						case 3:
-							cat2b4.setSelected(true);
-							break;
-					}
+					restoreCats(tile.cat1, tile.cat2);
 				}
 				setCat2Texts();
 				if (showListModel() != false) {
