@@ -3,6 +3,8 @@ package ctrmap.tests;
 import ctrmap.MapResizer;
 import ctrmap.formats.garc.GARC;
 import java.io.File;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * Matrix-resize core validation over every hasLOD==0 retail matrix: grown to
@@ -25,7 +27,7 @@ public class MapResizerTest {
 			if (mat == null || mat.length < 16 || u16(mat, 2) < 2) {
 				continue;
 			}
-			int sub0 = le32(mat, 4);
+			int sub0 = i32(mat, 4);
 			int hasLOD = u16(mat, sub0);
 			int w = u16(mat, sub0 + 4), h = u16(mat, sub0 + 6);
 			if (w < 1 || h < 1 || (long) (w + 1) * (h + 1) * 16 > 40000) {
@@ -66,9 +68,9 @@ public class MapResizerTest {
 		if (count != u16(mat, 2)) {
 			throw new IllegalStateException("subfile count changed");
 		}
-		int oldSub0 = le32(mat, 4);
+		int oldSub0 = i32(mat, 4);
 		int hasLOD = u16(mat, oldSub0);
-		int nSub0 = le32(out, 4);
+		int nSub0 = i32(out, 4);
 		if (u16(out, nSub0) != hasLOD || u16(out, nSub0 + 4) != newW || u16(out, nSub0 + 6) != newH) {
 			throw new IllegalStateException("grid header wrong");
 		}
@@ -117,18 +119,18 @@ public class MapResizerTest {
 			}
 		}
 		//camera subfile: same length, entry count preserved
-		int oCam0 = le32(mat, 8), oCam1 = le32(mat, 12);
-		int nCam0 = le32(out, 8), nCam1 = le32(out, 12);
+		int oCam0 = i32(mat, 8), oCam1 = i32(mat, 12);
+		int nCam0 = i32(out, 8), nCam1 = i32(out, 12);
 		if (oCam1 - oCam0 != nCam1 - nCam0) {
 			throw new IllegalStateException("camera subfile size changed");
 		}
-		if (oCam1 - oCam0 >= 4 && le32(mat, oCam0) != le32(out, nCam0)) {
+		if (oCam1 - oCam0 >= 4 && i32(mat, oCam0) != i32(out, nCam0)) {
 			throw new IllegalStateException("camera entry count changed");
 		}
 		//extra subfiles byte-identical
 		for (int s = 2; s < count; s++) {
-			int oa = le32(mat, 4 + s * 4), ob = le32(mat, 4 + (s + 1) * 4);
-			int na = le32(out, 4 + s * 4), nb = le32(out, 4 + (s + 1) * 4);
+			int oa = i32(mat, 4 + s * 4), ob = i32(mat, 4 + (s + 1) * 4);
+			int na = i32(out, 4 + s * 4), nb = i32(out, 4 + (s + 1) * 4);
 			if (ob - oa != nb - na) {
 				throw new IllegalStateException("extra subfile " + s + " size changed");
 			}
@@ -139,16 +141,8 @@ public class MapResizerTest {
 			}
 		}
 		//container well-formed: offsets contiguous, last == length
-		if (le32(out, 4 + count * 4) != out.length) {
+		if (i32(out, 4 + count * 4) != out.length) {
 			throw new IllegalStateException("container end offset wrong");
 		}
-	}
-
-	static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

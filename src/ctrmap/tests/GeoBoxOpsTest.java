@@ -4,6 +4,7 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.GeoBoxOps;
 import java.io.File;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Box-op validation on real map regions (sampled): for each region, a box over
@@ -170,26 +171,5 @@ public class GeoBoxOpsTest {
 			}
 		}
 		return any ? b : null;
-	}
-
-	private static byte[] subfile(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		byte[] out = new byte[o1 - o0];
-		System.arraycopy(c, o0, out, 0, out.length);
-		return out;
-	}
-
-	private static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Guards the PokePartyGetParam / PokePartySetParam selector table against the
@@ -354,7 +355,7 @@ public class PartyParamTest {
 			if (count < 3 || zo.length < 4 + (count + 1) * 4) {
 				return null;
 			}
-			int start = le(zo, 4 + 2 * 4), end = le(zo, 4 + 3 * 4);
+			int start = i32(zo, 4 + 2 * 4), end = i32(zo, 4 + 3 * 4);
 			if (start < 0 || end > zo.length || end <= start) {
 				return null;
 			}
@@ -362,9 +363,5 @@ public class PartyParamTest {
 		} catch (Throwable t) {
 			return null;
 		}
-	}
-
-	static int le(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

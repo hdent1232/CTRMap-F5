@@ -302,10 +302,6 @@ public class BchMapModelTest {
 		return null; // no u8 mesh available to upgrade
 	}
 
-	private static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
-	}
-
 	private static void write(File f, byte[] b) throws Exception {
 		try (OutputStream os = new FileOutputStream(f)) {
 			os.write(b);

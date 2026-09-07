@@ -8,6 +8,8 @@ import ctrmap.formats.mapmatrix.MapMatrix;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import java.io.File;
 import java.io.FileOutputStream;
+import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * The two answers the map tools reach for when the user has not said which
@@ -83,7 +85,7 @@ public class MapDefaultsTest {
 		check(MapMatrix.firstRegionId(new byte[]{1, 2, 3, 4, 5}) == -1, "a file too short to hold an offset -> no default region");
 		//a well-formed header whose subfile offset points past the end
 		byte[] bogus = new byte[16];
-		put32(bogus, 4, 0x40000);
+		putI32(bogus, 4, 0x40000);
 		check(MapMatrix.firstRegionId(bogus) == -1, "an offset past the end of the file -> no default region");
 		//a real shape, 2x2, every cell empty
 		byte[] empty = matrix(2, 2, new int[]{0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF});
@@ -354,20 +356,6 @@ public class MapDefaultsTest {
 		return "mesh " + mesh + " [" + n + "]";
 	}
 
-	private static byte[] subfile(byte[] container, int idx) {
-		if (container.length < 8 + idx * 4) {
-			return null;
-		}
-		int off = i32(container, 4 + idx * 4);
-		int end = i32(container, 8 + idx * 4);
-		if (off < 0 || end > container.length || end <= off) {
-			return null;
-		}
-		byte[] out = new byte[end - off];
-		System.arraycopy(container, off, out, 0, out.length);
-		return out;
-	}
-
 	/** A map matrix container: 2-byte magic, 2-byte count, offsets, subfile 0. */
 	private static byte[] matrix(int w, int h, int[] cells) {
 		int sub0 = 12;                       //magic + count + two offsets
@@ -375,8 +363,8 @@ public class MapDefaultsTest {
 		b[0] = 'M';
 		b[1] = 'M';
 		b[2] = 1;
-		put32(b, 4, sub0);
-		put32(b, 8, b.length);
+		putI32(b, 4, sub0);
+		putI32(b, 8, b.length);
 		b[sub0 + 4] = (byte) w;
 		b[sub0 + 6] = (byte) h;
 		for (int i = 0; i < cells.length; i++) {
@@ -384,17 +372,6 @@ public class MapDefaultsTest {
 			b[sub0 + 9 + i * 2] = (byte) (cells[i] >> 8);
 		}
 		return b;
-	}
-
-	private static void put32(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
-	}
-
-	private static int i32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 
 	static void check(boolean ok, String what) {

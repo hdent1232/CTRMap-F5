@@ -4,12 +4,12 @@ import ctrmap.formats.containers.AD;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.propdata.ADPropRegistry;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Arrays;
+import static ctrmap.formats.LittleEndian.i32;
+import java.nio.file.Files;
 
 /**
  * Headless order-preservation test for ADPropRegistry.
@@ -50,11 +50,11 @@ public class ADPropRegistryOrderTest {
 			if (b == null || b.length < 8 || b[0] != 0x41 || b[1] != 0x44) {
 				continue; //not an AD container (e.g. ORAS entry 228)
 			}
-			int file0Offset = readIntLE(b, 4);
+			int file0Offset = i32(b, 4);
 			if (file0Offset + 4 > b.length) {
 				continue;
 			}
-			int count = readIntLE(b, file0Offset);
+			int count = i32(b, file0Offset);
 			if (count < 2) {
 				continue;
 			}
@@ -123,7 +123,7 @@ public class ADPropRegistryOrderTest {
 				return false;
 			}
 
-			byte[] wholeAfter = readAll(tmp);
+			byte[] wholeAfter = Files.readAllBytes(tmp.toPath());
 			if (!Arrays.equals(adBytes, wholeAfter)) {
 				System.out.println("FAIL: entry " + index + " whole AD container is not byte-identical after write()");
 				hexDiff(adBytes, wholeAfter);
@@ -135,17 +135,6 @@ public class ADPropRegistryOrderTest {
 		}
 	}
 
-	private static int readIntLE(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
-	}
-
-	private static byte[] readAll(File f) throws IOException {
-		InputStream in = new FileInputStream(f);
-		byte[] b = new byte[in.available()];
-		in.read(b);
-		in.close();
-		return b;
-	}
 
 	private static void hexDiff(byte[] a, byte[] b) {
 		System.out.println("expected " + a.length + " bytes, got " + b.length);

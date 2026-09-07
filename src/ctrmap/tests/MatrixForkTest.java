@@ -7,6 +7,8 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * Guards the map matrix's ZONE-SWITCH layer across a geometry fork.
@@ -113,7 +115,7 @@ public class MatrixForkTest {
 					throw new IllegalStateException("fork reported 0 zone cells rewritten");
 				}
 				//the region grid must still be remapped to the fork's private regions
-				int sub0 = u32(out, 4);
+				int sub0 = i32(out, 4);
 				int w = u16(out, sub0 + 4), h = u16(out, sub0 + 6);
 				for (int k = 0; k < w * h; k++) {
 					int id = u16(out, sub0 + 8 + k * 2);
@@ -202,7 +204,7 @@ public class MatrixForkTest {
 		if (mat == null || mat.length < 12) {
 			return null;
 		}
-		int sub0 = u32(mat, 4);
+		int sub0 = i32(mat, 4);
 		if (sub0 < 0 || sub0 + 8 > mat.length) {
 			return null;
 		}
@@ -227,13 +229,5 @@ public class MatrixForkTest {
 			}
 		}
 		return out;
-	}
-
-	private static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	private static int u32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

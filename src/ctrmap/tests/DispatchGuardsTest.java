@@ -12,6 +12,7 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * The guards around the dispatch-case freeze must actually refuse - each one
@@ -587,18 +588,14 @@ public class DispatchGuardsTest {
 		if (count < 3 || zo.length < 4 + (count + 1) * 4) {
 			return null;
 		}
-		int start = readIntLE(zo, 4 + 2 * 4);
-		int end = readIntLE(zo, 4 + 3 * 4);
+		int start = i32(zo, 4 + 2 * 4);
+		int end = i32(zo, 4 + 3 * 4);
 		if (start < 0 || end > zo.length || end <= start) {
 			return null;
 		}
 		byte[] scr = new byte[end - start];
 		System.arraycopy(zo, start, scr, 0, scr.length);
 		return scr;
-	}
-
-	private static int readIntLE(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
 	}
 
 	private static void report() {

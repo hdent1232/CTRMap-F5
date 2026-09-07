@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * Headless acceptance battery for BchTexturePack (cross-area texture import).
@@ -323,9 +325,9 @@ public class TexturePackImportTest {
 
 			//synthesize a mipmapped pack: patch mipLevels of texture 0
 			byte[] bad = packs.get(areas.get(0)).clone();
-			int contentsAdr = peek(bad, 8);
-			int ptrTab = peek(bad, contentsAdr + 36) + contentsAdr;
-			int st = peek(bad, ptrTab) + contentsAdr;
+			int contentsAdr = i32(bad, 8);
+			int ptrTab = i32(bad, contentsAdr + 36) + contentsAdr;
+			int st = i32(bad, ptrTab) + contentsAdr;
 			bad[st + 25] = 3;
 			boolean threwMip = false;
 			try {
@@ -447,40 +449,40 @@ public class TexturePackImportTest {
 	 */
 	private static boolean verifyNameTree(String tag, byte[] pack, List<BchTexturePack.Texture> texes) {
 		boolean ok = true;
-		int contentsAdr = peek(pack, 8);
-		int stringsAdr = peek(pack, 12);
-		int count = peek(pack, contentsAdr + 40);
+		int contentsAdr = i32(pack, 8);
+		int stringsAdr = i32(pack, 12);
+		int count = i32(pack, contentsAdr + 40);
 		if (count != texes.size()) {
 			fail(tag + ": tree check: dict texture count " + count + " != parsed " + texes.size());
 			return false;
 		}
 		//the texture dict (index 3) name field holds the tree offset
-		int nodeBase = contentsAdr + peek(pack, contentsAdr + 3 * 12 + 8);
+		int nodeBase = contentsAdr + i32(pack, contentsAdr + 3 * 12 + 8);
 		int nodeCount = count + 1;
 		if (nodeBase < 0 || nodeBase + nodeCount * 12 > pack.length) {
 			fail(tag + ": tree nodes out of bounds");
 			return false;
 		}
-		long rootBit = peek(pack, nodeBase) & 0xFFFFFFFFL;
+		long rootBit = i32(pack, nodeBase) & 0xFFFFFFFFL;
 		if (rootBit != 0xFFFFFFFFL) {
 			fail(tag + ": tree root refBit is " + rootBit + ", expected 0xFFFFFFFF");
 			ok = false;
 		}
 		for (int i = 0; i < nodeCount; i++) {
-			int left = peekU16(pack, nodeBase + i * 12 + 4);
-			int right = peekU16(pack, nodeBase + i * 12 + 6);
+			int left = u16(pack, nodeBase + i * 12 + 4);
+			int right = u16(pack, nodeBase + i * 12 + 6);
 			if (left >= nodeCount || right >= nodeCount) {
 				fail(tag + ": tree node " + i + " has dangling link (left " + left + ", right " + right + ", " + nodeCount + " nodes)");
 				ok = false;
 			}
 			if (i > 0) {
-				long refBit = peek(pack, nodeBase + i * 12) & 0xFFFFFFFFL;
+				long refBit = i32(pack, nodeBase + i * 12) & 0xFFFFFFFFL;
 				if (refBit >= rootBit) {
 					fail(tag + ": tree node " + i + " refBit " + refBit + " not below the root sentinel");
 					ok = false;
 				}
 				//emit writes node i's name offset as texture i-1's name
-				String nodeName = readCString(pack, stringsAdr + peek(pack, nodeBase + i * 12 + 8));
+				String nodeName = readCString(pack, stringsAdr + i32(pack, nodeBase + i * 12 + 8));
 				if (!texes.get(i - 1).name.equals(nodeName)) {
 					fail(tag + ": tree node " + i + " name '" + nodeName + "' != texture '" + texes.get(i - 1).name + "'");
 					ok = false;
@@ -492,20 +494,20 @@ public class TexturePackImportTest {
 		}
 		for (BchTexturePack.Texture t : texes) {
 			long prevBit = rootBit;
-			int cur = peekU16(pack, nodeBase + 4); //root.left
+			int cur = u16(pack, nodeBase + 4); //root.left
 			int steps = 0;
 			boolean walked = true;
-			while ((peek(pack, nodeBase + cur * 12) & 0xFFFFFFFFL) < prevBit) {
+			while ((i32(pack, nodeBase + cur * 12) & 0xFFFFFFFFL) < prevBit) {
 				if (++steps > nodeCount) {
 					fail(tag + ": tree cycle while looking up '" + t.name + "'");
 					ok = false;
 					walked = false;
 					break;
 				}
-				prevBit = peek(pack, nodeBase + cur * 12) & 0xFFFFFFFFL;
+				prevBit = i32(pack, nodeBase + cur * 12) & 0xFFFFFFFFL;
 				cur = treeGetBit(t.name, prevBit)
-						? peekU16(pack, nodeBase + cur * 12 + 6)
-						: peekU16(pack, nodeBase + cur * 12 + 4);
+						? u16(pack, nodeBase + cur * 12 + 6)
+						: u16(pack, nodeBase + cur * 12 + 4);
 			}
 			if (!walked) {
 				continue;
@@ -515,7 +517,7 @@ public class TexturePackImportTest {
 				ok = false;
 				continue;
 			}
-			String found = readCString(pack, stringsAdr + peek(pack, nodeBase + cur * 12 + 8));
+			String found = readCString(pack, stringsAdr + i32(pack, nodeBase + cur * 12 + 8));
 			if (!t.name.equals(found)) {
 				fail(tag + ": tree lookup of '" + t.name + "' found '" + found + "'");
 				ok = false;
@@ -531,10 +533,6 @@ public class TexturePackImportTest {
 	private static boolean treeGetBit(String name, long bit) {
 		int pos = (int) (bit >>> 3);
 		return pos < name.length() && ((name.charAt(pos) >> (int) (bit & 7)) & 1) != 0;
-	}
-
-	private static int peekU16(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8);
 	}
 
 	private static String readCString(byte[] b, int off) {
@@ -574,9 +572,5 @@ public class TexturePackImportTest {
 		} catch (Exception ex) {
 			return false;
 		}
-	}
-
-	private static int peek(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
 	}
 }

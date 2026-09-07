@@ -5,6 +5,7 @@ import ctrmap.WorkspaceIntegrity;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Cross-archive references must resolve.
@@ -110,7 +111,7 @@ public class IntegrityTest {
 		int last = matrices - 1;
 		File matFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, last);
 		byte[] mat = Files.readAllBytes(matFile.toPath());
-		int sub0 = u32(mat, 4);
+		int sub0 = i32(mat, 4);
 		int cell = sub0 + 8;
 		int dangling = regions + 4143; //well past the end, and not 0xFFFF
 		mat[cell] = (byte) (dangling & 0xFF);
@@ -174,10 +175,6 @@ public class IntegrityTest {
 		check(!WorkspaceIntegrity.check(true).toString().contains("could not read any of the"),
 				"with the real archive back, the check stops saying it: it is a report about"
 				+ " THIS pass, not a line that is always printed");
-	}
-
-	private static int u32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 
 	/** The rule in isolation: an id is unusable when no registry has that index. */

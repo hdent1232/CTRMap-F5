@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.List;
 import javax.swing.AbstractButton;
 import javax.swing.JTextArea;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Guards the script assembler against the two silent failures the script
@@ -160,7 +161,7 @@ public class ScriptAssemblerGuardTest {
 		GARC zo = new GARC(garc);
 		int scripts = 0, bad = 0;
 		for (int z = 0; z < zo.length - 2; z++) {
-			byte[] sub = SysreqNameTest.sub(zo.getDecompressedEntry(z), 2);
+			byte[] sub = subfile(zo.getDecompressedEntry(z), 2);
 			if (sub == null || sub.length < 8) {
 				continue;
 			}
@@ -202,7 +203,7 @@ public class ScriptAssemblerGuardTest {
 		GFLPawnScript s = null;
 		String text = null;
 		for (int z = 0; z < zo.length - 2 && s == null; z++) {
-			byte[] sub = SysreqNameTest.sub(zo.getDecompressedEntry(z), 2);
+			byte[] sub = subfile(zo.getDecompressedEntry(z), 2);
 			if (sub == null || sub.length < 8) {
 				continue;
 			}

@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.f32;
 
 /**
  * Prefab pipeline validation on real regions (sampled): a tile box is cut out
@@ -332,9 +333,9 @@ public class MapPrefabTest {
 				throw new IllegalStateException(label + ": mesh for '" + l.material + "' smaller than landing");
 			}
 			for (int v = 0; v < l.count; v++) {
-				float relX = getF(piece.vertexBytes, v * piece.stride + piece.posOffset);
-				float relY = getF(piece.vertexBytes, v * piece.stride + piece.posOffset + 4);
-				float relZ = getF(piece.vertexBytes, v * piece.stride + piece.posOffset + 8);
+				float relX = f32(piece.vertexBytes, v * piece.stride + piece.posOffset);
+				float relY = f32(piece.vertexBytes, v * piece.stride + piece.posOffset + 4);
+				float relZ = f32(piece.vertexBytes, v * piece.stride + piece.posOffset + 8);
 				float[] got = pos[l.base + v];
 				if (Math.abs(got[0] - (relX + ax)) > 1e-3f || Math.abs(got[1] - (relY + dy)) > 1e-3f
 						|| Math.abs(got[2] - (relZ + az)) > 1e-3f) {
@@ -355,9 +356,5 @@ public class MapPrefabTest {
 			fos.write(entry);
 		}
 		return new GR(f);
-	}
-
-	private static float getF(byte[] b, int o) {
-		return Float.intBitsToFloat((b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24));
 	}
 }

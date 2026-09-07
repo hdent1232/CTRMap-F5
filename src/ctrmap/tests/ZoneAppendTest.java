@@ -10,14 +10,13 @@ import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.formats.zone.ZoneHeader;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.HashMap;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Headless end-to-end test of the EXPERIMENTAL zone append (ZoneAppender).
@@ -87,9 +86,9 @@ public class ZoneAppendTest {
 		File f536 = new File(packDir, "536");
 		File f537 = new File(packDir, "537");
 		File f538 = new File(packDir, "538");
-		writeAll(f536, p.newZo); //DECOMPRESSED - stays editable; the override compresses it at pack time
-		writeAll(f537, p.master);
-		writeAll(f538, p.en);
+		Files.write(f536.toPath(), p.newZo); //DECOMPRESSED - stays editable; the override compresses it at pack time
+		Files.write(f537.toPath(), p.master);
+		Files.write(f538.toPath(), p.en);
 		String savedWsPath = Workspace.WORKSPACE_PATH;
 		Workspace.WORKSPACE_PATH = tmp.getAbsolutePath();
 		Workspace.persist_paths.clear();
@@ -123,7 +122,7 @@ public class ZoneAppendTest {
 
 		//entry 536: structurally valid zone with the right index
 		File zoFile = new File(tmp, "zo536");
-		writeAll(zoFile, e536);
+		Files.write(zoFile.toPath(), e536);
 		ZO zo = new ZO(zoFile);
 		check(zo.len == 5, "new zone ZO has 5 subfiles, got " + zo.len);
 		ZoneHeader hdr = new ZoneHeader(zo.getFile(0), Workspace.GameType.ORAS);
@@ -157,8 +156,8 @@ public class ZoneAppendTest {
 				check(false, String.format("master row 536 differs from row %d outside the flags word at row offset 0x%X", SRC, i));
 			}
 		}
-		int srcRowFlags = readIntLE(masterOld, srcRowOff + ZoneCloner.UNKNOWN_FLAGS_OFFSET);
-		int newRowFlags = readIntLE(e537, newRowOff + ZoneCloner.UNKNOWN_FLAGS_OFFSET);
+		int srcRowFlags = i32(masterOld, srcRowOff + ZoneCloner.UNKNOWN_FLAGS_OFFSET);
+		int newRowFlags = i32(e537, newRowOff + ZoneCloner.UNKNOWN_FLAGS_OFFSET);
 		check((newRowFlags >>> 21) == NEW_INDEX, "master row 536 OAZoneNumber == " + (newRowFlags >>> 21) + ", expected " + NEW_INDEX);
 		check((newRowFlags & 0x1FFFFF) == (srcRowFlags & 0x1FFFFF), "master row 536 flags bits 0..20 preserved from source row");
 
@@ -166,21 +165,21 @@ public class ZoneAppendTest {
 		check(e538[0] == 'E' && e538[1] == 'N', "EN magic intact");
 		int enCount = (e538[2] & 0xFF) | ((e538[3] & 0xFF) << 8);
 		check(enCount == 537, "EN count == " + enCount + ", expected 537");
-		check(readIntLE(e538, 4) == 0x86C, "EN first offset == 0x86C (table end)");
+		check(i32(e538, 4) == 0x86C, "EN first offset == 0x86C (table end)");
 		for (int i = 0; i <= 536; i++) {
-			int oldOff = readIntLE(enOld, 4 + i * 4);
-			int newOff = readIntLE(e538, 4 + i * 4);
+			int oldOff = i32(enOld, 4 + i * 4);
+			int newOff = i32(e538, 4 + i * 4);
 			if (newOff != oldOff + 4) {
 				check(false, "EN offset " + i + " not shifted by exactly +4");
 			}
 		}
 		System.out.println("EN offsets 0..536 all shifted by +4");
-		int off536 = readIntLE(e538, 4 + 536 * 4);
-		int off537 = readIntLE(e538, 4 + 537 * 4);
+		int off536 = i32(e538, 4 + 536 * 4);
+		int off537 = i32(e538, 4 + 537 * 4);
 		check(off536 == off537, "EN offsets[536] == offsets[537] (empty new blob)");
 		check(off537 == e538.length, "EN end sentinel == file length");
-		int oldDataStart = readIntLE(enOld, 4);
-		int newDataStart = readIntLE(e538, 4);
+		int oldDataStart = i32(enOld, 4);
+		int newDataStart = i32(e538, 4);
 		for (int i = 0; i < enOld.length - oldDataStart; i++) {
 			if (e538[newDataStart + i] != enOld[oldDataStart + i]) {
 				check(false, String.format("EN blob data changed at data offset 0x%X", i));
@@ -200,8 +199,8 @@ public class ZoneAppendTest {
 
 		//GARC header fields of the packed file
 		byte[] head = readN(garcCopy, 0x1C);
-		check(readIntLE(head, 0x14) == (int) garcCopy.length(), "GARC header 0x14 == packed file length");
-		check(readIntLE(head, 0x18) == p.en.length, "GARC header 0x18 (largest padded entry) == grown EN size 0x" + Integer.toHexString(p.en.length));
+		check(i32(head, 0x14) == (int) garcCopy.length(), "GARC header 0x14 == packed file length");
+		check(i32(head, 0x18) == p.en.length, "GARC header 0x18 (largest padded entry) == grown EN size 0x" + Integer.toHexString(p.en.length));
 
 		System.out.println("stats: packed " + garcCopy.length() + " bytes (pristine " + pristineFile.length()
 				+ "), new zone " + NEW_INDEX + " from source " + SRC + ", master " + e537.length
@@ -241,7 +240,7 @@ public class ZoneAppendTest {
 	/** Writes the source ZO to a temp file and returns subfile 0 for header parsing. */
 	private static byte[] srcZo(byte[] srcZo, File tmp) throws IOException {
 		File f = new File(tmp, "zoSrc");
-		writeAll(f, srcZo);
+		Files.write(f.toPath(), srcZo);
 		return new ZO(f).getFile(0);
 	}
 
@@ -254,18 +253,18 @@ public class ZoneAppendTest {
 	/** Minimal raw GARC parse (VER_4, flags == 1) - entry lengths and first data bytes as stored on disk. */
 	private static RawEntry[] parseRawEntries(File garcFile) throws IOException {
 		byte[] b = Files.readAllBytes(garcFile.toPath());
-		int headerLen = readIntLE(b, 0x4);
-		int dataOffset = readIntLE(b, 0x10);
+		int headerLen = i32(b, 0x4);
+		int dataOffset = i32(b, 0x10);
 		int fatoPos = headerLen;
-		int fatoLen = readIntLE(b, fatoPos + 4);
+		int fatoLen = i32(b, fatoPos + 4);
 		int count = (b[fatoPos + 8] & 0xFF) | ((b[fatoPos + 9] & 0xFF) << 8);
 		int fatbPos = fatoPos + fatoLen;
 		RawEntry[] out = new RawEntry[count];
 		for (int i = 0; i < count; i++) {
 			int entryPos = fatbPos + 0xC + i * 16; //flags, start, end, length
-			int start = readIntLE(b, entryPos + 4);
+			int start = i32(b, entryPos + 4);
 			out[i] = new RawEntry();
-			out[i].len = readIntLE(b, entryPos + 12);
+			out[i].len = i32(b, entryPos + 12);
 			out[i].firstByte = out[i].len > 0 ? b[dataOffset + start] : 0;
 		}
 		return out;
@@ -279,10 +278,6 @@ public class ZoneAppendTest {
 		System.out.println("ok: " + what);
 	}
 
-	private static int readIntLE(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
-	}
-
 	private static byte[] readN(File f, int n) throws IOException {
 		InputStream in = new FileInputStream(f);
 		byte[] b = new byte[n];
@@ -291,10 +286,4 @@ public class ZoneAppendTest {
 		return b;
 	}
 
-	private static void writeAll(File f, byte[] b) throws IOException {
-		OutputStream os = new FileOutputStream(f);
-		os.write(b);
-		os.flush();
-		os.close();
-	}
 }
