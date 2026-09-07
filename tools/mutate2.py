@@ -499,10 +499,18 @@ def relocate(path, texts):
 
     The second bucket used to fall out of the loop with nothing recorded, so the
     report's one figure for "what this sweep did not look at" counted only the
-    duplicates. Measured on master at 095877f: 38 duplicated against 68 absent,
-    so the number a reader was given understated the unmeasured set by a factor
-    of nearly three. A measurement that quietly gets smaller is precisely what
-    this harness exists to make impossible, and it was doing it to itself.
+    duplicates. Measured on master at 095877f, over the added lines of all 23
+    merged branches:
+
+                            occurrences     distinct (file, text)
+        placed uniquely         257                 224
+        duplicated               74                  38   <- the figure printed
+        absent                  133                  68   <- recorded nowhere
+
+    The 74 is the number this report has been showing as the whole of what it
+    did not look at; the true figure was 207. A measurement that quietly gets
+    smaller is precisely what this harness exists to make impossible, and it was
+    doing it to itself.
 
     Absent is not automatically lost coverage: where the later edit came from
     another merged branch, the line that replaced it is in THAT branch's diff
@@ -1173,10 +1181,10 @@ def selftest():
 
         # DEFECT 6: relocate() must ACCOUNT for every fix line it cannot place,
         # not just the ambiguous ones. On master at 095877f the silent bucket -
-        # a line a later merge edited, so its exact text is gone - held 68
-        # lines against the 38 the report named. The whole point of this harness
-        # is that a measurement may not quietly get smaller, and this was it
-        # doing that to itself.
+        # a line a later merge edited, so its exact text is gone - held 133
+        # occurrences against the 74 the report named. The whole point of this
+        # harness is that a measurement may not quietly get smaller, and this
+        # was it doing that to itself.
         del SKIPPED_AMBIGUOUS[:]
         del SKIPPED_GONE[:]
         placed = relocate("src/t/T.java", [
