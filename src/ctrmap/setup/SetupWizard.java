@@ -45,7 +45,7 @@ import javax.swing.SwingWorker;
  * <p>Each step explains itself, validates before it lets you past, and can say
  * what is wrong in words rather than in archive names. The one thing it will not
  * do is pretend: the final step verifies that zones actually loaded, because
- * {@code Workspace.valid} is set before anything is read and so cannot tell
+ * {@code Workspace.isValid()} is true before anything is read and so cannot tell
  * "settings saved" apart from "editor working".
  */
 public class SetupWizard extends JDialog {
@@ -583,7 +583,7 @@ public class SetupWizard extends JDialog {
 	/** Runs the real load and checks that it actually produced something. */
 	private void completeSetup() {
 		Workspace.validate(this, false);
-		//Workspace.valid is set BEFORE the archives are read, so it says nothing
+		//Workspace.isValid() is true BEFORE the archives are read, so it says nothing
 		//about whether this worked. The only honest test is what the user can
 		//see: are there zones in the list?
 		int zones = 0;

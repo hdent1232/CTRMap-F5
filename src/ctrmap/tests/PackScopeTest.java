@@ -77,10 +77,65 @@ public class PackScopeTest {
 		check(inGame != null && Arrays.equals(edited, inGame),
 				"an edited GameText entry is what the packed archive holds");
 
+		//3. the two decisions a pack makes before it writes a byte, each alone
+		whatAPackTakes();
+
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * The two decisions a pack makes before it writes a byte, each on its
+	 * own, now that {@link GARC#packDirectory} is built from them.
+	 *
+	 * <p>{@link GARC#filesToPack} IS "a pack writes what was edited": the
+	 * extraction directory holds every entry ever opened, and only the ones
+	 * the workspace lists as edited go back in - in entry order, not the
+	 * directory's string order, where "10" comes before "2".
+	 * {@link GARC#storedCompressed}: an explicit override wins for any slot,
+	 * an existing slot keeps its flag, an appended slot inherits the last
+	 * entry's - the rule a zone insert-shift and a plain tail append both
+	 * rely on.
+	 */
+	static void whatAPackTakes() throws Exception {
+		File dir = Scratch.dir("ctrmap_pack_take");
+		for (String n : new String[]{"10", "2", "3"}) {
+			Files.write(new File(dir, n).toPath(), new byte[]{1});
+		}
+		Workspace.addPersist(new File(dir, "10"));
+		Workspace.addPersist(new File(dir, "2"));
+		java.util.List<File> take = GARC.filesToPack(dir, Workspace.session()::isPersisted);
+		StringBuilder names = new StringBuilder();
+		for (File f : take) {
+			names.append(f.getName()).append(' ');
+		}
+		check(take.size() == 2 && take.get(0).getName().equals("2") && take.get(1).getName().equals("10"),
+				"a pack takes only the files the workspace lists as edited, in entry order: ["
+				+ names.toString().trim() + "]");
+
+		//Asked on two archives whose tails are stored differently - field data
+		//ends compressed, zone data ends raw (measured) - so a rule that answers
+		//"always compressed" or "always raw" cannot pass as "inherits". Proving
+		//this section by breaking found exactly that: on zone data alone,
+		//"return false" and "inherit" agree.
+		GARC gr = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA), zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		int grLast = gr.getEntryCount() - 1, zoLast = zo.getEntryCount() - 1;
+		check(gr.isEntryCompressed(grLast) && !zo.isEntryCompressed(zoLast),
+				"the fixtures disagree about their tails (field data ends compressed, zone data raw)"
+				+ " - so the rule is asked both ways");
+		check(zo.storedCompressed(null, 0) == zo.isEntryCompressed(0)
+				&& zo.storedCompressed(null, zoLast) == zo.isEntryCompressed(zoLast)
+				&& gr.storedCompressed(null, 0) == gr.isEntryCompressed(0)
+				&& gr.storedCompressed(null, grLast) == gr.isEntryCompressed(grLast),
+				"an existing slot keeps the way it is stored");
+		check(gr.storedCompressed(null, grLast + 1) && gr.storedCompressed(null, grLast + 7)
+				&& !zo.storedCompressed(null, zoLast + 1) && !zo.storedCompressed(null, zoLast + 7),
+				"an appended slot inherits the last entry's: compressed after field data, raw after zone data");
+		check(!gr.storedCompressed(Boolean.FALSE, 0) && gr.storedCompressed(Boolean.TRUE, grLast + 1)
+				&& zo.storedCompressed(Boolean.TRUE, 0) && !zo.storedCompressed(Boolean.FALSE, zoLast + 1),
+				"and an explicit override wins for any slot, either way");
 	}
 
 	static void pack() throws Exception {

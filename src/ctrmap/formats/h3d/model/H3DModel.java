@@ -61,6 +61,27 @@ public class H3DModel {
 		return count;
 	}
 	
+	/**
+	 * Reads one model out of a BCH: the model header, the object-name
+	 * dictionary, the skeleton, the mesh table, then for every mesh its
+	 * vertex-shader uniforms (the eight scales and the position offset), its
+	 * faces, and every vertex of every face decoded attribute by attribute.
+	 * A port of Ohana's reader, section comments mark the phases.
+	 *
+	 * <p>LEFT AS ONE METHOD, DELIBERATELY. The candidate seam is the
+	 * per-vertex decode (the inner {@code switch (att)}), but it reads
+	 * fourteen values the outer loops set up - the attribute permutation and
+	 * format tables, the eight scales, the offset, the node list, the
+	 * skinning mode and the skeleton - and writes the mesh's flags, the
+	 * vertex and the model's bounds. Handing all of that to a
+	 * {@code readVertex(...)} would be a fourteen-parameter call, or those
+	 * fourteen hoisted into fields: the same tangle, spread over two places.
+	 * The header read (the first forty lines) is straight-line and reads as
+	 * itself. What would make this decomposable is a VertexLayout value
+	 * (permutation, formats, scales) that the whole mesh shares, and that
+	 * is a design change for when this reader is next touched for a reason
+	 * of its own, not a split for the sake of a shorter method.
+	 */
 	public H3DModel(RandomAccessBAIS in, byte[] buf, BCHHeader properties) throws IOException {
 		int objectsHeaderOffset = in.readInt();
 
