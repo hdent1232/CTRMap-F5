@@ -1015,6 +1015,56 @@ def compare_to_baseline(live, old):
 import require_build
 
 
+# ---- a mutant must never outlive the harness --------------------------------
+# Between "write the mutated source" and "write the original back" the tree on
+# disk carries an injected fault. The restore used to be a plain statement at the
+# bottom of the loop, so anything that escaped between the two - a MemoryError
+# from a chatty child (it happened), a KeyboardInterrupt, a SystemExit raised by
+# a mid-sweep refusal - left the fault on disk, showing in git status as an
+# ordinary modification, and the git reset at the very end never ran either.
+# Restore is now owed the moment the mutated bytes land, and paid by atexit on
+# any Python-level exit. A hard kill (SIGKILL, power) still cannot be caught in
+# process; that is what the frozen-sha reset on the next run is for.
+import atexit
+
+_PENDING_RESTORE = []          # [(path, original_text)] while a mutant is on disk
+
+
+def _restore_pending():
+    """Put back any source file still carrying a mutant. Idempotent; loud."""
+    while _PENDING_RESTORE:
+        path, original = _PENDING_RESTORE.pop()
+        try:
+            write_src(path, original)
+            print("RESTORED %s - a mutant was still on disk when the harness exited"
+                  % path, flush=True)
+        except Exception as ex:
+            print("COULD NOT RESTORE %s: %s - the tree carries an injected fault; "
+                  "run: git checkout -- %s" % (path, ex, path), flush=True)
+
+
+atexit.register(_restore_pending)
+
+# ---- a sampled run may not pose as a whole-tree record ---------------------
+# CAP (the first positional argument) caps how many mutants per file are tried.
+# The default is 6; the battery's gate has always been produced with 999. A run
+# at the default samples a fraction of each file and then, until now, wrote the
+# same baseline file with the same shape - indistinguishable from a full sweep
+# except that every number was smaller. That is the record a narrowed run must
+# never replace. Whether a run sampled is DERIVED from what happened (a file had
+# more candidates than CAP), not read from the flag, so a future flag that
+# narrows differently is caught the same way.
+SAMPLED_FILES = []             # paths whose candidates exceeded CAP this run
+
+
+def baseline_target(sampled_files, whole=None):
+    """Where this run's record may be written: the gate only if nothing was sampled."""
+    whole = whole if whole is not None else BASELINE
+    if sampled_files:
+        return whole.with_name(whole.stem + ".PARTIAL" + whole.suffix)
+    return whole
+
+
 def build():
     # The battery's own build and its stamp - never a bare javac. A javac-only
     # build once left build/classes with a stale catalogue, a guard suite failed
@@ -1223,6 +1273,33 @@ def selftest():
         except SystemExit as e:
             check("STALE EXCLUSION" in str(e),
                   "a stale exclusion is refused rather than applied to whatever line it lands on")
+
+        # DEFECT 6: a mutant left on disk by an escaping exception is put back.
+        # The restore was a plain statement after the suite runs; a MemoryError
+        # from a chatty child once escaped above it, and nothing after that
+        # point - the restore, the final git reset - ran.
+        victim = tmp / "src/t/Victim.java"
+        victim.parent.mkdir(parents=True, exist_ok=True)
+        io.open(victim, "w", encoding="utf-8", newline="").write(u"GOOD\n")
+        _PENDING_RESTORE.append((str(victim.relative_to(tmp)).replace("\\", "/"), u"GOOD\n"))
+        io.open(victim, "w", encoding="utf-8", newline="").write(u"MUTANT\n")
+        _saved_wt = globals().get("WT")
+        globals()["WT"] = tmp
+        try:
+            _restore_pending()
+        finally:
+            globals()["WT"] = _saved_wt
+        check(io.open(victim, encoding="utf-8").read() == u"GOOD\n",
+              "a mutant still on disk at exit is restored to the original bytes")
+        check(not _PENDING_RESTORE, "...and nothing remains owed afterwards")
+
+        # DEFECT 7: a sampled run may not overwrite the whole-tree record.
+        whole = tmp / "mutation_baseline.json"
+        check(baseline_target([], whole) == whole,
+              "a run that sampled nothing writes the gate itself")
+        part = baseline_target(["src/x/A.java"], whole)
+        check(part != whole and ".PARTIAL" in part.name,
+              "a run that sampled even one file is diverted away from the gate (%s)" % part.name)
     finally:
         WT = saved_wt
         shutil.rmtree(str(tmp), ignore_errors=True)
@@ -1519,6 +1596,8 @@ for cid, (base, suites) in RESOLVED.items():
             continue
         step = max(1, len(cands) // CAP) if cands else 1
         picked = cands[::step][:CAP]
+        if len(cands) > CAP:
+            SAMPLED_FILES.append(path)         # this run is a sample, not a record
         print("  %s: %d mutable line(s), trying %d%s"
               % (path.split("/")[-1], len(cands), len(picked),
                  (", %d not mutable" % len(noted)) if noted else ""), flush=True)
@@ -1538,6 +1617,9 @@ for cid, (base, suites) in RESOLVED.items():
             src = original.splitlines(keepends=True)
             ending = src[i][len(src[i].rstrip("\r\n")):]
             src[i:j + 1] = [repl + ending] if repl is not None else []
+            # owed from this line until the restore at the bottom of the loop;
+            # atexit pays it if anything in between escapes
+            _PENDING_RESTORE.append((path, original))
             write_src(path, "".join(src))
 
             ok, buildout = build()
@@ -1596,6 +1678,7 @@ for cid, (base, suites) in RESOLVED.items():
                                 kind=kind, verdict=verdict, detail=detail,
                                 code=original.splitlines()[i].strip()[:160]))
             write_src(path, original)
+            del _PENDING_RESTORE[:]            # paid; nothing is owed now
 
     git("reset", "--hard", FROZEN)
 
@@ -1731,8 +1814,15 @@ live["_meta"] = {"measured_at": FROZEN[:7],
                  "unmeasured": tally.get("hung", 0) + tally.get("nocompile", 0),
                  "unmutable": tally.get("unmutable", 0),
                  "excluded": tally.get("excluded", 0)}
-io.open(BASELINE, "w", encoding="utf-8", newline="\n").write(json.dumps(live, indent=1))
-print("baseline written to %s" % BASELINE)
+_target = baseline_target(SAMPLED_FILES)
+if SAMPLED_FILES:
+    print("\nSAMPLED RUN - NOT the battery's gate. CAP=%d left %d file(s) partly measured, e.g. %s"
+          % (CAP, len(SAMPLED_FILES), ", ".join(p.split("/")[-1] for p in SAMPLED_FILES[:4])))
+    print("  A record that measured a fraction of each file is byte-for-byte the shape of a whole")
+    print("  one, except every number is smaller. Written to %s instead;" % _target.name)
+    print("  re-run with 999 to produce a baseline the battery may be gated on.")
+io.open(_target, "w", encoding="utf-8", newline="\n").write(json.dumps(live, indent=1))
+print("baseline written to %s" % _target)
 print("  to make it the battery's gate, copy it to CTRMap/mutation_baseline.json "
       "and commit - MutationBaselineTest reads it from there")
 if regressed:
