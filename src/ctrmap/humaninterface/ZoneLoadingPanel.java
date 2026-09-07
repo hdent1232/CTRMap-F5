@@ -1066,7 +1066,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 							return;
 						}
 						//show the map that was just loaded instead of leaving the user on the property form
-						tabs.setSelectedComponent(tileEditMasterPnl);
+						ctrmap.CtrmapMainframe.showWorldEditor();
 						//forking is the safe default: a shared map means edits here
 						//would silently change other zones too
 						offerForkIfShared();

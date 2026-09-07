@@ -83,7 +83,7 @@ import javax.swing.filechooser.FileFilter;
 public class CtrmapMainframe {
 
 	public static JFrame frame;
-	public static JTabbedPane tabs;
+	private static JTabbedPane tabs;
 
 	/** The World Editor's tool row: the one handle for "pick this tool" and "which view is up". */
 	public static WorldEditorToolbar worldToolbar;
@@ -112,8 +112,9 @@ public class CtrmapMainframe {
 	public static TextEditor mTextEditor;
 	public static Builder mBuilder;
 
-	public static JPanel tileEditMasterPnl;
-	public static JSplitPane jsp;
+	//the World Editor tab and its split: showWorldEditor() and switchToolUI() are the way in
+	private static JPanel tileEditMasterPnl;
+	private static JSplitPane jsp;
 	//the Collision and Matrix editors' splits, sized by adjustSplitPanes()
 	private static JPanel collEditMasterPnl;
 	private static JSplitPane jsp2;
@@ -507,13 +508,48 @@ public class CtrmapMainframe {
 
 	/** Puts the 2D map or the 3D scene in the World Editor's view, and keeps the toggle honest. */
 	private static void showView3D(boolean on) {
-		Utils.setGraphicUI(on ? m3DDebugPanel : mTilemapScrollPane);
+		setGraphicUI(on ? m3DDebugPanel : mTilemapScrollPane);
 		worldToolbar.setView3D(on);
 	}
 
 	/** The toolbar's "3D view" toggle: what is DISPLAYED is the truth, not the toggle's own state. */
 	private static void toggleView() {
 		showView3D(jsp.getLeftComponent() != m3DDebugPanel);
+	}
+
+	/** Shows the World Editor tab: the map that was just loaded, not the form it was picked from. */
+	public static void showWorldEditor() {
+		tabs.setSelectedComponent(tileEditMasterPnl);
+	}
+
+	/**
+	 * Puts a tool's form on the right of the World Editor's split. The forms
+	 * are taller than the visible side panel on small screens, so one that is
+	 * not already a scroll pane is wrapped in one to keep its bottom controls
+	 * reachable. Each tool calls this as it starts.
+	 */
+	public static void switchToolUI(JComponent rightComponent) {
+		if (rightComponent instanceof JScrollPane) {
+			jsp.setRightComponent(rightComponent);
+		} else {
+			JScrollPane scroll = new JScrollPane(rightComponent);
+			scroll.getVerticalScrollBar().setUnitIncrement(16);
+			scroll.setBorder(null);
+			//keep the divider maths of adjustSplitPanes() intact: advertise the
+			//form's width plus room for the vertical scrollbar
+			Dimension pref = rightComponent.getPreferredSize();
+			scroll.setPreferredSize(new Dimension(pref.width + scroll.getVerticalScrollBar().getPreferredSize().width + 3, pref.height));
+			jsp.setRightComponent(scroll);
+		}
+		adjustSplitPanes();
+		frame.revalidate();
+	}
+
+	/** Puts the 2D map or the 3D scene on the left of the World Editor's split. */
+	private static void setGraphicUI(JComponent comp) {
+		jsp.setLeftComponent(comp);
+		adjustSplitPanes();
+		frame.revalidate();
 	}
 
 	// ------------------------------------------------------------ File menu
@@ -633,7 +669,7 @@ public class CtrmapMainframe {
 
 	/** Map > Map Builder: the painter is a World Editor tool, so go there and pick it. */
 	private static void openMapBuilderAction() {
-		tabs.setSelectedComponent(tileEditMasterPnl);
+		showWorldEditor();
 		worldToolbar.selectPaintTool();
 	}
 
@@ -1985,7 +2021,7 @@ public class CtrmapMainframe {
 				"Import map model", javax.swing.JOptionPane.INFORMATION_MESSAGE);
 	}
 
-	public static void adjustSplitPanes() {
+	private static void adjustSplitPanes() {
 		Dimension vsSize = mCamScrollPane.getVerticalScrollBar().getSize();
 		mCamScrollPane.setMinimumSize(new Dimension(mCamEditForm.getMinimumSize().width + vsSize.width + 10, mCamEditForm.getMinimumSize().height));
 		mCamScrollPane.setPreferredSize(mCamScrollPane.getMinimumSize());
