@@ -74,7 +74,7 @@ public class WorkspaceSessionTest {
 	 * raise it without saying in the commit message which file went back to
 	 * the global and why it had to.
 	 */
-	private static final int FILES_REACHING_WORKSPACE = 62;
+	private static final int FILES_REACHING_WORKSPACE = 61; //GARC handed its edited-set and staging folder
 
 	static int fails = 0;
 

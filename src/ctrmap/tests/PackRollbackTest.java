@@ -154,7 +154,7 @@ public class PackRollbackTest {
 		Throwable thrown = null;
 		try (FileInputStream somethingElse = new FileInputStream(archive)) {
 			try {
-				Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).packDirectory(dir);
+				ws().getArchive(Workspace.ArchiveType.NPC_REGISTRIES).packDirectory(dir, ws()::isPersisted, ws().workspaceDir());
 			} catch (Throwable t) {
 				thrown = t;
 			}
@@ -171,9 +171,14 @@ public class PackRollbackTest {
 		check(!halfWritten.exists(),
 				"and no half-written copy is left beside the workspace (" + halfWritten.getName() + ")");
 
-		Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).packDirectory(dir);
+		ws().getArchive(Workspace.ArchiveType.NPC_REGISTRIES).packDirectory(dir, ws()::isPersisted, ws().workspaceDir());
 		check(!Arrays.equals(before, Files.readAllBytes(archive.toPath())),
 				"...and the very same pack does write the archive once nothing holds it open");
+	}
+
+	/** The scratch game's session - the boundary until this suite is handed one. */
+	static ctrmap.WorkspaceSession ws() {
+		return Workspace.session();
 	}
 
 	static void pack() throws Exception {

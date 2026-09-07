@@ -511,7 +511,8 @@ public class Builder extends javax.swing.JPanel {
 				@Override
 				protected Object doInBackground() throws Exception {
 					Workspace.addPersist(currentAGFC.getOriginFile());
-					arc.packDirectory(Workspace.getExtractionDirectory(currentGARC));
+					ctrmap.WorkspaceSession ws = Workspace.session();
+					arc.packDirectory(ws.getExtractionDirectory(currentGARC), ws::isPersisted, ws.workspaceDir());
 					Workspace.reloadGARC(currentGARC);
 					reloadContainer();
 					loadGARC(garc.getSelectedIndex());

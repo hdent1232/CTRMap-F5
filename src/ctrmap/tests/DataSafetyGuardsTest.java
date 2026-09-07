@@ -160,41 +160,40 @@ public class DataSafetyGuardsTest {
 		archive.getParentFile().mkdirs();
 		Files.copy(src.toPath(), archive.toPath());
 		byte[] before = Files.readAllBytes(archive.toPath());
-		Workspace.WORKSPACE_PATH = new File(root, "ws").getAbsolutePath();
-		//packDirectory still reads the edited-file list through Workspace: a
-		//session over the scratch folder carries it
-		Sessions.bare(new File(root, "ws"), new File(root, "game"), Workspace.GameType.ORAS);
-		File dir = new File(Workspace.WORKSPACE_PATH, "mapmatrix");
+		File ws = new File(root, "ws");
+		File dir = new File(ws, "mapmatrix");
 		dir.mkdirs();
 
-		//the user edits entry 3 and saves
+		//the user edits entry 3 and saves; the pack is told so directly - no
+		//session, no global
 		GARC g = new GARC(archive);
 		byte[] edited = g.getDecompressedEntry(3).clone();
 		edited[edited.length - 1] ^= 0x5A;
 		File staged = new File(dir, "3");
 		Files.write(staged.toPath(), edited);
-		Workspace.addPersist(staged);
+		java.util.List<File> pending = new java.util.ArrayList<>();
+		pending.add(staged);
 
 		//the emulator has the archive open
 		try (RandomAccessFile holder = new RandomAccessFile(archive, "rw");
 				FileLock lock = holder.getChannel().lock()) {
 			try {
-				g.packDirectory(dir);
+				g.packDirectory(dir, pending::contains, ws);
 				check(false, "a pack against a locked archive throws");
 			} catch (Exception ex) {
 				check(true, "a pack against a locked archive throws (" + ex.getMessage() + ")");
 			}
 		}
 		check(Arrays.equals(before, Files.readAllBytes(archive.toPath())), "the archive on disk is untouched");
-		check(!new File(Workspace.WORKSPACE_PATH, archive.getName() + "_new").exists(),
+		check(!new File(ws, archive.getName() + "_new").exists(),
 				"no half-written <archive>_new is left in the workspace");
-		check(Workspace.persistPaths().contains(staged.getAbsolutePath()), "the edit is still pending");
+		check(staged.isFile() && Arrays.equals(Files.readAllBytes(staged.toPath()), edited),
+				"the staged edit is still there for the next pack");
 
 		//and once the archive is released the same pack goes through
-		g.packDirectory(dir);
+		g.packDirectory(dir, pending::contains, ws);
 		check(Arrays.equals(new GARC(archive).getDecompressedEntry(3), edited),
 				"the pack goes through once the archive is released, carrying the edit");
-		Workspace.install(null);
 		deleteTree(root);
 	}
 
