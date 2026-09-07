@@ -33,6 +33,9 @@ public class Zone {
 						file.storeFile(0, headerData);
 					case JOptionPane.NO_OPTION:
 						break;
+					//closing the dialog means cancel: the save stops rather
+					//than quietly dropping this piece of it
+					case JOptionPane.CLOSED_OPTION:
 					case JOptionPane.CANCEL_OPTION:
 						return false;
 				}
@@ -47,8 +50,11 @@ public class Zone {
 				entityData = entities.assembleData();
 			} catch (IllegalStateException ex) {
 				//a refused record (an unset warp, a NaN altitude, a 256th entity)
-				//used to die on the event thread where nobody saw it
-				ctrmap.Ui.error(null, ex.getMessage(), "Entity data not saved");
+				//used to die on the event thread where nobody saw it. getMessage()
+				//is null for a thrower that named no reason, and a report that
+				//reads "null" is the silent failure again, so name the throw.
+				ctrmap.Ui.error(null, ex.getMessage() != null ? ex.getMessage() : ex.toString(),
+						"Entity data not saved");
 				return false;
 			}
 			if (dialog){
@@ -58,6 +64,8 @@ public class Zone {
 						file.storeFile(1, entityData);
 					case JOptionPane.NO_OPTION:
 						break;
+					//closing the dialog means cancel, not "throw the edits away"
+					case JOptionPane.CLOSED_OPTION:
 					case JOptionPane.CANCEL_OPTION:
 						return false;
 				}

@@ -172,7 +172,7 @@ public class ExtrasPanel extends javax.swing.JPanel {
     }//GEN-LAST:event_btn3dActionPerformed
 
 	private boolean confirmMassEdit(String message) {
-		return JOptionPane.showConfirmDialog(this, message, "Confirm mass edit",
+		return ctrmap.Ui.confirm(this, message, "Confirm mass edit",
 				JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
 	}
 

@@ -35,7 +35,7 @@ public class ShopEditDialog {
 
 	public static void show(Frame parent) {
 		if (!Workspace.valid || !Workspace.isOA()) {
-			JOptionPane.showMessageDialog(parent, "Load an ORAS workspace first.", "Shop editor", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Shop editor");
 			return;
 		}
 		Preferences prefs = Preferences.userRoot().node(ShopEditDialog.class.getName());
@@ -47,7 +47,7 @@ public class ShopEditDialog {
 			codeFile = new File(remembered);
 		}
 		if (codeFile == null) {
-			JOptionPane.showMessageDialog(parent,
+			ctrmap.Ui.message(parent,
 					"Pick your DECOMPRESSED code.bin (the executable - shop lists live inside it,\n"
 					+ "not in the RomFS). It's the same file the zone-limit patch uses.",
 					"Shop editor", JOptionPane.INFORMATION_MESSAGE);
@@ -65,9 +65,9 @@ public class ShopEditDialog {
 			shops = ShopData.read(code);
 		} catch (Exception ex) {
 			prefs.remove(PREF_CODEBIN);
-			JOptionPane.showMessageDialog(parent, "Could not read the shop table:\n" + ex.getMessage()
+			ctrmap.Ui.error(parent, "Could not read the shop table:\n" + ex.getMessage()
 					+ "\n\n(The file must be the DECOMPRESSED ORAS code.bin - pick it again next time.)",
-					"Shop editor", JOptionPane.ERROR_MESSAGE);
+					"Shop editor");
 			return;
 		}
 		prefs.put(PREF_CODEBIN, codeFile.getAbsolutePath());
@@ -106,7 +106,7 @@ public class ShopEditDialog {
 			try {
 				byte[] patched = ShopData.write(code, model.shops);
 				if (java.util.Arrays.equals(patched, code)) {
-					JOptionPane.showMessageDialog(dlg, "No changes to save.", "Shop editor", JOptionPane.INFORMATION_MESSAGE);
+					ctrmap.Ui.message(dlg, "No changes to save.", "Shop editor", JOptionPane.INFORMATION_MESSAGE);
 					return;
 				}
 				byte[] ips = ShopData.diffIPS(code, patched);
@@ -119,10 +119,10 @@ public class ShopEditDialog {
 				File out = fc.getSelectedFile();
 				String note = "";
 				if (out.exists()) {
-					int rsl = JOptionPane.showConfirmDialog(dlg,
+					int rsl = ctrmap.Ui.confirm(dlg,
 							"code.ips already exists (e.g. the zone-limit patch).\n"
 							+ "MERGE the shop changes into it? (No = overwrite with shops only)",
-							"Shop editor", JOptionPane.YES_NO_CANCEL_OPTION);
+							"Shop editor", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
 					if (rsl == JOptionPane.CANCEL_OPTION) {
 						return;
 					}
@@ -132,7 +132,7 @@ public class ShopEditDialog {
 					}
 				}
 				Files.write(out.toPath(), ips);
-				JOptionPane.showMessageDialog(dlg,
+				ctrmap.Ui.message(dlg,
 						"Saved " + out.getName() + note + ".\n\n"
 						+ "Deploy it like the zone patch:\n"
 						+ "  Azahar: load/mods/<titleid>/exefs/code.ips\n"
@@ -140,7 +140,7 @@ public class ShopEditDialog {
 						+ "Then fully restart the emulator and talk to a shop clerk (TESTING.md item).",
 						"Shop editor", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(dlg, "Save failed:\n" + ex.getMessage(), "Shop editor", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Shop editor");
 			}
 		});
 		close.addActionListener(e -> dlg.dispose());

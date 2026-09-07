@@ -34,12 +34,12 @@ public class TrainerEditDialog {
 	/** Opens the editor, defaulting to the selected NPC's trainer when it is one. */
 	public static void showForSelection(Frame parent) {
 		if (!Workspace.valid || !Workspace.isOA()) {
-			JOptionPane.showMessageDialog(parent, "Load an ORAS workspace first.", "Trainer editor", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Trainer editor");
 			return;
 		}
 		if (Workspace.getArchive(Workspace.ArchiveType.TRAINER_DATA) == null
 				|| Workspace.getArchive(Workspace.ArchiveType.TRAINER_POKE) == null) {
-			JOptionPane.showMessageDialog(parent, "This dump has no trainer archives.", "Trainer editor", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "This dump has no trainer archives.", "Trainer editor");
 			return;
 		}
 		int def = 1;
@@ -51,9 +51,9 @@ public class TrainerEditDialog {
 				def = s - 5000;
 			}
 		}
-		String in = JOptionPane.showInputDialog(parent,
+		String in = (String) ctrmap.Ui.input(parent,
 				"Trainer ID (1..949). A map NPC with script 3000+ID battles that trainer;\n"
-				+ "the selected NPC's trainer is pre-filled when it is one.", def);
+				+ "the selected NPC's trainer is pre-filled when it is one.", "Input", JOptionPane.QUESTION_MESSAGE, null, def);
 		if (in == null) {
 			return;
 		}
@@ -64,7 +64,7 @@ public class TrainerEditDialog {
 			}
 			show(parent, tid);
 		} catch (NumberFormatException ex) {
-			JOptionPane.showMessageDialog(parent, "Enter a trainer id between 1 and 948.", "Trainer editor", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Enter a trainer id between 1 and 948.", "Trainer editor");
 		}
 	}
 
@@ -183,10 +183,10 @@ public class TrainerEditDialog {
 						Workspace.addPersist(nf);
 					}
 					dlg.dispose();
-					JOptionPane.showMessageDialog(parent, "Trainer " + tid + " saved. Deploy to emulator to apply.",
+					ctrmap.Ui.message(parent, "Trainer " + tid + " saved. Deploy to emulator to apply.",
 							"Trainer editor", JOptionPane.INFORMATION_MESSAGE);
 				} catch (Exception ex) {
-					JOptionPane.showMessageDialog(dlg, "Save failed:\n" + ex.getMessage(), "Trainer editor", JOptionPane.ERROR_MESSAGE);
+					ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Trainer editor");
 				}
 			});
 			cancel.addActionListener(e -> dlg.dispose());
@@ -195,7 +195,7 @@ public class TrainerEditDialog {
 			dlg.setLocationRelativeTo(parent);
 			dlg.setVisible(true);
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(parent, "Could not open trainer " + tid + ":\n" + ex.getMessage(), "Trainer editor", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Could not open trainer " + tid + ":\n" + ex.getMessage(), "Trainer editor");
 		}
 	}
 

@@ -124,7 +124,7 @@ public class ADPropRegistryEditor extends javax.swing.JFrame {
 	public boolean saveEntry(boolean dialog) {
 		if (e != null) {
 			if (reg.entries.containsKey((Integer) uid.getValue()) && !reg.entries.get((Integer) uid.getValue()).equals(e)) {
-				JOptionPane.showMessageDialog(this, "The specified UID is already registered. Please use another one.", "UID not unique", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "The specified UID is already registered. Please use another one.", "UID not unique");
 				return false;
 			}
 			ADPropRegistry.ADPropRegistryEntry e2 = new ADPropRegistry.ADPropRegistryEntry();
@@ -152,6 +152,8 @@ public class ADPropRegistryEditor extends javax.swing.JFrame {
 							break;
 						case JOptionPane.NO_OPTION:
 							return true;
+						//closing the dialog means cancel, not "apply it anyway"
+						case JOptionPane.CLOSED_OPTION:
 						case JOptionPane.CANCEL_OPTION:
 							return false;
 					}

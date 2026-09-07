@@ -1221,7 +1221,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				? "\nThis zone was added before the editor forked new zones automatically\n"
 				+ "- newly added zones now get their own map from the start.\n"
 				: "";
-		int rsl = JOptionPane.showConfirmDialog(this,
+		int rsl = ctrmap.Ui.confirm(this,
 				"This zone SHARES its map with " + sharers + " other zone(s):\n"
 				+ who
 				+ legacyNote
@@ -1244,7 +1244,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						@Override
 						public void run() {
 							selectZone(idx);
-							JOptionPane.showMessageDialog(ZoneLoadingPanel.this,
+							ctrmap.Ui.message(ZoneLoadingPanel.this,
 									"Zone " + idx + " now has its own private map (regions "
 									+ java.util.Arrays.toString(r.newRegions) + ").\nEdits here no longer affect any other zone."
 									+ (r.otherZones.length == 0 ? ""
@@ -1258,7 +1258,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				}
 			});
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(this, "Fork failed:\n" + ex.getMessage(), "Shared map", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Fork failed:\n" + ex.getMessage(), "Shared map");
 		}
 	}
 
@@ -1268,7 +1268,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 */
 	private void btnCloneZoneActionPerformed(java.awt.event.ActionEvent evt) {
 		if (zones == null || zone == null || zoneIndex == -1) {
-			JOptionPane.showMessageDialog(this, "Load the source zone from the dropdown first.", "Clone zone", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Load the source zone from the dropdown first.", "Clone zone");
 			return;
 		}
 		//the cloner reads the last-SAVED workspace bytes, so flush any pending
@@ -1298,11 +1298,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
 		int dstIndex = dstPicker.getSelectedIndex();
 		if (dstIndex == srcIndex) {
-			JOptionPane.showMessageDialog(this, "The source and destination zones are the same.", "Clone zone", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "The source and destination zones are the same.", "Clone zone");
 			return;
 		}
 		final boolean doFork = forkChk.isSelected() && Workspace.isOA();
-		int confirm = JOptionPane.showConfirmDialog(this,
+		int confirm = ctrmap.Ui.confirm(this,
 				"Zone " + dstIndex + " (" + names[dstIndex] + ") will be completely replaced by a copy of zone "
 				+ srcIndex + " (" + names[srcIndex] + "):\n"
 				+ "header, NPCs, warps, triggers, scripts.\n"
@@ -1322,7 +1322,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			}
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			JOptionPane.showMessageDialog(this, "Could not clone the zone:\n" + ex.getMessage(), "Clone zone", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not clone the zone:\n" + ex.getMessage(), "Clone zone");
 			return;
 		}
 		final int dst = dstIndex;
@@ -1357,11 +1357,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 */
 	private void btnAddZoneActionPerformed(java.awt.event.ActionEvent evt) {
 		if (!Workspace.isOA()) {
-			JOptionPane.showMessageDialog(this, "Adding new zones is ORAS-only in v1.", "Add new zones", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Adding new zones is ORAS-only in v1.", "Add new zones");
 			return;
 		}
 		if (zones == null || zones.length == 0) {
-			JOptionPane.showMessageDialog(this, "Load a workspace first.", "Add new zones", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Load a workspace first.", "Add new zones");
 			return;
 		}
 		//the appender reads the last-SAVED workspace bytes, so flush any pending
@@ -1405,7 +1405,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		int spares = m - baseCount - realZones;
 		//strong warning, Cancel is the default option
 		Object[] options = {"Continue", "Cancel"};
-		int confirm = JOptionPane.showOptionDialog(this,
+		int confirm = ctrmap.Ui.option(this,
 				"Adding " + realZones + " new zone(s): indices " + baseCount + ".." + (baseCount + realZones - 1) + ".\n\n"
 				+ "The game's zone table must stay 4-aligned, so the total is rounded up to " + m + "\n"
 				+ "(" + realZones + " real + " + spares + " spare, never-visited slot(s)).\n\n"
@@ -1418,7 +1418,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				+ "Continue?",
 				"Add new zones (lift zone limit)",
 				JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE,
-				null, options, options[1]);
+				options, options[1]);
 		if (confirm != 0) {
 			return;
 		}
@@ -1427,7 +1427,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			res = ctrmap.ZoneAppender.appendZones(realZones, srcIndex);
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			JOptionPane.showMessageDialog(this, "Could not add the zones:\n" + ex.getMessage(), "Add new zones", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not add the zones:\n" + ex.getMessage(), "Add new zones");
 			return;
 		}
 		//generate + save the paired code patch (same N drives both sides)
@@ -1445,7 +1445,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			}
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			JOptionPane.showMessageDialog(this, "The zones were staged, but the code.ips could not be saved:\n" + ex.getMessage()
+			ctrmap.Ui.message(this, "The zones were staged, but the code.ips could not be saved:\n" + ex.getMessage()
 					+ "\n\nThe game will not boot without it - regenerate it before testing.", "Add new zones", JOptionPane.WARNING_MESSAGE);
 		}
 		//the append changed the GARC layout. packWorkspace and loadEverything are
@@ -1463,7 +1463,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						if (firstNew < zoneList.getItemCount()) {
 							zoneList.setSelectedIndex(firstNew);
 						}
-						JOptionPane.showMessageDialog(ZoneLoadingPanel.this,
+						ctrmap.Ui.message(ZoneLoadingPanel.this,
 								"Added zones " + firstNew + ".." + lastReal + " (archive now holds " + total + " zone slots).\n\n"
 								+ "Each new zone got its OWN private map (its own FieldData region + matrix),\n"
 								+ "so editing its geometry won't affect the zone you copied it from.\n\n"

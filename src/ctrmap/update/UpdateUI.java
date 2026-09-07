@@ -57,7 +57,7 @@ public class UpdateUI {
 	public static void checkNow(final Frame parent) {
 		final File install = Updater.installDir();
 		if (Updater.isUpdateStaged(install)) {
-			JOptionPane.showMessageDialog(parent, readyMessage(Updater.stagedVersion(install)),
+			ctrmap.Ui.message(parent, readyMessage(Updater.stagedVersion(install)),
 					"Update ready", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
@@ -76,7 +76,7 @@ public class UpdateUI {
 					//treated as "nothing to report" below
 				}
 				if (rel == null) {
-					JOptionPane.showMessageDialog(parent,
+					ctrmap.Ui.message(parent,
 							"You are on CTRMap-F5 " + AppVersion.current() + ", which is the latest release.\n\n"
 							+ "(If you are offline or GitHub is unreachable, this says the same thing -\n"
 							+ "the check never interrupts you to report a network problem.)",
@@ -155,7 +155,7 @@ public class UpdateUI {
 		if (!Updater.isWritable(install)) {
 			//checked BEFORE downloading: failing on permissions after fetching
 			//seventy megabytes wastes the user's time for no reason
-			JOptionPane.showMessageDialog(parent,
+			ctrmap.Ui.message(parent,
 					"CTRMap cannot write to its own folder:\n  " + install.getAbsolutePath()
 					+ "\n\nIt was probably installed somewhere that needs administrator rights."
 					+ "\nMove the CTRMap folder somewhere you own - your Desktop or Documents -"
@@ -165,7 +165,7 @@ public class UpdateUI {
 			return;
 		}
 		if (rel.downloadUrl == null) {
-			JOptionPane.showMessageDialog(parent,
+			ctrmap.Ui.message(parent,
 					"That release does not have a download for this kind of installation.\n"
 					+ "Opening the releases page so you can pick one.",
 					"No matching download", JOptionPane.INFORMATION_MESSAGE);
@@ -227,13 +227,13 @@ public class UpdateUI {
 					get();
 				} catch (Exception ex) {
 					Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-					JOptionPane.showMessageDialog(parent,
+					ctrmap.Ui.error(parent,
 							"The update was not installed.\n\n" + cause.getMessage()
 							+ "\n\nNothing on your machine was changed.",
-							"Update failed", JOptionPane.ERROR_MESSAGE);
+							"Update failed");
 					return;
 				}
-				JOptionPane.showMessageDialog(parent, readyMessage(rel.version),
+				ctrmap.Ui.message(parent, readyMessage(rel.version),
 						"Update ready", JOptionPane.INFORMATION_MESSAGE);
 			}
 		};
@@ -245,7 +245,7 @@ public class UpdateUI {
 		try {
 			java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(parent, "Open this in your browser:\n" + url,
+			ctrmap.Ui.message(parent, "Open this in your browser:\n" + url,
 					"Releases", JOptionPane.INFORMATION_MESSAGE);
 		}
 	}

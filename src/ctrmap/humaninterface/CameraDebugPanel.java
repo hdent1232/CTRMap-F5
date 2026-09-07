@@ -52,7 +52,7 @@ public class CameraDebugPanel extends JPanel{
 		this.f = file;
 		camSelect.removeAllItems();
 		if (f.numEntries == 0) {
-			JOptionPane.showMessageDialog(null, "No camera data in this AD");
+			ctrmap.Ui.message(null, "No camera data in this AD", "Message", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
 		for (int i = 0; i < f.numEntries; i++) {

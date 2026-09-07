@@ -186,6 +186,19 @@ public class WorkspaceRepointTest {
 	 * cleans the workspace, and it must never be reached at all when the first
 	 * one was refused. "Nothing else was asked" is therefore also the assertion
 	 * that the save stopped where it said it did.
+	 *
+	 * <p>When the first one is AGREED to, the second is reached and is still
+	 * unanswered - and that must stop the save too. It did not always: the
+	 * switch on the answer handled YES, NO and CANCEL and nothing else, so a
+	 * closed dialog fell off the end of it and the settings were written with
+	 * the new game folder but WITHOUT the cleanup the warning demands, which is
+	 * the cross-injection it exists to prevent. This suite read that as "the
+	 * save carried on" and passed. What is asserted now is that it stops, which
+	 * is what closing a dialog has to mean.
+	 *
+	 * <p>What that leaves untested is the path where the user answers both:
+	 * cleanAndReload unloads the editor panels, so it cannot run without a
+	 * window at all.
 	 */
 	static void theSaveThatActsOnTheAnswer(String own, String other) {
 		freshBackupOf(own);
@@ -245,6 +258,8 @@ public class WorkspaceRepointTest {
 		check(haveBackup() && sameFolder(own), "save: and the backup is untouched");
 
 		//answered Yes: the switch is agreed to, so the wrong game's backup goes
+		//and the cleanup question is put. That one is left unanswered, which is
+		//a closed dialog, which must stop the save rather than skip the cleanup
 		gameField.setText(other);
 		saved[0] = false;
 		said = Ui.record(JOptionPane.YES_OPTION);
@@ -253,7 +268,11 @@ public class WorkspaceRepointTest {
 		} finally {
 			Ui.stopRecording();
 		}
-		check(saved[0], "save: agreeing to retake the backup lets the save carry on");
+		check(said.size() == 2 && said.get(1).contains("cleaned"),
+				"save: agreeing to retake the backup gets as far as the cleanup question;"
+				+ " the user was asked " + said.size() + ": " + said);
+		check(!saved[0], "save: and closing THAT one stops the save too, rather than writing the new"
+				+ " game folder without the cleanup that warning demands");
 		check(other.equals(gameField.getText()),
 				"save: and the folder the user chose stays in the field (it reads " + gameField.getText() + ")");
 		check(!haveBackup(), "save: and the old game's backup really is discarded, not just promised");
