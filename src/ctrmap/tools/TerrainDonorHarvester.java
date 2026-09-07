@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.List;
 import static ctrmap.formats.LittleEndian.u16;
 import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Mines a DONOR MATERIAL for every terrain brush, so the Map Builder can paint
@@ -56,7 +57,7 @@ public class TerrainDonorHarvester {
 		for (int z = 0; z < zones; z++) {
 			try {
 				byte[] c = zo.getDecompressedEntry(z);
-				byte[] hdr = sub(c, 0);
+				byte[] hdr = subfile(c, 0);
 				int area = u16(hdr, 2), matrix = u16(hdr, 4);
 				byte[] mat = mm.getDecompressedEntry(matrix);
 				int sub0 = i32(mat, 4);
@@ -80,7 +81,7 @@ public class TerrainDonorHarvester {
 			if (regionArea[r] < 0) {
 				continue;
 			}
-			byte[] modelB = sub(gr.getDecompressedEntry(r), 1);
+			byte[] modelB = subfile(gr.getDecompressedEntry(r), 1);
 			if (modelB == null || !BchMapModel.isMapModel(modelB)) {
 				continue;
 			}
@@ -135,7 +136,7 @@ public class TerrainDonorHarvester {
 		List<String> rows = new ArrayList<>();
 		byte[][] targets = new byte[PROBE_TARGETS.length][];
 		for (int i = 0; i < PROBE_TARGETS.length; i++) {
-			targets[i] = sub(gr.getDecompressedEntry(PROBE_TARGETS[i]), 1);
+			targets[i] = subfile(gr.getDecompressedEntry(PROBE_TARGETS[i]), 1);
 		}
 		for (TilePalette t : TilePalette.values()) {
 			if (t == TilePalette.VOID) {
@@ -148,7 +149,7 @@ public class TerrainDonorHarvester {
 				if (winner != null) {
 					break;
 				}
-				byte[] donor = sub(gr.getDecompressedEntry(c.region), 1);
+				byte[] donor = subfile(gr.getDecompressedEntry(c.region), 1);
 				String injectName = injectName(t);
 				boolean ok = true;
 				for (byte[] target : targets) {
@@ -250,20 +251,5 @@ public class TerrainDonorHarvester {
 		int region, area, mesh;
 		String material;
 		double score;
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = i32(c, 4 + i * 4), o1 = i32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, o0, o1);
 	}
 }

@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 import static ctrmap.formats.LittleEndian.u16;
 import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Finds base zones (index &lt; 536) that are candidates to REPURPOSE for custom
@@ -111,19 +112,5 @@ public class ZoneRepurposeScanner {
 		} catch (RuntimeException ex) {
 			return "";
 		}
-	}
-
-	private static byte[] subfile(byte[] c, int i) {
-		int cnt = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= cnt) {
-			return null;
-		}
-		int o0 = i32(c, 4 + i * 4), o1 = i32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		byte[] o = new byte[o1 - o0];
-		System.arraycopy(c, o0, o, 0, o.length);
-		return o;
 	}
 }
