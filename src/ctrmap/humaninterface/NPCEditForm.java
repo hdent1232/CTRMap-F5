@@ -21,6 +21,7 @@ import ctrmap.formats.scripts.NpcTemplates;
 import ctrmap.formats.scripts.SignWrapperInjector;
 import ctrmap.formats.scripts.TalkerScriptWizard;
 import ctrmap.formats.scripts.ZoneScriptAnalyzer;
+import ctrmap.formats.scripts.ZoneScriptEdit;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.vectors.Vec3f;
 import ctrmap.formats.zone.NpcMoveCodes;
@@ -618,34 +619,41 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	/**
-	 * Stores the story text file into the workspace and registers it for
+	 * Writes the story text file into the workspace and registers it for
 	 * packing - the same workspace-file + addPersist flow TextEditor.store()
-	 * uses for GAMETEXT.
+	 * uses for GAMETEXT. Throws with the reason when it cannot; this is the
+	 * {@link ZoneScriptEdit.Store} the Add wizards hand their edit.
 	 */
-	private boolean storeStoryFile(int textID, GFMessageFile msg) {
+	private void writeStoryFile(int textID, GFMessageFile msg) throws IOException {
 		byte[] b;
 		try {
 			b = msg.write();
 		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not encode story text file " + textID + ":\n" + ex.getMessage(), "Text encode error");
-			return false;
+			throw new IOException("the text could not be encoded: " + ex.getMessage(), ex);
 		}
 		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.STORYTEXT, textID);
 		if (f == null) {
-			ctrmap.Ui.error(this, "Could not extract story text file " + textID + " from the STORYTEXT archive.", "Text save error");
-			return false;
+			throw new IOException("story text file " + textID + " could not be extracted from the STORYTEXT archive");
 		}
+		OutputStream os = new FileOutputStream(f);
 		try {
-			OutputStream os = new FileOutputStream(f);
 			os.write(b);
 			os.flush();
+		} finally {
 			os.close();
-		} catch (IOException ex) {
-			Logger.getLogger(NPCEditForm.class.getName()).log(Level.SEVERE, null, ex);
-			return false;
 		}
 		Workspace.addPersist(f);
-		return true;
+	}
+
+	/** {@link #writeStoryFile}, reporting the reason through Ui instead: for the dialogue editor's in-place edit. */
+	private boolean storeStoryFile(int textID, GFMessageFile msg) {
+		try {
+			writeStoryFile(textID, msg);
+			return true;
+		} catch (IOException ex) {
+			ctrmap.Ui.error(this, "Could not store story text file " + textID + ":\n" + ex.getMessage(), "Text save error");
+			return false;
+		}
 	}
 
 	/**
@@ -896,43 +904,20 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
 			return;
 		}
-		//the whole script edit (injection + talker clone) runs on a copy that
-		//replaces zone.s only after the story text has been stored, so no
-		//failure anywhere in the flow can leave an orphan wrapper or talker
-		//in the in-memory zone script
-		GFLPawnScript work;
-		try {
-			work = new GFLPawnScript(zone.s.getScriptBytes());
-			work.decompressThis();
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add talking NPC");
-			return;
-		}
-		if (injectWrapper) {
-			try {
-				MsgWrapperInjector.injectMsgWrapper(work, wrapperDonor);
-				if (ZoneScriptAnalyzer.findMsgWrapper(work) == null) {
-					throw new MsgWrapperInjector.InjectionException("The injected routine did not verify.");
-				}
-			} catch (RuntimeException ex) {
-				ctrmap.Ui.error(this, "Could not inject the message routine:\n" + ex.getMessage(), "Add talking NPC");
-				return;
-			}
-		}
-		int newLine = msg.getLineCount();
+		//the whole script edit (injection + talker clone + the new line) lands
+		//whole or not at all - see ZoneScriptEdit
 		int newId;
 		try {
-			newId = TalkerScriptWizard.cloneTalker(work, newLine);
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not add the talker script:\n" + ex.getMessage(), "Add talking NPC");
+			ZoneScriptEdit edit = new ZoneScriptEdit(zone, "the talker script")
+					.withText(msg, zone.header.textID, java.util.Arrays.asList(text));
+			if (injectWrapper) {
+				edit.injectMsgWrapperFrom(wrapperDonor);
+			}
+			newId = edit.apply(TalkerScriptWizard::cloneTalker, this::writeStoryFile);
+		} catch (ZoneScriptEdit.Refused ex) {
+			ctrmap.Ui.error(this, ex.reason(), "Add talking NPC");
 			return;
 		}
-		msg.addLine(text);
-		if (!storeStoryFile(zone.header.textID, msg)) {
-			msg.removeLine(newLine); //keep the cached story file consistent with disk; zone.s is still the untouched original
-			return;
-		}
-		zone.s = work; //commit - nothing before this point modified the zone script
 		//add the NPC record at the viewport centre with the new script ID
 		loaded = false;
 		ZoneEntities.NPC newNPC = new ZoneEntities.NPC();
@@ -1014,40 +999,19 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
 			return;
 		}
-		int signType = NpcTemplates.SIGN_TYPES[Math.max(0, typeBox.getSelectedIndex())];
-		GFLPawnScript work;
-		try {
-			work = new GFLPawnScript(zone.s.getScriptBytes());
-			work.decompressThis();
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add sign");
-			return;
-		}
-		if (needsWrapper) {
-			try {
-				SignWrapperInjector.injectSignWrapper(work, signDonor);
-				if (ZoneScriptAnalyzer.findSignWrapper(work) == null) {
-					throw new IllegalStateException("The injected routine did not verify.");
-				}
-			} catch (RuntimeException ex) {
-				ctrmap.Ui.error(this, "Could not transplant the sign routine:\n" + ex.getMessage(), "Add sign");
-				return;
-			}
-		}
-		int newLine = msg.getLineCount();
+		final int signType = NpcTemplates.SIGN_TYPES[Math.max(0, typeBox.getSelectedIndex())];
 		int caseId;
 		try {
-			caseId = NpcTemplates.addSignScript(work, newLine, signType);
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not add the sign script:\n" + ex.getMessage(), "Add sign");
+			ZoneScriptEdit edit = new ZoneScriptEdit(zone, "the sign script")
+					.withText(msg, zone.header.textID, java.util.Arrays.asList(text));
+			if (needsWrapper) {
+				edit.injectSignWrapperFrom(signDonor);
+			}
+			caseId = edit.apply((work, line) -> NpcTemplates.addSignScript(work, line, signType), this::writeStoryFile);
+		} catch (ZoneScriptEdit.Refused ex) {
+			ctrmap.Ui.error(this, ex.reason(), "Add sign");
 			return;
 		}
-		msg.addLine(text);
-		if (!storeStoryFile(zone.header.textID, msg)) {
-			msg.removeLine(newLine); //keep the cache consistent with disk; zone.s untouched
-			return;
-		}
-		zone.s = work; //commit
 		Point pos = mTileMapPanel.getTileAtViewportCentre();
 		e.furniture.add(NpcTemplates.makeSignFurniture(caseId, pos.x, pos.y));
 		e.furnitureCount = e.furniture.size();
@@ -1082,15 +1046,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (giverRsl != JOptionPane.OK_OPTION) {
 			return;
 		}
-		GFLPawnScript work;
-		try {
-			work = new GFLPawnScript(zone.s.getScriptBytes());
-			work.decompressThis();
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add item giver");
-			return;
-		}
-		int itemId = itemChooser.getId();
+		final int itemId = itemChooser.getId();
 		if (itemId < 1) {
 			ctrmap.Ui.error(this, "Select an item first.", "Add item giver");
 			return;
@@ -1100,14 +1056,15 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "Select an overworld model first.", "Add item giver");
 			return;
 		}
+		final int count = (Integer) countSpinner.getValue();
 		int caseId;
 		try {
-			caseId = NpcTemplates.addItemGiverScript(work, itemId, (Integer) countSpinner.getValue());
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not add the give-item script:\n" + ex.getMessage(), "Add item giver");
+			caseId = new ZoneScriptEdit(zone, "the give-item script")
+					.apply((work, line) -> NpcTemplates.addItemGiverScript(work, itemId, count), this::writeStoryFile);
+		} catch (ZoneScriptEdit.Refused ex) {
+			ctrmap.Ui.error(this, ex.reason(), "Add item giver");
 			return;
 		}
-		zone.s = work; //commit - the clone is the only mutation and it succeeded
 		Point pos = mTileMapPanel.getTileAtViewportCentre();
 		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), giverModel, caseId, pos.x, pos.y);
 		finishNpcAdd(zone, npc, true);
@@ -1233,24 +1190,17 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				return;
 			}
 		}
-		//all script surgery on a copy; the zone commits only after everything held
-		GFLPawnScript work;
-		try {
-			work = new GFLPawnScript(zone.s.getScriptBytes());
-			work.decompressThis();
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add battle challenge");
-			return;
-		}
-		if (needText && ZoneScriptAnalyzer.findMsgWrapper(work) == null) {
-			GFLPawnScript wrapperDonor;
+		//a zone without the message routine gets it transplanted as part of the
+		//edit below - but the user is asked first, because it grows the script
+		GFLPawnScript wrapperDonor = null;
+		if (needText && ZoneScriptAnalyzer.findMsgWrapper(zone.s) == null) {
 			try {
 				wrapperDonor = loadWrapperDonor();
 			} catch (RuntimeException ex) {
 				ctrmap.Ui.error(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ex.getMessage(), "Add battle challenge");
 				return;
 			}
-			int insCount = MsgWrapperInjector.countInjectedInstructions(work, wrapperDonor);
+			int insCount = MsgWrapperInjector.countInjectedInstructions(zone.s, wrapperDonor);
 			if (ctrmap.Ui.confirm(frame,
 					"This zone's script has no message-display routine.\n"
 					+ "Inject one (copied from the game's own code)?\n"
@@ -1258,17 +1208,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					"Add battle challenge", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
 				return;
 			}
-			try {
-				MsgWrapperInjector.injectMsgWrapper(work, wrapperDonor);
-				if (ZoneScriptAnalyzer.findMsgWrapper(work) == null) {
-					throw new MsgWrapperInjector.InjectionException("The injected routine did not verify.");
-				}
-			} catch (RuntimeException ex) {
-				ctrmap.Ui.error(this, "Could not inject the message routine:\n" + ex.getMessage(), "Add battle challenge");
-				return;
-			}
 		}
-		ctrmap.formats.scripts.GauntletScriptWizard.Config cfg = new ctrmap.formats.scripts.GauntletScriptWizard.Config();
+		final ctrmap.formats.scripts.GauntletScriptWizard.Config cfg = new ctrmap.formats.scripts.GauntletScriptWizard.Config();
 		cfg.trainerIds = new int[trainerIds.size()];
 		for (int i = 0; i < trainerIds.size(); i++) {
 			cfg.trainerIds[i] = trainerIds.get(i);
@@ -1278,6 +1219,10 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		cfg.milestoneBonus = (Integer) bonusSpinner.getValue();
 		cfg.streakWorkId = workVar;
 		cfg.loseWhiteout = whiteoutBox.isSelected();
+		ZoneScriptEdit edit = new ZoneScriptEdit(zone, "the challenge script");
+		if (wrapperDonor != null) {
+			edit.injectMsgWrapperFrom(wrapperDonor);
+		}
 		int nextLine = msg != null ? msg.getLineCount() : 0;
 		if (!introText.isEmpty()) {
 			cfg.introLine = nextLine++;
@@ -1291,26 +1236,17 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			cfg.loseLine = nextLine++;
 			newLines.add(loseText);
 		}
+		if (msg != null && !newLines.isEmpty()) {
+			edit.withText(msg, zone.header.textID, newLines);
+		}
 		int caseId;
 		try {
-			caseId = ctrmap.formats.scripts.GauntletScriptWizard.addChallengeScript(work, cfg);
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not add the challenge script:\n" + ex.getMessage(), "Add battle challenge");
+			caseId = edit.apply((work, line) -> ctrmap.formats.scripts.GauntletScriptWizard.addChallengeScript(work, cfg),
+					this::writeStoryFile);
+		} catch (ZoneScriptEdit.Refused ex) {
+			ctrmap.Ui.error(this, ex.reason(), "Add battle challenge");
 			return;
 		}
-		if (msg != null && !newLines.isEmpty()) {
-			int firstNew = msg.getLineCount();
-			for (String t : newLines) {
-				msg.addLine(t);
-			}
-			if (!storeStoryFile(zone.header.textID, msg)) {
-				for (int i = newLines.size() - 1; i >= 0; i--) {
-					msg.removeLine(firstNew + i); //keep the cache consistent; zone.s untouched
-				}
-				return;
-			}
-		}
-		zone.s = work; //commit
 		Point pos = mTileMapPanel.getTileAtViewportCentre();
 		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
 		finishNpcAdd(zone, npc, true);
@@ -1343,22 +1279,16 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "Select an overworld model first.", "Add Give BP");
 			return;
 		}
-		GFLPawnScript work;
-		try {
-			work = new GFLPawnScript(zone.s.getScriptBytes());
-			work.decompressThis();
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add Give BP");
-			return;
-		}
+		final int amount = (Integer) amountSpinner.getValue();
 		int caseId;
 		try {
-			caseId = ctrmap.formats.scripts.FacilityScriptWizard.addGiveBpScript(work, (Integer) amountSpinner.getValue());
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not add the Give BP script:\n" + ex.getMessage(), "Add Give BP");
+			caseId = new ZoneScriptEdit(zone, "the Give BP script")
+					.apply((work, line) -> ctrmap.formats.scripts.FacilityScriptWizard.addGiveBpScript(work, amount),
+							this::writeStoryFile);
+		} catch (ZoneScriptEdit.Refused ex) {
+			ctrmap.Ui.error(this, ex.reason(), "Add Give BP");
 			return;
 		}
-		zone.s = work; //commit - the clone is the only mutation and it succeeded
 		Point pos = mTileMapPanel.getTileAtViewportCentre();
 		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
 		finishNpcAdd(zone, npc, true);

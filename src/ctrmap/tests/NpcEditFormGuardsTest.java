@@ -12,9 +12,12 @@ import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.RandomAccessBAIS;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.npcreg.NPCRegistry;
+import ctrmap.formats.scripts.GFLPawnScript;
+import ctrmap.formats.scripts.MsgWrapperInjector;
 import ctrmap.formats.scripts.PawnInstruction;
 import ctrmap.formats.scripts.TalkerScriptWizard;
 import ctrmap.formats.scripts.ZoneScriptAnalyzer;
+import ctrmap.formats.scripts.ZoneScriptEdit;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
@@ -124,6 +127,7 @@ public class NpcEditFormGuardsTest {
 			missingRegistryEntryAsksFirst(zo);
 			softLockWarningReachesTheUser(zo);
 			addTemplateStopsAtTheCeiling(zo);
+			aScriptedAdditionLandsWholeOrNotAtAll(zo);
 			dialogueNoteTellsABrokenScriptFromAPlainOne(zo);
 			aFullRegistryRefusesTheModelAndSaysSo(zo);
 			viewportDrawsOnlyModelledNPCs(zo, gr);
@@ -551,6 +555,111 @@ public class NpcEditFormGuardsTest {
 		check(said.size() == 2 && said.get(1).contains("255 props"), "a full prop list is refused against the prop count, not the NPC one: " + said);
 		check(e.furniture.size() == ZoneEntities.MAX_PER_KIND, "and nothing was added");
 		check(ran == null, "and the Sign arm stopped where it refused too: " + ran);
+	}
+
+	/**
+	 * An "Add ..." wizard's edit lands whole or not at all: routine
+	 * transplanted, case added, text stored - and only then the zone's script
+	 * replaced. Nothing that fails leaves a mark.
+	 *
+	 * <p>The talker, sign, item-giver, battle-challenge and Give-BP wizards
+	 * each wrote this transaction out for themselves inside their dialog
+	 * handler, behind a modal form no suite can answer, so the ordering that
+	 * keeps a zone loadable - text on disk BEFORE the script that points at
+	 * it, lines taken back out when the store fails - was five copies of
+	 * untested code. It is one thing now, {@link ZoneScriptEdit}, and this
+	 * drives it on a retail zone whose script has no message routine: the
+	 * transplant, the talker clone and the new line together, then the store
+	 * failing, the surgery failing, and text with nowhere to go.
+	 */
+	static void aScriptedAdditionLandsWholeOrNotAtAll(GARC zo) throws Exception {
+		//a zone with a dispatch and no message routine, and a donor for one
+		int target = -1;
+		for (int z = 0; z < zo.length - 2 && target < 0; z++) {
+			GFLPawnScript s = MsgWrapperInjector.extractZoneScript(zo.getDecompressedEntry(z));
+			if (s != null && ZoneScriptAnalyzer.findDispatch(s) != null && ZoneScriptAnalyzer.findMsgWrapper(s) == null) {
+				target = z;
+			}
+		}
+		check(target >= 0, "a retail zone whose script has a dispatch and no message routine: " + target);
+		GFLPawnScript donor = MsgWrapperInjector.pickDonor(
+				z -> MsgWrapperInjector.extractZoneScript(zo.getDecompressedEntry(z)), zo.length - 2);
+		final int TEXT = 5;
+		final List<int[]> stored = new ArrayList<>(); //{textID, lines} per store call
+
+		//1. everything lands, in order
+		Zone zone = openZone(zo, target);
+		zone.s.decompressThis();
+		GFLPawnScript before = zone.s;
+		GFMessageFile msg = new GFMessageFile(GFMessageFile.write(Arrays.asList("first")));
+		int caseId = new ZoneScriptEdit(zone, "the talker script")
+				.injectMsgWrapperFrom(donor)
+				.withText(msg, TEXT, Arrays.asList("Hello there"))
+				.apply(TalkerScriptWizard::cloneTalker, (id, m) -> stored.add(new int[]{id, m.getLineCount()}));
+		check(zone.s != before, "the zone now carries the edited script");
+		check(ZoneScriptAnalyzer.findMsgWrapper(zone.s) != null, "with the message routine transplanted into it");
+		ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(zone.s);
+		check(d != null && d.cases.get(caseId) != null, "and a dispatch case " + caseId + " for the talker");
+		ZoneScriptAnalyzer.TalkerPattern tp = ZoneScriptAnalyzer.findTalkerPattern(zone.s, caseId);
+		check(tp != null && tp.msgLine == 1, "which shows the line that was added, line 1"
+				+ (tp == null ? " (no talker pattern)" : " (line " + tp.msgLine + ")"));
+		check(msg.getLineCount() == 2 && "Hello there".equals(msg.getLine(1)), "the story file has the new line");
+		check(stored.size() == 1 && stored.get(0)[0] == TEXT && stored.get(0)[1] == 2,
+				"and it was stored once, as file " + TEXT + " with both lines, before the script was committed");
+
+		//2. the store fails: nothing changed, and the reason reaches the caller
+		zone = openZone(zo, target);
+		zone.s.decompressThis();
+		before = zone.s;
+		msg = new GFMessageFile(GFMessageFile.write(Arrays.asList("first")));
+		Throwable refused = null;
+		try {
+			new ZoneScriptEdit(zone, "the talker script")
+					.injectMsgWrapperFrom(donor)
+					.withText(msg, TEXT, Arrays.asList("Hello there"))
+					.apply(TalkerScriptWizard::cloneTalker, (id, m) -> {
+						throw new java.io.IOException("the disk is full");
+					});
+		} catch (Throwable t) {
+			refused = t;
+		}
+		check(refused instanceof ZoneScriptEdit.Refused && refused.getMessage().contains("story text file " + TEXT)
+				&& refused.getMessage().contains("the disk is full"),
+				"a store that fails refuses the whole edit, naming the file and the reason: " + refused);
+		check(zone.s == before, "and the zone keeps the script it had");
+		check(ZoneScriptAnalyzer.findMsgWrapper(zone.s) == null, "without the transplant");
+		check(msg.getLineCount() == 1, "and the story file has its line back (" + msg.getLineCount() + " line(s))");
+
+		//3. the surgery fails: the store is never asked
+		stored.clear();
+		refused = null;
+		try {
+			new ZoneScriptEdit(zone, "the talker script")
+					.withText(msg, TEXT, Arrays.asList("Hello there"))
+					.apply((work, line) -> {
+						throw new IllegalStateException("no room in the dispatch");
+					}, (id, m) -> stored.add(new int[]{id, m.getLineCount()}));
+		} catch (Throwable t) {
+			refused = t;
+		}
+		check(refused instanceof ZoneScriptEdit.Refused && refused.getMessage().startsWith("Could not add the talker script")
+				&& refused.getMessage().contains("no room in the dispatch"),
+				"a surgery that fails refuses the edit by name, with its reason: " + refused);
+		check(stored.isEmpty() && msg.getLineCount() == 1 && zone.s == before,
+				"and nothing was stored, added or committed");
+
+		//4. text with no story file to hold it is refused before anything moves
+		refused = null;
+		try {
+			new ZoneScriptEdit(zone, "the talker script")
+					.withText(null, TEXT, Arrays.asList("Hello there"))
+					.apply(TalkerScriptWizard::cloneTalker, (id, m) -> stored.add(new int[]{id, m.getLineCount()}));
+		} catch (Throwable t) {
+			refused = t;
+		}
+		check(refused instanceof ZoneScriptEdit.Refused && refused.getMessage().contains("story text file is not loaded"),
+				"text with no story file to go into is refused in words: " + refused);
+		check(stored.isEmpty() && zone.s == before, "and nothing was stored or committed");
 	}
 
 	/**
