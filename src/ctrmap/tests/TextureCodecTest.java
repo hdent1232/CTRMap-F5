@@ -131,6 +131,8 @@ public class TextureCodecTest {
 		solidIs(TextureFormat.rgb565, bytes(0x00, 0xF8), bytes(0xff, 0x00, 0x00, 0xff), "top 5 bits are blue");
 		solidIs(TextureFormat.rgb565, bytes(0x00, 0x04), bytes(0x00, 0x82, 0x00, 0xff),
 				"6-bit 0b100000 replicates two bits: 0x82");
+		solidIs(TextureFormat.rgb565, bytes(0x10, 0x00), bytes(0x00, 0x00, 0x84, 0xff),
+				"5-bit 0b10000 replicates three bits: 0x84, not 0x88");
 		solidIs(TextureFormat.rgba4, bytes(0x34, 0x12), bytes(0x11, 0x22, 0x33, 0x44),
 				"nibbles a,r,g,b from the low end, each doubled to 8 bits");
 		solidIs(TextureFormat.la8, bytes(0x5A, 0x80), bytes(0x5a, 0x5a, 0x5a, 0x80), "luminance then alpha");
