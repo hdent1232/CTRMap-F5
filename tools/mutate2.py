@@ -470,6 +470,7 @@ def added_lines(before, tip):
 
 
 SKIPPED_AMBIGUOUS = []
+SKIPPED_GONE = []
 
 
 def read_src(path):
@@ -488,7 +489,27 @@ def write_src(path, text):
 
 
 def relocate(path, texts):
-    """Current line numbers of the given line texts in the tree under test."""
+    """Current line numbers of the given line texts in the tree under test.
+
+    TWO ways a fix line fails to reach the measurement, and both must be
+    counted. A line whose text appears MORE than once cannot be placed without
+    guessing. A line whose text appears NOT AT ALL was edited or removed by a
+    later merge - which is ordinary, twelve branches interleave here, but it is
+    not nothing: the sweep set out to measure that line and did not.
+
+    The second bucket used to fall out of the loop with nothing recorded, so the
+    report's one figure for "what this sweep did not look at" counted only the
+    duplicates. Measured on master at 095877f: 38 duplicated against 68 absent,
+    so the number a reader was given understated the unmeasured set by a factor
+    of nearly three. A measurement that quietly gets smaller is precisely what
+    this harness exists to make impossible, and it was doing it to itself.
+
+    Absent is not automatically lost coverage: where the later edit came from
+    another merged branch, the line that replaced it is in THAT branch's diff
+    and is measured there. Where it did not, nothing measures it. The harness
+    cannot tell those apart without guessing either, so it reports the count and
+    the lines and leaves the judgement to a reader, rather than dropping both.
+    """
     src = read_src(path).splitlines()
     index = {}
     for n, line in enumerate(src, 1):
@@ -501,8 +522,12 @@ def relocate(path, texts):
         hits = index.get(t.strip(), [])
         if len(hits) == 1:
             found.append(hits[0])
-        elif len(hits) > 1 and eligible:
+        elif not eligible:
+            continue
+        elif len(hits) > 1:
             SKIPPED_AMBIGUOUS.append((path.split("/")[-1], t.strip()[:60]))
+        else:
+            SKIPPED_GONE.append((path.split("/")[-1], t.strip()[:60]))
     return sorted(set(found))
 
 
@@ -1146,6 +1171,35 @@ def selftest():
                   if c["kind"] in ("drop-throw", "drop-report")),
               "a deletion leaves an empty block rather than nothing")
 
+        # DEFECT 6: relocate() must ACCOUNT for every fix line it cannot place,
+        # not just the ambiguous ones. On master at 095877f the silent bucket -
+        # a line a later merge edited, so its exact text is gone - held 68
+        # lines against the 38 the report named. The whole point of this harness
+        # is that a measurement may not quietly get smaller, and this was it
+        # doing that to itself.
+        del SKIPPED_AMBIGUOUS[:]
+        del SKIPPED_GONE[:]
+        placed = relocate("src/t/T.java", [
+            u"\t\treturn true;",                              # unique -> measured
+            u"\t\t\tthrow new IllegalStateException(\"gone\");",   # eligible, absent
+            u"\t\t}",                                          # not eligible, absent
+        ])
+        check(len(placed) == 1, "a fix line whose text is unique today is placed (got %r)" % placed)
+        check(len(SKIPPED_GONE) == 1 and "IllegalStateException" in SKIPPED_GONE[0][1],
+              "a mutable fix line whose text is no longer in the tree is RECORDED, not dropped "
+              "(got %r)" % (SKIPPED_GONE,))
+        check(not SKIPPED_AMBIGUOUS,
+              "...and it is not filed as 'not uniquely relocatable', which is a different fact")
+        dup = u"\t\tif (a < 0) {"
+        io.open(tmp / "src/t/T.java", "a", encoding="utf-8", newline="").write(
+            u"\nclass U {\n\tvoid f(int a) {\n" + dup + u"\n\t\t}\n\t}\n}\n")
+        del SKIPPED_GONE[:]
+        relocate("src/t/T.java", [dup])
+        check(len(SKIPPED_AMBIGUOUS) == 1 and not SKIPPED_GONE,
+              "a fix line whose text now appears twice is still the AMBIGUOUS bucket")
+        del SKIPPED_AMBIGUOUS[:]
+        del SKIPPED_GONE[:]
+
         # DEFECT 5: an exclusion that has drifted onto another line is refused
         (tmp / "src/ctrmap").mkdir(parents=True)
         io.open(tmp / "src/ctrmap/Ui.java", "w", encoding="utf-8", newline="").write(
@@ -1550,6 +1604,16 @@ if SKIPPED_AMBIGUOUS:
     # file cannot be relocated from the branch's diff without guessing
     print("   %d added line(s) skipped as not uniquely relocatable, e.g. %s"
           % (len(SKIPPED_AMBIGUOUS), "; ".join("%s: %s" % s for s in SKIPPED_AMBIGUOUS[:3])))
+if SKIPPED_GONE:
+    # the other half of "not measured", which used to be recorded nowhere. See
+    # relocate(): a later merge edited or removed the line, so its text is not
+    # in today's file at all. Where the editing merge is itself in CLUSTERS its
+    # replacement is measured under that branch; where it is not, nothing
+    # measures it, and this is the only place a reader would find out.
+    print("   %d added line(s) skipped because their text is no longer in the tree - a later "
+          "merge\n       edited or removed them. Measured under the editing branch where that "
+          "branch is\n       in CLUSTERS; not measured at all where it is not. e.g. %s"
+          % (len(SKIPPED_GONE), "; ".join("%s: %s" % s for s in SKIPPED_GONE[:3])))
 for v in PRECEDENCE:
     print("   %-10s %d" % (v, tally.get(v, 0)))
 if floods:
