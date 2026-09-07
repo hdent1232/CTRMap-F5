@@ -15,6 +15,17 @@ if (-not $jdk) {
 }
 if (-not $jdk) { throw "No JDK found. Set CTRMAP_JDK to a JDK install path." }
 
+# Start from an empty output directory. javac only ever ADDS to -d, so a class
+# whose source has been deleted survives every later build: this tree carried 76
+# such orphans out of 906 class files, 68 of them CtrmapMainframe$N anonymous
+# listeners a structure sweep had removed, and three ($26, $30, $42) still read
+# Workspace.valid and .persist_paths - fields the source no longer declares.
+# Write-BuildStamp below then signed those ghosts as "exactly what build.ps1
+# produced from these sources", and any guard that walks the directory counted
+# them. Deleting the tree is the only way the stamp can mean this compile alone.
+# build\ itself stays: sources.txt is written into it a few lines down.
+# BatteryHygieneTest.noOrphanClassFiles fails if this clean stops happening.
+if (Test-Path build\classes) { Remove-Item -Recurse -Force build\classes }
 New-Item -ItemType Directory -Force build\classes | Out-Null
 
 # javac @argfile entries must be quoted because the repo path may contain spaces

@@ -1,10 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.Workspace;
-import java.io.BufferedInputStream;
-import java.io.DataInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -48,6 +45,10 @@ import java.util.regex.Pattern;
  * constant (implicitly final) for a mutable one. Grepping the sources for
  * "public static" without "final" reports 214 for the same tree this counts
  * 146 in, and 76 of those 214 are type declarations.
+ *
+ * <p>The class file reader this suite was built around now lives in
+ * {@link ClassFileScanner}, so every structural guard reads the same bytecode
+ * instead of each inventing a regular expression over source text.
  *
  * <h2>2. A global nothing ever writes</h2>
  * {@code PaintedRegionBuilder.terrainCovered} was a {@code public static
@@ -113,11 +114,6 @@ public class GlobalStateTest {
 	 */
 	private static final int CEILING = 38;
 
-	private static final int ACC_PUBLIC = 0x0001;
-	private static final int ACC_STATIC = 0x0008;
-	private static final int ACC_FINAL = 0x0010;
-	private static final int ACC_SYNTHETIC = 0x1000;
-
 	static int fails = 0;
 
 	static void check(boolean cond, String what) {
@@ -133,7 +129,7 @@ public class GlobalStateTest {
 		File src = new File(args.length > 0 ? args[0] : "src");
 		File classes = new File(args.length > 1 ? args[1] : "build/classes");
 
-		List<Global> globals = ceiling(classes);
+		List<ClassFileScanner.Member> globals = ceiling(classes);
 		neverWritten(src, globals);
 		resetCoversWorkspace(src);
 
@@ -143,26 +139,8 @@ public class GlobalStateTest {
 		}
 	}
 
-	/** One public static mutable field, as its class file records it. */
-	static final class Global {
-
-		final String owner;   //e.g. ctrmap/humaninterface/Selector
-		final String name;
-
-		Global(String owner, String name) {
-			this.owner = owner;
-			this.name = name;
-		}
-
-		String simpleOwner() {
-			String s = owner.substring(owner.lastIndexOf('/') + 1);
-			int dollar = s.indexOf('$');
-			return dollar < 0 ? s : s.substring(0, dollar);
-		}
-	}
-
 	// ---------------------------------------------------------------- 1. ceiling
-	static List<Global> ceiling(File classes) throws IOException {
+	static List<ClassFileScanner.Member> ceiling(File classes) throws IOException {
 		if (!classes.isDirectory()) {
 			//NOT a skip. A guard that quietly measures nothing and prints ALL
 			//PASS is the shape of failure this battery exists to refuse.
@@ -170,10 +148,12 @@ public class GlobalStateTest {
 					+ " (run build.ps1, or pass the classes root as args[1])");
 			return new ArrayList<>();
 		}
-		List<Global> globals = new ArrayList<>();
-		collect(classes, classes, globals);
+		List<ClassFileScanner.Member> globals = new ArrayList<>();
+		for (ClassFileScanner.ClassFile cf : ClassFileScanner.application(classes)) {
+			globals.addAll(cf.globals);
+		}
 		Map<String, Integer> perClass = new LinkedHashMap<>();
-		for (Global g : globals) {
+		for (ClassFileScanner.Member g : globals) {
 			String k = g.simpleOwner();
 			perClass.put(k, perClass.containsKey(k) ? perClass.get(k) + 1 : 1);
 		}
@@ -196,103 +176,8 @@ public class GlobalStateTest {
 		return globals;
 	}
 
-	private static void collect(File root, File dir, List<Global> out) throws IOException {
-		File[] kids = dir.listFiles();
-		if (kids == null) {
-			return;
-		}
-		for (File f : kids) {
-			if (f.isDirectory()) {
-				collect(root, f, out);
-			} else if (f.getName().endsWith(".class")) {
-				String rel = root.toURI().relativize(f.toURI()).getPath();
-				if (rel.startsWith("ctrmap/tests/")) {
-					continue; //a suite's own scaffolding is not the program's state
-				}
-				readFields(f, rel.substring(0, rel.length() - ".class".length()), out);
-			}
-		}
-	}
-
-	/**
-	 * The public static non-final fields of one class file. Reads the class
-	 * file rather than loading the class: loading runs static initialisers,
-	 * and some of these classes build windows or reach for the game when they
-	 * initialise.
-	 */
-	private static void readFields(File f, String owner, List<Global> out) throws IOException {
-		DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(f)));
-		try {
-			if (in.readInt() != 0xCAFEBABE) {
-				return;
-			}
-			skip(in, 4); //minor, major
-			int cpCount = in.readUnsignedShort();
-			String[] utf = new String[cpCount];
-			for (int i = 1; i < cpCount; i++) {
-				int tag = in.readUnsignedByte();
-				switch (tag) {
-					case 1:
-						utf[i] = in.readUTF();
-						break;
-					case 7: case 8: case 16: case 19: case 20:
-						skip(in, 2);
-						break;
-					case 15:
-						skip(in, 3);
-						break;
-					case 3: case 4: case 9: case 10: case 11: case 12: case 17: case 18:
-						skip(in, 4);
-						break;
-					case 5: case 6:
-						skip(in, 8);
-						i++; //a long or double eats two constant pool slots
-						break;
-					default:
-						throw new IOException("unknown constant pool tag " + tag + " in " + f);
-				}
-			}
-			skip(in, 6);                          //access flags, this class, super class
-			skip(in, 2 * in.readUnsignedShort()); //interfaces
-			int fieldCount = in.readUnsignedShort();
-			for (int i = 0; i < fieldCount; i++) {
-				int flags = in.readUnsignedShort();
-				String name = utf[in.readUnsignedShort()];
-				skip(in, 2); //descriptor
-				skipAttributes(in);
-				boolean mutableGlobal = (flags & ACC_PUBLIC) != 0 && (flags & ACC_STATIC) != 0
-						&& (flags & ACC_FINAL) == 0 && (flags & ACC_SYNTHETIC) == 0;
-				if (mutableGlobal) {
-					out.add(new Global(owner, name));
-				}
-			}
-		} finally {
-			in.close();
-		}
-	}
-
-	private static void skipAttributes(DataInputStream in) throws IOException {
-		int n = in.readUnsignedShort();
-		for (int i = 0; i < n; i++) {
-			skip(in, 2);
-			skip(in, in.readInt());
-		}
-	}
-
-	/** skipBytes may stop short; a short skip here would silently misparse. */
-	private static void skip(DataInputStream in, int n) throws IOException {
-		int done = 0;
-		while (done < n) {
-			int got = in.skipBytes(n - done);
-			if (got <= 0) {
-				throw new IOException("truncated class file");
-			}
-			done += got;
-		}
-	}
-
 	// ------------------------------------------------- 2. a global nothing writes
-	static void neverWritten(File src, List<Global> globals) throws IOException {
+	static void neverWritten(File src, List<ClassFileScanner.Member> globals) throws IOException {
 		if (globals.isEmpty() || !src.isDirectory()) {
 			check(false, "there are sources at " + src + " and globals to cross-check against them");
 			return;
@@ -303,7 +188,7 @@ public class GlobalStateTest {
 		}
 		String text = all.toString();
 		List<String> dead = new ArrayList<>();
-		for (Global g : globals) {
+		for (ClassFileScanner.Member g : globals) {
 			//Deliberately blunt: ANY "name =" (or ++/--/+=) anywhere in any source
 			//counts, even a local of the same name in an unrelated file. A guard
 			//that fires wrongly is worse than one that misses a case, and the
