@@ -1,7 +1,7 @@
 package ctrmap.gamedef;
 
-import ctrmap.Workspace.ArchiveType;
-import ctrmap.Workspace.GameType;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 
 /**
  * Pokemon Sun / Moon (Gen 7) - PLACEHOLDER. Gen 7 kept GARC/LZ11/text-cipher

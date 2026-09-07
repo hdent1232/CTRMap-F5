@@ -2,6 +2,7 @@ package ctrmap.tests;
 
 import ctrmap.Ui;
 import ctrmap.Workspace;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.List;
@@ -60,8 +61,8 @@ public class PackReportTest {
 		check(pack().isEmpty(), "a clean pack tells the user nothing");
 
 		//1. a zone that cannot load: its area id has no registry behind it
-		int masterIndex = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2;
-		File master = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, masterIndex);
+		int masterIndex = Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2;
+		File master = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
 		byte[] rows = Files.readAllBytes(master.toPath());
 		rows[ZONE * MASTER_ROW + 2] = (byte) DANGLING_AREA;
 		rows[ZONE * MASTER_ROW + 3] = 0;
@@ -69,14 +70,14 @@ public class PackReportTest {
 		Workspace.addPersist(master);
 
 		//2. a pristine snapshot that is missing an archive
-		String rel = Workspace.getArchivePath(Workspace.ArchiveType.NPC_REGISTRIES, Workspace.game());
+		String rel = Workspace.getArchivePath(ArchiveType.NPC_REGISTRIES, Workspace.game());
 		new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel).delete();
 
 		//3. an archive somebody else rewrote while this editor held its entry table
-		byte[] mat = Files.readAllBytes(Workspace.session().archiveFile(Workspace.ArchiveType.MAP_MATRIX).toPath());
+		byte[] mat = Files.readAllBytes(Workspace.session().archiveFile(ArchiveType.MAP_MATRIX).toPath());
 		byte[] longer = new byte[mat.length + 64];
 		System.arraycopy(mat, 0, longer, 0, mat.length);
-		Files.write(Workspace.session().archiveFile(Workspace.ArchiveType.MAP_MATRIX).toPath(), longer);
+		Files.write(Workspace.session().archiveFile(ArchiveType.MAP_MATRIX).toPath(), longer);
 
 		String said = pack().toString();
 		System.out.println("  the user is shown: " + said);
@@ -92,7 +93,7 @@ public class PackReportTest {
 		//check(true) named it, and the Pack dialog said "(nothing)". Typed into
 		//the matrix editor, a dangling region loads as a missing file in game.
 		int matrix = 14;
-		File matFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, matrix);
+		File matFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, matrix);
 		byte[] grid = Files.readAllBytes(matFile.toPath());
 		int sub0 = (grid[4] & 0xFF) | ((grid[5] & 0xFF) << 8) | ((grid[6] & 0xFF) << 16) | ((grid[7] & 0xFF) << 24);
 		int cell0 = sub0 + 8; //hasLOD, unknown, width, height, then the ids
@@ -133,8 +134,8 @@ public class PackReportTest {
 	 * be true of a pack that could not work at all.
 	 */
 	static void aPackThatFailedSaysSoAndStopsThere() throws Exception {
-		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
-		File gapped = new File(dir, String.valueOf(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length + 1));
+		File dir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
+		File gapped = new File(dir, String.valueOf(Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length + 1));
 		Files.write(gapped.toPath(), new byte[]{1, 2, 3, 4});
 		Workspace.addPersist(gapped);
 

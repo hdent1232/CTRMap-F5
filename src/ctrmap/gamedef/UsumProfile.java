@@ -1,7 +1,7 @@
 package ctrmap.gamedef;
 
-import ctrmap.Workspace.ArchiveType;
-import ctrmap.Workspace.GameType;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 
 /**
  * Pokemon Ultra Sun / Ultra Moon (Gen 7) - PLACEHOLDER, same status as

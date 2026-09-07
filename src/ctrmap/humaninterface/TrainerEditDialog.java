@@ -3,6 +3,7 @@ package ctrmap.humaninterface;
 import ctrmap.Workspace;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.trainers.TrainerEntry;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.Frame;
@@ -37,8 +38,8 @@ public class TrainerEditDialog {
 			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Trainer editor");
 			return;
 		}
-		if (Workspace.getArchive(Workspace.ArchiveType.TRAINER_DATA) == null
-				|| Workspace.getArchive(Workspace.ArchiveType.TRAINER_POKE) == null) {
+		if (Workspace.getArchive(ArchiveType.TRAINER_DATA) == null
+				|| Workspace.getArchive(ArchiveType.TRAINER_POKE) == null) {
 			ctrmap.Ui.error(parent, "This dump has no trainer archives.", "Trainer editor");
 			return;
 		}
@@ -70,8 +71,8 @@ public class TrainerEditDialog {
 
 	public static void show(Frame parent, int tid) {
 		try {
-			byte[] d = Files.readAllBytes(Workspace.getWorkspaceFile(Workspace.ArchiveType.TRAINER_DATA, tid).toPath());
-			byte[] p = Files.readAllBytes(Workspace.getWorkspaceFile(Workspace.ArchiveType.TRAINER_POKE, tid).toPath());
+			byte[] d = Files.readAllBytes(Workspace.getWorkspaceFile(ArchiveType.TRAINER_DATA, tid).toPath());
+			byte[] p = Files.readAllBytes(Workspace.getWorkspaceFile(ArchiveType.TRAINER_POKE, tid).toPath());
 			final TrainerEntry t = TrainerEntry.read(d, p);
 			ctrmap.gamedef.GameProfile prof = Workspace.profile();
 			String[] species = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES)),
@@ -163,8 +164,8 @@ public class TrainerEditDialog {
 					t.classId = (Integer) classSpin.getValue();
 					t.battleType = (Integer) typeSpin.getValue();
 					t.moneyRate = (Integer) moneySpin.getValue();
-					File df = Workspace.getWorkspaceFile(Workspace.ArchiveType.TRAINER_DATA, tid);
-					File pf = Workspace.getWorkspaceFile(Workspace.ArchiveType.TRAINER_POKE, tid);
+					File df = Workspace.getWorkspaceFile(ArchiveType.TRAINER_DATA, tid);
+					File pf = Workspace.getWorkspaceFile(ArchiveType.TRAINER_POKE, tid);
 					try (FileOutputStream fos = new FileOutputStream(df)) {
 						fos.write(t.toTrdata());
 					}
@@ -176,7 +177,7 @@ public class TrainerEditDialog {
 					String newName = nameField.getText().trim();
 					if (!newName.equals(origName.trim())) {
 						int entry = Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_NAMES);
-						File nf = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, entry);
+						File nf = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, entry);
 						GFMessageFile nmsg = new GFMessageFile(Files.readAllBytes(nf.toPath()));
 						nmsg.setLine(tid, newName);
 						Files.write(nf.toPath(), nmsg.write());
@@ -201,7 +202,7 @@ public class TrainerEditDialog {
 
 	private static String[] text(int entry) {
 		try {
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, entry);
+			File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, entry);
 			List<String> lines = GFMessageFile.getStrings(Files.readAllBytes(f.toPath()));
 			return lines.toArray(new String[0]);
 		} catch (Exception ex) {

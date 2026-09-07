@@ -1,6 +1,7 @@
 package ctrmap.formats.text;
 
 import ctrmap.Workspace;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
 import ctrmap.gamedef.OrasProfile;
 import java.io.File;
@@ -33,7 +34,7 @@ public class LocationNames {
 
 	/** (Re)loads the names from the open workspace's GAMETEXT. */
 	public static void loadFromGarc() {
-		File extracted = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, gametextIndex());
+		File extracted = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, gametextIndex());
 		if (extracted == null) {
 			throw new IllegalStateException("Location names: GAMETEXT entry " + gametextIndex()
 					+ " could not be read from the open workspace.");

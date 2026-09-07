@@ -1,7 +1,7 @@
 package ctrmap;
 
-import ctrmap.Workspace.ArchiveType;
-import ctrmap.Workspace.GameType;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import ctrmap.Workspace.PackProgress;
 import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.GameProfile;

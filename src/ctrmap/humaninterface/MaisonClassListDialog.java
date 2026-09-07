@@ -4,6 +4,8 @@ import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.maison.MaisonClassList;
 import ctrmap.formats.text.GFMessageFile;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.awt.BorderLayout;
 import java.awt.Dialog;
 import java.awt.FlowLayout;
@@ -31,17 +33,17 @@ import javax.swing.table.AbstractTableModel;
  */
 public class MaisonClassListDialog {
 
-	private static final Workspace.ArchiveType[] TABLES = {
-		Workspace.ArchiveType.MAISON_CLASS_LIST_A,
-		Workspace.ArchiveType.MAISON_CLASS_LIST_B
+	private static final ArchiveType[] TABLES = {
+		ArchiveType.MAISON_CLASS_LIST_A,
+		ArchiveType.MAISON_CLASS_LIST_B
 	};
 	private static final String[] TABLE_NAMES = {
-		"Table A (-> set pool A, " + arcName(Workspace.ArchiveType.MAISON_CLASS_LIST_A) + ")",
-		"Table B (-> set pool B, " + arcName(Workspace.ArchiveType.MAISON_CLASS_LIST_B) + ")"
+		"Table A (-> set pool A, " + arcName(ArchiveType.MAISON_CLASS_LIST_A) + ")",
+		"Table B (-> set pool B, " + arcName(ArchiveType.MAISON_CLASS_LIST_B) + ")"
 	};
 
-	private static String arcName(Workspace.ArchiveType t) {
-		String p = Workspace.getArchivePath(t, Workspace.game() != null ? Workspace.game() : Workspace.GameType.ORAS);
+	private static String arcName(ArchiveType t) {
+		String p = Workspace.getArchivePath(t, Workspace.game() != null ? Workspace.game() : GameType.ORAS);
 		return p == null ? "?" : p;
 	}
 
@@ -132,7 +134,7 @@ public class MaisonClassListDialog {
 
 	private static String[] text(int entry) {
 		try {
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, entry);
+			File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, entry);
 			List<String> lines = GFMessageFile.getStrings(Files.readAllBytes(f.toPath()));
 			return lines.toArray(new String[0]);
 		} catch (Exception ex) {

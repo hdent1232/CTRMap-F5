@@ -2,6 +2,8 @@ package ctrmap.tests;
 
 import ctrmap.ModDeployer;
 import ctrmap.Workspace;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -45,11 +47,11 @@ public class SnapshotIntegrityTest {
 
 		Workspace.GAMEDIR_PATH = gamedir.getAbsolutePath();
 		Workspace.WORKSPACE_PATH = wsdir.getAbsolutePath();
-		Sessions.bare(wsdir, gamedir, Workspace.GameType.ORAS);
+		Sessions.bare(wsdir, gamedir, GameType.ORAS);
 
 		//a stand-in game: one small file per moddable archive, at the real paths
 		int made = 0;
-		for (Workspace.ArchiveType t : ModDeployer.MODDABLE) {
+		for (ArchiveType t : ModDeployer.MODDABLE) {
 			String rel = Workspace.getArchivePath(t, Workspace.game());
 			if (rel == null) {
 				continue;
@@ -90,7 +92,7 @@ public class SnapshotIntegrityTest {
 
 		//--- and the rest of the snapshot is untouched --------------------------
 		int intact = 0;
-		for (Workspace.ArchiveType t : ModDeployer.MODDABLE) {
+		for (ArchiveType t : ModDeployer.MODDABLE) {
 			String r = Workspace.getArchivePath(t, Workspace.game());
 			if (r == null || r.equals(rel)) {
 				continue;
@@ -143,7 +145,7 @@ public class SnapshotIntegrityTest {
 	 */
 	static void pointedAtAnotherGame(File otherGame, File src) throws Exception {
 		int made = 0;
-		for (Workspace.ArchiveType t : ModDeployer.MODDABLE) {
+		for (ArchiveType t : ModDeployer.MODDABLE) {
 			String rel = Workspace.getArchivePath(t, Workspace.game());
 			if (rel == null) {
 				continue;
@@ -159,7 +161,7 @@ public class SnapshotIntegrityTest {
 		Workspace.GAMEDIR_PATH = otherGame.getAbsolutePath();
 		check(Workspace.snapshotIsForeign(), "and is foreign once the workspace is pointed elsewhere");
 		//pointing the workspace at another game is opening a session there
-		Sessions.bare(Workspace.session().workspaceDir(), otherGame, Workspace.GameType.ORAS);
+		Sessions.bare(Workspace.session().workspaceDir(), otherGame, GameType.ORAS);
 
 		//THE USER MUST BE TOLD. Everything below this line was already true and
 		//the workspace still went on being quietly wrong, because nothing said

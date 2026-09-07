@@ -5,6 +5,7 @@ import ctrmap.GeometryForker;
 import ctrmap.Ui;
 import ctrmap.Workspace;
 import ctrmap.WorkspaceIntegrity;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.AreaForkPrompt;
 import java.io.File;
 import java.io.IOException;
@@ -87,7 +88,7 @@ public class ForkGuardsTest {
 				return;
 			}
 			pack();
-			int areas = Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length, regs = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length;
+			int areas = Workspace.getArchive(ArchiveType.AREA_DATA).length, regs = Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length;
 			check(regs == areas, "fork " + (pass + 1) + ": the registry archive covers every area"
 					+ " (AreaData " + areas + ", NPCRegistries " + regs + ")");
 			check(r.newArea < regs, "fork " + (pass + 1) + ": the registry the engine reads for area "
@@ -114,31 +115,31 @@ public class ForkGuardsTest {
 	static void geometryForkOnlyRunsWhenItIsNeeded() throws Exception {
 		check(GeometryForker.matrixSharers(PRIVATE_ZONE) == 0,
 				"zone " + PRIVATE_ZONE + "'s map is already its own in the retail game");
-		int regions = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length, matrices = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX).length;
+		int regions = Workspace.getArchive(ArchiveType.FIELD_DATA).length, matrices = Workspace.getArchive(ArchiveType.MAP_MATRIX).length;
 		GeometryForker.ForkResult r = GeometryForker.ensurePrivate(PRIVATE_ZONE);
 		pack();
 		check(!r.forked, "so it reports that it forked nothing");
-		check(Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length == regions && Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX).length == matrices,
+		check(Workspace.getArchive(ArchiveType.FIELD_DATA).length == regions && Workspace.getArchive(ArchiveType.MAP_MATRIX).length == matrices,
 				"giving an already-private zone its own map appends nothing (FieldData "
-				+ regions + " -> " + Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length + ", MapMatrix " + matrices + " -> "
-				+ Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX).length + ")");
+				+ regions + " -> " + Workspace.getArchive(ArchiveType.FIELD_DATA).length + ", MapMatrix " + matrices + " -> "
+				+ Workspace.getArchive(ArchiveType.MAP_MATRIX).length + ")");
 
 		check(GeometryForker.matrixSharers(SHARED_ZONE) > 0,
 				"zone " + SHARED_ZONE + " shares its map with other zones");
 		r = GeometryForker.ensurePrivate(SHARED_ZONE);
 		pack();
-		check(r.forked && Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length > regions,
+		check(r.forked && Workspace.getArchive(ArchiveType.FIELD_DATA).length > regions,
 				"a zone that shares its map does get a private copy");
 		check(GeometryForker.matrixSharers(SHARED_ZONE) == 0, "and stops sharing");
 
-		regions = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length;
-		matrices = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX).length;
+		regions = Workspace.getArchive(ArchiveType.FIELD_DATA).length;
+		matrices = Workspace.getArchive(ArchiveType.MAP_MATRIX).length;
 		r = GeometryForker.ensurePrivate(SHARED_ZONE);
 		pack();
-		check(!r.forked && Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length == regions && Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX).length == matrices,
+		check(!r.forked && Workspace.getArchive(ArchiveType.FIELD_DATA).length == regions && Workspace.getArchive(ArchiveType.MAP_MATRIX).length == matrices,
 				"forking the same zone a second time appends nothing (FieldData " + regions
-				+ " -> " + Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length + ", MapMatrix " + matrices + " -> "
-				+ Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX).length + ")");
+				+ " -> " + Workspace.getArchive(ArchiveType.FIELD_DATA).length + ", MapMatrix " + matrices + " -> "
+				+ Workspace.getArchive(ArchiveType.MAP_MATRIX).length + ")");
 		check(Arrays.equals(r.srcRegions, r.newRegions),
 				"and hands back the regions the zone is already using");
 	}
@@ -240,8 +241,8 @@ public class ForkGuardsTest {
 	 * it would do the same to any other appender.
 	 */
 	static void gappedAppendIsRefused() throws Exception {
-		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
-		int before = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length;
+		File dir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
+		int before = Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length;
 		int past = before + 1;
 		File gapped = new File(dir, String.valueOf(past));
 		Files.write(gapped.toPath(), new byte[]{1, 2, 3, 4});
@@ -253,7 +254,7 @@ public class ForkGuardsTest {
 			check(ex.getMessage().contains(String.valueOf(past)),
 					"packing a file named past the end of the archive is refused: " + ex.getMessage());
 		}
-		check(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length == before,
+		check(Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length == before,
 				"and the archive did not grow into the slot it would have been renumbered to");
 		Workspace.persistPaths().remove(gapped.getAbsolutePath());
 		gapped.delete();
@@ -283,19 +284,19 @@ public class ForkGuardsTest {
 	 */
 	static void aRegistryAlreadyPastTheNewAreaIdIsRefusedOutLoud() throws Exception {
 		final int ZONE = 40; //not one of ZONES above, so it has never been forked here
-		File npDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
-		while (Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length <= Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length + 1) {
-			File tail = new File(npDir, String.valueOf(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length));
+		File npDir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
+		while (Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length <= Workspace.getArchive(ArchiveType.AREA_DATA).length + 1) {
+			File tail = new File(npDir, String.valueOf(Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length));
 			Files.write(tail.toPath(), new byte[]{0, 0, 0, 0}); //a registry naming no models
 			Workspace.addPersist(tail);
 			pack();
 		}
-		int areas = Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length, regs = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length;
+		int areas = Workspace.getArchive(ArchiveType.AREA_DATA).length, regs = Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length;
 		check(regs > areas + 1, "the archives are out of step: AreaData " + areas
 				+ ", NPCRegistries " + regs + " (the registry reaches past the id a fork would use)");
 
 		int areaBefore = AreaForker.currentArea(ZONE);
-		File adOut = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA),
+		File adOut = new File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA),
 				String.valueOf(areas));
 		AreaForker.ForkResult r = null;
 		Throwable thrown = null;
@@ -321,13 +322,13 @@ public class ForkGuardsTest {
 		check(AreaForker.currentArea(ZONE) == areaBefore,
 				"and zone " + ZONE + " still points at area " + areaBefore
 				+ " (now " + AreaForker.currentArea(ZONE) + ")");
-		check(Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length == areas, "and AreaData did not grow (" + areas + " -> "
-				+ Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length + ")");
+		check(Workspace.getArchive(ArchiveType.AREA_DATA).length == areas, "and AreaData did not grow (" + areas + " -> "
+				+ Workspace.getArchive(ArchiveType.AREA_DATA).length + ")");
 	}
 
 	/** The bytes the engine would read as the registry for an area id. */
 	static byte[] registry(int area) {
-		byte[] b = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getDecompressedEntry(area);
+		byte[] b = Workspace.getArchive(ArchiveType.NPC_REGISTRIES).getDecompressedEntry(area);
 		return b == null ? null : b;
 	}
 
@@ -350,10 +351,10 @@ public class ForkGuardsTest {
 	 * identity is their witness that nothing was packed.
 	 */
 	static ctrmap.formats.garc.GARC areaData() {
-		return Workspace.getArchive(Workspace.ArchiveType.AREA_DATA);
+		return Workspace.getArchive(ArchiveType.AREA_DATA);
 	}
 
 	static ctrmap.formats.garc.GARC zoneData() {
-		return Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		return Workspace.getArchive(ArchiveType.ZONE_DATA);
 	}
 }

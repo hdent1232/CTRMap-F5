@@ -2,6 +2,8 @@ package ctrmap.tools;
 
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -58,9 +60,9 @@ public class TerrainHarvester {
 		//Archive paths belong to the game profile, never spelled out here - the
 		//seam guard enforces that so a second game can be supported by adding a
 		//profile rather than by hunting literals through the tools.
-		ctrmap.Workspace.GameType game = ctrmap.Workspace.GameType.ORAS;
+		GameType game = GameType.ORAS;
 		GARC fd = new GARC(new File(root
-				+ ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.FIELD_DATA, game)));
+				+ ctrmap.Workspace.getArchivePath(ArchiveType.FIELD_DATA, game)));
 		Map<Integer, int[]> owner = zoneOwners(root, fd.length);
 
 		//profile signature -> the cuts that implement it, best first
@@ -414,11 +416,11 @@ public class TerrainHarvester {
 	/** region -> {zone, area}, so a cut knows where its textures live. */
 	static Map<Integer, int[]> zoneOwners(String root, int regionCount) throws Exception {
 		Map<Integer, int[]> owner = new LinkedHashMap<>();
-		ctrmap.Workspace.GameType game = ctrmap.Workspace.GameType.ORAS;
+		GameType game = GameType.ORAS;
 		GARC zo = new GARC(new File(root
-				+ ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.ZONE_DATA, game)));
+				+ ctrmap.Workspace.getArchivePath(ArchiveType.ZONE_DATA, game)));
 		GARC mm = new GARC(new File(root
-				+ ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.MAP_MATRIX, game)));
+				+ ctrmap.Workspace.getArchivePath(ArchiveType.MAP_MATRIX, game)));
 		byte[] master = zo.getDecompressedEntry(zo.length - 2);
 		for (int z = 0; z < zo.length - 2; z++) {
 			int area, matrix;

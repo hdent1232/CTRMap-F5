@@ -1,5 +1,6 @@
 package ctrmap;
 
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
 import static ctrmap.formats.LittleEndian.i32;
@@ -36,9 +37,9 @@ public class ZoneCloner {
 	 * master table row, and persists both touched files.
 	 */
 	public static void cloneIntoSlot(int srcIndex, int dstIndex) throws IOException {
-		File src = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, srcIndex);
-		File dst = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, dstIndex);
-		File master = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, getMasterIndex());
+		File src = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, srcIndex);
+		File dst = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, dstIndex);
+		File master = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, getMasterIndex());
 		if (src == null || dst == null || master == null) {
 			throw new IOException("Could not extract the required ZoneData files from the workspace.");
 		}
@@ -53,7 +54,7 @@ public class ZoneCloner {
 	 * second-to-last on ORAS (whose last entry is the "EN" encounter pack).
 	 */
 	public static int getMasterIndex() {
-		ctrmap.formats.garc.GARC zoArc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		ctrmap.formats.garc.GARC zoArc = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zoArc == null) {
 			throw new IllegalStateException("No workspace is loaded (ZoneData archive unavailable).");
 		}

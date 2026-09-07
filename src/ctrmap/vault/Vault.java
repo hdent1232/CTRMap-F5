@@ -3,6 +3,7 @@ package ctrmap.vault;
 import ctrmap.ModDeployer;
 import ctrmap.Ui;
 import ctrmap.Workspace;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
 import ctrmap.setup.DumpCheck;
 import java.io.File;
@@ -384,7 +385,7 @@ public final class Vault {
 				//everything the editor can WRITE, not only what it repacks: the
 				//item archive is written in place and would otherwise be missing
 				//from a backup whose whole purpose is putting the game back
-				for (Workspace.ArchiveType t : ModDeployer.allWritableArchives()) {
+				for (ArchiveType t : ModDeployer.allWritableArchives()) {
 					String rel = profile.archivePath(t);
 					//a profile returning null means "not present or not verified
 					//for this game" - absence, never a guess. Skip it rather

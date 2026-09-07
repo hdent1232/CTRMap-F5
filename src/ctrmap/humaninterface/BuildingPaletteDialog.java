@@ -8,6 +8,7 @@ import ctrmap.formats.h3d.texturing.H3DTexture;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.Dialog;
 import java.awt.Dimension;
@@ -118,7 +119,7 @@ public class BuildingPaletteDialog {
 		return donorTexCache.computeIfAbsent(areaId, id -> {
 			List<H3DTexture> out = new ArrayList<>();
 			try {
-				String rel = Workspace.getArchivePath(Workspace.ArchiveType.AREA_DATA, Workspace.game());
+				String rel = Workspace.getArchivePath(ArchiveType.AREA_DATA, Workspace.game());
 				File garcFile = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
 				if (!garcFile.exists()) {
 					garcFile = new File(Workspace.GAMEDIR_PATH + rel);

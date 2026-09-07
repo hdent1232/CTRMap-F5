@@ -1,6 +1,7 @@
 package ctrmap;
 
 import ctrmap.formats.garc.GARC;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
@@ -227,7 +228,7 @@ public class GeometryForker {
 		if (oldMatrix < 0 || oldMatrix >= mm.length) {
 			throw new IOException("Zone references matrix " + oldMatrix + " which does not exist.");
 		}
-		File srcMatrixFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, oldMatrix);
+		File srcMatrixFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, oldMatrix);
 		if (srcMatrixFile == null) {
 			throw new IOException("Could not extract map matrix " + oldMatrix + " from the workspace.");
 		}
@@ -245,7 +246,7 @@ public class GeometryForker {
 			if (oldR < 0 || oldR >= gr.length) {
 				throw new IOException("Zone matrix references region " + oldR + " which does not exist.");
 			}
-			File srcRegionFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, oldR);
+			File srcRegionFile = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, oldR);
 			if (srcRegionFile == null) {
 				throw new IOException("Could not extract FieldData region " + oldR + " from the workspace.");
 			}
@@ -277,13 +278,13 @@ public class GeometryForker {
 	 * @param newRealZones how many of the appended zones to fork
 	 */
 	public static void forkAppendedZones(byte[][] newZos, byte[] master, int oldCount, int newRealZones) throws IOException {
-		GARC gr = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA);
-		GARC mm = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX);
+		GARC gr = Workspace.getArchive(ArchiveType.FIELD_DATA);
+		GARC mm = Workspace.getArchive(ArchiveType.MAP_MATRIX);
 		if (gr == null || mm == null) {
 			throw new IOException("FieldData/MapMatrix archive unavailable.");
 		}
-		File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
-		File mmDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.MAP_MATRIX);
+		File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
+		File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
 		int nextRegion = gr.length;
 		int nextMatrix = mm.length;
 		for (int i = 0; i < newRealZones; i++) {
@@ -332,9 +333,9 @@ public class GeometryForker {
 		if (!Workspace.isOA()) {
 			throw new IOException("Geometry fork is ORAS-only in v1.");
 		}
-		GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
-		GARC gr = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA);
-		GARC mm = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX);
+		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
+		GARC gr = Workspace.getArchive(ArchiveType.FIELD_DATA);
+		GARC mm = Workspace.getArchive(ArchiveType.MAP_MATRIX);
 		if (zo == null || gr == null || mm == null) {
 			throw new IOException("No workspace is loaded (ZoneData/FieldData/MapMatrix unavailable).");
 		}
@@ -343,14 +344,14 @@ public class GeometryForker {
 			throw new IOException("Zone " + zoneIndex + " out of range (0.." + (zoneCount - 1) + "). "
 					+ "Note: the last two ZoneData entries are the master/EN tables, not zones.");
 		}
-		File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
-		File mmDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.MAP_MATRIX);
+		File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
+		File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
 		int newMatrix = mm.length;
 		File matrixOut = new File(mmDir, String.valueOf(newMatrix));
 		if (Workspace.persistPaths().contains(matrixOut.getAbsolutePath())) {
 			throw new IOException("A geometry fork/append is already pending. Pack the workspace before forking again.");
 		}
-		File zoneFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 		if (zoneFile == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
@@ -381,12 +382,12 @@ public class GeometryForker {
 	 * already private and a fork would only orphan archive entries.
 	 */
 	public static int matrixSharers(int zoneIndex) throws IOException {
-		GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zo == null) {
 			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
 		}
 		int zoneCount = zo.length - 2;
-		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneCount);
+		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
 		}
@@ -421,14 +422,14 @@ public class GeometryForker {
 	 * into the zone's own regions when it is already private.
 	 */
 	public static ForkResult currentGeometry(int zoneIndex) throws IOException {
-		File zoneFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 		if (zoneFile == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
 		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
 		int hdrOff = i32(zoBytes, 4);
 		int matrix = u16(zoBytes, hdrOff + 4);
-		File matFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, matrix);
+		File matFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, matrix);
 		if (matFile == null) {
 			throw new IOException("Could not extract map matrix " + matrix + " from the workspace.");
 		}
@@ -476,7 +477,7 @@ public class GeometryForker {
 	/** Repoints a zone's mapmatrixID in the master zone-header table file. */
 	public static void repointMasterRow(GARC zo, int zoneIndex, int newMatrix) throws IOException {
 		int masterIndex = zo.length - 2;
-		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, masterIndex);
+		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
 		}

@@ -13,6 +13,8 @@ import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
 import ctrmap.formats.tilemap.Tilemap;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import ctrmap.humaninterface.BuildingPaletteDialog;
 import ctrmap.humaninterface.TilePainterForm;
 import ctrmap.tools.BuildingHarvester;
@@ -101,10 +103,10 @@ public class PlacementGuardsTest {
 		//point a throwaway workspace's snapshot at the dump
 		Workspace.GAMEDIR_PATH = garcFile.getParentFile().getParentFile().getParentFile().getParentFile().getAbsolutePath();
 		Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_placement_guards").getAbsolutePath();
-		Sessions.bare(new File(Workspace.WORKSPACE_PATH), new File(Workspace.GAMEDIR_PATH), Workspace.GameType.ORAS)
+		Sessions.bare(new File(Workspace.WORKSPACE_PATH), new File(Workspace.GAMEDIR_PATH), GameType.ORAS)
 				.prepareDirectories();
 		File snap = new File(Workspace.originalSnapshotDir().getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game()));
+				+ Workspace.getArchivePath(ArchiveType.FIELD_DATA, Workspace.game()));
 		if (!snap.isFile()) {
 			snap.getParentFile().mkdirs();
 			try {

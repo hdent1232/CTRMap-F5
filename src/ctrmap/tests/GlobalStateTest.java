@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.Workspace;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -271,7 +272,7 @@ public class GlobalStateTest {
 		//the session: reset() must drop it, because everything the old fields
 		//held now hangs off it - one leaked session is every old leak at once
 		Workspace.install(new ctrmap.WorkspaceSession(new File("dirty-ws"), new File("dirty-game"),
-				Workspace.GameType.ORAS, null));
+				GameType.ORAS, null));
 		check(dirtied.size() >= 5, "enough of Workspace's statics can be dirtied here for the check to mean something ("
 				+ dirtied.size() + ")");
 

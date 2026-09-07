@@ -3,6 +3,7 @@ package ctrmap;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.LocationNames;
 import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.gamedef.ArchiveType;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -50,7 +51,7 @@ public class ZoneRepurposeScanner {
 	 * with no incoming warps are returned; the rest are considered in-use).
 	 */
 	public static List<Candidate> scan() {
-		GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zo == null) {
 			return new ArrayList<>();
 		}

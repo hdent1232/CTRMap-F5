@@ -2,6 +2,7 @@ package ctrmap.formats.pokedata;
 
 import ctrmap.Workspace;
 import ctrmap.formats.text.GFMessageFile;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
 import java.io.File;
 import java.io.IOException;
@@ -54,7 +55,7 @@ public final class ItemText {
 		if (idx < 0) {
 			return null;
 		}
-		return Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, idx);
+		return Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, idx);
 	}
 
 	/** Every line of the list, or an empty list when it cannot be read. */

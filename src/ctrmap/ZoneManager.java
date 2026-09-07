@@ -4,6 +4,7 @@ import ctrmap.formats.containers.ZO;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
 import static ctrmap.formats.LittleEndian.u16;
@@ -48,7 +49,7 @@ public class ZoneManager {
 		if (ws == null) {
 			throw new IOException("No workspace is loaded.");
 		}
-		File zf = ws.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		File zf = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 		if (zf == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
@@ -84,7 +85,7 @@ public class ZoneManager {
 		if (ws == null) {
 			throw new IOException("No workspace is loaded.");
 		}
-		GARC zoGarc = ws.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		GARC zoGarc = ws.getArchive(ArchiveType.ZONE_DATA);
 		if (zoGarc == null) {
 			throw new IOException("ZoneData archive unavailable.");
 		}
@@ -99,7 +100,7 @@ public class ZoneManager {
 			throw new IOException("That name can't be encoded: " + ex.getMessage());
 		}
 
-		File masterFile = ws.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, masterIndex);
+		File masterFile = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
 		byte[] master = Files.readAllBytes(masterFile.toPath());
 		int rowOff = zoneIndex * ZoneCloner.ZONE_HEADER_SIZE;
 		int curParent = u16(master, rowOff + PARENTMAP_OFFSET) & PARENTMAP_MASK;
@@ -115,7 +116,7 @@ public class ZoneManager {
 
 		// load the location-name text file (entry index from the game profile)
 		int gtIndex = ctrmap.formats.text.LocationNames.gametextIndex();
-		File gtFile = ws.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, gtIndex);
+		File gtFile = ws.getWorkspaceFile(ArchiveType.GAMETEXT, gtIndex);
 		if (gtFile == null) {
 			throw new IOException("Could not read the location-name text file (GAMETEXT " + gtIndex + ").");
 		}
@@ -189,7 +190,7 @@ public class ZoneManager {
 	/** Sets the zone's parentMap in BOTH the ZO header (subfile 0) and the master row. */
 	private static void repointParentMap(WorkspaceSession ws, int zoneIndex, File masterFile, byte[] master, int rowOff, int newParent) throws IOException {
 		// ZO header (subfile 0)
-		File zf = ws.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		File zf = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 		ZO zo = new ZO(zf);
 		byte[] hdr = zo.getFile(0);
 		setParentMap(hdr, 0, newParent);

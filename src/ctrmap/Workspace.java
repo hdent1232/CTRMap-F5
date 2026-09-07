@@ -3,6 +3,8 @@ package ctrmap;
 import ctrmap.formats.tilemap.EditorTileset;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.LocationNames;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import ctrmap.humaninterface.LoadingDialog;
 import ctrmap.resources.ResourceAccess;
 import java.awt.Component;
@@ -547,15 +549,6 @@ public class Workspace {
 		}
 	}
 
-	public static enum GameType {
-		XY,
-		ORAS,
-		/** Sun/Moon (Gen 7) - detected/served via gamedef profiles; not yet supported. */
-		SM,
-		/** Ultra Sun/Ultra Moon (Gen 7) - not yet supported. */
-		USUM
-	}
-
 	public static boolean isOA() {
 		return game() == GameType.ORAS;
 	}
@@ -569,33 +562,6 @@ public class Workspace {
 
 	public static boolean isXY() {
 		return game() == GameType.XY;
-	}
-
-	public static enum ArchiveType {
-		AREA_DATA,
-		FIELD_DATA,
-		TRAINER_DATA,
-		TRAINER_CLASS,
-		TRAINER_POKE,
-		MAISON_SET_POOL_A,
-		MAISON_CLASS_LIST_A,
-		MAISON_SET_POOL_B,
-		MAISON_CLASS_LIST_B,
-		MAISON_SET_POOL_C,
-		MAP_MATRIX,
-		GAMETEXT,
-		STORYTEXT,
-		ZONE_DATA,
-		BUILDING_MODELS,
-		NPC_REGISTRIES,
-		MOVE_MODELS,
-		/** Species base stats/types/abilities (read-only reference data). */
-		PERSONAL,
-		/** Move type/category/power mini-container (read-only reference data). */
-		MOVE_DATA,
-		/** Item records - 776 x 36 bytes in Gen 6, id == entry index. */
-		ITEM_DATA,
-		SOUND_BCSAR
 	}
 
 	public static void prefsPutNonNull(String key, String value) {

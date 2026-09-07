@@ -1,7 +1,9 @@
 package ctrmap.setup;
 
 import ctrmap.Workspace;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -28,19 +30,19 @@ import java.util.List;
 public class DumpCheck {
 
 	/** Archives {@link Workspace#validate} refuses to start without. */
-	private static final Workspace.ArchiveType[] REQUIRED = {
-		Workspace.ArchiveType.ZONE_DATA,
-		Workspace.ArchiveType.AREA_DATA,
-		Workspace.ArchiveType.FIELD_DATA,
-		Workspace.ArchiveType.MAP_MATRIX,
-		Workspace.ArchiveType.GAMETEXT,
-		Workspace.ArchiveType.BUILDING_MODELS,
-		Workspace.ArchiveType.NPC_REGISTRIES,
-		Workspace.ArchiveType.MOVE_MODELS
+	private static final ArchiveType[] REQUIRED = {
+		ArchiveType.ZONE_DATA,
+		ArchiveType.AREA_DATA,
+		ArchiveType.FIELD_DATA,
+		ArchiveType.MAP_MATRIX,
+		ArchiveType.GAMETEXT,
+		ArchiveType.BUILDING_MODELS,
+		ArchiveType.NPC_REGISTRIES,
+		ArchiveType.MOVE_MODELS
 	};
 
 	/** Nice names for the archives, so no message ever shows a raw archive path. */
-	private static String friendly(Workspace.ArchiveType t) {
+	private static String friendly(ArchiveType t) {
 		switch (t) {
 			case ZONE_DATA: return "the zone list";
 			case AREA_DATA: return "area data";
@@ -68,7 +70,7 @@ public class DumpCheck {
 	public static class Result {
 
 		public Status status;
-		public Workspace.GameType game;
+		public GameType game;
 		public GameProfile profile;
 		/** One sentence, plain language, safe to show as a heading. */
 		public String headline = "";
@@ -209,7 +211,7 @@ public class DumpCheck {
 		}
 		List<String> missing = new ArrayList<>();
 		List<String> broken = new ArrayList<>();
-		for (Workspace.ArchiveType t : REQUIRED) {
+		for (ArchiveType t : REQUIRED) {
 			String rel = Workspace.getArchivePath(t, p.type());
 			if (rel == null) {
 				continue;
@@ -253,7 +255,7 @@ public class DumpCheck {
 		if (p == null || !p.supports(GameProfile.Feature.H3D_MAPS)) {
 			return false;
 		}
-		for (Workspace.ArchiveType t : REQUIRED) {
+		for (ArchiveType t : REQUIRED) {
 			String rel = Workspace.getArchivePath(t, p.type());
 			if (rel == null) {
 				continue;

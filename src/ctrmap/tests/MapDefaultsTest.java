@@ -6,6 +6,8 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.mapmatrix.MapMatrix;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.FileOutputStream;
 import static ctrmap.formats.LittleEndian.putI32;
@@ -105,7 +107,7 @@ public class MapDefaultsTest {
 	 */
 	static void everyRetailMatrixNamesItsFirstRegion(File dump) throws Exception {
 		GARC mm = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.MAP_MATRIX, Workspace.GameType.ORAS)));
+				+ Workspace.getArchivePath(ArchiveType.MAP_MATRIX, GameType.ORAS)));
 		File tmp = Scratch.file("ctrmap_mapdefaults");
 		int read = 0, populated = 0;
 		StringBuilder bad = new StringBuilder();
@@ -159,7 +161,7 @@ public class MapDefaultsTest {
 	 */
 	static void theGroundIsNotJustTheBiggestMesh(File dump) throws Exception {
 		GARC fd = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.GameType.ORAS)));
+				+ Workspace.getArchivePath(ArchiveType.FIELD_DATA, GameType.ORAS)));
 		int scored = 0, differ = 0, wrong = 0;
 		StringBuilder first = new StringBuilder();
 		for (int i = 0; i < Math.min(REGIONS, fd.length); i++) {
@@ -224,7 +226,7 @@ public class MapDefaultsTest {
 	 */
 	static void theListOffersTheGroundFirst(File dump) throws Exception {
 		GARC fd = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.GameType.ORAS)));
+				+ Workspace.getArchivePath(ArchiveType.FIELD_DATA, GameType.ORAS)));
 		int scored = 0, promoted = 0;
 		StringBuilder notFirst = new StringBuilder();
 		StringBuilder notAList = new StringBuilder();
@@ -298,7 +300,7 @@ public class MapDefaultsTest {
 	/** A pick that DOES fit this region must be honoured, not overridden. */
 	static void aPickedMeshIsHonouredWhereItFits(File dump) throws Exception {
 		GARC fd = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.GameType.ORAS)));
+				+ Workspace.getArchivePath(ArchiveType.FIELD_DATA, GameType.ORAS)));
 		BchMapModel donor = modelOf(fd, DONOR);
 		if (donor == null) {
 			check(false, "the tileset donor region " + DONOR + " is a map model");

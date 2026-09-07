@@ -1,6 +1,8 @@
 package ctrmap;
 
 import ctrmap.formats.garc.GARC;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -32,23 +34,23 @@ import java.util.List;
 public class ModDeployer {
 
 	/** RomFS archives CTRMap can edit (STORYTEXT included; it is lazily loaded but deployable). */
-	public static final Workspace.ArchiveType[] MODDABLE = {
-		Workspace.ArchiveType.ZONE_DATA,
-		Workspace.ArchiveType.GAMETEXT,
-		Workspace.ArchiveType.STORYTEXT,
-		Workspace.ArchiveType.FIELD_DATA,
-		Workspace.ArchiveType.MAP_MATRIX,
-		Workspace.ArchiveType.AREA_DATA,
-		Workspace.ArchiveType.BUILDING_MODELS,
-		Workspace.ArchiveType.NPC_REGISTRIES,
-		Workspace.ArchiveType.MOVE_MODELS,
-		Workspace.ArchiveType.TRAINER_DATA,
-		Workspace.ArchiveType.TRAINER_POKE,
-		Workspace.ArchiveType.MAISON_SET_POOL_A,
-		Workspace.ArchiveType.MAISON_CLASS_LIST_A,
-		Workspace.ArchiveType.MAISON_SET_POOL_B,
-		Workspace.ArchiveType.MAISON_CLASS_LIST_B,
-		Workspace.ArchiveType.MAISON_SET_POOL_C
+	public static final ArchiveType[] MODDABLE = {
+		ArchiveType.ZONE_DATA,
+		ArchiveType.GAMETEXT,
+		ArchiveType.STORYTEXT,
+		ArchiveType.FIELD_DATA,
+		ArchiveType.MAP_MATRIX,
+		ArchiveType.AREA_DATA,
+		ArchiveType.BUILDING_MODELS,
+		ArchiveType.NPC_REGISTRIES,
+		ArchiveType.MOVE_MODELS,
+		ArchiveType.TRAINER_DATA,
+		ArchiveType.TRAINER_POKE,
+		ArchiveType.MAISON_SET_POOL_A,
+		ArchiveType.MAISON_CLASS_LIST_A,
+		ArchiveType.MAISON_SET_POOL_B,
+		ArchiveType.MAISON_CLASS_LIST_B,
+		ArchiveType.MAISON_SET_POOL_C
 	};
 
 	/**
@@ -71,13 +73,13 @@ public class ModDeployer {
 	 * ({@link ctrmap.formats.pokedata.ItemTable#baselineArchive}). Deploy diffs
 	 * against that, so it ships them when they were edited and not otherwise.
 	 */
-	public static final Workspace.ArchiveType[] MODDABLE_IN_PLACE = {
-		Workspace.ArchiveType.ITEM_DATA
+	public static final ArchiveType[] MODDABLE_IN_PLACE = {
+		ArchiveType.ITEM_DATA
 	};
 
 	/** Every archive the editor can write, however it writes it - for a backup that must be whole. */
-	public static List<Workspace.ArchiveType> allWritableArchives() {
-		List<Workspace.ArchiveType> out = new ArrayList<>(Arrays.asList(MODDABLE));
+	public static List<ArchiveType> allWritableArchives() {
+		List<ArchiveType> out = new ArrayList<>(Arrays.asList(MODDABLE));
 		out.addAll(Arrays.asList(MODDABLE_IN_PLACE));
 		return out;
 	}
@@ -108,7 +110,7 @@ public class ModDeployer {
 				return name.toUpperCase();
 			}
 		}
-		return Workspace.game() == Workspace.GameType.XY ? "0004000000055D00" : "000400000011C400"; // Pokemon X / Omega Ruby
+		return Workspace.game() == GameType.XY ? "0004000000055D00" : "000400000011C400"; // Pokemon X / Omega Ruby
 	}
 
 	/**
@@ -122,7 +124,7 @@ public class ModDeployer {
 		r.modRoot = modRoot;
 		File snapshot = Workspace.originalSnapshotDir();
 		File romfsOut = new File(modRoot, "romfs");
-		for (Workspace.ArchiveType t : MODDABLE) {
+		for (ArchiveType t : MODDABLE) {
 			String rel = Workspace.getArchivePath(t, Workspace.game());
 			if (rel == null) {
 				continue;
@@ -156,7 +158,7 @@ public class ModDeployer {
 		//MODDABLE_IN_PLACE). No copy means the editor has never written the
 		//archive, so there is nothing of the user's in it and nothing to ship.
 		if (ctrmap.formats.pokedata.ItemTable.changedSinceBaseline()) {
-			String rel = Workspace.getArchivePath(Workspace.ArchiveType.ITEM_DATA, Workspace.game());
+			String rel = Workspace.getArchivePath(ArchiveType.ITEM_DATA, Workspace.game());
 			File live = ctrmap.formats.pokedata.ItemTable.archiveFile();
 			if (rel != null && live != null) {
 				try {

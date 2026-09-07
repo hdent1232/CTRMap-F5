@@ -9,6 +9,8 @@ import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainCatalog;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.Arrays;
@@ -44,7 +46,7 @@ public class TerrainImportTest {
 				.getParentFile().getParentFile().getAbsolutePath();
 		ctrmap.Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_terrainimport").getAbsolutePath();
 		Sessions.bare(new File(ctrmap.Workspace.WORKSPACE_PATH), new File(ctrmap.Workspace.GAMEDIR_PATH),
-				ctrmap.Workspace.GameType.ORAS).prepareDirectories();
+				GameType.ORAS).prepareDirectories();
 		//Each brush's donor is cut through the workspace's PRISTINE snapshot,
 		//which refuses to fall back to live data - a donor taken from a map the
 		//user has already painted carries the paint into the next map. The dump
@@ -52,7 +54,7 @@ public class TerrainImportTest {
 		//than reaching around the runtime path: hardlink the archive into place,
 		//and copy only when the filesystem will not link it.
 		File snapshot = new File(ctrmap.Workspace.originalSnapshotDir().getAbsolutePath()
-				+ ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.FIELD_DATA,
+				+ ctrmap.Workspace.getArchivePath(ArchiveType.FIELD_DATA,
 						ctrmap.Workspace.game()));
 		if (!snapshot.isFile()) {
 			snapshot.getParentFile().mkdirs();

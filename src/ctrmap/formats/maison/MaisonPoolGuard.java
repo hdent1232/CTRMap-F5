@@ -2,6 +2,7 @@ package ctrmap.formats.maison;
 
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.util.HashSet;
 import java.util.Set;
@@ -41,7 +42,7 @@ public class MaisonPoolGuard {
 	 * list table). {@code current} - the pool as loaded in the editor - is the
 	 * fallback when no snapshot exists.
 	 */
-	public static MaisonPoolGuard load(Workspace.ArchiveType pool, Workspace.ArchiveType pairedList, MaisonSet[] current) {
+	public static MaisonPoolGuard load(ArchiveType pool, ArchiveType pairedList, MaisonSet[] current) {
 		MaisonSet[] vanilla = readSnapshotPool(pool);
 		if (vanilla != null && vanilla.length != current.length) {
 			vanilla = null; //truncated/mismatched snapshot - do not trust it
@@ -87,7 +88,7 @@ public class MaisonPoolGuard {
 	/** Opens a pool GARC from the pristine snapshot, or null when unavailable
 	 *  or unparseable (the GARC parser swallows read errors and can hand back
 	 *  an empty shell - treat that as "no snapshot", never as "all free"). */
-	private static MaisonSet[] readSnapshotPool(Workspace.ArchiveType pool) {
+	private static MaisonSet[] readSnapshotPool(ArchiveType pool) {
 		try {
 			GARC g = snapshotGarc(pool);
 			if (g == null || g.length == 0) {
@@ -108,7 +109,7 @@ public class MaisonPoolGuard {
 	}
 
 	/** Every set index any retail class-list row references, from the snapshot. */
-	private static Set<Integer> readSnapshotReferences(Workspace.ArchiveType listTable) {
+	private static Set<Integer> readSnapshotReferences(ArchiveType listTable) {
 		Set<Integer> refs = new HashSet<>();
 		try {
 			GARC g = snapshotGarc(listTable);
@@ -129,7 +130,7 @@ public class MaisonPoolGuard {
 
 	/** The pristine class lists of a table, or null when no snapshot exists -
 	 *  the class-assignment dialog's "restore retail row" source. */
-	public static MaisonClassList[] readSnapshotLists(Workspace.ArchiveType listTable) {
+	public static MaisonClassList[] readSnapshotLists(ArchiveType listTable) {
 		try {
 			GARC g = snapshotGarc(listTable);
 			if (g == null || g.length == 0) {
@@ -149,7 +150,7 @@ public class MaisonPoolGuard {
 		}
 	}
 
-	private static GARC snapshotGarc(Workspace.ArchiveType t) throws Exception {
+	private static GARC snapshotGarc(ArchiveType t) throws Exception {
 		String rel = Workspace.getArchivePath(t, Workspace.game());
 		if (rel == null) {
 			return null;

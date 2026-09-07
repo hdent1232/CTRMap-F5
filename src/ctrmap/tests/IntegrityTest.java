@@ -2,6 +2,8 @@ package ctrmap.tests;
 
 import ctrmap.Workspace;
 import ctrmap.WorkspaceIntegrity;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.List;
@@ -38,8 +40,8 @@ public class IntegrityTest {
 		}
 
 		if (!new File(gamedir.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.NPC_REGISTRIES,
-						Workspace.GameType.ORAS)).isFile()) {
+				+ Workspace.getArchivePath(ArchiveType.NPC_REGISTRIES,
+						GameType.ORAS)).isFile()) {
 			System.out.println("  skip: dump does not carry the archives this checks");
 			System.out.println("ALL PASS");
 			return;
@@ -47,11 +49,11 @@ public class IntegrityTest {
 		//a scratch copy, because the last check below has to BREAK an archive
 		ScratchGame.open(gamedir);
 
-		int areas = Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length;
-		int regs = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length;
-		int zones = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2;
-		int mats = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX).length;
-		int regions = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length;
+		int areas = Workspace.getArchive(ArchiveType.AREA_DATA).length;
+		int regs = Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length;
+		int zones = Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2;
+		int mats = Workspace.getArchive(ArchiveType.MAP_MATRIX).length;
+		int regions = Workspace.getArchive(ArchiveType.FIELD_DATA).length;
 		System.out.println("  dump: " + areas + " areas, " + regs + " registries, " + zones
 				+ " zones, " + mats + " matrices, " + regions + " regions");
 
@@ -109,7 +111,7 @@ public class IntegrityTest {
 	 */
 	static void danglingRegionIsFound(int matrices, int regions) throws Exception {
 		int last = matrices - 1;
-		File matFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, last);
+		File matFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, last);
 		byte[] mat = Files.readAllBytes(matFile.toPath());
 		int sub0 = i32(mat, 4);
 		int cell = sub0 + 8;
@@ -149,14 +151,14 @@ public class IntegrityTest {
 	 * archive goes back and the sentence has to be gone.
 	 */
 	static void aPassThatUnderstoodNoMatrixSaysSo() throws Exception {
-		ctrmap.formats.garc.GARC real = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX);
+		ctrmap.formats.garc.GARC real = Workspace.getArchive(ArchiveType.MAP_MATRIX);
 		String legible = WorkspaceIntegrity.check(Workspace.session(), true).toString();
 		check(!legible.contains("could not read any of the"),
 				"with matrices it can read, the check does not claim it read none of them: " + legible);
 
 		//the check is handed a session, so the blind one is simply built and
 		//passed - nothing installed, nothing to restore
-		ctrmap.WorkspaceSession blinded = Workspace.session().withArchive(Workspace.ArchiveType.MAP_MATRIX,
+		ctrmap.WorkspaceSession blinded = Workspace.session().withArchive(ArchiveType.MAP_MATRIX,
 				new ctrmap.formats.garc.GARC(real.file) {
 			@Override
 			public byte[] getDecompressedEntry(int num) {
@@ -182,7 +184,7 @@ public class IntegrityTest {
 
 	/** Highest areadataID any zone actually names, from the master table. */
 	static int highestAreaInUse() throws Exception {
-		ctrmap.formats.garc.GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		ctrmap.formats.garc.GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		byte[] m = zo.getDecompressedEntry(zo.length - 2);
 		int best = -1;
 		for (int z = 0; z < Math.min(m.length / 0x38, zo.length - 2); z++) {

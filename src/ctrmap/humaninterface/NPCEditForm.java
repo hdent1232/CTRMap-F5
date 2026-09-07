@@ -5,6 +5,7 @@ import com.jogamp.opengl.glu.gl2.GLUgl2;
 import ctrmap.CtrmapMainframe;
 import ctrmap.formats.npcreg.NPCRegistry;
 import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import javax.swing.JFormattedTextField;
@@ -600,7 +601,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (Workspace.getStoryTextGARC() == null) {
 			return null;
 		}
-		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.STORYTEXT, textID);
+		File f = Workspace.getWorkspaceFile(ArchiveType.STORYTEXT, textID);
 		if (f == null || !f.exists()) {
 			return null;
 		}
@@ -631,7 +632,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		} catch (RuntimeException ex) {
 			throw new IOException("the text could not be encoded: " + ex.getMessage(), ex);
 		}
-		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.STORYTEXT, textID);
+		File f = Workspace.getWorkspaceFile(ArchiveType.STORYTEXT, textID);
 		if (f == null) {
 			throw new IOException("story text file " + textID + " could not be extracted from the STORYTEXT archive");
 		}
@@ -664,14 +665,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * @throws MsgWrapperInjector.InjectionException when no zone validates
 	 */
 	private GFLPawnScript loadWrapperDonor() {
-		final GARC zoneGarc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		final GARC zoneGarc = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zoneGarc == null) {
 			throw new MsgWrapperInjector.InjectionException("The ZoneData archive is not loaded.");
 		}
 		return MsgWrapperInjector.pickDonor(new MsgWrapperInjector.ScriptSource() {
 			@Override
 			public GFLPawnScript get(int zoneIndex) {
-				File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+				File f = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 				if (f == null || !f.exists()) {
 					return null;
 				}
@@ -695,14 +696,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * @throws SignWrapperInjector.InjectionException when no zone validates
 	 */
 	private GFLPawnScript loadSignDonor() {
-		final GARC zoneGarc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		final GARC zoneGarc = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zoneGarc == null) {
 			throw new SignWrapperInjector.InjectionException("The ZoneData archive is not loaded.");
 		}
 		return SignWrapperInjector.pickDonor(new MsgWrapperInjector.ScriptSource() {
 			@Override
 			public GFLPawnScript get(int zoneIndex) {
-				File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+				File f = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 				if (f == null || !f.exists()) {
 					return null;
 				}
@@ -1571,11 +1572,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * there and the pickers fall back to a numeric spinner.
 	 */
 	private java.util.List<String> loadGameTextNames(int fileIndex) {
-		if (!Workspace.isOA() || Workspace.getArchive(Workspace.ArchiveType.GAMETEXT) == null) {
+		if (!Workspace.isOA() || Workspace.getArchive(ArchiveType.GAMETEXT) == null) {
 			return null;
 		}
 		try {
-			byte[] raw = Workspace.getArchive(Workspace.ArchiveType.GAMETEXT).getDecompressedEntry(fileIndex);
+			byte[] raw = Workspace.getArchive(ArchiveType.GAMETEXT).getDecompressedEntry(fileIndex);
 			return raw == null ? null : GFMessageFile.getStrings(raw);
 		} catch (RuntimeException ex) {
 			return null;

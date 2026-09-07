@@ -3,6 +3,7 @@ package ctrmap.tests;
 import ctrmap.AreaForker;
 import ctrmap.Ui;
 import ctrmap.Workspace;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.List;
@@ -62,12 +63,12 @@ public class MisplacedRegistryTest {
 		//the damage: the clone one slot early, another area's registry in its
 		//place. Counts stay equal and every index stays in range - exactly what
 		//the old fork left behind.
-		byte[] clone = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getDecompressedEntry(fork.newArea);
+		byte[] clone = Workspace.getArchive(ArchiveType.NPC_REGISTRIES).getDecompressedEntry(fork.newArea);
 		check(clone != null && clone.length > 0, "the forked area's registry is not empty ("
 				+ (clone == null ? -1 : clone.length) + " bytes), so moving it is visible");
 		int impostor = otherAreaWithADifferentRegistry(clone);
 		check(impostor >= 0, "some other area has a registry of its own to stand in for it");
-		byte[] impostorReg = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getDecompressedEntry(impostor);
+		byte[] impostorReg = Workspace.getArchive(ArchiveType.NPC_REGISTRIES).getDecompressedEntry(impostor);
 
 		write(AreaForker.AD_GLOBAL_TABLE, clone);
 		write(fork.newArea, impostorReg);
@@ -90,7 +91,7 @@ public class MisplacedRegistryTest {
 	/** A retail area whose registry is non-empty and is not the forked clone. */
 	static int otherAreaWithADifferentRegistry(byte[] clone) {
 		for (int a = 0; a < AreaForker.AD_GLOBAL_TABLE; a++) {
-			byte[] r = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getDecompressedEntry(a);
+			byte[] r = Workspace.getArchive(ArchiveType.NPC_REGISTRIES).getDecompressedEntry(a);
 			if (r != null && r.length > 0 && !java.util.Arrays.equals(r, clone)) {
 				return a;
 			}
@@ -100,9 +101,9 @@ public class MisplacedRegistryTest {
 
 	/** Stages a registry entry in the workspace so the next pack writes it. */
 	static void write(int index, byte[] bytes) throws Exception {
-		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.NPC_REGISTRIES, index);
+		File f = Workspace.getWorkspaceFile(ArchiveType.NPC_REGISTRIES, index);
 		if (f == null) {
-			f = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES),
+			f = new File(Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES),
 					String.valueOf(index));
 		}
 		Files.write(f.toPath(), bytes);

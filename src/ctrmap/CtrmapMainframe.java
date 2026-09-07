@@ -1,5 +1,7 @@
 package ctrmap;
 
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.awt.BorderLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -619,7 +621,7 @@ public class CtrmapMainframe {
 			return;
 		}
 		//the loose ZO files live in the workspace, never in the RomFS - start there when we can
-		File zoneDir = Workspace.isValid() ? Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA) : null;
+		File zoneDir = Workspace.isValid() ? Workspace.getExtractionDirectory(ArchiveType.ZONE_DATA) : null;
 		JFileChooser jfc = openDialog("LAST_DIR_ZO", "Open ZO file");
 		if (zoneDir != null && zoneDir.exists()) {
 			jfc.setCurrentDirectory(zoneDir);
@@ -649,7 +651,7 @@ public class CtrmapMainframe {
 						+ "\nThe normal way to open a map is the zone dropdown in the \"Zone Loader\" tab.");
 				return;
 			}
-			mZonePnl.loadZone(new Zone(new ZO(f), (Workspace.isValid()) ? Workspace.game() : Workspace.GameType.ORAS));
+			mZonePnl.loadZone(new Zone(new ZO(f), (Workspace.isValid()) ? Workspace.game() : GameType.ORAS));
 		}
 	}
 
@@ -755,7 +757,7 @@ public class CtrmapMainframe {
 			ctrmap.formats.containers.AD ad = mZonePnl.zone.header.areadata != null
 					? mZonePnl.zone.header.areadata
 					: new ctrmap.formats.containers.AD(Workspace.getWorkspaceFile(
-							Workspace.ArchiveType.AREA_DATA, mZonePnl.zone.header.areadataID));
+							ArchiveType.AREA_DATA, mZonePnl.zone.header.areadataID));
 			ctrmap.formats.area.AreaEnv env = ctrmap.formats.area.AreaEnv.read(ad.getFile(4));
 			m3DDebugPanel.setFog(env.fogColor[0], env.fogColor[1], env.fogColor[2], env.fogNear, env.fogFar);
 		} catch (Exception ex) {
@@ -1013,7 +1015,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, "Forking map geometry is ORAS-only in v1.", "Fork map geometry");
 			return;
 		}
-		ctrmap.formats.garc.GARC zoGarc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		ctrmap.formats.garc.GARC zoGarc = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zoGarc == null) {
 			Ui.error(frame, "ZoneData archive unavailable.", "Fork map geometry");
 			return;
@@ -1150,7 +1152,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Rename zone");
 			return;
 		}
-		ctrmap.formats.garc.GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		ctrmap.formats.garc.GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zo == null) {
 			Ui.error(frame, "ZoneData archive unavailable.", "Rename zone");
 			return;
@@ -1283,7 +1285,7 @@ public class CtrmapMainframe {
 		//the dialog shows the RIGHT path for whatever is loaded.
 		ctrmap.gamedef.GameProfile prof = ctrmap.gamedef.GameProfile.current();
 		String example = prof == null ? null
-				: prof.archivePath(Workspace.ArchiveType.ZONE_DATA);
+				: prof.archivePath(ArchiveType.ZONE_DATA);
 		Object rel = Ui.input(frame,
 				"Which file should be put back?\n\n"
 				+ (example == null
@@ -1303,7 +1305,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, "Load an ORAS workspace first.", "Remove added zones");
 			return;
 		}
-		ctrmap.formats.garc.GARC zoArc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		ctrmap.formats.garc.GARC zoArc = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zoArc == null || zoArc.length <= 538) {
 			Ui.message(frame, "This ZoneData has no added zones (stock layout).", "Remove added zones", JOptionPane.INFORMATION_MESSAGE);
 			return;
@@ -1333,10 +1335,10 @@ public class CtrmapMainframe {
 			@Override
 			public void run() {
 				try {
-					int removed = ZoneRemover.removeFromFile(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).file);
+					int removed = ZoneRemover.removeFromFile(Workspace.getArchive(ArchiveType.ZONE_DATA).file);
 					//drop the stale extraction cache for everything at/beyond the
 					//stock zone range (added zones + the old master/EN cache files)
-					java.io.File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA);
+					java.io.File dir = Workspace.getExtractionDirectory(ArchiveType.ZONE_DATA);
 					java.io.File[] fs = dir.listFiles();
 					if (fs != null) {
 						for (java.io.File f : fs) {
@@ -1349,7 +1351,7 @@ public class CtrmapMainframe {
 							}
 						}
 					}
-					Workspace.reloadGARC(Workspace.ArchiveType.ZONE_DATA);
+					Workspace.reloadGARC(ArchiveType.ZONE_DATA);
 					mZonePnl.clearForkDeclinesFrom(536); //those slots no longer exist
 					mZonePnl.loadEverything(new Runnable() {
 						@Override
@@ -1376,7 +1378,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Empty zone");
 			return;
 		}
-		ctrmap.formats.garc.GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		ctrmap.formats.garc.GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zo == null) {
 			Ui.error(frame, "ZoneData archive unavailable.", "Empty zone");
 			return;
@@ -1470,7 +1472,7 @@ public class CtrmapMainframe {
 			if (mZonePnl == null || mZonePnl.zone == null) {
 				return -1;
 			}
-			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			if (mmFile == null) {
 				return -1;
 			}
@@ -1488,7 +1490,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Export map to OBJ");
 			return;
 		}
-		int fieldCount = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length;
+		int fieldCount = Workspace.getArchive(ArchiveType.FIELD_DATA).length;
 		int def = defaultRegionForLoadedZone();
 		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def >= 0 ? def : 0, 0, fieldCount - 1, 1));
 		Object[] form = {
@@ -1511,7 +1513,7 @@ public class CtrmapMainframe {
 			return;
 		}
 		try {
-			GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, id));
+			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id));
 			byte[] model = gr.getFile(1);
 			if (!ctrmap.formats.h3d.BchMapModel.isMapModel(model)) {
 				Ui.error(frame, "FieldData region " + id + " has no editable map model.", "Export map to OBJ");
@@ -1540,7 +1542,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Import OBJ");
 			return;
 		}
-		int fieldCount = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length;
+		int fieldCount = Workspace.getArchive(ArchiveType.FIELD_DATA).length;
 		int def = defaultRegionForLoadedZone();
 		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def >= 0 ? def : 0, 0, fieldCount - 1, 1));
 		Object[] form = {
@@ -1570,7 +1572,7 @@ public class CtrmapMainframe {
 			} finally {
 				r.close();
 			}
-			File grFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, id);
+			File grFile = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id);
 			GR gr = new GR(grFile);
 			byte[] model = gr.getFile(1);
 			if (!ctrmap.formats.h3d.BchMapModel.isMapModel(model)) {
@@ -1613,7 +1615,7 @@ public class CtrmapMainframe {
 						"Cancel imports only the groups whose materials already exist."
 					};
 					if (JOptionPane.showConfirmDialog(frame, tForm, "New materials", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION) {
-						GR tgr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, (Integer) tRegion.getValue()));
+						GR tgr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, (Integer) tRegion.getValue()));
 						byte[] tm = tgr.getFile(1);
 						if (ctrmap.formats.h3d.BchMapModel.isMapModel(tm)) {
 							templateModel = tm;
@@ -1668,10 +1670,10 @@ public class CtrmapMainframe {
 		//ground-material picker from the zone's first region model
 		ctrmap.formats.h3d.BchMapModel probe;
 		try {
-			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			int rid = ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(
 					java.nio.file.Files.readAllBytes(mmFile.toPath()));
-			GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, rid));
+			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, rid));
 			probe = new ctrmap.formats.h3d.BchMapModel(gr.getFile(1));
 		} catch (Exception ex) {
 			Ui.error(frame, "Could not inspect the zone's map:\n" + ex.getMessage(), "Blank map canvas");
@@ -1741,7 +1743,7 @@ public class CtrmapMainframe {
 			//a re-run paints over the zone's own private regions instead of
 			//appending another set beside them
 			GeometryForker.ForkResult r = GeometryForker.ensurePrivate(zoneIndex);
-			File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
+			File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
 			for (int newRegion : r.newRegions) {
 				File f = new File(fdDir, String.valueOf(newRegion));
 				GR gr = new GR(f);
@@ -1816,7 +1818,7 @@ public class CtrmapMainframe {
 			return;
 		}
 		final int dstIndex = mZonePnl.zoneIndex;
-		int baseZones = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2;
+		int baseZones = Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2;
 		if (dstIndex >= baseZones) {
 			Ui.error(frame,
 					"This is an appended zone (index " + dstIndex + "). Appended zones cannot run field\n"
@@ -1960,7 +1962,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Import map model");
 			return;
 		}
-		int fieldCount = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length;
+		int fieldCount = Workspace.getArchive(ArchiveType.FIELD_DATA).length;
 		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(0, 0, fieldCount - 1, 1));
 		Object[] form = {
 			"Replace the visual 3D model of a map region.",
@@ -2020,7 +2022,7 @@ public class CtrmapMainframe {
 			return;
 		}
 		try {
-			File grFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, id);
+			File grFile = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id);
 			GR gr = new GR(grFile);
 			if (gr.len < 2) {
 				Ui.error(frame, "FieldData entry " + id + " is not a map region container.", "Import map model");

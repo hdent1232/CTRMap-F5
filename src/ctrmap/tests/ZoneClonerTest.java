@@ -7,6 +7,7 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.scripts.GFLPawnScript;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.formats.zone.ZoneHeader;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -116,9 +117,9 @@ public class ZoneClonerTest {
 		//the cloned ZO must still parse as a structurally valid zone
 		ZO zo = new ZO(dstFile);
 		check(zo.len == 5, "cloned ZO subfile count == " + zo.len + ", expected 5");
-		ZoneHeader header = new ZoneHeader(zo.getFile(0), Workspace.GameType.ORAS);
+		ZoneHeader header = new ZoneHeader(zo.getFile(0), GameType.ORAS);
 		check(header.OAZoneNumber == DST, "parsed ZoneHeader.OAZoneNumber == " + header.OAZoneNumber + ", expected " + DST);
-		ZoneHeader srcHeader = new ZoneHeader(new ZO(srcFile).getFile(0), Workspace.GameType.ORAS);
+		ZoneHeader srcHeader = new ZoneHeader(new ZO(srcFile).getFile(0), GameType.ORAS);
 		check(header.areadataID == srcHeader.areadataID, "cloned areadataID differs from source");
 		check(header.mapmatrixID == srcHeader.mapmatrixID, "cloned mapmatrixID differs from source");
 		check(header.textID == srcHeader.textID, "cloned textID differs from source");

@@ -2,6 +2,7 @@ package ctrmap;
 
 import ctrmap.formats.containers.ZO;
 import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -55,7 +56,7 @@ public class InteriorWirer {
 	/** areadataID (zone header u16@2) of a zone, or -1. */
 	public static int zoneArea(int zoneIndex) {
 		try {
-			File zf = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+			File zf = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 			byte[] hdr = new ZO(zf).getFile(0);
 			return u16(hdr, 2);
 		} catch (Exception ex) {
@@ -72,7 +73,7 @@ public class InteriorWirer {
 	 */
 	public static int cloneAndWire(int exteriorZone, int extWarpIdx, int interiorDonor, int targetSlot) throws IOException {
 		ZoneCloner.cloneIntoSlot(interiorDonor, targetSlot);
-		File zf = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, targetSlot);
+		File zf = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, targetSlot);
 		ZO zo = new ZO(zf);
 		ZoneEntities ent = new ZoneEntities(zo.getFile(1));
 		int interiorArea = zoneArea(targetSlot);

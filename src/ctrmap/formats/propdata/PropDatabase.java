@@ -3,6 +3,7 @@ package ctrmap.formats.propdata;
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.H3DModelNameGet;
+import ctrmap.gamedef.ArchiveType;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -54,8 +55,8 @@ public class PropDatabase {
 	 * on first use. Returns null if the workspace is not validated yet.
 	 */
 	public static synchronized PropDatabase get() {
-		if (instance == null && Workspace.isValid() && Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS) != null && Workspace.getArchive(Workspace.ArchiveType.AREA_DATA) != null) {
-			instance = build(Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS), Workspace.getArchive(Workspace.ArchiveType.AREA_DATA));
+		if (instance == null && Workspace.isValid() && Workspace.getArchive(ArchiveType.BUILDING_MODELS) != null && Workspace.getArchive(ArchiveType.AREA_DATA) != null) {
+			instance = build(Workspace.getArchive(ArchiveType.BUILDING_MODELS), Workspace.getArchive(ArchiveType.AREA_DATA));
 		}
 		return instance;
 	}

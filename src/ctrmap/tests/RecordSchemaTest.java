@@ -5,6 +5,8 @@ import ctrmap.formats.pokedata.ItemData;
 import ctrmap.formats.recordschema.RecordField;
 import ctrmap.formats.recordschema.RecordSchema;
 import ctrmap.formats.recordschema.SchemaRegistry;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.util.List;
 import java.util.ArrayList;
@@ -49,8 +51,8 @@ public class RecordSchemaTest {
 	//Where the item table lives is a per-game fact, so it comes from the gamedef
 	//seam and not from a literal in a suite.
 	private static String itemArchive() {
-		String p = ctrmap.gamedef.GameProfile.of(ctrmap.Workspace.GameType.ORAS)
-				.archivePath(ctrmap.Workspace.ArchiveType.ITEM_DATA);
+		String p = ctrmap.gamedef.GameProfile.of(GameType.ORAS)
+				.archivePath(ArchiveType.ITEM_DATA);
 		return p == null ? "" : p;
 	}
 

@@ -8,6 +8,7 @@ import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.TilePainterForm.Placed;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -323,7 +324,7 @@ public class PaintForm extends JPanel {
 			if (cell == null) {
 				return true;
 			}
-			byte[] m = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, cell[0])).getFile(1);
+			byte[] m = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, cell[0])).getFile(1);
 			return !java.util.Arrays.equals(m, originalModel);
 		} catch (Exception ex) {
 			return true;
@@ -369,7 +370,7 @@ public class PaintForm extends JPanel {
 		if (region >= 0) {
 			TilePainterForm.loadFromRegion(region, grid);
 			try {
-				GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, region));
+				GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, region));
 				byte[] m = gr.getFile(1);
 				if (BchMapModel.isMapModel(m)) {
 					donorModel = m;

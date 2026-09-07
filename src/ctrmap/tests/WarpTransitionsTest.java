@@ -6,6 +6,8 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.zone.WarpTransitions;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import ctrmap.humaninterface.WarpEditForm;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -115,9 +117,9 @@ public class WarpTransitionsTest {
 
 	/** The form must not keep a second copy of the answer - it used to BE the copy. */
 	static void theFormAsksTheTable() throws Exception {
-		for (Workspace.GameType g : new Workspace.GameType[]{Workspace.GameType.ORAS, Workspace.GameType.XY}) {
+		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
 			game(g);
-			boolean xy = g == Workspace.GameType.XY;
+			boolean xy = g == GameType.XY;
 			WarpEditForm form = new WarpEditForm();
 			form.fillTransitionDropdown();
 			int bad = 0;
@@ -145,14 +147,14 @@ public class WarpTransitionsTest {
 	 * cannot run without the main window.
 	 */
 	static void theFormKeepsACodeItCannotName() throws Exception {
-		game(Workspace.GameType.XY);
+		game(GameType.XY);
 		WarpEditForm form = new WarpEditForm();
 		form.fillTransitionDropdown();
 		check(form.transitionToWrite(-1, 99) == 99, "XY: no selection keeps the record's code 99, not -1: " + form.transitionToWrite(-1, 99));
 		check(form.transitionToWrite(-1, 0) == 0, "XY: no selection keeps code 0 too");
 		int row55 = WarpTransitions.index(55, true);
 		check(form.transitionToWrite(row55, 99) == 55, "XY: a selected row writes its own code: " + form.transitionToWrite(row55, 99));
-		game(Workspace.GameType.ORAS);
+		game(GameType.ORAS);
 		check(form.transitionToWrite(-1, 26) == 26, "ORAS: no selection keeps the record's code 26");
 		check(form.transitionToWrite(WarpTransitions.index(26, false), 0) == 26, "ORAS: the row for 26 writes 26");
 	}
@@ -162,9 +164,9 @@ public class WarpTransitionsTest {
 	 * round-trip.
 	 */
 	static void everyCodeTheGameShipsSurvivesTheDropdown(File dump) throws Exception {
-		Sessions.bare(Scratch.dir("ctrmap_warptransitions_ws"), dump, Workspace.GameType.ORAS);
+		Sessions.bare(Scratch.dir("ctrmap_warptransitions_ws"), dump, GameType.ORAS);
 		GARC zo = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game())));
+				+ Workspace.getArchivePath(ArchiveType.ZONE_DATA, Workspace.game())));
 		File tmp = Scratch.file("ctrmap_warptransitions");
 		TreeMap<Integer, Integer> codes = new TreeMap<>();
 		int warps = 0, zones = 0;
@@ -222,7 +224,7 @@ public class WarpTransitionsTest {
 	 * A session that is nothing but a game type: all the form asks Workspace for.
 	 * Two scratch folders stand in for the workspace and the game; no archive opens.
 	 */
-	static void game(Workspace.GameType g) throws Exception {
+	static void game(GameType g) throws Exception {
 		Sessions.bare(Scratch.dir("ctrmap_warptransitions_ws"), Scratch.dir("ctrmap_warptransitions_game"), g);
 	}
 }

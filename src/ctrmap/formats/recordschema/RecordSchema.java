@@ -1,6 +1,7 @@
 package ctrmap.formats.recordschema;
 
 import ctrmap.Workspace;
+import ctrmap.gamedef.ArchiveType;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -55,13 +56,13 @@ public final class RecordSchema {
 	private final String name;
 	private final String about;
 	private final Tier tier;
-	private final Workspace.ArchiveType archive;
+	private final ArchiveType archive;
 	private final int codeFileOffset;
 	private final int recordCount;
 	private final int stride;
 	private final List<RecordField> fields;
 
-	private RecordSchema(String name, String about, Tier tier, Workspace.ArchiveType archive,
+	private RecordSchema(String name, String about, Tier tier, ArchiveType archive,
 			int codeFileOffset, int recordCount, int stride, List<RecordField> fields) {
 		this.name = name;
 		this.about = about;
@@ -96,7 +97,7 @@ public final class RecordSchema {
 	 * rather than trust the number, because a count written here is a claim
 	 * about somebody else's file.
 	 */
-	public static RecordSchema archive(String name, String about, Workspace.ArchiveType archive,
+	public static RecordSchema archive(String name, String about, ArchiveType archive,
 			int recordCount, int stride, List<RecordField> fields) {
 		return new RecordSchema(name, about, Tier.DATA, archive, -1, recordCount, stride, fields);
 	}
@@ -122,7 +123,7 @@ public final class RecordSchema {
 	}
 
 	/** The archive holding the records, or null for a {@link Tier#CODE_PATCH} schema. */
-	public Workspace.ArchiveType archive() {
+	public ArchiveType archive() {
 		return archive;
 	}
 

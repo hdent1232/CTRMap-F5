@@ -6,6 +6,7 @@ import ctrmap.LittleEndianDataOutputStream;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.BM;
 import ctrmap.formats.h3d.H3DModelNameGet;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.MapObject;
 import java.io.File;
 import java.io.IOException;
@@ -64,10 +65,10 @@ public class GRProp implements MapObject{
 	public void updateName(ADPropRegistry reg) {
 		File f;
 		if (reg != null && reg.entries.containsKey(uid)) {
-			f = Workspace.getWorkspaceFile(Workspace.ArchiveType.BUILDING_MODELS, reg.entries.get(uid).model);
+			f = Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, reg.entries.get(uid).model);
 		} //not in registry, try the fallback method with UID only
 		else {
-			f = Workspace.getWorkspaceFile(Workspace.ArchiveType.BUILDING_MODELS, uid);
+			f = Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, uid);
 		}
 		if (f == null || !f.exists()) {
 			name = "Model not found";

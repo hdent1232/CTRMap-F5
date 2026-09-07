@@ -2,6 +2,7 @@ package ctrmap.tests;
 
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.Arrays;
@@ -47,7 +48,7 @@ public class PackScopeTest {
 			return;
 		}
 		ScratchGame.open(dump);
-		File archive = Workspace.session().archiveFile(Workspace.ArchiveType.GAMETEXT);
+		File archive = Workspace.session().archiveFile(ArchiveType.GAMETEXT);
 
 		//1. nothing staged for GameText: the archive must be the same file afterwards
 		long lengthBefore = archive.length();
@@ -62,8 +63,8 @@ public class PackScopeTest {
 				+ archive.lastModified() + "/" + archive.length() + ")");
 
 		//2. one entry edited: those bytes must be what the game now loads
-		int entry = Workspace.getArchive(Workspace.ArchiveType.GAMETEXT).length - 1;
-		File staged = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, entry);
+		int entry = Workspace.getArchive(ArchiveType.GAMETEXT).length - 1;
+		File staged = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, entry);
 		byte[] edited = Files.readAllBytes(staged.toPath());
 		check(edited.length > 0, "GameText entry " + entry + " extracted (" + edited.length + " bytes)");
 		//the last byte of the string data - a different character, same layout,
@@ -120,7 +121,7 @@ public class PackScopeTest {
 		//"always compressed" or "always raw" cannot pass as "inherits". Proving
 		//this section by breaking found exactly that: on zone data alone,
 		//"return false" and "inherit" agree.
-		GARC gr = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA), zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		GARC gr = Workspace.getArchive(ArchiveType.FIELD_DATA), zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		int grLast = gr.getEntryCount() - 1, zoLast = zo.getEntryCount() - 1;
 		check(gr.isEntryCompressed(grLast) && !zo.isEntryCompressed(zoLast),
 				"the fixtures disagree about their tails (field data ends compressed, zone data raw)"

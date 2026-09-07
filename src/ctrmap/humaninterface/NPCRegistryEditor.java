@@ -5,6 +5,7 @@ import ctrmap.Workspace;
 import ctrmap.formats.containers.MM;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.npcreg.NPCRegistry;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
@@ -90,7 +91,7 @@ public class NPCRegistryEditor extends javax.swing.JFrame {
 		item.setSelected(entry.isItOb == 0);
 		dummy.setSelected(entry.isDummy == 1);
 		e = entry;
-		File bchFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MOVE_MODELS, entry.model);
+		File bchFile = Workspace.getWorkspaceFile(ArchiveType.MOVE_MODELS, entry.model);
 		if (bchFile.exists()) {
 			BCHFile mdlBch = new BCHFile(new MM(bchFile).getFile(0));
 			mdlBch.models.get(0).setMaterialTextures(mdlBch.textures);

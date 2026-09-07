@@ -5,6 +5,8 @@ import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.BchModelAppender;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -45,10 +47,10 @@ public class TerrainDonorHarvester {
 		}
 		String romfs = args[0];
 		String out = args.length > 1 ? args[1] : "src/ctrmap/resources/oras_terrain.tsv";
-		ctrmap.Workspace.GameType game = ctrmap.Workspace.GameType.ORAS;
-		GARC gr = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.FIELD_DATA, game)));
-		GARC zo = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.ZONE_DATA, game)));
-		GARC mm = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.MAP_MATRIX, game)));
+		GameType game = GameType.ORAS;
+		GARC gr = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ArchiveType.FIELD_DATA, game)));
+		GARC zo = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ArchiveType.ZONE_DATA, game)));
+		GARC mm = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ArchiveType.MAP_MATRIX, game)));
 
 		//region -> area (for the texture carry at paint time)
 		int[] regionArea = new int[gr.length];

@@ -8,6 +8,8 @@ import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainCatalog;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -139,9 +141,9 @@ public class TerrainImportNoiseTest {
 		List<String> said = new ArrayList<>();
 		try {
 			Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_terrain_noise").getAbsolutePath();
-			Sessions.bare(new File(Workspace.WORKSPACE_PATH), new File("no-game"), Workspace.GameType.ORAS);
+			Sessions.bare(new File(Workspace.WORKSPACE_PATH), new File("no-game"), GameType.ORAS);
 			File snap = new File(Workspace.originalSnapshotDir().getAbsolutePath()
-					+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game()));
+					+ Workspace.getArchivePath(ArchiveType.FIELD_DATA, Workspace.game()));
 			snap.getParentFile().mkdirs();
 			try (FileOutputStream fo = new FileOutputStream(snap)) {
 				fo.write(new byte[]{'G', 'A', 'R', 'C'});
