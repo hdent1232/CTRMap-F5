@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import static ctrmap.formats.LittleEndian.u16;
-import static ctrmap.formats.LittleEndian.i32;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
