@@ -269,7 +269,7 @@ public class GARC {
 		ArrayList<File> files = new ArrayList<>();
 		files.addAll(Arrays.asList(dir.listFiles()));
 		for (int i = 0; i < files.size(); i++) {
-			if (!Workspace.persist_paths.contains(files.get(i).getAbsolutePath())) {
+			if (!Workspace.persistPaths().contains(files.get(i).getAbsolutePath())) {
 				files.remove(i);
 				i--;
 			}

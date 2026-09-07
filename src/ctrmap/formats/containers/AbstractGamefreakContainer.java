@@ -114,7 +114,7 @@ public abstract class AbstractGamefreakContainer {
 	public File getIOFile(int fileNum){
 		try {
 			byte[] b = getFile(fileNum);
-			File out = new File(Workspace.temp + "/agfc_extract_" + UUID.randomUUID().toString());
+			File out = new File(Workspace.temp() + "/agfc_extract_" + UUID.randomUUID().toString());
 			OutputStream os = new FileOutputStream(out);
 			os.write(b);
 			os.close();

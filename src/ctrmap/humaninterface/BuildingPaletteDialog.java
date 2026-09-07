@@ -118,13 +118,13 @@ public class BuildingPaletteDialog {
 		return donorTexCache.computeIfAbsent(areaId, id -> {
 			List<H3DTexture> out = new ArrayList<>();
 			try {
-				String rel = Workspace.getArchivePath(Workspace.ArchiveType.AREA_DATA, Workspace.game);
+				String rel = Workspace.getArchivePath(Workspace.ArchiveType.AREA_DATA, Workspace.game());
 				File garcFile = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
 				if (!garcFile.exists()) {
 					garcFile = new File(Workspace.GAMEDIR_PATH + rel);
 				}
 				byte[] entry = new ctrmap.formats.garc.GARC(garcFile).getDecompressedEntry(id);
-				File tmp = new File(Workspace.temp, "bcat_area_" + id);
+				File tmp = new File(Workspace.temp(), "bcat_area_" + id);
 				try (java.io.FileOutputStream fo = new java.io.FileOutputStream(tmp)) {
 					fo.write(entry);
 				}

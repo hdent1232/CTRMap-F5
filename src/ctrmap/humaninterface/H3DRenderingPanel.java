@@ -113,7 +113,7 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 
 	@Override
 	public void display(GLAutoDrawable drawable) {
-		if (Workspace.valid) {
+		if (Workspace.isValid()) {
 			GL2 gl = drawable.getGL().getGL2();
 			if (fogOn) {
 				//sky takes the fog color, exactly like the engine does

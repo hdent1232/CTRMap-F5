@@ -36,7 +36,7 @@ public class EncounterEditDialog {
 
 	/** Opens the editor for the currently loaded zone. */
 	public static void show(Frame parent) {
-		if (!Workspace.valid || !Workspace.isOA()) {
+		if (!Workspace.isValid() || !Workspace.isOA()) {
 			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Wild encounters");
 			return;
 		}
@@ -156,7 +156,7 @@ public class EncounterEditDialog {
 	private static byte[] loadPack(GARC zo, int enIndex, int zoneCount) {
 		try {
 			File enFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, enIndex);
-			if (enFile != null && Workspace.persist_paths.contains(enFile.getAbsolutePath())) {
+			if (enFile != null && Workspace.persistPaths().contains(enFile.getAbsolutePath())) {
 				byte[] cand = Files.readAllBytes(enFile.toPath());
 				try {
 					ZoneAppender.validateEN(cand, zoneCount);

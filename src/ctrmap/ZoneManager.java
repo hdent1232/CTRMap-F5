@@ -47,7 +47,7 @@ public class ZoneManager {
 	 * @return how many placed objects were removed
 	 */
 	public static int clearZone(int zoneIndex) throws IOException {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			throw new IOException("No workspace is loaded.");
 		}
 		File zf = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
@@ -83,7 +83,7 @@ public class ZoneManager {
 	 * @param newName   the new location name (plain text)
 	 */
 	public static RenameResult renameZone(int zoneIndex, String newName) throws IOException {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			throw new IOException("No workspace is loaded.");
 		}
 		GARC zoGarc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);

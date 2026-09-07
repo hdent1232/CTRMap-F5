@@ -118,7 +118,7 @@ public class ZoneAppender {
 		}
 		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA);
 		File enOut = new File(dir, String.valueOf(m + 1));    // the new EN slot
-		if (Workspace.persist_paths.contains(enOut.getAbsolutePath())) {
+		if (Workspace.persistPaths().contains(enOut.getAbsolutePath())) {
 			throw new IOException("An appended zone is already pending. Pack the workspace before adding more.");
 		}
 		File srcFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, srcIndex);
@@ -139,7 +139,7 @@ public class ZoneAppender {
 		// the old reverted single-zone append) produced "EN pack has wrong magic".
 		byte[] enBytes = null;
 		File enWs = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, oldCount + 1);
-		if (enWs != null && Workspace.persist_paths.contains(enWs.getAbsolutePath())) {
+		if (enWs != null && Workspace.persistPaths().contains(enWs.getAbsolutePath())) {
 			try {
 				byte[] cand = readAll(enWs);
 				validateEN(cand, oldCount);

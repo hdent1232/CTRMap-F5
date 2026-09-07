@@ -68,10 +68,10 @@ public final class ItemTable {
 	 * treated as absence, not as an invitation to guess.
 	 */
 	public static File archiveFile() {
-		if (Workspace.GAMEDIR_PATH == null || Workspace.game == null) {
+		if (Workspace.GAMEDIR_PATH == null || Workspace.game() == null) {
 			return null;
 		}
-		String rel = Workspace.getArchivePath(Workspace.ArchiveType.ITEM_DATA, Workspace.game);
+		String rel = Workspace.getArchivePath(Workspace.ArchiveType.ITEM_DATA, Workspace.game());
 		if (rel == null) {
 			return null;
 		}
@@ -99,7 +99,7 @@ public final class ItemTable {
 	 * rather than a write through a guess.
 	 */
 	public static ItemTable openWorkspace() throws IOException {
-		if (Workspace.game == null
+		if (Workspace.game() == null
 				|| !Workspace.profile().supports(
 						ctrmap.gamedef.GameProfile.Feature.ITEM_EDITING)) {
 			return null;

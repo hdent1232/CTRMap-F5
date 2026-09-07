@@ -41,7 +41,7 @@ public class MaisonClassListDialog {
 	};
 
 	private static String arcName(Workspace.ArchiveType t) {
-		String p = Workspace.getArchivePath(t, Workspace.game != null ? Workspace.game : Workspace.GameType.ORAS);
+		String p = Workspace.getArchivePath(t, Workspace.game() != null ? Workspace.game() : Workspace.GameType.ORAS);
 		return p == null ? "?" : p;
 	}
 

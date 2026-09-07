@@ -472,7 +472,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	private Zone getLoadedZone() {
-		if (!Workspace.valid || mZonePnl == null) {
+		if (!Workspace.isValid() || mZonePnl == null) {
 			return null;
 		}
 		return mZonePnl.zone;
@@ -1449,11 +1449,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * there and the pickers fall back to a numeric spinner.
 	 */
 	private java.util.List<String> loadGameTextNames(int fileIndex) {
-		if (!Workspace.isOA() || Workspace.texts == null) {
+		if (!Workspace.isOA() || Workspace.getArchive(Workspace.ArchiveType.GAMETEXT) == null) {
 			return null;
 		}
 		try {
-			byte[] raw = Workspace.texts.getDecompressedEntry(fileIndex);
+			byte[] raw = Workspace.getArchive(Workspace.ArchiveType.GAMETEXT).getDecompressedEntry(fileIndex);
 			return raw == null ? null : GFMessageFile.getStrings(raw);
 		} catch (RuntimeException ex) {
 			return null;

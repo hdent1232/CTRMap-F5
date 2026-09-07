@@ -527,7 +527,7 @@ public class CtrmapMainframe {
 		opengr.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent arg0) {
-				if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open GR Mapfile")) {
+				if (!Workspace.isValid() && !Utils.confirmOpenWithoutWorkspace("Open GR Mapfile")) {
 					return;
 				}
 				Preferences prefs = Preferences.userRoot().node(getClass().getName());
@@ -721,7 +721,7 @@ public class CtrmapMainframe {
 		openmm.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open MapMatrix")) {
+				if (!Workspace.isValid() && !Utils.confirmOpenWithoutWorkspace("Open MapMatrix")) {
 					return;
 				}
 				Preferences prefs = Preferences.userRoot().node(getClass().getName());
@@ -765,12 +765,12 @@ public class CtrmapMainframe {
 		openzo.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open Zone")) {
+				if (!Workspace.isValid() && !Utils.confirmOpenWithoutWorkspace("Open Zone")) {
 					return;
 				}
 				Preferences prefs = Preferences.userRoot().node(getClass().getName());
 				//the loose ZO files live in the workspace, never in the RomFS - start there when we can
-				File zoneDir = Workspace.valid ? Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA) : null;
+				File zoneDir = Workspace.isValid() ? Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA) : null;
 				JFileChooser jfc = (zoneDir != null && zoneDir.exists())
 						? new JFileChooser(zoneDir)
 						: new JFileChooser(prefs.get("LAST_DIR", new File(".").getAbsolutePath()));
@@ -803,7 +803,7 @@ public class CtrmapMainframe {
 								+ "\nThe normal way to open a map is the zone dropdown in the \"Zone Loader\" tab.");
 						return;
 					}
-					mZonePnl.loadZone(new Zone(new ZO(jfc.getSelectedFile()), (Workspace.valid) ? Workspace.game : Workspace.GameType.ORAS));
+					mZonePnl.loadZone(new Zone(new ZO(jfc.getSelectedFile()), (Workspace.isValid()) ? Workspace.game() : Workspace.GameType.ORAS));
 				}
 			}
 		});
@@ -996,7 +996,7 @@ public class CtrmapMainframe {
 			return;
 		}
 		try {
-			if (!Workspace.valid || mZonePnl == null || mZonePnl.zone == null || mZonePnl.zone.header == null) {
+			if (!Workspace.isValid() || mZonePnl == null || mZonePnl.zone == null || mZonePnl.zone.header == null) {
 				m3DDebugPanel.clearFog();
 				return;
 			}
@@ -1074,7 +1074,7 @@ public class CtrmapMainframe {
 	 * in-editor geometry editing - that needs a full BCH model writer.
 	 */
 	private static void deployModAction() {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			Ui.error(frame, "Load a workspace first.", "Deploy mod");
 			return;
 		}
@@ -1227,7 +1227,7 @@ public class CtrmapMainframe {
 	 * Defaults the zone picker to the currently loaded zone.
 	 */
 	private static void forkGeometryAction() {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Fork map geometry");
 			return;
 		}
@@ -1368,7 +1368,7 @@ public class CtrmapMainframe {
 	 * Shared names are moved to a private free slot so other zones are unaffected.
 	 */
 	private static void renameZoneAction() {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Rename zone");
 			return;
 		}
@@ -1521,7 +1521,7 @@ public class CtrmapMainframe {
 	}
 
 	private static void removeAddedZonesAction() {
-		if (!Workspace.valid || !Workspace.isOA()) {
+		if (!Workspace.isValid() || !Workspace.isOA()) {
 			Ui.error(frame, "Load an ORAS workspace first.", "Remove added zones");
 			return;
 		}
@@ -1564,7 +1564,7 @@ public class CtrmapMainframe {
 						for (java.io.File f : fs) {
 							try {
 								if (Integer.parseInt(f.getName()) >= 536) {
-									Workspace.persist_paths.remove(f.getAbsolutePath());
+									Workspace.persistPaths().remove(f.getAbsolutePath());
 									f.delete();
 								}
 							} catch (NumberFormatException ignore) {
@@ -1594,7 +1594,7 @@ public class CtrmapMainframe {
 	}
 
 	private static void emptyZoneAction() {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Empty zone");
 			return;
 		}
@@ -1637,7 +1637,7 @@ public class CtrmapMainframe {
 	 * being able to run scripts.
 	 */
 	private static void findReusableZonesAction() {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Find reusable zones");
 			return;
 		}
@@ -1706,7 +1706,7 @@ public class CtrmapMainframe {
 
 	/** Exports a map region's 3D model to a Blender-ready OBJ (Tools menu). */
 	private static void exportMapObjAction() {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Export map to OBJ");
 			return;
 		}
@@ -1758,7 +1758,7 @@ public class CtrmapMainframe {
 
 	/** Imports a (Blender-edited) OBJ back into a map region's 3D model (Tools menu). */
 	private static void importMapObjAction() {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Import OBJ");
 			return;
 		}
@@ -1878,7 +1878,7 @@ public class CtrmapMainframe {
 	 * for building a brand-new town/facility.
 	 */
 	private static void blankCanvasAction() {
-		if (!Workspace.valid || !Workspace.isOA()) {
+		if (!Workspace.isValid() || !Workspace.isOA()) {
 			Ui.error(frame, "Load an ORAS workspace first.", "Blank map canvas");
 			return;
 		}
@@ -2029,7 +2029,7 @@ public class CtrmapMainframe {
 	 * zone (index &lt; 536) because appended zones cannot run field scripts.
 	 */
 	private static void setupFacilityAction() {
-		if (!Workspace.valid || !Workspace.isOA()) {
+		if (!Workspace.isValid() || !Workspace.isOA()) {
 			Ui.error(frame, "Load an ORAS workspace first.", "Set up Battle facility");
 			return;
 		}
@@ -2129,7 +2129,7 @@ public class CtrmapMainframe {
 	 * cells become blank canvases in the zone's own area style.
 	 */
 	private static void resizeMapAction() {
-		if (!Workspace.valid || !Workspace.isOA()) {
+		if (!Workspace.isValid() || !Workspace.isOA()) {
 			Ui.error(frame, "Load an ORAS workspace first.", "Resize map");
 			return;
 		}
@@ -2178,7 +2178,7 @@ public class CtrmapMainframe {
 	}
 
 	private static void importMapModelAction() {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Import map model");
 			return;
 		}

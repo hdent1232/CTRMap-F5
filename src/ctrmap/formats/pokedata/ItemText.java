@@ -47,7 +47,7 @@ public final class ItemText {
 	 * verified index for it (or no workspace is loaded).
 	 */
 	private static File fileFor(Which w) {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			return null;
 		}
 		int idx = textIndex(w);
