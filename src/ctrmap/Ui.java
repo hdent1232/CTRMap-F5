@@ -45,6 +45,8 @@ public final class Ui {
 
 		int confirm(Component parent, String text, String title, int optionType);
 
+		int option(Component parent, String text, String title, Object[] options);
+
 		Object input(Component parent, String text, String title, int type, Object[] options, Object initial);
 	}
 
@@ -102,6 +104,21 @@ public final class Ui {
 	 * on rather than the one they skip.
 	 */
 	public static int confirm(Component parent, String text, String title, int optionType) {
+		return confirm(parent, text, title, optionType, JOptionPane.WARNING_MESSAGE);
+	}
+
+	/**
+	 * The same question, drawn with the icon the caller asks for.
+	 *
+	 * <p>The four-argument form above keeps WARNING_MESSAGE rather than
+	 * JOptionPane's own QUESTION_MESSAGE default, because every caller it had
+	 * before this overload existed is asking about something destructive. A
+	 * migrated call site must therefore name its icon: passing a raw
+	 * {@code showConfirmDialog}'s implicit QUESTION_MESSAGE through the
+	 * four-argument form would silently repaint it as a warning, which is a
+	 * behaviour change dressed up as a refactor.
+	 */
+	public static int confirm(Component parent, String text, String title, int optionType, int messageType) {
 		if (sink != null) {
 			return sink.confirm(parent, text, title, optionType);
 		}
@@ -109,7 +126,29 @@ public final class Ui {
 			System.out.println("[Ui] " + title + "? " + text.replace("\n", " | "));
 			return JOptionPane.CLOSED_OPTION;
 		}
-		return JOptionPane.showConfirmDialog(parent, text, title, optionType, JOptionPane.WARNING_MESSAGE);
+		return JOptionPane.showConfirmDialog(parent, text, title, optionType, messageType);
+	}
+
+	/**
+	 * Asks the user to press one of several named buttons and returns which,
+	 * as an index into options - or CLOSED_OPTION (-1) when they closed the
+	 * dialog, which is also the nobody-is-there answer.
+	 *
+	 * <p>Every caller must therefore treat a negative index as "do nothing".
+	 * They already do: each one guards its action with {@code != 0} or
+	 * {@code < 0} rather than with "not the cancel button", so an unanswered
+	 * question cannot be mistaken for the destructive choice.
+	 */
+	public static int option(Component parent, String text, String title, int optionType, int messageType,
+			Object[] options, Object initial) {
+		if (sink != null) {
+			return sink.option(parent, text, title, options);
+		}
+		if (!dialogsEnabled) {
+			System.out.println("[Ui] " + title + "? " + text.replace("\n", " | "));
+			return JOptionPane.CLOSED_OPTION;
+		}
+		return JOptionPane.showOptionDialog(parent, text, title, optionType, messageType, null, options, initial);
 	}
 
 	/**
@@ -130,9 +169,10 @@ public final class Ui {
 	/**
 	 * Collects what the program says instead of showing it, for the length of a
 	 * test, and answers the questions it asks with the given answers in order:
-	 * an Integer option constant for {@link #confirm}, the chosen object for
-	 * {@link #input}. Running out means the user closed the dialog. Returns the
-	 * live list of what was said; call {@link #stopRecording()} afterwards.
+	 * an Integer option constant for {@link #confirm}, an Integer button index
+	 * for {@link #option}, the chosen object for {@link #input}. Running out
+	 * means the user closed the dialog. Returns the live list of what was said;
+	 * call {@link #stopRecording()} afterwards.
 	 */
 	public static List<String> record(Object... answers) {
 		final List<String> said = new ArrayList<>();
@@ -145,6 +185,13 @@ public final class Ui {
 
 			@Override
 			public int confirm(Component parent, String text, String title, int optionType) {
+				said.add(title + ": " + text);
+				Object answer = queue.poll();
+				return answer instanceof Integer ? (Integer) answer : JOptionPane.CLOSED_OPTION;
+			}
+
+			@Override
+			public int option(Component parent, String text, String title, Object[] options) {
 				said.add(title + ": " + text);
 				Object answer = queue.poll();
 				return answer instanceof Integer ? (Integer) answer : JOptionPane.CLOSED_OPTION;
