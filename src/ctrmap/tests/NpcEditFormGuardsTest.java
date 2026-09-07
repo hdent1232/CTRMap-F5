@@ -13,7 +13,9 @@ import ctrmap.formats.h3d.RandomAccessBAIS;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.npcreg.NPCRegistry;
 import ctrmap.formats.scripts.GFLPawnScript;
+import ctrmap.formats.scripts.GauntletScriptWizard;
 import ctrmap.formats.scripts.MsgWrapperInjector;
+import ctrmap.formats.scripts.NpcTemplates;
 import ctrmap.formats.scripts.PawnInstruction;
 import ctrmap.formats.scripts.TalkerScriptWizard;
 import ctrmap.formats.scripts.ZoneScriptAnalyzer;
@@ -128,6 +130,7 @@ public class NpcEditFormGuardsTest {
 			softLockWarningReachesTheUser(zo);
 			addTemplateStopsAtTheCeiling(zo);
 			aScriptedAdditionLandsWholeOrNotAtAll(zo);
+			theAddWizardsActOnTheirFormsHeadless(zo);
 			dialogueNoteTellsABrokenScriptFromAPlainOne(zo);
 			aFullRegistryRefusesTheModelAndSaysSo(zo);
 			viewportDrawsOnlyModelledNPCs(zo, gr);
@@ -660,6 +663,108 @@ public class NpcEditFormGuardsTest {
 		check(refused instanceof ZoneScriptEdit.Refused && refused.getMessage().contains("story text file is not loaded"),
 				"text with no story file to go into is refused in words: " + refused);
 		check(stored.isEmpty() && zone.s == before, "and nothing was stored or committed");
+	}
+
+	/**
+	 * Each Add wizard's form builds without a window and hands its values to
+	 * a method that does the rest, so the refusals and the placed records are
+	 * facts a suite can see.
+	 *
+	 * <p>Six wizards and the dialogue editor each showed a live form through
+	 * JOptionPane and did everything - validation, the script edit, the
+	 * record - inside the handler behind it, so DialogSeamTest carried seven
+	 * exceptions for this file and nothing past a form was reachable. The
+	 * form and the work are apart now: a *Form class the handler builds and
+	 * shows through the one showForm, and an add* method it hands the values
+	 * to. The forms are built here for their defaults; the add* methods are
+	 * driven with values a user could have typed, good and bad.
+	 */
+	static void theAddWizardsActOnTheirFormsHeadless(GARC zo) throws Exception {
+		Zone zone = openZone(zo, ZONE);
+		ZoneEntities e = zone.entities;
+		zone.s.decompressThis();
+		NPCEditForm form = new NPCEditForm();
+		form.loadFromEntities(e, null);
+		Point pos = new Point(12, 34);
+		int npcs = e.npcs.size();
+
+		//the forms build without a window, with the defaults the handler relies on
+		NPCEditForm.GiveBpForm giveBp = form.new GiveBpForm();
+		check(giveBp.amount() == 20 && giveBp.model() < 0, "the Give BP form starts at 20 BP with no model chosen");
+		NPCEditForm.TrainerForm trainer = form.new TrainerForm();
+		check(trainer.trainer() == 1 && trainer.sight() == 0 && trainer.facing() == 0 && !trainer.pair(),
+				"the trainer form starts at trainer 1, no sight range, facing down, no partner");
+		NPCEditForm.GiverForm giver = form.new GiverForm();
+		check(giver.item() == 1 && giver.count() == 1, "the item-giver form starts at item 1, quantity 1");
+		NPCEditForm.SignForm sign = form.new SignForm();
+		check(sign.signType() == NpcTemplates.SIGN_TYPES[0] && sign.text().isEmpty(), "the sign form starts on the first style, empty");
+		NPCEditForm.ChallengeInput in = form.new ChallengeForm().input();
+		check(in.trainerIds.isEmpty() && in.bpPerWin == 3 && in.milestone == 0 && in.milestoneBonus == 20 && !in.loseWhiteout
+				&& in.model < 0 && Integer.parseInt(in.streakWorkHex, 16) == GauntletScriptWizard.DEFAULT_STREAK_WORK,
+				"the challenge form starts with an empty lineup, 3 BP a win, no bonus, the default streak variable");
+		NPCEditForm.TalkerForm talker = form.new TalkerForm(-1);
+		check(talker.text().isEmpty() && talker.model() < 0, "the talker form starts empty with no model");
+		NPCEditForm.DialogueForm dialogue = new NPCEditForm.DialogueForm("as it is");
+		check("as it is".equals(dialogue.text()), "the dialogue form starts with the line as it is");
+
+		//refusals, each said through Ui and each placing nothing
+		List<String> said = ctrmap.Ui.record();
+		try {
+			check(form.addGiveBp(zone, 20, -1, pos) == null && last(said).contains("Select an overworld model first"),
+					"Give BP with no model is refused: " + last(said));
+			check(form.addTrainer(zone, 0, 218, 0, 0, false, pos) == 0 && last(said).contains("Select a trainer first"),
+					"a trainer with no trainer is refused: " + last(said));
+			check(form.addTrainer(zone, 5, -1, 0, 0, false, pos) == 0 && last(said).contains("Select an overworld model first"),
+					"a trainer with no model is refused: " + last(said));
+			check(form.addGiver(zone, 0, 1, 218, pos) == null && last(said).contains("Select an item first"),
+					"an item giver with no item is refused: " + last(said));
+			check(form.addGiver(zone, 5, 1, -1, pos) == null && last(said).contains("Select an overworld model first"),
+					"an item giver with no model is refused: " + last(said));
+			check(form.addTalker(zone, null, "Hi", -1, null, pos) == null && last(said).contains("Select an overworld model first"),
+					"a talker with no model is refused before its text is looked at: " + last(said));
+			NPCEditForm.ChallengeInput bad = new NPCEditForm.ChallengeInput();
+			check(form.addChallenge(zone, bad, pos) == null && last(said).contains("Add at least one trainer"),
+					"a challenge with an empty lineup is refused: " + last(said));
+			bad.trainerIds.add(5);
+			check(form.addChallenge(zone, bad, pos) == null && last(said).contains("Select an overworld model first"),
+					"a challenge with no model is refused: " + last(said));
+			bad.model = 218;
+			bad.streakWorkHex = "not hex";
+			check(form.addChallenge(zone, bad, pos) == null && last(said).contains("must be a hex number"),
+					"a challenge whose streak variable is not hex is refused: " + last(said));
+			check(e.npcs.size() == npcs, "and none of the refusals placed a record");
+
+			//and what the record-only and text-free wizards place
+			int before = said.size();
+			check(form.addTrainer(zone, 5, 218, 2, 1, true, pos) == 2, "a trainer with a partner places two records");
+			ZoneEntities.NPC t = e.npcs.get(e.npcs.size() - 2), p = e.npcs.get(e.npcs.size() - 1);
+			check(t.script == NpcTemplates.TRAINER_SCRIPT_BASE + 5 && t.xTile == pos.x && t.yTile == pos.y && t.model == 218,
+					"the trainer runs script " + t.script + " at (" + t.xTile + "," + t.yTile + ") with model " + t.model);
+			check(p.script == NpcTemplates.TRAINER_PAIR_SCRIPT_BASE + 5 && p.xTile == pos.x + 1 && p.yTile == pos.y,
+					"the partner runs script " + p.script + " one tile right");
+			check(form.npc == p, "and the form shows the last one placed");
+			ZoneEntities.NPC bp = form.addGiveBp(zone, 20, 218, pos);
+			ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(zone.s);
+			check(bp != null && d != null && d.cases.get(bp.script) != null,
+					"Give BP adds a dispatch case and places an NPC on it (script " + (bp == null ? "-" : bp.script) + ")");
+			bad.streakWorkHex = "4020";
+			ZoneEntities.NPC ch = form.addChallenge(zone, bad, pos);
+			d = ZoneScriptAnalyzer.findDispatch(zone.s);
+			check(ch != null && d != null && d.cases.get(ch.script) != null && ch != bp,
+					"a challenge with no text needs no story file: it adds its case and places its NPC (script "
+					+ (ch == null ? "-" : ch.script) + ")");
+			check(said.size() == before, "and none of that had anything to complain about: " + said.subList(before, said.size()));
+			check(e.npcs.size() == npcs + 4, "four records placed in all (" + (e.npcs.size() - npcs) + ")");
+		} finally {
+			ctrmap.Ui.stopRecording();
+			//every form built above started a model preview's animator, a thread
+			//that is not a daemon: without this the suite never exits
+			form.disposePreviews();
+		}
+	}
+
+	static String last(List<String> said) {
+		return said.isEmpty() ? "(nothing said)" : said.get(said.size() - 1);
 	}
 
 	/**

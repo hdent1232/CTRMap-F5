@@ -81,10 +81,9 @@ public class DialogSeamTest {
 			"the OBJ importer's new-material form"},
 		{"CtrmapMainframe.java", "new javax.swing.JScrollPane(ta)", "1",
 			"the reusable-zones report is a scrollable text area, not a string"},
-		{"NPCEditForm.java", "panel", "6",
-			"the Add NPC wizards (talking, sign, item giver, battle, Give BP, trainer) are forms"},
-		{"NPCEditForm.java", "new JScrollPane(ta)", "1",
-			"the dialogue editor is an editable text area the user types into"},
+		{"NPCEditForm.java", "body", "1",
+			"showForm, the one place the Add NPC wizards and the dialogue editor show their forms;"
+			+ " the forms are built by the *Form classes and acted on by the add*/editDialogue methods, without a window"},
 		{"TilePainterForm.java", "panel", "1",
 			"the sign-text form"},
 		{"ZoneLoadingPanel.java", "form", "2",
@@ -99,7 +98,7 @@ public class DialogSeamTest {
 	 * as MutationBaselineTest caps its exclusions at 4. Shrinking it is free
 	 * and welcome - each entry removed is a dialog a test can finally answer.
 	 */
-	private static final int ALLOWED_CEILING = 8;
+	private static final int ALLOWED_CEILING = 7;
 
 	private static final Pattern RAW_CALL = Pattern.compile("(javax\\.swing\\.)?JOptionPane\\.show([A-Za-z]*)Dialog\\s*\\(");
 	/** {@code case JOptionPane.CANCEL_OPTION:}, however it is qualified. */
