@@ -1334,7 +1334,7 @@ public class CtrmapMainframe {
 			//a container that is not a map matrix usually fails on a bare
 			//dereference, whose getMessage() is null - "null" in a dialog is
 			//indistinguishable from the editor ignoring the click
-			Ui.error(frame, ex.getMessage() != null ? ex.getMessage() : ex.toString(), "Open MapMatrix");
+			Ui.error(frame, Ui.reason(ex), "Open MapMatrix");
 			return false;
 		}
 		return true;

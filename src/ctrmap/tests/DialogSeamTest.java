@@ -46,8 +46,8 @@ import javax.swing.JOptionPane;
  *     definition - wrote the file with nobody there.</li>
  * <li>A report whose whole text is a bare {@code getMessage()}. It is null for
  *     a whole family of exceptions, and a dialog that says "null" tells the user
- *     nothing. The tree's own idiom is {@code getMessage() != null ? ... :
- *     ex.toString()}.</li>
+ *     nothing. The tree's idiom is {@code Ui.reason(ex)}, which names the
+ *     exception when it gave no message.</li>
  * </ul>
  *
  * <p>And what it proves by running: Ui cannot be made to say nothing. Handed a
@@ -303,6 +303,14 @@ public class DialogSeamTest {
 		check(said.size() == 5 && said.get(4).equals("Save zone: zone 12 was not saved"),
 				"and a report that DOES say something is passed through untouched: "
 				+ (said.size() == 5 ? said.get(4) : said));
+
+		//...and the one way a report quotes an exception cannot come out as "null"
+		check("disk full".equals(Ui.reason(new java.io.IOException("disk full"))),
+				"Ui.reason quotes a message the exception gave: " + Ui.reason(new java.io.IOException("disk full")));
+		check("java.lang.NullPointerException".equals(Ui.reason(new NullPointerException())),
+				"Ui.reason names an exception that gave no message: " + Ui.reason(new NullPointerException()));
+		check("java.lang.IllegalStateException:   ".equals(Ui.reason(new IllegalStateException("  "))),
+				"Ui.reason treats a blank message as no message: " + Ui.reason(new IllegalStateException("  ")));
 	}
 
 	/**
