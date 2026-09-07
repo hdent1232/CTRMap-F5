@@ -6,6 +6,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * Adversarial tests for GFMessageFile. Run with:
@@ -52,8 +55,8 @@ public class GFMessageFileHostileTest {
 			pass("L2 65534-char line");
 		} else {
 			fail("L2 65534-char line", "SILENT CORRUPTION: stored u16 length field = 0x"
-					+ Integer.toHexString(readU16(l2b, 0x10 + 8)).toUpperCase()
-					+ ", 'unused' u16 after it = 0x" + Integer.toHexString(readU16(l2b, 0x10 + 10)).toUpperCase()
+					+ Integer.toHexString(u16(l2b, 0x10 + 8)).toUpperCase()
+					+ ", 'unused' u16 after it = 0x" + Integer.toHexString(u16(l2b, 0x10 + 10)).toUpperCase()
 					+ ", reparsed line0 length " + l2p.get(0).length() + " (expected 65534)");
 		}
 		//65535 chars + terminator = 65536 u16s -> length field overflows u16
@@ -69,8 +72,8 @@ public class GFMessageFileHostileTest {
 				fail("L3 65535-char line round trips", "SILENT CORRUPTION: wrote " + ob.length
 						+ " bytes, reparsed line0 length " + reparsed.get(0).length()
 						+ " (expected 65535); stored u16 length field = 0x"
-						+ Integer.toHexString(readU16(ob, 0x10 + 8)).toUpperCase()
-						+ ", bytes after it = 0x" + Integer.toHexString(readU16(ob, 0x10 + 10)).toUpperCase());
+						+ Integer.toHexString(u16(ob, 0x10 + 8)).toUpperCase()
+						+ ", bytes after it = 0x" + Integer.toHexString(u16(ob, 0x10 + 10)).toUpperCase());
 			}
 		} catch (RuntimeException ex) {
 			pass("L3 65535-char line rejected loudly (" + ex.getClass().getSimpleName() + ")");
@@ -152,13 +155,13 @@ public class GFMessageFileHostileTest {
 		byte[] out = new byte[total];
 		out[0] = 1; //textSections
 		putU16(out, 2, n);
-		putS32(out, 4, total - 0x10);
-		putS32(out, 0xC, 0x10);
-		putS32(out, 0x10, total - 0x10);
+		putI32(out, 4, total - 0x10);
+		putI32(out, 0xC, 0x10);
+		putI32(out, 0x10, total - 0x10);
 		int rel = 4 + 8 * n;
 		for (int i = 0; i < n; i++) {
-			putS32(out, 0x14 + i * 8, rel);
-			putS32(out, 0x18 + i * 8, lengths[i]);
+			putI32(out, 0x14 + i * 8, rel);
+			putI32(out, 0x18 + i * 8, lengths[i]);
 			System.arraycopy(enc[i], 0, out, 0x10 + rel, enc[i].length);
 			rel += enc[i].length;
 		}
@@ -305,21 +308,5 @@ public class GFMessageFileHostileTest {
 	private static void fail(String name, String diag) {
 		failed++;
 		System.out.println("FAIL " + name + ": " + diag);
-	}
-
-	private static int readU16(byte[] data, int off) {
-		return (data[off] & 0xFF) | ((data[off + 1] & 0xFF) << 8);
-	}
-
-	private static void putU16(byte[] d, int off, int v) {
-		d[off] = (byte) v;
-		d[off + 1] = (byte) (v >>> 8);
-	}
-
-	private static void putS32(byte[] d, int off, int v) {
-		d[off] = (byte) v;
-		d[off + 1] = (byte) (v >>> 8);
-		d[off + 2] = (byte) (v >>> 16);
-		d[off + 3] = (byte) (v >>> 24);
 	}
 }

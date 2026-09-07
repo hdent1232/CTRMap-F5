@@ -5,6 +5,7 @@ import ctrmap.formats.text.GFMessageFile;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Verifies the reference-data decode PokeData relies on (reads the GARCs
@@ -81,9 +82,5 @@ public class PokeDataTest {
 			return 1;
 		}
 		return 0;
-	}
-
-	static int i32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

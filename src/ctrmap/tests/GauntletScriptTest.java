@@ -8,6 +8,7 @@ import ctrmap.formats.scripts.ZoneScriptAnalyzer;
 import ctrmap.scripts.GfHash;
 import java.io.File;
 import java.util.List;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Dry-run gate for the INDEPENDENT battle-challenge emitter, over every ORAS
@@ -42,7 +43,7 @@ public class GauntletScriptTest {
 
 		boolean bigDone = false;
 		for (int z = 0; z < zones; z++) {
-			byte[] sub = sub(zo.getDecompressedEntry(z), 2);
+			byte[] sub = subfile(zo.getDecompressedEntry(z), 2);
 			if (sub == null || sub.length < 8) {
 				continue;
 			}
@@ -232,24 +233,5 @@ public class GauntletScriptTest {
 			}
 		}
 		return -1;
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return java.util.Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

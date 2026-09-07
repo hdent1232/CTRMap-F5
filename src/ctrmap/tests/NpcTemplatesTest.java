@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Headless dry run of the sign and item-giver script templates plus the
@@ -369,17 +370,13 @@ public class NpcTemplatesTest {
 		if (count <= sub || zo.length < 4 + (count + 1) * 4) {
 			return null;
 		}
-		int start = readIntLE(zo, 4 + sub * 4);
-		int end = readIntLE(zo, 4 + (sub + 1) * 4);
+		int start = i32(zo, 4 + sub * 4);
+		int end = i32(zo, 4 + (sub + 1) * 4);
 		if (start < 0 || end > zo.length || end < start) {
 			return null;
 		}
 		byte[] out = new byte[end - start];
 		System.arraycopy(zo, start, out, 0, out.length);
 		return out;
-	}
-
-	private static int readIntLE(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

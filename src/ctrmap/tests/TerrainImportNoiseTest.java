@@ -16,6 +16,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * The terrain import must be silent when it is merely too early, and loud when
@@ -158,7 +159,7 @@ public class TerrainImportNoiseTest {
 	/** Two builds: flat, then a plateau, which is what raises cliff faces. */
 	static void buildRegions(File garcFile) throws Exception {
 		GARC g = new GARC(garcFile);
-		byte[] donor = PaintedRegionTest.sub(g.getDecompressedEntry(1), 1);
+		byte[] donor = subfile(g.getDecompressedEntry(1), 1);
 		if (donor == null || !BchMapModel.isMapModel(donor)) {
 			System.out.println("no donor");
 			return;

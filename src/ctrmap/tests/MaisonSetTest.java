@@ -4,6 +4,7 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.maison.MaisonSet;
 import java.io.File;
 import java.util.Arrays;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * Maison opponent-set codec gate against the retail pools:
@@ -114,9 +115,5 @@ public class MaisonSetTest {
 		System.out.println("linkage a/1/8/" + listFile + " -> pool " + poolFile + ": " + refs
 				+ " refs, " + oob + " out-of-range, " + empty + " point-to-empty");
 		return dangling == 0 ? 0 : 1;
-	}
-
-	static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
 	}
 }

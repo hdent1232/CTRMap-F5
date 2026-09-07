@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Validates every building-catalog entry against the pristine dump: the box
@@ -47,7 +48,7 @@ public class BuildingCatalogTest {
 		File garcFile = new File(args.length > 0 ? args[0]
 				: "../RomFS_original_garcs/a/0/3/9");
 		GARC gr = new GARC(garcFile);
-		byte[] base = sub(gr.getDecompressedEntry(1), 1); // grass base donor (Route 101 region 1)
+		byte[] base = subfile(gr.getDecompressedEntry(1), 1); // grass base donor (Route 101 region 1)
 
 		List<BuildingCatalog.Entry> entries = BuildingCatalog.entries();
 		int fails = 0;
@@ -212,18 +213,5 @@ public class BuildingCatalogTest {
 
 	static String box(int tx0, int ty0, int tx1, int ty1) {
 		return tx0 + "," + ty0 + "," + tx1 + "," + ty1;
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

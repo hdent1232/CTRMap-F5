@@ -10,6 +10,7 @@ import ctrmap.humaninterface.TileMapPanel;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * The guards around the NPC record and the zone entity block. Each of these
@@ -269,7 +270,7 @@ public class NpcEntityGuardsTest {
 		if (count <= index || zo.length < 4 + (count + 1) * 4) {
 			return null;
 		}
-		int start = readIntLE(zo, 4 + index * 4), end = readIntLE(zo, 4 + (index + 1) * 4);
+		int start = i32(zo, 4 + index * 4), end = i32(zo, 4 + (index + 1) * 4);
 		if (start < 0 || end > zo.length || end <= start) {
 			return null;
 		}
@@ -291,10 +292,6 @@ public class NpcEntityGuardsTest {
 		GFLPawnScript s = new GFLPawnScript(scr);
 		s.decompressThis();
 		return s;
-	}
-
-	static int readIntLE(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
 	}
 
 	/** An entity block with no records and the smallest script that parses. */

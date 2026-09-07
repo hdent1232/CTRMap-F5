@@ -11,6 +11,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Where the tile painter puts a floor and which way it slopes. Five live
@@ -62,7 +63,7 @@ public class PaintedFloorTest {
 			return;
 		}
 		GARC gr = new GARC(garc);
-		byte[] donor = sub(gr.getDecompressedEntry(1), 1); //Route 101: the default tileset donor
+		byte[] donor = subfile(gr.getDecompressedEntry(1), 1); //Route 101: the default tileset donor
 		if (donor == null || !BchMapModel.isMapModel(donor)) {
 			System.out.println("  skip: region 1 is not a map model");
 			System.out.println("ALL PASS");
@@ -251,7 +252,7 @@ public class PaintedFloorTest {
 			} catch (RuntimeException ex) {
 				continue;
 			}
-			byte[] model = sub(raw, 1), coll = sub(raw, 2), tm = sub(raw, 0);
+			byte[] model = subfile(raw, 1), coll = subfile(raw, 2), tm = subfile(raw, 0);
 			if (model == null || !BchMapModel.isMapModel(model) || !GfColl.isColl(coll) || tm == null || tm.length < 6404) {
 				continue;
 			}
@@ -458,25 +459,6 @@ public class PaintedFloorTest {
 			Arrays.fill(row, fill);
 		}
 		return g;
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 
 	static void check(boolean ok, String what) {

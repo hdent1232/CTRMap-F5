@@ -7,6 +7,7 @@ import ctrmap.formats.scripts.ZoneScriptAnalyzer;
 import ctrmap.scripts.GfHash;
 import java.io.File;
 import java.util.Arrays;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Validates the Battle-facility source zones (the Maison lobby = 517, the
@@ -37,7 +38,7 @@ public class FacilitySourceTest {
 
 	static int checkFacility(GARC zo, int zone, String label, String[] wantNatives) {
 		try {
-			byte[] s2 = sub(zo.getDecompressedEntry(zone), 2);
+			byte[] s2 = subfile(zo.getDecompressedEntry(zone), 2);
 			if (s2 == null || s2.length < 8) {
 				System.out.println("FAIL " + label + " (zone " + zone + "): no script");
 				return 1;
@@ -79,24 +80,5 @@ public class FacilitySourceTest {
 			System.out.println("FAIL " + label + ": " + ex);
 			return 1;
 		}
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }
