@@ -6,6 +6,22 @@ the reference game (everything is built and corpus-verified against it); this
 document defines the layering that keeps the shared engine game-agnostic so
 the other games can be added without untangling anything.
 
+## Where things are, and how to run them
+
+```
+src/ctrmap/          the program            build.ps1   compile (never a bare javac)
+  gamedef/           per-game profiles      test.ps1    the 93-suite battery
+  formats/           readers and writers    stamp.ps1   "these classes came from these sources"
+  humaninterface/    the Swing UI           package.ps1 cut a release
+  tests/             the battery
+tools/mutate2.py     the mutation sweep + its own --selftest
+mutation_baseline.json   what the last sweep measured; MutationBaselineTest guards it
+```
+
+[TESTING.md](TESTING.md) is the operating manual for all of that: what you need,
+how to run one suite or all of them, what the four families of guard assert, and
+what to do when `MutationBaselineTest` fails after an edit.
+
 ## The three layers
 
 ```
@@ -65,12 +81,20 @@ established reference like pk3DS's GARCReference tables, and commented so).
 
 ## Known duplication / cleanup candidates (pre-existing)
 
-- `ParserLoader` and `GRColorPalette` duplicate ~55 TILE_* collision
+*Re-counted 2026-09-06; the numbers below are what is in the tree today, not
+what the list said when it was written.*
+
+- `ParserLoader` (60) and `GRColorPalette` (61) duplicate the TILE_* collision
   constants verbatim.
-- `ZoneCloner.ZONE_HEADER_SIZE` / `GeometryForker.MASTER_ROW` /
-  `ZoneLimitPatch.MASTER_ROW` are three names for the ORAS zone-header size
-  (0x38).
-- Trainer/Maison dialogs each carry a private GAMETEXT reader helper.
+- The ORAS zone-header size (0x38) has **four** independent literal definitions
+  outside the test sources — `ZoneCloner.ZONE_HEADER_SIZE`,
+  `GeometryForker.MASTER_ROW`, `ZoneLimitPatch.MASTER_ROW` and
+  `WorkspaceIntegrity.MASTER_ROW` — plus two that correctly alias one of them
+  (`AreaForker`, `ZoneRemover`) and three more literals in suites. Anyone
+  consolidating these should start from the four, not the three this list used
+  to name.
+- Four dialogs each carry a private GAMETEXT reader helper: Trainer, Maison,
+  MaisonClassList and Encounter.
 - `ExtrasPanel` injects the XY Lumiose camera-collision dummy into every
   AreaData regardless of game (upstream behavior, unreviewed).
 
