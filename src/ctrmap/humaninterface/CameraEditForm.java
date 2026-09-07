@@ -238,6 +238,8 @@ public class CameraEditForm extends javax.swing.JPanel {
 						case JOptionPane.NO_OPTION:
 							f.modified = false;
 							return true;
+						//closing the dialog means cancel, not "write it anyway"
+						case JOptionPane.CLOSED_OPTION:
 						case JOptionPane.CANCEL_OPTION:
 							return false;
 					}

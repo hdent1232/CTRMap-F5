@@ -159,6 +159,11 @@ public class NPCRegistry {
 				case JOptionPane.NO_OPTION:
 					modified = false;
 					return true;
+				//closing the dialog is the same as cancelling. Without this
+				//case the switch simply ended and the write below happened, so
+				//the X button meant "save" - and a headless caller, which gets
+				//CLOSED_OPTION by definition, wrote the file with nobody there.
+				case JOptionPane.CLOSED_OPTION:
 				case JOptionPane.CANCEL_OPTION:
 					return false;
 			}

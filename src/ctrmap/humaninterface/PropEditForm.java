@@ -719,6 +719,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 							break; //continue to save
 						case JOptionPane.NO_OPTION:
 							break;
+						//closing the dialog means cancel, not "throw the edits away"
+						case JOptionPane.CLOSED_OPTION:
 						case JOptionPane.CANCEL_OPTION:
 							return false;
 					}
@@ -740,6 +742,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 						case JOptionPane.NO_OPTION:
 							reg.modified = false;
 							return true;
+						//closing the dialog means cancel, not "write it anyway"
+						case JOptionPane.CLOSED_OPTION:
 						case JOptionPane.CANCEL_OPTION:
 							return false;
 					}

@@ -118,6 +118,8 @@ public class MatrixEditForm extends javax.swing.JPanel {
 							break;
 						case JOptionPane.NO_OPTION:
 							return true;
+						//closing the dialog means cancel, not "write it anyway"
+						case JOptionPane.CLOSED_OPTION:
 						case JOptionPane.CANCEL_OPTION:
 							return false;
 					}
