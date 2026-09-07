@@ -2186,31 +2186,36 @@ public class PaintedRegionBuilder {
 	 * already joined head-to-tail by {@link #emitCliffStrips}, turned into a
 	 * rounded, stepped, textured wall.
 	 *
-	 * <p>This is the longest thing in the file, so here is the shape of it
-	 * before the detail. Each phase has its own reasoning written where it
-	 * happens; what follows is only the order and why the order is that.
+	 * <p>Read top to bottom it is the shape of a wall. The per-vertex phases
+	 * are each their own method, so each can be read - and checked - with
+	 * only its own inputs in view, and every phase carries its reasoning
+	 * where it happens; what follows is only the order and why the order is
+	 * that.
 	 *
 	 * <ol>
 	 * <li><b>Polyline.</b> The chain's n edges give n+1 vertices. A chain whose
 	 *     last edge ends where the first began is a closed LOOP, and loops are
 	 *     treated differently at every step below, because they have no ends.</li>
-	 * <li><b>Round the outline</b> (three smoothing passes, then a cap on how
-	 *     far any vertex may travel). Elevation is quantised to whole tiles, so
-	 *     the raw contour is a staircase of right angles; smoothing is what
-	 *     makes it read as a hillside. The travel cap is what stops a one-tile
-	 *     path being smoothed out of existence from both sides at once. The ends
-	 *     of an open chain are pinned so neighbouring chains still meet.</li>
-	 * <li><b>Outward direction per vertex</b> - the mitre. Preferring the
-	 *     bisector every wall touching that point agrees on is what closes a
-	 *     corner shared between two strips; falling back to this chain's own two
-	 *     edges is what stops a ramp corridor (where a dozen edges face every
-	 *     which way and the sum cancels) turning into a spray of spikes.</li>
-	 * <li><b>Height per vertex</b>, top and bottom, averaged where two edges of
-	 *     different depth meet - and every proportion derived from it: the
-	 *     mid-height, and how far the shoulder and the face reach out. This is
-	 *     what lets ONE strip run through a change of step instead of stopping
-	 *     dead at it and starting again with a seam down the join. If no vertex
-	 *     has any fall at all, there is nothing to build and it returns here.</li>
+	 * <li><b>Round the outline</b> ({@link #roundOutline}: three smoothing
+	 *     passes, then a cap on how far any vertex may travel). Elevation is
+	 *     quantised to whole tiles, so the raw contour is a staircase of right
+	 *     angles; smoothing is what makes it read as a hillside. The travel cap
+	 *     is what stops a one-tile path being smoothed out of existence from
+	 *     both sides at once. The ends of an open chain are pinned so
+	 *     neighbouring chains still meet.</li>
+	 * <li><b>Outward direction per vertex</b> ({@link #mitres}) - the mitre.
+	 *     Preferring the bisector every wall touching that point agrees on is
+	 *     what closes a corner shared between two strips; falling back to this
+	 *     chain's own two edges is what stops a ramp corridor (where a dozen
+	 *     edges face every which way and the sum cancels) turning into a spray
+	 *     of spikes.</li>
+	 * <li><b>Height per vertex</b> ({@link #vertexHeights}), top and bottom,
+	 *     averaged where two edges of different depth meet - and every
+	 *     proportion derived from it ({@link #faceReach}): the mid-height, and
+	 *     how far the shoulder and the face reach out. This is what lets ONE
+	 *     strip run through a change of step instead of stopping dead at it and
+	 *     starting again with a seam down the join. If no vertex has any fall
+	 *     at all, there is nothing to build and it returns here.</li>
 	 * <li><b>Emit, segment by segment.</b> A flat COLLAR at the top bridges the
 	 *     rounded outline back to the tile boundary the floor actually ends on -
 	 *     without it, rounding tears holes straight through the map. Then the
@@ -2247,151 +2252,17 @@ public class PaintedRegionBuilder {
 		px[n] = chain.get(n - 1).bx;
 		pz[n] = chain.get(n - 1).bz;
 
-		//Round the outline. Elevation is quantised to tiles, so the contour
-		//steps a tile at a time and a chain of right angles reads as a
-		//staircase however well the faces are joined - which is the single
-		//thing that has made these cliffs look built out of blocks.
-		//One pass of corner cutting was all the top row could take, because the
-		//top is where the floor above ends: move it and triangular holes open
-		//straight through the map. That constraint is real, but it is not a
-		//reason to leave the silhouette square - it only means the smoothed
-		//outline has to be BRIDGED back to the tile boundary rather than left
-		//floating. The collar emitted below does that, so the whole cliff can
-		//now be rounded properly, top row included.
-		final int SMOOTH_PASSES = 3;
-		float[] smoothX = px.clone(), smoothZ = pz.clone();
-		for (int pass = 0; pass < SMOOTH_PASSES; pass++) {
-			float[] nx2 = smoothX.clone(), nz2 = smoothZ.clone();
-			for (int i = 0; i < vc; i++) {
-				//Pin the ends of an open chain. Chains are split by the pair of
-				//heights they join, so a raised path is bounded by several
-				//short chains that meet end to end - and each is smoothed on
-				//its own. Move the shared endpoints and they no longer meet:
-				//the wall opens at every junction and you see sky under the
-				//path, because there is no floor beneath a raised tile to catch
-				//the eye. Pinning costs a little rounding exactly at the joins
-				//and keeps the wall closed.
-				if (!loop && (i == 0 || i == vc - 1)) {
-					continue;
-				}
-				int prev = i == 0 ? (loop ? vc - 2 : 0) : i - 1;
-				int next = i == vc - 1 ? (loop ? 1 : vc - 1) : i + 1;
-				nx2[i] = smoothX[i] * 0.5f + smoothX[prev] * 0.25f + smoothX[next] * 0.25f;
-				nz2[i] = smoothZ[i] * 0.5f + smoothZ[prev] * 0.25f + smoothZ[next] * 0.25f;
-			}
-			smoothX = nx2;
-			smoothZ = nz2;
-		}
-		//Smoothing shrinks, and three passes shrink enough to eat a narrow
-		//feature alive: a one-tile-wide raised path has its two edges pulled
-		//toward each other from both sides at once and collapses into a row of
-		//stilts. Long runs need the full rounding, short ones cannot afford it,
-		//and the difference is not the chain's length but how far any single
-		//vertex ends up from where the tile grid actually put it. So cap that.
-		final float MAX_PULL = TILE * 0.3f;
-		for (int i = 0; i < vc; i++) {
-			float dx = smoothX[i] - px[i], dz = smoothZ[i] - pz[i];
-			float d = (float) Math.hypot(dx, dz);
-			if (d > MAX_PULL) {
-				smoothX[i] = px[i] + dx * (MAX_PULL / d);
-				smoothZ[i] = pz[i] + dz * (MAX_PULL / d);
-			}
-		}
-
-		//outward direction at each vertex: the mitre of the segments meeting there
-		float[] mx = new float[vc], mz = new float[vc];
-		for (int i = 0; i < vc; i++) {
-			CliffEdge prev = i == 0 ? (loop ? chain.get(n - 1) : chain.get(0)) : chain.get(i - 1);
-			CliffEdge next = i >= n ? (loop ? chain.get(0) : chain.get(n - 1)) : chain.get(i);
-			//Prefer the bisector agreed by every wall touching this point, so
-			//that a corner shared with another strip closes. Fall back to this
-			//chain's own two edges if the point is not in the map.
-			String vk = i < n ? chain.get(i).startKey() : chain.get(n - 1).endKey();
-			float[] shared = corner == null ? null : corner.get(vk);
-			float sx, sz;
-			//The shared bisector is the sum of the outward normals of every
-			//wall touching this point. That is meaningful at an ordinary
-			//corner, where two or three walls broadly agree. It is meaningless
-			//where a ramp corridor cuts through a cliff: half a dozen edges
-			//meet there facing opposite ways, the sum cancels to nearly zero,
-			//and normalising it yields an essentially random direction - which
-			//the dot-clamp and the reach scale then stretch into a blade. The
-			//cliff either side of every corridor was a spray of spikes.
-			//When the walls disagree that badly, there is no shared bisector to
-			//find; use this strip's own two edges.
-			float slen = shared == null ? 0f : (float) Math.hypot(shared[0], shared[1]);
-			if (shared != null && slen > 0.75f) {
-				sx = shared[0];
-				sz = shared[1];
-			} else {
-				sx = prev.nx + next.nx;
-				sz = prev.nz + next.nz;
-			}
-			float len = (float) Math.sqrt(sx * sx + sz * sz);
-			if (len < 1e-4f) {
-				sx = next.nx;
-				sz = next.nz;
-				len = 1f;
-			}
-			sx /= len;
-			sz /= len;
-			//lengthen so a mitred corner keeps the same face width as a straight run
-			//Cap how far a mitre may stretch. At 0.5 a corner reaches twice the
-			//face width, which is a spike whenever the bisector is even
-			//slightly off; 0.7 keeps corners closed without letting them grow
-			//blades.
-			float dot = Math.max(0.7f, sx * next.nx + sz * next.nz);
-			mx[i] = sx / dot;
-			mz[i] = sz / dot;
-		}
-
-		//HEIGHT PER VERTEX. This is what lets one strip run through a change of
-		//step instead of ending at it. A vertex shared by two edges of different
-		//depth takes the average of the two, so the wall's top and bottom edges
-		//both slope through the transition - which is what a hillside corner
-		//actually looks like - rather than one wall stopping dead and another
-		//starting beside it with a seam down the join.
-		float[] vyt = new float[vc], vyb = new float[vc];
-		for (int i = 0; i < vc; i++) {
-			CliffEdge ea = i == 0 ? (loop ? chain.get(n - 1) : chain.get(0)) : chain.get(i - 1);
-			CliffEdge eb = i >= n ? (loop ? chain.get(0) : chain.get(n - 1)) : chain.get(i);
-			vyt[i] = (ea.yTop + eb.yTop) * 0.5f;
-			vyb[i] = (ea.yBot + eb.yBot) * 0.5f;
-		}
-
-		//and every proportion derived from it, likewise per vertex
-		float[] vyMid = new float[vc], vRunS = new float[vc], vRunT = new float[vc];
-		boolean anyDrop = false;
-		for (int i = 0; i < vc; i++) {
-			float d = vyt[i] - vyb[i];
-			if (d > 0.01f) {
-				anyDrop = true;
-			}
-			//The face carries most of the fall AND most of the horizontal run,
-			//so from above it is the face you see, not the shoulder.
-			float rs = d * 0.22f;
-			float rt = rs + d * 0.55f;
-			//Never reach further than one tile out, however tall the drop: a
-			//45-degree face on a 36-unit step overshoots the terrace below.
-			if (rt > TILE) {
-				float squeeze = TILE / rt;
-				rs *= squeeze;
-				rt *= squeeze;
-			}
-			CliffEdge ea = i == 0 ? (loop ? chain.get(n - 1) : chain.get(0)) : chain.get(i - 1);
-			CliffEdge eb = i >= n ? (loop ? chain.get(0) : chain.get(n - 1)) : chain.get(i);
-			if (ea.tight || eb.tight) {
-				//a face that would lean over a route stands up instead
-				rs = Math.min(rs, 1.2f);
-				rt = Math.min(rt, 4.5f);
-			}
-			vyMid[i] = vyb[i] + d * 0.80f;
-			vRunS[i] = rs;
-			vRunT[i] = rt;
-		}
-		if (!anyDrop) {
+		float[][] rounded = roundOutline(px, pz, loop);
+		float[] smoothX = rounded[0], smoothZ = rounded[1];
+		float[][] mitre = mitres(chain, loop, corner);
+		float[] mx = mitre[0], mz = mitre[1];
+		float[][] heights = vertexHeights(chain, loop);
+		float[] vyt = heights[0], vyb = heights[1];
+		float[][] reach = faceReach(chain, loop, vyt, vyb);
+		if (reach == null) {
 			return;
 		}
+		float[] vyMid = reach[0], vRunS = reach[1], vRunT = reach[2];
 
 		//Stretch the mitre at a corner shared with a DEEPER wall so the two feet
 		//meet. Far less of this is needed now that a strip carries its own
@@ -2399,8 +2270,7 @@ public class PaintedRegionBuilder {
 		//exists and still has to close.
 		if (corner != null) {
 			for (int i = 0; i < vc; i++) {
-				String vk = i < n ? chain.get(i).startKey() : chain.get(n - 1).endKey();
-				float[] acc = corner.get(vk);
+				float[] acc = corner.get(vertexKey(chain, i));
 				if (acc == null || acc.length < 3 || vRunT[i] <= 0.01f
 						|| acc[2] <= (vyt[i] - vyb[i]) + 0.01f) {
 					continue;
@@ -2441,7 +2311,7 @@ public class PaintedRegionBuilder {
 		//separate walls can still be capped.
 		if (caps != null && !loop) {
 			for (int endIdx : new int[]{0, vc - 1}) {
-				String vk = endIdx < n ? chain.get(endIdx).startKey() : chain.get(n - 1).endKey();
+				String vk = vertexKey(chain, endIdx);
 				caps.computeIfAbsent(vk, k -> new ArrayList<>()).add(new float[][]{
 					{smoothX[endIdx], vyt[endIdx], smoothZ[endIdx]},
 					{smoothX[endIdx] + mx[endIdx] * vRunS[endIdx], vyMid[endIdx],
@@ -2555,6 +2425,217 @@ public class PaintedRegionBuilder {
 			}
 			u += segLen;
 		}
+	}
+
+	//---- the per-vertex phases of a chain -------------------------------------
+	//A chain of n edges is a polyline of n+1 vertices. Vertex i sits between
+	//the edge before it and the edge after it; on a loop those wrap, on an
+	//open chain the two end vertices reuse their own single edge.
+
+	/** The edge ending at vertex i of the polyline. */
+	private static CliffEdge edgeBefore(List<CliffEdge> chain, int i, boolean loop) {
+		int n = chain.size();
+		return i == 0 ? (loop ? chain.get(n - 1) : chain.get(0)) : chain.get(i - 1);
+	}
+
+	/** The edge starting at vertex i of the polyline. */
+	private static CliffEdge edgeAfter(List<CliffEdge> chain, int i, boolean loop) {
+		int n = chain.size();
+		return i >= n ? (loop ? chain.get(0) : chain.get(n - 1)) : chain.get(i);
+	}
+
+	/** The key vertex i has in the corner and cap maps. */
+	private static String vertexKey(List<CliffEdge> chain, int i) {
+		int n = chain.size();
+		return i < n ? chain.get(i).startKey() : chain.get(n - 1).endKey();
+	}
+
+	/**
+	 * Rounds the outline. Elevation is quantised to tiles, so the contour
+	 * steps a tile at a time and a chain of right angles reads as a
+	 * staircase however well the faces are joined - which is the single
+	 * thing that has made these cliffs look built out of blocks.
+	 * One pass of corner cutting was all the top row could take, because the
+	 * top is where the floor above ends: move it and triangular holes open
+	 * straight through the map. That constraint is real, but it is not a
+	 * reason to leave the silhouette square - it only means the smoothed
+	 * outline has to be BRIDGED back to the tile boundary rather than left
+	 * floating. The collar emitted by {@link #emitChain} does that, so the
+	 * whole cliff can now be rounded properly, top row included.
+	 *
+	 * <p>Three passes of {@code 0.25 / 0.5 / 0.25} averaging, then a cap on
+	 * how far any vertex may travel. The ends of an open chain are pinned.
+	 * Public so a suite can hand it a polyline on its own: the three
+	 * invariants below (pinned ends, a closed loop stays closed, the travel
+	 * cap) are what the whole map-sealing argument rests on.
+	 *
+	 * @param px   vertex x, in world units
+	 * @param pz   vertex z
+	 * @param loop the polyline is closed (first vertex equals last)
+	 * @return {x, z} of the rounded vertices; the inputs are not touched
+	 */
+	public static float[][] roundOutline(float[] px, float[] pz, boolean loop) {
+		int vc = px.length;
+		final int SMOOTH_PASSES = 3;
+		float[] smoothX = px.clone(), smoothZ = pz.clone();
+		for (int pass = 0; pass < SMOOTH_PASSES; pass++) {
+			float[] nx2 = smoothX.clone(), nz2 = smoothZ.clone();
+			for (int i = 0; i < vc; i++) {
+				//Pin the ends of an open chain. Chains are split by the pair of
+				//heights they join, so a raised path is bounded by several
+				//short chains that meet end to end - and each is smoothed on
+				//its own. Move the shared endpoints and they no longer meet:
+				//the wall opens at every junction and you see sky under the
+				//path, because there is no floor beneath a raised tile to catch
+				//the eye. Pinning costs a little rounding exactly at the joins
+				//and keeps the wall closed.
+				if (!loop && (i == 0 || i == vc - 1)) {
+					continue;
+				}
+				int prev = i == 0 ? (loop ? vc - 2 : 0) : i - 1;
+				int next = i == vc - 1 ? (loop ? 1 : vc - 1) : i + 1;
+				nx2[i] = smoothX[i] * 0.5f + smoothX[prev] * 0.25f + smoothX[next] * 0.25f;
+				nz2[i] = smoothZ[i] * 0.5f + smoothZ[prev] * 0.25f + smoothZ[next] * 0.25f;
+			}
+			smoothX = nx2;
+			smoothZ = nz2;
+		}
+		//Smoothing shrinks, and three passes shrink enough to eat a narrow
+		//feature alive: a one-tile-wide raised path has its two edges pulled
+		//toward each other from both sides at once and collapses into a row of
+		//stilts. Long runs need the full rounding, short ones cannot afford it,
+		//and the difference is not the chain's length but how far any single
+		//vertex ends up from where the tile grid actually put it. So cap that.
+		final float MAX_PULL = TILE * 0.3f;
+		for (int i = 0; i < vc; i++) {
+			float dx = smoothX[i] - px[i], dz = smoothZ[i] - pz[i];
+			float d = (float) Math.hypot(dx, dz);
+			if (d > MAX_PULL) {
+				smoothX[i] = px[i] + dx * (MAX_PULL / d);
+				smoothZ[i] = pz[i] + dz * (MAX_PULL / d);
+			}
+		}
+		return new float[][]{smoothX, smoothZ};
+	}
+
+	/**
+	 * The outward direction at each vertex: the mitre of the segments meeting
+	 * there, lengthened so a mitred corner keeps the same face width as a
+	 * straight run, and capped so it cannot grow a blade.
+	 *
+	 * @param corner the shared bisectors, keyed by vertex; may be null
+	 * @return {mx, mz} per vertex
+	 */
+	private static float[][] mitres(List<CliffEdge> chain, boolean loop, Map<String, float[]> corner) {
+		int vc = chain.size() + 1;
+		float[] mx = new float[vc], mz = new float[vc];
+		for (int i = 0; i < vc; i++) {
+			CliffEdge prev = edgeBefore(chain, i, loop);
+			CliffEdge next = edgeAfter(chain, i, loop);
+			//Prefer the bisector agreed by every wall touching this point, so
+			//that a corner shared with another strip closes. Fall back to this
+			//chain's own two edges if the point is not in the map.
+			float[] shared = corner == null ? null : corner.get(vertexKey(chain, i));
+			float sx, sz;
+			//The shared bisector is the sum of the outward normals of every
+			//wall touching this point. That is meaningful at an ordinary
+			//corner, where two or three walls broadly agree. It is meaningless
+			//where a ramp corridor cuts through a cliff: half a dozen edges
+			//meet there facing opposite ways, the sum cancels to nearly zero,
+			//and normalising it yields an essentially random direction - which
+			//the dot-clamp and the reach scale then stretch into a blade. The
+			//cliff either side of every corridor was a spray of spikes.
+			//When the walls disagree that badly, there is no shared bisector to
+			//find; use this strip's own two edges.
+			float slen = shared == null ? 0f : (float) Math.hypot(shared[0], shared[1]);
+			if (shared != null && slen > 0.75f) {
+				sx = shared[0];
+				sz = shared[1];
+			} else {
+				sx = prev.nx + next.nx;
+				sz = prev.nz + next.nz;
+			}
+			float len = (float) Math.sqrt(sx * sx + sz * sz);
+			if (len < 1e-4f) {
+				sx = next.nx;
+				sz = next.nz;
+				len = 1f;
+			}
+			sx /= len;
+			sz /= len;
+			//lengthen so a mitred corner keeps the same face width as a straight run
+			//Cap how far a mitre may stretch. At 0.5 a corner reaches twice the
+			//face width, which is a spike whenever the bisector is even
+			//slightly off; 0.7 keeps corners closed without letting them grow
+			//blades.
+			float dot = Math.max(0.7f, sx * next.nx + sz * next.nz);
+			mx[i] = sx / dot;
+			mz[i] = sz / dot;
+		}
+		return new float[][]{mx, mz};
+	}
+
+	/**
+	 * HEIGHT PER VERTEX. This is what lets one strip run through a change of
+	 * step instead of ending at it. A vertex shared by two edges of different
+	 * depth takes the average of the two, so the wall's top and bottom edges
+	 * both slope through the transition - which is what a hillside corner
+	 * actually looks like - rather than one wall stopping dead and another
+	 * starting beside it with a seam down the join.
+	 *
+	 * @return {top, bottom} per vertex
+	 */
+	private static float[][] vertexHeights(List<CliffEdge> chain, boolean loop) {
+		int vc = chain.size() + 1;
+		float[] vyt = new float[vc], vyb = new float[vc];
+		for (int i = 0; i < vc; i++) {
+			CliffEdge ea = edgeBefore(chain, i, loop);
+			CliffEdge eb = edgeAfter(chain, i, loop);
+			vyt[i] = (ea.yTop + eb.yTop) * 0.5f;
+			vyb[i] = (ea.yBot + eb.yBot) * 0.5f;
+		}
+		return new float[][]{vyt, vyb};
+	}
+
+	/**
+	 * Every proportion derived from a vertex's fall: the mid-height, and how
+	 * far the shoulder and the face reach out.
+	 *
+	 * @return {mid, shoulderReach, faceReach} per vertex, or null when no
+	 *         vertex has any fall at all - there is nothing to build
+	 */
+	private static float[][] faceReach(List<CliffEdge> chain, boolean loop, float[] vyt, float[] vyb) {
+		int vc = chain.size() + 1;
+		float[] vyMid = new float[vc], vRunS = new float[vc], vRunT = new float[vc];
+		boolean anyDrop = false;
+		for (int i = 0; i < vc; i++) {
+			float d = vyt[i] - vyb[i];
+			if (d > 0.01f) {
+				anyDrop = true;
+			}
+			//The face carries most of the fall AND most of the horizontal run,
+			//so from above it is the face you see, not the shoulder.
+			float rs = d * 0.22f;
+			float rt = rs + d * 0.55f;
+			//Never reach further than one tile out, however tall the drop: a
+			//45-degree face on a 36-unit step overshoots the terrace below.
+			if (rt > TILE) {
+				float squeeze = TILE / rt;
+				rs *= squeeze;
+				rt *= squeeze;
+			}
+			CliffEdge ea = edgeBefore(chain, i, loop);
+			CliffEdge eb = edgeAfter(chain, i, loop);
+			if (ea.tight || eb.tight) {
+				//a face that would lean over a route stands up instead
+				rs = Math.min(rs, 1.2f);
+				rt = Math.min(rt, 4.5f);
+			}
+			vyMid[i] = vyb[i] + d * 0.80f;
+			vRunS[i] = rs;
+			vRunT[i] = rt;
+		}
+		return anyDrop ? new float[][]{vyMid, vRunS, vRunT} : null;
 	}
 
 	/**
