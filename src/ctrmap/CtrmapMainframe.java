@@ -1397,23 +1397,43 @@ public class CtrmapMainframe {
 		try {
 			ZoneManager.RenameResult r = ZoneManager.renameZone(idx, name);
 			ctrmap.formats.text.LocationNames.loadFromGarc(); // refresh the dropdown name cache
-			StringBuilder sb = new StringBuilder();
-			sb.append("Zone ").append(idx).append(" renamed to \"").append(name).append("\".\n\n");
-			if (r.gaveOwnName) {
-				sb.append("It was sharing the name \"").append(r.oldName).append("\" with ").append(r.sharers)
-				  .append(" zones; it now has its own name and the others are unchanged.\n\n");
-			} else if (r.renamedSharers) {
-				sb.append("NOTE: \"").append(r.oldName).append("\" was shared by ").append(r.sharers)
-				  .append(" zones and no free name slot was available, so ALL of them were renamed.\n\n");
-			} else {
-				sb.append("The name belonged to this zone alone.\n\n");
-			}
-			sb.append("Run File > Deploy to emulator (it packs first), then fully restart the emulator.\n");
-			sb.append("Reselect the zone in the dropdown to see the new name in the editor.");
-			javax.swing.JOptionPane.showMessageDialog(frame, sb.toString(), "Rename zone", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+			javax.swing.JOptionPane.showMessageDialog(frame, renameZoneReport(idx, name, r),
+					"Rename zone", javax.swing.JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
 			javax.swing.JOptionPane.showMessageDialog(frame, "Rename failed:\n" + ex.getMessage(), "Rename zone", javax.swing.JOptionPane.ERROR_MESSAGE);
 		}
+	}
+
+	/**
+	 * What the user is told after a rename, and specifically WHO ELSE it moved.
+	 *
+	 * <p>A location name is shared: in the retail game one line names Fallarbor
+	 * Town and Routes 111 to 114 together. {@link ZoneManager#renameZone} tries
+	 * to give the renamed zone a private name line so the others keep theirs,
+	 * but the game's place-id bound is hard, and when no free line is left it
+	 * falls back to editing the shared line - which renames every zone on it.
+	 *
+	 * <p>Those two outcomes look identical from the map: the zone the user asked
+	 * about now has the name they typed. The only thing that distinguishes "your
+	 * town is renamed" from "your town and four routes are renamed" is this
+	 * sentence. Lose it and the user ships a game where four routes are called
+	 * whatever they named their new town, having been told the rename worked.
+	 */
+	public static String renameZoneReport(int zoneIndex, String newName, ZoneManager.RenameResult r) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("Zone ").append(zoneIndex).append(" renamed to \"").append(newName).append("\".\n\n");
+		if (r.gaveOwnName) {
+			sb.append("It was sharing the name \"").append(r.oldName).append("\" with ").append(r.sharers)
+			  .append(" zones; it now has its own name and the others are unchanged.\n\n");
+		} else if (r.renamedSharers) {
+			sb.append("NOTE: \"").append(r.oldName).append("\" was shared by ").append(r.sharers)
+			  .append(" zones and no free name slot was available, so ALL of them were renamed.\n\n");
+		} else {
+			sb.append("The name belonged to this zone alone.\n\n");
+		}
+		sb.append("Run File > Deploy to emulator (it packs first), then fully restart the emulator.\n");
+		sb.append("Reselect the zone in the dropdown to see the new name in the editor.");
+		return sb.toString();
 	}
 
 	/**
