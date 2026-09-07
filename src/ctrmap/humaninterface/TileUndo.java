@@ -30,6 +30,7 @@ public class TileUndo {
 	private static final Deque<List<Rec>> undoStack = new ArrayDeque<>();
 	private static final Deque<List<Rec>> redoStack = new ArrayDeque<>();
 	private static List<Rec> open = null;
+	private static final List<Runnable> listeners = new ArrayList<>();
 
 	/** Opens a gesture batch (no-op when one is already open). */
 	public static void begin() {
@@ -141,12 +142,18 @@ public class TileUndo {
 		return !redoStack.isEmpty();
 	}
 
+	/**
+	 * Runs after every change to what can be undone or redone. The World
+	 * Editor toolbar registers here to enable its buttons; nothing in this
+	 * class knows a button exists.
+	 */
+	public static void addListener(Runnable onChange) {
+		listeners.add(onChange);
+	}
+
 	private static void updateButtons() {
-		if (btnUndoTile != null) {
-			btnUndoTile.setEnabled(canUndo());
-		}
-		if (btnRedoTile != null) {
-			btnRedoTile.setEnabled(canRedo());
+		for (Runnable r : listeners) {
+			r.run();
 		}
 	}
 }

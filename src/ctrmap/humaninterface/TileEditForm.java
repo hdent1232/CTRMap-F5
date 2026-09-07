@@ -56,7 +56,7 @@ public class TileEditForm extends javax.swing.JPanel {
 				String name = tileList.getSelectedValue();
 				int c1 = t.cat1, c2 = t.cat2;
 				suppressListEvents = true;
-				ctrmap.CtrmapMainframe.btnSetTool.doClick();
+				ctrmap.CtrmapMainframe.worldToolbar.selectSetTool();
 				restoreCats(c1, c2);
 				showListModel();
 				tileList.setSelectedValue(name, true);

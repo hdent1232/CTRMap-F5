@@ -10,7 +10,6 @@ import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.util.prefs.Preferences;
 
-import javax.swing.ButtonGroup;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -19,7 +18,6 @@ import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JRadioButton;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JToolBar;
@@ -55,6 +53,7 @@ import ctrmap.humaninterface.TileMapPanel;
 import ctrmap.humaninterface.GeoEditForm;
 import ctrmap.humaninterface.TriggerEditForm;
 import ctrmap.humaninterface.WarpEditForm;
+import ctrmap.humaninterface.WorldEditorToolbar;
 import ctrmap.humaninterface.WorkspaceSettings;
 import ctrmap.humaninterface.ZoneLoadingPanel;
 import ctrmap.humaninterface.builder.Builder;
@@ -86,26 +85,11 @@ public class CtrmapMainframe {
 	public static JFrame frame;
 	public static JTabbedPane tabs;
 
-	public static JToolBar toolbar;
-	/** The always-visible 2D/3D view toggle (F2/F3 keep working and sync it). */
-	public static javax.swing.JToggleButton btn3DView;
-	public static ButtonGroup toolBtnGroup;
-	public static JRadioButton btnEditTool;
-	public static JRadioButton btnSetTool;
-	public static JRadioButton btnPaintTool;
+	/** The World Editor's tool row: the one handle for "pick this tool" and "which view is up". */
+	public static WorldEditorToolbar worldToolbar;
 	public static ctrmap.humaninterface.PaintForm mPaintForm;
-	public static javax.swing.JButton btnUndoTile;
-	public static javax.swing.JButton btnRedoTile;
 	public static JPanel zoneTabPnl;
 	public static JPanel extrasTabPnl;
-	public static JRadioButton btnFillTool;
-	public static JRadioButton btnCamTool;
-	public static JRadioButton btnPropTool;
-	public static JRadioButton btnNPCTool;
-	public static JRadioButton btnWarpTool;
-	public static JRadioButton btnTriggerTool;
-	public static JRadioButton btnGeoTool;
-	public static JLabel currentTool;
 
 	public static JScrollPane mTilemapScrollPane;
 	public static TileMapPanel mTileMapPanel;
@@ -180,107 +164,6 @@ public class CtrmapMainframe {
 		Workspace.loadWorkspace();
 		frame = new JFrame("CTRMap Editor");
 		tabs = new JTabbedPane();
-		toolbar = new JToolBar();
-		btnEditTool = Utils.createGraphicalButton("_tool_edit");
-		btnSetTool = Utils.createGraphicalButton("_tool_set");
-		btnFillTool = Utils.createGraphicalButton("_tool_fill");
-		btnCamTool = Utils.createGraphicalButton("_tool_cam");
-		btnPropTool = Utils.createGraphicalButton("_tool_prop");
-		btnNPCTool = Utils.createGraphicalButton("_tool_npc");
-		btnWarpTool = Utils.createGraphicalButton("_tool_warp");
-		btnTriggerTool = Utils.createGraphicalButton("_tool_trigger");
-		btnPaintTool = Utils.createGraphicalButton("_tool_paint");
-		btnPaintTool.setToolTipText("Map Builder - edit this zone's map with terrain brushes, elevation, buildings and decor, directly on the map view. Only tiles you touch are rebuilt. (The brush-icon Set tool instead paints tile TYPES onto the existing map.)");
-		btnPaintTool.getAccessibleContext().setAccessibleName("Map Builder");
-		btnGeoTool = Utils.createGraphicalButton("_tool_geo");
-		btnGeoTool.setToolTipText("Geometry tool - drag a box on the map to select its 3D geometry, then move/duplicate/delete it, or copy it as a prefab and stamp it elsewhere");
-		btnGeoTool.getAccessibleContext().setAccessibleName("Geometry");
-		btnEditTool.setToolTipText("Edit tool - click a tile to load its settings");
-		btnSetTool.setToolTipText("Set tool - paint the panel's settings onto tiles");
-		btnFillTool.setToolTipText("Fill tool - drag a box to fill tiles with settings");
-		btnCamTool.setToolTipText("Camera tool - place and edit camera zones");
-		btnPropTool.setToolTipText("Prop tool - place and edit map props (trees, signs)");
-		btnNPCTool.setToolTipText("NPC tool - place and edit overworld NPCs");
-		btnWarpTool.setToolTipText("Warp tool - place and edit warps (doors, stairs)");
-		btnTriggerTool.setToolTipText("Trigger tool - place script triggers (step-on events)");
-		toolBtnGroup = new ButtonGroup();
-		btnEditTool.setSelected(true);
-		currentTool = new JLabel("Current tool: Edit");
-
-		toolBtnGroup.add(btnEditTool);
-		toolBtnGroup.add(btnSetTool);
-		toolBtnGroup.add(btnFillTool);
-		toolBtnGroup.add(btnCamTool);
-		toolBtnGroup.add(btnPropTool);
-		toolBtnGroup.add(btnNPCTool);
-		toolBtnGroup.add(btnWarpTool);
-		toolBtnGroup.add(btnTriggerTool);
-		toolBtnGroup.add(btnPaintTool);
-		toolBtnGroup.add(btnGeoTool);
-		toolbar.add(btnEditTool);
-		toolbar.add(btnSetTool);
-		toolbar.add(btnFillTool);
-		toolbar.add(btnCamTool);
-		toolbar.add(btnPropTool);
-		toolbar.add(btnNPCTool);
-		toolbar.add(btnWarpTool);
-		toolbar.add(btnTriggerTool);
-		toolbar.add(btnPaintTool);
-		toolbar.add(btnGeoTool);
-		toolbar.add(currentTool);
-
-		//undo/redo for tile edits + the map actions, ON the World Editor where
-		//they belong (the menus keep shortcuts, but this is the primary home)
-		toolbar.addSeparator();
-		btnUndoTile = new javax.swing.JButton("↶ Undo");
-		btnRedoTile = new javax.swing.JButton("↷ Redo");
-		btnUndoTile.setToolTipText("Undo the last tile edit (Ctrl+Z)");
-		btnRedoTile.setToolTipText("Redo the undone tile edit (Ctrl+Y)");
-		btnUndoTile.setEnabled(false);
-		btnRedoTile.setEnabled(false);
-		btnUndoTile.setFocusable(false);
-		btnRedoTile.setFocusable(false);
-		btnUndoTile.addActionListener(e -> ctrmap.humaninterface.TileUndo.undo());
-		btnRedoTile.addActionListener(e -> ctrmap.humaninterface.TileUndo.redo());
-		toolbar.add(btnUndoTile);
-		toolbar.add(btnRedoTile);
-		//the 2D/3D view switch, ALWAYS visible and valid for every tool - the
-		//displayed component is the source of truth so F2/F3 stay in sync
-		btn3DView = new javax.swing.JToggleButton("3D view");
-		btn3DView.setToolTipText("Show the map in 3D (fly with WASD + drag; the Map Builder updates it live). F2 = 2D, F3 = 3D.");
-		btn3DView.setFocusable(false);
-		btn3DView.addActionListener(e -> {
-			boolean to3d = jsp.getLeftComponent() != m3DDebugPanel;
-			Utils.setGraphicUI(to3d ? m3DDebugPanel : mTilemapScrollPane);
-			btn3DView.setSelected(to3d);
-		});
-		toolbar.addSeparator();
-		toolbar.add(btn3DView);
-		javax.swing.JButton tbBlank = new javax.swing.JButton("Blank canvas");
-		tbBlank.setToolTipText("Replace this zone's map with a blank canvas cloned from a template route.");
-		tbBlank.addActionListener(e -> blankCanvasAction());
-		javax.swing.JButton tbResize = new javax.swing.JButton("Resize map");
-		tbResize.setToolTipText("Resize this zone's map (grow/shrink its region grid).");
-		tbResize.addActionListener(e -> resizeMapAction());
-		javax.swing.JButton tbFog = new javax.swing.JButton("Fog & lighting");
-		tbFog.setToolTipText("Pick a GameFreak atmosphere with live preview, or hand-tune fog and ambient light.");
-		tbFog.addActionListener(e -> ctrmap.humaninterface.AreaLightingDialog.show(frame));
-		javax.swing.JButton tbEnc = new javax.swing.JButton("Encounters");
-		tbEnc.setToolTipText("Edit this zone's wild Pokemon encounter slots.");
-		tbEnc.addActionListener(e -> ctrmap.humaninterface.EncounterEditDialog.show(frame));
-		javax.swing.JButton tbFork = new javax.swing.JButton("Fork geometry");
-		tbFork.setToolTipText("Give this zone its own private map so edits stop affecting the source town.");
-		tbFork.addActionListener(e -> forkGeometryAction());
-		//second toolbar row: the map-level actions (the toolbar's own row keeps
-		//the per-tile tools + undo; the Paint TOOL toggle is the painter's home)
-		JToolBar mapActionsBar = new JToolBar();
-		mapActionsBar.setFloatable(false);
-		mapActionsBar.add(new JLabel(" Map:  "));
-		for (javax.swing.JButton b : new javax.swing.JButton[]{tbBlank, tbResize, tbFog, tbEnc, tbFork}) {
-			b.setFocusable(false);
-			mapActionsBar.add(b);
-		}
-
 		tileEditMasterPnl = new JPanel(new BorderLayout());
 		collEditMasterPnl = new JPanel(new BorderLayout());
 		mtxEditMasterPnl = new JPanel(new BorderLayout());
@@ -332,9 +215,10 @@ public class CtrmapMainframe {
 		jsp3.setLeftComponent(mMtxScrollPane);
 		jsp3.setRightComponent(mMtxEditForm);
 
+		worldToolbar = new WorldEditorToolbar(mTilemapInputManager, CtrmapMainframe::toggleView);
 		JPanel toolbarRows = new JPanel(new java.awt.GridLayout(2, 1));
-		toolbarRows.add(toolbar);
-		toolbarRows.add(mapActionsBar);
+		toolbarRows.add(worldToolbar);
+		toolbarRows.add(buildMapActionsBar());
 		tileEditMasterPnl.add(toolbarRows, BorderLayout.NORTH);
 		tileEditMasterPnl.add(jsp, BorderLayout.CENTER);
 
@@ -420,27 +304,6 @@ public class CtrmapMainframe {
 			}
 		});
 
-		btnEditTool.setActionCommand("edit");
-		btnEditTool.addActionListener(mTilemapInputManager);
-		btnSetTool.setActionCommand("set");
-		btnSetTool.addActionListener(mTilemapInputManager);
-		btnFillTool.setActionCommand("fill");
-		btnFillTool.addActionListener(mTilemapInputManager);
-		btnCamTool.setActionCommand("cam");
-		btnCamTool.addActionListener(mTilemapInputManager);
-		btnPropTool.setActionCommand("prop");
-		btnPropTool.addActionListener(mTilemapInputManager);
-		btnNPCTool.setActionCommand("npc");
-		btnNPCTool.addActionListener(mTilemapInputManager);
-		btnWarpTool.setActionCommand("warp");
-		btnWarpTool.addActionListener(mTilemapInputManager);
-		btnTriggerTool.setActionCommand("trigger");
-		btnTriggerTool.addActionListener(mTilemapInputManager);
-		btnPaintTool.setActionCommand("paint");
-		btnPaintTool.addActionListener(mTilemapInputManager);
-		btnGeoTool.setActionCommand("geo");
-		btnGeoTool.addActionListener(mTilemapInputManager);
-
 		frame.getContentPane().add(tabs);
 
 		JMenuBar menubar = buildMenuBar();
@@ -489,20 +352,14 @@ public class CtrmapMainframe {
 		frame.getRootPane().getActionMap().put("switch2D", new AbstractAction("switch2D") {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				Utils.setGraphicUI(mTilemapScrollPane);
-				if (btn3DView != null) {
-					btn3DView.setSelected(false);
-				}
+				showView3D(false);
 			}
 		});
 		frame.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("F3"), "switch3D");
 		frame.getRootPane().getActionMap().put("switch3D", new AbstractAction("switch3D") {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				Utils.setGraphicUI(m3DDebugPanel);
-				if (btn3DView != null) {
-					btn3DView.setSelected(true);
-				}
+				showView3D(true);
 			}
 		});
 		tool = new SetTool();
@@ -533,7 +390,7 @@ public class CtrmapMainframe {
 	 * The menu bar: every menu and every item, in the order the user sees
 	 * them, each wired to the named method that does the work. This is the
 	 * ONLY place a menu item exists - the items are locals here, not fields,
-	 * so nothing else in the program can reach one - and MainframeMenusTest
+	 * so nothing else in the program can reach one - and MainframeShapeTest
 	 * builds this headless and pins the whole tree: labels, order, separators
 	 * and one action per item. Building it touches no other widget; the
 	 * actions read the editor's panels when they run, not when the menu is
@@ -618,6 +475,45 @@ public class CtrmapMainframe {
 		JMenuItem it = item(label, action);
 		it.setToolTipText(tooltip);
 		return it;
+	}
+
+	/**
+	 * The World Editor's second toolbar row: the map-level actions. The tool
+	 * row above it ({@link WorldEditorToolbar}) holds the per-tile tools; the
+	 * Map menu repeats these five for people who look in menus.
+	 */
+	public static JToolBar buildMapActionsBar() {
+		JToolBar bar = new JToolBar();
+		bar.setFloatable(false);
+		bar.add(new JLabel(" Map:  "));
+		bar.add(barButton("Blank canvas", "Replace this zone's map with a blank canvas cloned from a template route.", CtrmapMainframe::blankCanvasAction));
+		bar.add(barButton("Resize map", "Resize this zone's map (grow/shrink its region grid).", CtrmapMainframe::resizeMapAction));
+		bar.add(barButton("Fog & lighting", "Pick a GameFreak atmosphere with live preview, or hand-tune fog and ambient light.", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame)));
+		bar.add(barButton("Encounters", "Edit this zone's wild Pokemon encounter slots.", () -> ctrmap.humaninterface.EncounterEditDialog.show(frame)));
+		bar.add(barButton("Fork geometry", "Give this zone its own private map so edits stop affecting the source town.", CtrmapMainframe::forkGeometryAction));
+		return bar;
+	}
+
+	/** A toolbar button that does one thing and never takes the focus off the map. */
+	private static javax.swing.JButton barButton(String label, String tooltip, Runnable action) {
+		javax.swing.JButton b = new javax.swing.JButton(label);
+		b.setToolTipText(tooltip);
+		b.setFocusable(false);
+		b.addActionListener(e -> action.run());
+		return b;
+	}
+
+	// ------------------------------------------------------- the 2D/3D view
+
+	/** Puts the 2D map or the 3D scene in the World Editor's view, and keeps the toggle honest. */
+	private static void showView3D(boolean on) {
+		Utils.setGraphicUI(on ? m3DDebugPanel : mTilemapScrollPane);
+		worldToolbar.setView3D(on);
+	}
+
+	/** The toolbar's "3D view" toggle: what is DISPLAYED is the truth, not the toggle's own state. */
+	private static void toggleView() {
+		showView3D(jsp.getLeftComponent() != m3DDebugPanel);
 	}
 
 	// ------------------------------------------------------------ File menu
@@ -738,7 +634,7 @@ public class CtrmapMainframe {
 	/** Map > Map Builder: the painter is a World Editor tool, so go there and pick it. */
 	private static void openMapBuilderAction() {
 		tabs.setSelectedComponent(tileEditMasterPnl);
-		btnPaintTool.doClick();
+		worldToolbar.selectPaintTool();
 	}
 
 	private static void objToCollisionsAction() {
