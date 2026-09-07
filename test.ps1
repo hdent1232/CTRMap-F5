@@ -143,6 +143,7 @@ $suites = @(
     @{ n = "NpcEntityGuards (altitude/uid/count/script)"; c = "ctrmap.tests.NpcEntityGuardsTest"; a = @($a013) },
     @{ n = "NpcEditFormGuards (the NPC form: Save/Remove/New/overlay/drag)"; c = "ctrmap.tests.NpcEditFormGuardsTest"; a = @($pristine) },
     @{ n = "NpcMoveCodes (the motion dropdowns write back what they showed)"; c = "ctrmap.tests.NpcMoveCodesTest"; a = @($pristine) },
+    @{ n = "WarpTransitions (the transition dropdown writes back what it showed)"; c = "ctrmap.tests.WarpTransitionsTest"; a = @($pristine) },
     @{ n = "ZoneEntities round-trip";      c = "ctrmap.tests.ZoneEntitiesRoundTripTest"; a = @() },
     @{ n = "Integrity (cross-archive refs)"; c = "ctrmap.tests.IntegrityTest";         a = @($pristine) },
     @{ n = "Updater (in-place, lossless)"; c = "ctrmap.tests.UpdaterTest";           a = @() },
