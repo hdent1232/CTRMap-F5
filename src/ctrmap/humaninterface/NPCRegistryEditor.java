@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Map;
 import javax.swing.DefaultListModel;
 import javax.swing.JFormattedTextField;
-import javax.swing.JOptionPane;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.text.NumberFormatter;
 
@@ -131,17 +130,11 @@ public class NPCRegistryEditor extends javax.swing.JFrame {
 			e2.uC = e.uC;
 			e2.u11 = e.u11;
 			if (!e2.equals(e)) {
-				if (dialog) {
-					switch (Utils.showSaveConfirmationDialog("NPC registry")) {
-						case JOptionPane.YES_OPTION:
-							break;
-						case JOptionPane.NO_OPTION:
-							return true;
-						//closing the dialog means cancel, not "apply it anyway"
-						case JOptionPane.CLOSED_OPTION:
-						case JOptionPane.CANCEL_OPTION:
-							return false;
-					}
+				switch (Utils.askToKeep(dialog, "NPC registry")) {
+					case DISCARD:
+						return true;
+					case CANCEL:
+						return false;
 				}
 				model.setElementAt("UID: " + e2.uid + " | Model: " + e2.model, dict.indexOf(e.uid));
 				dict.set(dict.indexOf(e.uid), e2.uid);

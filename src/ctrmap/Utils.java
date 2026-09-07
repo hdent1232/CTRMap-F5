@@ -93,8 +93,41 @@ public class Utils {
 		}
 	}
 
-	public static int showSaveConfirmationDialog(String changeSubject) {
-		return Ui.confirm(null, changeSubject + " has been modified. Do you want to keep the changes?", "Save changes", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+	/** The user's answer to "keep the changes to X?" - see {@link #askToKeep}. */
+	public enum Keep {
+		SAVE, DISCARD, CANCEL
+	}
+
+	/**
+	 * Asks whether the changes to {@code changeSubject} should be kept - or,
+	 * when the caller wants no dialog, answers SAVE without asking.
+	 *
+	 * <p>WHY THIS EXISTS. Eleven store() methods asked this question, and each
+	 * one switched on JOptionPane's integer answer by hand, which meant each
+	 * one had to remember on its own that a CLOSED dialog is a cancel: the X
+	 * button is not consent, and a headless caller - which gets CLOSED by
+	 * definition - must never find its file written. One of them forgot
+	 * (NPCRegistry.store, the case DialogSeamTest proves), its switch ran off
+	 * the end, and closing the dialog saved the registry. The rule is now
+	 * written once, here, and a caller that cannot see JOptionPane cannot
+	 * get it wrong.
+	 */
+	public static Keep askToKeep(boolean dialog, String changeSubject) {
+		if (!dialog) {
+			return Keep.SAVE;
+		}
+		switch (Ui.confirm(null, changeSubject + " has been modified. Do you want to keep the changes?", "Save changes",
+				JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE)) {
+			case JOptionPane.YES_OPTION:
+				return Keep.SAVE;
+			case JOptionPane.NO_OPTION:
+				return Keep.DISCARD;
+			//closing the dialog is cancel, never "write it anyway"
+			case JOptionPane.CLOSED_OPTION:
+			case JOptionPane.CANCEL_OPTION:
+			default:
+				return Keep.CANCEL;
+		}
 	}
 
 	public static float getFloatFromDocument(JFormattedTextField docOwner) {

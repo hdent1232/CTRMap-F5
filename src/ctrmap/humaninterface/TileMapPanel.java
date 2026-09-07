@@ -43,7 +43,6 @@ import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.swing.JOptionPane;
 import javax.swing.SwingWorker;
 
 /**
@@ -264,9 +263,8 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 						continue;
 					}
 					if (tilemaps[j][i].modified) {
-						int result = (dialog) ? Utils.showSaveConfirmationDialog("Region data") : JOptionPane.YES_OPTION;
-						switch (result) {
-							case JOptionPane.YES_OPTION:
+						switch (Utils.askToKeep(dialog, "Region data")) {
+							case SAVE:
 								LoadingDialog progress = LoadingDialog.makeDialog("Saving matrix");
 								SwingWorker worker = new SwingWorker() {
 									@Override
@@ -305,7 +303,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 									return false; //the save failed and done() has said so; leaving now would drop what did not write
 								}
 								return true; //save as normal
-							case JOptionPane.NO_OPTION:
+							case DISCARD:
 								for (int k = 0; k < mm.height; k++) {
 									for (int l = 0; l < mm.width; l++) {
 										if (mm.regions.get(l, k) == null) {
@@ -440,11 +438,10 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 				return saveMatrix(dialog);
 			} else {
 				if (tilemaps[0][0].modified && dialog) {
-					int ret = Utils.showSaveConfirmationDialog("Tilemap");
-					switch (ret) {
-						case JOptionPane.YES_OPTION:
+					switch (Utils.askToKeep(true, "Tilemap")) {
+						case SAVE:
 							mainGR.storeFile(0, tilemaps[0][0].assembleTilemap());
-						case JOptionPane.NO_OPTION:
+						case DISCARD:
 							tilemaps[0][0].modified = false;
 							return true;
 						default:

@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.swing.JOptionPane;
 
 /**
  * Provides access to and manipulation of MoveModel/NPC registry, specified in a
@@ -151,22 +150,16 @@ public class NPCRegistry {
 		if (!modified) {
 			return true;
 		}
-		if (dialog) {
-			int result = Utils.showSaveConfirmationDialog("NPC registry");
-			switch (result) {
-				case JOptionPane.YES_OPTION:
-					break;
-				case JOptionPane.NO_OPTION:
-					modified = false;
-					return true;
-				//closing the dialog is the same as cancelling. Without this
-				//case the switch simply ended and the write below happened, so
-				//the X button meant "save" - and a headless caller, which gets
-				//CLOSED_OPTION by definition, wrote the file with nobody there.
-				case JOptionPane.CLOSED_OPTION:
-				case JOptionPane.CANCEL_OPTION:
-					return false;
-			}
+		//a closed dialog is CANCEL inside askToKeep. This switch used to handle
+		//it by hand and once did not, so the X button meant "save" - and a
+		//headless caller, which gets a closed dialog by definition, wrote the
+		//file with nobody there. DialogSeamTest holds the case.
+		switch (Utils.askToKeep(dialog, "NPC registry")) {
+			case DISCARD:
+				modified = false;
+				return true;
+			case CANCEL:
+				return false;
 		}
 		Workspace.addPersist(f);
 		try {

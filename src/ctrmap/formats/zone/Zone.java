@@ -5,7 +5,6 @@ import ctrmap.Utils;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.ZO;
 import java.util.Arrays;
-import javax.swing.JOptionPane;
 
 /**
  * Zone data container class, incomplete.
@@ -26,22 +25,13 @@ public class Zone {
 		if (!Arrays.equals(headerData, file.getFile(0))){
 			/*System.out.println(Arrays.toString(headerData));
 			System.out.println(Arrays.toString(file.getFile(0)));*/
-			if (dialog){
-				int result = Utils.showSaveConfirmationDialog("Zone header");
-				switch (result){
-					case JOptionPane.YES_OPTION:
-						file.storeFile(0, headerData);
-					case JOptionPane.NO_OPTION:
-						break;
-					//closing the dialog means cancel: the save stops rather
-					//than quietly dropping this piece of it
-					case JOptionPane.CLOSED_OPTION:
-					case JOptionPane.CANCEL_OPTION:
-						return false;
-				}
-			}
-			else {
-				file.storeFile(0, headerData);
+			switch (Utils.askToKeep(dialog, "Zone header")) {
+				case SAVE:
+					file.storeFile(0, headerData);
+					break;
+				//cancel stops the save rather than quietly dropping this piece of it
+				case CANCEL:
+					return false;
 			}
 		}
 		if (entities.modified){
@@ -56,21 +46,12 @@ public class Zone {
 				ctrmap.Ui.error(null, ctrmap.Ui.reason(ex), "Entity data not saved");
 				return false;
 			}
-			if (dialog){
-				int result = Utils.showSaveConfirmationDialog("Entity data");
-				switch (result){
-					case JOptionPane.YES_OPTION:
-						file.storeFile(1, entityData);
-					case JOptionPane.NO_OPTION:
-						break;
-					//closing the dialog means cancel, not "throw the edits away"
-					case JOptionPane.CLOSED_OPTION:
-					case JOptionPane.CANCEL_OPTION:
-						return false;
-				}
-			}
-			else {
-				file.storeFile(1, entityData);
+			switch (Utils.askToKeep(dialog, "Entity data")) {
+				case SAVE:
+					file.storeFile(1, entityData);
+					break;
+				case CANCEL:
+					return false;
 			}
 			entities.modified = false;
 		}
