@@ -88,8 +88,7 @@ public class CtrmapMainframe {
 	/** The World Editor's tool row: the one handle for "pick this tool" and "which view is up". */
 	public static WorldEditorToolbar worldToolbar;
 	public static ctrmap.humaninterface.PaintForm mPaintForm;
-	public static JPanel zoneTabPnl;
-	public static JPanel extrasTabPnl;
+	private static JPanel zoneTabPnl; //showZoneLoadingHint lands the user here
 
 	public static JScrollPane mTilemapScrollPane;
 	public static TileMapPanel mTileMapPanel;
@@ -102,31 +101,24 @@ public class CtrmapMainframe {
 	public static TriggerEditForm mTriggerEditForm;
 	public static GeoEditForm mGeoEditForm;
 
-	public static GLPanel mGLPanel;
 	public static H3DRenderingPanel m3DDebugPanel;
 	public static CollEditPanel mCollEditPanel;
 
-	public static JScrollPane mMtxScrollPane;
 	public static MapMatrixPanel mMtxPanel;
 	public static MatrixEditForm mMtxEditForm;
 
 	public static ZoneLoadingPanel mZonePnl;
 	public static ScriptEditor mScriptPnl;
-	public static ExtrasPanel mExtrasPnl;
 	public static TextEditor mTextEditor;
 	public static Builder mBuilder;
 
 	public static JPanel tileEditMasterPnl;
 	public static JSplitPane jsp;
-	public static JPanel collEditMasterPnl;
-	public static JSplitPane jsp2;
-	public static JPanel mtxEditMasterPnl;
-	public static JSplitPane jsp3;
-
-	public static TilemapPanelInputManager mTilemapInputManager;
-	public static CollInputManager mCollInputManager;
-	public static MatrixPanelInputManager mMtxPnlInputManager;
-	public static CM3DInputManager mCM3DInputManager;
+	//the Collision and Matrix editors' splits, sized by adjustSplitPanes()
+	private static JPanel collEditMasterPnl;
+	private static JSplitPane jsp2;
+	private static JPanel mtxEditMasterPnl;
+	private static JSplitPane jsp3;
 
 	public static AbstractTool tool;
 
@@ -169,7 +161,6 @@ public class CtrmapMainframe {
 		mtxEditMasterPnl = new JPanel(new BorderLayout());
 		mZonePnl = new ZoneLoadingPanel();
 		mScriptPnl = new ScriptEditor();
-		mExtrasPnl = new ExtrasPanel(mZonePnl);
 		mTextEditor = new TextEditor();
 		mBuilder = new Builder();
 
@@ -179,7 +170,7 @@ public class CtrmapMainframe {
 		mTilemapScrollPane = new JScrollPane();
 		mMtxPanel = new MapMatrixPanel();
 		mMtxEditForm = new MatrixEditForm();
-		mMtxScrollPane = new JScrollPane();
+		JScrollPane mtxScroll = new JScrollPane();
 		mCamScrollPane = new JScrollPane();
 		mTileEditForm = new TileEditForm();
 		mPaintForm = new ctrmap.humaninterface.PaintForm();
@@ -190,11 +181,11 @@ public class CtrmapMainframe {
 		mTriggerEditForm = new TriggerEditForm();
 		mGeoEditForm = new GeoEditForm();
 		mCollEditPanel = new CollEditPanel();
-		mGLPanel = new GLPanel(mCollEditPanel);
+		GLPanel glPanel = new GLPanel(mCollEditPanel);
 		m3DDebugPanel = new H3DRenderingPanel(CM3DComponents);
 		jsp = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
 		mTilemapScrollPane.setViewportView(mTileMapPanel);
-		mMtxScrollPane.setViewportView(mMtxPanel);
+		mtxScroll.setViewportView(mMtxPanel);
 		mCamScrollPane.setViewportView(mCamEditForm);
 		mCamScrollPane.setMinimumSize(mCamEditForm.getPreferredSize());
 		mCamScrollPane.setPreferredSize(mCamEditForm.getPreferredSize());
@@ -202,20 +193,22 @@ public class CtrmapMainframe {
 		jsp.setLeftComponent(mTilemapScrollPane);
 		jsp.setRightComponent(mTileEditForm);
 
-		mTilemapInputManager = new TilemapPanelInputManager(mTileMapPanel);
-		mCM3DInputManager = new CM3DInputManager(m3DDebugPanel);
-		mCollInputManager = new CollInputManager(mGLPanel);
-		mMtxPnlInputManager = new MatrixPanelInputManager(mMtxPanel);
+		//each input manager registers itself as its panel's listener; only the
+		//tile map's is needed again, by the tool row
+		TilemapPanelInputManager tilemapInput = new TilemapPanelInputManager(mTileMapPanel);
+		new CM3DInputManager(m3DDebugPanel);
+		new CollInputManager(glPanel);
+		new MatrixPanelInputManager(mMtxPanel);
 
 		jsp2 = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-		jsp2.setLeftComponent(mGLPanel);
+		jsp2.setLeftComponent(glPanel);
 		jsp2.setRightComponent(mCollEditPanel);
 
 		jsp3 = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-		jsp3.setLeftComponent(mMtxScrollPane);
+		jsp3.setLeftComponent(mtxScroll);
 		jsp3.setRightComponent(mMtxEditForm);
 
-		worldToolbar = new WorldEditorToolbar(mTilemapInputManager, CtrmapMainframe::toggleView);
+		worldToolbar = new WorldEditorToolbar(tilemapInput, CtrmapMainframe::toggleView);
 		JPanel toolbarRows = new JPanel(new java.awt.GridLayout(2, 1));
 		toolbarRows.add(worldToolbar);
 		toolbarRows.add(buildMapActionsBar());
@@ -226,50 +219,9 @@ public class CtrmapMainframe {
 
 		mtxEditMasterPnl.add(jsp3);
 
-		//Zone Loader tab = the zone panel + its lifecycle actions ON the tab
-		zoneTabPnl = new JPanel(new BorderLayout());
-		JToolBar zoneOps = new JToolBar();
-		zoneOps.setFloatable(false);
-		zoneOps.add(new JLabel(" Zone actions:  "));
-		javax.swing.JButton zbRename = new javax.swing.JButton("Rename");
-		zbRename.setToolTipText("Rename the loaded zone's in-game location banner.");
-		zbRename.addActionListener(e -> renameZoneAction());
-		javax.swing.JButton zbEmpty = new javax.swing.JButton("Empty");
-		zbEmpty.setToolTipText("Clear the loaded zone's NPCs, warps, triggers and furniture (keeps map + script).");
-		zbEmpty.addActionListener(e -> emptyZoneAction());
-		javax.swing.JButton zbFind = new javax.swing.JButton("Find reusable zones");
-		zbFind.setToolTipText("Scan for unused base zones you can safely repurpose for new areas.");
-		zbFind.addActionListener(e -> findReusableZonesAction());
-		javax.swing.JButton zbRemove = new javax.swing.JButton("Remove added zones");
-		zbRemove.setToolTipText("Delete all added zones (index 536+) and restore the stock ZoneData layout.");
-		zbRemove.addActionListener(e -> removeAddedZonesAction());
-		javax.swing.JButton zbFacility = new javax.swing.JButton("Custom battle facility");
-		zbFacility.setToolTipText("Build a custom battle facility here: INDEPENDENT script-driven battles with your own trainers (vanilla untouched), or clone a retail facility's full engine (shared opponent pools). Tower, dojo, gauntlet - whatever the zone should host.");
-		zbFacility.addActionListener(e -> setupFacilityAction());
-		for (javax.swing.JButton b : new javax.swing.JButton[]{zbRename, zbEmpty, zbFind, zbRemove, zbFacility}) {
-			b.setFocusable(false);
-			zoneOps.add(b);
-		}
-		zoneTabPnl.add(zoneOps, BorderLayout.NORTH);
-		zoneTabPnl.add(mZonePnl, BorderLayout.CENTER);
+		zoneTabPnl = buildZoneTab();
 
-		//Extras tab hosts the seldom-used Builder (raw archive browser)
-		extrasTabPnl = new JPanel(new BorderLayout());
-		JToolBar extrasOps = new JToolBar();
-		extrasOps.setFloatable(false);
-		javax.swing.JButton exBuilder = new javax.swing.JButton("Raw archive browser (Builder)");
-		exBuilder.setToolTipText("Browse raw GARC entries and their subfiles - advanced, rarely needed.");
-		exBuilder.setFocusable(false);
-		exBuilder.addActionListener(e -> {
-			javax.swing.JDialog bd = new javax.swing.JDialog(frame, "Builder - raw archive browser", false);
-			bd.add(mBuilder);
-			bd.setSize(900, 600);
-			bd.setLocationRelativeTo(frame);
-			bd.setVisible(true);
-		});
-		extrasOps.add(exBuilder);
-		extrasTabPnl.add(extrasOps, BorderLayout.NORTH);
-		extrasTabPnl.add(mExtrasPnl, BorderLayout.CENTER);
+		JPanel extrasTabPnl = buildExtrasTab();
 
 		tabs.add("World Editor", tileEditMasterPnl);
 		tabs.add("Collision Editor", collEditMasterPnl);
@@ -501,6 +453,54 @@ public class CtrmapMainframe {
 		b.setFocusable(false);
 		b.addActionListener(e -> action.run());
 		return b;
+	}
+
+	// ---------------------------------------------- the Zone Loader tab
+
+	/** The Zone Loader tab: the zone panel, with its lifecycle actions on a bar above it. */
+	private static JPanel buildZoneTab() {
+		JPanel tab = new JPanel(new BorderLayout());
+		tab.add(buildZoneActionsBar(), BorderLayout.NORTH);
+		tab.add(mZonePnl, BorderLayout.CENTER);
+		return tab;
+	}
+
+	/** The Zone Loader's actions row; the Zone menu repeats these five. */
+	public static JToolBar buildZoneActionsBar() {
+		JToolBar bar = new JToolBar();
+		bar.setFloatable(false);
+		bar.add(new JLabel(" Zone actions:  "));
+		bar.add(barButton("Rename", "Rename the loaded zone's in-game location banner.", CtrmapMainframe::renameZoneAction));
+		bar.add(barButton("Empty", "Clear the loaded zone's NPCs, warps, triggers and furniture (keeps map + script).", CtrmapMainframe::emptyZoneAction));
+		bar.add(barButton("Find reusable zones", "Scan for unused base zones you can safely repurpose for new areas.", CtrmapMainframe::findReusableZonesAction));
+		bar.add(barButton("Remove added zones", "Delete all added zones (index 536+) and restore the stock ZoneData layout.", CtrmapMainframe::removeAddedZonesAction));
+		bar.add(barButton("Custom battle facility", "Build a custom battle facility here: INDEPENDENT script-driven battles with your own trainers (vanilla untouched), or clone a retail facility's full engine (shared opponent pools). Tower, dojo, gauntlet - whatever the zone should host.", CtrmapMainframe::setupFacilityAction));
+		return bar;
+	}
+
+	// --------------------------------------------------- the Extras tab
+
+	/** The Extras tab: the seldom-used tools, with the raw archive browser (Builder) behind a button. */
+	private static JPanel buildExtrasTab() {
+		JPanel tab = new JPanel(new BorderLayout());
+		tab.add(buildExtrasBar(), BorderLayout.NORTH);
+		tab.add(new ExtrasPanel(mZonePnl), BorderLayout.CENTER);
+		return tab;
+	}
+
+	public static JToolBar buildExtrasBar() {
+		JToolBar bar = new JToolBar();
+		bar.setFloatable(false);
+		bar.add(barButton("Raw archive browser (Builder)", "Browse raw GARC entries and their subfiles - advanced, rarely needed.", CtrmapMainframe::showBuilderAction));
+		return bar;
+	}
+
+	private static void showBuilderAction() {
+		javax.swing.JDialog bd = new javax.swing.JDialog(frame, "Builder - raw archive browser", false);
+		bd.add(mBuilder);
+		bd.setSize(900, 600);
+		bd.setLocationRelativeTo(frame);
+		bd.setVisible(true);
 	}
 
 	// ------------------------------------------------------- the 2D/3D view

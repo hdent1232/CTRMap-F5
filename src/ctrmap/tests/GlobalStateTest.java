@@ -84,10 +84,11 @@ public class GlobalStateTest {
 	 * be mutable globals stopped being them (one dead, two private, two final);
 	 * 103 once the main window's 38 menu statics became locals of the one
 	 * builder that makes the menu bar; 88 once its tool row's sixteen became
-	 * one owner, WorldEditorToolbar (MainframeShapeTest ratchets that class
+	 * one owner, WorldEditorToolbar; 75 once the panel plumbing nothing else
+	 * read became locals or private (MainframeShapeTest ratchets that class
 	 * on its own).
 	 */
-	private static final int CEILING = 88;
+	private static final int CEILING = 75;
 
 	private static final int ACC_PUBLIC = 0x0001;
 	private static final int ACC_STATIC = 0x0008;

@@ -45,8 +45,9 @@ import javax.swing.JToolBar;
  *     that asks the window rather than deciding for itself, and the two
  *     things other code asks it for by name (the Set and the Map Builder
  *     tool);</li>
- * <li>the map-actions row: five buttons, one action each, none of which
- *     steals the focus from the map;</li>
+ * <li>the three action rows - the map actions under the tool row, the Zone
+ *     Loader's zone actions, the Extras bar - each button with one action and
+ *     a tooltip, none of which steals the focus;</li>
  * <li>the SHAPE of the window class: no anonymous {@code ActionListener}
  *     (a menu item or button names the method that does its work) and no
  *     preference node named after {@code getClass()} - four anonymous
@@ -93,6 +94,8 @@ public class MainframeShapeTest {
 	private static final String[] TOOL_NAMES = {"Edit", "Set", "Fill", "Camera", "Prop", "NPC", "Warp", "Trigger", "Map Builder", "Geometry"};
 
 	private static final String EXPECTED_MAP_ROW = "label: Map:   button:Blank canvas button:Resize map button:Fog & lighting button:Encounters button:Fork geometry";
+	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
+	private static final String EXPECTED_EXTRAS_ROW = "button:Raw archive browser (Builder)";
 
 	/**
 	 * Public static fields CtrmapMainframe may declare. 91 mutable ones (plus
@@ -100,7 +103,7 @@ public class MainframeShapeTest {
 	 * assigned once inside createAndShowGUI. LOWER this as widgets find
 	 * owners; raising it is the decision this exists to make visible.
 	 */
-	private static final int STATIC_CEILING = 39;
+	private static final int STATIC_CEILING = 26;
 
 	static int fails = 0;
 
@@ -125,7 +128,9 @@ public class MainframeShapeTest {
 		menuWired(bar);
 		menuTooltips(bar);
 		toolRow();
-		mapRow();
+		actionRow("map-actions", CtrmapMainframe.buildMapActionsBar(), EXPECTED_MAP_ROW);
+		actionRow("Zone Loader", CtrmapMainframe.buildZoneActionsBar(), EXPECTED_ZONE_ROW);
+		actionRow("Extras", CtrmapMainframe.buildExtrasBar(), EXPECTED_EXTRAS_ROW);
 		shape(new File(src, "ctrmap/CtrmapMainframe.java"));
 		ceiling();
 
@@ -308,12 +313,12 @@ public class MainframeShapeTest {
 		return sb.toString();
 	}
 
-	// --------------------------------------------------------------- map row
-	static void mapRow() {
-		JToolBar row = CtrmapMainframe.buildMapActionsBar();
+	// ----------------------------------------------------------- action rows
+	/** A row of plain action buttons: what it reads, and that each button does one thing. */
+	static void actionRow(String what, JToolBar row, String expected) {
 		String got = renderRow(row);
-		check(got.equals(EXPECTED_MAP_ROW), "the map-actions row reads: " + EXPECTED_MAP_ROW
-				+ (got.equals(EXPECTED_MAP_ROW) ? "" : "\n        but is: " + got));
+		check(got.equals(expected), "the " + what + " row reads: " + expected
+				+ (got.equals(expected) ? "" : "\n        but is: " + got));
 		List<String> wrong = new ArrayList<>();
 		for (Component c : row.getComponents()) {
 			if (c instanceof AbstractButton) {
@@ -323,9 +328,9 @@ public class MainframeShapeTest {
 				}
 			}
 		}
-		check(wrong.isEmpty(), "each map action has one action, a tooltip, and leaves the focus on the map"
+		check(wrong.isEmpty(), "each " + what + " button has one action, a tooltip, and leaves the focus where it was"
 				+ (wrong.isEmpty() ? "" : " - not: " + wrong));
-		check(!row.isFloatable(), "the map-actions row is not a floating palette");
+		check(!row.isFloatable(), "the " + what + " row is not a floating palette");
 	}
 
 	// ----------------------------------------------------------------- shape
