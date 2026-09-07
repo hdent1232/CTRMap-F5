@@ -741,59 +741,96 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (msg == null || tp.msgLine < 0 || tp.msgLine >= msg.getLineCount()) {
 			return;
 		}
-		JTextArea ta = new JTextArea(msg.getLine(tp.msgLine), 5, 40);
-		ta.setLineWrap(true);
-		ta.setWrapStyleWord(true);
-		int rsl = JOptionPane.showConfirmDialog(frame, new JScrollPane(ta), "Edit dialogue (story text " + zone.header.textID + ", line " + tp.msgLine + ")", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-		if (rsl != JOptionPane.OK_OPTION) {
+		DialogueForm form = new DialogueForm(msg.getLine(tp.msgLine));
+		if (!showForm(form.panel, "Edit dialogue (story text " + zone.header.textID + ", line " + tp.msgLine + ")")) {
 			return;
 		}
-		String text = escapeTypedText(ta.getText());
-		try {
-			GFMessageFile.write(java.util.Arrays.asList(text)); //validate the bracket/escape syntax before touching anything
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
+		DialogueEdit done = editDialogue(zone, npc.script, tp.msgLine, msg, form.text());
+		if (done == DialogueEdit.FAILED) {
 			return;
 		}
-		boolean scriptChanged = false;
-		String previousLine = null;
-		if (TalkerScriptWizard.countTalkersUsingLine(zone.s, tp.msgLine) > 1) {
-			//the line is shared with other talkers - add a new line and re-point this talker only
-			msg.addLine(text);
-			int newLine = msg.getLineCount() - 1;
-			if (!ZoneScriptAnalyzer.patchTalkerLine(zone.s, npc.script, newLine)) {
-				msg.removeLine(newLine);
-				ctrmap.Ui.error(this, "Could not re-point the talker script to line " + newLine + ".", "Script patch error");
-				return;
-			}
-			zone.s.updateRaw();
-			scriptChanged = true;
-		} else {
-			previousLine = msg.getLine(tp.msgLine);
-			msg.setLine(tp.msgLine, text);
-		}
-		if (!storeStoryFile(zone.header.textID, msg)) {
-			if (scriptChanged) {
-				//roll back the re-point so a later zone save cannot ship a script
-				//referencing a line that was never written
-				int addedLine = msg.getLineCount() - 1;
-				ZoneScriptAnalyzer.patchTalkerLine(zone.s, npc.script, tp.msgLine);
-				zone.s.updateRaw();
-				msg.removeLine(addedLine);
-			} else {
-				//roll back the in-place edit so the cache matches disk and a later
-				//store of this text file cannot silently commit the failed edit
-				msg.setLine(tp.msgLine, previousLine);
-			}
-			return;
-		}
-		if (scriptChanged) {
+		if (done == DialogueEdit.REPOINTED) {
 			mZonePnl.store(false); //same path ScriptEditor uses to save the zone script
 			mScriptPnl.loadScript(zone.s);
 			populateScriptDropdown();
 			syncScrDropdown(npc.script);
 		}
 		updateDialogueSection();
+	}
+
+	/** The dialogue editor's form: the line, as it is, to retype. */
+	public static final class DialogueForm {
+
+		public final JScrollPane panel;
+		private final JTextArea text;
+
+		public DialogueForm(String currentLine) {
+			text = textArea(currentLine, 5);
+			panel = new JScrollPane(text);
+		}
+
+		public String text() {
+			return text.getText();
+		}
+	}
+
+	/** What {@link #editDialogue} did. */
+	public enum DialogueEdit {
+		/** Nothing changed, and the user was told why. */
+		FAILED,
+		/** The line was rewritten where it is. */
+		IN_PLACE,
+		/** The line was shared, so a new one was added and this talker re-pointed at it: the script changed. */
+		REPOINTED
+	}
+
+	/**
+	 * The dialogue editor past its form: refuses text that will not encode
+	 * (saying so); rewrites the talker's line in place, or - when other
+	 * talkers share it - adds a new line and re-points scriptId's talker at
+	 * it; stores the story file, rolling either change back when it cannot.
+	 */
+	public DialogueEdit editDialogue(Zone zone, int scriptId, int msgLine, GFMessageFile msg, String typed) {
+		String text = escapeTypedText(typed);
+		try {
+			GFMessageFile.write(java.util.Arrays.asList(text)); //validate the bracket/escape syntax before touching anything
+		} catch (RuntimeException ex) {
+			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
+			return DialogueEdit.FAILED;
+		}
+		boolean scriptChanged = false;
+		String previousLine = null;
+		if (TalkerScriptWizard.countTalkersUsingLine(zone.s, msgLine) > 1) {
+			//the line is shared with other talkers - add a new line and re-point this talker only
+			msg.addLine(text);
+			int newLine = msg.getLineCount() - 1;
+			if (!ZoneScriptAnalyzer.patchTalkerLine(zone.s, scriptId, newLine)) {
+				msg.removeLine(newLine);
+				ctrmap.Ui.error(this, "Could not re-point the talker script to line " + newLine + ".", "Script patch error");
+				return DialogueEdit.FAILED;
+			}
+			zone.s.updateRaw();
+			scriptChanged = true;
+		} else {
+			previousLine = msg.getLine(msgLine);
+			msg.setLine(msgLine, text);
+		}
+		if (!storeStoryFile(zone.header.textID, msg)) {
+			if (scriptChanged) {
+				//roll back the re-point so a later zone save cannot ship a script
+				//referencing a line that was never written
+				int addedLine = msg.getLineCount() - 1;
+				ZoneScriptAnalyzer.patchTalkerLine(zone.s, scriptId, msgLine);
+				zone.s.updateRaw();
+				msg.removeLine(addedLine);
+			} else {
+				//roll back the in-place edit so the cache matches disk and a later
+				//store of this text file cannot silently commit the failed edit
+				msg.setLine(msgLine, previousLine);
+			}
+			return DialogueEdit.FAILED;
+		}
+		return scriptChanged ? DialogueEdit.REPOINTED : DialogueEdit.IN_PLACE;
 	}
 
 	private void btnAddTalkerActionPerformed(java.awt.event.ActionEvent evt) {
@@ -867,42 +904,58 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "Story text file " + zone.header.textID + " could not be read.", "Add talking NPC");
 			return;
 		}
-		JTextArea ta = new JTextArea("", 5, 40);
-		ta.setLineWrap(true);
-		ta.setWrapStyleWord(true);
-		ModelPicker modelPicker = new ModelPicker((npc != null) ? npc.model : -1);
-		JPanel panel = new JPanel();
-		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
-		JLabel textLabel = new JLabel("Dialogue text:");
-		textLabel.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(textLabel);
-		JScrollPane taScroll = new JScrollPane(ta);
-		taScroll.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(taScroll);
-		JLabel modelLabel = new JLabel("Model (type to search) - preview below:");
-		modelLabel.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(modelLabel);
-		modelPicker.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(modelPicker);
-		JLabel hintLabel = new JLabel("<html>The NPC is placed at the centre of the current view.<br>Only registered overworld models are listed.</html>");
-		hintLabel.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(hintLabel);
-		int rsl = JOptionPane.showConfirmDialog(frame, panel, "Add talking NPC", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-		disposePreviews();
-		if (rsl != JOptionPane.OK_OPTION) {
+		TalkerForm form = new TalkerForm((npc != null) ? npc.model : -1);
+		if (!showForm(form.panel, "Add talking NPC")) {
 			return;
 		}
-		int chosenModel = modelPicker.getSelectedUid();
-		if (chosenModel < 0) {
+		if (addTalker(zone, msg, form.text(), form.model(), injectWrapper ? wrapperDonor : null,
+				mTileMapPanel.getTileAtViewportCentre()) != null) {
+			finishNpcAdd(zone, true);
+			repaintFrame();
+		}
+	}
+
+	/** The talking-NPC form: the dialogue text and the model. */
+	public final class TalkerForm {
+
+		public final JPanel panel = stackedForm();
+		private final JTextArea text = textArea("", 5);
+		private final ModelPicker model;
+
+		public TalkerForm(int defaultModel) {
+			model = new ModelPicker(defaultModel);
+			addLabeled(panel, "Dialogue text:", new JScrollPane(text));
+			addLabeled(panel, "Model (type to search) - preview below:", model);
+			panel.add(hint("<html>The NPC is placed at the centre of the current view.<br>Only registered overworld models are listed.</html>"));
+		}
+
+		public String text() {
+			return text.getText();
+		}
+
+		public int model() {
+			return model.getSelectedUid();
+		}
+	}
+
+	/**
+	 * The talking-NPC wizard past its form: refuses a missing model or text
+	 * that will not encode (saying which), else clones the talker script for
+	 * the new story-text line - transplanting the message routine from
+	 * wrapperDonor first when one is given - and places the NPC record at
+	 * pos. Returns the placed record, or null when nothing was added.
+	 */
+	public ZoneEntities.NPC addTalker(Zone zone, GFMessageFile msg, String typed, int model, GFLPawnScript wrapperDonor, Point pos) {
+		if (model < 0) {
 			ctrmap.Ui.error(this, "Select an overworld model first.", "Add talking NPC");
-			return;
+			return null;
 		}
-		String text = escapeTypedText(ta.getText());
+		String text = escapeTypedText(typed);
 		try {
 			GFMessageFile.write(java.util.Arrays.asList(text)); //validate the bracket/escape syntax before touching anything
 		} catch (RuntimeException ex) {
 			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
-			return;
+			return null;
 		}
 		//the whole script edit (injection + talker clone + the new line) lands
 		//whole or not at all - see ZoneScriptEdit
@@ -910,37 +963,17 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		try {
 			ZoneScriptEdit edit = new ZoneScriptEdit(zone, "the talker script")
 					.withText(msg, zone.header.textID, java.util.Arrays.asList(text));
-			if (injectWrapper) {
+			if (wrapperDonor != null) {
 				edit.injectMsgWrapperFrom(wrapperDonor);
 			}
 			newId = edit.apply(TalkerScriptWizard::cloneTalker, this::writeStoryFile);
 		} catch (ZoneScriptEdit.Refused ex) {
 			ctrmap.Ui.error(this, ex.reason(), "Add talking NPC");
-			return;
+			return null;
 		}
-		//add the NPC record at the viewport centre with the new script ID
-		loaded = false;
-		ZoneEntities.NPC newNPC = new ZoneEntities.NPC();
-		int newuid = 0;
-		for (int i = 0; i < e.npcs.size(); i++) {
-			newuid = Math.max(e.npcs.get(i).uid + 1, newuid); //get first free UID but don't pollute free spaces if any
-		}
-		newNPC.uid = newuid;
-		newNPC.model = chosenModel;
-		newNPC.script = newId;
-		Point defaultPos = mTileMapPanel.getTileAtViewportCentre();
-		newNPC.xTile = defaultPos.x;
-		newNPC.yTile = defaultPos.y;
-		e.npcs.add(newNPC);
-		e.NPCCount++;
-		entryBox.addItem(String.valueOf(newNPC.uid));
-		loaded = true;
-		e.modified = true;
-		populateScriptDropdown();
-		setNPC(entryBox.getItemCount() - 1);
-		mZonePnl.store(false); //same path ScriptEditor uses to save the zone script
-		mScriptPnl.loadScript(zone.s);
-		repaintFrame();
+		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, newId, pos.x, pos.y);
+		placeNpc(placed);
+		return placed;
 	}
 
 	/**
@@ -978,47 +1011,72 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "Story text file " + zone.header.textID + " could not be read.", "Add sign");
 			return;
 		}
-		JTextArea ta = new JTextArea("", 5, 40);
-		ta.setLineWrap(true);
-		ta.setWrapStyleWord(true);
-		javax.swing.JComboBox<String> typeBox = new javax.swing.JComboBox<>(NpcTemplates.SIGN_TYPE_LABELS);
-		JPanel panel = new JPanel();
-		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
-		addLabeled(panel, "Sign text:", new JScrollPane(ta));
-		addLabeled(panel, "Sign style:", typeBox);
-		JLabel hint = new JLabel("<html>A sign furniture object is placed at the centre of the current view.<br>Edit its exact tile with the Prop tool.</html>");
-		hint.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(hint);
-		if (JOptionPane.showConfirmDialog(frame, panel, "Add sign", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
+		SignForm form = new SignForm();
+		if (!showForm(form.panel, "Add sign")) {
 			return;
 		}
-		String text = escapeTypedText(ta.getText());
+		if (addSign(zone, msg, form.text(), form.signType(), needsWrapper ? signDonor : null,
+				mTileMapPanel.getTileAtViewportCentre())) {
+			saveZoneScript(zone);
+			repaintFrame();
+		}
+	}
+
+	/** The sign form: the text and the sign style. */
+	public final class SignForm {
+
+		public final JPanel panel = stackedForm();
+		private final JTextArea text = textArea("", 5);
+		private final javax.swing.JComboBox<String> style = new javax.swing.JComboBox<>(NpcTemplates.SIGN_TYPE_LABELS);
+
+		public SignForm() {
+			addLabeled(panel, "Sign text:", new JScrollPane(text));
+			addLabeled(panel, "Sign style:", style);
+			panel.add(hint("<html>A sign furniture object is placed at the centre of the current view.<br>Edit its exact tile with the Prop tool.</html>"));
+		}
+
+		public String text() {
+			return text.getText();
+		}
+
+		/** The engine's sign type for the chosen style - see {@link NpcTemplates#SIGN_TYPES}. */
+		public int signType() {
+			return NpcTemplates.SIGN_TYPES[Math.max(0, style.getSelectedIndex())];
+		}
+	}
+
+	/**
+	 * The sign wizard past its form: refuses text that will not encode
+	 * (saying so), else adds the sign case for the new story-text line -
+	 * transplanting the sign routine from signDonor first when one is given -
+	 * and places the sign furniture at pos, telling the user where. Returns
+	 * false when nothing was added; the caller saves the script.
+	 */
+	public boolean addSign(Zone zone, GFMessageFile msg, String typed, final int signType, GFLPawnScript signDonor, Point pos) {
+		String text = escapeTypedText(typed);
 		try {
 			GFMessageFile.write(java.util.Arrays.asList(text));
 		} catch (RuntimeException ex) {
 			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
-			return;
+			return false;
 		}
-		final int signType = NpcTemplates.SIGN_TYPES[Math.max(0, typeBox.getSelectedIndex())];
 		int caseId;
 		try {
 			ZoneScriptEdit edit = new ZoneScriptEdit(zone, "the sign script")
 					.withText(msg, zone.header.textID, java.util.Arrays.asList(text));
-			if (needsWrapper) {
+			if (signDonor != null) {
 				edit.injectSignWrapperFrom(signDonor);
 			}
 			caseId = edit.apply((work, line) -> NpcTemplates.addSignScript(work, line, signType), this::writeStoryFile);
 		} catch (ZoneScriptEdit.Refused ex) {
 			ctrmap.Ui.error(this, ex.reason(), "Add sign");
-			return;
+			return false;
 		}
-		Point pos = mTileMapPanel.getTileAtViewportCentre();
 		e.furniture.add(NpcTemplates.makeSignFurniture(caseId, pos.x, pos.y));
 		e.furnitureCount = e.furniture.size();
 		e.modified = true;
-		saveZoneScript(zone);
 		ctrmap.Ui.message(this, "Sign added at tile (" + pos.x + ", " + pos.y + "). Adjust its position with the Prop tool.", "Add sign", JOptionPane.INFORMATION_MESSAGE);
-		repaintFrame();
+		return true;
 	}
 
 	/**
@@ -1030,44 +1088,68 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "This zone's script has no give-item routine (120 of 536 vanilla zones have one).\nPick a zone that already gives an item, or use pk3DS to place items differently.", "Add item giver");
 			return;
 		}
-		IdChooser itemChooser = new IdChooser(loadGameTextNames(NpcTemplates.gametextItemNames()), NpcTemplates.ITEM_ID_MAX, 1);
-		JSpinner countSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 99, 1));
-		ModelPicker modelPicker = new ModelPicker(-1);
-		JPanel panel = new JPanel();
-		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
-		addLabeled(panel, "Item (type to search):", itemChooser);
-		addLabeled(panel, "Quantity:", countSpinner);
-		addLabeled(panel, "NPC model (type to search; preview below):", modelPicker);
-		JLabel hint = new JLabel("<html>The NPC is placed at the centre of the view and gives the item<br>each time it is talked to (no one-time flag yet).</html>");
-		hint.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(hint);
-		int giverRsl = JOptionPane.showConfirmDialog(frame, panel, "Add item giver", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-		disposePreviews();
-		if (giverRsl != JOptionPane.OK_OPTION) {
+		GiverForm form = new GiverForm();
+		if (!showForm(form.panel, "Add item giver")) {
 			return;
 		}
-		final int itemId = itemChooser.getId();
+		if (addGiver(zone, form.item(), form.count(), form.model(), mTileMapPanel.getTileAtViewportCentre()) != null) {
+			finishNpcAdd(zone, true);
+		}
+	}
+
+	/** The item-giver form: which item, how many, which model. */
+	public final class GiverForm {
+
+		public final JPanel panel = stackedForm();
+		private final IdChooser item = new IdChooser(loadGameTextNames(NpcTemplates.gametextItemNames()), NpcTemplates.ITEM_ID_MAX, 1);
+		private final JSpinner count = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 99, 1));
+		private final ModelPicker model = new ModelPicker(-1);
+
+		public GiverForm() {
+			addLabeled(panel, "Item (type to search):", item);
+			addLabeled(panel, "Quantity:", count);
+			addLabeled(panel, "NPC model (type to search; preview below):", model);
+			panel.add(hint("<html>The NPC is placed at the centre of the view and gives the item<br>each time it is talked to (no one-time flag yet).</html>"));
+		}
+
+		public int item() {
+			return item.getId();
+		}
+
+		public int count() {
+			return (Integer) count.getValue();
+		}
+
+		public int model() {
+			return model.getSelectedUid();
+		}
+	}
+
+	/**
+	 * The item-giver wizard past its form: refuses a missing item or model
+	 * (saying which), else adds the give-item case and the NPC record at pos.
+	 * Returns the placed record, or null when nothing was added.
+	 */
+	public ZoneEntities.NPC addGiver(Zone zone, final int itemId, final int count, int model, Point pos) {
 		if (itemId < 1) {
 			ctrmap.Ui.error(this, "Select an item first.", "Add item giver");
-			return;
+			return null;
 		}
-		int giverModel = modelPicker.getSelectedUid();
-		if (giverModel < 0) {
+		if (model < 0) {
 			ctrmap.Ui.error(this, "Select an overworld model first.", "Add item giver");
-			return;
+			return null;
 		}
-		final int count = (Integer) countSpinner.getValue();
 		int caseId;
 		try {
 			caseId = new ZoneScriptEdit(zone, "the give-item script")
 					.apply((work, line) -> NpcTemplates.addItemGiverScript(work, itemId, count), this::writeStoryFile);
 		} catch (ZoneScriptEdit.Refused ex) {
 			ctrmap.Ui.error(this, ex.reason(), "Add item giver");
-			return;
+			return null;
 		}
-		Point pos = mTileMapPanel.getTileAtViewportCentre();
-		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), giverModel, caseId, pos.x, pos.y);
-		finishNpcAdd(zone, npc, true);
+		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
+		placeNpc(placed);
+		return placed;
 	}
 
 	/**
@@ -1079,93 +1161,141 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * win, streak reset on a loss. See {@link GauntletScriptWizard}.
 	 */
 	private void addChallengeTemplate(Zone zone) {
-		IdChooser idChooser = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames()), NpcTemplates.TRAINER_ID_MAX, 1);
-		final javax.swing.DefaultListModel<String> listModel = new javax.swing.DefaultListModel<>();
-		final java.util.List<Integer> trainerIds = new java.util.ArrayList<>();
-		final java.util.List<String> trainerNames = loadGameTextNames(NpcTemplates.gametextTrainerNames());
-		javax.swing.JList<String> trainerList = new javax.swing.JList<>(listModel);
-		trainerList.setVisibleRowCount(5);
-		javax.swing.JButton addBtn = new javax.swing.JButton("Add to lineup");
-		javax.swing.JButton removeBtn = new javax.swing.JButton("Remove selected");
-		addBtn.addActionListener(ev -> {
-			int tid = idChooser.getId();
-			if (tid >= 1 && tid <= 949) {
-				trainerIds.add(tid);
-				listModel.addElement("#" + trainerIds.size() + "  " + tid
-						+ (tid < trainerNames.size() && trainerNames.get(tid) != null && !trainerNames.get(tid).isEmpty()
-						? " " + trainerNames.get(tid) : ""));
-			}
-		});
-		removeBtn.addActionListener(ev -> {
-			int i = trainerList.getSelectedIndex();
-			if (i >= 0) {
-				trainerIds.remove(i);
-				listModel.remove(i);
-			}
-		});
-		JSpinner bpSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(3, 0, 999, 1));
-		JSpinner milestoneSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 99, 1));
-		JSpinner bonusSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(20, 0, 9999, 1));
-		javax.swing.JCheckBox whiteoutBox = new javax.swing.JCheckBox("White out on defeat (engine loss handler)");
-		JTextArea introTa = new JTextArea("", 2, 40);
-		JTextArea winTa = new JTextArea("", 2, 40);
-		JTextArea loseTa = new JTextArea("", 2, 40);
-		javax.swing.JTextField workVarField = new javax.swing.JTextField(
-				Integer.toHexString(ctrmap.formats.scripts.GauntletScriptWizard.DEFAULT_STREAK_WORK), 6);
-		ModelPicker modelPicker = new ModelPicker(-1);
-		JPanel panel = new JPanel();
-		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
-		addLabeled(panel, "Lineup (battle 1, 2, ... - the last repeats until a loss):", idChooser);
-		JPanel listBtns = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
-		listBtns.add(addBtn);
-		listBtns.add(removeBtn);
-		listBtns.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(listBtns);
-		JScrollPane listScroll = new JScrollPane(trainerList);
-		listScroll.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(listScroll);
-		addLabeled(panel, "BP per win (0 = none):", bpSpinner);
-		addLabeled(panel, "Bonus at streak (0 = no bonus):", milestoneSpinner);
-		addLabeled(panel, "Bonus BP:", bonusSpinner);
-		addLabeled(panel, "Intro text (empty = none):", new JScrollPane(introTa));
-		addLabeled(panel, "Win text (empty = none):", new JScrollPane(winTa));
-		addLabeled(panel, "Lose text (empty = none):", new JScrollPane(loseTa));
-		addLabeled(panel, "Streak save variable (hex; script-corpus-free default):", workVarField);
-		whiteoutBox.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(whiteoutBox);
-		addLabeled(panel, "NPC model (type to search; preview below):", modelPicker);
-		JLabel hint = new JLabel("<html>The lineup takes ANY trainer entry: retail trainers (Youngsters, Ace Trainers...)<br>"
-				+ "work AS-IS and are not modified by battling them here; for custom competitors,<br>"
-				+ "repurpose a blank-named entry in Game Data -> Trainers (set its class, name and<br>"
-				+ "team there - the class gives it the Youngster/Ace Trainer/... battle identity).<br>"
-				+ "Fully independent of the retail facilities' shared pools - vanilla stays untouched.<br>"
-				+ "Each talk = one battle at the current streak. UNPROVEN IN-GAME - test it first.</html>");
-		hint.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(hint);
-		int rsl = JOptionPane.showConfirmDialog(frame, panel, "Add battle challenge", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-		disposePreviews();
-		if (rsl != JOptionPane.OK_OPTION) {
+		ChallengeForm form = new ChallengeForm();
+		if (!showForm(form.panel, "Add battle challenge")) {
 			return;
 		}
+		if (addChallenge(zone, form.input(), mTileMapPanel.getTileAtViewportCentre()) != null) {
+			finishNpcAdd(zone, true);
+		}
+	}
+
+	/** What the battle-challenge form collects, as values. */
+	public static final class ChallengeInput {
+
+		public final java.util.List<Integer> trainerIds = new java.util.ArrayList<>();
+		public int bpPerWin = 3;
+		public int milestone = 0;
+		public int milestoneBonus = 20;
+		/** The streak save variable as typed: hex, with or without 0x. */
+		public String streakWorkHex = Integer.toHexString(ctrmap.formats.scripts.GauntletScriptWizard.DEFAULT_STREAK_WORK);
+		public boolean loseWhiteout = false;
+		public String intro = "", win = "", lose = "";
+		public int model = -1;
+	}
+
+	/** The battle-challenge form: the lineup, the BP rules, the three texts, the streak variable, the model. */
+	public final class ChallengeForm {
+
+		public final JPanel panel = stackedForm();
+		private final java.util.List<Integer> trainerIds = new java.util.ArrayList<>();
+		private final JSpinner bp = new JSpinner(new javax.swing.SpinnerNumberModel(3, 0, 999, 1));
+		private final JSpinner milestone = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 99, 1));
+		private final JSpinner bonus = new JSpinner(new javax.swing.SpinnerNumberModel(20, 0, 9999, 1));
+		private final javax.swing.JCheckBox whiteout = new javax.swing.JCheckBox("White out on defeat (engine loss handler)");
+		private final JTextArea intro = textArea("", 2);
+		private final JTextArea win = textArea("", 2);
+		private final JTextArea lose = textArea("", 2);
+		private final javax.swing.JTextField workVar = new javax.swing.JTextField(
+				Integer.toHexString(ctrmap.formats.scripts.GauntletScriptWizard.DEFAULT_STREAK_WORK), 6);
+		private final ModelPicker model = new ModelPicker(-1);
+
+		public ChallengeForm() {
+			final IdChooser idChooser = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames()), NpcTemplates.TRAINER_ID_MAX, 1);
+			final javax.swing.DefaultListModel<String> listModel = new javax.swing.DefaultListModel<>();
+			final java.util.List<String> trainerNames = loadGameTextNames(NpcTemplates.gametextTrainerNames());
+			final javax.swing.JList<String> trainerList = new javax.swing.JList<>(listModel);
+			trainerList.setVisibleRowCount(5);
+			javax.swing.JButton addBtn = new javax.swing.JButton("Add to lineup");
+			javax.swing.JButton removeBtn = new javax.swing.JButton("Remove selected");
+			addBtn.addActionListener(ev -> {
+				int tid = idChooser.getId();
+				if (tid >= 1 && tid <= 949) {
+					trainerIds.add(tid);
+					listModel.addElement("#" + trainerIds.size() + "  " + tid
+							+ (trainerNames != null && tid < trainerNames.size() && trainerNames.get(tid) != null && !trainerNames.get(tid).isEmpty()
+							? " " + trainerNames.get(tid) : ""));
+				}
+			});
+			removeBtn.addActionListener(ev -> {
+				int i = trainerList.getSelectedIndex();
+				if (i >= 0) {
+					trainerIds.remove(i);
+					listModel.remove(i);
+				}
+			});
+			addLabeled(panel, "Lineup (battle 1, 2, ... - the last repeats until a loss):", idChooser);
+			JPanel listBtns = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
+			listBtns.add(addBtn);
+			listBtns.add(removeBtn);
+			listBtns.setAlignmentX(LEFT_ALIGNMENT);
+			panel.add(listBtns);
+			JScrollPane listScroll = new JScrollPane(trainerList);
+			listScroll.setAlignmentX(LEFT_ALIGNMENT);
+			panel.add(listScroll);
+			addLabeled(panel, "BP per win (0 = none):", bp);
+			addLabeled(panel, "Bonus at streak (0 = no bonus):", milestone);
+			addLabeled(panel, "Bonus BP:", bonus);
+			addLabeled(panel, "Intro text (empty = none):", new JScrollPane(intro));
+			addLabeled(panel, "Win text (empty = none):", new JScrollPane(win));
+			addLabeled(panel, "Lose text (empty = none):", new JScrollPane(lose));
+			addLabeled(panel, "Streak save variable (hex; script-corpus-free default):", workVar);
+			whiteout.setAlignmentX(LEFT_ALIGNMENT);
+			panel.add(whiteout);
+			addLabeled(panel, "NPC model (type to search; preview below):", model);
+			panel.add(hint("<html>The lineup takes ANY trainer entry: retail trainers (Youngsters, Ace Trainers...)<br>"
+					+ "work AS-IS and are not modified by battling them here; for custom competitors,<br>"
+					+ "repurpose a blank-named entry in Game Data -> Trainers (set its class, name and<br>"
+					+ "team there - the class gives it the Youngster/Ace Trainer/... battle identity).<br>"
+					+ "Fully independent of the retail facilities' shared pools - vanilla stays untouched.<br>"
+					+ "Each talk = one battle at the current streak. UNPROVEN IN-GAME - test it first.</html>"));
+		}
+
+		public ChallengeInput input() {
+			ChallengeInput in = new ChallengeInput();
+			in.trainerIds.addAll(trainerIds);
+			in.bpPerWin = (Integer) bp.getValue();
+			in.milestone = (Integer) milestone.getValue();
+			in.milestoneBonus = (Integer) bonus.getValue();
+			in.streakWorkHex = workVar.getText();
+			in.loseWhiteout = whiteout.isSelected();
+			in.intro = intro.getText();
+			in.win = win.getText();
+			in.lose = lose.getText();
+			in.model = model.getSelectedUid();
+			return in;
+		}
+	}
+
+	/**
+	 * The battle-challenge wizard past its form: refuses an empty lineup, a
+	 * missing model, a streak variable that is not hex, or text that will not
+	 * encode (saying which); asks before transplanting the message routine a
+	 * zone lacks when there is text to show; then adds the challenge case
+	 * (with its lines) and places the NPC record at pos. Returns the placed
+	 * record, or null when nothing was added.
+	 */
+	public ZoneEntities.NPC addChallenge(Zone zone, ChallengeInput in, Point pos) {
+		final java.util.List<Integer> trainerIds = in.trainerIds;
 		if (trainerIds.isEmpty()) {
 			ctrmap.Ui.error(this, "Add at least one trainer to the lineup.", "Add battle challenge");
-			return;
+			return null;
 		}
-		int model = modelPicker.getSelectedUid();
+		int model = in.model;
 		if (model < 0) {
 			ctrmap.Ui.error(this, "Select an overworld model first.", "Add battle challenge");
-			return;
+			return null;
 		}
 		int workVar;
 		try {
-			workVar = Integer.parseInt(workVarField.getText().trim().replace("0x", ""), 16);
+			workVar = Integer.parseInt(in.streakWorkHex.trim().replace("0x", ""), 16);
 		} catch (NumberFormatException ex) {
 			ctrmap.Ui.error(this, "The streak variable must be a hex number (e.g. 4020).", "Add battle challenge");
-			return;
+			return null;
 		}
-		String introText = escapeTypedText(introTa.getText());
-		String winText = escapeTypedText(winTa.getText());
-		String loseText = escapeTypedText(loseTa.getText());
+		String introText = escapeTypedText(in.intro);
+		String winText = escapeTypedText(in.win);
+		String loseText = escapeTypedText(in.lose);
 		boolean needText = !introText.isEmpty() || !winText.isEmpty() || !loseText.isEmpty();
 		java.util.List<String> newLines = new java.util.ArrayList<>();
 		GFMessageFile msg = null;
@@ -1176,18 +1306,18 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 						GFMessageFile.write(java.util.Arrays.asList(t)); //validate before touching anything
 					} catch (RuntimeException ex) {
 						ctrmap.Ui.error(this, "A text could not be encoded:\n" + ex.getMessage(), "Text encode error");
-						return;
+						return null;
 					}
 				}
 			}
 			if (Workspace.getStoryTextGARC() == null) {
 				ctrmap.Ui.error(this, "The STORYTEXT archive was not found in the game directory.", "Add battle challenge");
-				return;
+				return null;
 			}
 			msg = getStoryFile(zone.header.textID);
 			if (msg == null) {
 				ctrmap.Ui.error(this, "Story text file " + zone.header.textID + " could not be read.", "Add battle challenge");
-				return;
+				return null;
 			}
 		}
 		//a zone without the message routine gets it transplanted as part of the
@@ -1198,7 +1328,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				wrapperDonor = loadWrapperDonor();
 			} catch (RuntimeException ex) {
 				ctrmap.Ui.error(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ex.getMessage(), "Add battle challenge");
-				return;
+				return null;
 			}
 			int insCount = MsgWrapperInjector.countInjectedInstructions(zone.s, wrapperDonor);
 			if (ctrmap.Ui.confirm(frame,
@@ -1206,7 +1336,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					+ "Inject one (copied from the game's own code)?\n"
 					+ "This adds " + insCount + " instructions (about 2.4 KB) to the zone script.",
 					"Add battle challenge", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
-				return;
+				return null;
 			}
 		}
 		final ctrmap.formats.scripts.GauntletScriptWizard.Config cfg = new ctrmap.formats.scripts.GauntletScriptWizard.Config();
@@ -1214,11 +1344,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		for (int i = 0; i < trainerIds.size(); i++) {
 			cfg.trainerIds[i] = trainerIds.get(i);
 		}
-		cfg.bpPerWin = (Integer) bpSpinner.getValue();
-		cfg.milestone = (Integer) milestoneSpinner.getValue();
-		cfg.milestoneBonus = (Integer) bonusSpinner.getValue();
+		cfg.bpPerWin = in.bpPerWin;
+		cfg.milestone = in.milestone;
+		cfg.milestoneBonus = in.milestoneBonus;
 		cfg.streakWorkId = workVar;
-		cfg.loseWhiteout = whiteoutBox.isSelected();
+		cfg.loseWhiteout = in.loseWhiteout;
 		ZoneScriptEdit edit = new ZoneScriptEdit(zone, "the challenge script");
 		if (wrapperDonor != null) {
 			edit.injectMsgWrapperFrom(wrapperDonor);
@@ -1245,11 +1375,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					this::writeStoryFile);
 		} catch (ZoneScriptEdit.Refused ex) {
 			ctrmap.Ui.error(this, ex.reason(), "Add battle challenge");
-			return;
+			return null;
 		}
-		Point pos = mTileMapPanel.getTileAtViewportCentre();
-		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
-		finishNpcAdd(zone, npc, true);
+		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
+		placeNpc(placed);
+		return placed;
 	}
 
 	/**
@@ -1260,26 +1390,47 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * and for testing BP-driven shops/facilities.
 	 */
 	private void addGiveBpTemplate(Zone zone) {
-		JSpinner amountSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(20, 1, 9999, 1));
-		ModelPicker modelPicker = new ModelPicker(-1);
-		JPanel panel = new JPanel();
-		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
-		addLabeled(panel, "Battle Points to give:", amountSpinner);
-		addLabeled(panel, "NPC model (type to search; preview below):", modelPicker);
-		JLabel hint = new JLabel("<html>The NPC adds this many BP each time it is talked to (no one-time flag yet;<br>the game caps total BP at 9999). Uses the engine's own BP natives.</html>");
-		hint.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(hint);
-		int rsl = JOptionPane.showConfirmDialog(frame, panel, "Add Give BP", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-		disposePreviews();
-		if (rsl != JOptionPane.OK_OPTION) {
+		GiveBpForm form = new GiveBpForm();
+		if (!showForm(form.panel, "Add Give BP")) {
 			return;
 		}
-		int model = modelPicker.getSelectedUid();
+		if (addGiveBp(zone, form.amount(), form.model(), mTileMapPanel.getTileAtViewportCentre()) != null) {
+			finishNpcAdd(zone, true);
+		}
+	}
+
+	/** The Give-BP form: how many points, and which model. */
+	public final class GiveBpForm {
+
+		public final JPanel panel = stackedForm();
+		private final JSpinner amount = new JSpinner(new javax.swing.SpinnerNumberModel(20, 1, 9999, 1));
+		private final ModelPicker model = new ModelPicker(-1);
+
+		public GiveBpForm() {
+			addLabeled(panel, "Battle Points to give:", amount);
+			addLabeled(panel, "NPC model (type to search; preview below):", model);
+			panel.add(hint("<html>The NPC adds this many BP each time it is talked to (no one-time flag yet;<br>the game caps total BP at 9999). Uses the engine's own BP natives.</html>"));
+		}
+
+		public int amount() {
+			return (Integer) amount.getValue();
+		}
+
+		public int model() {
+			return model.getSelectedUid();
+		}
+	}
+
+	/**
+	 * The Give-BP wizard past its form: refuses a missing model (saying so),
+	 * else adds the script case and the NPC record at pos. Returns the placed
+	 * record, or null when nothing was added.
+	 */
+	public ZoneEntities.NPC addGiveBp(Zone zone, final int amount, int model, Point pos) {
 		if (model < 0) {
 			ctrmap.Ui.error(this, "Select an overworld model first.", "Add Give BP");
-			return;
+			return null;
 		}
-		final int amount = (Integer) amountSpinner.getValue();
 		int caseId;
 		try {
 			caseId = new ZoneScriptEdit(zone, "the Give BP script")
@@ -1287,11 +1438,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 							this::writeStoryFile);
 		} catch (ZoneScriptEdit.Refused ex) {
 			ctrmap.Ui.error(this, ex.reason(), "Add Give BP");
-			return;
+			return null;
 		}
-		Point pos = mTileMapPanel.getTileAtViewportCentre();
-		ZoneEntities.NPC npc = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
-		finishNpcAdd(zone, npc, true);
+		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
+		placeNpc(placed);
+		return placed;
 	}
 
 	/**
@@ -1299,60 +1450,94 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * optional double-battle partner. No script surgery.
 	 */
 	private void addTrainerTemplate(Zone zone) {
-		IdChooser idChooser = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames()), NpcTemplates.TRAINER_ID_MAX, 1);
-		ModelPicker modelPicker = new ModelPicker(-1);
-		JSpinner sightSpinner = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 8, 1));
-		javax.swing.JComboBox<String> faceBox = new javax.swing.JComboBox<>(new String[]{"Down", "Up", "Left", "Right"});
-		javax.swing.JCheckBox pairBox = new javax.swing.JCheckBox("Add double-battle partner (script 5000 + ID) beside it");
-		JPanel panel = new JPanel();
-		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
-		addLabeled(panel, "Trainer (type to search; edit party/class in pk3DS):", idChooser);
-		addLabeled(panel, "NPC model (type to search; preview below):", modelPicker);
-		addLabeled(panel, "Sight range (0 = battle on talk only):", sightSpinner);
-		addLabeled(panel, "Facing:", faceBox);
-		pairBox.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(pairBox);
-		JLabel hint = new JLabel("<html>Places the overworld trainer NPC only. The battle exists only if<br>trainer data slot ID is valid (set it in pk3DS).</html>");
-		hint.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(hint);
-		int trainerRsl = JOptionPane.showConfirmDialog(frame, panel, "Add trainer", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-		disposePreviews();
-		if (trainerRsl != JOptionPane.OK_OPTION) {
+		TrainerForm form = new TrainerForm();
+		if (!showForm(form.panel, "Add trainer")) {
 			return;
 		}
-		int tid = idChooser.getId();
-		if (tid < 1) {
-			ctrmap.Ui.error(this, "Select a trainer first.", "Add trainer");
-			return;
+		if (addTrainer(zone, form.trainer(), form.model(), form.sight(), form.facing(), form.pair(),
+				mTileMapPanel.getTileAtViewportCentre()) > 0) {
+			finishNpcAdd(zone, false);
+			repaintFrame();
 		}
-		int model = modelPicker.getSelectedUid();
-		if (model < 0) {
-			ctrmap.Ui.error(this, "Select an overworld model first.", "Add trainer");
-			return;
+	}
+
+	/** The trainer form: which trainer, model, sight range, facing, and whether a double-battle partner comes too. */
+	public final class TrainerForm {
+
+		public final JPanel panel = stackedForm();
+		private final IdChooser trainer = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames()), NpcTemplates.TRAINER_ID_MAX, 1);
+		private final ModelPicker model = new ModelPicker(-1);
+		private final JSpinner sight = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 8, 1));
+		private final javax.swing.JComboBox<String> facing = new javax.swing.JComboBox<>(new String[]{"Down", "Up", "Left", "Right"});
+		private final javax.swing.JCheckBox pair = new javax.swing.JCheckBox("Add double-battle partner (script 5000 + ID) beside it");
+
+		public TrainerForm() {
+			addLabeled(panel, "Trainer (type to search; edit party/class in pk3DS):", trainer);
+			addLabeled(panel, "NPC model (type to search; preview below):", model);
+			addLabeled(panel, "Sight range (0 = battle on talk only):", sight);
+			addLabeled(panel, "Facing:", facing);
+			pair.setAlignmentX(LEFT_ALIGNMENT);
+			panel.add(pair);
+			panel.add(hint("<html>Places the overworld trainer NPC only. The battle exists only if<br>trainer data slot ID is valid (set it in pk3DS).</html>"));
 		}
-		int sight = (Integer) sightSpinner.getValue();
-		int face = Math.max(0, faceBox.getSelectedIndex());
-		Point pos = mTileMapPanel.getTileAtViewportCentre();
-		try {
-			ZoneEntities.NPC trainer = NpcTemplates.makeTrainerNpc(NpcTemplates.nextFreeUid(e), tid, model, sight, face, pos.x, pos.y);
-			finishNpcAdd(zone, trainer, false);
-			if (pairBox.isSelected()) {
-				ZoneEntities.NPC pair = NpcTemplates.makeTrainerPairNpc(NpcTemplates.nextFreeUid(e), tid, model, sight, face, pos.x + 1, pos.y);
-				finishNpcAdd(zone, pair, false);
-			}
-		} catch (RuntimeException ex) {
-			ctrmap.Ui.error(this, "Could not add the trainer:\n" + ex.getMessage(), "Add trainer");
-			return;
+
+		public int trainer() {
+			return trainer.getId();
 		}
-		repaintFrame();
+
+		public int model() {
+			return model.getSelectedUid();
+		}
+
+		public int sight() {
+			return (Integer) sight.getValue();
+		}
+
+		/** 0=down 1=up 2=left 3=right. */
+		public int facing() {
+			return Math.max(0, facing.getSelectedIndex());
+		}
+
+		public boolean pair() {
+			return pair.isSelected();
+		}
 	}
 
 	/**
-	 * Adds a scripted NPC record to the loaded zone, updates the list/model
-	 * state exactly like the talker flow, and saves. When saveScript is true the
-	 * zone script was changed and is persisted too.
+	 * The trainer wizard past its form: refuses a missing trainer or model
+	 * (saying so), else places the trainer record at pos - and its
+	 * double-battle partner one tile right when asked. Returns how many
+	 * records were placed, 0 when refused; the caller saves the zone.
 	 */
-	private void finishNpcAdd(Zone zone, ZoneEntities.NPC newNPC, boolean saveScript) {
+	public int addTrainer(Zone zone, int tid, int model, int sight, int face, boolean pair, Point pos) {
+		if (tid < 1) {
+			ctrmap.Ui.error(this, "Select a trainer first.", "Add trainer");
+			return 0;
+		}
+		if (model < 0) {
+			ctrmap.Ui.error(this, "Select an overworld model first.", "Add trainer");
+			return 0;
+		}
+		int placed = 0;
+		try {
+			placeNpc(NpcTemplates.makeTrainerNpc(NpcTemplates.nextFreeUid(e), tid, model, sight, face, pos.x, pos.y));
+			placed++;
+			if (pair) {
+				placeNpc(NpcTemplates.makeTrainerPairNpc(NpcTemplates.nextFreeUid(e), tid, model, sight, face, pos.x + 1, pos.y));
+				placed++;
+			}
+		} catch (RuntimeException ex) {
+			ctrmap.Ui.error(this, "Could not add the trainer:\n" + ex.getMessage(), "Add trainer");
+		}
+		return placed;
+	}
+
+	/**
+	 * Adds an NPC record to the loaded zone and shows it in this form - the
+	 * part of every Add that needs no window, so the {@code add*} methods can
+	 * do it and a suite can watch the record land.
+	 */
+	private void placeNpc(ZoneEntities.NPC newNPC) {
 		loaded = false;
 		e.npcs.add(newNPC);
 		e.NPCCount = e.npcs.size();
@@ -1361,6 +1546,13 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		e.modified = true;
 		populateScriptDropdown();
 		setNPC(entryBox.getItemCount() - 1);
+	}
+
+	/**
+	 * Saves what an Add placed, through the main window's panels. When
+	 * saveScript is true the zone script was changed and is persisted too.
+	 */
+	private void finishNpcAdd(Zone zone, boolean saveScript) {
 		if (saveScript) {
 			saveZoneScript(zone);
 		} else {
@@ -1508,12 +1700,53 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		return wrap;
 	}
 
-	/** Stops the render loops of any preview widgets from a just-closed dialog. */
-	private void disposePreviews() {
+	/**
+	 * Stops the render loops of any preview widgets from a just-closed dialog.
+	 * Public because a form's model picker starts its preview's animator the
+	 * moment it is built, and that thread is not a daemon: a suite that builds
+	 * a form without showing it must call this, or its JVM never exits.
+	 */
+	public void disposePreviews() {
 		for (CustomH3DPreview p : activePreviews) {
 			p.stop();
 		}
 		activePreviews.clear();
+	}
+
+	/**
+	 * Shows a wizard's form and waits for OK. The ONE place this form opens a
+	 * dialog with a live component in it, which is why it is not a
+	 * {@link ctrmap.Ui} call: the seam carries a String on purpose, and a
+	 * recording of "JPanel[...]" would assert nothing. What a suite can do
+	 * instead is everything around this call - build the same form
+	 * ({@code new TalkerForm(...)} and the others), read its defaults, and
+	 * hand its values to the {@code add*} method the handler hands them to.
+	 * DialogSeamTest counts this call, and only this one, for this file.
+	 */
+	private boolean showForm(javax.swing.JComponent body, String title) {
+		int rsl = JOptionPane.showConfirmDialog(frame, body, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+		disposePreviews();
+		return rsl == JOptionPane.OK_OPTION;
+	}
+
+	/** A form's widgets stacked top to bottom, each behind its label. */
+	private JPanel stackedForm() {
+		JPanel panel = new JPanel();
+		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
+		return panel;
+	}
+
+	private static JLabel hint(String html) {
+		JLabel hint = new JLabel(html);
+		hint.setAlignmentX(LEFT_ALIGNMENT);
+		return hint;
+	}
+
+	private static JTextArea textArea(String text, int rows) {
+		JTextArea ta = new JTextArea(text, rows, 40);
+		ta.setLineWrap(true);
+		ta.setWrapStyleWord(true);
+		return ta;
 	}
 
 	/**
