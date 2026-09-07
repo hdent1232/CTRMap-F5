@@ -101,9 +101,6 @@ public class ZoneRepurposeScanner {
 
 	private static String safeName(int parentMap) {
 		try {
-			if (LocationNames.textfile == null) {
-				LocationNames.loadFromGarc();
-			}
 			String n = LocationNames.getLocName(parentMap);
 			return n == null ? "" : n;
 		} catch (RuntimeException ex) {

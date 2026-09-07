@@ -2,7 +2,6 @@ package ctrmap.tests;
 
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.scripts.GFLPawnScript;
-import ctrmap.formats.scripts.PawnInstruction;
 import ctrmap.formats.scripts.ZoneScriptAnalyzer;
 import ctrmap.scripts.GfHash;
 import java.io.File;
@@ -44,7 +43,6 @@ public class FacilitySourceTest {
 			}
 			GFLPawnScript s = new GFLPawnScript(s2);
 			s.decompressThis();
-			PawnInstruction.nativeResolver = s;
 			if (ZoneScriptAnalyzer.findDispatch(s) == null) {
 				System.out.println("FAIL " + label + ": no dispatch");
 				return 1;
@@ -64,7 +62,6 @@ public class FacilitySourceTest {
 			// script round-trips
 			GFLPawnScript re = new GFLPawnScript(s.getScriptBytes());
 			re.decompressThis();
-			PawnInstruction.nativeResolver = re;
 			if (ZoneScriptAnalyzer.findDispatch(re) == null) {
 				System.out.println("FAIL " + label + ": dispatch lost on round-trip");
 				missing++;
@@ -73,7 +70,6 @@ public class FacilitySourceTest {
 			System.out.println(label + " (zone " + zone + "): dispatch OK, " + cases + " cases, "
 					+ s.natives.size() + " natives, facility natives "
 					+ (missing == 0 ? "present" : "MISSING"));
-			PawnInstruction.nativeResolver = null;
 			return missing;
 		} catch (Exception ex) {
 			System.out.println("FAIL " + label + ": " + ex);

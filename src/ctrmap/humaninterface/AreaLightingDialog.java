@@ -43,11 +43,12 @@ public class AreaLightingDialog {
 		}
 		//this zone's atmosphere must be ITS OWN: an area shared with other zones
 		//gets forked first, so the edit cannot leak into them
-		final int areaId = AreaForkPrompt.ensurePrivate(parent, mZonePnl.zoneIndex,
+		final ctrmap.AreaForker.ForkResult fork = AreaForkPrompt.ensurePrivate(parent, mZonePnl.zoneIndex,
 				mZonePnl.zone.header.areadataID, "changing the fog and lighting");
-		if (areaId < 0) {
+		if (fork == null) {
 			return;
 		}
+		final int areaId = fork.newArea;
 		final File areaFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areaId);
 		final AD ad;
 		final byte[] sub4;
@@ -77,7 +78,7 @@ public class AreaLightingDialog {
 				ad.storeFile(4, sub4);
 				Workspace.addPersist(areaFile);
 				ctrmap.CtrmapMainframe.refreshSceneFog();
-				AreaForkPrompt.packIfForked(null);
+				AreaForkPrompt.packIfForked(fork, null);
 				ctrmap.Ui.message(parent,
 						"Atmosphere applied. Deploy to see it in-game - the 3D view already shows it.",
 						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
@@ -177,7 +178,7 @@ public class AreaLightingDialog {
 				ad.storeFile(4, sub4);
 				Workspace.addPersist(areaFile);
 				ctrmap.CtrmapMainframe.refreshSceneFog();
-				AreaForkPrompt.packIfForked(null);
+				AreaForkPrompt.packIfForked(fork, null);
 				dlg.dispose();
 				ctrmap.Ui.message(parent,
 						"Fog & lighting saved. Deploy to see it in-game - the 3D view already shows it.",
