@@ -3,6 +3,7 @@ package ctrmap.formats.dressup;
 import ctrmap.formats.garc.GARC;
 import java.util.ArrayList;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Finds the dress-up index sets inside a player-parts GARC and resolves the
@@ -145,16 +146,11 @@ public class DressUpArchive {
 		if (d.length < 16 || d[0] != 'B' || d[1] != 'C' || d[2] != 'H' || d[3] != 0) {
 			return 0;
 		}
-		int contentHeader = u32(d, 8);
+		int contentHeader = i32(d, 8);
 		if (contentHeader < 0 || contentHeader + 8 > d.length) {
 			return 0;
 		}
-		int count = u32(d, contentHeader + 4);
+		int count = i32(d, contentHeader + 4);
 		return (count < 0 || count > 0xFFFF) ? 0 : count;
-	}
-
-	private static int u32(byte[] b, int p) {
-		return (b[p] & 0xFF) | ((b[p + 1] & 0xFF) << 8)
-				| ((b[p + 2] & 0xFF) << 16) | ((b[p + 3] & 0xFF) << 24);
 	}
 }

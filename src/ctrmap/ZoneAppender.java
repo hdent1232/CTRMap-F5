@@ -11,6 +11,8 @@ import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.putI32;
 
 /**
  * EXPERIMENTAL: appends a brand-new zone slot to the end of the ZoneData GARC
@@ -251,7 +253,7 @@ public class ZoneAppender {
 		}
 		int prev = -1;
 		for (int i = 0; i <= count; i++) {
-			int off = readIntLE(en, 4 + i * 4);
+			int off = i32(en, 4 + i * 4);
 			if (i == 0 && off != tableEnd) {
 				throw new IllegalArgumentException("EN pack first offset 0x" + Integer.toHexString(off) + " != table end 0x" + Integer.toHexString(tableEnd) + ".");
 			}
@@ -291,7 +293,7 @@ public class ZoneAppender {
 		int count = (en[2] & 0xFF) | ((en[3] & 0xFF) << 8);
 		int[] offs = new int[count + 1];
 		for (int i = 0; i <= count; i++) {
-			offs[i] = readIntLE(en, 4 + i * 4);
+			offs[i] = i32(en, 4 + i * 4);
 		}
 		int newCount = count + appendCount;
 		int tableEnd = 4 + (newCount + 1) * 4;
@@ -303,10 +305,10 @@ public class ZoneAppender {
 		out[3] = (byte) (newCount >> 8);
 		int shift = tableEnd - offs[0];
 		for (int i = 0; i <= count; i++) {
-			writeIntLE(out, 4 + i * 4, offs[i] + shift);
+			putI32(out, 4 + i * 4, offs[i] + shift);
 		}
 		for (int j = 1; j <= appendCount; j++) {
-			writeIntLE(out, 4 + (count + j) * 4, offs[count] + shift); //empty blob -> points at data end
+			putI32(out, 4 + (count + j) * 4, offs[count] + shift); //empty blob -> points at data end
 		}
 		System.arraycopy(en, offs[0], out, tableEnd, dataLen);
 		return out;
@@ -368,17 +370,6 @@ public class ZoneAppender {
 		}
 		p.en = rebuildENMulti(en, oldCount, addCount);
 		return p;
-	}
-
-	private static int readIntLE(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
-	}
-
-	private static void writeIntLE(byte[] b, int off, int value) {
-		b[off] = (byte) (value & 0xFF);
-		b[off + 1] = (byte) ((value >> 8) & 0xFF);
-		b[off + 2] = (byte) ((value >> 16) & 0xFF);
-		b[off + 3] = (byte) ((value >> 24) & 0xFF);
 	}
 
 	private static byte[] readAll(File f) throws IOException {

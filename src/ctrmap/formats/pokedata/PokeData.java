@@ -8,6 +8,7 @@ import java.awt.Color;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Read-only Pokemon reference data for the editor previews: base stats, types
@@ -220,9 +221,5 @@ public class PokeData {
 			return arr[id];
 		}
 		return "#" + id;
-	}
-
-	private static int i32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

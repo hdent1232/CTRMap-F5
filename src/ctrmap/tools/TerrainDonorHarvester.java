@@ -10,6 +10,8 @@ import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Mines a DONOR MATERIAL for every terrain brush, so the Map Builder can paint
@@ -57,7 +59,7 @@ public class TerrainDonorHarvester {
 				byte[] hdr = sub(c, 0);
 				int area = u16(hdr, 2), matrix = u16(hdr, 4);
 				byte[] mat = mm.getDecompressedEntry(matrix);
-				int sub0 = le32(mat, 4);
+				int sub0 = i32(mat, 4);
 				int w = u16(mat, sub0 + 4), h = u16(mat, sub0 + 6);
 				for (int k = 0; k < w * h; k++) {
 					int id = u16(mat, sub0 + 8 + k * 2);
@@ -258,18 +260,10 @@ public class TerrainDonorHarvester {
 		if (i >= count) {
 			return null;
 		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
+		int o0 = i32(c, 4 + i * 4), o1 = i32(c, 4 + (i + 1) * 4);
 		if (o0 < 0 || o1 > c.length || o1 < o0) {
 			return null;
 		}
 		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

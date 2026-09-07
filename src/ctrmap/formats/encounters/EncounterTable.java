@@ -2,6 +2,7 @@ package ctrmap.formats.encounters;
 
 import java.util.ArrayList;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * One zone's wild-encounter table - the 260-byte record inside the ORAS "EN"
@@ -196,10 +197,6 @@ public class EncounterTable {
 		}
 		p32(out, 4 + count * 4, off);
 		return out;
-	}
-
-	private static int i32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 
 	private static void p32(byte[] b, int o, int v) {

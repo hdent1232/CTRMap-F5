@@ -4,6 +4,11 @@ import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.u32;
+import static ctrmap.formats.LittleEndian.putU16;
+import static ctrmap.formats.LittleEndian.putI32;
 
 /**
  * Gen 6/7 GameFreak text file codec (read AND write), ported from pk3DS' TextFile.cs.
@@ -124,11 +129,11 @@ public class GFMessageFile {
 	}
 
 	private static List<Integer> readLineExtras(byte[] data) {
-		int lineCount = readU16(data, 0x02);
-		int sdo = (int) readU32(data, 0x0C);
+		int lineCount = u16(data, 0x02);
+		int sdo = (int) u32(data, 0x0C);
 		List<Integer> extras = new ArrayList<>(lineCount);
 		for (int i = 0; i < lineCount; i++) {
-			extras.add(readU16(data, sdo + 10 + i * 8));
+			extras.add(u16(data, sdo + 10 + i * 8));
 		}
 		return extras;
 	}
@@ -139,11 +144,11 @@ public class GFMessageFile {
 	 * the padding means an untouched file re-writes to identical bytes.
 	 */
 	private static List<Integer> readLinePads(byte[] data, List<String> parsedLines, boolean remapChars) {
-		int lineCount = readU16(data, 0x02);
-		int sdo = (int) readU32(data, 0x0C);
+		int lineCount = u16(data, 0x02);
+		int sdo = (int) u32(data, 0x0C);
 		List<Integer> pads = new ArrayList<>(lineCount);
 		for (int i = 0; i < lineCount; i++) {
-			int length = readU16(data, sdo + 8 + i * 8);
+			int length = u16(data, sdo + 8 + i * 8);
 			int pad = 0;
 			try {
 				//the canonical encoding ends at the terminator; anything the file declares beyond
@@ -166,11 +171,11 @@ public class GFMessageFile {
 		if (data == null || data.length < 0x14) {
 			throw new IllegalArgumentException("Invalid Text File");
 		}
-		int textSections = readU16(data, 0x00);
-		int lineCount = readU16(data, 0x02);
-		long totalLength = readU32(data, 0x04);
-		long initialKey = readU32(data, 0x08);
-		long sectionDataOffset = readU32(data, 0x0C);
+		int textSections = u16(data, 0x00);
+		int lineCount = u16(data, 0x02);
+		long totalLength = u32(data, 0x04);
+		long initialKey = u32(data, 0x08);
+		long sectionDataOffset = u32(data, 0x0C);
 		if (initialKey != 0) {
 			throw new IllegalArgumentException("Invalid initial key! Not 0?");
 		}
@@ -178,15 +183,15 @@ public class GFMessageFile {
 			throw new IllegalArgumentException("Invalid Text File");
 		}
 		int sdo = (int) sectionDataOffset;
-		long sectionLength = readU32(data, sdo);
+		long sectionLength = u32(data, sdo);
 		if (sectionLength != totalLength) {
 			throw new IllegalArgumentException("Section size and overall size do not match.");
 		}
 		List<String> lines = new ArrayList<>();
 		int key = KEY_BASE;
 		for (int i = 0; i < lineCount; i++) {
-			int offset = readS32(data, sdo + 4 + i * 8) + sdo;
-			int length = readU16(data, sdo + 8 + i * 8); //u16 read, the two bytes after it are always 0
+			int offset = i32(data, sdo + 4 + i * 8) + sdo;
+			int length = u16(data, sdo + 8 + i * 8); //u16 read, the two bytes after it are always 0
 			if (offset < sdo || offset + length * 2 > data.length) {
 				throw new IllegalArgumentException("Line data out of bounds");
 			}
@@ -253,17 +258,17 @@ public class GFMessageFile {
 		}
 		int total = 0x10 + 4 + 8 * n + bytesUsed;
 		byte[] out = new byte[total];
-		writeU16(out, 0x00, 1); //textSections
-		writeU16(out, 0x02, n); //lineCount
-		writeS32(out, 0x04, total - 0x10); //totalLength
-		writeS32(out, 0x08, 0); //initialKey
-		writeS32(out, 0x0C, 0x10); //sectionDataOffset
-		writeS32(out, 0x10, total - 0x10); //sectionLength
+		putU16(out, 0x00, 1); //textSections
+		putU16(out, 0x02, n); //lineCount
+		putI32(out, 0x04, total - 0x10); //totalLength
+		putI32(out, 0x08, 0); //initialKey
+		putI32(out, 0x0C, 0x10); //sectionDataOffset
+		putI32(out, 0x10, total - 0x10); //sectionLength
 		int rel = 4 + 8 * n;
 		for (int i = 0; i < n; i++) {
-			writeS32(out, 0x10 + 4 + i * 8, rel);
-			writeU16(out, 0x10 + 8 + i * 8, lengths[i]);
-			writeU16(out, 0x10 + 10 + i * 8, (lineExtras == null || i >= lineExtras.length) ? 0 : lineExtras[i]);
+			putI32(out, 0x10 + 4 + i * 8, rel);
+			putU16(out, 0x10 + 8 + i * 8, lengths[i]);
+			putU16(out, 0x10 + 10 + i * 8, (lineExtras == null || i >= lineExtras.length) ? 0 : lineExtras[i]);
 			System.arraycopy(enc[i], 0, out, 0x10 + rel, enc[i].length);
 			rel += enc[i].length;
 		}
@@ -286,7 +291,7 @@ public class GFMessageFile {
 		StringBuilder s = new StringBuilder();
 		int[] i = new int[]{0};
 		while (i[0] + 1 < data.length) {
-			int val = readU16(data, i[0]);
+			int val = u16(data, i[0]);
 			if (val == KEY_TERMINATOR) {
 				break;
 			}
@@ -314,9 +319,9 @@ public class GFMessageFile {
 
 	private static String getVariableString(byte[] data, int[] i) {
 		StringBuilder s = new StringBuilder();
-		int count = readU16(data, i[0]);
+		int count = u16(data, i[0]);
 		i[0] += 2;
-		int variable = readU16(data, i[0]);
+		int variable = u16(data, i[0]);
 		i[0] += 2;
 		switch (variable) {
 			case KEY_TEXTRETURN: //wait for button, then scroll
@@ -324,12 +329,12 @@ public class GFMessageFile {
 			case KEY_TEXTCLEAR: //wait for button, then clear
 				return "\\c";
 			case KEY_TEXTWAIT: {
-				int time = readU16(data, i[0]);
+				int time = u16(data, i[0]);
 				i[0] += 2;
 				return "[WAIT " + time + "]";
 			}
 			case KEY_TEXTNULL: {
-				int line = readU16(data, i[0]);
+				int line = u16(data, i[0]);
 				i[0] += 2;
 				return "[~ " + line + "]";
 			}
@@ -342,7 +347,7 @@ public class GFMessageFile {
 		if (count > 1) {
 			s.append('(');
 			while (count > 1) {
-				int arg = readU16(data, i[0]);
+				int arg = u16(data, i[0]);
 				i[0] += 2;
 				s.append(String.format("%04X", arg));
 				if (--count == 1) {
@@ -541,30 +546,6 @@ public class GFMessageFile {
 			throw new NumberFormatException("Value out of u16 range: " + s);
 		}
 		return v;
-	}
-
-	private static int readU16(byte[] data, int off) {
-		return (data[off] & 0xFF) | ((data[off + 1] & 0xFF) << 8);
-	}
-
-	private static int readS32(byte[] data, int off) {
-		return (data[off] & 0xFF) | ((data[off + 1] & 0xFF) << 8) | ((data[off + 2] & 0xFF) << 16) | ((data[off + 3] & 0xFF) << 24);
-	}
-
-	private static long readU32(byte[] data, int off) {
-		return readS32(data, off) & 0xFFFFFFFFL;
-	}
-
-	private static void writeU16(byte[] data, int off, int val) {
-		data[off] = (byte) (val & 0xFF);
-		data[off + 1] = (byte) ((val >>> 8) & 0xFF);
-	}
-
-	private static void writeS32(byte[] data, int off, int val) {
-		data[off] = (byte) (val & 0xFF);
-		data[off + 1] = (byte) ((val >>> 8) & 0xFF);
-		data[off + 2] = (byte) ((val >>> 16) & 0xFF);
-		data[off + 3] = (byte) ((val >>> 24) & 0xFF);
 	}
 
 	private static void writeU16(ByteArrayOutputStream out, int val) {

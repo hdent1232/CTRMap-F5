@@ -8,6 +8,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Removes ADDED zones (index &gt;= 536), restoring the stock ZoneData layout:
@@ -83,7 +84,7 @@ public class ZoneRemover {
 				if (cnt < 2) {
 					continue;
 				}
-				int o0 = le32(z, 4 + 4), o1 = le32(z, 4 + 2 * 4);
+				int o0 = i32(z, 4 + 4), o1 = i32(z, 4 + 2 * 4);
 				if (o0 < 0 || o1 > z.length || o1 <= o0) {
 					continue;
 				}
@@ -99,9 +100,5 @@ public class ZoneRemover {
 			}
 		}
 		return out;
-	}
-
-	private static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

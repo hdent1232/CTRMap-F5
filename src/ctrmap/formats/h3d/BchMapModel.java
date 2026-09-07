@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import ctrmap.formats.LittleEndian;
 
 /**
  * Lossless structural reader for ORAS FieldData map-model BCH files (the visual
@@ -86,11 +87,11 @@ public class BchMapModel {
 		if ((b[4] & 0xFF) != 0x21) {
 			return false;
 		}
-		int contentsAddr = le32(b, 8);
+		int contentsAddr = LittleEndian.i32(b, 8);
 		if (contentsAddr != 0x44 || contentsAddr + 15 * 12 > b.length) {
 			return false;
 		}
-		int models = le32(b, contentsAddr + 4);       // dict0 (models) count
+		int models = LittleEndian.i32(b, contentsAddr + 4);       // dict0 (models) count
 		return models == 1;
 	}
 
@@ -478,7 +479,7 @@ public class BchMapModel {
 			return false;
 		}
 		for (int c = 0; c < 3; c++) {
-			float f = Float.intBitsToFloat(le32(raw, base + c * 4));
+			float f = Float.intBitsToFloat(LittleEndian.i32(raw, base + c * 4));
 			if (Float.isNaN(f) || Float.isInfinite(f) || Math.abs(f) > 1e5f) {
 				return false;
 			}
@@ -511,9 +512,9 @@ public class BchMapModel {
 		float[][] out = new float[g.vertexCount][3];
 		for (int v = 0; v < g.vertexCount; v++) {
 			int base = g.vtxAbs + v * g.stride + g.posOffset;
-			out[v][0] = Float.intBitsToFloat(le32(raw, base));
-			out[v][1] = Float.intBitsToFloat(le32(raw, base + 4));
-			out[v][2] = Float.intBitsToFloat(le32(raw, base + 8));
+			out[v][0] = Float.intBitsToFloat(LittleEndian.i32(raw, base));
+			out[v][1] = Float.intBitsToFloat(LittleEndian.i32(raw, base + 4));
+			out[v][2] = Float.intBitsToFloat(LittleEndian.i32(raw, base + 8));
 		}
 		return out;
 	}
@@ -626,9 +627,9 @@ public class BchMapModel {
 			}
 			for (int v = 0; v < g.vertexCount; v++) {
 				int base = g.vtxAbs + v * g.stride + g.posOffset;
-				putFloat(out, base, Float.intBitsToFloat(le32(out, base)) + dx);
-				putFloat(out, base + 4, Float.intBitsToFloat(le32(out, base + 4)) + dy);
-				putFloat(out, base + 8, Float.intBitsToFloat(le32(out, base + 8)) + dz);
+				putFloat(out, base, Float.intBitsToFloat(LittleEndian.i32(out, base)) + dx);
+				putFloat(out, base + 4, Float.intBitsToFloat(LittleEndian.i32(out, base + 4)) + dy);
+				putFloat(out, base + 8, Float.intBitsToFloat(LittleEndian.i32(out, base + 8)) + dz);
 			}
 		}
 		return out;
@@ -842,9 +843,9 @@ public class BchMapModel {
 		if (newElemSize != elemSize) {
 			int ei = relocEntryIndexFor(idxCmdLoc, 0x28);
 			if (ei >= 0) {
-				int outRelocAddr = le32(out, 28);
+				int outRelocAddr = LittleEndian.i32(out, 28);
 				int off = outRelocAddr + ei * 4;
-				pokeInt(out, off, (le32(out, off) & 0x1FFFFFF) | (0x27 << 25));
+				pokeInt(out, off, (LittleEndian.i32(out, off) & 0x1FFFFFF) | (0x27 << 25));
 			}
 		}
 		return out;
@@ -928,9 +929,9 @@ public class BchMapModel {
 		if (newElemSize != elemSize) {
 			int ei = relocEntryIndexFor(idxCmdLoc, 0x28);
 			if (ei >= 0) {
-				int outRelocAddr = le32(out, 28);
+				int outRelocAddr = LittleEndian.i32(out, 28);
 				int off = outRelocAddr + ei * 4;
-				pokeInt(out, off, (le32(out, off) & 0x1FFFFFF) | (0x27 << 25));
+				pokeInt(out, off, (LittleEndian.i32(out, off) & 0x1FFFFFF) | (0x27 << 25));
 			}
 		}
 		return out;
@@ -995,10 +996,6 @@ public class BchMapModel {
 	}
 
 	private int i32(int o) {
-		return le32(raw, o);
-	}
-
-	private static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
+		return LittleEndian.i32(raw, o);
 	}
 }

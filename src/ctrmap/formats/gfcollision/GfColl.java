@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.f32;
 
 /**
  * Spec-exact reader/writer for the ORAS "coll" collision subfile (GR subfile 2,
@@ -388,14 +390,6 @@ public class GfColl {
 			h = 31 * h + Float.floatToIntBits(a[off + i]);
 		}
 		return h;
-	}
-
-	public static int i32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
-	}
-
-	public static float f32(byte[] b, int o) {
-		return Float.intBitsToFloat(i32(b, o));
 	}
 
 	static void p32(byte[] b, int o, int v) {

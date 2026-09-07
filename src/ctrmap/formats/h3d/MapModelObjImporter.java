@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.putF32;
 
 /**
  * Applies a parsed OBJ (see {@link MapModelObj}) back onto a map model - the
@@ -168,7 +169,7 @@ public class MapModelObjImporter {
 	public static void putComp(byte[] b, int o, int type, float v) {
 		switch (type) {
 			case 3:
-				putFloatLE(b, o, v);
+				putF32(b, o, v);
 				break;
 			case 1:
 				b[o] = (byte) Math.max(0, Math.min(255, Math.round(v * 255f)));
@@ -242,13 +243,5 @@ public class MapModelObjImporter {
 			}
 		}
 		return -1;
-	}
-
-	private static void putFloatLE(byte[] b, int o, float f) {
-		int v = Float.floatToIntBits(f);
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
 	}
 }

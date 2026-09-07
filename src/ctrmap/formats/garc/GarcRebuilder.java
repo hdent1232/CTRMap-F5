@@ -6,6 +6,7 @@ import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Writes a fresh GARC containing EXACTLY the given stored entries - the
@@ -28,7 +29,7 @@ public class GarcRebuilder {
 			in.readFully(head);
 			in.skipBytes(8); // dataOffset, fileSize
 			templMax = Integer.reverseBytes(in.readInt());
-			int fatoPos = le32(head, 4); // header length = FATO position
+			int fatoPos = i32(head, 4); // header length = FATO position
 			in.seek(fatoPos);
 			in.readFully(fatoMagic);
 			int fatoLength = Integer.reverseBytes(in.readInt());
@@ -98,9 +99,5 @@ public class GarcRebuilder {
 			dos.writeInt(Integer.reverseBytes(totalLength - ((int) dataLengthPos + 4)));
 		}
 		Files.move(tmp.toPath(), out.toPath(), StandardCopyOption.REPLACE_EXISTING);
-	}
-
-	private static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

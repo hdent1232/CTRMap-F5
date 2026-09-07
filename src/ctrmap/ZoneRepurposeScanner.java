@@ -6,6 +6,8 @@ import ctrmap.formats.zone.ZoneEntities;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Finds base zones (index &lt; 536) that are candidates to REPURPOSE for custom
@@ -116,7 +118,7 @@ public class ZoneRepurposeScanner {
 		if (i >= cnt) {
 			return null;
 		}
-		int o0 = u32(c, 4 + i * 4), o1 = u32(c, 4 + (i + 1) * 4);
+		int o0 = i32(c, 4 + i * 4), o1 = i32(c, 4 + (i + 1) * 4);
 		if (o0 < 0 || o1 > c.length || o1 < o0) {
 			return null;
 		}
@@ -124,7 +126,4 @@ public class ZoneRepurposeScanner {
 		System.arraycopy(c, o0, o, 0, o.length);
 		return o;
 	}
-
-	private static int u16(byte[] b, int o) { return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8); }
-	private static int u32(byte[] b, int o) { return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24); }
 }
