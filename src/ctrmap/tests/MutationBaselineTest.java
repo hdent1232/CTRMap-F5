@@ -11,13 +11,24 @@ import java.util.regex.Pattern;
 /**
  * The mutation baseline must still describe the code it was measured against.
  *
- * <p>The guards in this battery were themselves measured: wt/_state/mutate2.py
+ * <p>The guards in this battery were themselves measured: {@code tools/mutate2.py}
  * breaks one statement of a fix in a way that still compiles and asks whether
  * any suite notices. Where none does, that line is recorded in
  * mutation_baseline.json as a survivor - a known hole, per
- * file, with the exact text of the line. The sweep costs half an hour of builds
+ * file, with the exact text of the line. The sweep costs hours of builds
  * and cannot run on every commit; this check runs in seconds and keeps the
  * record honest between sweeps.
+ *
+ * <p>WHEN THIS SUITE FAILS AFTER YOU EDIT A FILE, that is what it is for, and
+ * the fix is NOT to edit mutation_baseline.json. The record says "these lines
+ * of these files were measured, and this is what the battery noticed"; changing
+ * a digest by hand asserts a measurement nobody took, which is the one lie this
+ * file exists to prevent. Re-run the sweep
+ * ({@code python tools/mutate2.py}, hours, and it ends in {@code git reset
+ * --hard} so commit first), copy the baseline it writes over
+ * mutation_baseline.json, and commit that. Until the sweep is re-run the
+ * failure is the honest state of the record - report it rather than silencing
+ * it. See TESTING.md, "The mutation sweep", for the whole procedure.
  *
  * <p>Two things it refuses:
  * <ul>
@@ -75,7 +86,7 @@ public class MutationBaselineTest {
 		File repo = root.getParentFile() == null ? new File(".") : root.getParentFile();
 		File baseline = new File(repo, "mutation_baseline.json");
 		if (!baseline.isFile()) {
-			System.out.println("  skip: no baseline at " + baseline + " - run wt/_state/mutate2.py and commit its output");
+			System.out.println("  skip: no baseline at " + baseline + " - run tools/mutate2.py and commit its output");
 			System.out.println("ALL PASS");
 			return;
 		}

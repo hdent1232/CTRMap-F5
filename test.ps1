@@ -140,7 +140,7 @@ $suites = @(
     @{ n = "ZoneRemove (GARC shrink)";    c = "ctrmap.tests.ZoneRemoveTest";         a = @($a013) },
     @{ n = "ZoneCloner (fork a whole zone)"; c = "ctrmap.tests.ZoneClonerTest";     a = @($a013) },
     @{ n = "ZoneAppendMulti (several at once)"; c = "ctrmap.tests.ZoneAppendMultiTest"; a = @($a013) },
-    @{ n = "ZoneLimitPatch";              c = "ctrmap.tests.ZoneLimitPatchTest";     a = @() },
+    @{ n = "ZoneLimitPatch";              c = "ctrmap.tests.ZoneLimitPatchTest";     a = @($code) },
     @{ n = "ShopData (mart inventories)"; c = "ctrmap.tests.ShopDataTest";           a = @($code) },
     @{ n = "ADPropRegistryOrder (prop registry order)"; c = "ctrmap.tests.ADPropRegistryOrderTest"; a = @((Join-Path $pristine "a\0\1\4")) },
     @{ n = "MapModelImport (BCH map import)"; c = "ctrmap.tests.MapModelImportTest"; a = @($a039) },

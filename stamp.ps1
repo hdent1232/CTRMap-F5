@@ -14,7 +14,7 @@
 #   classes  over every file under build\classes, the stamp itself excluded
 #            - hand-compiled, resource missing, class swapped in?
 #
-# Algorithm, identical in stamp.ps1 / wt/_state/require_build.py /
+# Algorithm, identical in stamp.ps1 / tools/require_build.py /
 # BatteryHygieneTest.builtByTheBattery - change one, change all three:
 #   files sorted by forward-slash relative path, ordinal order;
 #   one line per file: "<relpath>:<lowercase hex sha256 of content>\n";

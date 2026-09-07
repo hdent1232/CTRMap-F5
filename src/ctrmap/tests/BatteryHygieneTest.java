@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -31,6 +32,11 @@ import java.util.regex.Pattern;
  *     ALL PASS having round-tripped nought of nought entries. Both looked
  *     like a passing battery. A suite whose source names the dump must be
  *     registered with a path.</li>
+ * <li>No count in the shipped documents that the repository cannot still
+ *     produce. Three have shipped wrong - the building palette as 3,527 in
+ *     README.md and 3,479 in TESTING.md against 3,583 in the tables, and the
+ *     battery as "42 suites" and "84 headless test suites" against the ninety-odd
+ *     test.ps1 registers. See {@link #publishedCountsAreMeasured}.</li>
  * </ul>
  * Comments are stripped before scanning, so only live code counts.
  *
@@ -42,8 +48,22 @@ public class BatteryHygieneTest {
 	private static final Pattern FIXED_TEMP = Pattern.compile("java\\.io\\.tmpdir");
 	/** createTempFile used only to find the temp folder, then a name of the test's own. */
 	private static final Pattern TEMP_PARENT = Pattern.compile("createTempFile\\([^;]*\\)\\s*\\.getParentFile\\(\\)");
-	/** A dump path spelled relative to the repo's parent. */
-	private static final Pattern REPO_RELATIVE_DUMP = Pattern.compile("\"\\.\\./RomFS");
+	/**
+	 * A path to the user's game data spelled relative to the repo's parent -
+	 * the GARC/RomFS dumps, and the decompressed executable beside them.
+	 *
+	 * <p>code.bin was added to this pattern after ZoneLimitPatchTest was found
+	 * registered with {@code a = @()}: it fell back to "../code.bin", which
+	 * exists only in the author's layout, so from a worktree or a fresh clone
+	 * the half of that suite which checks the five reverse-engineered stock
+	 * words against the REAL executable never ran. It printed "(code.bin not
+	 * found - skipped real-binary verification)" and then "PASS" - and since
+	 * the runner shows only a suite's last two lines, even that notice was cut
+	 * off. Green, silent, and asserting nothing about the executable at all.
+	 * Two sibling suites (ItemIconPatch, ShopData) were registered with $code
+	 * the whole time, which is what made the odd one out invisible.
+	 */
+	private static final Pattern REPO_RELATIVE_DUMP = Pattern.compile("\"\\.\\./(RomFS|code\\.bin)");
 	/** Reading a path the runner passed in. */
 	private static final Pattern TAKES_ARG = Pattern.compile("args\\s*\\[\\s*0\\s*\\]|args\\s*\\.\\s*length");
 	/** A suite's registration line in the battery runner. */
@@ -81,6 +101,7 @@ public class BatteryHygieneTest {
 		}
 		builtByTheBattery(repo);
 		noDialogsUnderTest(new File(root, "ctrmap"));
+		publishedCountsAreMeasured(repo, root, new File(repo, "test.ps1"));
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -146,6 +167,109 @@ public class BatteryHygieneTest {
 		}
 		check(registered >= 50, registered + " suites registered in the battery");
 		check(starved.isEmpty(), "every suite that names the dump is registered with one; starved: " + starved);
+	}
+
+	/** A count the shipped docs publish about the catalogue. */
+	private static final Pattern DOC_CATALOG = Pattern.compile(
+			"([0-9][0-9,]*)\\s*(?:\\*\\*\\s*)?(?:catalogued|auto-harvested|curated)");
+	/** ...and about the size of this battery. */
+	private static final Pattern DOC_SUITES = Pattern.compile(
+			"([0-9][0-9,]*)(?:\\*\\*)?\\s+(?:headless\\s+)?(?:test\\s+)?suites?\\b");
+	/** A data row in one of the catalogue tables: not blank, not a '#' comment. */
+	private static final Pattern TSV_COMMENT = Pattern.compile("^\\s*(#.*)?$");
+
+	/**
+	 * A number the README, the release notes or this file publishes about the
+	 * program has to be one the repository can still produce.
+	 *
+	 * <p>WHY THIS EXISTS. Three counts have shipped wrong, and each was read by
+	 * somebody as fact. The building palette was published as 3,527 in README.md
+	 * and 3,479 in TESTING.md while the two tables held 3,583 between them; the
+	 * battery was published as "42 suites" and "84 headless test suites" while
+	 * test.ps1 registered ninety-odd. Nothing was watching, because a number in
+	 * a document is not code and no suite reads documents.
+	 *
+	 * <p>WHAT IS ASSERTED, and deliberately no more. Only two families of claim,
+	 * both mechanically derivable from data in this repository: how many
+	 * structures the palette ships (the two TSVs, counted the way
+	 * {@code BuildingCatalog} counts them) and how many suites the battery runs
+	 * (test.ps1's own registrations). Every number a doc states next to those
+	 * words must be one of the answers. The claims must also still BE there - a
+	 * guard that silently stops matching is not a guard - so each family has to
+	 * appear at least once across the documents scanned.
+	 *
+	 * <p>WHAT IT WILL NOT CATCH: a doc that rephrases the claim out of these
+	 * patterns, or any of the dozens of other measured numbers in these files.
+	 * The bar for adding to this is that the number can be RE-DERIVED here from
+	 * committed data; anything else would be a second hand-maintained copy of
+	 * the fact, which is the defect, not the fix.
+	 */
+	static void publishedCountsAreMeasured(File repo, File srcRoot, File runner) throws Exception {
+		File res = new File(srcRoot, "ctrmap/resources");
+		int curated = tsvRows(new File(res, "oras_buildings.tsv"));
+		int auto = tsvRows(new File(res, "oras_buildings_auto.tsv"));
+		if (curated < 0 || auto < 0) {
+			System.out.println("  skip: no building catalogue at " + res);
+			return;
+		}
+		int suites = 0;
+		if (runner.isFile()) {
+			for (String line : Files.readAllLines(runner.toPath(), StandardCharsets.UTF_8)) {
+				if (REGISTERED.matcher(line).find()) {
+					suites++;
+				}
+			}
+		}
+		//48 curated, 3,535 harvested, 3,583 in the palette: a doc may quote any
+		//of the three, because all three are true and each says something
+		//different. It may not quote a fourth.
+		List<Integer> catalogOk = java.util.Arrays.asList(curated, auto, curated + auto);
+		List<String> wrong = new ArrayList<>();
+		int catalogClaims = 0, suiteClaims = 0;
+		for (String name : new String[]{"README.md", "NOTES.md", "TESTING.md", "QUICKSTART.md"}) {
+			File doc = new File(repo, name);
+			if (!doc.isFile()) {
+				continue;
+			}
+			String text = read(doc);
+			Matcher m = DOC_CATALOG.matcher(text);
+			while (m.find()) {
+				catalogClaims++;
+				int n = Integer.parseInt(m.group(1).replace(",", ""));
+				if (!catalogOk.contains(n)) {
+					wrong.add(name + " says " + m.group(0).trim() + " - the tables hold "
+							+ curated + " curated + " + auto + " harvested = " + (curated + auto));
+				}
+			}
+			m = DOC_SUITES.matcher(text);
+			while (m.find()) {
+				suiteClaims++;
+				int n = Integer.parseInt(m.group(1).replace(",", ""));
+				if (suites > 0 && n != suites) {
+					wrong.add(name + " says " + m.group(0).trim() + " - test.ps1 registers " + suites);
+				}
+			}
+		}
+		check(wrong.isEmpty(), "every count the docs publish about the palette and the battery is "
+				+ "one this repo can still produce (" + catalogClaims + " palette claim(s), "
+				+ suiteClaims + " battery claim(s) checked); wrong: " + wrong);
+		check(catalogClaims > 0 && suiteClaims > 0, "...and both claims are still MADE somewhere - "
+				+ "a check that has quietly stopped matching asserts nothing (" + catalogClaims
+				+ " palette, " + suiteClaims + " battery)");
+	}
+
+	/** Data rows in a catalogue TSV, counted as BuildingCatalog counts them; -1 if absent. */
+	static int tsvRows(File f) throws Exception {
+		if (!f.isFile()) {
+			return -1;
+		}
+		int n = 0;
+		for (String line : Files.readAllLines(f.toPath(), StandardCharsets.UTF_8)) {
+			if (!TSV_COMMENT.matcher(line).matches() && line.split("\t").length >= 14) {
+				n++;
+			}
+		}
+		return n;
 	}
 
 	/**

@@ -21,7 +21,8 @@ pointing it at one, and tells you what to look for.
 - **Setup wizard** on first run — finds your unpacked game, validates it, and explains exactly
   what's wrong when you pick the wrong folder.
 - **Map Builder** — paint terrain onto real maps and keep everything you didn't touch.
-- **3,583 catalogued buildings** to search, preview and stamp.
+- **3,583 catalogued buildings** to search, preview and stamp — 48 curated and door-wired,
+  3,535 auto-harvested from every map in the game.
 - **Talking NPCs without scripting**, in all 536 zones.
 - **Trainers, shops, wild encounters and battle facilities.**
 - **Live 3D view**, area fog and lighting, zone cloning and appending.
@@ -29,7 +30,7 @@ pointing it at one, and tells you what to look for.
   want the retail game back.
 - **In-app updates** that replace the copy you have instead of leaving a second one beside it.
 
-Verified against a real dump by 84 headless test suites: every format writer round-trips
+Verified against a real dump by 93 headless test suites: every format writer round-trips
 byte-identically across all 536 zones, and the guards themselves are measured - a mutation
 sweep breaks each fix on purpose and records every change no suite notices.
 

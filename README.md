@@ -57,7 +57,7 @@ You can re-run it any time from **Options → Setup wizard**.
   one from elsewhere in the game rather than refusing or painting garbage.
 - **Edit in place** — paint onto a real map and keep everything you did not touch. The
   surrounding retail terrain, its collision and its detail stay exactly as they were.
-- **Building palette** — **3,527 catalogued structures** harvested from the game: houses, marts,
+- **Building palette** — **3,583 catalogued structures** harvested from the game: houses, marts,
   Pokémon Centers, gyms, signs, fences, doors. Search by name, preview, stamp. Textures the
   target map lacks are carried across automatically.
 - **Blank canvas** — start a map from nothing instead of from someone else's town.
@@ -113,7 +113,7 @@ Every binary format writer is validated headlessly against a real ORAS dump: par
 re-serialize must be **byte-identical**, and every surgical operation is dry-run across *every*
 eligible zone in the game before it is allowed into the UI.
 
-`test.ps1` runs **42 suites**. Current measured results:
+`test.ps1` runs **93 suites**. Current measured results:
 
 | | |
 |---|---|
@@ -138,6 +138,18 @@ No IDE required. Any JDK 17+ (it targets Java 8 bytecode); the JOGL jars are bun
 powershell -ExecutionPolicy Bypass -File build.ps1
 run.bat
 ```
+
+To run the regression battery against your own dump (build first — `test.ps1` refuses a
+`build\classes` that `build.ps1` did not produce):
+
+```
+powershell -ExecutionPolicy Bypass -File test.ps1 -Quick `
+    -Pristine "<...>\RomFS_original_garcs" -GameDir "<...>\RomFS\000400000011C400"
+```
+
+[TESTING.md](TESTING.md) explains what the suites assert, what a `skip:` line means, and what to
+do when `MutationBaselineTest` fails after you edit a file (re-run the sweep — never hand-edit
+the digest).
 
 A copy running from source never self-updates — it tells you to `git pull` and rebuild, so a
 checkout is never overwritten by a release.
