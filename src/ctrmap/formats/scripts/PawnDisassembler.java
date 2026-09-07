@@ -28,7 +28,16 @@ public class PawnDisassembler {
 	 * Commit refuses on them.
 	 */
 	public static PawnAssembly assembleScript(String code) {
-		PawnAssembly asm = new PawnAssembly(code);
+		return assembleScript(code, null);
+	}
+
+	/**
+	 * The same, resolving a {@code SYSREQ_N} written by native name in
+	 * nativesFrom's table - the script the text was disassembled from. Null
+	 * accepts indices only.
+	 */
+	public static PawnAssembly assembleScript(String code, GFLPawnScript nativesFrom) {
+		PawnAssembly asm = new PawnAssembly(code, nativesFrom);
 		int ptr = 0;
 		while (asm.hasNextLine()) {
 			String line = asm.nextLine();

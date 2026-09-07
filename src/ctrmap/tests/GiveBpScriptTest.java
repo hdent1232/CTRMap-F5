@@ -62,7 +62,6 @@ public class GiveBpScriptTest {
 				// re-parse from bytes and verify structure
 				GFLPawnScript re = new GFLPawnScript(out);
 				re.decompressThis();
-				PawnInstruction.nativeResolver = re;
 				ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(re);
 				if (d == null) {
 					throw new IllegalStateException("dispatch lost after emit");
@@ -121,7 +120,6 @@ public class GiveBpScriptTest {
 				}
 			}
 		}
-		PawnInstruction.nativeResolver = null;
 		System.out.println("\nGiveBP emit: tested=" + tested + " (noDispatch " + noDispatch + ")  ok=" + ok + "  failures=" + failures);
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (failures > 0) {
