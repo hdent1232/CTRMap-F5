@@ -346,11 +346,11 @@ public class ItemEditTest {
 		Files.copy(pristine.toPath(), live.toPath(), StandardCopyOption.REPLACE_EXISTING);
 
 		String oldGame = Workspace.GAMEDIR_PATH, oldWs = Workspace.WORKSPACE_PATH;
-		Workspace.GameType oldType = Workspace.game;
+		ctrmap.WorkspaceSession before = Workspace.session();
 		try {
-			Workspace.game = Workspace.GameType.ORAS;
 			Workspace.GAMEDIR_PATH = game.getAbsolutePath();
 			Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
+			Sessions.bare(ws, game, Workspace.GameType.ORAS);
 
 			check(ItemTable.archiveFile() != null, "the editor finds the archive through the profile");
 			check(ItemTable.openWorkspace() != null,
@@ -369,10 +369,10 @@ public class ItemEditTest {
 			File xyLive = new File(game.getAbsolutePath() + xyRel);
 			xyLive.getParentFile().mkdirs();
 			Files.copy(pristine.toPath(), xyLive.toPath(), StandardCopyOption.REPLACE_EXISTING);
-			Workspace.game = Workspace.GameType.XY;
+			Sessions.bare(ws, game, Workspace.GameType.XY);
 			boolean xyPresent = ItemTable.archiveFile() != null;
 			boolean xyRefused = ItemTable.openWorkspace() == null;
-			Workspace.game = Workspace.GameType.ORAS;
+			Sessions.bare(ws, game, Workspace.GameType.ORAS);
 			check(xyPresent, "the XY item archive is present in the fixture, so a refusal can only"
 					+ " come from the verification gate");
 			check(xyRefused, "and REFUSES a game whose item table is only cited, never measured"
@@ -396,7 +396,7 @@ public class ItemEditTest {
 		} finally {
 			Workspace.GAMEDIR_PATH = oldGame;
 			Workspace.WORKSPACE_PATH = oldWs;
-			Workspace.game = oldType;
+			Workspace.install(before);
 		}
 	}
 
@@ -412,18 +412,16 @@ public class ItemEditTest {
 	 */
 	static void theEditorRefusesBeforeItBuildsAnything() {
 		System.out.println("--- the editor refuses with a sentence, before it builds a window");
-		boolean oldValid = Workspace.valid;
-		Workspace.GameType oldType = Workspace.game;
+		ctrmap.WorkspaceSession before = Workspace.session();
 		try {
-			Workspace.valid = false;
+			Workspace.install(null);
 			List<String> said = ctrmap.Ui.record();
 			ctrmap.humaninterface.ItemEditDialog.show(null);
 			ctrmap.Ui.stopRecording();
 			check(said.size() == 1 && said.get(0).contains("workspace"),
 					"with no workspace loaded it says so and returns (" + said + ")");
 
-			Workspace.valid = true;
-			Workspace.game = Workspace.GameType.XY;
+			Sessions.bare(new File("no-workspace"), new File("no-game"), Workspace.GameType.XY);
 			said = ctrmap.Ui.record();
 			ctrmap.humaninterface.ItemEditDialog.show(null);
 			ctrmap.Ui.stopRecording();
@@ -434,8 +432,7 @@ public class ItemEditTest {
 			ctrmap.Ui.stopRecording();
 			check(false, "it returned without throwing - got " + t);
 		} finally {
-			Workspace.valid = oldValid;
-			Workspace.game = oldType;
+			Workspace.install(before);
 		}
 	}
 

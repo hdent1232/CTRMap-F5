@@ -93,8 +93,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 
 			specWalk.setSelected(z.header.enableSpecialWalking);
 			flash.setSelected(z.header.enableFlashableDarkness);
-			flash.setEnabled(Workspace.game == Workspace.GameType.ORAS);
-			specWalk.setEnabled(Workspace.game == Workspace.GameType.XY);
+			flash.setEnabled(Workspace.game() == Workspace.GameType.ORAS);
+			specWalk.setEnabled(Workspace.game() == Workspace.GameType.XY);
 
 			loaded = true;
 		} catch (Exception e) {
@@ -160,7 +160,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				tmg.setSelectedIndex(-1);
 				tmg.removeAllItems();
 				//zone appending is ORAS-only in v1 (XY has no EN pack and different OAZoneNumber semantics)
-				if (Workspace.game == Workspace.GameType.XY) {
+				if (Workspace.game() == Workspace.GameType.XY) {
 					btnAddZone.setEnabled(false);
 					btnAddZone.setToolTipText("Adding new zones is ORAS-only in v1.");
 				} else {
@@ -168,7 +168,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 					btnAddZone.setToolTipText("Add new zones and lift ORAS's 536-zone limit; also generates the required code.ips patch. ORAS only - test in Azahar first.");
 				}
 				int totalZones = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length;
-				totalZones -= (Workspace.game == Workspace.GameType.XY) ? 1 : 2;
+				totalZones -= (Workspace.game() == Workspace.GameType.XY) ? 1 : 2;
 				if (totalZones <= 0) {
 					//a truncated or non-ZoneData archive: without this the array
 					//size goes negative and the real problem is never reported
@@ -179,7 +179,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				zones = new Zone[totalZones]; //last file is not a ZO
 				for (int i = 0; i < totalZones; i++) {
 					ZO zo = new ZO(Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, i));
-					zones[i] = new Zone(zo, Workspace.game);
+					zones[i] = new Zone(zo, Workspace.game());
 					//unknown flags 1024 == 8192 ???, 4096, 16384 always 0, >> 20 lumi warp zone?,
 					String name = LocationNames.getLocName(zones[i].header.parentMap) + " - " + i;
 					if (zones[i].s.publics.size() > 3) {
@@ -195,7 +195,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 					tmg.addItem(name);
 					progress.setBarPercent((int) ((float) i / totalZones * 100));
 				}
-				if (Workspace.game == Workspace.GameType.XY) {
+				if (Workspace.game() == Workspace.GameType.XY) {
 					type.setModel(new DefaultComboBoxModel<>(new String[]{
 						"Small generic",
 						"Outside generic",
@@ -326,7 +326,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			try {
 				//save to master table
 				File master = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length
-						- ((Workspace.game == Workspace.GameType.XY) ? 1 : 2));
+						- ((Workspace.game() == Workspace.GameType.XY) ? 1 : 2));
 				RandomAccessFile dos = new RandomAccessFile(master, "rw");
 				dos.skipBytes(zoneIndex * 0x38);
 				byte[] test = new byte[0x38];
@@ -355,7 +355,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	}
 
 	public int getWeatherRaw(int index) {
-		if (Workspace.game == Workspace.GameType.ORAS) {
+		if (Workspace.game() == Workspace.GameType.ORAS) {
 			return index;
 		} else {
 			switch (index) {
@@ -406,7 +406,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	}
 
 	public int getWeatherIndex(int raw) {
-		if (Workspace.game == Workspace.GameType.ORAS) {
+		if (Workspace.game() == Workspace.GameType.ORAS) {
 			return raw;
 		} else {
 			if (raw < 5) {
@@ -466,7 +466,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			case 2:
 				return 2;
 			case 3:
-				if (Workspace.game == Workspace.GameType.XY) {
+				if (Workspace.game() == Workspace.GameType.XY) {
 					return 3;
 				} else {
 					return 1;
@@ -489,7 +489,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			case 0:
 				return 0;
 			case 1:
-				if (Workspace.game == Workspace.GameType.XY) {
+				if (Workspace.game() == Workspace.GameType.XY) {
 					return 1;
 				} else {
 					return 3;

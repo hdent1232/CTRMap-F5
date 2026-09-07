@@ -95,25 +95,25 @@ public class TextEditor extends javax.swing.JPanel {
 	}
 
 	public void loadGarc() {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			return;
 		}
 		loading = true;
 		DefaultComboBoxModel<Integer> cbm = new DefaultComboBoxModel<>();
-		for (int i = 0; i < Workspace.texts.length; i++) {
+		for (int i = 0; i < Workspace.getArchive(Workspace.ArchiveType.GAMETEXT).length; i++) {
 			cbm.addElement(i);
 		}
 		fileIdx.setModel(cbm);
-		int target = (loadedIdx >= 0 && loadedIdx < Workspace.texts.length) ? loadedIdx : 0;
+		int target = (loadedIdx >= 0 && loadedIdx < Workspace.getArchive(Workspace.ArchiveType.GAMETEXT).length) ? loadedIdx : 0;
 		fileIdx.setSelectedItem(target);
 		loading = false;
-		if (Workspace.texts.length > 0) {
+		if (Workspace.getArchive(Workspace.ArchiveType.GAMETEXT).length > 0) {
 			loadFile(target);
 		}
 	}
 
 	public void loadFile(int idx) {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			return;
 		}
 		loading = true;
@@ -147,7 +147,7 @@ public class TextEditor extends javax.swing.JPanel {
 	}
 
 	public boolean store(boolean dialog) {
-		if (!Workspace.valid || loadedIdx == -1) {
+		if (!Workspace.isValid() || loadedIdx == -1) {
 			return true;
 		}
 		if (table.isEditing()) {

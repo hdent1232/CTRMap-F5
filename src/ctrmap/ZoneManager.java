@@ -46,11 +46,11 @@ public class ZoneManager {
 	 *
 	 * @return how many placed objects were removed
 	 */
-	public static int clearZone(int zoneIndex) throws IOException {
-		if (!Workspace.valid) {
+	public static int clearZone(WorkspaceSession ws, int zoneIndex) throws IOException {
+		if (ws == null) {
 			throw new IOException("No workspace is loaded.");
 		}
-		File zf = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		File zf = ws.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
 		if (zf == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
@@ -82,11 +82,11 @@ public class ZoneManager {
 	 * @param zoneIndex the zone to rename
 	 * @param newName   the new location name (plain text)
 	 */
-	public static RenameResult renameZone(int zoneIndex, String newName) throws IOException {
-		if (!Workspace.valid) {
+	public static RenameResult renameZone(WorkspaceSession ws, int zoneIndex, String newName) throws IOException {
+		if (ws == null) {
 			throw new IOException("No workspace is loaded.");
 		}
-		GARC zoGarc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		GARC zoGarc = ws.getArchive(Workspace.ArchiveType.ZONE_DATA);
 		if (zoGarc == null) {
 			throw new IOException("ZoneData archive unavailable.");
 		}
@@ -101,7 +101,7 @@ public class ZoneManager {
 			throw new IOException("That name can't be encoded: " + ex.getMessage());
 		}
 
-		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, masterIndex);
+		File masterFile = ws.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, masterIndex);
 		byte[] master = readAll(masterFile);
 		int rowOff = zoneIndex * ZoneCloner.ZONE_HEADER_SIZE;
 		int curParent = u16(master, rowOff + PARENTMAP_OFFSET) & PARENTMAP_MASK;
@@ -117,7 +117,7 @@ public class ZoneManager {
 
 		// load the location-name text file (entry index from the game profile)
 		int gtIndex = ctrmap.formats.text.LocationNames.gametextIndex();
-		File gtFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, gtIndex);
+		File gtFile = ws.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, gtIndex);
 		if (gtFile == null) {
 			throw new IOException("Could not read the location-name text file (GAMETEXT " + gtIndex + ").");
 		}
@@ -153,10 +153,10 @@ public class ZoneManager {
 			}
 		}
 		writeAll(gtFile, names.write());
-		Workspace.addPersist(gtFile);
+		ws.addPersist(gtFile);
 
 		if (newParent != curParent) {
-			repointParentMap(zoneIndex, masterFile, master, rowOff, newParent);
+			repointParentMap(ws, zoneIndex, masterFile, master, rowOff, newParent);
 		}
 		r.parentMap = newParent;
 		return r;
@@ -189,9 +189,9 @@ public class ZoneManager {
 	}
 
 	/** Sets the zone's parentMap in BOTH the ZO header (subfile 0) and the master row. */
-	private static void repointParentMap(int zoneIndex, File masterFile, byte[] master, int rowOff, int newParent) throws IOException {
+	private static void repointParentMap(WorkspaceSession ws, int zoneIndex, File masterFile, byte[] master, int rowOff, int newParent) throws IOException {
 		// ZO header (subfile 0)
-		File zf = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		File zf = ws.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
 		ZO zo = new ZO(zf);
 		byte[] hdr = zo.getFile(0);
 		setParentMap(hdr, 0, newParent);
@@ -201,7 +201,7 @@ public class ZoneManager {
 		// master row
 		setParentMap(master, rowOff, newParent);
 		writeAll(masterFile, master);
-		Workspace.addPersist(masterFile);
+		ws.addPersist(masterFile);
 	}
 
 	/** Overwrites only the low-10-bit parentMap of the packed u16 at base+0x1C. */

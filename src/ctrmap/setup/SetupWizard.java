@@ -535,8 +535,10 @@ public class SetupWizard extends JDialog {
 				//megabytes, and doing it inside validate() froze the whole app
 				Workspace.GAMEDIR_PATH = gamePath;
 				Workspace.WORKSPACE_PATH = wsPath;
-				Workspace.game = gameResult.game;
-				Workspace.snapshotOriginals();
+				//the game is known from the dump check; nothing is opened yet, so
+				//the backup is taken through a session built from the paths alone
+				Workspace.reportSnapshot(new ctrmap.WorkspaceSession(new File(wsPath), new File(gamePath),
+						gameResult.game, null).snapshotOriginals());
 				return null;
 			}
 
@@ -591,7 +593,7 @@ public class SetupWizard extends JDialog {
 			zones = 0;
 		}
 		setButtonsBusy(false);
-		if (!Workspace.valid || zones == 0) {
+		if (!Workspace.isValid() || zones == 0) {
 			finishStatus.setText(BLANK);
 			Ui.error(this,
 					"CTRMap read that folder but found no maps in it.\n\n"

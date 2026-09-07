@@ -84,7 +84,7 @@ public class PokeData {
 	 *  reference-data paths are then probed against whatever dir is set). */
 	private static GameProfile profile() {
 		try {
-			return Workspace.game != null ? GameProfile.current() : GameProfile.of(Workspace.GameType.ORAS);
+			return Workspace.game() != null ? GameProfile.current() : GameProfile.of(Workspace.GameType.ORAS);
 		} catch (RuntimeException ex) {
 			return GameProfile.of(Workspace.GameType.ORAS);
 		}

@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.Workspace;
+import ctrmap.WorkspaceSession;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -12,15 +13,21 @@ import java.nio.file.StandardCopyOption;
  * <p>Guards about forking and packing have to WRITE archives, and the only
  * archives with the shapes the code was written for are the ones in the dump.
  * Packing into the dump would destroy the corpus every other suite reads from,
- * so this copies the archives a workspace opens into scratch space, points
- * {@link Workspace} at the copies, and loads them exactly the way the
- * application does.
+ * so this copies the archives a workspace opens into scratch space, opens a
+ * {@link WorkspaceSession} on the copies exactly the way the application does,
+ * and installs it as the live one.
+ *
+ * <p>This used to set sixteen statics of {@link Workspace} by hand - the game,
+ * both paths, eight archive files, the scratch and persist paths, the valid
+ * flag - and call the loader, which is what opening a game looked like when
+ * the state was global. Now it is one call, and the suite that wants a
+ * session without installing it can have one: {@link WorkspaceSession#open}.
  */
 final class ScratchGame {
 
 	/**
-	 * The archives {@link Workspace#loadArchives} opens. All of them, because a
-	 * pack reloads all of them - leave one out and the reload dereferences null.
+	 * The archives {@link WorkspaceSession#open} requires. All of them, because
+	 * a pack reloads all of them - leave one out and the reload dereferences null.
 	 */
 	private static final Workspace.ArchiveType[] NEEDED = {
 		Workspace.ArchiveType.AREA_DATA, Workspace.ArchiveType.FIELD_DATA,
@@ -38,41 +45,33 @@ final class ScratchGame {
 		File game = new File(root, "game");
 		File ws = new File(root, "ws");
 		//Whatever the suite pointed Workspace at before this, forget it. Opening
-		//a throwaway game means THIS game and nothing of the last one: the fields
-		//set below are only some of what Workspace holds, so without the reset an
-		//archive handle or path from an earlier setup would still be live under a
-		//workspace that no longer contains it.
+		//a throwaway game means THIS game and nothing of the last one.
 		Workspace.reset();
-		Workspace.game = Workspace.GameType.ORAS;
 		Workspace.GAMEDIR_PATH = game.getAbsolutePath();
 		Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
-		for (String d : Workspace.WORKSPACE_SUBDIRS) {
-			new File(ws, d).mkdirs();
-		}
-		Workspace.temp = new File(ws, "temp");
-		Workspace.persist_config = new File(ws, "ctrmap_persist.txt");
-		Workspace.persist_paths.clear();
+		ws.mkdirs();
+		//detection looks for the game's own sound archive; an empty stand-in is enough
+		File sound = new File(game, ctrmap.gamedef.GameProfile.of(Workspace.GameType.ORAS)
+				.archivePath(Workspace.ArchiveType.SOUND_BCSAR));
+		sound.getParentFile().mkdirs();
+		Files.write(sound.toPath(), new byte[0]);
 		for (Workspace.ArchiveType t : NEEDED) {
-			String rel = Workspace.getArchivePath(t, Workspace.game);
+			String rel = Workspace.getArchivePath(t, Workspace.GameType.ORAS);
 			File src = new File(dump.getAbsolutePath() + rel);
 			File dst = new File(game.getAbsolutePath() + rel);
 			dst.getParentFile().mkdirs();
 			Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING);
 		}
-		Workspace.areadata = archive(game, Workspace.ArchiveType.AREA_DATA);
-		Workspace.fielddata = archive(game, Workspace.ArchiveType.FIELD_DATA);
-		Workspace.mapmatrix = archive(game, Workspace.ArchiveType.MAP_MATRIX);
-		Workspace.gametext = archive(game, Workspace.ArchiveType.GAMETEXT);
-		Workspace.zonedata = archive(game, Workspace.ArchiveType.ZONE_DATA);
-		Workspace.buildingmodels = archive(game, Workspace.ArchiveType.BUILDING_MODELS);
-		Workspace.npcregistries = archive(game, Workspace.ArchiveType.NPC_REGISTRIES);
-		Workspace.movemodels = archive(game, Workspace.ArchiveType.MOVE_MODELS);
-		Workspace.valid = true;
-		Workspace.loadArchives();
+		WorkspaceSession session;
+		try {
+			session = WorkspaceSession.open(ws, game);
+		} catch (WorkspaceSession.OpenFailed ex) {
+			throw new IOException("the scratch copy of the game did not open: " + ex.problems(), ex);
+		}
+		session.prepareDirectories();
+		Workspace.install(session);
+		//the app takes the pristine backup on every load; the pack guards read it
+		Workspace.snapshotOriginals();
 		return root;
-	}
-
-	private static File archive(File game, Workspace.ArchiveType t) {
-		return new File(game.getAbsolutePath() + Workspace.getArchivePath(t, Workspace.game));
 	}
 }

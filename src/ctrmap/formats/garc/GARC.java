@@ -1,7 +1,6 @@
 package ctrmap.formats.garc;
 
 import ctrmap.LittleEndianDataInputStream;
-import ctrmap.Workspace;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -194,17 +193,25 @@ public class GARC {
 		return declared > 0 && declared < 0x400000;
 	}
 
-	public void packDirectory(File dir) throws IOException {
-		packDirectory(dir, null);
+	/**
+	 * Packs a workspace directory into this GARC: the files in it that
+	 * {@code edited} accepts, named by entry index, replace or append entries,
+	 * and the rest are ignored. The rewritten archive is staged as
+	 * {@code <name>_new} under {@code scratchDir} and moved over this one.
+	 * Entries that already exist keep their original compression flag; appended
+	 * entries (index beyond the original entry count) inherit the flag of the
+	 * LAST original entry, unless compressionOverrides holds a Boolean for
+	 * their index (keyed by the numeric file name in the pack directory).
+	 *
+	 * <p>Nothing here knows about the workspace. Which files count as edits and
+	 * where to stage are handed in, so a suite can pack an archive with an
+	 * explicit set and no session at all, and the format layer reaches into no
+	 * application class. It used to read both from Workspace's statics.
+	 */
+	public void packDirectory(File dir, java.util.function.Predicate<File> edited, File scratchDir) throws IOException {
+		packDirectory(dir, edited, scratchDir, null);
 	}
 
-	/**
-	 * Packs a workspace directory into this GARC. Entries that already exist in
-	 * the archive keep their original compression flag. Appended entries (index
-	 * beyond the original entry count) inherit the compression flag of the LAST
-	 * original entry, unless compressionOverrides contains a Boolean for their
-	 * index (keyed by the numeric file name in the pack directory).
-	 */
 	/**
 	 * True when the archive file has been rewritten by somebody else since this
 	 * instance read its entry table.
@@ -237,9 +244,9 @@ public class GARC {
 	 * repair is to re-read the entry table, and that is what happens - but the
 	 * user has to be told that a second program is writing to their game. That
 	 * sentence used to go to stderr, and the shipped build has no console to
-	 * put it on, so nobody ever saw it. Collecting it here lets
-	 * {@link Workspace#packArchives} hand it to the dialog that reports the
-	 * pack, whichever archives the pack happened to touch.
+	 * put it on, so nobody ever saw it. Collecting it here lets the pack
+	 * ({@code WorkspaceSession.packArchives}) hand it to the dialog that
+	 * reports the pack, whichever archives the pack happened to touch.
 	 */
 	private static final ArrayList<String> packWarnings = new ArrayList<>();
 
@@ -250,7 +257,8 @@ public class GARC {
 		return out;
 	}
 
-	public void packDirectory(File dir, Map<Integer, Boolean> compressionOverrides) throws IOException {
+	public void packDirectory(File dir, java.util.function.Predicate<File> edited, File scratchDir,
+			Map<Integer, Boolean> compressionOverrides) throws IOException {
 		if (!dir.isDirectory()) {
 			return;
 		}
@@ -269,7 +277,7 @@ public class GARC {
 		ArrayList<File> files = new ArrayList<>();
 		files.addAll(Arrays.asList(dir.listFiles()));
 		for (int i = 0; i < files.size(); i++) {
-			if (!Workspace.persist_paths.contains(files.get(i).getAbsolutePath())) {
+			if (!edited.test(files.get(i))) {
 				files.remove(i);
 				i--;
 			}
@@ -345,7 +353,7 @@ public class GARC {
 				working.add(add);
 			}
 		}
-		File newGARC = new File(Workspace.WORKSPACE_PATH + "/" + file.getName() + "_new");
+		File newGARC = new File(scratchDir, file.getName() + "_new");
 		//get largest unpadded size
 		int maxlength = 0;
 		int[] filelengths = new int[compressedData.length];
@@ -598,11 +606,6 @@ public class GARC {
 			}
 		}
 		return returnvalue;
-	}
-
-	public static void main(String[] args) throws IOException {
-		GARC garc = new GARC(new File("1"));
-		garc.packDirectory(new File("1_pack"));
 	}
 }
 

@@ -43,14 +43,14 @@ public class SnapshotIntegrityTest {
 		gamedir.mkdirs();
 		wsdir.mkdirs();
 
-		Workspace.game = Workspace.GameType.ORAS;
 		Workspace.GAMEDIR_PATH = gamedir.getAbsolutePath();
 		Workspace.WORKSPACE_PATH = wsdir.getAbsolutePath();
+		Sessions.bare(wsdir, gamedir, Workspace.GameType.ORAS);
 
 		//a stand-in game: one small file per moddable archive, at the real paths
 		int made = 0;
 		for (Workspace.ArchiveType t : ModDeployer.MODDABLE) {
-			String rel = Workspace.getArchivePath(t, Workspace.game);
+			String rel = Workspace.getArchivePath(t, Workspace.game());
 			if (rel == null) {
 				continue;
 			}
@@ -68,7 +68,7 @@ public class SnapshotIntegrityTest {
 		check(missing.isEmpty(), "a fresh snapshot captures every archive (missing " + missing + ")");
 
 		//--- now the user edits the game, and one snapshot archive goes astray --
-		String rel = Workspace.getArchivePath(ModDeployer.MODDABLE[0], Workspace.game);
+		String rel = Workspace.getArchivePath(ModDeployer.MODDABLE[0], Workspace.game());
 		File snapFile = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
 		File liveFile = new File(gamedir.getAbsolutePath() + rel);
 		check(snapFile.delete(), "removed one archive from the snapshot");
@@ -91,7 +91,7 @@ public class SnapshotIntegrityTest {
 		//--- and the rest of the snapshot is untouched --------------------------
 		int intact = 0;
 		for (Workspace.ArchiveType t : ModDeployer.MODDABLE) {
-			String r = Workspace.getArchivePath(t, Workspace.game);
+			String r = Workspace.getArchivePath(t, Workspace.game());
 			if (r == null || r.equals(rel)) {
 				continue;
 			}
@@ -144,7 +144,7 @@ public class SnapshotIntegrityTest {
 	static void pointedAtAnotherGame(File otherGame, File src) throws Exception {
 		int made = 0;
 		for (Workspace.ArchiveType t : ModDeployer.MODDABLE) {
-			String rel = Workspace.getArchivePath(t, Workspace.game);
+			String rel = Workspace.getArchivePath(t, Workspace.game());
 			if (rel == null) {
 				continue;
 			}
@@ -158,6 +158,8 @@ public class SnapshotIntegrityTest {
 		check(!Workspace.snapshotIsForeign(), "the backup belongs to the game folder it was taken from");
 		Workspace.GAMEDIR_PATH = otherGame.getAbsolutePath();
 		check(Workspace.snapshotIsForeign(), "and is foreign once the workspace is pointed elsewhere");
+		//pointing the workspace at another game is opening a session there
+		Sessions.bare(Workspace.session().workspaceDir(), otherGame, Workspace.GameType.ORAS);
 
 		//THE USER MUST BE TOLD. Everything below this line was already true and
 		//the workspace still went on being quietly wrong, because nothing said
@@ -170,7 +172,7 @@ public class SnapshotIntegrityTest {
 		}
 		check(!said.isEmpty(), "opening a workspace whose backup is another game's says so: " + said);
 
-		String rel = Workspace.getArchivePath(ModDeployer.MODDABLE[0], Workspace.game);
+		String rel = Workspace.getArchivePath(ModDeployer.MODDABLE[0], Workspace.game());
 		File snapFile = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
 		check(!new String(Files.readAllBytes(snapFile.toPath()), StandardCharsets.UTF_8)
 				.startsWith("ANOTHER GAME "), "the first game's backup is not quietly overwritten either");
@@ -214,7 +216,7 @@ public class SnapshotIntegrityTest {
 		Workspace.resetSnapshotProblemReporting();
 
 		//make one archive uncapturable, the way real use does
-		String rel = Workspace.getArchivePath(ModDeployer.MODDABLE[0], Workspace.game);
+		String rel = Workspace.getArchivePath(ModDeployer.MODDABLE[0], Workspace.game());
 		File snapFile = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
 		File liveFile = new File(Workspace.GAMEDIR_PATH + rel);
 		byte[] liveWas = liveFile.isFile() ? Files.readAllBytes(liveFile.toPath()) : null;

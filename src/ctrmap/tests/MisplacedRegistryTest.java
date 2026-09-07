@@ -62,12 +62,12 @@ public class MisplacedRegistryTest {
 		//the damage: the clone one slot early, another area's registry in its
 		//place. Counts stay equal and every index stays in range - exactly what
 		//the old fork left behind.
-		byte[] clone = Workspace.npcreg.getDecompressedEntry(fork.newArea);
+		byte[] clone = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getDecompressedEntry(fork.newArea);
 		check(clone != null && clone.length > 0, "the forked area's registry is not empty ("
 				+ (clone == null ? -1 : clone.length) + " bytes), so moving it is visible");
 		int impostor = otherAreaWithADifferentRegistry(clone);
 		check(impostor >= 0, "some other area has a registry of its own to stand in for it");
-		byte[] impostorReg = Workspace.npcreg.getDecompressedEntry(impostor);
+		byte[] impostorReg = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getDecompressedEntry(impostor);
 
 		write(AreaForker.AD_GLOBAL_TABLE, clone);
 		write(fork.newArea, impostorReg);
@@ -90,7 +90,7 @@ public class MisplacedRegistryTest {
 	/** A retail area whose registry is non-empty and is not the forked clone. */
 	static int otherAreaWithADifferentRegistry(byte[] clone) {
 		for (int a = 0; a < AreaForker.AD_GLOBAL_TABLE; a++) {
-			byte[] r = Workspace.npcreg.getDecompressedEntry(a);
+			byte[] r = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getDecompressedEntry(a);
 			if (r != null && r.length > 0 && !java.util.Arrays.equals(r, clone)) {
 				return a;
 			}

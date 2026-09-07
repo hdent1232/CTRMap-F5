@@ -66,7 +66,7 @@ public class TextureCarryGuardsTest {
 		Set<String> held = namesOf(target);
 		int donor = -1;
 		List<String> spare = new ArrayList<>();
-		for (int a = 0; a < Workspace.ad.length && donor < 0; a++) {
+		for (int a = 0; a < Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length && donor < 0; a++) {
 			if (a == target) {
 				continue;
 			}
@@ -156,9 +156,9 @@ public class TextureCarryGuardsTest {
 
 	/** An area used by exactly one zone in the master table, or -1. */
 	static int privateArea() throws Exception {
-		byte[] m = Workspace.zo.getDecompressedEntry(Workspace.zo.length - 2);
-		int zones = Math.min(m.length / 0x38, Workspace.zo.length - 2);
-		int[] users = new int[Workspace.ad.length];
+		byte[] m = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).getDecompressedEntry(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2);
+		int zones = Math.min(m.length / 0x38, Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2);
+		int[] users = new int[Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length];
 		for (int z = 0; z < zones; z++) {
 			int a = area(m, z);
 			if (a >= 0 && a < users.length) {
@@ -175,8 +175,8 @@ public class TextureCarryGuardsTest {
 
 	/** The zone whose header names this area. */
 	static int zoneOn(int targetArea) throws Exception {
-		byte[] m = Workspace.zo.getDecompressedEntry(Workspace.zo.length - 2);
-		int zones = Math.min(m.length / 0x38, Workspace.zo.length - 2);
+		byte[] m = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).getDecompressedEntry(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2);
+		int zones = Math.min(m.length / 0x38, Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2);
 		for (int z = 0; z < zones; z++) {
 			if (area(m, z) == targetArea) {
 				return z;
@@ -192,7 +192,7 @@ public class TextureCarryGuardsTest {
 	/** Every texture name an area holds, across both of its packs. */
 	static Set<String> namesOf(int areaId) {
 		Set<String> names = new LinkedHashSet<>();
-		byte[] c = Workspace.ad.getDecompressedEntry(areaId);
+		byte[] c = Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).getDecompressedEntry(areaId);
 		if (c == null || c.length < 8 || c[0] != 'A' || c[1] != 'D') {
 			return names;
 		}

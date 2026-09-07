@@ -879,7 +879,7 @@ public class TilePainterForm {
 	/** An area's prop texture pack as this workspace holds it: the extracted file when there is one, else the archive's. */
 	static byte[] propPackOf(int area) throws Exception {
 		File ws = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA), String.valueOf(area));
-		byte[] entry = ws.exists() ? java.nio.file.Files.readAllBytes(ws.toPath()) : Workspace.ad.getDecompressedEntry(area);
+		byte[] entry = ws.exists() ? java.nio.file.Files.readAllBytes(ws.toPath()) : Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).getDecompressedEntry(area);
 		return ctrmap.formats.propdata.PropDatabase.getSubfile(entry, 1);
 	}
 
@@ -900,7 +900,7 @@ public class TilePainterForm {
 		}
 		// textures first (all-or-nothing before any registry entry)
 		byte[] modelBch = ctrmap.formats.propdata.PropDatabase.getSubfile(
-				Workspace.bm.getDecompressedEntry(pm.modelIndex), 0);
+				Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS).getDecompressedEntry(pm.modelIndex), 0);
 		byte[] targetPack = area.file(1);
 		java.util.Set<String> available = ctrmap.formats.propdata.PropDatabase.getTexturePackTextureNames(targetPack);
 		java.util.List<String> missing = ctrmap.formats.propdata.PropDatabase.getMissingTextureNames(modelBch, available);
