@@ -2176,7 +2176,7 @@ public class CtrmapMainframe {
 			return;
 		}
 		try {
-			final MapResizer.ResizeResult r = MapResizer.resize(zoneIndex, (Integer) wSpin.getValue(), (Integer) hSpin.getValue());
+			final MapResizer.ResizeResult r = MapResizer.resize(Workspace.session(), zoneIndex, (Integer) wSpin.getValue(), (Integer) hSpin.getValue());
 			Workspace.packWorkspace(new Runnable() {
 				@Override
 				public void run() {
