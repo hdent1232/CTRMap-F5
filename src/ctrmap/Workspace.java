@@ -725,6 +725,10 @@ public class Workspace {
 		musicNames = null;
 		game = null;
 		valid = false;
+		//not a field of this class, but derived from it: the location-name
+		//table is read from the open workspace's GAMETEXT, and a reset that
+		//kept it would hand one game's names to the next
+		LocationNames.unload();
 		//spelled out rather than delegated to resetSnapshotProblemReporting():
 		//GlobalStateTest reads this method's own body to prove no field of this
 		//class was left out of the reset, and it cannot follow a call to do it.
