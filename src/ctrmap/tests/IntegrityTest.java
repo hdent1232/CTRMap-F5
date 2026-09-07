@@ -148,22 +148,23 @@ public class IntegrityTest {
 	 * archive goes back and the sentence has to be gone.
 	 */
 	static void aPassThatUnderstoodNoMatrixSaysSo() throws Exception {
-		ctrmap.formats.garc.GARC real = Workspace.mm;
+		ctrmap.formats.garc.GARC real = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX);
 		String legible = WorkspaceIntegrity.check(true).toString();
 		check(!legible.contains("could not read any of the"),
 				"with matrices it can read, the check does not claim it read none of them: " + legible);
 
-		Workspace.mm = new ctrmap.formats.garc.GARC(real.file) {
+		ctrmap.WorkspaceSession opened = Workspace.session();
+		Workspace.install(opened.withArchive(Workspace.ArchiveType.MAP_MATRIX, new ctrmap.formats.garc.GARC(real.file) {
 			@Override
 			public byte[] getDecompressedEntry(int num) {
 				return new byte[]{0, 0, 0, 0}; //no Gamefreak container, so no grid: unreadable
 			}
-		};
+		}));
 		String blind;
 		try {
 			blind = WorkspaceIntegrity.check(true).toString();
 		} finally {
-			Workspace.mm = real;
+			Workspace.install(opened);
 		}
 		check(blind.contains("could not read any of the " + real.length + " matrices"),
 				"a region pass that understood no matrix at all says so, and how many it gave up on: " + blind);

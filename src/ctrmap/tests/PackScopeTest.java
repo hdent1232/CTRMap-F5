@@ -47,7 +47,7 @@ public class PackScopeTest {
 			return;
 		}
 		ScratchGame.open(dump);
-		File archive = Workspace.gametext;
+		File archive = Workspace.session().archiveFile(Workspace.ArchiveType.GAMETEXT);
 
 		//1. nothing staged for GameText: the archive must be the same file afterwards
 		long lengthBefore = archive.length();
@@ -62,7 +62,7 @@ public class PackScopeTest {
 				+ archive.lastModified() + "/" + archive.length() + ")");
 
 		//2. one entry edited: those bytes must be what the game now loads
-		int entry = Workspace.texts.length - 1;
+		int entry = Workspace.getArchive(Workspace.ArchiveType.GAMETEXT).length - 1;
 		File staged = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, entry);
 		byte[] edited = Files.readAllBytes(staged.toPath());
 		check(edited.length > 0, "GameText entry " + entry + " extracted (" + edited.length + " bytes)");

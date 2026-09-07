@@ -38,13 +38,12 @@ public class TerrainImportTest {
 		GARC gr = new GARC(garcFile);
 		//the donor cut reads the pristine dump through the workspace paths -
 		//point them at the dump this test was handed (a/0/3/9 -> its romfs root)
-		ctrmap.Workspace.game = ctrmap.Workspace.GameType.ORAS;
 		//a/0/3/9 -> up four levels is the romfs root the archive paths hang off
 		ctrmap.Workspace.GAMEDIR_PATH = garcFile.getParentFile().getParentFile()
 				.getParentFile().getParentFile().getAbsolutePath();
 		ctrmap.Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_terrainimport").getAbsolutePath();
-		ctrmap.Workspace.temp = new File(ctrmap.Workspace.WORKSPACE_PATH, "temp");
-		ctrmap.Workspace.temp.mkdirs();
+		Sessions.bare(new File(ctrmap.Workspace.WORKSPACE_PATH), new File(ctrmap.Workspace.GAMEDIR_PATH),
+				ctrmap.Workspace.GameType.ORAS).prepareDirectories();
 		//Each brush's donor is cut through the workspace's PRISTINE snapshot,
 		//which refuses to fall back to live data - a donor taken from a map the
 		//user has already painted carries the paint into the next map. The dump
@@ -53,7 +52,7 @@ public class TerrainImportTest {
 		//and copy only when the filesystem will not link it.
 		File snapshot = new File(ctrmap.Workspace.originalSnapshotDir().getAbsolutePath()
 				+ ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.FIELD_DATA,
-						ctrmap.Workspace.game));
+						ctrmap.Workspace.game()));
 		if (!snapshot.isFile()) {
 			snapshot.getParentFile().mkdirs();
 			try {

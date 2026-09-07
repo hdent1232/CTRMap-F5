@@ -114,15 +114,15 @@ public class TerrainImportNoiseTest {
 	 * in an error box the user can do nothing about.
 	 */
 	static void tooEarlyTellsNobody() {
-		Workspace.GameType prevGame = Workspace.game;
+		ctrmap.WorkspaceSession prev = Workspace.session();
 		List<String> said = new ArrayList<>();
 		try {
-			Workspace.game = null;
+			Workspace.install(null);
 			said = Ui.record();
 			TerrainCatalog.ensureCliffMaterial(new byte[]{'B'});
 		} finally {
 			Ui.stopRecording();
-			Workspace.game = prevGame;
+			Workspace.install(prev);
 		}
 		check(said.isEmpty(), "with no workspace open the cliff import tells the user nothing; it said " + said);
 	}
@@ -134,13 +134,13 @@ public class TerrainImportNoiseTest {
 	 */
 	static void realFailureReachesTheUser() throws Exception {
 		String prevPath = Workspace.WORKSPACE_PATH;
-		Workspace.GameType prevGame = Workspace.game;
+		ctrmap.WorkspaceSession prev = Workspace.session();
 		List<String> said = new ArrayList<>();
 		try {
 			Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_terrain_noise").getAbsolutePath();
-			Workspace.game = Workspace.GameType.ORAS;
+			Sessions.bare(new File(Workspace.WORKSPACE_PATH), new File("no-game"), Workspace.GameType.ORAS);
 			File snap = new File(Workspace.originalSnapshotDir().getAbsolutePath()
-					+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game));
+					+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game()));
 			snap.getParentFile().mkdirs();
 			try (FileOutputStream fo = new FileOutputStream(snap)) {
 				fo.write(new byte[]{'G', 'A', 'R', 'C'});
@@ -150,7 +150,7 @@ public class TerrainImportNoiseTest {
 		} finally {
 			Ui.stopRecording();
 			Workspace.WORKSPACE_PATH = prevPath;
-			Workspace.game = prevGame;
+			Workspace.install(prev);
 		}
 		check(!said.isEmpty(), "a real cliff-import failure is reported through Ui; it said " + said);
 	}

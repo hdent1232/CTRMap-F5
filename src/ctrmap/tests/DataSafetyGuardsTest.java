@@ -161,6 +161,9 @@ public class DataSafetyGuardsTest {
 		Files.copy(src.toPath(), archive.toPath());
 		byte[] before = Files.readAllBytes(archive.toPath());
 		Workspace.WORKSPACE_PATH = new File(root, "ws").getAbsolutePath();
+		//packDirectory still reads the edited-file list through Workspace: a
+		//session over the scratch folder carries it
+		Sessions.bare(new File(root, "ws"), new File(root, "game"), Workspace.GameType.ORAS);
 		File dir = new File(Workspace.WORKSPACE_PATH, "mapmatrix");
 		dir.mkdirs();
 
@@ -185,13 +188,13 @@ public class DataSafetyGuardsTest {
 		check(Arrays.equals(before, Files.readAllBytes(archive.toPath())), "the archive on disk is untouched");
 		check(!new File(Workspace.WORKSPACE_PATH, archive.getName() + "_new").exists(),
 				"no half-written <archive>_new is left in the workspace");
-		check(Workspace.persist_paths.contains(staged.getAbsolutePath()), "the edit is still pending");
+		check(Workspace.persistPaths().contains(staged.getAbsolutePath()), "the edit is still pending");
 
 		//and once the archive is released the same pack goes through
 		g.packDirectory(dir);
 		check(Arrays.equals(new GARC(archive).getDecompressedEntry(3), edited),
 				"the pack goes through once the archive is released, carrying the edit");
-		Workspace.persist_paths.remove(staged.getAbsolutePath());
+		Workspace.install(null);
 		deleteTree(root);
 	}
 
@@ -256,16 +259,16 @@ public class DataSafetyGuardsTest {
 			System.out.println("  skip: no dump at " + dump);
 			return;
 		}
-		Workspace.game = Workspace.GameType.ORAS;
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
-		GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game)));
-		GARC texts = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.GAMETEXT, Workspace.game)));
+		Sessions.bare(Scratch.dir("ctrmap_data_safety_warps"), dump, Workspace.GameType.ORAS);
+		GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game())));
+		GARC texts = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.GAMETEXT, Workspace.game())));
 		LocationNames.textfile = new TextFile(temp(texts.getDecompressedEntry(LocationNames.gametextIndex())));
 		//three zones make a zone table; the editor is told zone 2 is open
 		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel();
 		zonePnl.zones = new Zone[3];
 		for (int i = 0; i < zonePnl.zones.length; i++) {
-			zonePnl.zones[i] = new Zone(new ZO(temp(zo.getDecompressedEntry(i))), Workspace.game);
+			zonePnl.zones[i] = new Zone(new ZO(temp(zo.getDecompressedEntry(i))), Workspace.game());
 		}
 		zonePnl.zoneIndex = 2;
 		CtrmapMainframe.mZonePnl = zonePnl;
@@ -431,8 +434,9 @@ public class DataSafetyGuardsTest {
 		a.targetWarpId = 0;
 		File ws = Scratch.dir("ctrmap_data_safety");
 		Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
-		ctrmap.Utils.mkDirsIfNotContains(ws, Workspace.WORKSPACE_SUBDIRS);
-		Workspace.zo = zo;
+		Workspace.install(Sessions.bare(ws, Workspace.session().gameDir(), Workspace.GameType.ORAS)
+				.withArchive(Workspace.ArchiveType.ZONE_DATA, zo));
+		Workspace.session().prepareDirectories();
 		zonePnl.zones[2].entities.modified = true;
 		said = ctrmap.Ui.record();
 		try {
@@ -612,7 +616,7 @@ public class DataSafetyGuardsTest {
 		java.lang.reflect.Method addFile = builder.getClass()
 				.getDeclaredMethod("btnAddFileToGARCActionPerformed", java.awt.event.ActionEvent.class);
 		addFile.setAccessible(true);
-		File archive = Workspace.mm.file;
+		File archive = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX).file;
 		int before = new GARC(archive).length;
 
 		List<String> said;
@@ -693,12 +697,12 @@ public class DataSafetyGuardsTest {
 		try {
 
 			//a real zone, then the damage: an area id AreaData does not have
-			int noSuchArea = Workspace.ad.length + 21;
-			Zone broken = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+			int noSuchArea = Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length + 21;
+			Zone broken = new Zone(new ZO(temp(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
 			broken.header.areadataID = noSuchArea;
 			//the same failure, reproduced here, so the report can be required to
 			//carry what actually went wrong rather than a fixed sentence
-			Zone probe = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+			Zone probe = new Zone(new ZO(temp(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
 			probe.header.areadataID = noSuchArea;
 			String cause = "";
 			try {
@@ -711,7 +715,7 @@ public class DataSafetyGuardsTest {
 			pnl.zones = new Zone[]{null, broken};
 			fill(pnl, "zoneList", 2);
 			//the editors are showing the zone the user had open
-			Zone open = new Zone(new ZO(temp(Workspace.zo.getDecompressedEntry(15))), Workspace.game);
+			Zone open = new Zone(new ZO(temp(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
 			CtrmapMainframe.mNPCEditForm.loadFromEntities(open.entities, null);
 			check(CtrmapMainframe.mNPCEditForm.loaded, "the NPC editor is showing a zone before the failed load");
 			setField(pnl, "loaded", true);
@@ -798,19 +802,8 @@ public class DataSafetyGuardsTest {
 		//the archives straight from the dump: the form's bound reads FieldData's
 		//length through Workspace.getArchive, so it must be loaded the way the
 		//app loads it, not opened on the side
-		Workspace.game = Workspace.GameType.ORAS;
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
-		String base = Workspace.GAMEDIR_PATH;
-		Workspace.areadata = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.AREA_DATA, Workspace.game));
-		Workspace.fielddata = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game));
-		Workspace.mapmatrix = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.MAP_MATRIX, Workspace.game));
-		Workspace.gametext = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.GAMETEXT, Workspace.game));
-		Workspace.zonedata = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game));
-		Workspace.buildingmodels = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.BUILDING_MODELS, Workspace.game));
-		Workspace.npcregistries = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.NPC_REGISTRIES, Workspace.game));
-		Workspace.movemodels = new File(base + Workspace.getArchivePath(Workspace.ArchiveType.MOVE_MODELS, Workspace.game));
-		Workspace.valid = true;
-		Workspace.loadArchives();
+		Sessions.overDump(Scratch.dir("ctrmap_data_safety_matrix"), dump);
 		GARC fd = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA);
 		GARC mmGarc = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX);
 		if (fd == null || mmGarc == null) {
@@ -819,11 +812,11 @@ public class DataSafetyGuardsTest {
 		}
 		int regions = fd.length;
 		//a real retail matrix, regions left unresolved (no extracted workspace here)
-		boolean wasValid = Workspace.valid;
-		Workspace.valid = false;
+		ctrmap.WorkspaceSession was = Workspace.session();
+		Workspace.install(null);
 		ctrmap.formats.mapmatrix.MapMatrix mm = new ctrmap.formats.mapmatrix.MapMatrix(
 				new ctrmap.formats.containers.MM(temp(mmGarc.getDecompressedEntry(14))));
-		Workspace.valid = wasValid;
+		Workspace.install(was);
 		short before = mm.ids.get(0, 0);
 
 		ctrmap.humaninterface.MatrixEditForm form = new ctrmap.humaninterface.MatrixEditForm();

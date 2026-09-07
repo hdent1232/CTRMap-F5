@@ -108,11 +108,11 @@ public class NpcEditFormGuardsTest {
 		if (!dump.isDirectory()) {
 			System.out.println("  skip: no dump at " + dump + " - the form checks need zone 24");
 		} else {
-			Workspace.game = Workspace.GameType.ORAS;
 			Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
-			Workspace.valid = true; //the form only looks up its zone inside a workspace
-			GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game)));
-			GARC gr = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game)));
+			//the form only looks up its zone inside a workspace; it is handed its archives, none is opened through the session
+			Sessions.bare(Scratch.dir("ctrmap_npc_form"), dump, Workspace.GameType.ORAS);
+			GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game())));
+			GARC gr = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game())));
 			removeKeepsModels(zo, gr);
 			saveRefusesUndefinedScript(zo);
 			saveWithNothingSelected(zo);
@@ -487,7 +487,7 @@ public class NpcEditFormGuardsTest {
 			saved = form.saveEntry();
 		} finally {
 			ctrmap.Ui.stopRecording();
-			Workspace.storytexts = null;
+			Workspace.install(Workspace.session().withArchive(Workspace.ArchiveType.STORYTEXT, null));
 		}
 		check(saved && e.npcs.get(0).script == 8, "the save goes through - a missing message is a warning, not a refusal");
 		check(said.size() == 1 && said.get(0).contains("soft-lock"), "and the user is warned: " + said);
@@ -948,7 +948,7 @@ public class NpcEditFormGuardsTest {
 	 * check reads once the archive is known to exist.
 	 */
 	static void withStoryFile(NPCEditForm form, GARC anyGarc, int textID, String... lines) throws Exception {
-		Workspace.storytexts = anyGarc; //only ever null-checked on this path
+		Workspace.install(Workspace.session().withArchive(Workspace.ArchiveType.STORYTEXT, anyGarc)); //only ever null-checked on this path
 		setField(form, "storyFile", new GFMessageFile(GFMessageFile.write(Arrays.asList(lines))));
 		setField(form, "storyFileTextID", textID);
 	}
@@ -973,7 +973,7 @@ public class NpcEditFormGuardsTest {
 	static Zone openZone(GARC zo, int index) throws Exception {
 		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
 		pnl.zones = new Zone[index + 1];
-		pnl.zones[index] = new Zone(new ZO(temp(zo.getDecompressedEntry(index))), Workspace.game);
+		pnl.zones[index] = new Zone(new ZO(temp(zo.getDecompressedEntry(index))), Workspace.game());
 		pnl.zone = pnl.zones[index];
 		pnl.zoneIndex = index;
 		CtrmapMainframe.mZonePnl = pnl;

@@ -55,11 +55,10 @@ public class MapDefaultsTest {
 		if (!dump.isDirectory()) {
 			System.out.println("  skip: no dump at " + dump + " - the corpus checks need MapMatrix and FieldData");
 		} else {
-			Workspace.game = Workspace.GameType.ORAS;
-			//left invalid on purpose: MapMatrix opens a GR per populated cell
-			//against the live workspace when it is valid, and this suite only
+			//no session on purpose: MapMatrix opens a GR per populated cell
+			//against the live workspace when there is one, and this suite only
 			//wants the numbers in the file
-			Workspace.valid = false;
+			Workspace.reset();
 			everyRetailMatrixNamesItsFirstRegion(dump);
 			theGroundIsNotJustTheBiggestMesh(dump);
 			theListOffersTheGroundFirst(dump);
@@ -104,7 +103,7 @@ public class MapDefaultsTest {
 	 */
 	static void everyRetailMatrixNamesItsFirstRegion(File dump) throws Exception {
 		GARC mm = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.MAP_MATRIX, Workspace.game)));
+				+ Workspace.getArchivePath(Workspace.ArchiveType.MAP_MATRIX, Workspace.GameType.ORAS)));
 		File tmp = Scratch.file("ctrmap_mapdefaults");
 		int read = 0, populated = 0;
 		StringBuilder bad = new StringBuilder();
@@ -158,7 +157,7 @@ public class MapDefaultsTest {
 	 */
 	static void theGroundIsNotJustTheBiggestMesh(File dump) throws Exception {
 		GARC fd = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game)));
+				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.GameType.ORAS)));
 		int scored = 0, differ = 0, wrong = 0;
 		StringBuilder first = new StringBuilder();
 		for (int i = 0; i < Math.min(REGIONS, fd.length); i++) {
@@ -223,7 +222,7 @@ public class MapDefaultsTest {
 	 */
 	static void theListOffersTheGroundFirst(File dump) throws Exception {
 		GARC fd = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game)));
+				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.GameType.ORAS)));
 		int scored = 0, promoted = 0;
 		StringBuilder notFirst = new StringBuilder();
 		StringBuilder notAList = new StringBuilder();
@@ -297,7 +296,7 @@ public class MapDefaultsTest {
 	/** A pick that DOES fit this region must be honoured, not overridden. */
 	static void aPickedMeshIsHonouredWhereItFits(File dump) throws Exception {
 		GARC fd = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game)));
+				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.GameType.ORAS)));
 		BchMapModel donor = modelOf(fd, DONOR);
 		if (donor == null) {
 			check(false, "the tileset donor region " + DONOR + " is a map model");

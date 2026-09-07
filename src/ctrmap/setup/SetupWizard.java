@@ -535,8 +535,10 @@ public class SetupWizard extends JDialog {
 				//megabytes, and doing it inside validate() froze the whole app
 				Workspace.GAMEDIR_PATH = gamePath;
 				Workspace.WORKSPACE_PATH = wsPath;
-				Workspace.game = gameResult.game;
-				Workspace.snapshotOriginals();
+				//the game is known from the dump check; nothing is opened yet, so
+				//the backup is taken through a session built from the paths alone
+				Workspace.reportSnapshot(new ctrmap.WorkspaceSession(new File(wsPath), new File(gamePath),
+						gameResult.game, null).snapshotOriginals());
 				return null;
 			}
 

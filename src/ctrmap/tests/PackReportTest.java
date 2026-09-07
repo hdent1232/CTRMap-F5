@@ -60,7 +60,7 @@ public class PackReportTest {
 		check(pack().isEmpty(), "a clean pack tells the user nothing");
 
 		//1. a zone that cannot load: its area id has no registry behind it
-		int masterIndex = Workspace.zo.length - 2;
+		int masterIndex = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2;
 		File master = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, masterIndex);
 		byte[] rows = Files.readAllBytes(master.toPath());
 		rows[ZONE * MASTER_ROW + 2] = (byte) DANGLING_AREA;
@@ -69,14 +69,14 @@ public class PackReportTest {
 		Workspace.addPersist(master);
 
 		//2. a pristine snapshot that is missing an archive
-		String rel = Workspace.getArchivePath(Workspace.ArchiveType.NPC_REGISTRIES, Workspace.game);
+		String rel = Workspace.getArchivePath(Workspace.ArchiveType.NPC_REGISTRIES, Workspace.game());
 		new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel).delete();
 
 		//3. an archive somebody else rewrote while this editor held its entry table
-		byte[] mat = Files.readAllBytes(Workspace.mapmatrix.toPath());
+		byte[] mat = Files.readAllBytes(Workspace.session().archiveFile(Workspace.ArchiveType.MAP_MATRIX).toPath());
 		byte[] longer = new byte[mat.length + 64];
 		System.arraycopy(mat, 0, longer, 0, mat.length);
-		Files.write(Workspace.mapmatrix.toPath(), longer);
+		Files.write(Workspace.session().archiveFile(Workspace.ArchiveType.MAP_MATRIX).toPath(), longer);
 
 		String said = pack().toString();
 		System.out.println("  the user is shown: " + said);
@@ -134,7 +134,7 @@ public class PackReportTest {
 	 */
 	static void aPackThatFailedSaysSoAndStopsThere() throws Exception {
 		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
-		File gapped = new File(dir, String.valueOf(Workspace.npcreg.length + 1));
+		File gapped = new File(dir, String.valueOf(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length + 1));
 		Files.write(gapped.toPath(), new byte[]{1, 2, 3, 4});
 		Workspace.addPersist(gapped);
 
@@ -149,7 +149,7 @@ public class PackReportTest {
 		check(contains(told, "before deploying"),
 				"and warning them off the one thing that would ship the damage: " + told);
 
-		Workspace.persist_paths.remove(gapped.getAbsolutePath());
+		Workspace.persistPaths().remove(gapped.getAbsolutePath());
 		gapped.delete();
 		after[0] = false;
 		told = packThroughTheApp(() -> after[0] = true);

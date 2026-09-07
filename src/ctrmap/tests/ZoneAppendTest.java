@@ -92,10 +92,12 @@ public class ZoneAppendTest {
 		writeAll(f538, p.en);
 		String savedWsPath = Workspace.WORKSPACE_PATH;
 		Workspace.WORKSPACE_PATH = tmp.getAbsolutePath();
-		Workspace.persist_paths.clear();
-		Workspace.persist_paths.add(f536.getAbsolutePath());
-		Workspace.persist_paths.add(f537.getAbsolutePath());
-		Workspace.persist_paths.add(f538.getAbsolutePath());
+		//packDirectory still reads the edited-file list through Workspace: a
+		//session over the scratch folder carries it
+		ctrmap.WorkspaceSession staged = Sessions.bare(tmp, new File("no-game"), Workspace.GameType.ORAS);
+		staged.addPersist(f536);
+		staged.addPersist(f537);
+		staged.addPersist(f538);
 		HashMap<Integer, Boolean> overrides = new HashMap<>();
 		overrides.put(536, Boolean.TRUE);  //new ZO must be LZ11 like every other zone
 		overrides.put(537, Boolean.FALSE); //master table uncompressed
@@ -103,7 +105,7 @@ public class ZoneAppendTest {
 		GARC work = new GARC(garcCopy);
 		work.packDirectory(packDir, overrides);
 		Workspace.WORKSPACE_PATH = savedWsPath;
-		Workspace.persist_paths.clear();
+		Workspace.install(null);
 
 		//---- reopen and verify everything from the packed file ----
 		GARC packed = new GARC(garcCopy);
