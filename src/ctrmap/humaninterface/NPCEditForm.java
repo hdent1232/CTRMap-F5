@@ -1227,7 +1227,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		e.furnitureCount = e.furniture.size();
 		e.modified = true;
 		saveZoneScript(zone);
-		JOptionPane.showMessageDialog(this, "Sign added at tile (" + pos.x + ", " + pos.y + "). Adjust its position with the Prop tool.", "Add sign", JOptionPane.INFORMATION_MESSAGE);
+		ctrmap.Ui.message(this, "Sign added at tile (" + pos.x + ", " + pos.y + "). Adjust its position with the Prop tool.", "Add sign", JOptionPane.INFORMATION_MESSAGE);
 		repaintFrame();
 	}
 

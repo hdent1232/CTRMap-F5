@@ -93,7 +93,7 @@ public class EncounterEditDialog {
 				int src = Integer.parseInt(s.trim());
 				EncounterTable other = EncounterTable.read(packRef, src);
 				if (other == null) {
-					JOptionPane.showMessageDialog(dlg, "Zone " + src + " has no wild data.", "Copy", JOptionPane.INFORMATION_MESSAGE);
+					ctrmap.Ui.message(dlg, "Zone " + src + " has no wild data.", "Copy", JOptionPane.INFORMATION_MESSAGE);
 					return;
 				}
 				copyInto(other, table);
@@ -125,7 +125,7 @@ public class EncounterEditDialog {
 				}
 				Workspace.addPersist(enFile);
 				dlg.dispose();
-				JOptionPane.showMessageDialog(parent,
+				ctrmap.Ui.message(parent,
 						(table.isEmpty() ? "Wild data removed for zone " : "Wild encounters saved for zone ") + zoneIndex
 						+ ".\nDeploy to emulator to apply (packs automatically).",
 						"Wild encounters", JOptionPane.INFORMATION_MESSAGE);

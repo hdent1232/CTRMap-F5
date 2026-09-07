@@ -1244,7 +1244,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						@Override
 						public void run() {
 							selectZone(idx);
-							JOptionPane.showMessageDialog(ZoneLoadingPanel.this,
+							ctrmap.Ui.message(ZoneLoadingPanel.this,
 									"Zone " + idx + " now has its own private map (regions "
 									+ java.util.Arrays.toString(r.newRegions) + ").\nEdits here no longer affect any other zone."
 									+ (r.otherZones.length == 0 ? ""
@@ -1463,7 +1463,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						if (firstNew < zoneList.getItemCount()) {
 							zoneList.setSelectedIndex(firstNew);
 						}
-						JOptionPane.showMessageDialog(ZoneLoadingPanel.this,
+						ctrmap.Ui.message(ZoneLoadingPanel.this,
 								"Added zones " + firstNew + ".." + lastReal + " (archive now holds " + total + " zone slots).\n\n"
 								+ "Each new zone got its OWN private map (its own FieldData region + matrix),\n"
 								+ "so editing its geometry won't affect the zone you copied it from.\n\n"

@@ -1171,7 +1171,7 @@ public class CtrmapMainframe {
 						+ "the game's files, so a soft reset can still show the old data.\n");
 				sb.append("To play the untouched retail game, come back here and pick\n"
 						+ "\"Turn mod OFF (play vanilla)\" - it switches off without deleting anything.");
-				JOptionPane.showMessageDialog(frame, sb.toString(), "Deploy to emulator", JOptionPane.INFORMATION_MESSAGE);
+				Ui.message(frame, sb.toString(), "Deploy to emulator", JOptionPane.INFORMATION_MESSAGE);
 			}
 		});
 	}
@@ -1188,13 +1188,13 @@ public class CtrmapMainframe {
 		try {
 			if (parked) {
 				File back = ModDeployer.enable(modRoot);
-				JOptionPane.showMessageDialog(frame,
+				Ui.message(frame,
 						"Mod is back ON:\n  " + back.getAbsolutePath()
 						+ "\n\nFully close and reopen the emulator before playing - it caches game files.",
 						"Mod switched on", JOptionPane.INFORMATION_MESSAGE);
 			} else if (ModDeployer.isDeployed(modRoot)) {
 				File parkedAt = ModDeployer.disable(modRoot);
-				JOptionPane.showMessageDialog(frame,
+				Ui.message(frame,
 						"Mod is OFF - the game now boots completely stock.\n\n"
 						+ "Your edits are safe here:\n  " + parkedAt.getAbsolutePath()
 						+ "\n\nSave data was not touched. Come back here and pick \"Turn mod back ON\"\n"
@@ -1202,7 +1202,7 @@ public class CtrmapMainframe {
 						+ "Fully close and reopen the emulator before playing - it caches game files.",
 						"Playing vanilla", JOptionPane.INFORMATION_MESSAGE);
 			} else {
-				JOptionPane.showMessageDialog(frame,
+				Ui.message(frame,
 						"There is no deployed mod at:\n  " + modRoot.getAbsolutePath()
 						+ "\n\nNothing to switch off - the game already boots stock.",
 						"Nothing deployed", JOptionPane.INFORMATION_MESSAGE);
@@ -1410,7 +1410,7 @@ public class CtrmapMainframe {
 			}
 			sb.append("Run File > Deploy to emulator (it packs first), then fully restart the emulator.\n");
 			sb.append("Reselect the zone in the dropdown to see the new name in the editor.");
-			javax.swing.JOptionPane.showMessageDialog(frame, sb.toString(), "Rename zone", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+			Ui.message(frame, sb.toString(), "Rename zone", javax.swing.JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
 			Ui.error(frame, "Rename failed:\n" + ex.getMessage(), "Rename zone");
 		}
@@ -1497,7 +1497,7 @@ public class CtrmapMainframe {
 		}
 		ctrmap.formats.garc.GARC zoArc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
 		if (zoArc == null || zoArc.length <= 538) {
-			JOptionPane.showMessageDialog(frame, "This ZoneData has no added zones (stock layout).", "Remove added zones", JOptionPane.INFORMATION_MESSAGE);
+			Ui.message(frame, "This ZoneData has no added zones (stock layout).", "Remove added zones", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
 		final int n = zoArc.length - 538;
@@ -1546,7 +1546,7 @@ public class CtrmapMainframe {
 					mZonePnl.loadEverything(new Runnable() {
 						@Override
 						public void run() {
-							JOptionPane.showMessageDialog(frame,
+							Ui.message(frame,
 									"Removed " + removed + " added zone(s) - ZoneData is back to the stock layout.\n\n"
 									+ "Remember to DELETE the deployed code.ips:\n"
 									+ "  Azahar: load/mods/<titleid>/exefs/code.ips\n"
@@ -1591,7 +1591,7 @@ public class CtrmapMainframe {
 		int idx = (Integer) idSpinner.getValue();
 		try {
 			int removed = ZoneManager.clearZone(idx);
-			javax.swing.JOptionPane.showMessageDialog(frame,
+			Ui.message(frame,
 					"Zone " + idx + " emptied - removed " + removed + " placed object(s).\n\n"
 					+ "Run File > Deploy to emulator (it packs first) to apply.\n"
 					+ "Reselect the zone in the dropdown to see it cleared in the editor.",
@@ -1725,7 +1725,7 @@ public class CtrmapMainframe {
 			} finally {
 				w.close();
 			}
-			JOptionPane.showMessageDialog(frame,
+			Ui.message(frame,
 					"Exported region " + id + " (" + bmm.meshes.size() + " meshes) to\n" + fc.getSelectedFile().getAbsolutePath()
 					+ (skipped.isEmpty() ? "" : "\n\n" + skipped.size() + " mesh(es) use an exotic vertex format and were skipped;\nthey stay untouched on import."),
 					"Export map to OBJ", JOptionPane.INFORMATION_MESSAGE);
@@ -1843,7 +1843,7 @@ public class CtrmapMainframe {
 				  .append(" (").append(oc.vertices).append(" verts, ").append(oc.faces).append(" faces)\n");
 			}
 			sb.append("\nRun File > Deploy to emulator to see it in game (packs automatically).");
-			JOptionPane.showMessageDialog(frame, sb.toString(), "Import OBJ", JOptionPane.INFORMATION_MESSAGE);
+			Ui.message(frame, sb.toString(), "Import OBJ", JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
 			Ui.error(frame, "Import failed:\n" + ex.getMessage(), "Import OBJ");
 		}
@@ -1996,7 +1996,7 @@ public class CtrmapMainframe {
 						@Override
 						public void run() {
 							mZonePnl.selectZone(zi);
-							JOptionPane.showMessageDialog(frame,
+							Ui.message(frame,
 									"Zone " + zi + " now has a private blank canvas (region(s) "
 									+ java.util.Arrays.toString(r.newRegions) + ").\n\n"
 									+ "Build on it with prefabs, the Geometry tool, or Blender OBJ import.\n"
@@ -2059,7 +2059,7 @@ public class CtrmapMainframe {
 			return;
 		}
 		if (path == 0) {
-			JOptionPane.showMessageDialog(frame,
+			Ui.message(frame,
 					"To add an independent battle NPC:\n\n"
 					+ "1. Author its opponents' teams in Game Data -> Trainers (pick unused\n"
 					+ "   trainer entries - blank-named ones are safe to repurpose).\n"
@@ -2105,7 +2105,7 @@ public class CtrmapMainframe {
 						@Override
 						public void run() {
 							mZonePnl.selectZone(dstIndex);
-							JOptionPane.showMessageDialog(frame,
+							Ui.message(frame,
 									"Zone " + dstIndex + " is now a copy of the facility (from zone " + srcIndex + ").\n\n"
 									+ "Next: Game Data -> Facility opponents to author the teams (use the\n"
 									+ "pools' free slots - they are shared with the retail facility),\n"
@@ -2160,7 +2160,7 @@ public class CtrmapMainframe {
 						@Override
 						public void run() {
 							mZonePnl.selectZone(zoneIndex);
-							JOptionPane.showMessageDialog(frame,
+							Ui.message(frame,
 									"Map grown " + r.oldW + "x" + r.oldH + " -> " + r.newW + "x" + r.newH
 									+ " (new blank region(s) " + java.util.Arrays.toString(r.newRegions) + ", matrix " + r.newMatrix + ").\n"
 									+ "Deploy to emulator to walk the new area.",
@@ -2254,7 +2254,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, "Import failed:\n" + ex.getMessage(), "Import map model");
 			return;
 		}
-		javax.swing.JOptionPane.showMessageDialog(frame,
+		Ui.message(frame,
 				"Map model imported into FieldData region " + id + ".\n\n"
 				+ "Run File > Pack Workspace, then load the RomFS as a LayeredFS mod and\n"
 				+ "TEST IN CITRA - confirm the map loads before trusting it.",

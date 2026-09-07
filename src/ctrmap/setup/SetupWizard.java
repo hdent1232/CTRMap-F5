@@ -605,7 +605,7 @@ public class SetupWizard extends JDialog {
 		Workspace.saveWorkspace();
 		finished = true;
 		dispose();
-		JOptionPane.showMessageDialog(getOwner(),
+		Ui.message(getOwner(),
 				gameResult.gameName() + " is loaded - " + zones + " maps.\n\n"
 				+ "Open the \"Zone Loader\" tab and pick one from the dropdown to start editing.",
 				"CTRMap is ready", JOptionPane.INFORMATION_MESSAGE);
@@ -637,7 +637,7 @@ public class SetupWizard extends JDialog {
 					//treated as "found nothing"
 				}
 				if (hits.isEmpty()) {
-					JOptionPane.showMessageDialog(SetupWizard.this,
+					Ui.message(SetupWizard.this,
 							"CTRMap looked in your Desktop, Downloads, Documents and emulator\n"
 							+ "folders and did not find an unpacked game.\n\n"
 							+ "If you have one somewhere else, use Browse to point at it.",

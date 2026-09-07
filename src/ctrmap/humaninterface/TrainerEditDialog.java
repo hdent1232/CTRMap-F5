@@ -183,7 +183,7 @@ public class TrainerEditDialog {
 						Workspace.addPersist(nf);
 					}
 					dlg.dispose();
-					JOptionPane.showMessageDialog(parent, "Trainer " + tid + " saved. Deploy to emulator to apply.",
+					ctrmap.Ui.message(parent, "Trainer " + tid + " saved. Deploy to emulator to apply.",
 							"Trainer editor", JOptionPane.INFORMATION_MESSAGE);
 				} catch (Exception ex) {
 					ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Trainer editor");

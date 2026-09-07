@@ -118,7 +118,7 @@ public class MaisonEditDialog {
 		goFree.addActionListener(e -> {
 			int free = model.guard.firstFreeSlot(model.sets);
 			if (free < 0) {
-				JOptionPane.showMessageDialog(dlg, "No free slot left in this pool.", "Battle facility opponents", JOptionPane.INFORMATION_MESSAGE);
+				ctrmap.Ui.message(dlg, "No free slot left in this pool.", "Battle facility opponents", JOptionPane.INFORMATION_MESSAGE);
 				return;
 			}
 			jt.getSelectionModel().setSelectionInterval(free, free);
@@ -151,7 +151,7 @@ public class MaisonEditDialog {
 				}
 				model.save();
 				refreshUsed.run();
-				JOptionPane.showMessageDialog(dlg, "Saved " + POOL_NAMES[model.poolIndex]
+				ctrmap.Ui.message(dlg, "Saved " + POOL_NAMES[model.poolIndex]
 						+ ".\nDeploy to emulator to apply.", "Battle facility opponents", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
 				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Battle facility opponents");
