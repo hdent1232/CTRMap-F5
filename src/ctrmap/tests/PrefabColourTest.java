@@ -34,15 +34,14 @@ public class PrefabColourTest {
 	public static void main(String[] args) throws Exception {
 		File garcFile = new File(args.length > 0 ? args[0]
 				: "../RomFS_original_garcs/a/0/3/9");
-		ctrmap.Workspace.game = ctrmap.Workspace.GameType.ORAS;
 		ctrmap.Workspace.GAMEDIR_PATH = garcFile.getParentFile().getParentFile()
 				.getParentFile().getParentFile().getAbsolutePath();
 		ctrmap.Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_prefabcolour").getAbsolutePath();
-		ctrmap.Workspace.temp = new File(ctrmap.Workspace.WORKSPACE_PATH, "temp");
-		ctrmap.Workspace.temp.mkdirs();
+		Sessions.bare(new File(ctrmap.Workspace.WORKSPACE_PATH), new File(ctrmap.Workspace.GAMEDIR_PATH),
+				ctrmap.Workspace.GameType.ORAS).prepareDirectories();
 		File snap = new File(ctrmap.Workspace.originalSnapshotDir().getAbsolutePath()
 				+ ctrmap.Workspace.getArchivePath(
-						ctrmap.Workspace.ArchiveType.FIELD_DATA, ctrmap.Workspace.game));
+						ctrmap.Workspace.ArchiveType.FIELD_DATA, ctrmap.Workspace.game()));
 		if (!snap.isFile()) {
 			snap.getParentFile().mkdirs();
 			try {

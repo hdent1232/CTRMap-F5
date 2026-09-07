@@ -90,20 +90,14 @@ public class ZoneAppendTest {
 		writeAll(f536, p.newZo); //DECOMPRESSED - stays editable; the override compresses it at pack time
 		writeAll(f537, p.master);
 		writeAll(f538, p.en);
-		String savedWsPath = Workspace.WORKSPACE_PATH;
-		Workspace.WORKSPACE_PATH = tmp.getAbsolutePath();
-		Workspace.persist_paths.clear();
-		Workspace.persist_paths.add(f536.getAbsolutePath());
-		Workspace.persist_paths.add(f537.getAbsolutePath());
-		Workspace.persist_paths.add(f538.getAbsolutePath());
+		//the pack is told which files are edits and where to stage; no session, no global
+		java.util.List<File> edited = java.util.Arrays.asList(f536, f537, f538);
 		HashMap<Integer, Boolean> overrides = new HashMap<>();
 		overrides.put(536, Boolean.TRUE);  //new ZO must be LZ11 like every other zone
 		overrides.put(537, Boolean.FALSE); //master table uncompressed
 		overrides.put(538, Boolean.FALSE); //appended EN slot uncompressed
 		GARC work = new GARC(garcCopy);
-		work.packDirectory(packDir, overrides);
-		Workspace.WORKSPACE_PATH = savedWsPath;
-		Workspace.persist_paths.clear();
+		work.packDirectory(packDir, edited::contains, tmp, overrides);
 
 		//---- reopen and verify everything from the packed file ----
 		GARC packed = new GARC(garcCopy);

@@ -253,7 +253,7 @@ public class GfEnvPicker {
 	/** Pristine snapshot GARC when available (true retail values), else the live one. */
 	private static GARC pristineOrLive(Workspace.ArchiveType type) {
 		try {
-			String rel = Workspace.getArchivePath(type, Workspace.game);
+			String rel = Workspace.getArchivePath(type, Workspace.game());
 			if (rel != null) {
 				File snap = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
 				if (snap.exists()) {

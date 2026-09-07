@@ -23,11 +23,12 @@ import java.util.regex.Pattern;
  * growing.
  *
  * <p>CTRMap is built around global mutable state - {@link Workspace} above all,
- * whose paths, archive handles and {@code GameType} are read from everywhere.
- * De-globalising it is a rewrite of every file and is deliberately NOT
- * attempted. What this suite does instead is hold the line, and make the two
- * failure modes global state actually causes here impossible to reintroduce
- * quietly.
+ * whose paths, archive handles and {@code GameType} were read from everywhere.
+ * That state is a {@link ctrmap.WorkspaceSession} instance now, with
+ * Workspace's old statics delegating to the current one while callers are
+ * migrated ({@code WorkspaceSessionTest} counts them). What this suite does
+ * is hold the line on everything else, and make the two failure modes global
+ * state actually causes here impossible to reintroduce quietly.
  *
  * <h2>1. The ceiling (a ratchet)</h2>
  * A count of every {@code public static} non-final field in the compiled
@@ -60,13 +61,16 @@ import java.util.regex.Pattern;
  * can only fire on a field that truly nothing writes.
  *
  * <h2>3. {@link Workspace#reset} covers every field</h2>
- * Workspace is the god object, so "state left behind" bites there first.
- * {@code reset()} puts all of it back. A reset that silently misses a field is
- * worse than no reset - it reads as a clean slate while one workspace leaks
- * into the next - so this enumerates Workspace's static fields by reflection
- * and fails when {@code reset()} does not name one. Every field whose value
- * can be constructed here is additionally dirtied for real and checked, which
- * is what proves those lines do something rather than merely being present.
+ * Workspace holds the settings and the current session, so "state left
+ * behind" bites there first. {@code reset()} puts all of it back. A reset
+ * that silently misses a field is worse than no reset - it reads as a clean
+ * slate while one workspace leaks into the next - so this enumerates
+ * Workspace's static fields by reflection and fails when {@code reset()}
+ * does not name one. Every field whose value can be constructed here is
+ * additionally dirtied for real and checked, which is what proves those
+ * lines do something rather than merely being present; the session is
+ * installed and must be gone afterwards, since everything the old fields
+ * held now hangs off it.
  *
  * <p>ORDER: this suite needs no dump, no workspace and no scratch space, and
  * writes no file. It can run first, last, or alone.
@@ -81,9 +85,13 @@ public class GlobalStateTest {
 	 * message which global was added and why it had to be one.
 	 *
 	 * <p>146 when this suite was written; 141 after five that did not need to
-	 * be mutable globals stopped being them (one dead, two private, two final).
+	 * be mutable globals stopped being them (one dead, two private, two final);
+	 * 110 once the open game moved out of Workspace's statics into a
+	 * WorkspaceSession instance (ten archive files, seventeen GARC handles,
+	 * the persist file, the GameType, the valid flag, and a music-name table
+	 * nothing ever filled).
 	 */
-	private static final int CEILING = 141;
+	private static final int CEILING = 110;
 
 	private static final int ACC_PUBLIC = 0x0001;
 	private static final int ACC_STATIC = 0x0008;
@@ -316,8 +324,13 @@ public class GlobalStateTest {
 				statics.add(f);
 			}
 		}
-		check(statics.size() > 20, "Workspace still keeps the open game in statics ("
-				+ statics.size() + " of them), so this is the right class to hold to a reset");
+		//What is left static here is the settings, the current session and a
+		//once-per-session flag. The open game itself - paths, GameType, archive
+		//files, GARC handles, edited-file list - is a WorkspaceSession instance
+		//now, and WorkspaceSessionTest holds that class to having no static
+		//mutable field at all. Eight is the whole list; a ninth is a decision.
+		check(statics.size() <= 8, "Workspace keeps only the settings, the current session and its"
+				+ " reporting flag in statics (" + statics.size() + " of them)");
 
 		//(a) every one of them is named in reset()'s own body
 		File ws = new File(src, "ctrmap/Workspace.java");
@@ -350,10 +363,11 @@ public class GlobalStateTest {
 				dirtied.add(f);
 			}
 		}
-		//the one collection: reset() must EMPTY it, because the renderer-style
-		//trap applies here too - anything holding the list would keep the old one
-		Workspace.persist_paths.add("left over from an earlier workspace");
-		check(dirtied.size() >= 15, "enough of Workspace's statics can be dirtied here for the check to mean something ("
+		//the session: reset() must drop it, because everything the old fields
+		//held now hangs off it - one leaked session is every old leak at once
+		Workspace.install(new ctrmap.WorkspaceSession(new File("dirty-ws"), new File("dirty-game"),
+				Workspace.GameType.ORAS, null));
+		check(dirtied.size() >= 5, "enough of Workspace's statics can be dirtied here for the check to mean something ("
 				+ dirtied.size() + ")");
 
 		Workspace.reset();
@@ -368,8 +382,8 @@ public class GlobalStateTest {
 		}
 		check(survived.isEmpty(), "and dirtying them and calling reset() really does put them back"
 				+ (survived.isEmpty() ? "" : " - these survived it: " + survived));
-		check(Workspace.persist_paths.isEmpty(),
-				"including the persisted-paths list, which is emptied rather than replaced");
+		check(Workspace.session() == null && !Workspace.isValid() && Workspace.game() == null,
+				"including the current session, which is dropped so no archive of it is reachable");
 	}
 
 	private static final Object NOT_CONSTRUCTIBLE = new Object();

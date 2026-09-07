@@ -58,7 +58,7 @@ public class TriggerEditForm extends javax.swing.JPanel {
 	private void populateScriptDropdown() {
 		scriptDropdownLoading = true;
 		scriptDropdown.removeAllItems();
-		if (ctrmap.Workspace.valid && mZonePnl != null && mZonePnl.zone != null && mZonePnl.zone.s != null) {
+		if (ctrmap.Workspace.isValid() && mZonePnl != null && mZonePnl.zone != null && mZonePnl.zone.s != null) {
 			mZonePnl.zone.s.decompressThis();
 			for (String item : TalkerScriptWizard.buildScriptIdItems(mZonePnl.zone.s)) {
 				scriptDropdown.addItem(item);

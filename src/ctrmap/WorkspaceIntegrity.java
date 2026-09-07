@@ -45,17 +45,19 @@ public class WorkspaceIntegrity {
 	/**
 	 * Every violated invariant, as a human sentence. Empty means consistent.
 	 *
+	 * @param ws   the open game to check - handed in, so a suite can check a
+	 *             session it built (or one archive swapped) without installing it
 	 * @param deep also walk every zone header and every matrix cell; costs a
 	 *             full read of ZoneData and MapMatrix.
 	 */
-	public static List<String> check(boolean deep) {
+	public static List<String> check(WorkspaceSession ws, boolean deep) {
 		List<String> bad = new ArrayList<>();
 		try {
-			GARC ad = Workspace.getArchive(Workspace.ArchiveType.AREA_DATA);
-			GARC np = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES);
-			GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
-			GARC mm = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX);
-			GARC gr = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA);
+			GARC ad = ws.getArchive(Workspace.ArchiveType.AREA_DATA);
+			GARC np = ws.getArchive(Workspace.ArchiveType.NPC_REGISTRIES);
+			GARC zo = ws.getArchive(Workspace.ArchiveType.ZONE_DATA);
+			GARC mm = ws.getArchive(Workspace.ArchiveType.MAP_MATRIX);
+			GARC gr = ws.getArchive(Workspace.ArchiveType.FIELD_DATA);
 			if (ad == null || np == null || zo == null || mm == null || gr == null) {
 				return bad; //no workspace loaded; nothing to check
 			}
@@ -127,7 +129,7 @@ public class WorkspaceIntegrity {
 			//workspace has nothing here. Deliberately not "the clone still
 			//matches its source" - forking exists so the copy can be edited,
 			//and that check would fire on every fork the user actually used.
-			if (Workspace.isOA() && np.length > AreaForker.AD_GLOBAL_TABLE) {
+			if (ws.isOA() && np.length > AreaForker.AD_GLOBAL_TABLE) {
 				List<Integer> stranded = new ArrayList<>();
 				for (int i = AreaForker.AD_GLOBAL_TABLE; i < np.length; i++) {
 					if (forkedAreaZone.containsKey(i)) {
@@ -268,12 +270,12 @@ public class WorkspaceIntegrity {
 	 * stderr line is still written - it is useful when running from a terminal -
 	 * but the returned list is the channel that reaches anybody.
 	 */
-	public static List<String> report(String after) {
+	public static List<String> report(WorkspaceSession ws, String after) {
 		//deep: the region pass was fixed to read every matrix and then never
 		//ran outside IntegrityTest, because this called check(false), which
 		//returns before it. A dangling region typed into the matrix editor
 		//reached the archive and the Pack dialog said nothing. One 224 KB read.
-		List<String> bad = check(true);
+		List<String> bad = check(ws, true);
 		if (bad.isEmpty()) {
 			return bad;
 		}

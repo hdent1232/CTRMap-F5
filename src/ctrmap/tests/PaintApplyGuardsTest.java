@@ -118,7 +118,7 @@ public class PaintApplyGuardsTest {
 	static void refusedCarryWritesNothing() throws Exception {
 		open(74);
 		paintSand();
-		List<String> before = new ArrayList<>(Workspace.persist_paths);
+		List<String> before = new ArrayList<>(Workspace.persistPaths());
 		Exception stop = apply(74, new ArrayList<TilePainterForm.Placed>());
 		check(stop != null, "Apply on a shared-area zone does not report success (stopped by: " + stop + ")");
 		check(newlyPersisted(before).isEmpty(), "nothing was persisted by the refused Apply: " + newlyPersisted(before));
@@ -156,7 +156,7 @@ public class PaintApplyGuardsTest {
 	static void editingTheSharedAreaAnywayIsStillRefused() throws Exception {
 		open(74);
 		paintSand();
-		List<String> before = new ArrayList<>(Workspace.persist_paths);
+		List<String> before = new ArrayList<>(Workspace.persistPaths());
 		List<String> said = ctrmap.Ui.record("Edit the shared area anyway");
 		Exception stop;
 		try {
@@ -196,7 +196,7 @@ public class PaintApplyGuardsTest {
 		}
 		List<TilePainterForm.Placed> placed = new ArrayList<>();
 		placed.add(new TilePainterForm.Placed(gym, 20, 20));
-		List<String> before = new ArrayList<>(Workspace.persist_paths);
+		List<String> before = new ArrayList<>(Workspace.persistPaths());
 		Exception stop = apply(6, placed);
 		check(stop != null, "Apply with a door prop on a shared-area zone does not report success (stopped by: " + stop + ")");
 		check(newlyPersisted(before).isEmpty(), "nothing was persisted by the refused Apply: " + newlyPersisted(before));
@@ -219,7 +219,7 @@ public class PaintApplyGuardsTest {
 		int lacking = areaLacking(needed);
 		File donorFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, sand.donorArea);
 		Files.write(donorFile.toPath(), ad.getDecompressedEntry(lacking));
-		List<String> before = new ArrayList<>(Workspace.persist_paths);
+		List<String> before = new ArrayList<>(Workspace.persistPaths());
 		Exception stop = apply(15, new ArrayList<TilePainterForm.Placed>());
 		donorFile.delete();
 		check(stop != null && stop.getMessage() != null && stop.getMessage().contains(needed.get(0)),
@@ -237,7 +237,7 @@ public class PaintApplyGuardsTest {
 		List<String> needed = TerrainCatalog.ensureMaterial(PropDatabase.getSubfile(
 				gr.getDecompressedEntry(153), 1), TilePalette.SAND).texturesNeeded;
 		forget(Workspace.ArchiveType.FIELD_DATA, 153);
-		List<String> before = new ArrayList<>(Workspace.persist_paths);
+		List<String> before = new ArrayList<>(Workspace.persistPaths());
 		Exception stop = apply(15, new ArrayList<TilePainterForm.Placed>());
 		check(stop == null, "Apply on a private zone succeeds (stopped by: " + stop + ")");
 		File region = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, 153);
@@ -284,7 +284,7 @@ public class PaintApplyGuardsTest {
 	static void sharedMatrixIsPaintedAfterTheFork() throws Exception {
 		open(0);
 		paintSand();
-		List<String> before = new ArrayList<>(Workspace.persist_paths);
+		List<String> before = new ArrayList<>(Workspace.persistPaths());
 		Exception stop = apply(0, new ArrayList<TilePainterForm.Placed>());
 		check(stop == null, "Apply on a shared-matrix zone succeeds (stopped by: " + stop + ")");
 		check(pristine(Workspace.ArchiveType.FIELD_DATA, gr, 0), "the shared region 0 is byte-identical to the archive");
@@ -791,7 +791,7 @@ public class PaintApplyGuardsTest {
 	static void cancellingTheSharedAreaQuestionWritesNothing() throws Exception {
 		open(74);
 		paintSand();
-		List<String> before = new ArrayList<>(Workspace.persist_paths);
+		List<String> before = new ArrayList<>(Workspace.persistPaths());
 		List<String> said = ctrmap.Ui.record("Cancel");
 		Exception stop;
 		try {
@@ -841,17 +841,17 @@ public class PaintApplyGuardsTest {
 	//--- fixtures -------------------------------------------------------------
 
 	static void openWorkspace(File dump) throws Exception {
-		Workspace.game = Workspace.GameType.ORAS;
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
 		File ws = Scratch.dir("ctrmap_paint_apply_guards");
 		Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
-		ctrmap.Utils.mkDirsIfNotContains(ws, Workspace.WORKSPACE_SUBDIRS);
-		Workspace.temp = new File(ws, "temp");
-		Workspace.persist_paths.clear();
+		//the dump is the corpus every suite reads, so the session over it is
+		//READ-ONLY: a successful Apply stops at the pack instead of rewriting it
+		ctrmap.WorkspaceSession session = Sessions.overDump(ws, dump);
+		session.prepareDirectories();
 		//the brush donors are cut through the workspace's pristine snapshot;
 		//the dump IS pristine, so link it into place (copy when linking fails)
 		File snap = new File(Workspace.originalSnapshotDir().getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game));
+				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game()));
 		if (!snap.isFile()) {
 			snap.getParentFile().mkdirs();
 			try {
@@ -860,34 +860,23 @@ public class PaintApplyGuardsTest {
 				Files.copy(new File(dump, "a/0/3/9").toPath(), snap.toPath());
 			}
 		}
-		ad = Workspace.ad = archive(dump, Workspace.ArchiveType.AREA_DATA);
-		gr = Workspace.gr = archive(dump, Workspace.ArchiveType.FIELD_DATA);
-		zo = Workspace.zo = archive(dump, Workspace.ArchiveType.ZONE_DATA);
-		Workspace.mm = archive(dump, Workspace.ArchiveType.MAP_MATRIX);
-		Workspace.bm = archive(dump, Workspace.ArchiveType.BUILDING_MODELS);
-		Workspace.npcreg = archive(dump, Workspace.ArchiveType.NPC_REGISTRIES);
-		//the prop database builds only behind a validated workspace, and a
-		//validated workspace packs after Apply (a Swing worker) - build it
-		//once, then leave valid off so a successful Apply stops at the pack
-		Workspace.valid = true;
+		ad = session.getArchive(Workspace.ArchiveType.AREA_DATA);
+		gr = session.getArchive(Workspace.ArchiveType.FIELD_DATA);
+		zo = session.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		//the prop database builds only behind an open workspace
 		if (PropDatabase.get() == null) {
 			throw new IllegalStateException("prop database did not build");
 		}
-		Workspace.valid = false;
 		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel();
 		for (int[] row : ramp) {
 			Arrays.fill(row, PaintedRegionBuilder.NO_RAMP);
 		}
 	}
 
-	static GARC archive(File dump, Workspace.ArchiveType type) throws Exception {
-		return new GARC(new File(dump.getAbsolutePath() + Workspace.getArchivePath(type, Workspace.game)));
-	}
-
 	/** Loads a zone into the panel the painter reads, as the editor would. */
 	static void open(int zoneIndex) throws Exception {
 		CtrmapMainframe.mZonePnl.zone = new Zone(new ZO(Workspace.getWorkspaceFile(
-				Workspace.ArchiveType.ZONE_DATA, zoneIndex)), Workspace.game);
+				Workspace.ArchiveType.ZONE_DATA, zoneIndex)), Workspace.game());
 		CtrmapMainframe.mZonePnl.zoneIndex = zoneIndex;
 	}
 
@@ -914,7 +903,7 @@ public class PaintApplyGuardsTest {
 	}
 
 	static List<String> newlyPersisted(List<String> before) {
-		List<String> now = new ArrayList<>(Workspace.persist_paths);
+		List<String> now = new ArrayList<>(Workspace.persistPaths());
 		now.removeAll(before);
 		return now;
 	}
@@ -922,7 +911,7 @@ public class PaintApplyGuardsTest {
 	/** Drops the workspace's copy of an entry so the next read is the archive's. */
 	static void forget(Workspace.ArchiveType type, int index) {
 		File f = new File(Workspace.getExtractionDirectory(type), String.valueOf(index));
-		Workspace.persist_paths.remove(f.getAbsolutePath());
+		Workspace.persistPaths().remove(f.getAbsolutePath());
 		f.delete();
 	}
 

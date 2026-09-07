@@ -52,8 +52,8 @@ public class PropDatabase {
 	 * on first use. Returns null if the workspace is not validated yet.
 	 */
 	public static synchronized PropDatabase get() {
-		if (instance == null && Workspace.valid && Workspace.bm != null && Workspace.ad != null) {
-			instance = build(Workspace.bm, Workspace.ad);
+		if (instance == null && Workspace.isValid() && Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS) != null && Workspace.getArchive(Workspace.ArchiveType.AREA_DATA) != null) {
+			instance = build(Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS), Workspace.getArchive(Workspace.ArchiveType.AREA_DATA));
 		}
 		return instance;
 	}

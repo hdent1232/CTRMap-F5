@@ -102,35 +102,48 @@ what the list said when it was written.*
 
 CTRMap keeps a lot in `public static` fields. Measured from the compiled
 classes (`ctrmap.tests.GlobalStateTest`, which counts fields rather than
-grepping lines), there are **141 public static mutable fields outside
+grepping lines), there are **110 public static mutable fields outside
 `ctrmap.tests`**, and they are not scattered - they sit in seven classes:
 
 | where | count | what it is |
 |---|---|---|
 | `CtrmapMainframe` | 91 | Swing widgets and the panels/forms of the main window. Each is assigned exactly once, while `main()` builds the window, and never again: effectively final after startup. A smell, low risk. |
-| `Workspace` | 36 | The open game: 4 config strings, 11 derived archive `File`s, 17 `GARC` handles, the `GameType` and `valid`. These do change during operation - but together, as one "a workspace was opened / packed" transaction. |
+| `Workspace` | 5 | The settings: the four paths and the tileset flag kept in `java.util.prefs`, written by the settings dialog and the setup wizard. The open game itself - paths, `GameType`, archive `File`s, `GARC` handles, the edited-file list - is a `WorkspaceSession` instance (below), not a static. |
 | `Selector`, `MatrixSelector` | 11 | The 2D cursor: selected/highlighted tile and region coordinates, rewritten on every mouse move. Genuinely per-interaction mutable state, confined to the two panels that own it. |
 | `AreaForkPrompt.lastForked` | 1 | A return value smuggled through a static: `ensurePrivate` sets it, `packIfForked` reads it later. Its sibling `GeometryForker.ensurePrivate` returns a `ForkResult` instead, which is the shape this wants. |
 | `PawnInstruction.nativeResolver` | 1 | The script whose natives table a disassembly resolves names against. Per-script context living in a class field; five suites set it and null it again in a `finally`, which is what knowing it is a hazard looks like. |
 | `LocationNames.textfile` | 1 | A lazily-loaded name table. `getLocName` dereferences it without a null check; `ZoneRepurposeScanner` loads it first by hand rather than risk that, which is the workaround the missing check forces. |
 
-**Workspace is deliberately NOT de-globalised.** That is a rewrite touching
-every file, on a program that writes people's game data. What exists instead
-is `Workspace.reset()`, which puts every static this class owns back to its
-pre-startup value so a test can exercise more than one workspace per JVM,
-and `GlobalStateTest`, which fails if a field is added and left out of the
-reset, if a public static field is added that nothing ever assigns, or if
-the count of 141 rises. Nothing in the application calls `reset()`:
-re-pointing a live workspace goes through `validate()`, and rerouting that
-through the reset would be a behaviour change with no test behind it.
+**The open game is a `WorkspaceSession`, and `Workspace` is being strangled
+around it.** `Workspace` used to hold the open game in 36 public statics that
+seventy files read; now `WorkspaceSession` is that state as an instance -
+opened whole by `WorkspaceSession.open(workspaceDir, gameDir)`, which probes
+the folder, checks every archive the game needs, opens them all and either
+returns a session or throws with every problem found, touching nothing
+global either way. It is headless (no window, no dialog, no static of its
+own, never reads `Workspace`), and `WorkspaceSessionTest` holds it to that.
+`Workspace` keeps the settings, the CURRENT session (installed only by a
+successful `validate()`), the dialogs around opening and packing, and every
+old static as a one-line delegator to the current session.
 
-Known and not fixed: on `validate()`'s failure path (a game folder that is
-missing, or whose version cannot be detected) `game` keeps its previous
-value, the `File` fields are rebuilt from the NEW folder using the OLD
-game's archive layout, and the `GARC` handles still point at the OLD game's
-archives - all while `valid` is set false. Every menu action checked so far
-tests `Workspace.valid` first, so this is a latent hazard rather than a
-reachable defect, but it is the concrete cost of the god object.
+The migration is file by file, and a file only counts as migrated when it
+is HANDED its session (a parameter, or a field set by whoever owns it) and
+could be handed a different one in a test - `Workspace.session()` at a call
+site is the same global with a longer name. `WorkspaceSessionTest` counts the
+production files that still reach a `Workspace` static (62 on the day the
+state moved; every one of them) and fails when the recorded number is not the
+measured one, so the boundary is always written down. `GlobalStateTest`
+still fails if a `Workspace` static is added and left out of `reset()`, if a
+public static field is added that nothing assigns, or if the count of 110
+rises.
+
+Fixed on the way: `validate()`'s failure path used to keep the previous
+game's `GameType` and all of its `GARC` handles live, with `valid` false and
+the archive `File`s rebuilt from the NEW folder using the OLD game's layout
+- half of each game at once, and the error list padded with archives "not
+found" in a folder that was never identified as that game. A failed switch
+now leaves NO current session: `game()` null, every `getArchive` null, the
+user told only what is wrong with the folder they chose.
 
 ### The battery does not depend on its own order (measured)
 

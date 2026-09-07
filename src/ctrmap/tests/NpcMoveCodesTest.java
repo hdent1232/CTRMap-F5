@@ -144,7 +144,7 @@ public class NpcMoveCodesTest {
 	 */
 	static void theFormAsksTheTable() {
 		for (Workspace.GameType g : new Workspace.GameType[]{Workspace.GameType.ORAS, Workspace.GameType.XY}) {
-			Workspace.game = g;
+			Sessions.bare(new File("no-workspace"), new File("no-game"), g);
 			boolean xy = g == Workspace.GameType.XY;
 			NPCEditForm form = new NPCEditForm();
 			int bad = 0;
@@ -166,9 +166,9 @@ public class NpcMoveCodesTest {
 	 * that code 22 matters; the game can, and it says 18 NPCs wear it.
 	 */
 	static void everyCodeTheGameShipsSurvivesTheDropdown(File dump) throws Exception {
-		Workspace.game = Workspace.GameType.ORAS;
+		Sessions.bare(new File("no-workspace"), dump, Workspace.GameType.ORAS);
 		GARC zo = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game)));
+				+ Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game())));
 		File tmp = Scratch.file("ctrmap_movecodes");
 		TreeMap<Integer, Integer> move2 = new TreeMap<>();
 		TreeMap<Integer, Integer> move1 = new TreeMap<>();
@@ -187,7 +187,7 @@ public class NpcMoveCodesTest {
 			}
 			ZoneEntities e;
 			try {
-				e = new Zone(new ZO(tmp), Workspace.game).entities;
+				e = new Zone(new ZO(tmp), Workspace.game()).entities;
 			} catch (Exception ex) {
 				continue;
 			}

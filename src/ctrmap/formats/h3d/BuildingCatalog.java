@@ -193,15 +193,15 @@ public class BuildingCatalog {
 	 * tells the user their pristine backup is gone, which is where that belongs.
 	 */
 	public static boolean canCutDonor() {
-		if (Workspace.game == null) {
+		if (Workspace.game() == null) {
 			return false;
 		}
-		String rel = Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game);
+		String rel = Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game());
 		return new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel).exists();
 	}
 
 	public static GR pristineRegion(int region) throws Exception {
-		String rel = Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game);
+		String rel = Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game());
 		File garcFile = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
 		if (!garcFile.exists()) {
 			System.err.println("BuildingCatalog: no pristine snapshot in this workspace ("
@@ -213,7 +213,7 @@ public class BuildingCatalog {
 		if (bytes == null) {
 			return null;
 		}
-		File tmp = new File(Workspace.temp, "bcat_region_" + region);
+		File tmp = new File(Workspace.temp(), "bcat_region_" + region);
 		try (FileOutputStream fo = new FileOutputStream(tmp)) {
 			fo.write(bytes);
 		}

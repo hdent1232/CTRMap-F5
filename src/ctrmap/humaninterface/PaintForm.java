@@ -300,7 +300,7 @@ public class PaintForm extends JPanel {
 	/** Called when the Painter tool is selected. Seeds from the loaded zone. */
 	public void activate() {
 		toolActive = true;
-		if (!Workspace.valid || !Workspace.isOA() || mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
+		if (!Workspace.isValid() || !Workspace.isOA() || mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
 			zoneLabel.setText("Load a zone first (Zone Loader tab)");
 			seededZone = -1;
 			return;

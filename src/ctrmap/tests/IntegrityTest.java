@@ -55,7 +55,7 @@ public class IntegrityTest {
 				+ " zones, " + mats + " matrices, " + regions + " regions");
 
 		//--- the retail game must satisfy every invariant ----------------------
-		List<String> bad = WorkspaceIntegrity.check(true);
+		List<String> bad = WorkspaceIntegrity.check(Workspace.session(), true);
 		if (bad.isEmpty()) {
 			System.out.println("  ok: the retail game passes every cross-archive invariant");
 		} else {
@@ -120,7 +120,7 @@ public class IntegrityTest {
 		Workspace.packArchives((percent, what) -> {
 		});
 
-		String bad = WorkspaceIntegrity.check(true).toString();
+		String bad = WorkspaceIntegrity.check(Workspace.session(), true).toString();
 		check(bad.contains("FieldData region that does not exist"),
 				"a matrix cell naming region " + dangling + " of " + regions + " is reported: " + bad);
 		check(bad.contains("matrix " + last),
@@ -148,30 +148,28 @@ public class IntegrityTest {
 	 * archive goes back and the sentence has to be gone.
 	 */
 	static void aPassThatUnderstoodNoMatrixSaysSo() throws Exception {
-		ctrmap.formats.garc.GARC real = Workspace.mm;
-		String legible = WorkspaceIntegrity.check(true).toString();
+		ctrmap.formats.garc.GARC real = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX);
+		String legible = WorkspaceIntegrity.check(Workspace.session(), true).toString();
 		check(!legible.contains("could not read any of the"),
 				"with matrices it can read, the check does not claim it read none of them: " + legible);
 
-		Workspace.mm = new ctrmap.formats.garc.GARC(real.file) {
+		//the check is handed a session, so the blind one is simply built and
+		//passed - nothing installed, nothing to restore
+		ctrmap.WorkspaceSession blinded = Workspace.session().withArchive(Workspace.ArchiveType.MAP_MATRIX,
+				new ctrmap.formats.garc.GARC(real.file) {
 			@Override
 			public byte[] getDecompressedEntry(int num) {
 				return new byte[]{0, 0, 0, 0}; //no Gamefreak container, so no grid: unreadable
 			}
-		};
-		String blind;
-		try {
-			blind = WorkspaceIntegrity.check(true).toString();
-		} finally {
-			Workspace.mm = real;
-		}
+		});
+		String blind = WorkspaceIntegrity.check(blinded, true).toString();
 		check(blind.contains("could not read any of the " + real.length + " matrices"),
 				"a region pass that understood no matrix at all says so, and how many it gave up on: " + blind);
 		check(blind.contains("nothing was verified"),
 				"and says what that costs the user: " + blind);
 		check(!blind.contains("FieldData region that does not exist"),
 				"and does not also report the dangling region it never got to read: " + blind);
-		check(!WorkspaceIntegrity.check(true).toString().contains("could not read any of the"),
+		check(!WorkspaceIntegrity.check(Workspace.session(), true).toString().contains("could not read any of the"),
 				"with the real archive back, the check stops saying it: it is a report about"
 				+ " THIS pass, not a line that is always printed");
 	}

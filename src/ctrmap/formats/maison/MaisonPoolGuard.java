@@ -150,7 +150,7 @@ public class MaisonPoolGuard {
 	}
 
 	private static GARC snapshotGarc(Workspace.ArchiveType t) throws Exception {
-		String rel = Workspace.getArchivePath(t, Workspace.game);
+		String rel = Workspace.getArchivePath(t, Workspace.game());
 		if (rel == null) {
 			return null;
 		}

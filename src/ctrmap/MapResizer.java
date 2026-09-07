@@ -152,13 +152,13 @@ public class MapResizer {
 	 * regions in the new cells. Pack Workspace must run afterwards (one
 	 * append per pack cycle, same rule as the fork).
 	 */
-	public static ResizeResult resize(int zoneIndex, int newW, int newH) throws IOException {
-		if (!Workspace.isOA()) {
+	public static ResizeResult resize(WorkspaceSession ws, int zoneIndex, int newW, int newH) throws IOException {
+		if (!ws.isOA()) {
 			throw new IOException("Map resize is ORAS-only in v1.");
 		}
-		GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
-		GARC gr = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA);
-		GARC mm = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX);
+		GARC zo = ws.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		GARC gr = ws.getArchive(Workspace.ArchiveType.FIELD_DATA);
+		GARC mm = ws.getArchive(Workspace.ArchiveType.MAP_MATRIX);
 		if (zo == null || gr == null || mm == null) {
 			throw new IOException("No workspace is loaded.");
 		}
@@ -166,19 +166,19 @@ public class MapResizer {
 		if (zoneIndex < 0 || zoneIndex >= zoneCount) {
 			throw new IOException("Zone " + zoneIndex + " out of range.");
 		}
-		File mmDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.MAP_MATRIX);
-		File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
+		File mmDir = ws.getExtractionDirectory(Workspace.ArchiveType.MAP_MATRIX);
+		File fdDir = ws.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
 		int newMatrix = mm.length;
 		File matrixOut = new File(mmDir, String.valueOf(newMatrix));
-		if (Workspace.persist_paths.contains(matrixOut.getAbsolutePath())) {
+		if (ws.isPersisted(matrixOut)) {
 			throw new IOException("A map append is already pending. Pack the workspace first.");
 		}
 
-		File zoneFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		File zoneFile = ws.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
 		byte[] zoBytes = readAll(zoneFile);
 		int hdrOff = i32(zoBytes, 4);
 		int oldMatrix = u16(zoBytes, hdrOff + 4);
-		byte[] matBytes = readAll(Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, oldMatrix));
+		byte[] matBytes = readAll(ws.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, oldMatrix));
 
 		//template = the zone's first region (same area -> textures guaranteed)
 		int sub0 = i32(matBytes, 4);
@@ -193,7 +193,7 @@ public class MapResizer {
 		if (templateRegion < 0) {
 			throw new IOException("The zone's matrix has no regions.");
 		}
-		byte[] templateGr = readAll(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, templateRegion));
+		byte[] templateGr = readAll(ws.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, templateRegion));
 
 		int newCells = newW * newH - w * h;
 		if (newCells <= 0) {
@@ -236,19 +236,19 @@ public class MapResizer {
 					}
 				}
 			}
-			Workspace.addPersist(f);
+			ws.addPersist(f);
 			GeometryForker.registerPendingField(id, gr.isEntryCompressed(templateRegion));
 		}
 
 		writeAll(matrixOut, newMat);
-		Workspace.addPersist(matrixOut);
+		ws.addPersist(matrixOut);
 		GeometryForker.registerPendingMatrix(newMatrix, mm.isEntryCompressed(oldMatrix));
 
 		//repoint the zone (ZO header + the runtime-authoritative master row)
 		byte[] newZo = zoBytes.clone();
 		putU16(newZo, hdrOff + 4, newMatrix);
 		writeAll(zoneFile, newZo);
-		Workspace.addPersist(zoneFile);
+		ws.addPersist(zoneFile);
 		GeometryForker.repointMasterRow(zo, zoneIndex, newMatrix);
 
 		ResizeResult r = new ResizeResult();
