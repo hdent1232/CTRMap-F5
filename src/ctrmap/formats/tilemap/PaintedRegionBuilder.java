@@ -3353,6 +3353,34 @@ public class PaintedRegionBuilder {
 		return bestArea > 0 ? best : bestFallback;
 	}
 
+	/**
+	 * The mesh to lay a floor on in {@code model}, honouring {@code preferred}
+	 * when that mesh exists here and can be read, and falling back to
+	 * {@link #defaultGroundMesh} when it cannot.
+	 *
+	 * <p>The fallback is the whole point. A zone's map is several regions and
+	 * they do NOT share a mesh numbering, so a mesh index chosen while looking
+	 * at one region is a guess about all the others - and a guess that misses
+	 * has to land on that region's ground, not on whatever happens to have the
+	 * most triangles. Blank map canvas used to pick by raw triangle count here,
+	 * which is exactly the heuristic {@link #defaultGroundMesh} was written to
+	 * replace: indoors the biggest mesh is usually a wall, so the new floor came
+	 * out textured like plaster.
+	 *
+	 * @param preferred the mesh the user picked, or any value at all - out of
+	 *                  range and unreadable are both answered by the fallback
+	 * @return a mesh index, or -1 if the model has no readable geometry
+	 */
+	public static int groundMeshOr(BchMapModel model, int preferred) {
+		if (preferred >= 0 && preferred < model.meshCount) {
+			List<BchMapModel.MeshGeom> g = model.geometry();
+			if (preferred < g.size() && g.get(preferred).posOk) {
+				return preferred;
+			}
+		}
+		return defaultGroundMesh(model);
+	}
+
 	/** Plan-view area of a mesh's up-facing triangles (a floor scores high, a wall ~0). */
 	private static double upFacingArea(BchMapModel model, int meshIndex) {
 		try {
