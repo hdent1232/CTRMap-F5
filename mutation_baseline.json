@@ -21,7 +21,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "b46dbafb672292883767c8d5ff61f47cb5446922404b2e7d1af5f17c2167405d"
+  "sha256": "fd1dbb401bfc28b33a4775e918a6f37986f15924dfee020f377561aced06f147"
  },
  "src/ctrmap/CtrmapMainframe.java": {
   "survivors": 0,
@@ -32,24 +32,24 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 1288,
+    "line": 1066,
     "kind": "negate-if"
    },
    {
-    "line": 1303,
+    "line": 1081,
     "kind": "negate-if"
    },
    {
-    "line": 1307,
+    "line": 1085,
     "kind": "negate-if"
    },
    {
-    "line": 1338,
+    "line": 1116,
     "kind": "flip-return"
    }
   ],
   "excluded": [],
-  "sha256": "f0b1a91b2128dc9a1c7b160d8761eac1a3d8b0c07324fb8783fd46c7f682f9b6"
+  "sha256": "49706eec1a4bddc453df4fd1c8c0b82a44cdd978235943fda8944b8fa982e663"
  },
  "src/ctrmap/GeometryForker.java": {
   "survivors": 0,
@@ -77,7 +77,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "067021fc49f5124ad26e6d010e3315e72d5ede69d4fd7adbd3147942c05146f8"
+  "sha256": "2927fde0cd8931a045b9be88952887a854c577aa8e2e30d4150ba5bb9ab9d6df"
  },
  "src/ctrmap/Ui.java": {
   "survivors": 0,
@@ -97,82 +97,42 @@
     "reason": "unreachable in a headless suite by construction: dialogs stay off unless the app's own main calls Ui.enableDialogs(), which no suite does and none may - that is the entire reason this seam exists. Nothing a headless test can observe distinguishes this line from its absence."
    }
   ],
-  "sha256": "0282f632cdac006652525a7089ebe181e114f99b1a1c08f19947d153c4c59bfd"
+  "sha256": "84a482679defd2675455ce12f0721c478380e62706456d1b84652852ae164ad2"
  },
  "src/ctrmap/Workspace.java": {
   "survivors": 0,
-  "killed": 10,
+  "killed": 2,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
   "lines": [],
   "killed_lines": [
    {
-    "line": 537,
+    "line": 469,
     "kind": "negate-if"
    },
    {
-    "line": 755,
-    "kind": "negate-if"
-   },
-   {
-    "line": 951,
-    "kind": "negate-if"
-   },
-   {
-    "line": 954,
-    "kind": "negate-if"
-   },
-   {
-    "line": 961,
-    "kind": "negate-if"
-   },
-   {
-    "line": 967,
-    "kind": "negate-if"
-   },
-   {
-    "line": 973,
-    "kind": "negate-if"
-   },
-   {
-    "line": 999,
-    "kind": "negate-if"
-   },
-   {
-    "line": 1020,
-    "kind": "negate-if"
-   },
-   {
-    "line": 1037,
+    "line": 486,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "2ce2bb3b67a7aa9b567a4f820f76ec2b48c51096ea59ee3bc9cd42fb89f43ace"
+  "sha256": "77347c68d563cbd171485273b6c811a4271cd17b70036444092a377878fa61f3"
  },
  "src/ctrmap/WorkspaceIntegrity.java": {
   "survivors": 0,
-  "killed": 13,
+  "killed": 9,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
   "lines": [],
   "killed_lines": [
    {
-    "line": 94,
+    "line": 98,
     "kind": "negate-if"
    },
    {
-    "line": 130,
-    "kind": "negate-if"
-   },
-   {
-    "line": 133,
-    "kind": "negate-if"
-   },
-   {
-    "line": 142,
+    "line": 137,
     "kind": "negate-if"
    },
    {
@@ -180,104 +140,88 @@
     "kind": "negate-if"
    },
    {
-    "line": 153,
+    "line": 150,
+    "kind": "negate-if"
+   },
+   {
+    "line": 157,
     "kind": "drop-report"
    },
    {
-    "line": 225,
+    "line": 229,
     "kind": "negate-if"
    },
    {
-    "line": 230,
+    "line": 234,
     "kind": "negate-if"
    },
    {
-    "line": 249,
+    "line": 253,
     "kind": "negate-if"
    },
    {
-    "line": 250,
+    "line": 254,
     "kind": "drop-report"
-   },
-   {
-    "line": 301,
-    "kind": "negate-if"
-   },
-   {
-    "line": 305,
-    "kind": "negate-if"
-   },
-   {
-    "line": 309,
-    "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "c54778b4781d6dff8d7472bd730d13d4592ff4420ffa34473fc60749a21f9dfd"
+  "sha256": "bc444ac88584ef8b8e1db0fd71a4b58c0c46997ff648cdb9174eb3939a6fbf42"
  },
  "src/ctrmap/formats/garc/GARC.java": {
   "survivors": 0,
-  "killed": 13,
+  "killed": 11,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
   "lines": [],
   "killed_lines": [
    {
-    "line": 254,
+    "line": 278,
     "kind": "negate-if"
    },
    {
-    "line": 257,
+    "line": 293,
     "kind": "negate-if"
    },
    {
-    "line": 272,
+    "line": 340,
     "kind": "negate-if"
    },
    {
-    "line": 310,
+    "line": 389,
     "kind": "negate-if"
    },
    {
-    "line": 312,
+    "line": 394,
     "kind": "negate-if"
    },
    {
-    "line": 317,
+    "line": 401,
     "kind": "negate-if"
    },
    {
-    "line": 322,
-    "kind": "negate-if"
-   },
-   {
-    "line": 329,
-    "kind": "negate-if"
-   },
-   {
-    "line": 330,
+    "line": 402,
     "kind": "drop-throw"
    },
    {
-    "line": 330,
+    "line": 402,
     "kind": "swallow-throw"
    },
    {
-    "line": 359,
+    "line": 443,
     "kind": "negate-if"
    },
    {
-    "line": 497,
+    "line": 590,
     "kind": "drop-throw"
    },
    {
-    "line": 497,
+    "line": 590,
     "kind": "swallow-throw"
    }
   ],
   "excluded": [],
-  "sha256": "c3183d2ed9b01b5eb471e5c967d731f3a6643fe16156ff2f1f439b7162306f14"
+  "sha256": "ea17c7865536a774f01613db2fefb9b9e32e32ed72fbb0dc128d73149ffa18d9"
  },
  "src/ctrmap/formats/h3d/BchTexturePack.java": {
   "survivors": 0,
@@ -288,92 +232,88 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 399,
+    "line": 402,
     "kind": "negate-if"
    },
    {
-    "line": 404,
+    "line": 407,
     "kind": "negate-if"
    },
    {
-    "line": 405,
+    "line": 408,
     "kind": "negate-if"
    },
    {
-    "line": 406,
+    "line": 409,
     "kind": "drop-throw"
    },
    {
-    "line": 406,
+    "line": 409,
     "kind": "swallow-throw"
    },
    {
-    "line": 443,
+    "line": 446,
     "kind": "negate-if"
    },
    {
-    "line": 448,
+    "line": 451,
     "kind": "negate-if"
    },
    {
-    "line": 459,
+    "line": 462,
     "kind": "negate-if"
    },
    {
-    "line": 500,
+    "line": 503,
     "kind": "negate-if"
    },
    {
-    "line": 505,
+    "line": 508,
     "kind": "negate-if"
    },
    {
-    "line": 509,
+    "line": 512,
     "kind": "negate-if"
    },
    {
-    "line": 516,
+    "line": 519,
     "kind": "negate-if"
    },
    {
-    "line": 597,
+    "line": 600,
     "kind": "negate-if"
    },
    {
-    "line": 598,
+    "line": 601,
     "kind": "negate-if"
    },
    {
-    "line": 599,
+    "line": 602,
     "kind": "drop-throw"
    },
    {
-    "line": 599,
+    "line": 602,
     "kind": "swallow-throw"
    }
   ],
   "excluded": [],
-  "sha256": "3f70a626e78fd65f3ea625bb3f47c2d971472e94d301829d8eeb82cdd1bcef97"
+  "sha256": "4abc0d12214fca2af36ca6681068f0c0223ceacf5600843b764fc7b234c5ec2a"
  },
  "src/ctrmap/formats/h3d/BuildingCatalog.java": {
   "survivors": 0,
-  "killed": 2,
+  "killed": 1,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
   "lines": [],
   "killed_lines": [
    {
-    "line": 196,
-    "kind": "negate-if"
-   },
-   {
     "line": 197,
     "kind": "flip-return"
    }
   ],
   "excluded": [],
-  "sha256": "a7dcdbbbadb74c389cac310040f9b77e4635ada42d2a5d32a04cb9fc309867eb"
+  "sha256": "80c905bc6369d9a6ea30f3af88cbafd194864a215145c899d6c288f69f13dcaa"
  },
  "src/ctrmap/formats/h3d/MapPrefab.java": {
   "survivors": 0,
@@ -384,84 +324,84 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 126,
+    "line": 128,
     "kind": "negate-if"
    },
    {
-    "line": 131,
+    "line": 133,
     "kind": "negate-if"
    },
    {
-    "line": 175,
+    "line": 177,
     "kind": "negate-if"
    },
    {
-    "line": 180,
+    "line": 182,
     "kind": "negate-if"
    },
    {
-    "line": 181,
+    "line": 183,
     "kind": "drop-throw"
    },
    {
-    "line": 181,
+    "line": 183,
     "kind": "swallow-throw"
    },
    {
-    "line": 279,
+    "line": 281,
     "kind": "negate-if"
    },
    {
-    "line": 282,
+    "line": 284,
     "kind": "negate-if"
    },
    {
-    "line": 288,
+    "line": 290,
     "kind": "negate-if"
    },
    {
-    "line": 332,
+    "line": 334,
     "kind": "negate-if"
    },
    {
-    "line": 351,
+    "line": 353,
     "kind": "negate-if"
    },
    {
-    "line": 406,
+    "line": 408,
     "kind": "negate-if"
    },
    {
-    "line": 419,
+    "line": 421,
     "kind": "negate-if"
    },
    {
-    "line": 455,
+    "line": 457,
     "kind": "negate-if"
    },
    {
-    "line": 697,
+    "line": 699,
     "kind": "negate-if"
    },
    {
-    "line": 701,
+    "line": 703,
     "kind": "negate-if"
    },
    {
-    "line": 849,
+    "line": 851,
     "kind": "negate-if"
    },
    {
-    "line": 908,
+    "line": 910,
     "kind": "negate-if"
    },
    {
-    "line": 938,
+    "line": 940,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "9acc753a7a137ec9f8b7d154b8d5e723f8a483e1c2f7ecf39954130c9fd95d66"
+  "sha256": "c77c405c1718e0b31d80112555977939468971d2938f2f981c41dd70390a97d2"
  },
  "src/ctrmap/formats/scripts/PawnDisassembler.java": {
   "survivors": 0,
@@ -472,20 +412,20 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 35,
+    "line": 44,
     "kind": "negate-if"
    },
    {
-    "line": 38,
+    "line": 47,
     "kind": "negate-if"
    },
    {
-    "line": 43,
+    "line": 52,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "00227c7e99b8848f18c0c68536d70226fea8e842f3755b31ad97f628f989590b"
+  "sha256": "8600f85c87e8867514679ddba5a47426aa4b0fe20d212e7b97d4ab9a458e6a77"
  },
  "src/ctrmap/formats/scripts/PawnInstruction.java": {
   "survivors": 0,
@@ -496,20 +436,20 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 119,
+    "line": 99,
     "kind": "negate-if"
    },
    {
-    "line": 123,
+    "line": 103,
     "kind": "negate-if"
    },
    {
-    "line": 141,
+    "line": 121,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "76a5037163ec71a6df72980bace5b0ba8edf950b669e794ee0dd38d9e705cea5"
+  "sha256": "ae90bf5ba9993c01ed3856e49d997f1fbb8a4edd839b5661208b855dcae0111a"
  },
  "src/ctrmap/formats/scripts/PawnSubroutine.java": {
   "survivors": 0,
@@ -664,60 +604,60 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 244,
+    "line": 245,
     "kind": "negate-if"
    },
    {
-    "line": 254,
+    "line": 255,
     "kind": "negate-if"
    },
    {
-    "line": 299,
+    "line": 300,
     "kind": "negate-if"
    },
    {
-    "line": 305,
+    "line": 306,
     "kind": "negate-if"
    },
    {
-    "line": 311,
+    "line": 312,
     "kind": "negate-if"
    },
    {
-    "line": 439,
+    "line": 440,
     "kind": "negate-if"
    },
    {
-    "line": 441,
+    "line": 442,
     "kind": "drop-throw"
    },
    {
-    "line": 441,
+    "line": 442,
     "kind": "swallow-throw"
    },
    {
-    "line": 447,
+    "line": 448,
     "kind": "negate-if"
    },
    {
-    "line": 450,
+    "line": 451,
     "kind": "negate-if"
    },
    {
-    "line": 477,
+    "line": 478,
     "kind": "negate-if"
    },
    {
-    "line": 635,
+    "line": 636,
     "kind": "negate-if"
    },
    {
-    "line": 880,
+    "line": 881,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "df7c18469e2c459994307eaaef1c1f364cbc10aa8c434f0bdae87ccf355a66b7"
+  "sha256": "6a6f1fed43ccd411134ce4f5c8b68e4418f32499325bf428d611413a4ea99fe4"
  },
  "src/ctrmap/formats/tilemap/TerrainCatalog.java": {
   "survivors": 0,
@@ -876,16 +816,16 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 62,
+    "line": 69,
     "kind": "negate-if"
    },
    {
-    "line": 65,
+    "line": 72,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "4a238d2dedd832ff0a301684476a4d36040ee58ecb07f0d3766f4fc486cbc364"
+  "sha256": "15af38199c2619a4971bcfeea4142798ade89d1ce66a065a8ec26968afa0cab2"
  },
  "src/ctrmap/humaninterface/GeoEditForm.java": {
   "survivors": 0,
@@ -905,7 +845,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "3a2194d2e4f5d710bb3e1845e41b34b5bcba4bbd42e2cb90012f94f3e2275550"
+  "sha256": "5df6928a4b4bb59f7c4a46f93442a5460d852dde94e939db76574dd6583f3083"
  },
  "src/ctrmap/humaninterface/MatrixEditForm.java": {
   "survivors": 0,
@@ -916,12 +856,12 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 78,
+    "line": 77,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "49494e6c4bb1e9d0cc8c95d0c1ba474cbf36871a31d92d2645a162a5cb93c76a"
+  "sha256": "b1bd3c97d1b48f8805c82d5f10cbefd49b301e83fd210de5c843144331b3afb1"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
   "survivors": 0,
@@ -932,76 +872,76 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 264,
+    "line": 265,
     "kind": "negate-if"
    },
    {
-    "line": 270,
+    "line": 271,
     "kind": "negate-if"
    },
    {
-    "line": 311,
+    "line": 312,
     "kind": "negate-if"
    },
    {
-    "line": 319,
+    "line": 320,
     "kind": "negate-if"
    },
    {
-    "line": 347,
+    "line": 348,
     "kind": "negate-if"
    },
    {
-    "line": 376,
+    "line": 377,
     "kind": "negate-if"
    },
    {
-    "line": 394,
+    "line": 395,
     "kind": "negate-if"
    },
    {
-    "line": 408,
+    "line": 409,
     "kind": "negate-if"
    },
    {
-    "line": 427,
-    "kind": "negate-if"
-   },
-   {
-    "line": 559,
+    "line": 428,
     "kind": "negate-if"
    },
    {
     "line": 560,
+    "kind": "negate-if"
+   },
+   {
+    "line": 561,
     "kind": "drop-report"
    },
    {
-    "line": 569,
+    "line": 570,
     "kind": "drop-report"
    },
    {
-    "line": 810,
+    "line": 855,
     "kind": "negate-if"
    },
    {
-    "line": 1799,
+    "line": 1962,
     "kind": "negate-if"
    },
    {
-    "line": 1836,
+    "line": 1999,
     "kind": "negate-if"
    },
    {
-    "line": 1843,
+    "line": 2006,
     "kind": "negate-if"
    },
    {
-    "line": 1884,
+    "line": 2047,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "af0bde9e467e468a67f0580079e90cf0d1ef0d8592c0e8473643362115dbb9b5"
+  "sha256": "6a62fefd4c46bcdf1bd2a35405000d2ce70159f07a41508bc4d95256a9521dec"
  },
  "src/ctrmap/humaninterface/PaintForm.java": {
   "survivors": 0,
@@ -1016,28 +956,28 @@
     "kind": "negate-if"
    },
    {
-    "line": 632,
+    "line": 633,
     "kind": "negate-if"
    },
    {
-    "line": 634,
+    "line": 635,
     "kind": "drop-report"
    },
    {
-    "line": 639,
+    "line": 640,
     "kind": "negate-if"
    },
    {
-    "line": 704,
+    "line": 705,
     "kind": "negate-if"
    },
    {
-    "line": 875,
+    "line": 876,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "863f247074b46852dc1592b48b05cc071d33d10b5de8a993b8d78ca3c882b4c2"
+  "sha256": "97e803d3093554553ae33ad9461c8f842e95e256de7537ed4d56ec59fe0e54cf"
  },
  "src/ctrmap/humaninterface/PropEditForm.java": {
   "survivors": 0,
@@ -1053,7 +993,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "a05df360c8822c1d5caf3f4fe540df905e82841e53df3f40489e840fd28e7cc3"
+  "sha256": "e1849da716667dd9a4341fe4598e8922ffd0d6b1f7c9e1ee6e138736ea62b558"
  },
  "src/ctrmap/humaninterface/ScriptEditor.java": {
   "survivors": 0,
@@ -1064,12 +1004,12 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 947,
+    "line": 945,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "43fbcba96eb43f26215b829aa40f7724d6d8c72cd3bf1cf4517751cd0d96aecf"
+  "sha256": "aaaff6dac45b4e28954132b81d9bb44f3227b77d5c43998e15c73ca9e795d073"
  },
  "src/ctrmap/humaninterface/TileMapPanel.java": {
   "survivors": 0,
@@ -1080,155 +1020,147 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 433,
+    "line": 431,
     "kind": "drop-throw"
    },
    {
-    "line": 433,
+    "line": 431,
     "kind": "swallow-throw"
    },
    {
-    "line": 545,
+    "line": 542,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "ea64cc599cd6faeb2ee0ecc2fcd7c3bfce1a63274631c2f1fde0ac7c6cdb6e9f"
+  "sha256": "3710d7f341581ea2669372c5df07bb0542ce2adfb1d6b60e34b461a3d546c8f1"
  },
  "src/ctrmap/humaninterface/TilePainterForm.java": {
   "survivors": 0,
-  "killed": 35,
+  "killed": 34,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
   "lines": [],
   "killed_lines": [
    {
-    "line": 199,
+    "line": 201,
     "kind": "negate-if"
    },
    {
-    "line": 204,
+    "line": 206,
     "kind": "negate-if"
    },
    {
-    "line": 205,
+    "line": 207,
     "kind": "drop-throw"
    },
    {
-    "line": 205,
+    "line": 207,
     "kind": "swallow-throw"
    },
    {
-    "line": 218,
+    "line": 220,
     "kind": "negate-if"
    },
    {
-    "line": 219,
+    "line": 221,
     "kind": "drop-throw"
    },
    {
-    "line": 219,
+    "line": 221,
     "kind": "swallow-throw"
    },
    {
-    "line": 236,
+    "line": 238,
     "kind": "negate-if"
    },
    {
-    "line": 239,
+    "line": 241,
     "kind": "negate-if"
    },
    {
-    "line": 247,
+    "line": 249,
     "kind": "negate-if"
    },
    {
-    "line": 320,
+    "line": 322,
     "kind": "negate-if"
    },
    {
-    "line": 341,
+    "line": 343,
     "kind": "negate-if"
    },
    {
-    "line": 342,
+    "line": 344,
     "kind": "drop-throw"
    },
    {
-    "line": 342,
+    "line": 344,
     "kind": "swallow-throw"
    },
    {
-    "line": 431,
+    "line": 433,
     "kind": "negate-if"
    },
    {
-    "line": 468,
+    "line": 470,
     "kind": "negate-if"
-   },
-   {
-    "line": 471,
-    "kind": "negate-if"
-   },
-   {
-    "line": 472,
-    "kind": "drop-throw"
-   },
-   {
-    "line": 472,
-    "kind": "swallow-throw"
    },
    {
     "line": 476,
-    "kind": "negate-if"
-   },
-   {
-    "line": 477,
     "kind": "drop-throw"
    },
    {
-    "line": 477,
+    "line": 476,
     "kind": "swallow-throw"
    },
    {
-    "line": 497,
+    "line": 480,
     "kind": "negate-if"
    },
    {
-    "line": 518,
-    "kind": "negate-if"
-   },
-   {
-    "line": 524,
-    "kind": "negate-if"
-   },
-   {
-    "line": 525,
+    "line": 481,
     "kind": "drop-throw"
    },
    {
-    "line": 525,
+    "line": 481,
     "kind": "swallow-throw"
    },
    {
-    "line": 555,
+    "line": 501,
     "kind": "negate-if"
    },
    {
-    "line": 604,
+    "line": 522,
     "kind": "negate-if"
    },
    {
-    "line": 637,
+    "line": 528,
     "kind": "negate-if"
    },
    {
-    "line": 644,
+    "line": 529,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 529,
+    "kind": "swallow-throw"
+   },
+   {
+    "line": 559,
     "kind": "negate-if"
    },
    {
-    "line": 655,
+    "line": 608,
+    "kind": "negate-if"
+   },
+   {
+    "line": 641,
+    "kind": "negate-if"
+   },
+   {
+    "line": 648,
     "kind": "negate-if"
    },
    {
@@ -1236,16 +1168,20 @@
     "kind": "negate-if"
    },
    {
-    "line": 754,
+    "line": 663,
     "kind": "negate-if"
    },
    {
-    "line": 911,
+    "line": 758,
+    "kind": "negate-if"
+   },
+   {
+    "line": 915,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "fad4ab2ad48905503c8a5a5d095642361035895a64028700a8abc9614a6cc687"
+  "sha256": "10d1041b20d9a733a701345e21f4dd7e2df3a5875070a990c4c90e6005b9d4a8"
  },
  "src/ctrmap/humaninterface/WarpEditForm.java": {
   "survivors": 0,
@@ -1256,28 +1192,28 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 70,
+    "line": 65,
     "kind": "negate-if"
    },
    {
-    "line": 73,
+    "line": 68,
     "kind": "negate-if"
    },
    {
-    "line": 352,
+    "line": 161,
     "kind": "negate-if"
    },
    {
-    "line": 638,
+    "line": 447,
     "kind": "negate-if"
    },
    {
-    "line": 656,
+    "line": 465,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "0d85c8e36db1f90e1cb62ce1df236ddd605edf3320e66d15eb820b02cfa0b0e9"
+  "sha256": "cec3b1f01a484f6abf0f40364d7b9ff2da144700ad8584673b3c1cafd602df0c"
  },
  "src/ctrmap/humaninterface/WorkspaceSettings.java": {
   "survivors": 0,
@@ -1317,7 +1253,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "e593c7ffa3e038af81d1c1eb24896895756f39b07d6badec125f365f1ccb1775"
+  "sha256": "934cacecb9eee05533d69ee6bfa04d77714eee29f836eb76d0158f309fb2f783"
  },
  "src/ctrmap/humaninterface/tools/WarpTool.java": {
   "survivors": 0,
@@ -1328,12 +1264,12 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 43,
+    "line": 42,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "c4ab382d4881ae7538ac7f6e10e91132277d96efabd5f4d1499aa47aa247f427"
+  "sha256": "b03d454015b98587d8f06a24d3d4ff35ecd8e70d9be5b154f67f87993b4479f8"
  },
  "src/ctrmap/setup/SetupWizard.java": {
   "survivors": 0,
@@ -1344,20 +1280,20 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 746,
+    "line": 748,
     "kind": "negate-if"
    },
    {
-    "line": 755,
+    "line": 757,
     "kind": "negate-if"
    },
    {
-    "line": 760,
+    "line": 762,
     "kind": "flip-return"
    }
   ],
   "excluded": [],
-  "sha256": "17839fa842c6e228db1aa05fc39cf728ce9c731df8117dcff220ff8123649f3d"
+  "sha256": "18988d5cccceb60f5f0b105533ce0b989af45afcd4548d22c0431a6e1145d159"
  },
  "src/ctrmap/tools/BuildingHarvester.java": {
   "survivors": 0,
@@ -1368,44 +1304,44 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 180,
+    "line": 183,
     "kind": "negate-if"
    },
    {
-    "line": 316,
+    "line": 319,
     "kind": "negate-if"
    },
    {
-    "line": 327,
+    "line": 330,
     "kind": "negate-if"
    },
    {
-    "line": 350,
+    "line": 353,
     "kind": "negate-if"
    },
    {
-    "line": 355,
+    "line": 358,
     "kind": "negate-if"
    },
    {
-    "line": 386,
+    "line": 389,
     "kind": "negate-if"
    },
    {
-    "line": 571,
+    "line": 574,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "3b56a80fe981822a3bcbd90b82e68e8f0595c6b57affedee5f60e568fad5b7a3"
+  "sha256": "117f14dc91de0e408ec488327e051bd3651d56691fefe8993e452ff51c42bb42"
  },
  "_meta": {
-  "measured_at": "e226e30",
-  "measurements": 278,
-  "distinct": 246,
-  "attempted": 243,
+  "measured_at": "79afab8",
+  "measurements": 255,
+  "distinct": 230,
+  "attempted": 227,
   "survived": 0,
-  "killed": 243,
+  "killed": 227,
   "killed_by_flood": 1,
   "hung": 0,
   "nocompile": 0,
