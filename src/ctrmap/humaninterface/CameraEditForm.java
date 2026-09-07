@@ -221,7 +221,7 @@ public class CameraEditForm extends javax.swing.JPanel {
 			float ret = Float.parseFloat(field.getText());
 			return ret;
 		} catch (NumberFormatException | NullPointerException ex) {
-			JOptionPane.showMessageDialog(null, "Warning: Couldn't retrieve floating point value of " + field.getText());
+			ctrmap.Ui.message(null, "Warning: Couldn't retrieve floating point value of " + field.getText(), "Message", JOptionPane.INFORMATION_MESSAGE);
 			return 0f;
 		}
 	}

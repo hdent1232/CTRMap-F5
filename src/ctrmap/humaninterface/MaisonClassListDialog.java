@@ -77,7 +77,7 @@ public class MaisonClassListDialog {
 		restoreRow.addActionListener(e -> {
 			int r = jt.getSelectedRow();
 			if (r < 0) {
-				JOptionPane.showMessageDialog(dlg, "Select a class row first.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
+				ctrmap.Ui.message(dlg, "Select a class row first.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
 				return;
 			}
 			if (!model.restoreRetailRow(r)) {
@@ -107,7 +107,7 @@ public class MaisonClassListDialog {
 					jt.getCellEditor().stopCellEditing();
 				}
 				model.save();
-				JOptionPane.showMessageDialog(dlg, "Saved " + TABLE_NAMES[model.tableIndex]
+				ctrmap.Ui.message(dlg, "Saved " + TABLE_NAMES[model.tableIndex]
 						+ ".\nDeploy to emulator to apply.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
 				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Class assignments");

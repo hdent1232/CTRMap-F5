@@ -78,7 +78,7 @@ public class AreaLightingDialog {
 				Workspace.addPersist(areaFile);
 				ctrmap.CtrmapMainframe.refreshSceneFog();
 				AreaForkPrompt.packIfForked(null);
-				JOptionPane.showMessageDialog(parent,
+				ctrmap.Ui.message(parent,
 						"Atmosphere applied. Deploy to see it in-game - the 3D view already shows it.",
 						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
@@ -179,7 +179,7 @@ public class AreaLightingDialog {
 				ctrmap.CtrmapMainframe.refreshSceneFog();
 				AreaForkPrompt.packIfForked(null);
 				dlg.dispose();
-				JOptionPane.showMessageDialog(parent,
+				ctrmap.Ui.message(parent,
 						"Fog & lighting saved. Deploy to see it in-game - the 3D view already shows it.",
 						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {

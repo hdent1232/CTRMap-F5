@@ -346,7 +346,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		ensurePaletteLoaded();
 		int sel = paletteList.getSelectedIndex();
 		if (sel < 0 || sel >= paletteEntries.length) {
-			JOptionPane.showMessageDialog(this, "Select a prop in the palette list first.", "No prop selected", JOptionPane.INFORMATION_MESSAGE);
+			ctrmap.Ui.message(this, "Select a prop in the palette list first.", "No prop selected", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
 		if (!loaded || props == null) {
@@ -985,7 +985,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			reg.entries.put(entry.reference, entry);
 			reg.modified = true;
 			if (!fromTemplate) {
-				JOptionPane.showMessageDialog(this,
+				ctrmap.Ui.message(this,
 						"Registered with a BARE entry: this model has no retail registry template\n"
 						+ "anywhere (custom prop?), so its animation bindings could not be copied.\n"
 						+ "Set them via \"[DANGER] Edit registry data\" if the prop should animate.",

@@ -1145,7 +1145,7 @@ public class TilePainterForm {
 					throw new IllegalStateException("the injected routine did not verify");
 				}
 			} catch (RuntimeException ex) {
-				JOptionPane.showMessageDialog(frame, signs.size() + " sign(s) placed as scenery only - the sign routine could not\n"
+				ctrmap.Ui.message(frame, signs.size() + " sign(s) placed as scenery only - the sign routine could not\n"
 						+ "be transplanted: " + ex.getMessage(), "Signs", JOptionPane.INFORMATION_MESSAGE);
 				return 0;
 			}
@@ -1154,7 +1154,7 @@ public class TilePainterForm {
 		File sf = Workspace.getStoryTextGARC() != null
 				? Workspace.getWorkspaceFile(Workspace.ArchiveType.STORYTEXT, textID) : null;
 		if (sf == null || !sf.exists()) {
-			JOptionPane.showMessageDialog(frame, "Signs placed as scenery only: the STORYTEXT archive is unavailable.",
+			ctrmap.Ui.message(frame, "Signs placed as scenery only: the STORYTEXT archive is unavailable.",
 					"Signs", JOptionPane.INFORMATION_MESSAGE);
 			return 0;
 		}

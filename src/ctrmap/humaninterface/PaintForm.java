@@ -430,7 +430,7 @@ public class PaintForm extends JPanel {
 			int changed = TilePainterForm.enableWaterScroll(areaId);
 			syncWater();
 			AreaForkPrompt.packIfForked(null);
-			JOptionPane.showMessageDialog(this, changed > 0
+			ctrmap.Ui.message(this, changed > 0
 					? "Sea-scroll animation added for " + changed + " map cell(s)."
 					: "No map cells needed changes (the scroll was already bound).",
 					"Make water ripple", JOptionPane.INFORMATION_MESSAGE);
@@ -925,7 +925,7 @@ public class PaintForm extends JPanel {
 			}
 		}
 		if (touchedCount == 0 && placed.isEmpty()) {
-			JOptionPane.showMessageDialog(this, "Nothing to apply yet - paint some tiles or place a building first.",
+			ctrmap.Ui.message(this, "Nothing to apply yet - paint some tiles or place a building first.",
 					"Map Builder", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}

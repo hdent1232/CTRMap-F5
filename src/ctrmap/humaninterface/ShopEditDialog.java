@@ -47,7 +47,7 @@ public class ShopEditDialog {
 			codeFile = new File(remembered);
 		}
 		if (codeFile == null) {
-			JOptionPane.showMessageDialog(parent,
+			ctrmap.Ui.message(parent,
 					"Pick your DECOMPRESSED code.bin (the executable - shop lists live inside it,\n"
 					+ "not in the RomFS). It's the same file the zone-limit patch uses.",
 					"Shop editor", JOptionPane.INFORMATION_MESSAGE);
@@ -106,7 +106,7 @@ public class ShopEditDialog {
 			try {
 				byte[] patched = ShopData.write(code, model.shops);
 				if (java.util.Arrays.equals(patched, code)) {
-					JOptionPane.showMessageDialog(dlg, "No changes to save.", "Shop editor", JOptionPane.INFORMATION_MESSAGE);
+					ctrmap.Ui.message(dlg, "No changes to save.", "Shop editor", JOptionPane.INFORMATION_MESSAGE);
 					return;
 				}
 				byte[] ips = ShopData.diffIPS(code, patched);
@@ -132,7 +132,7 @@ public class ShopEditDialog {
 					}
 				}
 				Files.write(out.toPath(), ips);
-				JOptionPane.showMessageDialog(dlg,
+				ctrmap.Ui.message(dlg,
 						"Saved " + out.getName() + note + ".\n\n"
 						+ "Deploy it like the zone patch:\n"
 						+ "  Azahar: load/mods/<titleid>/exefs/code.ips\n"

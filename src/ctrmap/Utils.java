@@ -51,7 +51,7 @@ public class Utils {
 	}
 
 	public static void showInfoMessage(String title, String message) {
-		JOptionPane.showMessageDialog(null, message, title, JOptionPane.INFORMATION_MESSAGE);
+		Ui.message(null, message, title, JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	/**
