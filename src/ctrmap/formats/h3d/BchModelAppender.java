@@ -84,6 +84,134 @@ public class BchModelAppender {
         return (off & 0x1FFFFFF) | (flag<<25);
     }
 
+    /**
+     * Where, in the donor file, everything an append copies lives. Absolute
+     * file offsets, computed from the donor alone by {@link #locateDonor};
+     * public so a suite can ask for them without appending anything.
+     */
+    public static final class DonorSpans {
+        /** The material the donor mesh uses. */
+        public int mat;
+        /** Its 0x2C material header, and the mesh's 0x38 header. */
+        public int matHdr, meshHdr;
+        /** The material's parameter block [beg, end). */
+        public int paramsBeg, paramsEnd;
+        /** The mesh's submesh block [beg, end). */
+        public int subBeg, subEnd;
+        /** The material's command stream: fragment commands from matCmdBeg, texture commands [texCmdBeg, texCmdEnd). */
+        public int matCmdBeg, texCmdBeg, texCmdEnd;
+        /** The mesh's command stream: enable commands from meshCmdBeg, disable commands [disCmdBeg, disCmdEnd). */
+        public int meshCmdBeg, disCmdBeg, disCmdEnd;
+        /** The mesh's vertex and index buffers in the raw section; idxFlag is the index pointer's reloc flag, 0x27 for 16-bit indices, 0x28 for 8-bit. */
+        public int vtx, vtxSize, idx, idxSize, idxFlag;
+        /** Pointers to the material header's three texture-name strings, or null where the slot is empty. */
+        public Integer tex0, tex1, tex2;
+    }
+
+    /**
+     * Finds the donor spans for submesh {@code dj}. Every object start in the
+     * contents section (material parameter blocks, submesh blocks, and where
+     * the metadata tail begins) is collected, so a block ends where the next
+     * object starts. Refuses a skinned submesh, and a material whose command
+     * streams are not in the expected order.
+     */
+    public static DonorSpans locateDonor(byte[] D, BchMapModel d, int dj){
+        DonorSpans s=new DonorSpans();
+        s.mat=d.meshes.get(dj)[5];
+        s.paramsBeg=d.materialParamOffsets.get(s.mat);
+        TreeSet<Integer> dObj=new TreeSet<>();
+        for (int i=0;i<d.matCount;i++) dObj.add(d.materialParamOffsets.get(i));
+        for (int j=0;j<d.meshCount;j++) dObj.add(d.meshes.get(j)[3]);
+        int dmmv=d.ptr(d.modelMetaPtr), dmmc=le32(D,d.modelMetaPtr+4);
+        int dTail=0x44+d.contentsLen;
+        for (int k=0;k<dmmc;k++){ int dp=d.ptr(dmmv+k*0xC+8); if (dp!=0&&dp<dTail) dTail=dp; }
+        dObj.add(dTail);
+        s.paramsEnd=dObj.higher(s.paramsBeg);
+        s.subBeg=d.meshes.get(dj)[3];
+        s.subEnd=dObj.higher(s.subBeg);
+
+        // donor submesh must not be skinned (+0 skinningMode u16, +2 nodeIdCount u16):
+        // its bone indices reference the DONOR's bone list, which the target does not
+        // have - even a target WITH a skeleton has different bones (verified crash:
+        // donor bone index 5 vs a 2-bone target). Rigid-skinned interior props are
+        // therefore not appendable in v1; same-material fast paths still handle them.
+        if ((le32(D,s.subBeg)&0xFFFFFFFF)!=0)
+            throw new IllegalStateException("donor submesh is skinned (bone-dependent) - not supported");
+        s.matHdr=d.matValuesPtr+s.mat*0x2C;
+        s.meshHdr=d.meshes.get(dj)[0];
+
+        // donor command blocks
+        s.matCmdBeg=d.ptr(s.paramsBeg+0xC8);
+        s.texCmdBeg=d.ptr(s.matHdr+0x10);
+        s.texCmdEnd=s.texCmdBeg+4*le32(D,s.matHdr+0x14);
+        s.meshCmdBeg=d.meshes.get(dj)[1];
+        s.disCmdBeg=d.ptr(s.meshHdr+0x18);
+        s.disCmdEnd=s.disCmdBeg+4*le32(D,s.meshHdr+0x1C);
+        if (!(s.matCmdBeg<s.texCmdBeg && s.texCmdBeg<=s.texCmdEnd)) throw new IllegalStateException("donor mat cmd order");
+
+        // donor mat hdr strings
+        if (d.ptr(s.matHdr+0x1C)!=0) s.tex0=d.ptr(s.matHdr+0x1C);
+        if (d.ptr(s.matHdr+0x20)!=0) s.tex1=d.ptr(s.matHdr+0x20);
+        if (d.ptr(s.matHdr+0x24)!=0) s.tex2=d.ptr(s.matHdr+0x24);
+
+        // donor buffers
+        TreeSet<Integer> dBufs=new TreeSet<>();
+        for (int[] vb : d.vtxBuffers) dBufs.add(vb[0]);
+        for (int[] ib : d.idxBuffers) dBufs.add(ib[0]);
+        s.vtx=d.vtxBuffers.get(0)[0]; // per-mesh: find by cmd loc
+        { int loc=d.meshes.get(dj)[1]+0x30;
+          for (int[] vb : d.vtxBuffers) if (vb[1]==loc) s.vtx=vb[0];
+          int sc=d.ptr(d.meshes.get(dj)[3]+0x2C)+0x10;
+          for (int[] ib : d.idxBuffers) if (ib[1]==sc){ s.idx=ib[0]; s.idxFlag=(ib[2]==2)?0x27:0x28; }
+        }
+        int dRawEnd=d.rawDataAddr+d.rawDataLen;
+        Integer q; q=dBufs.higher(s.vtx); int dVe=q==null?dRawEnd:q;
+        q=dBufs.higher(s.idx); int dIe=q==null?dRawEnd:q;
+        s.vtxSize=dVe-s.vtx; s.idxSize=dIe-s.idx;
+        return s;
+    }
+
+    /**
+     * A string pool rebuilt for the appended model: the target's strings plus
+     * the ones the append needs, sorted, NUL-separated, first byte NUL - the
+     * layout every retail pool has. Built by {@link #rebuildStrings}.
+     */
+    public static final class StringPool {
+        public byte[] bytes;
+        /** string -> its offset in the new pool */
+        public Map<String,Integer> offset;
+        /** old pool offset -> new pool offset, for every string the target had (and 0 -> 0) */
+        public Map<Integer,Integer> remap;
+    }
+
+    public static StringPool rebuildStrings(byte[] T, BchMapModel t, Collection<String> needed){
+        TreeSet<String> set=new TreeSet<>(needed);
+        { int s=t.stringsAddr+1, end=t.stringsAddr+t.stringsLen;
+          while (s<end){ String v=str(T,s); set.add(v); s+=v.length()+1; } }
+        StringPool sp=new StringPool();
+        sp.offset=new HashMap<>();
+        int so=1;
+        StringBuilder poolB=new StringBuilder("\0");
+        for (String v : set){ sp.offset.put(v,so); poolB.append(v).append('\0'); so+=v.length()+1; }
+        sp.bytes=new byte[so];
+        for (int i=0;i<so;i++) sp.bytes[i]=(byte)poolB.charAt(i);
+        // old->new offset remap
+        sp.remap=new HashMap<>();
+        { int s=t.stringsAddr+1, end=t.stringsAddr+t.stringsLen;
+          sp.remap.put(0,0);
+          while (s<end){ String v=str(T,s); sp.remap.put(s-t.stringsAddr, sp.offset.get(v)); s+=v.length()+1; } }
+        return sp;
+    }
+
+    /**
+     * Appends donor submesh {@code dj} (and its material, named {@code newName})
+     * to the target. In order: parse both and take the target's landmarks;
+     * {@link #locateDonor}; gather the strings the append needs and
+     * {@link #rebuildStrings}; rebuild the two name trees; plan the seven
+     * contents insertions and the command/raw layouts; assemble contents,
+     * commands and raw; rewrite every relocation; repair the layer boundary
+     * words; write the file.
+     */
     public static byte[] append(byte[] T, byte[] D, int dj, String newName){
         BchMapModel t=new BchMapModel(T), d=new BchMapModel(D);
         if (!t.validate().isEmpty() || !d.validate().isEmpty()) throw new IllegalStateException("parse problems");
@@ -100,98 +228,33 @@ public class BchModelAppender {
         for (int k=0;k<mmc;k++){ int dp=t.ptr(mmv+k*0xC+8); if (dp!=0&&dp<P7) P7=dp; }
         String tModelName=str(T, t.modelNamePtr);
 
-        // donor landmarks
-        int ddj=dj;
-        int dm=d.meshes.get(ddj)[5];
-        int dPB=d.materialParamOffsets.get(dm);
-        TreeSet<Integer> dObj=new TreeSet<>();
-        for (int i=0;i<d.matCount;i++) dObj.add(d.materialParamOffsets.get(i));
-        for (int j=0;j<d.meshCount;j++) dObj.add(d.meshes.get(j)[3]);
-        int dmmv=d.ptr(d.modelMetaPtr), dmmc=le32(D,d.modelMetaPtr+4);
-        int dTail=0x44+d.contentsLen;
-        for (int k=0;k<dmmc;k++){ int dp=d.ptr(dmmv+k*0xC+8); if (dp!=0&&dp<dTail) dTail=dp; }
-        dObj.add(dTail);
-        Integer nx=dObj.higher(dPB);
-        int dPE=nx;
-        int dSB=d.meshes.get(ddj)[3];
-        Integer nx2=dObj.higher(dSB);
-        int dSE=nx2;
-
-        // donor submesh must not be skinned (+0 skinningMode u16, +2 nodeIdCount u16):
-        // its bone indices reference the DONOR's bone list, which the target does not
-        // have - even a target WITH a skeleton has different bones (verified crash:
-        // donor bone index 5 vs a 2-bone target). Rigid-skinned interior props are
-        // therefore not appendable in v1; same-material fast paths still handle them.
-        if ((le32(D,dSB)&0xFFFFFFFF)!=0)
-            throw new IllegalStateException("donor submesh is skinned (bone-dependent) - not supported");
-        int dMatHdr=d.matValuesPtr+dm*0x2C;
-        int dMeshHdr=d.meshes.get(ddj)[0];
-        String dName=d.getMaterialName(dm);
-        String dModelName=str(D, d.modelNamePtr);
+        // ---- donor landmarks ----
+        DonorSpans ds=locateDonor(D, d, dj);
         String newFull=newName+"@"+tModelName;
-
-        // donor command blocks
-        int dFC=d.ptr(dPB+0xC8);
-        int dTC=d.ptr(dMatHdr+0x10);
-        int dTCend=dTC+4*le32(D,dMatHdr+0x14);
-        int dEN=d.meshes.get(ddj)[1];
-        int dDIS=d.ptr(dMeshHdr+0x18);
-        int dDISend=dDIS+4*le32(D,dMeshHdr+0x1C);
-        if (!(dFC<dTC && dTC<=dTCend)) throw new IllegalStateException("donor mat cmd order");
-        int matCmdSize=dTCend-dFC, meshCmdSize=dDISend-dEN;
-
-        // donor buffers
-        TreeSet<Integer> dBufs=new TreeSet<>();
-        for (int[] vb : d.vtxBuffers) dBufs.add(vb[0]);
-        for (int[] ib : d.idxBuffers) dBufs.add(ib[0]);
-        int dV=d.vtxBuffers.get(0)[0]; // per-mesh: find by cmd loc
-        int dI=0, dIdxFlag=0;
-        { int loc=d.meshes.get(ddj)[1]+0x30;
-          for (int[] vb : d.vtxBuffers) if (vb[1]==loc) dV=vb[0];
-          int sc=d.ptr(d.meshes.get(ddj)[3]+0x2C)+0x10;
-          for (int[] ib : d.idxBuffers) if (ib[1]==sc){ dI=ib[0]; dIdxFlag=(ib[2]==2)?0x27:0x28; }
-        }
-        int dRawEnd=d.rawDataAddr+d.rawDataLen;
-        Integer q; q=dBufs.higher(dV); int dVe=q==null?dRawEnd:q;
-        q=dBufs.higher(dI); int dIe=q==null?dRawEnd:q;
-        int vtxSize=dVe-dV, idxSize=dIe-dI;
+        int matCmdSize=ds.texCmdEnd-ds.matCmdBeg, meshCmdSize=ds.disCmdEnd-ds.meshCmdBeg;
+        int vtxSize=ds.vtxSize, idxSize=ds.idxSize;
 
         // ---- string pool ----
-        // existing
-        List<String> pool=new ArrayList<>();
-        { int s=t.stringsAddr+1, end=t.stringsAddr+t.stringsLen;
-          while (s<end){ String v=str(T,s); pool.add(v); s+=v.length()+1; } }
-        TreeSet<String> set=new TreeSet<>(pool);
-        if (set.contains(newName)||set.contains(newFull)){ /* name reuse allowed if unused by mats? enforce unique */ }
         for (int i=0;i<N;i++) if (t.getMaterialName(i).equals(newName)) throw new IllegalArgumentException("name exists");
         // donor strings needed: role-translated
         List<RE> dre=decode(d,D);
         List<RE> dBlockEntries=new ArrayList<>();
         for (RE e : dre){
-            if (e.src==0 && ((e.ptrLoc>=dPB&&e.ptrLoc<dPE)||(e.ptrLoc>=dSB&&e.ptrLoc<dSE))) dBlockEntries.add(e);
+            if (e.src==0 && ((e.ptrLoc>=ds.paramsBeg&&e.ptrLoc<ds.paramsEnd)||(e.ptrLoc>=ds.subBeg&&e.ptrLoc<ds.subEnd))) dBlockEntries.add(e);
         }
+        TreeSet<String> needed=new TreeSet<>();
         for (RE e : dBlockEntries) if (e.tgt==1){
-            String v = (e.ptrLoc==dPB+0x108)? newFull : str(D, d.stringsAddr+e.word);
-            set.add(v);
+            String v = (e.ptrLoc==ds.paramsBeg+0x108)? newFull : str(D, d.stringsAddr+e.word);
+            needed.add(v);
         }
-        // donor mat hdr strings
-        Integer dTex0=null,dTex1=null,dTex2=null;
-        if (d.ptr(dMatHdr+0x1C)!=0){ set.add(str(D,d.ptr(dMatHdr+0x1C))); dTex0=d.ptr(dMatHdr+0x1C); }
-        if (d.ptr(dMatHdr+0x20)!=0){ set.add(str(D,d.ptr(dMatHdr+0x20))); dTex1=d.ptr(dMatHdr+0x20); }
-        if (d.ptr(dMatHdr+0x24)!=0){ set.add(str(D,d.ptr(dMatHdr+0x24))); dTex2=d.ptr(dMatHdr+0x24); }
-        set.add(newName); set.add(newFull);
-        // build new pool
-        Map<String,Integer> strOff=new HashMap<>();
-        int so=1;
-        StringBuilder poolB=new StringBuilder("\0");
-        for (String v : set){ strOff.put(v,so); poolB.append(v).append('\0'); so+=v.length()+1; }
-        byte[] newStrings=new byte[so];
-        for (int i=0;i<so;i++) newStrings[i]=(byte)poolB.charAt(i);
-        // old->new offset remap
-        Map<Integer,Integer> strRemap=new HashMap<>();
-        { int s=t.stringsAddr+1, end=t.stringsAddr+t.stringsLen;
-          strRemap.put(0,0);
-          while (s<end){ String v=str(T,s); strRemap.put(s-t.stringsAddr, strOff.get(v)); s+=v.length()+1; } }
+        if (ds.tex0!=null) needed.add(str(D,ds.tex0));
+        if (ds.tex1!=null) needed.add(str(D,ds.tex1));
+        if (ds.tex2!=null) needed.add(str(D,ds.tex2));
+        needed.add(newName); needed.add(newFull);
+        StringPool sp=rebuildStrings(T, t, needed);
+        byte[] newStrings=sp.bytes;
+        Map<String,Integer> strOff=sp.offset;
+        Map<Integer,Integer> strRemap=sp.remap;
 
         // ---- trees ----
         List<String> fullNames=new ArrayList<>(), matNames=new ArrayList<>();
@@ -201,7 +264,7 @@ public class BchModelAppender {
         List<Node> nMT=buildTree(concat(matNames,newName));
 
         // ---- contents insertions ----
-        int lam=le32(D,dMeshHdr+4)>>>24;
+        int lam=le32(D,ds.meshHdr+4)>>>24;
         int[] endOff={0x4C,0x54,0x5C,0x64};
         int[] begOff={0x48,0x50,0x58,0x60};
         int P5=t.ptr(t.modelPtr+endOff[lam]);
@@ -213,7 +276,7 @@ public class BchModelAppender {
         layerCnt[lam]++;
 
         int[] insPos ={ d1v, d1v+4*N, matArr, meshArr, P5, P6, P7 };
-        int[] insSize={ 0xC, 4,       0xC,    0x2C,    0x38, dPE-dPB, dSE-dSB };
+        int[] insSize={ 0xC, 4,       0xC,    0x2C,    0x38, ds.paramsEnd-ds.paramsBeg, ds.subEnd-ds.subBeg };
         // new absolute starts (contents) of each insertion
         int[] newStart=new int[7];
         { int acc=0;
@@ -242,7 +305,7 @@ public class BchModelAppender {
           if (minIdx!=Integer.MAX_VALUE) vtxGroupEnd=minIdx-t.rawDataAddr;
           if (minIdx8!=Integer.MAX_VALUE) idx16GroupEnd=minIdx8-t.rawDataAddr; }
         int insVtxPos=vtxGroupEnd;
-        int insIdxPos=(dIdxFlag==0x27)? idx16GroupEnd : rawLen;
+        int insIdxPos=(ds.idxFlag==0x27)? idx16GroupEnd : rawLen;
         java.util.function.IntUnaryOperator rawDelta = x -> { int a=0; if (insVtxPos<=x) a+=vtxSize; if (insIdxPos<=x) a+=idxSize; return a; };
         int newVtxOff=insVtxPos, newIdxOff=insIdxPos+vtxSize;
         int newRawLen=rawLen+vtxSize+idxSize;
@@ -269,25 +332,25 @@ public class BchModelAppender {
         // dict1.values[N]
         poke(newC, newStart[1]-C, newParamsAbs-C);
         // new mat hdr (donor bytes, patch)
-        System.arraycopy(D, dMatHdr, newC, newMatHdrAbs-C, 0x2C);
+        System.arraycopy(D, ds.matHdr, newC, newMatHdrAbs-C, 0x2C);
         poke(newC, newMatHdrAbs-C+0x00, newParamsAbs-C);
-        poke(newC, newMatHdrAbs-C+0x10, newMatCmdRel+(dTC-dFC));
+        poke(newC, newMatHdrAbs-C+0x10, newMatCmdRel+(ds.texCmdBeg-ds.matCmdBeg));
         poke(newC, newMatHdrAbs-C+0x18, newParamsAbs-C+0x110);
-        poke(newC, newMatHdrAbs-C+0x1C, dTex0==null?0:strOff.get(str(D,dTex0)));
-        poke(newC, newMatHdrAbs-C+0x20, dTex1==null?0:strOff.get(str(D,dTex1)));
-        poke(newC, newMatHdrAbs-C+0x24, dTex2==null?0:strOff.get(str(D,dTex2)));
+        poke(newC, newMatHdrAbs-C+0x1C, ds.tex0==null?0:strOff.get(str(D,ds.tex0)));
+        poke(newC, newMatHdrAbs-C+0x20, ds.tex1==null?0:strOff.get(str(D,ds.tex1)));
+        poke(newC, newMatHdrAbs-C+0x24, ds.tex2==null?0:strOff.get(str(D,ds.tex2)));
         poke(newC, newMatHdrAbs-C+0x28, strOff.get(newName));
         // new mesh hdr
-        System.arraycopy(D, dMeshHdr, newC, newMeshHdrAbs-C, 0x38);
+        System.arraycopy(D, ds.meshHdr, newC, newMeshHdrAbs-C, 0x38);
         poke(newC, newMeshHdrAbs-C+0x00, N);
-        poke(newC, newMeshHdrAbs-C+0x08, newMeshCmdRel+(dEN-dEN));
+        poke(newC, newMeshHdrAbs-C+0x08, newMeshCmdRel+(ds.meshCmdBeg-ds.meshCmdBeg));
         poke(newC, newMeshHdrAbs-C+0x10, newSubAbs-C);
-        poke(newC, newMeshHdrAbs-C+0x18, newMeshCmdRel+(dDIS-dEN));
+        poke(newC, newMeshHdrAbs-C+0x18, newMeshCmdRel+(ds.disCmdBeg-ds.meshCmdBeg));
         poke(newC, newMeshHdrAbs-C+0x2C, newModelAbs-C);
         poke(newC, newMeshHdrAbs-C+0x34, newSubAbs-C+0x34);
         // donor blocks verbatim
-        System.arraycopy(D, dPB, newC, newMatBlkAbs-C, dPE-dPB);
-        System.arraycopy(D, dSB, newC, newMeshBlkAbs-C, dSE-dSB);
+        System.arraycopy(D, ds.paramsBeg, newC, newMatBlkAbs-C, ds.paramsEnd-ds.paramsBeg);
+        System.arraycopy(D, ds.subBeg, newC, newMeshBlkAbs-C, ds.subEnd-ds.subBeg);
         // counts
         poke(newC, 12+4, N+1);                    // content dict1 count (dictTable+0x10 rel to C)
         poke(newC, newModelAbs-C+0x38, N+1);
@@ -296,16 +359,16 @@ public class BchModelAppender {
         // ---- assemble commands ----
         byte[] newCmd=new byte[newCmdLen];
         System.arraycopy(T, t.commandsAddr, newCmd, 0, Q1rel);
-        System.arraycopy(D, dFC, newCmd, Q1rel, matCmdSize);
+        System.arraycopy(D, ds.matCmdBeg, newCmd, Q1rel, matCmdSize);
         System.arraycopy(T, t.commandsAddr+Q1rel, newCmd, Q1rel+matCmdSize, oldCmdLen-Q1rel);
-        System.arraycopy(D, dEN, newCmd, newMeshCmdRel, meshCmdSize);
+        System.arraycopy(D, ds.meshCmdBeg, newCmd, newMeshCmdRel, meshCmdSize);
 
         // ---- assemble raw ----
         byte[] newRaw=new byte[newRawLen];
         System.arraycopy(T, t.rawDataAddr, newRaw, 0, insVtxPos);
-        System.arraycopy(D, dV, newRaw, insVtxPos, vtxSize);
+        System.arraycopy(D, ds.vtx, newRaw, insVtxPos, vtxSize);
         System.arraycopy(T, t.rawDataAddr+insVtxPos, newRaw, insVtxPos+vtxSize, insIdxPos-insVtxPos);
-        System.arraycopy(D, dI, newRaw, insIdxPos+vtxSize, idxSize);
+        System.arraycopy(D, ds.idx, newRaw, insIdxPos+vtxSize, idxSize);
         System.arraycopy(T, t.rawDataAddr+insIdxPos, newRaw, insIdxPos+vtxSize+idxSize, rawLen-insIdxPos);
 
         // ---- reloc rebuild ----
@@ -344,8 +407,8 @@ public class BchModelAppender {
         // new trio (donor mesh CMD entries)
         for (RE e : dre){
             if (e.src!=2) continue;
-            if (e.ptrLoc<dEN||e.ptrLoc>=dDISend) continue;
-            int nl=newMeshCmdRel+(e.ptrLoc-d.commandsAddr-(dEN-d.commandsAddr));
+            if (e.ptrLoc<ds.meshCmdBeg||e.ptrLoc>=ds.disCmdEnd) continue;
+            int nl=newMeshCmdRel+(e.ptrLoc-d.commandsAddr-(ds.meshCmdBeg-d.commandsAddr));
             int nw;
             switch (e.flag){
                 case 0x2E: nw=0; break;
@@ -358,18 +421,18 @@ public class BchModelAppender {
         }
         // donor block entries
         for (RE e : dBlockEntries){
-            boolean inMat=e.ptrLoc>=dPB&&e.ptrLoc<dPE;
-            int base=inMat?dPB:dSB, nbase=inMat?newMatBlkAbs:newMeshBlkAbs;
+            boolean inMat=e.ptrLoc>=ds.paramsBeg&&e.ptrLoc<ds.paramsEnd;
+            int base=inMat?ds.paramsBeg:ds.subBeg, nbase=inMat?newMatBlkAbs:newMeshBlkAbs;
             int nl=(nbase-C)+(e.ptrLoc-base);
             int nw;
             switch (e.tgt){
                 case 0: { int abs=e.word+0x44;
-                          if (abs<base||abs>= (inMat?dPE:dSE)) throw new IllegalStateException("cross-block ptr");
+                          if (abs<base||abs>= (inMat?ds.paramsEnd:ds.subEnd)) throw new IllegalStateException("cross-block ptr");
                           nw=(nbase-C)+(abs-base); break; }
-                case 1: { String v=(e.ptrLoc==dPB+0x108)?newFull:str(D,d.stringsAddr+e.word); nw=strOff.get(v); break; }
+                case 1: { String v=(e.ptrLoc==ds.paramsBeg+0x108)?newFull:str(D,d.stringsAddr+e.word); nw=strOff.get(v); break; }
                 case 2: case 3: {
-                          if (e.word>=dFC-d.commandsAddr && e.word<dTCend-d.commandsAddr) nw=newMatCmdRel+(e.word-(dFC-d.commandsAddr));
-                          else if (e.word>=dEN-d.commandsAddr && e.word<dDISend-d.commandsAddr) nw=newMeshCmdRel+(e.word-(dEN-d.commandsAddr));
+                          if (e.word>=ds.matCmdBeg-d.commandsAddr && e.word<ds.texCmdEnd-d.commandsAddr) nw=newMatCmdRel+(e.word-(ds.matCmdBeg-d.commandsAddr));
+                          else if (e.word>=ds.meshCmdBeg-d.commandsAddr && e.word<ds.disCmdEnd-d.commandsAddr) nw=newMeshCmdRel+(e.word-(ds.meshCmdBeg-d.commandsAddr));
                           else throw new IllegalStateException("donor cmd word outside blocks");
                           break; }
                 default: throw new IllegalStateException("donor tgt "+e.tgt);
@@ -387,9 +450,9 @@ public class BchModelAppender {
         outRest.add(encode(0x00, h+0x00, C, 0));
         outRest.add(encode(0x02, h+0x10, C, 2));
         outRest.add(encode(0x00, h+0x18, C, 0));
-        if (dTex0!=null) outRest.add(encode(0x01, h+0x1C, C, 1));
-        if (dTex1!=null) outRest.add(encode(0x01, h+0x20, C, 1));
-        if (dTex2!=null) outRest.add(encode(0x01, h+0x24, C, 1));
+        if (ds.tex0!=null) outRest.add(encode(0x01, h+0x1C, C, 1));
+        if (ds.tex1!=null) outRest.add(encode(0x01, h+0x20, C, 1));
+        if (ds.tex2!=null) outRest.add(encode(0x01, h+0x24, C, 1));
         outRest.add(encode(0x01, h+0x28, C, 1));
         // new mesh hdr
         int g=newMeshHdrAbs;

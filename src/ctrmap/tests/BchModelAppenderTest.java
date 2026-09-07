@@ -118,10 +118,128 @@ public class BchModelAppenderTest {
 			System.out.println("FAIL cross-area 682->722: " + ex.getMessage());
 		}
 
+		// (F) the two pieces append is built from, on their own
+		piecesStandAlone();
+
 		summary();
 		if (failures > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * (F) {@link BchModelAppender#locateDonor} and
+	 * {@link BchModelAppender#rebuildStrings} on their own. The append is
+	 * built from them, and neither could be asked anything before without
+	 * appending: the spans of a donor mesh must be ordered, disjoint and inside
+	 * their sections, and a rebuilt pool must be sorted, NUL-separated, hold
+	 * every old string and every new one, and map every old offset to the
+	 * same string at its new offset.
+	 */
+	static void piecesStandAlone() {
+		int spans = 0, pools = 0;
+		for (int i : new int[]{1, 30, 153, 500, 800}) {
+			byte[] m = sub(field.getDecompressedEntry(i), 1);
+			if (m == null || !BchMapModel.isMapModel(m)) {
+				continue;
+			}
+			BchMapModel d = new BchMapModel(m);
+			int dj = pickDonorMesh(m, m);
+			if (dj < 0) {
+				continue;
+			}
+			BchModelAppender.DonorSpans s = BchModelAppender.locateDonor(m, d, dj);
+			int cEnd = 0x44 + d.contentsLen, cmdEnd = d.commandsAddr + d.commandsLen, rawEnd = d.rawDataAddr + d.rawDataLen;
+			String why = null;
+			if (!(0x44 <= s.paramsBeg && s.paramsBeg < s.paramsEnd && s.paramsEnd <= cEnd)) {
+				why = "material params [" + s.paramsBeg + "," + s.paramsEnd + ") not inside contents ending " + cEnd;
+			} else if (!(0x44 <= s.subBeg && s.subBeg < s.subEnd && s.subEnd <= cEnd)) {
+				why = "submesh [" + s.subBeg + "," + s.subEnd + ") not inside contents ending " + cEnd;
+			} else if (!(s.paramsEnd <= s.subBeg || s.subEnd <= s.paramsBeg)) {
+				why = "material params and submesh overlap";
+			} else if (!(d.commandsAddr <= s.matCmdBeg && s.matCmdBeg < s.texCmdBeg && s.texCmdBeg <= s.texCmdEnd && s.texCmdEnd <= cmdEnd)) {
+				why = "material commands " + s.matCmdBeg + "/" + s.texCmdBeg + "/" + s.texCmdEnd + " not ordered inside commands ending " + cmdEnd;
+			} else if (!(d.commandsAddr <= s.meshCmdBeg && s.meshCmdBeg <= s.disCmdBeg && s.disCmdBeg <= s.disCmdEnd && s.meshCmdBeg < s.disCmdEnd && s.disCmdEnd <= cmdEnd)) {
+				why = "mesh commands " + s.meshCmdBeg + "/" + s.disCmdBeg + "/" + s.disCmdEnd + " not ordered inside commands ending " + cmdEnd;
+			} else if (!(d.rawDataAddr <= s.vtx && s.vtxSize > 0 && s.vtx + s.vtxSize <= rawEnd)) {
+				why = "vertex buffer [" + s.vtx + "+" + s.vtxSize + ") not inside raw ending " + rawEnd;
+			} else if (!(d.rawDataAddr <= s.idx && s.idxSize > 0 && s.idx + s.idxSize <= rawEnd)) {
+				why = "index buffer [" + s.idx + "+" + s.idxSize + ") not inside raw ending " + rawEnd;
+			} else if (!(s.idxFlag == 0x27 || s.idxFlag == 0x28)) {
+				why = "index flag " + Integer.toHexString(s.idxFlag) + " is neither u16 nor u8";
+			} else if (s.matHdr != d.matValuesPtr + s.mat * 0x2C || s.meshHdr != d.meshes.get(dj)[0]) {
+				why = "headers do not sit where the tables say";
+			}
+			if (why != null) {
+				failures++;
+				System.out.println("FAIL spans region " + i + " mesh " + dj + ": " + why);
+			} else {
+				spans++;
+			}
+
+			BchModelAppender.StringPool sp = BchModelAppender.rebuildStrings(m, d, Arrays.asList("zz_new", "aa_new"));
+			List<String> old = new ArrayList<>();
+			for (int o = d.stringsAddr + 1, end = d.stringsAddr + d.stringsLen; o < end;) {
+				String v = readZ(m, o);
+				old.add(v);
+				o += v.length() + 1;
+			}
+			List<String> walked = new ArrayList<>();
+			String bad = sp.bytes.length > 0 && sp.bytes[0] == 0 ? null : "the pool does not start with NUL";
+			String prev = null;
+			for (int o = 1; bad == null && o < sp.bytes.length;) {
+				String v = readZ(sp.bytes, o);
+				walked.add(v);
+				Integer at = sp.offset.get(v);
+				if (at == null || at != o) {
+					bad = "\"" + v + "\" sits at " + o + " but offset says " + at;
+				} else if (prev != null && prev.compareTo(v) >= 0) {
+					bad = "\"" + prev + "\" before \"" + v + "\" - the pool is not sorted";
+				}
+				prev = v;
+				o += v.length() + 1;
+			}
+			if (bad == null && !(walked.contains("zz_new") && walked.contains("aa_new"))) {
+				bad = "the strings asked for are not in the pool";
+			}
+			if (bad == null && !walked.containsAll(old)) {
+				bad = "an old string was lost";
+			}
+			if (bad == null && new HashSet<>(walked).size() != walked.size()) {
+				bad = "a string is in the pool twice";
+			}
+			Integer zero = sp.remap.get(0);
+			if (bad == null && (zero == null || zero != 0)) {
+				bad = "old offset 0 does not remap to 0";
+			}
+			for (int o = d.stringsAddr + 1, end = d.stringsAddr + d.stringsLen; bad == null && o < end;) {
+				String v = readZ(m, o);
+				Integer no = sp.remap.get(o - d.stringsAddr);
+				if (no == null || !readZ(sp.bytes, no).equals(v)) {
+					bad = "old offset " + (o - d.stringsAddr) + " (\"" + v + "\") remaps to " + no;
+				}
+				o += v.length() + 1;
+			}
+			if (bad != null) {
+				failures++;
+				System.out.println("FAIL pool region " + i + ": " + bad);
+			} else {
+				pools++;
+			}
+		}
+		System.out.println("(F) pieces alone: " + spans + " donor span sets and " + pools + " rebuilt pools hold their invariants");
+		if (spans < 3 || pools < 3) {
+			failures++;
+			System.out.println("FAIL pieces: fewer than 3 regions were checked (" + spans + "/" + pools + ")");
+		}
+	}
+
+	static String readZ(byte[] b, int at) {
+		StringBuilder sb = new StringBuilder();
+		for (int p = at; p < b.length && b[p] != 0; p++) {
+			sb.append((char) (b[p] & 0xFF));
+		}
+		return sb.toString();
 	}
 
 	static void trySelfAppend(int i, byte[] model) {
