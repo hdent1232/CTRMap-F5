@@ -81,9 +81,11 @@ public class GlobalStateTest {
 	 * message which global was added and why it had to be one.
 	 *
 	 * <p>146 when this suite was written; 141 after five that did not need to
-	 * be mutable globals stopped being them (one dead, two private, two final).
+	 * be mutable globals stopped being them (one dead, two private, two final);
+	 * 140 once AreaForkPrompt handed its fork result back instead of
+	 * remembering it.
 	 */
-	private static final int CEILING = 141;
+	private static final int CEILING = 140;
 
 	private static final int ACC_PUBLIC = 0x0001;
 	private static final int ACC_STATIC = 0x0008;

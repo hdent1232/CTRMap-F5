@@ -2,8 +2,10 @@ package ctrmap.tests;
 
 import ctrmap.AreaForker;
 import ctrmap.GeometryForker;
+import ctrmap.Ui;
 import ctrmap.Workspace;
 import ctrmap.WorkspaceIntegrity;
+import ctrmap.humaninterface.AreaForkPrompt;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -60,6 +62,7 @@ public class ForkGuardsTest {
 		ScratchGame.open(dump);
 		areaForkKeepsTheRegistryAligned();
 		geometryForkOnlyRunsWhenItIsNeeded();
+		theForkPromptHandsBackWhatItDid();
 		gappedAppendIsRefused();
 		aRegistryAlreadyPastTheNewAreaIdIsRefusedOutLoud();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -138,6 +141,96 @@ public class ForkGuardsTest {
 				+ Workspace.mm.length + ")");
 		check(Arrays.equals(r.srcRegions, r.newRegions),
 				"and hands back the regions the zone is already using");
+	}
+
+	/**
+	 * The shared-area prompt hands its outcome back to the caller, instead of
+	 * leaving it in a static for whoever packs next.
+	 *
+	 * <p>{@code AreaForkPrompt.ensurePrivate} used to return a bare area id and
+	 * remember "I forked" in {@code lastForked}, which {@code packIfForked}
+	 * read later. Three dialogs call the first; two of them call the second.
+	 * The third - the tile painter's Apply - packs on its own, so its fork left
+	 * the flag standing, and the next atmosphere or ripple edit packed the
+	 * workspace for a fork it never made. The result now travels with the
+	 * caller, exactly as {@link GeometryForker#ensurePrivate}'s does, and a
+	 * caller that forked nothing cannot be told otherwise by anyone.
+	 *
+	 * <p>Drives the prompt headless through {@link Ui#record}: every answer the
+	 * dialog can give, then the pack-if-forked decision on a result that
+	 * forked nothing while a fork somebody else made and packed is fresh.
+	 */
+	static void theForkPromptHandsBackWhatItDid() throws Exception {
+		int zone = -1;
+		for (int z = 0; z < Workspace.zo.length - 2 && zone < 0; z++) {
+			if (Arrays.binarySearch(ZONES, z) < 0 && AreaForker.areaSharers(z) > 0) {
+				zone = z;
+			}
+		}
+		check(zone >= 0, "a zone that still shares its area: " + zone);
+		final int area = AreaForker.currentArea(zone);
+		final int areas = Workspace.ad.length;
+		final String edit = "a test edit";
+
+		//nobody there to answer: that is a cancel, not consent
+		List<String> said = Ui.record();
+		AreaForker.ForkResult r = AreaForkPrompt.ensurePrivate(null, zone, area, edit);
+		Ui.stopRecording();
+		check(said.size() == 1 && said.get(0).contains("SHARES its area"),
+				"a zone that shares its area is asked: " + said);
+		check(r == null, "and an unanswered question hands back nothing to edit with: " + r);
+
+		Ui.record("Cancel");
+		r = AreaForkPrompt.ensurePrivate(null, zone, area, edit);
+		Ui.stopRecording();
+		check(r == null, "Cancel hands back nothing to edit with: " + r);
+
+		Ui.record("Edit the shared area anyway");
+		r = AreaForkPrompt.ensurePrivate(null, zone, area, edit);
+		Ui.stopRecording();
+		check(r != null && !r.forked && r.newArea == area && r.oldArea == area && r.zoneIndex == zone,
+				"declining the fork hands back the shared area " + area + " as it is, forked=false");
+		check(AreaForker.currentArea(zone) == area && Workspace.ad.length == areas,
+				"and none of the three answers so far wrote anything (zone " + zone + " still on area "
+				+ AreaForker.currentArea(zone) + ", AreaData " + Workspace.ad.length + ")");
+
+		Ui.record("Give this zone its own area");
+		r = AreaForkPrompt.ensurePrivate(null, zone, area, edit);
+		Ui.stopRecording();
+		check(r != null && r.forked && r.oldArea == area && r.newArea != area && r.newArea == areas,
+				"accepting forks, and the result says so: area " + area + " -> "
+				+ (r == null ? "null" : r.newArea + ", forked=" + r.forked));
+		check(r != null && AreaForker.currentArea(zone) == r.newArea, "and the zone now points at the copy");
+
+		//this caller packs on its own, as the tile painter's Apply does, and
+		//never calls packIfForked - the shape that left the static standing
+		pack();
+		check(Workspace.ad.length == areas + 1 && AreaForker.areaSharers(zone) == 0,
+				"packed by the caller itself: AreaData " + areas + " -> " + Workspace.ad.length
+				+ ", zone " + zone + " shares with nobody");
+
+		//an unrelated caller now asks about a zone that forks nothing. Its
+		//pack-if-forked must run onDone at once and pack nothing: the fork above
+		//is not its news, and there is no longer anywhere for it to be told
+		final boolean[] ran = {false};
+		AreaForker.ForkResult none = AreaForker.forkIfShared(zone);
+		check(!none.forked, "a zone that owns its area forks nothing when asked again");
+		//a pack reloads every archive handle, so the handle's identity is the
+		//cheap, exact witness of "nothing was packed" - a headless pack waits
+		//for its worker, so timing would not tell the two apart
+		ctrmap.formats.garc.GARC handle = Workspace.ad;
+		AreaForkPrompt.packIfForked(none, () -> ran[0] = true);
+		check(ran[0], "packIfForked on a result that forked nothing runs onDone");
+		check(Workspace.ad == handle, "and packs nothing, whatever somebody else forked a moment ago"
+				+ " (the AreaData handle was " + (Workspace.ad == handle ? "kept" : "reloaded by a pack") + ")");
+
+		//and the prompt itself does not ask about a private area
+		said = Ui.record();
+		r = AreaForkPrompt.ensurePrivate(null, zone, r.newArea, edit);
+		Ui.stopRecording();
+		check(said.isEmpty() && r != null && !r.forked && r.newArea == r.oldArea
+				&& r.newArea == AreaForker.currentArea(zone),
+				"a zone that owns its area is not asked, and gets that area back unforked: " + said);
 	}
 
 	/**

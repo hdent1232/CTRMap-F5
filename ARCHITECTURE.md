@@ -102,15 +102,14 @@ what the list said when it was written.*
 
 CTRMap keeps a lot in `public static` fields. Measured from the compiled
 classes (`ctrmap.tests.GlobalStateTest`, which counts fields rather than
-grepping lines), there are **141 public static mutable fields outside
-`ctrmap.tests`**, and they are not scattered - they sit in seven classes:
+grepping lines), there are **140 public static mutable fields outside
+`ctrmap.tests`**, and they are not scattered - they sit in six classes:
 
 | where | count | what it is |
 |---|---|---|
 | `CtrmapMainframe` | 91 | Swing widgets and the panels/forms of the main window. Each is assigned exactly once, while `main()` builds the window, and never again: effectively final after startup. A smell, low risk. |
 | `Workspace` | 36 | The open game: 4 config strings, 11 derived archive `File`s, 17 `GARC` handles, the `GameType` and `valid`. These do change during operation - but together, as one "a workspace was opened / packed" transaction. |
 | `Selector`, `MatrixSelector` | 11 | The 2D cursor: selected/highlighted tile and region coordinates, rewritten on every mouse move. Genuinely per-interaction mutable state, confined to the two panels that own it. |
-| `AreaForkPrompt.lastForked` | 1 | A return value smuggled through a static: `ensurePrivate` sets it, `packIfForked` reads it later. Its sibling `GeometryForker.ensurePrivate` returns a `ForkResult` instead, which is the shape this wants. |
 | `PawnInstruction.nativeResolver` | 1 | The script whose natives table a disassembly resolves names against. Per-script context living in a class field; five suites set it and null it again in a `finally`, which is what knowing it is a hazard looks like. |
 | `LocationNames.textfile` | 1 | A lazily-loaded name table. `getLocName` dereferences it without a null check; `ZoneRepurposeScanner` loads it first by hand rather than risk that, which is the workaround the missing check forces. |
 
@@ -120,7 +119,7 @@ is `Workspace.reset()`, which puts every static this class owns back to its
 pre-startup value so a test can exercise more than one workspace per JVM,
 and `GlobalStateTest`, which fails if a field is added and left out of the
 reset, if a public static field is added that nothing ever assigns, or if
-the count of 141 rises. Nothing in the application calls `reset()`:
+the count of 140 rises. Nothing in the application calls `reset()`:
 re-pointing a live workspace goes through `validate()`, and rerouting that
 through the reset would be a behaviour change with no test behind it.
 
