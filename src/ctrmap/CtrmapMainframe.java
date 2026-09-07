@@ -1666,20 +1666,12 @@ public class CtrmapMainframe {
 			if (mmFile == null) {
 				return -1;
 			}
-			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
-			int sub0 = (mm[4] & 0xFF) | ((mm[5] & 0xFF) << 8) | ((mm[6] & 0xFF) << 16) | ((mm[7] & 0xFF) << 24);
-			int w = (mm[sub0 + 4] & 0xFF) | ((mm[sub0 + 5] & 0xFF) << 8);
-			int h = (mm[sub0 + 6] & 0xFF) | ((mm[sub0 + 7] & 0xFF) << 8);
-			for (int k = 0; k < w * h; k++) {
-				int id = (mm[sub0 + 8 + k * 2] & 0xFF) | ((mm[sub0 + 9 + k * 2] & 0xFF) << 8);
-				if (id != 0xFFFF) {
-					return id;
-				}
-			}
+			return ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(
+					java.nio.file.Files.readAllBytes(mmFile.toPath()));
 		} catch (Exception ex) {
 			//fall through - the spinner just starts at 0
+			return -1;
 		}
-		return -1;
 	}
 
 	/** Exports a map region's 3D model to a Blender-ready OBJ (Tools menu). */
@@ -1869,17 +1861,8 @@ public class CtrmapMainframe {
 		ctrmap.formats.h3d.BchMapModel probe;
 		try {
 			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
-			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
-			int sub0 = (mm[4] & 0xFF) | ((mm[5] & 0xFF) << 8) | ((mm[6] & 0xFF) << 16) | ((mm[7] & 0xFF) << 24);
-			int w = (mm[sub0 + 4] & 0xFF) | ((mm[sub0 + 5] & 0xFF) << 8);
-			int h = (mm[sub0 + 6] & 0xFF) | ((mm[sub0 + 7] & 0xFF) << 8);
-			int rid = -1;
-			for (int k = 0; k < w * h && rid < 0; k++) {
-				int id = (mm[sub0 + 8 + k * 2] & 0xFF) | ((mm[sub0 + 9 + k * 2] & 0xFF) << 8);
-				if (id != 0xFFFF) {
-					rid = id;
-				}
-			}
+			int rid = ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(
+					java.nio.file.Files.readAllBytes(mmFile.toPath()));
 			GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, rid));
 			probe = new ctrmap.formats.h3d.BchMapModel(gr.getFile(1));
 		} catch (Exception ex) {
@@ -1962,17 +1945,10 @@ public class CtrmapMainframe {
 					continue;
 				}
 				ctrmap.formats.h3d.BchMapModel tm = new ctrmap.formats.h3d.BchMapModel(template);
-				int gm = groundMesh;
-				if (gm >= tm.meshCount || !tm.geometry().get(gm).posOk) {
-					gm = 0;
-					int bt = -1;
-					for (ctrmap.formats.h3d.BchMapModel.MeshGeom g : tm.geometry()) {
-						if (g.posOk && tm.getTriangles(g.meshIndex).length > bt) {
-							bt = tm.getTriangles(g.meshIndex).length;
-							gm = g.meshIndex;
-						}
-					}
-				}
+				//the picked mesh number came from ONE region's model; the zone's
+				//other regions number their meshes differently, so where it does
+				//not fit, fall back to that region's own ground
+				int gm = ctrmap.formats.tilemap.PaintedRegionBuilder.groundMeshOr(tm, groundMesh);
 				ctrmap.formats.h3d.RegionFactory.BlankContent bc = ctrmap.formats.h3d.RegionFactory.blank(template, gm);
 				gr.storeFile(1, bc.model);
 				gr.storeFile(2, bc.collision);

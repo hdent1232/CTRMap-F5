@@ -96,6 +96,58 @@ public class MapMatrix {
 		mcb.east = 740;
 	}
 
+	/**
+	 * The first FieldData region a map matrix uses, or -1.
+	 *
+	 * <p>This is what "the map of the loaded zone" means to the tools that work
+	 * on one region at a time - Export/Import OBJ default to it, and Blank map
+	 * canvas probes it for the zone's own materials. Getting it wrong is not a
+	 * cosmetic default: Import OBJ writes the mesh into whatever region the
+	 * spinner is showing, so a wrong answer here drops the user's edited model
+	 * on top of somebody else's town.
+	 *
+	 * <p>Takes the whole .mm container rather than a parsed MapMatrix because
+	 * the callers have a file and want one number; building a MapMatrix would
+	 * open a GR per populated cell against the live workspace. Cells read
+	 * 0xFFFF where the zone puts no region, so the first cell that is not
+	 * 0xFFFF is the map's top-left corner in reading order.
+	 *
+	 * @param mmContainer the raw bytes of the map matrix file (header + subfiles)
+	 * @return the region id, or -1 if the file is unreadable or wholly empty
+	 */
+	public static int firstRegionId(byte[] mmContainer) {
+		if (mmContainer == null || mmContainer.length < 8) {
+			return -1;
+		}
+		//subfile 0's offset lives in the container header, right after the
+		//2-byte magic and 2-byte file count
+		int sub0 = u32(mmContainer, 4);
+		if (sub0 < 0 || sub0 + 8 > mmContainer.length) {
+			return -1;
+		}
+		int w = u16(mmContainer, sub0 + 4);
+		int h = u16(mmContainer, sub0 + 6);
+		for (int k = 0; k < w * h; k++) {
+			int at = sub0 + 8 + k * 2;
+			if (at + 1 >= mmContainer.length) {
+				break;
+			}
+			int id = u16(mmContainer, at);
+			if (id != 0xFFFF) {
+				return id;
+			}
+		}
+		return -1;
+	}
+
+	private static int u16(byte[] b, int o) {
+		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
+	}
+
+	private static int u32(byte[] b, int o) {
+		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
+	}
+
 	public byte[] assembleData() {
 		try {
 			ByteArrayOutputStream out = new ByteArrayOutputStream();
