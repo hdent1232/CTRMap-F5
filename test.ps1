@@ -91,6 +91,7 @@ if ($absent.Count -gt 0) {
 $step = if ($Quick) { "60" } else { "20" }
 $suites = @(
     @{ n = "Source seam guard (gamedef)"; c = "ctrmap.tests.SourceSeamTest";        a = @("src") },
+    @{ n = "GarcSniff (what a stored entry IS)"; c = "ctrmap.tests.GarcSniffTest"; a = @($gamedir) },
     @{ n = "VaultGuards (a pristine copy that can be put back)"; c = "ctrmap.tests.VaultGuardsTest"; a = @() },
     @{ n = "ItemData (776 retail records round-trip)"; c = "ctrmap.tests.ItemDataTest"; a = @($gamedir) },
     @{ n = "RecordSchema (the registry reads what ItemData reads)"; c = "ctrmap.tests.RecordSchemaTest"; a = @($gamedir) },
