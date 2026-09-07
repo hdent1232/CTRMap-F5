@@ -252,12 +252,35 @@ public class GFMessageFileHostileTest {
 		}
 	}
 
+	/**
+	 * Whether the writer REFUSED this input - not merely whether it blew up.
+	 *
+	 * <p>Every refusal {@link GFMessageFile#write} raises is an
+	 * IllegalArgumentException (NumberFormatException, which it also raises, is
+	 * one). Anything else means the guard that should have refused is gone and
+	 * something downstream fell over instead. MEASURED, by hand: disable the
+	 * "Variable text is not capped properly" check and the substring a line
+	 * below it throws StringIndexOutOfBoundsException - with
+	 * {@code catch (RuntimeException)} here, both message-file suites stayed
+	 * green over a writer with no guard at all.
+	 *
+	 * <p>That matters more here than in the item and pack guards, which witness
+	 * the FILE and so do not depend on the exception's type: write() returns
+	 * bytes and touches nothing, so the exception is the whole property.
+	 * It is the same shape as the talker freeze - a suite scoring "it threw
+	 * something" as "it refused" - and the wrong exception is printed by name
+	 * rather than returned as a quiet false.
+	 */
 	private static boolean throwsOnWrite(List<String> lines) {
 		try {
 			GFMessageFile.write(lines);
 			return false;
-		} catch (RuntimeException ex) {
+		} catch (IllegalArgumentException ex) {
 			return true;
+		} catch (RuntimeException ex) {
+			System.out.println("    (not a refusal: " + ex.getClass().getName() + ": "
+					+ ex.getMessage() + " - the guard that should have refused is gone)");
+			return false;
 		}
 	}
 

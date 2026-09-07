@@ -191,12 +191,25 @@ public class GFMessageFileRoundTripTest {
 		return null;
 	}
 
+	/**
+	 * Whether the writer REFUSED this input - not merely whether it blew up.
+	 * Every refusal {@link GFMessageFile#write} raises is an
+	 * IllegalArgumentException; anything else means the guard that should have
+	 * refused is gone and something downstream fell over instead. The whole
+	 * reasoning, and the measurement behind it, is on
+	 * GFMessageFileHostileTest.throwsOnWrite - this helper is its twin and must
+	 * not drift from it.
+	 */
 	private static boolean throwsOnWrite(List<String> lines) {
 		try {
 			GFMessageFile.write(lines);
 			return false;
-		} catch (RuntimeException ex) {
+		} catch (IllegalArgumentException ex) {
 			return true;
+		} catch (RuntimeException ex) {
+			System.out.println("    (not a refusal: " + ex.getClass().getName() + ": "
+					+ ex.getMessage() + " - the guard that should have refused is gone)");
+			return false;
 		}
 	}
 
