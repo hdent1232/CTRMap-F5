@@ -51,7 +51,7 @@ public class MaisonEditDialog {
 	};
 
 	public static void show(Frame parent) {
-		if (!Workspace.valid || !Workspace.isOA()) {
+		if (!Workspace.isValid() || !Workspace.isOA()) {
 			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Battle facility opponents");
 			return;
 		}

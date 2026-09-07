@@ -70,6 +70,31 @@ public class Workspace {
 	public static GameType game;
 	public static boolean valid = false;
 
+	/**
+	 * The open game, or null when no workspace has validated.
+	 *
+	 * <p>Read through these four accessors rather than the fields, so that the
+	 * state can move out of this class without every reader moving with it.
+	 */
+	public static GameType game() {
+		return game;
+	}
+
+	/** True once a workspace has validated and its archives are open. */
+	public static boolean isValid() {
+		return valid;
+	}
+
+	/** The extracted files marked as edited - the ones a pack writes back. */
+	public static ArrayList<String> persistPaths() {
+		return persist_paths;
+	}
+
+	/** Scratch directory inside the workspace, or null before validation. */
+	public static File temp() {
+		return temp;
+	}
+
 	public static void loadWorkspace() {
 		prefs = Preferences.userRoot().node(Workspace.class.getName());
 		WORKSPACE_PATH = prefs.get("WORKSPACE_PATH", "");

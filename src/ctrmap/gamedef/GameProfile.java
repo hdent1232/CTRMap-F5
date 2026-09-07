@@ -140,6 +140,6 @@ public abstract class GameProfile {
 	}
 
 	public static GameProfile current() {
-		return of(Workspace.game);
+		return of(Workspace.game());
 	}
 }

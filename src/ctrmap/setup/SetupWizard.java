@@ -591,7 +591,7 @@ public class SetupWizard extends JDialog {
 			zones = 0;
 		}
 		setButtonsBusy(false);
-		if (!Workspace.valid || zones == 0) {
+		if (!Workspace.isValid() || zones == 0) {
 			finishStatus.setText(BLANK);
 			Ui.error(this,
 					"CTRMap read that folder but found no maps in it.\n\n"

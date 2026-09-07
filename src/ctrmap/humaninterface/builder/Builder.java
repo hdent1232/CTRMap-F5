@@ -399,7 +399,7 @@ public class Builder extends javax.swing.JPanel {
 					File f = openFileDialog("Open a model file");
 					if (f != null) {
 						File donor = ResourceAccess.copyToTemp("DummyBCH3DModel.bch");
-						File output = new File(Workspace.temp + "/espica_model_" + UUID.randomUUID().toString() + ".bch");
+						File output = new File(Workspace.temp() + "/espica_model_" + UUID.randomUUID().toString() + ".bch");
 						int textures = ctrmap.Ui.confirm(this, "Do you want to embed the model's textures into the output BCH?", "Converter alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 						String[] extra = (textures == JOptionPane.YES_OPTION) ? new String[0] : new String[]{"-notextures"};
 						ESPICAControl.ESPICAProcess proc = new ESPICAControl.ESPICAProcess(ESPICAControl.ESPICAFunctionMode.MODEL_CONVERT, f, donor, output, extra);
@@ -420,7 +420,7 @@ public class Builder extends javax.swing.JPanel {
 					File f = openFileDialog("Open a material description file");
 					if (f != null) {
 						File donor = persistentContainerReference.getIOFile(index);
-						File output = new File(Workspace.temp + "/espica_texturepack_" + UUID.randomUUID().toString() + ".bch");
+						File output = new File(Workspace.temp() + "/espica_texturepack_" + UUID.randomUUID().toString() + ".bch");
 						ESPICAControl.ESPICAProcess proc = new ESPICAControl.ESPICAProcess(ESPICAControl.ESPICAFunctionMode.TEXTURE_MERGE, f, donor, output, new String[0]);
 						runESPICA(proc, () -> {
 							if (persistentContainerReference.storeFile(index, output)) {

@@ -33,7 +33,7 @@ public class TrainerEditDialog {
 
 	/** Opens the editor, defaulting to the selected NPC's trainer when it is one. */
 	public static void showForSelection(Frame parent) {
-		if (!Workspace.valid || !Workspace.isOA()) {
+		if (!Workspace.isValid() || !Workspace.isOA()) {
 			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Trainer editor");
 			return;
 		}

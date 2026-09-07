@@ -631,7 +631,7 @@ public class GeoEditForm extends JPanel {
 			gr.storeFile(0, tm.assembleTilemap());
 			tm.modified = false;
 		}
-		if (Workspace.valid && gr.getOriginFile() != null
+		if (Workspace.isValid() && gr.getOriginFile() != null
 				&& gr.getOriginFile().getAbsolutePath().startsWith(new java.io.File(Workspace.WORKSPACE_PATH).getAbsolutePath())) {
 			Workspace.addPersist(gr.getOriginFile());
 		}

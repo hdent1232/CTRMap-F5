@@ -30,7 +30,7 @@ public class ResourceAccess {
 			byte[] b = new byte[in.available()];
 			in.read(b);
 			in.close();
-			File out = new File(Workspace.temp + "/" + name);
+			File out = new File(Workspace.temp() + "/" + name);
 			OutputStream os = new FileOutputStream(out);
 			os.write(b);
 			os.close();

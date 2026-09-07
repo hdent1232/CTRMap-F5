@@ -75,7 +75,7 @@ public class ItemEditDialog {
 			+ " attempt.";
 
 	public static void show(Frame parent) {
-		if (!Workspace.valid) {
+		if (!Workspace.isValid()) {
 			Ui.error(parent, "Load a workspace first.", "Item editor");
 			return;
 		}

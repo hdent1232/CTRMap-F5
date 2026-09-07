@@ -170,7 +170,7 @@ public class MapResizer {
 		File fdDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
 		int newMatrix = mm.length;
 		File matrixOut = new File(mmDir, String.valueOf(newMatrix));
-		if (Workspace.persist_paths.contains(matrixOut.getAbsolutePath())) {
+		if (Workspace.persistPaths().contains(matrixOut.getAbsolutePath())) {
 			throw new IOException("A map append is already pending. Pack the workspace first.");
 		}
 

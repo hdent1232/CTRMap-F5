@@ -34,7 +34,7 @@ public class ShopEditDialog {
 	private static final String PREF_CODEBIN = "SHOP_CODEBIN_PATH";
 
 	public static void show(Frame parent) {
-		if (!Workspace.valid || !Workspace.isOA()) {
+		if (!Workspace.isValid() || !Workspace.isOA()) {
 			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Shop editor");
 			return;
 		}

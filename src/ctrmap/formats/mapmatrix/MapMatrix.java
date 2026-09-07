@@ -48,7 +48,7 @@ public class MapMatrix {
 			for (int i = 0; i < height; i++) {
 				for (int j = 0; j < width; j++) {
 					ids.set(j, i, dis.readShort());
-					if (Workspace.valid && ids.get(j, i) != -1) {
+					if (Workspace.isValid() && ids.get(j, i) != -1) {
 						regions.set(j, i, new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, ids.get(j, i))));
 					}
 				}
