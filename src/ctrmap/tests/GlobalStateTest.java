@@ -81,9 +81,12 @@ public class GlobalStateTest {
 	 * message which global was added and why it had to be one.
 	 *
 	 * <p>146 when this suite was written; 141 after five that did not need to
-	 * be mutable globals stopped being them (one dead, two private, two final).
+	 * be mutable globals stopped being them (one dead, two private, two final);
+	 * 103 once the main window's 38 menu statics became locals of the one
+	 * builder that makes the menu bar (MainframeMenusTest ratchets that class
+	 * on its own).
 	 */
-	private static final int CEILING = 141;
+	private static final int CEILING = 103;
 
 	private static final int ACC_PUBLIC = 0x0001;
 	private static final int ACC_STATIC = 0x0008;
