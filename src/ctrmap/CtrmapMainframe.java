@@ -86,44 +86,6 @@ public class CtrmapMainframe {
 	public static JFrame frame;
 	public static JTabbedPane tabs;
 
-	public static JMenuBar menubar;
-	public static JMenu filemenu;
-	public static JMenu toolsmenu;
-	public static JMenu optionsmenu;
-	public static JMenu helpmenu;
-	public static JMenuItem opengr;
-	public static JMenuItem openmm;
-	public static JMenuItem openzo;
-	public static JMenuItem save;
-	public static JMenuItem packworkspace;
-	public static JMenuItem deploymod;
-	public static JMenuItem tilesetWriter;
-	public static JMenuItem objconvert;
-	public static JMenuItem importMapModel;
-	public static JMenuItem exportMapObj;
-	public static JMenuItem importMapObj;
-	public static JMenuItem forkGeometry;
-	public static JMenuItem blankCanvas;
-	public static JMenuItem tilePainter;
-	public static JMenuItem areaLighting;
-	public static JMenuItem resizeMap;
-	public static JMenuItem wildEncounters;
-	public static JMenuItem trainerEditor;
-	public static JMenuItem maisonEditor;
-	public static JMenuItem shopEditor;
-	public static JMenuItem itemEditor;
-	public static JMenuItem setupFacility;
-	public static JMenuItem renameZone;
-	public static JMenuItem emptyZone;
-	public static JMenuItem removeAddedZones;
-	public static JMenuItem findReusableZones;
-	public static JMenuItem wssettings;
-	public static JMenuItem restoreFromVault;
-	public static JMenuItem setupWizard;
-	public static JMenuItem wsclean;
-	public static JMenuItem isstracker;
-	public static JMenuItem about;
-	public static JMenuItem checkUpdates;
 	public static JToolBar toolbar;
 	/** The always-visible 2D/3D view toggle (F2/F3 keep working and sync it). */
 	public static javax.swing.JToggleButton btn3DView;
@@ -218,48 +180,6 @@ public class CtrmapMainframe {
 		Workspace.loadWorkspace();
 		frame = new JFrame("CTRMap Editor");
 		tabs = new JTabbedPane();
-		menubar = new JMenuBar();
-		filemenu = new JMenu("File");
-		toolsmenu = new JMenu("Tools");
-		optionsmenu = new JMenu("Options");
-		helpmenu = new JMenu("Help");
-		opengr = new JMenuItem("Open GR Mapfile");
-		openmm = new JMenuItem("Open MapMatrix");
-		openzo = new JMenuItem("Open Zone");
-		openzo.setToolTipText("Opens a single loose ZO file. To load a map from the game, use the zone dropdown in the \"Zone Loader\" tab instead.");
-		save = new JMenuItem("Save");
-		packworkspace = new JMenuItem("Pack Workspace");
-		deploymod = new JMenuItem("Deploy to emulator (mod)...");
-		tilesetWriter = new JMenuItem("Tileset Editor");
-		objconvert = new JMenuItem("OBJ to collisions");
-		importMapModel = new JMenuItem("Import map model (.bch)...");
-		exportMapObj = new JMenuItem("Export map region to OBJ (Blender)...");
-		importMapObj = new JMenuItem("Import OBJ into map region (Blender)...");
-		forkGeometry = new JMenuItem("Fork map geometry (make zone independent)...");
-		blankCanvas = new JMenuItem("Blank map canvas (this zone)...");
-		tilePainter = new JMenuItem("Map Builder (this zone)");
-		areaLighting = new JMenuItem("Edit area fog & lighting...");
-		wildEncounters = new JMenuItem("Edit wild encounters (this zone)...");
-		resizeMap = new JMenuItem("Resize map (this zone)...");
-		trainerEditor = new JMenuItem("Edit trainer (party/battle)...");
-		maisonEditor = new JMenuItem("Edit battle facility opponents...");
-		shopEditor = new JMenuItem("Edit shop inventories (Marts)...");
-		itemEditor = new JMenuItem("Edit items (price, effects, name)...");
-		setupFacility = new JMenuItem("Custom battle facility here (clone a retail facility)");
-		renameZone = new JMenuItem("Rename zone (in-game name)...");
-		emptyZone = new JMenuItem("Empty zone (clear contents)...");
-		removeAddedZones = new JMenuItem("Remove added zones (restore stock 536)...");
-		findReusableZones = new JMenuItem("Find reusable base zones...");
-		setupWizard = new JMenuItem("Setup wizard...");
-		setupWizard.setToolTipText("Point CTRMap at your game, step by step.");
-		wssettings = new JMenuItem("Workspace settings");
-		restoreFromVault = new JMenuItem("Restore from pristine backup...");
-		restoreFromVault.setToolTipText("Put the whole game, or one damaged archive, "
-				+ "back as it was when CTRMap first copied it.");
-		wsclean = new JMenuItem("Clean workspace");
-		isstracker = new JMenuItem("Support/Issue tracker");
-		about = new JMenuItem("About");
-		checkUpdates = new JMenuItem("Check for updates...");
 		toolbar = new JToolBar();
 		btnEditTool = Utils.createGraphicalButton("_tool_edit");
 		btnSetTool = Utils.createGraphicalButton("_tool_set");
@@ -523,380 +443,8 @@ public class CtrmapMainframe {
 
 		frame.getContentPane().add(tabs);
 
+		JMenuBar menubar = buildMenuBar();
 		frame.setJMenuBar(menubar);
-		opengr.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent arg0) {
-				if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open GR Mapfile")) {
-					return;
-				}
-				Preferences prefs = Preferences.userRoot().node(getClass().getName());
-				JFileChooser jfc = new JFileChooser(prefs.get("LAST_DIR",
-						new File(".").getAbsolutePath()));
-				jfc.setDialogTitle("Open GR/153/bin mapfile");
-				jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-				jfc.setMultiSelectionEnabled(false);
-				jfc.showOpenDialog(frame);
-				if (jfc.getSelectedFile() != null) {
-					prefs.put("LAST_DIR", jfc.getSelectedFile().getParent());
-					GR mainGR = new GR(jfc.getSelectedFile());
-					CtrmapMainframe.frame.setTitle("GfMap Editor - " + mainGR.getOriginFile().getName());
-					mTileMapPanel.loadTileMap(mainGR);
-					mCollEditPanel.unload();
-					mCollEditPanel.loadCollision(mainGR);
-					mTileMapPanel.scaleImage(1);
-				}
-			}
-		});
-		save.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				mTileMapPanel.saveTileMap(false);
-				mMtxEditForm.store(false);
-				mCollEditPanel.store();
-				mCamEditForm.store(false);
-				mPropEditForm.store(false);
-				mNPCEditForm.saveRegistry(false);
-				mZonePnl.store(false);
-				mTextEditor.store(false);
-			}
-		});
-		tilesetWriter.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				JFrame tilesetEditor = new TileDBWriter();
-				tilesetEditor.setVisible(true);
-			}
-		});
-		objconvert.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				Preferences prefs = Preferences.userRoot().node(getClass().getName());
-				JFileChooser jfc = new JFileChooser(prefs.get("LAST_DIR",
-						new File(".").getAbsolutePath()));
-				jfc.setDialogTitle("Open OBJ file");
-				jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-				jfc.setMultiSelectionEnabled(false);
-				jfc.setFileFilter(new FileFilter() {
-					@Override
-					public boolean accept(File f) {
-						if (f.isDirectory()) {
-							return true;
-						}
-						return f.getName().endsWith(".obj");
-					}
-
-					@Override
-					public String getDescription() {
-						return "Wavefront OBJ file | .obj";
-					}
-				});
-				jfc.showOpenDialog(frame);
-				if (jfc.getSelectedFile() != null) {
-					prefs.put("LAST_DIR", jfc.getSelectedFile().getParent());
-					WavefrontOBJ obj = new WavefrontOBJ(jfc.getSelectedFile());
-					if (mCollEditPanel.coll != null) {
-						mCollEditPanel.coll.meshes = obj.getGfCollision();
-						mCollEditPanel.coll.modified = true;
-						mCollEditPanel.buildTree();
-					}
-				}
-			}
-		});
-		importMapModel.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				importMapModelAction();
-			}
-		});
-		forkGeometry.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				forkGeometryAction();
-			}
-		});
-		blankCanvas.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				blankCanvasAction();
-			}
-		});
-		tilePainter.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				tabs.setSelectedComponent(tileEditMasterPnl);
-				btnPaintTool.doClick(); //the painter is a World Editor tool now
-			}
-		});
-		areaLighting.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				ctrmap.humaninterface.AreaLightingDialog.show(frame);
-			}
-		});
-		wildEncounters.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				ctrmap.humaninterface.EncounterEditDialog.show(frame);
-			}
-		});
-		resizeMap.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				resizeMapAction();
-			}
-		});
-		trainerEditor.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame);
-			}
-		});
-		maisonEditor.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				ctrmap.humaninterface.MaisonEditDialog.show(frame);
-			}
-		});
-		shopEditor.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				ctrmap.humaninterface.ShopEditDialog.show(frame);
-			}
-		});
-		itemEditor.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				ctrmap.humaninterface.ItemEditDialog.show(frame);
-			}
-		});
-		setupFacility.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				setupFacilityAction();
-			}
-		});
-		exportMapObj.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				exportMapObjAction();
-			}
-		});
-		importMapObj.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				importMapObjAction();
-			}
-		});
-		renameZone.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				renameZoneAction();
-			}
-		});
-		emptyZone.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				emptyZoneAction();
-			}
-		});
-		removeAddedZones.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				removeAddedZonesAction();
-			}
-		});
-		findReusableZones.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				findReusableZonesAction();
-			}
-		});
-		deploymod.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				deployModAction();
-			}
-		});
-		openmm.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open MapMatrix")) {
-					return;
-				}
-				Preferences prefs = Preferences.userRoot().node(getClass().getName());
-				JFileChooser jfc = new JFileChooser(prefs.get("LAST_DIR",
-						new File(".").getAbsolutePath()));
-				jfc.setDialogTitle("Open MM file");
-				jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-				jfc.setMultiSelectionEnabled(false);
-				jfc.showOpenDialog(frame);
-				if (jfc.getSelectedFile() != null) {
-					prefs.put("LAST_DIR", jfc.getSelectedFile().getParent());
-					openChosenMapMatrix(jfc.getSelectedFile(), new Runnable() {
-						@Override
-						public void run() {
-							mTileMapPanel.scaleImage(1);
-						}
-					});
-				}
-			}
-		});
-		restoreFromVault.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				restoreFromVaultAction();
-			}
-		});
-		wssettings.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				WorkspaceSettings form = new WorkspaceSettings();
-				form.setLocationByPlatform(true);
-				form.setVisible(true);
-			}
-		});
-		packworkspace.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				Workspace.packWorkspace();
-			}
-		});
-		openzo.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open Zone")) {
-					return;
-				}
-				Preferences prefs = Preferences.userRoot().node(getClass().getName());
-				//the loose ZO files live in the workspace, never in the RomFS - start there when we can
-				File zoneDir = Workspace.valid ? Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA) : null;
-				JFileChooser jfc = (zoneDir != null && zoneDir.exists())
-						? new JFileChooser(zoneDir)
-						: new JFileChooser(prefs.get("LAST_DIR", new File(".").getAbsolutePath()));
-				jfc.setDialogTitle("Open ZO file");
-				jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-				jfc.setMultiSelectionEnabled(false);
-				jfc.setFileFilter(new FileFilter() {
-					@Override
-					public boolean accept(File f) {
-						if (f.isDirectory()) {
-							return true;
-						}
-						return f.getName().matches("\\d+") || f.getName().endsWith(".zo") || f.getName().endsWith(".bin");
-					}
-
-					@Override
-					public String getDescription() {
-						return "Zone mini-pack | .zo, .bin, extracted zonedata";
-					}
-				});
-				jfc.showOpenDialog(frame);
-				if (jfc.getSelectedFile() != null) {
-					prefs.put("LAST_DIR", jfc.getSelectedFile().getParent());
-					if (!Utils.checkMagicLE16(jfc.getSelectedFile(), 0x5a4f)) {
-						Utils.showErrorMessage("Not a ZO file", jfc.getSelectedFile().getName()
-								+ " is not a zone mini-pack.\n\n"
-								+ "The RomFS only holds packed GARC archives, not single zone files, so pointing\n"
-								+ "this dialog at the game directory can never work.\n"
-								+ (zoneDir != null ? ("Extracted zone files live in " + zoneDir.getAbsolutePath() + "\n") : "")
-								+ "\nThe normal way to open a map is the zone dropdown in the \"Zone Loader\" tab.");
-						return;
-					}
-					mZonePnl.loadZone(new Zone(new ZO(jfc.getSelectedFile()), (Workspace.valid) ? Workspace.game : Workspace.GameType.ORAS));
-				}
-			}
-		});
-		isstracker.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-					try {
-						Desktop.getDesktop().browse(new URI("https://github.com/HelloOO7/CTRMap/issues"));
-					} catch (URISyntaxException | IOException ex) {
-						Logger.getLogger(CtrmapMainframe.class.getName()).log(Level.SEVERE, null, ex);
-					}
-				} else {
-					Utils.showErrorMessage("Browser open error", "Your system either does not support the Java Desktop API or you do not have a suitable browser installed.");
-				}
-			}
-		});
-		setupWizard.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				ctrmap.setup.SetupWizard.show(frame);
-			}
-		});
-		checkUpdates.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				ctrmap.update.UpdateUI.checkNow(frame);
-			}
-		});
-		about.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				AboutDialog dlg = new AboutDialog();
-				dlg.setLocationRelativeTo(frame);
-				dlg.setVisible(true);
-			}
-		});
-		wsclean.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				Workspace.cleanAndReload();
-				mZonePnl.loadEverything();
-			}
-		});
-		filemenu.add(opengr);
-		filemenu.add(openmm);
-		filemenu.add(openzo);
-		filemenu.add(save);
-		filemenu.add(packworkspace);
-		filemenu.add(deploymod);
-		//menus are SECONDARY access grouped by subject - the primary homes are
-		//the World Editor toolbar, the Zone Loader bar and the Game Data tab
-		JMenu mapMenu = new JMenu("Map");
-		mapMenu.add(tilePainter);
-		mapMenu.add(blankCanvas);
-		mapMenu.add(resizeMap);
-		mapMenu.add(areaLighting);
-		mapMenu.add(forkGeometry);
-		mapMenu.addSeparator();
-		mapMenu.add(importMapModel);
-		mapMenu.add(exportMapObj);
-		mapMenu.add(importMapObj);
-		mapMenu.add(objconvert);
-		mapMenu.add(tilesetWriter);
-		JMenu zoneMenu = new JMenu("Zone");
-		zoneMenu.add(renameZone);
-		zoneMenu.add(emptyZone);
-		zoneMenu.add(findReusableZones);
-		zoneMenu.add(removeAddedZones);
-		zoneMenu.add(setupFacility);
-		JMenu dataMenu = new JMenu("Game Data");
-		dataMenu.add(trainerEditor);
-		dataMenu.add(maisonEditor);
-		dataMenu.add(shopEditor);
-		dataMenu.add(itemEditor);
-		dataMenu.add(wildEncounters);
-		//the wizard sits above the raw path dialog it replaces for beginners:
-		//same job, but it explains itself and checks what you picked
-		optionsmenu.add(setupWizard);
-		optionsmenu.addSeparator();
-		optionsmenu.add(wssettings);
-		optionsmenu.add(restoreFromVault);
-		optionsmenu.add(wsclean);
-		helpmenu.add(checkUpdates);
-		helpmenu.addSeparator();
-		helpmenu.add(isstracker);
-		helpmenu.add(about);
-		menubar.add(filemenu);
-		menubar.add(mapMenu);
-		menubar.add(zoneMenu);
-		menubar.add(dataMenu);
-		menubar.add(optionsmenu);
-		menubar.add(helpmenu);
 
 		CM3DComponents.add(mTileMapPanel);
 		CM3DComponents.add(mPropEditForm);
@@ -982,10 +530,282 @@ public class CtrmapMainframe {
 	}
 
 	/**
-	 * Lands the user on the tab that actually opens zones and explains how to use
-	 * it. Called from Workspace.validate() so that it also fires for the first
-	 * validation that succeeds after the paths are set in Workspace settings.
+	 * The menu bar: every menu and every item, in the order the user sees
+	 * them, each wired to the named method that does the work. This is the
+	 * ONLY place a menu item exists - the items are locals here, not fields,
+	 * so nothing else in the program can reach one - and MainframeMenusTest
+	 * builds this headless and pins the whole tree: labels, order, separators
+	 * and one action per item. Building it touches no other widget; the
+	 * actions read the editor's panels when they run, not when the menu is
+	 * made.
+	 *
+	 * <p>Menus are SECONDARY access grouped by subject. The primary homes are
+	 * the World Editor toolbar, the Zone Loader bar and the Game Data tab.
 	 */
+	public static JMenuBar buildMenuBar() {
+		JMenuBar bar = new JMenuBar();
+
+		JMenu file = new JMenu("File");
+		file.add(item("Open GR Mapfile", CtrmapMainframe::openGrAction));
+		file.add(item("Open MapMatrix", CtrmapMainframe::openMapMatrixAction));
+		file.add(item("Open Zone", CtrmapMainframe::openZoneAction,
+				"Opens a single loose ZO file. To load a map from the game, use the zone dropdown in the \"Zone Loader\" tab instead."));
+		file.add(item("Save", CtrmapMainframe::saveAllAction));
+		file.add(item("Pack Workspace", Workspace::packWorkspace));
+		file.add(item("Deploy to emulator (mod)...", CtrmapMainframe::deployModAction));
+
+		JMenu map = new JMenu("Map");
+		map.add(item("Map Builder (this zone)", CtrmapMainframe::openMapBuilderAction));
+		map.add(item("Blank map canvas (this zone)...", CtrmapMainframe::blankCanvasAction));
+		map.add(item("Resize map (this zone)...", CtrmapMainframe::resizeMapAction));
+		map.add(item("Edit area fog & lighting...", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame)));
+		map.add(item("Fork map geometry (make zone independent)...", CtrmapMainframe::forkGeometryAction));
+		map.addSeparator();
+		map.add(item("Import map model (.bch)...", CtrmapMainframe::importMapModelAction));
+		map.add(item("Export map region to OBJ (Blender)...", CtrmapMainframe::exportMapObjAction));
+		map.add(item("Import OBJ into map region (Blender)...", CtrmapMainframe::importMapObjAction));
+		map.add(item("OBJ to collisions", CtrmapMainframe::objToCollisionsAction));
+		map.add(item("Tileset Editor", CtrmapMainframe::tilesetEditorAction));
+
+		JMenu zone = new JMenu("Zone");
+		zone.add(item("Rename zone (in-game name)...", CtrmapMainframe::renameZoneAction));
+		zone.add(item("Empty zone (clear contents)...", CtrmapMainframe::emptyZoneAction));
+		zone.add(item("Find reusable base zones...", CtrmapMainframe::findReusableZonesAction));
+		zone.add(item("Remove added zones (restore stock 536)...", CtrmapMainframe::removeAddedZonesAction));
+		zone.add(item("Custom battle facility here (clone a retail facility)", CtrmapMainframe::setupFacilityAction));
+
+		JMenu data = new JMenu("Game Data");
+		data.add(item("Edit trainer (party/battle)...", () -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame)));
+		data.add(item("Edit battle facility opponents...", () -> ctrmap.humaninterface.MaisonEditDialog.show(frame)));
+		data.add(item("Edit shop inventories (Marts)...", () -> ctrmap.humaninterface.ShopEditDialog.show(frame)));
+		data.add(item("Edit items (price, effects, name)...", () -> ctrmap.humaninterface.ItemEditDialog.show(frame)));
+		data.add(item("Edit wild encounters (this zone)...", () -> ctrmap.humaninterface.EncounterEditDialog.show(frame)));
+
+		JMenu options = new JMenu("Options");
+		//the wizard sits above the raw path dialog it replaces for beginners:
+		//same job, but it explains itself and checks what you picked
+		options.add(item("Setup wizard...", () -> ctrmap.setup.SetupWizard.show(frame),
+				"Point CTRMap at your game, step by step."));
+		options.addSeparator();
+		options.add(item("Workspace settings", CtrmapMainframe::workspaceSettingsAction));
+		options.add(item("Restore from pristine backup...", CtrmapMainframe::restoreFromVaultAction,
+				"Put the whole game, or one damaged archive, back as it was when CTRMap first copied it."));
+		options.add(item("Clean workspace", CtrmapMainframe::cleanWorkspaceAction));
+
+		JMenu help = new JMenu("Help");
+		help.add(item("Check for updates...", () -> ctrmap.update.UpdateUI.checkNow(frame)));
+		help.addSeparator();
+		help.add(item("Support/Issue tracker", CtrmapMainframe::issueTrackerAction));
+		help.add(item("About", CtrmapMainframe::aboutAction));
+
+		bar.add(file);
+		bar.add(map);
+		bar.add(zone);
+		bar.add(data);
+		bar.add(options);
+		bar.add(help);
+		return bar;
+	}
+
+	/** One menu item, wired to the one thing it does. */
+	private static JMenuItem item(String label, Runnable action) {
+		JMenuItem it = new JMenuItem(label);
+		it.addActionListener(e -> action.run());
+		return it;
+	}
+
+	private static JMenuItem item(String label, Runnable action, String tooltip) {
+		JMenuItem it = item(label, action);
+		it.setToolTipText(tooltip);
+		return it;
+	}
+
+	// ------------------------------------------------------------ File menu
+
+	/**
+	 * Where the file dialogs remember the folder they were last in: ONE node,
+	 * named after this class, with one key per dialog. The listeners these
+	 * dialogs came from were anonymous classes that keyed the node on
+	 * {@code getClass().getName()} - that is "ctrmap.CtrmapMainframe$5", a
+	 * name the compiler hands out by position in the file, so adding an
+	 * anonymous class above one silently moved its folder and the dialog
+	 * forgot where it had been. Nothing can key on a compiler-numbered name
+	 * from a static method, which is why these are static methods. (The
+	 * folders remembered under the old names are left behind once; a dialog
+	 * then starts from "." exactly as on a fresh install.)
+	 */
+	private static Preferences fileDialogPrefs() {
+		return Preferences.userRoot().node(CtrmapMainframe.class.getName());
+	}
+
+	/** A single-file open dialog that starts where the same dialog last ended. */
+	private static JFileChooser openDialog(String prefKey, String title) {
+		JFileChooser jfc = new JFileChooser(fileDialogPrefs().get(prefKey, new File(".").getAbsolutePath()));
+		jfc.setDialogTitle(title);
+		jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
+		jfc.setMultiSelectionEnabled(false);
+		return jfc;
+	}
+
+	/** Shows {@code jfc}; the file picked, remembered under {@code prefKey}, or null. */
+	private static File picked(JFileChooser jfc, String prefKey) {
+		jfc.showOpenDialog(frame);
+		File f = jfc.getSelectedFile();
+		if (f != null) {
+			fileDialogPrefs().put(prefKey, f.getParent());
+		}
+		return f;
+	}
+
+	private static void openGrAction() {
+		if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open GR Mapfile")) {
+			return;
+		}
+		File f = picked(openDialog("LAST_DIR_GR", "Open GR/153/bin mapfile"), "LAST_DIR_GR");
+		if (f != null) {
+			GR mainGR = new GR(f);
+			frame.setTitle("GfMap Editor - " + mainGR.getOriginFile().getName());
+			mTileMapPanel.loadTileMap(mainGR);
+			mCollEditPanel.unload();
+			mCollEditPanel.loadCollision(mainGR);
+			mTileMapPanel.scaleImage(1);
+		}
+	}
+
+	private static void openMapMatrixAction() {
+		if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open MapMatrix")) {
+			return;
+		}
+		File f = picked(openDialog("LAST_DIR_MM", "Open MM file"), "LAST_DIR_MM");
+		if (f != null) {
+			openChosenMapMatrix(f, () -> mTileMapPanel.scaleImage(1));
+		}
+	}
+
+	private static void openZoneAction() {
+		if (!Workspace.valid && !Utils.confirmOpenWithoutWorkspace("Open Zone")) {
+			return;
+		}
+		//the loose ZO files live in the workspace, never in the RomFS - start there when we can
+		File zoneDir = Workspace.valid ? Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA) : null;
+		JFileChooser jfc = openDialog("LAST_DIR_ZO", "Open ZO file");
+		if (zoneDir != null && zoneDir.exists()) {
+			jfc.setCurrentDirectory(zoneDir);
+		}
+		jfc.setFileFilter(new FileFilter() {
+			@Override
+			public boolean accept(File f) {
+				if (f.isDirectory()) {
+					return true;
+				}
+				return f.getName().matches("\\d+") || f.getName().endsWith(".zo") || f.getName().endsWith(".bin");
+			}
+
+			@Override
+			public String getDescription() {
+				return "Zone mini-pack | .zo, .bin, extracted zonedata";
+			}
+		});
+		File f = picked(jfc, "LAST_DIR_ZO");
+		if (f != null) {
+			if (!Utils.checkMagicLE16(f, 0x5a4f)) {
+				Utils.showErrorMessage("Not a ZO file", f.getName()
+						+ " is not a zone mini-pack.\n\n"
+						+ "The RomFS only holds packed GARC archives, not single zone files, so pointing\n"
+						+ "this dialog at the game directory can never work.\n"
+						+ (zoneDir != null ? ("Extracted zone files live in " + zoneDir.getAbsolutePath() + "\n") : "")
+						+ "\nThe normal way to open a map is the zone dropdown in the \"Zone Loader\" tab.");
+				return;
+			}
+			mZonePnl.loadZone(new Zone(new ZO(f), (Workspace.valid) ? Workspace.game : Workspace.GameType.ORAS));
+		}
+	}
+
+	/** File > Save: every editor stores what it holds, without asking. */
+	private static void saveAllAction() {
+		mTileMapPanel.saveTileMap(false);
+		mMtxEditForm.store(false);
+		mCollEditPanel.store();
+		mCamEditForm.store(false);
+		mPropEditForm.store(false);
+		mNPCEditForm.saveRegistry(false);
+		mZonePnl.store(false);
+		mTextEditor.store(false);
+	}
+
+	// ------------------------------------------------------------- Map menu
+
+	/** Map > Map Builder: the painter is a World Editor tool, so go there and pick it. */
+	private static void openMapBuilderAction() {
+		tabs.setSelectedComponent(tileEditMasterPnl);
+		btnPaintTool.doClick();
+	}
+
+	private static void objToCollisionsAction() {
+		JFileChooser jfc = openDialog("LAST_DIR_OBJ", "Open OBJ file");
+		jfc.setFileFilter(new FileFilter() {
+			@Override
+			public boolean accept(File f) {
+				if (f.isDirectory()) {
+					return true;
+				}
+				return f.getName().endsWith(".obj");
+			}
+
+			@Override
+			public String getDescription() {
+				return "Wavefront OBJ file | .obj";
+			}
+		});
+		File f = picked(jfc, "LAST_DIR_OBJ");
+		if (f != null) {
+			WavefrontOBJ obj = new WavefrontOBJ(f);
+			if (mCollEditPanel.coll != null) {
+				mCollEditPanel.coll.meshes = obj.getGfCollision();
+				mCollEditPanel.coll.modified = true;
+				mCollEditPanel.buildTree();
+			}
+		}
+	}
+
+	private static void tilesetEditorAction() {
+		JFrame tilesetEditor = new TileDBWriter();
+		tilesetEditor.setVisible(true);
+	}
+
+	// --------------------------------------------------------- Options menu
+
+	private static void workspaceSettingsAction() {
+		WorkspaceSettings form = new WorkspaceSettings();
+		form.setLocationByPlatform(true);
+		form.setVisible(true);
+	}
+
+	private static void cleanWorkspaceAction() {
+		Workspace.cleanAndReload();
+		mZonePnl.loadEverything();
+	}
+
+	// ------------------------------------------------------------ Help menu
+
+	private static void issueTrackerAction() {
+		if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+			try {
+				Desktop.getDesktop().browse(new URI("https://github.com/HelloOO7/CTRMap/issues"));
+			} catch (URISyntaxException | IOException ex) {
+				Logger.getLogger(CtrmapMainframe.class.getName()).log(Level.SEVERE, null, ex);
+			}
+		} else {
+			Utils.showErrorMessage("Browser open error", "Your system either does not support the Java Desktop API or you do not have a suitable browser installed.");
+		}
+	}
+
+	private static void aboutAction() {
+		AboutDialog dlg = new AboutDialog();
+		dlg.setLocationRelativeTo(frame);
+		dlg.setVisible(true);
+	}
+
 	/**
 	 * Pushes the loaded zone's atmosphere (AreaData subfile 4) into the 3D
 	 * scene, so fog & lighting edits are visible in the editor itself and not
@@ -1053,6 +873,11 @@ public class CtrmapMainframe {
 		p.add(javax.swing.Box.createVerticalStrut(22));
 	}
 
+	/**
+	 * Lands the user on the tab that actually opens zones and explains how to use
+	 * it. Called from Workspace.validate() so that it also fires for the first
+	 * validation that succeeds after the paths are set in Workspace settings.
+	 */
 	public static void showZoneLoadingHint() {
 		tabs.setSelectedComponent(zoneTabPnl);
 		Preferences hintPrefs = Preferences.userRoot().node(CtrmapMainframe.class.getName());
