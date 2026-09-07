@@ -1,7 +1,6 @@
 package ctrmap.humaninterface.tools;
 
 import static ctrmap.CtrmapMainframe.*;
-import ctrmap.Utils;
 import ctrmap.humaninterface.Selector;
 import java.awt.Graphics;
 import java.awt.event.MouseEvent;
@@ -16,7 +15,7 @@ public class PaintTool extends AbstractTool {
 
 	@Override
 	public void onToolInit() {
-		Utils.switchToolUI(mPaintForm);
+		switchToolUI(mPaintForm);
 		mPaintForm.activate();
 	}
 

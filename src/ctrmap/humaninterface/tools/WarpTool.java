@@ -1,7 +1,6 @@
 package ctrmap.humaninterface.tools;
 
 import static ctrmap.CtrmapMainframe.*;
-import ctrmap.Utils;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.humaninterface.Selector;
 import java.awt.Color;
@@ -15,7 +14,7 @@ public class WarpTool extends AbstractTool {
 
 	@Override
 	public void onToolInit() {
-		Utils.switchToolUI(mWarpEditForm);
+		switchToolUI(mWarpEditForm);
 	}
 
 	@Override

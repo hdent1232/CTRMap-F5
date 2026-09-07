@@ -103,7 +103,7 @@ public class MainframeShapeTest {
 	 * assigned once inside createAndShowGUI. LOWER this as widgets find
 	 * owners; raising it is the decision this exists to make visible.
 	 */
-	private static final int STATIC_CEILING = 26;
+	private static final int STATIC_CEILING = 23;
 
 	static int fails = 0;
 
@@ -132,6 +132,7 @@ public class MainframeShapeTest {
 		actionRow("Zone Loader", CtrmapMainframe.buildZoneActionsBar(), EXPECTED_ZONE_ROW);
 		actionRow("Extras", CtrmapMainframe.buildExtrasBar(), EXPECTED_EXTRAS_ROW);
 		shape(new File(src, "ctrmap/CtrmapMainframe.java"));
+		utilsFree(new File(src, "ctrmap/Utils.java"));
 		ceiling();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -344,6 +345,21 @@ public class MainframeShapeTest {
 				"the window declares no anonymous ActionListener - an item or button names the method that does its work");
 		check(!text.contains("node(getClass()"),
 				"no preference node is named after getClass() - an anonymous listener's name moves with every edit above it");
+	}
+
+	/**
+	 * Utils is the grab-bag every format and form reaches for. It used to
+	 * reach back into the window for its split pane and frame, which made
+	 * the window a dependency of everything. It no longer names the window
+	 * at all.
+	 */
+	static void utilsFree(File utils) throws Exception {
+		if (!utils.isFile()) {
+			check(false, "Utils is at " + utils);
+			return;
+		}
+		String text = SourceSeamTest.stripComments(new String(Files.readAllBytes(utils.toPath()), StandardCharsets.UTF_8));
+		check(!text.contains("CtrmapMainframe"), "Utils does not depend on the main window");
 	}
 
 	// --------------------------------------------------------------- ceiling
