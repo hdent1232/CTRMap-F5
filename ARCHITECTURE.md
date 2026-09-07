@@ -102,17 +102,22 @@ what the list said when it was written.*
 
 CTRMap keeps a lot in `public static` fields. Measured from the compiled
 classes (`ctrmap.tests.GlobalStateTest`, which counts fields rather than
-grepping lines), there are **110 public static mutable fields outside
-`ctrmap.tests`**, and they are not scattered - they sit in seven classes:
+grepping lines), there are **38 public static mutable fields outside
+`ctrmap.tests`**, and they are not scattered - they sit in four classes:
 
 | where | count | what it is |
 |---|---|---|
-| `CtrmapMainframe` | 91 | Swing widgets and the panels/forms of the main window. Each is assigned exactly once, while `main()` builds the window, and never again: effectively final after startup. A smell, low risk. |
+| `CtrmapMainframe` | 22 | The frame, the world toolbar, the current `tool`, two scroll panes and seventeen panels and editor forms other classes reach (tilemap, tile, camera, prop, NPC, warp, trigger, geometry, collision, matrix, zone list, script, text, builder, 3D debug). Each panel is assigned once while the window is built; `tool` changes with every tool switch. The 38 menu items, the tool-row buttons and the split-pane and tab plumbing that used to sit here are locals of their builders or private, and `MainframeShapeTest` ratchets this class on its own. |
 | `Workspace` | 5 | The settings: the four paths and the tileset flag kept in `java.util.prefs`, written by the settings dialog and the setup wizard. The open game itself - paths, `GameType`, archive `File`s, `GARC` handles, the edited-file list - is a `WorkspaceSession` instance (below), not a static. |
 | `Selector`, `MatrixSelector` | 11 | The 2D cursor: selected/highlighted tile and region coordinates, rewritten on every mouse move. Genuinely per-interaction mutable state, confined to the two panels that own it. |
-| `AreaForkPrompt.lastForked` | 1 | A return value smuggled through a static: `ensurePrivate` sets it, `packIfForked` reads it later. Its sibling `GeometryForker.ensurePrivate` returns a `ForkResult` instead, which is the shape this wants. |
-| `PawnInstruction.nativeResolver` | 1 | The script whose natives table a disassembly resolves names against. Per-script context living in a class field; five suites set it and null it again in a `finally`, which is what knowing it is a hazard looks like. |
-| `LocationNames.textfile` | 1 | A lazily-loaded name table. `getLocName` dereferences it without a null check; `ZoneRepurposeScanner` loads it first by hand rather than risk that, which is the workaround the missing check forces. |
+
+The three per-operation smells the 2026-09-06 sweep listed here are gone:
+`AreaForkPrompt.lastForked` (a return value smuggled through a static) is
+returned as a `ForkResult`; `PawnInstruction.nativeResolver` (per-script
+assembler context in a class field) rides on the `PawnAssembly`; and
+`LocationNames.textfile` (a lazy table dereferenced with no null check) is
+private behind an accessor that loads it and refuses in words when there is
+no workspace to load from.
 
 **The open game is a `WorkspaceSession`, and `Workspace` is being strangled
 around it.** `Workspace` used to hold the open game in 36 public statics that
@@ -134,7 +139,7 @@ production files that still reach a `Workspace` static (62 on the day the
 state moved; every one of them) and fails when the recorded number is not the
 measured one, so the boundary is always written down. `GlobalStateTest`
 still fails if a `Workspace` static is added and left out of `reset()`, if a
-public static field is added that nothing assigns, or if the count of 110
+public static field is added that nothing assigns, or if the count of 38
 rises.
 
 Fixed on the way: `validate()`'s failure path used to keep the previous

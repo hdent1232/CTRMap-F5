@@ -413,11 +413,12 @@ public class PaintForm extends JPanel {
 		//animations live in the AREA - fork a shared one first so the ripple
 		//cannot reach other zones (this is what made the water splice a
 		//game-wide edit before)
-		int areaId = AreaForkPrompt.ensurePrivate(this, mZonePnl.zoneIndex,
+		ctrmap.AreaForker.ForkResult fork = AreaForkPrompt.ensurePrivate(this, mZonePnl.zoneIndex,
 				mZonePnl.zone.header.areadataID, "adding the water animation");
-		if (areaId < 0) {
+		if (fork == null) {
 			return;
 		}
+		int areaId = fork.newArea;
 		int rsl = ctrmap.Ui.confirm(this,
 				"Add GameFreak's sea-scroll animation for this zone's map cells?\n\n"
 				+ "This is the exact animation retail water routes use. Safe to do\n"
@@ -429,7 +430,7 @@ public class PaintForm extends JPanel {
 		try {
 			int changed = TilePainterForm.enableWaterScroll(areaId);
 			syncWater();
-			AreaForkPrompt.packIfForked(null);
+			AreaForkPrompt.packIfForked(fork, null);
 			ctrmap.Ui.message(this, changed > 0
 					? "Sea-scroll animation added for " + changed + " map cell(s)."
 					: "No map cells needed changes (the scroll was already bound).",

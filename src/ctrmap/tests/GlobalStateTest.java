@@ -97,12 +97,21 @@ public class GlobalStateTest {
 	 * read became locals or private; 72 once the tab switch and the split
 	 * pane became methods the window offers instead of fields it exposes
 	 * (MainframeShapeTest ratchets that class on its own).
-	 * <p>MERGED: both reductions above landed together. Measured on the merged
-	 * build by this suite: 41 (CtrmapMainframe 22, MatrixSelector 6, Selector 5,
-	 * Workspace 5, PawnInstruction 1). Set to that, not to either branch's figure -
-	 * a ceiling 31 above the truth cannot fail on a real regression.
+	 *
+	 * <p>Independently of the two reductions above, from the same 141:
+	 * 140 once AreaForkPrompt handed its fork result back instead of
+	 * remembering it; 139 once the natives table a SYSREQ_N name resolves in
+	 * rode on the PawnAssembly instead of on PawnInstruction; 138 once
+	 * LocationNames' table went private behind an accessor that loads it.
+	 *
+	 * <p>MERGED 2026-09-07: the workspace, window and debt reductions all
+	 * landed on one tree. Measured by this suite on that build and set to
+	 * exactly that. Merge 2 wrote "measured 41" here and left the constant
+	 * at 72 - a ceiling 31 above the truth cannot fail on a real regression -
+	 * so this number was proven by breaking: one below it fails, naming the
+	 * count, before it was set.
 	 */
-	private static final int CEILING = 72;
+	private static final int CEILING = 38;
 
 	private static final int ACC_PUBLIC = 0x0001;
 	private static final int ACC_STATIC = 0x0008;

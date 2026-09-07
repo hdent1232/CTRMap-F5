@@ -86,6 +86,101 @@ public class LZ11 {
 		return outstream.toByteArray();
 	}
 
+	/**
+	 * The fewest stored bytes an LZ11 stream can have and still produce
+	 * {@code declared} bytes of output: the 4-byte header, one 4-byte token
+	 * per 65,808 output bytes (the longest run the format can encode), and one
+	 * flag byte per 8 tokens. Arithmetic about the format, not a heuristic: an
+	 * entry shorter than this cannot be a stream of that length whatever its
+	 * header says. It is what refuses trclass a/0/3/7 #122 - 16 stored bytes
+	 * declaring 16,720,640, which would need at least 1,056 - without a size
+	 * ceiling that also refused two genuine 4.7 MB and 5.5 MB entries.
+	 */
+	public static int minimumStoredLength(int declared) {
+		if (declared <= 0) {
+			return 4;
+		}
+		int tokens = (declared + MAX_MATCH - 1) / MAX_MATCH;
+		return 4 + tokens * 4 + (tokens + 7) / 8;
+	}
+
+	/**
+	 * Whether the first {@code maxInput} bytes of {@code data} read as a
+	 * well-formed LZ11 stream, decoding strictly: every token it reads must be
+	 * complete, no back-reference may point before the start of the output,
+	 * and the stream must not run out of bytes before its declared length.
+	 * True as well when the whole stream decodes inside the bound.
+	 *
+	 * <p>This is the check that tells a raw record whose first byte happens
+	 * to be 0x11 from a compressed one. {@link #decompress} cannot: at the end
+	 * of its input it reads -1, takes that as a flag byte with every bit set
+	 * and a 16-byte run at displacement 0, and pads its way to the declared
+	 * length - so it "decodes" anything, and a measurement built on it
+	 * counted 12 raw retail records as compressed. Decoded strictly, every
+	 * raw record in the dump faults inside its first 24 bytes (a reference
+	 * to bytes not yet written, or bytes that run out), and no genuine entry
+	 * faults at all. The bound keeps this a header check rather than the
+	 * 42-second trial decode of the whole dump.
+	 */
+	public static boolean prefixDecodes(byte[] data, int maxInput) {
+		if (data.length < 4) {
+			return false;
+		}
+		int declared = (data[1] & 0xFF) | ((data[2] & 0xFF) << 8) | ((data[3] & 0xFF) << 16);
+		if (declared <= 0) {
+			return false;
+		}
+		int limit = Math.min(maxInput, data.length);
+		int in = 4, out = 0, flags = 0, mask = 1;
+		while (out < declared) {
+			if (in >= limit) {
+				return in < data.length; //ran out of bound: fine; ran out of data: a fault
+			}
+			if (mask == 1) {
+				flags = data[in++] & 0xFF;
+				mask = 0x80;
+			} else {
+				mask >>= 1;
+			}
+			if ((flags & mask) == 0) {
+				if (in >= limit) {
+					return in < data.length;
+				}
+				in++;
+				out++;
+				continue;
+			}
+			if (in >= limit) {
+				return in < data.length;
+			}
+			int b1 = data[in++] & 0xFF;
+			int form = b1 >> 4;
+			int need = form == 0 ? 2 : form == 1 ? 3 : 1; //bytes the token still needs
+			if (in + need > limit) {
+				return in + need <= data.length;
+			}
+			int length, disp;
+			if (form == 0) {
+				int b2 = data[in++] & 0xFF, b3 = data[in++] & 0xFF;
+				length = (((b1 & 0x0F) << 4) | (b2 >> 4)) + 0x11;
+				disp = (((b2 & 0x0F) << 8) | b3) + 1;
+			} else if (form == 1) {
+				int b2 = data[in++] & 0xFF, b3 = data[in++] & 0xFF, b4 = data[in++] & 0xFF;
+				length = (((b1 & 0x0F) << 12) | (b2 << 4) | (b3 >> 4)) + 0x111;
+				disp = (((b3 & 0x0F) << 8) | b4) + 1;
+			} else {
+				int b2 = data[in++] & 0xFF;
+				length = form + 1;
+				disp = (((b1 & 0x0F) << 8) | b2) + 1;
+			}
+			if (disp > out) {
+				return false; //a reference to bytes that have not been written
+			}
+			out += length;
+		}
+		return true;
+	}
+
 	// LZ11 window + match limits (must match the token forms the decoder reads)
 	private static final int WINDOW = 0x1000;       // max displacement 4096
 	private static final int MIN_MATCH = 3;

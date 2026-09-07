@@ -80,7 +80,6 @@ public class GauntletScriptTest {
 
 				GFLPawnScript re = new GFLPawnScript(out);
 				re.decompressThis();
-				PawnInstruction.nativeResolver = re;
 				ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(re);
 				if (d == null) {
 					throw new IllegalStateException("dispatch lost after emit");
@@ -125,7 +124,6 @@ public class GauntletScriptTest {
 				}
 			}
 		}
-		PawnInstruction.nativeResolver = null;
 		System.out.println("\nGauntlet emit: tested=" + tested + " (noDispatch " + noDispatch
 				+ ", withMsgs " + withMsgs + ")  ok=" + ok + "  failures=" + failures);
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");

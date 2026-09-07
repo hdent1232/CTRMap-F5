@@ -466,12 +466,14 @@ public class TilePainterForm {
 		//need not be the panel's current one.
 		int zoneArea = ctrmap.AreaForker.currentArea(zoneIndex);
 		if (needsAreaWrite(zoneArea, placed, texNeeds)) {
-			int owned = AreaForkPrompt.ensurePrivate(frame, zoneIndex, zoneArea,
+			//the pack at the end of this Apply carries a fork's new area too, so
+			//the result is only read for the id - no packIfForked here
+			ctrmap.AreaForker.ForkResult owned = AreaForkPrompt.ensurePrivate(frame, zoneIndex, zoneArea,
 					"adding this map's brush textures and door props");
-			if (owned < 0) {
+			if (owned == null) {
 				throw new IllegalStateException("Apply cancelled - nothing was changed.");
 			}
-			zoneArea = owned;
+			zoneArea = owned.newArea;
 			String shared = ctrmap.formats.h3d.BchTexturePack.zonesUsingArea(zoneArea, zoneIndex);
 			if (shared != null) {
 				throw new IllegalStateException("Area " + zoneArea + " is also used by " + shared

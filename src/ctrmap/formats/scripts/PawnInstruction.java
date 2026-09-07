@@ -31,12 +31,6 @@ public class PawnInstruction {
 				Collections.unmodifiableList(Arrays.asList(Commands.values()));
 
 	public GFLPawnScript parent;
-	/**
-	 * The script whose natives table {@link #fromString} uses to resolve a
-	 * SYSREQ_N given by native NAME back to its table index. Set by the script
-	 * editor to the currently open script; null = numeric indices only.
-	 */
-	public static GFLPawnScript nativeResolver;
 
 	private static boolean isNumeric(String s) {
 		if (s.isEmpty()) {
@@ -49,20 +43,6 @@ public class PawnInstruction {
 			}
 		}
 		return true;
-	}
-
-	/** natives[] index whose registered name hash matches {@code name}, or -1. */
-	private static int resolveNativeIndex(String name) {
-		if (nativeResolver == null) {
-			return -1;
-		}
-		int hash = ctrmap.scripts.GfHash.hashForName(name);
-		for (int i = 0; i < nativeResolver.natives.size(); i++) {
-			if (nativeResolver.natives.get(i).data[1] == hash) {
-				return i;
-			}
-		}
-		return -1;
 	}
 
 	public PawnInstruction(int ptr, int[] allCommands, GFLPawnScript parent) {
@@ -157,8 +137,8 @@ public class PawnInstruction {
 							ret.argumentCells[i] = Float.floatToIntBits(Float.parseFloat(argsUnparsed[i].replaceAll("f", "")));
 						} else if (ret.getCommand() == 0x87 && i == 0 && !isNumeric(argsUnparsed[i])) {
 							// SYSREQ_N by native NAME: resolve to the natives-table index
-							// via the resolver context (the currently open script).
-							int ix = resolveNativeIndex(argsUnparsed[i]);
+							// of the script this assembly was given
+							int ix = asm.resolveNativeIndex(argsUnparsed[i]);
 							if (ix < 0) {
 								asm.error("\"" + instruction + "\": unknown native " + argsUnparsed[i]);
 							} else {

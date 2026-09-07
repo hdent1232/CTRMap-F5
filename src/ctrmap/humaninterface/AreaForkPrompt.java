@@ -28,28 +28,35 @@ import static ctrmap.CtrmapMainframe.*;
  */
 public class AreaForkPrompt {
 
-	/** True when the last {@link #ensurePrivate} call actually appended an area
-	 *  (the caller should pack the workspace after applying its edit). */
-	public static boolean lastForked = false;
-
 	/**
-	 * Returns the area id the caller should edit: the zone's own area when it
-	 * is already private, a freshly forked private copy when the user accepts,
-	 * the shared id when they decline, or -1 when they cancel.
+	 * Returns what the caller should edit, or null when they cancelled.
+	 *
+	 * <p>{@link AreaForker.ForkResult#newArea} is the area id to write into:
+	 * the zone's own area when it is already private, a freshly forked private
+	 * copy when the user accepts, the shared id when they decline to fork.
+	 * {@link AreaForker.ForkResult#forked} says whether this call appended an
+	 * area - the caller hands the same result to {@link #packIfForked} after
+	 * applying its edit, so the new area lands in the archive. Null means the
+	 * user cancelled, or nobody was there to answer, and nothing was written.
+	 *
+	 * <p>The result is handed back rather than remembered: this used to leave
+	 * "did I fork?" in a static that {@link #packIfForked} read later, and a
+	 * caller that packed on its own (the tile painter does) left it set, so the
+	 * next unrelated caller's pack-if-forked packed for a fork it never made.
+	 * Its sibling {@link GeometryForker#ensurePrivate} returns the same shape.
 	 */
-	public static int ensurePrivate(Component parent, int zoneIndex, int currentArea, String whatEdit) {
-		lastForked = false;
+	public static AreaForker.ForkResult ensurePrivate(Component parent, int zoneIndex, int currentArea, String whatEdit) {
 		if (!Workspace.isOA() || zoneIndex < 0) {
-			return currentArea;
+			return unforked(zoneIndex, currentArea);
 		}
 		int sharers;
 		try {
 			sharers = AreaForker.areaSharers(zoneIndex);
 		} catch (Exception ex) {
-			return currentArea; //cannot tell - let the edit proceed as before
+			return unforked(zoneIndex, currentArea); //cannot tell - let the edit proceed as before
 		}
 		if (sharers == 0) {
-			return currentArea; //already this zone's own area
+			return unforked(zoneIndex, currentArea); //already this zone's own area
 		}
 		String[] opts = {"Give this zone its own area", "Edit the shared area anyway", "Cancel"};
 		Object pick = ctrmap.Ui.input(parent,
@@ -60,34 +67,45 @@ public class AreaForkPrompt {
 				+ "the copy starts identical, so nothing looks different until you edit it.)",
 				"Shared area", JOptionPane.QUESTION_MESSAGE, opts, opts[0]);
 		if (pick == null || opts[2].equals(pick)) {
-			return -1; //cancelled, or nobody there to answer
+			return null; //cancelled, or nobody there to answer
 		}
 		if (opts[1].equals(pick)) {
-			return currentArea; //deliberate game-wide edit
+			return unforked(zoneIndex, currentArea); //deliberate game-wide edit
 		}
 		try {
 			AreaForker.ForkResult r = AreaForker.forkArea(zoneIndex);
-			lastForked = r.forked;
 			//keep the loaded zone's live header coherent with what we just wrote
 			if (mZonePnl != null && mZonePnl.zone != null && mZonePnl.zone.header != null
 					&& mZonePnl.zoneIndex == zoneIndex) {
 				mZonePnl.zone.header.areadataID = r.newArea;
 			}
-			return r.newArea;
+			return r;
 		} catch (Exception ex) {
 			ctrmap.Ui.error(parent,
 					"Could not give this zone its own area:\n" + ex.getMessage()
 					+ "\n\nThe edit was not applied.",
 					"Shared area");
-			return -1;
+			return null;
 		}
 	}
 
-	/** Packs when the last ensurePrivate forked, so the new area lands in the
-	 *  archive; a no-op otherwise. */
-	public static void packIfForked(Runnable onDone) {
-		if (lastForked) {
-			lastForked = false;
+	/** "Edit this area as it is": the id the caller came in with, nothing appended. */
+	private static AreaForker.ForkResult unforked(int zoneIndex, int area) {
+		AreaForker.ForkResult r = new AreaForker.ForkResult();
+		r.zoneIndex = zoneIndex;
+		r.oldArea = area;
+		r.newArea = area;
+		r.forked = false;
+		return r;
+	}
+
+	/**
+	 * Packs when the given {@link #ensurePrivate} result forked, so the new
+	 * area lands in the archive; otherwise just runs onDone. A caller that
+	 * packs on its own anyway (the tile painter's Apply) need not call this.
+	 */
+	public static void packIfForked(AreaForker.ForkResult fork, Runnable onDone) {
+		if (fork != null && fork.forked) {
 			Workspace.packWorkspace(onDone);
 		} else if (onDone != null) {
 			onDone.run();
