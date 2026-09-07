@@ -97,43 +97,33 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 		switch (e.getActionCommand()) {
 			case ("edit"):
 				CtrmapMainframe.tool = new EditTool();
-				currentTool.setText("Current tool: Edit");
 				break;
 			case ("set"):
 				CtrmapMainframe.tool = new SetTool();
-				currentTool.setText("Current tool: Set");
 				break;
 			case ("fill"):
 				CtrmapMainframe.tool = new FillTool();
-				currentTool.setText("Current tool: Fill");
 				break;
 			case ("cam"):
 				CtrmapMainframe.tool = new CameraTool();
-				currentTool.setText("Current tool: Camera");
 				break;
 			case ("prop"):
 				CtrmapMainframe.tool = new PropTool();
-				currentTool.setText("Current tool: Prop");
 				break;
 			case ("npc"):
 				CtrmapMainframe.tool = new NPCTool();
-				currentTool.setText("Current tool: NPC");
 				break;
 			case ("warp"):
 				CtrmapMainframe.tool = new WarpTool();
-				currentTool.setText("Current tool: Warp");
 				break;
 			case ("trigger"):
 				CtrmapMainframe.tool = new TriggerTool();
-				currentTool.setText("Current tool: Trigger");
 				break;
 			case ("paint"):
 				CtrmapMainframe.tool = new ctrmap.humaninterface.tools.PaintTool();
-				currentTool.setText("Current tool: Map Builder");
 				break;
 			case ("geo"):
 				CtrmapMainframe.tool = new GeoTool();
-				currentTool.setText("Current tool: Geometry");
 				break;
 		}
 	}

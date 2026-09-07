@@ -90,8 +90,19 @@ public class GlobalStateTest {
 	 * WorkspaceSession instance (ten archive files, seventeen GARC handles,
 	 * the persist file, the GameType, the valid flag, and a music-name table
 	 * nothing ever filled).
+	 *
+	 * 103 once the main window's 38 menu statics became locals of the one
+	 * builder that makes the menu bar; 88 once its tool row's sixteen became
+	 * one owner, WorldEditorToolbar; 75 once the panel plumbing nothing else
+	 * read became locals or private; 72 once the tab switch and the split
+	 * pane became methods the window offers instead of fields it exposes
+	 * (MainframeShapeTest ratchets that class on its own).
+	 * <p>MERGED: both reductions above landed together. Measured on the merged
+	 * build by this suite: 41 (CtrmapMainframe 22, MatrixSelector 6, Selector 5,
+	 * Workspace 5, PawnInstruction 1). Set to that, not to either branch's figure -
+	 * a ceiling 31 above the truth cannot fail on a real regression.
 	 */
-	private static final int CEILING = 110;
+	private static final int CEILING = 72;
 
 	private static final int ACC_PUBLIC = 0x0001;
 	private static final int ACC_STATIC = 0x0008;

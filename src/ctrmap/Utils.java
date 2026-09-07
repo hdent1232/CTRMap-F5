@@ -1,7 +1,6 @@
 package ctrmap;
 
 import com.jogamp.opengl.glu.gl2.GLUgl2;
-import static ctrmap.CtrmapMainframe.*;
 import ctrmap.formats.vectors.Vec3f;
 import ctrmap.resources.ResourceAccess;
 import java.awt.Component;
@@ -130,31 +129,6 @@ public class Utils {
 		ret.setSelectedIcon(getImageIconFromResource(prefix + "_active.png"));
 		ret.setRolloverEnabled(true);
 		return ret;
-	}
-
-	public static void switchToolUI(JComponent rightComponent) {
-		//the tool forms are taller than the visible side panel on small screens -
-		//wrap them in a scroll pane so the bottom controls stay reachable
-		if (rightComponent instanceof JScrollPane) {
-			jsp.setRightComponent(rightComponent);
-		} else {
-			JScrollPane scroll = new JScrollPane(rightComponent);
-			scroll.getVerticalScrollBar().setUnitIncrement(16);
-			scroll.setBorder(null);
-			//keep the divider maths of adjustSplitPanes() intact: advertise the
-			//form's width plus room for the vertical scrollbar
-			Dimension pref = rightComponent.getPreferredSize();
-			scroll.setPreferredSize(new Dimension(pref.width + scroll.getVerticalScrollBar().getPreferredSize().width + 3, pref.height));
-			jsp.setRightComponent(scroll);
-		}
-		adjustSplitPanes();
-		frame.revalidate();
-	}
-
-	public static void setGraphicUI(JComponent comp) {
-		jsp.setLeftComponent(comp);
-		adjustSplitPanes();
-		frame.revalidate();
 	}
 
 	public static boolean checkBCHMagic(byte[] data) {

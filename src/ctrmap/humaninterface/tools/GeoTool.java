@@ -1,6 +1,5 @@
 package ctrmap.humaninterface.tools;
 
-import ctrmap.Utils;
 import ctrmap.humaninterface.Selector;
 import java.awt.Color;
 import java.awt.Graphics;
@@ -21,7 +20,7 @@ public class GeoTool extends AbstractTool {
 
 	@Override
 	public void onToolInit() {
-		Utils.switchToolUI(mGeoEditForm);
+		switchToolUI(mGeoEditForm);
 	}
 
 	@Override
