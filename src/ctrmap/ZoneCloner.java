@@ -1,13 +1,10 @@
 package ctrmap;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import static ctrmap.formats.LittleEndian.i32;
 import static ctrmap.formats.LittleEndian.putI32;
+import java.nio.file.Files;
 
 /**
  * Clones a zone over another EXISTING ZoneData slot ("safe" variant - no GARC
@@ -74,15 +71,15 @@ public class ZoneCloner {
 		if (srcIndex == dstIndex) {
 			throw new IllegalArgumentException("Source and destination are the same zone.");
 		}
-		byte[] src = readAll(srcZo);
+		byte[] src = Files.readAllBytes(srcZo.toPath());
 		checkZOMagic(src, "Source zone " + srcIndex);
-		byte[] dstOld = readAll(dstZo);
+		byte[] dstOld = Files.readAllBytes(dstZo.toPath());
 		checkZOMagic(dstOld, "Destination zone " + dstIndex);
 		byte[] cloned = cloneZoneBytes(src, dstIndex, patchOAZoneNumber);
-		byte[] master = readAll(masterFile);
+		byte[] master = Files.readAllBytes(masterFile.toPath());
 		patchMasterRow(master, srcIndex, dstIndex, patchOAZoneNumber);
-		writeAll(dstZo, cloned);
-		writeAll(masterFile, master);
+		Files.write(dstZo.toPath(), cloned);
+		Files.write(masterFile.toPath(), master);
 	}
 
 	/**
@@ -140,18 +137,5 @@ public class ZoneCloner {
 		}
 	}
 
-	private static byte[] readAll(File f) throws IOException {
-		InputStream in = new FileInputStream(f);
-		byte[] b = new byte[in.available()];
-		in.read(b);
-		in.close();
-		return b;
-	}
 
-	private static void writeAll(File f, byte[] b) throws IOException {
-		OutputStream os = new FileOutputStream(f);
-		os.write(b);
-		os.flush();
-		os.close();
-	}
 }

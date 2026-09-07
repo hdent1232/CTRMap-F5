@@ -5,12 +5,9 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.zone.ZoneEntities;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import static ctrmap.formats.LittleEndian.u16;
+import java.nio.file.Files;
 
 /**
  * Safe, index-preserving zone edits: EMPTY a zone (clear its NPCs/warps/etc.) and
@@ -103,7 +100,7 @@ public class ZoneManager {
 		}
 
 		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, masterIndex);
-		byte[] master = readAll(masterFile);
+		byte[] master = Files.readAllBytes(masterFile.toPath());
 		int rowOff = zoneIndex * ZoneCloner.ZONE_HEADER_SIZE;
 		int curParent = u16(master, rowOff + PARENTMAP_OFFSET) & PARENTMAP_MASK;
 
@@ -122,7 +119,7 @@ public class ZoneManager {
 		if (gtFile == null) {
 			throw new IOException("Could not read the location-name text file (GAMETEXT " + gtIndex + ").");
 		}
-		GFMessageFile names = new GFMessageFile(readAll(gtFile));
+		GFMessageFile names = new GFMessageFile(Files.readAllBytes(gtFile.toPath()));
 
 		RenameResult r = new RenameResult();
 		r.sharers = sharers;
@@ -153,7 +150,7 @@ public class ZoneManager {
 				r.renamedSharers = true;
 			}
 		}
-		writeAll(gtFile, names.write());
+		Files.write(gtFile.toPath(), names.write());
 		Workspace.addPersist(gtFile);
 
 		if (newParent != curParent) {
@@ -201,7 +198,7 @@ public class ZoneManager {
 		}
 		// master row
 		setParentMap(master, rowOff, newParent);
-		writeAll(masterFile, master);
+		Files.write(masterFile.toPath(), master);
 		Workspace.addPersist(masterFile);
 	}
 
@@ -213,18 +210,5 @@ public class ZoneManager {
 		b[base + PARENTMAP_OFFSET + 1] = (byte) ((packed >> 8) & 0xFF);
 	}
 
-	private static byte[] readAll(File f) throws IOException {
-		InputStream in = new FileInputStream(f);
-		byte[] b = new byte[in.available()];
-		in.read(b);
-		in.close();
-		return b;
-	}
 
-	private static void writeAll(File f, byte[] b) throws IOException {
-		OutputStream os = new FileOutputStream(f);
-		os.write(b);
-		os.flush();
-		os.close();
-	}
 }
