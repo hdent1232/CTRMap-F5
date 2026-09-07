@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.putF32;
 
 /**
  * Box-selection geometry operations on a map model - the engine of the in-app
@@ -167,9 +168,9 @@ public class GeoBoxOps {
 			for (Map.Entry<Integer, Integer> e : cloneIndex.entrySet()) {
 				int src = e.getKey(), dst = e.getValue();
 				System.arraycopy(model.raw, g.vtxAbs + src * g.stride, extraV, dst * g.stride, g.stride);
-				putF(extraV, dst * g.stride + g.posOffset, pos[src][0] + dx);
-				putF(extraV, dst * g.stride + g.posOffset + 4, pos[src][1] + dy);
-				putF(extraV, dst * g.stride + g.posOffset + 8, pos[src][2] + dz);
+				putF32(extraV, dst * g.stride + g.posOffset, pos[src][0] + dx);
+				putF32(extraV, dst * g.stride + g.posOffset + 4, pos[src][1] + dy);
+				putF32(extraV, dst * g.stride + g.posOffset + 8, pos[src][2] + dz);
 			}
 			int[] extraI = new int[newTris.size()];
 			for (int i = 0; i < extraI.length; i++) {
@@ -239,13 +240,5 @@ public class GeoBoxOps {
 			model = new BchMapModel(current);
 		}
 		return current;
-	}
-
-	private static void putF(byte[] b, int o, float f) {
-		int v = Float.floatToIntBits(f);
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
 	}
 }

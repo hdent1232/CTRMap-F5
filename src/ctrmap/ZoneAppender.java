@@ -10,6 +10,7 @@ import java.util.Map;
 import static ctrmap.formats.LittleEndian.i32;
 import static ctrmap.formats.LittleEndian.putI32;
 import java.nio.file.Files;
+import ctrmap.formats.containers.ContainerBytes;
 
 /**
  * EXPERIMENTAL: appends a brand-new zone slot to the end of the ZoneData GARC
@@ -240,7 +241,7 @@ public class ZoneAppender {
 		if (en[0] != 'E' || en[1] != 'N') {
 			throw new IllegalArgumentException("EN pack has wrong magic (0x" + Integer.toHexString(en[0] & 0xFF) + Integer.toHexString(en[1] & 0xFF) + ").");
 		}
-		int count = (en[2] & 0xFF) | ((en[3] & 0xFF) << 8);
+		int count = ContainerBytes.count(en);
 		if (count != expectedCount) {
 			throw new IllegalArgumentException("EN pack count " + count + " != zone count " + expectedCount + ".");
 		}
@@ -287,7 +288,7 @@ public class ZoneAppender {
 			throw new IllegalArgumentException("appendCount must be >= 0");
 		}
 		validateEN(en, expectedCount);
-		int count = (en[2] & 0xFF) | ((en[3] & 0xFF) << 8);
+		int count = ContainerBytes.count(en);
 		int[] offs = new int[count + 1];
 		for (int i = 0; i <= count; i++) {
 			offs[i] = i32(en, 4 + i * 4);

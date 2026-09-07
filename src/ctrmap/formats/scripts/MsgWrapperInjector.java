@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.zip.CRC32;
 import static ctrmap.formats.LittleEndian.i32;
+import ctrmap.formats.containers.ContainerBytes;
 
 /**
  * Headless transplantation of the vanilla message-display routine (the
@@ -292,7 +293,7 @@ public class MsgWrapperInjector {
 			if (magic != 0x5A4F) {
 				return null;
 			}
-			int count = (zo[2] & 0xFF) | ((zo[3] & 0xFF) << 8);
+			int count = ContainerBytes.count(zo);
 			if (count < 3 || zo.length < 4 + (count + 1) * 4) {
 				return null;
 			}

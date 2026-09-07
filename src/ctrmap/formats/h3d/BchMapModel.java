@@ -539,9 +539,9 @@ public class BchMapModel {
 		int n = Math.min(positions.length, g.vertexCount);
 		for (int v = 0; v < n; v++) {
 			int base = g.vtxAbs + v * g.stride + g.posOffset;
-			putFloat(out, base, positions[v][0]);
-			putFloat(out, base + 4, positions[v][1]);
-			putFloat(out, base + 8, positions[v][2]);
+			LittleEndian.putF32(out, base, positions[v][0]);
+			LittleEndian.putF32(out, base + 4, positions[v][1]);
+			LittleEndian.putF32(out, base + 8, positions[v][2]);
 		}
 		return out;
 	}
@@ -627,9 +627,9 @@ public class BchMapModel {
 			}
 			for (int v = 0; v < g.vertexCount; v++) {
 				int base = g.vtxAbs + v * g.stride + g.posOffset;
-				putFloat(out, base, Float.intBitsToFloat(LittleEndian.i32(out, base)) + dx);
-				putFloat(out, base + 4, Float.intBitsToFloat(LittleEndian.i32(out, base + 4)) + dy);
-				putFloat(out, base + 8, Float.intBitsToFloat(LittleEndian.i32(out, base + 8)) + dz);
+				LittleEndian.putF32(out, base, Float.intBitsToFloat(LittleEndian.i32(out, base)) + dx);
+				LittleEndian.putF32(out, base + 4, Float.intBitsToFloat(LittleEndian.i32(out, base + 4)) + dy);
+				LittleEndian.putF32(out, base + 8, Float.intBitsToFloat(LittleEndian.i32(out, base + 8)) + dz);
 			}
 		}
 		return out;
@@ -725,23 +725,16 @@ public class BchMapModel {
 		for (Map.Entry<Integer, Integer> e : newRelByCmd.entrySet()) {
 			int cmdLoc = e.getKey();
 			int high = i32(cmdLoc) & 0x80000000;
-			pokeInt(out, cmdLoc, e.getValue() | high);
+			LittleEndian.putI32(out, cmdLoc, e.getValue() | high);
 		}
 		// new raw-data, then (zero) section padding, then relocation verbatim
 		System.arraycopy(newRawData, 0, out, rawDataAddr, newRawData.length);
 		System.arraycopy(raw, relocAddr, out, newRelocAddr, relocLen);
 		// patch header addresses/length
-		pokeInt(out, 24, newRelocAddr); // rawExtAddr (rawExt is empty, shares reloc addr)
-		pokeInt(out, 28, newRelocAddr); // relocationAddr
-		pokeInt(out, 44, newRawData.length); // rawDataLength
+		LittleEndian.putI32(out, 24, newRelocAddr); // rawExtAddr (rawExt is empty, shares reloc addr)
+		LittleEndian.putI32(out, 28, newRelocAddr); // relocationAddr
+		LittleEndian.putI32(out, 44, newRawData.length); // rawDataLength
 		return out;
-	}
-
-	private static void pokeInt(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
 	}
 
 	/**
@@ -834,7 +827,7 @@ public class BchMapModel {
 		repl.put(vtxCmdLoc, newVtx);
 		repl.put(idxCmdLoc, newIdx);
 		byte[] out = rebuildRawData(repl, newElemSize != elemSize ? upgradeOrderFix(idxCmdLoc) : null);
-		pokeInt(out, numVerticesLoc, newIndices.length); // NUMVERTICES = new draw count
+		LittleEndian.putI32(out, numVerticesLoc, newIndices.length); // NUMVERTICES = new draw count
 
 		// if the index width was upgraded u8 -> u16, flip its relocation flag
 		// (0x28 RawDataIndex8 -> 0x27 RawDataIndex16) so the loader reads 2-byte
@@ -845,7 +838,7 @@ public class BchMapModel {
 			if (ei >= 0) {
 				int outRelocAddr = LittleEndian.i32(out, 28);
 				int off = outRelocAddr + ei * 4;
-				pokeInt(out, off, (LittleEndian.i32(out, off) & 0x1FFFFFF) | (0x27 << 25));
+				LittleEndian.putI32(out, off, (LittleEndian.i32(out, off) & 0x1FFFFFF) | (0x27 << 25));
 			}
 		}
 		return out;
@@ -925,13 +918,13 @@ public class BchMapModel {
 		repl.put(vtxCmdLoc, vertexBytes.clone());
 		repl.put(idxCmdLoc, newIdx);
 		byte[] out = rebuildRawData(repl, newElemSize != elemSize ? upgradeOrderFix(idxCmdLoc) : null);
-		pokeInt(out, numVerticesLoc, indices.length);
+		LittleEndian.putI32(out, numVerticesLoc, indices.length);
 		if (newElemSize != elemSize) {
 			int ei = relocEntryIndexFor(idxCmdLoc, 0x28);
 			if (ei >= 0) {
 				int outRelocAddr = LittleEndian.i32(out, 28);
 				int off = outRelocAddr + ei * 4;
-				pokeInt(out, off, (LittleEndian.i32(out, off) & 0x1FFFFFF) | (0x27 << 25));
+				LittleEndian.putI32(out, off, (LittleEndian.i32(out, off) & 0x1FFFFFF) | (0x27 << 25));
 			}
 		}
 		return out;
@@ -973,14 +966,6 @@ public class BchMapModel {
 		return -1;
 	}
 
-	private static void putFloat(byte[] b, int o, float f) {
-		int v = Float.floatToIntBits(f);
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
-	}
-
 	private void check(boolean cond, String what) {
 		if (!cond) {
 			problems.add(what);
@@ -992,7 +977,7 @@ public class BchMapModel {
 	}
 
 	private int u16(int o) {
-		return (raw[o] & 0xFF) | ((raw[o + 1] & 0xFF) << 8);
+		return LittleEndian.u16(raw, o);
 	}
 
 	private int i32(int o) {

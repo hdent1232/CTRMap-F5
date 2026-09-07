@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import static ctrmap.formats.LittleEndian.putI32;
+import ctrmap.formats.LittleEndian;
 
 /**
  * The AreaData subfile-2 "world animations" BCH - the file that makes water
@@ -66,11 +67,11 @@ public class WorldAnim {
 	// ---- logical reads (stored/on-disk form; pointers resolved on the fly) --
 
 	private int le32(int o) {
-		return (raw[o] & 0xFF) | ((raw[o + 1] & 0xFF) << 8) | ((raw[o + 2] & 0xFF) << 16) | ((raw[o + 3] & 0xFF) << 24);
+		return LittleEndian.i32(raw, o);
 	}
 
 	private int u16(int o) {
-		return (raw[o] & 0xFF) | ((raw[o + 1] & 0xFF) << 8);
+		return LittleEndian.u16(raw, o);
 	}
 
 	private String str(int strOff) {

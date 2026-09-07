@@ -11,6 +11,8 @@ import static ctrmap.formats.LittleEndian.i32;
 import static ctrmap.formats.LittleEndian.f32;
 import static ctrmap.formats.LittleEndian.putU16;
 import java.nio.file.Files;
+import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.formats.LittleEndian.putF32;
 
 /**
  * Grows a zone's map beyond one region - the "bigger custom maps" feature
@@ -119,8 +121,8 @@ public class MapResizer {
 				float west = f32(cam, base + 8), east = f32(cam, base + 12);
 				int isRepeal = i32(cam, base + 16);
 				if (isRepeal == 0 && south >= oldSouth - 40f && east >= oldEast - 40f && north <= 40f && west <= 40f) {
-					putF(cam, base + 4, south + (newH - h) * 720f);
-					putF(cam, base + 12, east + (newW - w) * 720f);
+					putF32(cam, base + 4, south + (newH - h) * 720f);
+					putF32(cam, base + 12, east + (newW - w) * 720f);
 				}
 			}
 		}
@@ -140,11 +142,11 @@ public class MapResizer {
 		putU16(out, 2, count);
 		int off = 4 + (count + 1) * 4;
 		for (int i = 0; i < count; i++) {
-			p32(out, 4 + i * 4, off);
+			putI32(out, 4 + i * 4, off);
 			System.arraycopy(subs[i], 0, out, off, subs[i].length);
 			off += subs[i].length;
 		}
-		p32(out, 4 + count * 4, off);
+		putI32(out, 4 + count * 4, off);
 		return out;
 	}
 
@@ -268,17 +270,6 @@ public class MapResizer {
 
 	private static int pad4(int v) {
 		return (v + 3) & ~3;
-	}
-
-	private static void p32(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
-	}
-
-	private static void putF(byte[] b, int o, float f) {
-		p32(b, o, Float.floatToIntBits(f));
 	}
 
 
