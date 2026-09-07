@@ -107,8 +107,13 @@ merged fix branches added, breaks it in a way that still **compiles** (deletes a
 `throw`, inverts an `if`, flips a `return true`), rebuilds, and runs the battery
 to see whether anything notices. A mutant nothing notices is a line no suite
 asserts — a hole — and it is recorded in `mutation_baseline.json` with the exact
-text of the line. The last recorded sweep: **243 of 244 measurable mutants
-killed, 1 survivor, 2 lines excluded by hand with a written reason each.**
+text of the line. The last recorded sweep (2026-09-07, on 79afab8, after the
+structure merges): **227 of 227 measurable mutants
+killed, 0 survivors, 2 lines excluded by hand with a written reason each.**
+160 fix lines whose text later merges rewrote are outside that measurement
+(16 of them were scored in the previous sweep); their replacements are guarded
+by the structure branches' own suites but not yet mutation-scored, because the
+sweep measures the `sf/` merges only.
 
 The sweep costs hours. `MutationBaselineTest` costs seconds and keeps the record
 honest in between: it re-hashes every file the sweep measured and refuses a
@@ -120,6 +125,10 @@ it is a digest check, not a regression.** The fix is:
 - **Do not hand-edit `mutation_baseline.json`.** Updating a digest without
   measuring asserts a measurement nobody took — the one thing the file exists
   to prevent.
+- If it names files you did not edit, compare line endings before anything else:
+  the digest is byte-for-byte, and a checkout that has LF where the sweep's
+  worktree had CRLF for the same commit fails it (seen 2026-09-07, seven files
+  a `sed -i` had left LF). Make the bytes match; do not re-sweep for that.
 - Commit your work **first**: the sweep ends in `git reset --hard <the sha it
   started from>`, so anything uncommitted while it runs is erased.
 - Re-run it — `python tools/mutate2.py` — and copy the baseline it writes to
