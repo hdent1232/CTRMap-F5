@@ -131,7 +131,8 @@ the mods folder in Citra/Lime3DS/Azahar). You do not need to rebuild a CIA.
 
 ## Good zones to experiment with
 
-190 of 538 ORAS zones contain triggers. Ones with plenty to look at:
+190 of the 536 ORAS zones contain triggers (175 have a step-on trigger, 22 have a type-2
+one). Ones with plenty to look at:
 
 | Zone | Triggers |
 |---|---|
