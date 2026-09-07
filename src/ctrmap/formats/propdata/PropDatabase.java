@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Searchable database of all BuildingModels props: model names, which areas
@@ -82,7 +83,7 @@ public class PropDatabase {
 			byte[] container = bmGarc.getDecompressedEntry(i);
 			if (container != null && container.length > 4 && container[0] == 'B' && container[1] == 'M') {
 				byte[] bch = getSubfile(container, 0);
-				if (isBCH(bch) && peek(bch, 8) + 8 <= bch.length && peek(bch, peek(bch, 8) + 4) > 0) { //content header model count > 0
+				if (isBCH(bch) && i32(bch, 8) + 8 <= bch.length && i32(bch, i32(bch, 8) + 4) > 0) { //content header model count > 0
 					try {
 						m.name = H3DModelNameGet.H3DModelNameGet(bch);
 					} catch (Exception ex) {
@@ -103,7 +104,7 @@ public class PropDatabase {
 			if (reg == null || reg.length < 4) {
 				continue;
 			}
-			int count = peek(reg, 0);
+			int count = i32(reg, 0);
 			for (int e = 0; e < count && 4 + e * 0x50 + 0x50 <= reg.length; e++) {
 				int base = 4 + e * 0x50;
 				int model = u16(reg, base + 2);
@@ -228,8 +229,8 @@ public class PropDatabase {
 		if (index < 0 || index >= count || 4 + (count + 1) * 4 > container.length) {
 			return null;
 		}
-		int start = peek(container, 4 + index * 4);
-		int end = peek(container, 4 + (index + 1) * 4);
+		int start = i32(container, 4 + index * 4);
+		int end = i32(container, 4 + (index + 1) * 4);
 		if (start < 0 || end > container.length || end < start) {
 			return null;
 		}
@@ -247,19 +248,19 @@ public class PropDatabase {
 		if (!isBCH(bch)) {
 			return out;
 		}
-		int main = peek(bch, 8);
-		int strTable = peek(bch, 12);
-		int ptrTable = peek(bch, main + 36) + main;
-		int count = peek(bch, main + 40);
+		int main = i32(bch, 8);
+		int strTable = i32(bch, 12);
+		int ptrTable = i32(bch, main + 36) + main;
+		int count = i32(bch, main + 40);
 		for (int i = 0; i < count; i++) {
 			if (ptrTable + i * 4 + 4 > bch.length) {
 				break;
 			}
-			int texHeader = peek(bch, ptrTable + i * 4) + main;
+			int texHeader = i32(bch, ptrTable + i * 4) + main;
 			if (texHeader < 0 || texHeader + 32 > bch.length) {
 				continue;
 			}
-			String name = readCString(bch, peek(bch, texHeader + 28) + strTable);
+			String name = readCString(bch, i32(bch, texHeader + 28) + strTable);
 			if (name != null && !name.isEmpty()) {
 				out.add(name);
 			}
@@ -280,20 +281,20 @@ public class PropDatabase {
 			return out;
 		}
 		int bc = bch[4] & 0xFF;
-		int main = peek(bch, 8);
-		int strTable = peek(bch, 12);
+		int main = i32(bch, 8);
+		int strTable = i32(bch, 12);
 		Set<Integer> stringPositions = getStringRelocPositions(bch);
-		int modelPtrTable = peek(bch, main) + main;
-		int modelCount = peek(bch, main + 4);
+		int modelPtrTable = i32(bch, main) + main;
+		int modelCount = i32(bch, main + 4);
 		if (modelCount < 1 || modelPtrTable + 4 > bch.length) {
 			return out;
 		}
-		int model0 = peek(bch, modelPtrTable) + main;
+		int model0 = i32(bch, modelPtrTable) + main;
 		if (model0 < 0 || model0 + 0x3C > bch.length) {
 			return out;
 		}
-		int matTable = peek(bch, model0 + 0x34) + main;
-		int matCount = peek(bch, model0 + 0x38);
+		int matTable = i32(bch, model0 + 0x34) + main;
+		int matCount = i32(bch, model0 + 0x38);
 		int stride = (bc < 0x21) ? 0x58 : 0x2C;
 		int nameBase = (bc < 0x21) ? 0x48 : 0x1C;
 		for (int i = 0; i < matCount; i++) {
@@ -302,7 +303,7 @@ public class PropDatabase {
 				if (fieldPos < 0 || fieldPos + 4 > bch.length || !stringPositions.contains(fieldPos)) {
 					continue;
 				}
-				String name = readCString(bch, peek(bch, fieldPos) + strTable);
+				String name = readCString(bch, i32(bch, fieldPos) + strTable);
 				if (name == null || name.length() <= 1 || name.equals("projection_dummy")) {
 					continue;
 				}
@@ -337,11 +338,11 @@ public class PropDatabase {
 	private static Set<Integer> getStringRelocPositions(byte[] bch) {
 		Set<Integer> out = new HashSet<>();
 		int bc = bch[4] & 0xFF;
-		int main = peek(bch, 8);
-		int relocOffset = (bc > 0x20) ? peek(bch, 28) : peek(bch, 24);
-		int relocLength = (bc > 0x20) ? peek(bch, 52) : peek(bch, 44);
+		int main = i32(bch, 8);
+		int relocOffset = (bc > 0x20) ? i32(bch, 28) : i32(bch, 24);
+		int relocLength = (bc > 0x20) ? i32(bch, 52) : i32(bch, 44);
 		for (int o = relocOffset; o + 4 <= relocOffset + relocLength && o + 4 <= bch.length; o += 4) {
-			int value = peek(bch, o);
+			int value = i32(bch, o);
 			int offset = value & 0x1FFFFFF;
 			int flags = value >>> 25;
 			if (flags == 1) {
@@ -364,9 +365,5 @@ public class PropDatabase {
 			sb.append((char) (b[i] & 0xFF));
 		}
 		return sb.toString();
-	}
-
-	private static int peek(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
 	}
 }

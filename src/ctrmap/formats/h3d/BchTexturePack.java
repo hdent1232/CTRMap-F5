@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Reader/writer for ORAS area texture packs (AreaData a/0/1/4, AD subfile 1) -
@@ -83,12 +84,12 @@ public class BchTexturePack {
 		if ((bch[4] & 0xFF) != 0x21) {
 			return false;
 		}
-		int contentsAdr = peek(bch, 8);
+		int contentsAdr = i32(bch, 8);
 		if (contentsAdr < 0 || contentsAdr + 44 > bch.length) {
 			return false;
 		}
-		int modelCount = peek(bch, contentsAdr + 4);
-		int textureCount = peek(bch, contentsAdr + 40);
+		int modelCount = i32(bch, contentsAdr + 4);
+		int textureCount = i32(bch, contentsAdr + 40);
 		return modelCount == 0 && textureCount > 0;
 	}
 
@@ -104,16 +105,16 @@ public class BchTexturePack {
 		if ((p[4] & 0xFF) != 0x21) {
 			throw new IllegalArgumentException("unsupported BCH backwardCompat " + (p[4] & 0xFF) + " (expected 0x21)");
 		}
-		int contentsAdr = peek(p, 8);
-		int stringsAdr = peek(p, 12);
-		int commandsAdr = peek(p, 16);
-		int rawAdr = peek(p, 20);
-		int count = peek(p, contentsAdr + 40);
-		int ptrTab = peek(p, contentsAdr + 36) + contentsAdr;
+		int contentsAdr = i32(p, 8);
+		int stringsAdr = i32(p, 12);
+		int commandsAdr = i32(p, 16);
+		int rawAdr = i32(p, 20);
+		int count = i32(p, contentsAdr + 40);
+		int ptrTab = i32(p, contentsAdr + 36) + contentsAdr;
 		List<Texture> out = new ArrayList<>();
 		Set<String> seen = new HashSet<>();
 		for (int i = 0; i < count; i++) {
-			int st = peek(p, ptrTab + i * 4) + contentsAdr;
+			int st = i32(p, ptrTab + i * 4) + contentsAdr;
 			Texture t = new Texture();
 			t.format = p[st + 24] & 0xFF;
 			if (t.format >= BPP.length) {
@@ -122,30 +123,30 @@ public class BchTexturePack {
 			if ((p[st + 25] & 0xFF) != 1) {
 				throw new IllegalArgumentException("mipmapped texture unsupported (mipLevels " + (p[st + 25] & 0xFF) + ")");
 			}
-			if (peek(p, st + 4) != 12 || peek(p, st + 12) != 12 || peek(p, st + 20) != 12) {
+			if (i32(p, st + 4) != 12 || i32(p, st + 12) != 12 || i32(p, st + 20) != 12) {
 				throw new IllegalArgumentException("nonstandard texture command word count");
 			}
 			//validate the register opcode words of all 3 unit command sets - a
 			//foreign/edited pack with a different layout must fail loudly here
 			//instead of being mis-parsed by the fixed-template reads below
 			for (int u = 0; u < 3; u++) {
-				int cu = peek(p, st + u * 8) + commandsAdr;
+				int cu = i32(p, st + u * 8) + commandsAdr;
 				if (cu < 0 || cu + 48 > p.length
-						|| peek(p, cu + 4) != ((0xF << 16) | UNIT_REGS[u][0])
-						|| peek(p, cu + 12) != ((0x4 << 16) | UNIT_REGS[u][1])
-						|| peek(p, cu + 20) != ((0xF << 16) | UNIT_REGS[u][2])
-						|| peek(p, cu + 28) != ((0xF << 16) | UNIT_REGS[u][3])
-						|| peek(p, cu + 44) != ((0xF << 16) | 0x23D)) {
+						|| i32(p, cu + 4) != ((0xF << 16) | UNIT_REGS[u][0])
+						|| i32(p, cu + 12) != ((0x4 << 16) | UNIT_REGS[u][1])
+						|| i32(p, cu + 20) != ((0xF << 16) | UNIT_REGS[u][2])
+						|| i32(p, cu + 28) != ((0xF << 16) | UNIT_REGS[u][3])
+						|| i32(p, cu + 44) != ((0xF << 16) | 0x23D)) {
 					throw new IllegalArgumentException("unsupported texture command layout");
 				}
 			}
-			t.name = readCString(p, peek(p, st + 28) + stringsAdr);
+			t.name = readCString(p, i32(p, st + 28) + stringsAdr);
 			if (!seen.add(t.name)) {
 				throw new IllegalArgumentException("duplicate texture name in pack: " + t.name);
 			}
-			int c0 = peek(p, st) + commandsAdr;
-			t.dimParam = peek(p, c0);
-			int dataAdr = peek(p, c0 + 16);
+			int c0 = i32(p, st) + commandsAdr;
+			t.dimParam = i32(p, c0);
+			int dataAdr = i32(p, c0 + 16);
 			int size = t.getWidth() * t.getHeight() * BPP[t.format] / 8;
 			if (rawAdr + dataAdr + size > p.length) {
 				throw new IllegalArgumentException("texture data out of bounds: " + t.name);
@@ -694,10 +695,6 @@ public class BchTexturePack {
 
 	private static int align(int v, int a) {
 		return (v + a - 1) / a * a;
-	}
-
-	private static int peek(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
 	}
 
 	private static void poke(byte[] b, int off, int v) {
