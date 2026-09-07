@@ -4,9 +4,10 @@ Requested 2026-09-04. Decisions taken by the owner:
   SCOPE  — ship all three sizes, ask once at setup, default to compressed-full.
   TIMING — build AFTER the current mutation work lands (sweep, baseline, push).
 
-Written outside the repo on purpose: the sweep running at the time ends with
-`git reset --hard <sha it started from>`, so a commit made while it runs is
-erased. Move this into CTRMap/docs/ when the sweep is done.
+(Drafted outside the repo while a mutation sweep was running — `tools/mutate2.py`
+ends in `git reset --hard <the sha it started from>`, so a commit made during a
+sweep is erased. The sweep finished and this now lives in `docs/`; the note is
+kept because the hazard is still real for anyone editing during a sweep.)
 
 ## The ask, in the owner's words
 

@@ -28,12 +28,12 @@ import java.util.Set;
  * The harvester's own decisions, driven on real regions.
  *
  * <p>WHY THIS IS NOT {@link BuildingCatalogTest}. That suite validates the
- * shipped TSV - 3,479 rows of metadata, committed data that no longer changes
+ * shipped TSV - 3,535 rows of metadata, committed data that no longer changes
  * when the harvester does. These are the functions that PRODUCE it, and every
  * one of them could be broken with the whole battery still green, because
  * nothing runs them: the naming rule that decides what a cut is called, and the
  * footing that decides how high off the ground it stamps. A break here is not
- * noticed until somebody re-harvests, and then it is noticed as 3,479 wrong
+ * noticed until somebody re-harvests, and then it is noticed as 3,535 wrong
  * rows.
  *
  * <p>WHAT IS ASSERTED.

@@ -54,8 +54,9 @@ It now paints the zone's own cell.
 - [ ] The test hub is the live check for this — see TESTZONE.md.
 
 ## Game-wide asset palette (NEW — the comprehensive catalog)
-"Buildings & decor" now holds **3,479 auto-harvested structures from every
-map in the game** (plus the 48 curated, door-wired entries pinned first):
+"Buildings & decor" now holds **3,535 auto-harvested structures from every
+map in the game** (plus the 48 curated, door-wired entries pinned first —
+3,583 in all):
 houses, domes, fountains, lamps, stair blocks, bridges, trees, rocks —
 each one machine-verified to cut and stamp cleanly. Narrow by type and by
 place ("Sootopolis City", "Rustboro City"...), or search.
