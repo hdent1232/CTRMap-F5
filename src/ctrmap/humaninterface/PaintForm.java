@@ -418,7 +418,7 @@ public class PaintForm extends JPanel {
 		if (areaId < 0) {
 			return;
 		}
-		int rsl = JOptionPane.showConfirmDialog(this,
+		int rsl = ctrmap.Ui.confirm(this,
 				"Add GameFreak's sea-scroll animation for this zone's map cells?\n\n"
 				+ "This is the exact animation retail water routes use. Safe to do\n"
 				+ "before or after painting water.",
@@ -430,13 +430,13 @@ public class PaintForm extends JPanel {
 			int changed = TilePainterForm.enableWaterScroll(areaId);
 			syncWater();
 			AreaForkPrompt.packIfForked(null);
-			JOptionPane.showMessageDialog(this, changed > 0
+			ctrmap.Ui.message(this, changed > 0
 					? "Sea-scroll animation added for " + changed + " map cell(s)."
 					: "No map cells needed changes (the scroll was already bound).",
 					"Make water ripple", JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(this, "Could not add the animation:\n" + ex.getMessage(),
-					"Make water ripple", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not add the animation:\n" + ex.getMessage(),
+					"Make water ripple");
 		}
 	}
 
@@ -566,8 +566,8 @@ public class PaintForm extends JPanel {
 		if (right && ptool != 4) {
 			for (int i = placed.size() - 1; i >= 0; i--) {
 				if (placed.get(i).contains(lx, ly)) {
-					if (JOptionPane.showConfirmDialog(this, "Remove \"" + placed.get(i).e.name + "\"?",
-							"Buildings", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+					if (ctrmap.Ui.confirm(this, "Remove \"" + placed.get(i).e.name + "\"?",
+							"Buildings", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION) {
 						snapshot();
 						Placed rem = placed.remove(i);
 						//mark its footprint edited so an earlier Apply's stamped
@@ -925,7 +925,7 @@ public class PaintForm extends JPanel {
 			}
 		}
 		if (touchedCount == 0 && placed.isEmpty()) {
-			JOptionPane.showMessageDialog(this, "Nothing to apply yet - paint some tiles or place a building first.",
+			ctrmap.Ui.message(this, "Nothing to apply yet - paint some tiles or place a building first.",
 					"Map Builder", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
@@ -936,7 +936,7 @@ public class PaintForm extends JPanel {
 		}
 		//what each building really is, at the moment of the decision
 		String buildingsNote = placed.isEmpty() ? "" : "\n\nBuildings to place:\n" + TilePainterForm.placedSummary(placed);
-		int rsl = JOptionPane.showConfirmDialog(this,
+		int rsl = ctrmap.Ui.confirm(this,
 				"Apply your edits to zone " + zoneIndex + "'s map?\n"
 				+ "The " + touchedCount + " tile(s) you touched are rebuilt; the rest of the map keeps\n"
 				+ "its existing geometry. If the map is still shared with other zones, this\n"

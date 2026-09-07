@@ -157,7 +157,7 @@ public class TextEditor extends javax.swing.JPanel {
 			return true;
 		}
 		if (dialog) {
-			int rsl = JOptionPane.showConfirmDialog(this, "Save text changes?", "Save changes", JOptionPane.YES_NO_CANCEL_OPTION);
+			int rsl = ctrmap.Ui.confirm(this, "Save text changes?", "Save changes", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
 			switch (rsl) {
 				case JOptionPane.YES_OPTION:
 					break; //continue to save
@@ -182,12 +182,12 @@ public class TextEditor extends javax.swing.JPanel {
 				b = GFMessageFile.write(lines);
 			}
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not encode text file " + loadedIdx + ":\n" + ex.getMessage(), "Text encode error", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not encode text file " + loadedIdx + ":\n" + ex.getMessage(), "Text encode error");
 			return false;
 		}
 		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, loadedIdx);
 		if (f == null) {
-			JOptionPane.showMessageDialog(this, "Could not extract text file " + loadedIdx + " from the GameText archive.", "Text save error", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not extract text file " + loadedIdx + " from the GameText archive.", "Text save error");
 			return false;
 		}
 		try {

@@ -104,7 +104,7 @@ public class NPCRegistryEditor extends javax.swing.JFrame {
 	public boolean saveEntry(boolean dialog) {
 		if (e != null) {
 			if (reg.entries.containsKey((Integer) uid.getValue()) && !reg.entries.get((Integer) uid.getValue()).equals(e)) {
-				JOptionPane.showMessageDialog(this, "The specified UID is already registered. Please use another one.", "UID not unique", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "The specified UID is already registered. Please use another one.", "UID not unique");
 				return false;
 			}
 			NPCRegistry.NPCRegistryEntry e2 = new NPCRegistry.NPCRegistryEntry();
@@ -137,6 +137,8 @@ public class NPCRegistryEditor extends javax.swing.JFrame {
 							break;
 						case JOptionPane.NO_OPTION:
 							return true;
+						//closing the dialog means cancel, not "apply it anyway"
+						case JOptionPane.CLOSED_OPTION:
 						case JOptionPane.CANCEL_OPTION:
 							return false;
 					}
@@ -380,8 +382,8 @@ public class NPCRegistryEditor extends javax.swing.JFrame {
 			setEntry(e2.uid);
 			reg.modified = true;
 		} else {
-			JOptionPane.showMessageDialog(this, "An area can hold a maximum of 31 NPCs.\n"
-					+ "Reassign duplicates, free some space and try again.", "Registry limit error", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "An area can hold a maximum of 31 NPCs.\n"
+					+ "Reassign duplicates, free some space and try again.", "Registry limit error");
 		}
     }//GEN-LAST:event_btnAddActionPerformed
 

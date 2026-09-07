@@ -497,11 +497,11 @@ public class SetupWizard extends JDialog {
 		final String wsPath = wsField.getText().trim();
 		File ws = new File(wsPath);
 		if (!ws.isDirectory() && !ws.mkdirs()) {
-			JOptionPane.showMessageDialog(this,
+			Ui.error(this,
 					"CTRMap could not create that working folder:\n  " + wsPath
 					+ "\n\nChoose somewhere you have permission to write, such as a folder"
 					+ "\ninside your user folder.",
-					"Cannot create folder", JOptionPane.ERROR_MESSAGE);
+					"Cannot create folder");
 			showStep(STEP_WORKSPACE);
 			return;
 		}
@@ -550,8 +550,8 @@ public class SetupWizard extends JDialog {
 					Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
 					setButtonsBusy(false);
 					finishStatus.setText(BLANK);
-					JOptionPane.showMessageDialog(SetupWizard.this, "The pristine backup was not made:\n" + cause
-							+ "\n\nPick a working folder CTRMap can write to and try again.", "Backup failed", JOptionPane.ERROR_MESSAGE);
+					Ui.error(SetupWizard.this, "The pristine backup was not made:\n" + cause
+							+ "\n\nPick a working folder CTRMap can write to and try again.", "Backup failed");
 					showStep(STEP_WORKSPACE);
 					return;
 				}
@@ -593,19 +593,19 @@ public class SetupWizard extends JDialog {
 		setButtonsBusy(false);
 		if (!Workspace.valid || zones == 0) {
 			finishStatus.setText(BLANK);
-			JOptionPane.showMessageDialog(this,
+			Ui.error(this,
 					"CTRMap read that folder but found no maps in it.\n\n"
 					+ "The unpacked game is probably incomplete - unpacking sometimes stops\n"
 					+ "early without saying so. Try unpacking your game again, then point\n"
 					+ "CTRMap at the new folder.",
-					"No maps found", JOptionPane.ERROR_MESSAGE);
+					"No maps found");
 			showStep(STEP_GAME);
 			return;
 		}
 		Workspace.saveWorkspace();
 		finished = true;
 		dispose();
-		JOptionPane.showMessageDialog(getOwner(),
+		Ui.message(getOwner(),
 				gameResult.gameName() + " is loaded - " + zones + " maps.\n\n"
 				+ "Open the \"Zone Loader\" tab and pick one from the dropdown to start editing.",
 				"CTRMap is ready", JOptionPane.INFORMATION_MESSAGE);
@@ -637,7 +637,7 @@ public class SetupWizard extends JDialog {
 					//treated as "found nothing"
 				}
 				if (hits.isEmpty()) {
-					JOptionPane.showMessageDialog(SetupWizard.this,
+					Ui.message(SetupWizard.this,
 							"CTRMap looked in your Desktop, Downloads, Documents and emulator\n"
 							+ "folders and did not find an unpacked game.\n\n"
 							+ "If you have one somewhere else, use Browse to point at it.",
@@ -649,9 +649,9 @@ public class SetupWizard extends JDialog {
 					revalidateGame();
 					return;
 				}
-				Object pick = JOptionPane.showInputDialog(SetupWizard.this,
+				Object pick = Ui.input(SetupWizard.this,
 						"CTRMap found more than one unpacked game. Which one?",
-						"Choose your game", JOptionPane.QUESTION_MESSAGE, null,
+						"Choose your game", JOptionPane.QUESTION_MESSAGE,
 						hits.toArray(), hits.get(0));
 				if (pick != null) {
 					gameField.setText(pick.toString());

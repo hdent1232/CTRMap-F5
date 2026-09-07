@@ -47,11 +47,11 @@ public class Utils {
 	}
 
 	public static void showErrorMessage(String title, String message) {
-		JOptionPane.showMessageDialog(null, message, title, JOptionPane.ERROR_MESSAGE);
+		Ui.error(null, message, title);
 	}
 
 	public static void showInfoMessage(String title, String message) {
-		JOptionPane.showMessageDialog(null, message, title, JOptionPane.INFORMATION_MESSAGE);
+		Ui.message(null, message, title, JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	/**
@@ -59,7 +59,7 @@ public class Utils {
 	 * triggered. Returns true if the user still wants to open a loose file.
 	 */
 	public static boolean confirmOpenWithoutWorkspace(String action) {
-		return JOptionPane.showConfirmDialog(null,
+		return Ui.confirm(null,
 				"No workspace is loaded, so \"" + action + "\" can only open a single loose file.\n\n"
 				+ "To edit a game, first set the RomFS (game directory) and workspace paths in\n"
 				+ "Options > Workspace settings. CTRMap then unpacks the game's GARC archives into\n"
@@ -94,7 +94,7 @@ public class Utils {
 	}
 
 	public static int showSaveConfirmationDialog(String changeSubject) {
-		return JOptionPane.showConfirmDialog(null, changeSubject + " has been modified. Do you want to keep the changes?", "Save changes", JOptionPane.YES_NO_CANCEL_OPTION);
+		return Ui.confirm(null, changeSubject + " has been modified. Do you want to keep the changes?", "Save changes", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
 	}
 
 	public static float getFloatFromDocument(JFormattedTextField docOwner) {

@@ -160,7 +160,7 @@ public class GeoEditForm extends JPanel {
 		if (box == null || gr == null) {
 			return;
 		}
-		String name = JOptionPane.showInputDialog(this, "Prefab name:", "e.g. PokeCenter");
+		String name = (String) ctrmap.Ui.input(this, "Prefab name:", "Input", JOptionPane.QUESTION_MESSAGE, null, "e.g. PokeCenter");
 		if (name == null || name.trim().isEmpty()) {
 			return;
 		}
@@ -183,12 +183,12 @@ public class GeoEditForm extends JPanel {
 				}
 				mats.append(piece.material);
 			}
-			int save = JOptionPane.showConfirmDialog(this,
+			int save = ctrmap.Ui.confirm(this,
 					"Copied \"" + p.name + "\": " + p.pieces.size() + " pieces, " + p.collTris.size()
 					+ " collision tris, " + p.tilesW + "x" + p.tilesH + " tiles.\nMaterials: " + mats
 					+ (p.facesDropped == 0 ? "" : "\n\n" + p.cutReport())
 					+ "\n\nAlso save it as a .ctrprefab file (reusable across sessions)?",
-					"Copy prefab", JOptionPane.YES_NO_OPTION);
+					"Copy prefab", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 			if (save == JOptionPane.YES_OPTION) {
 				javax.swing.JFileChooser fc = new javax.swing.JFileChooser();
 				fc.setSelectedFile(new java.io.File(p.name.replaceAll("[^A-Za-z0-9_-]", "_") + ".ctrprefab"));
@@ -234,10 +234,10 @@ public class GeoEditForm extends JPanel {
 			return;
 		}
 		ctrmap.formats.h3d.MapPrefab p = clipboard;
-		if (p == null || JOptionPane.showConfirmDialog(this,
+		if (p == null || ctrmap.Ui.confirm(this,
 				(p == null ? "No prefab on the clipboard - load a .ctrprefab file?"
 						: "Stamp \"" + p.name + "\" here? (No = load a .ctrprefab file instead)"),
-				"Stamp prefab", JOptionPane.YES_NO_OPTION) == JOptionPane.NO_OPTION) {
+				"Stamp prefab", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.NO_OPTION) {
 			javax.swing.JFileChooser fc = new javax.swing.JFileChooser();
 			if (fc.showOpenDialog(this) != javax.swing.JFileChooser.APPROVE_OPTION) {
 				return;
@@ -381,9 +381,9 @@ public class GeoEditForm extends JPanel {
 			return;
 		}
 		if (target != gr) {
-			if (unsaved && JOptionPane.showConfirmDialog(this,
+			if (unsaved && ctrmap.Ui.confirm(this,
 					"You have unsaved geometry edits in region " + regionId + ".\nDiscard them?",
-					"Map geometry", JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) {
+					"Map geometry", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
 				return;
 			}
 			gr = target;
@@ -645,9 +645,9 @@ public class GeoEditForm extends JPanel {
 		if (!unsaved) {
 			return true;
 		}
-		int r = dialog ? JOptionPane.showConfirmDialog(this,
+		int r = dialog ? ctrmap.Ui.confirm(this,
 				"Save the geometry edits in region " + regionId + "?", "Map geometry",
-				JOptionPane.YES_NO_CANCEL_OPTION) : JOptionPane.YES_OPTION;
+				JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) : JOptionPane.YES_OPTION;
 		if (r == JOptionPane.CANCEL_OPTION) {
 			return false;
 		}

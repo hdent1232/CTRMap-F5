@@ -1133,7 +1133,7 @@ public class TilePainterForm {
 			try {
 				ctrmap.formats.scripts.GFLPawnScript donor = paletteSignDonor();
 				int insCount = ctrmap.formats.scripts.SignWrapperInjector.countInjectedInstructions(s, donor);
-				if (JOptionPane.showConfirmDialog(frame,
+				if (ctrmap.Ui.confirm(frame,
 						"To make the placed sign(s) readable, this zone's script needs the vanilla\n"
 						+ "sign-display routine (" + insCount + " instructions) transplanted into it.\n"
 						+ "Inject it now? (Cancel keeps the signs as scenery.)",
@@ -1145,7 +1145,7 @@ public class TilePainterForm {
 					throw new IllegalStateException("the injected routine did not verify");
 				}
 			} catch (RuntimeException ex) {
-				JOptionPane.showMessageDialog(frame, signs.size() + " sign(s) placed as scenery only - the sign routine could not\n"
+				ctrmap.Ui.message(frame, signs.size() + " sign(s) placed as scenery only - the sign routine could not\n"
 						+ "be transplanted: " + ex.getMessage(), "Signs", JOptionPane.INFORMATION_MESSAGE);
 				return 0;
 			}
@@ -1154,7 +1154,7 @@ public class TilePainterForm {
 		File sf = Workspace.getStoryTextGARC() != null
 				? Workspace.getWorkspaceFile(Workspace.ArchiveType.STORYTEXT, textID) : null;
 		if (sf == null || !sf.exists()) {
-			JOptionPane.showMessageDialog(frame, "Signs placed as scenery only: the STORYTEXT archive is unavailable.",
+			ctrmap.Ui.message(frame, "Signs placed as scenery only: the STORYTEXT archive is unavailable.",
 					"Signs", JOptionPane.INFORMATION_MESSAGE);
 			return 0;
 		}
@@ -1196,8 +1196,8 @@ public class TilePainterForm {
 			try {
 				ctrmap.formats.text.GFMessageFile.write(java.util.Arrays.asList(text));
 			} catch (RuntimeException ex) {
-				JOptionPane.showMessageDialog(frame, "This sign's text could not be encoded and was skipped:\n"
-						+ ex.getMessage(), "Sign text", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(frame, "This sign's text could not be encoded and was skipped:\n"
+						+ ex.getMessage(), "Sign text");
 				continue;
 			}
 			int line = msg.getLineCount();

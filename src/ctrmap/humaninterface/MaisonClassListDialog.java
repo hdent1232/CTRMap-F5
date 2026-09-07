@@ -47,7 +47,7 @@ public class MaisonClassListDialog {
 
 	public static void show(Dialog parent) {
 		if (Workspace.getArchive(TABLES[0]) == null) {
-			JOptionPane.showMessageDialog(parent, "This dump has no facility class tables.", "Class assignments", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "This dump has no facility class tables.", "Class assignments");
 			return;
 		}
 		String[] classNames = text(Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_CLASS_NAMES));
@@ -77,12 +77,12 @@ public class MaisonClassListDialog {
 		restoreRow.addActionListener(e -> {
 			int r = jt.getSelectedRow();
 			if (r < 0) {
-				JOptionPane.showMessageDialog(dlg, "Select a class row first.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
+				ctrmap.Ui.message(dlg, "Select a class row first.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
 				return;
 			}
 			if (!model.restoreRetailRow(r)) {
-				JOptionPane.showMessageDialog(dlg, "No pristine snapshot is available to restore from.",
-						"Class assignments", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(dlg, "No pristine snapshot is available to restore from.",
+						"Class assignments");
 			}
 		});
 
@@ -107,10 +107,10 @@ public class MaisonClassListDialog {
 					jt.getCellEditor().stopCellEditing();
 				}
 				model.save();
-				JOptionPane.showMessageDialog(dlg, "Saved " + TABLE_NAMES[model.tableIndex]
+				ctrmap.Ui.message(dlg, "Saved " + TABLE_NAMES[model.tableIndex]
 						+ ".\nDeploy to emulator to apply.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(dlg, "Save failed:\n" + ex.getMessage(), "Class assignments", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Class assignments");
 			}
 		});
 		close.addActionListener(e -> {
@@ -126,8 +126,8 @@ public class MaisonClassListDialog {
 	}
 
 	private static boolean confirmDiscard(java.awt.Component c) {
-		return JOptionPane.showConfirmDialog(c, "Discard unsaved changes to this table?", "Class assignments",
-				JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION;
+		return ctrmap.Ui.confirm(c, "Discard unsaved changes to this table?", "Class assignments",
+				JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION;
 	}
 
 	private static String[] text(int entry) {
@@ -241,7 +241,7 @@ public class MaisonClassListDialog {
 			}
 			if (!disclosed) {
 				//armed until the user actually accepts - a Cancel must re-prompt
-				if (JOptionPane.showConfirmDialog(promptOwner,
+				if (ctrmap.Ui.confirm(promptOwner,
 						"Class assignments are ENGINE-WIDE: this row decides which team sets\n"
 						+ "EVERY facility - the retail one and every clone - draws for this trainer\n"
 						+ "class. There is no per-facility copy. (\"Restore retail row\" undoes a row.)\n\n"

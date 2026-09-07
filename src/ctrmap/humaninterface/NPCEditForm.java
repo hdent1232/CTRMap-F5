@@ -376,7 +376,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (npc == null || idx == -1 || idx >= e.npcs.size() || e.npcs.get(idx) != npc) {
 			return;
 		}
-		if (idx < e.npcs.size() - 1 && JOptionPane.showConfirmDialog(frame,
+		if (idx < e.npcs.size() - 1 && ctrmap.Ui.confirm(frame,
 				"The NPCs after this one will be renumbered (uids " + (idx + 1) + ".." + (e.npcs.size() - 1)
 				+ " become " + idx + ".." + (e.npcs.size() - 2) + "), because the game keeps NPC uids\n"
 				+ "equal to their position. Scripts that address them by uid will need updating.\n\n"
@@ -627,12 +627,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		try {
 			b = msg.write();
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not encode story text file " + textID + ":\n" + ex.getMessage(), "Text encode error", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not encode story text file " + textID + ":\n" + ex.getMessage(), "Text encode error");
 			return false;
 		}
 		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.STORYTEXT, textID);
 		if (f == null) {
-			JOptionPane.showMessageDialog(this, "Could not extract story text file " + textID + " from the STORYTEXT archive.", "Text save error", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not extract story text file " + textID + " from the STORYTEXT archive.", "Text save error");
 			return false;
 		}
 		try {
@@ -744,7 +744,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		try {
 			GFMessageFile.write(java.util.Arrays.asList(text)); //validate the bracket/escape syntax before touching anything
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
 			return;
 		}
 		boolean scriptChanged = false;
@@ -755,7 +755,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			int newLine = msg.getLineCount() - 1;
 			if (!ZoneScriptAnalyzer.patchTalkerLine(zone.s, npc.script, newLine)) {
 				msg.removeLine(newLine);
-				JOptionPane.showMessageDialog(this, "Could not re-point the talker script to line " + newLine + ".", "Script patch error", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "Could not re-point the talker script to line " + newLine + ".", "Script patch error");
 				return;
 			}
 			zone.s.updateRaw();
@@ -791,12 +791,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private void btnAddTalkerActionPerformed(java.awt.event.ActionEvent evt) {
 		Zone zone = getLoadedZone();
 		if (zone == null || zone.s == null || e == null) {
-			JOptionPane.showMessageDialog(this, "No zone is loaded.", "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "No zone is loaded.", "Add talking NPC");
 			return;
 		}
 		zone.s.decompressThis();
 		if (ZoneScriptAnalyzer.findDispatch(zone.s) == null) {
-			JOptionPane.showMessageDialog(this, "This zone's script has no script dispatch (main SWITCH/CASETBL).", "Add NPC / object", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "This zone's script has no script dispatch (main SWITCH/CASETBL).", "Add NPC / object");
 			return;
 		}
 		//pick which template to add; "Talking NPC" continues the proven flow below,
@@ -836,11 +836,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			try {
 				wrapperDonor = loadWrapperDonor();
 			} catch (RuntimeException ex) {
-				JOptionPane.showMessageDialog(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ex.getMessage(), "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ex.getMessage(), "Add talking NPC");
 				return;
 			}
 			int insCount = MsgWrapperInjector.countInjectedInstructions(zone.s, wrapperDonor);
-			int rslInject = JOptionPane.showConfirmDialog(frame,
+			int rslInject = ctrmap.Ui.confirm(frame,
 					"This zone's script has no message-display routine.\n"
 					+ "Inject one (copied from the game's own code)?\n"
 					+ "This adds " + insCount + " instructions (about 2.4 KB) to the zone script.",
@@ -851,12 +851,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			injectWrapper = true;
 		}
 		if (Workspace.getStoryTextGARC() == null) {
-			JOptionPane.showMessageDialog(this, "The STORYTEXT archive was not found in the game directory.", "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "The STORYTEXT archive was not found in the game directory.", "Add talking NPC");
 			return;
 		}
 		GFMessageFile msg = getStoryFile(zone.header.textID);
 		if (msg == null) {
-			JOptionPane.showMessageDialog(this, "Story text file " + zone.header.textID + " could not be read.", "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Story text file " + zone.header.textID + " could not be read.", "Add talking NPC");
 			return;
 		}
 		JTextArea ta = new JTextArea("", 5, 40);
@@ -886,14 +886,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		int chosenModel = modelPicker.getSelectedUid();
 		if (chosenModel < 0) {
-			JOptionPane.showMessageDialog(this, "Select an overworld model first.", "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Select an overworld model first.", "Add talking NPC");
 			return;
 		}
 		String text = escapeTypedText(ta.getText());
 		try {
 			GFMessageFile.write(java.util.Arrays.asList(text)); //validate the bracket/escape syntax before touching anything
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
 			return;
 		}
 		//the whole script edit (injection + talker clone) runs on a copy that
@@ -905,7 +905,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			work = new GFLPawnScript(zone.s.getScriptBytes());
 			work.decompressThis();
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add talking NPC");
 			return;
 		}
 		if (injectWrapper) {
@@ -915,7 +915,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					throw new MsgWrapperInjector.InjectionException("The injected routine did not verify.");
 				}
 			} catch (RuntimeException ex) {
-				JOptionPane.showMessageDialog(this, "Could not inject the message routine:\n" + ex.getMessage(), "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "Could not inject the message routine:\n" + ex.getMessage(), "Add talking NPC");
 				return;
 			}
 		}
@@ -924,7 +924,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		try {
 			newId = TalkerScriptWizard.cloneTalker(work, newLine);
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not add the talker script:\n" + ex.getMessage(), "Add talking NPC", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not add the talker script:\n" + ex.getMessage(), "Add talking NPC");
 			return;
 		}
 		msg.addLine(text);
@@ -972,11 +972,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			try {
 				signDonor = loadSignDonor();
 			} catch (RuntimeException ex) {
-				JOptionPane.showMessageDialog(this, "This zone's script has no sign-display routine and none could be\ntransplanted: " + ex.getMessage(), "Add sign", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "This zone's script has no sign-display routine and none could be\ntransplanted: " + ex.getMessage(), "Add sign");
 				return;
 			}
 			int insCount = SignWrapperInjector.countInjectedInstructions(zone.s, signDonor);
-			if (JOptionPane.showConfirmDialog(this,
+			if (ctrmap.Ui.confirm(this,
 					"This zone's script has no sign-display routine (467 of 536 vanilla zones lack it).\n"
 					+ "Inject the vanilla routine (" + insCount + " instructions) into this zone's script?\n"
 					+ "This is the same transplant that makes talking NPCs work everywhere.",
@@ -985,12 +985,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 		}
 		if (Workspace.getStoryTextGARC() == null) {
-			JOptionPane.showMessageDialog(this, "The STORYTEXT archive was not found in the game directory.", "Add sign", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "The STORYTEXT archive was not found in the game directory.", "Add sign");
 			return;
 		}
 		GFMessageFile msg = getStoryFile(zone.header.textID);
 		if (msg == null) {
-			JOptionPane.showMessageDialog(this, "Story text file " + zone.header.textID + " could not be read.", "Add sign", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Story text file " + zone.header.textID + " could not be read.", "Add sign");
 			return;
 		}
 		JTextArea ta = new JTextArea("", 5, 40);
@@ -1011,7 +1011,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		try {
 			GFMessageFile.write(java.util.Arrays.asList(text));
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "The text could not be encoded:\n" + ex.getMessage(), "Text encode error");
 			return;
 		}
 		int signType = NpcTemplates.SIGN_TYPES[Math.max(0, typeBox.getSelectedIndex())];
@@ -1020,7 +1020,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			work = new GFLPawnScript(zone.s.getScriptBytes());
 			work.decompressThis();
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add sign", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add sign");
 			return;
 		}
 		if (needsWrapper) {
@@ -1030,7 +1030,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					throw new IllegalStateException("The injected routine did not verify.");
 				}
 			} catch (RuntimeException ex) {
-				JOptionPane.showMessageDialog(this, "Could not transplant the sign routine:\n" + ex.getMessage(), "Add sign", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "Could not transplant the sign routine:\n" + ex.getMessage(), "Add sign");
 				return;
 			}
 		}
@@ -1039,7 +1039,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		try {
 			caseId = NpcTemplates.addSignScript(work, newLine, signType);
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not add the sign script:\n" + ex.getMessage(), "Add sign", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not add the sign script:\n" + ex.getMessage(), "Add sign");
 			return;
 		}
 		msg.addLine(text);
@@ -1053,7 +1053,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		e.furnitureCount = e.furniture.size();
 		e.modified = true;
 		saveZoneScript(zone);
-		JOptionPane.showMessageDialog(this, "Sign added at tile (" + pos.x + ", " + pos.y + "). Adjust its position with the Prop tool.", "Add sign", JOptionPane.INFORMATION_MESSAGE);
+		ctrmap.Ui.message(this, "Sign added at tile (" + pos.x + ", " + pos.y + "). Adjust its position with the Prop tool.", "Add sign", JOptionPane.INFORMATION_MESSAGE);
 		repaintFrame();
 	}
 
@@ -1063,7 +1063,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	private void addGiverTemplate(Zone zone) {
 		if (ZoneScriptAnalyzer.findGiveWrapper(zone.s) == null) {
-			JOptionPane.showMessageDialog(this, "This zone's script has no give-item routine (120 of 536 vanilla zones have one).\nPick a zone that already gives an item, or use pk3DS to place items differently.", "Add item giver", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "This zone's script has no give-item routine (120 of 536 vanilla zones have one).\nPick a zone that already gives an item, or use pk3DS to place items differently.", "Add item giver");
 			return;
 		}
 		IdChooser itemChooser = new IdChooser(loadGameTextNames(NpcTemplates.gametextItemNames()), NpcTemplates.ITEM_ID_MAX, 1);
@@ -1087,24 +1087,24 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			work = new GFLPawnScript(zone.s.getScriptBytes());
 			work.decompressThis();
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add item giver", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add item giver");
 			return;
 		}
 		int itemId = itemChooser.getId();
 		if (itemId < 1) {
-			JOptionPane.showMessageDialog(this, "Select an item first.", "Add item giver", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Select an item first.", "Add item giver");
 			return;
 		}
 		int giverModel = modelPicker.getSelectedUid();
 		if (giverModel < 0) {
-			JOptionPane.showMessageDialog(this, "Select an overworld model first.", "Add item giver", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Select an overworld model first.", "Add item giver");
 			return;
 		}
 		int caseId;
 		try {
 			caseId = NpcTemplates.addItemGiverScript(work, itemId, (Integer) countSpinner.getValue());
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not add the give-item script:\n" + ex.getMessage(), "Add item giver", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not add the give-item script:\n" + ex.getMessage(), "Add item giver");
 			return;
 		}
 		zone.s = work; //commit - the clone is the only mutation and it succeeded
@@ -1191,19 +1191,19 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return;
 		}
 		if (trainerIds.isEmpty()) {
-			JOptionPane.showMessageDialog(this, "Add at least one trainer to the lineup.", "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Add at least one trainer to the lineup.", "Add battle challenge");
 			return;
 		}
 		int model = modelPicker.getSelectedUid();
 		if (model < 0) {
-			JOptionPane.showMessageDialog(this, "Select an overworld model first.", "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Select an overworld model first.", "Add battle challenge");
 			return;
 		}
 		int workVar;
 		try {
 			workVar = Integer.parseInt(workVarField.getText().trim().replace("0x", ""), 16);
 		} catch (NumberFormatException ex) {
-			JOptionPane.showMessageDialog(this, "The streak variable must be a hex number (e.g. 4020).", "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "The streak variable must be a hex number (e.g. 4020).", "Add battle challenge");
 			return;
 		}
 		String introText = escapeTypedText(introTa.getText());
@@ -1218,18 +1218,18 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					try {
 						GFMessageFile.write(java.util.Arrays.asList(t)); //validate before touching anything
 					} catch (RuntimeException ex) {
-						JOptionPane.showMessageDialog(this, "A text could not be encoded:\n" + ex.getMessage(), "Text encode error", JOptionPane.ERROR_MESSAGE);
+						ctrmap.Ui.error(this, "A text could not be encoded:\n" + ex.getMessage(), "Text encode error");
 						return;
 					}
 				}
 			}
 			if (Workspace.getStoryTextGARC() == null) {
-				JOptionPane.showMessageDialog(this, "The STORYTEXT archive was not found in the game directory.", "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "The STORYTEXT archive was not found in the game directory.", "Add battle challenge");
 				return;
 			}
 			msg = getStoryFile(zone.header.textID);
 			if (msg == null) {
-				JOptionPane.showMessageDialog(this, "Story text file " + zone.header.textID + " could not be read.", "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "Story text file " + zone.header.textID + " could not be read.", "Add battle challenge");
 				return;
 			}
 		}
@@ -1239,7 +1239,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			work = new GFLPawnScript(zone.s.getScriptBytes());
 			work.decompressThis();
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add battle challenge");
 			return;
 		}
 		if (needText && ZoneScriptAnalyzer.findMsgWrapper(work) == null) {
@@ -1247,11 +1247,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			try {
 				wrapperDonor = loadWrapperDonor();
 			} catch (RuntimeException ex) {
-				JOptionPane.showMessageDialog(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ex.getMessage(), "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "This zone's script has no message-display routine and no donor zone could provide one:\n" + ex.getMessage(), "Add battle challenge");
 				return;
 			}
 			int insCount = MsgWrapperInjector.countInjectedInstructions(work, wrapperDonor);
-			if (JOptionPane.showConfirmDialog(frame,
+			if (ctrmap.Ui.confirm(frame,
 					"This zone's script has no message-display routine.\n"
 					+ "Inject one (copied from the game's own code)?\n"
 					+ "This adds " + insCount + " instructions (about 2.4 KB) to the zone script.",
@@ -1264,7 +1264,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					throw new MsgWrapperInjector.InjectionException("The injected routine did not verify.");
 				}
 			} catch (RuntimeException ex) {
-				JOptionPane.showMessageDialog(this, "Could not inject the message routine:\n" + ex.getMessage(), "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "Could not inject the message routine:\n" + ex.getMessage(), "Add battle challenge");
 				return;
 			}
 		}
@@ -1295,7 +1295,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		try {
 			caseId = ctrmap.formats.scripts.GauntletScriptWizard.addChallengeScript(work, cfg);
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not add the challenge script:\n" + ex.getMessage(), "Add battle challenge", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not add the challenge script:\n" + ex.getMessage(), "Add battle challenge");
 			return;
 		}
 		if (msg != null && !newLines.isEmpty()) {
@@ -1340,7 +1340,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		int model = modelPicker.getSelectedUid();
 		if (model < 0) {
-			JOptionPane.showMessageDialog(this, "Select an overworld model first.", "Add Give BP", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Select an overworld model first.", "Add Give BP");
 			return;
 		}
 		GFLPawnScript work;
@@ -1348,14 +1348,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			work = new GFLPawnScript(zone.s.getScriptBytes());
 			work.decompressThis();
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add Give BP", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not copy the zone script:\n" + ex.getMessage(), "Add Give BP");
 			return;
 		}
 		int caseId;
 		try {
 			caseId = ctrmap.formats.scripts.FacilityScriptWizard.addGiveBpScript(work, (Integer) amountSpinner.getValue());
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not add the Give BP script:\n" + ex.getMessage(), "Add Give BP", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not add the Give BP script:\n" + ex.getMessage(), "Add Give BP");
 			return;
 		}
 		zone.s = work; //commit - the clone is the only mutation and it succeeded
@@ -1392,12 +1392,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		int tid = idChooser.getId();
 		if (tid < 1) {
-			JOptionPane.showMessageDialog(this, "Select a trainer first.", "Add trainer", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Select a trainer first.", "Add trainer");
 			return;
 		}
 		int model = modelPicker.getSelectedUid();
 		if (model < 0) {
-			JOptionPane.showMessageDialog(this, "Select an overworld model first.", "Add trainer", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Select an overworld model first.", "Add trainer");
 			return;
 		}
 		int sight = (Integer) sightSpinner.getValue();
@@ -1411,7 +1411,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				finishNpcAdd(zone, pair, false);
 			}
 		} catch (RuntimeException ex) {
-			JOptionPane.showMessageDialog(this, "Could not add the trainer:\n" + ex.getMessage(), "Add trainer", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not add the trainer:\n" + ex.getMessage(), "Add trainer");
 			return;
 		}
 		repaintFrame();

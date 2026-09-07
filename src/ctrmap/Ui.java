@@ -32,9 +32,18 @@ import javax.swing.JOptionPane;
  * side becomes ordinary code.
  *
  * <p>Routing a message through here makes "the user was told" a fact a test can
- * assert, and makes the path runnable without a screen. Only the paths a guard
- * needs to see have been moved over - a blanket migration of all 280 would be
- * churn without a reader.
+ * assert, and makes the path runnable without a screen. Every call site now
+ * does, bar the twenty-two whose dialog body is a live Swing form the user
+ * fills in - the seam carries a String on purpose, and recording
+ * "javax.swing.JPanel[...]" would be an assertion about nothing.
+ * DialogSeamTest holds that list, with a reason against each entry and a
+ * ceiling, so the tree cannot drift back.
+ *
+ * <p>Two things follow from being the only way out. The first is that this
+ * class must never say nothing: a blank dialog is the silent failure it was
+ * built to remove, so a null or empty text is replaced rather than shown or
+ * dereferenced. The second is that a question nobody answers must mean "do
+ * nothing" - see {@link #confirm} and {@link #option}.
  */
 public final class Ui {
 
@@ -44,6 +53,8 @@ public final class Ui {
 		void message(Component parent, String text, String title, int type);
 
 		int confirm(Component parent, String text, String title, int optionType);
+
+		int option(Component parent, String text, String title, Object[] options);
 
 		Object input(Component parent, String text, String title, int type, Object[] options, Object initial);
 	}
@@ -74,8 +85,32 @@ public final class Ui {
 		dialogsEnabled = true;
 	}
 
+	/**
+	 * What a report says when whatever it was handed said nothing.
+	 *
+	 * <p>A guard that reports nothing is a silent failure with extra steps -
+	 * the whole reason this class exists - and a blank dialog is exactly that:
+	 * the user sees a title and no reason. The common way to get one is
+	 * {@code ex.getMessage()}, which is null for a whole family of exceptions
+	 * (NullPointerException among them), and a null went further still: the
+	 * dialogs-off path called {@code text.replace} on it, so the report of a
+	 * failure died reporting it. Substituting here means the seam is incapable
+	 * of saying nothing, whichever of the three paths the message takes.
+	 *
+	 * <p>It is a floor, not a fix. A call site that can only produce this
+	 * should name the exception itself - see the {@code getMessage() != null}
+	 * idiom the reports use - and DialogSeamTest refuses a report whose whole
+	 * text is a bare getMessage() for that reason.
+	 */
+	static final String NOTHING_SAID = "(no details were given)";
+
+	private static String saying(String text) {
+		return text == null || text.trim().isEmpty() ? NOTHING_SAID : text;
+	}
+
 	/** Tells the user something, through a dialog or through a test's sink. */
 	public static void message(Component parent, String text, String title, int type) {
+		text = saying(text);
 		if (sink != null) {
 			sink.message(parent, text, title, type);
 			return;
@@ -102,6 +137,22 @@ public final class Ui {
 	 * on rather than the one they skip.
 	 */
 	public static int confirm(Component parent, String text, String title, int optionType) {
+		return confirm(parent, text, title, optionType, JOptionPane.WARNING_MESSAGE);
+	}
+
+	/**
+	 * The same question, drawn with the icon the caller asks for.
+	 *
+	 * <p>The four-argument form above keeps WARNING_MESSAGE rather than
+	 * JOptionPane's own QUESTION_MESSAGE default, because every caller it had
+	 * before this overload existed is asking about something destructive. A
+	 * migrated call site must therefore name its icon: passing a raw
+	 * {@code showConfirmDialog}'s implicit QUESTION_MESSAGE through the
+	 * four-argument form would silently repaint it as a warning, which is a
+	 * behaviour change dressed up as a refactor.
+	 */
+	public static int confirm(Component parent, String text, String title, int optionType, int messageType) {
+		text = saying(text);
 		if (sink != null) {
 			return sink.confirm(parent, text, title, optionType);
 		}
@@ -109,7 +160,30 @@ public final class Ui {
 			System.out.println("[Ui] " + title + "? " + text.replace("\n", " | "));
 			return JOptionPane.CLOSED_OPTION;
 		}
-		return JOptionPane.showConfirmDialog(parent, text, title, optionType, JOptionPane.WARNING_MESSAGE);
+		return JOptionPane.showConfirmDialog(parent, text, title, optionType, messageType);
+	}
+
+	/**
+	 * Asks the user to press one of several named buttons and returns which,
+	 * as an index into options - or CLOSED_OPTION (-1) when they closed the
+	 * dialog, which is also the nobody-is-there answer.
+	 *
+	 * <p>Every caller must therefore treat a negative index as "do nothing".
+	 * They already do: each one guards its action with {@code != 0} or
+	 * {@code < 0} rather than with "not the cancel button", so an unanswered
+	 * question cannot be mistaken for the destructive choice.
+	 */
+	public static int option(Component parent, String text, String title, int optionType, int messageType,
+			Object[] options, Object initial) {
+		text = saying(text);
+		if (sink != null) {
+			return sink.option(parent, text, title, options);
+		}
+		if (!dialogsEnabled) {
+			System.out.println("[Ui] " + title + "? " + text.replace("\n", " | "));
+			return JOptionPane.CLOSED_OPTION;
+		}
+		return JOptionPane.showOptionDialog(parent, text, title, optionType, messageType, null, options, initial);
 	}
 
 	/**
@@ -117,6 +191,7 @@ public final class Ui {
 	 * cancel - which is also what nobody-is-there answers.
 	 */
 	public static Object input(Component parent, String text, String title, int type, Object[] options, Object initial) {
+		text = saying(text);
 		if (sink != null) {
 			return sink.input(parent, text, title, type, options, initial);
 		}
@@ -130,9 +205,10 @@ public final class Ui {
 	/**
 	 * Collects what the program says instead of showing it, for the length of a
 	 * test, and answers the questions it asks with the given answers in order:
-	 * an Integer option constant for {@link #confirm}, the chosen object for
-	 * {@link #input}. Running out means the user closed the dialog. Returns the
-	 * live list of what was said; call {@link #stopRecording()} afterwards.
+	 * an Integer option constant for {@link #confirm}, an Integer button index
+	 * for {@link #option}, the chosen object for {@link #input}. Running out
+	 * means the user closed the dialog. Returns the live list of what was said;
+	 * call {@link #stopRecording()} afterwards.
 	 */
 	public static List<String> record(Object... answers) {
 		final List<String> said = new ArrayList<>();
@@ -145,6 +221,13 @@ public final class Ui {
 
 			@Override
 			public int confirm(Component parent, String text, String title, int optionType) {
+				said.add(title + ": " + text);
+				Object answer = queue.poll();
+				return answer instanceof Integer ? (Integer) answer : JOptionPane.CLOSED_OPTION;
+			}
+
+			@Override
+			public int option(Component parent, String text, String title, Object[] options) {
 				said.add(title + ": " + text);
 				Object answer = queue.poll();
 				return answer instanceof Integer ? (Integer) answer : JOptionPane.CLOSED_OPTION;

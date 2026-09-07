@@ -52,11 +52,11 @@ public class MaisonEditDialog {
 
 	public static void show(Frame parent) {
 		if (!Workspace.valid || !Workspace.isOA()) {
-			JOptionPane.showMessageDialog(parent, "Load an ORAS workspace first.", "Battle facility opponents", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Battle facility opponents");
 			return;
 		}
 		if (Workspace.getArchive(POOLS[0]) == null) {
-			JOptionPane.showMessageDialog(parent, "This dump has no battle facility opponent data.", "Battle facility opponents", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "This dump has no battle facility opponent data.", "Battle facility opponents");
 			return;
 		}
 		ctrmap.gamedef.GameProfile prof = Workspace.profile();
@@ -118,7 +118,7 @@ public class MaisonEditDialog {
 		goFree.addActionListener(e -> {
 			int free = model.guard.firstFreeSlot(model.sets);
 			if (free < 0) {
-				JOptionPane.showMessageDialog(dlg, "No free slot left in this pool.", "Battle facility opponents", JOptionPane.INFORMATION_MESSAGE);
+				ctrmap.Ui.message(dlg, "No free slot left in this pool.", "Battle facility opponents", JOptionPane.INFORMATION_MESSAGE);
 				return;
 			}
 			jt.getSelectionModel().setSelectionInterval(free, free);
@@ -151,10 +151,10 @@ public class MaisonEditDialog {
 				}
 				model.save();
 				refreshUsed.run();
-				JOptionPane.showMessageDialog(dlg, "Saved " + POOL_NAMES[model.poolIndex]
+				ctrmap.Ui.message(dlg, "Saved " + POOL_NAMES[model.poolIndex]
 						+ ".\nDeploy to emulator to apply.", "Battle facility opponents", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(dlg, "Save failed:\n" + ex.getMessage(), "Battle facility opponents", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Battle facility opponents");
 			}
 		});
 		close.addActionListener(e -> {
@@ -170,8 +170,8 @@ public class MaisonEditDialog {
 	}
 
 	private static boolean confirmDiscard(java.awt.Component c) {
-		return JOptionPane.showConfirmDialog(c, "Discard unsaved changes to this pool?", "Battle facility opponents",
-				JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION;
+		return ctrmap.Ui.confirm(c, "Discard unsaved changes to this pool?", "Battle facility opponents",
+				JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION;
 	}
 
 	private static String[] text(int entry) {
@@ -336,17 +336,17 @@ public class MaisonEditDialog {
 			int row = r;
 			if (isRetail(r) && !allowVanillaEdits) {
 				String[] opts = {"Copy to a free slot", "Edit the retail data", "Cancel"};
-				int pick = JOptionPane.showOptionDialog(table,
+				int pick = ctrmap.Ui.option(table,
 						"Set #" + r + " is RETAIL data - the retail facility (and every cloned\n"
 						+ "facility) battles with it. Editing it changes the shipped game.\n\n"
 						+ "Copy this set to a free slot and put your edit there instead?",
 						"Battle facility opponents", JOptionPane.DEFAULT_OPTION,
-						JOptionPane.WARNING_MESSAGE, null, opts, opts[0]);
+						JOptionPane.WARNING_MESSAGE, opts, opts[0]);
 				if (pick == 0) {
 					int free = copyToFreeSlot(r);
 					if (free < 0) {
-						JOptionPane.showMessageDialog(table, "No free slot left in this pool.",
-								"Battle facility opponents", JOptionPane.ERROR_MESSAGE);
+						ctrmap.Ui.error(table, "No free slot left in this pool.",
+								"Battle facility opponents");
 						return;
 					}
 					row = free;
