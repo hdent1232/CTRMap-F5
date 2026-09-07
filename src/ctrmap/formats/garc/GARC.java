@@ -133,18 +133,65 @@ public class GARC {
 	}
 
 	/**
-	 * Validating LZ11 sniff: first byte 0x11 AND the declared decompressed size
-	 * (header bytes 1-3) must be plausible for the entry's stored length. A raw
-	 * entry that merely STARTS with 0x11 (measured: trclass a/0/3/7 entry 122,
-	 * which would otherwise "inflate" to 16.7 MB of garbage) almost always
-	 * declares a wild size and is rejected.
+	 * Validating LZ11 sniff: first byte 0x11 AND a plausible declared
+	 * decompressed size in header bytes 1-3.
+	 *
+	 * <p>A raw entry that merely STARTS with 0x11 has to be rejected - the
+	 * measured example is trclass a/0/3/7 entry 122, 16 stored bytes declaring
+	 * 16,720,640 (0xFF2300), which would "inflate" into 16.7 MB of garbage. The
+	 * size ceiling is what rejects it.
+	 *
+	 * <p>THERE USED TO BE A 64:1 RATIO CAP HERE AS WELL, and it was wrong twice
+	 * over. Measured across all 298 archives of a retail ORAS dump - 51,048
+	 * entries, 21,923 of them starting with 0x11, each trial-decoded and checked
+	 * against its declared length:
+	 * <pre>
+	 *   accept + decodes to declared   21,217   working as intended
+	 *   reject + decodes to declared      696   SILENTLY HANDED BACK COMPRESSED
+	 *   accept + does not decode            3   pre-existing, see below
+	 *   reject + does not decode            7   working as intended
+	 * </pre>
+	 * 691 of those 696 were rejected by the ratio cap ALONE, 49 of them BCH
+	 * files. The visible symptom that started this: a/0/8/8's {@code _m} mask
+	 * textures for clothing designs (subfiles 177, 181, 255, 318 and ~38 more)
+	 * are stored at ratios of 75:1 to 172:1, so every consumer got a raw blob
+	 * where a texture should be.
+	 *
+	 * <p>And the cap was not even doing the job its own comment claimed: entry
+	 * 122's declared size is 0xFF2300, which the {@code < 0x400000} ceiling
+	 * already rejects on its own. Removing the ratio clause introduces ZERO new
+	 * false positives, because a run of identical bytes legitimately compresses
+	 * far better than 64:1 - the worst legitimate ratio in the dump is 5473:1
+	 * (a/0/2/2 entry 463, 24 stored bytes to 131,344).
+	 *
+	 * <p>WHY NOT TRIAL-DECODE INSTEAD, which would be exact? Measured: decoding
+	 * every 0x11 entry costs 41.8 s across the dump and <b>24.1 s for a/0/0/8
+	 * alone</b> (8,064 entries). That is a visible freeze every time the Pokemon
+	 * model archive is opened, so the sniff stays a cheap header check.
+	 *
+	 * <p>KNOWN REMAINING GAPS, measured and deliberately not fixed here because
+	 * each needs its own judgement rather than a speculative tweak:
+	 * <ul>
+	 * <li>3 entries are accepted but do not decode to their declared length -
+	 *     a/0/0/7 #2 (declares 1, yields 16), a/1/9/1 #22 and #385. These are
+	 *     PRE-EXISTING and unaffected by this change; they pass the ratio clause
+	 *     too. A {@code declared > buffer.length} clause would catch only the
+	 *     first and would break a/1/5/2 #1114, which legitimately declares 8,040
+	 *     from 8,483 stored.</li>
+	 * <li>2 entries decode exactly but declare more than the 4 MB ceiling -
+	 *     a/0/0/8 #6223 (4,723,968) and a/1/5/2 #561 (5,521,120). Raising the
+	 *     ceiling would fix them, but it is the only thing rejecting entry 122,
+	 *     so moving it needs its own measurement.</li>
+	 * <li>3 entries decode exactly to a declared length of 0.</li>
+	 * </ul>
+	 * Guarded by {@link ctrmap.tests.GarcSniffTest}.
 	 */
 	private static boolean sniffLZ11(byte[] buffer) {
 		if (buffer.length < 4 || buffer[0] != 0x11) {
 			return false;
 		}
 		int declared = (buffer[1] & 0xFF) | ((buffer[2] & 0xFF) << 8) | ((buffer[3] & 0xFF) << 16);
-		return declared > 0 && declared < 0x400000 && declared <= Math.max(0x1000, buffer.length * 64);
+		return declared > 0 && declared < 0x400000;
 	}
 
 	public void packDirectory(File dir) throws IOException {

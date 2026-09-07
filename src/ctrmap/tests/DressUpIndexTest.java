@@ -97,21 +97,15 @@ public class DressUpIndexTest {
 			} catch (Throwable t) {
 				continue;
 			}
-			// Some texture subfiles here are LZ11-compressed at a ratio above
-			// 64:1, which GARC's sniff refuses, so they come back still
-			// compressed. Decompress them locally rather than record a
-			// texture as missing. (Reported separately; when the sniff is
-			// fixed this branch becomes dead, not wrong.)
+			// GARC used to hand these back still compressed - its sniff carried a
+			// 64:1 ratio cap and these textures are stored at 75:1 to 172:1 - so
+			// this loop had to decompress them itself. The cap is gone (measured:
+			// it rejected 696 entries dump-wide and prevented nothing the size
+			// ceiling did not already reject), so the workaround is gone with it.
+			// The counter stays, asserted at zero below, so if the sniff ever
+			// regresses this suite says so instead of silently coping again.
 			if (d != null && d.length > 4 && (d[0] & 0xFF) == 0x11) {
-				try {
-					byte[] un = ctrmap.formats.garc.LZ11.decompress(d);
-					if (un != null && un.length > 4 && un[0] == 'B' && un[1] == 'C' && un[2] == 'H') {
-						d = un;
-						lateDecompressed++;
-					}
-				} catch (Throwable t) {
-					// not compressed after all
-				}
+				lateDecompressed++;
 			}
 			if (d == null || d.length < 4 || d[0] != 'B' || d[1] != 'C' || d[2] != 'H') {
 				continue;
@@ -430,8 +424,13 @@ public class DressUpIndexTest {
 		}
 		fails += check("at least one set's face-paint block decoded (" + facePaintTotal
 				+ " textures)", facePaintTotal > 0);
-		System.out.println("  " + lateDecompressed + " subfiles were LZ11 above GARC's 64:1 sniff cap"
-				+ " and had to be decompressed here (see the GARC sniff note)");
+		// Zero is the point. A non-zero count means GARC handed this suite a
+		// still-compressed entry, which is the exact defect GarcSniffTest guards
+		// from the other side - and it would mean every OTHER consumer of these
+		// textures is getting a raw blob too.
+		fails += check("GARC decompressed every compressed texture itself, so this"
+				+ " suite had to decompress none (" + lateDecompressed + ")",
+				lateDecompressed == 0);
 
 		// ---- the reader refuses rubbish instead of returning empty --------
 		fails += check("refuses a non-container", refuses(new byte[]{'X', 'Y', 8, 0, 0, 0, 0, 0,
