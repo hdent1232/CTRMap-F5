@@ -32,7 +32,7 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 						return;
 					}
 				}
-				if (JOptionPane.showConfirmDialog(e.getComponent(), "Do you want to save the new settings?", "Save settings?", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION) {
+				if (Ui.confirm(e.getComponent(), "Do you want to save the new settings?", "Save settings?", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION) {
 					save();
 				}
 			}

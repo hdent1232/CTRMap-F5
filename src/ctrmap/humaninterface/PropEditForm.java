@@ -511,7 +511,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				getAreaDisplayName(header.areadataID), inline.toString())) {
 			return false;
 		}
-		int rsl = JOptionPane.showConfirmDialog(this,
+		int rsl = ctrmap.Ui.confirm(this,
 				"This prop's textures (" + inline + ") are not in this area.\n"
 				+ "Import them from " + getAreaDisplayName(donorArea) + "?\n\n"
 				+ "This modifies the area's texture data.",

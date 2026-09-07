@@ -550,7 +550,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (npc == null || idx == -1 || idx >= e.npcs.size() || e.npcs.get(idx) != npc) {
 			return;
 		}
-		if (idx < e.npcs.size() - 1 && JOptionPane.showConfirmDialog(frame,
+		if (idx < e.npcs.size() - 1 && ctrmap.Ui.confirm(frame,
 				"The NPCs after this one will be renumbered (uids " + (idx + 1) + ".." + (e.npcs.size() - 1)
 				+ " become " + idx + ".." + (e.npcs.size() - 2) + "), because the game keeps NPC uids\n"
 				+ "equal to their position. Scripts that address them by uid will need updating.\n\n"
@@ -1014,7 +1014,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				return;
 			}
 			int insCount = MsgWrapperInjector.countInjectedInstructions(zone.s, wrapperDonor);
-			int rslInject = JOptionPane.showConfirmDialog(frame,
+			int rslInject = ctrmap.Ui.confirm(frame,
 					"This zone's script has no message-display routine.\n"
 					+ "Inject one (copied from the game's own code)?\n"
 					+ "This adds " + insCount + " instructions (about 2.4 KB) to the zone script.",
@@ -1150,7 +1150,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				return;
 			}
 			int insCount = SignWrapperInjector.countInjectedInstructions(zone.s, signDonor);
-			if (JOptionPane.showConfirmDialog(this,
+			if (ctrmap.Ui.confirm(this,
 					"This zone's script has no sign-display routine (467 of 536 vanilla zones lack it).\n"
 					+ "Inject the vanilla routine (" + insCount + " instructions) into this zone's script?\n"
 					+ "This is the same transplant that makes talking NPCs work everywhere.",
@@ -1425,7 +1425,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				return;
 			}
 			int insCount = MsgWrapperInjector.countInjectedInstructions(work, wrapperDonor);
-			if (JOptionPane.showConfirmDialog(frame,
+			if (ctrmap.Ui.confirm(frame,
 					"This zone's script has no message-display routine.\n"
 					+ "Inject one (copied from the game's own code)?\n"
 					+ "This adds " + insCount + " instructions (about 2.4 KB) to the zone script.",

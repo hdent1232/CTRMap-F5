@@ -157,7 +157,7 @@ public class TextEditor extends javax.swing.JPanel {
 			return true;
 		}
 		if (dialog) {
-			int rsl = JOptionPane.showConfirmDialog(this, "Save text changes?", "Save changes", JOptionPane.YES_NO_CANCEL_OPTION);
+			int rsl = ctrmap.Ui.confirm(this, "Save text changes?", "Save changes", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
 			switch (rsl) {
 				case JOptionPane.YES_OPTION:
 					break; //continue to save

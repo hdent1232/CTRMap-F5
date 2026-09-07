@@ -126,8 +126,8 @@ public class MaisonClassListDialog {
 	}
 
 	private static boolean confirmDiscard(java.awt.Component c) {
-		return JOptionPane.showConfirmDialog(c, "Discard unsaved changes to this table?", "Class assignments",
-				JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION;
+		return ctrmap.Ui.confirm(c, "Discard unsaved changes to this table?", "Class assignments",
+				JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION;
 	}
 
 	private static String[] text(int entry) {
@@ -241,7 +241,7 @@ public class MaisonClassListDialog {
 			}
 			if (!disclosed) {
 				//armed until the user actually accepts - a Cancel must re-prompt
-				if (JOptionPane.showConfirmDialog(promptOwner,
+				if (ctrmap.Ui.confirm(promptOwner,
 						"Class assignments are ENGINE-WIDE: this row decides which team sets\n"
 						+ "EVERY facility - the retail one and every clone - draws for this trainer\n"
 						+ "class. There is no per-facility copy. (\"Restore retail row\" undoes a row.)\n\n"
