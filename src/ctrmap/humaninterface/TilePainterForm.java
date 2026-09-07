@@ -1196,8 +1196,8 @@ public class TilePainterForm {
 			try {
 				ctrmap.formats.text.GFMessageFile.write(java.util.Arrays.asList(text));
 			} catch (RuntimeException ex) {
-				JOptionPane.showMessageDialog(frame, "This sign's text could not be encoded and was skipped:\n"
-						+ ex.getMessage(), "Sign text", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(frame, "This sign's text could not be encoded and was skipped:\n"
+						+ ex.getMessage(), "Sign text");
 				continue;
 			}
 			int line = msg.getLineCount();

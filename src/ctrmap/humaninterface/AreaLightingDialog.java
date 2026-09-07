@@ -34,11 +34,11 @@ public class AreaLightingDialog {
 
 	public static void show(Frame parent) {
 		if (!Workspace.valid || !Workspace.isOA()) {
-			JOptionPane.showMessageDialog(parent, "Load an ORAS workspace first.", "Area fog & lighting", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Area fog & lighting");
 			return;
 		}
 		if (mZonePnl == null || mZonePnl.zone == null) {
-			JOptionPane.showMessageDialog(parent, "Load a zone first (Zone tab).", "Area fog & lighting", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Load a zone first (Zone tab).", "Area fog & lighting");
 			return;
 		}
 		//this zone's atmosphere must be ITS OWN: an area shared with other zones
@@ -57,7 +57,7 @@ public class AreaLightingDialog {
 			sub4 = ad.getFile(4);
 			env = AreaEnv.read(sub4);
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(parent, "Could not read area " + areaId + " lighting:\n" + ex.getMessage(), "Area fog & lighting", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Could not read area " + areaId + " lighting:\n" + ex.getMessage(), "Area fog & lighting");
 			return;
 		}
 
@@ -69,7 +69,7 @@ public class AreaLightingDialog {
 		}
 		if (picked != GfEnvPicker.CUSTOM) {
 			if (picked.length != sub4.length) {
-				JOptionPane.showMessageDialog(parent, "The picked atmosphere block does not match this area's format.", "Area fog & lighting", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(parent, "The picked atmosphere block does not match this area's format.", "Area fog & lighting");
 				return;
 			}
 			try {
@@ -82,7 +82,7 @@ public class AreaLightingDialog {
 						"Atmosphere applied. Deploy to see it in-game - the 3D view already shows it.",
 						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(parent, "Save failed:\n" + ex.getMessage(), "Area fog & lighting", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(parent, "Save failed:\n" + ex.getMessage(), "Area fog & lighting");
 			}
 			return;
 		}
@@ -183,7 +183,7 @@ public class AreaLightingDialog {
 						"Fog & lighting saved. Deploy to see it in-game - the 3D view already shows it.",
 						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(dlg, "Save failed:\n" + ex.getMessage(), "Area fog & lighting", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Area fog & lighting");
 			}
 		});
 		cancel.addActionListener(e -> dlg.dispose());

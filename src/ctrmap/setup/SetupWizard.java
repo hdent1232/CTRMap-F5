@@ -497,11 +497,11 @@ public class SetupWizard extends JDialog {
 		final String wsPath = wsField.getText().trim();
 		File ws = new File(wsPath);
 		if (!ws.isDirectory() && !ws.mkdirs()) {
-			JOptionPane.showMessageDialog(this,
+			Ui.error(this,
 					"CTRMap could not create that working folder:\n  " + wsPath
 					+ "\n\nChoose somewhere you have permission to write, such as a folder"
 					+ "\ninside your user folder.",
-					"Cannot create folder", JOptionPane.ERROR_MESSAGE);
+					"Cannot create folder");
 			showStep(STEP_WORKSPACE);
 			return;
 		}
@@ -550,8 +550,8 @@ public class SetupWizard extends JDialog {
 					Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
 					setButtonsBusy(false);
 					finishStatus.setText(BLANK);
-					JOptionPane.showMessageDialog(SetupWizard.this, "The pristine backup was not made:\n" + cause
-							+ "\n\nPick a working folder CTRMap can write to and try again.", "Backup failed", JOptionPane.ERROR_MESSAGE);
+					Ui.error(SetupWizard.this, "The pristine backup was not made:\n" + cause
+							+ "\n\nPick a working folder CTRMap can write to and try again.", "Backup failed");
 					showStep(STEP_WORKSPACE);
 					return;
 				}
@@ -593,12 +593,12 @@ public class SetupWizard extends JDialog {
 		setButtonsBusy(false);
 		if (!Workspace.valid || zones == 0) {
 			finishStatus.setText(BLANK);
-			JOptionPane.showMessageDialog(this,
+			Ui.error(this,
 					"CTRMap read that folder but found no maps in it.\n\n"
 					+ "The unpacked game is probably incomplete - unpacking sometimes stops\n"
 					+ "early without saying so. Try unpacking your game again, then point\n"
 					+ "CTRMap at the new folder.",
-					"No maps found", JOptionPane.ERROR_MESSAGE);
+					"No maps found");
 			showStep(STEP_GAME);
 			return;
 		}

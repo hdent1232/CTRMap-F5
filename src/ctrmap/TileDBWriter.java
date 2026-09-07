@@ -335,7 +335,7 @@ public class TileDBWriter extends javax.swing.JFrame {
 			if (dis.available() > 0) {
 				int magic = dis.readInt();
 				if (magic != 0x4D455453){
-					JOptionPane.showMessageDialog(null, "Tileset magic mismatch", "Parse error", JOptionPane.ERROR_MESSAGE);
+					Ui.error(null, "Tileset magic mismatch", "Parse error");
 					dis.close();
 					return;
 				}

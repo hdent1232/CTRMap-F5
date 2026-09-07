@@ -158,9 +158,9 @@ public class BuildingPaletteDialog {
 		((JPanel) dlg.getContentPane()).setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
 		if (all.isEmpty()) {
-			javax.swing.JOptionPane.showMessageDialog(parent,
+			ctrmap.Ui.error(parent,
 					"The building catalog is empty - this build shipped without oras_buildings.tsv.",
-					"Building palette", javax.swing.JOptionPane.ERROR_MESSAGE);
+					"Building palette");
 			return null;
 		}
 

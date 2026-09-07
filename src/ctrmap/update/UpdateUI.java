@@ -155,7 +155,7 @@ public class UpdateUI {
 		if (!Updater.isWritable(install)) {
 			//checked BEFORE downloading: failing on permissions after fetching
 			//seventy megabytes wastes the user's time for no reason
-			JOptionPane.showMessageDialog(parent,
+			ctrmap.Ui.message(parent,
 					"CTRMap cannot write to its own folder:\n  " + install.getAbsolutePath()
 					+ "\n\nIt was probably installed somewhere that needs administrator rights."
 					+ "\nMove the CTRMap folder somewhere you own - your Desktop or Documents -"
@@ -227,10 +227,10 @@ public class UpdateUI {
 					get();
 				} catch (Exception ex) {
 					Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
-					JOptionPane.showMessageDialog(parent,
+					ctrmap.Ui.error(parent,
 							"The update was not installed.\n\n" + cause.getMessage()
 							+ "\n\nNothing on your machine was changed.",
-							"Update failed", JOptionPane.ERROR_MESSAGE);
+							"Update failed");
 					return;
 				}
 				JOptionPane.showMessageDialog(parent, readyMessage(rel.version),

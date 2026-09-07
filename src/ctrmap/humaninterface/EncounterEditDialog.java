@@ -37,11 +37,11 @@ public class EncounterEditDialog {
 	/** Opens the editor for the currently loaded zone. */
 	public static void show(Frame parent) {
 		if (!Workspace.valid || !Workspace.isOA()) {
-			JOptionPane.showMessageDialog(parent, "Load an ORAS workspace first.", "Wild encounters", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Wild encounters");
 			return;
 		}
 		if (mZonePnl == null || mZonePnl.zoneIndex < 0) {
-			JOptionPane.showMessageDialog(parent, "Load a zone first (Zone tab).", "Wild encounters", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Load a zone first (Zone tab).", "Wild encounters");
 			return;
 		}
 		final int zoneIndex = mZonePnl.zoneIndex;
@@ -51,7 +51,7 @@ public class EncounterEditDialog {
 
 		byte[] pack = loadPack(zo, enIndex, zoneCount);
 		if (pack == null) {
-			JOptionPane.showMessageDialog(parent, "Could not read the encounter pack.", "Wild encounters", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Could not read the encounter pack.", "Wild encounters");
 			return;
 		}
 		String[] species = loadSpeciesNames();
@@ -99,7 +99,7 @@ public class EncounterEditDialog {
 				copyInto(other, table);
 				model.fireTableDataChanged();
 			} catch (RuntimeException ex) {
-				JOptionPane.showMessageDialog(dlg, "Could not copy: " + ex.getMessage(), "Copy", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(dlg, "Could not copy: " + ex.getMessage(), "Copy");
 			}
 		});
 		clear.addActionListener(e -> {
@@ -130,7 +130,7 @@ public class EncounterEditDialog {
 						+ ".\nDeploy to emulator to apply (packs automatically).",
 						"Wild encounters", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(dlg, "Save failed:\n" + ex.getMessage(), "Wild encounters", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Wild encounters");
 			}
 		});
 		cancel.addActionListener(e -> dlg.dispose());

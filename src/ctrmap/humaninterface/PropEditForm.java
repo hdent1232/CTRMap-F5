@@ -350,11 +350,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return;
 		}
 		if (!loaded || props == null) {
-			JOptionPane.showMessageDialog(this, "Load a map through the Zone Loader first.", "No map loaded", JOptionPane.WARNING_MESSAGE);
+			ctrmap.Ui.message(this, "Load a map through the Zone Loader first.", "No map loaded", JOptionPane.WARNING_MESSAGE);
 			return;
 		}
 		if (reg == null) {
-			JOptionPane.showMessageDialog(this, "The prop palette needs an area prop registry.\nLoad a map through the Zone Loader first.", "No registry loaded", JOptionPane.WARNING_MESSAGE);
+			ctrmap.Ui.message(this, "The prop palette needs an area prop registry.\nLoad a map through the Zone Loader first.", "No registry loaded", JOptionPane.WARNING_MESSAGE);
 			return;
 		}
 		PropDatabase.PropModel pm = paletteEntries[sel];
@@ -486,21 +486,21 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		PropDatabase db = PropDatabase.get();
 		ZoneHeader header = (CtrmapMainframe.mZonePnl != null && CtrmapMainframe.mZonePnl.zone != null) ? CtrmapMainframe.mZonePnl.zone.header : null;
 		if (db == null || header == null || header.areadata == null) {
-			JOptionPane.showMessageDialog(this,
+			ctrmap.Ui.error(this,
 					"This prop needs textures that this area does not have:" + list
 					+ "\n\nPlacing it anyway would hardlock the game when the area loads,"
 					+ "\nand no area data is loaded to import them into, so the prop was not placed.",
-					"Missing textures", JOptionPane.ERROR_MESSAGE);
+					"Missing textures");
 			return false;
 		}
 		int donorArea = db.findDonorAreaWithTextures(pm, missing);
 		if (donorArea == -1) {
-			JOptionPane.showMessageDialog(this,
+			ctrmap.Ui.error(this,
 					"This prop needs textures that this area does not have:" + list
 					+ "\n\nPlacing it anyway would hardlock the game when the area loads."
 					+ "\nNo single donor area contains all of these textures, so CTRMap"
 					+ "\ncan not import them automatically and the prop was not placed.",
-					"Missing textures", JOptionPane.ERROR_MESSAGE);
+					"Missing textures");
 			return false;
 		}
 		//An area other zones use is not this prop's to grow. Asked BEFORE the
@@ -576,10 +576,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return true;
 		} catch (Exception ex) {
 			ex.printStackTrace();
-			JOptionPane.showMessageDialog(this,
+			ctrmap.Ui.error(this,
 					"The texture import failed:\n" + ex
 					+ "\n\nThe area was not modified and the prop was not placed.",
-					"Import failed", JOptionPane.ERROR_MESSAGE);
+					"Import failed");
 			return false;
 		}
 	}
@@ -932,11 +932,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					int donorArea = (db != null && header != null && header.areadata != null)
 							? db.findDonorAreaWithTextures(pm, missing) : -1;
 					if (donorArea == -1) {
-						JOptionPane.showMessageDialog(this,
+						ctrmap.Ui.error(this,
 								"This prop needs textures this area does not have (" + missing + ")\n"
 								+ "and no donor area contains them all - it was not registered, because\n"
 								+ "placing it would hardlock the game when the area loads.",
-								"Prop registration", JOptionPane.ERROR_MESSAGE);
+								"Prop registration");
 						return null;
 					}
 					byte[] targetPack = header.areadata.getFile(1);
@@ -993,8 +993,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 			return entry;
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(this, "Automatic prop registration failed:\n" + ex.getMessage(),
-					"Prop registration", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Automatic prop registration failed:\n" + ex.getMessage(),
+					"Prop registration");
 			return null;
 		}
 	}

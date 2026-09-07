@@ -52,11 +52,11 @@ public class MaisonEditDialog {
 
 	public static void show(Frame parent) {
 		if (!Workspace.valid || !Workspace.isOA()) {
-			JOptionPane.showMessageDialog(parent, "Load an ORAS workspace first.", "Battle facility opponents", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Battle facility opponents");
 			return;
 		}
 		if (Workspace.getArchive(POOLS[0]) == null) {
-			JOptionPane.showMessageDialog(parent, "This dump has no battle facility opponent data.", "Battle facility opponents", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "This dump has no battle facility opponent data.", "Battle facility opponents");
 			return;
 		}
 		ctrmap.gamedef.GameProfile prof = Workspace.profile();
@@ -154,7 +154,7 @@ public class MaisonEditDialog {
 				JOptionPane.showMessageDialog(dlg, "Saved " + POOL_NAMES[model.poolIndex]
 						+ ".\nDeploy to emulator to apply.", "Battle facility opponents", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(dlg, "Save failed:\n" + ex.getMessage(), "Battle facility opponents", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Battle facility opponents");
 			}
 		});
 		close.addActionListener(e -> {
@@ -345,8 +345,8 @@ public class MaisonEditDialog {
 				if (pick == 0) {
 					int free = copyToFreeSlot(r);
 					if (free < 0) {
-						JOptionPane.showMessageDialog(table, "No free slot left in this pool.",
-								"Battle facility opponents", JOptionPane.ERROR_MESSAGE);
+						ctrmap.Ui.error(table, "No free slot left in this pool.",
+								"Battle facility opponents");
 						return;
 					}
 					row = free;

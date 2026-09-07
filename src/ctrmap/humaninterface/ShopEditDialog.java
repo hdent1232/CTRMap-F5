@@ -35,7 +35,7 @@ public class ShopEditDialog {
 
 	public static void show(Frame parent) {
 		if (!Workspace.valid || !Workspace.isOA()) {
-			JOptionPane.showMessageDialog(parent, "Load an ORAS workspace first.", "Shop editor", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Shop editor");
 			return;
 		}
 		Preferences prefs = Preferences.userRoot().node(ShopEditDialog.class.getName());
@@ -65,9 +65,9 @@ public class ShopEditDialog {
 			shops = ShopData.read(code);
 		} catch (Exception ex) {
 			prefs.remove(PREF_CODEBIN);
-			JOptionPane.showMessageDialog(parent, "Could not read the shop table:\n" + ex.getMessage()
+			ctrmap.Ui.error(parent, "Could not read the shop table:\n" + ex.getMessage()
 					+ "\n\n(The file must be the DECOMPRESSED ORAS code.bin - pick it again next time.)",
-					"Shop editor", JOptionPane.ERROR_MESSAGE);
+					"Shop editor");
 			return;
 		}
 		prefs.put(PREF_CODEBIN, codeFile.getAbsolutePath());
@@ -140,7 +140,7 @@ public class ShopEditDialog {
 						+ "Then fully restart the emulator and talk to a shop clerk (TESTING.md item).",
 						"Shop editor", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(dlg, "Save failed:\n" + ex.getMessage(), "Shop editor", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Shop editor");
 			}
 		});
 		close.addActionListener(e -> dlg.dispose());
