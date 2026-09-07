@@ -3,6 +3,7 @@ package ctrmap.tests;
 import ctrmap.CtrmapMainframe;
 import ctrmap.GeometryForker;
 import ctrmap.Ui;
+import ctrmap.ZoneManager;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.List;
@@ -45,10 +46,17 @@ public class MainframeReportsTest {
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
+		//needs no game: the rename result is a plain record, and what the user
+		//is told about it is the thing under test
+		aRenameThatMovedOtherZonesSaysSo();
+
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump);
-			System.out.println("ALL PASS");
+			System.out.println("  skip: no dump at " + dump + " - the fork and matrix checks need one");
+			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
+			if (fails > 0) {
+				System.exit(1);
+			}
 			return;
 		}
 		ScratchGame.open(dump);
@@ -221,6 +229,60 @@ public class MainframeReportsTest {
 				"a file that could not be read does not go on to fit the view to a map that never loaded");
 		check(!said.isEmpty() && said.get(0).startsWith("Open MapMatrix:"),
 				"and what the user gets instead is the reason it was not read: " + said);
+	}
+
+	/**
+	 * A rename that moved OTHER zones has to say so.
+	 *
+	 * <p>Location names are shared - in the retail game one line names Fallarbor
+	 * Town and Routes 111 to 114 together - and {@link ctrmap.ZoneManager} tries
+	 * to give the renamed zone a private line so the rest keep theirs. The
+	 * game's place-id bound is hard, though, so when no free line is left it
+	 * edits the shared line instead and every zone on it takes the new name.
+	 *
+	 * <p>From the map the two outcomes are identical: the zone the user asked
+	 * about is called what they typed. This sentence is the only thing that
+	 * tells them four routes came with it. Said the wrong way round, the user
+	 * ships a game with four routes named after their new town and no idea it
+	 * happened; said the other wrong way round, they go hunting for damage that
+	 * a private name line means was never done.
+	 */
+	static void aRenameThatMovedOtherZonesSaysSo() {
+		ZoneManager.RenameResult shared = new ZoneManager.RenameResult();
+		shared.oldName = "Fallarbor Town";
+		shared.sharers = 5;
+		shared.renamedSharers = true;
+		String said = CtrmapMainframe.renameZoneReport(10, "Delta Town", shared);
+		check(said.contains("ALL of them were renamed"),
+				"a rename with no free name slot says every zone on that name moved: " + said.split("\n\n")[1]);
+		check(said.contains("shared by 5 zones"), "and how many there were (5)");
+		check(said.contains("\"Fallarbor Town\""), "and what the name they shared was");
+		check(!said.contains("the others are unchanged"),
+				"and does NOT also claim the others are unchanged");
+
+		ZoneManager.RenameResult forked = new ZoneManager.RenameResult();
+		forked.oldName = "Fallarbor Town";
+		forked.sharers = 5;
+		forked.gaveOwnName = true;
+		said = CtrmapMainframe.renameZoneReport(10, "Delta Town", forked);
+		check(said.contains("it now has its own name and the others are unchanged"),
+				"a rename that got its own name slot says the others were left alone: " + said.split("\n\n")[1]);
+		check(!said.contains("ALL of them were renamed"),
+				"and does NOT warn about damage it did not do");
+
+		ZoneManager.RenameResult alone = new ZoneManager.RenameResult();
+		alone.oldName = "Mauville City";
+		alone.sharers = 1;
+		String solo = CtrmapMainframe.renameZoneReport(15, "Delta City", alone);
+		check(solo.contains("The name belonged to this zone alone"),
+				"a zone that owned its name is told nothing else moved: " + solo.split("\n\n")[1]);
+		check(!solo.contains("ALL of them") && !solo.contains("the others are unchanged"),
+				"and gets neither of the shared-name sentences");
+
+		for (String s : new String[]{said, solo}) {
+			check(s.startsWith("Zone "), "every one names the zone it renamed first: " + firstLine(s));
+			check(s.contains("Deploy to emulator"), "and says what to do next to see it in game");
+		}
 	}
 
 	static String firstLine(String s) {
