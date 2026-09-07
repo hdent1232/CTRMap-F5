@@ -5,15 +5,12 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.RegionFactory;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import static ctrmap.formats.LittleEndian.u16;
 import static ctrmap.formats.LittleEndian.i32;
 import static ctrmap.formats.LittleEndian.f32;
 import static ctrmap.formats.LittleEndian.putU16;
+import java.nio.file.Files;
 
 /**
  * Grows a zone's map beyond one region - the "bigger custom maps" feature
@@ -179,10 +176,10 @@ public class MapResizer {
 		}
 
 		File zoneFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
-		byte[] zoBytes = readAll(zoneFile);
+		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
 		int hdrOff = i32(zoBytes, 4);
 		int oldMatrix = u16(zoBytes, hdrOff + 4);
-		byte[] matBytes = readAll(Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, oldMatrix));
+		byte[] matBytes = Files.readAllBytes(Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, oldMatrix).toPath());
 
 		//template = the zone's first region (same area -> textures guaranteed)
 		int sub0 = i32(matBytes, 4);
@@ -197,7 +194,7 @@ public class MapResizer {
 		if (templateRegion < 0) {
 			throw new IOException("The zone's matrix has no regions.");
 		}
-		byte[] templateGr = readAll(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, templateRegion));
+		byte[] templateGr = Files.readAllBytes(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, templateRegion).toPath());
 
 		int newCells = newW * newH - w * h;
 		if (newCells <= 0) {
@@ -214,7 +211,7 @@ public class MapResizer {
 		//blank-canvas regions for the new cells
 		for (int id : newIds) {
 			File f = new File(fdDir, String.valueOf(id));
-			writeAll(f, templateGr);
+			Files.write(f.toPath(), templateGr);
 			GR reg = new GR(f);
 			byte[] template = reg.getFile(1);
 			if (BchMapModel.isMapModel(template)) {
@@ -244,14 +241,14 @@ public class MapResizer {
 			GeometryForker.registerPendingField(id, gr.isEntryCompressed(templateRegion));
 		}
 
-		writeAll(matrixOut, newMat);
+		Files.write(matrixOut.toPath(), newMat);
 		Workspace.addPersist(matrixOut);
 		GeometryForker.registerPendingMatrix(newMatrix, mm.isEntryCompressed(oldMatrix));
 
 		//repoint the zone (ZO header + the runtime-authoritative master row)
 		byte[] newZo = zoBytes.clone();
 		putU16(newZo, hdrOff + 4, newMatrix);
-		writeAll(zoneFile, newZo);
+		Files.write(zoneFile.toPath(), newZo);
 		Workspace.addPersist(zoneFile);
 		GeometryForker.repointMasterRow(zo, zoneIndex, newMatrix);
 
@@ -284,18 +281,5 @@ public class MapResizer {
 		p32(b, o, Float.floatToIntBits(f));
 	}
 
-	private static byte[] readAll(File f) throws IOException {
-		InputStream in = new FileInputStream(f);
-		byte[] b = new byte[in.available()];
-		in.read(b);
-		in.close();
-		return b;
-	}
 
-	private static void writeAll(File f, byte[] b) throws IOException {
-		OutputStream os = new FileOutputStream(f);
-		os.write(b);
-		os.flush();
-		os.close();
-	}
 }

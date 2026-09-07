@@ -3,16 +3,13 @@ package ctrmap;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.garc.LZ11;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import static ctrmap.formats.LittleEndian.i32;
 import static ctrmap.formats.LittleEndian.putI32;
+import java.nio.file.Files;
 
 /**
  * EXPERIMENTAL: appends a brand-new zone slot to the end of the ZoneData GARC
@@ -131,7 +128,7 @@ public class ZoneAppender {
 		// Master respects saved zone-header edits via the workspace file, but fall
 		// back to the authoritative GARC bytes if it is the wrong structure (a
 		// reverted single-zone append can leave a grown-master artifact behind).
-		byte[] masterBytes = readAll(masterFile);
+		byte[] masterBytes = Files.readAllBytes(masterFile.toPath());
 		if (masterBytes.length != oldCount * ZoneCloner.ZONE_HEADER_SIZE) {
 			masterBytes = garc.getDecompressedEntry(oldCount);
 		}
@@ -143,7 +140,7 @@ public class ZoneAppender {
 		File enWs = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, oldCount + 1);
 		if (enWs != null && Workspace.persist_paths.contains(enWs.getAbsolutePath())) {
 			try {
-				byte[] cand = readAll(enWs);
+				byte[] cand = Files.readAllBytes(enWs.toPath());
 				validateEN(cand, oldCount);
 				enBytes = cand;
 			} catch (RuntimeException stale) {
@@ -153,7 +150,7 @@ public class ZoneAppender {
 		if (enBytes == null) {
 			enBytes = garc.getDecompressedEntry(oldCount + 1);
 		}
-		MultiAppendPayloads p = buildMultiAppendPayloads(readAll(srcFile), masterBytes, enBytes, srcIndex, oldCount, addCount);
+		MultiAppendPayloads p = buildMultiAppendPayloads(Files.readAllBytes(srcFile.toPath()), masterBytes, enBytes, srcIndex, oldCount, addCount);
 
 		// Auto-fork geometry: give each REAL new zone its OWN private map so editing
 		// it does not change the zone it was cloned from (what users expect - a new
@@ -169,14 +166,14 @@ public class ZoneAppender {
 		// new ZOs occupy entries oldCount..m-1 (decompressed on disk, LZ11 on pack)
 		for (int i = 0; i < addCount; i++) {
 			File f = new File(dir, String.valueOf(oldCount + i));
-			writeAll(f, p.newZos[i]);
+			Files.write(f.toPath(), p.newZos[i]);
 			Workspace.addPersist(f);
 			pendingZoneDataOverrides.put(oldCount + i, Boolean.TRUE);
 		}
 		// master table shifts to entry m, EN to entry m+1 (both uncompressed)
 		File masterOut = new File(dir, String.valueOf(m));
-		writeAll(masterOut, p.master);
-		writeAll(enOut, p.en);
+		Files.write(masterOut.toPath(), p.master);
+		Files.write(enOut.toPath(), p.en);
 		Workspace.addPersist(masterOut);
 		Workspace.addPersist(enOut);
 		pendingZoneDataOverrides.put(m, Boolean.FALSE);
@@ -372,18 +369,5 @@ public class ZoneAppender {
 		return p;
 	}
 
-	private static byte[] readAll(File f) throws IOException {
-		InputStream in = new FileInputStream(f);
-		byte[] b = new byte[in.available()];
-		in.read(b);
-		in.close();
-		return b;
-	}
 
-	private static void writeAll(File f, byte[] b) throws IOException {
-		OutputStream os = new FileOutputStream(f);
-		os.write(b);
-		os.flush();
-		os.close();
-	}
 }
