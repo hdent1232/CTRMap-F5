@@ -571,13 +571,6 @@ public class PaintedRegionBuilder {
 						continue;
 					}
 					float drop = myY - nY;
-					int qx = tx + (dir == 0 ? 1 : dir == 1 ? -1 : 0);
-					int qy = ty + (dir == 2 ? 1 : dir == 3 ? -1 : 0);
-					if (terrainCovered != null && terrainCovered[ty][tx]
-							&& qx >= 0 && qy >= 0 && qx < DIM && qy < DIM
-							&& terrainCovered[qy][qx]) {
-						continue;   //authored terrain already stands here
-					}
 					if (drop > 0.75f) {
 						CliffEdge ce = cliffEdge(tx, ty, dir, nY, myY);
 						//A cliff face leans a whole tile out for a two-level
@@ -1129,18 +1122,6 @@ public class PaintedRegionBuilder {
 
 	/** [emitted, rejected-as-flat] ramp skirts, for diagnosis. */
 	static final int[] SKIRTS = new int[3];
-
-	/**
-	 * Tiles whose cliffs are supplied by STAMPED RETAIL TERRAIN rather than
-	 * generated here. Null means generate everything, as before.
-	 *
-	 * <p>Set by the terrain-kit composer just before a build and cleared after.
-	 * A piece from the retail game is only ever placed where the elevation grid
-	 * already calls for exactly its shape, so where one lands the generated
-	 * cliff would be a second, worse wall in the same place - hence this mask
-	 * rather than letting both run.
-	 */
-	public static boolean[][] terrainCovered;
 
 	/** Ground texture repeats: one per 72 world units, i.e. per four tiles. */
 	static final float FLOOR_UV = 1f / 72f;

@@ -2,6 +2,7 @@ package ctrmap.formats.scripts;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +20,15 @@ public class PawnInstruction {
 
 	public List<JumpListener> jmpListeners = new ArrayList<>();
 
-	public static List<Commands> cmdList = Arrays.asList(Commands.values());
+	/**
+	 * The opcode table, in ordinal order. Fixed for the life of the JVM: it is
+	 * the enum, and a disassembly names an opcode by indexing it. Private and
+	 * final because nothing outside this class has ever read it and nothing
+	 * anywhere has ever written it - as a public mutable global it advertised
+	 * a swap that would silently renumber every script CTRMap has open.
+	 */
+	private static final List<Commands> cmdList =
+				Collections.unmodifiableList(Arrays.asList(Commands.values()));
 
 	public GFLPawnScript parent;
 	/**
