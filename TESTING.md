@@ -1,4 +1,141 @@
-# TESTING.md — things to verify in the emulator
+# TESTING.md — how this project is verified
+
+Two halves, and they answer different questions.
+
+- **The offline battery** — 93 headless suites, run on your machine against a
+  real dump, answering *"does the code still do what it says?"*. That is the
+  first half of this file.
+- **The in-emulator checklist** — everything only the real game engine can
+  answer, starting at [TESTZONE.md](TESTZONE.md). That is the second half,
+  from "Map Builder" onwards, and it is the larger part of the file.
+
+---
+
+# Part one — the offline battery
+
+## What you need
+
+| | |
+|---|---|
+| A JDK | 17 or newer. `build.ps1` compiles with `--release 8`. Found under `C:\Program Files\Eclipse Adoptium`, or set `CTRMAP_JDK` to any JDK. |
+| A pristine GARC dump | the untouched `a/` tree from *your own* copy of the game. Most suites take its path as `args[0]`. |
+| A full RomFS dump | the whole title folder (`.../RomFS/000400000011C400`), not just the GARCs — the setup and item suites validate real folder layouts. |
+| A decompressed `code.bin` | optional. Only the executable-patch suites (`ItemIconPatch`, `ShopData`) need it; without it they say so and skip. |
+
+Nothing in this repository is a game file, and the battery downloads nothing.
+No dump, no battery — that is by design.
+
+## Build, then run
+
+```
+powershell -ExecutionPolicy Bypass -File build.ps1
+
+powershell -ExecutionPolicy Bypass -File test.ps1 -Quick `
+    -Pristine "<...>\RomFS_original_garcs" `
+    -GameDir  "<...>\RomFS\000400000011C400"
+```
+
+- **Always `build.ps1`, never a bare `javac`.** A bare `javac` copies no
+  resources, so the catalogue tables in `build\classes` go stale while every
+  class looks fresh. `build.ps1` signs what it built (see `stamp.ps1`), and
+  `test.ps1` **refuses to run** — exit code 2, "REFUSING TO RUN" — against a
+  `build\classes` that is not exactly that script's output from exactly these
+  sources. Rebuild and run it again.
+- **`-Pristine` / `-GameDir` are how you point it at a dump anywhere on disk.**
+  Without them it looks beside the repo, which is the author's layout and
+  nobody else's; six suites used to fail in a fresh clone for a reason that had
+  nothing to do with the code.
+- **`-Quick` is the LIGHTER run, not the thorough one.** It is a sampling
+  *stride*: 60 instead of 20, so the corpus sweeps visit a third as many
+  regions. Roughly 15 minutes with it. Drop the flag for the full sweep and
+  expect appreciably longer.
+- One suite on its own, with the arguments `test.ps1` gives it:
+  ```
+  java -Xmx4g -Djava.awt.headless=true -cp "build\classes;lib\jogl-all.jar;lib\gluegen-rt.jar" `
+       ctrmap.tests.DispatchGuardsTest "<...>\RomFS_original_garcs\a\0\1\3"
+  ```
+
+## Reading the result
+
+Every suite prints `ALL PASS` (or `PASS`) as its last line and **exits 0**; the
+exit code is the verdict, not the text. `test.ps1` ends in one of:
+
+```
+ALL SUITES PASS  (912s)
+FAILED: <suite name>, <suite name>          # and exit code 1
+```
+
+A suite that prints `skip:` and passes is telling you it could not run — nearly
+always a missing dump path. **A skipping suite is not a passing suite.** That
+hole has been paid for twice (`BchMapModelTest` skipped from every worktree and
+looked green; `MaisonClassListTest` round-tripped nought of nought entries and
+said ALL PASS), which is why `BatteryHygieneTest` now fails the battery if a
+suite that names the dump is registered in `test.ps1` without a path to one.
+
+## What the guards mean
+
+Four families, and they assert different kinds of thing:
+
+1. **Corpus round-trips** (`ZoneEntitiesRoundTrip`, `GFMessageFileRoundTrip`,
+   `TrainerData`, `AreaEnv`, `GfColl`…) — parse then re-serialize every record
+   in the retail game and demand the bytes come back identical. These pin the
+   *formats*.
+2. **Operation sweeps** (`ZoneAppend`, `MapPrefab`, `CompositeBuild`,
+   `PaintedRegion`…) — run a real editing operation across every eligible zone
+   or region and check the result, often against the pristine archive. These
+   pin the *edits*.
+3. **Guard suites** (the 15 named `*Guard*Test`) — take a refusal the code is
+   supposed to make and feed it an input built to trip it, then demand it
+   refuses **by name**: the declared exception type, with the archive on disk
+   untouched. "It threw something" is not "it refused" — a dropped guard turns
+   into an index blowup a few lines later, after the damage. `DispatchGuardsTest`
+   and `PaintedRegionTest` are the models to copy.
+4. **Meta-suites**, which assert about the repository rather than the program:
+   - `SourceSeamTest` — no RomFS path, GameText index or other game-detected
+     constant outside `src/ctrmap/gamedef/`. See ARCHITECTURE.md.
+   - `BatteryHygieneTest` — how a suite may touch the machine, that every
+     suite is registered with its corpus, that `build\classes` came from
+     `build.ps1`, and that the counts the docs publish match the data.
+   - `MutationBaselineTest` — below.
+   - `SnapshotIntegrityTest`, `UiOutputTest`, `VaultGuardsTest` — the pristine
+     backup, and that a message the user should see is actually reachable.
+
+## The mutation sweep, and what to do when `MutationBaselineTest` fails
+
+The suites are themselves measured. `tools/mutate2.py` takes each line the
+merged fix branches added, breaks it in a way that still **compiles** (deletes a
+`throw`, inverts an `if`, flips a `return true`), rebuilds, and runs the battery
+to see whether anything notices. A mutant nothing notices is a line no suite
+asserts — a hole — and it is recorded in `mutation_baseline.json` with the exact
+text of the line. The last recorded sweep: **243 of 244 measurable mutants
+killed, 1 survivor, 2 lines excluded by hand with a written reason each.**
+
+The sweep costs hours. `MutationBaselineTest` costs seconds and keeps the record
+honest in between: it re-hashes every file the sweep measured and refuses a
+baseline that no longer describes the tree.
+
+**So when you edit one of those 35 files, this suite fails. That is correct, and
+it is a digest check, not a regression.** The fix is:
+
+- **Do not hand-edit `mutation_baseline.json`.** Updating a digest without
+  measuring asserts a measurement nobody took — the one thing the file exists
+  to prevent.
+- Commit your work **first**: the sweep ends in `git reset --hard <the sha it
+  started from>`, so anything uncommitted while it runs is erased.
+- Re-run it — `python tools/mutate2.py` — and copy the baseline it writes to
+  `wt/_state/mutation_baseline.json` over the repo's `mutation_baseline.json`,
+  then commit that.
+- If you are not the person who will re-run it, **say so in your handover**
+  rather than silencing the suite. A failing MutationBaselineTest is the record
+  telling the truth about itself.
+
+`python tools/mutate2.py --selftest` re-runs the harness's own guards against
+synthetic input in seconds, with no JDK, worktree or dump. The battery runs it
+as its last entry, and skips it (loudly) where there is no Python.
+
+---
+
+# Part two — things only the emulator can answer
 
 > **START HERE: [TESTZONE.md](TESTZONE.md).** A ready-made test world is
 > packed into your game data — entering May's house at the start of the
