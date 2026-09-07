@@ -91,7 +91,7 @@ public class ForkGuardsTest {
 					+ r.newArea + " exists");
 			check(Arrays.equals(registry(r.newArea), srcRegistry),
 					"fork " + (pass + 1) + ": and it is the clone of area " + oldArea);
-			List<String> bad = WorkspaceIntegrity.check(true);
+			List<String> bad = WorkspaceIntegrity.check(Workspace.session(), true);
 			check(bad.isEmpty(), "fork " + (pass + 1) + ": the packed game passes every"
 					+ " cross-archive invariant " + bad);
 		}

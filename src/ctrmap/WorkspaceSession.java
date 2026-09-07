@@ -853,7 +853,7 @@ public final class WorkspaceSession {
 		//zone that will not load. Check here, while the edit that
 		//caused it is still the last thing that happened.
 		List<String> warnings = new ArrayList<>();
-		warnings.addAll(WorkspaceIntegrity.report("packing the workspace"));
+		warnings.addAll(WorkspaceIntegrity.report(this, "packing the workspace"));
 		warnings.addAll(GARC.drainPackWarnings());
 		List<String> missing = snapshotMissingArchives();
 		if (!missing.isEmpty()) {
