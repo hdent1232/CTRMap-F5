@@ -47,7 +47,7 @@ public class MaisonClassListDialog {
 
 	public static void show(Dialog parent) {
 		if (Workspace.getArchive(TABLES[0]) == null) {
-			JOptionPane.showMessageDialog(parent, "This dump has no facility class tables.", "Class assignments", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(parent, "This dump has no facility class tables.", "Class assignments");
 			return;
 		}
 		String[] classNames = text(Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_CLASS_NAMES));
@@ -81,8 +81,8 @@ public class MaisonClassListDialog {
 				return;
 			}
 			if (!model.restoreRetailRow(r)) {
-				JOptionPane.showMessageDialog(dlg, "No pristine snapshot is available to restore from.",
-						"Class assignments", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(dlg, "No pristine snapshot is available to restore from.",
+						"Class assignments");
 			}
 		});
 
@@ -110,7 +110,7 @@ public class MaisonClassListDialog {
 				JOptionPane.showMessageDialog(dlg, "Saved " + TABLE_NAMES[model.tableIndex]
 						+ ".\nDeploy to emulator to apply.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
-				JOptionPane.showMessageDialog(dlg, "Save failed:\n" + ex.getMessage(), "Class assignments", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Class assignments");
 			}
 		});
 		close.addActionListener(e -> {

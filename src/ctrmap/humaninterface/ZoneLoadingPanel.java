@@ -1258,7 +1258,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				}
 			});
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(this, "Fork failed:\n" + ex.getMessage(), "Shared map", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Fork failed:\n" + ex.getMessage(), "Shared map");
 		}
 	}
 
@@ -1268,7 +1268,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 */
 	private void btnCloneZoneActionPerformed(java.awt.event.ActionEvent evt) {
 		if (zones == null || zone == null || zoneIndex == -1) {
-			JOptionPane.showMessageDialog(this, "Load the source zone from the dropdown first.", "Clone zone", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Load the source zone from the dropdown first.", "Clone zone");
 			return;
 		}
 		//the cloner reads the last-SAVED workspace bytes, so flush any pending
@@ -1298,7 +1298,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
 		int dstIndex = dstPicker.getSelectedIndex();
 		if (dstIndex == srcIndex) {
-			JOptionPane.showMessageDialog(this, "The source and destination zones are the same.", "Clone zone", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "The source and destination zones are the same.", "Clone zone");
 			return;
 		}
 		final boolean doFork = forkChk.isSelected() && Workspace.isOA();
@@ -1322,7 +1322,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			}
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			JOptionPane.showMessageDialog(this, "Could not clone the zone:\n" + ex.getMessage(), "Clone zone", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not clone the zone:\n" + ex.getMessage(), "Clone zone");
 			return;
 		}
 		final int dst = dstIndex;
@@ -1357,11 +1357,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 */
 	private void btnAddZoneActionPerformed(java.awt.event.ActionEvent evt) {
 		if (!Workspace.isOA()) {
-			JOptionPane.showMessageDialog(this, "Adding new zones is ORAS-only in v1.", "Add new zones", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Adding new zones is ORAS-only in v1.", "Add new zones");
 			return;
 		}
 		if (zones == null || zones.length == 0) {
-			JOptionPane.showMessageDialog(this, "Load a workspace first.", "Add new zones", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Load a workspace first.", "Add new zones");
 			return;
 		}
 		//the appender reads the last-SAVED workspace bytes, so flush any pending
@@ -1427,7 +1427,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			res = ctrmap.ZoneAppender.appendZones(realZones, srcIndex);
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			JOptionPane.showMessageDialog(this, "Could not add the zones:\n" + ex.getMessage(), "Add new zones", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not add the zones:\n" + ex.getMessage(), "Add new zones");
 			return;
 		}
 		//generate + save the paired code patch (same N drives both sides)
@@ -1445,7 +1445,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			}
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-			JOptionPane.showMessageDialog(this, "The zones were staged, but the code.ips could not be saved:\n" + ex.getMessage()
+			ctrmap.Ui.message(this, "The zones were staged, but the code.ips could not be saved:\n" + ex.getMessage()
 					+ "\n\nThe game will not boot without it - regenerate it before testing.", "Add new zones", JOptionPane.WARNING_MESSAGE);
 		}
 		//the append changed the GARC layout. packWorkspace and loadEverything are

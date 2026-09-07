@@ -47,7 +47,7 @@ public class Utils {
 	}
 
 	public static void showErrorMessage(String title, String message) {
-		JOptionPane.showMessageDialog(null, message, title, JOptionPane.ERROR_MESSAGE);
+		Ui.error(null, message, title);
 	}
 
 	public static void showInfoMessage(String title, String message) {

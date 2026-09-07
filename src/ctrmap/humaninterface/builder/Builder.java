@@ -407,7 +407,7 @@ public class Builder extends javax.swing.JPanel {
 							if (persistentContainerReference.storeFile(index, output)) {
 								Workspace.addPersist(persistentContainerReference.getOriginFile());
 							} else {
-								JOptionPane.showMessageDialog(Builder.this, "Storing the converted model into the container failed. The container was not modified.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+								ctrmap.Ui.error(Builder.this, "Storing the converted model into the container failed. The container was not modified.", "Builder alert");
 							}
 						});
 					}
@@ -426,7 +426,7 @@ public class Builder extends javax.swing.JPanel {
 							if (persistentContainerReference.storeFile(index, output)) {
 								Workspace.addPersist(persistentContainerReference.getOriginFile());
 							} else {
-								JOptionPane.showMessageDialog(Builder.this, "Storing the merged texture pack into the container failed. The container was not modified.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+								ctrmap.Ui.error(Builder.this, "Storing the merged texture pack into the container failed. The container was not modified.", "Builder alert");
 							}
 							reloadContainer();
 						});
@@ -545,7 +545,7 @@ public class Builder extends javax.swing.JPanel {
 				if (currentAGFC.storeFile(index, new byte[0])) {
 					Workspace.addPersist(currentAGFC.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
 				} else {
-					JOptionPane.showMessageDialog(this, "Replacing the file with a dummy failed. The container was not modified.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+					ctrmap.Ui.error(this, "Replacing the file with a dummy failed. The container was not modified.", "Builder alert");
 				}
 				reloadContainer();
 			}
@@ -562,7 +562,7 @@ public class Builder extends javax.swing.JPanel {
 				} else if (currentAGFC instanceof MM) {
 					currentAGFC = new MM(target, currentAGFC.len, ((MM) currentAGFC).type);
 				} else {
-					JOptionPane.showMessageDialog(this, "Creating this container type from scratch is not supported.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+					ctrmap.Ui.error(this, "Creating this container type from scratch is not supported.", "Builder alert");
 					return;
 				}
 				Workspace.addPersist(target);
@@ -581,7 +581,7 @@ public class Builder extends javax.swing.JPanel {
 				}
 				Workspace.addPersist(currentAGFC.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
 				if (!allOk) {
-					JOptionPane.showMessageDialog(this, "Clearing one or more files failed - the container may be only partially cleared.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+					ctrmap.Ui.error(this, "Clearing one or more files failed - the container may be only partially cleared.", "Builder alert");
 				}
 				reloadContainer();
 			}
@@ -598,14 +598,14 @@ public class Builder extends javax.swing.JPanel {
 			if (persistentContainerReference.storeFile(index, in)) {
 				Workspace.addPersist(persistentContainerReference.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
 			} else {
-				JOptionPane.showMessageDialog(this, "Importing the file into the container failed. The container was not modified.", "Builder alert", JOptionPane.ERROR_MESSAGE);
+				ctrmap.Ui.error(this, "Importing the file into the container failed. The container was not modified.", "Builder alert");
 			}
 		}
 	}
 
 	private void runESPICA(ESPICAControl.ESPICAProcess proc, Runnable onSuccess) {
 		if (Workspace.ESPICA_PATH == null) {
-			JOptionPane.showMessageDialog(this, "ESPICA path not set or invalid. Please correct it in Workspace settings.", "ESPICA error", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "ESPICA path not set or invalid. Please correct it in Workspace settings.", "ESPICA error");
 		} else {
 			ESPICAControl esc = new ESPICAControl(onSuccess);
 			esc.setVisible(true);

@@ -435,8 +435,8 @@ public class PaintForm extends JPanel {
 					: "No map cells needed changes (the scroll was already bound).",
 					"Make water ripple", JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(this, "Could not add the animation:\n" + ex.getMessage(),
-					"Make water ripple", JOptionPane.ERROR_MESSAGE);
+			ctrmap.Ui.error(this, "Could not add the animation:\n" + ex.getMessage(),
+					"Make water ripple");
 		}
 	}
 

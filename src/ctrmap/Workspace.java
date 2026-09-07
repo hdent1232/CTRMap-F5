@@ -234,7 +234,7 @@ public class Workspace {
 			}
 			sb.append("\nRun Options > Setup wizard to point CTRMap at your game,\n");
 			sb.append("then open a map from the zone dropdown in the \"Zone Loader\" tab.");
-			JOptionPane.showMessageDialog(parent, sb.toString(), "Setup Error", JOptionPane.ERROR_MESSAGE);
+			Ui.error(parent, sb.toString(), "Setup Error");
 		}
 	}
 

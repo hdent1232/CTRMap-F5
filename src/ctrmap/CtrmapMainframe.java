@@ -1069,7 +1069,7 @@ public class CtrmapMainframe {
 	 */
 	private static void deployModAction() {
 		if (!Workspace.valid) {
-			JOptionPane.showMessageDialog(frame, "Load a workspace first.", "Deploy mod", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load a workspace first.", "Deploy mod");
 			return;
 		}
 		String titleId = ModDeployer.guessTitleId();
@@ -1127,7 +1127,7 @@ public class CtrmapMainframe {
 		}
 		String folder = folderField.getText().trim();
 		if (folder.isEmpty()) {
-			JOptionPane.showMessageDialog(frame, "Pick a mod folder first.", "Deploy mod", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Pick a mod folder first.", "Deploy mod");
 			return;
 		}
 		final File modRoot = new File(folder);
@@ -1208,10 +1208,10 @@ public class CtrmapMainframe {
 						"Nothing deployed", JOptionPane.INFORMATION_MESSAGE);
 			}
 		} catch (java.io.IOException ex) {
-			JOptionPane.showMessageDialog(frame,
+			Ui.error(frame,
 					"Could not move the mod folder:\n  " + ex.getMessage()
 					+ "\n\nClose the emulator (it may be holding the files open) and try again.",
-					"Mod switch failed", JOptionPane.ERROR_MESSAGE);
+					"Mod switch failed");
 		}
 	}
 
@@ -1222,16 +1222,16 @@ public class CtrmapMainframe {
 	 */
 	private static void forkGeometryAction() {
 		if (!Workspace.valid) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Fork map geometry", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Fork map geometry");
 			return;
 		}
 		if (!Workspace.isOA()) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "Forking map geometry is ORAS-only in v1.", "Fork map geometry", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Forking map geometry is ORAS-only in v1.", "Fork map geometry");
 			return;
 		}
 		ctrmap.formats.garc.GARC zoGarc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
 		if (zoGarc == null) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "ZoneData archive unavailable.", "Fork map geometry", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "ZoneData archive unavailable.", "Fork map geometry");
 			return;
 		}
 		int zoneCount = zoGarc.length - 2; //master table + EN pack occupy the last two entries
@@ -1258,7 +1258,7 @@ public class CtrmapMainframe {
 			Ui.message(frame, forkGeometryReport(zoneIndex, r), "Fork map geometry",
 					javax.swing.JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "Fork failed:\n" + ex.getMessage(), "Fork map geometry", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Fork failed:\n" + ex.getMessage(), "Fork map geometry");
 		}
 	}
 
@@ -1363,12 +1363,12 @@ public class CtrmapMainframe {
 	 */
 	private static void renameZoneAction() {
 		if (!Workspace.valid) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Rename zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Rename zone");
 			return;
 		}
 		ctrmap.formats.garc.GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
 		if (zo == null) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "ZoneData archive unavailable.", "Rename zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "ZoneData archive unavailable.", "Rename zone");
 			return;
 		}
 		int zoneCount = zo.length - (Workspace.isXY() ? 1 : 2);
@@ -1391,7 +1391,7 @@ public class CtrmapMainframe {
 		int idx = (Integer) idSpinner.getValue();
 		String name = nameField.getText().trim();
 		if (name.isEmpty()) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "Enter a name.", "Rename zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Enter a name.", "Rename zone");
 			return;
 		}
 		try {
@@ -1412,7 +1412,7 @@ public class CtrmapMainframe {
 			sb.append("Reselect the zone in the dropdown to see the new name in the editor.");
 			javax.swing.JOptionPane.showMessageDialog(frame, sb.toString(), "Rename zone", javax.swing.JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "Rename failed:\n" + ex.getMessage(), "Rename zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Rename failed:\n" + ex.getMessage(), "Rename zone");
 		}
 	}
 
@@ -1492,7 +1492,7 @@ public class CtrmapMainframe {
 
 	private static void removeAddedZonesAction() {
 		if (!Workspace.valid || !Workspace.isOA()) {
-			JOptionPane.showMessageDialog(frame, "Load an ORAS workspace first.", "Remove added zones", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load an ORAS workspace first.", "Remove added zones");
 			return;
 		}
 		ctrmap.formats.garc.GARC zoArc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
@@ -1557,7 +1557,7 @@ public class CtrmapMainframe {
 						}
 					});
 				} catch (Exception ex) {
-					JOptionPane.showMessageDialog(frame, "Removal failed:\n" + ex.getMessage(), "Remove added zones", JOptionPane.ERROR_MESSAGE);
+					Ui.error(frame, "Removal failed:\n" + ex.getMessage(), "Remove added zones");
 				}
 			}
 		});
@@ -1565,12 +1565,12 @@ public class CtrmapMainframe {
 
 	private static void emptyZoneAction() {
 		if (!Workspace.valid) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Empty zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Empty zone");
 			return;
 		}
 		ctrmap.formats.garc.GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
 		if (zo == null) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "ZoneData archive unavailable.", "Empty zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "ZoneData archive unavailable.", "Empty zone");
 			return;
 		}
 		int zoneCount = zo.length - (Workspace.isXY() ? 1 : 2);
@@ -1597,7 +1597,7 @@ public class CtrmapMainframe {
 					+ "Reselect the zone in the dropdown to see it cleared in the editor.",
 					"Empty zone", javax.swing.JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "Empty failed:\n" + ex.getMessage(), "Empty zone", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Empty failed:\n" + ex.getMessage(), "Empty zone");
 		}
 	}
 
@@ -1608,11 +1608,11 @@ public class CtrmapMainframe {
 	 */
 	private static void findReusableZonesAction() {
 		if (!Workspace.valid) {
-			JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Find reusable zones", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Find reusable zones");
 			return;
 		}
 		if (!Workspace.isOA()) {
-			JOptionPane.showMessageDialog(frame, "This is ORAS-only in v1.", "Find reusable zones", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "This is ORAS-only in v1.", "Find reusable zones");
 			return;
 		}
 		frame.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.WAIT_CURSOR));
@@ -1685,7 +1685,7 @@ public class CtrmapMainframe {
 	/** Exports a map region's 3D model to a Blender-ready OBJ (Tools menu). */
 	private static void exportMapObjAction() {
 		if (!Workspace.valid) {
-			JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Export map to OBJ", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Export map to OBJ");
 			return;
 		}
 		int fieldCount = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length;
@@ -1714,7 +1714,7 @@ public class CtrmapMainframe {
 			GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, id));
 			byte[] model = gr.getFile(1);
 			if (!ctrmap.formats.h3d.BchMapModel.isMapModel(model)) {
-				JOptionPane.showMessageDialog(frame, "FieldData region " + id + " has no editable map model.", "Export map to OBJ", JOptionPane.ERROR_MESSAGE);
+				Ui.error(frame, "FieldData region " + id + " has no editable map model.", "Export map to OBJ");
 				return;
 			}
 			ctrmap.formats.h3d.BchMapModel bmm = new ctrmap.formats.h3d.BchMapModel(model);
@@ -1730,14 +1730,14 @@ public class CtrmapMainframe {
 					+ (skipped.isEmpty() ? "" : "\n\n" + skipped.size() + " mesh(es) use an exotic vertex format and were skipped;\nthey stay untouched on import."),
 					"Export map to OBJ", JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(frame, "Export failed:\n" + ex.getMessage(), "Export map to OBJ", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Export failed:\n" + ex.getMessage(), "Export map to OBJ");
 		}
 	}
 
 	/** Imports a (Blender-edited) OBJ back into a map region's 3D model (Tools menu). */
 	private static void importMapObjAction() {
 		if (!Workspace.valid) {
-			JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Import OBJ", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Import OBJ");
 			return;
 		}
 		int fieldCount = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length;
@@ -1774,7 +1774,7 @@ public class CtrmapMainframe {
 			GR gr = new GR(grFile);
 			byte[] model = gr.getFile(1);
 			if (!ctrmap.formats.h3d.BchMapModel.isMapModel(model)) {
-				JOptionPane.showMessageDialog(frame, "FieldData region " + id + " has no editable map model.", "Import OBJ", JOptionPane.ERROR_MESSAGE);
+				Ui.error(frame, "FieldData region " + id + " has no editable map model.", "Import OBJ");
 				return;
 			}
 			//groups whose material this map does not have can be injected as BRAND-NEW
@@ -1819,7 +1819,7 @@ public class CtrmapMainframe {
 							templateModel = tm;
 							templateMesh = (Integer) tMesh.getValue();
 						} else {
-							JOptionPane.showMessageDialog(frame, "That region has no map model - new-material groups will be skipped.", "Import OBJ", JOptionPane.WARNING_MESSAGE);
+							Ui.message(frame, "That region has no map model - new-material groups will be skipped.", "Import OBJ", JOptionPane.WARNING_MESSAGE);
 						}
 					}
 				}
@@ -1829,11 +1829,11 @@ public class CtrmapMainframe {
 			//sanity: the edited model must re-parse clean before it touches the workspace
 			ctrmap.formats.h3d.BchMapModel check = new ctrmap.formats.h3d.BchMapModel(edited);
 			if (!check.validate().isEmpty()) {
-				JOptionPane.showMessageDialog(frame, "The edited model failed validation - nothing was changed:\n" + check.validate(), "Import OBJ", JOptionPane.ERROR_MESSAGE);
+				Ui.error(frame, "The edited model failed validation - nothing was changed:\n" + check.validate(), "Import OBJ");
 				return;
 			}
 			if (!gr.storeFile(1, edited)) {
-				JOptionPane.showMessageDialog(frame, "Could not write the model into the workspace.", "Import OBJ", JOptionPane.ERROR_MESSAGE);
+				Ui.error(frame, "Could not write the model into the workspace.", "Import OBJ");
 				return;
 			}
 			Workspace.addPersist(grFile);
@@ -1845,7 +1845,7 @@ public class CtrmapMainframe {
 			sb.append("\nRun File > Deploy to emulator to see it in game (packs automatically).");
 			JOptionPane.showMessageDialog(frame, sb.toString(), "Import OBJ", JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(frame, "Import failed:\n" + ex.getMessage(), "Import OBJ", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Import failed:\n" + ex.getMessage(), "Import OBJ");
 		}
 	}
 
@@ -1857,11 +1857,11 @@ public class CtrmapMainframe {
 	 */
 	private static void blankCanvasAction() {
 		if (!Workspace.valid || !Workspace.isOA()) {
-			JOptionPane.showMessageDialog(frame, "Load an ORAS workspace first.", "Blank map canvas", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load an ORAS workspace first.", "Blank map canvas");
 			return;
 		}
 		if (mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
-			JOptionPane.showMessageDialog(frame, "Load the zone first (Zone tab).", "Blank map canvas", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load the zone first (Zone tab).", "Blank map canvas");
 			return;
 		}
 		final int zoneIndex = mZonePnl.zoneIndex;
@@ -1883,7 +1883,7 @@ public class CtrmapMainframe {
 			GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, rid));
 			probe = new ctrmap.formats.h3d.BchMapModel(gr.getFile(1));
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(frame, "Could not inspect the zone's map:\n" + ex.getMessage(), "Blank map canvas", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Could not inspect the zone's map:\n" + ex.getMessage(), "Blank map canvas");
 			return;
 		}
 		//list the zone model's materials LARGEST FIRST - the ground is almost
@@ -2007,7 +2007,7 @@ public class CtrmapMainframe {
 				}
 			});
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(frame, "Blank canvas failed:\n" + ex.getMessage(), "Blank map canvas", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Blank canvas failed:\n" + ex.getMessage(), "Blank map canvas");
 		}
 	}
 
@@ -2027,21 +2027,21 @@ public class CtrmapMainframe {
 	 */
 	private static void setupFacilityAction() {
 		if (!Workspace.valid || !Workspace.isOA()) {
-			JOptionPane.showMessageDialog(frame, "Load an ORAS workspace first.", "Set up Battle facility", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load an ORAS workspace first.", "Set up Battle facility");
 			return;
 		}
 		if (mZonePnl == null || mZonePnl.zoneIndex < 0) {
-			JOptionPane.showMessageDialog(frame, "Load the base zone to convert first (Zone tab).", "Set up Battle facility", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load the base zone to convert first (Zone tab).", "Set up Battle facility");
 			return;
 		}
 		final int dstIndex = mZonePnl.zoneIndex;
 		int baseZones = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2;
 		if (dstIndex >= baseZones) {
-			JOptionPane.showMessageDialog(frame,
+			Ui.error(frame,
 					"This is an appended zone (index " + dstIndex + "). Appended zones cannot run field\n"
 					+ "scripts, so a facility must go in a base zone (< " + baseZones + "). Load or repurpose a\n"
 					+ "base zone (e.g. an unused one, via Tools -> Empty zone) and try again.",
-					"Set up Battle facility", JOptionPane.ERROR_MESSAGE);
+					"Set up Battle facility");
 			return;
 		}
 		//two ways to build a facility - offer both honestly
@@ -2080,7 +2080,7 @@ public class CtrmapMainframe {
 		}
 		final int srcIndex = kind == kinds[1] ? INSTITUTE_ZONE : MAISON_LOBBY_ZONE;
 		if (srcIndex == dstIndex) {
-			JOptionPane.showMessageDialog(frame, "That IS the source facility zone - pick a different base zone to convert.", "Set up Battle facility", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "That IS the source facility zone - pick a different base zone to convert.", "Set up Battle facility");
 			return;
 		}
 		int confirm = JOptionPane.showConfirmDialog(frame,
@@ -2117,7 +2117,7 @@ public class CtrmapMainframe {
 				}
 			});
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(frame, "Facility setup failed:\n" + ex.getMessage(), "Set up Battle facility", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Facility setup failed:\n" + ex.getMessage(), "Set up Battle facility");
 		}
 	}
 
@@ -2127,11 +2127,11 @@ public class CtrmapMainframe {
 	 */
 	private static void resizeMapAction() {
 		if (!Workspace.valid || !Workspace.isOA()) {
-			JOptionPane.showMessageDialog(frame, "Load an ORAS workspace first.", "Resize map", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load an ORAS workspace first.", "Resize map");
 			return;
 		}
 		if (mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
-			JOptionPane.showMessageDialog(frame, "Load the zone first (Zone tab).", "Resize map", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load the zone first (Zone tab).", "Resize map");
 			return;
 		}
 		final int zoneIndex = mZonePnl.zoneIndex;
@@ -2170,13 +2170,13 @@ public class CtrmapMainframe {
 				}
 			});
 		} catch (Exception ex) {
-			JOptionPane.showMessageDialog(frame, "Resize failed:\n" + ex.getMessage(), "Resize map", JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Resize failed:\n" + ex.getMessage(), "Resize map");
 		}
 	}
 
 	private static void importMapModelAction() {
 		if (!Workspace.valid) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "Load a workspace first (Options > Workspace settings).", "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Import map model");
 			return;
 		}
 		int fieldCount = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA).length;
@@ -2210,18 +2210,18 @@ public class CtrmapMainframe {
 		try {
 			bch = java.nio.file.Files.readAllBytes(chosen.toPath());
 		} catch (java.io.IOException ex) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "Could not read the file:\n" + ex.getMessage(), "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Could not read the file:\n" + ex.getMessage(), "Import map model");
 			return;
 		}
 		//sanity-check that it parses as a BCH model
 		try {
 			ctrmap.formats.h3d.BCHFile parsed = new ctrmap.formats.h3d.BCHFile(bch);
 			if (parsed.errorlevel != 0 || parsed.models.isEmpty()) {
-				javax.swing.JOptionPane.showMessageDialog(frame, "That file does not parse as a BCH model (no models / read error).", "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+				Ui.error(frame, "That file does not parse as a BCH model (no models / read error).", "Import map model");
 				return;
 			}
 		} catch (RuntimeException ex) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "That file is not a readable BCH model:\n" + ex.getMessage(), "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "That file is not a readable BCH model:\n" + ex.getMessage(), "Import map model");
 			return;
 		}
 
@@ -2242,16 +2242,16 @@ public class CtrmapMainframe {
 			File grFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, id);
 			GR gr = new GR(grFile);
 			if (gr.len < 2) {
-				javax.swing.JOptionPane.showMessageDialog(frame, "FieldData entry " + id + " is not a map region container.", "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+				Ui.error(frame, "FieldData entry " + id + " is not a map region container.", "Import map model");
 				return;
 			}
 			if (!gr.storeFile(1, bch)) {
-				javax.swing.JOptionPane.showMessageDialog(frame, "Could not write the model into the workspace.", "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+				Ui.error(frame, "Could not write the model into the workspace.", "Import map model");
 				return;
 			}
 			Workspace.addPersist(grFile);
 		} catch (RuntimeException ex) {
-			javax.swing.JOptionPane.showMessageDialog(frame, "Import failed:\n" + ex.getMessage(), "Import map model", javax.swing.JOptionPane.ERROR_MESSAGE);
+			Ui.error(frame, "Import failed:\n" + ex.getMessage(), "Import map model");
 			return;
 		}
 		javax.swing.JOptionPane.showMessageDialog(frame,
