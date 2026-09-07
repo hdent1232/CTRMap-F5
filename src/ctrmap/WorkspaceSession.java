@@ -475,6 +475,11 @@ public final class WorkspaceSession {
 		}
 	}
 
+	/** True when an extracted file is marked as edited - what a pack writes back. */
+	public boolean isPersisted(File f) {
+		return persistPaths.contains(f.getAbsolutePath());
+	}
+
 	/** The live list of edited files' absolute paths. */
 	public List<String> persistPaths() {
 		return persistPaths;
@@ -783,50 +788,50 @@ public final class WorkspaceSession {
 		GARC.drainPackWarnings();
 		progress.at(0, "Packing - fielddata");
 		//a pending geometry fork appends private region copies (see GeometryForker)
-		getArchive(ArchiveType.FIELD_DATA).packDirectory(getExtractionDirectory(ArchiveType.FIELD_DATA), GeometryForker.consumePendingFieldOverrides());
+		getArchive(ArchiveType.FIELD_DATA).packDirectory(getExtractionDirectory(ArchiveType.FIELD_DATA), this::isPersisted, workspaceDir, GeometryForker.consumePendingFieldOverrides());
 		progress.at(30, "Packing - areadata");
 		//a pending area fork appends a private area copy (see AreaForker)
-		getArchive(ArchiveType.AREA_DATA).packDirectory(getExtractionDirectory(ArchiveType.AREA_DATA), AreaForker.consumePendingAreaOverrides());
+		getArchive(ArchiveType.AREA_DATA).packDirectory(getExtractionDirectory(ArchiveType.AREA_DATA), this::isPersisted, workspaceDir, AreaForker.consumePendingAreaOverrides());
 		progress.at(60, "Packing - zonedata");
 		//a pending zone append needs its compression overrides exactly once (see ZoneAppender)
-		getArchive(ArchiveType.ZONE_DATA).packDirectory(getExtractionDirectory(ArchiveType.ZONE_DATA), ZoneAppender.consumePendingZoneDataOverrides());
+		getArchive(ArchiveType.ZONE_DATA).packDirectory(getExtractionDirectory(ArchiveType.ZONE_DATA), this::isPersisted, workspaceDir, ZoneAppender.consumePendingZoneDataOverrides());
 		progress.at(65, "Packing - mapmatrix");
 		//a pending geometry fork appends a rewired matrix (see GeometryForker)
-		getArchive(ArchiveType.MAP_MATRIX).packDirectory(getExtractionDirectory(ArchiveType.MAP_MATRIX), GeometryForker.consumePendingMatrixOverrides());
+		getArchive(ArchiveType.MAP_MATRIX).packDirectory(getExtractionDirectory(ArchiveType.MAP_MATRIX), this::isPersisted, workspaceDir, GeometryForker.consumePendingMatrixOverrides());
 		progress.at(70, "Packing - buildingmodels");
-		getArchive(ArchiveType.BUILDING_MODELS).packDirectory(getExtractionDirectory(ArchiveType.BUILDING_MODELS));
+		getArchive(ArchiveType.BUILDING_MODELS).packDirectory(getExtractionDirectory(ArchiveType.BUILDING_MODELS), this::isPersisted, workspaceDir);
 		progress.at(90, "Packing - npcregistries");
 		//an area fork appends the matching registry entry (indexed by area id)
-		getArchive(ArchiveType.NPC_REGISTRIES).packDirectory(getExtractionDirectory(ArchiveType.NPC_REGISTRIES), AreaForker.consumePendingNpcRegOverrides());
+		getArchive(ArchiveType.NPC_REGISTRIES).packDirectory(getExtractionDirectory(ArchiveType.NPC_REGISTRIES), this::isPersisted, workspaceDir, AreaForker.consumePendingNpcRegOverrides());
 		progress.at(95, "Packing - trainers");
 		//trainer archives: pack only when actually edited (rewriting them
 		//without edits would still be byte-faithful, but skip the churn)
 		GARC trdata = getArchive(ArchiveType.TRAINER_DATA);
 		if (trdata != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.TRAINER_DATA))) {
-			trdata.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_DATA));
+			trdata.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_DATA), this::isPersisted, workspaceDir);
 		}
 		GARC trpoke = getArchive(ArchiveType.TRAINER_POKE);
 		if (trpoke != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.TRAINER_POKE))) {
-			trpoke.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_POKE));
+			trpoke.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_POKE), this::isPersisted, workspaceDir);
 		}
 		//Battle Maison opponent pools/lists (edited-only)
 		for (ArchiveType mt : new ArchiveType[]{ArchiveType.MAISON_SET_POOL_A, ArchiveType.MAISON_CLASS_LIST_A,
 			ArchiveType.MAISON_SET_POOL_B, ArchiveType.MAISON_CLASS_LIST_B, ArchiveType.MAISON_SET_POOL_C}) {
 			GARC mg = getArchive(mt);
 			if (mg != null && hasPersistedFiles(getExtractionDirectory(mt))) {
-				mg.packDirectory(getExtractionDirectory(mt));
+				mg.packDirectory(getExtractionDirectory(mt), this::isPersisted, workspaceDir);
 			}
 		}
 		progress.at(95, "Packing - gametext");
 		//packDirectory rewrites the GARC in the game directory even with zero persisted files - only pack when text was actually edited
 		if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {
-			getArchive(ArchiveType.GAMETEXT).packDirectory(getExtractionDirectory(ArchiveType.GAMETEXT));
+			getArchive(ArchiveType.GAMETEXT).packDirectory(getExtractionDirectory(ArchiveType.GAMETEXT), this::isPersisted, workspaceDir);
 		}
 		progress.at(97, "Packing - storytext");
 		//storytext is lazy-loaded and huge - only pack when dialogue was actually edited
 		GARC storyGarc = getStoryTextGARC();
 		if (storyGarc != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.STORYTEXT))) {
-			storyGarc.packDirectory(getExtractionDirectory(ArchiveType.STORYTEXT));
+			storyGarc.packDirectory(getExtractionDirectory(ArchiveType.STORYTEXT), this::isPersisted, workspaceDir);
 			reloadGARC(ArchiveType.STORYTEXT);
 		}
 		progress.at(100, "Done, updating GARCs");
