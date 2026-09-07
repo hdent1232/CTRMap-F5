@@ -159,13 +159,13 @@ SUBST = {
 # test COULD, without asserting its own instrument.
 EXCLUSION_CEILING = 4
 EXCLUSIONS = {
-    ("src/ctrmap/Ui.java", 87): (
+    ("src/ctrmap/Ui.java", 122): (
         "JOptionPane.showMessageDialog(parent, text, title, type);",
         "unreachable in a headless suite by construction: dialogs stay off unless the "
         "app's own main calls Ui.enableDialogs(), which no suite does and none may - "
         "that is the entire reason this seam exists. Nothing a headless test can "
         "observe distinguishes this line from its absence."),
-    ("src/ctrmap/Ui.java", 84): (
+    ("src/ctrmap/Ui.java", 119): (
         'System.out.println("[Ui] " + title + ": " + text.replace("\\n", " | "));',
         "this line IS the channel a suite reads a Ui message through when no sink is "
         "installed. A test asserting on it would be asserting its own instrument, and "
