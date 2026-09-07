@@ -37,6 +37,12 @@ final class ScratchGame {
 		File root = Scratch.dir("ctrmap_scratch_game");
 		File game = new File(root, "game");
 		File ws = new File(root, "ws");
+		//Whatever the suite pointed Workspace at before this, forget it. Opening
+		//a throwaway game means THIS game and nothing of the last one: the fields
+		//set below are only some of what Workspace holds, so without the reset an
+		//archive handle or path from an earlier setup would still be live under a
+		//workspace that no longer contains it.
+		Workspace.reset();
 		Workspace.game = Workspace.GameType.ORAS;
 		Workspace.GAMEDIR_PATH = game.getAbsolutePath();
 		Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
