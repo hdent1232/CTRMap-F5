@@ -32,24 +32,24 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 1282,
+    "line": 1288,
     "kind": "negate-if"
    },
    {
-    "line": 1297,
+    "line": 1303,
     "kind": "negate-if"
    },
    {
-    "line": 1301,
+    "line": 1307,
     "kind": "negate-if"
    },
    {
-    "line": 1332,
+    "line": 1338,
     "kind": "flip-return"
    }
   ],
   "excluded": [],
-  "sha256": "618dd56c03088ebbbe23b1abb3b73ff2cf4408145a831f31624fcbba8bd7f7e7"
+  "sha256": "f0b1a91b2128dc9a1c7b160d8761eac1a3d8b0c07324fb8783fd46c7f682f9b6"
  },
  "src/ctrmap/GeometryForker.java": {
   "survivors": 0,
@@ -89,15 +89,15 @@
   "killed_lines": [],
   "excluded": [
    {
-    "line": 84,
+    "line": 119,
     "reason": "this line IS the channel a suite reads a Ui message through when no sink is installed. A test asserting on it would be asserting its own instrument, and deleting the line makes any such assertion vacuously true - the mutant would be scored killed by a check that had stopped checking anything."
    },
    {
-    "line": 87,
+    "line": 122,
     "reason": "unreachable in a headless suite by construction: dialogs stay off unless the app's own main calls Ui.enableDialogs(), which no suite does and none may - that is the entire reason this seam exists. Nothing a headless test can observe distinguishes this line from its absence."
    }
   ],
-  "sha256": "c60886bdbb8a9d6095f8fc70353cd283a65fa4f8e9e3eb129937826ffbf2a96c"
+  "sha256": "0282f632cdac006652525a7089ebe181e114f99b1a1c08f19947d153c4c59bfd"
  },
  "src/ctrmap/Workspace.java": {
   "survivors": 0,
@@ -112,44 +112,44 @@
     "kind": "negate-if"
    },
    {
-    "line": 679,
+    "line": 755,
     "kind": "negate-if"
    },
    {
-    "line": 875,
+    "line": 951,
     "kind": "negate-if"
    },
    {
-    "line": 878,
-    "kind": "negate-if"
-   },
-   {
-    "line": 885,
-    "kind": "negate-if"
-   },
-   {
-    "line": 891,
-    "kind": "negate-if"
-   },
-   {
-    "line": 897,
-    "kind": "negate-if"
-   },
-   {
-    "line": 923,
-    "kind": "negate-if"
-   },
-   {
-    "line": 944,
+    "line": 954,
     "kind": "negate-if"
    },
    {
     "line": 961,
     "kind": "negate-if"
+   },
+   {
+    "line": 967,
+    "kind": "negate-if"
+   },
+   {
+    "line": 973,
+    "kind": "negate-if"
+   },
+   {
+    "line": 999,
+    "kind": "negate-if"
+   },
+   {
+    "line": 1020,
+    "kind": "negate-if"
+   },
+   {
+    "line": 1037,
+    "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "b63bb5af842430e827794fe536e8cecac4cff03f39fb97dec65568becb35b4fc"
+  "sha256": "2ce2bb3b67a7aa9b567a4f820f76ec2b48c51096ea59ee3bc9cd42fb89f43ace"
  },
  "src/ctrmap/WorkspaceIntegrity.java": {
   "survivors": 0,
@@ -224,60 +224,60 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 207,
+    "line": 254,
     "kind": "negate-if"
    },
    {
-    "line": 210,
+    "line": 257,
     "kind": "negate-if"
    },
    {
-    "line": 225,
+    "line": 272,
     "kind": "negate-if"
    },
    {
-    "line": 263,
+    "line": 310,
     "kind": "negate-if"
-   },
-   {
-    "line": 265,
-    "kind": "negate-if"
-   },
-   {
-    "line": 270,
-    "kind": "negate-if"
-   },
-   {
-    "line": 275,
-    "kind": "negate-if"
-   },
-   {
-    "line": 282,
-    "kind": "negate-if"
-   },
-   {
-    "line": 283,
-    "kind": "drop-throw"
-   },
-   {
-    "line": 283,
-    "kind": "swallow-throw"
    },
    {
     "line": 312,
     "kind": "negate-if"
    },
    {
-    "line": 450,
+    "line": 317,
+    "kind": "negate-if"
+   },
+   {
+    "line": 322,
+    "kind": "negate-if"
+   },
+   {
+    "line": 329,
+    "kind": "negate-if"
+   },
+   {
+    "line": 330,
     "kind": "drop-throw"
    },
    {
-    "line": 450,
+    "line": 330,
+    "kind": "swallow-throw"
+   },
+   {
+    "line": 359,
+    "kind": "negate-if"
+   },
+   {
+    "line": 497,
+    "kind": "drop-throw"
+   },
+   {
+    "line": 497,
     "kind": "swallow-throw"
    }
   ],
   "excluded": [],
-  "sha256": "b9ef7fbbf979b358dec94d01bc8e280ca907cea0dcc5ef6406d988d42911badd"
+  "sha256": "c3183d2ed9b01b5eb471e5c967d731f3a6643fe16156ff2f1f439b7162306f14"
  },
  "src/ctrmap/formats/h3d/BchTexturePack.java": {
   "survivors": 0,
@@ -496,20 +496,20 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 110,
+    "line": 119,
     "kind": "negate-if"
    },
    {
-    "line": 114,
+    "line": 123,
     "kind": "negate-if"
    },
    {
-    "line": 132,
+    "line": 141,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "d7d65de7e712927d39e113a0b81ceff55cf40ba7f9e77b6ff8756329ed8e193e"
+  "sha256": "76a5037163ec71a6df72980bace5b0ba8edf950b669e794ee0dd38d9e705cea5"
  },
  "src/ctrmap/formats/scripts/PawnSubroutine.java": {
   "survivors": 0,
@@ -708,16 +708,16 @@
     "kind": "negate-if"
    },
    {
-    "line": 642,
+    "line": 635,
     "kind": "negate-if"
    },
    {
-    "line": 887,
+    "line": 880,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "9298ff605b3506fa2ab4caffbe3ea30ad72bf1976096c208198d3b3dc053a907"
+  "sha256": "df7c18469e2c459994307eaaef1c1f364cbc10aa8c434f0bdae87ccf355a66b7"
  },
  "src/ctrmap/formats/tilemap/TerrainCatalog.java": {
   "survivors": 0,
@@ -905,7 +905,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "6aa4a37a79452bb5cb054ca9dac261af35f0e7773fdf6368b41a8f57179d9da8"
+  "sha256": "3a2194d2e4f5d710bb3e1845e41b34b5bcba4bbd42e2cb90012f94f3e2275550"
  },
  "src/ctrmap/humaninterface/MatrixEditForm.java": {
   "survivors": 0,
@@ -921,7 +921,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "7d941930a872401353f3b010233652d9d00902abf7c774c5c42f704be7a794ca"
+  "sha256": "49494e6c4bb1e9d0cc8c95d0c1ba474cbf36871a31d92d2645a162a5cb93c76a"
  },
  "src/ctrmap/humaninterface/NPCEditForm.java": {
   "survivors": 0,
@@ -932,76 +932,76 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 438,
+    "line": 264,
     "kind": "negate-if"
    },
    {
-    "line": 444,
+    "line": 270,
     "kind": "negate-if"
    },
    {
-    "line": 485,
+    "line": 311,
     "kind": "negate-if"
    },
    {
-    "line": 493,
+    "line": 319,
     "kind": "negate-if"
    },
    {
-    "line": 521,
+    "line": 347,
     "kind": "negate-if"
    },
    {
-    "line": 550,
+    "line": 376,
     "kind": "negate-if"
    },
    {
-    "line": 568,
+    "line": 394,
     "kind": "negate-if"
    },
    {
-    "line": 582,
+    "line": 408,
     "kind": "negate-if"
    },
    {
-    "line": 601,
+    "line": 427,
     "kind": "negate-if"
    },
    {
-    "line": 733,
+    "line": 559,
     "kind": "negate-if"
    },
    {
-    "line": 734,
+    "line": 560,
     "kind": "drop-report"
    },
    {
-    "line": 743,
+    "line": 569,
     "kind": "drop-report"
    },
    {
-    "line": 984,
+    "line": 810,
     "kind": "negate-if"
    },
    {
-    "line": 1973,
+    "line": 1799,
     "kind": "negate-if"
    },
    {
-    "line": 2010,
+    "line": 1836,
     "kind": "negate-if"
    },
    {
-    "line": 2017,
+    "line": 1843,
     "kind": "negate-if"
    },
    {
-    "line": 2058,
+    "line": 1884,
     "kind": "negate-if"
    }
   ],
   "excluded": [],
-  "sha256": "cff2ada4afbed9c7f0c2ad49fa098f284d76c96f362a113ba21e9a9d1638f04a"
+  "sha256": "af0bde9e467e468a67f0580079e90cf0d1ef0d8592c0e8473643362115dbb9b5"
  },
  "src/ctrmap/humaninterface/PaintForm.java": {
   "survivors": 0,
@@ -1037,7 +1037,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "2441b1aff4e45d79d21e6890f02e51770facb4d546ee444fd55a51d8de9b0647"
+  "sha256": "863f247074b46852dc1592b48b05cc071d33d10b5de8a993b8d78ca3c882b4c2"
  },
  "src/ctrmap/humaninterface/PropEditForm.java": {
   "survivors": 0,
@@ -1053,7 +1053,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "7a88d959b368d7f05e71f90135620dbb503645ac4bc84ad749865b9a63ae4e63"
+  "sha256": "a05df360c8822c1d5caf3f4fe540df905e82841e53df3f40489e840fd28e7cc3"
  },
  "src/ctrmap/humaninterface/ScriptEditor.java": {
   "survivors": 0,
@@ -1245,7 +1245,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "ab8e8975a4ffc1296424e3b8d67d03954db2842ce7c3114d27f9090a30378e58"
+  "sha256": "fad4ab2ad48905503c8a5a5d095642361035895a64028700a8abc9614a6cc687"
  },
  "src/ctrmap/humaninterface/WarpEditForm.java": {
   "survivors": 0,
@@ -1288,20 +1288,20 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 142,
+    "line": 147,
     "kind": "negate-if"
    },
    {
-    "line": 154,
+    "line": 159,
     "kind": "negate-if"
    },
    {
-    "line": 155,
+    "line": 160,
     "kind": "flip-return"
    }
   ],
   "excluded": [],
-  "sha256": "60a84530c1d4a5d559b02cfa13d029a594b6b990e6355e5b05d427ff09e66328"
+  "sha256": "89d9cb3cff1457766e3aa804935b6ae2666d2b6dca980410ec6abf9505c5b007"
  },
  "src/ctrmap/humaninterface/ZoneLoadingPanel.java": {
   "survivors": 0,
@@ -1317,7 +1317,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "78f0a5f9df2cc9c2b02515c52319227155a8708b839bfa4a011cc160420ce4c6"
+  "sha256": "e593c7ffa3e038af81d1c1eb24896895756f39b07d6badec125f365f1ccb1775"
  },
  "src/ctrmap/humaninterface/tools/WarpTool.java": {
   "survivors": 0,
@@ -1336,18 +1336,12 @@
   "sha256": "c4ab382d4881ae7538ac7f6e10e91132277d96efabd5f4d1499aa47aa247f427"
  },
  "src/ctrmap/setup/SetupWizard.java": {
-  "survivors": 1,
+  "survivors": 0,
   "killed": 3,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
-  "lines": [
-   {
-    "line": 553,
-    "kind": "drop-report",
-    "code": "JOptionPane.showMessageDialog(SetupWizard.this, \"The pristine backup was not made:\\n\" + cause"
-   }
-  ],
+  "lines": [],
   "killed_lines": [
    {
     "line": 746,
@@ -1363,7 +1357,7 @@
    }
   ],
   "excluded": [],
-  "sha256": "3b26923b803a224a5c5ff873db91d82578d95c0dde9631a86cf8626dd30ada75"
+  "sha256": "17839fa842c6e228db1aa05fc39cf728ce9c731df8117dcff220ff8123649f3d"
  },
  "src/ctrmap/tools/BuildingHarvester.java": {
   "survivors": 0,
@@ -1406,11 +1400,11 @@
   "sha256": "3b56a80fe981822a3bcbd90b82e68e8f0595c6b57affedee5f60e568fad5b7a3"
  },
  "_meta": {
-  "measured_at": "8b6f5ef",
-  "measurements": 279,
-  "distinct": 247,
-  "attempted": 244,
-  "survived": 1,
+  "measured_at": "e226e30",
+  "measurements": 278,
+  "distinct": 246,
+  "attempted": 243,
+  "survived": 0,
   "killed": 243,
   "killed_by_flood": 1,
   "hung": 0,
