@@ -23,6 +23,7 @@ import ctrmap.formats.scripts.TalkerScriptWizard;
 import ctrmap.formats.scripts.ZoneScriptAnalyzer;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.vectors.Vec3f;
+import ctrmap.formats.zone.NpcMoveCodes;
 import ctrmap.formats.zone.Zone;
 import ctrmap.humaninterface.tools.NPCTool;
 import java.awt.Component;
@@ -79,14 +80,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	public void loadFromEntities(ZoneEntities e, NPCRegistry reg) {
-		motionModel.removeAllElements();
-		motion2Model.removeAllElements();
-		addBaseMotion();
-		if (Workspace.isXY()) {
-			addXYMotion();
-		} else {
-			addOAMotion();
-		}
+		fillMotionDropdowns();
 		this.reg = reg;
 		this.e = e;
 		loaded = false;
@@ -120,194 +114,26 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-	private void addBaseMotion() {
-		String[] baseMoveCodes = new String[]{
-			"Dummy",
-			"MoveCodeNone",
-			"MoveCodeDirRnd",
-			"MoveCodeDirRndUD",
-			"MoveCodeDirRndLR",
-			"MoveCodeDirRndUL",
-			"MoveCodeDirRndUR",
-			"MoveCodeDirRndDL",
-			"MoveCodeDirRndDR",
-			"MoveCodeDirRndUDL",
-			"MoveCodeDirRndUDR",
-			"MoveCodeDirRndULR",
-			"MoveCodeDirRndDLR",
-			"MoveCodeUp",
-			"MoveCodeDown",
-			"MoveCodeLeft",
-			"MoveCodeRight",
-			"MoveCodeRndHLim",
-			"MoveCodeRndBLim",
-			"Move constant in left vertical limit",
-			"Move constant in left vertical & upper horizontal limit",
-			"Move constant in left vertical & upper horizontal limit; H first",
-			"Move constant in left vertical & upper horizontal limit; V first 1",
-			"Move constant in left vertical & upper horizontal limit; V first 2",
-			"???",
-			"???",
-			"???",
-			"Move constant in right vertical & upper horizontal limit",
-			"???",
-			"Move constant in left vertical & lower horizontal limit",
-			"???",
-			"Surf along vertical limit",
-			"???",
-			"???",
-			"???",
-			"MoveCodeSit",
-			"MoveCodeAlongWallLeftHandLimitChange 1",
-			"MoveCodeAlongWallLeftHandLimitChange 2",
-			"MoveCodeAlongWallLeftHandLimitChange; VH limit invert",
-			"MoveCodeAlongWallLeftHandLimitChange; H limit invert",
-			"???",
-			"MoveCodeAlongWallRightHandLimitChange; V limit invert",
-			"???",
-			"MoveCodeAlongWallRightHandLimitChange",
-			"???",
-			"???",
-			"Clockwise cruise along edges of area with unwalkables on edges",
-			"MoveCodeRand",
-			"???",
-			"???",
-			"MoveCodeAlongBitLeftHandRoller",
-			"MoveCodeAlongBitLeftHandRoller",
-			"MoveCodeKakuremino",
-			"???",
-			"???",
-			"???",
-			"MoveCodeTsutikemuriAlongBitLeftHand",
-			"MoveCodeTsutikemuriAlongBitRightHand",
-			"MoveCodeTsutikemuriRand"
-		};
-		String[] baseMove2Codes = new String[]{
-			"None",
-			"Approaching trainer (Standard)",
-			"Approaching trainer - see 1 tile around extra",
-			"Approaching trainer - tilt head in expectation",
-			"Item",
-			"AI Motion",
-			"Approaching trainer - paired",
-			"Mirror trainer (down)",
-			"Fixed line of sight (left)",
-			"Fixed line of sight (right)",
-			"Mirror trainer pair (down)",
-			"Jumpout trainer",};
-		motModelStrArrMerge(baseMoveCodes);
-		mot2ModelStrArrMerge(baseMove2Codes);
+	private void fillMotionDropdowns() {
+		motionModel.removeAllElements();
+		motion2Model.removeAllElements();
+		boolean xy = Workspace.isXY();
+		motModelStrArrMerge(NpcMoveCodes.movePerm1Labels(xy));
+		mot2ModelStrArrMerge(NpcMoveCodes.movePerm2Labels(xy));
 	}
 
-	private void addXYMotion() {
-		String[] XYMoveCodes = new String[]{
-			"MoveCodeYagiQuick",
-			"MoveCodeYagiSlow",
-			"MoveCodeYagiStay",};
-		String[] XYMove2Codes = new String[]{
-			"Approaching Painter (XY Extension)",
-			"Rolling skater (XY Extension)",
-			"EvTypeTrFighting (GymFight Skater) (XY Extension)"
-		};
-		motModelStrArrMerge(XYMoveCodes);
-		mot2ModelStrArrMerge(XYMove2Codes);
-	}
-
-	private void addOAMotion() {
-		String[] OAMoveCodes = new String[]{
-			"???",
-			"MoveCodeSeiza",
-			"MoveCodeSecretBaseTrainer",
-			"MoveCodeFishing2",};
-		String[] OAMove2Codes = new String[]{
-			"Approaching diver (OA Extension)",
-			"Secret Base Trainer (OA Extension)"
-		};
-		motModelStrArrMerge(OAMoveCodes);
-		mot2ModelStrArrMerge(OAMove2Codes);
-	}
-
+	/**
+	 * Which AI-motion row shows movePerm2 code {@code raw}, or -1 when this game
+	 * gives it no name. See {@link NpcMoveCodes} for why both directions have to
+	 * come off one table.
+	 */
 	public int getMot2Index(int raw) {
-		if (raw <= 4) {
-			return raw;
-		}
-		switch (raw) {
-			case 7:
-				return 5;
-			case 9: //XY
-			case 10: //OA
-				return 6;
-			case 11:
-				return 12; //XY extension
-			case 12:
-				return 7;
-			case 14:
-				return 8;
-			case 15:
-				return 9;
-			case 16:
-				return 10;
-			case 20:
-				return 11;
-		}
-		if (Workspace.isXY()) {
-			switch (raw) {
-				case 22:
-					return 13;
-				case 23:
-					return 14;
-			}
-		} else {
-			switch (raw) {
-				case 22:
-					return 12;
-				case 23:
-					return 13;
-			}
-		}
-		return -1;
+		return NpcMoveCodes.movePerm2Index(raw, Workspace.isXY());
 	}
 
+	/** The movePerm2 code AI-motion row {@code index} writes, or -1 off the end. */
 	public int getMot2Raw(int index) {
-		if (index <= 4) {
-			return index;
-		}
-		switch (index) {
-			case 5:
-				return 7;
-			case 12:
-				return 11; //XY extension
-			case 7:
-				return 12;
-			case 8:
-				return 14;
-			case 9:
-				return 15;
-			case 10:
-				return 16;
-			case 11:
-				return 20;
-		}
-		if (Workspace.isXY()) {
-			switch (index) {
-				case 6:
-					return 9;
-				case 13:
-					return 22;
-				case 14:
-					return 23;
-			}
-		} else {
-			switch (index) {
-				case 6:
-					return 10;
-				case 12:
-					return 22;
-				case 13:
-					return 23;
-			}
-		}
-		return -1;
+		return NpcMoveCodes.movePerm2Raw(index, Workspace.isXY());
 	}
 
 	public void motModelStrArrMerge(String[] strings) {

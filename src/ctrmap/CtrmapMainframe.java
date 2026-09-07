@@ -1403,23 +1403,43 @@ public class CtrmapMainframe {
 		try {
 			ZoneManager.RenameResult r = ZoneManager.renameZone(idx, name);
 			ctrmap.formats.text.LocationNames.loadFromGarc(); // refresh the dropdown name cache
-			StringBuilder sb = new StringBuilder();
-			sb.append("Zone ").append(idx).append(" renamed to \"").append(name).append("\".\n\n");
-			if (r.gaveOwnName) {
-				sb.append("It was sharing the name \"").append(r.oldName).append("\" with ").append(r.sharers)
-				  .append(" zones; it now has its own name and the others are unchanged.\n\n");
-			} else if (r.renamedSharers) {
-				sb.append("NOTE: \"").append(r.oldName).append("\" was shared by ").append(r.sharers)
-				  .append(" zones and no free name slot was available, so ALL of them were renamed.\n\n");
-			} else {
-				sb.append("The name belonged to this zone alone.\n\n");
-			}
-			sb.append("Run File > Deploy to emulator (it packs first), then fully restart the emulator.\n");
-			sb.append("Reselect the zone in the dropdown to see the new name in the editor.");
-			javax.swing.JOptionPane.showMessageDialog(frame, sb.toString(), "Rename zone", javax.swing.JOptionPane.INFORMATION_MESSAGE);
+			javax.swing.JOptionPane.showMessageDialog(frame, renameZoneReport(idx, name, r),
+					"Rename zone", javax.swing.JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
 			javax.swing.JOptionPane.showMessageDialog(frame, "Rename failed:\n" + ex.getMessage(), "Rename zone", javax.swing.JOptionPane.ERROR_MESSAGE);
 		}
+	}
+
+	/**
+	 * What the user is told after a rename, and specifically WHO ELSE it moved.
+	 *
+	 * <p>A location name is shared: in the retail game one line names Fallarbor
+	 * Town and Routes 111 to 114 together. {@link ZoneManager#renameZone} tries
+	 * to give the renamed zone a private name line so the others keep theirs,
+	 * but the game's place-id bound is hard, and when no free line is left it
+	 * falls back to editing the shared line - which renames every zone on it.
+	 *
+	 * <p>Those two outcomes look identical from the map: the zone the user asked
+	 * about now has the name they typed. The only thing that distinguishes "your
+	 * town is renamed" from "your town and four routes are renamed" is this
+	 * sentence. Lose it and the user ships a game where four routes are called
+	 * whatever they named their new town, having been told the rename worked.
+	 */
+	public static String renameZoneReport(int zoneIndex, String newName, ZoneManager.RenameResult r) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("Zone ").append(zoneIndex).append(" renamed to \"").append(newName).append("\".\n\n");
+		if (r.gaveOwnName) {
+			sb.append("It was sharing the name \"").append(r.oldName).append("\" with ").append(r.sharers)
+			  .append(" zones; it now has its own name and the others are unchanged.\n\n");
+		} else if (r.renamedSharers) {
+			sb.append("NOTE: \"").append(r.oldName).append("\" was shared by ").append(r.sharers)
+			  .append(" zones and no free name slot was available, so ALL of them were renamed.\n\n");
+		} else {
+			sb.append("The name belonged to this zone alone.\n\n");
+		}
+		sb.append("Run File > Deploy to emulator (it packs first), then fully restart the emulator.\n");
+		sb.append("Reselect the zone in the dropdown to see the new name in the editor.");
+		return sb.toString();
 	}
 
 	/**
@@ -1672,20 +1692,12 @@ public class CtrmapMainframe {
 			if (mmFile == null) {
 				return -1;
 			}
-			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
-			int sub0 = (mm[4] & 0xFF) | ((mm[5] & 0xFF) << 8) | ((mm[6] & 0xFF) << 16) | ((mm[7] & 0xFF) << 24);
-			int w = (mm[sub0 + 4] & 0xFF) | ((mm[sub0 + 5] & 0xFF) << 8);
-			int h = (mm[sub0 + 6] & 0xFF) | ((mm[sub0 + 7] & 0xFF) << 8);
-			for (int k = 0; k < w * h; k++) {
-				int id = (mm[sub0 + 8 + k * 2] & 0xFF) | ((mm[sub0 + 9 + k * 2] & 0xFF) << 8);
-				if (id != 0xFFFF) {
-					return id;
-				}
-			}
+			return ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(
+					java.nio.file.Files.readAllBytes(mmFile.toPath()));
 		} catch (Exception ex) {
 			//fall through - the spinner just starts at 0
+			return -1;
 		}
-		return -1;
 	}
 
 	/** Exports a map region's 3D model to a Blender-ready OBJ (Tools menu). */
@@ -1875,43 +1887,31 @@ public class CtrmapMainframe {
 		ctrmap.formats.h3d.BchMapModel probe;
 		try {
 			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
-			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
-			int sub0 = (mm[4] & 0xFF) | ((mm[5] & 0xFF) << 8) | ((mm[6] & 0xFF) << 16) | ((mm[7] & 0xFF) << 24);
-			int w = (mm[sub0 + 4] & 0xFF) | ((mm[sub0 + 5] & 0xFF) << 8);
-			int h = (mm[sub0 + 6] & 0xFF) | ((mm[sub0 + 7] & 0xFF) << 8);
-			int rid = -1;
-			for (int k = 0; k < w * h && rid < 0; k++) {
-				int id = (mm[sub0 + 8 + k * 2] & 0xFF) | ((mm[sub0 + 9 + k * 2] & 0xFF) << 8);
-				if (id != 0xFFFF) {
-					rid = id;
-				}
-			}
+			int rid = ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(
+					java.nio.file.Files.readAllBytes(mmFile.toPath()));
 			GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, rid));
 			probe = new ctrmap.formats.h3d.BchMapModel(gr.getFile(1));
 		} catch (Exception ex) {
 			JOptionPane.showMessageDialog(frame, "Could not inspect the zone's map:\n" + ex.getMessage(), "Blank map canvas", JOptionPane.ERROR_MESSAGE);
 			return;
 		}
-		//list the zone model's materials LARGEST FIRST - the ground is almost
-		//always the biggest mesh, and small parts (doors, windows, tree bits)
-		//sink to the bottom instead of cluttering the top of the list
-		java.util.List<int[]> order = new java.util.ArrayList<>(); //{meshIndex, tris}
-		for (ctrmap.formats.h3d.BchMapModel.MeshGeom g : probe.geometry()) {
-			if (!g.posOk) {
-				continue;
-			}
-			order.add(new int[]{g.meshIndex, probe.getTriangles(g.meshIndex).length / 3});
-		}
-		order.sort((a, b) -> b[1] - a[1]);
+		//The zone model's materials, THIS MAP'S GROUND FIRST and the rest
+		//biggest first - so small parts (doors, windows, tree bits) sink to the
+		//bottom instead of cluttering the top, and the entry labelled as the
+		//ground really is it. Ordering by size alone had been answering both
+		//questions at once, and on 312 of the first 400 retail regions the
+		//biggest mesh is a wall, a fence or the sea.
+		int[] order = ctrmap.formats.tilemap.PaintedRegionBuilder.groundFirstMeshOrder(probe);
 		java.util.List<String> items = new java.util.ArrayList<>();
 		java.util.List<Integer> meshIds = new java.util.ArrayList<>();
-		for (int[] o : order) {
-			String label = probe.getMaterialName(probe.getMeshMaterialIndex(o[0])) + "  (" + o[1] + " faces)";
+		for (int mesh : order) {
+			String label = probe.getMaterialName(probe.getMeshMaterialIndex(mesh))
+					+ "  (" + probe.getTriangles(mesh).length / 3 + " faces)";
 			if (items.isEmpty()) {
 				label += "  - this map's main ground";
 			}
 			items.add(label);
-			meshIds.add(o[0]);
+			meshIds.add(mesh);
 		}
 		int def = 0;
 		//visual picker: each entry shows what the material ACTUALLY looks like
@@ -1968,17 +1968,10 @@ public class CtrmapMainframe {
 					continue;
 				}
 				ctrmap.formats.h3d.BchMapModel tm = new ctrmap.formats.h3d.BchMapModel(template);
-				int gm = groundMesh;
-				if (gm >= tm.meshCount || !tm.geometry().get(gm).posOk) {
-					gm = 0;
-					int bt = -1;
-					for (ctrmap.formats.h3d.BchMapModel.MeshGeom g : tm.geometry()) {
-						if (g.posOk && tm.getTriangles(g.meshIndex).length > bt) {
-							bt = tm.getTriangles(g.meshIndex).length;
-							gm = g.meshIndex;
-						}
-					}
-				}
+				//the picked mesh number came from ONE region's model; the zone's
+				//other regions number their meshes differently, so where it does
+				//not fit, fall back to that region's own ground
+				int gm = ctrmap.formats.tilemap.PaintedRegionBuilder.groundMeshOr(tm, groundMesh);
 				ctrmap.formats.h3d.RegionFactory.BlankContent bc = ctrmap.formats.h3d.RegionFactory.blank(template, gm);
 				gr.storeFile(1, bc.model);
 				gr.storeFile(2, bc.collision);

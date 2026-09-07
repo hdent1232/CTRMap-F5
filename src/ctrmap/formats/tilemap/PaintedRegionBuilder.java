@@ -1680,6 +1680,19 @@ public class PaintedRegionBuilder {
 		}
 	}
 
+	/**
+	 * The water's edge along ONE continuous land/water boundary, as a band of
+	 * wet sand fading into the water rather than a straight cut between them.
+	 *
+	 * <p>The same shape as {@link #emitChain} and for the same reason - build
+	 * the polyline, round it, take an outward direction per vertex, then sweep
+	 * bands along it - but simpler, because a shore has no fall to step down and
+	 * so no stack of faces: it is bank, then flat band, then water.
+	 *
+	 * <p>A chain of one edge is dropped: with two vertices there is no interior
+	 * point to round and nothing to smooth, so it would be emitted as the very
+	 * straight cut this exists to avoid.
+	 */
 	private static void emitShoreChain(List<ShoreEdge> chain, TilePalette[][] grid, int[][] height,
 			Map<Integer, List<Quad>> quadsByMesh, int waterMesh) {
 		int n = chain.size();
@@ -1808,6 +1821,21 @@ public class PaintedRegionBuilder {
 		return q;
 	}
 
+	/**
+	 * The walkable top of one tile: a single quad over the tile's square, at
+	 * {@code yHi}, with world-projected UVs and baked corner AO.
+	 *
+	 * <p>A RAMP tile is the same quad with two of its corners dropped. Which two
+	 * is the whole of {@code rd}: the pair on the edge the ramp descends over
+	 * goes to {@code yLo}, so the tile is a plane tilted the way the player
+	 * walks it. {@code rd} of {@link #NO_RAMP} leaves all four at {@code yHi}
+	 * and the tile is flat.
+	 *
+	 * @param h  the tile's height LEVEL, used only to score its corners' AO
+	 *           against the neighbours - the geometry comes from yHi/yLo
+	 * @param rd the way DOWN (0 east, 1 west, 2 south, 3 north), or
+	 *           {@link #NO_RAMP} for a flat tile
+	 */
 	static Quad floorQuad(TilePalette[][] grid, int[][] height, int tx, int ty, int h, int rd, float yHi, float yLo) {
 		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
 		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
@@ -1897,6 +1925,21 @@ public class PaintedRegionBuilder {
 		}
 	}
 
+	/**
+	 * One tile edge that needs a wall, as a directed segment with an outward
+	 * normal - the unit {@link #emitCliffStrips} chains together.
+	 *
+	 * <p>The direction is not arbitrary: every edge runs so that the high ground
+	 * is on its left and the outward normal points down the drop. That is what
+	 * makes head-to-tail chaining meaningful (an edge's end is the next edge's
+	 * start all the way round a plateau) and what lets the mitre at a shared
+	 * vertex be the sum of the normals meeting there.
+	 *
+	 * @param dir which side of the tile the wall stands on: 0 east, 1 west,
+	 *            2 south, 3 north
+	 * @param yb  the bottom of the fall (the neighbour's surface)
+	 * @param yt  the top of the fall (this tile's surface)
+	 */
 	static CliffEdge cliffEdge(int tx, int ty, int dir, float yb, float yt) {
 		float x0 = tx * TILE + ORIGIN, x1 = x0 + TILE;
 		float z0 = ty * TILE + ORIGIN, z1 = z0 + TILE;
@@ -2138,6 +2181,55 @@ public class PaintedRegionBuilder {
 		return Math.min(TILE, drop * 0.77f);
 	}
 
+	/**
+	 * Builds the geometry for ONE continuous run of cliff: a chain of tile edges
+	 * already joined head-to-tail by {@link #emitCliffStrips}, turned into a
+	 * rounded, stepped, textured wall.
+	 *
+	 * <p>This is the longest thing in the file, so here is the shape of it
+	 * before the detail. Each phase has its own reasoning written where it
+	 * happens; what follows is only the order and why the order is that.
+	 *
+	 * <ol>
+	 * <li><b>Polyline.</b> The chain's n edges give n+1 vertices. A chain whose
+	 *     last edge ends where the first began is a closed LOOP, and loops are
+	 *     treated differently at every step below, because they have no ends.</li>
+	 * <li><b>Round the outline</b> (three smoothing passes, then a cap on how
+	 *     far any vertex may travel). Elevation is quantised to whole tiles, so
+	 *     the raw contour is a staircase of right angles; smoothing is what
+	 *     makes it read as a hillside. The travel cap is what stops a one-tile
+	 *     path being smoothed out of existence from both sides at once. The ends
+	 *     of an open chain are pinned so neighbouring chains still meet.</li>
+	 * <li><b>Outward direction per vertex</b> - the mitre. Preferring the
+	 *     bisector every wall touching that point agrees on is what closes a
+	 *     corner shared between two strips; falling back to this chain's own two
+	 *     edges is what stops a ramp corridor (where a dozen edges face every
+	 *     which way and the sum cancels) turning into a spray of spikes.</li>
+	 * <li><b>Height per vertex</b>, top and bottom, averaged where two edges of
+	 *     different depth meet - and every proportion derived from it: the
+	 *     mid-height, and how far the shoulder and the face reach out. This is
+	 *     what lets ONE strip run through a change of step instead of stopping
+	 *     dead at it and starting again with a seam down the join. If no vertex
+	 *     has any fall at all, there is nothing to build and it returns here.</li>
+	 * <li><b>Emit, segment by segment.</b> A flat COLLAR at the top bridges the
+	 *     rounded outline back to the tile boundary the floor actually ends on -
+	 *     without it, rounding tears holes straight through the map. Then the
+	 *     face itself as a STACK of 18-unit steps, three quads each (lip bevel,
+	 *     sheer wall, foot bevel), because vanilla never lets a cliff face cross
+	 *     a multiple of 18 and one tall quad reads as flat plastic. The texture
+	 *     restarts every step; u runs along the contour by arc length.</li>
+	 * </ol>
+	 *
+	 * @param chain  the edges, head-to-tail, all of the same step
+	 * @param out    receives the quads (collar and face alike)
+	 * @param corner per-vertex accumulated outward normals and deepest drop,
+	 *               shared across strips so corners between them close; may be null
+	 * @param caps   receives this strip's end profiles, keyed by vertex, so a
+	 *               genuine corner between two separate walls can be capped;
+	 *               null, or skipped entirely, for a loop, which has no ends
+	 * @param lip    currently unused; the clifftop lip is emitted into
+	 *               {@code out} as part of the collar (see the note there)
+	 */
 	private static void emitChain(List<CliffEdge> chain, List<Quad> out,
 			Map<String, float[]> corner, Map<String, List<float[][]>> caps, List<Quad> lip) {
 		if (chain.isEmpty()) {
@@ -2580,6 +2672,20 @@ public class PaintedRegionBuilder {
 		return q;
 	}
 
+	/**
+	 * A band whose top and bottom edges run along DIFFERENT polylines.
+	 *
+	 * <p>{@link #stripVar} sweeps one line, offsetting top and bottom outward
+	 * from the same two points; that is right for a cliff, whose top and bottom
+	 * follow the same contour. A shore's do not - the waterline and the bank
+	 * behind it are two separate curves - so this takes a top pair
+	 * ({@code tx0,tz0} and {@code tx1,tz1}) and a bottom pair
+	 * ({@code bx0,bz0} and {@code bx1,bz1}) and joins them.
+	 *
+	 * <p>{@code m0}/{@code m1} are the mitres, {@code outTop}/{@code outBot} how
+	 * far along them each edge sits, and {@code edgeNx,edgeNz} the segment's own
+	 * outward normal, used only to orient the winding.
+	 */
 	private static Quad stripMixed(float tx0, float tz0, float bx0, float bz0, float m0x, float m0z,
 			float tx1, float tz1, float bx1, float bz1, float m1x, float m1z,
 			float edgeNx, float edgeNz,
@@ -2624,6 +2730,22 @@ public class PaintedRegionBuilder {
 		return q;
 	}
 
+	/**
+	 * A cliff face for ONE tile edge on its own, as a shoulder quad and a lower
+	 * face quad leaning out over the tile below.
+	 *
+	 * <p>The per-tile fallback, for edges that never made it into a chain.
+	 * {@link #emitCliffStrips} handles everything it can reach, and its output
+	 * is better in every way - mitred, rounded, stepped - so this is what a
+	 * lone edge gets, not what a cliff is normally built from.
+	 *
+	 * <p>Two quads rather than one because a single 45-degree slab reads as a
+	 * ramp; splitting the fall 30/70 across a wide shoulder and a steep face is
+	 * what makes it read as rock. The foot is buried below the lower floor and
+	 * the top left exactly on the tile edge - both to keep any two surfaces from
+	 * ending up coplanar, which z-fights and shows as dark streaks down the
+	 * cliff. Returns empty for a drop of nothing.
+	 */
 	static List<Quad> cliffQuads(int tx, int ty, int dir, float yb, float yt) {
 		List<Quad> out = new ArrayList<>();
 		float drop = yt - yb;
@@ -2998,6 +3120,25 @@ public class PaintedRegionBuilder {
 
 	// ---- material resolution + UV scale -----------------------------------
 
+	/**
+	 * How many texture repeats a mesh's own geometry puts on one world unit, as
+	 * {u-per-x, v-per-z} - read off the donor rather than assumed, so a brush
+	 * paints at the density the map it came from was authored at.
+	 *
+	 * <p>Measured by regression on the mesh's own vertices: the UV span divided
+	 * by the world span, in each axis independently. A mesh flatter than a world
+	 * unit in an axis has no span to divide by and takes the default there.
+	 *
+	 * <p>Both fallbacks matter and they are different. A mesh with no readable
+	 * float UV attribute has nothing to measure. A mesh this editor imported has
+	 * nothing LEFT to measure - {@link TerrainCatalog} keeps the material and
+	 * throws the donor's geometry away - and that one must ask the catalog for
+	 * the donor's scale instead of taking the default, or every imported brush
+	 * paints at twice retail density.
+	 *
+	 * @return two positive scales, each already passed through
+	 *         {@link #clampScale}; never null
+	 */
 	static float[] measureUvScale(BchMapModel model, BchMapModel.MeshGeom g) {
 		BchMapModel.MeshAttr uv = model.findAttr(g.meshIndex, 4);
 		float def = 1f / 36f;
@@ -3033,6 +3174,19 @@ public class PaintedRegionBuilder {
 		return new float[]{clampScale(sx, def), clampScale(sz, def)};
 	}
 
+	/**
+	 * Keeps a measured UV scale inside the range a ground texture can actually
+	 * be authored at.
+	 *
+	 * <p>A measurement is a ratio of two spans and either can be wrong: a
+	 * degenerate mesh gives zero or NaN, and a mesh whose UVs are not a world
+	 * projection at all (an atlas lookup, say) gives something enormous. Above
+	 * one repeat per world unit the floor is noise, so that is refused outright
+	 * and the default used. Below 1/720 - one repeat per forty tiles - the floor
+	 * is one flat colour, so that is raised rather than refused: an unusually
+	 * coarse texture is still a texture, but a span of nothing is not a
+	 * measurement.
+	 */
 	private static float clampScale(float s, float def) {
 		if (!(s > 0) || Float.isNaN(s) || s > 1f) {
 			return def;
@@ -3082,6 +3236,20 @@ public class PaintedRegionBuilder {
 		return measureUvScale(model, model.geometry().get(meshIndex));
 	}
 
+	/**
+	 * The search behind {@link #resolveMesh(BchMapModel, TilePalette, int)},
+	 * with the surface filter made explicit.
+	 *
+	 * <p>Hints are tried IN ORDER and the first mesh matching the current hint
+	 * wins, so a palette's hint list is a preference ranking, not a set. Within
+	 * one hint the meshes are scanned in model order; a mesh with no readable
+	 * positions, an edge overlay, or a sprite atlas is never a candidate.
+	 *
+	 * @param wantSurface true to also reject anything standing up (see the
+	 *                    caller's note on ROCK matching {@code gake}); false
+	 *                    when the vertical material is the one wanted
+	 * @param fallback    returned when no hint matches anything
+	 */
 	private static int resolveMesh(BchMapModel model, TilePalette t, int fallback, boolean wantSurface) {
 		for (String hint : t.matHints) {
 			for (BchMapModel.MeshGeom g : model.geometry()) {
@@ -3164,6 +3332,20 @@ public class PaintedRegionBuilder {
 		return spriteMaterials().contains(name);
 	}
 
+	/**
+	 * The set of material names measured to be see-through, read once from the
+	 * harvested ground-material table and cached for the life of the process.
+	 *
+	 * <p>Synchronized because the cache is a static field and the painter runs
+	 * off the event thread; without it two callers can both find it null and
+	 * both build it, and one of them can hand out a half-filled set.
+	 *
+	 * <p>A missing or unreadable table is not fatal - it yields an empty set, so
+	 * nothing is rejected as a sprite and the painter behaves as it did before
+	 * the table existed. The failure is said on stderr rather than swallowed,
+	 * because "no material is a sprite" and "the table did not load" produce
+	 * identical geometry and only the message tells them apart.
+	 */
 	private static synchronized Set<String> spriteMaterials() {
 		if (spriteMaterials != null) {
 			return spriteMaterials;
@@ -3332,6 +3514,82 @@ public class PaintedRegionBuilder {
 			}
 		}
 		return bestArea > 0 ? best : bestFallback;
+	}
+
+	/**
+	 * The mesh to lay a floor on in {@code model}, honouring {@code preferred}
+	 * when that mesh exists here and can be read, and falling back to
+	 * {@link #defaultGroundMesh} when it cannot.
+	 *
+	 * <p>The fallback is the whole point. A zone's map is several regions and
+	 * they do NOT share a mesh numbering, so a mesh index chosen while looking
+	 * at one region is a guess about all the others - and a guess that misses
+	 * has to land on that region's ground, not on whatever happens to have the
+	 * most triangles. Blank map canvas used to pick by raw triangle count here,
+	 * which is exactly the heuristic {@link #defaultGroundMesh} was written to
+	 * replace: indoors the biggest mesh is usually a wall, so the new floor came
+	 * out textured like plaster.
+	 *
+	 * @param preferred the mesh the user picked, or any value at all - out of
+	 *                  range and unreadable are both answered by the fallback
+	 * @return a mesh index, or -1 if the model has no readable geometry
+	 */
+	/**
+	 * The order to OFFER a map's meshes in when asking the user which one is
+	 * the ground: the ground first, then everything else biggest first.
+	 *
+	 * <p>Biggest-first on its own is a good browsing order - doors, windows and
+	 * tree parts sink to the bottom instead of crowding the top - and it was
+	 * being used to answer a different question as well: whatever came first
+	 * was labelled the map's ground and pre-selected. Over the first 400 retail
+	 * regions those are not the same mesh 312 times, so the label was wrong more
+	 * often than right and a user who accepted the default floored their new map
+	 * in a fence.
+	 *
+	 * <p>Putting {@link #defaultGroundMesh} at the front costs the browsing
+	 * order nothing - it moves exactly one entry - and makes the first entry an
+	 * answer to the question actually being asked.
+	 *
+	 * @return every mesh with readable positions, each exactly once; empty if
+	 *         the model has none
+	 */
+	public static int[] groundFirstMeshOrder(BchMapModel model) {
+		List<int[]> bySize = new ArrayList<>();   //{meshIndex, triangles}
+		for (BchMapModel.MeshGeom g : model.geometry()) {
+			if (g.posOk) {
+				bySize.add(new int[]{g.meshIndex, model.getTriangles(g.meshIndex).length});
+			}
+		}
+		bySize.sort((a, b) -> b[1] - a[1]);
+		//defaultGroundMesh skips edge overlays, so on a map that is nothing but
+		//those it answers -1 and there is no entry to promote
+		int ground = defaultGroundMesh(model);
+		boolean hasGround = false;
+		for (int[] e : bySize) {
+			hasGround |= e[0] == ground;
+		}
+		int[] out = new int[bySize.size()];
+		int at = 0;
+		if (hasGround) {
+			out[at++] = ground;
+		}
+		for (int[] e : bySize) {
+			if (hasGround && e[0] == ground) {
+				continue;
+			}
+			out[at++] = e[0];
+		}
+		return out;
+	}
+
+	public static int groundMeshOr(BchMapModel model, int preferred) {
+		if (preferred >= 0 && preferred < model.meshCount) {
+			List<BchMapModel.MeshGeom> g = model.geometry();
+			if (preferred < g.size() && g.get(preferred).posOk) {
+				return preferred;
+			}
+		}
+		return defaultGroundMesh(model);
 	}
 
 	/** Plan-view area of a mesh's up-facing triangles (a floor scores high, a wall ~0). */

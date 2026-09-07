@@ -139,6 +139,7 @@ $suites = @(
     @{ n = "DataSafetyGuards (stale/script/warp/worker)"; c = "ctrmap.tests.DataSafetyGuardsTest"; a = @($a040, $pristine) },
     @{ n = "NpcEntityGuards (altitude/uid/count/script)"; c = "ctrmap.tests.NpcEntityGuardsTest"; a = @($a013) },
     @{ n = "NpcEditFormGuards (the NPC form: Save/Remove/New/overlay/drag)"; c = "ctrmap.tests.NpcEditFormGuardsTest"; a = @($pristine) },
+    @{ n = "NpcMoveCodes (the motion dropdowns write back what they showed)"; c = "ctrmap.tests.NpcMoveCodesTest"; a = @($pristine) },
     @{ n = "ZoneEntities round-trip";      c = "ctrmap.tests.ZoneEntitiesRoundTripTest"; a = @() },
     @{ n = "Integrity (cross-archive refs)"; c = "ctrmap.tests.IntegrityTest";         a = @($pristine) },
     @{ n = "Updater (in-place, lossless)"; c = "ctrmap.tests.UpdaterTest";           a = @() },
@@ -184,6 +185,7 @@ $suites = @(
     @{ n = "PackScope (a pack writes what was edited)"; c = "ctrmap.tests.PackScopeTest"; a = @($pristine) },
     @{ n = "WorkspaceRepoint (the backup when the game folder changes)"; c = "ctrmap.tests.WorkspaceRepointTest"; a = @($pristine) },
     @{ n = "MainframeReports (what the main window says it did)"; c = "ctrmap.tests.MainframeReportsTest"; a = @($pristine) },
+    @{ n = "MapDefaults (which region, and which mesh is the ground)"; c = "ctrmap.tests.MapDefaultsTest"; a = @($pristine) },
     @{ n = "MisplacedRegistry (damage an old fork left)"; c = "ctrmap.tests.MisplacedRegistryTest"; a = @($pristine) }
 )
 
