@@ -23,6 +23,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * The harvester's own decisions, driven on real regions.
@@ -305,7 +306,7 @@ public class HarvesterGuardsTest {
 		for (TilePalette[] row : grid) {
 			Arrays.fill(row, TilePalette.GRASS);
 		}
-		byte[] base = PaintedRegionBuilder.build(sub(gr.getDecompressedEntry(1), 1), grid, null, null,
+		byte[] base = PaintedRegionBuilder.build(subfile(gr.getDecompressedEntry(1), 1), grid, null, null,
 				TerrainLighting.daytime(), false).model;
 		File rf = Scratch.file("harvest_row_region");
 		List<String> broken = new ArrayList<>();
@@ -363,7 +364,7 @@ public class HarvesterGuardsTest {
 		List<BuildingHarvester.Comp> out = new ArrayList<>();
 		for (int r : regions) {
 			byte[] rc = gr.getDecompressedEntry(r);
-			byte[] model = sub(rc, 1), coll = sub(rc, 2);
+			byte[] model = subfile(rc, 1), coll = subfile(rc, 2);
 			if (model == null || !BchMapModel.isMapModel(model)) {
 				continue;
 			}
@@ -424,22 +425,6 @@ public class HarvesterGuardsTest {
 	static String describe(BuildingHarvester.Comp c) {
 		return "the " + c.tilesW() + "x" + c.tilesH() + " cut at tile " + c.tx0 + "," + c.ty0
 				+ " (" + c.materialTriangles() + ")";
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 
 	static void check(boolean ok, String what) {

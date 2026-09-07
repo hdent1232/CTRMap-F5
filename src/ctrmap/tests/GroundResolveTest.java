@@ -6,6 +6,7 @@ import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
 import java.util.Arrays;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * A ground brush must never resolve to a cliff face.
@@ -51,7 +52,7 @@ public class GroundResolveTest {
 		for (int r = 0; r < gr.length; r++) {
 			byte[] model;
 			try {
-				model = sub(gr.getDecompressedEntry(r), 1);
+				model = subfile(gr.getDecompressedEntry(r), 1);
 			} catch (RuntimeException ignore) {
 				continue;
 			}
@@ -96,24 +97,5 @@ public class GroundResolveTest {
 		if (bad > 0) {
 			System.exit(1);
 		}
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

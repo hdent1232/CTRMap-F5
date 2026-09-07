@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 import javax.swing.DefaultListModel;
 import javax.swing.JFormattedTextField;
-import javax.swing.JOptionPane;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.text.NumberFormatter;
 
@@ -146,17 +145,11 @@ public class ADPropRegistryEditor extends javax.swing.JFrame {
 				e2.evtAnimations2[i / 3][i % 3] = (Short) evtA2Table.getValueAt(i % 3, i / 3);
 			}
 			if (!e2.equals(e)) {
-				if (dialog) {
-					switch (Utils.showSaveConfirmationDialog("Prop registry")) {
-						case JOptionPane.YES_OPTION:
-							break;
-						case JOptionPane.NO_OPTION:
-							return true;
-						//closing the dialog means cancel, not "apply it anyway"
-						case JOptionPane.CLOSED_OPTION:
-						case JOptionPane.CANCEL_OPTION:
-							return false;
-					}
+				switch (Utils.askToKeep(dialog, "Prop registry")) {
+					case DISCARD:
+						return true;
+					case CANCEL:
+						return false;
 				}
 				if (e.model != e2.model) {
 					models.set(dict.indexOf(e.reference), getH3DModel(e2.model));

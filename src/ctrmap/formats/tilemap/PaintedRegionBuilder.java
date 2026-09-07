@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import static ctrmap.formats.LittleEndian.f32;
 
 /**
  * Builds a full map region (visual model + collision + tilemap) from a painted
@@ -1075,8 +1076,7 @@ public class PaintedRegionBuilder {
 					case 0: out[c++] = raw[o]; break;
 					case 1: out[c++] = raw[o] & 0xFF; break;
 					case 2: out[c++] = (short) ((raw[o] & 0xFF) | (raw[o + 1] << 8)); break;
-					default: out[c++] = Float.intBitsToFloat((raw[o] & 0xFF) | ((raw[o + 1] & 0xFF) << 8)
-							| ((raw[o + 2] & 0xFF) << 16) | ((raw[o + 3] & 0xFF) << 24)); break;
+					default: out[c++] = f32(raw, o); break;
 				}
 			}
 		}
@@ -3698,17 +3698,5 @@ public class PaintedRegionBuilder {
 	private static float dist(float ax, float az, float bx, float bz) {
 		float dx = bx - ax, dz = bz - az;
 		return (float) Math.sqrt(dx * dx + dz * dz);
-	}
-
-	private static void putF(byte[] b, int o, float f) {
-		int v = Float.floatToIntBits(f);
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
-	}
-
-	private static float f32(byte[] b, int o) {
-		return Float.intBitsToFloat((b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24));
 	}
 }

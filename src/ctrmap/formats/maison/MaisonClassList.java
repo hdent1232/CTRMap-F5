@@ -2,6 +2,8 @@ package ctrmap.formats.maison;
 
 import java.util.ArrayList;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.putU16;
 
 /**
  * One Battle Maison class-to-set-list record: which opponent {@link MaisonSet}s
@@ -51,23 +53,14 @@ public class MaisonClassList {
 		int tight = 4 + setIndices.size() * 2;
 		int len = Math.max(tight, sourceLength);
 		byte[] out = new byte[len];
-		pu16(out, 0, classTag);
-		pu16(out, 2, setIndices.size());
+		putU16(out, 0, classTag);
+		putU16(out, 2, setIndices.size());
 		for (int i = 0; i < setIndices.size(); i++) {
-			pu16(out, 4 + i * 2, setIndices.get(i));
+			putU16(out, 4 + i * 2, setIndices.get(i));
 		}
 		for (int o = tight; o + 1 < len; o += 2) {
-			pu16(out, o, PAD);
+			putU16(out, o, PAD);
 		}
 		return out;
-	}
-
-	private static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	private static void pu16(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
 	}
 }

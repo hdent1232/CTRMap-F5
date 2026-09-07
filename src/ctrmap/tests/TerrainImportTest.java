@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Proves EVERY terrain brush can paint on ANY map: for each hostile target (an
@@ -70,7 +71,7 @@ public class TerrainImportTest {
 		System.out.println("donors: " + TerrainCatalog.donors().size());
 
 		for (int target : TARGETS) {
-			byte[] model = sub(gr.getDecompressedEntry(target), 1);
+			byte[] model = subfile(gr.getDecompressedEntry(target), 1);
 			if (model == null || !BchMapModel.isMapModel(model)) {
 				System.out.println("FAIL target " + target + " unusable");
 				failures++;
@@ -257,24 +258,5 @@ public class TerrainImportTest {
 			checked++;
 		}
 		return checked;
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

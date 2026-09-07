@@ -10,7 +10,7 @@ the other games can be added without untangling anything.
 
 ```
 src/ctrmap/          the program            build.ps1   compile (never a bare javac)
-  gamedef/           per-game profiles      test.ps1    the 99-suite battery
+  gamedef/           per-game profiles      test.ps1    the 104-suite battery
   formats/           readers and writers    stamp.ps1   "these classes came from these sources"
   humaninterface/    the Swing UI           package.ps1 cut a release
   tests/             the battery

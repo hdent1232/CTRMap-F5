@@ -11,6 +11,9 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.f32;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Full-fidelity OBJ validation:
@@ -38,7 +41,7 @@ public class MapModelObjV2Test {
 		int censusMeshes = 0, censusBad = 0, withUv = 0, withNrm = 0, withColor = 0, withTex1 = 0;
 		int rtRegions = 0, uvCorners = 0, nrmCorners = 0, shiftOk = 0, templateOk = 0, failures = 0;
 		for (int i = 0; i < garc.length; i++) {
-			byte[] model = sub(garc.getDecompressedEntry(i), 1);
+			byte[] model = subfile(garc.getDecompressedEntry(i), 1);
 			if (model == null || !BchMapModel.isMapModel(model)) {
 				continue;
 			}
@@ -184,7 +187,7 @@ public class MapModelObjV2Test {
 				MapModelObj.ObjMesh donor = null;
 				for (MapModelObj.ObjMesh cand : parsed) {
 					int subPtr = m.meshes.get(cand.meshIndex)[3];
-					if (le32(m.raw, subPtr) == 0) { //skinningMode/nodeIdCount == 0
+					if (i32(m.raw, subPtr) == 0) { //skinningMode/nodeIdCount == 0
 						donor = cand;
 						break;
 					}
@@ -244,28 +247,5 @@ public class MapModelObjV2Test {
 		if (failures > 0) {
 			System.exit(1);
 		}
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return java.util.Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static float f32(byte[] b, int o) {
-		return Float.intBitsToFloat(le32(b, o));
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

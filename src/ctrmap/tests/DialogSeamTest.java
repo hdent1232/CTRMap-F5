@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.Ui;
+import ctrmap.Utils;
 import ctrmap.formats.npcreg.NPCRegistry;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -46,8 +47,8 @@ import javax.swing.JOptionPane;
  *     definition - wrote the file with nobody there.</li>
  * <li>A report whose whole text is a bare {@code getMessage()}. It is null for
  *     a whole family of exceptions, and a dialog that says "null" tells the user
- *     nothing. The tree's own idiom is {@code getMessage() != null ? ... :
- *     ex.toString()}.</li>
+ *     nothing. The tree's idiom is {@code Ui.reason(ex)}, which names the
+ *     exception when it gave no message.</li>
  * </ul>
  *
  * <p>And what it proves by running: Ui cannot be made to say nothing. Handed a
@@ -134,6 +135,7 @@ public class DialogSeamTest {
 		closingADialogIsNeverConsent(root);
 		aReportNeverSaysOnlyNull(root);
 		theSeamCannotSayNothing();
+		theOneKeepQuestionAnswersClosedAsCancel();
 		closedMeansTheRegistryIsNotWritten();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -302,6 +304,40 @@ public class DialogSeamTest {
 		check(said.size() == 5 && said.get(4).equals("Save zone: zone 12 was not saved"),
 				"and a report that DOES say something is passed through untouched: "
 				+ (said.size() == 5 ? said.get(4) : said));
+
+		//...and the one way a report quotes an exception cannot come out as "null"
+		check("disk full".equals(Ui.reason(new java.io.IOException("disk full"))),
+				"Ui.reason quotes a message the exception gave: " + Ui.reason(new java.io.IOException("disk full")));
+		check("java.lang.NullPointerException".equals(Ui.reason(new NullPointerException())),
+				"Ui.reason names an exception that gave no message: " + Ui.reason(new NullPointerException()));
+		check("java.lang.IllegalStateException:   ".equals(Ui.reason(new IllegalStateException("  "))),
+				"Ui.reason treats a blank message as no message: " + Ui.reason(new IllegalStateException("  ")));
+	}
+
+	/**
+	 * Every "keep the changes?" question in the program is now asked by
+	 * Utils.askToKeep, so rule three is proved once, directly: each of
+	 * JOptionPane's four answers maps to the right one of SAVE, DISCARD and
+	 * CANCEL, a closed dialog and a dialog nobody answers are both CANCEL, and
+	 * a caller that wants no dialog gets SAVE without the seam being touched.
+	 */
+	static void theOneKeepQuestionAnswersClosedAsCancel() {
+		List<String> said = Ui.record(JOptionPane.YES_OPTION, JOptionPane.NO_OPTION,
+				JOptionPane.CANCEL_OPTION, JOptionPane.CLOSED_OPTION);
+		try {
+			check(Utils.askToKeep(true, "Zone header") == Utils.Keep.SAVE, "askToKeep: yes is SAVE");
+			check(Utils.askToKeep(true, "Zone header") == Utils.Keep.DISCARD, "askToKeep: no is DISCARD");
+			check(Utils.askToKeep(true, "Zone header") == Utils.Keep.CANCEL, "askToKeep: cancel is CANCEL");
+			check(Utils.askToKeep(true, "Zone header") == Utils.Keep.CANCEL, "askToKeep: a closed dialog is CANCEL, never consent");
+			check(Utils.askToKeep(true, "Zone header") == Utils.Keep.CANCEL, "askToKeep: an answer that never comes is CANCEL too");
+			check(said.size() == 5 && said.get(0).equals("Save changes: Zone header has been modified. Do you want to keep the changes?"),
+					"askToKeep names what changed, in the words every store() always used: " + (said.isEmpty() ? said : said.get(0)));
+			int asked = said.size();
+			check(Utils.askToKeep(false, "Zone header") == Utils.Keep.SAVE && said.size() == asked,
+					"askToKeep with no dialog wanted is SAVE, and nobody is asked");
+		} finally {
+			Ui.stopRecording();
+		}
 	}
 
 	/**

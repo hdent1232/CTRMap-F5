@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Cross-archive invariants: the things that must stay in lockstep, checked in
@@ -286,31 +288,9 @@ public class WorkspaceIntegrity {
 		return bad;
 	}
 
-	private static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	private static int u32(byte[] b, int o) {
-		return u16(b, o) | (u16(b, o + 2) << 16);
-	}
-
 	/**
 	 * One subfile out of a Gamefreak container: u16 magic, u16 subfile count,
 	 * then count+1 u32 offsets. Null when the bytes are not a container of that
 	 * shape, or do not hold subfile {@code i}.
 	 */
-	private static byte[] subfile(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = u16(c, 2);
-		if (i >= count || 4 + (i + 2) * 4 > c.length) {
-			return null;
-		}
-		int from = u32(c, 4 + i * 4), to = u32(c, 4 + (i + 1) * 4);
-		if (from < 0 || to < from || to > c.length) {
-			return null;
-		}
-		return java.util.Arrays.copyOfRange(c, from, to);
-	}
 }

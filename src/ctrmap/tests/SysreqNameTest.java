@@ -6,6 +6,7 @@ import ctrmap.formats.scripts.PawnAssembly;
 import ctrmap.formats.scripts.PawnInstruction;
 import ctrmap.scripts.GfHash;
 import java.io.File;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Verifies SYSREQ-by-name in the disassembler: across every ORAS zone script,
@@ -43,7 +44,7 @@ public class SysreqNameTest {
 		java.util.Set<Integer> distinctUnknown = new java.util.HashSet<>();
 
 		for (int z = 0; z < zones; z++) {
-			byte[] sub = sub(zo.getDecompressedEntry(z), 2);
+			byte[] sub = subfile(zo.getDecompressedEntry(z), 2);
 			if (sub == null || sub.length < 8) {
 				continue;
 			}
@@ -128,7 +129,7 @@ public class SysreqNameTest {
 		//hash -> (the first script registering it, and at which index)
 		java.util.Map<Integer, Object[]> seen = new java.util.HashMap<>();
 		for (int z = 0; z < zo.length - 2 && b == null; z++) {
-			byte[] raw = sub(zo.getDecompressedEntry(z), 2);
+			byte[] raw = subfile(zo.getDecompressedEntry(z), 2);
 			if (raw == null || raw.length < 8) {
 				continue;
 			}
@@ -182,22 +183,4 @@ public class SysreqNameTest {
 		check(inNone.argumentCells[0] == 0, "and leaves the index unset rather than guessing one");
 	}
 
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return java.util.Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
-	}
 }

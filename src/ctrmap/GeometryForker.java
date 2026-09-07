@@ -2,14 +2,14 @@ package ctrmap;
 
 import ctrmap.formats.garc.GARC;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.putU16;
+import java.nio.file.Files;
 
 /**
  * Gives a zone its OWN private map geometry so that editing its map no longer
@@ -108,7 +108,7 @@ public class GeometryForker {
 		if (zoBytes == null || zoBytes.length < 8) {
 			throw new IllegalArgumentException("Zone container too short.");
 		}
-		int hdrOff = u32(zoBytes, 4);
+		int hdrOff = i32(zoBytes, 4);
 		if (hdrOff < 0 || hdrOff + 6 > zoBytes.length) {
 			throw new IllegalArgumentException("Zone header subfile out of range.");
 		}
@@ -117,7 +117,7 @@ public class GeometryForker {
 		if (matBytes == null || matBytes.length < 12) {
 			throw new IllegalArgumentException("Map matrix container too short.");
 		}
-		int sub0 = u32(matBytes, 4);
+		int sub0 = i32(matBytes, 4);
 		if (sub0 < 0 || sub0 + 8 > matBytes.length) {
 			throw new IllegalArgumentException("Map matrix grid subfile out of range.");
 		}
@@ -222,7 +222,7 @@ public class GeometryForker {
 	 */
 	private static ForkPlan forkArchives(byte[] zoBytes, int firstNewRegion, int newMatrix, int owningZone,
 			boolean claimEveryCell, GARC gr, GARC mm, File fdDir, File mmDir) throws IOException {
-		int hdrOff = u32(zoBytes, 4);
+		int hdrOff = i32(zoBytes, 4);
 		int oldMatrix = u16(zoBytes, hdrOff + 4);
 		if (oldMatrix < 0 || oldMatrix >= mm.length) {
 			throw new IOException("Zone references matrix " + oldMatrix + " which does not exist.");
@@ -231,7 +231,7 @@ public class GeometryForker {
 		if (srcMatrixFile == null) {
 			throw new IOException("Could not extract map matrix " + oldMatrix + " from the workspace.");
 		}
-		ForkPlan plan = planFork(zoBytes, readAll(srcMatrixFile), firstNewRegion, newMatrix, owningZone,
+		ForkPlan plan = planFork(zoBytes, Files.readAllBytes(srcMatrixFile.toPath()), firstNewRegion, newMatrix, owningZone,
 				claimEveryCell);
 
 		if (pendingFieldOverrides == null) {
@@ -250,12 +250,12 @@ public class GeometryForker {
 				throw new IOException("Could not extract FieldData region " + oldR + " from the workspace.");
 			}
 			File out = new File(fdDir, String.valueOf(newR));
-			writeAll(out, readAll(srcRegionFile));
+			Files.write(out.toPath(), Files.readAllBytes(srcRegionFile.toPath()));
 			Workspace.addPersist(out);
 			pendingFieldOverrides.put(newR, gr.isEntryCompressed(oldR));
 		}
 		File matrixOut = new File(mmDir, String.valueOf(newMatrix));
-		writeAll(matrixOut, plan.newMatrixBytes);
+		Files.write(matrixOut.toPath(), plan.newMatrixBytes);
 		Workspace.addPersist(matrixOut);
 		pendingMatrixOverrides.put(newMatrix, mm.isEntryCompressed(oldMatrix));
 		return plan;
@@ -354,12 +354,12 @@ public class GeometryForker {
 		if (zoneFile == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
-		byte[] zoBytes = readAll(zoneFile);
+		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
 		//an existing zone keeps its own cells and leaves its neighbours' alone
 		ForkPlan plan = forkArchives(zoBytes, gr.length, newMatrix, zoneIndex, false, gr, mm, fdDir, mmDir);
 
 		// repoint the ZO container header, in place
-		writeAll(zoneFile, plan.newZoBytes);
+		Files.write(zoneFile.toPath(), plan.newZoBytes);
 		Workspace.addPersist(zoneFile);
 		// repoint the master zone-header table row (the runtime-authoritative copy)
 		repointMasterRow(zo, zoneIndex, newMatrix);
@@ -390,7 +390,7 @@ public class GeometryForker {
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
 		}
-		byte[] master = readAll(masterFile);
+		byte[] master = Files.readAllBytes(masterFile.toPath());
 		if (master.length != zoneCount * MASTER_ROW) {
 			//a stale/foreign artifact in the workspace slot; the pristine table
 			//comes from the archive itself. If even that disagrees, report
@@ -425,15 +425,15 @@ public class GeometryForker {
 		if (zoneFile == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
-		byte[] zoBytes = readAll(zoneFile);
-		int hdrOff = u32(zoBytes, 4);
+		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
+		int hdrOff = i32(zoBytes, 4);
 		int matrix = u16(zoBytes, hdrOff + 4);
 		File matFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, matrix);
 		if (matFile == null) {
 			throw new IOException("Could not extract map matrix " + matrix + " from the workspace.");
 		}
-		byte[] mat = readAll(matFile);
-		int sub0 = u32(mat, 4);
+		byte[] mat = Files.readAllBytes(matFile.toPath());
+		int sub0 = i32(mat, 4);
 		int w = u16(mat, sub0 + 4), h = u16(mat, sub0 + 6);
 		LinkedHashMap<Integer, Integer> seen = new LinkedHashMap<>();
 		for (int k = 0; k < w * h; k++) {
@@ -480,13 +480,13 @@ public class GeometryForker {
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
 		}
-		byte[] master = readAll(masterFile);
+		byte[] master = Files.readAllBytes(masterFile.toPath());
 		int rowOff = zoneIndex * MASTER_ROW + 4;
 		if (rowOff + 2 > master.length) {
 			throw new IOException("Master-table row for zone " + zoneIndex + " out of range.");
 		}
 		putU16(master, rowOff, newMatrix);
-		writeAll(masterFile, master);
+		Files.write(masterFile.toPath(), master);
 		Workspace.addPersist(masterFile);
 	}
 
@@ -504,31 +504,5 @@ public class GeometryForker {
 		return m;
 	}
 
-	private static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
 
-	private static int u32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
-	}
-
-	private static void putU16(byte[] b, int o, int v) {
-		b[o] = (byte) (v & 0xFF);
-		b[o + 1] = (byte) ((v >> 8) & 0xFF);
-	}
-
-	private static byte[] readAll(File f) throws IOException {
-		InputStream in = new FileInputStream(f);
-		byte[] b = new byte[in.available()];
-		in.read(b);
-		in.close();
-		return b;
-	}
-
-	private static void writeAll(File f, byte[] b) throws IOException {
-		OutputStream os = new FileOutputStream(f);
-		os.write(b);
-		os.flush();
-		os.close();
-	}
 }

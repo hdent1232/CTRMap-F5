@@ -8,6 +8,7 @@ import ctrmap.formats.h3d.BchModelVerifier;
 import ctrmap.formats.h3d.RegionFactory;
 import java.io.File;
 import java.util.List;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Blank-canvas validation on sampled real regions: blank content built from
@@ -27,7 +28,7 @@ public class RegionFactoryTest {
 		GARC garc = new GARC(garcFile);
 		int tested = 0, ok = 0, failures = 0;
 		for (int i = 0; i < garc.length; i += step) {
-			byte[] model = sub(garc.getDecompressedEntry(i), 1);
+			byte[] model = subfile(garc.getDecompressedEntry(i), 1);
 			if (model == null || !BchMapModel.isMapModel(model)) {
 				continue;
 			}
@@ -113,24 +114,5 @@ public class RegionFactoryTest {
 		if (failures > 0) {
 			System.exit(1);
 		}
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return java.util.Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

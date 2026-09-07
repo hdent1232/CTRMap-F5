@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * The ORAS shop (Poke Mart) inventories - u16 item-id lists embedded in the
@@ -87,7 +88,7 @@ public class ShopData {
 		for (int s = 0; s < COUNTS.length; s++) {
 			shops[s] = new int[COUNTS[s]];
 			for (int i = 0; i < COUNTS[s]; i++) {
-				shops[s][i] = (code[p] & 0xFF) | ((code[p + 1] & 0xFF) << 8);
+				shops[s][i] = u16(code, p);
 				p += 2;
 			}
 		}

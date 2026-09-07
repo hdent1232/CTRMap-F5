@@ -4,6 +4,8 @@ import ctrmap.formats.text.GFMessageFile;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * Headless round-trip test for GFMessageFile. Run with:
@@ -155,29 +157,29 @@ public class GFMessageFileRoundTripTest {
 	}
 
 	private static String structCheck(byte[] b) {
-		if (readU16(b, 0x00) != 1) {
+		if (u16(b, 0x00) != 1) {
 			return "textSections != 1";
 		}
-		if (readS32(b, 0x08) != 0) {
+		if (i32(b, 0x08) != 0) {
 			return "initialKey != 0";
 		}
-		if (readS32(b, 0x0C) != 0x10) {
+		if (i32(b, 0x0C) != 0x10) {
 			return "sectionDataOffset != 0x10";
 		}
-		if (readS32(b, 0x04) != b.length - 0x10) {
+		if (i32(b, 0x04) != b.length - 0x10) {
 			return "totalLength mismatch";
 		}
-		if (readS32(b, 0x10) != b.length - 0x10) {
+		if (i32(b, 0x10) != b.length - 0x10) {
 			return "sectionLength mismatch";
 		}
 		if (b.length % 4 != 0) {
 			return "total length not a multiple of 4";
 		}
-		int n = readU16(b, 0x02);
+		int n = u16(b, 0x02);
 		for (int i = 0; i < n; i++) {
-			int off = readS32(b, 0x10 + 4 + i * 8);
-			int len = readU16(b, 0x10 + 8 + i * 8);
-			int unused = readU16(b, 0x10 + 10 + i * 8);
+			int off = i32(b, 0x10 + 4 + i * 8);
+			int len = u16(b, 0x10 + 8 + i * 8);
+			int unused = u16(b, 0x10 + 10 + i * 8);
 			if (off < 4 + 8 * n) {
 				return "line " + i + " offset overlaps line table";
 			}
@@ -229,13 +231,5 @@ public class GFMessageFileRoundTripTest {
 	private static void fail(String name, String diag) {
 		failed++;
 		System.out.println("FAIL " + name + ": " + diag);
-	}
-
-	private static int readU16(byte[] data, int off) {
-		return (data[off] & 0xFF) | ((data[off + 1] & 0xFF) << 8);
-	}
-
-	private static int readS32(byte[] data, int off) {
-		return (data[off] & 0xFF) | ((data[off + 1] & 0xFF) << 8) | ((data[off + 2] & 0xFF) << 16) | ((data[off + 3] & 0xFF) << 24);
 	}
 }

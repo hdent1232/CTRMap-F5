@@ -15,6 +15,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Measures, for every material a terrain brush could match by name, how much of
@@ -73,7 +76,7 @@ public class GroundMaterialAudit {
 				continue;
 			}
 			byte[] mat = mm.getDecompressedEntry(matIdx);
-			int sub0 = u32(mat, 4);
+			int sub0 = i32(mat, 4);
 			int w = u16(mat, sub0 + 4), h = u16(mat, sub0 + 6);
 			for (int k = 0; k < w * h; k++) {
 				int rid = u16(mat, sub0 + 8 + k * 2);
@@ -102,7 +105,7 @@ public class GroundMaterialAudit {
 			}
 			byte[] model;
 			try {
-				model = sub(fd.getDecompressedEntry(region), 1);
+				model = subfile(fd.getDecompressedEntry(region), 1);
 			} catch (RuntimeException ex) {
 				continue;
 			}
@@ -212,7 +215,7 @@ public class GroundMaterialAudit {
 	private static Map<String, double[]> textureAlpha(GARC adGarc, int area) {
 		Map<String, double[]> out = new HashMap<>();
 		try {
-			byte[] wTex = sub(adGarc.getDecompressedEntry(area), 11); //AD subfile 11 = world textures
+			byte[] wTex = subfile(adGarc.getDecompressedEntry(area), 11); //AD subfile 11 = world textures
 			if (wTex == null || wTex.length < 4) {
 				return out;
 			}
@@ -243,22 +246,6 @@ public class GroundMaterialAudit {
 			//area without a usable texture pack
 		}
 		return out;
-	}
-
-	private static byte[] sub(byte[] c, int i) {
-		int o0 = u32(c, 4 + i * 4), o1 = u32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 <= o0) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	private static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	private static int u32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }
 

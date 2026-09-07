@@ -2,14 +2,14 @@ package ctrmap;
 
 import ctrmap.formats.garc.GARC;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.putU16;
+import java.nio.file.Files;
 
 /**
  * Gives a zone its OWN private AREA so that editing its atmosphere, water
@@ -102,7 +102,7 @@ public class AreaForker {
 		if (newArea == AD_GLOBAL_TABLE) {
 			throw new IllegalArgumentException("Area id " + AD_GLOBAL_TABLE + " is the engine's per-area table, not an area.");
 		}
-		int hdrOff = u32(zoBytes, 4);
+		int hdrOff = i32(zoBytes, 4);
 		if (hdrOff < 0 || hdrOff + HDR_AREA_OFF + 2 > zoBytes.length) {
 			throw new IllegalArgumentException("Zone header subfile out of range.");
 		}
@@ -143,7 +143,7 @@ public class AreaForker {
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
 		}
-		byte[] master = readAll(masterFile);
+		byte[] master = Files.readAllBytes(masterFile.toPath());
 		if (master.length != zoneCount * MASTER_ROW) {
 			byte[] fromGarc = zo.getDecompressedEntry(zoneCount);
 			if (fromGarc == null || fromGarc.length != zoneCount * MASTER_ROW) {
@@ -194,8 +194,8 @@ public class AreaForker {
 		if (zoneFile == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
-		byte[] zoBytes = readAll(zoneFile);
-		return u16(zoBytes, u32(zoBytes, 4) + HDR_AREA_OFF);
+		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
+		return u16(zoBytes, i32(zoBytes, 4) + HDR_AREA_OFF);
 	}
 
 	/**
@@ -258,19 +258,19 @@ public class AreaForker {
 		if (zoneFile == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
-		byte[] zoBytes = readAll(zoneFile);
-		int oldArea = u16(zoBytes, u32(zoBytes, 4) + HDR_AREA_OFF);
+		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
+		int oldArea = u16(zoBytes, i32(zoBytes, 4) + HDR_AREA_OFF);
 		File srcAdFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, oldArea);
 		File srcNpFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.NPC_REGISTRIES, oldArea);
 		File tableFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, AD_GLOBAL_TABLE);
 		if (srcAdFile == null || tableFile == null) {
 			throw new IOException("Could not extract area " + oldArea + " from the workspace.");
 		}
-		byte[] srcNp = (srcNpFile != null && srcNpFile.exists()) ? readAll(srcNpFile) : new byte[0];
-		ForkPlan plan = planFork(zoBytes, readAll(srcAdFile), srcNp, readAll(tableFile), newArea);
+		byte[] srcNp = (srcNpFile != null && srcNpFile.exists()) ? Files.readAllBytes(srcNpFile.toPath()) : new byte[0];
+		ForkPlan plan = planFork(zoBytes, Files.readAllBytes(srcAdFile.toPath()), srcNp, Files.readAllBytes(tableFile.toPath()), newArea);
 
 		//stage: new area, its registry, the grown table, the repointed zone
-		writeAll(adOut, plan.newAdBytes);
+		Files.write(adOut.toPath(), plan.newAdBytes);
 		Workspace.addPersist(adOut);
 		registerPendingArea(newArea, ad.isEntryCompressed(oldArea));
 
@@ -285,19 +285,19 @@ public class AreaForker {
 		//per-area table's slot, which planFork refuses as an area.
 		for (int filler = np.length; filler < newArea; filler++) {
 			File fillOut = new File(npDir, String.valueOf(filler));
-			writeAll(fillOut, new byte[0]);
+			Files.write(fillOut.toPath(), new byte[0]);
 			Workspace.addPersist(fillOut);
 			registerPendingNpcReg(filler, false);
 		}
 		File npOut = new File(npDir, String.valueOf(newArea));
-		writeAll(npOut, plan.newNpcBytes);
+		Files.write(npOut.toPath(), plan.newNpcBytes);
 		Workspace.addPersist(npOut);
 		registerPendingNpcReg(newArea, np.length > 0 && np.isEntryCompressed(Math.min(oldArea, np.length - 1)));
 
-		writeAll(tableFile, plan.newTableBytes);
+		Files.write(tableFile.toPath(), plan.newTableBytes);
 		Workspace.addPersist(tableFile);
 
-		writeAll(zoneFile, plan.newZoBytes);
+		Files.write(zoneFile.toPath(), plan.newZoBytes);
 		Workspace.addPersist(zoneFile);
 		repointMasterArea(zo, zoneIndex, newArea);
 
@@ -322,13 +322,13 @@ public class AreaForker {
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
 		}
-		byte[] master = readAll(masterFile);
+		byte[] master = Files.readAllBytes(masterFile.toPath());
 		int rowOff = zoneIndex * MASTER_ROW + HDR_AREA_OFF;
 		if (rowOff + 2 > master.length) {
 			throw new IOException("Master-table row for zone " + zoneIndex + " out of range.");
 		}
 		putU16(master, rowOff, newArea);
-		writeAll(masterFile, master);
+		Files.write(masterFile.toPath(), master);
 		Workspace.addPersist(masterFile);
 	}
 
@@ -360,31 +360,5 @@ public class AreaForker {
 		return m;
 	}
 
-	private static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
 
-	private static int u32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
-	}
-
-	private static void putU16(byte[] b, int o, int v) {
-		b[o] = (byte) (v & 0xFF);
-		b[o + 1] = (byte) ((v >> 8) & 0xFF);
-	}
-
-	private static byte[] readAll(File f) throws IOException {
-		InputStream in = new FileInputStream(f);
-		byte[] b = new byte[in.available()];
-		in.read(b);
-		in.close();
-		return b;
-	}
-
-	private static void writeAll(File f, byte[] b) throws IOException {
-		OutputStream os = new FileOutputStream(f);
-		os.write(b);
-		os.flush();
-		os.close();
-	}
 }

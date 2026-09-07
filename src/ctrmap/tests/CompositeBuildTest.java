@@ -11,6 +11,7 @@ import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
 import java.util.Arrays;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Validates the Map Builder's COMPOSITE mode (edit-in-place with exact
@@ -81,7 +82,7 @@ public class CompositeBuildTest {
 	static byte[][] region(GARC gr, int i) {
 		try {
 			byte[] c = gr.getDecompressedEntry(i);
-			byte[] model = sub(c, 1), coll = sub(c, 2), tm = sub(c, 0);
+			byte[] model = subfile(c, 1), coll = subfile(c, 2), tm = subfile(c, 0);
 			if (model == null || !BchMapModel.isMapModel(model) || tm == null || tm.length < 4 + DIM * DIM * 4
 					|| (tm[0] & 0xFF) != DIM || (tm[2] & 0xFF) != DIM || coll == null || !GfColl.isColl(coll)) {
 				return null;
@@ -474,24 +475,5 @@ public class CompositeBuildTest {
 			Arrays.fill(row, fill);
 		}
 		return g;
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

@@ -8,12 +8,9 @@ import ctrmap.formats.scripts.GFLPawnScript;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.formats.zone.ZoneHeader;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.file.Files;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Headless test of ZoneCloner's core byte transform. Operates ONLY on copies
@@ -55,24 +52,24 @@ public class ZoneClonerTest {
 		byte[] masterOrig = garc.getDecompressedEntry(masterIndex);
 		check(srcOrig != null && dstOrig != null && masterOrig != null, "could not extract entries " + SRC + "/" + DST + "/" + masterIndex);
 		check(masterOrig.length == 536 * ZoneCloner.ZONE_HEADER_SIZE, "master table is 536 rows x 0x38, got " + masterOrig.length + " bytes");
-		writeAll(srcFile, srcOrig);
-		writeAll(dstFile, dstOrig);
-		writeAll(masterFile, masterOrig);
+		Files.write(srcFile.toPath(), srcOrig);
+		Files.write(dstFile.toPath(), dstOrig);
+		Files.write(masterFile.toPath(), masterOrig);
 
 		//the core clone transform, file locations injected
 		ZoneCloner.cloneIntoFiles(srcFile, dstFile, masterFile, SRC, DST, true);
 
-		byte[] srcAfter = readAll(srcFile);
-		byte[] dstAfter = readAll(dstFile);
-		byte[] masterAfter = readAll(masterFile);
+		byte[] srcAfter = Files.readAllBytes(srcFile.toPath());
+		byte[] dstAfter = Files.readAllBytes(dstFile.toPath());
+		byte[] masterAfter = Files.readAllBytes(masterFile.toPath());
 
 		//source file must be untouched
 		check(java.util.Arrays.equals(srcAfter, srcOrig), "source zone file was modified");
 
 		//dst == src except the 4 header flag bytes; flags differ ONLY in bits 21..31
 		check(dstAfter.length == srcOrig.length, "dst length " + dstAfter.length + " != src length " + srcOrig.length);
-		int headerOffset = readIntLE(srcOrig, 4);
-		check(headerOffset == readIntLE(dstAfter, 4), "subfile 0 offset differs between src and dst");
+		int headerOffset = i32(srcOrig, 4);
+		check(headerOffset == i32(dstAfter, 4), "subfile 0 offset differs between src and dst");
 		int flagsOffset = headerOffset + ZoneCloner.UNKNOWN_FLAGS_OFFSET;
 		for (int i = 0; i < dstAfter.length; i++) {
 			if (i >= flagsOffset && i < flagsOffset + 4) {
@@ -82,8 +79,8 @@ public class ZoneClonerTest {
 				check(false, String.format("dst differs from src outside the flags word at 0x%X: %02X != %02X", i, dstAfter[i], srcOrig[i]));
 			}
 		}
-		int srcFlags = readIntLE(srcOrig, flagsOffset);
-		int dstFlags = readIntLE(dstAfter, flagsOffset);
+		int srcFlags = i32(srcOrig, flagsOffset);
+		int dstFlags = i32(dstAfter, flagsOffset);
 		check((dstFlags >>> 21) == DST, "dst OAZoneNumber (flags >>> 21) == " + (dstFlags >>> 21) + ", expected " + DST);
 		check((dstFlags & 0x1FFFFF) == (srcFlags & 0x1FFFFF), "dst flags bits 0..20 changed: 0x" + Integer.toHexString(dstFlags & 0x1FFFFF) + " != 0x" + Integer.toHexString(srcFlags & 0x1FFFFF));
 		System.out.println("src zone " + SRC + " OAZoneNumber was " + (srcFlags >>> 21) + ", dst patched to " + (dstFlags >>> 21));
@@ -109,8 +106,8 @@ public class ZoneClonerTest {
 				check(false, String.format("master row %d differs from row %d outside the flags word at row offset 0x%X", DST, SRC, i));
 			}
 		}
-		int srcRowFlags = readIntLE(masterOrig, srcRow + rowFlagsOffset);
-		int dstRowFlags = readIntLE(masterAfter, dstRow + rowFlagsOffset);
+		int srcRowFlags = i32(masterOrig, srcRow + rowFlagsOffset);
+		int dstRowFlags = i32(masterAfter, dstRow + rowFlagsOffset);
 		check((dstRowFlags >>> 21) == DST, "master row OAZoneNumber == " + (dstRowFlags >>> 21) + ", expected " + DST);
 		check((dstRowFlags & 0x1FFFFF) == (srcRowFlags & 0x1FFFFF), "master row flags bits 0..20 changed");
 		//the master convention: bit 16 clear even where the zone's own header has it set
@@ -154,22 +151,5 @@ public class ZoneClonerTest {
 		}
 	}
 
-	private static int readIntLE(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
-	}
 
-	private static byte[] readAll(File f) throws IOException {
-		InputStream in = new FileInputStream(f);
-		byte[] b = new byte[in.available()];
-		in.read(b);
-		in.close();
-		return b;
-	}
-
-	private static void writeAll(File f, byte[] b) throws IOException {
-		OutputStream os = new FileOutputStream(f);
-		os.write(b);
-		os.flush();
-		os.close();
-	}
 }

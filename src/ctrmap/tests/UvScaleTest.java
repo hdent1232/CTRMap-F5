@@ -7,6 +7,7 @@ import ctrmap.formats.tilemap.TerrainCatalog;
 import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
 import java.util.Arrays;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * An imported brush must paint at the scale its DONOR was authored at.
@@ -74,7 +75,7 @@ public class UvScaleTest {
 		GARC gr = new GARC(garcFile);
 		//Mauville mall: an indoor map with no outdoor materials, so outdoor
 		//brushes must import rather than resolve natively
-		byte[] model = sub(gr.getDecompressedEntry(153), 1);
+		byte[] model = subfile(gr.getDecompressedEntry(153), 1);
 		if (model == null || !BchMapModel.isMapModel(model)) {
 			System.out.println("  FAIL target 153 unusable");
 			fails++;
@@ -133,24 +134,5 @@ public class UvScaleTest {
 			System.out.println("  FAIL: " + what);
 			fails++;
 		}
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

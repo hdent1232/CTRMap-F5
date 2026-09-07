@@ -5,11 +5,14 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.RegionFactory;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.f32;
+import static ctrmap.formats.LittleEndian.putU16;
+import java.nio.file.Files;
+import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.formats.LittleEndian.putF32;
 
 /**
  * Grows a zone's map beyond one region - the "bigger custom maps" feature
@@ -118,8 +121,8 @@ public class MapResizer {
 				float west = f32(cam, base + 8), east = f32(cam, base + 12);
 				int isRepeal = i32(cam, base + 16);
 				if (isRepeal == 0 && south >= oldSouth - 40f && east >= oldEast - 40f && north <= 40f && west <= 40f) {
-					putF(cam, base + 4, south + (newH - h) * 720f);
-					putF(cam, base + 12, east + (newW - w) * 720f);
+					putF32(cam, base + 4, south + (newH - h) * 720f);
+					putF32(cam, base + 12, east + (newW - w) * 720f);
 				}
 			}
 		}
@@ -139,11 +142,11 @@ public class MapResizer {
 		putU16(out, 2, count);
 		int off = 4 + (count + 1) * 4;
 		for (int i = 0; i < count; i++) {
-			p32(out, 4 + i * 4, off);
+			putI32(out, 4 + i * 4, off);
 			System.arraycopy(subs[i], 0, out, off, subs[i].length);
 			off += subs[i].length;
 		}
-		p32(out, 4 + count * 4, off);
+		putI32(out, 4 + count * 4, off);
 		return out;
 	}
 
@@ -175,10 +178,10 @@ public class MapResizer {
 		}
 
 		File zoneFile = ws.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
-		byte[] zoBytes = readAll(zoneFile);
+		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
 		int hdrOff = i32(zoBytes, 4);
 		int oldMatrix = u16(zoBytes, hdrOff + 4);
-		byte[] matBytes = readAll(ws.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, oldMatrix));
+		byte[] matBytes = Files.readAllBytes(ws.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, oldMatrix).toPath());
 
 		//template = the zone's first region (same area -> textures guaranteed)
 		int sub0 = i32(matBytes, 4);
@@ -193,7 +196,7 @@ public class MapResizer {
 		if (templateRegion < 0) {
 			throw new IOException("The zone's matrix has no regions.");
 		}
-		byte[] templateGr = readAll(ws.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, templateRegion));
+		byte[] templateGr = Files.readAllBytes(ws.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, templateRegion).toPath());
 
 		int newCells = newW * newH - w * h;
 		if (newCells <= 0) {
@@ -210,7 +213,7 @@ public class MapResizer {
 		//blank-canvas regions for the new cells
 		for (int id : newIds) {
 			File f = new File(fdDir, String.valueOf(id));
-			writeAll(f, templateGr);
+			Files.write(f.toPath(), templateGr);
 			GR reg = new GR(f);
 			byte[] template = reg.getFile(1);
 			if (BchMapModel.isMapModel(template)) {
@@ -240,14 +243,14 @@ public class MapResizer {
 			GeometryForker.registerPendingField(id, gr.isEntryCompressed(templateRegion));
 		}
 
-		writeAll(matrixOut, newMat);
+		Files.write(matrixOut.toPath(), newMat);
 		ws.addPersist(matrixOut);
 		GeometryForker.registerPendingMatrix(newMatrix, mm.isEntryCompressed(oldMatrix));
 
 		//repoint the zone (ZO header + the runtime-authoritative master row)
 		byte[] newZo = zoBytes.clone();
 		putU16(newZo, hdrOff + 4, newMatrix);
-		writeAll(zoneFile, newZo);
+		Files.write(zoneFile.toPath(), newZo);
 		ws.addPersist(zoneFile);
 		GeometryForker.repointMasterRow(zo, zoneIndex, newMatrix);
 
@@ -269,46 +272,5 @@ public class MapResizer {
 		return (v + 3) & ~3;
 	}
 
-	private static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
 
-	private static int i32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
-	}
-
-	private static float f32(byte[] b, int o) {
-		return Float.intBitsToFloat(i32(b, o));
-	}
-
-	private static void putU16(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-	}
-
-	private static void p32(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
-	}
-
-	private static void putF(byte[] b, int o, float f) {
-		p32(b, o, Float.floatToIntBits(f));
-	}
-
-	private static byte[] readAll(File f) throws IOException {
-		InputStream in = new FileInputStream(f);
-		byte[] b = new byte[in.available()];
-		in.read(b);
-		in.close();
-		return b;
-	}
-
-	private static void writeAll(File f, byte[] b) throws IOException {
-		OutputStream os = new FileOutputStream(f);
-		os.write(b);
-		os.flush();
-		os.close();
-	}
 }

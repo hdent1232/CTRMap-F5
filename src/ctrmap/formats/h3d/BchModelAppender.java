@@ -1,6 +1,9 @@
 package ctrmap.formats.h3d;
 
 import java.util.*;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.formats.LittleEndian.putU16;
 
 /**
  * Appends a MESH + MATERIAL copied from a donor map model into a target map
@@ -22,10 +25,6 @@ import java.util.*;
  * pre-existing command-tail note).
  */
 public class BchModelAppender {
-
-    static int le32(byte[] b,int o){return (b[o]&0xFF)|((b[o+1]&0xFF)<<8)|((b[o+2]&0xFF)<<16)|((b[o+3]&0xFF)<<24);}
-    static void poke(byte[] b,int o,int v){b[o]=(byte)v;b[o+1]=(byte)(v>>8);b[o+2]=(byte)(v>>16);b[o+3]=(byte)(v>>24);}
-    static void poke16(byte[] b,int o,int v){b[o]=(byte)v;b[o+1]=(byte)(v>>8);}
     static String str(byte[] b,int abs){StringBuilder sb=new StringBuilder();for(int p=abs;p<b.length&&b[p]!=0;p++)sb.append((char)(b[p]&0xFF));return sb.toString();}
     static int align(int v,int a){return (v+a-1)/a*a;}
 
@@ -74,7 +73,7 @@ public class BchModelAppender {
             int base = e.src==0?m.contentsAddr: e.src==2?m.commandsAddr: -1;
             if (base<0) throw new IllegalStateException("reloc src "+e.src);
             e.ptrLoc = base + (e.tgt==1?off:off*4);
-            e.word = le32(raw, e.ptrLoc);
+            e.word = i32(raw, e.ptrLoc);
             out.add(e);
         }
         return out;
@@ -122,7 +121,7 @@ public class BchModelAppender {
         TreeSet<Integer> dObj=new TreeSet<>();
         for (int i=0;i<d.matCount;i++) dObj.add(d.materialParamOffsets.get(i));
         for (int j=0;j<d.meshCount;j++) dObj.add(d.meshes.get(j)[3]);
-        int dmmv=d.ptr(d.modelMetaPtr), dmmc=le32(D,d.modelMetaPtr+4);
+        int dmmv=d.ptr(d.modelMetaPtr), dmmc=i32(D,d.modelMetaPtr+4);
         int dTail=0x44+d.contentsLen;
         for (int k=0;k<dmmc;k++){ int dp=d.ptr(dmmv+k*0xC+8); if (dp!=0&&dp<dTail) dTail=dp; }
         dObj.add(dTail);
@@ -135,7 +134,7 @@ public class BchModelAppender {
         // have - even a target WITH a skeleton has different bones (verified crash:
         // donor bone index 5 vs a 2-bone target). Rigid-skinned interior props are
         // therefore not appendable in v1; same-material fast paths still handle them.
-        if ((le32(D,s.subBeg)&0xFFFFFFFF)!=0)
+        if ((i32(D,s.subBeg)&0xFFFFFFFF)!=0)
             throw new IllegalStateException("donor submesh is skinned (bone-dependent) - not supported");
         s.matHdr=d.matValuesPtr+s.mat*0x2C;
         s.meshHdr=d.meshes.get(dj)[0];
@@ -143,10 +142,10 @@ public class BchModelAppender {
         // donor command blocks
         s.matCmdBeg=d.ptr(s.paramsBeg+0xC8);
         s.texCmdBeg=d.ptr(s.matHdr+0x10);
-        s.texCmdEnd=s.texCmdBeg+4*le32(D,s.matHdr+0x14);
+        s.texCmdEnd=s.texCmdBeg+4*i32(D,s.matHdr+0x14);
         s.meshCmdBeg=d.meshes.get(dj)[1];
         s.disCmdBeg=d.ptr(s.meshHdr+0x18);
-        s.disCmdEnd=s.disCmdBeg+4*le32(D,s.meshHdr+0x1C);
+        s.disCmdEnd=s.disCmdBeg+4*i32(D,s.meshHdr+0x1C);
         if (!(s.matCmdBeg<s.texCmdBeg && s.texCmdBeg<=s.texCmdEnd)) throw new IllegalStateException("donor mat cmd order");
 
         // donor mat hdr strings
@@ -223,7 +222,7 @@ public class BchModelAppender {
         int matTree=t.ptr(t.modelPtr+0x3C);
         int matArr=t.matValuesPtr, meshArr=t.meshesPtr;
         int P6=Integer.MAX_VALUE; for (int j=0;j<M;j++) P6=Math.min(P6, t.meshes.get(j)[3]);
-        int mmv=t.ptr(t.modelMetaPtr), mmc=le32(T,t.modelMetaPtr+4);
+        int mmv=t.ptr(t.modelMetaPtr), mmc=i32(T,t.modelMetaPtr+4);
         int P7=C+t.contentsLen;
         for (int k=0;k<mmc;k++){ int dp=t.ptr(mmv+k*0xC+8); if (dp!=0&&dp<P7) P7=dp; }
         String tModelName=str(T, t.modelNamePtr);
@@ -264,7 +263,7 @@ public class BchModelAppender {
         List<Node> nMT=buildTree(concat(matNames,newName));
 
         // ---- contents insertions ----
-        int lam=le32(D,ds.meshHdr+4)>>>24;
+        int lam=i32(D,ds.meshHdr+4)>>>24;
         int[] endOff={0x4C,0x54,0x5C,0x64};
         int[] begOff={0x48,0x50,0x58,0x60};
         int P5=t.ptr(t.modelPtr+endOff[lam]);
@@ -314,8 +313,8 @@ public class BchModelAppender {
         byte[] oldC=Arrays.copyOfRange(T, C, C+t.contentsLen);
         // in-place tree node overwrites (nodes 0..N keep OLD string offsets; generic pass remaps)
         for (int n=0;n<=N;n++){
-            writeNode(oldC, d1t-C+n*0xC, nD1.get(n), n==0?-1: (le32(T, d1t+n*0xC+8)));
-            writeNode(oldC, matTree-C+n*0xC, nMT.get(n), n==0?-1: (le32(T, matTree+n*0xC+8)));
+            writeNode(oldC, d1t-C+n*0xC, nD1.get(n), n==0?-1: (i32(T, d1t+n*0xC+8)));
+            writeNode(oldC, matTree-C+n*0xC, nMT.get(n), n==0?-1: (i32(T, matTree+n*0xC+8)));
         }
         byte[] newC=new byte[t.contentsLen+totalIns];
         { int src=0, dst2=0;
@@ -330,31 +329,31 @@ public class BchModelAppender {
         writeNode(newC, newStart[0]-C, nD1.get(N+1), strOff.get(newFull));
         writeNode(newC, newStart[2]-C, nMT.get(N+1), strOff.get(newName));
         // dict1.values[N]
-        poke(newC, newStart[1]-C, newParamsAbs-C);
+        putI32(newC, newStart[1]-C, newParamsAbs-C);
         // new mat hdr (donor bytes, patch)
         System.arraycopy(D, ds.matHdr, newC, newMatHdrAbs-C, 0x2C);
-        poke(newC, newMatHdrAbs-C+0x00, newParamsAbs-C);
-        poke(newC, newMatHdrAbs-C+0x10, newMatCmdRel+(ds.texCmdBeg-ds.matCmdBeg));
-        poke(newC, newMatHdrAbs-C+0x18, newParamsAbs-C+0x110);
-        poke(newC, newMatHdrAbs-C+0x1C, ds.tex0==null?0:strOff.get(str(D,ds.tex0)));
-        poke(newC, newMatHdrAbs-C+0x20, ds.tex1==null?0:strOff.get(str(D,ds.tex1)));
-        poke(newC, newMatHdrAbs-C+0x24, ds.tex2==null?0:strOff.get(str(D,ds.tex2)));
-        poke(newC, newMatHdrAbs-C+0x28, strOff.get(newName));
+        putI32(newC, newMatHdrAbs-C+0x00, newParamsAbs-C);
+        putI32(newC, newMatHdrAbs-C+0x10, newMatCmdRel+(ds.texCmdBeg-ds.matCmdBeg));
+        putI32(newC, newMatHdrAbs-C+0x18, newParamsAbs-C+0x110);
+        putI32(newC, newMatHdrAbs-C+0x1C, ds.tex0==null?0:strOff.get(str(D,ds.tex0)));
+        putI32(newC, newMatHdrAbs-C+0x20, ds.tex1==null?0:strOff.get(str(D,ds.tex1)));
+        putI32(newC, newMatHdrAbs-C+0x24, ds.tex2==null?0:strOff.get(str(D,ds.tex2)));
+        putI32(newC, newMatHdrAbs-C+0x28, strOff.get(newName));
         // new mesh hdr
         System.arraycopy(D, ds.meshHdr, newC, newMeshHdrAbs-C, 0x38);
-        poke(newC, newMeshHdrAbs-C+0x00, N);
-        poke(newC, newMeshHdrAbs-C+0x08, newMeshCmdRel+(ds.meshCmdBeg-ds.meshCmdBeg));
-        poke(newC, newMeshHdrAbs-C+0x10, newSubAbs-C);
-        poke(newC, newMeshHdrAbs-C+0x18, newMeshCmdRel+(ds.disCmdBeg-ds.meshCmdBeg));
-        poke(newC, newMeshHdrAbs-C+0x2C, newModelAbs-C);
-        poke(newC, newMeshHdrAbs-C+0x34, newSubAbs-C+0x34);
+        putI32(newC, newMeshHdrAbs-C+0x00, N);
+        putI32(newC, newMeshHdrAbs-C+0x08, newMeshCmdRel+(ds.meshCmdBeg-ds.meshCmdBeg));
+        putI32(newC, newMeshHdrAbs-C+0x10, newSubAbs-C);
+        putI32(newC, newMeshHdrAbs-C+0x18, newMeshCmdRel+(ds.disCmdBeg-ds.meshCmdBeg));
+        putI32(newC, newMeshHdrAbs-C+0x2C, newModelAbs-C);
+        putI32(newC, newMeshHdrAbs-C+0x34, newSubAbs-C+0x34);
         // donor blocks verbatim
         System.arraycopy(D, ds.paramsBeg, newC, newMatBlkAbs-C, ds.paramsEnd-ds.paramsBeg);
         System.arraycopy(D, ds.subBeg, newC, newMeshBlkAbs-C, ds.subEnd-ds.subBeg);
         // counts
-        poke(newC, 12+4, N+1);                    // content dict1 count (dictTable+0x10 rel to C)
-        poke(newC, newModelAbs-C+0x38, N+1);
-        poke(newC, newModelAbs-C+0x44, M+1);
+        putI32(newC, 12+4, N+1);                    // content dict1 count (dictTable+0x10 rel to C)
+        putI32(newC, newModelAbs-C+0x38, N+1);
+        putI32(newC, newModelAbs-C+0x44, M+1);
 
         // ---- assemble commands ----
         byte[] newCmd=new byte[newCmdLen];
@@ -389,7 +388,7 @@ public class BchModelAppender {
                     case 0x27: case 0x28: { int off=w&0x7FFFFFFF; nw=(w&0x80000000)|(off+rawDelta.applyAsInt(off)); break; }
                     default: throw new IllegalStateException("cmd flag "+Integer.toHexString(e.flag));
                 }
-                poke(newCmd, nl, nw);
+                putI32(newCmd, nl, nw);
                 outTrios.add(new int[]{encode(e.flag, newCommandsAddr+nl, newCommandsAddr, e.tgt)});
             } else {
                 int rel=e.ptrLoc-C;
@@ -400,7 +399,7 @@ public class BchModelAppender {
                     case 2: case 3: nw=w+cmdDelta.applyAsInt(w); break;
                     default: throw new IllegalStateException("cont tgt "+e.tgt);
                 }
-                poke(newC, nl, nw);
+                putI32(newC, nl, nw);
                 outRest.add(encode(e.flag, C+nl, C, e.tgt));
             }
         }
@@ -416,7 +415,7 @@ public class BchModelAppender {
                 case 0x27: case 0x28: nw=(e.word&0x80000000)|newIdxOff; break;
                 default: throw new IllegalStateException();
             }
-            poke(newCmd, nl, nw);
+            putI32(newCmd, nl, nw);
             outTrios.add(new int[]{encode(e.flag, newCommandsAddr+nl, newCommandsAddr, e.tgt)});
         }
         // donor block entries
@@ -437,7 +436,7 @@ public class BchModelAppender {
                           break; }
                 default: throw new IllegalStateException("donor tgt "+e.tgt);
             }
-            poke(newC, nl, nw);
+            putI32(newC, nl, nw);
             outRest.add(encode(e.flag, C+nl, C, e.tgt));
         }
         // synthesized entries
@@ -469,9 +468,9 @@ public class BchModelAppender {
         {
             int cur = (meshArr + 0xC + 4 + 0xC + 0x2C) - C;
             for (int k = 0; k < 4; k++) {
-                poke(newC, newModelAbs - C + begOff[k], cur);
+                putI32(newC, newModelAbs - C + begOff[k], cur);
                 cur += 0x38 * layerCnt[k];
-                poke(newC, newModelAbs - C + endOff[k], cur);
+                putI32(newC, newModelAbs - C + endOff[k], cur);
             }
         }
 
@@ -483,37 +482,37 @@ public class BchModelAppender {
         byte[] out=new byte[fileLen];
         // header
         System.arraycopy(T,0,out,0,0x44);
-        poke(out,8,C);
-        poke(out,12,newStringsAddr);
-        poke(out,16,newCommandsAddr);
-        poke(out,20,newRawAddr);
-        poke(out,24,newRelocAddr);
-        poke(out,28,newRelocAddr);
-        poke(out,32,newC.length);
-        poke(out,36,newStrings.length);
-        poke(out,40,newCmdLen);
-        poke(out,44,newRawLen);
-        poke(out,48,0);
-        poke(out,52,relocCount*4);
-        poke(out,56,(2*(M+1))*4);   // uninitDataSectionLength = 4*addressCount
-        poke(out,60,0);
+        putI32(out,8,C);
+        putI32(out,12,newStringsAddr);
+        putI32(out,16,newCommandsAddr);
+        putI32(out,20,newRawAddr);
+        putI32(out,24,newRelocAddr);
+        putI32(out,28,newRelocAddr);
+        putI32(out,32,newC.length);
+        putI32(out,36,newStrings.length);
+        putI32(out,40,newCmdLen);
+        putI32(out,44,newRawLen);
+        putI32(out,48,0);
+        putI32(out,52,relocCount*4);
+        putI32(out,56,(2*(M+1))*4);   // uninitDataSectionLength = 4*addressCount
+        putI32(out,60,0);
         out[64]=1;
-        poke16(out,66,2*(M+1));
+        putU16(out,66,2*(M+1));
         System.arraycopy(newC,0,out,C,newC.length);
         System.arraycopy(newStrings,0,out,newStringsAddr,newStrings.length);
         System.arraycopy(newCmd,0,out,newCommandsAddr,newCmdLen);
         System.arraycopy(newRaw,0,out,newRawAddr,newRawLen);
         int rp=newRelocAddr;
-        for (int[] e : outTrios){ poke(out,rp,e[0]); rp+=4; }
-        for (int e : outRest){ poke(out,rp,e); rp+=4; }
+        for (int[] e : outTrios){ putI32(out,rp,e[0]); rp+=4; }
+        for (int e : outRest){ putI32(out,rp,e); rp+=4; }
         return out;
     }
 
     static void writeNode(byte[] b, int off, Node n, int nameOff){
-        poke(b,off,(int)n.refBit);
-        poke16(b,off+4,n.left);
-        poke16(b,off+6,n.right);
-        poke(b,off+8, nameOff<0?0:nameOff);
+        putI32(b,off,(int)n.refBit);
+        putU16(b,off+4,n.left);
+        putU16(b,off+6,n.right);
+        putI32(b,off+8, nameOff<0?0:nameOff);
     }
     static List<String> concat(List<String> a, String b){ List<String> r=new ArrayList<>(a); r.add(b); return r; }
 }

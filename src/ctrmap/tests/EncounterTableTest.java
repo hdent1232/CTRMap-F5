@@ -4,6 +4,7 @@ import ctrmap.formats.encounters.EncounterTable;
 import ctrmap.formats.garc.GARC;
 import java.io.File;
 import java.util.Arrays;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Encounter codec validation against the retail EN pack:
@@ -118,11 +119,7 @@ public class EncounterTableTest {
 	}
 
 	static byte[] blob(byte[] pack, int z) {
-		int o0 = le32(pack, 4 + z * 4), o1 = le32(pack, 4 + (z + 1) * 4);
+		int o0 = i32(pack, 4 + z * 4), o1 = i32(pack, 4 + (z + 1) * 4);
 		return Arrays.copyOfRange(pack, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

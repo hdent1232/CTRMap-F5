@@ -10,6 +10,7 @@ import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
 import java.util.List;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Validates the tile painter's region generator on the default tileset donor
@@ -30,7 +31,7 @@ public class PaintedRegionTest {
 		File garc = new File(args.length > 0 ? args[0]
 				: "../RomFS_original_garcs/a/0/3/9");
 		GARC gr = new GARC(garc);
-		byte[] donor = sub(gr.getDecompressedEntry(1), 1); // Route 101 region 1: grass+sea+rock+wood
+		byte[] donor = subfile(gr.getDecompressedEntry(1), 1); // Route 101 region 1: grass+sea+rock+wood
 		if (donor == null || !BchMapModel.isMapModel(donor)) {
 			System.out.println("FAIL donor region 1 not a map model");
 			System.exit(1);
@@ -580,24 +581,5 @@ public class PaintedRegionTest {
 			g[i][20] = TilePalette.PATH;
 		}
 		return g;
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return java.util.Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

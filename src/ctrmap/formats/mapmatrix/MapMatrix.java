@@ -17,6 +17,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
 
 public class MapMatrix {
 
@@ -121,7 +123,7 @@ public class MapMatrix {
 		}
 		//subfile 0's offset lives in the container header, right after the
 		//2-byte magic and 2-byte file count
-		int sub0 = u32(mmContainer, 4);
+		int sub0 = i32(mmContainer, 4);
 		if (sub0 < 0 || sub0 + 8 > mmContainer.length) {
 			return -1;
 		}
@@ -138,14 +140,6 @@ public class MapMatrix {
 			}
 		}
 		return -1;
-	}
-
-	private static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	private static int u32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 
 	public byte[] assembleData() {

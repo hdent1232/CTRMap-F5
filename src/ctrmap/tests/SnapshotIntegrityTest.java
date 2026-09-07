@@ -104,7 +104,7 @@ public class SnapshotIntegrityTest {
 		check(intact > 0, "the archives captured while the game was clean are still retail (" + intact + ")");
 
 		//--- a snapshot retaken from scratch works again ------------------------
-		deleteTree(Workspace.originalSnapshotDir());
+		Scratch.deleteTree(Workspace.originalSnapshotDir());
 		Workspace.snapshotOriginals();
 		check(Workspace.snapshotMissingArchives().isEmpty(),
 				"deleting the snapshot folder allows a whole retake");
@@ -116,7 +116,7 @@ public class SnapshotIntegrityTest {
 		//leave the fixture in that state for anything after it
 		aPartialSnapshotIsReported();
 
-		deleteTree(tmp);
+		Scratch.deleteTree(tmp);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -261,18 +261,5 @@ public class SnapshotIntegrityTest {
 			System.out.println("  FAIL: " + what);
 			fails++;
 		}
-	}
-
-	static void deleteTree(File f) {
-		if (f == null || !f.exists()) {
-			return;
-		}
-		File[] kids = f.listFiles();
-		if (kids != null) {
-			for (File k : kids) {
-				deleteTree(k);
-			}
-		}
-		f.delete();
 	}
 }

@@ -194,7 +194,7 @@ public class DataSafetyGuardsTest {
 		g.packDirectory(dir, pending::contains, ws);
 		check(Arrays.equals(new GARC(archive).getDecompressedEntry(3), edited),
 				"the pack goes through once the archive is released, carrying the edit");
-		deleteTree(root);
+		Scratch.deleteTree(root);
 	}
 
 	/**
@@ -773,16 +773,6 @@ public class DataSafetyGuardsTest {
 			}
 		}
 		return n;
-	}
-
-	static void deleteTree(File f) {
-		File[] kids = f.listFiles();
-		if (kids != null) {
-			for (File k : kids) {
-				deleteTree(k);
-			}
-		}
-		f.delete();
 	}
 
 	/**

@@ -7,6 +7,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.formats.LittleEndian.putU16;
 
 /**
  * Reader/writer for ORAS area texture packs (AreaData a/0/1/4, AD subfile 1) -
@@ -83,12 +86,12 @@ public class BchTexturePack {
 		if ((bch[4] & 0xFF) != 0x21) {
 			return false;
 		}
-		int contentsAdr = peek(bch, 8);
+		int contentsAdr = i32(bch, 8);
 		if (contentsAdr < 0 || contentsAdr + 44 > bch.length) {
 			return false;
 		}
-		int modelCount = peek(bch, contentsAdr + 4);
-		int textureCount = peek(bch, contentsAdr + 40);
+		int modelCount = i32(bch, contentsAdr + 4);
+		int textureCount = i32(bch, contentsAdr + 40);
 		return modelCount == 0 && textureCount > 0;
 	}
 
@@ -104,16 +107,16 @@ public class BchTexturePack {
 		if ((p[4] & 0xFF) != 0x21) {
 			throw new IllegalArgumentException("unsupported BCH backwardCompat " + (p[4] & 0xFF) + " (expected 0x21)");
 		}
-		int contentsAdr = peek(p, 8);
-		int stringsAdr = peek(p, 12);
-		int commandsAdr = peek(p, 16);
-		int rawAdr = peek(p, 20);
-		int count = peek(p, contentsAdr + 40);
-		int ptrTab = peek(p, contentsAdr + 36) + contentsAdr;
+		int contentsAdr = i32(p, 8);
+		int stringsAdr = i32(p, 12);
+		int commandsAdr = i32(p, 16);
+		int rawAdr = i32(p, 20);
+		int count = i32(p, contentsAdr + 40);
+		int ptrTab = i32(p, contentsAdr + 36) + contentsAdr;
 		List<Texture> out = new ArrayList<>();
 		Set<String> seen = new HashSet<>();
 		for (int i = 0; i < count; i++) {
-			int st = peek(p, ptrTab + i * 4) + contentsAdr;
+			int st = i32(p, ptrTab + i * 4) + contentsAdr;
 			Texture t = new Texture();
 			t.format = p[st + 24] & 0xFF;
 			if (t.format >= BPP.length) {
@@ -122,30 +125,30 @@ public class BchTexturePack {
 			if ((p[st + 25] & 0xFF) != 1) {
 				throw new IllegalArgumentException("mipmapped texture unsupported (mipLevels " + (p[st + 25] & 0xFF) + ")");
 			}
-			if (peek(p, st + 4) != 12 || peek(p, st + 12) != 12 || peek(p, st + 20) != 12) {
+			if (i32(p, st + 4) != 12 || i32(p, st + 12) != 12 || i32(p, st + 20) != 12) {
 				throw new IllegalArgumentException("nonstandard texture command word count");
 			}
 			//validate the register opcode words of all 3 unit command sets - a
 			//foreign/edited pack with a different layout must fail loudly here
 			//instead of being mis-parsed by the fixed-template reads below
 			for (int u = 0; u < 3; u++) {
-				int cu = peek(p, st + u * 8) + commandsAdr;
+				int cu = i32(p, st + u * 8) + commandsAdr;
 				if (cu < 0 || cu + 48 > p.length
-						|| peek(p, cu + 4) != ((0xF << 16) | UNIT_REGS[u][0])
-						|| peek(p, cu + 12) != ((0x4 << 16) | UNIT_REGS[u][1])
-						|| peek(p, cu + 20) != ((0xF << 16) | UNIT_REGS[u][2])
-						|| peek(p, cu + 28) != ((0xF << 16) | UNIT_REGS[u][3])
-						|| peek(p, cu + 44) != ((0xF << 16) | 0x23D)) {
+						|| i32(p, cu + 4) != ((0xF << 16) | UNIT_REGS[u][0])
+						|| i32(p, cu + 12) != ((0x4 << 16) | UNIT_REGS[u][1])
+						|| i32(p, cu + 20) != ((0xF << 16) | UNIT_REGS[u][2])
+						|| i32(p, cu + 28) != ((0xF << 16) | UNIT_REGS[u][3])
+						|| i32(p, cu + 44) != ((0xF << 16) | 0x23D)) {
 					throw new IllegalArgumentException("unsupported texture command layout");
 				}
 			}
-			t.name = readCString(p, peek(p, st + 28) + stringsAdr);
+			t.name = readCString(p, i32(p, st + 28) + stringsAdr);
 			if (!seen.add(t.name)) {
 				throw new IllegalArgumentException("duplicate texture name in pack: " + t.name);
 			}
-			int c0 = peek(p, st) + commandsAdr;
-			t.dimParam = peek(p, c0);
-			int dataAdr = peek(p, c0 + 16);
+			int c0 = i32(p, st) + commandsAdr;
+			t.dimParam = i32(p, c0);
+			int dataAdr = i32(p, c0 + 16);
 			int size = t.getWidth() * t.getHeight() * BPP[t.format] / 8;
 			if (rawAdr + dataAdr + size > p.length) {
 				throw new IllegalArgumentException("texture data out of bounds: " + t.name);
@@ -203,30 +206,30 @@ public class BchTexturePack {
 		o[2] = 'H';
 		o[4] = 0x21; //backwardCompat
 		o[5] = 0x21; //forwardCompat
-		poke16(o, 6, 42607); //converterVersion
-		poke(o, 8, contentsAdr);
-		poke(o, 12, stringsAdr);
-		poke(o, 16, commandsAdr);
-		poke(o, 20, rawAdr);
-		poke(o, 24, relocAdr); //rawExt (length 0) shares the relocation address
-		poke(o, 28, relocAdr);
-		poke(o, 32, contentsLen);
-		poke(o, 36, stringsLen);
-		poke(o, 40, commandsLen);
-		poke(o, 44, rawLen);
-		poke(o, 48, 0); //rawExtLen
-		poke(o, 52, relocLen);
-		poke(o, 56, 12 * count); //uninitializedDataSectionLength = 4 * addressCount
-		poke(o, 60, 0); //uninitializedDescriptionSectionLength
-		poke16(o, 64, 1); //flags
-		poke16(o, 66, 3 * count); //addressCount (all 3 units' data address words)
+		putU16(o, 6, 42607); //converterVersion
+		putI32(o, 8, contentsAdr);
+		putI32(o, 12, stringsAdr);
+		putI32(o, 16, commandsAdr);
+		putI32(o, 20, rawAdr);
+		putI32(o, 24, relocAdr); //rawExt (length 0) shares the relocation address
+		putI32(o, 28, relocAdr);
+		putI32(o, 32, contentsLen);
+		putI32(o, 36, stringsLen);
+		putI32(o, 40, commandsLen);
+		putI32(o, 44, rawLen);
+		putI32(o, 48, 0); //rawExtLen
+		putI32(o, 52, relocLen);
+		putI32(o, 56, 12 * count); //uninitializedDataSectionLength = 4 * addressCount
+		putI32(o, 60, 0); //uninitializedDescriptionSectionLength
+		putU16(o, 64, 1); //flags
+		putU16(o, 66, 3 * count); //addressCount (all 3 units' data address words)
 
 		//content header: 15 dicts, only index 3 (textures) is populated
 		for (int d = 0; d < 15; d++) {
 			int base = contentsAdr + d * 12;
-			poke(o, base, d == 3 ? ptrTabOff : 0);
-			poke(o, base + 4, d == 3 ? count : 0);
-			poke(o, base + 8, d < 3 ? 180 + d * 12 : (d == 3 ? treeOff : roots4Off + (d - 4) * 12));
+			putI32(o, base, d == 3 ? ptrTabOff : 0);
+			putI32(o, base + 4, d == 3 ? count : 0);
+			putI32(o, base + 8, d < 3 ? 180 + d * 12 : (d == 3 ? treeOff : roots4Off + (d - 4) * 12));
 		}
 
 		//patricia name tree
@@ -234,25 +237,25 @@ public class BchTexturePack {
 		for (int i = 0; i < nodes.size(); i++) {
 			Node n = nodes.get(i);
 			int base = contentsAdr + treeOff + i * 12;
-			poke(o, base, (int) n.refBit);
-			poke16(o, base + 4, n.left);
-			poke16(o, base + 6, n.right);
-			poke(o, base + 8, i == 0 ? 0 : nameOff[i - 1]);
+			putI32(o, base, (int) n.refBit);
+			putU16(o, base + 4, n.left);
+			putU16(o, base + 6, n.right);
+			putI32(o, base + 8, i == 0 ? 0 : nameOff[i - 1]);
 		}
 
 		//texture pointer table + 32-byte texture structs
 		for (int i = 0; i < count; i++) {
-			poke(o, contentsAdr + ptrTabOff + i * 4, structsOff + i * 32);
+			putI32(o, contentsAdr + ptrTabOff + i * 4, structsOff + i * 32);
 			int st = contentsAdr + structsOff + i * 32;
-			poke(o, st, i * 144);
-			poke(o, st + 4, 12);
-			poke(o, st + 8, i * 144 + 48);
-			poke(o, st + 12, 12);
-			poke(o, st + 16, i * 144 + 96);
-			poke(o, st + 20, 12);
+			putI32(o, st, i * 144);
+			putI32(o, st + 4, 12);
+			putI32(o, st + 8, i * 144 + 48);
+			putI32(o, st + 12, 12);
+			putI32(o, st + 16, i * 144 + 96);
+			putI32(o, st + 20, 12);
 			o[st + 24] = (byte) texes.get(i).format;
 			o[st + 25] = 1; //mipLevels
-			poke(o, st + 28, nameOff[i]);
+			putI32(o, st + 28, nameOff[i]);
 		}
 
 		//strings (no leading empty string, names in table order, no holes)
@@ -271,16 +274,16 @@ public class BchTexturePack {
 			Texture t = texes.get(i);
 			for (int u = 0; u < 3; u++) {
 				int c = commandsAdr + i * 144 + u * 48;
-				poke(o, c, t.dimParam);
-				poke(o, c + 4, (0xF << 16) | regs[u][0]); //dim
-				poke(o, c + 8, 0);
-				poke(o, c + 12, (0x4 << 16) | regs[u][1]); //lod
-				poke(o, c + 16, dataAdr[i]);
-				poke(o, c + 20, (0xF << 16) | regs[u][2]); //data address
-				poke(o, c + 24, t.format);
-				poke(o, c + 28, (0xF << 16) | regs[u][3]); //type
-				poke(o, c + 40, 1);
-				poke(o, c + 44, (0xF << 16) | 0x23D); //block end
+				putI32(o, c, t.dimParam);
+				putI32(o, c + 4, (0xF << 16) | regs[u][0]); //dim
+				putI32(o, c + 8, 0);
+				putI32(o, c + 12, (0x4 << 16) | regs[u][1]); //lod
+				putI32(o, c + 16, dataAdr[i]);
+				putI32(o, c + 20, (0xF << 16) | regs[u][2]); //data address
+				putI32(o, c + 24, t.format);
+				putI32(o, c + 28, (0xF << 16) | regs[u][3]); //type
+				putI32(o, c + 40, 1);
+				putI32(o, c + 44, (0xF << 16) | 0x23D); //block end
 			}
 		}
 
@@ -696,22 +699,6 @@ public class BchTexturePack {
 		return (v + a - 1) / a * a;
 	}
 
-	private static int peek(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
-	}
-
-	private static void poke(byte[] b, int off, int v) {
-		b[off] = (byte) v;
-		b[off + 1] = (byte) (v >> 8);
-		b[off + 2] = (byte) (v >> 16);
-		b[off + 3] = (byte) (v >> 24);
-	}
-
-	private static void poke16(byte[] b, int off, int v) {
-		b[off] = (byte) v;
-		b[off + 1] = (byte) (v >> 8);
-	}
-
 	private static String readCString(byte[] b, int off) {
 		StringBuilder sb = new StringBuilder();
 		for (int i = off; i < b.length && b[i] != 0; i++) {
@@ -728,7 +715,7 @@ public class BchTexturePack {
 		if (offset < 0 || offset >= 0x2000000) {
 			throw new IllegalArgumentException("relocation offset out of 25-bit range: " + offset);
 		}
-		poke(o, pos, (flags << 25) | offset);
+		putI32(o, pos, (flags << 25) | offset);
 		return pos + 4;
 	}
 }
