@@ -3,6 +3,7 @@ package ctrmap.humaninterface;
 import static ctrmap.CtrmapMainframe.*;
 import ctrmap.Workspace;
 import ctrmap.formats.text.LocationNames;
+import ctrmap.formats.zone.WarpTransitions;
 import ctrmap.formats.zone.ZoneEntities;
 import java.awt.Point;
 import javax.swing.DefaultComboBoxModel;
@@ -33,13 +34,7 @@ public class WarpEditForm extends javax.swing.JPanel {
 		for (int i = 0; i < mZonePnl.zones.length; i++) {
 			tgtZone.addItem(i + " - " + LocationNames.getLocName(mZonePnl.zones[i].header.parentMap));
 		}
-		transition.removeAllItems();
-		addBaseTransitions();
-		if (Workspace.isOA()) {
-			addOATransitions();
-		} else {
-			addXYTransitions();
-		}
+		fillTransitionDropdown();
 		reloadEntries(e.warpCount > 0 ? 0 : -1);
 	}
 
@@ -108,227 +103,41 @@ public class WarpEditForm extends javax.swing.JPanel {
 		facedir.setSelectedIndex(warp.faceDirection);
 	}
 
-	private void addBaseTransitions() {
-		String[] baseTr = new String[]{
-			"0 - Warp of No Return",
-			"2 - Warp on touch; Arrive at warp.",
-			"3 - Warp on touch, push; Arrive at neighbor.",
-			"4 - Arrival autotrigger (Contest/Salon)",
-			"5 - Warp on walk; Arrive at neighbor",
-			"6 - Warp pad",};
-		trModelStrArrMerge(baseTr);
+	/**
+	 * The transition rows for the loaded game, in {@link WarpTransitions}'
+	 * order - which is what makes {@link #getTransitionRaw} the row's code.
+	 */
+	public void fillTransitionDropdown() {
+		transitionModel.removeAllElements();
+		for (String label : WarpTransitions.labels(Workspace.isXY())) {
+			transitionModel.addElement(label);
+		}
 	}
 
-	private void addXYTransitions() {
-		String[] XYtr = new String[]{
-			"Lumiose City camera rotate",
-			"=2/No arrival FX",
-			"=3/No arrival FX",
-			"Camera move down (obtuse angle)",
-			"Camera move up low",
-			"Camera move up high",
-			"Camera move up high 2",
-			"Camera move up highest",
-			"Camera rotate up low",
-			"Camera rotate up high",
-			"Camera rotate in warp direction (FlareHQ)",};
-		trModelStrArrMerge(XYtr);
-	}
-
-	private void addOATransitions() {
-		String[] OATr = new String[]{
-			"Ladder up",
-			"Ladder down",
-			"Camera move up low (slow)",
-			"Camera move up low (fast)",
-			"Camera move up low (lowest angle)",
-			"Camera move up low (lower angle)",
-			"Camera move up low (low angle)",
-			"Camera move up high",
-			"Camera move up higher",
-			"Camera move up highest",
-			"Camera move up high (slow)",
-			"Camera move up high (lower angle)",
-			"Camera move up high (low angle)",
-			"Camera move up and left",
-			"Camera move up and right",
-			"Camera move forward",
-			"Camera move above player (90deg)",
-			"Camera zoom out"
-		};
-		trModelStrArrMerge(OATr);
-	}
-
+	/**
+	 * The dropdown row that shows transition code {@code raw}, or -1 for a code
+	 * the table has no name for. Both directions come off the one table; the
+	 * form used to hold two switch statements that disagreed.
+	 */
 	public int getTransitionIndex(int raw) {
-		switch (raw) {
-			case 0:
-				return 0;
-			case 2:
-				return 1;
-			case 3:
-				return 2;
-			case 4:
-				return 3;
-			case 5:
-				return 4;
-			case 6:
-				return 5;
-			case 7:
-				return 6; //XY
-			case 8:
-				return 7; //XY
-			case 9:
-				return 8; //XY
-			case 10:
-				return 6; //OA
-			case 11:
-				return 7; //OA
-		}
-		if (Workspace.isXY()) {
-			switch (raw) {
-				case 15:
-					return 9;
-				case 55:
-					return 10;
-				case 16:
-					return 11;
-				case 17:
-					return 12;
-				case 56:
-					return 13;
-				case 22:
-					return 14;
-				case 57:
-					return 15;
-				case 54:
-					return 16;
-			}
-		} else {
-			switch (raw) {
-				case 55:
-					return 8;
-				case 56:
-					return 9;
-				case 54:
-					return 10;
-				case 17:
-					return 11;
-				case 18:
-					return 12;
-				case 24:
-					return 13;
-				case 23:
-					return 14;
-				case 22:
-					return 15;
-				case 26:
-					return 16;
-				case 20:
-					return 17;
-				case 16:
-					return 18;
-				case 19:
-					return 19;
-				case 15:
-					return 20;
-				case 21:
-					return 21;
-				case 57:
-					return 22;
-				case 25:
-					return 23;
-			}
-		}
-		return -1;
+		return WarpTransitions.index(raw, Workspace.isXY());
 	}
 
+	/** The transition code row {@code index} writes, or -1 for no selection. */
 	public int getTransitionRaw(int index) {
-		switch (index) {
-			case 0:
-				return 0;
-			case 1:
-				return 2;
-			case 2:
-				return 3;
-			case 3:
-				return 4;
-			case 4:
-				return 5;
-			case 5:
-				return 6;
-		}
-		if (Workspace.isXY()) {
-			switch (index) {
-				case 6:
-					return 7;
-				case 7:
-					return 8;
-				case 8:
-					return 9;
-				case 9:
-					return 15;
-				case 10:
-					return 22;
-				case 11:
-					return 16;
-				case 12:
-					return 17;
-				case 13:
-					return 56;
-				case 14:
-					return 22;
-				case 15:
-					return 57;
-				case 16:
-					return 54;
-			}
-		} else {
-			switch (index) {
-				case 6:
-					return 10;
-				case 7:
-					return 11;
-				case 8:
-					return 55;
-				case 9:
-					return 56;
-				case 10:
-					return 54;
-				case 11:
-					return 17;
-				case 12:
-					return 18;
-				case 13:
-					return 24;
-				case 14:
-					return 23;
-				case 15:
-					return 22;
-				case 16:
-					return 26;
-				case 17:
-					return 20;
-				case 18:
-					return 16;
-				case 19:
-					return 19;
-				case 20:
-					return 15;
-				case 21:
-					return 21;
-				case 22:
-					return 57;
-				case 23:
-					return 25;
-			}
-		}
-		return -1;
+		return WarpTransitions.raw(index, Workspace.isXY());
 	}
 
-	public void trModelStrArrMerge(String[] strings) {
-		for (int i = 0; i < strings.length; i++) {
-			transitionModel.addElement(strings[i]);
-		}
+	/**
+	 * The code a save writes when the dropdown is on {@code row} and the record
+	 * currently wears {@code current}: the row's code, or - when nothing is
+	 * selected, which is how a code the table has no name for is shown -
+	 * the record's own code, kept. It used to write {@code getTransitionRaw(-1)},
+	 * which is -1. Held here, apart from saveEntry, because saveEntry reaches
+	 * the main window for its labels and a suite cannot call it.
+	 */
+	public int transitionToWrite(int row, int current) {
+		return row == -1 ? current : getTransitionRaw(row);
 	}
 
 	public void saveEntry() {
@@ -341,7 +150,7 @@ public class WarpEditForm extends javax.swing.JPanel {
 		warp2.targetZone = tgtZone.getSelectedIndex() == -1 ? ZoneEntities.Warp.NO_TARGET : tgtZone.getSelectedIndex();
 		warp2.targetWarpId = tgtWarp.getValue() == null ? ZoneEntities.Warp.NO_TARGET : (Integer) tgtWarp.getValue();
 		warp2.directionality = warpType.getSelectedIndex();
-		warp2.transitionType = getTransitionRaw(transition.getSelectedIndex());
+		warp2.transitionType = transitionToWrite(transition.getSelectedIndex(), warp.transitionType);
 		warp2.coordinateType = posType.getSelectedIndex();
 		warp2.x = (Integer) x.getValue();
 		warp2.y = (Integer) y.getValue();
