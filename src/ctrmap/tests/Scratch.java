@@ -33,7 +33,11 @@ final class Scratch {
 		return f;
 	}
 
+	/** Removes {@code f} and everything under it; nothing, or a path that is not there, is fine. */
 	static void deleteTree(File f) {
+		if (f == null || !f.exists()) {
+			return;
+		}
 		File[] kids = f.listFiles();
 		if (kids != null) {
 			for (File k : kids) {

@@ -6,6 +6,8 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * The dress-up (kisekae) part index that ships alongside the swappable player
@@ -337,7 +339,7 @@ public class DressUpIndex {
 		int sections = u16(c, 2);
 		int[] off = new int[sections + 1];
 		for (int i = 0; i <= sections; i++) {
-			off[i] = u32(c, 4 + 4 * i);
+			off[i] = i32(c, 4 + 4 * i);
 			if (off[i] < 0 || off[i] > c.length || (i > 0 && off[i] < off[i - 1])) {
 				throw new IllegalArgumentException("dress-up container section table is not monotonic");
 			}
@@ -385,13 +387,13 @@ public class DressUpIndex {
 		}
 		int prev = -1;
 		for (int i = 0; i <= sections; i++) {
-			int o = u32(c, 4 + 4 * i);
+			int o = i32(c, 4 + 4 * i);
 			if (o < 0 || o > c.length || o < prev) {
 				return false;
 			}
 			prev = o;
 		}
-		return u32(c, 4 + 4 * sections) == c.length;
+		return i32(c, 4 + 4 * sections) == c.length;
 	}
 
 	private static MasterRow[] readMaster(byte[] b) {
@@ -619,7 +621,7 @@ public class DressUpIndex {
 		if (p + 8 > t.length) {
 			return new int[0];
 		}
-		int len = u32(t, p);
+		int len = i32(t, p);
 		if (len < 8 || (len - 4) % 4 != 0 || p + len != t.length) {
 			return new int[0];
 		}
@@ -628,17 +630,6 @@ public class DressUpIndex {
 			out[i] = u16(t, p + 4 + 4 * i + 2);
 		}
 		return out;
-	}
-
-	// ------------------------------------------------------------------ bytes
-
-	private static int u16(byte[] b, int p) {
-		return (b[p] & 0xFF) | ((b[p + 1] & 0xFF) << 8);
-	}
-
-	private static int u32(byte[] b, int p) {
-		return (b[p] & 0xFF) | ((b[p + 1] & 0xFF) << 8)
-				| ((b[p + 2] & 0xFF) << 16) | ((b[p + 3] & 0xFF) << 24);
 	}
 
 	private static int[] toIntArray(Collection<Integer> c) {

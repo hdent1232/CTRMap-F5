@@ -5,6 +5,8 @@ import ctrmap.formats.garc.GARC;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Validates the world-animation codec + water-scroll splicer against the whole
@@ -40,7 +42,7 @@ public class AnimSpliceTest {
 			if (c == null || c.length < 4 || c[0] != 'A' || c[1] != 'D') {
 				continue; // entry 228 is not an AD container
 			}
-			byte[] sub2 = sub(c, 2);
+			byte[] sub2 = subfile(c, 2);
 			if (sub2 == null) {
 				continue;
 			}
@@ -240,30 +242,11 @@ public class AnimSpliceTest {
 	static void dumpTree(String tag, byte[] t) {
 		StringBuilder sb = new StringBuilder("    " + tag + ":");
 		for (int i = 0; i < t.length / 12; i++) {
-			sb.append(String.format(" [%d]{%08x,L%d,R%d,n%04x}", i, le32(t, i * 12),
+			sb.append(String.format(" [%d]{%08x,L%d,R%d,n%04x}", i, i32(t, i * 12),
 					(t[i * 12 + 4] & 0xFF) | ((t[i * 12 + 5] & 0xFF) << 8),
-					(t[i * 12 + 6] & 0xFF) | ((t[i * 12 + 7] & 0xFF) << 8), le32(t, i * 12 + 8)));
+					(t[i * 12 + 6] & 0xFF) | ((t[i * 12 + 7] & 0xFF) << 8), i32(t, i * 12 + 8)));
 		}
 		System.out.println(sb);
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return java.util.Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 
 	/** A word as the byte-hex its little-endian encoding produces in dumps. */

@@ -1,6 +1,7 @@
 package ctrmap.vault;
 
 import ctrmap.ModDeployer;
+import ctrmap.Ui;
 import ctrmap.Workspace;
 import ctrmap.gamedef.GameProfile;
 import ctrmap.setup.DumpCheck;
@@ -256,7 +257,7 @@ public final class Vault {
 			}
 		} catch (IOException | RuntimeException ex) {
 			out.problem = "The backup could not be completed: "
-					+ (ex.getMessage() != null ? ex.getMessage() : ex.toString())
+					+ Ui.reason(ex)
 					+ "\nThe part-written vault is marked unfinished and will not be trusted.";
 		}
 		return out;
@@ -499,7 +500,7 @@ public final class Vault {
 			}
 		} catch (IOException ex) {
 			bad.add(new Drift("", "the backup could not be read: "
-					+ (ex.getMessage() != null ? ex.getMessage() : ex.toString())));
+					+ Ui.reason(ex)));
 		} finally {
 			if (zf != null) {
 				try {
@@ -569,7 +570,7 @@ public final class Vault {
 			}
 		} catch (IOException ex) {
 			return "Could not restore " + relPath + ": "
-					+ (ex.getMessage() != null ? ex.getMessage() : ex.toString());
+					+ Ui.reason(ex);
 		}
 		//restoring must land the bytes that were sealed, not merely some bytes
 		String got;

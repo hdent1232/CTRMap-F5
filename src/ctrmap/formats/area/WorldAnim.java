@@ -7,6 +7,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import static ctrmap.formats.LittleEndian.putI32;
+import ctrmap.formats.LittleEndian;
 
 /**
  * The AreaData subfile-2 "world animations" BCH - the file that makes water
@@ -65,11 +67,11 @@ public class WorldAnim {
 	// ---- logical reads (stored/on-disk form; pointers resolved on the fly) --
 
 	private int le32(int o) {
-		return (raw[o] & 0xFF) | ((raw[o + 1] & 0xFF) << 8) | ((raw[o + 2] & 0xFF) << 16) | ((raw[o + 3] & 0xFF) << 24);
+		return LittleEndian.i32(raw, o);
 	}
 
 	private int u16(int o) {
-		return (raw[o] & 0xFF) | ((raw[o + 1] & 0xFF) << 8);
+		return LittleEndian.u16(raw, o);
 	}
 
 	private String str(int strOff) {
@@ -423,12 +425,12 @@ public class WorldAnim {
 		byte[] out = new byte[nodes.size() * 12];
 		for (int i = 0; i < nodes.size(); i++) {
 			PNode n = nodes.get(i);
-			putLE(out, i * 12, (int) n.refBit);
+			putI32(out, i * 12, (int) n.refBit);
 			out[i * 12 + 4] = (byte) n.left;
 			out[i * 12 + 5] = (byte) (n.left >> 8);
 			out[i * 12 + 6] = (byte) n.right;
 			out[i * 12 + 7] = (byte) (n.right >> 8);
-			putLE(out, i * 12 + 8, n.nameOff);
+			putI32(out, i * 12 + 8, n.nameOff);
 		}
 		return out;
 	}
@@ -558,7 +560,7 @@ public class WorldAnim {
 		}
 
 		void patchWord(int contLoc, int v) {
-			putLE(contPatch, contLoc, v);
+			putI32(contPatch, contLoc, v);
 		}
 
 		void patchU16(int contLoc, int v) {
@@ -609,20 +611,20 @@ public class WorldAnim {
 			int newLen = align(newRelocAddr + newRelocLen, 128);
 			byte[] out = new byte[newLen];
 			System.arraycopy(raw, 0, out, 0, 0x44);
-			putLE(out, 0x0C, newStringsAddr);
-			putLE(out, 0x14, newRelocAddr);
-			putLE(out, 0x18, newRelocAddr);
-			putLE(out, 0x1C, newRelocAddr);
-			putLE(out, 0x20, newContentsLen);
-			putLE(out, 0x24, newStringsLen);
-			putLE(out, 0x34, newRelocLen);
+			putI32(out, 0x0C, newStringsAddr);
+			putI32(out, 0x14, newRelocAddr);
+			putI32(out, 0x18, newRelocAddr);
+			putI32(out, 0x1C, newRelocAddr);
+			putI32(out, 0x20, newContentsLen);
+			putI32(out, 0x24, newStringsLen);
+			putI32(out, 0x34, newRelocLen);
 			System.arraycopy(contPatch, 0, out, 0x44, contentsLen);
 			System.arraycopy(cont.toByteArray(), 0, out, 0x44 + contentsLen, cont.size());
 			System.arraycopy(raw, stringsAddr, out, newStringsAddr, stringsLen);
 			System.arraycopy(strs.toByteArray(), 0, out, newStringsAddr + stringsLen, strs.size());
 			System.arraycopy(raw, relocAddr, out, newRelocAddr, relocLen);
 			for (int i = 0; i < relocs.size(); i++) {
-				putLE(out, newRelocAddr + relocLen + i * 4, relocs.get(i));
+				putI32(out, newRelocAddr + relocLen + i * 4, relocs.get(i));
 			}
 			return out;
 		}
@@ -744,12 +746,5 @@ public class WorldAnim {
 
 	private static int align(int v, int a) {
 		return (v + a - 1) / a * a;
-	}
-
-	private static void putLE(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
 	}
 }

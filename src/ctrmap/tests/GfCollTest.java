@@ -6,6 +6,8 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import ctrmap.formats.LittleEndian;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Collision engine validation against EVERY retail collision subfile (all
@@ -56,7 +58,7 @@ public class GfCollTest {
 						}
 					}
 					for (int w = 0; w < 640; w += 4) {
-						float a = GfColl.f32(c.boundsRaw, w), q = GfColl.f32(r.boundsRaw, w);
+						float a = LittleEndian.f32(c.boundsRaw, w), q = LittleEndian.f32(r.boundsRaw, w);
 						double err = Math.abs(a - q);
 						worstBoundsErr = Math.max(worstBoundsErr, err);
 						if (err > 0.1) {
@@ -122,23 +124,5 @@ public class GfCollTest {
 			}
 		}
 		return a.length == b.length ? -1 : m;
-	}
-
-	private static byte[] subfile(byte[] c, int i) {
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		byte[] out = new byte[o1 - o0];
-		System.arraycopy(c, o0, out, 0, out.length);
-		return out;
-	}
-
-	private static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

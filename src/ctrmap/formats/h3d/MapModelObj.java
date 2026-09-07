@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.f32;
 
 /**
  * Wavefront OBJ bridge for ORAS map models (the Blender workflow): exports a
@@ -246,9 +247,5 @@ public class MapModelObj {
 			return "mat";
 		}
 		return s.replaceAll("[^A-Za-z0-9_.-]", "_");
-	}
-
-	private static float f32(byte[] b, int o) {
-		return Float.intBitsToFloat((b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24));
 	}
 }

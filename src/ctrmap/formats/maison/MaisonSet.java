@@ -1,5 +1,8 @@
 package ctrmap.formats.maison;
 
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.putU16;
+
 /**
  * One Battle Maison opponent Pokemon "set" - the fixed 16-byte record stored,
  * one per GARC entry, in the three Maison set pools (romfs a/1/8/2, a/1/8/4,
@@ -49,27 +52,18 @@ public class MaisonSet {
 
 	public byte[] write() {
 		byte[] out = new byte[SIZE];
-		pu16(out, 0, species);
+		putU16(out, 0, species);
 		for (int i = 0; i < 4; i++) {
-			pu16(out, 2 + i * 2, moves[i]);
+			putU16(out, 2 + i * 2, moves[i]);
 		}
 		out[0x0A] = (byte) evSpreadPreset;
 		out[0x0B] = (byte) nature;
-		pu16(out, 0x0C, heldItem);
-		pu16(out, 0x0E, formFlag);
+		putU16(out, 0x0C, heldItem);
+		putU16(out, 0x0E, formFlag);
 		return out;
 	}
 
 	public boolean isEmpty() {
 		return species == 0;
-	}
-
-	private static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	private static void pu16(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
 	}
 }

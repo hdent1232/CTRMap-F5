@@ -28,6 +28,8 @@ import javax.swing.JSlider;
 import javax.swing.JToggleButton;
 
 import static ctrmap.CtrmapMainframe.*;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * The tile painter: paint terrain (grass, tall grass, path, sand, water, rock)
@@ -83,7 +85,7 @@ public class TilePainterForm {
 		try {
 			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
-			int sub0 = le32(mm, 4);
+			int sub0 = i32(mm, 4);
 			int w = u16(mm, sub0 + 4), h = u16(mm, sub0 + 6);
 			for (int k = 0; k < w * h; k++) {
 				int id = u16(mm, sub0 + 8 + k * 2);
@@ -814,7 +816,7 @@ public class TilePainterForm {
 		try {
 			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
-			int sub0 = le32(mm, 4);
+			int sub0 = i32(mm, 4);
 			int w = u16(mm, sub0 + 4), h = u16(mm, sub0 + 6);
 			//the zone's own position (X = world x, Y = world z), 720 units per cell
 			int ownX = mZonePnl.zone.header.X / 720;
@@ -1228,14 +1230,6 @@ public class TilePainterForm {
 	static Color textOn(Color c) {
 		double lum = 0.299 * c.getRed() + 0.587 * c.getGreen() + 0.114 * c.getBlue();
 		return lum > 140 ? Color.BLACK : Color.WHITE;
-	}
-
-	static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 
 	/** The 40x40 paint grid canvas. */

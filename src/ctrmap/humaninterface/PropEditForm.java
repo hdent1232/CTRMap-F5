@@ -707,46 +707,28 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (props != null) {
 			saveProp();
 			if (props.modified) {
-				if (dialog) {
-					int rsl = Utils.showSaveConfirmationDialog("Prop data");
-					switch (rsl) {
-						case JOptionPane.YES_OPTION:
-							if (CtrmapMainframe.mTileMapPanel.mm != null) {
-								props.write(CtrmapMainframe.mTileMapPanel.mm);
-							} else if (gr != null) {
-								props.write();
-							}
-							break; //continue to save
-						case JOptionPane.NO_OPTION:
-							break;
-						//closing the dialog means cancel, not "throw the edits away"
-						case JOptionPane.CLOSED_OPTION:
-						case JOptionPane.CANCEL_OPTION:
-							return false;
-					}
-				} else {
-					if (CtrmapMainframe.mTileMapPanel.mm != null) {
-						props.write(CtrmapMainframe.mTileMapPanel.mm);
-					} else if (gr != null) {
-						props.write();
-					}
+				switch (Utils.askToKeep(dialog, "Prop data")) {
+					case SAVE:
+						if (CtrmapMainframe.mTileMapPanel.mm != null) {
+							props.write(CtrmapMainframe.mTileMapPanel.mm);
+						} else if (gr != null) {
+							props.write();
+						}
+						break;
+					case DISCARD:
+						break;
+					case CANCEL:
+						return false;
 				}
 				props.modified = false;
 			}
 			if (reg != null && reg.modified) {
-				if (dialog) {
-					int rsl = Utils.showSaveConfirmationDialog("Prop registry");
-					switch (rsl) {
-						case JOptionPane.YES_OPTION:
-							break; //continue to save
-						case JOptionPane.NO_OPTION:
-							reg.modified = false;
-							return true;
-						//closing the dialog means cancel, not "write it anyway"
-						case JOptionPane.CLOSED_OPTION:
-						case JOptionPane.CANCEL_OPTION:
-							return false;
-					}
+				switch (Utils.askToKeep(dialog, "Prop registry")) {
+					case DISCARD:
+						reg.modified = false;
+						return true;
+					case CANCEL:
+						return false;
 				}
 				reg.write();
 			}

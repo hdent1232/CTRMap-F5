@@ -20,6 +20,9 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * THE ASSET HARVESTER: sweeps every retail map region and mines every
@@ -73,10 +76,10 @@ public class BuildingHarvester {
 		for (int z = 0; z < zones; z++) {
 			try {
 				byte[] c = zo.getDecompressedEntry(z);
-				byte[] hdr = sub(c, 0);
+				byte[] hdr = subfile(c, 0);
 				ZoneHeader h = new ZoneHeader(hdr, ctrmap.Workspace.GameType.ORAS);
 				byte[] mat = mm.getDecompressedEntry(h.mapmatrixID);
-				int sub0 = le32(mat, 4);
+				int sub0 = i32(mat, 4);
 				int w = u16(mat, sub0 + 4), ht = u16(mat, sub0 + 6);
 				String loc = h.parentMap >= 0 && h.parentMap < locNames.size() ? locNames.get(h.parentMap) : "";
 				if (loc == null || loc.isEmpty()) {
@@ -101,8 +104,8 @@ public class BuildingHarvester {
 				continue; //not reachable from any base zone
 			}
 			byte[] rc = gr.getDecompressedEntry(r);
-			byte[] modelB = sub(rc, 1);
-			byte[] collB = sub(rc, 2);
+			byte[] modelB = subfile(rc, 1);
+			byte[] collB = subfile(rc, 2);
 			if (modelB == null || !BchMapModel.isMapModel(modelB)) {
 				continue;
 			}
@@ -140,7 +143,7 @@ public class BuildingHarvester {
 				+ terrain + " terrain, " + edge + " edge-straddling), " + bySig.size() + " unique");
 
 		//verify every candidate through the curated-catalog gate
-		byte[] grassDonor = sub(gr.getDecompressedEntry(1), 1); //Route 101 tileset
+		byte[] grassDonor = subfile(gr.getDecompressedEntry(1), 1); //Route 101 tileset
 		TilePalette[][] grass = new TilePalette[DIM][DIM];
 		for (TilePalette[] row : grass) {
 			java.util.Arrays.fill(row, TilePalette.GRASS);
@@ -674,28 +677,5 @@ public class BuildingHarvester {
 
 	static void union(int[] p, int a, int b) {
 		p[find(p, a)] = find(p, b);
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = (c[2] & 0xFF) | ((c[3] & 0xFF) << 8);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return java.util.Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

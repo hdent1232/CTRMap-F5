@@ -8,6 +8,7 @@ import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
 import java.util.Arrays;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * Paints a block onto real retail maps and asserts that nothing is left
@@ -54,9 +55,9 @@ public class CompositeLeftoverTest {
 			byte[] model, coll, tm;
 			try {
 				container = fd.getDecompressedEntry(region);
-				model = sub(container, 1);
-				coll = sub(container, 2);
-				tm = sub(container, 0);
+				model = subfile(container, 1);
+				coll = subfile(container, 2);
+				tm = subfile(container, 0);
 			} catch (RuntimeException ex) {
 				continue;
 			}
@@ -215,17 +216,5 @@ public class CompositeLeftoverTest {
 
 	private static boolean inside(float x, float z, float x0, float x1, float z0, float z1) {
 		return x > x0 + 0.5f && x < x1 - 0.5f && z > z0 + 0.5f && z < z1 - 0.5f;
-	}
-
-	private static byte[] sub(byte[] c, int i) {
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 <= o0) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	private static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

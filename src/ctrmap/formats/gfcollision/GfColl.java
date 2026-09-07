@@ -4,6 +4,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.f32;
+import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.formats.LittleEndian.putF32;
 
 /**
  * Spec-exact reader/writer for the ORAS "coll" collision subfile (GR subfile 2,
@@ -121,24 +125,24 @@ public class GfColl {
 		out[1] = 'o';
 		out[2] = 'l';
 		out[3] = 'l';
-		p32(out, 4, payloadLen);
-		p32(out, 8, const5d8a);
+		putI32(out, 4, payloadLen);
+		putI32(out, 8, const5d8a);
 		for (int i = 0; i < 5; i++) {
-			p32(out, 0xC + i * 4, consts13212[i]);
+			putI32(out, 0xC + i * 4, consts13212[i]);
 		}
 		System.arraycopy(boundsRaw, 0, out, 0x20, 640);
 		int vtx = 0;
 		for (int b = 0; b < 16; b++) {
-			p32(out, 0x2A0 + b * 8, bucketOff[b]);
-			p32(out, 0x2A0 + b * 8 + 4, bucketCnt[b]);
+			putI32(out, 0x2A0 + b * 8, bucketOff[b]);
+			putI32(out, 0x2A0 + b * 8 + 4, bucketCnt[b]);
 			float[] tris = bucketTris[b];
 			for (int t = 0; t < tris.length / 9; t++) {
 				for (int v = 0; v < 3; v++) {
 					int dst = 0x320 + vtx * 16;
-					pf(out, dst, tris[t * 9 + v * 3]);
-					pf(out, dst + 4, tris[t * 9 + v * 3 + 1]);
-					pf(out, dst + 8, tris[t * 9 + v * 3 + 2]);
-					pf(out, dst + 12, 1f);
+					putF32(out, dst, tris[t * 9 + v * 3]);
+					putF32(out, dst + 4, tris[t * 9 + v * 3 + 1]);
+					putF32(out, dst + 8, tris[t * 9 + v * 3 + 2]);
+					putF32(out, dst + 12, 1f);
 					vtx++;
 				}
 			}
@@ -147,9 +151,9 @@ public class GfColl {
 		out[termAt + 1] = 'e';
 		out[termAt + 2] = 'r';
 		out[termAt + 3] = 'm';
-		p32(out, termAt + 4, 0);
-		p32(out, termAt + 8, const5d8b);
-		p32(out, termAt + 12, 1);
+		putI32(out, termAt + 4, 0);
+		putI32(out, termAt + 8, const5d8b);
+		putI32(out, termAt + 12, 1);
 		return out;
 	}
 
@@ -227,14 +231,14 @@ public class GfColl {
 
 	private static void writeRect(byte[] out, int struct, int rect, float[] x, float[] y, float[] z) {
 		int base = struct * 64 + rect * 32;
-		pf(out, base, x[0]);
-		pf(out, base + 4, y[0]);
-		pf(out, base + 8, z[0]);
-		pf(out, base + 12, 0f);
-		pf(out, base + 16, x[1]);
-		pf(out, base + 20, y[1]);
-		pf(out, base + 24, z[1]);
-		pf(out, base + 28, 0f);
+		putF32(out, base, x[0]);
+		putF32(out, base + 4, y[0]);
+		putF32(out, base + 8, z[0]);
+		putF32(out, base + 12, 0f);
+		putF32(out, base + 16, x[1]);
+		putF32(out, base + 20, y[1]);
+		putF32(out, base + 24, z[1]);
+		putF32(out, base + 28, 0f);
 	}
 
 	/** The stored XZ rect of bucket b, read from a bounds block. */
@@ -282,24 +286,24 @@ public class GfColl {
 		out[1] = 'o';
 		out[2] = 'l';
 		out[3] = 'l';
-		p32(out, 4, 640 + 128 + 16 * totalVerts + 16);
-		p32(out, 8, template != null ? template.const5d8a : 0x5D8);
+		putI32(out, 4, 640 + 128 + 16 * totalVerts + 16);
+		putI32(out, 8, template != null ? template.const5d8a : 0x5D8);
 		int[] c5 = template != null ? template.consts13212 : new int[]{1, 3, 2, 1, 2};
 		for (int i = 0; i < 5; i++) {
-			p32(out, 0xC + i * 4, c5[i]);
+			putI32(out, 0xC + i * 4, c5[i]);
 		}
 		System.arraycopy(bounds, 0, out, 0x20, 640);
 		int vtx = 0;
 		for (int b = 0; b < 16; b++) {
-			p32(out, 0x2A0 + b * 8, vtx);
-			p32(out, 0x2A0 + b * 8 + 4, buckets.get(b).size() * 3);
+			putI32(out, 0x2A0 + b * 8, vtx);
+			putI32(out, 0x2A0 + b * 8 + 4, buckets.get(b).size() * 3);
 			for (float[] t : buckets.get(b)) {
 				for (int v = 0; v < 3; v++) {
 					int dst = 0x320 + vtx * 16;
-					pf(out, dst, t[v * 3]);
-					pf(out, dst + 4, t[v * 3 + 1]);
-					pf(out, dst + 8, t[v * 3 + 2]);
-					pf(out, dst + 12, 1f);
+					putF32(out, dst, t[v * 3]);
+					putF32(out, dst + 4, t[v * 3 + 1]);
+					putF32(out, dst + 8, t[v * 3 + 2]);
+					putF32(out, dst + 12, 1f);
 					vtx++;
 				}
 			}
@@ -308,9 +312,9 @@ public class GfColl {
 		out[termAt + 1] = 'e';
 		out[termAt + 2] = 'r';
 		out[termAt + 3] = 'm';
-		p32(out, termAt + 4, 0);
-		p32(out, termAt + 8, template != null ? template.const5d8b : 0x5D8);
-		p32(out, termAt + 12, 1);
+		putI32(out, termAt + 4, 0);
+		putI32(out, termAt + 8, template != null ? template.const5d8b : 0x5D8);
+		putI32(out, termAt + 12, 1);
 		return out;
 	}
 
@@ -388,24 +392,5 @@ public class GfColl {
 			h = 31 * h + Float.floatToIntBits(a[off + i]);
 		}
 		return h;
-	}
-
-	public static int i32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
-	}
-
-	public static float f32(byte[] b, int o) {
-		return Float.intBitsToFloat(i32(b, o));
-	}
-
-	static void p32(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
-	}
-
-	static void pf(byte[] b, int o, float f) {
-		p32(b, o, Float.floatToIntBits(f));
 	}
 }

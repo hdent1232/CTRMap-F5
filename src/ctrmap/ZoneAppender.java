@@ -3,14 +3,14 @@ package ctrmap;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.garc.LZ11;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.putI32;
+import java.nio.file.Files;
+import ctrmap.formats.containers.ContainerBytes;
 
 /**
  * EXPERIMENTAL: appends a brand-new zone slot to the end of the ZoneData GARC
@@ -129,7 +129,7 @@ public class ZoneAppender {
 		// Master respects saved zone-header edits via the workspace file, but fall
 		// back to the authoritative GARC bytes if it is the wrong structure (a
 		// reverted single-zone append can leave a grown-master artifact behind).
-		byte[] masterBytes = readAll(masterFile);
+		byte[] masterBytes = Files.readAllBytes(masterFile.toPath());
 		if (masterBytes.length != oldCount * ZoneCloner.ZONE_HEADER_SIZE) {
 			masterBytes = garc.getDecompressedEntry(oldCount);
 		}
@@ -141,7 +141,7 @@ public class ZoneAppender {
 		File enWs = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, oldCount + 1);
 		if (enWs != null && Workspace.persistPaths().contains(enWs.getAbsolutePath())) {
 			try {
-				byte[] cand = readAll(enWs);
+				byte[] cand = Files.readAllBytes(enWs.toPath());
 				validateEN(cand, oldCount);
 				enBytes = cand;
 			} catch (RuntimeException stale) {
@@ -151,7 +151,7 @@ public class ZoneAppender {
 		if (enBytes == null) {
 			enBytes = garc.getDecompressedEntry(oldCount + 1);
 		}
-		MultiAppendPayloads p = buildMultiAppendPayloads(readAll(srcFile), masterBytes, enBytes, srcIndex, oldCount, addCount);
+		MultiAppendPayloads p = buildMultiAppendPayloads(Files.readAllBytes(srcFile.toPath()), masterBytes, enBytes, srcIndex, oldCount, addCount);
 
 		// Auto-fork geometry: give each REAL new zone its OWN private map so editing
 		// it does not change the zone it was cloned from (what users expect - a new
@@ -167,14 +167,14 @@ public class ZoneAppender {
 		// new ZOs occupy entries oldCount..m-1 (decompressed on disk, LZ11 on pack)
 		for (int i = 0; i < addCount; i++) {
 			File f = new File(dir, String.valueOf(oldCount + i));
-			writeAll(f, p.newZos[i]);
+			Files.write(f.toPath(), p.newZos[i]);
 			Workspace.addPersist(f);
 			pendingZoneDataOverrides.put(oldCount + i, Boolean.TRUE);
 		}
 		// master table shifts to entry m, EN to entry m+1 (both uncompressed)
 		File masterOut = new File(dir, String.valueOf(m));
-		writeAll(masterOut, p.master);
-		writeAll(enOut, p.en);
+		Files.write(masterOut.toPath(), p.master);
+		Files.write(enOut.toPath(), p.en);
 		Workspace.addPersist(masterOut);
 		Workspace.addPersist(enOut);
 		pendingZoneDataOverrides.put(m, Boolean.FALSE);
@@ -241,7 +241,7 @@ public class ZoneAppender {
 		if (en[0] != 'E' || en[1] != 'N') {
 			throw new IllegalArgumentException("EN pack has wrong magic (0x" + Integer.toHexString(en[0] & 0xFF) + Integer.toHexString(en[1] & 0xFF) + ").");
 		}
-		int count = (en[2] & 0xFF) | ((en[3] & 0xFF) << 8);
+		int count = ContainerBytes.count(en);
 		if (count != expectedCount) {
 			throw new IllegalArgumentException("EN pack count " + count + " != zone count " + expectedCount + ".");
 		}
@@ -251,7 +251,7 @@ public class ZoneAppender {
 		}
 		int prev = -1;
 		for (int i = 0; i <= count; i++) {
-			int off = readIntLE(en, 4 + i * 4);
+			int off = i32(en, 4 + i * 4);
 			if (i == 0 && off != tableEnd) {
 				throw new IllegalArgumentException("EN pack first offset 0x" + Integer.toHexString(off) + " != table end 0x" + Integer.toHexString(tableEnd) + ".");
 			}
@@ -288,10 +288,10 @@ public class ZoneAppender {
 			throw new IllegalArgumentException("appendCount must be >= 0");
 		}
 		validateEN(en, expectedCount);
-		int count = (en[2] & 0xFF) | ((en[3] & 0xFF) << 8);
+		int count = ContainerBytes.count(en);
 		int[] offs = new int[count + 1];
 		for (int i = 0; i <= count; i++) {
-			offs[i] = readIntLE(en, 4 + i * 4);
+			offs[i] = i32(en, 4 + i * 4);
 		}
 		int newCount = count + appendCount;
 		int tableEnd = 4 + (newCount + 1) * 4;
@@ -303,10 +303,10 @@ public class ZoneAppender {
 		out[3] = (byte) (newCount >> 8);
 		int shift = tableEnd - offs[0];
 		for (int i = 0; i <= count; i++) {
-			writeIntLE(out, 4 + i * 4, offs[i] + shift);
+			putI32(out, 4 + i * 4, offs[i] + shift);
 		}
 		for (int j = 1; j <= appendCount; j++) {
-			writeIntLE(out, 4 + (count + j) * 4, offs[count] + shift); //empty blob -> points at data end
+			putI32(out, 4 + (count + j) * 4, offs[count] + shift); //empty blob -> points at data end
 		}
 		System.arraycopy(en, offs[0], out, tableEnd, dataLen);
 		return out;
@@ -370,29 +370,5 @@ public class ZoneAppender {
 		return p;
 	}
 
-	private static int readIntLE(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
-	}
 
-	private static void writeIntLE(byte[] b, int off, int value) {
-		b[off] = (byte) (value & 0xFF);
-		b[off + 1] = (byte) ((value >> 8) & 0xFF);
-		b[off + 2] = (byte) ((value >> 16) & 0xFF);
-		b[off + 3] = (byte) ((value >> 24) & 0xFF);
-	}
-
-	private static byte[] readAll(File f) throws IOException {
-		InputStream in = new FileInputStream(f);
-		byte[] b = new byte[in.available()];
-		in.read(b);
-		in.close();
-		return b;
-	}
-
-	private static void writeAll(File f, byte[] b) throws IOException {
-		OutputStream os = new FileOutputStream(f);
-		os.write(b);
-		os.flush();
-		os.close();
-	}
 }

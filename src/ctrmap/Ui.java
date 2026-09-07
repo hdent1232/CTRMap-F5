@@ -98,9 +98,9 @@ public final class Ui {
 	 * of saying nothing, whichever of the three paths the message takes.
 	 *
 	 * <p>It is a floor, not a fix. A call site that can only produce this
-	 * should name the exception itself - see the {@code getMessage() != null}
-	 * idiom the reports use - and DialogSeamTest refuses a report whose whole
-	 * text is a bare getMessage() for that reason.
+	 * should name the exception itself - {@link #reason} does - and
+	 * DialogSeamTest refuses a report whose whole text is a bare getMessage()
+	 * for that reason.
 	 */
 	static final String NOTHING_SAID = "(no details were given)";
 
@@ -125,6 +125,21 @@ public final class Ui {
 	/** An error, which is what nearly every one of these is. */
 	public static void error(Component parent, String text, String title) {
 		message(parent, text, title, JOptionPane.ERROR_MESSAGE);
+	}
+
+	/**
+	 * What a report says about {@code ex}: its message when it gave one, and
+	 * otherwise the exception itself - "java.lang.NullPointerException" tells
+	 * the reader which line to go and look at, "null" tells them nothing.
+	 *
+	 * <p>Every report that quotes an exception goes through here. The same
+	 * conditional used to be written out at each call site, and a site that
+	 * forgot it showed "null"; a message that is present but blank is treated
+	 * the same as a missing one, because a blank is the silent failure too.
+	 */
+	public static String reason(Throwable ex) {
+		String m = ex.getMessage();
+		return m == null || m.trim().isEmpty() ? ex.toString() : m;
 	}
 
 	/**

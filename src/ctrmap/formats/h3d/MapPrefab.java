@@ -16,6 +16,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import static ctrmap.formats.LittleEndian.f32;
+import static ctrmap.formats.LittleEndian.putF32;
 
 /**
  * A map PREFAB - a reusable piece of map (a building, a bridge, a patch of
@@ -161,8 +163,8 @@ public class MapPrefab {
 				int src = e.getKey(), dst = e.getValue();
 				System.arraycopy(model.raw, g.vtxAbs + src * g.stride, piece.vertexBytes, dst * g.stride, g.stride);
 				//re-anchor the position
-				putF(piece.vertexBytes, dst * g.stride + g.posOffset, pos[src][0] - ax);
-				putF(piece.vertexBytes, dst * g.stride + g.posOffset + 8, pos[src][2] - az);
+				putF32(piece.vertexBytes, dst * g.stride + g.posOffset, pos[src][0] - ax);
+				putF32(piece.vertexBytes, dst * g.stride + g.posOffset + 8, pos[src][2] - az);
 			}
 			piece.triangles = new int[localTris.size()];
 			for (int i = 0; i < localTris.size(); i++) {
@@ -354,7 +356,7 @@ public class MapPrefab {
 		float lo = Float.MAX_VALUE, hi = -Float.MAX_VALUE;
 		for (Piece piece : pieces) {
 			for (int o = piece.posOffset + 4; o + 4 <= piece.vertexBytes.length; o += piece.stride) {
-				float y = getF(piece.vertexBytes, o);
+				float y = f32(piece.vertexBytes, o);
 				lo = Math.min(lo, y);
 				hi = Math.max(hi, y);
 			}
@@ -535,9 +537,9 @@ public class MapPrefab {
 			byte[] vtx = piece.vertexBytes.clone();
 			for (int v = 0; v < n; v++) {
 				int o = v * piece.stride + piece.posOffset;
-				putF(vtx, o, getF(vtx, o) + ax);
-				putF(vtx, o + 4, getF(vtx, o + 4) + dy);
-				putF(vtx, o + 8, getF(vtx, o + 8) + az);
+				putF32(vtx, o, f32(vtx, o) + ax);
+				putF32(vtx, o + 4, f32(vtx, o + 4) + dy);
+				putF32(vtx, o + 8, f32(vtx, o + 8) + az);
 			}
 			if (target >= 0) {
 				//FAST PATH: grow the existing mesh with the same material+layout
@@ -946,17 +948,5 @@ public class MapPrefab {
 			}
 			return p;
 		}
-	}
-
-	private static float getF(byte[] b, int o) {
-		return Float.intBitsToFloat((b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24));
-	}
-
-	private static void putF(byte[] b, int o, float f) {
-		int v = Float.floatToIntBits(f);
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
 	}
 }

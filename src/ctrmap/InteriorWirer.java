@@ -6,6 +6,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * Completes the "place a working building" story: clones a retail interior
@@ -56,7 +57,7 @@ public class InteriorWirer {
 		try {
 			File zf = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
 			byte[] hdr = new ZO(zf).getFile(0);
-			return (hdr[2] & 0xFF) | ((hdr[3] & 0xFF) << 8);
+			return u16(hdr, 2);
 		} catch (Exception ex) {
 			return -1;
 		}

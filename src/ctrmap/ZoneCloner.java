@@ -1,11 +1,10 @@
 package ctrmap;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.putI32;
+import java.nio.file.Files;
 
 /**
  * Clones a zone over another EXISTING ZoneData slot ("safe" variant - no GARC
@@ -72,15 +71,15 @@ public class ZoneCloner {
 		if (srcIndex == dstIndex) {
 			throw new IllegalArgumentException("Source and destination are the same zone.");
 		}
-		byte[] src = readAll(srcZo);
+		byte[] src = Files.readAllBytes(srcZo.toPath());
 		checkZOMagic(src, "Source zone " + srcIndex);
-		byte[] dstOld = readAll(dstZo);
+		byte[] dstOld = Files.readAllBytes(dstZo.toPath());
 		checkZOMagic(dstOld, "Destination zone " + dstIndex);
 		byte[] cloned = cloneZoneBytes(src, dstIndex, patchOAZoneNumber);
-		byte[] master = readAll(masterFile);
+		byte[] master = Files.readAllBytes(masterFile.toPath());
 		patchMasterRow(master, srcIndex, dstIndex, patchOAZoneNumber);
-		writeAll(dstZo, cloned);
-		writeAll(masterFile, master);
+		Files.write(dstZo.toPath(), cloned);
+		Files.write(masterFile.toPath(), master);
 	}
 
 	/**
@@ -93,7 +92,7 @@ public class ZoneCloner {
 		byte[] out = new byte[zo.length];
 		System.arraycopy(zo, 0, out, 0, zo.length);
 		if (patchOAZoneNumber) {
-			int headerOffset = readIntLE(out, 4); //containerOffset[0] = start of subfile 0 (the 0x38-byte zone header)
+			int headerOffset = i32(out, 4); //containerOffset[0] = start of subfile 0 (the 0x38-byte zone header)
 			if (headerOffset < 0 || headerOffset + ZONE_HEADER_SIZE > out.length) {
 				throw new IllegalArgumentException("ZO subfile 0 out of bounds (offset " + headerOffset + ").");
 			}
@@ -124,9 +123,9 @@ public class ZoneCloner {
 		if (zoneNumber < 0 || zoneNumber > 0x7FF) {
 			throw new IllegalArgumentException("Zone number " + zoneNumber + " does not fit in 11 bits.");
 		}
-		int flags = readIntLE(b, headerOffset + UNKNOWN_FLAGS_OFFSET);
+		int flags = i32(b, headerOffset + UNKNOWN_FLAGS_OFFSET);
 		flags = (flags & 0x001FFFFF) | (zoneNumber << OA_ZONE_NUMBER_SHIFT);
-		writeIntLE(b, headerOffset + UNKNOWN_FLAGS_OFFSET, flags);
+		putI32(b, headerOffset + UNKNOWN_FLAGS_OFFSET, flags);
 	}
 
 	private static void checkZOMagic(byte[] zo, String what) {
@@ -138,29 +137,5 @@ public class ZoneCloner {
 		}
 	}
 
-	private static int readIntLE(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
-	}
 
-	private static void writeIntLE(byte[] b, int off, int value) {
-		b[off] = (byte) (value & 0xFF);
-		b[off + 1] = (byte) ((value >> 8) & 0xFF);
-		b[off + 2] = (byte) ((value >> 16) & 0xFF);
-		b[off + 3] = (byte) ((value >> 24) & 0xFF);
-	}
-
-	private static byte[] readAll(File f) throws IOException {
-		InputStream in = new FileInputStream(f);
-		byte[] b = new byte[in.available()];
-		in.read(b);
-		in.close();
-		return b;
-	}
-
-	private static void writeAll(File f, byte[] b) throws IOException {
-		OutputStream os = new FileOutputStream(f);
-		os.write(b);
-		os.flush();
-		os.close();
-	}
 }

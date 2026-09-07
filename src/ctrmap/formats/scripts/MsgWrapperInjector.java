@@ -6,6 +6,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.CRC32;
+import static ctrmap.formats.LittleEndian.i32;
+import ctrmap.formats.containers.ContainerBytes;
 
 /**
  * Headless transplantation of the vanilla message-display routine (the
@@ -291,12 +293,12 @@ public class MsgWrapperInjector {
 			if (magic != 0x5A4F) {
 				return null;
 			}
-			int count = (zo[2] & 0xFF) | ((zo[3] & 0xFF) << 8);
+			int count = ContainerBytes.count(zo);
 			if (count < 3 || zo.length < 4 + (count + 1) * 4) {
 				return null;
 			}
-			int start = readIntLE(zo, 4 + 2 * 4);
-			int end = readIntLE(zo, 4 + 3 * 4);
+			int start = i32(zo, 4 + 2 * 4);
+			int end = i32(zo, 4 + 3 * 4);
 			if (start < 0 || end > zo.length || end <= start) {
 				return null;
 			}
@@ -825,9 +827,5 @@ public class MsgWrapperInjector {
 
 	private static boolean argIs(PawnInstruction ins, int idx, int value) {
 		return ins.argumentCells.length > idx && ins.argumentCells[idx] == value;
-	}
-
-	private static int readIntLE(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
 	}
 }

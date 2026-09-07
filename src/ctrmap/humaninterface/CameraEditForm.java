@@ -230,19 +230,12 @@ public class CameraEditForm extends javax.swing.JPanel {
 		if (f != null) {
 			saveCamera();
 			if (f.modified) {
-				if (dialog) {
-					int rsl = Utils.showSaveConfirmationDialog("Camera data");
-					switch (rsl) {
-						case JOptionPane.YES_OPTION:
-							break; //continue to save
-						case JOptionPane.NO_OPTION:
-							f.modified = false;
-							return true;
-						//closing the dialog means cancel, not "write it anyway"
-						case JOptionPane.CLOSED_OPTION:
-						case JOptionPane.CANCEL_OPTION:
-							return false;
-					}
+				switch (Utils.askToKeep(dialog, "Camera data")) {
+					case DISCARD:
+						f.modified = false;
+						return true;
+					case CANCEL:
+						return false;
 				}
 				f.write();
 				f.modified = false;

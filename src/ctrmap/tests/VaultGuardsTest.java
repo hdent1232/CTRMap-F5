@@ -74,7 +74,7 @@ public class VaultGuardsTest {
 			aTruncatedManifestIsRefused(dump);
 			flowAsksAndNeverAssumesConsent(scratch);
 		} finally {
-			deleteTree(scratch);
+			Scratch.deleteTree(scratch);
 		}
 
 		if (fails == 0) {
@@ -306,15 +306,5 @@ public class VaultGuardsTest {
 
 	static String str(byte[] b) throws IOException {
 		return new String(b, "UTF-8");
-	}
-
-	static void deleteTree(File f) {
-		File[] kids = f.listFiles();
-		if (kids != null) {
-			for (File k : kids) {
-				deleteTree(k);
-			}
-		}
-		f.delete();
 	}
 }

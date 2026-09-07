@@ -15,6 +15,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
  * The trust gate for BchModelAppender, per the verified implementation brief:
@@ -47,7 +49,7 @@ public class BchModelAppenderTest {
 
 		// (A) + (B): baseline verify + self-append, every region
 		for (int i = 0; i < field.length; i += step) {
-			byte[] model = sub(field.getDecompressedEntry(i), 1);
+			byte[] model = subfile(field.getDecompressedEntry(i), 1);
 			if (model == null || !BchMapModel.isMapModel(model)) {
 				continue;
 			}
@@ -71,7 +73,7 @@ public class BchModelAppenderTest {
 		// (C) chained x3 on diverse regions: normal, aux-LUT, bones, null-meta
 		for (int i : new int[]{153, 260, 344, 279}) {
 			try {
-				byte[] model = sub(field.getDecompressedEntry(i), 1);
+				byte[] model = subfile(field.getDecompressedEntry(i), 1);
 				if (model == null || !BchMapModel.isMapModel(model)) {
 					continue;
 				}
@@ -94,8 +96,8 @@ public class BchModelAppenderTest {
 		// (D) cross-append same-area pairs from the brief
 		for (int[] pair : new int[][]{{593, 590}, {4, 22}}) {
 			try {
-				byte[] donor = sub(field.getDecompressedEntry(pair[0]), 1);
-				byte[] target = sub(field.getDecompressedEntry(pair[1]), 1);
+				byte[] donor = subfile(field.getDecompressedEntry(pair[0]), 1);
+				byte[] target = subfile(field.getDecompressedEntry(pair[1]), 1);
 				int dj = pickDonorMesh(donor, target);
 				if (dj < 0) {
 					throw new IllegalStateException("no usable donor mesh");
@@ -139,7 +141,7 @@ public class BchModelAppenderTest {
 	static void piecesStandAlone() {
 		int spans = 0, pools = 0;
 		for (int i : new int[]{1, 30, 153, 500, 800}) {
-			byte[] m = sub(field.getDecompressedEntry(i), 1);
+			byte[] m = subfile(field.getDecompressedEntry(i), 1);
 			if (m == null || !BchMapModel.isMapModel(m)) {
 				continue;
 			}
@@ -318,8 +320,8 @@ public class BchModelAppenderTest {
 		if (da == null || ta == null || da.equals(ta)) {
 			throw new IllegalStateException("pair is not cross-area (areas " + da + "/" + ta + ")");
 		}
-		byte[] donor = sub(field.getDecompressedEntry(donorRegion), 1);
-		byte[] target = sub(field.getDecompressedEntry(targetRegion), 1);
+		byte[] donor = subfile(field.getDecompressedEntry(donorRegion), 1);
+		byte[] target = subfile(field.getDecompressedEntry(targetRegion), 1);
 		int dj = pickDonorMesh(donor, target);
 		if (dj < 0) {
 			throw new IllegalStateException("no usable donor mesh");
@@ -438,7 +440,7 @@ public class BchModelAppenderTest {
 	/** {file1, file11} texture packs of an area (decompressed), entries may be null. */
 	static byte[][] areaPacks(int areaId) {
 		byte[] ad = area.getDecompressedEntry(areaId);
-		byte[] f1 = sub(ad, 1), f11 = sub(ad, 11);
+		byte[] f1 = subfile(ad, 1), f11 = subfile(ad, 11);
 		if (f1 != null && f1.length > 0 && f1[0] == 0x11) {
 			f1 = LZ11.decompress(f1);
 		}
@@ -469,7 +471,7 @@ public class BchModelAppenderTest {
 		int zones = zone.length - 2;
 		for (int z = 0; z < zones; z++) {
 			byte[] zo = zone.getDecompressedEntry(z);
-			byte[] hdr = sub(zo, 0);
+			byte[] hdr = subfile(zo, 0);
 			if (hdr == null || hdr.length < 8) {
 				continue;
 			}
@@ -478,7 +480,7 @@ public class BchModelAppenderTest {
 				continue;
 			}
 			byte[] mm = matrix.getDecompressedEntry(mmId);
-			byte[] grid = sub(mm, 0);
+			byte[] grid = subfile(mm, 0);
 			if (grid == null || grid.length < 8) {
 				continue;
 			}
@@ -498,28 +500,5 @@ public class BchModelAppenderTest {
 				+ " (skip " + selfSkip + ")  chain=" + chainOk + "/4  cross=" + crossOk + "/2  crossArea="
 				+ crossAreaOk + "/1  failures=" + failures);
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
-	}
-
-	static byte[] sub(byte[] c, int i) {
-		if (c == null || c.length < 8) {
-			return null;
-		}
-		int count = u16(c, 2);
-		if (i >= count) {
-			return null;
-		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
-		if (o0 < 0 || o1 > c.length || o1 < o0) {
-			return null;
-		}
-		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }
