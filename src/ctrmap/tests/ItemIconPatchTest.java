@@ -6,6 +6,7 @@ import ctrmap.formats.codepatch.ZoneLimitPatch;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.Arrays;
+import static ctrmap.formats.LittleEndian.putI32;
 
 /**
  * The item-icon patch must refuse the wrong build, and must never write outside
@@ -99,13 +100,13 @@ public class ItemIconPatchTest {
 		byte[] code = new byte[ItemIconTable.NEXT_TABLE + 256];
 		System.arraycopy(ANCHOR, 0, code, ItemIconTable.FILE_OFFSET - ANCHOR.length, ANCHOR.length);
 		//retail shape: item 0 is the blank icon, then a run
-		put(code, ItemIconTable.FILE_OFFSET, 629);
+		putI32(code, ItemIconTable.FILE_OFFSET, 629);
 		for (int i = 1; i < ItemIconTable.COUNT; i++) {
-			put(code, ItemIconTable.FILE_OFFSET + i * 4, (i - 1) % 630);
+			putI32(code, ItemIconTable.FILE_OFFSET + i * 4, (i - 1) % 630);
 		}
 		int[] next = {0, 1, 2, 3, 4, 6, 7, 8};
 		for (int i = 0; i < next.length; i++) {
-			put(code, ItemIconTable.NEXT_TABLE + i * 4, next[i]);
+			putI32(code, ItemIconTable.NEXT_TABLE + i * 4, next[i]);
 		}
 		return code;
 	}
@@ -183,7 +184,7 @@ public class ItemIconPatchTest {
 		//the neighbouring table is the fingerprint: change the word that makes
 		//it distinctive (the skipped 5) and the build is no longer the one these
 		//offsets were measured in
-		put(movedTable, ItemIconTable.NEXT_TABLE + 5 * 4, 5);
+		putI32(movedTable, ItemIconTable.NEXT_TABLE + 5 * 4, 5);
 		check(refusesToRead(movedTable),
 				"a file where the table AFTER the icons does not read as recorded is refused");
 
@@ -191,7 +192,7 @@ public class ItemIconPatchTest {
 		check(refusesToRead(shortFile), "a file too short to hold the table is refused");
 
 		byte[] wildValue = good.clone();
-		put(wildValue, ItemIconTable.FILE_OFFSET + 400 * 4, 999999);
+		putI32(wildValue, ItemIconTable.FILE_OFFSET + 400 * 4, 999999);
 		check(refusesToRead(wildValue),
 				"a 'table' holding a value no icon index could be is refused - it is not the icon table");
 
@@ -285,12 +286,5 @@ public class ItemIconPatchTest {
 		int[] b = a.clone();
 		b[i] = v;
 		return b;
-	}
-
-	static void put(byte[] b, int off, int v) {
-		b[off] = (byte) v;
-		b[off + 1] = (byte) (v >> 8);
-		b[off + 2] = (byte) (v >> 16);
-		b[off + 3] = (byte) (v >> 24);
 	}
 }
