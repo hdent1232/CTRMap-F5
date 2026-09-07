@@ -6,7 +6,6 @@ import ctrmap.formats.containers.ZO;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.gfcollision.GRCollisionFile;
 import ctrmap.formats.text.LocationNames;
-import ctrmap.formats.text.TextFile;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.humaninterface.NPCEditForm;
@@ -112,6 +111,7 @@ public class DataSafetyGuardsTest {
 		mapLoadFailuresSurface();
 		builderAddFileFailureSurfaces(dump);
 		zoneThatDidNotLoadSaysSo(dump);
+		locationNamesLoadThemselves(dump);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -260,7 +260,7 @@ public class DataSafetyGuardsTest {
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
 		GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game)));
 		GARC texts = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.GAMETEXT, Workspace.game)));
-		LocationNames.textfile = new TextFile(temp(texts.getDecompressedEntry(LocationNames.gametextIndex())));
+		LocationNames.load(temp(texts.getDecompressedEntry(LocationNames.gametextIndex())));
 		//three zones make a zone table; the editor is told zone 2 is open
 		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel();
 		zonePnl.zones = new Zone[3];
@@ -876,6 +876,82 @@ public class DataSafetyGuardsTest {
 		} catch (java.lang.reflect.InvocationTargetException ex) {
 			return ex.getCause() == null ? ex : ex.getCause();
 		}
+	}
+
+	/**
+	 * The location-name table loads itself from the open workspace, refuses in
+	 * words when there is none, and does not outlive the workspace it came from.
+	 *
+	 * <p>{@code LocationNames.textfile} was a public field that
+	 * {@code getLocName} dereferenced with no null check: the first caller
+	 * before a load got a NullPointerException with nothing in it, and
+	 * ZoneRepurposeScanner loaded the table by hand first rather than risk it -
+	 * the workaround a missing check forces on every caller. And nothing ever
+	 * cleared it, so a suite that opened a second game in the same JVM kept the
+	 * first game's names.
+	 *
+	 * <p>Runs LAST, because it resets the workspace: with none open the
+	 * accessor must throw IllegalStateException that says so; a table loaded
+	 * by hand is replaced by the next load; and opening a workspace drops the
+	 * hand-loaded table, so the next name read is that workspace's own.
+	 */
+	static void locationNamesLoadThemselves(File dump) throws Exception {
+		if (!dump.isDirectory()) {
+			System.out.println("  skip: no dump at " + dump);
+			return;
+		}
+		//1. nothing loaded, no workspace: a refusal in words, not an NPE
+		Workspace.reset();
+		Throwable refused = null;
+		try {
+			LocationNames.getLocName(0);
+		} catch (Throwable t) {
+			refused = t;
+		}
+		check(refused instanceof IllegalStateException && String.valueOf(refused.getMessage()).contains("workspace"),
+				"with no table and no workspace, a name is refused out loud: " + refused);
+
+		//2. a table loaded by hand answers, and the next load replaces it
+		Workspace.game = Workspace.GameType.ORAS;
+		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
+		GARC texts = new GARC(new File(dump.getAbsolutePath()
+				+ Workspace.getArchivePath(Workspace.ArchiveType.GAMETEXT, Workspace.game)));
+		int table = LocationNames.gametextIndex();
+		LocationNames.load(temp(texts.getDecompressedEntry(table)));
+		int line = -1;
+		String name = null;
+		for (int i = 0; i < 400 && line < 0; i++) {
+			String n = LocationNames.getLocName(i);
+			//a plain name, so the line printed below reads as one
+			if (n != null && n.matches("[A-Za-z][A-Za-z0-9 .'-]+") && !n.equals("NullPointerException")) {
+				line = i;
+				name = n;
+			}
+		}
+		check(line >= 0, "the hand-loaded table names line " + line + ": " + name);
+		int other = -1;
+		for (int t = 0; t < texts.length && other < 0; t++) {
+			if (t == table) {
+				continue;
+			}
+			byte[] b = texts.getDecompressedEntry(t);
+			if (b == null || b.length < 16) {
+				continue;
+			}
+			LocationNames.load(temp(b));
+			if (!name.equals(LocationNames.getLocName(line))) {
+				other = t;
+			}
+		}
+		check(other >= 0, "loading GAMETEXT entry " + other + " instead replaces it: line " + line
+				+ " is now " + LocationNames.getLocName(line));
+
+		//3. opening a workspace drops the hand-loaded table, and the next name
+		//asked for is read from that workspace on demand
+		ScratchGame.open(dump);
+		String fromWorkspace = LocationNames.getLocName(line);
+		check(name.equals(fromWorkspace), "after a workspace opens, line " + line + " is its own "
+				+ name + " again, loaded on demand (got " + fromWorkspace + ")");
 	}
 
 	private static boolean scratchOpen = false;

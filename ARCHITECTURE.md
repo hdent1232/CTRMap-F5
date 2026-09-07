@@ -102,15 +102,22 @@ what the list said when it was written.*
 
 CTRMap keeps a lot in `public static` fields. Measured from the compiled
 classes (`ctrmap.tests.GlobalStateTest`, which counts fields rather than
-grepping lines), there are **139 public static mutable fields outside
-`ctrmap.tests`**, and they are not scattered - they sit in five classes:
+grepping lines), there are **138 public static mutable fields outside
+`ctrmap.tests`**, and they are not scattered - they sit in four classes:
 
 | where | count | what it is |
 |---|---|---|
 | `CtrmapMainframe` | 91 | Swing widgets and the panels/forms of the main window. Each is assigned exactly once, while `main()` builds the window, and never again: effectively final after startup. A smell, low risk. |
 | `Workspace` | 36 | The open game: 4 config strings, 11 derived archive `File`s, 17 `GARC` handles, the `GameType` and `valid`. These do change during operation - but together, as one "a workspace was opened / packed" transaction. |
 | `Selector`, `MatrixSelector` | 11 | The 2D cursor: selected/highlighted tile and region coordinates, rewritten on every mouse move. Genuinely per-interaction mutable state, confined to the two panels that own it. |
-| `LocationNames.textfile` | 1 | A lazily-loaded name table. `getLocName` dereferences it without a null check; `ZoneRepurposeScanner` loads it first by hand rather than risk that, which is the workaround the missing check forces. |
+
+The three per-operation smells the 2026-09-06 sweep listed here are gone:
+`AreaForkPrompt.lastForked` (a return value smuggled through a static) is
+returned as a `ForkResult`; `PawnInstruction.nativeResolver` (per-script
+assembler context in a class field) rides on the `PawnAssembly`; and
+`LocationNames.textfile` (a lazy table dereferenced with no null check) is
+private behind an accessor that loads it and refuses in words when there is
+no workspace to load from.
 
 **Workspace is deliberately NOT de-globalised.** That is a rewrite touching
 every file, on a program that writes people's game data. What exists instead
@@ -118,7 +125,7 @@ is `Workspace.reset()`, which puts every static this class owns back to its
 pre-startup value so a test can exercise more than one workspace per JVM,
 and `GlobalStateTest`, which fails if a field is added and left out of the
 reset, if a public static field is added that nothing ever assigns, or if
-the count of 139 rises. Nothing in the application calls `reset()`:
+the count of 138 rises. Nothing in the application calls `reset()`:
 re-pointing a live workspace goes through `validate()`, and rerouting that
 through the reset would be a behaviour change with no test behind it.
 
