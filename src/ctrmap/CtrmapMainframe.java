@@ -184,7 +184,13 @@ public class CtrmapMainframe {
 
 	public static AbstractTool tool;
 
-	public static List<CM3DRenderable> CM3DComponents = new ArrayList<>();
+	/**
+	 * Everything the 3D view draws. FINAL because the renderer is handed this
+	 * very list once, at construction: reassigning the field would leave the
+	 * renderer looking at the old list, and every component registered after
+	 * the swap would simply never be drawn, with nothing to say so.
+	 */
+	public static final List<CM3DRenderable> CM3DComponents = new ArrayList<>();
 
 	public static void main(String[] args) {
 		//This is the application, so this is where dialogs are allowed. Ui keeps
