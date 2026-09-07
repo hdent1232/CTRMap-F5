@@ -83,9 +83,10 @@ public class GlobalStateTest {
 	 * <p>146 when this suite was written; 141 after five that did not need to
 	 * be mutable globals stopped being them (one dead, two private, two final);
 	 * 140 once AreaForkPrompt handed its fork result back instead of
-	 * remembering it.
+	 * remembering it; 139 once the natives table a SYSREQ_N name resolves in
+	 * rode on the PawnAssembly instead of on PawnInstruction.
 	 */
-	private static final int CEILING = 140;
+	private static final int CEILING = 139;
 
 	private static final int ACC_PUBLIC = 0x0001;
 	private static final int ACC_STATIC = 0x0008;

@@ -172,8 +172,7 @@ public class ScriptAssemblerGuardTest {
 				continue;
 			}
 			scripts++;
-			PawnInstruction.nativeResolver = s;
-			PawnAssembly asm = PawnDisassembler.assembleScript(ScriptEditor.getDisassemblyTextForArea(s));
+			PawnAssembly asm = PawnDisassembler.assembleScript(ScriptEditor.getDisassemblyTextForArea(s), s);
 			int[] want = PawnDisassembler.getRawInstructions(s.instructions);
 			int[] got = PawnDisassembler.getRawInstructions(instructions(asm));
 			if (!asm.errors.isEmpty() || !Arrays.equals(want, got)) {
@@ -183,7 +182,6 @@ public class ScriptAssemblerGuardTest {
 				}
 			}
 		}
-		PawnInstruction.nativeResolver = null;
 		check(scripts > 400, "the corpus has zone scripts: " + scripts);
 		check(bad == 0, "every vanilla script's disassembly assembles back to itself (" + bad + " of " + scripts + " did not)");
 	}
@@ -209,9 +207,8 @@ public class ScriptAssemblerGuardTest {
 			try {
 				GFLPawnScript cand = new GFLPawnScript(sub);
 				cand.decompressThis();
-				PawnInstruction.nativeResolver = cand;
 				String t = ScriptEditor.getDisassemblyTextForArea(cand);
-				if (t.contains("PUSH_C(") && PawnDisassembler.assembleScript(t).errors.isEmpty()) {
+				if (t.contains("PUSH_C(") && PawnDisassembler.assembleScript(t, cand).errors.isEmpty()) {
 					s = cand;
 					text = t;
 				}

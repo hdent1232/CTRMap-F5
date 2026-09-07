@@ -77,8 +77,6 @@ public class ScriptEditor extends javax.swing.JPanel {
 	public void loadScript(GFLPawnScript scr) {
 		loaded = false;
 		script = scr;
-		//let fromString resolve SYSREQ_N native NAMES back to this script's indices
-		ctrmap.formats.scripts.PawnInstruction.nativeResolver = scr;
 		currentIdx = -1;
 		sdl.setScript(scr);
 		sdf.setScript(scr);
@@ -144,7 +142,7 @@ public class ScriptEditor extends javax.swing.JPanel {
 						int changedLineEnd = getCountOfLineEndsInString(text, off + len);
 						//int addedLines = changedLineEnd - changedLineStart;
 						String newText = text.substring(0, offset) + text.substring(offset + length);
-						List<PawnSubroutine> reassembled = PawnDisassembler.assembleScript(newText).subroutines;
+						List<PawnSubroutine> reassembled = PawnDisassembler.assembleScript(newText, scr).subroutines;
 						int insCount = 0;
 						for (PawnSubroutine s : reassembled) {
 							insCount += s.instructions.size();
@@ -338,7 +336,7 @@ public class ScriptEditor extends javax.swing.JPanel {
 						}
 					}
 
-					List<PawnSubroutine> reassembled = PawnDisassembler.assembleScript(text).subroutines;
+					List<PawnSubroutine> reassembled = PawnDisassembler.assembleScript(text, scr).subroutines;
 					int insCount = 0;
 					for (PawnSubroutine s : reassembled) {
 						insCount += s.instructions.size();
@@ -975,7 +973,7 @@ public class ScriptEditor extends javax.swing.JPanel {
 	 * the shortened script in the same click. The verdict goes to the output box.
 	 */
 	private PawnAssembly assemble() {
-		PawnAssembly asm = PawnDisassembler.assembleScript(disassemblyArea.getText());
+		PawnAssembly asm = PawnDisassembler.assembleScript(disassemblyArea.getText(), script);
 		if (!asm.errors.isEmpty()) {
 			assemblerOutput.setText("Assembler refused:\n" + asm.report() + asm.errors.size() + " line(s) did not assemble. The script was not changed.");
 			return asm;

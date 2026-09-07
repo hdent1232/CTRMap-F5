@@ -27,9 +27,39 @@ public class PawnAssembly {
 
 	private final Scanner source;
 	private int line;
+	/**
+	 * The script whose natives table a {@code SYSREQ_N} written by native NAME
+	 * resolves against, or null when only numeric indices are accepted. Held
+	 * here, on the run that needs it, because it is per-script: it used to be
+	 * a static on PawnInstruction that the editor set on load and five suites
+	 * set and nulled again in a finally, and two scripts assembled in the same
+	 * JVM could quietly resolve the same name to each other's index.
+	 */
+	private final GFLPawnScript natives;
 
+	/** An assembly that accepts natives by index only. */
 	public PawnAssembly(String code) {
+		this(code, null);
+	}
+
+	/** An assembly that also accepts natives by name, resolved in nativesFrom's table. */
+	public PawnAssembly(String code, GFLPawnScript nativesFrom) {
 		source = new Scanner(code);
+		natives = nativesFrom;
+	}
+
+	/** natives[] index whose registered name hash matches {@code name}, or -1. */
+	int resolveNativeIndex(String name) {
+		if (natives == null) {
+			return -1;
+		}
+		int hash = ctrmap.scripts.GfHash.hashForName(name);
+		for (int i = 0; i < natives.natives.size(); i++) {
+			if (natives.natives.get(i).data[1] == hash) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	boolean hasNextLine() {
