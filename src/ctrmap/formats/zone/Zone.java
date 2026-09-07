@@ -53,8 +53,7 @@ public class Zone {
 				//used to die on the event thread where nobody saw it. getMessage()
 				//is null for a thrower that named no reason, and a report that
 				//reads "null" is the silent failure again, so name the throw.
-				ctrmap.Ui.error(null, ex.getMessage() != null ? ex.getMessage() : ex.toString(),
-						"Entity data not saved");
+				ctrmap.Ui.error(null, ctrmap.Ui.reason(ex), "Entity data not saved");
 				return false;
 			}
 			if (dialog){
