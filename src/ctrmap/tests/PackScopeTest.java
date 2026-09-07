@@ -115,16 +115,27 @@ public class PackScopeTest {
 				"a pack takes only the files the workspace lists as edited, in entry order: ["
 				+ names.toString().trim() + "]");
 
-		GARC zo = Workspace.zo;
-		int last = zo.getEntryCount() - 1;
+		//Asked on two archives whose tails are stored differently - field data
+		//ends compressed, zone data ends raw (measured) - so a rule that answers
+		//"always compressed" or "always raw" cannot pass as "inherits". Proving
+		//this section by breaking found exactly that: on zone data alone,
+		//"return false" and "inherit" agree.
+		GARC gr = Workspace.gr, zo = Workspace.zo;
+		int grLast = gr.getEntryCount() - 1, zoLast = zo.getEntryCount() - 1;
+		check(gr.isEntryCompressed(grLast) && !zo.isEntryCompressed(zoLast),
+				"the fixtures disagree about their tails (field data ends compressed, zone data raw)"
+				+ " - so the rule is asked both ways");
 		check(zo.storedCompressed(null, 0) == zo.isEntryCompressed(0)
-				&& zo.storedCompressed(null, last) == zo.isEntryCompressed(last),
-				"an existing slot keeps the way it is stored (entry 0 compressed=" + zo.isEntryCompressed(0) + ")");
-		check(zo.storedCompressed(null, last + 1) == zo.isEntryCompressed(last)
-				&& zo.storedCompressed(null, last + 7) == zo.isEntryCompressed(last),
-				"an appended slot inherits the last entry's");
-		check(!zo.storedCompressed(Boolean.FALSE, 0) && zo.storedCompressed(Boolean.TRUE, last + 1),
-				"and an explicit override wins for any slot");
+				&& zo.storedCompressed(null, zoLast) == zo.isEntryCompressed(zoLast)
+				&& gr.storedCompressed(null, 0) == gr.isEntryCompressed(0)
+				&& gr.storedCompressed(null, grLast) == gr.isEntryCompressed(grLast),
+				"an existing slot keeps the way it is stored");
+		check(gr.storedCompressed(null, grLast + 1) && gr.storedCompressed(null, grLast + 7)
+				&& !zo.storedCompressed(null, zoLast + 1) && !zo.storedCompressed(null, zoLast + 7),
+				"an appended slot inherits the last entry's: compressed after field data, raw after zone data");
+		check(!gr.storedCompressed(Boolean.FALSE, 0) && gr.storedCompressed(Boolean.TRUE, grLast + 1)
+				&& zo.storedCompressed(Boolean.TRUE, 0) && !zo.storedCompressed(Boolean.FALSE, zoLast + 1),
+				"and an explicit override wins for any slot, either way");
 	}
 
 	static void pack() throws Exception {
