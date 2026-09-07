@@ -32,9 +32,18 @@ import javax.swing.JOptionPane;
  * side becomes ordinary code.
  *
  * <p>Routing a message through here makes "the user was told" a fact a test can
- * assert, and makes the path runnable without a screen. Only the paths a guard
- * needs to see have been moved over - a blanket migration of all 280 would be
- * churn without a reader.
+ * assert, and makes the path runnable without a screen. Every call site now
+ * does, bar the twenty-two whose dialog body is a live Swing form the user
+ * fills in - the seam carries a String on purpose, and recording
+ * "javax.swing.JPanel[...]" would be an assertion about nothing.
+ * DialogSeamTest holds that list, with a reason against each entry and a
+ * ceiling, so the tree cannot drift back.
+ *
+ * <p>Two things follow from being the only way out. The first is that this
+ * class must never say nothing: a blank dialog is the silent failure it was
+ * built to remove, so a null or empty text is replaced rather than shown or
+ * dereferenced. The second is that a question nobody answers must mean "do
+ * nothing" - see {@link #confirm} and {@link #option}.
  */
 public final class Ui {
 
@@ -76,8 +85,32 @@ public final class Ui {
 		dialogsEnabled = true;
 	}
 
+	/**
+	 * What a report says when whatever it was handed said nothing.
+	 *
+	 * <p>A guard that reports nothing is a silent failure with extra steps -
+	 * the whole reason this class exists - and a blank dialog is exactly that:
+	 * the user sees a title and no reason. The common way to get one is
+	 * {@code ex.getMessage()}, which is null for a whole family of exceptions
+	 * (NullPointerException among them), and a null went further still: the
+	 * dialogs-off path called {@code text.replace} on it, so the report of a
+	 * failure died reporting it. Substituting here means the seam is incapable
+	 * of saying nothing, whichever of the three paths the message takes.
+	 *
+	 * <p>It is a floor, not a fix. A call site that can only produce this
+	 * should name the exception itself - see the {@code getMessage() != null}
+	 * idiom the reports use - and DialogSeamTest refuses a report whose whole
+	 * text is a bare getMessage() for that reason.
+	 */
+	static final String NOTHING_SAID = "(no details were given)";
+
+	private static String saying(String text) {
+		return text == null || text.trim().isEmpty() ? NOTHING_SAID : text;
+	}
+
 	/** Tells the user something, through a dialog or through a test's sink. */
 	public static void message(Component parent, String text, String title, int type) {
+		text = saying(text);
 		if (sink != null) {
 			sink.message(parent, text, title, type);
 			return;
@@ -119,6 +152,7 @@ public final class Ui {
 	 * behaviour change dressed up as a refactor.
 	 */
 	public static int confirm(Component parent, String text, String title, int optionType, int messageType) {
+		text = saying(text);
 		if (sink != null) {
 			return sink.confirm(parent, text, title, optionType);
 		}
@@ -141,6 +175,7 @@ public final class Ui {
 	 */
 	public static int option(Component parent, String text, String title, int optionType, int messageType,
 			Object[] options, Object initial) {
+		text = saying(text);
 		if (sink != null) {
 			return sink.option(parent, text, title, options);
 		}
@@ -156,6 +191,7 @@ public final class Ui {
 	 * cancel - which is also what nobody-is-there answers.
 	 */
 	public static Object input(Component parent, String text, String title, int type, Object[] options, Object initial) {
+		text = saying(text);
 		if (sink != null) {
 			return sink.input(parent, text, title, type, options, initial);
 		}

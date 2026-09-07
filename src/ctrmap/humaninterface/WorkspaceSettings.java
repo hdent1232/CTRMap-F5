@@ -112,6 +112,11 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 					Workspace.GAMEDIR_PATH = gameField.getText();
 					Workspace.cleanAndReload();
 					break;
+				//closing the dialog means cancel. Without this case the switch
+				//ended and the settings were saved with the new game path but
+				//WITHOUT the cleanup - the cross-injection this warning exists
+				//to prevent, reached by pressing X.
+				case JOptionPane.CLOSED_OPTION:
 				case JOptionPane.CANCEL_OPTION:
 					return; //interrupt the saving process
 			}
