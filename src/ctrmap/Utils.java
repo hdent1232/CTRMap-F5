@@ -22,6 +22,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.text.BadLocationException;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * Class to store methods used between various classes that do not extend the
@@ -80,7 +81,7 @@ public class Utils {
 			if (in.read(b) != 2) {
 				return false;
 			}
-			return ((b[0] & 0xFF) | ((b[1] & 0xFF) << 8)) == magic;
+			return u16(b, 0) == magic;
 		} catch (IOException ex) {
 			return false;
 		} finally {

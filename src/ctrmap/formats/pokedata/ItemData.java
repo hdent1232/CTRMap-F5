@@ -1,5 +1,7 @@
 package ctrmap.formats.pokedata;
 
+import ctrmap.formats.LittleEndian;
+
 /**
  * One item's 36-byte record, as Gen 6 and Gen 7 store it.
  *
@@ -77,12 +79,11 @@ public final class ItemData {
 	}
 
 	private int u16(int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8);
+		return LittleEndian.u16(b, off);
 	}
 
 	private void u16(int off, int v) {
-		b[off] = (byte) v;
-		b[off + 1] = (byte) (v >> 8);
+		LittleEndian.putU16(b, off, v);
 	}
 
 	// ---- the fields --------------------------------------------------------

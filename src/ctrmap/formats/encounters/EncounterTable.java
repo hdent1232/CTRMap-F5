@@ -3,6 +3,9 @@ package ctrmap.formats.encounters;
 import java.util.ArrayList;
 import java.util.List;
 import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.putI32;
+import ctrmap.formats.containers.ContainerBytes;
 
 /**
  * One zone's wild-encounter table - the 260-byte record inside the ORAS "EN"
@@ -73,7 +76,7 @@ public class EncounterTable {
 		int off = 0x0E;
 		for (int b = 0; b < BANK_SIZES.length; b++) {
 			for (int s = 0; s < BANK_SIZES[b]; s++) {
-				int raw = (blob[off] & 0xFF) | ((blob[off + 1] & 0xFF) << 8);
+				int raw = u16(blob, off);
 				Slot slot = t.banks[b][s];
 				slot.species = raw & 0x7FF;
 				slot.form = raw >>> 11;
@@ -143,7 +146,7 @@ public class EncounterTable {
 
 	/** The zone's table from an EN pack, or null when the zone has no wild data. */
 	public static EncounterTable read(byte[] enPack, int zone) {
-		int count = (enPack[2] & 0xFF) | ((enPack[3] & 0xFF) << 8);
+		int count = ContainerBytes.count(enPack);
 		if (zone < 0 || zone >= count) {
 			throw new IllegalArgumentException("zone " + zone + " out of range (EN count " + count + ")");
 		}
@@ -162,7 +165,7 @@ public class EncounterTable {
 	 * carried verbatim; the offset table is rebuilt.
 	 */
 	public static byte[] write(byte[] enPack, int zone, EncounterTable table) {
-		int count = (enPack[2] & 0xFF) | ((enPack[3] & 0xFF) << 8);
+		int count = ContainerBytes.count(enPack);
 		if (zone < 0 || zone >= count) {
 			throw new IllegalArgumentException("zone " + zone + " out of range (EN count " + count + ")");
 		}
@@ -190,19 +193,12 @@ public class EncounterTable {
 		out[3] = (byte) (count >> 8);
 		int off = tableEnd;
 		for (int z = 0; z < count; z++) {
-			p32(out, 4 + z * 4, off);
+			putI32(out, 4 + z * 4, off);
 			byte[] bz = blobs.get(z);
 			System.arraycopy(bz, 0, out, off, bz.length);
 			off += bz.length;
 		}
-		p32(out, 4 + count * 4, off);
+		putI32(out, 4 + count * 4, off);
 		return out;
-	}
-
-	private static void p32(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
-		b[o + 2] = (byte) (v >> 16);
-		b[o + 3] = (byte) (v >> 24);
 	}
 }

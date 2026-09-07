@@ -278,7 +278,7 @@ public class GFMessageFile {
 	private static byte[] cryptLineData(byte[] data, int key) {
 		byte[] result = new byte[data.length];
 		for (int i = 0; i < result.length; i += 2) {
-			int v = (data[i] & 0xFF) | ((data[i + 1] & 0xFF) << 8);
+			int v = u16(data, i);
 			v ^= key;
 			result[i] = (byte) (v & 0xFF);
 			result[i + 1] = (byte) ((v >>> 8) & 0xFF);

@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.putI32;
+import static ctrmap.formats.LittleEndian.putU16;
 
 /**
  * Reader/writer for ORAS area texture packs (AreaData a/0/1/4, AD subfile 1) -
@@ -204,30 +206,30 @@ public class BchTexturePack {
 		o[2] = 'H';
 		o[4] = 0x21; //backwardCompat
 		o[5] = 0x21; //forwardCompat
-		poke16(o, 6, 42607); //converterVersion
-		poke(o, 8, contentsAdr);
-		poke(o, 12, stringsAdr);
-		poke(o, 16, commandsAdr);
-		poke(o, 20, rawAdr);
-		poke(o, 24, relocAdr); //rawExt (length 0) shares the relocation address
-		poke(o, 28, relocAdr);
-		poke(o, 32, contentsLen);
-		poke(o, 36, stringsLen);
-		poke(o, 40, commandsLen);
-		poke(o, 44, rawLen);
-		poke(o, 48, 0); //rawExtLen
-		poke(o, 52, relocLen);
-		poke(o, 56, 12 * count); //uninitializedDataSectionLength = 4 * addressCount
-		poke(o, 60, 0); //uninitializedDescriptionSectionLength
-		poke16(o, 64, 1); //flags
-		poke16(o, 66, 3 * count); //addressCount (all 3 units' data address words)
+		putU16(o, 6, 42607); //converterVersion
+		putI32(o, 8, contentsAdr);
+		putI32(o, 12, stringsAdr);
+		putI32(o, 16, commandsAdr);
+		putI32(o, 20, rawAdr);
+		putI32(o, 24, relocAdr); //rawExt (length 0) shares the relocation address
+		putI32(o, 28, relocAdr);
+		putI32(o, 32, contentsLen);
+		putI32(o, 36, stringsLen);
+		putI32(o, 40, commandsLen);
+		putI32(o, 44, rawLen);
+		putI32(o, 48, 0); //rawExtLen
+		putI32(o, 52, relocLen);
+		putI32(o, 56, 12 * count); //uninitializedDataSectionLength = 4 * addressCount
+		putI32(o, 60, 0); //uninitializedDescriptionSectionLength
+		putU16(o, 64, 1); //flags
+		putU16(o, 66, 3 * count); //addressCount (all 3 units' data address words)
 
 		//content header: 15 dicts, only index 3 (textures) is populated
 		for (int d = 0; d < 15; d++) {
 			int base = contentsAdr + d * 12;
-			poke(o, base, d == 3 ? ptrTabOff : 0);
-			poke(o, base + 4, d == 3 ? count : 0);
-			poke(o, base + 8, d < 3 ? 180 + d * 12 : (d == 3 ? treeOff : roots4Off + (d - 4) * 12));
+			putI32(o, base, d == 3 ? ptrTabOff : 0);
+			putI32(o, base + 4, d == 3 ? count : 0);
+			putI32(o, base + 8, d < 3 ? 180 + d * 12 : (d == 3 ? treeOff : roots4Off + (d - 4) * 12));
 		}
 
 		//patricia name tree
@@ -235,25 +237,25 @@ public class BchTexturePack {
 		for (int i = 0; i < nodes.size(); i++) {
 			Node n = nodes.get(i);
 			int base = contentsAdr + treeOff + i * 12;
-			poke(o, base, (int) n.refBit);
-			poke16(o, base + 4, n.left);
-			poke16(o, base + 6, n.right);
-			poke(o, base + 8, i == 0 ? 0 : nameOff[i - 1]);
+			putI32(o, base, (int) n.refBit);
+			putU16(o, base + 4, n.left);
+			putU16(o, base + 6, n.right);
+			putI32(o, base + 8, i == 0 ? 0 : nameOff[i - 1]);
 		}
 
 		//texture pointer table + 32-byte texture structs
 		for (int i = 0; i < count; i++) {
-			poke(o, contentsAdr + ptrTabOff + i * 4, structsOff + i * 32);
+			putI32(o, contentsAdr + ptrTabOff + i * 4, structsOff + i * 32);
 			int st = contentsAdr + structsOff + i * 32;
-			poke(o, st, i * 144);
-			poke(o, st + 4, 12);
-			poke(o, st + 8, i * 144 + 48);
-			poke(o, st + 12, 12);
-			poke(o, st + 16, i * 144 + 96);
-			poke(o, st + 20, 12);
+			putI32(o, st, i * 144);
+			putI32(o, st + 4, 12);
+			putI32(o, st + 8, i * 144 + 48);
+			putI32(o, st + 12, 12);
+			putI32(o, st + 16, i * 144 + 96);
+			putI32(o, st + 20, 12);
 			o[st + 24] = (byte) texes.get(i).format;
 			o[st + 25] = 1; //mipLevels
-			poke(o, st + 28, nameOff[i]);
+			putI32(o, st + 28, nameOff[i]);
 		}
 
 		//strings (no leading empty string, names in table order, no holes)
@@ -272,16 +274,16 @@ public class BchTexturePack {
 			Texture t = texes.get(i);
 			for (int u = 0; u < 3; u++) {
 				int c = commandsAdr + i * 144 + u * 48;
-				poke(o, c, t.dimParam);
-				poke(o, c + 4, (0xF << 16) | regs[u][0]); //dim
-				poke(o, c + 8, 0);
-				poke(o, c + 12, (0x4 << 16) | regs[u][1]); //lod
-				poke(o, c + 16, dataAdr[i]);
-				poke(o, c + 20, (0xF << 16) | regs[u][2]); //data address
-				poke(o, c + 24, t.format);
-				poke(o, c + 28, (0xF << 16) | regs[u][3]); //type
-				poke(o, c + 40, 1);
-				poke(o, c + 44, (0xF << 16) | 0x23D); //block end
+				putI32(o, c, t.dimParam);
+				putI32(o, c + 4, (0xF << 16) | regs[u][0]); //dim
+				putI32(o, c + 8, 0);
+				putI32(o, c + 12, (0x4 << 16) | regs[u][1]); //lod
+				putI32(o, c + 16, dataAdr[i]);
+				putI32(o, c + 20, (0xF << 16) | regs[u][2]); //data address
+				putI32(o, c + 24, t.format);
+				putI32(o, c + 28, (0xF << 16) | regs[u][3]); //type
+				putI32(o, c + 40, 1);
+				putI32(o, c + 44, (0xF << 16) | 0x23D); //block end
 			}
 		}
 
@@ -697,18 +699,6 @@ public class BchTexturePack {
 		return (v + a - 1) / a * a;
 	}
 
-	private static void poke(byte[] b, int off, int v) {
-		b[off] = (byte) v;
-		b[off + 1] = (byte) (v >> 8);
-		b[off + 2] = (byte) (v >> 16);
-		b[off + 3] = (byte) (v >> 24);
-	}
-
-	private static void poke16(byte[] b, int off, int v) {
-		b[off] = (byte) v;
-		b[off + 1] = (byte) (v >> 8);
-	}
-
 	private static String readCString(byte[] b, int off) {
 		StringBuilder sb = new StringBuilder();
 		for (int i = off; i < b.length && b[i] != 0; i++) {
@@ -725,7 +715,7 @@ public class BchTexturePack {
 		if (offset < 0 || offset >= 0x2000000) {
 			throw new IllegalArgumentException("relocation offset out of 25-bit range: " + offset);
 		}
-		poke(o, pos, (flags << 25) | offset);
+		putI32(o, pos, (flags << 25) | offset);
 		return pos + 4;
 	}
 }

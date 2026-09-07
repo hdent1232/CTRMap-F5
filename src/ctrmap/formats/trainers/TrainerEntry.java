@@ -3,6 +3,7 @@ package ctrmap.formats.trainers;
 import java.util.ArrayList;
 import java.util.List;
 import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.putU16;
 
 /**
  * One ORAS trainer: the 24-byte trdata record (a/0/3/6) plus its party from
@@ -119,15 +120,15 @@ public class TrainerEntry {
 		}
 		byte[] out = new byte[24];
 		int flags = formatFlags | (anyMoves() ? 1 : 0) | (anyItem() ? 2 : 0);
-		pu16(out, 0, flags);
-		pu16(out, 2, classId);
+		putU16(out, 0, flags);
+		putU16(out, 2, classId);
 		out[6] = (byte) battleType;
 		out[7] = (byte) party.size();
 		for (int i = 0; i < 4; i++) {
-			pu16(out, 8 + i * 2, aiItems[i]);
+			putU16(out, 8 + i * 2, aiItems[i]);
 		}
-		pu16(out, 0x10, (int) (aiFlags & 0xFFFF));
-		pu16(out, 0x12, (int) ((aiFlags >>> 16) & 0xFFFF));
+		putU16(out, 0x10, (int) (aiFlags & 0xFFFF));
+		putU16(out, 0x12, (int) ((aiFlags >>> 16) & 0xFFFF));
 		out[0x15] = (byte) moneyRate;
 		return out;
 	}
@@ -146,25 +147,20 @@ public class TrainerEntry {
 			int o = m * perMon;
 			out[o] = (byte) mon.ivByte;
 			out[o + 1] = (byte) mon.genderAbility;
-			pu16(out, o + 2, Math.max(1, Math.min(100, mon.level)));
-			pu16(out, o + 4, mon.species);
-			pu16(out, o + 6, mon.form);
+			putU16(out, o + 2, Math.max(1, Math.min(100, mon.level)));
+			putU16(out, o + 4, mon.species);
+			putU16(out, o + 6, mon.form);
 			int p = o + 8;
 			if (hasItem) {
-				pu16(out, p, mon.heldItem);
+				putU16(out, p, mon.heldItem);
 				p += 2;
 			}
 			if (hasMoves) {
 				for (int k = 0; k < 4; k++) {
-					pu16(out, p + k * 2, mon.moves[k]);
+					putU16(out, p + k * 2, mon.moves[k]);
 				}
 			}
 		}
 		return out;
-	}
-
-	private static void pu16(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
 	}
 }
