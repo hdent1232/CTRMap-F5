@@ -1053,6 +1053,27 @@ public class CtrmapMainframe {
 		p.add(javax.swing.Box.createVerticalStrut(22));
 	}
 
+	/**
+	 * What the main window does once a workspace has opened: the panels that
+	 * read from it load. Called by {@link Workspace#validate} on success, and
+	 * only when the window exists - a headless suite validates without one.
+	 */
+	public static void onWorkspaceOpened() {
+		mBuilder.loadGARCs();
+		mZonePnl.loadEverything();
+		mTextEditor.loadGarc();
+		showZoneLoadingHint();
+	}
+
+	/** Drops everything the editor panels hold from the workspace, ahead of a clean. */
+	public static void unloadEditors() {
+		mTileMapPanel.unload();
+		mCollEditPanel.unload();
+		mCamEditForm.unload();
+		mNPCEditForm.unload();
+		mPropEditForm.unload();
+	}
+
 	public static void showZoneLoadingHint() {
 		tabs.setSelectedComponent(zoneTabPnl);
 		Preferences hintPrefs = Preferences.userRoot().node(CtrmapMainframe.class.getName());

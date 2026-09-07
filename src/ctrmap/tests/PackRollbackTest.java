@@ -60,14 +60,14 @@ public class PackRollbackTest {
 	 */
 	static void refusedPackLeavesTheTableAsTheFileHasIt() throws Exception {
 		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
-		int before = Workspace.npcreg.length;
+		int before = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length;
 		File tail = new File(dir, String.valueOf(before));
 		File gapped = new File(dir, String.valueOf(before + 2));
 		Files.write(tail.toPath(), new byte[]{1, 2, 3, 4});
 		Files.write(gapped.toPath(), new byte[]{5, 6, 7, 8});
 		Workspace.addPersist(tail);
 		Workspace.addPersist(gapped);
-		File archive = Workspace.npcreg.file;
+		File archive = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).file;
 		try {
 			pack();
 			check(false, "a pack that would leave a gap in the archive is refused");
@@ -77,16 +77,16 @@ public class PackRollbackTest {
 		}
 
 		GARC fresh = new GARC(archive);
-		check(Workspace.npcreg.getEntryCount() == fresh.getEntryCount(),
-				"the refused pack left the entry table as the file has it (" + Workspace.npcreg.getEntryCount()
+		check(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getEntryCount() == fresh.getEntryCount(),
+				"the refused pack left the entry table as the file has it (" + Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getEntryCount()
 				+ " entries in memory, " + fresh.getEntryCount() + " in " + archive.getName() + ")");
-		check(Workspace.npcreg.length == fresh.length,
-				"and the entry count with it (" + Workspace.npcreg.length + " vs " + fresh.length + ")");
-		int common = Math.min(Workspace.npcreg.getEntryCount(), fresh.getEntryCount());
+		check(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length == fresh.length,
+				"and the entry count with it (" + Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length + " vs " + fresh.length + ")");
+		int common = Math.min(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getEntryCount(), fresh.getEntryCount());
 		int differing = 0;
 		for (int i = 0; i < common; i++) {
-			if (Workspace.npcreg.getEntryStoredLength(i) != fresh.getEntryStoredLength(i)
-					|| Workspace.npcreg.isEntryCompressed(i) != fresh.isEntryCompressed(i)) {
+			if (Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getEntryStoredLength(i) != fresh.getEntryStoredLength(i)
+					|| Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).isEntryCompressed(i) != fresh.isEntryCompressed(i)) {
 				differing++;
 			}
 		}
@@ -94,14 +94,14 @@ public class PackRollbackTest {
 
 		//the cost: with nothing staged at all, the next pack still writes the
 		//table it is holding, so the archive grows by an entry of garbage
-		Workspace.persist_paths.remove(tail.getAbsolutePath());
-		Workspace.persist_paths.remove(gapped.getAbsolutePath());
+		Workspace.persistPaths().remove(tail.getAbsolutePath());
+		Workspace.persistPaths().remove(gapped.getAbsolutePath());
 		tail.delete();
 		gapped.delete();
 		pack();
-		check(Workspace.npcreg.length == before,
+		check(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length == before,
 				"and a later pack that stages nothing does not grow the archive by the entry the"
-				+ " refused one had taken in (" + before + " -> " + Workspace.npcreg.length + ")");
+				+ " refused one had taken in (" + before + " -> " + Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length + ")");
 	}
 
 	/**
@@ -124,7 +124,7 @@ public class PackRollbackTest {
 	 */
 	static void anArchiveSomethingElseHoldsOpenIsRefusedOutLoud() throws Exception {
 		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
-		File archive = Workspace.npcreg.file;
+		File archive = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).file;
 		//a real edit, staged the way the editor stages one, so that a pack
 		//which ran would visibly change the file. Retail ships empty registries
 		//at the front of the archive, and flipping a byte of nothing changes
@@ -132,7 +132,7 @@ public class PackRollbackTest {
 		//it, and the test says which.
 		File staged = null;
 		byte[] edited = null;
-		for (int i = 0; i < Workspace.npcreg.length && staged == null; i++) {
+		for (int i = 0; i < Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length && staged == null; i++) {
 			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.NPC_REGISTRIES, i);
 			byte[] b = (f == null || !f.isFile()) ? new byte[0] : Files.readAllBytes(f.toPath());
 			if (b.length > 0) {
@@ -154,7 +154,7 @@ public class PackRollbackTest {
 		Throwable thrown = null;
 		try (FileInputStream somethingElse = new FileInputStream(archive)) {
 			try {
-				Workspace.npcreg.packDirectory(dir);
+				Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).packDirectory(dir);
 			} catch (Throwable t) {
 				thrown = t;
 			}
@@ -171,7 +171,7 @@ public class PackRollbackTest {
 		check(!halfWritten.exists(),
 				"and no half-written copy is left beside the workspace (" + halfWritten.getName() + ")");
 
-		Workspace.npcreg.packDirectory(dir);
+		Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).packDirectory(dir);
 		check(!Arrays.equals(before, Files.readAllBytes(archive.toPath())),
 				"...and the very same pack does write the archive once nothing holds it open");
 	}

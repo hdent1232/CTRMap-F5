@@ -27,9 +27,9 @@ public class MaisonPoolGuardTest {
 		String realWs = args.length > 0 ? args[0]
 				: "../Workspace";
 		String savedWs = Workspace.WORKSPACE_PATH;
-		Workspace.GameType savedGame = Workspace.game;
+		ctrmap.WorkspaceSession saved = Workspace.session();
 		Workspace.WORKSPACE_PATH = "Z:/ctrmap-test-missing-path";
-		Workspace.game = Workspace.GameType.ORAS;
+		Sessions.bare(new File(Workspace.WORKSPACE_PATH), new File("no-game"), Workspace.GameType.ORAS);
 		MaisonSet[] cur = new MaisonSet[10];
 		for (int i = 0; i < cur.length; i++) {
 			cur[i] = new MaisonSet();
@@ -56,7 +56,7 @@ public class MaisonPoolGuardTest {
 
 		// ---- 2) exact path against the real pristine snapshot --------------
 		Workspace.WORKSPACE_PATH = realWs;
-		Workspace.game = Workspace.GameType.ORAS;
+		Sessions.bare(new File(realWs), new File("no-game"), Workspace.GameType.ORAS);
 		File snap = Workspace.originalSnapshotDir();
 		Workspace.ArchiveType[] pools = {Workspace.ArchiveType.MAISON_SET_POOL_A,
 			Workspace.ArchiveType.MAISON_SET_POOL_B, Workspace.ArchiveType.MAISON_SET_POOL_C};
@@ -67,7 +67,7 @@ public class MaisonPoolGuardTest {
 		int[] wantUsed = {217, 873, 36};
 		boolean snapshotRan = false;
 		for (int p = 0; p < pools.length; p++) {
-			String rel = Workspace.getArchivePath(pools[p], Workspace.game);
+			String rel = Workspace.getArchivePath(pools[p], Workspace.game());
 			if (rel == null || !new File(snap.getAbsolutePath() + rel).exists()) {
 				continue;
 			}
@@ -104,7 +104,7 @@ public class MaisonPoolGuardTest {
 		}
 
 		Workspace.WORKSPACE_PATH = savedWs;
-		Workspace.game = savedGame;
+		Workspace.install(saved);
 		System.out.println(failures == 0 ? "MaisonPoolGuardTest: ALL OK" : "MaisonPoolGuardTest: " + failures + " FAILURES");
 		if (failures > 0) {
 			System.exit(1);
