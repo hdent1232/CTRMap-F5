@@ -30,7 +30,7 @@ pointing it at one, and tells you what to look for.
   want the retail game back.
 - **In-app updates** that replace the copy you have instead of leaving a second one beside it.
 
-Verified against a real dump by 104 headless test suites: every format writer round-trips
+Verified against a real dump by 105 headless test suites: every format writer round-trips
 byte-identically across all 536 zones, and the guards themselves are measured - a mutation
 sweep breaks each fix on purpose and records every change no suite notices.
 

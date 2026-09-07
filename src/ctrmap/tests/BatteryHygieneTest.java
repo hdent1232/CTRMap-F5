@@ -37,6 +37,11 @@ import java.util.regex.Pattern;
  *     README.md and 3,479 in TESTING.md against 3,583 in the tables, and the
  *     battery as "42 suites" and "84 headless test suites" against the ninety-odd
  *     test.ps1 registers. See {@link #publishedCountsAreMeasured}.</li>
+ * <li>No class file in the build that no source could produce. build.ps1 used
+ *     to compile into build\classes without clearing it, so 76 of the 906
+ *     class files there were left over from earlier compiles and three still
+ *     read fields the source had dropped. The build stamp signed them as
+ *     genuine output. See {@link #noOrphanClassFiles}.</li>
  * </ul>
  * Comments are stripped before scanning, so only live code counts.
  *
@@ -100,6 +105,7 @@ public class BatteryHygieneTest {
 			}
 		}
 		builtByTheBattery(repo);
+		noOrphanClassFiles(repo, root);
 		noDialogsUnderTest(new File(root, "ctrmap"));
 		publishedCountsAreMeasured(repo, root, new File(repo, "test.ps1"));
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -328,6 +334,109 @@ public class BatteryHygieneTest {
 				"src/ is what build.ps1 last compiled (otherwise: rebuild before measuring anything)");
 		check(treeDigest(classes, ".built-by-build-ps1").equals(kv.get("classes")),
 				"build/classes is exactly what build.ps1 produced (a file added, removed or replaced since fails this)");
+	}
+
+	/**
+	 * A top-level type declared in a source file that is not named after it.
+	 * Five exist here (FATBEntry and GARCEntry in GARC.java, BoundStructure in
+	 * GRCollisionBounds.java, OBJMesh in WavefrontOBJ.java, Tile in
+	 * TileDBWriter.java), and each compiles to a class file whose name matches
+	 * no .java at all. Anchored at column 0 because that is where a top-level
+	 * declaration sits: a nested type is indented, and it compiles to
+	 * Outer$Inner.class, which this check has already resolved to its outer name
+	 * before it looks here.
+	 */
+	private static final Pattern TOP_LEVEL_TYPE = Pattern.compile(
+			"(?m)^(?:(?:public|final|abstract|strictfp)\\s+)*(?:class|interface|enum)\\s+(\\w+)\\b");
+
+	/**
+	 * No class file in the build whose source has gone. javac only ever ADDS to
+	 * its -d directory, so before build.ps1 learned to clear build\classes a
+	 * class outlived the deletion of the code that made it: 76 of the 906 class
+	 * files there were orphans of earlier compiles, and three
+	 * (CtrmapMainframe$26, $30, $42) still read {@code Workspace.valid} and
+	 * {@code .persist_paths}, fields the source no longer declares.
+	 *
+	 * <p>Why that mattered rather than merely wasting disk: {@link #builtByTheBattery}
+	 * asks whether build/classes is exactly what build.ps1 produced, and it was -
+	 * build.ps1 stamped the ghosts along with everything else, so the stamp
+	 * certified them. A guard that reads bytecode off the directory counts them
+	 * too, and reports about code no source can produce.
+	 *
+	 * <p>WHAT IS ASSERTED: for every .class here, some source in src could have
+	 * produced it. Foo$Bar.class and Foo$1.class resolve to their outermost name
+	 * first, so the question is only ever about a top-level type; that is
+	 * usually Foo.java beside it, and otherwise a type declared inside another
+	 * file of the same package (see {@link #TOP_LEVEL_TYPE}).
+	 *
+	 * <p>WHAT IT WILL NOT CATCH: a stale ANONYMOUS class, Foo$26.class from a
+	 * listener that has been deleted while Foo.java lives on - counting the
+	 * anonymous classes a source would generate means compiling it, and a
+	 * guess is worse than nothing. The clean in build.ps1 is what removes those;
+	 * this is the check that the clean is still happening at all, since a build
+	 * that stopped clearing the directory would strand a whole deleted class
+	 * here on its very next run. Deliberately NOT a timestamp comparison: an
+	 * mtime says when a file was written, never what is in it.
+	 */
+	static void noOrphanClassFiles(File repo, File srcRoot) throws Exception {
+		File classes = new File(repo, "build/classes");
+		if (!classes.isDirectory()) {
+			System.out.println("  skip: no build at " + classes);
+			return;
+		}
+		java.util.Map<String, java.util.Set<String>> declaredByPackage = new java.util.HashMap<>();
+		List<String> orphans = new ArrayList<>();
+		int scanned = 0;
+		java.nio.file.Path base = classes.toPath();
+		try (java.util.stream.Stream<java.nio.file.Path> walk = Files.walk(base)) {
+			for (java.nio.file.Path p : (Iterable<java.nio.file.Path>) walk::iterator) {
+				if (!Files.isRegularFile(p)) {
+					continue;
+				}
+				String rel = base.relativize(p).toString().replace('\\', '/');
+				if (!rel.endsWith(".class")) {
+					continue;
+				}
+				scanned++;
+				String binary = rel.substring(0, rel.length() - ".class".length());
+				int dollar = binary.indexOf('$');
+				String top = dollar < 0 ? binary : binary.substring(0, dollar);
+				if (new File(srcRoot, top + ".java").isFile()) {
+					continue;
+				}
+				int slash = top.lastIndexOf('/');
+				String pkg = slash < 0 ? "" : top.substring(0, slash);
+				if (!declaredByPackage.containsKey(pkg)) {
+					declaredByPackage.put(pkg, topLevelTypesIn(new File(srcRoot, pkg)));
+				}
+				if (!declaredByPackage.get(pkg).contains(top.substring(slash + 1))) {
+					orphans.add(rel);
+				}
+			}
+		}
+		check(scanned >= 500, scanned + " class files walked in " + classes);
+		java.util.Collections.sort(orphans);
+		check(orphans.isEmpty(), "every class file in the build still has a source that could produce it "
+				+ "(a clean build leaves no orphan); orphaned: " + orphans);
+	}
+
+	/** The top-level type names the .java files directly in one package declare. */
+	static java.util.Set<String> topLevelTypesIn(File pkgDir) throws Exception {
+		java.util.Set<String> names = new java.util.HashSet<>();
+		File[] files = pkgDir.listFiles();
+		if (files == null) {
+			return names;
+		}
+		for (File f : files) {
+			if (!f.isFile() || !f.getName().endsWith(".java")) {
+				continue;
+			}
+			Matcher m = TOP_LEVEL_TYPE.matcher(SourceSeamTest.stripComments(read(f)));
+			while (m.find()) {
+				names.add(m.group(1));
+			}
+		}
+		return names;
 	}
 
 	/**
