@@ -58,8 +58,33 @@ if (-not (Test-Path $code)) {
     Write-Host "No decompressed code.bin at $code - the executable-patch suites will skip." -ForegroundColor Yellow
 }
 
-if (-not (Test-Path $pristine)) {
-    Write-Host "No dump at $pristine - pass -Pristine <path>." -ForegroundColor Yellow
+# REFUSE A CORPUS THAT IS NOT THERE, rather than sweeping it.
+#
+# A corpus suite that sweeps nothing prints its count and then ALL PASS, and
+# exits 0. Measured on this tree by pointing every registered suite at an empty
+# folder: 46 refused, but FOURTEEN went green having examined nought records -
+# "GfColl: 0 collision files, verbatim=0, rebuild=0, failures=0" / ALL PASS,
+# and the same for the OBJ, geometry, region, resize, ground, LZ11, script-emit
+# and Maison-list sweeps. GARC.parse logs a FileNotFoundException and hands
+# back an archive of length 0, so every one of them is downstream of one silent
+# failure and none of them can tell "the corpus is fine" from "there was no
+# corpus". That is the shape that already cost this project twice
+# (BchMapModelTest, MaisonClassListTest - see BatteryHygieneTest).
+#
+# A wholly absent dump is caught today by the other 46 going red. A PARTIAL one
+# is not: point the battery at a folder holding some archives and not others
+# and it reports ALL SUITES PASS with those fourteen asserting nothing. So the
+# three archives the battery hands around are checked here, before anything
+# runs, and a missing one is a refusal with the same weight as an unstamped
+# build - not a warning above nine hundred lines of output that nobody reads.
+$needed = @($a013, $a039, $a040)
+$absent = @($needed | Where-Object { -not (Test-Path $_) })
+if ($absent.Count -gt 0) {
+    Write-Host "REFUSING TO RUN: the pristine dump is missing $($absent.Count) of its $($needed.Count) archives:" -ForegroundColor Red
+    foreach ($a in $absent) { Write-Host "    $a" }
+    Write-Host "  Every corpus suite would sweep nought records and print ALL PASS."
+    Write-Host "  powershell -ExecutionPolicy Bypass -File test.ps1 -Pristine <your dump> -GameDir <your romfs title folder>"
+    exit 2
 }
 
 # suite name -> {main class, args}; -Quick raises sampling steps
