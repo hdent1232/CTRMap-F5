@@ -5,9 +5,9 @@ import ctrmap.Workspace;
 import ctrmap.formats.codepatch.ItemIconTable;
 import ctrmap.formats.codepatch.ShopData;
 import ctrmap.formats.pokedata.ItemData;
+import ctrmap.formats.pokedata.ItemEditSession;
 import ctrmap.formats.pokedata.ItemEffectLabels;
 import ctrmap.formats.pokedata.ItemTable;
-import ctrmap.formats.pokedata.ItemText;
 import ctrmap.formats.recordschema.RecordField;
 import ctrmap.formats.recordschema.RecordSchema;
 import ctrmap.formats.recordschema.SchemaRegistry;
@@ -17,10 +17,12 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Frame;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import javax.swing.BorderFactory;
@@ -75,18 +77,19 @@ public class ItemEditDialog {
 			+ " attempt.";
 
 	public static void show(Frame parent) {
+		//Refuse before building anything: a headless suite proves the order.
 		if (!Workspace.isValid()) {
 			Ui.error(parent, "Load a workspace first.", "Item editor");
 			return;
 		}
-		final ItemTable table;
+		final ItemEditSession s;
 		try {
-			table = ItemTable.openWorkspace();
+			s = ItemEditSession.openWorkspace();
 		} catch (Exception ex) {
 			Ui.error(parent, "Could not read the item table:\n" + ex.getMessage(), "Item editor");
 			return;
 		}
-		if (table == null) {
+		if (s == null) {
 			Ui.error(parent, "CTRMap has no VERIFIED item table for this game yet.\n\n"
 					+ "A location for it may be known from another tool, but nothing here has"
 					+ " measured it against a dump of this game - and this editor writes 36 bytes"
@@ -95,11 +98,8 @@ public class ItemEditDialog {
 			return;
 		}
 
-		final List<String> names = ItemText.read(ItemText.Which.NAMES);
-		final List<String> descs = ItemText.read(ItemText.Which.DESCRIPTIONS);
-		final List<Integer> free = table.freeSlots(names);
 		final RecordSchema schema = SchemaRegistry.items();
-		final DerivedLabels labels = new DerivedLabels(table.all(), names);
+		final DerivedLabels labels = new DerivedLabels(s.table.all(), s.names);
 		final State st = new State();
 
 		final JDialog dlg = new JDialog(parent, "Items", true);
@@ -107,8 +107,8 @@ public class ItemEditDialog {
 
 		// ---- left: the list -------------------------------------------------
 		final DefaultListModel<String> listModel = new DefaultListModel<>();
-		for (int i = 0; i < table.count(); i++) {
-			listModel.addElement(rowText(i, names, free.contains(i)));
+		for (int i = 0; i < s.count(); i++) {
+			listModel.addElement(rowText(i, s));
 		}
 		final JList<String> list = new JList<>(listModel);
 		list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -123,7 +123,7 @@ public class ItemEditDialog {
 		JScrollPane listScroll = new JScrollPane(list);
 		listScroll.setPreferredSize(new Dimension(250, 500));
 		left.add(listScroll, BorderLayout.CENTER);
-		final JButton newItem = new JButton("New item (" + free.size() + " free)");
+		final JButton newItem = new JButton("New item (" + s.free.size() + " free)");
 		newItem.setToolTipText(NEW_ITEM_HINT);
 		left.add(newItem, BorderLayout.SOUTH);
 
@@ -216,6 +216,7 @@ public class ItemEditDialog {
 		south.add(buttons, BorderLayout.EAST);
 		dlg.add(south, BorderLayout.SOUTH);
 
+		// ---- wiring: the widgets show the session, the session writes the game --
 		final Runnable refresh = () -> {
 			undo.setEnabled(form.canUndo());
 			redo.setEnabled(form.canRedo());
@@ -225,9 +226,9 @@ public class ItemEditDialog {
 		final Runnable load = () -> {
 			st.loading = true;
 			try {
-				form.setRecord(table.raw(st.id));
-				nameField.setText(st.id < names.size() ? names.get(st.id) : "");
-				descField.setText(st.id < descs.size() ? descs.get(st.id) : "");
+				form.setRecord(s.record(st.id));
+				nameField.setText(s.name(st.id));
+				descField.setText(s.description(st.id));
 				if (st.icons != null && st.id < st.icons.length) {
 					iconSpin.setValue(Math.min(st.icons[st.id], ItemIconTable.MAX_ICON));
 				}
@@ -273,8 +274,8 @@ public class ItemEditDialog {
 		filter.getDocument().addDocumentListener(new SimpleDoc(() -> {
 			String q = filter.getText().trim().toLowerCase();
 			listModel.clear();
-			for (int i = 0; i < table.count(); i++) {
-				String row = rowText(i, names, free.contains(i));
+			for (int i = 0; i < s.count(); i++) {
+				String row = rowText(i, s);
 				if (q.isEmpty() || row.toLowerCase().contains(q)) {
 					listModel.addElement(row);
 				}
@@ -291,14 +292,14 @@ public class ItemEditDialog {
 		});
 
 		newItem.addActionListener(e -> {
-			if (free.isEmpty()) {
+			if (s.free.isEmpty()) {
 				Ui.error(dlg, "There is no empty item slot left in this game.\n\n" + NEW_ITEM_HINT,
 						"New item");
 				return;
 			}
-			String[] opts = new String[free.size()];
-			for (int i = 0; i < free.size(); i++) {
-				opts[i] = "id " + free.get(i);
+			String[] opts = new String[s.free.size()];
+			for (int i = 0; i < s.free.size(); i++) {
+				opts[i] = "id " + s.free.get(i);
 			}
 			Object pick = Ui.input(dlg, NEW_ITEM_HINT + "\n\nWhich slot?", "New item",
 					JOptionPane.PLAIN_MESSAGE, opts, opts[0]);
@@ -308,7 +309,7 @@ public class ItemEditDialog {
 			if (st.dirty && !confirmDiscard(dlg)) {
 				return;
 			}
-			st.id = free.get(Arrays.asList(opts).indexOf(pick));
+			st.id = s.free.get(Arrays.asList(opts).indexOf(pick));
 			load.run();
 			select(list, listModel, st.id);
 			nameField.requestFocusInWindow();
@@ -326,12 +327,7 @@ public class ItemEditDialog {
 				if (fc.showOpenDialog(dlg) != JFileChooser.APPROVE_OPTION) {
 					return;
 				}
-				st.codeFile = fc.getSelectedFile();
-				st.code = Files.readAllBytes(st.codeFile.toPath());
-				//throws with a sentence saying WHY when this is not the build
-				//the offsets were measured in, rather than patching it blind
-				st.stockIcons = ItemIconTable.read(st.code);
-				st.icons = st.stockIcons.clone();
+				st.loadCode(fc.getSelectedFile());
 				iconSpin.setEnabled(true);
 				copyIcon.setEnabled(true);
 				saveIps.setEnabled(true);
@@ -340,9 +336,6 @@ public class ItemEditDialog {
 				iconSpin.setValue(Math.min(st.icons[st.id], ItemIconTable.MAX_ICON));
 				st.loading = false;
 			} catch (Exception ex) {
-				st.code = null;
-				st.icons = null;
-				st.stockIcons = null;
 				iconState.setText("no code.bin loaded");
 				Ui.error(dlg, "That file is not the executable this editor knows how to patch:\n\n"
 						+ ex.getMessage(), "Item icons");
@@ -358,7 +351,7 @@ public class ItemEditDialog {
 		});
 
 		revert.addActionListener(e -> {
-			byte[] original = ItemTable.baselineRecord(st.id);
+			byte[] original = s.baselineRecord(st.id);
 			if (original == null) {
 				Ui.error(dlg, "This workspace holds no pre-edit copy of the item archive, so there"
 						+ " is nothing to revert to.\n\nThe copy is taken the first time you save"
@@ -372,28 +365,17 @@ public class ItemEditDialog {
 
 		save.addActionListener(e -> {
 			try {
-				byte[] rec = form.record();
-				if (!Arrays.equals(rec, table.raw(st.id))) {
-					table.writeRecord(st.id, rec);
-				}
-				String newName = nameField.getText();
-				if (st.id < names.size() && !newName.equals(names.get(st.id))) {
-					ItemText.setLine(ItemText.Which.NAMES, st.id, newName);
-					names.set(st.id, newName);
+				EnumSet<ItemEditSession.Changed> changed
+						= s.save(st.id, form.record(), nameField.getText(), descField.getText());
+				if (changed.contains(ItemEditSession.Changed.NAME)) {
 					int row = rowFor(listModel, st.id);
 					if (row >= 0) {
-						listModel.set(row, rowText(st.id, names, free.contains(st.id)));
+						listModel.set(row, rowText(st.id, s));
 					}
-				}
-				String newDesc = descField.getText();
-				if (st.id < descs.size() && !newDesc.equals(descs.get(st.id))) {
-					ItemText.setLine(ItemText.Which.DESCRIPTIONS, st.id, newDesc);
-					descs.set(st.id, newDesc);
 				}
 				st.dirty = false;
 				refresh.run();
-				String iconNote = st.icons != null && st.stockIcons != null
-						&& !Arrays.equals(st.icons, st.stockIcons)
+				String iconNote = st.iconsChanged()
 						? "\n\nThe ICON is NOT saved by this button - it lives in the executable."
 						+ " Use \"Save code.ips...\" for it." : "";
 				info(dlg, "Item " + st.id + " saved into the game folder."
@@ -423,7 +405,11 @@ public class ItemEditDialog {
 		dlg.setVisible(true);
 	}
 
-	/** Everything the listeners share. */
+	/**
+	 * Everything the listeners share that is NOT the game data: which item is
+	 * up, whether it is dirty, and the icon table the user loaded (the one
+	 * part of this editor that is a code patch rather than data).
+	 */
 	private static final class State {
 
 		int id = 1;
@@ -435,6 +421,31 @@ public class ItemEditDialog {
 		int[] icons;
 		File codeFile;
 		byte[] code;
+
+		/**
+		 * Reads a decompressed code.bin and its icon table. Throws, with a
+		 * sentence saying WHY, when this is not the build the offsets were
+		 * measured in, rather than patching it blind - and then nothing is
+		 * loaded, so no later click can patch a file that was refused.
+		 */
+		void loadCode(File f) throws IOException {
+			try {
+				codeFile = f;
+				code = Files.readAllBytes(f.toPath());
+				stockIcons = ItemIconTable.read(code);
+				icons = stockIcons.clone();
+			} catch (IOException | RuntimeException ex) {
+				code = null;
+				icons = null;
+				stockIcons = null;
+				throw ex;
+			}
+		}
+
+		/** The user changed an icon since loading the table. */
+		boolean iconsChanged() {
+			return icons != null && stockIcons != null && !Arrays.equals(icons, stockIcons);
+		}
 	}
 
 	/**
@@ -496,10 +507,10 @@ public class ItemEditDialog {
 		Ui.message(parent, text, title, JOptionPane.INFORMATION_MESSAGE);
 	}
 
-	private static String rowText(int id, List<String> names, boolean free) {
-		String n = id < names.size() ? names.get(id) : "";
+	private static String rowText(int id, ItemEditSession s) {
+		String n = s.name(id);
 		if (ItemTable.isPlaceholderName(n)) {
-			n = free ? "(free slot)" : "(unused)";
+			n = s.isFree(id) ? "(free slot)" : "(unused)";
 		}
 		return pad(id) + "  " + n;
 	}

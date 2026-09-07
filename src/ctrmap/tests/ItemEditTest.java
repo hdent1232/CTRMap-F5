@@ -4,7 +4,9 @@ import ctrmap.ModDeployer;
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.pokedata.ItemData;
+import ctrmap.formats.pokedata.ItemEditSession;
 import ctrmap.formats.pokedata.ItemTable;
+import ctrmap.formats.pokedata.ItemText;
 import ctrmap.formats.recordschema.RecordField;
 import ctrmap.formats.recordschema.RecordSchema;
 import ctrmap.formats.recordschema.SchemaRegistry;
@@ -13,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.List;
 
 /**
@@ -87,6 +90,7 @@ public class ItemEditTest {
 		//last two: they repoint the Workspace statics at a scratch game
 		deployShipsItOnlyWhenItWasEdited(tmp, src);
 		theEditorRefusesBeforeItBuildsAnything();
+		theSessionSavesOnlyWhatChanged(src, args[0]);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -434,6 +438,87 @@ public class ItemEditTest {
 		} finally {
 			Workspace.install(before);
 		}
+	}
+
+	/**
+	 * The session behind the dialog writes only the parts that differ, and
+	 * says which.
+	 *
+	 * <p>This is the item editor's one write path, pulled out of the Swing
+	 * listener so it can be driven with no screen. What is asserted is the
+	 * contract the dialog relies on: an unchanged item writes NOTHING (no
+	 * bytes in the archive, no text file staged for the next pack); a changed
+	 * record writes the record and stages no text; a changed name rewrites the
+	 * names file and not the descriptions; and a refused record write stops
+	 * the save before any text is touched. Staging a text file that did not
+	 * change would make every pack after it carry the 12 MB text archive.
+	 */
+	static void theSessionSavesOnlyWhatChanged(File pristine, String romfs) throws Exception {
+		System.out.println("--- the editor's session writes only the parts that differ");
+		//a throwaway game with a real workspace, so the text lists are the game's own
+		ScratchGame.open(new File(romfs));
+		File live = new File(Workspace.GAMEDIR_PATH + itemArchive());
+		live.getParentFile().mkdirs();
+		Files.copy(pristine.toPath(), live.toPath(), StandardCopyOption.REPLACE_EXISTING);
+		ItemEditSession s = ItemEditSession.openWorkspace();
+		check(s != null, "the session opens on the scratch game");
+		if (s == null) {
+			return;
+		}
+		check(s.names.size() == s.count() && s.descs.size() == s.count(),
+				"names and descriptions are one per record (" + s.names.size() + " / " + s.descs.size()
+				+ " / " + s.count() + ")");
+		String name = s.name(ULTRA_BALL), desc = s.description(ULTRA_BALL);
+		check("Ultra Ball".equals(name), "item " + ULTRA_BALL + " is the Ultra Ball (" + name + ")");
+		String namesFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT,
+				Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES)).getAbsolutePath();
+		String descsFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT,
+				Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_DESCRIPTIONS)).getAbsolutePath();
+		byte[] before = Files.readAllBytes(live.toPath());
+
+		EnumSet<ItemEditSession.Changed> none = s.save(ULTRA_BALL, s.record(ULTRA_BALL), name, desc);
+		check(none.isEmpty(), "saving the item exactly as it is writes nothing (" + none + ")");
+		check(Arrays.equals(before, Files.readAllBytes(live.toPath())), "the archive is byte-identical");
+		check(!Workspace.persistPaths().contains(namesFile) && !Workspace.persistPaths().contains(descsFile),
+				"and neither text file was staged for the next pack");
+
+		byte[] rec = s.record(ULTRA_BALL);
+		fieldNamed("Price / 10").set(rec, 321);
+		EnumSet<ItemEditSession.Changed> recOnly = s.save(ULTRA_BALL, rec, name, desc);
+		check(recOnly.equals(EnumSet.of(ItemEditSession.Changed.RECORD)),
+				"a changed price writes the record, and says so (" + recOnly + ")");
+		check(new ItemData(new GARC(live, false).getDecompressedEntry(ULTRA_BALL)).priceRaw() == 321,
+				"the new price is in the archive");
+		check(!Workspace.persistPaths().contains(namesFile) && !Workspace.persistPaths().contains(descsFile),
+				"and still no text file was staged");
+
+		EnumSet<ItemEditSession.Changed> nameOnly = s.save(ULTRA_BALL, rec, "Mega Ball", desc);
+		check(nameOnly.equals(EnumSet.of(ItemEditSession.Changed.NAME)),
+				"a changed name writes the name, and only the name (" + nameOnly + ")");
+		check("Mega Ball".equals(s.name(ULTRA_BALL))
+				&& "Mega Ball".equals(ItemText.read(ItemText.Which.NAMES).get(ULTRA_BALL)),
+				"the name is in the session and in the staged text file");
+		check(Workspace.persistPaths().contains(namesFile) && !Workspace.persistPaths().contains(descsFile),
+				"the names file is staged and the descriptions file is not");
+		check(desc.equals(ItemText.read(ItemText.Which.DESCRIPTIONS).get(ULTRA_BALL)),
+				"and the description line is untouched");
+
+		EnumSet<ItemEditSession.Changed> descOnly = s.save(ULTRA_BALL, rec, "Mega Ball", "Catches things.");
+		check(descOnly.equals(EnumSet.of(ItemEditSession.Changed.DESCRIPTION)),
+				"a changed description writes the description, and only that (" + descOnly + ")");
+		check("Catches things.".equals(ItemText.read(ItemText.Which.DESCRIPTIONS).get(ULTRA_BALL)),
+				"and it is in the staged text file");
+
+		//a record the table refuses stops the save before any text is written
+		boolean refused = false;
+		try {
+			s.save(ULTRA_BALL, filled(ItemData.SIZE - 1), "Master Ball", "Catches things.");
+		} catch (Exception ex) {
+			refused = true;
+		}
+		check(refused && "Mega Ball".equals(ItemText.read(ItemText.Which.NAMES).get(ULTRA_BALL))
+				&& "Mega Ball".equals(s.name(ULTRA_BALL)),
+				"a refused record write is refused BEFORE the text is touched - the name is still Mega Ball");
 	}
 
 	static RecordField fieldNamed(String name) {

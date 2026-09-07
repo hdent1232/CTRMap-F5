@@ -44,6 +44,7 @@ public class PaintedRegionTest {
 		failures += checkEdges(donor);
 		failures += checkCliffWinding(donor);
 		failures += checkContradictoryRampIsRefused(donor);
+		failures += checkOutlineRounding();
 
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
 		if (failures > 0) {
@@ -260,6 +261,91 @@ public class PaintedRegionTest {
 	 * builder - the same grid with the ground actually lower must build, and
 	 * the tile must really be a slope.
 	 */
+	/**
+	 * The outline rounding on its own, with a polyline in hand and nothing
+	 * else. Three invariants the map-sealing argument rests on: the ends of an
+	 * open chain do not move (neighbouring chains must still meet), a closed
+	 * loop stays closed, and no vertex travels more than 0.3 of a tile (a
+	 * one-tile path must not be smoothed out of existence from both sides).
+	 * A straight run is left exactly where it was, which is what proves the
+	 * averaging is a rounding and not a drift.
+	 */
+	static int checkOutlineRounding() {
+		final float T = PaintedRegionBuilder.TILE;
+		final float CAP = T * 0.3f;
+		int failures = 0;
+
+		//a straight run: every vertex is already the mean of its neighbours
+		float[] sx = {0, T, 2 * T, 3 * T, 4 * T, 5 * T}, sz = {T, T, T, T, T, T};
+		float[][] r = PaintedRegionBuilder.roundOutline(sx, sz, false);
+		if (!java.util.Arrays.equals(r[0], sx) || !java.util.Arrays.equals(r[1], sz)) {
+			System.out.println("FAIL outline: a straight open run moved under rounding: "
+					+ java.util.Arrays.toString(r[0]) + " / " + java.util.Arrays.toString(r[1]));
+			failures++;
+		} else {
+			System.out.println("  ok: rounding leaves a straight run exactly where it was");
+		}
+
+		//an open staircase: ends pinned, corners cut, nobody travels past the cap
+		float[] px = {0, T, T, 2 * T, 2 * T, 3 * T, 3 * T, 4 * T};
+		float[] pz = {0, 0, T, T, 2 * T, 2 * T, 3 * T, 3 * T};
+		r = PaintedRegionBuilder.roundOutline(px, pz, false);
+		int last = px.length - 1;
+		boolean pinned = r[0][0] == px[0] && r[1][0] == pz[0] && r[0][last] == px[last] && r[1][last] == pz[last];
+		float maxTravel = 0f;
+		int moved = 0;
+		for (int i = 0; i < px.length; i++) {
+			float d = (float) Math.hypot(r[0][i] - px[i], r[1][i] - pz[i]);
+			maxTravel = Math.max(maxTravel, d);
+			if (d > 1e-4f) {
+				moved++;
+			}
+		}
+		if (!pinned) {
+			System.out.println("FAIL outline: the ends of an open chain moved - neighbouring chains no"
+					+ " longer meet: (" + r[0][0] + "," + r[1][0] + ") and (" + r[0][last] + "," + r[1][last] + ")");
+			failures++;
+		} else if (moved < 4) {
+			System.out.println("FAIL outline: a staircase was not rounded (" + moved + " vertices moved)");
+			failures++;
+		} else if (maxTravel > CAP + 1e-3f) {
+			System.out.println("FAIL outline: a vertex travelled " + maxTravel + " > the " + CAP
+					+ " cap - a one-tile path would be smoothed away");
+			failures++;
+		} else if (maxTravel < CAP - 1e-3f) {
+			System.out.println("FAIL outline: the cap never bound on a right-angle staircase (max travel "
+					+ maxTravel + ") - this check is not exercising it");
+			failures++;
+		} else {
+			System.out.println("  ok: an open staircase keeps its ends, rounds " + moved
+					+ " corners, and the travel cap binds at " + maxTravel);
+		}
+
+		//a closed square: no ends to pin, and it must still close after rounding
+		float[] lx = {0, 2 * T, 2 * T, 0, 0}, lz = {0, 0, 2 * T, 2 * T, 0};
+		r = PaintedRegionBuilder.roundOutline(lx, lz, true);
+		boolean closed = r[0][0] == r[0][4] && r[1][0] == r[1][4];
+		float d0 = (float) Math.hypot(r[0][0] - lx[0], r[1][0] - lz[0]);
+		boolean cornersCut = d0 > 1e-3f && d0 <= CAP + 1e-3f;
+		boolean symmetric = true;
+		for (int i = 1; i < 4; i++) {
+			float di = (float) Math.hypot(r[0][i] - lx[i], r[1][i] - lz[i]);
+			symmetric &= Math.abs(di - d0) < 1e-3f;
+		}
+		if (!closed) {
+			System.out.println("FAIL outline: a closed loop opened under rounding: first (" + r[0][0] + ","
+					+ r[1][0] + ") last (" + r[0][4] + "," + r[1][4] + ")");
+			failures++;
+		} else if (!cornersCut || !symmetric) {
+			System.out.println("FAIL outline: the loop's four corners were not cut alike (first moved "
+					+ d0 + ", symmetric=" + symmetric + ")");
+			failures++;
+		} else {
+			System.out.println("  ok: a closed loop stays closed and its corners are cut alike (" + d0 + ")");
+		}
+		return failures;
+	}
+
 	static int checkContradictoryRampIsRefused(byte[] donor) {
 		ctrmap.formats.tilemap.TerrainLighting L = ctrmap.formats.tilemap.TerrainLighting.daytime();
 		TilePalette[][] g = grid(TilePalette.GRASS);

@@ -568,6 +568,30 @@ public class PawnInstruction {
 		}
 	}
 
+	/**
+	 * One instruction as text. Every opcode prints in one of five shapes,
+	 * and this switch is the table that says which:
+	 * <ul>
+	 * <li>{@code eA(ins)} - the mnemonic and its integer arguments;</li>
+	 * <li>{@code eA(c & 0xFF, ins)} - the same, for opcodes whose mnemonic is
+	 *     looked up by the low byte alone ({@link #getCommand} keeps fifteen
+	 *     bits);</li>
+	 * <li>{@code eF(ins)} - the arguments printed as floats;</li>
+	 * <li>the jumps and calls (0x31, 0x33, 0x35-0x40, 0x81) - the mnemonic
+	 *     and the resolved target address;</li>
+	 * <li>0x82 CASETBL - the whole jump table, one line per case; and 0x87
+	 *     SYSREQ_N, via {@link #sysreqDisasm}, with the native's name.</li>
+	 * </ul>
+	 *
+	 * <p>LEFT AS ONE METHOD, DELIBERATELY. Three hundred lines, but nearly
+	 * all of them are case labels: it is a lookup table written as a switch,
+	 * and it holds nothing in its head between cases. Splitting it would
+	 * mean either moving the labels into a data table (a rewrite of the
+	 * upstream disassembler with no behaviour to gain) or extracting bodies
+	 * that are already one call each. The {@code default} label at the top
+	 * falls through into the first group on purpose: an unknown opcode is
+	 * reported and then printed as a plain mnemonic.
+	 */
 	public static String getDisassembly(PawnInstruction ins) {
 		int c = ins.cellValue;
 		String op;

@@ -112,8 +112,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	/**
 	 * How many zones are actually in the dropdown.
 	 *
-	 * <p>The honest test of whether a workspace loaded. {@code Workspace.valid}
-	 * is set before the archives are read, so it reports that the paths looked
+	 * <p>The honest test of whether a workspace loaded. {@code Workspace.isValid()}
+	 * is true before the archives are read, so it reports that the paths looked
 	 * right, not that anything came of them; this reports what the user can see.
 	 */
 	public int getLoadedZoneCount() {
