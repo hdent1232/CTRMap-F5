@@ -28,8 +28,22 @@ public class MaisonClassListTest {
 	}
 
 	static int checkTable(String root, int listFile, int poolFile) throws Exception {
-		GARC lists = new GARC(new File(root + "/a/1/8/" + listFile), false);
+		File listPath = new File(root + "/a/1/8/" + listFile);
+		GARC lists = new GARC(listPath, false);
 		GARC pool = new GARC(new File(root + "/a/1/8/" + poolFile), false);
+		//A sweep that swept nothing is not a sweep that passed. GARC.parse logs
+		//a FileNotFoundException and hands back an archive of length 0, so this
+		//suite once printed "0/0 round-trip" and ALL PASS from any worktree -
+		//the incident BatteryHygieneTest's registration rule was written for.
+		//That rule made the runner pass a path; it cannot make the path point
+		//at an archive, and a partial dump still gets past it. This does.
+		if (lists.length == 0 || pool.length == 0) {
+			System.out.println("FAIL a/1/8/" + listFile + ": read 0 entries (pool " + poolFile
+					+ ": " + pool.length + ") from " + listPath.getAbsolutePath()
+					+ " - there is nothing here to round-trip, so this suite asserts nothing."
+					+ " Point it at a complete dump.");
+			return 1;
+		}
 		int poolSize = pool.length;
 		int fails = 0, rtOk = 0, refs = 0;
 		for (int i = 0; i < lists.length; i++) {
