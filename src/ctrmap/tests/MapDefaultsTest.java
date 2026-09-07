@@ -62,6 +62,7 @@ public class MapDefaultsTest {
 			Workspace.valid = false;
 			everyRetailMatrixNamesItsFirstRegion(dump);
 			theGroundIsNotJustTheBiggestMesh(dump);
+			theListOffersTheGroundFirst(dump);
 			aPickedMeshIsHonouredWhereItFits(dump);
 		}
 
@@ -205,6 +206,92 @@ public class MapDefaultsTest {
 				+ ", not " + name(donor, naive));
 		check(PaintedRegionBuilder.groundMeshOr(donor, donor.meshCount) == ground,
 				"and a mesh number past the end of this region does the same");
+	}
+
+	/**
+	 * The list the user picks FROM has to put the ground where it says it is.
+	 *
+	 * <p>The picker offers a map's materials biggest first and labels the top
+	 * one "this map's main ground", which is the same wrong heuristic in a
+	 * second place - and this one the user acts on directly, because the top
+	 * entry is also what is pre-selected. Accepting the default on region 1
+	 * floored the new map in chip_wood_b.
+	 *
+	 * <p>The order also has to stay a faithful list of the map's meshes: lose
+	 * one and a material the user can see in game cannot be chosen; repeat one
+	 * and two rows of the picker do the same thing.
+	 */
+	static void theListOffersTheGroundFirst(File dump) throws Exception {
+		GARC fd = new GARC(new File(dump.getAbsolutePath()
+				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game)));
+		int scored = 0, promoted = 0;
+		StringBuilder notFirst = new StringBuilder();
+		StringBuilder notAList = new StringBuilder();
+		for (int i = 0; i < Math.min(REGIONS, fd.length); i++) {
+			BchMapModel m = modelOf(fd, i);
+			if (m == null) {
+				continue;
+			}
+			int[] order = PaintedRegionBuilder.groundFirstMeshOrder(m);
+			//a faithful permutation of the readable meshes
+			java.util.List<Integer> readable = new java.util.ArrayList<>();
+			for (BchMapModel.MeshGeom g : m.geometry()) {
+				if (g.posOk) {
+					readable.add(g.meshIndex);
+				}
+			}
+			java.util.Set<Integer> seen = new java.util.TreeSet<>();
+			for (int mesh : order) {
+				seen.add(mesh);
+			}
+			if (order.length != readable.size() || seen.size() != order.length
+					|| !seen.containsAll(readable)) {
+				if (notAList.length() < 300) {
+					notAList.append("\n    region ").append(i).append(": offers ").append(order.length)
+							.append(" rows (").append(seen.size()).append(" distinct) for ")
+							.append(readable.size()).append(" readable meshes");
+				}
+				continue;
+			}
+			int ground = PaintedRegionBuilder.defaultGroundMesh(m);
+			if (ground < 0 || order.length == 0) {
+				continue;
+			}
+			scored++;
+			if (order[0] != ground) {
+				if (notFirst.length() < 400) {
+					notFirst.append("\n    region ").append(i).append(": offers ").append(name(m, order[0]))
+							.append(" first and calls it the ground, which is ").append(name(m, ground));
+				}
+			}
+			if (order[0] != biggestMesh(m)) {
+				promoted++;
+			}
+		}
+		check(notAList.length() == 0, "the picker's order is every readable mesh, once each" + notAList);
+		check(scored >= 200, "checked the offered order over " + scored + " retail regions");
+		check(notFirst.length() == 0, "and on every one the entry labelled the ground IS the ground" + notFirst);
+		check(promoted >= 100, "on " + promoted + " of them that is not the biggest mesh, so the "
+				+ "promotion is doing real work");
+
+		BchMapModel donor = modelOf(fd, DONOR);
+		if (donor != null) {
+			int[] order = PaintedRegionBuilder.groundFirstMeshOrder(donor);
+			check(order.length > 0 && order[0] == PaintedRegionBuilder.defaultGroundMesh(donor),
+					"region " + DONOR + " offers " + name(donor, order[0])
+					+ " first, so accepting the default floors it in grass and not in "
+					+ name(donor, biggestMesh(donor)));
+			//everything after the promoted ground stays biggest-first, which is
+			//what keeps doors and window frames off the top of the list
+			long prev = Long.MAX_VALUE;
+			boolean descending = true;
+			for (int k = 1; k < order.length; k++) {
+				long t = donor.getTriangles(order[k]).length;
+				descending &= t <= prev;
+				prev = t;
+			}
+			check(descending, "and the rest of region " + DONOR + "'s list is still biggest first");
+		}
 	}
 
 	/** A pick that DOES fit this region must be honoured, not overridden. */
