@@ -3,7 +3,6 @@ package ctrmap.humaninterface.tools;
 import java.util.Arrays;
 
 import static ctrmap.CtrmapMainframe.*;
-import ctrmap.Utils;
 import ctrmap.formats.tilemap.Tilemap;
 import ctrmap.humaninterface.Selector;
 import java.awt.Graphics;
@@ -14,7 +13,7 @@ public class SetTool extends AbstractTool {
 	public byte[] actTileData = new byte[4];
 	@Override
 	public void onToolInit() {
-		Utils.switchToolUI(mTileEditForm);
+		switchToolUI(mTileEditForm);
 		mTileEditForm.makeTile();
 		mTileEditForm.lockTile(true);
 	}

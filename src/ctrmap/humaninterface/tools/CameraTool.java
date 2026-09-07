@@ -1,7 +1,6 @@
 package ctrmap.humaninterface.tools;
 
 import static ctrmap.CtrmapMainframe.*;
-import ctrmap.Utils;
 import ctrmap.formats.cameradata.CameraData;
 import ctrmap.humaninterface.Selector;
 import java.awt.Color;
@@ -15,7 +14,7 @@ public class CameraTool extends AbstractTool {
 
 	@Override
 	public void onToolInit() {
-		Utils.switchToolUI(mCamScrollPane);
+		switchToolUI(mCamScrollPane);
 	}
 
 	@Override

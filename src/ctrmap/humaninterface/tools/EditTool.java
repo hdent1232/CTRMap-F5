@@ -1,7 +1,6 @@
 package ctrmap.humaninterface.tools;
 
 import static ctrmap.CtrmapMainframe.*;
-import ctrmap.Utils;
 import ctrmap.humaninterface.Selector;
 import java.awt.Graphics;
 import java.awt.event.MouseEvent;
@@ -11,7 +10,7 @@ public class EditTool extends AbstractTool {
 
 	@Override
 	public void onToolInit() {
-		Utils.switchToolUI(mTileEditForm);
+		switchToolUI(mTileEditForm);
 		mTileEditForm.lockTile(false);
 	}
 

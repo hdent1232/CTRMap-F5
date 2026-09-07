@@ -2,7 +2,6 @@ package ctrmap.humaninterface.tools;
 
 import java.awt.event.MouseEvent;
 import static ctrmap.CtrmapMainframe.*;
-import ctrmap.Utils;
 import ctrmap.formats.propdata.GRProp;
 import java.awt.Color;
 import java.awt.Font;
@@ -17,7 +16,7 @@ public class PropTool extends AbstractTool {
 	
 	@Override
 	public void onToolInit() {
-		Utils.switchToolUI(mPropEditForm);
+		switchToolUI(mPropEditForm);
 		mPropEditForm.saveAndRefresh();
 	}
 

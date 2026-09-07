@@ -2,7 +2,6 @@ package ctrmap.humaninterface.tools;
 
 import ctrmap.CtrmapMainframe;
 import static ctrmap.CtrmapMainframe.*;
-import ctrmap.Utils;
 import ctrmap.humaninterface.Selector;
 import java.awt.Color;
 import java.awt.Graphics;
@@ -21,7 +20,7 @@ public class FillTool extends AbstractTool {
 
 	@Override
 	public void onToolInit() {
-		Utils.switchToolUI(mTileEditForm);
+		switchToolUI(mTileEditForm);
 		mTileEditForm.makeTile();
 		mTileEditForm.lockTile(true);
 	}
