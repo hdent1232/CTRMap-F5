@@ -2,6 +2,7 @@ package ctrmap.formats.trainers;
 
 import java.util.ArrayList;
 import java.util.List;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * One ORAS trainer: the 24-byte trdata record (a/0/3/6) plus its party from
@@ -160,10 +161,6 @@ public class TrainerEntry {
 			}
 		}
 		return out;
-	}
-
-	private static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
 	}
 
 	private static void pu16(byte[] b, int o, int v) {

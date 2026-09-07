@@ -6,6 +6,7 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import ctrmap.formats.LittleEndian;
 
 /**
  * Collision engine validation against EVERY retail collision subfile (all
@@ -56,7 +57,7 @@ public class GfCollTest {
 						}
 					}
 					for (int w = 0; w < 640; w += 4) {
-						float a = GfColl.f32(c.boundsRaw, w), q = GfColl.f32(r.boundsRaw, w);
+						float a = LittleEndian.f32(c.boundsRaw, w), q = LittleEndian.f32(r.boundsRaw, w);
 						double err = Math.abs(a - q);
 						worstBoundsErr = Math.max(worstBoundsErr, err);
 						if (err > 0.1) {

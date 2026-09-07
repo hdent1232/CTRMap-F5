@@ -10,6 +10,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * Safe, index-preserving zone edits: EMPTY a zone (clear its NPCs/warps/etc.) and
@@ -211,8 +212,6 @@ public class ZoneManager {
 		b[base + PARENTMAP_OFFSET] = (byte) (packed & 0xFF);
 		b[base + PARENTMAP_OFFSET + 1] = (byte) ((packed >> 8) & 0xFF);
 	}
-
-	private static int u16(byte[] b, int o) { return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8); }
 
 	private static byte[] readAll(File f) throws IOException {
 		InputStream in = new FileInputStream(f);

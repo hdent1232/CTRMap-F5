@@ -13,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import static ctrmap.formats.LittleEndian.u16;
 
 /**
  * Searchable database of all BuildingModels props: model names, which areas
@@ -105,7 +106,7 @@ public class PropDatabase {
 			int count = peek(reg, 0);
 			for (int e = 0; e < count && 4 + e * 0x50 + 0x50 <= reg.length; e++) {
 				int base = 4 + e * 0x50;
-				int model = peekU16(reg, base + 2);
+				int model = u16(reg, base + 2);
 				if (model < 0 || model >= db.models.size()) {
 					continue;
 				}
@@ -223,7 +224,7 @@ public class PropDatabase {
 		if (container == null || container.length < 8) {
 			return null;
 		}
-		int count = peekU16(container, 2);
+		int count = u16(container, 2);
 		if (index < 0 || index >= count || 4 + (count + 1) * 4 > container.length) {
 			return null;
 		}
@@ -367,9 +368,5 @@ public class PropDatabase {
 
 	private static int peek(byte[] b, int off) {
 		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
-	}
-
-	private static int peekU16(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8);
 	}
 }

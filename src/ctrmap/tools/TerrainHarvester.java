@@ -9,6 +9,8 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Cut a kit of reusable TERRAIN out of the retail maps.
@@ -432,7 +434,7 @@ public class TerrainHarvester {
 				continue;
 			}
 			try {
-				int sub0 = u32(mat, 4);
+				int sub0 = i32(mat, 4);
 				int w = u16(mat, sub0 + 4), h = u16(mat, sub0 + 6);
 				for (int i = 0; i < w * h; i++) {
 					int r = u16(mat, sub0 + 8 + i * 2);
@@ -455,22 +457,10 @@ public class TerrainHarvester {
 		if (i >= cnt) {
 			return null;
 		}
-		int o0 = le32(c, 4 + i * 4), o1 = le32(c, 4 + (i + 1) * 4);
+		int o0 = i32(c, 4 + i * 4), o1 = i32(c, 4 + (i + 1) * 4);
 		if (o1 <= o0 || o1 > c.length) {
 			return null;
 		}
 		return Arrays.copyOfRange(c, o0, o1);
-	}
-
-	static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	static int u32(byte[] b, int o) {
-		return le32(b, o);
-	}
-
-	static int le32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

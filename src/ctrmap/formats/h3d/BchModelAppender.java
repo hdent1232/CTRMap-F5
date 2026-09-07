@@ -1,6 +1,7 @@
 package ctrmap.formats.h3d;
 
 import java.util.*;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * Appends a MESH + MATERIAL copied from a donor map model into a target map
@@ -22,8 +23,6 @@ import java.util.*;
  * pre-existing command-tail note).
  */
 public class BchModelAppender {
-
-    static int le32(byte[] b,int o){return (b[o]&0xFF)|((b[o+1]&0xFF)<<8)|((b[o+2]&0xFF)<<16)|((b[o+3]&0xFF)<<24);}
     static void poke(byte[] b,int o,int v){b[o]=(byte)v;b[o+1]=(byte)(v>>8);b[o+2]=(byte)(v>>16);b[o+3]=(byte)(v>>24);}
     static void poke16(byte[] b,int o,int v){b[o]=(byte)v;b[o+1]=(byte)(v>>8);}
     static String str(byte[] b,int abs){StringBuilder sb=new StringBuilder();for(int p=abs;p<b.length&&b[p]!=0;p++)sb.append((char)(b[p]&0xFF));return sb.toString();}
@@ -74,7 +73,7 @@ public class BchModelAppender {
             int base = e.src==0?m.contentsAddr: e.src==2?m.commandsAddr: -1;
             if (base<0) throw new IllegalStateException("reloc src "+e.src);
             e.ptrLoc = base + (e.tgt==1?off:off*4);
-            e.word = le32(raw, e.ptrLoc);
+            e.word = i32(raw, e.ptrLoc);
             out.add(e);
         }
         return out;
@@ -95,7 +94,7 @@ public class BchModelAppender {
         int matTree=t.ptr(t.modelPtr+0x3C);
         int matArr=t.matValuesPtr, meshArr=t.meshesPtr;
         int P6=Integer.MAX_VALUE; for (int j=0;j<M;j++) P6=Math.min(P6, t.meshes.get(j)[3]);
-        int mmv=t.ptr(t.modelMetaPtr), mmc=le32(T,t.modelMetaPtr+4);
+        int mmv=t.ptr(t.modelMetaPtr), mmc=i32(T,t.modelMetaPtr+4);
         int P7=C+t.contentsLen;
         for (int k=0;k<mmc;k++){ int dp=t.ptr(mmv+k*0xC+8); if (dp!=0&&dp<P7) P7=dp; }
         String tModelName=str(T, t.modelNamePtr);
@@ -107,7 +106,7 @@ public class BchModelAppender {
         TreeSet<Integer> dObj=new TreeSet<>();
         for (int i=0;i<d.matCount;i++) dObj.add(d.materialParamOffsets.get(i));
         for (int j=0;j<d.meshCount;j++) dObj.add(d.meshes.get(j)[3]);
-        int dmmv=d.ptr(d.modelMetaPtr), dmmc=le32(D,d.modelMetaPtr+4);
+        int dmmv=d.ptr(d.modelMetaPtr), dmmc=i32(D,d.modelMetaPtr+4);
         int dTail=0x44+d.contentsLen;
         for (int k=0;k<dmmc;k++){ int dp=d.ptr(dmmv+k*0xC+8); if (dp!=0&&dp<dTail) dTail=dp; }
         dObj.add(dTail);
@@ -122,7 +121,7 @@ public class BchModelAppender {
         // have - even a target WITH a skeleton has different bones (verified crash:
         // donor bone index 5 vs a 2-bone target). Rigid-skinned interior props are
         // therefore not appendable in v1; same-material fast paths still handle them.
-        if ((le32(D,dSB)&0xFFFFFFFF)!=0)
+        if ((i32(D,dSB)&0xFFFFFFFF)!=0)
             throw new IllegalStateException("donor submesh is skinned (bone-dependent) - not supported");
         int dMatHdr=d.matValuesPtr+dm*0x2C;
         int dMeshHdr=d.meshes.get(ddj)[0];
@@ -133,10 +132,10 @@ public class BchModelAppender {
         // donor command blocks
         int dFC=d.ptr(dPB+0xC8);
         int dTC=d.ptr(dMatHdr+0x10);
-        int dTCend=dTC+4*le32(D,dMatHdr+0x14);
+        int dTCend=dTC+4*i32(D,dMatHdr+0x14);
         int dEN=d.meshes.get(ddj)[1];
         int dDIS=d.ptr(dMeshHdr+0x18);
-        int dDISend=dDIS+4*le32(D,dMeshHdr+0x1C);
+        int dDISend=dDIS+4*i32(D,dMeshHdr+0x1C);
         if (!(dFC<dTC && dTC<=dTCend)) throw new IllegalStateException("donor mat cmd order");
         int matCmdSize=dTCend-dFC, meshCmdSize=dDISend-dEN;
 
@@ -201,7 +200,7 @@ public class BchModelAppender {
         List<Node> nMT=buildTree(concat(matNames,newName));
 
         // ---- contents insertions ----
-        int lam=le32(D,dMeshHdr+4)>>>24;
+        int lam=i32(D,dMeshHdr+4)>>>24;
         int[] endOff={0x4C,0x54,0x5C,0x64};
         int[] begOff={0x48,0x50,0x58,0x60};
         int P5=t.ptr(t.modelPtr+endOff[lam]);
@@ -251,8 +250,8 @@ public class BchModelAppender {
         byte[] oldC=Arrays.copyOfRange(T, C, C+t.contentsLen);
         // in-place tree node overwrites (nodes 0..N keep OLD string offsets; generic pass remaps)
         for (int n=0;n<=N;n++){
-            writeNode(oldC, d1t-C+n*0xC, nD1.get(n), n==0?-1: (le32(T, d1t+n*0xC+8)));
-            writeNode(oldC, matTree-C+n*0xC, nMT.get(n), n==0?-1: (le32(T, matTree+n*0xC+8)));
+            writeNode(oldC, d1t-C+n*0xC, nD1.get(n), n==0?-1: (i32(T, d1t+n*0xC+8)));
+            writeNode(oldC, matTree-C+n*0xC, nMT.get(n), n==0?-1: (i32(T, matTree+n*0xC+8)));
         }
         byte[] newC=new byte[t.contentsLen+totalIns];
         { int src=0, dst2=0;

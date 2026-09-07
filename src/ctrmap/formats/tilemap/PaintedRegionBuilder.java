@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import static ctrmap.formats.LittleEndian.f32;
 
 /**
  * Builds a full map region (visual model + collision + tilemap) from a painted
@@ -3625,9 +3626,5 @@ public class PaintedRegionBuilder {
 		b[o + 1] = (byte) (v >> 8);
 		b[o + 2] = (byte) (v >> 16);
 		b[o + 3] = (byte) (v >> 24);
-	}
-
-	private static float f32(byte[] b, int o) {
-		return Float.intBitsToFloat((b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24));
 	}
 }

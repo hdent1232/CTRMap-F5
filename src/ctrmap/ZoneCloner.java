@@ -6,6 +6,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.putI32;
 
 /**
  * Clones a zone over another EXISTING ZoneData slot ("safe" variant - no GARC
@@ -93,7 +95,7 @@ public class ZoneCloner {
 		byte[] out = new byte[zo.length];
 		System.arraycopy(zo, 0, out, 0, zo.length);
 		if (patchOAZoneNumber) {
-			int headerOffset = readIntLE(out, 4); //containerOffset[0] = start of subfile 0 (the 0x38-byte zone header)
+			int headerOffset = i32(out, 4); //containerOffset[0] = start of subfile 0 (the 0x38-byte zone header)
 			if (headerOffset < 0 || headerOffset + ZONE_HEADER_SIZE > out.length) {
 				throw new IllegalArgumentException("ZO subfile 0 out of bounds (offset " + headerOffset + ").");
 			}
@@ -124,9 +126,9 @@ public class ZoneCloner {
 		if (zoneNumber < 0 || zoneNumber > 0x7FF) {
 			throw new IllegalArgumentException("Zone number " + zoneNumber + " does not fit in 11 bits.");
 		}
-		int flags = readIntLE(b, headerOffset + UNKNOWN_FLAGS_OFFSET);
+		int flags = i32(b, headerOffset + UNKNOWN_FLAGS_OFFSET);
 		flags = (flags & 0x001FFFFF) | (zoneNumber << OA_ZONE_NUMBER_SHIFT);
-		writeIntLE(b, headerOffset + UNKNOWN_FLAGS_OFFSET, flags);
+		putI32(b, headerOffset + UNKNOWN_FLAGS_OFFSET, flags);
 	}
 
 	private static void checkZOMagic(byte[] zo, String what) {
@@ -136,17 +138,6 @@ public class ZoneCloner {
 		if ((zo[0] & 0xFF) != 0x5A || (zo[1] & 0xFF) != 0x4F) {
 			throw new IllegalArgumentException(what + " is not a ZO container (dummy ZoneData entry?).");
 		}
-	}
-
-	private static int readIntLE(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8) | ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
-	}
-
-	private static void writeIntLE(byte[] b, int off, int value) {
-		b[off] = (byte) (value & 0xFF);
-		b[off + 1] = (byte) ((value >> 8) & 0xFF);
-		b[off + 2] = (byte) ((value >> 16) & 0xFF);
-		b[off + 3] = (byte) ((value >> 24) & 0xFF);
 	}
 
 	private static byte[] readAll(File f) throws IOException {

@@ -33,6 +33,8 @@ import javax.swing.event.DocumentListener;
 
 import static ctrmap.CtrmapMainframe.mTileMapPanel;
 import static ctrmap.CtrmapMainframe.mZonePnl;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
 
 /**
  * "Pick GameFreak's atmosphere": browse every retail zone by name, see a LIVE
@@ -228,7 +230,7 @@ public class GfEnvPicker {
 			}
 			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
-			int s0 = u32(mm, 4);
+			int s0 = i32(mm, 4);
 			int w = u16(mm, s0 + 4), h = u16(mm, s0 + 6);
 			int region = -1;
 			for (int k = 0; k < w * h; k++) {
@@ -367,18 +369,10 @@ public class GfEnvPicker {
 		if (c == null || c.length < 8) {
 			return null;
 		}
-		int st = u32(c, 4 + 4 * i), en = u32(c, 4 + 4 * (i + 1));
+		int st = i32(c, 4 + 4 * i), en = i32(c, 4 + 4 * (i + 1));
 		if (st < 0 || en > c.length || en < st) {
 			return null;
 		}
 		return Arrays.copyOfRange(c, st, en);
-	}
-
-	static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	static int u32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
 	}
 }

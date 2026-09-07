@@ -1,5 +1,7 @@
 package ctrmap.formats.codepatch;
 
+import static ctrmap.formats.LittleEndian.i32;
+
 /**
  * Which icon each item draws - a {@code u32[776]} inside the ORAS EXECUTABLE,
  * not in any archive.
@@ -135,7 +137,7 @@ public final class ItemIconTable {
 					+ " (" + code.length + " bytes)");
 		}
 		for (int i = 0; i < NEXT_TABLE_STOCK.length; i++) {
-			int got = u32(code, NEXT_TABLE + i * 4);
+			int got = i32(code, NEXT_TABLE + i * 4);
 			if (got != NEXT_TABLE_STOCK[i]) {
 				throw new IllegalStateException("the table after the item icons does not read as"
 						+ " recorded (word " + i + " is " + got + ", expected " + NEXT_TABLE_STOCK[i]
@@ -143,7 +145,7 @@ public final class ItemIconTable {
 			}
 		}
 		for (int i = 0; i < COUNT; i++) {
-			int v = u32(code, FILE_OFFSET + i * 4);
+			int v = i32(code, FILE_OFFSET + i * 4);
 			if (v < 0 || v > MAX_ICON) {
 				throw new IllegalStateException("item " + i + " points at icon " + v
 						+ ", outside the 0.." + MAX_ICON + " range every retail entry sits in"
@@ -157,7 +159,7 @@ public final class ItemIconTable {
 		verify(code);
 		int[] out = new int[COUNT];
 		for (int i = 0; i < COUNT; i++) {
-			out[i] = u32(code, FILE_OFFSET + i * 4);
+			out[i] = i32(code, FILE_OFFSET + i * 4);
 		}
 		return out;
 	}
@@ -202,11 +204,6 @@ public final class ItemIconTable {
 	 */
 	public static byte[] diffIPS(byte[] code, int[] icons) {
 		return ShopData.diffIPS(code, write(code, icons));
-	}
-
-	private static int u32(byte[] b, int off) {
-		return (b[off] & 0xFF) | ((b[off + 1] & 0xFF) << 8)
-				| ((b[off + 2] & 0xFF) << 16) | ((b[off + 3] & 0xFF) << 24);
 	}
 
 	private static int indexOf(byte[] hay, byte[] needle) {

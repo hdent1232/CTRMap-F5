@@ -10,6 +10,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import static ctrmap.formats.LittleEndian.u16;
+import static ctrmap.formats.LittleEndian.i32;
+import static ctrmap.formats.LittleEndian.f32;
+import static ctrmap.formats.LittleEndian.putU16;
 
 /**
  * Grows a zone's map beyond one region - the "bigger custom maps" feature
@@ -267,23 +271,6 @@ public class MapResizer {
 
 	private static int pad4(int v) {
 		return (v + 3) & ~3;
-	}
-
-	private static int u16(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8);
-	}
-
-	private static int i32(byte[] b, int o) {
-		return (b[o] & 0xFF) | ((b[o + 1] & 0xFF) << 8) | ((b[o + 2] & 0xFF) << 16) | ((b[o + 3] & 0xFF) << 24);
-	}
-
-	private static float f32(byte[] b, int o) {
-		return Float.intBitsToFloat(i32(b, o));
-	}
-
-	private static void putU16(byte[] b, int o, int v) {
-		b[o] = (byte) v;
-		b[o + 1] = (byte) (v >> 8);
 	}
 
 	private static void p32(byte[] b, int o, int v) {
