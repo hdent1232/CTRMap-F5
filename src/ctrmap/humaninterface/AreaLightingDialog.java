@@ -3,6 +3,7 @@ package ctrmap.humaninterface;
 import ctrmap.Workspace;
 import ctrmap.formats.area.AreaEnv;
 import ctrmap.formats.containers.AD;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -49,7 +50,7 @@ public class AreaLightingDialog {
 			return;
 		}
 		final int areaId = fork.newArea;
-		final File areaFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areaId);
+		final File areaFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, areaId);
 		final AD ad;
 		final byte[] sub4;
 		final AreaEnv env;

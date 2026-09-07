@@ -11,6 +11,8 @@ import ctrmap.formats.tilemap.TilePalette;
 import ctrmap.formats.zone.ZoneHeader;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.text.GFMessageFile;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.PrintWriter;
@@ -61,11 +63,11 @@ public class BuildingHarvester {
 		}
 		String romfs = args[0];
 		String out = args.length > 1 ? args[1] : "src/ctrmap/resources/oras_buildings_auto.tsv";
-		ctrmap.Workspace.GameType game = ctrmap.Workspace.GameType.ORAS;
-		GARC gr = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.FIELD_DATA, game)));
-		GARC zo = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.ZONE_DATA, game)));
-		GARC mm = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.MAP_MATRIX, game)));
-		GARC gt = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ctrmap.Workspace.ArchiveType.GAMETEXT, game)));
+		GameType game = GameType.ORAS;
+		GARC gr = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ArchiveType.FIELD_DATA, game)));
+		GARC zo = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ArchiveType.ZONE_DATA, game)));
+		GARC mm = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ArchiveType.MAP_MATRIX, game)));
+		GARC gt = new GARC(new File(romfs + ctrmap.Workspace.getArchivePath(ArchiveType.GAMETEXT, game)));
 		List<String> locNames = GFMessageFile.getStrings(gt.getDecompressedEntry(90));
 
 		//region -> {areaId, locationName} via the base zones' headers
@@ -77,7 +79,7 @@ public class BuildingHarvester {
 			try {
 				byte[] c = zo.getDecompressedEntry(z);
 				byte[] hdr = subfile(c, 0);
-				ZoneHeader h = new ZoneHeader(hdr, ctrmap.Workspace.GameType.ORAS);
+				ZoneHeader h = new ZoneHeader(hdr, GameType.ORAS);
 				byte[] mat = mm.getDecompressedEntry(h.mapmatrixID);
 				int sub0 = i32(mat, 4);
 				int w = u16(mat, sub0 + 4), ht = u16(mat, sub0 + 6);

@@ -8,6 +8,8 @@ import ctrmap.formats.gfcollision.GRCollisionFile;
 import ctrmap.formats.text.LocationNames;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import ctrmap.humaninterface.NPCEditForm;
 import ctrmap.humaninterface.TileMapPanel;
 import ctrmap.humaninterface.TriggerEditForm;
@@ -259,9 +261,9 @@ public class DataSafetyGuardsTest {
 			return;
 		}
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
-		Sessions.bare(Scratch.dir("ctrmap_data_safety_warps"), dump, Workspace.GameType.ORAS);
-		GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game())));
-		GARC texts = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.GAMETEXT, Workspace.game())));
+		Sessions.bare(Scratch.dir("ctrmap_data_safety_warps"), dump, GameType.ORAS);
+		GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.ZONE_DATA, Workspace.game())));
+		GARC texts = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.GAMETEXT, Workspace.game())));
 		LocationNames.load(temp(texts.getDecompressedEntry(LocationNames.gametextIndex())));
 		//three zones make a zone table; the editor is told zone 2 is open
 		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel();
@@ -433,8 +435,8 @@ public class DataSafetyGuardsTest {
 		a.targetWarpId = 0;
 		File ws = Scratch.dir("ctrmap_data_safety");
 		Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
-		Workspace.install(Sessions.bare(ws, Workspace.session().gameDir(), Workspace.GameType.ORAS)
-				.withArchive(Workspace.ArchiveType.ZONE_DATA, zo));
+		Workspace.install(Sessions.bare(ws, Workspace.session().gameDir(), GameType.ORAS)
+				.withArchive(ArchiveType.ZONE_DATA, zo));
 		Workspace.session().prepareDirectories();
 		zonePnl.zones[2].entities.modified = true;
 		said = ctrmap.Ui.record();
@@ -611,11 +613,11 @@ public class DataSafetyGuardsTest {
 		}
 		scratchGameOnce(dump);
 		ctrmap.humaninterface.builder.Builder builder = new ctrmap.humaninterface.builder.Builder();
-		setField(builder, "currentGARC", Workspace.ArchiveType.MAP_MATRIX);
+		setField(builder, "currentGARC", ArchiveType.MAP_MATRIX);
 		java.lang.reflect.Method addFile = builder.getClass()
 				.getDeclaredMethod("btnAddFileToGARCActionPerformed", java.awt.event.ActionEvent.class);
 		addFile.setAccessible(true);
-		File archive = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX).file;
+		File archive = Workspace.getArchive(ArchiveType.MAP_MATRIX).file;
 		int before = new GARC(archive).length;
 
 		List<String> said;
@@ -696,12 +698,12 @@ public class DataSafetyGuardsTest {
 		try {
 
 			//a real zone, then the damage: an area id AreaData does not have
-			int noSuchArea = Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length + 21;
-			Zone broken = new Zone(new ZO(temp(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
+			int noSuchArea = Workspace.getArchive(ArchiveType.AREA_DATA).length + 21;
+			Zone broken = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
 			broken.header.areadataID = noSuchArea;
 			//the same failure, reproduced here, so the report can be required to
 			//carry what actually went wrong rather than a fixed sentence
-			Zone probe = new Zone(new ZO(temp(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
+			Zone probe = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
 			probe.header.areadataID = noSuchArea;
 			String cause = "";
 			try {
@@ -714,7 +716,7 @@ public class DataSafetyGuardsTest {
 			pnl.zones = new Zone[]{null, broken};
 			fill(pnl, "zoneList", 2);
 			//the editors are showing the zone the user had open
-			Zone open = new Zone(new ZO(temp(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
+			Zone open = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
 			CtrmapMainframe.mNPCEditForm.loadFromEntities(open.entities, null);
 			check(CtrmapMainframe.mNPCEditForm.loaded, "the NPC editor is showing a zone before the failed load");
 			setField(pnl, "loaded", true);
@@ -793,8 +795,8 @@ public class DataSafetyGuardsTest {
 		//app loads it, not opened on the side
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
 		Sessions.overDump(Scratch.dir("ctrmap_data_safety_matrix"), dump);
-		GARC fd = Workspace.getArchive(Workspace.ArchiveType.FIELD_DATA);
-		GARC mmGarc = Workspace.getArchive(Workspace.ArchiveType.MAP_MATRIX);
+		GARC fd = Workspace.getArchive(ArchiveType.FIELD_DATA);
+		GARC mmGarc = Workspace.getArchive(ArchiveType.MAP_MATRIX);
 		if (fd == null || mmGarc == null) {
 			System.out.println("  skip: the dump does not carry FieldData and MapMatrix");
 			return;
@@ -895,9 +897,9 @@ public class DataSafetyGuardsTest {
 
 		//2. a table loaded by hand answers, and the next load replaces it
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
-		Sessions.bare(Scratch.dir("ctrmap_data_safety_locnames"), dump, Workspace.GameType.ORAS);
+		Sessions.bare(Scratch.dir("ctrmap_data_safety_locnames"), dump, GameType.ORAS);
 		GARC texts = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.GAMETEXT, Workspace.game())));
+				+ Workspace.getArchivePath(ArchiveType.GAMETEXT, Workspace.game())));
 		int table = LocationNames.gametextIndex();
 		LocationNames.load(temp(texts.getDecompressedEntry(table)));
 		int line = -1;

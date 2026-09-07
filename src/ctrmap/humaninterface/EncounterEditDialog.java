@@ -5,6 +5,7 @@ import ctrmap.ZoneAppender;
 import ctrmap.formats.encounters.EncounterTable;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.GFMessageFile;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.Frame;
@@ -45,7 +46,7 @@ public class EncounterEditDialog {
 			return;
 		}
 		final int zoneIndex = mZonePnl.zoneIndex;
-		GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		final int enIndex = zo.length - 1;
 		final int zoneCount = zo.length - 2;
 
@@ -119,7 +120,7 @@ public class EncounterEditDialog {
 					jt.getCellEditor().stopCellEditing();
 				}
 				byte[] newPack = EncounterTable.write(packRef, zoneIndex, table);
-				File enFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, enIndex);
+				File enFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, enIndex);
 				try (FileOutputStream fos = new FileOutputStream(enFile)) {
 					fos.write(newPack);
 				}
@@ -155,7 +156,7 @@ public class EncounterEditDialog {
 	/** The workspace EN pack: a persisted valid edit wins, else the GARC bytes. */
 	private static byte[] loadPack(GARC zo, int enIndex, int zoneCount) {
 		try {
-			File enFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, enIndex);
+			File enFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, enIndex);
 			if (enFile != null && Workspace.persistPaths().contains(enFile.getAbsolutePath())) {
 				byte[] cand = Files.readAllBytes(enFile.toPath());
 				try {
@@ -174,7 +175,7 @@ public class EncounterEditDialog {
 	/** Species names from GameText (entry 98; index == national dex number). */
 	private static String[] loadSpeciesNames() {
 		try {
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT,
+			File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT,
 					Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES));
 			List<String> lines = GFMessageFile.getStrings(Files.readAllBytes(f.toPath()));
 			return lines.toArray(new String[0]);

@@ -2,6 +2,7 @@ package ctrmap.tests;
 
 import ctrmap.Ui;
 import ctrmap.Workspace;
+import ctrmap.gamedef.GameType;
 import ctrmap.humaninterface.WorkspaceSettings;
 import ctrmap.setup.DumpCheck;
 import ctrmap.setup.SetupWizard;
@@ -421,7 +422,7 @@ public class WorkspaceRepointTest {
 			//a dump the wizard would accept, so the run reaches the decision
 			DumpCheck.Result usable = new DumpCheck.Result();
 			usable.status = DumpCheck.Status.VALID;
-			usable.game = Workspace.GameType.ORAS;
+			usable.game = GameType.ORAS;
 			set(w, "gameResult", usable);
 			WorkspaceRepointTest.<JTextField>field(w, "gameField").setText(other);
 			WorkspaceRepointTest.<JTextField>field(w, "wsField").setText(Workspace.WORKSPACE_PATH);

@@ -4,6 +4,7 @@ import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.maison.MaisonSet;
 import ctrmap.formats.text.GFMessageFile;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.awt.Frame;
@@ -41,10 +42,10 @@ import static ctrmap.CtrmapMainframe.*;
  */
 public class MaisonEditDialog {
 
-	private static final Workspace.ArchiveType[] POOLS = {
-		Workspace.ArchiveType.MAISON_SET_POOL_A,
-		Workspace.ArchiveType.MAISON_SET_POOL_B,
-		Workspace.ArchiveType.MAISON_SET_POOL_C
+	private static final ArchiveType[] POOLS = {
+		ArchiveType.MAISON_SET_POOL_A,
+		ArchiveType.MAISON_SET_POOL_B,
+		ArchiveType.MAISON_SET_POOL_C
 	};
 	private static final String[] POOL_NAMES = {
 		"Pool A (standard)", "Pool B (+legendaries)", "Pool C (Hoenn)"
@@ -176,7 +177,7 @@ public class MaisonEditDialog {
 
 	private static String[] text(int entry) {
 		try {
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, entry);
+			File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, entry);
 			List<String> lines = GFMessageFile.getStrings(Files.readAllBytes(f.toPath()));
 			return lines.toArray(new String[0]);
 		} catch (Exception ex) {
@@ -193,9 +194,9 @@ public class MaisonEditDialog {
 	private static class SetModel extends AbstractTableModel {
 
 		/** The class-list table pairing of each pool (C has none). */
-		private static final Workspace.ArchiveType[] PAIRED_LISTS = {
-			Workspace.ArchiveType.MAISON_CLASS_LIST_A,
-			Workspace.ArchiveType.MAISON_CLASS_LIST_B,
+		private static final ArchiveType[] PAIRED_LISTS = {
+			ArchiveType.MAISON_CLASS_LIST_A,
+			ArchiveType.MAISON_CLASS_LIST_B,
 			null
 		};
 

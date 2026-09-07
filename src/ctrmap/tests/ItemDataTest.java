@@ -2,6 +2,8 @@ package ctrmap.tests;
 
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.pokedata.ItemData;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -43,8 +45,8 @@ public class ItemDataTest {
 	//path lives outside that package, and a suite is not exempt from the rule it
 	//exists to protect.
 	private static String itemArchive() {
-		String p = ctrmap.gamedef.GameProfile.of(ctrmap.Workspace.GameType.ORAS)
-				.archivePath(ctrmap.Workspace.ArchiveType.ITEM_DATA);
+		String p = ctrmap.gamedef.GameProfile.of(GameType.ORAS)
+				.archivePath(ArchiveType.ITEM_DATA);
 		return p == null ? "" : p;
 	}
 

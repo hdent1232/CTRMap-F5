@@ -14,6 +14,7 @@ import ctrmap.formats.tilemap.TerrainCatalog;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
 import ctrmap.formats.zone.Zone;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.TilePainterForm;
 import ctrmap.humaninterface.ZoneLoadingPanel;
 import java.io.File;
@@ -122,8 +123,8 @@ public class PaintApplyGuardsTest {
 		Exception stop = apply(74, new ArrayList<TilePainterForm.Placed>());
 		check(stop != null, "Apply on a shared-area zone does not report success (stopped by: " + stop + ")");
 		check(newlyPersisted(before).isEmpty(), "nothing was persisted by the refused Apply: " + newlyPersisted(before));
-		check(pristine(Workspace.ArchiveType.FIELD_DATA, gr, 272), "region 272 is byte-identical to the archive");
-		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 43), "area 43 is byte-identical to the archive");
+		check(pristine(ArchiveType.FIELD_DATA, gr, 272), "region 272 is byte-identical to the archive");
+		check(pristine(ArchiveType.AREA_DATA, ad, 43), "area 43 is byte-identical to the archive");
 	}
 
 	/**
@@ -172,8 +173,8 @@ public class PaintApplyGuardsTest {
 				+ " and 73's area: the Apply refuses in its own words, naming them, saying nothing was"
 				+ " applied and what to do instead (stopped by: " + stop + ")");
 		check(newlyPersisted(before).isEmpty(), "nothing was written by it: " + newlyPersisted(before));
-		check(pristine(Workspace.ArchiveType.FIELD_DATA, gr, 272), "region 272 is byte-identical to the archive");
-		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 43), "area 43 is byte-identical to the archive");
+		check(pristine(ArchiveType.FIELD_DATA, gr, 272), "region 272 is byte-identical to the archive");
+		check(pristine(ArchiveType.AREA_DATA, ad, 43), "area 43 is byte-identical to the archive");
 	}
 
 	/**
@@ -200,7 +201,7 @@ public class PaintApplyGuardsTest {
 		Exception stop = apply(6, placed);
 		check(stop != null, "Apply with a door prop on a shared-area zone does not report success (stopped by: " + stop + ")");
 		check(newlyPersisted(before).isEmpty(), "nothing was persisted by the refused Apply: " + newlyPersisted(before));
-		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 8), "shared area 8 is byte-identical to the archive (no door textures, no registry entry)");
+		check(pristine(ArchiveType.AREA_DATA, ad, 8), "shared area 8 is byte-identical to the archive (no door textures, no registry entry)");
 	}
 
 	/**
@@ -214,10 +215,10 @@ public class PaintApplyGuardsTest {
 		paintSand();
 		TerrainCatalog.Donor sand = TerrainCatalog.donors().get(TilePalette.SAND);
 		List<String> needed = TerrainCatalog.ensureMaterial(new GR(Workspace.getWorkspaceFile(
-				Workspace.ArchiveType.FIELD_DATA, 153)).getFile(1), TilePalette.SAND).texturesNeeded;
+				ArchiveType.FIELD_DATA, 153)).getFile(1), TilePalette.SAND).texturesNeeded;
 		check(sand != null && !needed.isEmpty(), "the SAND brush imports a donor material that needs textures: " + needed);
 		int lacking = areaLacking(needed);
-		File donorFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, sand.donorArea);
+		File donorFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, sand.donorArea);
 		Files.write(donorFile.toPath(), ad.getDecompressedEntry(lacking));
 		List<String> before = new ArrayList<>(Workspace.persistPaths());
 		Exception stop = apply(15, new ArrayList<TilePainterForm.Placed>());
@@ -225,8 +226,8 @@ public class PaintApplyGuardsTest {
 		check(stop != null && stop.getMessage() != null && stop.getMessage().contains(needed.get(0)),
 				"a carry that cannot find its texture stops the Apply and names it (stopped by: " + stop + ")");
 		check(newlyPersisted(before).isEmpty(), "nothing was persisted by the failed Apply: " + newlyPersisted(before));
-		check(pristine(Workspace.ArchiveType.FIELD_DATA, gr, 153), "region 153 is byte-identical to the archive");
-		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 21), "area 21 is byte-identical to the archive");
+		check(pristine(ArchiveType.FIELD_DATA, gr, 153), "region 153 is byte-identical to the archive");
+		check(pristine(ArchiveType.AREA_DATA, ad, 21), "area 21 is byte-identical to the archive");
 	}
 
 	/** The same Apply with the real donor: the map lands AND its textures do. */
@@ -236,14 +237,14 @@ public class PaintApplyGuardsTest {
 		//what the pristine map will need, read before anything paints it
 		List<String> needed = TerrainCatalog.ensureMaterial(PropDatabase.getSubfile(
 				gr.getDecompressedEntry(153), 1), TilePalette.SAND).texturesNeeded;
-		forget(Workspace.ArchiveType.FIELD_DATA, 153);
+		forget(ArchiveType.FIELD_DATA, 153);
 		List<String> before = new ArrayList<>(Workspace.persistPaths());
 		Exception stop = apply(15, new ArrayList<TilePainterForm.Placed>());
 		check(stop == null, "Apply on a private zone succeeds (stopped by: " + stop + ")");
-		File region = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, 153);
+		File region = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 153);
 		check(newlyPersisted(before).contains(region.getAbsolutePath()), "region 153 was written");
 		check(sandTriangles(new GR(region).getFile(1)) > 0, "and it carries the painted sand floor");
-		File area = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, 21);
+		File area = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 21);
 		check(newlyPersisted(before).contains(area.getAbsolutePath()), "area 21 was written");
 		check(!needed.isEmpty() && areaTextures(Files.readAllBytes(area.toPath())).containsAll(needed),
 				"and it now holds the sand texture(s) " + needed);
@@ -259,19 +260,19 @@ public class PaintApplyGuardsTest {
 	 */
 	static void retryStillAsksForTheTextures() throws Exception {
 		byte[] painted = new GR(Workspace.getWorkspaceFile(
-				Workspace.ArchiveType.FIELD_DATA, 153)).getFile(1);
+				ArchiveType.FIELD_DATA, 153)).getFile(1);
 		List<String> needed = TerrainCatalog.ensureMaterial(PropDatabase.getSubfile(
 				gr.getDecompressedEntry(153), 1), TilePalette.SAND).texturesNeeded;
 		TerrainCatalog.ImportResult again = TerrainCatalog.ensureMaterial(painted, TilePalette.SAND);
 		check(!again.injected && again.texturesNeeded.equals(needed),
 				"a map that already carries the brush's material still reports its textures "
 				+ again.texturesNeeded + " (the donor's are " + needed + ")");
-		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		forget(ArchiveType.AREA_DATA, 21);
 		open(15);
 		paintSand();
 		Exception stop = apply(15, new ArrayList<TilePainterForm.Placed>());
 		check(stop == null, "the retry applies (stopped by: " + stop + ")");
-		File area = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, 21);
+		File area = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 21);
 		check(!needed.isEmpty() && areaTextures(Files.readAllBytes(area.toPath())).containsAll(needed),
 				"and it carries the sand texture(s) " + needed + " the refused carry never delivered");
 	}
@@ -287,9 +288,9 @@ public class PaintApplyGuardsTest {
 		List<String> before = new ArrayList<>(Workspace.persistPaths());
 		Exception stop = apply(0, new ArrayList<TilePainterForm.Placed>());
 		check(stop == null, "Apply on a shared-matrix zone succeeds (stopped by: " + stop + ")");
-		check(pristine(Workspace.ArchiveType.FIELD_DATA, gr, 0), "the shared region 0 is byte-identical to the archive");
+		check(pristine(ArchiveType.FIELD_DATA, gr, 0), "the shared region 0 is byte-identical to the archive");
 		File painted = null;
-		String fd = Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA).getAbsolutePath();
+		String fd = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA).getAbsolutePath();
 		for (String p : newlyPersisted(before)) {
 			if (p.startsWith(fd) && sandTriangles(new GR(new File(p)).getFile(1)) > 0) {
 				painted = new File(p);
@@ -364,13 +365,13 @@ public class PaintApplyGuardsTest {
 		if (gym == null) {
 			return;
 		}
-		forget(Workspace.ArchiveType.FIELD_DATA, 153);
-		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		forget(ArchiveType.FIELD_DATA, 153);
+		forget(ArchiveType.AREA_DATA, 21);
 		open(15);
 		paintSand();
 		List<TilePainterForm.Placed> placed = new ArrayList<>();
 		placed.add(new TilePainterForm.Placed(gym, 20, 20));
-		File zone = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, 15);
+		File zone = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, 15);
 		check(zone.setWritable(false) && !zone.canWrite(), "fixture: zone 15's own file cannot be written");
 		Exception stop;
 		ctrmap.Ui.record("Link retail interiors (enter-only)");
@@ -381,7 +382,7 @@ public class PaintApplyGuardsTest {
 			zone.setWritable(true);
 		}
 		check(stop == null, "an Apply whose door wiring cannot run still reports success (stopped by: " + stop + ")");
-		File region = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, 153);
+		File region = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 153);
 		check(sandTriangles(new GR(region).getFile(1)) > 0, "and the map it wrote is on disk");
 		check(report != null && report.contains("Door wiring failed"),
 				"and the wiring that failed is a line in the result, not a lost message: " + report);
@@ -403,8 +404,8 @@ public class PaintApplyGuardsTest {
 		List<TilePainterForm.Placed> placed = new ArrayList<>();
 		placed.add(new TilePainterForm.Placed(gym, 20, 20));
 
-		forget(Workspace.ArchiveType.FIELD_DATA, 153);
-		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		forget(ArchiveType.FIELD_DATA, 153);
+		forget(ArchiveType.AREA_DATA, 21);
 		open(15);
 		paintSand();
 		List<String> said = ctrmap.Ui.record("Skip");
@@ -421,8 +422,8 @@ public class PaintApplyGuardsTest {
 		check(report != null && report.contains("door(s) left unwired"),
 				"and the result says the door is still unwired: " + report);
 
-		forget(Workspace.ArchiveType.FIELD_DATA, 153);
-		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		forget(ArchiveType.FIELD_DATA, 153);
+		forget(ArchiveType.AREA_DATA, 21);
 		open(15);
 		paintSand();
 		ctrmap.Ui.record("Link retail interiors (enter-only)");
@@ -458,8 +459,8 @@ public class PaintApplyGuardsTest {
 	static void paintedCliffsCarryTheirTexture() throws Exception {
 		List<String> needed = TerrainCatalog.donorTextures(TerrainCatalog.cliffDonor());
 		check(!needed.isEmpty(), "the generated cliff faces need the donor's texture(s) " + needed);
-		forget(Workspace.ArchiveType.FIELD_DATA, 153);
-		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		forget(ArchiveType.FIELD_DATA, 153);
+		forget(ArchiveType.AREA_DATA, 21);
 		open(15);
 		paintSand();
 		//a raised plateau, so the build really has cliff faces to generate
@@ -473,7 +474,7 @@ public class PaintApplyGuardsTest {
 			Arrays.fill(row, 0);
 		}
 		check(stop == null, "a map with a slope applies (stopped by: " + stop + ")");
-		File area = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, 21);
+		File area = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 21);
 		check(!needed.isEmpty() && areaTextures(Files.readAllBytes(area.toPath())).containsAll(needed),
 				"and its area now holds the cliff texture(s) " + needed);
 	}
@@ -605,11 +606,11 @@ public class PaintApplyGuardsTest {
 	 * own; region 154) has 39 such tiles under the guards' 12x12 sand patch.
 	 */
 	static void applyCountsTilesThatTookANeighboursGround() throws Exception {
-		forget(Workspace.ArchiveType.FIELD_DATA, 154);
-		forget(Workspace.ArchiveType.AREA_DATA, 22);
+		forget(ArchiveType.FIELD_DATA, 154);
+		forget(ArchiveType.AREA_DATA, 22);
 		open(17);
 		paintSand();
-		GR region = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, 154));
+		GR region = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 154));
 		int borrowed = PaintedRegionBuilder.borrowedGroundTiles(region.getFile(2), region.getFile(0), touched);
 		check(borrowed > 0, "fixture: the painted tiles include " + borrowed + " with no ground of their own");
 		Exception stop = apply(17, new ArrayList<TilePainterForm.Placed>());
@@ -628,12 +629,12 @@ public class PaintApplyGuardsTest {
 	 * shape of finding 0, arrived at from the other end.
 	 */
 	static void aRegionThatCannotBeWrittenStopsTheApply() throws Exception {
-		forget(Workspace.ArchiveType.FIELD_DATA, 153);
-		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		forget(ArchiveType.FIELD_DATA, 153);
+		forget(ArchiveType.AREA_DATA, 21);
 		open(15);
 		paintSand();
 		//getWorkspaceFile extracts it from the archive, so there is a file to lock
-		File region = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, 153);
+		File region = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 153);
 		byte[] was = Files.readAllBytes(region.toPath());
 		check(region.setWritable(false) && !region.canWrite(), "fixture: region 153's workspace file is read-only");
 		Exception stop;
@@ -645,7 +646,7 @@ public class PaintApplyGuardsTest {
 		check(stop != null && String.valueOf(stop.getMessage()).contains("could not write region 153"),
 				"a region the workspace cannot write stops the Apply and names it (stopped by: " + stop + ")");
 		check(Arrays.equals(Files.readAllBytes(region.toPath()), was), "the region is exactly as it was");
-		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 21),
+		check(pristine(ArchiveType.AREA_DATA, ad, 21),
 				"and its area was not committed either - no textures for a map that was never written");
 	}
 
@@ -669,12 +670,12 @@ public class PaintApplyGuardsTest {
 	 * the write itself.
 	 */
 	static void anAreaThatCannotBeWrittenStopsTheApply() throws Exception {
-		forget(Workspace.ArchiveType.FIELD_DATA, 153);
-		forget(Workspace.ArchiveType.AREA_DATA, 21);
+		forget(ArchiveType.FIELD_DATA, 153);
+		forget(ArchiveType.AREA_DATA, 21);
 		open(15);
 		paintSand();
 		//extract it first, so there is a file to make read-only
-		File area = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, 21);
+		File area = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 21);
 		byte[] was = Files.readAllBytes(area.toPath());
 		check(area.setWritable(false) && !area.canWrite(), "fixture: area 21's workspace file is read-only");
 		Exception stop;
@@ -688,7 +689,7 @@ public class PaintApplyGuardsTest {
 				"an area the workspace cannot write stops the Apply and names it (stopped by: " + stop + ")");
 		check(Arrays.equals(Files.readAllBytes(area.toPath()), was),
 				"and area 21 is exactly as it was - no half-written texture pack");
-		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 21), "which is the archive's own copy of it");
+		check(pristine(ArchiveType.AREA_DATA, ad, 21), "which is the archive's own copy of it");
 	}
 
 	/**
@@ -772,7 +773,7 @@ public class PaintApplyGuardsTest {
 	static boolean registersProp(int area, int model) throws Exception {
 		ctrmap.formats.propdata.ADPropRegistry reg = new ctrmap.formats.propdata.ADPropRegistry(
 				new ctrmap.formats.containers.AD(Workspace.getWorkspaceFile(
-						Workspace.ArchiveType.AREA_DATA, area)), null, false);
+						ArchiveType.AREA_DATA, area)), null, false);
 		for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
 			if (e.model == model) {
 				return true;
@@ -803,8 +804,8 @@ public class PaintApplyGuardsTest {
 		check(stop != null && String.valueOf(stop.getMessage()).contains("Apply cancelled - nothing was changed."),
 				"cancelling that question stops the Apply and says so (stopped by: " + stop + ")");
 		check(newlyPersisted(before).isEmpty(), "nothing was written by the cancelled Apply: " + newlyPersisted(before));
-		check(pristine(Workspace.ArchiveType.FIELD_DATA, gr, 272), "region 272 is byte-identical to the archive");
-		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 43), "area 43 is byte-identical to the archive");
+		check(pristine(ArchiveType.FIELD_DATA, gr, 272), "region 272 is byte-identical to the archive");
+		check(pristine(ArchiveType.AREA_DATA, ad, 43), "area 43 is byte-identical to the archive");
 	}
 
 	/** The other answer: the fork is taken, and the paint lands in the copy. */
@@ -820,12 +821,12 @@ public class PaintApplyGuardsTest {
 		}
 		check(said(said, "SHARES its area"), "the same question is asked: " + said);
 		check(stop == null, "accepting the fork applies the paint (stopped by: " + stop + ")");
-		check(pristine(Workspace.ArchiveType.AREA_DATA, ad, 43),
+		check(pristine(ArchiveType.AREA_DATA, ad, 43),
 				"and zones 72 and 73's area 43 is still byte-identical to the archive");
 		int now = ctrmap.AreaForker.currentArea(74);
 		check(now != 43, "zone 74 now has an area of its own (" + now + ")");
 		check(sandTriangles(new GR(Workspace.getWorkspaceFile(
-				Workspace.ArchiveType.FIELD_DATA, 272)).getFile(1)) > 0, "and its map carries the painted sand floor");
+				ArchiveType.FIELD_DATA, 272)).getFile(1)) > 0, "and its map carries the painted sand floor");
 	}
 
 	/** True when one of the messages the program gave contains the text. */
@@ -851,7 +852,7 @@ public class PaintApplyGuardsTest {
 		//the brush donors are cut through the workspace's pristine snapshot;
 		//the dump IS pristine, so link it into place (copy when linking fails)
 		File snap = new File(Workspace.originalSnapshotDir().getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game()));
+				+ Workspace.getArchivePath(ArchiveType.FIELD_DATA, Workspace.game()));
 		if (!snap.isFile()) {
 			snap.getParentFile().mkdirs();
 			try {
@@ -860,9 +861,9 @@ public class PaintApplyGuardsTest {
 				Files.copy(new File(dump, "a/0/3/9").toPath(), snap.toPath());
 			}
 		}
-		ad = session.getArchive(Workspace.ArchiveType.AREA_DATA);
-		gr = session.getArchive(Workspace.ArchiveType.FIELD_DATA);
-		zo = session.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		ad = session.getArchive(ArchiveType.AREA_DATA);
+		gr = session.getArchive(ArchiveType.FIELD_DATA);
+		zo = session.getArchive(ArchiveType.ZONE_DATA);
 		//the prop database builds only behind an open workspace
 		if (PropDatabase.get() == null) {
 			throw new IllegalStateException("prop database did not build");
@@ -876,7 +877,7 @@ public class PaintApplyGuardsTest {
 	/** Loads a zone into the panel the painter reads, as the editor would. */
 	static void open(int zoneIndex) throws Exception {
 		CtrmapMainframe.mZonePnl.zone = new Zone(new ZO(Workspace.getWorkspaceFile(
-				Workspace.ArchiveType.ZONE_DATA, zoneIndex)), Workspace.game());
+				ArchiveType.ZONE_DATA, zoneIndex)), Workspace.game());
 		CtrmapMainframe.mZonePnl.zoneIndex = zoneIndex;
 	}
 
@@ -909,14 +910,14 @@ public class PaintApplyGuardsTest {
 	}
 
 	/** Drops the workspace's copy of an entry so the next read is the archive's. */
-	static void forget(Workspace.ArchiveType type, int index) {
+	static void forget(ArchiveType type, int index) {
 		File f = new File(Workspace.getExtractionDirectory(type), String.valueOf(index));
 		Workspace.persistPaths().remove(f.getAbsolutePath());
 		f.delete();
 	}
 
 	/** True when the workspace holds no copy of the entry, or an identical one. */
-	static boolean pristine(Workspace.ArchiveType type, GARC garc, int index) throws Exception {
+	static boolean pristine(ArchiveType type, GARC garc, int index) throws Exception {
 		File f = new File(Workspace.getExtractionDirectory(type), String.valueOf(index));
 		return !f.exists() || Arrays.equals(Files.readAllBytes(f.toPath()), garc.getDecompressedEntry(index));
 	}

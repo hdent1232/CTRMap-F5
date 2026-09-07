@@ -3,6 +3,8 @@ package ctrmap.tests;
 import ctrmap.Workspace;
 import ctrmap.WorkspaceSession;
 import ctrmap.formats.garc.GARC;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.util.EnumMap;
 
@@ -17,11 +19,11 @@ import java.util.EnumMap;
 final class Sessions {
 
 	/** The archives every game needs open - the same eight {@link WorkspaceSession#open} insists on. */
-	static final Workspace.ArchiveType[] REQUIRED = {
-		Workspace.ArchiveType.AREA_DATA, Workspace.ArchiveType.FIELD_DATA,
-		Workspace.ArchiveType.MAP_MATRIX, Workspace.ArchiveType.GAMETEXT,
-		Workspace.ArchiveType.ZONE_DATA, Workspace.ArchiveType.BUILDING_MODELS,
-		Workspace.ArchiveType.NPC_REGISTRIES, Workspace.ArchiveType.MOVE_MODELS
+	static final ArchiveType[] REQUIRED = {
+		ArchiveType.AREA_DATA, ArchiveType.FIELD_DATA,
+		ArchiveType.MAP_MATRIX, ArchiveType.GAMETEXT,
+		ArchiveType.ZONE_DATA, ArchiveType.BUILDING_MODELS,
+		ArchiveType.NPC_REGISTRIES, ArchiveType.MOVE_MODELS
 	};
 
 	private Sessions() {
@@ -32,7 +34,7 @@ final class Sessions {
 	 * reads the game, its folders and the workspace's pristine snapshot.
 	 * Installed as the current one.
 	 */
-	static WorkspaceSession bare(File workspaceDir, File gameDir, Workspace.GameType game) {
+	static WorkspaceSession bare(File workspaceDir, File gameDir, GameType game) {
 		WorkspaceSession s = new WorkspaceSession(workspaceDir, gameDir, game, null);
 		Workspace.install(s);
 		return s;
@@ -48,11 +50,11 @@ final class Sessions {
 	 * WorkspaceSession#open} to identify the game by.
 	 */
 	static WorkspaceSession overDump(File workspaceDir, File dump) {
-		EnumMap<Workspace.ArchiveType, GARC> open = new EnumMap<>(Workspace.ArchiveType.class);
-		for (Workspace.ArchiveType t : REQUIRED) {
-			open.put(t, new GARC(new File(dump.getAbsolutePath() + Workspace.getArchivePath(t, Workspace.GameType.ORAS))));
+		EnumMap<ArchiveType, GARC> open = new EnumMap<>(ArchiveType.class);
+		for (ArchiveType t : REQUIRED) {
+			open.put(t, new GARC(new File(dump.getAbsolutePath() + Workspace.getArchivePath(t, GameType.ORAS))));
 		}
-		WorkspaceSession s = new WorkspaceSession(workspaceDir, dump, Workspace.GameType.ORAS, open).readOnly();
+		WorkspaceSession s = new WorkspaceSession(workspaceDir, dump, GameType.ORAS, open).readOnly();
 		Workspace.install(s);
 		return s;
 	}

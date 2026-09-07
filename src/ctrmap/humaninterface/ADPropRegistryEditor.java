@@ -7,6 +7,7 @@ import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.h3d.texturing.H3DTexture;
 import ctrmap.formats.propdata.ADPropRegistry;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.File;
@@ -84,7 +85,7 @@ public class ADPropRegistryEditor extends javax.swing.JFrame {
 	}
 
 	public H3DModel getH3DModel(int model) {
-		File bchFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.BUILDING_MODELS, model);
+		File bchFile = Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, model);
 		if (bchFile.exists()) {
 			BCHFile mdlBch = new BCHFile(new BM(bchFile).getFile(0));
 			mdlBch.models.get(0).setMaterialTextures(mdlBch.textures);

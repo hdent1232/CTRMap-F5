@@ -6,6 +6,8 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.zone.NpcMoveCodes;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import ctrmap.humaninterface.NPCEditForm;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -143,9 +145,9 @@ public class NpcMoveCodesTest {
 	 * copy, so a table nobody consults is exactly the failure to guard against.
 	 */
 	static void theFormAsksTheTable() {
-		for (Workspace.GameType g : new Workspace.GameType[]{Workspace.GameType.ORAS, Workspace.GameType.XY}) {
+		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
 			Sessions.bare(new File("no-workspace"), new File("no-game"), g);
-			boolean xy = g == Workspace.GameType.XY;
+			boolean xy = g == GameType.XY;
 			NPCEditForm form = new NPCEditForm();
 			int bad = 0;
 			for (int code = 0; code <= PROBE_CEILING; code++) {
@@ -166,9 +168,9 @@ public class NpcMoveCodesTest {
 	 * that code 22 matters; the game can, and it says 18 NPCs wear it.
 	 */
 	static void everyCodeTheGameShipsSurvivesTheDropdown(File dump) throws Exception {
-		Sessions.bare(new File("no-workspace"), dump, Workspace.GameType.ORAS);
+		Sessions.bare(new File("no-workspace"), dump, GameType.ORAS);
 		GARC zo = new GARC(new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game())));
+				+ Workspace.getArchivePath(ArchiveType.ZONE_DATA, Workspace.game())));
 		File tmp = Scratch.file("ctrmap_movecodes");
 		TreeMap<Integer, Integer> move2 = new TreeMap<>();
 		TreeMap<Integer, Integer> move1 = new TreeMap<>();

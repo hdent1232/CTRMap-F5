@@ -8,6 +8,7 @@ import ctrmap.formats.containers.BM;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.h3d.texturing.H3DTexture;
+import ctrmap.gamedef.ArchiveType;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -47,7 +48,7 @@ public class ADPropRegistry {
 				if (!loadModels) {
 					continue;
 				}
-				BCHFile bch = new BCHFile(new BM(Workspace.getWorkspaceFile(Workspace.ArchiveType.BUILDING_MODELS, entry.model)).getFile(0));
+				BCHFile bch = new BCHFile(new BM(Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, entry.model)).getFile(0));
 				if (!bch.models.isEmpty()){
 					bch.models.get(0).setMaterialTextures(bch.textures);
 					if (textures != null){

@@ -7,6 +7,7 @@ import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.RegionFactory;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -83,7 +84,7 @@ public class TilePainterForm {
 	static java.util.List<String> zoneRegionModels() {
 		java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
 		try {
-			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
 			int sub0 = i32(mm, 4);
 			int w = u16(mm, sub0 + 4), h = u16(mm, sub0 + 6);
@@ -93,7 +94,7 @@ public class TilePainterForm {
 					continue;
 				}
 				try {
-					byte[] model = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, id)).getFile(1);
+					byte[] model = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id)).getFile(1);
 					if (BchMapModel.isMapModel(model)) {
 						String n = new BchMapModel(model).getModelName();
 						if (n != null && !n.isEmpty()) {
@@ -116,7 +117,7 @@ public class TilePainterForm {
 	 *  file, and writing through that would grow the very area we just forked
 	 *  away from. */
 	static ctrmap.formats.containers.AD areaContainer(int areaId) throws Exception {
-		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areaId);
+		File f = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, areaId);
 		if (mZonePnl != null && mZonePnl.zone != null && mZonePnl.zone.header != null
 				&& mZonePnl.zone.header.areadata != null && f != null
 				&& f.equals(mZonePnl.zone.header.areadata.getOriginFile())) {
@@ -389,7 +390,7 @@ public class TilePainterForm {
 		float[][] floorY = null;
 		if (composite) {
 			for (int newRegion : src.newRegions) {
-				File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, newRegion);
+				File f = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, newRegion);
 				if (f != null) {
 					GR gr = new GR(f);
 					if (BchMapModel.isMapModel(gr.getFile(1))) {
@@ -421,7 +422,7 @@ public class TilePainterForm {
 		int borrowedGround = 0;
 		java.util.List<StagedRegion> staged = new java.util.ArrayList<>();
 		for (int region : src.newRegions) {
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, region);
+			File f = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, region);
 			if (f == null) {
 				continue;
 			}
@@ -510,7 +511,7 @@ public class TilePainterForm {
 		GeometryForker.ForkResult r = GeometryForker.ensurePrivate(zoneIndex);
 		for (StagedRegion s : staged) {
 			int dest = destRegion(r, s.srcRegion);
-			GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, dest));
+			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, dest));
 			boolean ok = gr.storeFile(1, s.model);
 			ok &= gr.storeFile(2, s.collision);
 			ok &= gr.storeFile(0, s.tilemap);
@@ -763,7 +764,7 @@ public class TilePainterForm {
 	/** Seeds the grid from the region's existing tilemap tuples (reverse lookup). */
 	static void loadFromRegion(int region, TilePalette[][] grid) {
 		try {
-			GR gr = new GR(new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA), String.valueOf(region)));
+			GR gr = new GR(new File(Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA), String.valueOf(region)));
 			byte[] tm = gr.getFile(0);
 			if (tm == null || tm.length < 8) {
 				return;
@@ -814,7 +815,7 @@ public class TilePainterForm {
 	 */
 	public static int[] firstRegionCell() {
 		try {
-			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
 			int sub0 = i32(mm, 4);
 			int w = u16(mm, sub0 + 4), h = u16(mm, sub0 + 6);
@@ -882,8 +883,8 @@ public class TilePainterForm {
 	 */
 	/** An area's prop texture pack as this workspace holds it: the extracted file when there is one, else the archive's. */
 	static byte[] propPackOf(int area) throws Exception {
-		File ws = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA), String.valueOf(area));
-		byte[] entry = ws.exists() ? java.nio.file.Files.readAllBytes(ws.toPath()) : Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).getDecompressedEntry(area);
+		File ws = new File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA), String.valueOf(area));
+		byte[] entry = ws.exists() ? java.nio.file.Files.readAllBytes(ws.toPath()) : Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(area);
 		return ctrmap.formats.propdata.PropDatabase.getSubfile(entry, 1);
 	}
 
@@ -904,7 +905,7 @@ public class TilePainterForm {
 		}
 		// textures first (all-or-nothing before any registry entry)
 		byte[] modelBch = ctrmap.formats.propdata.PropDatabase.getSubfile(
-				Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS).getDecompressedEntry(pm.modelIndex), 0);
+				Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(pm.modelIndex), 0);
 		byte[] targetPack = area.file(1);
 		java.util.Set<String> available = ctrmap.formats.propdata.PropDatabase.getTexturePackTextureNames(targetPack);
 		java.util.List<String> missing = ctrmap.formats.propdata.PropDatabase.getMissingTextureNames(modelBch, available);
@@ -972,7 +973,7 @@ public class TilePainterForm {
 		// the packed archive (which the scanner reads) still looks empty
 		java.util.List<Integer> slots = new java.util.ArrayList<>();
 		if (cloneInteriors) {
-			File zoDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA);
+			File zoDir = Workspace.getExtractionDirectory(ArchiveType.ZONE_DATA);
 			for (ctrmap.ZoneRepurposeScanner.Candidate c : ctrmap.ZoneRepurposeScanner.scan()) {
 				if (c.tier <= 1 && c.index != zoneIndex && !new File(zoDir, String.valueOf(c.index)).exists()) {
 					slots.add(c.index);
@@ -1077,7 +1078,7 @@ public class TilePainterForm {
 		if (mZonePnl != null && mZonePnl.zone != null && mZonePnl.zoneIndex == zoneIndex && mZonePnl.zone.file != null) {
 			return mZonePnl.zone.file;
 		}
-		return new ctrmap.formats.containers.ZO(Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex));
+		return new ctrmap.formats.containers.ZO(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex));
 	}
 
 	static String escapeTypedText(String text) {
@@ -1086,14 +1087,14 @@ public class TilePainterForm {
 
 	/** A validated sign-routine donor script from the workspace ZoneData. */
 	static ctrmap.formats.scripts.GFLPawnScript paletteSignDonor() {
-		final ctrmap.formats.garc.GARC zoneGarc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		final ctrmap.formats.garc.GARC zoneGarc = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zoneGarc == null) {
 			throw new ctrmap.formats.scripts.SignWrapperInjector.InjectionException("The ZoneData archive is not loaded.");
 		}
 		return ctrmap.formats.scripts.SignWrapperInjector.pickDonor(new ctrmap.formats.scripts.MsgWrapperInjector.ScriptSource() {
 			@Override
 			public ctrmap.formats.scripts.GFLPawnScript get(int zoneIndex) {
-				File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+				File f = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 				if (f == null || !f.exists()) {
 					return null;
 				}
@@ -1156,7 +1157,7 @@ public class TilePainterForm {
 		}
 		int textID = mZonePnl.zone.header.textID;
 		File sf = Workspace.getStoryTextGARC() != null
-				? Workspace.getWorkspaceFile(Workspace.ArchiveType.STORYTEXT, textID) : null;
+				? Workspace.getWorkspaceFile(ArchiveType.STORYTEXT, textID) : null;
 		if (sf == null || !sf.exists()) {
 			ctrmap.Ui.message(frame, "Signs placed as scenery only: the STORYTEXT archive is unavailable.",
 					"Signs", JOptionPane.INFORMATION_MESSAGE);

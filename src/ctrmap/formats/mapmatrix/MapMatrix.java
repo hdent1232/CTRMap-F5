@@ -10,6 +10,7 @@ import ctrmap.LittleEndianDataOutputStream;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.containers.MM;
+import ctrmap.gamedef.ArchiveType;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -51,7 +52,7 @@ public class MapMatrix {
 				for (int j = 0; j < width; j++) {
 					ids.set(j, i, dis.readShort());
 					if (Workspace.isValid() && ids.get(j, i) != -1) {
-						regions.set(j, i, new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, ids.get(j, i))));
+						regions.set(j, i, new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, ids.get(j, i))));
 					}
 				}
 			}

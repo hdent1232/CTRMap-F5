@@ -1,5 +1,6 @@
 package ctrmap.humaninterface;
 
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.resources.ResourceAccess;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.AD;
@@ -100,8 +101,8 @@ public class ExtrasPanel extends javax.swing.JPanel {
 			return;
 		}
 		byte[] ad7 = ResourceAccess.getByteArray("DummyLumioseCollision.bin");
-		for (int i = 0; i < Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length - (Workspace.isOA() ? 2 : 1); i++) {
-			AD ad = new AD(Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, i));
+		for (int i = 0; i < Workspace.getArchive(ArchiveType.AREA_DATA).length - (Workspace.isOA() ? 2 : 1); i++) {
+			AD ad = new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, i));
 			ad.storeFile(7, ad7);
 		}
     }//GEN-LAST:event_freecamActionPerformed
@@ -123,8 +124,8 @@ public class ExtrasPanel extends javax.swing.JPanel {
 			}
 		}
 
-		File f170 = Workspace.isXY() ? Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, 170)
-				: Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, 228);
+		File f170 = Workspace.isXY() ? Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 170)
+				: Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 228);
 		try {
 			RandomAccessFile raf = new RandomAccessFile(f170, "rw");
 			int skip = Workspace.isXY() ? 0x14 : 0x1c;
@@ -154,8 +155,8 @@ public class ExtrasPanel extends javax.swing.JPanel {
 			}
 		}
 
-		File f170 = Workspace.isXY() ? Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, 170)
-				: Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, 228);
+		File f170 = Workspace.isXY() ? Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 170)
+				: Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 228);
 		try {
 			RandomAccessFile raf = new RandomAccessFile(f170, "rw");
 			int skip = Workspace.isXY() ? 0x19 : 0x21;

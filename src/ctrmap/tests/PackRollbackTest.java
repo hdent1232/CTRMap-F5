@@ -2,6 +2,7 @@ package ctrmap.tests;
 
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -59,15 +60,15 @@ public class PackRollbackTest {
 	 * that is the whole defect, and a lone gapped file never reaches it.
 	 */
 	static void refusedPackLeavesTheTableAsTheFileHasIt() throws Exception {
-		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
-		int before = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length;
+		File dir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
+		int before = Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length;
 		File tail = new File(dir, String.valueOf(before));
 		File gapped = new File(dir, String.valueOf(before + 2));
 		Files.write(tail.toPath(), new byte[]{1, 2, 3, 4});
 		Files.write(gapped.toPath(), new byte[]{5, 6, 7, 8});
 		Workspace.addPersist(tail);
 		Workspace.addPersist(gapped);
-		File archive = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).file;
+		File archive = Workspace.getArchive(ArchiveType.NPC_REGISTRIES).file;
 		try {
 			pack();
 			check(false, "a pack that would leave a gap in the archive is refused");
@@ -77,16 +78,16 @@ public class PackRollbackTest {
 		}
 
 		GARC fresh = new GARC(archive);
-		check(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getEntryCount() == fresh.getEntryCount(),
-				"the refused pack left the entry table as the file has it (" + Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getEntryCount()
+		check(Workspace.getArchive(ArchiveType.NPC_REGISTRIES).getEntryCount() == fresh.getEntryCount(),
+				"the refused pack left the entry table as the file has it (" + Workspace.getArchive(ArchiveType.NPC_REGISTRIES).getEntryCount()
 				+ " entries in memory, " + fresh.getEntryCount() + " in " + archive.getName() + ")");
-		check(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length == fresh.length,
-				"and the entry count with it (" + Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length + " vs " + fresh.length + ")");
-		int common = Math.min(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getEntryCount(), fresh.getEntryCount());
+		check(Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length == fresh.length,
+				"and the entry count with it (" + Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length + " vs " + fresh.length + ")");
+		int common = Math.min(Workspace.getArchive(ArchiveType.NPC_REGISTRIES).getEntryCount(), fresh.getEntryCount());
 		int differing = 0;
 		for (int i = 0; i < common; i++) {
-			if (Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).getEntryStoredLength(i) != fresh.getEntryStoredLength(i)
-					|| Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).isEntryCompressed(i) != fresh.isEntryCompressed(i)) {
+			if (Workspace.getArchive(ArchiveType.NPC_REGISTRIES).getEntryStoredLength(i) != fresh.getEntryStoredLength(i)
+					|| Workspace.getArchive(ArchiveType.NPC_REGISTRIES).isEntryCompressed(i) != fresh.isEntryCompressed(i)) {
 				differing++;
 			}
 		}
@@ -99,9 +100,9 @@ public class PackRollbackTest {
 		tail.delete();
 		gapped.delete();
 		pack();
-		check(Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length == before,
+		check(Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length == before,
 				"and a later pack that stages nothing does not grow the archive by the entry the"
-				+ " refused one had taken in (" + before + " -> " + Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length + ")");
+				+ " refused one had taken in (" + before + " -> " + Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length + ")");
 	}
 
 	/**
@@ -123,8 +124,8 @@ public class PackRollbackTest {
 	 * archive that simply cannot be packed at all.
 	 */
 	static void anArchiveSomethingElseHoldsOpenIsRefusedOutLoud() throws Exception {
-		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
-		File archive = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).file;
+		File dir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
+		File archive = Workspace.getArchive(ArchiveType.NPC_REGISTRIES).file;
 		//a real edit, staged the way the editor stages one, so that a pack
 		//which ran would visibly change the file. Retail ships empty registries
 		//at the front of the archive, and flipping a byte of nothing changes
@@ -132,8 +133,8 @@ public class PackRollbackTest {
 		//it, and the test says which.
 		File staged = null;
 		byte[] edited = null;
-		for (int i = 0; i < Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES).length && staged == null; i++) {
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.NPC_REGISTRIES, i);
+		for (int i = 0; i < Workspace.getArchive(ArchiveType.NPC_REGISTRIES).length && staged == null; i++) {
+			File f = Workspace.getWorkspaceFile(ArchiveType.NPC_REGISTRIES, i);
 			byte[] b = (f == null || !f.isFile()) ? new byte[0] : Files.readAllBytes(f.toPath());
 			if (b.length > 0) {
 				staged = f;
@@ -154,7 +155,7 @@ public class PackRollbackTest {
 		Throwable thrown = null;
 		try (FileInputStream somethingElse = new FileInputStream(archive)) {
 			try {
-				ws().getArchive(Workspace.ArchiveType.NPC_REGISTRIES).packDirectory(dir, ws()::isPersisted, ws().workspaceDir());
+				ws().getArchive(ArchiveType.NPC_REGISTRIES).packDirectory(dir, ws()::isPersisted, ws().workspaceDir());
 			} catch (Throwable t) {
 				thrown = t;
 			}
@@ -171,7 +172,7 @@ public class PackRollbackTest {
 		check(!halfWritten.exists(),
 				"and no half-written copy is left beside the workspace (" + halfWritten.getName() + ")");
 
-		ws().getArchive(Workspace.ArchiveType.NPC_REGISTRIES).packDirectory(dir, ws()::isPersisted, ws().workspaceDir());
+		ws().getArchive(ArchiveType.NPC_REGISTRIES).packDirectory(dir, ws()::isPersisted, ws().workspaceDir());
 		check(!Arrays.equals(before, Files.readAllBytes(archive.toPath())),
 				"...and the very same pack does write the archive once nothing holds it open");
 	}

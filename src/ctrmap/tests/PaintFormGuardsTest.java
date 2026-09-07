@@ -6,6 +6,7 @@ import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.PaintForm;
 import ctrmap.humaninterface.TilePainterForm;
 import ctrmap.humaninterface.ZoneLoadingPanel;
@@ -328,7 +329,7 @@ public class PaintFormGuardsTest {
 		if (cell == null) {
 			return;
 		}
-		GR gr = new GR(Workspace.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, cell[0]));
+		GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, cell[0]));
 		int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(gr.getFile(2), gr.getFile(0), new int[DIM][DIM]);
 		check(borrowed > 0, "fixture: region " + cell[0] + " has tiles with no ground of their own (" + borrowed + ")");
 		String label = ((JLabel) get(form, "zoneLabel")).getText();

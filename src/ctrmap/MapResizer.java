@@ -4,6 +4,7 @@ import ctrmap.formats.containers.GR;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.RegionFactory;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
 import static ctrmap.formats.LittleEndian.u16;
@@ -159,9 +160,9 @@ public class MapResizer {
 		if (!ws.isOA()) {
 			throw new IOException("Map resize is ORAS-only in v1.");
 		}
-		GARC zo = ws.getArchive(Workspace.ArchiveType.ZONE_DATA);
-		GARC gr = ws.getArchive(Workspace.ArchiveType.FIELD_DATA);
-		GARC mm = ws.getArchive(Workspace.ArchiveType.MAP_MATRIX);
+		GARC zo = ws.getArchive(ArchiveType.ZONE_DATA);
+		GARC gr = ws.getArchive(ArchiveType.FIELD_DATA);
+		GARC mm = ws.getArchive(ArchiveType.MAP_MATRIX);
 		if (zo == null || gr == null || mm == null) {
 			throw new IOException("No workspace is loaded.");
 		}
@@ -169,19 +170,19 @@ public class MapResizer {
 		if (zoneIndex < 0 || zoneIndex >= zoneCount) {
 			throw new IOException("Zone " + zoneIndex + " out of range.");
 		}
-		File mmDir = ws.getExtractionDirectory(Workspace.ArchiveType.MAP_MATRIX);
-		File fdDir = ws.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA);
+		File mmDir = ws.getExtractionDirectory(ArchiveType.MAP_MATRIX);
+		File fdDir = ws.getExtractionDirectory(ArchiveType.FIELD_DATA);
 		int newMatrix = mm.length;
 		File matrixOut = new File(mmDir, String.valueOf(newMatrix));
 		if (ws.isPersisted(matrixOut)) {
 			throw new IOException("A map append is already pending. Pack the workspace first.");
 		}
 
-		File zoneFile = ws.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		File zoneFile = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
 		int hdrOff = i32(zoBytes, 4);
 		int oldMatrix = u16(zoBytes, hdrOff + 4);
-		byte[] matBytes = Files.readAllBytes(ws.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, oldMatrix).toPath());
+		byte[] matBytes = Files.readAllBytes(ws.getWorkspaceFile(ArchiveType.MAP_MATRIX, oldMatrix).toPath());
 
 		//template = the zone's first region (same area -> textures guaranteed)
 		int sub0 = i32(matBytes, 4);
@@ -196,7 +197,7 @@ public class MapResizer {
 		if (templateRegion < 0) {
 			throw new IOException("The zone's matrix has no regions.");
 		}
-		byte[] templateGr = Files.readAllBytes(ws.getWorkspaceFile(Workspace.ArchiveType.FIELD_DATA, templateRegion).toPath());
+		byte[] templateGr = Files.readAllBytes(ws.getWorkspaceFile(ArchiveType.FIELD_DATA, templateRegion).toPath());
 
 		int newCells = newW * newH - w * h;
 		if (newCells <= 0) {

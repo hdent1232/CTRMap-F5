@@ -1,5 +1,6 @@
 package ctrmap.formats.h3d;
 
+import ctrmap.gamedef.ArchiveType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -351,7 +352,7 @@ public class BchTexturePack {
 			if (!ctrmap.Workspace.isOA()) {
 				return null;
 			}
-			ctrmap.formats.garc.GARC zo = ctrmap.Workspace.getArchive(ctrmap.Workspace.ArchiveType.ZONE_DATA);
+			ctrmap.formats.garc.GARC zo = ctrmap.Workspace.getArchive(ArchiveType.ZONE_DATA);
 			if (zo == null) {
 				return null;
 			}
@@ -362,7 +363,7 @@ public class BchTexturePack {
 			//longer shares with anybody.
 			byte[] master = null;
 			java.io.File mf = ctrmap.Workspace.getWorkspaceFile(
-					ctrmap.Workspace.ArchiveType.ZONE_DATA, zo.length - 2);
+					ArchiveType.ZONE_DATA, zo.length - 2);
 			if (mf != null && mf.isFile()) {
 				try {
 					master = java.nio.file.Files.readAllBytes(mf.toPath());
@@ -398,7 +399,7 @@ public class BchTexturePack {
 	 */
 	public static String carryToArea(int donorArea, int targetArea, List<String> needed,
 			ctrmap.formats.containers.AD liveTarget, int editingZone) throws Exception {
-		java.io.File tgtFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, targetArea);
+		java.io.File tgtFile = ctrmap.Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, targetArea);
 		if (tgtFile == null) {
 			throw new IllegalStateException("area files unavailable");
 		}
@@ -442,7 +443,7 @@ public class BchTexturePack {
 	public static Carry planCarry(int donorArea, int targetArea, List<String> needed,
 			byte[] targetWorldPack, byte[] targetPropPack, int editingZone) throws Exception {
 		assertNotShared(targetArea, editingZone);
-		java.io.File donFile = ctrmap.Workspace.getWorkspaceFile(ctrmap.Workspace.ArchiveType.AREA_DATA, donorArea);
+		java.io.File donFile = ctrmap.Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, donorArea);
 		if (donFile == null) {
 			throw new IllegalStateException("area files unavailable");
 		}

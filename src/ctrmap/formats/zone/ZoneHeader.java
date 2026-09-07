@@ -10,6 +10,8 @@ import ctrmap.formats.garc.LZ11;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.texturing.H3DTexture;
 import ctrmap.formats.npcreg.NPCRegistry;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -75,7 +77,7 @@ public class ZoneHeader {
 
 	public int unknownFlags;
 
-	public Workspace.GameType game;
+	public GameType game;
 
 	public boolean enableDowsingMachine;
 	public boolean enableBreathFX;
@@ -85,7 +87,7 @@ public class ZoneHeader {
 	public boolean enable3D;
 	public int OAZoneNumber;
 
-	public ZoneHeader(byte[] data, Workspace.GameType game) {
+	public ZoneHeader(byte[] data, GameType game) {
 		try {
 			this.game = game;
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(data));
@@ -128,13 +130,13 @@ public class ZoneHeader {
 
 			unknownFlags = dis.readInt();
 			// >> 13 in OA
-			int relocator = (game == Workspace.GameType.XY) ? 0 : 1;
+			int relocator = (game == GameType.XY) ? 0 : 1;
 			enableDowsingMachine = (unknownFlags >> (12 + relocator) & 1) == 1;
 			// >> 12 in OA
 			enableBreathFX = (unknownFlags >> (11 + relocator) & 1) == 1;
 			enable3D = (unknownFlags >> (15 + relocator) & 1) == 1;
 			// means flashable darkness in OA
-			if (game == Workspace.GameType.XY) {
+			if (game == GameType.XY) {
 				enableSpecialWalking = (unknownFlags >> 2 & 1) == 0;
 			} else {
 				enableFlashableDarkness = (unknownFlags >> 1 & 1) == 1;
@@ -213,7 +215,7 @@ public class ZoneHeader {
 	}
 
 	public void calculateFlags() {
-		if (game == Workspace.GameType.XY) {
+		if (game == GameType.XY) {
 			unknownFlags = unknownFlags & 0xFFFFFFFE | ((enableGhosting) ? 1 : 0);
 			unknownFlags = unknownFlags & 0xFFFFF7FF | ((enableBreathFX) ? 1 : 0) << 11;
 			unknownFlags = unknownFlags & 0xFFFFEFFF | ((enableDowsingMachine) ? 1 : 0) << 12;
@@ -230,7 +232,7 @@ public class ZoneHeader {
 	}
 
 	public void fetchArchives() {
-		areadata = new AD(Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, areadataID));
+		areadata = new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, areadataID));
 		byte[] adbch1 = areadata.getFile(1);
 		if (Utils.checkBCHMagic(adbch1)) {
 			BCHFile adbch1bch = new BCHFile(adbch1);
@@ -246,8 +248,8 @@ public class ZoneHeader {
 		} else {
 			worldTextures.addAll(new BCHFile(wTex).textures);
 		}
-		npcreg = new NPCRegistry(Workspace.getWorkspaceFile(Workspace.ArchiveType.NPC_REGISTRIES, areadataID));
-		mapmatrix = new MM(Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mapmatrixID));
+		npcreg = new NPCRegistry(Workspace.getWorkspaceFile(ArchiveType.NPC_REGISTRIES, areadataID));
+		mapmatrix = new MM(Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mapmatrixID));
 	}
 
 	public void freeArchives() {

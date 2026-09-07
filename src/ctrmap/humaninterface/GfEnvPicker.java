@@ -4,6 +4,7 @@ import ctrmap.Workspace;
 import ctrmap.formats.area.AreaEnv;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.GFMessageFile;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dialog;
@@ -62,8 +63,8 @@ public class GfEnvPicker {
 	 * or null on cancel.
 	 */
 	public static byte[] pick(java.awt.Window parent, boolean offerCustom) {
-		final GARC zoG = pristineOrLive(Workspace.ArchiveType.ZONE_DATA);
-		final GARC adG = pristineOrLive(Workspace.ArchiveType.AREA_DATA);
+		final GARC zoG = pristineOrLive(ArchiveType.ZONE_DATA);
+		final GARC adG = pristineOrLive(ArchiveType.AREA_DATA);
 		if (zoG == null || adG == null) {
 			return null;
 		}
@@ -229,7 +230,7 @@ public class GfEnvPicker {
 			if (mZonePnl == null || mZonePnl.zone == null) {
 				return null;
 			}
-			File mmFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
 			int s0 = i32(mm, 4);
 			int w = u16(mm, s0 + 4), h = u16(mm, s0 + 6);
@@ -245,7 +246,7 @@ public class GfEnvPicker {
 				return null;
 			}
 			ctrmap.formats.containers.GR gr = new ctrmap.formats.containers.GR(
-					new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.FIELD_DATA), String.valueOf(region)));
+					new File(Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA), String.valueOf(region)));
 			byte[] model = gr.getFile(1);
 			return ctrmap.formats.h3d.BchMapModel.isMapModel(model) ? model : null;
 		} catch (Exception ex) {
@@ -254,7 +255,7 @@ public class GfEnvPicker {
 	}
 
 	/** Pristine snapshot GARC when available (true retail values), else the live one. */
-	private static GARC pristineOrLive(Workspace.ArchiveType type) {
+	private static GARC pristineOrLive(ArchiveType type) {
 		try {
 			String rel = Workspace.getArchivePath(type, Workspace.game());
 			if (rel != null) {
@@ -280,7 +281,7 @@ public class GfEnvPicker {
 
 	private static String[] locationNames() {
 		try {
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT,
+			File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT,
 					ctrmap.formats.text.LocationNames.gametextIndex());
 			List<String> lines = GFMessageFile.getStrings(java.nio.file.Files.readAllBytes(f.toPath()));
 			return lines.toArray(new String[0]);

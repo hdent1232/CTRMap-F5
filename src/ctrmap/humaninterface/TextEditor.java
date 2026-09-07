@@ -3,6 +3,7 @@ package ctrmap.humaninterface;
 import ctrmap.Workspace;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.text.LocationNames;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.io.File;
@@ -100,14 +101,14 @@ public class TextEditor extends javax.swing.JPanel {
 		}
 		loading = true;
 		DefaultComboBoxModel<Integer> cbm = new DefaultComboBoxModel<>();
-		for (int i = 0; i < Workspace.getArchive(Workspace.ArchiveType.GAMETEXT).length; i++) {
+		for (int i = 0; i < Workspace.getArchive(ArchiveType.GAMETEXT).length; i++) {
 			cbm.addElement(i);
 		}
 		fileIdx.setModel(cbm);
-		int target = (loadedIdx >= 0 && loadedIdx < Workspace.getArchive(Workspace.ArchiveType.GAMETEXT).length) ? loadedIdx : 0;
+		int target = (loadedIdx >= 0 && loadedIdx < Workspace.getArchive(ArchiveType.GAMETEXT).length) ? loadedIdx : 0;
 		fileIdx.setSelectedItem(target);
 		loading = false;
-		if (Workspace.getArchive(Workspace.ArchiveType.GAMETEXT).length > 0) {
+		if (Workspace.getArchive(ArchiveType.GAMETEXT).length > 0) {
 			loadFile(target);
 		}
 	}
@@ -118,7 +119,7 @@ public class TextEditor extends javax.swing.JPanel {
 		}
 		loading = true;
 		byte[] b = new byte[0];
-		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, idx);
+		File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, idx);
 		if (f != null && f.exists()) {
 			try {
 				InputStream in = new FileInputStream(f);
@@ -185,7 +186,7 @@ public class TextEditor extends javax.swing.JPanel {
 			ctrmap.Ui.error(this, "Could not encode text file " + loadedIdx + ":\n" + ex.getMessage(), "Text encode error");
 			return false;
 		}
-		File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT, loadedIdx);
+		File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, loadedIdx);
 		if (f == null) {
 			ctrmap.Ui.error(this, "Could not extract text file " + loadedIdx + " from the GameText archive.", "Text save error");
 			return false;

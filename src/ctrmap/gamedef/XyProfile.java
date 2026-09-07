@@ -1,7 +1,7 @@
 package ctrmap.gamedef;
 
-import ctrmap.Workspace.ArchiveType;
-import ctrmap.Workspace.GameType;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 
 /**
  * Pokemon X / Y. Same engine generation as ORAS (Gen 6, BCH/H3D formats), so

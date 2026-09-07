@@ -2,8 +2,8 @@ package ctrmap.tests;
 
 import ctrmap.Ui;
 import ctrmap.Workspace;
-import ctrmap.Workspace.ArchiveType;
-import ctrmap.Workspace.GameType;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import ctrmap.WorkspaceSession;
 import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.GameProfile;
@@ -68,7 +68,7 @@ public class WorkspaceSessionTest {
 	 * Production files (outside ctrmap.tests) that name a static member of
 	 * Workspace other than its nested types, as of 2026-09-07 - the day the
 	 * state moved into WorkspaceSession, when every one of them still read
-	 * the facade. (Eight more name only {@code Workspace.ArchiveType} or
+	 * the facade. (Eight more name only {@code ArchiveType} or
 	 * {@code GameType}; a type is not state, so they are not counted.)
 	 * LOWER THIS as callers are migrated to a session they are handed; never
 	 * raise it without saying in the commit message which file went back to

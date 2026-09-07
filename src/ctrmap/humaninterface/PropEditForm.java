@@ -21,6 +21,7 @@ import ctrmap.formats.text.LocationNames;
 import ctrmap.formats.vectors.Vec3f;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneHeader;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.tools.PropTool;
 import java.awt.Component;
 import java.awt.Cursor;
@@ -310,11 +311,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	private void previewPaletteSelection() {
 		int sel = paletteList.getSelectedIndex();
-		if (sel < 0 || sel >= paletteEntries.length || Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS) == null) {
+		if (sel < 0 || sel >= paletteEntries.length || Workspace.getArchive(ArchiveType.BUILDING_MODELS) == null) {
 			return;
 		}
 		try {
-			byte[] bch = PropDatabase.getSubfile(Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS).getDecompressedEntry(paletteEntries[sel].modelIndex), 0);
+			byte[] bch = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(paletteEntries[sel].modelIndex), 0);
 			if (!PropDatabase.isBCH(bch)) {
 				return;
 			}
@@ -367,7 +368,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		if (uid == -1) {
 			//model not in this area's registry - guard the textures, then auto-import a donor entry
-			byte[] bch = PropDatabase.getSubfile(Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS).getDecompressedEntry(pm.modelIndex), 0);
+			byte[] bch = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(pm.modelIndex), 0);
 			Set<String> available = new HashSet<>();
 			if (propTextures != null) {
 				for (H3DTexture t : propTextures) {
@@ -403,7 +404,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			//registry loader does, so rendering does not depend on the
 			//uid==modelIndex failsafe (ref can differ from model on collision)
 			try {
-				BCHFile mdlBch = new BCHFile(new BM(Workspace.getWorkspaceFile(Workspace.ArchiveType.BUILDING_MODELS, imported.model)).getFile(0));
+				BCHFile mdlBch = new BCHFile(new BM(Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, imported.model)).getFile(0));
 				if (!mdlBch.models.isEmpty()) {
 					H3DModel mdl = mdlBch.models.get(0);
 					mdl.setMaterialTextures(mdlBch.textures);
@@ -525,11 +526,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			//workspace file when one exists (it carries earlier in-session
 			//imports that the packed GARC does not have yet), else the GARC
 			byte[] donorPack;
-			File donorWs = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA), String.valueOf(donorArea));
+			File donorWs = new File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA), String.valueOf(donorArea));
 			if (donorWs.exists()) {
 				donorPack = PropDatabase.getSubfile(java.nio.file.Files.readAllBytes(donorWs.toPath()), 1);
 			} else {
-				donorPack = PropDatabase.getSubfile(Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).getDecompressedEntry(donorArea), 1);
+				donorPack = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(donorArea), 1);
 			}
 			//verify against the actual bytes that will be read - the database's
 			//name-sets can be ahead of disk after earlier in-session imports
@@ -541,7 +542,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			//Say which, before anything is written.
 			for (String c : BchTexturePack.clashesWith(header.areadata.getFile(11), targetPack, donorPack,
 					new ArrayList<>(PropDatabase.getMaterialTextureNames(
-							PropDatabase.getSubfile(Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS).getDecompressedEntry(pm.modelIndex), 0))))) {
+							PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(pm.modelIndex), 0))))) {
 				ctrmap.Ui.message(this, "This prop will draw the area's " + c + ", not its own - the two textures share a name and differ.",
 						"Prop textures", JOptionPane.INFORMATION_MESSAGE);
 			}
@@ -861,7 +862,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			if (reg != null && reg.entries.containsKey(mdlIndex)) {
 				mdlIndex = reg.entries.get(mdlIndex).model;
 			}
-			File f = Workspace.getWorkspaceFile(Workspace.ArchiveType.BUILDING_MODELS, mdlIndex);
+			File f = Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, mdlIndex);
 			if (f.exists()) {
 				BCHFile bch = new BCHFile(new BM(f).getFile(0));
 				bch.models.get(0).setMaterialTextures(bch.textures);
@@ -905,14 +906,14 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ZoneHeader header = (CtrmapMainframe.mZonePnl != null && CtrmapMainframe.mZonePnl.zone != null)
 					? CtrmapMainframe.mZonePnl.zone.header : null;
 			//textures first - all-or-nothing before any registry write
-			if (pm != null && Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS) != null) {
+			if (pm != null && Workspace.getArchive(ArchiveType.BUILDING_MODELS) != null) {
 				java.util.Set<String> available = new java.util.HashSet<>();
 				if (propTextures != null) {
 					for (H3DTexture t : propTextures) {
 						available.add(t.textureName);
 					}
 				}
-				byte[] mdlBch = PropDatabase.getSubfile(Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS).getDecompressedEntry(uid), 0);
+				byte[] mdlBch = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(uid), 0);
 				java.util.List<String> missing = PropDatabase.getMissingTextureNames(mdlBch, available);
 				if (!missing.isEmpty()) {
 					int donorArea = (db != null && header != null && header.areadata != null)
@@ -927,11 +928,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					}
 					byte[] targetPack = header.areadata.getFile(1);
 					byte[] donorPack;
-					File donorWs = new File(Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA), String.valueOf(donorArea));
+					File donorWs = new File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA), String.valueOf(donorArea));
 					if (donorWs.exists()) {
 						donorPack = PropDatabase.getSubfile(java.nio.file.Files.readAllBytes(donorWs.toPath()), 1);
 					} else {
-						donorPack = PropDatabase.getSubfile(Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).getDecompressedEntry(donorArea), 1);
+						donorPack = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(donorArea), 1);
 					}
 					for (String c : BchTexturePack.clashesWith(header.areadata.getFile(11), targetPack, donorPack,
 							new ArrayList<>(PropDatabase.getMaterialTextureNames(mdlBch)))) {
@@ -949,7 +950,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 						if (!header.areadata.storeFile(1, merged)) {
 							throw new IllegalStateException("could not write the area's texture pack");
 						}
-						Workspace.addPersist(Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, header.areadataID));
+						Workspace.addPersist(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, header.areadataID));
 						for (H3DTexture t : packBch.textures) {
 							if (missing.contains(t.textureName) && propTextures != null) {
 								propTextures.add(t);

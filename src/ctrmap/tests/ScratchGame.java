@@ -2,6 +2,8 @@ package ctrmap.tests;
 
 import ctrmap.Workspace;
 import ctrmap.WorkspaceSession;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -29,11 +31,11 @@ final class ScratchGame {
 	 * The archives {@link WorkspaceSession#open} requires. All of them, because
 	 * a pack reloads all of them - leave one out and the reload dereferences null.
 	 */
-	private static final Workspace.ArchiveType[] NEEDED = {
-		Workspace.ArchiveType.AREA_DATA, Workspace.ArchiveType.FIELD_DATA,
-		Workspace.ArchiveType.MAP_MATRIX, Workspace.ArchiveType.GAMETEXT,
-		Workspace.ArchiveType.ZONE_DATA, Workspace.ArchiveType.BUILDING_MODELS,
-		Workspace.ArchiveType.NPC_REGISTRIES, Workspace.ArchiveType.MOVE_MODELS
+	private static final ArchiveType[] NEEDED = {
+		ArchiveType.AREA_DATA, ArchiveType.FIELD_DATA,
+		ArchiveType.MAP_MATRIX, ArchiveType.GAMETEXT,
+		ArchiveType.ZONE_DATA, ArchiveType.BUILDING_MODELS,
+		ArchiveType.NPC_REGISTRIES, ArchiveType.MOVE_MODELS
 	};
 
 	private ScratchGame() {
@@ -51,12 +53,12 @@ final class ScratchGame {
 		Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
 		ws.mkdirs();
 		//detection looks for the game's own sound archive; an empty stand-in is enough
-		File sound = new File(game, ctrmap.gamedef.GameProfile.of(Workspace.GameType.ORAS)
-				.archivePath(Workspace.ArchiveType.SOUND_BCSAR));
+		File sound = new File(game, ctrmap.gamedef.GameProfile.of(GameType.ORAS)
+				.archivePath(ArchiveType.SOUND_BCSAR));
 		sound.getParentFile().mkdirs();
 		Files.write(sound.toPath(), new byte[0]);
-		for (Workspace.ArchiveType t : NEEDED) {
-			String rel = Workspace.getArchivePath(t, Workspace.GameType.ORAS);
+		for (ArchiveType t : NEEDED) {
+			String rel = Workspace.getArchivePath(t, GameType.ORAS);
 			File src = new File(dump.getAbsolutePath() + rel);
 			File dst = new File(game.getAbsolutePath() + rel);
 			dst.getParentFile().mkdirs();

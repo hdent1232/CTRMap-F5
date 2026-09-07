@@ -3,7 +3,9 @@ package ctrmap.formats.pokedata;
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.GFMessageFile;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
+import ctrmap.gamedef.GameType;
 import java.awt.Color;
 import java.io.File;
 import java.nio.file.Files;
@@ -58,14 +60,14 @@ public class PokeData {
 		}
 		loaded = true;
 		try {
-			GARC p = optional(profile().archivePath(Workspace.ArchiveType.PERSONAL));
+			GARC p = optional(profile().archivePath(ArchiveType.PERSONAL));
 			if (p != null) {
 				personal = new byte[p.length][];
 				for (int i = 0; i < p.length; i++) {
 					personal[i] = p.getDecompressedEntry(i);
 				}
 			}
-			GARC mv = optional(profile().archivePath(Workspace.ArchiveType.MOVE_DATA));
+			GARC mv = optional(profile().archivePath(ArchiveType.MOVE_DATA));
 			if (mv != null) {
 				moveMini = mv.getDecompressedEntry(0);
 				//header = 4 + (count+1) u32 offsets; count = (firstOffset-4)/4 - 1
@@ -85,9 +87,9 @@ public class PokeData {
 	 *  reference-data paths are then probed against whatever dir is set). */
 	private static GameProfile profile() {
 		try {
-			return Workspace.game() != null ? GameProfile.current() : GameProfile.of(Workspace.GameType.ORAS);
+			return Workspace.game() != null ? GameProfile.current() : GameProfile.of(GameType.ORAS);
 		} catch (RuntimeException ex) {
-			return GameProfile.of(Workspace.GameType.ORAS);
+			return GameProfile.of(GameType.ORAS);
 		}
 	}
 
@@ -112,7 +114,7 @@ public class PokeData {
 				return new String[0];
 			}
 			if (gameText == null) {
-				gameText = optional(profile().archivePath(Workspace.ArchiveType.GAMETEXT));
+				gameText = optional(profile().archivePath(ArchiveType.GAMETEXT));
 			}
 			if (gameText == null) {
 				return new String[0];

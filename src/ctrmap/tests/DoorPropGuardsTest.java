@@ -4,6 +4,7 @@ import ctrmap.Workspace;
 import ctrmap.formats.h3d.BchTexturePack;
 import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.propdata.PropDatabase;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.TilePainterForm;
 import java.io.File;
 import java.util.ArrayList;
@@ -46,7 +47,7 @@ public class DoorPropGuardsTest {
 
 		int zone = zoneOnArea(TARGET_AREA);
 		check(zone >= 0, "some zone sits on area " + TARGET_AREA + " (zone " + zone + ")");
-		byte[] areaEntry = Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).getDecompressedEntry(TARGET_AREA);
+		byte[] areaEntry = Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(TARGET_AREA);
 		byte[] world = PropDatabase.getSubfile(areaEntry, 11);
 		byte[] props = PropDatabase.getSubfile(areaEntry, 1);
 
@@ -58,7 +59,7 @@ public class DoorPropGuardsTest {
 			if (e.doorProp == null || "-".equals(e.doorProp) || e.donorArea == TARGET_AREA || looked++ > 400) {
 				continue;
 			}
-			byte[] donorPack = PropDatabase.getSubfile(Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).getDecompressedEntry(e.donorArea), 1);
+			byte[] donorPack = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(e.donorArea), 1);
 			List<String> names = new ArrayList<>(PropDatabase.getMaterialTextureNames(modelOf(e.doorProp, e.donorArea)));
 			List<String> clashes = BchTexturePack.clashesWith(world, props, donorPack, names);
 			if (!clashes.isEmpty()) {
@@ -94,7 +95,7 @@ public class DoorPropGuardsTest {
 		}
 		for (PropDatabase.PropModel m : db.models) {
 			if (propName.equals(m.name)) {
-				return PropDatabase.getSubfile(Workspace.getArchive(Workspace.ArchiveType.BUILDING_MODELS).getDecompressedEntry(m.modelIndex), 0);
+				return PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(m.modelIndex), 0);
 			}
 		}
 		throw new IllegalStateException("no prop model named " + propName);
@@ -102,8 +103,8 @@ public class DoorPropGuardsTest {
 
 	/** First zone whose header names the area, from the master table. */
 	static int zoneOnArea(int area) throws Exception {
-		byte[] m = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).getDecompressedEntry(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2);
-		for (int z = 0; z < Math.min(m.length / 0x38, Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2); z++) {
+		byte[] m = Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2);
+		for (int z = 0; z < Math.min(m.length / 0x38, Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2); z++) {
 			int a = (m[z * 0x38 + 2] & 0xFF) | ((m[z * 0x38 + 3] & 0xFF) << 8);
 			if (a == area) {
 				return z;

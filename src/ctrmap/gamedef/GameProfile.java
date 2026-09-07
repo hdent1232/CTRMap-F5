@@ -76,7 +76,7 @@ public abstract class GameProfile {
 		ITEM_EDITING
 	}
 
-	public abstract Workspace.GameType type();
+	public abstract GameType type();
 
 	public abstract String displayName();
 
@@ -84,7 +84,7 @@ public abstract class GameProfile {
 	 * RomFS-relative path of an archive ("/a/0/3/9"), or null when this game
 	 * lacks the archive or its location is not yet verified.
 	 */
-	public abstract String archivePath(Workspace.ArchiveType t);
+	public abstract String archivePath(ArchiveType t);
 
 	/** GameText entry index for a table, or -1 when unknown for this game. */
 	public abstract int textIndex(TextIndex t);
@@ -103,7 +103,7 @@ public abstract class GameProfile {
 		new OrasProfile(), new XyProfile(), new SmProfile(), new UsumProfile()
 	};
 
-	public static GameProfile of(Workspace.GameType g) {
+	public static GameProfile of(GameType g) {
 		for (GameProfile p : ALL) {
 			if (p.type() == g) {
 				return p;
@@ -125,7 +125,7 @@ public abstract class GameProfile {
 	 */
 	public static GameProfile detect(File romfsRoot) {
 		for (GameProfile p : ALL) {
-			String sound = p.archivePath(Workspace.ArchiveType.SOUND_BCSAR);
+			String sound = p.archivePath(ArchiveType.SOUND_BCSAR);
 			if (sound != null && new File(romfsRoot, sound).isFile()) {
 				return p;
 			}

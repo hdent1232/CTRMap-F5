@@ -3,6 +3,7 @@ package ctrmap.formats.npcreg;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.MM;
 import ctrmap.formats.h3d.H3DModelNameGet;
+import ctrmap.gamedef.ArchiveType;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -43,11 +44,11 @@ public class MoveModelPool {
 		}
 		names = new ArrayList<>();
 		try {
-			int count = Workspace.getArchive(Workspace.ArchiveType.MOVE_MODELS).length;
+			int count = Workspace.getArchive(ArchiveType.MOVE_MODELS).length;
 			for (int i = 0; i < count; i++) {
 				String nm = null;
 				try {
-					byte[] bch = new MM(Workspace.getWorkspaceFile(Workspace.ArchiveType.MOVE_MODELS, i)).getFile(0);
+					byte[] bch = new MM(Workspace.getWorkspaceFile(ArchiveType.MOVE_MODELS, i)).getFile(0);
 					if (bch != null) {
 						nm = H3DModelNameGet.H3DModelNameGet(bch);
 					}

@@ -3,6 +3,8 @@ package ctrmap.tests;
 import ctrmap.Workspace;
 import ctrmap.formats.maison.MaisonPoolGuard;
 import ctrmap.formats.maison.MaisonSet;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 
 /**
@@ -29,7 +31,7 @@ public class MaisonPoolGuardTest {
 		String savedWs = Workspace.WORKSPACE_PATH;
 		ctrmap.WorkspaceSession saved = Workspace.session();
 		Workspace.WORKSPACE_PATH = "Z:/ctrmap-test-missing-path";
-		Sessions.bare(new File(Workspace.WORKSPACE_PATH), new File("no-game"), Workspace.GameType.ORAS);
+		Sessions.bare(new File(Workspace.WORKSPACE_PATH), new File("no-game"), GameType.ORAS);
 		MaisonSet[] cur = new MaisonSet[10];
 		for (int i = 0; i < cur.length; i++) {
 			cur[i] = new MaisonSet();
@@ -37,8 +39,8 @@ public class MaisonPoolGuardTest {
 				cur[i].species = 1 + i;
 			}
 		}
-		MaisonPoolGuard fb = MaisonPoolGuard.load(Workspace.ArchiveType.MAISON_SET_POOL_A,
-				Workspace.ArchiveType.MAISON_CLASS_LIST_A, cur);
+		MaisonPoolGuard fb = MaisonPoolGuard.load(ArchiveType.MAISON_SET_POOL_A,
+				ArchiveType.MAISON_CLASS_LIST_A, cur);
 		if (fb.exact) {
 			failures++;
 			System.out.println("FAIL fallback guard claims snapshot exactness");
@@ -56,12 +58,12 @@ public class MaisonPoolGuardTest {
 
 		// ---- 2) exact path against the real pristine snapshot --------------
 		Workspace.WORKSPACE_PATH = realWs;
-		Sessions.bare(new File(realWs), new File("no-game"), Workspace.GameType.ORAS);
+		Sessions.bare(new File(realWs), new File("no-game"), GameType.ORAS);
 		File snap = Workspace.originalSnapshotDir();
-		Workspace.ArchiveType[] pools = {Workspace.ArchiveType.MAISON_SET_POOL_A,
-			Workspace.ArchiveType.MAISON_SET_POOL_B, Workspace.ArchiveType.MAISON_SET_POOL_C};
-		Workspace.ArchiveType[] lists = {Workspace.ArchiveType.MAISON_CLASS_LIST_A,
-			Workspace.ArchiveType.MAISON_CLASS_LIST_B, null};
+		ArchiveType[] pools = {ArchiveType.MAISON_SET_POOL_A,
+			ArchiveType.MAISON_SET_POOL_B, ArchiveType.MAISON_SET_POOL_C};
+		ArchiveType[] lists = {ArchiveType.MAISON_CLASS_LIST_A,
+			ArchiveType.MAISON_CLASS_LIST_B, null};
 		// measured retail occupancy (non-empty sets; referenced adds nothing new
 		// per the linkage invariant "0 refs to empty sets")
 		int[] wantUsed = {217, 873, 36};

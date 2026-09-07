@@ -4,6 +4,7 @@ import ctrmap.formats.scripts.GFLPawnScript;
 import ctrmap.Utils;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.ZO;
+import ctrmap.gamedef.GameType;
 import java.util.Arrays;
 
 /**
@@ -14,7 +15,7 @@ public class Zone {
 	public ZoneHeader header;
 	public ZoneEntities entities;
 	public GFLPawnScript s;
-	public Zone(ZO data, Workspace.GameType game){
+	public Zone(ZO data, GameType game){
 		file = data;
 		header = new ZoneHeader(data.getFile(0), game);
 		entities = new ZoneEntities(data.getFile(1));

@@ -10,6 +10,8 @@ import ctrmap.formats.pokedata.ItemText;
 import ctrmap.formats.recordschema.RecordField;
 import ctrmap.formats.recordschema.RecordSchema;
 import ctrmap.formats.recordschema.SchemaRegistry;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -60,8 +62,8 @@ public class ItemEditTest {
 
 	//per-game fact -> gamedef seam, never a literal in a suite
 	private static String itemArchive() {
-		String p = ctrmap.gamedef.GameProfile.of(ctrmap.Workspace.GameType.ORAS)
-				.archivePath(ctrmap.Workspace.ArchiveType.ITEM_DATA);
+		String p = ctrmap.gamedef.GameProfile.of(GameType.ORAS)
+				.archivePath(ArchiveType.ITEM_DATA);
 		return p == null ? "" : p;
 	}
 
@@ -326,15 +328,15 @@ public class ItemEditTest {
 	 */
 	static void deployShipsItOnlyWhenItWasEdited(File tmp, File pristine) throws Exception {
 		System.out.println("--- deploy ships the item archive when it changed, and only then");
-		List<Workspace.ArchiveType> moddable = Arrays.asList(ModDeployer.MODDABLE);
-		check(!moddable.contains(Workspace.ArchiveType.ITEM_DATA),
+		List<ArchiveType> moddable = Arrays.asList(ModDeployer.MODDABLE);
+		check(!moddable.contains(ArchiveType.ITEM_DATA),
 				"the item archive is NOT in MODDABLE - that list is the pristine snapshot's"
 				+ " contract, and an archive added to it after a workspace was stamped can never"
 				+ " be captured, so every existing workspace would report a partial backup forever");
-		check(Arrays.asList(ModDeployer.MODDABLE_IN_PLACE).contains(Workspace.ArchiveType.ITEM_DATA),
+		check(Arrays.asList(ModDeployer.MODDABLE_IN_PLACE).contains(ArchiveType.ITEM_DATA),
 				"it is in MODDABLE_IN_PLACE instead");
-		List<Workspace.ArchiveType> all = ModDeployer.allWritableArchives();
-		check(all.containsAll(moddable) && all.contains(Workspace.ArchiveType.ITEM_DATA),
+		List<ArchiveType> all = ModDeployer.allWritableArchives();
+		check(all.containsAll(moddable) && all.contains(ArchiveType.ITEM_DATA),
 				"and a backup that must be whole gets both lists (" + all.size() + " archives)");
 		check(new java.util.HashSet<>(all).size() == all.size(),
 				"with nothing counted twice");
@@ -342,8 +344,8 @@ public class ItemEditTest {
 		//now the decision itself, against a scratch game and a scratch workspace
 		File game = new File(tmp, "game");
 		File ws = new File(tmp, "ws");
-		String rel = ctrmap.gamedef.GameProfile.of(Workspace.GameType.ORAS)
-				.archivePath(Workspace.ArchiveType.ITEM_DATA);
+		String rel = ctrmap.gamedef.GameProfile.of(GameType.ORAS)
+				.archivePath(ArchiveType.ITEM_DATA);
 		File live = new File(game.getAbsolutePath() + rel);
 		live.getParentFile().mkdirs();
 		ws.mkdirs();
@@ -354,7 +356,7 @@ public class ItemEditTest {
 		try {
 			Workspace.GAMEDIR_PATH = game.getAbsolutePath();
 			Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
-			Sessions.bare(ws, game, Workspace.GameType.ORAS);
+			Sessions.bare(ws, game, GameType.ORAS);
 
 			check(ItemTable.archiveFile() != null, "the editor finds the archive through the profile");
 			check(ItemTable.openWorkspace() != null,
@@ -368,15 +370,15 @@ public class ItemEditTest {
 			//refuse is the verification gate. Without this the check passed
 			//while the gate was deleted, because the file simply was not there -
 			//a guard answering a question nobody asked.
-			String xyRel = ctrmap.gamedef.GameProfile.of(Workspace.GameType.XY)
-					.archivePath(Workspace.ArchiveType.ITEM_DATA);
+			String xyRel = ctrmap.gamedef.GameProfile.of(GameType.XY)
+					.archivePath(ArchiveType.ITEM_DATA);
 			File xyLive = new File(game.getAbsolutePath() + xyRel);
 			xyLive.getParentFile().mkdirs();
 			Files.copy(pristine.toPath(), xyLive.toPath(), StandardCopyOption.REPLACE_EXISTING);
-			Sessions.bare(ws, game, Workspace.GameType.XY);
+			Sessions.bare(ws, game, GameType.XY);
 			boolean xyPresent = ItemTable.archiveFile() != null;
 			boolean xyRefused = ItemTable.openWorkspace() == null;
-			Sessions.bare(ws, game, Workspace.GameType.ORAS);
+			Sessions.bare(ws, game, GameType.ORAS);
 			check(xyPresent, "the XY item archive is present in the fixture, so a refusal can only"
 					+ " come from the verification gate");
 			check(xyRefused, "and REFUSES a game whose item table is only cited, never measured"
@@ -425,7 +427,7 @@ public class ItemEditTest {
 			check(said.size() == 1 && said.get(0).contains("workspace"),
 					"with no workspace loaded it says so and returns (" + said + ")");
 
-			Sessions.bare(new File("no-workspace"), new File("no-game"), Workspace.GameType.XY);
+			Sessions.bare(new File("no-workspace"), new File("no-game"), GameType.XY);
 			said = ctrmap.Ui.record();
 			ctrmap.humaninterface.ItemEditDialog.show(null);
 			ctrmap.Ui.stopRecording();
@@ -470,9 +472,9 @@ public class ItemEditTest {
 				+ " / " + s.count() + ")");
 		String name = s.name(ULTRA_BALL), desc = s.description(ULTRA_BALL);
 		check("Ultra Ball".equals(name), "item " + ULTRA_BALL + " is the Ultra Ball (" + name + ")");
-		String namesFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT,
+		String namesFile = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT,
 				Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES)).getAbsolutePath();
-		String descsFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.GAMETEXT,
+		String descsFile = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT,
 				Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_DESCRIPTIONS)).getAbsolutePath();
 		byte[] before = Files.readAllBytes(live.toPath());
 

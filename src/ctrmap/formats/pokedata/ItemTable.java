@@ -2,6 +2,7 @@ package ctrmap.formats.pokedata;
 
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -71,7 +72,7 @@ public final class ItemTable {
 		if (Workspace.GAMEDIR_PATH == null || Workspace.game() == null) {
 			return null;
 		}
-		String rel = Workspace.getArchivePath(Workspace.ArchiveType.ITEM_DATA, Workspace.game());
+		String rel = Workspace.getArchivePath(ArchiveType.ITEM_DATA, Workspace.game());
 		if (rel == null) {
 			return null;
 		}

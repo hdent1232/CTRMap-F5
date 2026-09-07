@@ -2,6 +2,7 @@ package ctrmap;
 
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.garc.LZ11;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
@@ -103,7 +104,7 @@ public class ZoneAppender {
 		if (newRealZones < 1) {
 			throw new IOException("Must add at least one zone.");
 		}
-		GARC garc = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		GARC garc = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (garc == null) {
 			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
 		}
@@ -116,13 +117,13 @@ public class ZoneAppender {
 		if (srcIndex < 0 || srcIndex >= oldCount) {
 			throw new IOException("Source zone " + srcIndex + " out of range (0.." + (oldCount - 1) + ").");
 		}
-		File dir = Workspace.getExtractionDirectory(Workspace.ArchiveType.ZONE_DATA);
+		File dir = Workspace.getExtractionDirectory(ArchiveType.ZONE_DATA);
 		File enOut = new File(dir, String.valueOf(m + 1));    // the new EN slot
 		if (Workspace.persistPaths().contains(enOut.getAbsolutePath())) {
 			throw new IOException("An appended zone is already pending. Pack the workspace before adding more.");
 		}
-		File srcFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, srcIndex);
-		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, oldCount);
+		File srcFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, srcIndex);
+		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, oldCount);
 		if (srcFile == null || masterFile == null) {
 			throw new IOException("Could not extract the required ZoneData files from the workspace.");
 		}
@@ -138,7 +139,7 @@ public class ZoneAppender {
 		// trust a non-persisted extraction file: a stale one in the EN slot (from
 		// the old reverted single-zone append) produced "EN pack has wrong magic".
 		byte[] enBytes = null;
-		File enWs = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, oldCount + 1);
+		File enWs = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, oldCount + 1);
 		if (enWs != null && Workspace.persistPaths().contains(enWs.getAbsolutePath())) {
 			try {
 				byte[] cand = Files.readAllBytes(enWs.toPath());

@@ -1,6 +1,7 @@
 package ctrmap;
 
 import ctrmap.formats.garc.GARC;
+import ctrmap.gamedef.ArchiveType;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -55,11 +56,11 @@ public class WorkspaceIntegrity {
 	public static List<String> check(WorkspaceSession ws, boolean deep) {
 		List<String> bad = new ArrayList<>();
 		try {
-			GARC ad = ws.getArchive(Workspace.ArchiveType.AREA_DATA);
-			GARC np = ws.getArchive(Workspace.ArchiveType.NPC_REGISTRIES);
-			GARC zo = ws.getArchive(Workspace.ArchiveType.ZONE_DATA);
-			GARC mm = ws.getArchive(Workspace.ArchiveType.MAP_MATRIX);
-			GARC gr = ws.getArchive(Workspace.ArchiveType.FIELD_DATA);
+			GARC ad = ws.getArchive(ArchiveType.AREA_DATA);
+			GARC np = ws.getArchive(ArchiveType.NPC_REGISTRIES);
+			GARC zo = ws.getArchive(ArchiveType.ZONE_DATA);
+			GARC mm = ws.getArchive(ArchiveType.MAP_MATRIX);
+			GARC gr = ws.getArchive(ArchiveType.FIELD_DATA);
 			if (ad == null || np == null || zo == null || mm == null || gr == null) {
 				return bad; //no workspace loaded; nothing to check
 			}

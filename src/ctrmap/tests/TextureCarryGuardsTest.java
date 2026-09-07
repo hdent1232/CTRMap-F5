@@ -4,6 +4,7 @@ import ctrmap.Workspace;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.h3d.BchTexturePack;
 import ctrmap.formats.propdata.PropDatabase;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -66,7 +67,7 @@ public class TextureCarryGuardsTest {
 		Set<String> held = namesOf(target);
 		int donor = -1;
 		List<String> spare = new ArrayList<>();
-		for (int a = 0; a < Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length && donor < 0; a++) {
+		for (int a = 0; a < Workspace.getArchive(ArchiveType.AREA_DATA).length && donor < 0; a++) {
 			if (a == target) {
 				continue;
 			}
@@ -104,7 +105,7 @@ public class TextureCarryGuardsTest {
 	 * agree with itself whether or not the write happened.
 	 */
 	static void aCarryReallyWrites(int donor, int target, int zone, List<String> needed) throws Exception {
-		File tgtFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, target);
+		File tgtFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, target);
 		check(tgtFile != null && tgtFile.isFile(), "the target area has a workspace file to grow (" + tgtFile + ")");
 		String note;
 		try {
@@ -131,7 +132,7 @@ public class TextureCarryGuardsTest {
 	 * throw rather than return its cheerful note.
 	 */
 	static void aCarryThatCannotWriteRefuses(int donor, int target, int zone, List<String> needed) throws Exception {
-		File tgtFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, target);
+		File tgtFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, target);
 		byte[] before = Files.readAllBytes(tgtFile.toPath());
 		Exception thrown = null;
 		String note = null;
@@ -156,9 +157,9 @@ public class TextureCarryGuardsTest {
 
 	/** An area used by exactly one zone in the master table, or -1. */
 	static int privateArea() throws Exception {
-		byte[] m = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).getDecompressedEntry(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2);
-		int zones = Math.min(m.length / 0x38, Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2);
-		int[] users = new int[Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).length];
+		byte[] m = Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2);
+		int zones = Math.min(m.length / 0x38, Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2);
+		int[] users = new int[Workspace.getArchive(ArchiveType.AREA_DATA).length];
 		for (int z = 0; z < zones; z++) {
 			int a = area(m, z);
 			if (a >= 0 && a < users.length) {
@@ -175,8 +176,8 @@ public class TextureCarryGuardsTest {
 
 	/** The zone whose header names this area. */
 	static int zoneOn(int targetArea) throws Exception {
-		byte[] m = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).getDecompressedEntry(Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2);
-		int zones = Math.min(m.length / 0x38, Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA).length - 2);
+		byte[] m = Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2);
+		int zones = Math.min(m.length / 0x38, Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2);
 		for (int z = 0; z < zones; z++) {
 			if (area(m, z) == targetArea) {
 				return z;
@@ -192,7 +193,7 @@ public class TextureCarryGuardsTest {
 	/** Every texture name an area holds, across both of its packs. */
 	static Set<String> namesOf(int areaId) {
 		Set<String> names = new LinkedHashSet<>();
-		byte[] c = Workspace.getArchive(Workspace.ArchiveType.AREA_DATA).getDecompressedEntry(areaId);
+		byte[] c = Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(areaId);
 		if (c == null || c.length < 8 || c[0] != 'A' || c[1] != 'D') {
 			return names;
 		}

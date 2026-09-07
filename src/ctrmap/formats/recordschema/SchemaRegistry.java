@@ -3,6 +3,7 @@ package ctrmap.formats.recordschema;
 import ctrmap.Workspace;
 import ctrmap.formats.pokedata.ItemData;
 import ctrmap.formats.pokedata.ItemEffectLabels;
+import ctrmap.gamedef.ArchiveType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -140,7 +141,7 @@ public final class SchemaRegistry {
 				+ " game - it cannot author a new behaviour, because the held-effect ids are a full"
 				+ " palette of 183 with no spare, and some behaviour (Exp. Share, Ability Capsule) is"
 				+ " keyed on the item id in code and is not in this record at all.",
-				Workspace.ArchiveType.ITEM_DATA, -1, ItemData.SIZE, f);
+				ArchiveType.ITEM_DATA, -1, ItemData.SIZE, f);
 	}
 
 	/**

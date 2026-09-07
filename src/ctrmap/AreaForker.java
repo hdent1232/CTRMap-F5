@@ -1,6 +1,7 @@
 package ctrmap;
 
 import ctrmap.formats.garc.GARC;
+import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
@@ -134,12 +135,12 @@ public class AreaForker {
 	 * table. 0 = the area is already private.
 	 */
 	public static int areaSharers(int zoneIndex) throws IOException {
-		GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
+		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zo == null) {
 			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
 		}
 		int zoneCount = zo.length - 2;
-		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneCount);
+		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
 		}
@@ -190,7 +191,7 @@ public class AreaForker {
 
 	/** The zone's current areadataID, straight from its container header. */
 	public static int currentArea(int zoneIndex) throws IOException {
-		File zoneFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 		if (zoneFile == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
@@ -223,9 +224,9 @@ public class AreaForker {
 		if (!Workspace.isOA()) {
 			throw new IOException("Area fork is ORAS-only in v1.");
 		}
-		GARC zo = Workspace.getArchive(Workspace.ArchiveType.ZONE_DATA);
-		GARC ad = Workspace.getArchive(Workspace.ArchiveType.AREA_DATA);
-		GARC np = Workspace.getArchive(Workspace.ArchiveType.NPC_REGISTRIES);
+		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
+		GARC ad = Workspace.getArchive(ArchiveType.AREA_DATA);
+		GARC np = Workspace.getArchive(ArchiveType.NPC_REGISTRIES);
 		if (zo == null || ad == null || np == null) {
 			throw new IOException("No workspace is loaded (ZoneData/AreaData/NPCRegistries unavailable).");
 		}
@@ -248,21 +249,21 @@ public class AreaForker {
 					+ " past the new area id " + newArea + "; it and AreaData (" + ad.length
 					+ " entries) are out of step, and an area fork would not repair that.");
 		}
-		File adDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.AREA_DATA);
-		File npDir = Workspace.getExtractionDirectory(Workspace.ArchiveType.NPC_REGISTRIES);
+		File adDir = Workspace.getExtractionDirectory(ArchiveType.AREA_DATA);
+		File npDir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
 		File adOut = new File(adDir, String.valueOf(newArea));
 		if (Workspace.persistPaths().contains(adOut.getAbsolutePath())) {
 			throw new IOException("An area fork is already pending. Pack the workspace before forking again.");
 		}
-		File zoneFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, zoneIndex);
+		File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 		if (zoneFile == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
 		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
 		int oldArea = u16(zoBytes, i32(zoBytes, 4) + HDR_AREA_OFF);
-		File srcAdFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, oldArea);
-		File srcNpFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.NPC_REGISTRIES, oldArea);
-		File tableFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.AREA_DATA, AD_GLOBAL_TABLE);
+		File srcAdFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, oldArea);
+		File srcNpFile = Workspace.getWorkspaceFile(ArchiveType.NPC_REGISTRIES, oldArea);
+		File tableFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AD_GLOBAL_TABLE);
 		if (srcAdFile == null || tableFile == null) {
 			throw new IOException("Could not extract area " + oldArea + " from the workspace.");
 		}
@@ -318,7 +319,7 @@ public class AreaForker {
 	/** Repoints a zone's areadataID in the master zone-header table file. */
 	public static void repointMasterArea(GARC zo, int zoneIndex, int newArea) throws IOException {
 		int masterIndex = zo.length - 2;
-		File masterFile = Workspace.getWorkspaceFile(Workspace.ArchiveType.ZONE_DATA, masterIndex);
+		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
 		}

@@ -13,6 +13,7 @@ import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.mapmatrix.MapMatrix;
 import ctrmap.formats.tilemap.Tilemap;
+import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.ESPICAControl;
 import ctrmap.humaninterface.LoadingDialog;
 import ctrmap.resources.ResourceAccess;
@@ -43,7 +44,7 @@ public class Builder extends javax.swing.JPanel {
 	public DefaultListModel<String> contModel = new DefaultListModel<>();
 	public ArrayList<BuilderFile> currentFiles = new ArrayList<>();
 	public AbstractGamefreakContainer currentAGFC;
-	public Workspace.ArchiveType currentGARC;
+	public ArchiveType currentGARC;
 
 	public Builder() {
 		initComponents();
@@ -75,7 +76,7 @@ public class Builder extends javax.swing.JPanel {
 
 	public void loadGARCs() {
 		garc.removeAllItems();
-		Workspace.ArchiveType[] arcTypeEnumValues = Workspace.ArchiveType.values();
+		ArchiveType[] arcTypeEnumValues = ArchiveType.values();
 		for (int i = 0; i < arcTypeEnumValues.length; i++) {
 			garc.addItem(arcTypeEnumValues[i].name());
 		}
@@ -470,13 +471,13 @@ public class Builder extends javax.swing.JPanel {
     private void btnAddFileToGARCActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddFileToGARCActionPerformed
 		boolean success = false;
 		GARC arc = Workspace.getArchive(currentGARC);
-		if (currentGARC == Workspace.ArchiveType.MAP_MATRIX) {
+		if (currentGARC == ArchiveType.MAP_MATRIX) {
 			MM mm = new MM(Workspace.getWorkspaceFile(currentGARC, arc.length), 2, MM.MM_MAP_MATRIX);
 			currentAGFC = mm;
 			MapMatrix tmp = new MapMatrix(mm, 1, 1, 0);
 			tmp.write();
 			success = true;
-		} else if (currentGARC == Workspace.ArchiveType.FIELD_DATA) {
+		} else if (currentGARC == ArchiveType.FIELD_DATA) {
 			GR gr = new GR(Workspace.getWorkspaceFile(currentGARC, arc.length), Workspace.isOA() ? 7 : 6);
 			currentAGFC = gr;
 			Tilemap tm = new Tilemap(gr, 40, 40);
@@ -617,7 +618,7 @@ public class Builder extends javax.swing.JPanel {
 	public void loadGARC(int index) {
 		GARCmodel.clear();
 		if (index != -1) {
-			currentGARC = Workspace.ArchiveType.values()[index];
+			currentGARC = ArchiveType.values()[index];
 			if (Workspace.getArchive(currentGARC) != null) {
 				for (int i = 0; i < Workspace.getArchive(currentGARC).length; i++) {
 					GARCmodel.addElement(String.valueOf(i));

@@ -23,6 +23,8 @@ import ctrmap.formats.scripts.ZoneScriptEdit;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import ctrmap.humaninterface.NPCEditForm;
 import ctrmap.humaninterface.Selector;
 import ctrmap.humaninterface.TileMapPanel;
@@ -115,9 +117,9 @@ public class NpcEditFormGuardsTest {
 		} else {
 			Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
 			//the form only looks up its zone inside a workspace; it is handed its archives, none is opened through the session
-			Sessions.bare(Scratch.dir("ctrmap_npc_form"), dump, Workspace.GameType.ORAS);
-			GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.ZONE_DATA, Workspace.game())));
-			GARC gr = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.game())));
+			Sessions.bare(Scratch.dir("ctrmap_npc_form"), dump, GameType.ORAS);
+			GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.ZONE_DATA, Workspace.game())));
+			GARC gr = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.FIELD_DATA, Workspace.game())));
 			removeKeepsModels(zo, gr);
 			saveRefusesUndefinedScript(zo);
 			saveWithNothingSelected(zo);
@@ -494,7 +496,7 @@ public class NpcEditFormGuardsTest {
 			saved = form.saveEntry();
 		} finally {
 			ctrmap.Ui.stopRecording();
-			Workspace.install(Workspace.session().withArchive(Workspace.ArchiveType.STORYTEXT, null));
+			Workspace.install(Workspace.session().withArchive(ArchiveType.STORYTEXT, null));
 		}
 		check(saved && e.npcs.get(0).script == 8, "the save goes through - a missing message is a warning, not a refusal");
 		check(said.size() == 1 && said.get(0).contains("soft-lock"), "and the user is warned: " + said);
@@ -1162,7 +1164,7 @@ public class NpcEditFormGuardsTest {
 	 * check reads once the archive is known to exist.
 	 */
 	static void withStoryFile(NPCEditForm form, GARC anyGarc, int textID, String... lines) throws Exception {
-		Workspace.install(Workspace.session().withArchive(Workspace.ArchiveType.STORYTEXT, anyGarc)); //only ever null-checked on this path
+		Workspace.install(Workspace.session().withArchive(ArchiveType.STORYTEXT, anyGarc)); //only ever null-checked on this path
 		setField(form, "storyFile", new GFMessageFile(GFMessageFile.write(Arrays.asList(lines))));
 		setField(form, "storyFileTextID", textID);
 	}

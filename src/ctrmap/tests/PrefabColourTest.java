@@ -4,6 +4,8 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.h3d.MapPrefab;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.Arrays;
@@ -39,10 +41,10 @@ public class PrefabColourTest {
 				.getParentFile().getParentFile().getAbsolutePath();
 		ctrmap.Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_prefabcolour").getAbsolutePath();
 		Sessions.bare(new File(ctrmap.Workspace.WORKSPACE_PATH), new File(ctrmap.Workspace.GAMEDIR_PATH),
-				ctrmap.Workspace.GameType.ORAS).prepareDirectories();
+				GameType.ORAS).prepareDirectories();
 		File snap = new File(ctrmap.Workspace.originalSnapshotDir().getAbsolutePath()
 				+ ctrmap.Workspace.getArchivePath(
-						ctrmap.Workspace.ArchiveType.FIELD_DATA, ctrmap.Workspace.game()));
+						ArchiveType.FIELD_DATA, ctrmap.Workspace.game()));
 		if (!snap.isFile()) {
 			snap.getParentFile().mkdirs();
 			try {

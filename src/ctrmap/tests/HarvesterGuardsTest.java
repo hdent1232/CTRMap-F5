@@ -10,6 +10,8 @@ import ctrmap.formats.h3d.MapPrefab;
 import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 import ctrmap.tools.BuildingHarvester;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -94,7 +96,7 @@ public class HarvesterGuardsTest {
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		File garcFile = new File(dump.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.GameType.ORAS));
+				+ Workspace.getArchivePath(ArchiveType.FIELD_DATA, GameType.ORAS));
 		if (!garcFile.isFile()) {
 			System.out.println("  skip: no pristine FieldData archive under " + dump + " (pass the romfs root as args[0])");
 			System.out.println("ALL PASS");
@@ -268,9 +270,9 @@ public class HarvesterGuardsTest {
 			keep.add(r);
 		}
 		File romfs = Scratch.dir("ctrmap_harvest_dump");
-		for (Workspace.ArchiveType t : new Workspace.ArchiveType[]{
-			Workspace.ArchiveType.ZONE_DATA, Workspace.ArchiveType.MAP_MATRIX, Workspace.ArchiveType.GAMETEXT}) {
-			String rel = Workspace.getArchivePath(t, Workspace.GameType.ORAS);
+		for (ArchiveType t : new ArchiveType[]{
+			ArchiveType.ZONE_DATA, ArchiveType.MAP_MATRIX, ArchiveType.GAMETEXT}) {
+			String rel = Workspace.getArchivePath(t, GameType.ORAS);
 			File dst = new File(romfs.getAbsolutePath() + rel);
 			dst.getParentFile().mkdirs();
 			Files.copy(new File(dump.getAbsolutePath() + rel).toPath(), dst.toPath(),
@@ -285,7 +287,7 @@ public class HarvesterGuardsTest {
 			stored.add(keep.contains(i) ? gr.getStoredEntry(i) : new byte[]{0, 0, 0, 0});
 		}
 		File field = new File(romfs.getAbsolutePath()
-				+ Workspace.getArchivePath(Workspace.ArchiveType.FIELD_DATA, Workspace.GameType.ORAS));
+				+ Workspace.getArchivePath(ArchiveType.FIELD_DATA, GameType.ORAS));
 		field.getParentFile().mkdirs();
 		GarcRebuilder.write(gr.file, field, stored);
 

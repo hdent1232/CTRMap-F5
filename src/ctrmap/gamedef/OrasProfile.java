@@ -1,7 +1,7 @@
 package ctrmap.gamedef;
 
-import ctrmap.Workspace.ArchiveType;
-import ctrmap.Workspace.GameType;
+import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameType;
 
 /**
  * Pokemon Omega Ruby / Alpha Sapphire - the reference game of this editor.

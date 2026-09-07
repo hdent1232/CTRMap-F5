@@ -5,6 +5,7 @@ import ctrmap.Utils;
 import ctrmap.formats.mapmatrix.MapMatrix;
 import ctrmap.formats.mapmatrix.MatrixCameraBoundaries;
 import ctrmap.formats.text.LocationNames;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics;
@@ -73,7 +74,7 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			if (curRegX != -1) {
 				if (btnChunkTool.isSelected()) {
 					short id = (Short) chunkId.getValue();
-					ctrmap.formats.garc.GARC fd = ctrmap.Workspace.getArchive(ctrmap.Workspace.ArchiveType.FIELD_DATA);
+					ctrmap.formats.garc.GARC fd = ctrmap.Workspace.getArchive(ArchiveType.FIELD_DATA);
 					if (fd != null && (id < -1 || id >= fd.length)) {
 						//typed past the last region, the cell would name a file the
 						//game cannot open; the integrity pass would catch it after a
