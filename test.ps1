@@ -8,7 +8,7 @@
 # could not run from a worktree or a fresh clone: six suites resolved the dump
 # relative to the repo's parent and failed for a reason that had nothing to do
 # with the code under test.
-param([switch]$Quick, [string]$Pristine, [string]$GameDir, [string]$Code)
+param([switch]$Quick, [string]$Pristine, [string]$GameDir, [string]$Code, [ValidateSet("asc","desc","shuffle")][string]$Order = "asc", [int]$Seed = 0)
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -98,6 +98,7 @@ $suites = @(
     @{ n = "ItemEdit (in place, four free slots)"; c = "ctrmap.tests.ItemEditTest"; a = @($gamedir) },
     @{ n = "ItemIconPatch (code.bin, zero slack)"; c = "ctrmap.tests.ItemIconPatchTest"; a = @($code) },
     @{ n = "Battery hygiene (temp paths, corpus args)"; c = "ctrmap.tests.BatteryHygieneTest"; a = @("src") },
+    @{ n = "GlobalState (the public-static ceiling, and Workspace.reset)"; c = "ctrmap.tests.GlobalStateTest"; a = @("src", "build\classes") },
     @{ n = "Ui output paths (printed, and shown)"; c = "ctrmap.tests.UiOutputTest";           a = @() },
     @{ n = "Mutation baseline (guards still measured)"; c = "ctrmap.tests.MutationBaselineTest"; a = @("src") },
     @{ n = "BchMapModel (engine)";        c = "ctrmap.tests.BchMapModelTest";       a = @($a039) },
@@ -185,6 +186,22 @@ $suites = @(
     @{ n = "MainframeReports (what the main window says it did)"; c = "ctrmap.tests.MainframeReportsTest"; a = @($pristine) },
     @{ n = "MisplacedRegistry (damage an old fork left)"; c = "ctrmap.tests.MisplacedRegistryTest"; a = @($pristine) }
 )
+
+# -Order re-runs the same suites in a different sequence. Every suite is its
+# own java.exe, so no static field can carry state from one to the next; the
+# only channels left are the filesystem and java.util.prefs, and those are
+# what a reversed or shuffled run actually tests. If the battery is green in
+# one order and red in another, a suite is depending on something an earlier
+# suite left lying about, and the order is hiding it.
+if ($Order -eq "desc") {
+    [array]::Reverse($suites)
+} elseif ($Order -eq "shuffle") {
+    if ($Seed -eq 0) { $Seed = Get-Random -Minimum 1 -Maximum 999999 }
+    Write-Host ("Suite order shuffled with seed " + $Seed + " (re-run with -Seed " + $Seed + ")") -ForegroundColor Yellow
+    $rng = New-Object System.Random($Seed)
+    $suites = @($suites | Sort-Object { $rng.Next() })
+}
+if ($Order -ne "asc") { Write-Host ("Suite order: " + $Order) -ForegroundColor Yellow }
 
 $failed = @()
 $sw = [System.Diagnostics.Stopwatch]::StartNew()

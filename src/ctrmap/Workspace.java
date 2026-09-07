@@ -45,7 +45,7 @@ public class Workspace {
 	public static File temp;
 
 	public static File persist_config;
-	public static ArrayList<String> persist_paths = new ArrayList<>();
+	public static final ArrayList<String> persist_paths = new ArrayList<>();
 
 	public static GARC ad;
 	public static GARC gr;
@@ -652,6 +652,82 @@ public class Workspace {
 
 	/** Lets a suite exercise more than one snapshot problem in one JVM. */
 	public static void resetSnapshotProblemReporting() {
+		snapshotProblemShown = false;
+	}
+
+	/**
+	 * Puts every static this class owns back to the value it had before any
+	 * workspace was loaded, as though the JVM had just started.
+	 *
+	 * <p>Workspace is a static god object: the open game's paths, archive
+	 * handles, {@link GameType} and validity live in class fields that
+	 * everything reads. That is not changed here - de-globalising it would
+	 * touch every file in the program - but it does mean a test can only ever
+	 * exercise ONE workspace per JVM unless something knows how to put the
+	 * state back. This is that something;
+	 * {@link #resetSnapshotProblemReporting} was the first instance of the
+	 * same need, for one field.
+	 *
+	 * <p>The list below must name EVERY static field of this class. That is not
+	 * a request: {@code ctrmap.tests.GlobalStateTest} enumerates the fields by
+	 * reflection and fails if one is missing, so a field added later cannot
+	 * quietly survive a reset and leak one workspace into the next.
+	 *
+	 * <p>Nothing in the application calls this. Repointing a live workspace at
+	 * a different game goes through {@link #validate}, and rerouting that
+	 * through here would be a behaviour change with no test behind it.
+	 */
+	public static void reset() {
+		prefs = null;
+		WORKSPACE_PATH = null;
+		GAMEDIR_PATH = null;
+		ESPICA_PATH = null;
+		TILESET_DEFAULT = false;
+		TILESET_PATH = null;
+
+		areadata = null;
+		fielddata = null;
+		mapmatrix = null;
+		gametext = null;
+		storytext = null;
+		zonedata = null;
+		buildingmodels = null;
+		npcregistries = null;
+		movemodels = null;
+		temp = null;
+
+		persist_config = null;
+		persist_paths.clear();
+
+		ad = null;
+		gr = null;
+		mm = null;
+		texts = null;
+		storytexts = null;
+		zo = null;
+		bm = null;
+		npcreg = null;
+		npcmm = null;
+
+		trdata = null;
+		trclass = null;
+		trpoke = null;
+		trainerdataFile = null;
+		trainerclassFile = null;
+		trainerpokeFile = null;
+
+		maisonSetA = null;
+		maisonListA = null;
+		maisonSetB = null;
+		maisonListB = null;
+		maisonSetC = null;
+
+		musicNames = null;
+		game = null;
+		valid = false;
+		//spelled out rather than delegated to resetSnapshotProblemReporting():
+		//GlobalStateTest reads this method's own body to prove no field of this
+		//class was left out of the reset, and it cannot follow a call to do it.
 		snapshotProblemShown = false;
 	}
 

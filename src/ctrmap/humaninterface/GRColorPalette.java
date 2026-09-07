@@ -6,8 +6,9 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 import ctrmap.ImageMapCreator;
 
@@ -93,7 +94,13 @@ public class GRColorPalette {
 	
 	public int type;
 	private byte[] colors;
-	public static ArrayList<Integer> tileNums = new ArrayList<Integer>(Arrays.asList(
+	/**
+	 * Collision tile codes in palette order; the index into this list IS the
+	 * palette slot. Private, final and unmodifiable: only this class reads it,
+	 * only indexOf/get/size are ever called on it, and a stray add() would
+	 * shift every slot after it and repaint a map with the wrong collision.
+	 */
+	private static final List<Integer> tileNums = Collections.unmodifiableList(Arrays.asList(
 		TILE_NORMAL_WALKABLE,
 		TILE_NORMAL_UNWALKABLE,
 		TILE_TRI_WALKABLE,
