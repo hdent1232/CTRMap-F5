@@ -11,7 +11,6 @@ import java.util.Collections;
 import java.util.List;
 
 import ctrmap.ImageMapCreator;
-import ctrmap.Utils;
 
 public class GRColorPalette {
 	
@@ -179,7 +178,7 @@ public class GRColorPalette {
 		}
 	}
 	public Color getColor(byte[] tiledata) {
-		int index = tileNums.indexOf(Utils.ba2int(tiledata));
+		int index = tileNums.indexOf(ctrmap.util.Bytes.ba2int(tiledata));
 		if (index != -1) {
 			int x = colors[index*4 + 1];
 			x = (x << 8) | (colors[index*4 + 2] & 0xFF);

@@ -54,6 +54,21 @@ import java.util.logging.Logger;
  * deliberately does not implement it.
  */
 public final class WorkspaceSession implements GameFiles {
+	/**
+	 * Makes any of {@code requiredContents} the container does not already
+	 * hold. Moved here from {@code ctrmap.Utils} in the package split: this
+	 * class was its only caller, and making the workspace's folders is this
+	 * class's business.
+	 */
+	public static void mkDirsIfNotContains(File container, String[] requiredContents) {
+		java.util.List<String> contents = java.util.Arrays.asList(container.list());
+		for (int i = 0; i < requiredContents.length; i++) {
+			if (!contents.contains(requiredContents[i])) {
+				new File(container.getAbsolutePath() + "/" + requiredContents[i]).mkdir();
+			}
+		}
+	}
+
 
 	/** Every problem {@link #open} found, in the words the user is shown. */
 	public static final class OpenFailed extends Exception {
@@ -318,7 +333,7 @@ public final class WorkspaceSession implements GameFiles {
 	 * workspace.
 	 */
 	public void prepareDirectories() {
-		Utils.mkDirsIfNotContains(workspaceDir, WORKSPACE_SUBDIRS);
+		mkDirsIfNotContains(workspaceDir, WORKSPACE_SUBDIRS);
 	}
 
 	/** Writes the persisted-paths file, relative to the workspace so it can move between machines. */

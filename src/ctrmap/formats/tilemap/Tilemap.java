@@ -10,7 +10,6 @@ import java.io.IOException;
 import java.io.InputStream;
 
 import ctrmap.LittleEndianDataOutputStream;
-import ctrmap.Utils;
 
 /**
  * One region's 40x40 movement tiles, and the picture of them the tile editor
@@ -140,7 +139,7 @@ public class Tilemap {
 		}
 		for (int x = 0; x < 40; x++) {
 			for (int y = 0; y < 40; y++) {
-				g.setColor(colors.colorOf(Utils.ba2int(rawTileData[x][y])));
+				g.setColor(colors.colorOf(ctrmap.util.Bytes.ba2int(rawTileData[x][y])));
 				g.fillRect(x * 10, y * 10, 10, 10);
 			}
 		}

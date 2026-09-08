@@ -1,6 +1,5 @@
 package ctrmap.formats.containers;
 
-import ctrmap.Utils;
 import ctrmap.formats.GameFiles;
 import java.io.File;
 
@@ -35,7 +34,7 @@ public class MM extends AbstractGamefreakContainer{
 
 	/** A move model's first subfile is a BCH model; a map matrix's is not. */
 	private int sniffType() {
-		if (Utils.checkBCHMagic(getFile(0))){
+		if (ctrmap.util.Bytes.checkBCHMagic(getFile(0))){
 			return MM_MOVE_MODEL;
 		}
 		return MM_MAP_MATRIX;

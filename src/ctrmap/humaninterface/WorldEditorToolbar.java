@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import ctrmap.Utils;
 import java.awt.event.ActionListener;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -59,7 +58,7 @@ public class WorldEditorToolbar extends JToolBar {
 		ButtonGroup group = new ButtonGroup();
 		for (int i = 0; i < TOOLS.length; i++) {
 			String[] t = TOOLS[i];
-			JRadioButton b = Utils.createGraphicalButton(t[2]);
+			JRadioButton b = ctrmap.humaninterface.Forms.createGraphicalButton(t[2]);
 			b.setActionCommand(t[0]);
 			b.setToolTipText(t[3]);
 			b.getAccessibleContext().setAccessibleName(t[1]);

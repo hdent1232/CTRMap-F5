@@ -12,7 +12,6 @@ import java.awt.event.FocusEvent;
 import javax.swing.JFormattedTextField;
 import javax.swing.text.NumberFormatter;
 import static ctrmap.CtrmapMainframe.*;
-import ctrmap.Utils;
 import ctrmap.Workspace;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.model.H3DModel;
@@ -368,7 +367,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (reg == null || !reg.modified) {
 			return true;
 		}
-		switch (Utils.askToKeep(dialog, "NPC registry")) {
+		switch (ctrmap.Ui.askToKeep(dialog, "NPC registry")) {
 			case DISCARD:
 				reg.discard();
 				return true;
@@ -2806,7 +2805,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			H3DModel m = modelAt(i);
 			ZoneEntities.NPC testNpc = e.npcs.get(i);
 			float[][] box = m.boxVectors;
-			if (Utils.isBoxSelected(box, evt, parent, new Vec3f(testNpc.getX(), testNpc.getY(), testNpc.getZ()), new Vec3f(1f, 1f, 1f), new Vec3f(0f, get3DOrientation(testNpc.faceDirection), 0f), mvMatrix, projMatrix, view)) {
+			if (ctrmap.humaninterface.Picking.isBoxSelected(box, evt, parent, new Vec3f(testNpc.getX(), testNpc.getY(), testNpc.getZ()), new Vec3f(1f, 1f, 1f), new Vec3f(0f, get3DOrientation(testNpc.faceDirection), 0f), mvMatrix, projMatrix, view)) {
 				boolean allow = false;
 				for (int mesh = 0; mesh < m.meshes.size(); mesh++) {
 					for (int vertex = 0; vertex < m.meshes.get(mesh).vertices.size(); vertex++) {
@@ -2826,7 +2825,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					continue;
 				}
 				Vec3f dummyCenterVector = new Vec3f(testNpc.getX(), testNpc.getY(), testNpc.getZ());
-				double dist = Utils.getDistanceFromVector(dummyCenterVector, cameraVec);
+				double dist = ctrmap.humaninterface.Picking.getDistanceFromVector(dummyCenterVector, cameraVec);
 				if (Math.abs(dist) < closestDist && i != npcIndex) {
 					closestDist = Math.abs(dist);
 					closestIdx = i;

@@ -18,7 +18,6 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 
 import static ctrmap.CtrmapMainframe.*;
-import ctrmap.Utils;
 import ctrmap.formats.vectors.Vec3f;
 import ctrmap.formats.tilemap.Tilemap;
 import ctrmap.formats.containers.GR;
@@ -279,7 +278,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 						continue;
 					}
 					if (tilemaps[j][i].modified) {
-						switch (Utils.askToKeep(dialog, "Region data")) {
+						switch (ctrmap.Ui.askToKeep(dialog, "Region data")) {
 							case SAVE:
 								LoadingDialog progress = LoadingDialog.makeDialog("Saving matrix");
 								SwingWorker worker = new SwingWorker() {
@@ -454,7 +453,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 				return saveMatrix(dialog);
 			} else {
 				if (tilemaps[0][0].modified && dialog) {
-					switch (Utils.askToKeep(true, "Tilemap")) {
+					switch (ctrmap.Ui.askToKeep(true, "Tilemap")) {
 						case SAVE:
 							mainGR.storeFile(0, tilemaps[0][0].assembleTilemap());
 						case DISCARD:

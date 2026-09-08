@@ -1,7 +1,6 @@
 package ctrmap.humaninterface;
 
 import ctrmap.CtrmapMainframe;
-import ctrmap.Utils;
 import ctrmap.formats.Triangle;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.gfcollision.GRCollisionFile;
@@ -565,21 +564,21 @@ public class CollEditPanel extends javax.swing.JPanel {
 
 	private void adjustX(JFormattedTextField source, int vertex) {
 		if (selectedTri != -1) {
-			coll.meshes[selectedMesh].tris.get(selectedTri).setX(vertex, Utils.getFloatFromDocument(source));
+			coll.meshes[selectedMesh].tris.get(selectedTri).setX(vertex, ctrmap.humaninterface.Forms.getFloatFromDocument(source));
 			coll.modified = true;
 		}
 	}
 
 	private void adjustY(JFormattedTextField source, int vertex) {
 		if (selectedTri != -1) {
-			coll.meshes[selectedMesh].tris.get(selectedTri).setY(vertex, Utils.getFloatFromDocument(source));
+			coll.meshes[selectedMesh].tris.get(selectedTri).setY(vertex, ctrmap.humaninterface.Forms.getFloatFromDocument(source));
 			coll.modified = true;
 		}
 	}
 
 	private void adjustZ(JFormattedTextField source, int vertex) {
 		if (selectedTri != -1) {
-			coll.meshes[selectedMesh].tris.get(selectedTri).setZ(vertex, Utils.getFloatFromDocument(source));
+			coll.meshes[selectedMesh].tris.get(selectedTri).setZ(vertex, ctrmap.humaninterface.Forms.getFloatFromDocument(source));
 			coll.modified = true;
 		}
 	}

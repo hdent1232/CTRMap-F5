@@ -2,7 +2,6 @@ package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
 import ctrmap.LoadedZone;
-import ctrmap.Utils;
 import ctrmap.Workspace;
 import ctrmap.ZoneAppender;
 import ctrmap.ZoneCloner;
@@ -416,7 +415,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		EnumSet<Zone.Part> changed = zone.changed();
 		EnumSet<Zone.Part> keep = EnumSet.noneOf(Zone.Part.class);
 		if (changed.contains(Zone.Part.HEADER)) {
-			switch (Utils.askToKeep(dialog, "Zone header")) {
+			switch (ctrmap.Ui.askToKeep(dialog, "Zone header")) {
 				case SAVE:
 					keep.add(Zone.Part.HEADER);
 					break;
@@ -428,7 +427,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			}
 		}
 		if (changed.contains(Zone.Part.ENTITIES)) {
-			switch (Utils.askToKeep(dialog, "Entity data")) {
+			switch (ctrmap.Ui.askToKeep(dialog, "Entity data")) {
 				case SAVE:
 					keep.add(Zone.Part.ENTITIES);
 					break;

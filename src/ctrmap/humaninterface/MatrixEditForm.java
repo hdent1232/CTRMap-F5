@@ -2,7 +2,6 @@ package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
 import ctrmap.LoadedZone;
-import ctrmap.Utils;
 import ctrmap.formats.mapmatrix.MapMatrix;
 import ctrmap.formats.mapmatrix.MatrixCameraBoundaries;
 import ctrmap.formats.text.LocationNames;
@@ -119,7 +118,7 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			saveAll();
 			byte[] newCamData = mm.assembleCamData();
 			if (!Arrays.equals(mm.file.getFile(0), mm.assembleData()) || !Arrays.equals(Arrays.copyOf(mm.file.getFile(1), newCamData.length), newCamData)) {
-				switch (Utils.askToKeep(dialog, "Map matrix")) {
+				switch (ctrmap.Ui.askToKeep(dialog, "Map matrix")) {
 					case DISCARD:
 						return true;
 					case CANCEL:

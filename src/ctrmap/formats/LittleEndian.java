@@ -17,7 +17,7 @@ package ctrmap.formats;
  * copies did. A reader that must survive a truncated file checks the length
  * first - {@link ctrmap.formats.containers.ContainerBytes} is the example.
  *
- * <p>Big-endian tile ids are a different family: see {@code Utils.ba2int}.
+ * <p>Big-endian tile ids are a different family: see {@code ctrmap.util.Bytes.ba2int}.
  * Stream-shaped reads are {@code LittleEndianDataInputStream}.
  */
 public final class LittleEndian {

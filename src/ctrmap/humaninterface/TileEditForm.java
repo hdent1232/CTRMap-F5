@@ -1,7 +1,6 @@
 package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
-import ctrmap.Utils;
 import ctrmap.Workspace;
 import ctrmap.formats.tilemap.EditorTileset;
 import ctrmap.formats.tilemap.TileTemplate;
@@ -293,7 +292,7 @@ public class TileEditForm extends javax.swing.JPanel {
 			//programmatic selection (inspector display) - must not trip the
 			//pick-a-brush listener (which would switch tools on hover)
 			suppressListEvents = true;
-			tileList.setSelectedValue(tileset.getTemplate(Utils.ba2int(mTileMapPanel.getRegionForTile(Selector.selTileX, Selector.selTileY).getTileData(Selector.selTileX % 40, Selector.selTileY % 40))).name, true);
+			tileList.setSelectedValue(tileset.getTemplate(ctrmap.util.Bytes.ba2int(mTileMapPanel.getRegionForTile(Selector.selTileX, Selector.selTileY).getTileData(Selector.selTileX % 40, Selector.selTileY % 40))).name, true);
 			suppressListEvents = false;
 		}
 		return result != 12;
@@ -309,7 +308,7 @@ public class TileEditForm extends javax.swing.JPanel {
 				byte1.setValue((int) data[1] & 0xFF);
 				byte2.setValue((int) data[2] & 0xFF);
 				byte3.setValue((int) data[3] & 0xFF);
-				int dataInt = Utils.ba2int(data);
+				int dataInt = ctrmap.util.Bytes.ba2int(data);
 				TileTemplate tile = tileset.getTemplate(dataInt);
 				if (tile.name.equals("Unknown")) {
 					cat1BtnGroup.clearSelection();

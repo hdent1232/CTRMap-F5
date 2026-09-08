@@ -10,7 +10,6 @@ import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.FPSAnimator;
 import ctrmap.CtrmapMainframe;
 
-import ctrmap.Utils;
 import ctrmap.Workspace;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.vectors.Vec3f;
@@ -173,17 +172,17 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 			return false;
 		}
 		float[][] Xbox = navi.ax.boxVectors;
-		if (Utils.isBoxSelected(Xbox, e, this, new Vec3f(navi.ax.worldLocX, navi.ax.worldLocY, navi.ax.worldLocZ), new Vec3f(navi.scale, navi.scale, navi.scale), new Vec3f(0f, 0f, 0f), mvMatrix, projMatrix, view)) {
+		if (ctrmap.humaninterface.Picking.isBoxSelected(Xbox, e, this, new Vec3f(navi.ax.worldLocX, navi.ax.worldLocY, navi.ax.worldLocZ), new Vec3f(navi.scale, navi.scale, navi.scale), new Vec3f(0f, 0f, 0f), mvMatrix, projMatrix, view)) {
 			navi.targetAxis = CM3DNavigator.TargetAxis.X;
 			return true;
 		}
 		float[][] Ybox = navi.ay.boxVectors;
-		if (Utils.isBoxSelected(Ybox, e, this, new Vec3f(navi.ay.worldLocX, navi.ay.worldLocY, navi.ay.worldLocZ), new Vec3f(navi.scale, navi.scale, navi.scale), new Vec3f(0f, 0f, 0f), mvMatrix, projMatrix, view)) {
+		if (ctrmap.humaninterface.Picking.isBoxSelected(Ybox, e, this, new Vec3f(navi.ay.worldLocX, navi.ay.worldLocY, navi.ay.worldLocZ), new Vec3f(navi.scale, navi.scale, navi.scale), new Vec3f(0f, 0f, 0f), mvMatrix, projMatrix, view)) {
 			navi.targetAxis = CM3DNavigator.TargetAxis.Y;
 			return true;
 		}
 		float[][] Zbox = navi.az.boxVectors;
-		if (Utils.isBoxSelected(Zbox, e, this, new Vec3f(navi.az.worldLocX, navi.az.worldLocY, navi.az.worldLocZ), new Vec3f(navi.scale, navi.scale, navi.scale), new Vec3f(0f, 0f, 0f), mvMatrix, projMatrix, view)) {
+		if (ctrmap.humaninterface.Picking.isBoxSelected(Zbox, e, this, new Vec3f(navi.az.worldLocX, navi.az.worldLocY, navi.az.worldLocZ), new Vec3f(navi.scale, navi.scale, navi.scale), new Vec3f(0f, 0f, 0f), mvMatrix, projMatrix, view)) {
 			navi.targetAxis = CM3DNavigator.TargetAxis.Z;
 			return true;
 		}

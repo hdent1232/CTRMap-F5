@@ -1,7 +1,6 @@
 package ctrmap.tests;
 
 import ctrmap.Ui;
-import ctrmap.Utils;
 import ctrmap.formats.npcreg.NPCRegistry;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -398,7 +397,7 @@ public class DialogSeamTest {
 
 	/**
 	 * Every "keep the changes?" question in the program is now asked by
-	 * Utils.askToKeep, so rule three is proved once, directly: each of
+	 * ctrmap.Ui.askToKeep, so rule three is proved once, directly: each of
 	 * JOptionPane's four answers maps to the right one of SAVE, DISCARD and
 	 * CANCEL, a closed dialog and a dialog nobody answers are both CANCEL, and
 	 * a caller that wants no dialog gets SAVE without the seam being touched.
@@ -407,15 +406,15 @@ public class DialogSeamTest {
 		List<String> said = Ui.record(JOptionPane.YES_OPTION, JOptionPane.NO_OPTION,
 				JOptionPane.CANCEL_OPTION, JOptionPane.CLOSED_OPTION);
 		try {
-			check(Utils.askToKeep(true, "Zone header") == Utils.Keep.SAVE, "askToKeep: yes is SAVE");
-			check(Utils.askToKeep(true, "Zone header") == Utils.Keep.DISCARD, "askToKeep: no is DISCARD");
-			check(Utils.askToKeep(true, "Zone header") == Utils.Keep.CANCEL, "askToKeep: cancel is CANCEL");
-			check(Utils.askToKeep(true, "Zone header") == Utils.Keep.CANCEL, "askToKeep: a closed dialog is CANCEL, never consent");
-			check(Utils.askToKeep(true, "Zone header") == Utils.Keep.CANCEL, "askToKeep: an answer that never comes is CANCEL too");
+			check(ctrmap.Ui.askToKeep(true, "Zone header") == ctrmap.Ui.Keep.SAVE, "askToKeep: yes is SAVE");
+			check(ctrmap.Ui.askToKeep(true, "Zone header") == ctrmap.Ui.Keep.DISCARD, "askToKeep: no is DISCARD");
+			check(ctrmap.Ui.askToKeep(true, "Zone header") == ctrmap.Ui.Keep.CANCEL, "askToKeep: cancel is CANCEL");
+			check(ctrmap.Ui.askToKeep(true, "Zone header") == ctrmap.Ui.Keep.CANCEL, "askToKeep: a closed dialog is CANCEL, never consent");
+			check(ctrmap.Ui.askToKeep(true, "Zone header") == ctrmap.Ui.Keep.CANCEL, "askToKeep: an answer that never comes is CANCEL too");
 			check(said.size() == 5 && said.get(0).equals("Save changes: Zone header has been modified. Do you want to keep the changes?"),
 					"askToKeep names what changed, in the words every store() always used: " + (said.isEmpty() ? said : said.get(0)));
 			int asked = said.size();
-			check(Utils.askToKeep(false, "Zone header") == Utils.Keep.SAVE && said.size() == asked,
+			check(ctrmap.Ui.askToKeep(false, "Zone header") == ctrmap.Ui.Keep.SAVE && said.size() == asked,
 					"askToKeep with no dialog wanted is SAVE, and nobody is asked");
 		} finally {
 			Ui.stopRecording();

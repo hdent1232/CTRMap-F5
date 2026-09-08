@@ -7,7 +7,6 @@ import java.io.IOException;
 
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.LittleEndianDataOutputStream;
-import ctrmap.Utils;
 import ctrmap.formats.GameFiles;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -106,7 +105,7 @@ public abstract class AbstractGamefreakContainer {
 				out.writeInt(offsets[i]);
 			}
 			if (getIsPadded()){
-				out.write(Utils.getPadding(0, headerLength));
+				out.write(ctrmap.util.Bytes.getPadding(0, headerLength));
 				out.write(new byte[len * 0x80]);
 			}
 			out.close();
@@ -193,7 +192,7 @@ public abstract class AbstractGamefreakContainer {
 	public boolean storeFile(int num, byte[] data) {
 		byte[] paddedData;
 		if (getIsPadded()){
-			byte[] padding = Utils.getPadding(getOffset(num), data.length);
+			byte[] padding = ctrmap.util.Bytes.getPadding(getOffset(num), data.length);
 			paddedData = new byte[data.length + padding.length];
 			System.arraycopy(data, 0, paddedData, 0, data.length);
 			System.arraycopy(padding, 0, paddedData, data.length, padding.length);

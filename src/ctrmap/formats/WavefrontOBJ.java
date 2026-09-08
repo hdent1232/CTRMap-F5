@@ -1,6 +1,5 @@
 package ctrmap.formats;
 
-import ctrmap.Utils;
 import ctrmap.formats.gfcollision.GRCollisionMesh;
 import java.io.BufferedReader;
 import java.io.File;
@@ -39,7 +38,7 @@ public class WavefrontOBJ {
 							float[] v1 = vertices.get(Integer.valueOf(read[2].split("/")[0]) - 1);
 							float[] v2 = vertices.get(Integer.valueOf(read[3].split("/")[0]) - 1);
 							//calculate 2D area of triangle of grounded vertices, if 0, it's a wall, so we remove it
-							if (!Utils.impreciseFloatEquals(v0[0] * (v1[2] - v2[2]) +  v1[0] * (v2[2] - v0[2]) +  v2[0] * (v0[2] - v1[2]), 0f)){
+							if (!ctrmap.util.Bytes.impreciseFloatEquals(v0[0] * (v1[2] - v2[2]) +  v1[0] * (v2[2] - v0[2]) +  v2[0] * (v0[2] - v1[2]), 0f)){
 								meshes.get(meshIndex).addTri(v0, v1, v2);
 							}
 						}
@@ -48,10 +47,10 @@ public class WavefrontOBJ {
 							float[] v1 = vertices.get(Integer.valueOf(read[2].split("/")[0]) - 1);
 							float[] v2 = vertices.get(Integer.valueOf(read[3].split("/")[0]) - 1);
 							float[] v3 = vertices.get(Integer.valueOf(read[4].split("/")[0]) - 1);
-							if (!Utils.impreciseFloatEquals(v0[0] * (v1[2] - v2[2]) +  v1[0] * (v2[2] - v0[2]) +  v2[0] * (v0[2] - v1[2]), 0f)){
+							if (!ctrmap.util.Bytes.impreciseFloatEquals(v0[0] * (v1[2] - v2[2]) +  v1[0] * (v2[2] - v0[2]) +  v2[0] * (v0[2] - v1[2]), 0f)){
 								meshes.get(meshIndex).addTri(v0, v1, v1);
 							}
-							if (!Utils.impreciseFloatEquals(v0[0] * (v3[2] - v2[2]) +  v3[0] * (v2[2] - v0[2]) +  v2[0] * (v0[2] - v3[2]), 0f)){
+							if (!ctrmap.util.Bytes.impreciseFloatEquals(v0[0] * (v3[2] - v2[2]) +  v3[0] * (v2[2] - v0[2]) +  v2[0] * (v0[2] - v3[2]), 0f)){
 								meshes.get(meshIndex).addTri(v0, v3, v2);
 							}
 						}

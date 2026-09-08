@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import ctrmap.Utils;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.BM;
 import ctrmap.formats.h3d.BCHFile;
@@ -146,7 +145,7 @@ public class ADPropRegistryEditor extends javax.swing.JFrame {
 				e2.evtAnimations2[i / 3][i % 3] = (Short) evtA2Table.getValueAt(i % 3, i / 3);
 			}
 			if (!e2.equals(e)) {
-				switch (Utils.askToKeep(dialog, "Prop registry")) {
+				switch (ctrmap.Ui.askToKeep(dialog, "Prop registry")) {
 					case DISCARD:
 						return true;
 					case CANCEL:

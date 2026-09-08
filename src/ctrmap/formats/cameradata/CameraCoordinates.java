@@ -4,7 +4,6 @@ import java.io.IOException;
 
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.LittleEndianDataOutputStream;
-import ctrmap.Utils;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -39,13 +38,13 @@ public class CameraCoordinates {
 	public boolean equals(Object o) {
 		if (o != null && o instanceof CameraCoordinates) {
 			CameraCoordinates c2 = (CameraCoordinates) o;
-			return Utils.impreciseFloatEquals(Math.round(this.FOV), Math.round(c2.FOV))
-					&& Utils.impreciseFloatEquals(Math.round(this.distanceFromTarget), Math.round(c2.distanceFromTarget))
-					&& Utils.impreciseFloatEquals(Math.round(this.pitch), Math.round(c2.pitch))
-					&& Utils.impreciseFloatEquals(Math.round(this.pitchShift), Math.round(c2.pitchShift))
-					&& Utils.impreciseFloatEquals(Math.round(this.yaw), Math.round(c2.yaw))
-					&& Utils.impreciseFloatEquals(Math.round(this.yawShift), Math.round(c2.yawShift))
-					&& Utils.impreciseFloatEquals(Math.round(this.roll), Math.round(c2.roll));
+			return ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.FOV), Math.round(c2.FOV))
+					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.distanceFromTarget), Math.round(c2.distanceFromTarget))
+					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.pitch), Math.round(c2.pitch))
+					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.pitchShift), Math.round(c2.pitchShift))
+					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.yaw), Math.round(c2.yaw))
+					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.yawShift), Math.round(c2.yawShift))
+					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.roll), Math.round(c2.roll));
 			
 		}
 		return false;
