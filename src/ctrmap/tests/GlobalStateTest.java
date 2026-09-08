@@ -113,7 +113,9 @@ public class GlobalStateTest {
 	 * so this number was proven by breaking: one below it fails, naming the
 	 * count, before it was set.
 	 */
-	private static final int CEILING = 38;
+	//38 -> 36: the decoupling steps deleted the window's held tool and made its
+	//frame private, both of which were public and mutable.
+	private static final int CEILING = 36;
 
 	static int fails = 0;
 

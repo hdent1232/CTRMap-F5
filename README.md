@@ -113,7 +113,7 @@ Every binary format writer is validated headlessly against a real ORAS dump: par
 re-serialize must be **byte-identical**, and every surgical operation is dry-run across *every*
 eligible zone in the game before it is allowed into the UI.
 
-`test.ps1` runs **122 suites**. Current measured results:
+`test.ps1` runs **123 suites**. Current measured results:
 
 | | |
 |---|---|

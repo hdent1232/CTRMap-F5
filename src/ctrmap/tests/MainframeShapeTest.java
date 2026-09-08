@@ -103,7 +103,9 @@ public class MainframeShapeTest {
 	 * assigned once inside createAndShowGUI. LOWER this as widgets find
 	 * owners; raising it is the decision this exists to make visible.
 	 */
-	private static final int STATIC_CEILING = 23;
+	//23 -> 21: the held tool is an owner now (ToolSelection) and the frame is
+	//private, nothing below the window having a reason to reach it.
+	private static final int STATIC_CEILING = 21;
 
 	static int fails = 0;
 

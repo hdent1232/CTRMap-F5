@@ -42,10 +42,10 @@ public class MatrixPanelInputManager implements MouseWheelListener, MouseMotionL
 	}
 	
 	private void moveSelector(MouseEvent e) {
-		int xbound = (int) (mMtxPanel.getLocationOnScreen().getX() + (mMtxPanel.getWidth() - mMtxPanel.getFullImageWidth()) / 2);
-		int ybound = (int) (mMtxPanel.getLocationOnScreen().getY() + (mMtxPanel.getHeight() - mMtxPanel.getFullImageHeight()) / 2);
-		if (e.getXOnScreen() >= xbound && e.getXOnScreen() < xbound + mMtxPanel.getFullImageWidth()
-				&& e.getYOnScreen() >= ybound && e.getYOnScreen() < ybound + mMtxPanel.getFullImageHeight()) {
+		int xbound = (int) (parent.getLocationOnScreen().getX() + (parent.getWidth() - parent.getFullImageWidth()) / 2);
+		int ybound = (int) (parent.getLocationOnScreen().getY() + (parent.getHeight() - parent.getFullImageHeight()) / 2);
+		if (e.getXOnScreen() >= xbound && e.getXOnScreen() < xbound + parent.getFullImageWidth()
+				&& e.getYOnScreen() >= ybound && e.getYOnScreen() < ybound + parent.getFullImageHeight()) {
 			MatrixSelector.select(e.getXOnScreen() - xbound, e.getYOnScreen() - ybound);
 		} else {
 			if (MatrixSelector.hilightRegionX != -1) {
