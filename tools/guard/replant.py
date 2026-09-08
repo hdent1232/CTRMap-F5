@@ -1,0 +1,265 @@
+# -*- coding: utf-8 -*-
+"""Put each recorded defect back, and require the guard that was proven against it to go RED.
+
+WHY THIS EXISTS. "Proven by breaking" is real in this project and it is one-time: the proof lives
+in a commit message and cannot be re-executed. A guard proven in one month and hollowed out in the
+next looks identical to one that still works - the suite is green either way, because the thing it
+was watching is gone. This re-runs the proofs.
+
+Per plant in tools/guard/plants.json:
+
+  1. the substitution is applied to one file, and it must match EXACTLY ONCE. A plant that matches
+     twice is ambiguous and a plant that matches nothing has rotted; both are refusals, not skips.
+  2. the tree is rebuilt (unless the plant says no_rebuild - a PowerShell or data file the battery
+     reads at run time needs no compile);
+  3. the named suite is run and must FAIL, and its output must contain the plant's must_say. Exit
+     code alone is not enough: a suite that fails for an unrelated reason would otherwise be
+     recorded as having caught this;
+  4. the file is restored from the bytes read in step 1 and the restore is VERIFIED byte for byte.
+     A runner that breaks a tree and cannot prove it put it back is worse than no runner.
+
+The tree is rebuilt once at the end, whatever happened, so nobody is left with a planted build.
+
+    python tools/guard/replant.py                # every plant
+    python tools/guard/replant.py <id> [<id>...] # named plants only
+    python tools/guard/replant.py --owed         # the two ratchets, no builds, seconds
+    python tools/guard/replant.py --selftest     # the runner's own checks, no builds, no JDK
+
+Usage note: this rebuilds the tree once per plant, so a full run is minutes, not seconds. It is a
+tool you invoke deliberately. PlantLedgerTest is the cheap half that runs in every battery: it
+checks the ledger's shape, that every plant still matches its file exactly once, and that the two
+ratchets have not risen.
+"""
+import io
+import json
+import os
+import re
+import subprocess
+import sys
+
+LF = chr(10)
+CR = chr(13)
+CRLF = CR + LF
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LEDGER = os.path.join(ROOT, "tools", "guard", "plants.json")
+LIBS = "build/classes;lib/jogl-all.jar;lib/gluegen-rt.jar"
+
+
+def ledger():
+    return json.load(io.open(LEDGER, encoding="utf-8"))
+
+
+def jdk():
+    """The JDK the battery uses, or None."""
+    override = os.environ.get("CTRMAP_JDK")
+    if override and os.path.isdir(override):
+        return override
+    base = r"C:\Program Files\Eclipse Adoptium"
+    if not os.path.isdir(base):
+        return None
+    found = sorted(d for d in os.listdir(base) if d.lower().startswith("jdk"))
+    return os.path.join(base, found[-1]) if found else None
+
+
+def read(path):
+    """(raw bytes, text with LF endings, whether the file is CRLF)."""
+    raw = io.open(path, "rb").read()
+    text = raw.decode("utf-8", "replace")
+    return raw, (text.replace(CRLF, LF) if CRLF in text else text), (CRLF in text)
+
+
+def write(path, text, crlf):
+    io.open(path, "w", encoding="utf-8", newline="").write(text.replace(LF, CRLF) if crlf else text)
+
+
+def build():
+    """(ok, output). Uses the same script the battery insists on."""
+    done = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                           "-File", os.path.join(ROOT, "build.ps1")],
+                          cwd=ROOT, capture_output=True, text=True, errors="replace")
+    out = (done.stdout or "") + (done.stderr or "")
+    return ("Build OK" in out), out
+
+
+def run_suite(cls, args, java):
+    command = [java, "-Xmx4g", "-Djava.awt.headless=true", "-cp", LIBS, cls] + args
+    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, errors="replace")
+    return done.returncode, (done.stdout or "") + (done.stderr or "")
+
+
+def expand(args, pristine):
+    return [a.replace("${PRISTINE}", pristine) for a in args]
+
+
+def owed(book):
+    """(suites with no plant, plants proven only at their own site, the suite names)."""
+    registered = set()
+    text = io.open(os.path.join(ROOT, "test.ps1"), encoding="utf-8", errors="replace").read()
+    for found in re.findall(r'c\s*=\s*"(ctrmap\.tests\.\w+)"', text):
+        registered.add(found)
+    planted = set(p["suite"] for p in book["plants"])
+    site_only = sum(1 for p in book["plants"] if p.get("site_only"))
+    return len(registered - planted), site_only, sorted(registered - planted)
+
+
+def check_shape(book):
+    """Every refusal the ledger can make without building anything. Returns a list of problems."""
+    bad = []
+    seen = set()
+    for p in book["plants"]:
+        pid = p.get("id", "<no id>")
+        if pid in seen:
+            bad.append("%s: two plants share an id" % pid)
+        seen.add(pid)
+        for field in ("id", "why", "file", "find", "replace", "suite", "must_say"):
+            if field not in p:
+                bad.append("%s: has no %s" % (pid, field))
+        if "file" not in p or "find" not in p:
+            continue
+        path = os.path.join(ROOT, p["file"].replace("/", os.sep))
+        if not os.path.isfile(path):
+            bad.append("%s: no such file %s" % (pid, p["file"]))
+            continue
+        _, text, _ = read(path)
+        hits = text.count(p["find"])
+        if hits != 1:
+            bad.append("%s: its substitution matches %s%d time(s) in %s - a plant that matches "
+                       "nothing has rotted, and one that matches twice is ambiguous"
+                       % (pid, "", hits, p["file"]))
+        if p.get("replace") == p.get("find"):
+            bad.append("%s: substitutes a thing for itself, so it plants nothing" % pid)
+    return bad
+
+
+def replant(p, java, pristine):
+    """True when the guard noticed. Restores the file whatever happens."""
+    path = os.path.join(ROOT, p["file"].replace("/", os.sep))
+    raw, text, crlf = read(path)
+    if text.count(p["find"]) != 1:
+        print("  REFUSED %s: its substitution no longer matches %s exactly once"
+              % (p["id"], p["file"]))
+        return False
+    print("  %s -> %s" % (p["id"], p["suite"]))
+    ok = False
+    try:
+        write(path, text.replace(p["find"], p["replace"]), crlf)
+        if not p.get("no_rebuild"):
+            built, out = build()
+            if not built:
+                print("     the planted tree does not compile, so nothing is proven here.")
+                print("     A plant must leave a tree that BUILDS - otherwise the suite never runs")
+                print("     and 'it failed' means only that javac did.")
+                return False
+        code, said = run_suite(p["suite"], expand(p.get("args", []), pristine), java)
+        noticed = code != 0
+        named = p["must_say"] in said
+        if noticed and named:
+            print("     ok: red, and it said what it was watching for")
+            ok = True
+        elif noticed:
+            print("     NOT PROVEN: the suite failed but never said %r." % p["must_say"])
+            print("     It may have failed for something else entirely, which would record this")
+            print("     guard as holding when it does not.")
+        else:
+            print("     SURVIVED: the defect is back and %s still passes." % p["suite"])
+    finally:
+        io.open(path, "wb").write(raw)
+        back = io.open(path, "rb").read()
+        if back != raw:
+            print("     RESTORE FAILED for %s - the tree is NOT as it was." % p["file"])
+            ok = False
+    return ok
+
+
+def selftest():
+    fails = []
+
+    def check(cond, what):
+        print(("  ok: " if cond else "  FAIL: ") + what)
+        if not cond:
+            fails.append(what)
+
+    book = ledger()
+    check(isinstance(book.get("plants"), list) and book["plants"],
+          "the ledger holds plants (%d)" % len(book.get("plants") or []))
+    check(check_shape(book) == [], "every plant matches its file exactly once: %s"
+          % (check_shape(book) or "yes"))
+    n_owed, n_site, missing = owed(book)
+    check(n_owed <= book["owed_ceiling"],
+          "owed %d is at or under its ceiling %d - it may only fall" % (n_owed, book["owed_ceiling"]))
+    check(n_site <= book["owed_generalisation_ceiling"],
+          "owed_generalisation %d is at or under its ceiling %d"
+          % (n_site, book["owed_generalisation_ceiling"]))
+
+    # the runner's own refusals, on a scratch ledger rather than the real one
+    fake = {"plants": [{"id": "a", "why": "w", "file": "test.ps1", "find": "zzz-not-here",
+                        "replace": "x", "suite": "s", "must_say": "m"}],
+            "owed_ceiling": 999, "owed_generalisation_ceiling": 999}
+    check(any("has rotted" in b for b in check_shape(fake)),
+          "a plant whose text is gone is refused, not skipped")
+    fake["plants"][0].update(find="param(", replace="param(")
+    check(any("substitutes a thing for itself" in b for b in check_shape(fake)),
+          "and a plant that substitutes a thing for itself is refused")
+    fake["plants"] = [dict(fake["plants"][0], id="dup"), dict(fake["plants"][0], id="dup")]
+    check(any("share an id" in b for b in check_shape(fake)), "and two plants may not share an id")
+
+    print("ALL PASS" if not fails else "FAILURES PRESENT (%d)" % len(fails))
+    return 0 if not fails else 1
+
+
+def main(argv):
+    book = ledger()
+    if "--selftest" in argv:
+        return selftest()
+
+    n_owed, n_site, missing = owed(book)
+    if "--owed" in argv:
+        print("owed: %d registered suite(s) have no plant (ceiling %d)"
+              % (n_owed, book["owed_ceiling"]))
+        print("owed_generalisation: %d plant(s) proven only at their own site (ceiling %d)"
+              % (n_site, book["owed_generalisation_ceiling"]))
+        for name in missing:
+            print("    %s" % name)
+        return 0
+
+    bad = check_shape(book)
+    if bad:
+        print("THE LEDGER IS NOT USABLE:")
+        for b in bad:
+            print("  %s" % b)
+        return 2
+
+    java = jdk()
+    if not java:
+        print("No JDK found under C:\\Program Files\\Eclipse Adoptium and CTRMAP_JDK is not set.")
+        return 2
+    java = os.path.join(java, "bin", "java.exe")
+    pristine = os.environ.get("CTRMAP_PRISTINE",
+                              os.path.join(os.path.dirname(ROOT), "RomFS_original_garcs"))
+
+    wanted = [a for a in argv[1:] if not a.startswith("-")]
+    plants = [p for p in book["plants"] if not wanted or p["id"] in wanted]
+    if wanted and len(plants) != len(wanted):
+        print("no such plant: %s" % ", ".join(sorted(set(wanted) - set(p["id"] for p in plants))))
+        return 2
+
+    print("replanting %d defect(s); each must make its guard go red" % len(plants))
+    held, lost = [], []
+    try:
+        for p in plants:
+            (held if replant(p, java, pristine) else lost).append(p["id"])
+    finally:
+        print("rebuilding, so nobody is left with a planted tree")
+        built, _ = build()
+        print("  %s" % ("Build OK" if built else "THE REBUILD FAILED - check the tree by hand"))
+
+    print("")
+    print("%d guard(s) still notice; %d do not" % (len(held), len(lost)))
+    for pid in lost:
+        print("    NOT PROVEN: %s" % pid)
+    print("owed: %d suite(s) with no plant; owed_generalisation: %d" % (n_owed, n_site))
+    return 0 if not lost else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
