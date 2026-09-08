@@ -1,6 +1,13 @@
 package ctrmap.humaninterface;
 
 import ctrmap.resources.ResourceAccess;
+import java.awt.Component;
+import javax.swing.BoxLayout;
+import javax.swing.JComponent;
+import javax.swing.JTextArea;
+import javax.swing.JScrollPane;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.ImageIcon;
 import javax.swing.JFormattedTextField;
 import javax.swing.JRadioButton;
@@ -51,4 +58,40 @@ public final class Forms {
 		ret.setRolloverEnabled(true);
 		return ret;
 	}
-}
+
+	/**
+	 * A label above a field, both left-aligned, appended to a stacked form.
+	 * Twenty-two of the NPC editor's wizard forms build their rows with this;
+	 * it was an instance method of that class, which is one of the reasons its
+	 * seven wizard forms could not leave it.
+	 */
+	public static void addLabeled(JPanel panel, String label, Component field) {
+		JLabel l = new JLabel(label);
+		l.setAlignmentX(Component.LEFT_ALIGNMENT);
+		panel.add(l);
+		if (field instanceof JComponent) {
+			((JComponent) field).setAlignmentX(Component.LEFT_ALIGNMENT);
+		}
+		panel.add(field);
+	}
+
+	/** An empty panel that stacks what is added to it, top to bottom. */
+	public static JPanel stackedForm() {
+		JPanel panel = new JPanel();
+		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+		return panel;
+	}
+
+	/** A grey hint line under a field, in HTML. */
+	public static JLabel hint(String html) {
+		JLabel hint = new JLabel(html);
+		hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return hint;
+	}
+
+	public static JTextArea textArea(String text, int rows) {
+		JTextArea ta = new JTextArea(text, rows, 40);
+		ta.setLineWrap(true);
+		ta.setWrapStyleWord(true);
+		return ta;
+	}}
