@@ -119,16 +119,18 @@ public class Workspace {
 	}
 
 	/**
-	 * Makes a session the open game, or none, and hands it to the main window,
-	 * which keeps it in one field rather than fetching it here from every
-	 * action. {@link #validate} is how the application does it; a suite does
-	 * it directly with a session it built - and because both come through
-	 * here, the window is handed a suite's session exactly as it is handed
-	 * the user's.
+	 * Makes a session the open game, or none.
+	 *
+	 * <p>This says nothing to anybody. It used to hand the session to the main
+	 * window, which is the wrong direction - the state a program keeps should
+	 * not know the screen it is drawn on - and it made every suite that
+	 * installs a session load the window class. The window is told by whoever
+	 * asked for the game: {@link #validate} hands its result back, and the
+	 * three UI callers pass it on. A suite that wants the window to know says
+	 * so in one line, which is also the honest way to write it down.
 	 */
 	public static void install(WorkspaceSession s) {
 		current = s;
-		CtrmapMainframe.onWorkspaceOpened(s);
 	}
 
 	/** The open game's type, or null when no workspace has validated. */
@@ -154,8 +156,8 @@ public class Workspace {
 		return current == null ? null : current.temp();
 	}
 
-	public static void validate(Component parent) {
-		validate(parent, true);
+	public static WorkspaceSession validate(Component parent) {
+		return validate(parent, true);
 	}
 
 	/**
@@ -175,7 +177,7 @@ public class Workspace {
 	 * reports problems in its own words, and a brand-new user must never meet
 	 * the raw list before they have had a chance to do anything.
 	 */
-	public static void validate(Component parent, boolean showErrors) {
+	public static WorkspaceSession validate(Component parent, boolean showErrors) {
 		install(null);
 		WorkspaceSession opened;
 		try {
@@ -183,7 +185,7 @@ public class Workspace {
 					GAMEDIR_PATH == null ? null : new File(GAMEDIR_PATH));
 		} catch (WorkspaceSession.OpenFailed ex) {
 			if (!showErrors) {
-				return;
+				return null;
 			}
 			StringBuilder sb = new StringBuilder();
 			for (String s : ex.problems()) {
@@ -193,7 +195,7 @@ public class Workspace {
 			sb.append("\nRun Options > Setup wizard to point CTRMap at your game,\n");
 			sb.append("then open a map from the zone dropdown in the \"Zone Loader\" tab.");
 			Ui.error(parent, sb.toString(), "Setup Error");
-			return;
+			return null;
 		}
 		opened.prepareDirectories();
 		reportSnapshot(opened.snapshotOriginals());
@@ -201,11 +203,13 @@ public class Workspace {
 		//was just opened, handed in: neither class reads the global any more,
 		//so a workspace that opens without loading them leaves the location
 		//dropdowns refusing and the Pokemon pickers on id-only labels. They
-		//load BEFORE the session is installed, because installing it hands it
-		//to the main window, whose zone dropdown names its rows from them.
+		//load BEFORE this returns, because the caller hands the session
+		//straight to the main window, whose zone dropdown names its rows
+		//from them.
 		LocationNames.loadFromGarc(opened);
 		PokeData.load(opened);
 		install(opened);
+		return opened;
 	}
 
 	// ------------------------------------------------------------ delegators
@@ -240,10 +244,14 @@ public class Workspace {
 		saveWorkspace();
 	}
 
+	/**
+	 * Deletes the workspace's working copies. The editors showing them have to
+	 * be unloaded FIRST, and their owner does that: this used to call the main
+	 * window itself, which is why WorkspaceRepointTest records that the path
+	 * where the user answers both questions "cannot run without a window at
+	 * all". It runs without one now.
+	 */
 	public static void cleanAndReload() {
-		if (CtrmapMainframe.frame != null) {
-			CtrmapMainframe.unloadEditors();
-		}
 		cleanAll();
 	}
 
@@ -350,7 +358,7 @@ public class Workspace {
 			return;
 		}
 		snapshotProblemShown = true;
-		ctrmap.Ui.error(CtrmapMainframe.frame, text, "Pristine backup");
+		ctrmap.Ui.error(text, "Pristine backup");
 	}
 
 	/** Lets a suite exercise more than one snapshot problem in one JVM. */
@@ -379,10 +387,6 @@ public class Workspace {
 		TILESET_DEFAULT = false;
 		TILESET_PATH = null;
 		current = null;
-		//the main window holds the session it was handed in install(); a reset
-		//that dropped the global's copy and left the window's would leave the
-		//window operating on a game nothing else has open
-		CtrmapMainframe.onWorkspaceOpened(null);
 		//not fields of this class, but derived from it: the location-name
 		//table and the Pokemon reference tables are read from the open
 		//workspace's game, and a reset that kept them would hand one game's
@@ -410,7 +414,7 @@ public class Workspace {
 	/** The three things a backup can have wrong, worded for the user. */
 	public static java.util.List<String> reportSnapshot(WorkspaceSession.SnapshotReport report) {
 		if (report.foreignTakenFrom != null) {
-			Ui.error(CtrmapMainframe.frame, "This workspace holds a pristine backup of a different game folder:\n  "
+			Ui.error("This workspace holds a pristine backup of a different game folder:\n  "
 					+ report.foreignTakenFrom
 					+ "\n\nCTRMap compares your edits against that backup to work out what you"
 					+ "\nchanged, and cuts donor buildings out of it, so both are now wrong for"
@@ -538,7 +542,7 @@ public class Workspace {
 						//through Ui: this sentence is the only difference between
 						//a pack that failed and one that worked, and a bare
 						//dialog is not something a guard can see
-						Ui.error(CtrmapMainframe.frame, "The workspace was not packed:\n" + cause
+						Ui.error("The workspace was not packed:\n" + cause
 								+ "\n\nThe game archives may be partly written. Fix the cause and pack again before deploying.", "Pack workspace");
 						return;
 					}
@@ -561,7 +565,7 @@ public class Workspace {
 			progress.showDialog();
 			//showDialog returns on the EDT once done() has closed the progress
 			//dialog, so this is the first moment anything else can be seen
-			reportPackWarnings(CtrmapMainframe.frame, warnings);
+			reportPackWarnings(Ui.parent(), warnings);
 		}
 	}
 

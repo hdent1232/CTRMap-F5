@@ -61,6 +61,25 @@ public final class Ui {
 
 	private static Sink sink;
 	private static boolean dialogsEnabled;
+	/**
+	 * The window a dialog belongs to when its caller does not name one.
+	 *
+	 * <p>A dialog has to be parented to something: unparented, it can open
+	 * behind the editor, and a modal one that opens behind is a program that
+	 * has stopped responding as far as the user can tell. Every caller
+	 * therefore passed {@code CtrmapMainframe.frame} - eighty-seven of them,
+	 * eighteen outside the window itself, each reaching into the main window's
+	 * statics for the one window this program has ever had, and each unable to
+	 * be pointed at another.
+	 *
+	 * <p>So the seam holds it. The application sets it once, when its window
+	 * exists; a caller that owns its own window (a dialog opening a second
+	 * dialog, a panel parenting to itself) still names that one, which is
+	 * better than this and is why the parented overloads remain. It is null
+	 * until set, which is exactly what those call sites passed before the
+	 * window was built and what a headless suite passes now.
+	 */
+	private static Component parent;
 
 	private Ui() {
 	}
@@ -106,6 +125,55 @@ public final class Ui {
 
 	private static String saying(String text) {
 		return text == null || text.trim().isEmpty() ? NOTHING_SAID : text;
+	}
+
+	/**
+	 * Hands the seam the window dialogs belong to. ONLY the application calls
+	 * it, once, with the window it has just built.
+	 */
+	public static void parent(Component window) {
+		parent = window;
+	}
+
+	/**
+	 * That window, for the twenty-two dialogs whose body is a live Swing form
+	 * the seam cannot carry (DialogSeamTest names every one). They need a
+	 * parent like any other dialog; what they must not need is the main
+	 * window's statics.
+	 */
+	public static Component parent() {
+		return parent;
+	}
+
+	/** Tells the user something, parented to the window the application set. */
+	public static void message(String text, String title, int type) {
+		message(parent, text, title, type);
+	}
+
+	/** An error, parented to the window the application set. */
+	public static void error(String text, String title) {
+		error(parent, text, title);
+	}
+
+	/** A question, parented to the window the application set. */
+	public static int confirm(String text, String title, int optionType) {
+		return confirm(parent, text, title, optionType);
+	}
+
+	/** The same, with the icon the caller names. */
+	public static int confirm(String text, String title, int optionType, int messageType) {
+		return confirm(parent, text, title, optionType, messageType);
+	}
+
+	/** Named buttons, parented to the window the application set. */
+	public static int option(String text, String title, int optionType, int messageType,
+			Object[] options, Object initial) {
+		return option(parent, text, title, optionType, messageType, options, initial);
+	}
+
+	/** A choice, parented to the window the application set. */
+	public static Object input(String text, String title, int type, Object[] options, Object initial) {
+		return input(parent, text, title, type, options, initial);
 	}
 
 	/** Tells the user something, through a dialog or through a test's sink. */
@@ -255,6 +323,16 @@ public final class Ui {
 			}
 		};
 		return said;
+	}
+
+	/**
+	 * Sends what this program says to a sink of the caller's own. For a test
+	 * that has to see more than the text - {@link #record} keeps what was
+	 * said and throws away which window it was said over, which is the one
+	 * thing the parented and unparented forms differ by.
+	 */
+	public static void into(Sink custom) {
+		sink = custom;
 	}
 
 	/** Back to real dialogs. */

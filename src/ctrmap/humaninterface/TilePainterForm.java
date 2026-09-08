@@ -476,7 +476,7 @@ public class TilePainterForm {
 		if (needsAreaWrite(loaded, zoneArea, placed, texNeeds)) {
 			//the pack at the end of this Apply carries a fork's new area too, so
 			//the result is only read for the id - no packIfForked here
-			ctrmap.AreaForker.ForkResult owned = AreaForkPrompt.ensurePrivate(loaded, frame, zoneIndex, zoneArea,
+			ctrmap.AreaForker.ForkResult owned = AreaForkPrompt.ensurePrivate(loaded, ctrmap.Ui.parent(), zoneIndex, zoneArea,
 					"adding this map's brush textures and door props");
 			if (owned == null) {
 				throw new IllegalStateException("Apply cancelled - nothing was changed.");
@@ -553,7 +553,7 @@ public class TilePainterForm {
 				//through Ui: a bare option dialog is a wall no test can answer,
 				//so everything past it - including whether Skip really skips -
 				//was unreachable code. No answer at all means Skip, never wiring.
-				Object pick = ctrmap.Ui.input(frame,
+				Object pick = ctrmap.Ui.input(
 						enterable + " placed building(s) have doors. Wire them now?\n\n"
 						+ "CLONE (recommended): each door gets its OWN interior - a copy of the retail\n"
 						+ "room placed in a free base zone - and the room's exit leads BACK TO THIS MAP.\n"
@@ -599,7 +599,7 @@ public class TilePainterForm {
 					@Override
 					public void run() {
 						mZonePnl.selectZone(zoneIndex);
-						ctrmap.Ui.message(frame, report, "Tile painter", JOptionPane.INFORMATION_MESSAGE);
+						ctrmap.Ui.message(report, "Tile painter", JOptionPane.INFORMATION_MESSAGE);
 					}
 				});
 			}
@@ -1143,7 +1143,7 @@ public class TilePainterForm {
 			try {
 				ctrmap.formats.scripts.GFLPawnScript donor = paletteSignDonor();
 				int insCount = ctrmap.formats.scripts.SignWrapperInjector.countInjectedInstructions(s, donor);
-				if (ctrmap.Ui.confirm(frame,
+				if (ctrmap.Ui.confirm(
 						"To make the placed sign(s) readable, this zone's script needs the vanilla\n"
 						+ "sign-display routine (" + insCount + " instructions) transplanted into it.\n"
 						+ "Inject it now? (Cancel keeps the signs as scenery.)",
@@ -1155,7 +1155,7 @@ public class TilePainterForm {
 					throw new IllegalStateException("the injected routine did not verify");
 				}
 			} catch (RuntimeException ex) {
-				ctrmap.Ui.message(frame, signs.size() + " sign(s) placed as scenery only - the sign routine could not\n"
+				ctrmap.Ui.message(signs.size() + " sign(s) placed as scenery only - the sign routine could not\n"
 						+ "be transplanted: " + ex.getMessage(), "Signs", JOptionPane.INFORMATION_MESSAGE);
 				return 0;
 			}
@@ -1164,7 +1164,7 @@ public class TilePainterForm {
 		File sf = Workspace.getStoryTextGARC() != null
 				? Workspace.getWorkspaceFile(ArchiveType.STORYTEXT, textID) : null;
 		if (sf == null || !sf.exists()) {
-			ctrmap.Ui.message(frame, "Signs placed as scenery only: the STORYTEXT archive is unavailable.",
+			ctrmap.Ui.message("Signs placed as scenery only: the STORYTEXT archive is unavailable.",
 					"Signs", JOptionPane.INFORMATION_MESSAGE);
 			return 0;
 		}
@@ -1196,7 +1196,7 @@ public class TilePainterForm {
 			panel.add(new javax.swing.JScrollPane(ta));
 			panel.add(new JLabel("Sign style:"));
 			panel.add(typeBox);
-			if (JOptionPane.showConfirmDialog(frame, panel, "Sign text",
+			if (JOptionPane.showConfirmDialog(ctrmap.Ui.parent(), panel, "Sign text",
 					JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) {
 				continue;
 			}
@@ -1206,7 +1206,7 @@ public class TilePainterForm {
 			try {
 				ctrmap.formats.text.GFMessageFile.write(java.util.Arrays.asList(text));
 			} catch (RuntimeException ex) {
-				ctrmap.Ui.error(frame, "This sign's text could not be encoded and was skipped:\n"
+				ctrmap.Ui.error("This sign's text could not be encoded and was skipped:\n"
 						+ ex.getMessage(), "Sign text");
 				continue;
 			}

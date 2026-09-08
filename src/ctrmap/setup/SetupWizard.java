@@ -582,7 +582,7 @@ public class SetupWizard extends JDialog {
 
 	/** Runs the real load and checks that it actually produced something. */
 	private void completeSetup() {
-		Workspace.validate(this, false);
+		ctrmap.CtrmapMainframe.onWorkspaceOpened(Workspace.validate(this, false));
 		//Workspace.isValid() is true BEFORE the archives are read, so it says nothing
 		//about whether this worked. The only honest test is what the user can
 		//see: are there zones in the list?

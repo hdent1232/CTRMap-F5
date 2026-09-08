@@ -82,8 +82,8 @@ public class LoadingDialog extends javax.swing.JPanel {
 			}
 			return;
 		}
-		if (CtrmapMainframe.frame != null) {
-			dlg.setLocationRelativeTo(CtrmapMainframe.frame);
+		if (ctrmap.Ui.parent() != null) {
+			dlg.setLocationRelativeTo(ctrmap.Ui.parent());
 		}
 		dlg.setVisible(true);
 	}

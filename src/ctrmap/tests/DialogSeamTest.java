@@ -135,6 +135,7 @@ public class DialogSeamTest {
 		closingADialogIsNeverConsent(root);
 		aReportNeverSaysOnlyNull(root);
 		theSeamCannotSayNothing();
+		theSeamCarriesTheWindowItWasGiven();
 		theOneKeepQuestionAnswersClosedAsCancel();
 		closedMeansTheRegistryIsNotWritten();
 
@@ -284,6 +285,81 @@ public class DialogSeamTest {
 	 * seam says something. All three of Ui's paths are checked through the sink
 	 * a recording test sees, which is the one every other guard asserts on.
 	 */
+	/**
+	 * Rule six: a dialog opened without naming a window is parented to the one
+	 * the application gave the seam.
+	 *
+	 * <p>Eighty-seven call sites used to name {@code CtrmapMainframe.frame}
+	 * themselves, eighteen of them outside the window - each reaching into the
+	 * main window's statics for the one window this program has ever had. A
+	 * dialog with no parent can open BEHIND the editor, and a modal one that
+	 * opens behind is a program that has stopped responding as far as the user
+	 * can tell; so "the seam holds the window" is not a convenience, it is what
+	 * makes dropping the argument safe, and it is what this asserts.
+	 *
+	 * <p>{@link Ui#record} keeps what was said and throws the parent away, so
+	 * this installs a sink that keeps the parent instead.
+	 */
+	static void theSeamCarriesTheWindowItWasGiven() {
+		final List<java.awt.Component> parents = new ArrayList<>();
+		Ui.Sink spy = new Ui.Sink() {
+			@Override
+			public void message(java.awt.Component parent, String text, String title, int type) {
+				parents.add(parent);
+			}
+
+			@Override
+			public int confirm(java.awt.Component parent, String text, String title, int optionType) {
+				parents.add(parent);
+				return JOptionPane.CLOSED_OPTION;
+			}
+
+			@Override
+			public int option(java.awt.Component parent, String text, String title, Object[] options) {
+				parents.add(parent);
+				return JOptionPane.CLOSED_OPTION;
+			}
+
+			@Override
+			public Object input(java.awt.Component parent, String text, String title, int type,
+					Object[] options, Object initial) {
+				parents.add(parent);
+				return null;
+			}
+		};
+		javax.swing.JPanel window = new javax.swing.JPanel();
+		javax.swing.JPanel own = new javax.swing.JPanel();
+		Ui.parent(window);
+		Ui.into(spy);
+		try {
+			Ui.error("a", "t");
+			Ui.message("a", "t", JOptionPane.INFORMATION_MESSAGE);
+			Ui.confirm("a", "t", JOptionPane.YES_NO_OPTION);
+			Ui.confirm("a", "t", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+			Ui.option("a", "t", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE,
+					new Object[]{"ok"}, "ok");
+			Ui.input("a", "t", JOptionPane.QUESTION_MESSAGE, new Object[]{"one"}, "one");
+			check(parents.size() == 6, "all six unparented forms reached the seam (" + parents.size() + ")");
+			boolean allOverTheWindow = true;
+			for (java.awt.Component p : parents) {
+				allOverTheWindow &= p == window;
+			}
+			check(allOverTheWindow, "and every one of them was parented to the window the seam holds " + parents);
+			check(Ui.parent() == window, "which the seam also hands back, for the live-form dialogs");
+
+			//a caller that owns a window of its own still names it
+			parents.clear();
+			Ui.error(own, "a", "t");
+			check(parents.size() == 1 && parents.get(0) == own,
+					"a caller naming its own window is parented to THAT one, not the default");
+		} finally {
+			Ui.stopRecording();
+			Ui.parent(null);
+		}
+		check(Ui.parent() == null,
+				"and the seam can be given no window at all, which is what a headless run is");
+	}
+
 	static void theSeamCannotSayNothing() {
 		List<String> said = Ui.record();
 		try {

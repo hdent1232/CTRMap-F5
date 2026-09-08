@@ -72,6 +72,11 @@ final class ScratchGame {
 		}
 		session.prepareDirectories();
 		Workspace.install(session);
+		//what the application does one line after validate returns: the window
+		//is handed the game it just opened. Said here rather than inside
+		//install, so the facade knows nothing about the window and a suite
+		//that wants the window told says so.
+		ctrmap.CtrmapMainframe.onWorkspaceOpened(session);
 		//the app takes the pristine backup on every load; the pack guards read it
 		Workspace.snapshotOriginals();
 		//and loads the two tables derived from the game, handed the session it
