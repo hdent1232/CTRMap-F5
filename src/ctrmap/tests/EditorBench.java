@@ -79,6 +79,9 @@ import javax.swing.JSplitPane;
  * there; a mutation sweep is headless and they do not.
  */
 final class EditorBench {
+	/** The editor set the panels here flush: it records instead of saving. */
+	static final RecordingEditors EDITORS = new RecordingEditors();
+
 
 	/** The zone owner every panel and form built here shares, as the window's would. */
 	static final LoadedZone LOADED = new LoadedZone();
@@ -517,7 +520,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchPaintForm() {
-			super(LOADED);
+			super(LOADED, EDITORS);
 		}
 		final List<String> calls = new ArrayList<String>();
 

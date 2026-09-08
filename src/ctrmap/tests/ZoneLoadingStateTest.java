@@ -68,6 +68,9 @@ import javax.swing.JOptionPane;
  * Usage: java ctrmap.tests.ZoneLoadingStateTest &lt;pristine dump root&gt;
  */
 public class ZoneLoadingStateTest {
+	/** The editor set the panels here flush: it records instead of saving. */
+	static final RecordingEditors EDITORS = new RecordingEditors();
+
 	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
 	static final Redraws REDRAW = new Redraws();
 
@@ -97,7 +100,7 @@ public class ZoneLoadingStateTest {
 			ScratchGame.open(dump);
 			LocationNames.loadFromGarc(Workspace.session());
 			LoadedZone lz = new LoadedZone();
-			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
+			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS);
 			CtrmapMainframe.mZonePnl = pnl;
 			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW);
 			CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW);
@@ -132,7 +135,7 @@ public class ZoneLoadingStateTest {
 	static void aFreshPanelHoldsNoZone() {
 		System.out.println("--- a panel that has never been given a game");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS);
 		check(lz.count() == 0, "no zone table");
 		check(lz.open() == null, "no open zone");
 		check(lz.index() == -1, "and the index is -1, not 0 - nothing is open (got " + lz.index() + ")");
@@ -156,7 +159,7 @@ public class ZoneLoadingStateTest {
 	 */
 	static void theDropdownTablesAgreeWithThemselves() throws Exception {
 		System.out.println("--- the weather and map-type tables agree with themselves");
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS);
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.XY);
@@ -223,7 +226,7 @@ public class ZoneLoadingStateTest {
 	static void theZoneButtonsRefuseWhatTheyCannotDo() throws Exception {
 		System.out.println("--- the Clone and Add buttons refuse before they flush anything");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS);
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.ORAS);

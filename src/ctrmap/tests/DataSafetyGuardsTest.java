@@ -87,6 +87,9 @@ import javax.swing.SwingWorker;
  * The worker check reads src/ from the working directory.
  */
 public class DataSafetyGuardsTest {
+	/** The editor set the panels here flush: it records instead of saving. */
+	static final RecordingEditors EDITORS = new RecordingEditors();
+
 	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
 	static final Redraws REDRAW = new Redraws();
 
@@ -274,7 +277,7 @@ public class DataSafetyGuardsTest {
 		LocationNames.load(temp(texts.getDecompressedEntry(LocationNames.gametextIndex(Workspace.session()))));
 		//three zones make a zone table; the editor is told zone 2 is open
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz, TOOLS);
+		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS);
 		Zone[] table = new Zone[3];
 		for (int i = 0; i < table.length; i++) {
 			table[i] = new Zone(new ZO(temp(zo.getDecompressedEntry(i)), Workspace.session()), Workspace.game());
@@ -707,7 +710,7 @@ public class DataSafetyGuardsTest {
 		}
 		scratchGameOnce(dump);
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm(REDRAW);
 		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS);

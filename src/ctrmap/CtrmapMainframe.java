@@ -38,6 +38,7 @@ import ctrmap.humaninterface.CM3DInputManager;
 import ctrmap.humaninterface.CM3DRenderable;
 import ctrmap.humaninterface.CameraEditForm;
 import ctrmap.humaninterface.CollEditPanel;
+import ctrmap.humaninterface.OpenEditors;
 import ctrmap.humaninterface.Redraw;
 import ctrmap.humaninterface.CollInputManager;
 import ctrmap.humaninterface.ExtrasPanel;
@@ -130,6 +131,14 @@ public class CtrmapMainframe {
 	 * tools, and "the NPC form marks its NPC while the NPC tool is up" had to
 	 * be asserted by writing to this window's field.
 	 */
+	/**
+	 * Every editor that holds unsaved work, in the order they are written.
+	 * Made ONCE here, because this is where the editors are built, and handed
+	 * to the two classes that flush them before they reload or apply. See
+	 * {@link OpenEditors} for the five copies of the chain it replaces and
+	 * what they disagreed about.
+	 */
+	private static OpenEditors openEditors;
 	private static ToolSelection tools;
 	/**
 	 * How the editor is asked to draw itself again, made ONCE here and handed
@@ -238,7 +247,7 @@ public class CtrmapMainframe {
 				frame.repaint();
 			}
 		};
-		mZonePnl = new ZoneLoadingPanel(loadedZone, tools);
+		mZonePnl = new ZoneLoadingPanel(loadedZone, tools, openEditors);
 		mScriptPnl = new ScriptEditor();
 		mTextEditor = new TextEditor();
 		mBuilder = new Builder();
@@ -252,7 +261,7 @@ public class CtrmapMainframe {
 		JScrollPane mtxScroll = new JScrollPane();
 		mCamScrollPane = new JScrollPane();
 		mTileEditForm = new TileEditForm(tools);
-		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone);
+		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, openEditors);
 		mCamEditForm = new CameraEditForm(redraw);
 		mPropEditForm = new PropEditForm(loadedZone, tools, redraw);
 		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw);
@@ -300,6 +309,21 @@ public class CtrmapMainframe {
 				return mTileMapPanel;
 			}
 		};
+		//the editors that hold unsaved work, in the order they are written. One
+		//list, because five copies of the chain disagreed about which editors
+		//counted and in which order - see OpenEditors.
+		openEditors = new OpenEditors(java.util.Arrays.<OpenEditors.Editable>asList(
+				ask -> mCamEditForm.store(ask),
+				ask -> mTileMapPanel.saveTileMap(ask),
+				ask -> mMtxEditForm.store(ask),
+				ask -> {
+					mCollEditPanel.store();
+					return true;
+				},
+				ask -> mPropEditForm.store(ask),
+				ask -> mNPCEditForm.saveRegistry(ask),
+				ask -> mZonePnl.store(ask),
+				ask -> mTextEditor.store(ask)));
 		ToolBox toolBox = new ToolBox(toolHost, mTileEditForm, mGeoEditForm, mNPCEditForm, mPropEditForm,
 				mWarpEditForm, mTriggerEditForm, mPaintForm, mCamEditForm, mCamScrollPane);
 		TilemapPanelInputManager tilemapInput = new TilemapPanelInputManager(mTileMapPanel, tools, toolBox);
@@ -397,7 +421,7 @@ public class CtrmapMainframe {
 		frame.addWindowListener(new WindowAdapter() {
 			@Override
 			public void windowClosing(WindowEvent e) {
-				if (mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true) && mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && mZonePnl.store(true) && mTextEditor.store(true)) {
+				if (openEditors.saveAll(true)) {
 					Workspace.cleanUnchanged();
 					Workspace.saveWorkspace();
 					//a staged update for the Windows bundle installs itself as we
@@ -772,14 +796,7 @@ public class CtrmapMainframe {
 
 	/** File > Save: every editor stores what it holds, without asking. */
 	private static void saveAllAction() {
-		mTileMapPanel.saveTileMap(false);
-		mMtxEditForm.store(false);
-		mCollEditPanel.store();
-		mCamEditForm.store(false);
-		mPropEditForm.store(false);
-		mNPCEditForm.saveRegistry(false);
-		mZonePnl.store(false);
-		mTextEditor.store(false);
+		openEditors.saveAll(false);
 	}
 
 	// ------------------------------------------------------------- Map menu

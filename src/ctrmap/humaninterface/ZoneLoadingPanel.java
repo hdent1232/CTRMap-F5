@@ -48,7 +48,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	/** Which tool the editor is holding, handed in: this class only asks. */
 	private final ctrmap.humaninterface.tools.ToolSelection tools;
 
-	public ZoneLoadingPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools) {
+	/** The editors that hold unsaved work, handed in: this class flushes them, it does not own them. */
+	private final OpenEditors openEditors;
+
+	public ZoneLoadingPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, OpenEditors openEditors) {
+		this.openEditors = openEditors;
 		this.tools = tools;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("ZoneLoadingPanel must be handed a LoadedZone");
@@ -1140,7 +1144,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 
     private void zoneListActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_zoneListActionPerformed
 		if (zoneList.getSelectedIndex() != -1 && loaded) {
-			if (mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true) && mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && store(true)) {
+			if (openEditors.saveAll(true)) {
 				LoadingDialog progress = LoadingDialog.makeDialog("Loading zone");
 				SwingWorker worker = new SwingWorker() {
 					@Override
@@ -1392,7 +1396,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
 		//the cloner reads the last-SAVED workspace bytes, so flush any pending
 		//on-screen edits first (same store chain as switching zones) - abort on cancel
-		if (!(mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true) && mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && store(true))) {
+		if (!openEditors.saveAll(true)) {
 			return;
 		}
 		int srcIndex = zoneIndex;
@@ -1505,7 +1509,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
 		//the appender reads the last-SAVED workspace bytes, so flush any pending
 		//on-screen edits first (same store chain as switching zones) - abort on cancel
-		if (!(mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true) && mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && store(true))) {
+		if (!openEditors.saveAll(true)) {
 			return;
 		}
 		int baseCount = loadedZone.count();
