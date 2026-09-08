@@ -312,6 +312,8 @@ public class HarvesterGuardsTest {
 				TerrainLighting.daytime(), false).model;
 		File rf = Scratch.file("harvest_row_region");
 		List<String> broken = new ArrayList<>();
+		//a scratch game for the region containers to report to: nothing here opens a workspace
+		FakeGameFiles game = new FakeGameFiles();
 		for (String row : rows) {
 			String[] f = row.split("\t");
 			String name = f[1];
@@ -323,7 +325,7 @@ public class HarvesterGuardsTest {
 				fo.write(gr.getDecompressedEntry(region));
 			}
 			String why = null;
-			MapPrefab p = MapPrefab.extract(new GR(rf), tx0, ty0, tx1, ty1, "check");
+			MapPrefab p = MapPrefab.extract(new GR(rf, game), tx0, ty0, tx1, ty1, "check");
 			if (p == null || p.pieces.isEmpty()) {
 				why = "no geometry in the box";
 			} else {

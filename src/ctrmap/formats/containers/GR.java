@@ -36,16 +36,6 @@ public class GR extends AbstractGamefreakContainer{
 		super(f, len, files);
 	}
 
-	/** Transitional: see {@link AbstractGamefreakContainer}. */
-	public GR(File f) {
-		super(f);
-	}
-
-	/** Transitional: see {@link AbstractGamefreakContainer}. */
-	public GR(File f, int len){
-		super(f, len);
-	}
-
 	@Override
 	public short getHeader() {
 		return 0x4752;

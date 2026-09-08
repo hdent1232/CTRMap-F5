@@ -355,6 +355,7 @@ public class MapPrefabTest {
 		try (FileOutputStream fos = new FileOutputStream(f)) {
 			fos.write(entry);
 		}
-		return new GR(f);
+		//a scratch game for the container to report to: nothing here opens a workspace
+		return new GR(f, new FakeGameFiles());
 	}
 }

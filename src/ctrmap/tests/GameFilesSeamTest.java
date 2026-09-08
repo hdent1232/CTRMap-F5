@@ -12,7 +12,6 @@ import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -67,13 +66,14 @@ public class GameFilesSeamTest {
 	 * their nine edges went, and ZoneHeader, not yet moved, gained the one
 	 * session() it hands the registry it builds), 1 across 1 once ZoneHeader
 	 * and BuildingCatalog (through TerrainCatalog) were handed theirs (the same
-	 * suite, sections 18 and 19): what is left is the container base's
-	 * transitional constructor, which the finisher deletes.
-	 * LOWER BOTH as classes are migrated; never raise either without saying in
-	 * the commit message which class went back to the global and why it had to.
+	 * suite, sections 18 and 19), and 0 across 0 once the container base's
+	 * transitional constructors were deleted with their last callers migrated:
+	 * the format layer reaches the global nowhere. Both stay at zero; never
+	 * raise either without saying in the commit message which class went back
+	 * to the global and why it had to.
 	 */
-	private static final int FORMATS_EDGES = 1;
-	private static final int FORMATS_CLASSES = 1;
+	private static final int FORMATS_EDGES = 0;
+	private static final int FORMATS_CLASSES = 0;
 
 	private static final String WORKSPACE = "ctrmap/Workspace";
 	private static final String CONTAINER = "ctrmap/formats/containers/AbstractGamefreakContainer";
@@ -272,14 +272,14 @@ public class GameFilesSeamTest {
 				"no more format classes reach Workspace than the " + FORMATS_CLASSES + " recorded, over no more than "
 				+ FORMATS_EDGES + " edges (it is " + byClass.size() + " over " + edges + ")");
 		check(edges == FORMATS_EDGES && byClass.size() == FORMATS_CLASSES,
-				"and the recorded numbers are the measured ones - lower them when a class is migrated (measured "
+				"and the recorded numbers are the measured ones (measured "
 				+ byClass.size() + " classes, " + edges + " edges; recorded " + FORMATS_CLASSES + ", " + FORMATS_EDGES + ")");
 		check(!byClass.containsKey(MATRIX), "MapMatrix, the worked example, has no edge to the global at all"
 				+ (byClass.containsKey(MATRIX) ? " - it reaches " + byClass.get(MATRIX) : ""));
-		Set<String> container = byClass.containsKey(CONTAINER) ? byClass.get(CONTAINER) : Collections.<String>emptySet();
-		check(new TreeSet<>(Collections.singletonList("session")).containsAll(container),
-				"AbstractGamefreakContainer reaches nothing of the global but its transitional constructors'"
-				+ " session() (it reaches " + container + ")");
+		check(!byClass.containsKey(CONTAINER), "AbstractGamefreakContainer, whose transitional constructors were"
+				+ " the last edge, has none" + (byClass.containsKey(CONTAINER) ? " - it reaches " + byClass.get(CONTAINER) : ""));
+		check(byClass.isEmpty(), "the format layer reaches the global nowhere"
+				+ (byClass.isEmpty() ? "" : " - " + byClass.keySet() + " still do"));
 	}
 
 	// ------------------------------------------------------ helpers

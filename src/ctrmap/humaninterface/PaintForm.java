@@ -347,7 +347,7 @@ public class PaintForm extends JPanel {
 			if (cell == null) {
 				return true;
 			}
-			byte[] m = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, cell[0])).getFile(1);
+			byte[] m = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, cell[0]), Workspace.session()).getFile(1);
 			return !java.util.Arrays.equals(m, originalModel);
 		} catch (Exception ex) {
 			return true;
@@ -393,7 +393,7 @@ public class PaintForm extends JPanel {
 		if (region >= 0) {
 			TilePainterForm.loadFromRegion(region, grid);
 			try {
-				GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, region));
+				GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, region), Workspace.session());
 				byte[] m = gr.getFile(1);
 				if (BchMapModel.isMapModel(m)) {
 					donorModel = m;

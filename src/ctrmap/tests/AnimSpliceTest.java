@@ -147,10 +147,12 @@ public class AnimSpliceTest {
 			tmp.deleteOnExit();
 			byte[] entry = ad.getDecompressedEntry(ids.get(10));
 			java.nio.file.Files.write(tmp.toPath(), entry);
-			ctrmap.formats.containers.AD cont = new ctrmap.formats.containers.AD(tmp);
+			//a scratch game for the container to report its write to: nothing here opens a workspace
+			FakeGameFiles game = new FakeGameFiles();
+			ctrmap.formats.containers.AD cont = new ctrmap.formats.containers.AD(tmp, game);
 			byte[] spliced = WorldAnim.spliceSeaScroll(cont.getFile(2), "zztest_99_99");
 			cont.storeFile(2, spliced);
-			byte[] back = new ctrmap.formats.containers.AD(tmp).getFile(2);
+			byte[] back = new ctrmap.formats.containers.AD(tmp, game).getFile(2);
 			WorldAnim wb = new WorldAnim(back);
 			adOk = wb.validate().isEmpty() && wb.hasSeaScroll("zztest_99_99");
 			if (!adOk) {

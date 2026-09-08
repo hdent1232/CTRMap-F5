@@ -1189,7 +1189,7 @@ public class NpcEditFormGuardsTest {
 	static Zone openZone(GARC zo, int index) throws Exception {
 		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
 		pnl.zones = new Zone[index + 1];
-		pnl.zones[index] = new Zone(new ZO(temp(zo.getDecompressedEntry(index))), Workspace.game());
+		pnl.zones[index] = new Zone(new ZO(temp(zo.getDecompressedEntry(index)), Workspace.session()), Workspace.game());
 		pnl.zone = pnl.zones[index];
 		pnl.zoneIndex = index;
 		CtrmapMainframe.mZonePnl = pnl;
@@ -1225,7 +1225,7 @@ public class NpcEditFormGuardsTest {
 			if (raw == null || raw.length < 2 || (((raw[0] & 0xFF) << 8) | (raw[1] & 0xFF)) != 0x4752) {
 				continue;
 			}
-			GR container = new GR(temp(raw));
+			GR container = new GR(temp(raw), Workspace.session());
 			byte[] model = container.len >= 2 ? container.getFile(1) : null;
 			if (model != null && BchMapModel.isMapModel(model) && !new BCHFile(model).models.isEmpty()) {
 				return model;

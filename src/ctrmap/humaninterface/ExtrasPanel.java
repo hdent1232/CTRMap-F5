@@ -148,7 +148,7 @@ public class ExtrasPanel extends javax.swing.JPanel {
 		}
 		byte[] ad7 = ResourceAccess.getByteArray("DummyLumioseCollision.bin");
 		for (int i = 0; i < areas; i++) {
-			AD ad = new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, i));
+			AD ad = new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, i), Workspace.session());
 			ad.storeFile(7, ad7);
 		}
     }//GEN-LAST:event_freecamActionPerformed

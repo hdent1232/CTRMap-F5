@@ -37,6 +37,8 @@ public class BchMapModelTest {
 		long vertsTotal = 0, meshesSeen = 0, meshesDecoded = 0, meshesSkipped = 0;
 		// sample every region (step keeps it fast on the 857-entry GARC while covering the whole range)
 		int step = 1;
+		//a scratch game for the containers to report to: nothing here opens a workspace
+		FakeGameFiles game = new FakeGameFiles();
 		for (int idx = 0; idx < garc.length; idx += step) {
 			byte[] rawgr = garc.getDecompressedEntry(idx);
 			if (rawgr == null || rawgr.length < 2 || (((rawgr[0] & 0xFF) << 8) | (rawgr[1] & 0xFF)) != 0x4752) {
@@ -44,7 +46,7 @@ public class BchMapModelTest {
 			}
 			File grFile = new File(tmp, "gr" + idx);
 			write(grFile, rawgr);
-			GR gr = new GR(grFile);
+			GR gr = new GR(grFile, game);
 			byte[] model = gr.len >= 2 ? gr.getFile(1) : null;
 			grFile.delete();
 			if (model == null || !BchMapModel.isMapModel(model)) {

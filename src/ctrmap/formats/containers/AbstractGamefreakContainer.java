@@ -8,7 +8,6 @@ import java.io.IOException;
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.LittleEndianDataOutputStream;
 import ctrmap.Utils;
-import ctrmap.Workspace;
 import ctrmap.formats.GameFiles;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -33,22 +32,23 @@ import java.util.logging.Logger;
  * sat in the extracted file, the pack never picked it up, and nothing said so.
  * Handed its GameFiles, a container reports to the object it was given and can
  * be given a scratch stand-in ({@code ctrmap.tests.FakeGameFiles}) with no
- * workspace open at all; handed null, the handed constructors refuse, because a
+ * workspace open at all; handed null, the constructors refuse, because a
  * container nobody will hear from is that silent edit again.
  *
- * <p>TRANSITIONAL: the constructors that take no GameFiles still exist, for the
- * callers that have not yet been handed their own. Each resolves the open game
- * from the global ONCE, when the container is made, and inherits the global's
- * own null when nothing is open - the one place this class still touches the
- * global, and {@code ctrmap.tests.GameFilesSeamTest} names it. Delete them, and
- * the subclasses' matching ones, when the last such caller is migrated.
+ * <p>There is no constructor that takes no GameFiles. There were, while the
+ * callers were being migrated: each resolved the open game from the
+ * application's global once, when the container was made, and inherited the
+ * global's own null when nothing was open, so a container made with no
+ * workspace wrote edits nobody packed and extracted subfiles nowhere.
+ * {@code ctrmap.tests.GameFilesSeamTest} holds the format layer to reaching
+ * that global nowhere at all; a constructor that fetched it would be counted.
  */
 public abstract class AbstractGamefreakContainer {
 
 	private File f;
 	public int len;
 	private int[] offsets;
-	/** Who hears about a write. Null only through a transitional constructor with no game open. */
+	/** Who hears about a write. Never null: the constructors refuse null. */
 	private final GameFiles files;
 
 	public abstract short getHeader();
@@ -65,18 +65,6 @@ public abstract class AbstractGamefreakContainer {
 	 */
 	public AbstractGamefreakContainer(File target, int fileCount, GameFiles files) {
 		this.files = handed(files);
-		create(target, fileCount);
-	}
-
-	/** Transitional: the open game, resolved once here, for a caller not yet handed its own. See the class comment. */
-	public AbstractGamefreakContainer(File f) {
-		this.files = Workspace.session();
-		open(f);
-	}
-
-	/** Transitional: the open game, resolved once here, for a caller not yet handed its own. See the class comment. */
-	public AbstractGamefreakContainer(File target, int fileCount) {
-		this.files = Workspace.session();
 		create(target, fileCount);
 	}
 
@@ -172,14 +160,9 @@ public abstract class AbstractGamefreakContainer {
 
 	/**
 	 * One subfile written out to a fresh file in the handed scratch directory,
-	 * or null when it could not be written - including when this container was
-	 * made through a transitional constructor with no game open, which is the
-	 * same null a missing temp folder produced before.
+	 * or null when it could not be written.
 	 */
 	public File getIOFile(int fileNum){
-		if (files == null) {
-			return null;
-		}
 		try {
 			byte[] b = getFile(fileNum);
 			File out = new File(files.scratch(), "agfc_extract_" + UUID.randomUUID().toString());
@@ -259,11 +242,7 @@ public abstract class AbstractGamefreakContainer {
 			}
 			out.flush();
 			out.close();
-			//null only through a transitional constructor with no game open,
-			//where the global's own addPersist was a no-op as well
-			if (files != null) {
-				files.edited(getOriginFile());
-			}
+			files.edited(getOriginFile());
 			return true;
 		} catch (IOException e) {
 			e.printStackTrace();

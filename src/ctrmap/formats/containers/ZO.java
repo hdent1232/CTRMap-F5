@@ -29,11 +29,6 @@ public class ZO extends AbstractGamefreakContainer{
 		super(f, files);
 	}
 
-	/** Transitional: see {@link AbstractGamefreakContainer}. */
-	public ZO(File f) {
-		super(f);
-	}
-
 	@Override
 	public short getHeader() {
 		return 0x5a4f;

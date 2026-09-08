@@ -118,7 +118,8 @@ public class ZoneAppendTest {
 		//entry 536: structurally valid zone with the right index
 		File zoFile = new File(tmp, "zo536");
 		Files.write(zoFile.toPath(), e536);
-		ZO zo = new ZO(zoFile);
+		//a scratch game for the container to report to: nothing here opens a workspace
+		ZO zo = new ZO(zoFile, new FakeGameFiles());
 		check(zo.len == 5, "new zone ZO has 5 subfiles, got " + zo.len);
 		ZoneHeader hdr = new ZoneHeader(zo.getFile(0), GameType.ORAS);
 		check(hdr.OAZoneNumber == NEW_INDEX, "parsed OAZoneNumber == " + hdr.OAZoneNumber + ", expected " + NEW_INDEX);
@@ -236,7 +237,7 @@ public class ZoneAppendTest {
 	private static byte[] srcZo(byte[] srcZo, File tmp) throws IOException {
 		File f = new File(tmp, "zoSrc");
 		Files.write(f.toPath(), srcZo);
-		return new ZO(f).getFile(0);
+		return new ZO(f, new FakeGameFiles()).getFile(0);
 	}
 
 	private static class RawEntry {

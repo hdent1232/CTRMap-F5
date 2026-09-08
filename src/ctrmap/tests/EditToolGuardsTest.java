@@ -992,12 +992,14 @@ public class EditToolGuardsTest {
 			return null;
 		}
 		GARC garc = new GARC(garcFile);
+		//a scratch game for the area containers to report to, for the same reason
+		FakeGameFiles game = new FakeGameFiles();
 		for (int i = 0; i < Math.min(8, garc.length); i++) {
 			File tmp = File.createTempFile("ctrmap_tooltest_ad", ".bin");
 			tmp.deleteOnExit();
 			Files.write(tmp.toPath(), garc.getDecompressedEntry(i));
 			try {
-				CameraDataFile cdf = new CameraDataFile(new AD(tmp));
+				CameraDataFile cdf = new CameraDataFile(new AD(tmp, game));
 				if (cdf.camData != null) {
 					return cdf;
 				}

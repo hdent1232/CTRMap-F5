@@ -72,7 +72,7 @@ public class Builder extends javax.swing.JPanel {
 							in.read(magicarr);
 						}
 						if (Utils.isUTF8Capital(magicarr[0]) && Utils.isUTF8Capital(magicarr[1]) && !Utils.isUTF8Capital(magicarr[2])) {
-							loadContainer(ContainerIdentifier.makeAGFC(decFile, magicarr));
+							loadContainer(ContainerIdentifier.makeAGFC(decFile, magicarr, Workspace.session()));
 						}
 						in.close();
 					} catch (IOException ex) {
@@ -466,7 +466,7 @@ public class Builder extends javax.swing.JPanel {
 		if (fNew != null && currentAGFC != null) {
 			try {
 				Files.copy(fNew.toPath(), fToReplace.toPath(), StandardCopyOption.REPLACE_EXISTING);
-				currentAGFC = ContainerIdentifier.makeAGFC(fToReplace);
+				currentAGFC = ContainerIdentifier.makeAGFC(fToReplace, Workspace.session());
 				Workspace.addPersist(fToReplace);
 				reloadContainer();
 			} catch (IOException ex) {
@@ -490,7 +490,7 @@ public class Builder extends javax.swing.JPanel {
 		boolean success = false;
 		GARC arc = Workspace.getArchive(currentGARC);
 		if (currentGARC == ArchiveType.MAP_MATRIX) {
-			MM mm = new MM(Workspace.getWorkspaceFile(currentGARC, arc.length), 2, MM.MM_MAP_MATRIX);
+			MM mm = new MM(Workspace.getWorkspaceFile(currentGARC, arc.length), 2, MM.MM_MAP_MATRIX, Workspace.session());
 			currentAGFC = mm;
 			MapMatrix tmp = new MapMatrix(mm, 1, 1, 0);
 			tmp.write();
@@ -513,7 +513,7 @@ public class Builder extends javax.swing.JPanel {
 						+ " game's profile.", "Builder alert");
 				return;
 			}
-			GR gr = new GR(Workspace.getWorkspaceFile(currentGARC, arc.length), subfiles);
+			GR gr = new GR(Workspace.getWorkspaceFile(currentGARC, arc.length), subfiles, Workspace.session());
 			currentAGFC = gr;
 			Tilemap tm = new Tilemap(gr, 40, 40);
 			GRCollisionFile coll = new GRCollisionFile(gr, true);
@@ -599,9 +599,9 @@ public class Builder extends javax.swing.JPanel {
 			if (rsl == JOptionPane.YES_OPTION) {
 				File target = currentAGFC.getOriginFile();
 				if (currentAGFC instanceof GR) {
-					currentAGFC = new GR(target, currentAGFC.len);
+					currentAGFC = new GR(target, currentAGFC.len, Workspace.session());
 				} else if (currentAGFC instanceof MM) {
-					currentAGFC = new MM(target, currentAGFC.len, ((MM) currentAGFC).type);
+					currentAGFC = new MM(target, currentAGFC.len, ((MM) currentAGFC).type, Workspace.session());
 				} else {
 					ctrmap.Ui.error(this, "Creating this container type from scratch is not supported.", "Builder alert");
 					return;

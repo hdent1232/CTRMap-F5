@@ -388,7 +388,7 @@ public class TriggerEditFormGuardsTest {
 		Files.write(f.toPath(), zo.getDecompressedEntry(index));
 		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
 		pnl.zones = new Zone[index + 1];
-		pnl.zones[index] = new Zone(new ZO(f), Workspace.game());
+		pnl.zones[index] = new Zone(new ZO(f, Workspace.session()), Workspace.game());
 		pnl.zone = pnl.zones[index];
 		pnl.zoneIndex = index;
 		CtrmapMainframe.mZonePnl = pnl;

@@ -32,6 +32,11 @@ import java.util.regex.Pattern;
  *     {@link #noApplicationClassAsksWhichGameIsLoaded}: that rule is measured
  *     in BYTECODE, not in source text, because the other four here are greps
  *     and a grep cannot see a static import.</li>
+ * <li>THE FORMAT LAYER REACHING ABOVE ITSELF: no class under ctrmap.formats
+ *     may reference the window, the widgets, the dialogs or the global. Read
+ *     {@link #noFormatClassReachesAboveItself}; bytecode again, and both
+ *     member references and bare class references, because an
+ *     {@code implements} holds no member.</li>
  * </ul>
  *
  * <p>The home-directory rule exists because the first two were not enough. Tests were
@@ -84,8 +89,9 @@ public class SourceSeamTest {
 				+ violations.size() + " leak(s)");
 
 		int asking = noApplicationClassAsksWhichGameIsLoaded(classes);
+		int above = noFormatClassReachesAboveItself(classes);
 
-		boolean ok = violations.isEmpty() && asking == 0;
+		boolean ok = violations.isEmpty() && asking == 0 && above == 0;
 		System.out.println(ok ? "ALL PASS" : "FAILURES PRESENT");
 		if (!ok) {
 			System.exit(1);
@@ -277,6 +283,221 @@ public class SourceSeamTest {
 	private static String[] allowedFor(String internalName) {
 		for (String[] a : ALLOWED_ASKERS) {
 			if (a[0].equals(internalName)) {
+				return a;
+			}
+		}
+		return null;
+	}
+
+	// ---------------------------------------------------- the layering rule
+
+	/**
+	 * The classes under {@code ctrmap.formats} that may still name something
+	 * above the format layer, as {internal name, what it names, why it is
+	 * still there}. Named classes with a written reason, not a count, for the
+	 * reason {@link #ALLOWED_ASKERS} gives. Both entries are a CLASS reference
+	 * with no member behind it - an {@code implements} clause - which is
+	 * exactly the shape a rule counting member edges alone would never see.
+	 */
+	private static final String[][] ALLOWED_ABOVE = {
+		{"ctrmap/formats/propdata/GRProp", "ctrmap/humaninterface/MapObject",
+			"implements MapObject, the interface the viewport selects and drags a placed thing"
+			+ " through. The interface is declared beside the widgets but describes a placed"
+			+ " thing (its position, its rotation, its name), which is format-layer knowledge;"
+			+ " a later step moves it down into ctrmap.formats, and this entry goes with it."
+			+ " Until then the prop names the interface and touches no member of its package."},
+		{"ctrmap/formats/zone/ZoneEntities", "ctrmap/humaninterface/MapObject",
+			"ZoneEntities.NPC implements MapObject for the same reason and moves in the same"
+			+ " step; the inner class folds to its outer one here, as everywhere in this battery."}
+	};
+
+	/** Mirrors ALLOWED_ABOVE.length. Raising it is the decision this makes visible. */
+	private static final int ALLOWED_ABOVE_CEILING = 2;
+
+	/**
+	 * The members of {@code ctrmap.Utils} the format layer may use: pure byte
+	 * and number helpers, measured 2026-09-08 as the ONLY ones it does use.
+	 * Utils also holds a dialog wrapper ({@code askToKeep}, answered with its
+	 * {@code Keep} enum), and a dialog reached through a helper's name is still
+	 * a dialog in the format layer. Naming the helpers that are allowed, rather
+	 * than the wrappers that are not, means a wrapper added to Utils tomorrow
+	 * is refused here before anyone has to know it exists.
+	 */
+	private static final String[] PURE_UTILS = {
+		"ba2int", "checkBCHMagic", "getPadding", "impreciseFloatEquals", "isUTF8Capital"
+	};
+	/**
+	 * Distinct (format class, Utils member) edges, measured 2026-09-08: seven
+	 * classes, one helper each (WavefrontOBJ, CameraCoordinates,
+	 * AbstractGamefreakContainer, ContainerIdentifier, MM, Tilemap, ZoneHeader).
+	 * Lower it when one stops; raising it is a review.
+	 */
+	private static final int PURE_UTILS_EDGES = 7;
+
+	private static final String FORMATS = "ctrmap/formats/";
+	private static final String HUMANINTERFACE = "ctrmap/humaninterface/";
+	private static final String MAINFRAME = "ctrmap/CtrmapMainframe";
+	private static final String UI = "ctrmap/Ui";
+	private static final String UTILS = "ctrmap/Utils";
+	private static final String KEEP = "ctrmap/Utils$Keep";
+	private static final String ASK_TO_KEEP = "askToKeep";
+
+	/**
+	 * No class under {@code ctrmap.formats} may reference
+	 * {@code ctrmap.humaninterface}, {@code ctrmap.CtrmapMainframe},
+	 * {@code ctrmap.Ui}, {@code ctrmap.Workspace}, or {@code ctrmap.Utils}'
+	 * dialog wrapper and its answer: the widgets, the window, the dialogs, the
+	 * global. A format class is handed what it needs and says what happened in
+	 * its return value; it asks nobody anything and looks nothing up.
+	 *
+	 * <h2>Why this rule exists</h2>
+	 * It is the ratchet the decoupling campaign was building towards. Sixteen
+	 * format classes fetched the open game from the global; several opened
+	 * dialogs (a texture-pack import asked "keep the changes?" from inside the
+	 * container write, so no suite could drive the write without a person at
+	 * the keyboard); one read the main window's zone panel. Each was migrated
+	 * under its own suite ({@link GameFilesSeamTest}, {@link HandedGameTest},
+	 * {@link DialogSeamTest}); this is the rule that keeps all of it migrated,
+	 * in one place, for every class under the package at once, including the
+	 * ones nobody has written yet.
+	 *
+	 * <h2>Two kinds of reference</h2>
+	 * A MEMBER reference is a call or a field read: {@code Ui.error(...)},
+	 * {@code Workspace.session()}. A CLASS reference is the name of a type with
+	 * no member behind it: an {@code implements}, a parameter type, a cast.
+	 * {@link ClassFileScanner.ClassFile#refs} holds the first kind and
+	 * {@link ClassFileScanner.ClassFile#classes} the second, and this rule
+	 * asks both, because {@code GRProp implements MapObject} is a real edge
+	 * from the format layer to the widget package and holds not one member. A
+	 * class reference is reported only where no member edge to the same class
+	 * was, so one dialog call reads as one line, not two.
+	 *
+	 * <h2>Why bytecode</h2>
+	 * The same reason as {@link #noApplicationClassAsksWhichGameIsLoaded}: a
+	 * grep for {@code Ui\.error} is defeated by {@code import static
+	 * ctrmap.Ui.error;} followed by a bare {@code error(...)}, and 33 files in
+	 * this tree already static-import a class and use bare names. The class
+	 * file holds {@code invokestatic ctrmap/Ui.error} either way. Proven by
+	 * breaking, both ways: a {@code ctrmap.Ui.error} call added to a container
+	 * class failed here naming the class and the member, and the same call
+	 * through a static import with a bare name failed with the same line.
+	 *
+	 * <h2>The Utils rule</h2>
+	 * Utils is five unrelated helper groups in one file, and the format layer
+	 * legitimately uses the pure ones. So the rule is positive: the ONLY Utils
+	 * members the format layer uses are {@link #PURE_UTILS}, over exactly
+	 * {@link #PURE_UTILS_EDGES} edges. A dialog wrapper that crept back in
+	 * under a helper's name would be one member too many.
+	 *
+	 * @return the number of violations, so the caller can fail the suite
+	 */
+	static int noFormatClassReachesAboveItself(File classesRoot) throws Exception {
+		if (!new File(classesRoot, WORKSPACE + ".class").isFile()) {
+			System.out.println("  FAIL: no compiled " + WORKSPACE + ".class under "
+					+ classesRoot.getAbsolutePath()
+					+ " - run build.ps1 first; this rule reads class files, not source");
+			return 1;
+		}
+		List<ClassFileScanner.ClassFile> app = ClassFileScanner.application(classesRoot);
+		List<String> above = new ArrayList<>();
+		Set<String> allowedSeen = new LinkedHashSet<>();
+		Map<String, Set<String>> utilsUsed = new LinkedHashMap<>();
+		int formatClasses = 0;
+		for (ClassFileScanner.ClassFile cf : app) {
+			if (!cf.name.startsWith(FORMATS)) {
+				continue;
+			}
+			formatClasses++;
+			Set<String> memberOwners = new LinkedHashSet<>();
+			for (ClassFileScanner.Ref r : cf.refs) {
+				boolean wrapper = r.owner.equals(UTILS) && r.name.equals(ASK_TO_KEEP);
+				if (isAbove(r.owner) || wrapper) {
+					memberOwners.add(r.owner);
+					above.add(cf.topLevel() + (r.method ? " calls " : " reads ") + r.owner + "." + r.name);
+				}
+				if (r.owner.equals(UTILS)) {
+					Set<String> names = utilsUsed.get(cf.topLevel());
+					if (names == null) {
+						names = new LinkedHashSet<>();
+						utilsUsed.put(cf.topLevel(), names);
+					}
+					names.add(r.name);
+				}
+			}
+			for (String c : cf.classes) {
+				if (!(isAbove(c) || c.equals(KEEP)) || memberOwners.contains(c)) {
+					continue;
+				}
+				if (allowedAbove(cf.topLevel(), c) != null) {
+					allowedSeen.add(cf.topLevel() + " " + c);
+					continue;
+				}
+				above.add(cf.topLevel() + " names " + c + " (a type, with no member behind it)");
+			}
+		}
+		for (String v : above) {
+			System.out.println("  ABOVE: " + v + " - a format class is handed what it needs and answers in"
+					+ " its return value; it opens no dialog, reads no widget and reaches no global");
+		}
+
+		//the allowed list: within its ceiling, every entry argued, and none stale
+		boolean argued = ALLOWED_ABOVE.length <= ALLOWED_ABOVE_CEILING;
+		for (String[] a : ALLOWED_ABOVE) {
+			argued &= a[2] != null && a[2].trim().length() > 40;
+			if (!allowedSeen.contains(a[0] + " " + a[1])) {
+				System.out.println("  ABOVE: the allowed entry " + a[0] + " -> " + a[1]
+						+ " is no longer in the bytecode - delete it, so the list only ever shrinks");
+				argued = false;
+			}
+		}
+		if (ALLOWED_ABOVE.length > ALLOWED_ABOVE_CEILING) {
+			System.out.println("  ABOVE: the allowed list grew past its ceiling of " + ALLOWED_ABOVE_CEILING
+					+ " - " + ALLOWED_ABOVE.length + " entries");
+		}
+
+		//Utils: only the named pure helpers, over exactly the recorded number of edges
+		Set<String> pure = new LinkedHashSet<>(java.util.Arrays.asList(PURE_UTILS));
+		Set<String> names = new java.util.TreeSet<>();
+		int utilsEdges = 0;
+		List<String> impure = new ArrayList<>();
+		for (Map.Entry<String, Set<String>> e : utilsUsed.entrySet()) {
+			for (String n : e.getValue()) {
+				names.add(n);
+				utilsEdges++;
+				if (!pure.contains(n)) {
+					impure.add(e.getKey() + " uses Utils." + n);
+				}
+			}
+		}
+		for (String v : impure) {
+			System.out.println("  ABOVE: " + v + " - not one of the pure helpers " + pure
+					+ "; a dialog wrapper reached through a helper's name is still a dialog");
+		}
+		boolean utilsOk = impure.isEmpty() && utilsEdges == PURE_UTILS_EDGES;
+		if (utilsEdges != PURE_UTILS_EDGES) {
+			System.out.println("  ABOVE: the format layer holds " + utilsEdges + " (class, Utils member) edges, "
+					+ PURE_UTILS_EDGES + " recorded - " + (utilsEdges < PURE_UTILS_EDGES
+							? "lower PURE_UTILS_EDGES" : "a new use of Utils in the format layer is a review"));
+		}
+
+		System.out.println("layering rule: " + formatClasses + " format class file(s) read, " + above.size()
+				+ " reaching above the format layer, " + allowedSeen.size() + " of " + ALLOWED_ABOVE.length
+				+ " allowed exception(s) still present; Utils members used: " + names + " over " + utilsEdges
+				+ " edge(s)");
+		return above.size() + (argued ? 0 : 1) + (utilsOk ? 0 : 1);
+	}
+
+	/** The window, the widgets, the dialogs, the global - by internal name, nested types included. */
+	private static boolean isAbove(String owner) {
+		return owner.startsWith(HUMANINTERFACE)
+				|| owner.equals(MAINFRAME) || owner.startsWith(MAINFRAME + "$")
+				|| owner.equals(UI) || owner.startsWith(UI + "$")
+				|| owner.equals(WORKSPACE) || owner.startsWith(WORKSPACE + "$");
+	}
+
+	private static String[] allowedAbove(String internalName, String named) {
+		for (String[] a : ALLOWED_ABOVE) {
+			if (a[0].equals(internalName) && a[1].equals(named)) {
 				return a;
 			}
 		}

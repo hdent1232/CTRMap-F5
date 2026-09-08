@@ -129,7 +129,7 @@ public class BuildingPaletteDialog {
 				try (java.io.FileOutputStream fo = new java.io.FileOutputStream(tmp)) {
 					fo.write(entry);
 				}
-				ctrmap.formats.containers.AD ad = new ctrmap.formats.containers.AD(tmp);
+				ctrmap.formats.containers.AD ad = new ctrmap.formats.containers.AD(tmp, Workspace.session());
 				for (int sub : new int[]{11, 1}) {
 					byte[] pack = ad.getFile(sub);
 					if (pack != null && pack.length > 0x44) {

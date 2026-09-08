@@ -379,7 +379,7 @@ public class GeoEditFormGuardsTest {
 		File onDisk = Scratch.file("ctrmap_geoform");
 		java.nio.file.Files.write(onDisk.toPath(),
 				Workspace.getArchive(ArchiveType.FIELD_DATA).getDecompressedEntry(REGION));
-		f.gr = new GR(onDisk);
+		f.gr = new GR(onDisk, Workspace.session());
 		f.tiles0 = f.gr.getFile(0);
 		f.model0 = f.gr.getFile(1);
 		f.coll0 = f.gr.getFile(2);

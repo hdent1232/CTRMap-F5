@@ -246,7 +246,8 @@ public class GfEnvPicker {
 				return null;
 			}
 			ctrmap.formats.containers.GR gr = new ctrmap.formats.containers.GR(
-					new File(Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA), String.valueOf(region)));
+					new File(Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA), String.valueOf(region)),
+					Workspace.session());
 			byte[] model = gr.getFile(1);
 			return ctrmap.formats.h3d.BchMapModel.isMapModel(model) ? model : null;
 		} catch (Exception ex) {

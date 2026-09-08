@@ -57,7 +57,7 @@ public class InteriorWirer {
 	public static int zoneArea(int zoneIndex) {
 		try {
 			File zf = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
-			byte[] hdr = new ZO(zf).getFile(0);
+			byte[] hdr = new ZO(zf, Workspace.session()).getFile(0);
 			return u16(hdr, 2);
 		} catch (Exception ex) {
 			return -1;
@@ -74,7 +74,7 @@ public class InteriorWirer {
 	public static int cloneAndWire(int exteriorZone, int extWarpIdx, int interiorDonor, int targetSlot) throws IOException {
 		ZoneCloner.cloneIntoSlot(interiorDonor, targetSlot);
 		File zf = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, targetSlot);
-		ZO zo = new ZO(zf);
+		ZO zo = new ZO(zf, Workspace.session());
 		ZoneEntities ent = new ZoneEntities(zo.getFile(1));
 		int interiorArea = zoneArea(targetSlot);
 		List<Integer> exits = exitWarps(ent, interiorArea, InteriorWirer::zoneArea);

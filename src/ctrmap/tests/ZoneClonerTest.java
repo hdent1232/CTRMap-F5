@@ -114,12 +114,14 @@ public class ZoneClonerTest {
 		//the master convention: bit 16 clear even where the zone's own header has it set
 		check((dstRowFlags >> 16 & 1) == (srcRowFlags >> 16 & 1), "master row bit16 convention not preserved");
 
-		//the cloned ZO must still parse as a structurally valid zone
-		ZO zo = new ZO(dstFile);
+		//the cloned ZO must still parse as a structurally valid zone; the
+		//containers report to a scratch game, since nothing here opens a workspace
+		FakeGameFiles game = new FakeGameFiles();
+		ZO zo = new ZO(dstFile, game);
 		check(zo.len == 5, "cloned ZO subfile count == " + zo.len + ", expected 5");
 		ZoneHeader header = new ZoneHeader(zo.getFile(0), GameType.ORAS);
 		check(header.OAZoneNumber == DST, "parsed ZoneHeader.OAZoneNumber == " + header.OAZoneNumber + ", expected " + DST);
-		ZoneHeader srcHeader = new ZoneHeader(new ZO(srcFile).getFile(0), GameType.ORAS);
+		ZoneHeader srcHeader = new ZoneHeader(new ZO(srcFile, game).getFile(0), GameType.ORAS);
 		check(header.areadataID == srcHeader.areadataID, "cloned areadataID differs from source");
 		check(header.mapmatrixID == srcHeader.mapmatrixID, "cloned mapmatrixID differs from source");
 		check(header.textID == srcHeader.textID, "cloned textID differs from source");

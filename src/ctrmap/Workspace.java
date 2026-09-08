@@ -119,11 +119,16 @@ public class Workspace {
 	}
 
 	/**
-	 * Makes a session the open game, or none. {@link #validate} is how the
-	 * application does it; a suite does it directly with a session it built.
+	 * Makes a session the open game, or none, and hands it to the main window,
+	 * which keeps it in one field rather than fetching it here from every
+	 * action. {@link #validate} is how the application does it; a suite does
+	 * it directly with a session it built - and because both come through
+	 * here, the window is handed a suite's session exactly as it is handed
+	 * the user's.
 	 */
 	public static void install(WorkspaceSession s) {
 		current = s;
+		CtrmapMainframe.onWorkspaceOpened(s);
 	}
 
 	/** The open game's type, or null when no workspace has validated. */
@@ -171,7 +176,7 @@ public class Workspace {
 	 * the raw list before they have had a chance to do anything.
 	 */
 	public static void validate(Component parent, boolean showErrors) {
-		current = null;
+		install(null);
 		WorkspaceSession opened;
 		try {
 			opened = WorkspaceSession.open(WORKSPACE_PATH == null ? null : new File(WORKSPACE_PATH),
@@ -191,17 +196,16 @@ public class Workspace {
 			return;
 		}
 		opened.prepareDirectories();
-		current = opened;
 		reportSnapshot(opened.snapshotOriginals());
 		//the two tables derived from the game are loaded from the session that
 		//was just opened, handed in: neither class reads the global any more,
 		//so a workspace that opens without loading them leaves the location
-		//dropdowns refusing and the Pokemon pickers on id-only labels
+		//dropdowns refusing and the Pokemon pickers on id-only labels. They
+		//load BEFORE the session is installed, because installing it hands it
+		//to the main window, whose zone dropdown names its rows from them.
 		LocationNames.loadFromGarc(opened);
 		PokeData.load(opened);
-		if (CtrmapMainframe.frame != null) {
-			CtrmapMainframe.onWorkspaceOpened();
-		}
+		install(opened);
 	}
 
 	// ------------------------------------------------------------ delegators
@@ -375,6 +379,10 @@ public class Workspace {
 		TILESET_DEFAULT = false;
 		TILESET_PATH = null;
 		current = null;
+		//the main window holds the session it was handed in install(); a reset
+		//that dropped the global's copy and left the window's would leave the
+		//window operating on a game nothing else has open
+		CtrmapMainframe.onWorkspaceOpened(null);
 		//not fields of this class, but derived from it: the location-name
 		//table and the Pokemon reference tables are read from the open
 		//workspace's game, and a reset that kept them would hand one game's

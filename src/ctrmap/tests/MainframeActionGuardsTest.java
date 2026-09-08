@@ -612,7 +612,7 @@ public class MainframeActionGuardsTest {
 
 		int zoneIndex = 15; //Mauville: its map matrix is its own in the retail game
 		ctrmap.formats.zone.Zone z = new ctrmap.formats.zone.Zone(
-				new ctrmap.formats.containers.ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(zoneIndex))),
+				new ctrmap.formats.containers.ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(zoneIndex)), Workspace.session()),
 				Workspace.game());
 		pnl.zone = z;
 		pnl.zoneIndex = zoneIndex;
