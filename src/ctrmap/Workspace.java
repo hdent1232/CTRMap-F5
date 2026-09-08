@@ -2,6 +2,7 @@ package ctrmap;
 
 import ctrmap.formats.tilemap.EditorTileset;
 import ctrmap.formats.garc.GARC;
+import ctrmap.formats.pokedata.PokeData;
 import ctrmap.formats.text.LocationNames;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameType;
@@ -192,7 +193,12 @@ public class Workspace {
 		opened.prepareDirectories();
 		current = opened;
 		reportSnapshot(opened.snapshotOriginals());
-		LocationNames.loadFromGarc();
+		//the two tables derived from the game are loaded from the session that
+		//was just opened, handed in: neither class reads the global any more,
+		//so a workspace that opens without loading them leaves the location
+		//dropdowns refusing and the Pokemon pickers on id-only labels
+		LocationNames.loadFromGarc(opened);
+		PokeData.load(opened);
 		if (CtrmapMainframe.frame != null) {
 			CtrmapMainframe.onWorkspaceOpened();
 		}
@@ -369,10 +375,12 @@ public class Workspace {
 		TILESET_DEFAULT = false;
 		TILESET_PATH = null;
 		current = null;
-		//not a field of this class, but derived from it: the location-name
-		//table is read from the open workspace's GAMETEXT, and a reset that
-		//kept it would hand one game's names to the next
+		//not fields of this class, but derived from it: the location-name
+		//table and the Pokemon reference tables are read from the open
+		//workspace's game, and a reset that kept them would hand one game's
+		//names to the next
 		LocationNames.unload();
+		PokeData.unload();
 		//spelled out rather than delegated to resetSnapshotProblemReporting():
 		//GlobalStateTest reads this method's own body to prove no field of this
 		//class was left out of the reset, and it cannot follow a call to do it.

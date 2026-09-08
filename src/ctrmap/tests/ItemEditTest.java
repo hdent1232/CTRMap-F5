@@ -358,8 +358,8 @@ public class ItemEditTest {
 			Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
 			Sessions.bare(ws, game, GameType.ORAS);
 
-			check(ItemTable.archiveFile() != null, "the editor finds the archive through the profile");
-			check(ItemTable.openWorkspace() != null,
+			check(ItemTable.archiveFile(Workspace.session()) != null, "the editor finds the archive through the profile");
+			check(ItemTable.open(Workspace.session()) != null,
 					"and opens it for ORAS, where the location was measured");
 			//A path that is only CITED is not a path this editor may write
 			//through. XY's item archive comes from pk3DS's reference tables and
@@ -376,27 +376,27 @@ public class ItemEditTest {
 			xyLive.getParentFile().mkdirs();
 			Files.copy(pristine.toPath(), xyLive.toPath(), StandardCopyOption.REPLACE_EXISTING);
 			Sessions.bare(ws, game, GameType.XY);
-			boolean xyPresent = ItemTable.archiveFile() != null;
-			boolean xyRefused = ItemTable.openWorkspace() == null;
+			boolean xyPresent = ItemTable.archiveFile(Workspace.session()) != null;
+			boolean xyRefused = ItemTable.open(Workspace.session()) == null;
 			Sessions.bare(ws, game, GameType.ORAS);
 			check(xyPresent, "the XY item archive is present in the fixture, so a refusal can only"
 					+ " come from the verification gate");
 			check(xyRefused, "and REFUSES a game whose item table is only cited, never measured"
 					+ " - XY has a path from pk3DS and no verification, so the editor will not"
 					+ " write through it");
-			check(!ItemTable.changedSinceBaseline(),
+			check(!ItemTable.changedSinceBaseline(Workspace.session()),
 					"a workspace that has never edited items ships nothing - no pre-edit copy"
 					+ " means nothing of the user's is in there");
 
-			ItemTable t = ItemTable.openWorkspace();
+			ItemTable t = ItemTable.open(Workspace.session());
 			byte[] rec = t.raw(ULTRA_BALL);
 			byte[] original = rec.clone();
 			fieldNamed("Price / 10").set(rec, 7);
 			t.writeRecord(ULTRA_BALL, rec);
-			check(ItemTable.changedSinceBaseline(), "after an edit, deploy ships it");
+			check(ItemTable.changedSinceBaseline(Workspace.session()), "after an edit, deploy ships it");
 
 			t.writeRecord(ULTRA_BALL, original);
-			check(!ItemTable.changedSinceBaseline(),
+			check(!ItemTable.changedSinceBaseline(Workspace.session()),
 					"and putting the bytes back makes it stop shipping - the test is the CONTENT,"
 					+ " not whether the editor was ever opened");
 		} finally {
@@ -462,7 +462,7 @@ public class ItemEditTest {
 		File live = new File(Workspace.GAMEDIR_PATH + itemArchive());
 		live.getParentFile().mkdirs();
 		Files.copy(pristine.toPath(), live.toPath(), StandardCopyOption.REPLACE_EXISTING);
-		ItemEditSession s = ItemEditSession.openWorkspace();
+		ItemEditSession s = ItemEditSession.open(Workspace.session());
 		check(s != null, "the session opens on the scratch game");
 		if (s == null) {
 			return;
@@ -498,17 +498,17 @@ public class ItemEditTest {
 		check(nameOnly.equals(EnumSet.of(ItemEditSession.Changed.NAME)),
 				"a changed name writes the name, and only the name (" + nameOnly + ")");
 		check("Mega Ball".equals(s.name(ULTRA_BALL))
-				&& "Mega Ball".equals(ItemText.read(ItemText.Which.NAMES).get(ULTRA_BALL)),
+				&& "Mega Ball".equals(ItemText.read(Workspace.session(), ItemText.Which.NAMES).get(ULTRA_BALL)),
 				"the name is in the session and in the staged text file");
 		check(Workspace.persistPaths().contains(namesFile) && !Workspace.persistPaths().contains(descsFile),
 				"the names file is staged and the descriptions file is not");
-		check(desc.equals(ItemText.read(ItemText.Which.DESCRIPTIONS).get(ULTRA_BALL)),
+		check(desc.equals(ItemText.read(Workspace.session(), ItemText.Which.DESCRIPTIONS).get(ULTRA_BALL)),
 				"and the description line is untouched");
 
 		EnumSet<ItemEditSession.Changed> descOnly = s.save(ULTRA_BALL, rec, "Mega Ball", "Catches things.");
 		check(descOnly.equals(EnumSet.of(ItemEditSession.Changed.DESCRIPTION)),
 				"a changed description writes the description, and only that (" + descOnly + ")");
-		check("Catches things.".equals(ItemText.read(ItemText.Which.DESCRIPTIONS).get(ULTRA_BALL)),
+		check("Catches things.".equals(ItemText.read(Workspace.session(), ItemText.Which.DESCRIPTIONS).get(ULTRA_BALL)),
 				"and it is in the staged text file");
 
 		//a record the table refuses stops the save before any text is written
@@ -518,7 +518,7 @@ public class ItemEditTest {
 		} catch (Exception ex) {
 			refused = true;
 		}
-		check(refused && "Mega Ball".equals(ItemText.read(ItemText.Which.NAMES).get(ULTRA_BALL))
+		check(refused && "Mega Ball".equals(ItemText.read(Workspace.session(), ItemText.Which.NAMES).get(ULTRA_BALL))
 				&& "Mega Ball".equals(s.name(ULTRA_BALL)),
 				"a refused record write is refused BEFORE the text is touched - the name is still Mega Ball");
 	}

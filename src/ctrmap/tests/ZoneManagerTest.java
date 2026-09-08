@@ -77,7 +77,7 @@ public class ZoneManagerTest {
 		check(masterIndex == 536 && rows == 536,
 				"pristine ORAS ZoneData: master table is entry " + masterIndex + " with " + rows + " rows");
 
-		int gtIndex = ctrmap.formats.text.LocationNames.gametextIndex();
+		int gtIndex = ctrmap.formats.text.LocationNames.gametextIndex(Workspace.session());
 		File gtFile = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, gtIndex);
 		GFMessageFile names0 = new GFMessageFile(readAll(gtFile));
 		check(gtIndex == 90 && names0.getLineCount() == 356,

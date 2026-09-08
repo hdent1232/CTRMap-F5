@@ -1,6 +1,6 @@
 package ctrmap.formats.pokedata;
 
-import ctrmap.Workspace;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
@@ -24,6 +24,14 @@ import java.util.List;
  * answers -1 for a game where nobody has verified it. -1 means absent, and this
  * class treats it that way rather than falling back to a number that happened to
  * work for another game.
+ *
+ * <p>WHOSE GAME. Every method is handed the {@link GameFiles} whose text it
+ * reads or writes. This class used to fetch the open workspace from the
+ * application's global itself, so a name written with no workspace open was
+ * quietly not written (the file lookup answered null and the read answered an
+ * empty list), and no suite could hand it a text file of its own. Handed, it
+ * stages and reports its writes to the game it was handed; handed nothing, it
+ * refuses in words instead of answering "no lines".
  */
 public final class ItemText {
 
@@ -36,31 +44,35 @@ public final class ItemText {
 	private ItemText() {
 	}
 
-	private static int textIndex(Which w) {
-		GameProfile p = Workspace.profile();
+	private static GameFiles handed(GameFiles game, String what) {
+		if (game == null) {
+			throw new IllegalArgumentException("ItemText." + what + " was handed no game. The item text lives in"
+					+ " a game's staged GameText, and there is nothing to read or write without one.");
+		}
+		return game;
+	}
+
+	private static int textIndex(GameProfile p, Which w) {
 		return p.textIndex(w == Which.NAMES
 				? GameProfile.TextIndex.ITEM_NAMES
 				: GameProfile.TextIndex.ITEM_DESCRIPTIONS);
 	}
 
 	/**
-	 * The workspace's copy of the text file, or null when this game has no
-	 * verified index for it (or no workspace is loaded).
+	 * The handed game's staged copy of the text file, or null when that game
+	 * has no verified index for it or nothing can stage it.
 	 */
-	private static File fileFor(Which w) {
-		if (!Workspace.isValid()) {
-			return null;
-		}
-		int idx = textIndex(w);
+	private static File fileFor(GameFiles game, Which w) {
+		int idx = textIndex(game.profile(), w);
 		if (idx < 0) {
 			return null;
 		}
-		return Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, idx);
+		return game.staged(ArchiveType.GAMETEXT, idx);
 	}
 
 	/** Every line of the list, or an empty list when it cannot be read. */
-	public static List<String> read(Which w) {
-		File f = fileFor(w);
+	public static List<String> read(GameFiles game, Which w) {
+		File f = fileFor(handed(game, "read"), w);
 		if (f == null || !f.isFile()) {
 			return new ArrayList<>();
 		}
@@ -72,14 +84,14 @@ public final class ItemText {
 	}
 
 	/** One line, or null when the list cannot be read or does not go that far. */
-	public static String line(Which w, int id) {
-		List<String> l = read(w);
+	public static String line(GameFiles game, Which w, int id) {
+		List<String> l = read(game, w);
 		return id >= 0 && id < l.size() ? l.get(id) : null;
 	}
 
 	/**
-	 * Replaces one line and stores the file back into the workspace, ready for
-	 * the next pack.
+	 * Replaces one line and stores the file back into the handed game's
+	 * workspace, reported as edited so the next pack carries it.
 	 *
 	 * <p>Rewrites the file through its own {@link GFMessageFile}, which keeps
 	 * the per-line extra values the games carry alongside the text; building a
@@ -90,11 +102,11 @@ public final class ItemText {
 	 * with 777 lines would put the editor's idea of an item out of step with the
 	 * game's without anything failing.
 	 */
-	public static void setLine(Which w, int id, String text) throws IOException {
-		File f = fileFor(w);
+	public static void setLine(GameFiles game, Which w, int id, String text) throws IOException {
+		File f = fileFor(handed(game, "setLine"), w);
 		if (f == null) {
 			throw new IOException("this game has no verified " + (w == Which.NAMES ? "item name" : "item description")
-					+ " text file, so the editor will not guess at one");
+					+ " text file the editor can reach, so it will not guess at one");
 		}
 		GFMessageFile msg = new GFMessageFile(Files.readAllBytes(f.toPath()));
 		List<String> lines = msg.getLines();
@@ -107,11 +119,11 @@ public final class ItemText {
 		lines.set(id, text == null ? "" : text);
 		msg.setLines(lines);
 		Files.write(f.toPath(), msg.write());
-		Workspace.addPersist(f);
+		game.edited(f);
 	}
 
 	/** How many lines each list holds, for a caller checking they agree with the records. */
-	public static int count(Which w) {
-		return read(w).size();
+	public static int count(GameFiles game, Which w) {
+		return read(game, w).size();
 	}
 }

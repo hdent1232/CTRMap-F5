@@ -73,7 +73,7 @@ public class GeoEditFormGuardsTest {
 			return;
 		}
 		ScratchGame.open(dump);
-		ctrmap.formats.text.LocationNames.loadFromGarc();
+		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
 		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
 		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel();
 

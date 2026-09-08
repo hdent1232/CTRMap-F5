@@ -76,7 +76,7 @@ public class MatrixEditFormGuardsTest {
 		ScratchGame.open(dump);
 		//the zone dropdown names every row after its location; Workspace.validate
 		//loads this in the app, and loadArchives (which ScratchGame calls) does not
-		ctrmap.formats.text.LocationNames.loadFromGarc();
+		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
 		CtrmapMainframe.mMtxPanel = new MapMatrixPanel();
 
 		theMatrixIsTheOneTheseChecksDescribe();

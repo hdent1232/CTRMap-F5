@@ -1,28 +1,65 @@
 package ctrmap.tests;
 
 import ctrmap.Workspace;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchTexturePack;
 import ctrmap.formats.maison.MaisonClassList;
 import ctrmap.formats.maison.MaisonPoolGuard;
 import ctrmap.formats.maison.MaisonSet;
+import ctrmap.formats.pokedata.ItemData;
+import ctrmap.formats.pokedata.ItemEditSession;
+import ctrmap.formats.pokedata.ItemTable;
+import ctrmap.formats.pokedata.ItemText;
+import ctrmap.formats.pokedata.PokeData;
+import ctrmap.formats.text.GFMessageFile;
+import ctrmap.formats.text.LocationNames;
 import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameProfile;
+import ctrmap.gamedef.GameType;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import static ctrmap.formats.LittleEndian.putI32;
 import static ctrmap.formats.LittleEndian.putU16;
 
 /**
- * Two more format classes work when HANDED their game, with no workspace open,
- * and answer for the game they are handed rather than for the one the
- * application has open: the area texture operations of
- * {@link BchTexturePack} and the vanilla-safety guard {@link MaisonPoolGuard}.
+ * Format classes work when HANDED their game, with no workspace open, and
+ * answer for the game they are handed rather than for the one the application
+ * has open: the area texture operations of {@link BchTexturePack}, the
+ * vanilla-safety guard {@link MaisonPoolGuard}, and - sections 6 to 10 - the
+ * item table {@link ItemTable}, the item text {@link ItemText}, the edit
+ * session over both {@link ItemEditSession}, the Pokemon reference tables
+ * {@link PokeData} and the location names {@link LocationNames}.
  *
- * <p>WHY THIS SUITE EXISTS. Both classes fetched the open game from
+ * <p>THE TABLES (sections 6 to 10). Each of the four fetched the open game
+ * from {@link Workspace}'s statics itself. ItemTable found its archive in the
+ * global's game folder and kept its pre-edit copy in the global's workspace
+ * folder, so "does deploy need to ship the items" could only be asked about
+ * the application's game; ItemText answered an empty list and wrote nothing
+ * whenever no workspace was open; PokeData loaded itself once on first use
+ * and could never be pointed at a second game in the same JVM; LocationNames
+ * loaded on demand from the global, so a suite wanting another game's names
+ * had to install a workspace first. Each is handed its {@link GameFiles} now
+ * (the two tables through a loader, as the application loads them when a
+ * workspace opens), and the item baseline lives in {@link GameFiles#durable},
+ * added for it. The sections hand each class two fakes and read back two
+ * answers. Proven by breaking, all four at once: with {@code ItemTable.archiveFile}
+ * put back to {@code Workspace.GAMEDIR_PATH} the handed archive was not found
+ * (null) and no table opened; with {@code ItemText.read} gated on
+ * {@code Workspace.isValid} every list read as empty; with {@code PokeData.load}
+ * gated the same way nothing loaded and species 1 was "#1"; with
+ * {@code LocationNames.gametextIndex} reading {@code Workspace.variant} a demo
+ * game was read at the retail entry ("Wrong City"). Twenty-five checks named
+ * it, and the seam test's count rose to 13 classes over 19 edges.
+ *
+ * <p>WHY THIS SUITE EXISTS. Both of the first two classes fetched the open game from
  * {@link Workspace}'s statics themselves. For BchTexturePack that meant the
  * shared-area check - the one thing standing between a texture carry and
  * fifteen other maps drawing from the same area - could only be asked about
@@ -75,6 +112,12 @@ public class HandedGameTest {
 			theAreaOperationsRefuseToBeHandedNothing();
 			thePoolGuardReadsTheSnapshotItIsHanded();
 			thePoolGuardRefusesToBeHandedNothing();
+			theItemTableOpensTheArchiveOfTheGameItIsHanded();
+			theItemTextReadsTheStagedListsOfTheGameItIsHanded();
+			theEditSessionWritesIntoTheGameItIsHanded();
+			thePokeDataAnswersForTheGameItIsHanded();
+			theLocationNamesLoadFromTheGameTheyAreHanded();
+			theTablesRefuseToBeHandedNothing();
 		} finally {
 			Workspace.reset();
 		}
@@ -264,6 +307,353 @@ public class HandedGameTest {
 		System.out.println("--- the pool guard handed null refuses in words, rather than guessing");
 		refuses("load", () -> MaisonPoolGuard.load(null, ArchiveType.MAISON_SET_POOL_A, ArchiveType.MAISON_CLASS_LIST_A, emptySets(6)));
 		refuses("readSnapshotLists", () -> MaisonPoolGuard.readSnapshotLists(null, ArchiveType.MAISON_CLASS_LIST_A));
+	}
+
+	// ------------------------------------------------ 6. the item table
+	static void theItemTableOpensTheArchiveOfTheGameItIsHanded() throws Exception {
+		System.out.println("--- the item table opens, edits and baselines the archive of the game it is handed, with no workspace open");
+		check(!Workspace.isValid() && Workspace.session() == null, "no workspace is open");
+
+		byte[] retail = garcBytes(record(0), record(12), record(7));
+		FakeGameFiles fake = new FakeGameFiles().plantArchive(ArchiveType.ITEM_DATA, retail);
+		check(fake.archiveFile(ArchiveType.ITEM_DATA).equals(ItemTable.archiveFile(fake)),
+				"the archive is found where the handed game keeps it (" + ItemTable.archiveFile(fake) + ")");
+		check(ItemTable.baselineArchive(fake) == null && !ItemTable.changedSinceBaseline(fake),
+				"before any edit there is no pre-edit copy, and nothing to ship");
+		ItemTable t = ItemTable.open(fake);
+		check(t != null && t.count() == 3 && Arrays.equals(t.raw(1), record(12)),
+				"it opens with the three records planted (" + (t == null ? "null" : String.valueOf(t.count())) + ")");
+		if (t == null) {
+			return;
+		}
+		check(t.baselineArchive() == null && t.baselineRecord(1) == null, "and the table knows of no pre-edit copy yet");
+
+		t.writeRecord(1, record(99));
+		File copy = new File(ItemTable.baselineDir(fake), "itemdata.garc");
+		check(ItemTable.baselineDir(fake).equals(fake.durable("original_items")) && copy.isFile(),
+				"the first write takes the pre-edit copy into the handed game's durable directory (" + copy + ")");
+		check(Arrays.equals(Files.readAllBytes(copy.toPath()), retail),
+				"and the copy is the archive as it was, byte for byte");
+		check(Arrays.equals(t.baselineRecord(1), record(12)) && Arrays.equals(t.raw(1), record(99)),
+				"the table answers both the retail record and the edited one");
+		check(copy.equals(ItemTable.baselineArchive(fake)) && copy.equals(t.baselineArchive()),
+				"the static and the instance name the same copy");
+		check(ItemTable.changedSinceBaseline(fake), "and deploy would ship it");
+		check(fake.edited().isEmpty() && Workspace.persistPaths().isEmpty(),
+				"an in-place write stages nothing for a pack, in the handed game or in the global");
+		t.writeRecord(1, record(12));
+		check(!ItemTable.changedSinceBaseline(fake),
+				"putting the bytes back means nothing to ship - the content decides, not the edit history");
+
+		//a DIFFERENT game: the same shape, record 1 saying 34, no copy ever taken
+		FakeGameFiles other = new FakeGameFiles()
+				.plantArchive(ArchiveType.ITEM_DATA, garcBytes(record(0), record(34), record(7)));
+		ItemTable o = ItemTable.open(other);
+		check(o != null && Arrays.equals(o.raw(1), record(34)), "handed another game, the table is that game's");
+		check(!ItemTable.baselineDir(other).equals(ItemTable.baselineDir(fake))
+				&& ItemTable.baselineArchive(other) == null && !ItemTable.changedSinceBaseline(other),
+				"its pre-edit copy would live in its own directory, and none was taken");
+		check(Arrays.equals(t.baselineRecord(1), record(12)), "and the first game's copy is unchanged");
+
+		//a game whose item table is only CITED: on disk, refused by the gate
+		FakeGameFiles xy = new FakeGameFiles().profile(GameProfile.of(GameType.XY))
+				.plantArchive(ArchiveType.ITEM_DATA, retail);
+		check(ItemTable.archiveFile(xy) != null && ItemTable.open(xy) == null,
+				"a game whose item table was never measured is refused by the feature gate, not by absence");
+		check(ItemTable.archiveFile(new FakeGameFiles()) == null && ItemTable.open(new FakeGameFiles()) == null,
+				"and a game with no item archive on disk opens nothing");
+		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
+				"after all of it no workspace is open and nothing reached the global");
+	}
+
+	// ------------------------------------------------ 7. the item text
+	static void theItemTextReadsTheStagedListsOfTheGameItIsHanded() throws Exception {
+		System.out.println("--- the item text reads and stages the lists of the game it is handed, with no workspace open");
+		int names = ORAS.textIndex(GameProfile.TextIndex.ITEM_NAMES);
+		int descs = ORAS.textIndex(GameProfile.TextIndex.ITEM_DESCRIPTIONS);
+		FakeGameFiles fake = new FakeGameFiles()
+				.plant(ArchiveType.GAMETEXT, names, textOf("", "Master Ball", "Ultra Ball"))
+				.plant(ArchiveType.GAMETEXT, descs, textOf("", "The best Ball.", "A very good Ball."));
+		check(Arrays.asList("", "Master Ball", "Ultra Ball").equals(ItemText.read(fake, ItemText.Which.NAMES)),
+				"the names are the handed game's staged list (" + ItemText.read(fake, ItemText.Which.NAMES) + ")");
+		check("A very good Ball.".equals(ItemText.line(fake, ItemText.Which.DESCRIPTIONS, 2))
+				&& ItemText.count(fake, ItemText.Which.DESCRIPTIONS) == 3,
+				"and so are the descriptions (" + ItemText.count(fake, ItemText.Which.DESCRIPTIONS) + " lines)");
+		check(fake.edited().isEmpty(), "reading stages nothing");
+
+		ItemText.setLine(fake, ItemText.Which.NAMES, 2, "Mega Ball");
+		File namesFile = fake.staged(ArchiveType.GAMETEXT, names);
+		check("Mega Ball".equals(ItemText.line(fake, ItemText.Which.NAMES, 2)), "a line written reads back");
+		check(fake.edited().size() == 1 && fake.edited().get(0).equals(namesFile.getAbsoluteFile()),
+				"and the names file, and only it, was reported edited to the handed game (" + fake.edited() + ")");
+		check(Workspace.persistPaths().isEmpty(), "and nothing reached the global's edited-file list");
+		try {
+			ItemText.setLine(fake, ItemText.Which.NAMES, 3, "Beast Ball");
+			check(false, "a line past the end is refused (it was written)");
+		} catch (IOException ex) {
+			check(String.valueOf(ex.getMessage()).contains("does not add lines"),
+					"a line past the end is refused in words: " + firstLine(ex));
+		}
+		check(ItemText.count(fake, ItemText.Which.NAMES) == 3 && fake.edited().size() == 1,
+				"and the refused write neither lengthened the list nor reported anything new");
+
+		//a DIFFERENT game: the same slot names a Great Ball, and stages no descriptions
+		FakeGameFiles other = new FakeGameFiles()
+				.plant(ArchiveType.GAMETEXT, names, textOf("", "Master Ball", "Great Ball"));
+		check("Great Ball".equals(ItemText.line(other, ItemText.Which.NAMES, 2)),
+				"handed another game, the same line is that game's");
+		check("Mega Ball".equals(ItemText.line(fake, ItemText.Which.NAMES, 2)), "and the first game's is unchanged");
+		check(ItemText.read(other, ItemText.Which.DESCRIPTIONS).isEmpty(),
+				"a list that game has not staged reads as empty, not as the other game's");
+
+		//a game with no VERIFIED entry for item text: XY answers -1
+		FakeGameFiles xy = new FakeGameFiles().profile(GameProfile.of(GameType.XY));
+		check(ItemText.read(xy, ItemText.Which.NAMES).isEmpty(), "a game with no verified item-name entry reads as empty");
+		try {
+			ItemText.setLine(xy, ItemText.Which.NAMES, 1, "x");
+			check(false, "and refuses a write (it accepted)");
+		} catch (IOException ex) {
+			check(String.valueOf(ex.getMessage()).contains("verified"), "and refuses a write in words: " + firstLine(ex));
+		}
+		check(xy.edited().isEmpty(), "reporting nothing");
+	}
+
+	// ------------------------------------------------ 8. the edit session
+	static void theEditSessionWritesIntoTheGameItIsHanded() throws Exception {
+		System.out.println("--- the item edit session writes into the game it is handed, and only what differs");
+		int names = ORAS.textIndex(GameProfile.TextIndex.ITEM_NAMES);
+		int descs = ORAS.textIndex(GameProfile.TextIndex.ITEM_DESCRIPTIONS);
+		FakeGameFiles fake = itemGame(names, descs);
+		ItemEditSession s = ItemEditSession.open(fake);
+		check(s != null && s.count() == 3 && "Ultra Ball".equals(s.name(2)) && "Very good.".equals(s.description(2)),
+				"the session opens on the handed game");
+		if (s == null) {
+			return;
+		}
+		check(s.free.equals(Arrays.asList(1)), "and offers the blank, unnamed slot (" + s.free + ")");
+		EnumSet<ItemEditSession.Changed> changed = s.save(2, record(7), "Mega Ball", "Very good.");
+		check(changed.equals(EnumSet.of(ItemEditSession.Changed.NAME)),
+				"a changed name writes the name and only that (" + changed + ")");
+		check(fake.edited().size() == 1 && fake.edited().get(0).equals(fake.staged(ArchiveType.GAMETEXT, names).getAbsoluteFile()),
+				"staged in the handed game (" + fake.edited() + ")");
+		check("Mega Ball".equals(ItemText.line(fake, ItemText.Which.NAMES, 2)), "and readable from it");
+		check(Workspace.persistPaths().isEmpty(), "and not in the global");
+		changed = s.save(2, record(70), "Mega Ball", "Very good.");
+		check(changed.equals(EnumSet.of(ItemEditSession.Changed.RECORD)) && fake.edited().size() == 1
+				&& Arrays.equals(s.baselineRecord(2), record(7)),
+				"a changed record writes in place, stages nothing new, and the baseline holds the retail one (" + changed + ")");
+
+		//a DIFFERENT game, untouched
+		FakeGameFiles other = itemGame(names, descs);
+		ItemEditSession o = ItemEditSession.open(other);
+		check(o != null && "Ultra Ball".equals(o.name(2)) && Arrays.equals(o.record(2), record(7)) && other.edited().isEmpty(),
+				"handed another game, the session sees that game's unedited item");
+		check(ItemEditSession.open(new FakeGameFiles().profile(GameProfile.of(GameType.XY))) == null,
+				"and a game whose item table was never measured opens no session");
+	}
+
+	// ------------------------------------------------ 9. the Pokemon reference tables
+	static void thePokeDataAnswersForTheGameItIsHanded() throws Exception {
+		System.out.println("--- the Pokemon reference tables are those of the game they are handed, with no workspace open");
+		FakeGameFiles fake = referenceGame("Bulbasaur", new int[]{45, 49, 49, 45, 65, 65}, 11, 3, "Pound", 40, "Master Ball");
+		PokeData.load(fake);
+		check(PokeData.available(), "a game with a PERSONAL archive loads as available");
+		check(Arrays.equals(PokeData.baseStats(1), new int[]{45, 49, 49, 45, 65, 65}),
+				"species 1's base stats are the handed game's " + Arrays.toString(PokeData.baseStats(1)));
+		check(Arrays.equals(PokeData.types(1), new int[]{11, 3}) && Arrays.equals(PokeData.abilities(1), new int[]{65, 0, 34}),
+				"and its types and abilities");
+		check("Bulbasaur".equals(PokeData.speciesName(1)) && PokeData.speciesCount() == 2,
+				"and its name; the count is the list's (" + PokeData.speciesCount() + ")");
+		check("Pound".equals(PokeData.moveName(1)) && Arrays.equals(PokeData.moveInfo(1), new int[]{0, 1, 40, 100, 35}),
+				"move 1 is the handed game's, name and numbers " + Arrays.toString(PokeData.moveInfo(1)));
+		check("Master Ball".equals(PokeData.itemName(1)) && "Overgrow".equals(PokeData.abilityName(65)),
+				"and so are item 1 and ability 65");
+		check("#5".equals(PokeData.speciesName(5)) && PokeData.baseStats(5) == null,
+				"a species the game does not have is an id, with no stats");
+
+		//a DIFFERENT game
+		FakeGameFiles other = referenceGame("Fushigidane", new int[]{1, 2, 3, 4, 5, 6}, 9, 2, "Hataku", 50, "Masuta Booru");
+		PokeData.load(other);
+		check("Fushigidane".equals(PokeData.speciesName(1)) && Arrays.equals(PokeData.baseStats(1), new int[]{1, 2, 3, 4, 5, 6})
+				&& Arrays.equals(PokeData.types(1), new int[]{9, 2}),
+				"handed another game, species 1 is that game's (" + PokeData.speciesName(1) + ")");
+		check("Hataku".equals(PokeData.moveName(1)) && PokeData.moveInfo(1)[2] == 50 && "Masuta Booru".equals(PokeData.itemName(1)),
+				"and so are its move and item");
+		PokeData.load(fake);
+		check("Bulbasaur".equals(PokeData.speciesName(1)) && PokeData.moveInfo(1)[2] == 40,
+				"and handed the first again, the first game's");
+
+		//a game with none of the archives: nothing, not the last game's tables
+		PokeData.load(new FakeGameFiles());
+		check(!PokeData.available() && PokeData.baseStats(1) == null && "#1".equals(PokeData.speciesName(1))
+				&& PokeData.moveInfo(1) == null && "#1".equals(PokeData.itemName(1)),
+				"a game with none of the reference archives loads as nothing: id-only labels, no guess from the last game");
+		//species 0 (its list is empty, not absent), moves and items at the gen 6
+		//fallbacks: an asymmetry the class always had, not one this suite pins
+		check(PokeData.speciesCount() != 2 && PokeData.moveCount() == 622 && PokeData.itemCount() == 776,
+				"and no count is the last game's (species " + PokeData.speciesCount() + ", moves "
+				+ PokeData.moveCount() + ", items " + PokeData.itemCount() + ")");
+
+		PokeData.load(fake);
+		Workspace.reset();
+		check(!PokeData.available() && "#1".equals(PokeData.speciesName(1)),
+				"Workspace.reset() forgets the tables, so one game's names cannot outlive it into the next");
+		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
+				"after all of it no workspace is open and nothing reached the global");
+	}
+
+	// ------------------------------------------------ 10. the location names
+	static void theLocationNamesLoadFromTheGameTheyAreHanded() throws Exception {
+		System.out.println("--- the location names load from the game they are handed, at the entry that game's edition uses");
+		int retail = ORAS.textIndex(GameProfile.TextIndex.LOCATION_NAMES, GameProfile.Variant.RETAIL);
+		int demo = ORAS.textIndex(GameProfile.TextIndex.LOCATION_NAMES, GameProfile.Variant.DEMO);
+		check(retail != demo, "the fixture rests on ORAS keeping its demo's names in another entry (" + retail + " vs " + demo + ")");
+		FakeGameFiles fake = new FakeGameFiles()
+				.plant(ArchiveType.GAMETEXT, retail, textOf("Littleroot Town", "Oldale Town"));
+		check(LocationNames.gametextIndex(fake) == retail,
+				"a retail game's entry is the retail one (" + LocationNames.gametextIndex(fake) + ")");
+		check(LocationNames.gametextIndex(new FakeGameFiles().variant(GameProfile.Variant.DEMO)) == demo,
+				"and a demo's is the demo's (" + demo + ")");
+		LocationNames.loadFromGarc(fake);
+		check("Oldale Town".equals(LocationNames.getLocName(1)),
+				"loaded from the handed game, line 1 is its (" + LocationNames.getLocName(1) + ")");
+
+		//a DIFFERENT game
+		FakeGameFiles other = new FakeGameFiles()
+				.plant(ArchiveType.GAMETEXT, retail, textOf("Pallet Town", "Viridian City"));
+		LocationNames.loadFromGarc(other);
+		check("Viridian City".equals(LocationNames.getLocName(1)),
+				"handed another game, line 1 is that game's (" + LocationNames.getLocName(1) + ")");
+
+		//a demo: read at the demo's entry, not the retail entry beside it
+		FakeGameFiles demoGame = new FakeGameFiles().variant(GameProfile.Variant.DEMO)
+				.plant(ArchiveType.GAMETEXT, retail, textOf("Wrong Town", "Wrong City"))
+				.plant(ArchiveType.GAMETEXT, demo, textOf("Demo Town", "Demo City"));
+		LocationNames.loadFromGarc(demoGame);
+		check("Demo City".equals(LocationNames.getLocName(1)),
+				"a demo is read at the demo's entry, not the retail one beside it (" + LocationNames.getLocName(1) + ")");
+
+		//a game with nothing at that entry
+		try {
+			LocationNames.loadFromGarc(new FakeGameFiles());
+			check(false, "a game with nothing at that entry is refused (it loaded)");
+		} catch (IllegalStateException ex) {
+			check(String.valueOf(ex.getMessage()).contains("GAMETEXT entry " + retail),
+					"a game with nothing at that entry is refused in words: " + firstLine(ex));
+		}
+		check("Demo City".equals(LocationNames.getLocName(1)), "and the refused load left the previous table in place");
+
+		Workspace.reset();
+		try {
+			LocationNames.getLocName(1);
+			check(false, "after a reset, with nothing loaded, a name is refused (it answered)");
+		} catch (IllegalStateException ex) {
+			check(String.valueOf(ex.getMessage()).contains("workspace"),
+					"after a reset, with nothing loaded, a name is refused in words that name the workspace: " + firstLine(ex));
+		}
+		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
+				"after all of it no workspace is open and nothing reached the global");
+	}
+
+	// ------------------------------------------------ 11. null is refused
+	static void theTablesRefuseToBeHandedNothing() {
+		System.out.println("--- the tables handed null refuse in words, rather than answering for no game");
+		refuses("ItemTable.open", () -> ItemTable.open((GameFiles) null));
+		refuses("ItemTable.archiveFile", () -> ItemTable.archiveFile(null));
+		refuses("ItemTable.baselineDir", () -> ItemTable.baselineDir(null));
+		refuses("ItemTable.baselineArchive", () -> ItemTable.baselineArchive(null));
+		refuses("ItemTable.changedSinceBaseline", () -> ItemTable.changedSinceBaseline(null));
+		refuses("ItemText.read", () -> ItemText.read(null, ItemText.Which.NAMES));
+		refuses("ItemText.line", () -> ItemText.line(null, ItemText.Which.NAMES, 1));
+		refuses("ItemText.setLine", () -> ItemText.setLine(null, ItemText.Which.NAMES, 1, "x"));
+		refuses("ItemText.count", () -> ItemText.count(null, ItemText.Which.NAMES));
+		refuses("ItemEditSession.open", () -> ItemEditSession.open(null));
+		refuses("PokeData.load", () -> PokeData.load(null));
+		refuses("LocationNames.gametextIndex", () -> LocationNames.gametextIndex(null));
+		refuses("LocationNames.loadFromGarc", () -> LocationNames.loadFromGarc(null));
+	}
+
+	// ------------------------------------------------ fixtures for the tables
+
+	/** The profile whose text indices and archive locations the table fixtures are laid out for. */
+	private static final GameProfile ORAS = GameProfile.of(GameType.ORAS);
+
+	/** An item record: {@link ItemData#SIZE} bytes of one value, so 0 is the blank record. */
+	static byte[] record(int value) {
+		byte[] r = new byte[ItemData.SIZE];
+		Arrays.fill(r, (byte) value);
+		return r;
+	}
+
+	/** The bytes of an archive holding these entries, in the layout {@link #writeGarc} produces. */
+	static byte[] garcBytes(byte[]... entries) throws Exception {
+		File f = Scratch.file("ctrmap_handed_garc");
+		writeGarc(f, entries);
+		return Files.readAllBytes(f.toPath());
+	}
+
+	/** A GameText file of these lines, with no per-line extras. */
+	static byte[] textOf(String... lines) {
+		return GFMessageFile.write(Arrays.asList(lines));
+	}
+
+	/** A game with a three-record item archive (record 1 blank and unnamed) and both item text lists staged. */
+	static FakeGameFiles itemGame(int names, int descs) throws Exception {
+		return new FakeGameFiles()
+				.plantArchive(ArchiveType.ITEM_DATA, garcBytes(record(0), record(0), record(7)))
+				.plant(ArchiveType.GAMETEXT, names, textOf("", "???", "Ultra Ball"))
+				.plant(ArchiveType.GAMETEXT, descs, textOf("", "", "Very good."));
+	}
+
+	/**
+	 * A game whose PERSONAL, MOVE_DATA and GAMETEXT archives - at ORAS's
+	 * locations and text indices - describe species 1, move 1 and item 1.
+	 * Species 1 always has abilities 65, 0 and 34; ability 65 is Overgrow.
+	 */
+	static FakeGameFiles referenceGame(String species, int[] stats, int type1, int type2, String move, int power, String item)
+			throws Exception {
+		//PERSONAL: species 0 blank, species 1 as given; 80-byte records, as the game's
+		byte[] one = new byte[80];
+		for (int i = 0; i < 6; i++) {
+			one[i] = (byte) stats[i];
+		}
+		one[6] = (byte) type1;
+		one[7] = (byte) type2;
+		one[0x18] = 65;
+		one[0x19] = 0;
+		one[0x1A] = 34;
+		byte[] personal = garcBytes(new byte[80], one);
+		//MOVE_DATA entry 0: a mini-container of two 6-byte move records, offsets from the container start
+		byte[] mini = new byte[4 + 2 * 4 + 2 * 6];
+		putI32(mini, 4, 12);
+		putI32(mini, 8, 18);
+		//move 1: type, unused, category, power, accuracy, pp
+		mini[18] = 0;
+		mini[20] = 1;
+		mini[21] = (byte) power;
+		mini[22] = 100;
+		mini[23] = 35;
+		byte[] moves = garcBytes(mini);
+		//GAMETEXT: the four name lists at ORAS's indices, every other entry empty
+		GameProfile.TextIndex[] lists = {GameProfile.TextIndex.SPECIES_NAMES, GameProfile.TextIndex.ABILITY_NAMES,
+			GameProfile.TextIndex.MOVE_NAMES, GameProfile.TextIndex.ITEM_NAMES};
+		int entries = 0;
+		for (GameProfile.TextIndex t : lists) {
+			entries = Math.max(entries, ORAS.textIndex(t) + 1);
+		}
+		byte[][] text = new byte[entries][];
+		Arrays.fill(text, new byte[0]);
+		text[ORAS.textIndex(GameProfile.TextIndex.SPECIES_NAMES)] = textOf("???", species);
+		text[ORAS.textIndex(GameProfile.TextIndex.MOVE_NAMES)] = textOf("-", move);
+		text[ORAS.textIndex(GameProfile.TextIndex.ITEM_NAMES)] = textOf("-", item);
+		List<String> abilities = new ArrayList<>(Collections.nCopies(66, ""));
+		abilities.set(34, "Chlorophyll");
+		abilities.set(65, "Overgrow");
+		text[ORAS.textIndex(GameProfile.TextIndex.ABILITY_NAMES)] = GFMessageFile.write(abilities);
+		return new FakeGameFiles()
+				.plantArchive(ArchiveType.PERSONAL, personal)
+				.plantArchive(ArchiveType.MOVE_DATA, moves)
+				.plantArchive(ArchiveType.GAMETEXT, garcBytes(text));
 	}
 
 	// ------------------------------------------------ fixtures

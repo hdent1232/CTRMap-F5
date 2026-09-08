@@ -264,7 +264,7 @@ public class DataSafetyGuardsTest {
 		Sessions.bare(Scratch.dir("ctrmap_data_safety_warps"), dump, GameType.ORAS);
 		GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.ZONE_DATA, Workspace.game())));
 		GARC texts = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.GAMETEXT, Workspace.game())));
-		LocationNames.load(temp(texts.getDecompressedEntry(LocationNames.gametextIndex())));
+		LocationNames.load(temp(texts.getDecompressedEntry(LocationNames.gametextIndex(Workspace.session()))));
 		//three zones make a zone table; the editor is told zone 2 is open
 		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel();
 		zonePnl.zones = new Zone[3];
@@ -898,7 +898,7 @@ public class DataSafetyGuardsTest {
 		Sessions.bare(Scratch.dir("ctrmap_data_safety_locnames"), dump, GameType.ORAS);
 		GARC texts = new GARC(new File(dump.getAbsolutePath()
 				+ Workspace.getArchivePath(ArchiveType.GAMETEXT, Workspace.game())));
-		int table = LocationNames.gametextIndex();
+		int table = LocationNames.gametextIndex(Workspace.session());
 		LocationNames.load(temp(texts.getDecompressedEntry(table)));
 		int line = -1;
 		String name = null;

@@ -74,6 +74,12 @@ final class ScratchGame {
 		Workspace.install(session);
 		//the app takes the pristine backup on every load; the pack guards read it
 		Workspace.snapshotOriginals();
+		//and loads the two tables derived from the game, handed the session it
+		//opened - exactly what Workspace.validate does. Neither table loads
+		//itself from the global any more, so a stand-in for "open a workspace"
+		//that skipped this would leave every zone dropdown refusing names
+		ctrmap.formats.text.LocationNames.loadFromGarc(session);
+		ctrmap.formats.pokedata.PokeData.load(session);
 		return root;
 	}
 }
