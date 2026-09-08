@@ -119,9 +119,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private void fillMotionDropdowns() {
 		motionModel.removeAllElements();
 		motion2Model.removeAllElements();
-		boolean xy = Workspace.isXY();
-		motModelStrArrMerge(NpcMoveCodes.movePerm1Labels(xy));
-		mot2ModelStrArrMerge(NpcMoveCodes.movePerm2Labels(xy));
+		ctrmap.gamedef.GameType g = Workspace.game();
+		motModelStrArrMerge(NpcMoveCodes.movePerm1Labels(g));
+		mot2ModelStrArrMerge(NpcMoveCodes.movePerm2Labels(g));
 	}
 
 	/**
@@ -130,12 +130,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * come off one table.
 	 */
 	public int getMot2Index(int raw) {
-		return NpcMoveCodes.movePerm2Index(raw, Workspace.isXY());
+		return NpcMoveCodes.movePerm2Index(raw, Workspace.game());
 	}
 
 	/** The movePerm2 code AI-motion row {@code index} writes, or -1 off the end. */
 	public int getMot2Raw(int index) {
-		return NpcMoveCodes.movePerm2Raw(index, Workspace.isXY());
+		return NpcMoveCodes.movePerm2Raw(index, Workspace.game());
 	}
 
 	public void motModelStrArrMerge(String[] strings) {
@@ -1568,11 +1568,20 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 	/**
 	 * Loads a GameText name list (item names, trainer names) for the item/trainer
-	 * pickers. ORAS-only - the file indices differ on X/Y, so this returns null
-	 * there and the pickers fall back to a numeric spinner.
+	 * pickers, or null when this game has no such list to load - the pickers then
+	 * fall back to a numeric spinner.
+	 *
+	 * <p>The gate was {@code !Workspace.isOA()}, on the reasoning that the entry
+	 * indices differ on X/Y. They do, but "which game is this" was never the
+	 * question: the question is whether an index EXISTS for the table being
+	 * asked for. The callers already get theirs from the profile
+	 * ({@code NpcTemplates.gametextItemNames()} and friends), which answers -1
+	 * for a game nobody has measured - so the absent index is the thing to test,
+	 * and a game whose indices someone fills in later gets its names without
+	 * anyone remembering to widen a game check here.
 	 */
 	private java.util.List<String> loadGameTextNames(int fileIndex) {
-		if (!Workspace.isOA() || Workspace.getArchive(ArchiveType.GAMETEXT) == null) {
+		if (fileIndex < 0 || Workspace.getArchive(ArchiveType.GAMETEXT) == null) {
 			return null;
 		}
 		try {

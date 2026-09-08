@@ -109,7 +109,7 @@ public class WarpEditForm extends javax.swing.JPanel {
 	 */
 	public void fillTransitionDropdown() {
 		transitionModel.removeAllElements();
-		for (String label : WarpTransitions.labels(Workspace.isXY())) {
+		for (String label : WarpTransitions.labels(Workspace.game())) {
 			transitionModel.addElement(label);
 		}
 	}
@@ -120,12 +120,12 @@ public class WarpEditForm extends javax.swing.JPanel {
 	 * form used to hold two switch statements that disagreed.
 	 */
 	public int getTransitionIndex(int raw) {
-		return WarpTransitions.index(raw, Workspace.isXY());
+		return WarpTransitions.index(raw, Workspace.game());
 	}
 
 	/** The transition code row {@code index} writes, or -1 for no selection. */
 	public int getTransitionRaw(int index) {
-		return WarpTransitions.raw(index, Workspace.isXY());
+		return WarpTransitions.raw(index, Workspace.game());
 	}
 
 	/**

@@ -5,7 +5,6 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.maison.MaisonClassList;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.gamedef.ArchiveType;
-import ctrmap.gamedef.GameType;
 import java.awt.BorderLayout;
 import java.awt.Dialog;
 import java.awt.FlowLayout;
@@ -42,8 +41,19 @@ public class MaisonClassListDialog {
 		"Table B (-> set pool B, " + arcName(ArchiveType.MAISON_CLASS_LIST_B) + ")"
 	};
 
+	/**
+	 * The archive path shown in the table label, or "?" when there is nothing
+	 * to ask - no game open, or a game that has no such archive.
+	 *
+	 * <p>This used to substitute {@code GameType.ORAS} when no workspace was
+	 * open, so the labels of a dialog reached before validation named ORAS's
+	 * archives whatever the user had. A label is not worth a guess.
+	 */
 	private static String arcName(ArchiveType t) {
-		String p = Workspace.getArchivePath(t, Workspace.game() != null ? Workspace.game() : GameType.ORAS);
+		if (!Workspace.isValid()) {
+			return "?";
+		}
+		String p = Workspace.getArchivePath(t, Workspace.game());
 		return p == null ? "?" : p;
 	}
 

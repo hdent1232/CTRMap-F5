@@ -2,7 +2,7 @@
 
 Two halves, and they answer different questions.
 
-- **The offline battery** — 105 headless suites, run on your machine against a
+- **The offline battery** — 106 headless suites, run on your machine against a
   real dump, answering *"does the code still do what it says?"*. That is the
   first half of this file.
 - **The in-emulator checklist** — everything only the real game engine can
@@ -92,7 +92,14 @@ Four families, and they assert different kinds of thing:
    and `PaintedRegionTest` are the models to copy.
 4. **Meta-suites**, which assert about the repository rather than the program:
    - `SourceSeamTest` — no RomFS path, GameText index or other game-detected
-     constant outside `src/ctrmap/gamedef/`. See ARCHITECTURE.md.
+     constant outside `src/ctrmap/gamedef/`. See ARCHITECTURE.md. Its last
+     rule is not a grep: `noApplicationClassAsksWhichGameIsLoaded` reads
+     `build\classes` through `ClassFileScanner` and fails on any class outside
+     `ctrmap.gamedef` that names `isOA`/`isXY`/`isOADemo` (all six deleted) or
+     that holds both `Workspace.game()` and a `GameType` constant. A static
+     import defeats a source pattern completely and does not defeat this one,
+     which is why it reads bytecode. One exception is allowed, argued in the
+     suite's `ALLOWED_ASKERS` table.
    - `BatteryHygieneTest` — how a suite may touch the machine, that every
      suite is registered with its corpus, that `build\classes` came from
      `build.ps1`, and that the counts the docs publish match the data.

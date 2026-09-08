@@ -132,7 +132,13 @@ public class WorkspaceIntegrity {
 			//workspace has nothing here. Deliberately not "the clone still
 			//matches its source" - forking exists so the copy can be edited,
 			//and that check would fire on every fork the user actually used.
-			if (ws.isOA() && np.length > AreaForker.AD_GLOBAL_TABLE) {
+			//Asks for the CAPABILITY, not for the game: this check is about the
+			//wreckage the area fork leaves, AD_GLOBAL_TABLE is the fork's own
+			//ORAS-measured index, and "ws.isOA()" - what stood here - would
+			//have run the check on Sun/Moon the day a Gen 7 dump opened, with
+			//ORAS's 228 as the threshold on an archive nobody has measured.
+			if (ws.profile().supports(ctrmap.gamedef.GameProfile.Feature.AREA_FORK)
+					&& np.length > AreaForker.AD_GLOBAL_TABLE) {
 				List<Integer> stranded = new ArrayList<>();
 				for (int i = AreaForker.AD_GLOBAL_TABLE; i < np.length; i++) {
 					if (forkedAreaZone.containsKey(i)) {

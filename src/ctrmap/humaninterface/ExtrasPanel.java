@@ -3,6 +3,7 @@ package ctrmap.humaninterface;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.resources.ResourceAccess;
 import ctrmap.Workspace;
+import ctrmap.ZoneTables;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.zone.Zone;
 import java.io.File;
@@ -13,9 +14,45 @@ import java.util.logging.Logger;
 import javax.swing.JOptionPane;
 
 /**
+ * The mass edits: three buttons that rewrite EVERY area or EVERY zone at once.
  *
+ * <p>All three used to work out where the AreaData archive stops holding areas
+ * with {@code length - (isOA() ? 2 : 1)} and which entry the engine's global
+ * per-area table is with {@code isXY() ? 170 : 228}, then stepped through that
+ * table with a hardcoded per-game stride ({@code isXY() ? 0x14 : 0x1c}). Two
+ * defects came out of that, both measured on the reference dump:
+ * <ul>
+ * <li>ORAS's AreaData is 229 entries, of which exactly ONE is not an area (the
+ *     global table at 228; entry 227 carries the "AD " container magic and a
+ *     live zone points at it). {@code length - 2} is 227, so the "inject dummy
+ *     camera collision into ALL areas" button has always skipped the last real
+ *     area;</li>
+ * <li>a game that is neither XY nor ORAS answers false to both gates, so it
+ *     silently received ORAS's entry index and ORAS's stride and would have had
+ *     44-byte strides walked through a table of some other shape.</li>
+ * </ul>
+ *
+ * <p>Both numbers are asked for now instead of assumed: the count comes from
+ * {@link ZoneTables#areaCount}, which refuses in words for a game whose archive
+ * tail nobody has measured, and the stride is DERIVED from the table that is
+ * actually open (its length divided by the number of areas in it), which is a
+ * measurement of this dump rather than a constant copied from another game. On
+ * the reference dump that derivation reproduces the old ORAS numbers exactly:
+ * 10032 / 228 = 44 = 0x0f + 1 + 0x1c = 0x0a + 1 + 0x21.
  */
 public class ExtrasPanel extends javax.swing.JPanel {
+
+	/**
+	 * Byte offset within one global-per-area-table row of the camera-collision
+	 * enable flag. Shared by every game the editor has seen: only the row
+	 * STRIDE differed between XY and ORAS, not where the flag sits inside a
+	 * row, which is why the old code spelled the same 0xf on both games and
+	 * only the trailing skip changed.
+	 */
+	public static final int CAMERA_FLAG_OFFSET = 0x0f;
+
+	/** Byte offset within one row of the stereoscopic-3D depth field. */
+	public static final int STEREO_FLAG_OFFSET = 0x0a;
 
 	/**
 	 * Creates new form ExtrasPanel
@@ -96,18 +133,37 @@ public class ExtrasPanel extends javax.swing.JPanel {
     }// </editor-fold>//GEN-END:initComponents
 
     private void freecamActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_freecamActionPerformed
-		if (!confirmMassEdit("This will inject dummy camera collision data into ALL AreaData areas.\n"
+		int areas;
+		try {
+			areas = areaEditRange();
+		} catch (IOException ex) {
+			//refuse BEFORE asking: a question we cannot honour is not a question
+			ctrmap.Ui.error(this, ctrmap.Ui.reason(ex), "Inject dummy camera collisions");
+			return;
+		}
+		if (!confirmMassEdit("This will inject dummy camera collision data into ALL " + areas
+				+ " AreaData areas.\n"
 				+ "It cannot be undone from within CTRMap. Continue?")) {
 			return;
 		}
 		byte[] ad7 = ResourceAccess.getByteArray("DummyLumioseCollision.bin");
-		for (int i = 0; i < Workspace.getArchive(ArchiveType.AREA_DATA).length - (Workspace.isOA() ? 2 : 1); i++) {
+		for (int i = 0; i < areas; i++) {
 			AD ad = new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, i));
 			ad.storeFile(7, ad7);
 		}
     }//GEN-LAST:event_freecamActionPerformed
 
     private void freecamRegActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_freecamRegActionPerformed
+		AreaTable table;
+		try {
+			table = openAreaTable();
+		} catch (IOException ex) {
+			//resolved BEFORE the zone loop on purpose: this edit used to rewrite
+			//all 536 zone headers and only then discover it could not patch
+			//AreaData, leaving half the mass edit applied
+			ctrmap.Ui.error(this, ctrmap.Ui.reason(ex), "Set camera flags + Zone failsafes");
+			return;
+		}
 		if (!confirmMassEdit("This will modify the headers of ALL zones (camera flags + failsafes) and patch AreaData.\n"
 				+ "It cannot be undone from within CTRMap. Continue?")) {
 			return;
@@ -119,29 +175,27 @@ public class ExtrasPanel extends javax.swing.JPanel {
 				zones[i].header.enableEscapeRope = true;
 				zones[i].header.enableFlyFrom = true;
 				zones[i].header.enableRunning = true;
-				zones[i].header.enableCycling = Workspace.isXY(); //Cycling softlocks the game even on emulators
+				//Cycling softlocks ORAS even on emulators; XY is fine with it.
+				//That is a per-game MEASURED fact, so the profile holds it:
+				//this line was "= Workspace.isXY()", which answered "no" for
+				//Sun/Moon because they are not XY rather than because anybody
+				//had tried it there. cyclingFlagSafe() answers the same "no"
+				//for the same games and says why it is saying it.
+				zones[i].header.enableCycling = Workspace.profile().cyclingFlagSafe();
 				zones[i].store(false);
 			}
 		}
-
-		File f170 = Workspace.isXY() ? Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 170)
-				: Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 228);
-		try {
-			RandomAccessFile raf = new RandomAccessFile(f170, "rw");
-			int skip = Workspace.isXY() ? 0x14 : 0x1c;
-			while (raf.getFilePointer() + 0xf < raf.length()) {
-				raf.skipBytes(0xf);
-				raf.write(1);
-				raf.skipBytes(skip);
-			}
-			raf.close();
-			Workspace.addPersist(f170);
-		} catch (IOException ex) {
-			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
-		}
+		patchAreaTable(table, CAMERA_FLAG_OFFSET, (byte) 1, "Set camera flags + Zone failsafes");
     }//GEN-LAST:event_freecamRegActionPerformed
 
     private void btn3dActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btn3dActionPerformed
+		AreaTable table;
+		try {
+			table = openAreaTable();
+		} catch (IOException ex) {
+			ctrmap.Ui.error(this, ctrmap.Ui.reason(ex), "Enable stereoscopic 3D");
+			return;
+		}
 		if (!confirmMassEdit("This will modify the headers of ALL zones and patch AreaData to enable stereoscopic 3D.\n"
 				+ "It cannot be undone from within CTRMap. Continue?")) {
 			return;
@@ -154,23 +208,136 @@ public class ExtrasPanel extends javax.swing.JPanel {
 				zones[i].store(false);
 			}
 		}
+		patchAreaTable(table, STEREO_FLAG_OFFSET, (byte) 0x2c, "Enable stereoscopic 3D");
+    }//GEN-LAST:event_btn3dActionPerformed
 
-		File f170 = Workspace.isXY() ? Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 170)
-				: Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 228);
+	/**
+	 * How many AreaData entries the mass edits on this panel cover: every entry
+	 * that IS an area, per the open game's measured archive tail.
+	 *
+	 * <p>THE DEFECT THIS REPLACES. The camera-collision injection looped to
+	 * {@code archive.length - (isOA() ? 2 : 1)}. ORAS's AreaData is 229 entries
+	 * with exactly ONE non-area at the end, so that bound was 227 and area 227 -
+	 * a real area, carrying the "AD " container magic, pointed at by a live zone
+	 * in the master zone-header table - was never injected, on every run since
+	 * the button existed. Nothing said so; the loop simply stopped one early.
+	 *
+	 * @throws IOException naming the game when its AreaData tail is unmeasured,
+	 * so a game nobody has counted is refused rather than handed ORAS's 2
+	 */
+	public static int areaEditRange() throws IOException {
+		return ZoneTables.areaCount(Workspace.getArchive(ArchiveType.AREA_DATA));
+	}
+
+	/**
+	 * The engine's global per-area table as this dump actually holds it: the
+	 * workspace file, how many per-area rows are in it, and how wide a row is.
+	 */
+	private static final class AreaTable {
+
+		final File file;
+		final int rows;
+		final int rowSize;
+
+		AreaTable(File file, int rows, int rowSize) {
+			this.file = file;
+			this.rows = rows;
+			this.rowSize = rowSize;
+		}
+	}
+
+	/**
+	 * Locates the global per-area table of the open game and measures its row
+	 * stride, or refuses in words.
+	 *
+	 * <p>The table is the first AreaData entry past the last area, so its index
+	 * IS the area count - which is why {@link ZoneTables#areaCount} answers both
+	 * questions and the hardcoded {@code isXY() ? 170 : 228} is gone: 228 is
+	 * what the count comes to on ORAS and 170 is what it comes to on XY, and on
+	 * a game nobody has measured this throws instead of picking one.
+	 *
+	 * @throws IOException naming the game when its AreaData tail is unmeasured,
+	 * when the table entry cannot be extracted, or when the table is not a whole
+	 * number of equal rows - the last of which means the derived stride would be
+	 * a guess, and a guess walked through this file writes single bytes into the
+	 * middle of whatever the rows really are
+	 */
+	private AreaTable openAreaTable() throws IOException {
+		int areas = areaEditRange();
+		File f = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, areas);
+		if (f == null || !f.isFile()) {
+			throw new IOException("The engine's global per-area table (AreaData entry " + areas
+					+ ") could not be extracted from the open workspace, so there is nothing to patch.");
+		}
+		return new AreaTable(f, areas, areaTableRowSize(f.length(), areas));
+	}
+
+	/**
+	 * How many bytes one per-area row of the global table takes, DERIVED from
+	 * the open dump rather than assumed per game.
+	 *
+	 * <p>Measured on the reference ORAS dump: 10032 bytes over 228 areas = 44,
+	 * which is exactly the stride the two patch loops used to spell as
+	 * {@code 0xf + 1 + 0x1c} and {@code 0xa + 1 + 0x21}. XY's 36 is likewise
+	 * {@code 0xf + 1 + 0x14}. Deriving it means a third game gets ITS stride or
+	 * a refusal, never ORAS's.
+	 *
+	 * @throws IOException when the length is not a whole number of rows, or
+	 * when a row would be too short to hold the flags this panel writes
+	 */
+	public static int areaTableRowSize(long tableLength, int areas) throws IOException {
+		if (areas <= 0 || tableLength <= 0 || tableLength % areas != 0) {
+			throw new IOException("The engine's global per-area table is " + tableLength
+					+ " bytes across " + areas + " areas, which is not a whole number of equal rows."
+					+ "\n\nCTRMap works out the row stride by dividing, so it cannot patch a table"
+					+ " it cannot divide - and it will not fall back to another game's stride,"
+					+ " which would write single bytes into the middle of rows.");
+		}
+		int rowSize = (int) (tableLength / areas);
+		int needed = Math.max(CAMERA_FLAG_OFFSET, STEREO_FLAG_OFFSET) + 1;
+		if (rowSize < needed) {
+			throw new IOException("The engine's global per-area table has " + rowSize
+					+ "-byte rows, too short to hold the camera and 3D flags CTRMap writes at"
+					+ " offsets " + CAMERA_FLAG_OFFSET + " and " + STEREO_FLAG_OFFSET
+					+ ". This game's table is not shaped the way the mass edits assume.");
+		}
+		return rowSize;
+	}
+
+	/**
+	 * Writes one byte into the same offset of every per-area row.
+	 *
+	 * <p>An explicit seek per row, rather than the old
+	 * "skip N, write, skip stride-N-1" walk: the walk carried the per-game
+	 * stride as the leftover of a subtraction nobody could read, and its
+	 * {@code while (pointer + N < length)} bound silently wrote a different
+	 * number of rows for any table whose length was not a multiple of the
+	 * stride it had been handed.
+	 */
+	private void patchAreaTable(AreaTable table, int offsetInRow, byte value, String title) {
+		RandomAccessFile raf = null;
 		try {
-			RandomAccessFile raf = new RandomAccessFile(f170, "rw");
-			int skip = Workspace.isXY() ? 0x19 : 0x21;
-			while (raf.getFilePointer() + 0xa < raf.length()) {
-				raf.skipBytes(0xa);
-				raf.write(0x2c);
-				raf.skipBytes(skip);
+			raf = new RandomAccessFile(table.file, "rw");
+			for (int row = 0; row < table.rows; row++) {
+				raf.seek((long) row * table.rowSize + offsetInRow);
+				raf.write(value);
 			}
 			raf.close();
-			Workspace.addPersist(f170);
+			raf = null;
+			Workspace.addPersist(table.file);
 		} catch (IOException ex) {
-			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
+			Logger.getLogger(ExtrasPanel.class.getName()).log(Level.SEVERE, null, ex);
+			ctrmap.Ui.error(this, "The zone headers were changed, but patching the per-area table failed:\n"
+					+ ctrmap.Ui.reason(ex), title);
+		} finally {
+			if (raf != null) {
+				try {
+					raf.close();
+				} catch (IOException ignore) {
+				}
+			}
 		}
-    }//GEN-LAST:event_btn3dActionPerformed
+	}
 
 	private boolean confirmMassEdit(String message) {
 		return ctrmap.Ui.confirm(this, message, "Confirm mass edit",

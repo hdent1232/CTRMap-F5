@@ -9,6 +9,7 @@ import ctrmap.formats.tilemap.PaintedRegionBuilder;
 import ctrmap.formats.tilemap.TerrainLighting;
 import ctrmap.formats.tilemap.TilePalette;
 import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameProfile;
 import ctrmap.humaninterface.TilePainterForm.Placed;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -298,10 +299,32 @@ public class PaintForm extends JPanel {
 
 	// ---- activation / seeding ---------------------------------------------
 
-	/** Called when the Painter tool is selected. Seeds from the loaded zone. */
+	/**
+	 * Called when the Painter tool is selected. Seeds from the loaded zone.
+	 *
+	 * <p>The painter is gated on {@link GameProfile.Feature#TILE_PAINTER} rather
+	 * than on the game being ORAS. Both refusals are the same today - ORAS is
+	 * the only game the tile brushes, elevation and edge strips were measured
+	 * on - but the label now says which of the two reasons applies. It used to
+	 * say "Load a zone first" to a user on X/Y who had loaded a zone, sending
+	 * them to look for a fault in the zone loader.
+	 */
 	public void activate() {
 		toolActive = true;
-		if (!Workspace.isValid() || !Workspace.isOA() || mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
+		if (!Workspace.isValid()) {
+			zoneLabel.setText("Load a zone first (Zone Loader tab)");
+			seededZone = -1;
+			return;
+		}
+		if (!Workspace.profile().supports(GameProfile.Feature.TILE_PAINTER)) {
+			zoneLabel.setText("<html>The tile painter has not been verified for "
+					+ Workspace.profile().displayName() + ".<br><small>"
+					+ "Its brushes, elevation steps and edge strips were measured on"
+					+ " Omega Ruby / Alpha Sapphire only.</small></html>");
+			seededZone = -1;
+			return;
+		}
+		if (mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
 			zoneLabel.setText("Load a zone first (Zone Loader tab)");
 			seededZone = -1;
 			return;

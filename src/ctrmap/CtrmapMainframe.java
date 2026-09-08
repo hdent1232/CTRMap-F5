@@ -1,7 +1,7 @@
 package ctrmap;
 
 import ctrmap.gamedef.ArchiveType;
-import ctrmap.gamedef.GameType;
+import ctrmap.gamedef.GameProfile;
 import java.awt.BorderLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -651,7 +651,18 @@ public class CtrmapMainframe {
 						+ "\nThe normal way to open a map is the zone dropdown in the \"Zone Loader\" tab.");
 				return;
 			}
-			mZonePnl.loadZone(new Zone(new ZO(f), (Workspace.isValid()) ? Workspace.game() : GameType.ORAS));
+			//WAS "isValid() ? game() : GameType.ORAS". A .zo does not record
+			//which game it came from, and a zone read with the wrong game's
+			//semantics has the wrong warp labels, the wrong move codes and,
+			//if it is then saved, the wrong bits written into its header. With
+			//no workspace open there is nothing to read that from, so say so.
+			if (!Workspace.isValid()) {
+				Utils.showErrorMessage("No workspace", "Open a workspace first (Options > Workspace settings).\n\n"
+						+ "A .zo file does not say which game it belongs to, and a zone header means\n"
+						+ "different things in each of them, so CTRMap will not guess one for it.");
+				return;
+			}
+			mZonePnl.loadZone(new Zone(new ZO(f), Workspace.game()));
 		}
 	}
 
@@ -1002,17 +1013,53 @@ public class CtrmapMainframe {
 	}
 
 	/**
+	 * Refuses an action in words when the OPEN GAME cannot do it, naming that
+	 * game and what is missing. Returns true when the caller must stop.
+	 *
+	 * <p>WHY THIS REPLACED {@code !Workspace.isOA()}. That test asks which game
+	 * is loaded, and every gate built on it answered the same sentence - "Load
+	 * an ORAS workspace first" - to four different situations: no workspace at
+	 * all, X/Y, Sun/Moon and Ultra Sun/Ultra Moon. A user with X/Y open read an
+	 * instruction that was simply false (a workspace WAS loaded) and learned
+	 * nothing about why the menu item did not work, while Sun/Moon - a game
+	 * whose overworld formats are not even the same generation - was told it
+	 * was one archive away. The profile answers a third thing, "nobody measured
+	 * that for this game", and that is what the user is entitled to read.
+	 *
+	 * @param f the capability the action needs, per {@link GameProfile#supports}
+	 * @param title the dialog title, so the refusal is attributable to the menu
+	 * item that was clicked
+	 * @param what the action, as a sentence subject ("Forking map geometry")
+	 * @param why what specifically is unmeasured for another game - written per
+	 * site, because "it was only done on ORAS" is a claim each site has to earn
+	 */
+	private static boolean refuseUnsupported(GameProfile.Feature f, String title, String what, String why) {
+		if (!Workspace.isValid()) {
+			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", title);
+			return true;
+		}
+		GameProfile p = Workspace.profile();
+		if (p.supports(f)) {
+			return false;
+		}
+		Ui.error(frame, what + " is not available for " + p.displayName() + ".\n\n" + why
+				+ "\n\nNone of that has been verified against " + p.displayName()
+				+ ", so CTRMap refuses here rather than writing through a guess.", title);
+		return true;
+	}
+
+	/**
 	 * Gives a zone its own private map geometry (see {@link GeometryForker}) so a
 	 * cloned zone can be edited without changing the town it was cloned from.
 	 * Defaults the zone picker to the currently loaded zone.
 	 */
 	private static void forkGeometryAction() {
-		if (!Workspace.isValid()) {
-			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Fork map geometry");
-			return;
-		}
-		if (!Workspace.isOA()) {
-			Ui.error(frame, "Forking map geometry is ORAS-only in v1.", "Fork map geometry");
+		if (refuseUnsupported(GameProfile.Feature.AREA_FORK, "Fork map geometry",
+				"Forking map geometry",
+				"Giving one zone its own copy of its map appends to FieldData and the"
+				+ " MapMatrix and repoints the zone in the master zone-header table;"
+				+ " every one of those offsets was measured on Omega Ruby / Alpha"
+				+ " Sapphire.")) {
 			return;
 		}
 		ctrmap.formats.garc.GARC zoGarc = Workspace.getArchive(ArchiveType.ZONE_DATA);
@@ -1020,7 +1067,15 @@ public class CtrmapMainframe {
 			Ui.error(frame, "ZoneData archive unavailable.", "Fork map geometry");
 			return;
 		}
-		int zoneCount = zoGarc.length - 2; //master table + EN pack occupy the last two entries
+		//how many trailing entries are tables rather than zones is the profile's
+		//measured number, not "2 unless it is XY" - see ZoneTables
+		int zoneCount;
+		try {
+			zoneCount = ZoneTables.zoneCount(zoGarc);
+		} catch (java.io.IOException ex) {
+			Ui.error(frame, Ui.reason(ex), "Fork map geometry");
+			return;
+		}
 		int def = (mZonePnl != null && mZonePnl.zoneIndex >= 0 && mZonePnl.zoneIndex < zoneCount) ? mZonePnl.zoneIndex : 0;
 		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def, 0, zoneCount - 1, 1));
 		Object[] form = {
@@ -1157,7 +1212,16 @@ public class CtrmapMainframe {
 			Ui.error(frame, "ZoneData archive unavailable.", "Rename zone");
 			return;
 		}
-		int zoneCount = zo.length - (Workspace.isXY() ? 1 : 2);
+		//"length - (isXY() ? 1 : 2)" has two answers for four games, and the one
+		//it gave Sun/Moon was ORAS's - a zone count silently two short. The
+		//count is the open game's MEASURED number or a refusal; see ZoneTables.
+		int zoneCount;
+		try {
+			zoneCount = ZoneTables.zoneCount(zo);
+		} catch (java.io.IOException ex) {
+			Ui.error(frame, Ui.reason(ex), "Rename zone");
+			return;
+		}
 		int def = (mZonePnl != null && mZonePnl.zoneIndex >= 0 && mZonePnl.zoneIndex < zoneCount) ? mZonePnl.zoneIndex : 0;
 		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def, 0, zoneCount - 1, 1));
 		javax.swing.JTextField nameField = new javax.swing.JTextField(24);
@@ -1283,7 +1347,11 @@ public class CtrmapMainframe {
 		//archive paths differ per game, and SourceSeamTest exists to stop one
 		//game's path being written into code every game shares. It also means
 		//the dialog shows the RIGHT path for whatever is loaded.
-		ctrmap.gamedef.GameProfile prof = ctrmap.gamedef.GameProfile.current();
+		//through Workspace, not through gamedef: the seam does not reach back
+		//into the workspace global to find out which game is open. Guarded on
+		//isValid() because Workspace.profile() has no profile to hand back
+		//before a workspace validates, and this dialog can be opened then.
+		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
 		String example = prof == null ? null
 				: prof.archivePath(ArchiveType.ZONE_DATA);
 		Object rel = Ui.input(frame,
@@ -1301,16 +1369,30 @@ public class CtrmapMainframe {
 	}
 
 	private static void removeAddedZonesAction() {
-		if (!Workspace.isValid() || !Workspace.isOA()) {
-			Ui.error(frame, "Load an ORAS workspace first.", "Remove added zones");
+		//the inverse of ZoneAppender, and gated on the same capability: it
+		//restores the stock layout that game's executable was built for, and
+		//"stock" is a number nobody has established outside ORAS
+		if (refuseUnsupported(GameProfile.Feature.ZONE_APPEND, "Remove added zones",
+				"Removing added zones",
+				"Undoing an append means knowing how many zones the game shipped with and"
+				+ " how its master zone-header table is laid out. Both were measured for"
+				+ " Omega Ruby / Alpha Sapphire, alongside the code patch that raises the"
+				+ " zone limit in the first place.")) {
 			return;
 		}
 		ctrmap.formats.garc.GARC zoArc = Workspace.getArchive(ArchiveType.ZONE_DATA);
-		if (zoArc == null || zoArc.length <= 538) {
+		final int stockLength;
+		try {
+			stockLength = ZoneRemover.BASE_ZONES + ZoneTables.zoneTrailing();
+		} catch (java.io.IOException ex) {
+			Ui.error(frame, Ui.reason(ex), "Remove added zones");
+			return;
+		}
+		if (zoArc == null || zoArc.length <= stockLength) {
 			Ui.message(frame, "This ZoneData has no added zones (stock layout).", "Remove added zones", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
-		final int n = zoArc.length - 538;
+		final int n = zoArc.length - stockLength;
 		java.util.List<String> refs = ZoneRemover.referencesToAdded(zoArc);
 		StringBuilder refWarn = new StringBuilder();
 		if (!refs.isEmpty()) {
@@ -1383,7 +1465,15 @@ public class CtrmapMainframe {
 			Ui.error(frame, "ZoneData archive unavailable.", "Empty zone");
 			return;
 		}
-		int zoneCount = zo.length - (Workspace.isXY() ? 1 : 2);
+		//the open game's measured trailing-entry count, or a refusal - never the
+		//"1 for XY, 2 for everything else" guess this used to make
+		int zoneCount;
+		try {
+			zoneCount = ZoneTables.zoneCount(zo);
+		} catch (java.io.IOException ex) {
+			Ui.error(frame, Ui.reason(ex), "Empty zone");
+			return;
+		}
 		int def = (mZonePnl != null && mZonePnl.zoneIndex >= 0 && mZonePnl.zoneIndex < zoneCount) ? mZonePnl.zoneIndex : 0;
 		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def, 0, zoneCount - 1, 1));
 		Object[] form = {
@@ -1417,12 +1507,16 @@ public class CtrmapMainframe {
 	 * being able to run scripts.
 	 */
 	private static void findReusableZonesAction() {
-		if (!Workspace.isValid()) {
-			Ui.error(frame, "Load a workspace first (Options > Workspace settings).", "Find reusable zones");
-			return;
-		}
-		if (!Workspace.isOA()) {
-			Ui.error(frame, "This is ORAS-only in v1.", "Find reusable zones");
+		//the scanner is the other half of ZONE_APPEND: it exists because
+		//appended zones cannot run scripts, so it hunts retail zones safe to
+		//overwrite instead. "This is ORAS-only in v1" named neither the game
+		//the user had open nor anything they could act on.
+		if (refuseUnsupported(GameProfile.Feature.ZONE_APPEND, "Find reusable zones",
+				"Finding reusable base zones",
+				"The scan reads every zone header, its script and its warps to judge"
+				+ " whether overwriting it is safe. That judgement rests on the zone"
+				+ " header layout, the script format and the base/appended zone boundary"
+				+ " as measured on Omega Ruby / Alpha Sapphire.")) {
 			return;
 		}
 		frame.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.WAIT_CURSOR));
@@ -1658,8 +1752,15 @@ public class CtrmapMainframe {
 	 * for building a brand-new town/facility.
 	 */
 	private static void blankCanvasAction() {
-		if (!Workspace.isValid() || !Workspace.isOA()) {
-			Ui.error(frame, "Load an ORAS workspace first.", "Blank map canvas");
+		//forks the zone's geometry before blanking it, so it needs exactly what
+		//GeometryForker.requireForkSupport needs - asked here so the refusal
+		//arrives before the material picker, not after it
+		if (refuseUnsupported(GameProfile.Feature.AREA_FORK, "Blank map canvas",
+				"Starting a zone's map from scratch",
+				"It first gives the zone its OWN geometry (appending to FieldData and the"
+				+ " MapMatrix), then rewrites each private region's BCH map model in place."
+				+ " Both the fork offsets and the model layout were measured on Omega Ruby"
+				+ " / Alpha Sapphire.")) {
 			return;
 		}
 		if (mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
@@ -1809,8 +1910,15 @@ public class CtrmapMainframe {
 	 * zone (index &lt; 536) because appended zones cannot run field scripts.
 	 */
 	private static void setupFacilityAction() {
-		if (!Workspace.isValid() || !Workspace.isOA()) {
-			Ui.error(frame, "Load an ORAS workspace first.", "Set up Battle facility");
+		//MAISON, not "is it ORAS": what this needs is a game whose battle
+		//facility is known - the lobby zone indices copied below and the
+		//opponent pools the copy will battle out of
+		if (refuseUnsupported(GameProfile.Feature.MAISON, "Set up Battle facility",
+				"Setting up a Battle facility",
+				"It replaces a zone with a verbatim copy of a retail facility lobby, which"
+				+ " means knowing which zone that lobby is and where the engine keeps the"
+				+ " opponent pools it draws from. Both were measured on Omega Ruby / Alpha"
+				+ " Sapphire.")) {
 			return;
 		}
 		if (mZonePnl == null || mZonePnl.zoneIndex < 0) {
@@ -1818,7 +1926,13 @@ public class CtrmapMainframe {
 			return;
 		}
 		final int dstIndex = mZonePnl.zoneIndex;
-		int baseZones = Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2;
+		int baseZones;
+		try {
+			baseZones = ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		} catch (java.io.IOException ex) {
+			Ui.error(frame, Ui.reason(ex), "Set up Battle facility");
+			return;
+		}
 		if (dstIndex >= baseZones) {
 			Ui.error(frame,
 					"This is an appended zone (index " + dstIndex + "). Appended zones cannot run field\n"
@@ -1909,8 +2023,14 @@ public class CtrmapMainframe {
 	 * cells become blank canvases in the zone's own area style.
 	 */
 	private static void resizeMapAction() {
-		if (!Workspace.isValid() || !Workspace.isOA()) {
-			Ui.error(frame, "Load an ORAS workspace first.", "Resize map");
+		//growing a map forks the zone's geometry first, so it asks the same
+		//question the forkers ask rather than asking which game is open
+		if (refuseUnsupported(GameProfile.Feature.AREA_FORK, "Resize map",
+				"Growing a zone's map",
+				"New map cells are appended to FieldData and wired into a rebuilt"
+				+ " MapMatrix after the zone's geometry has been made private. The"
+				+ " container layouts and every offset involved were measured on Omega"
+				+ " Ruby / Alpha Sapphire.")) {
 			return;
 		}
 		if (mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {

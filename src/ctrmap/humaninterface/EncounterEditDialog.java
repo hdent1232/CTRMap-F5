@@ -37,8 +37,24 @@ public class EncounterEditDialog {
 
 	/** Opens the editor for the currently loaded zone. */
 	public static void show(Frame parent) {
-		if (!Workspace.isValid() || !Workspace.isOA()) {
-			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Wild encounters");
+		//ENCOUNTERS, not "is it ORAS": the EN pack's slot in the zone archive
+		//and its 61-slot record layout were measured on ORAS and checked
+		//nowhere else. The old gate said "Load an ORAS workspace first" to a
+		//user who already had X/Y loaded.
+		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
+		if (prof == null) {
+			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).", "Wild encounters");
+			return;
+		}
+		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.ENCOUNTERS)) {
+			ctrmap.Ui.error(parent, "Editing wild encounters is not available for "
+					+ prof.displayName() + "."
+					+ "\n\nThe wild-encounter pack's slot at the end of the zone archive, and"
+					+ " the 61-slot table inside it, were measured on Omega Ruby / Alpha"
+					+ " Sapphire."
+					+ "\n\nCTRMap refuses here rather than rewriting whatever this game keeps"
+					+ " in that slot.",
+					"Wild encounters");
 			return;
 		}
 		if (mZonePnl == null || mZonePnl.zoneIndex < 0) {
@@ -47,8 +63,17 @@ public class EncounterEditDialog {
 		}
 		final int zoneIndex = mZonePnl.zoneIndex;
 		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
+		//the zone count comes from the profile's MEASURED trailing-entry number,
+		//not from a "2" written into the arithmetic; the EN pack is the last
+		//entry of the archive on the games that have one
+		final int zoneCount;
+		try {
+			zoneCount = ctrmap.ZoneTables.zoneCount(zo);
+		} catch (java.io.IOException ex) {
+			ctrmap.Ui.error(parent, ctrmap.Ui.reason(ex), "Wild encounters");
+			return;
+		}
 		final int enIndex = zo.length - 1;
-		final int zoneCount = zo.length - 2;
 
 		byte[] pack = loadPack(zo, enIndex, zoneCount);
 		if (pack == null) {

@@ -549,20 +549,40 @@ public class Workspace {
 		}
 	}
 
-	public static boolean isOA() {
-		return game() == GameType.ORAS;
-	}
-
-	public static boolean isOADemo() {
+	/**
+	 * Which EDITION of the open game the dump is - the answer a caller needs
+	 * when a game ships more than one and they disagree about their data (the
+	 * ORAS Special Demo keeps its location names in another GameText entry).
+	 *
+	 * <p>The probing is the profile's: this asks
+	 * {@link ctrmap.gamedef.GameProfile#detectVariant}, so no caller outside
+	 * the gamedef seam has to know what file identifies a demo. With no session
+	 * open it probes the configured game folder, which is what the setup wizard
+	 * needs before anything has validated.
+	 *
+	 * @return RETAIL when no game folder is configured at all - a caller with
+	 * nothing to probe is not looking at a demo
+	 */
+	public static ctrmap.gamedef.GameProfile.Variant variant() {
 		if (current != null) {
-			return current.isOADemo();
+			return current.variant();
 		}
-		return GAMEDIR_PATH != null && new File(GAMEDIR_PATH + ctrmap.gamedef.OrasProfile.DEMO_PROBE).exists();
+		if (GAMEDIR_PATH == null) {
+			return ctrmap.gamedef.GameProfile.Variant.RETAIL;
+		}
+		File dir = new File(GAMEDIR_PATH);
+		ctrmap.gamedef.GameProfile p = ctrmap.gamedef.GameProfile.detect(dir);
+		return p == null ? ctrmap.gamedef.GameProfile.Variant.RETAIL : p.detectVariant(dir);
 	}
 
-	public static boolean isXY() {
-		return game() == GameType.XY;
-	}
+	//isOA(), isXY() and isOADemo() USED TO BE HERE. They were the migration's
+	//ramp: deprecated in place so the 44 call sites could move one at a time,
+	//and deleted once the last one had. Nothing asks which game is open any
+	//more - callers ask profile() what the game can DO, what it MEASURED, or
+	//variant() which EDITION it is - and SourceSeamTest.noApplicationClassAsks
+	//WhichGameIsLoaded reads the compiled classes to keep it that way. A gate
+	//that answers a four-valued question with a boolean cannot come back by
+	//being written somewhere else.
 
 	public static void prefsPutNonNull(String key, String value) {
 		if (value != null && key != null) {

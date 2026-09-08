@@ -2,7 +2,6 @@ package ctrmap;
 
 import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.ArchiveType;
-import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -92,17 +91,32 @@ public class ModDeployer {
 		public File modRoot;
 	}
 
-	/** Default Azahar mods folder for a title, or null if %APPDATA% is unavailable. */
+	/**
+	 * Default Azahar mods folder for a title, or null if %APPDATA% is
+	 * unavailable OR no title id is known. A null id used to build
+	 * "...\mods\null"; a folder named after nothing is not a suggestion.
+	 */
 	public static File azaharModRoot(String titleId) {
 		String appdata = System.getenv("APPDATA");
-		if (appdata == null) {
+		if (appdata == null || titleId == null) {
 			return null;
 		}
 		return new File(appdata + File.separator + "Azahar" + File.separator + "load"
 				+ File.separator + "mods" + File.separator + titleId);
 	}
 
-	/** Best-guess title id: the RomFS folder name if it looks like one, else the stock id for the game. */
+	/**
+	 * Best-guess title id: the RomFS folder name when it looks like one, else
+	 * the open game's own default from its profile - and null when neither
+	 * says anything.
+	 *
+	 * <p>The fallback was {@code isXY() ? X : Omega Ruby}. "Not X/Y" is three
+	 * games, so a Sun/Moon or Ultra Sun/Ultra Moon workspace was offered Omega
+	 * Ruby's mods folder: a mod deployed where the game it was built for never
+	 * looks, and where another game does. Null instead means the deploy dialog
+	 * offers no folder and the user says which, which is the honest answer for
+	 * a game whose id nobody recorded.
+	 */
 	public static String guessTitleId() {
 		if (Workspace.GAMEDIR_PATH != null) {
 			String name = new File(Workspace.GAMEDIR_PATH).getName();
@@ -110,7 +124,7 @@ public class ModDeployer {
 				return name.toUpperCase();
 			}
 		}
-		return Workspace.game() == GameType.XY ? "0004000000055D00" : "000400000011C400"; // Pokemon X / Omega Ruby
+		return Workspace.isValid() ? Workspace.profile().titleId() : null;
 	}
 
 	/**

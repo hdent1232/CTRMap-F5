@@ -4,6 +4,7 @@ import static ctrmap.CtrmapMainframe.*;
 import ctrmap.Workspace;
 import ctrmap.ZoneAppender;
 import ctrmap.ZoneCloner;
+import ctrmap.ZoneTables;
 import ctrmap.formats.containers.ZO;
 import ctrmap.formats.cameradata.CameraDataFile;
 import ctrmap.formats.mapmatrix.MapMatrix;
@@ -11,6 +12,7 @@ import ctrmap.formats.propdata.ADPropRegistry;
 import ctrmap.formats.text.LocationNames;
 import ctrmap.formats.zone.Zone;
 import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameProfile;
 import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.IOException;
@@ -143,6 +145,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 					//zone list is just silently empty with no error anywhere
 				} catch (Exception ex) {
 					Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, "loading zones", ex);
+					//...and the log alone IS silent to anyone not watching a
+					//console. The zone count now comes from the profile and can
+					//refuse in words for a game nobody has measured; that
+					//sentence is worth nothing if it only reaches stderr.
+					ctrmap.Ui.error(ZoneLoadingPanel.this, ctrmap.Ui.reason(ex), "Loading Zone data");
 				}
 				if (onDone != null) {
 					onDone.run();
@@ -150,7 +157,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			}
 
 			@Override
-			protected Object doInBackground() {
+			protected Object doInBackground() throws Exception {
 				loaded = false;
 				if (zone != null) {
 					zone.header.freeArchives();
@@ -161,16 +168,25 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				zoneList.removeAllItems();
 				tmg.setSelectedIndex(-1);
 				tmg.removeAllItems();
-				//zone appending is ORAS-only in v1 (XY has no EN pack and different OAZoneNumber semantics)
-				if (Workspace.game() == GameType.XY) {
+				//The button follows the same capability the action behind it
+				//refuses on. It used to be disabled for XY and enabled for
+				//everything else, so Sun/Moon and Ultra Sun/Ultra Moon got a
+				//live "Add zones" button that opens a dialog which cannot
+				//finish - the gate said "not XY", the appender means "ORAS".
+				if (!Workspace.profile().supports(GameProfile.Feature.ZONE_APPEND)) {
 					btnAddZone.setEnabled(false);
-					btnAddZone.setToolTipText("Adding new zones is ORAS-only in v1.");
+					btnAddZone.setToolTipText("Adding new zones is not available for "
+							+ Workspace.profile().displayName()
+							+ " - it needs that game's zone-table limit found in its executable.");
 				} else {
 					btnAddZone.setEnabled(true);
 					btnAddZone.setToolTipText("Add new zones and lift ORAS's 536-zone limit; also generates the required code.ips patch. ORAS only - test in Azahar first.");
 				}
-				int totalZones = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
-				totalZones -= (Workspace.game() == GameType.XY) ? 1 : 2;
+				//WAS "length - (isXY() ? 1 : 2)": two answers for four games,
+				//and the "else" arm handed every unmeasured game ORAS's 2 - a
+				//zone count two short, with an ordinary zone read as the master
+				//table. ZoneTables asks the open game and refuses in words.
+				int totalZones = ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
 				if (totalZones <= 0) {
 					//a truncated or non-ZoneData archive: without this the array
 					//size goes negative and the real problem is never reported
@@ -326,9 +342,13 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		}
 		if (stored) {
 			try {
-				//save to master table
-				File master = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, Workspace.getArchive(ArchiveType.ZONE_DATA).length
-						- ((Workspace.game() == GameType.XY) ? 1 : 2));
+				//save to master table - the entry just past the last zone.
+				//WAS "length - (isXY() ? 1 : 2)", the same two-answers-for-four-
+				//games arithmetic as the zone count: on a game whose tail nobody
+				//has counted this wrote a zone header 0x38 bytes at a time into
+				//an ORDINARY ZONE.
+				File master = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA,
+						ZoneTables.masterIndex(Workspace.getArchive(ArchiveType.ZONE_DATA)));
 				RandomAccessFile dos = new RandomAccessFile(master, "rw");
 				dos.skipBytes(zoneIndex * 0x38);
 				byte[] test = new byte[0x38];
@@ -342,6 +362,12 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				dos.close();
 			} catch (IOException ex) {
 				Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
+				//the zone file itself IS written by here, so this is a half
+				//save: the game reads its headers from the master table and
+				//would keep loading the old one. It used to go to the log only.
+				ctrmap.Ui.error(this, "Zone " + zoneIndex + " was saved, but the master zone-header"
+						+ " table was NOT updated, so the game will keep loading the old header.\n\n"
+						+ ctrmap.Ui.reason(ex), "Save zone");
 			}
 			loadZone(zone);
 			return true;
@@ -1127,6 +1153,25 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		zoneList.setSelectedIndex(-1);
 	}
 
+	/**
+	 * Whether this game can be given a zone its own private copy of a map.
+	 *
+	 * <p>Three sites here asked {@code Workspace.isOA()} instead - the offer
+	 * after loading a shared zone, the tick box in the clone dialog, and the
+	 * flag that decides whether a clone forks. A fork appends to AreaData, the
+	 * NPC registry, FieldData and the MapMatrix and repoints the zone in two
+	 * places, and every one of those offsets was measured on ORAS - which is
+	 * what {@link GameProfile.Feature#AREA_FORK} records. Asking for the
+	 * capability rather than for the game means the day someone measures those
+	 * offsets on another game, this panel follows the profile instead of
+	 * needing three more edits, and {@code AreaForker} / {@code GeometryForker}
+	 * - which already refuse on the same flag - cannot disagree with the UI in
+	 * front of them.
+	 */
+	private static boolean canFork() {
+		return Workspace.isValid() && Workspace.profile().supports(GameProfile.Feature.AREA_FORK);
+	}
+
 	private java.util.Set<Integer> forkDeclined = null;
 	private String forkDeclinedWs = null;
 
@@ -1193,7 +1238,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 * remembered per zone, per workspace.
 	 */
 	private void offerForkIfShared() {
-		if (zone == null || zoneIndex < 0 || !Workspace.isOA() || forkDeclined().contains(zoneIndex) || zones == null) {
+		if (zone == null || zoneIndex < 0 || !canFork() || forkDeclined().contains(zoneIndex) || zones == null) {
 			return;
 		}
 		int mm = zone.header.mapmatrixID;
@@ -1287,7 +1332,14 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		dstPicker.setMaximumRowCount(20);
 		javax.swing.JCheckBox forkChk = new javax.swing.JCheckBox(
 				"Give this zone its own private map (edit it without changing the source)", true);
-		forkChk.setEnabled(Workspace.isOA());
+		forkChk.setEnabled(canFork());
+		if (!canFork()) {
+			//a disabled tick with no reason beside it reads as a bug in the
+			//editor; say which game is loaded and what is missing for it
+			forkChk.setText("Give this zone its own private map - not available for "
+					+ Workspace.profile().displayName());
+			forkChk.setSelected(false);
+		}
 		Object[] form = {
 			"Source (currently loaded): " + names[srcIndex],
 			"Destination (will be overwritten):",
@@ -1303,7 +1355,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			ctrmap.Ui.error(this, "The source and destination zones are the same.", "Clone zone");
 			return;
 		}
-		final boolean doFork = forkChk.isSelected() && Workspace.isOA();
+		final boolean doFork = forkChk.isSelected() && canFork();
 		int confirm = ctrmap.Ui.confirm(this,
 				"Zone " + dstIndex + " (" + names[dstIndex] + ") will be completely replaced by a copy of zone "
 				+ srcIndex + " (" + names[srcIndex] + "):\n"
@@ -1358,8 +1410,21 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 * is allowed per pack cycle).
 	 */
 	private void btnAddZoneActionPerformed(java.awt.event.ActionEvent evt) {
-		if (!Workspace.isOA()) {
-			ctrmap.Ui.error(this, "Adding new zones is ORAS-only in v1.", "Add new zones");
+		if (!Workspace.isValid()) {
+			ctrmap.Ui.error(this, "Load a workspace first (Options > Workspace settings).", "Add new zones");
+			return;
+		}
+		if (!Workspace.profile().supports(GameProfile.Feature.ZONE_APPEND)) {
+			//"ORAS-only in v1" described the EDITOR's history, not this user's
+			//game, and said the same thing to X/Y, Sun/Moon and Ultra Sun/Moon
+			//alike. ZoneAppender refuses again in the same words; this one is
+			//here so the button does not open a dialog that cannot finish.
+			ctrmap.Ui.error(this, "Adding new zones is not available for "
+					+ Workspace.profile().displayName() + "."
+					+ "\n\nZones past the ones a game ships need that game's zone-table limit"
+					+ " found in its executable and raised by a code patch. Both were measured"
+					+ " for Omega Ruby / Alpha Sapphire only, so CTRMap refuses here rather"
+					+ " than writing a zone this game would never load.", "Add new zones");
 			return;
 		}
 		if (zones == null || zones.length == 0) {

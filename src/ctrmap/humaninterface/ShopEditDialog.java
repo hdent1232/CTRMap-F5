@@ -34,8 +34,24 @@ public class ShopEditDialog {
 	private static final String PREF_CODEBIN = "SHOP_CODEBIN_PATH";
 
 	public static void show(Frame parent) {
-		if (!Workspace.isValid() || !Workspace.isOA()) {
-			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Shop editor");
+		//CODE_PATCHES, not "is it ORAS": the shop lists are found by absolute
+		//addresses in a particular game's executable, so what this needs is a
+		//game whose code.bin has been reverse engineered - which is a different
+		//question from which game it is, and one the profile can answer for a
+		//game nobody has RE'd yet.
+		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
+		if (prof == null) {
+			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).", "Shop editor");
+			return;
+		}
+		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.CODE_PATCHES)) {
+			ctrmap.Ui.error(parent, "Editing shops is not available for " + prof.displayName() + "."
+					+ "\n\nShop inventories live in the executable, not the RomFS, and CTRMap"
+					+ " finds them by addresses read out of a disassembled code.bin. Those"
+					+ " addresses were found in the Omega Ruby / Alpha Sapphire executable."
+					+ "\n\nCTRMap refuses here rather than patching bytes at an address that"
+					+ " means something else in this game's code.",
+					"Shop editor");
 			return;
 		}
 		Preferences prefs = Preferences.userRoot().node(ShopEditDialog.class.getName());

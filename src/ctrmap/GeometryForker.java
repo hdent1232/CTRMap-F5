@@ -330,19 +330,19 @@ public class GeometryForker {
 	 * is pure waste and cannot be undone - go through {@link #ensurePrivate}.
 	 */
 	private static ForkResult forkGeometry(int zoneIndex) throws IOException {
-		if (!Workspace.isOA()) {
-			throw new IOException("Geometry fork is ORAS-only in v1.");
-		}
+		//what this game CAN DO, not which game it is; see AreaForker.requireForkSupport
+		requireGeometryForkSupport();
 		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		GARC gr = Workspace.getArchive(ArchiveType.FIELD_DATA);
 		GARC mm = Workspace.getArchive(ArchiveType.MAP_MATRIX);
 		if (zo == null || gr == null || mm == null) {
 			throw new IOException("No workspace is loaded (ZoneData/FieldData/MapMatrix unavailable).");
 		}
-		int zoneCount = zo.length - 2; // master table + EN pack occupy the last two entries
+		int trailing = ZoneTables.zoneTrailing();
+		int zoneCount = zo.length - trailing;
 		if (zoneIndex < 0 || zoneIndex >= zoneCount) {
 			throw new IOException("Zone " + zoneIndex + " out of range (0.." + (zoneCount - 1) + "). "
-					+ "Note: the last two ZoneData entries are the master/EN tables, not zones.");
+					+ "Note: the last " + trailing + " ZoneData entries are tables, not zones.");
 		}
 		File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
 		File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
@@ -386,7 +386,7 @@ public class GeometryForker {
 		if (zo == null) {
 			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
 		}
-		int zoneCount = zo.length - 2;
+		int zoneCount = ZoneTables.zoneCount(zo);
 		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
@@ -476,7 +476,7 @@ public class GeometryForker {
 
 	/** Repoints a zone's mapmatrixID in the master zone-header table file. */
 	public static void repointMasterRow(GARC zo, int zoneIndex, int newMatrix) throws IOException {
-		int masterIndex = zo.length - 2;
+		int masterIndex = ZoneTables.masterIndex(zo);
 		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
@@ -505,5 +505,25 @@ public class GeometryForker {
 		return m;
 	}
 
-
+	/**
+	 * Refuses a geometry fork, in the loaded game's own name, when that game
+	 * has no verified fork support. Same reasoning as
+	 * {@link AreaForker#requireForkSupport}: the message a user gets must name
+	 * the game they opened and the thing that was not measured for it, not the
+	 * game that was.
+	 */
+	static void requireGeometryForkSupport() throws IOException {
+		if (!Workspace.isValid()) {
+			throw new IOException("No workspace is loaded, so there is no game to ask.");
+		}
+		ctrmap.gamedef.GameProfile p = Workspace.profile();
+		if (!p.supports(ctrmap.gamedef.GameProfile.Feature.AREA_FORK)) {
+			throw new IOException("Forking map geometry is not available for " + p.displayName() + "."
+					+ "\n\nGiving one zone its own copy of its map appends a new MapMatrix and a"
+					+ " copy of every region it names, then repoints the zone in both the ZO"
+					+ " header and the master zone-header table. Those layouts were measured on"
+					+ " Omega Ruby / Alpha Sapphire and have not been checked against "
+					+ p.displayName() + ".");
+		}
+	}
 }

@@ -5,7 +5,6 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
-import ctrmap.gamedef.GameType;
 import java.awt.Color;
 import java.io.File;
 import java.nio.file.Files;
@@ -59,15 +58,21 @@ public class PokeData {
 			return;
 		}
 		loaded = true;
+		GameProfile prof = profile();
+		if (prof == null) {
+			//no game to ask: leave every cache null, which is the state all the
+			//accessors below already treat as "show ids, not names"
+			return;
+		}
 		try {
-			GARC p = optional(profile().archivePath(ArchiveType.PERSONAL));
+			GARC p = optional(prof.archivePath(ArchiveType.PERSONAL));
 			if (p != null) {
 				personal = new byte[p.length][];
 				for (int i = 0; i < p.length; i++) {
 					personal[i] = p.getDecompressedEntry(i);
 				}
 			}
-			GARC mv = optional(profile().archivePath(ArchiveType.MOVE_DATA));
+			GARC mv = optional(prof.archivePath(ArchiveType.MOVE_DATA));
 			if (mv != null) {
 				moveMini = mv.getDecompressedEntry(0);
 				//header = 4 + (count+1) u32 offsets; count = (firstOffset-4)/4 - 1
@@ -77,19 +82,34 @@ public class PokeData {
 		} catch (Exception ex) {
 			System.err.println("PokeData: reference load failed: " + ex);
 		}
-		speciesNames = text(profile().textIndex(GameProfile.TextIndex.SPECIES_NAMES));
-		abilityNames = text(profile().textIndex(GameProfile.TextIndex.ABILITY_NAMES));
-		moveNames = text(profile().textIndex(GameProfile.TextIndex.MOVE_NAMES));
-		itemNames = text(profile().textIndex(GameProfile.TextIndex.ITEM_NAMES));
+		speciesNames = text(prof, prof.textIndex(GameProfile.TextIndex.SPECIES_NAMES));
+		abilityNames = text(prof, prof.textIndex(GameProfile.TextIndex.ABILITY_NAMES));
+		moveNames = text(prof, prof.textIndex(GameProfile.TextIndex.MOVE_NAMES));
+		itemNames = text(prof, prof.textIndex(GameProfile.TextIndex.ITEM_NAMES));
 	}
 
-	/** The active game's profile, or ORAS when no workspace is loaded (the
-	 *  reference-data paths are then probed against whatever dir is set). */
+	/**
+	 * The active game's profile, or - with no workspace validated yet - the
+	 * profile of whatever game the configured RomFS folder actually IS, or null
+	 * when there is nothing to ask.
+	 *
+	 * <p>This used to answer {@code GameProfile.of(GameType.ORAS)} whenever no
+	 * session was open, so an X/Y user with a game folder set and no workspace
+	 * loaded had ORAS's PERSONAL, MOVE_DATA and GameText paths probed inside it:
+	 * either nothing loaded, or - where the two games' paths collide - the wrong
+	 * archive was read as species and move names. Detection asks the folder
+	 * instead of assuming, and null means the previews stay on id-only labels,
+	 * which every accessor here already handles.
+	 */
 	private static GameProfile profile() {
 		try {
-			return Workspace.game() != null ? GameProfile.current() : GameProfile.of(GameType.ORAS);
+			if (Workspace.isValid()) {
+				return Workspace.profile();
+			}
+			return Workspace.GAMEDIR_PATH == null ? null
+					: GameProfile.detect(new File(Workspace.GAMEDIR_PATH));
 		} catch (RuntimeException ex) {
-			return GameProfile.of(GameType.ORAS);
+			return null;
 		}
 	}
 
@@ -108,13 +128,13 @@ public class PokeData {
 	private static GARC gameText;
 
 	/** Names read straight from the game dir's GameText (read-only reference). */
-	private static String[] text(int entry) {
+	private static String[] text(GameProfile prof, int entry) {
 		try {
 			if (entry < 0) {
 				return new String[0];
 			}
 			if (gameText == null) {
-				gameText = optional(profile().archivePath(ArchiveType.GAMETEXT));
+				gameText = optional(prof.archivePath(ArchiveType.GAMETEXT));
 			}
 			if (gameText == null) {
 				return new String[0];

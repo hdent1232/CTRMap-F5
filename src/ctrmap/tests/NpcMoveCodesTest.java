@@ -54,10 +54,10 @@ public class NpcMoveCodesTest {
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
-		tableIsABijection(true, "XY");
-		tableIsABijection(false, "ORAS");
-		rowsAndCodesLineUp(true, "XY");
-		rowsAndCodesLineUp(false, "ORAS");
+		tableIsABijection(GameType.XY, "XY");
+		tableIsABijection(GameType.ORAS, "ORAS");
+		rowsAndCodesLineUp(GameType.XY, "XY");
+		rowsAndCodesLineUp(GameType.ORAS, "ORAS");
 		theFormAsksTheTable();
 
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
@@ -77,12 +77,12 @@ public class NpcMoveCodesTest {
 	 * Row to code to row, and code to row to code, for everything the table
 	 * claims to know. This is the property the two switch statements broke.
 	 */
-	static void tableIsABijection(boolean xy, String game) {
-		int[] raws = NpcMoveCodes.movePerm2Raws(xy);
+	static void tableIsABijection(GameType g, String game) {
+		int[] raws = NpcMoveCodes.movePerm2Raws(g);
 		int bad = 0;
 		for (int row = 0; row < raws.length; row++) {
-			int code = NpcMoveCodes.movePerm2Raw(row, xy);
-			int back = NpcMoveCodes.movePerm2Index(code, xy);
+			int code = NpcMoveCodes.movePerm2Raw(row, g);
+			int back = NpcMoveCodes.movePerm2Index(code, g);
 			if (back != row) {
 				System.out.println("    " + game + " row " + row + " writes code " + code
 						+ ", which shows as row " + back);
@@ -94,7 +94,7 @@ public class NpcMoveCodesTest {
 		bad = 0;
 		int known = 0;
 		for (int code = 0; code <= PROBE_CEILING; code++) {
-			int row = NpcMoveCodes.movePerm2Index(code, xy);
+			int row = NpcMoveCodes.movePerm2Index(code, g);
 			if (row < 0) {
 				continue;
 			}
@@ -105,7 +105,7 @@ public class NpcMoveCodesTest {
 				bad++;
 				continue;
 			}
-			int back = NpcMoveCodes.movePerm2Raw(row, xy);
+			int back = NpcMoveCodes.movePerm2Raw(row, g);
 			if (back != code) {
 				System.out.println("    " + game + " code " + code + " shows as row " + row
 						+ ", which writes back code " + back);
@@ -114,25 +114,25 @@ public class NpcMoveCodesTest {
 		}
 		check(bad == 0, game + ": all " + known + " named codes survive a trip through the dropdown");
 		check(known == raws.length, game + ": exactly one code per row (" + known + " named, " + raws.length + " rows)");
-		check(NpcMoveCodes.movePerm2Index(PROBE_CEILING + 1, xy) == -1,
+		check(NpcMoveCodes.movePerm2Index(PROBE_CEILING + 1, g) == -1,
 				game + ": a code with no name says so rather than picking a neighbour");
-		check(NpcMoveCodes.movePerm2Raw(-1, xy) == -1 && NpcMoveCodes.movePerm2Raw(raws.length, xy) == -1,
+		check(NpcMoveCodes.movePerm2Raw(-1, g) == -1 && NpcMoveCodes.movePerm2Raw(raws.length, g) == -1,
 				game + ": no selection, and a row past the end, write no code");
 	}
 
 	/** A dropdown with more names than codes (or fewer) would mislabel rows. */
-	static void rowsAndCodesLineUp(boolean xy, String game) {
-		String[] labels = NpcMoveCodes.movePerm2Labels(xy);
-		int[] raws = NpcMoveCodes.movePerm2Raws(xy);
+	static void rowsAndCodesLineUp(GameType g, String game) {
+		String[] labels = NpcMoveCodes.movePerm2Labels(g);
+		int[] raws = NpcMoveCodes.movePerm2Raws(g);
 		check(labels.length == raws.length, game + ": " + labels.length + " AI-motion names for "
 				+ raws.length + " codes - one name per code");
 		check(labels.length >= 14, game + ": the AI-motion list is populated (" + labels.length + " rows)");
-		check(NpcMoveCodes.movePerm1Labels(xy).length >= 62,
-				game + ": the movement list is populated (" + NpcMoveCodes.movePerm1Labels(xy).length + " rows)");
+		check(NpcMoveCodes.movePerm1Labels(g).length >= 62,
+				game + ": the movement list is populated (" + NpcMoveCodes.movePerm1Labels(g).length + " rows)");
 		//movePerm1 is dense - the form selects row N for code N with no
 		//translation at all, so a gap in this list would silently relabel every
 		//code above it.
-		for (String l : NpcMoveCodes.movePerm1Labels(xy)) {
+		for (String l : NpcMoveCodes.movePerm1Labels(g)) {
 			if (l == null || l.isEmpty()) {
 				check(false, game + ": every movement row has a name");
 				return;
@@ -147,14 +147,13 @@ public class NpcMoveCodesTest {
 	static void theFormAsksTheTable() {
 		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
 			Sessions.bare(new File("no-workspace"), new File("no-game"), g);
-			boolean xy = g == GameType.XY;
 			NPCEditForm form = new NPCEditForm();
 			int bad = 0;
 			for (int code = 0; code <= PROBE_CEILING; code++) {
-				bad += form.getMot2Index(code) == NpcMoveCodes.movePerm2Index(code, xy) ? 0 : 1;
+				bad += form.getMot2Index(code) == NpcMoveCodes.movePerm2Index(code, g) ? 0 : 1;
 			}
-			for (int row = -1; row <= NpcMoveCodes.movePerm2Raws(xy).length; row++) {
-				bad += form.getMot2Raw(row) == NpcMoveCodes.movePerm2Raw(row, xy) ? 0 : 1;
+			for (int row = -1; row <= NpcMoveCodes.movePerm2Raws(g).length; row++) {
+				bad += form.getMot2Raw(row) == NpcMoveCodes.movePerm2Raw(row, g) ? 0 : 1;
 			}
 			check(bad == 0, g + ": the form's dropdown translation is the table's, not a copy of it");
 		}
@@ -205,12 +204,12 @@ public class NpcMoveCodesTest {
 		}
 		check(zones >= 500 && npcs >= 2000, "read " + npcs + " NPCs from " + zones + " retail zones");
 
-		int rows = NpcMoveCodes.movePerm2Raws(false).length;
+		int rows = NpcMoveCodes.movePerm2Raws(GameType.ORAS).length;
 		StringBuilder lost = new StringBuilder();
 		StringBuilder nameless = new StringBuilder();
 		for (java.util.Map.Entry<Integer, Integer> en : move2.entrySet()) {
 			int code = en.getKey();
-			int row = NpcMoveCodes.movePerm2Index(code, false);
+			int row = NpcMoveCodes.movePerm2Index(code, GameType.ORAS);
 			if (row < 0) {
 				//A code with no row cannot be shown, cannot be chosen, and reads
 				//as an empty dropdown on an NPC that plainly does something. All
@@ -220,7 +219,7 @@ public class NpcMoveCodesTest {
 						.append(en.getValue()).append(" NPC(s) and has no row to show it in");
 				continue;
 			}
-			int back = row < rows ? NpcMoveCodes.movePerm2Raw(row, false) : -1;
+			int back = row < rows ? NpcMoveCodes.movePerm2Raw(row, GameType.ORAS) : -1;
 			if (back != code) {
 				lost.append("\n    code ").append(code).append(" on ").append(en.getValue())
 						.append(" NPC(s) shows as row ").append(row).append(" and writes back ").append(back);
@@ -230,7 +229,7 @@ public class NpcMoveCodesTest {
 				+ move2.keySet() + ") is written back unchanged" + lost);
 		check(nameless.length() == 0, "every AI-motion code the retail game uses has a row to show it in" + nameless);
 
-		int names = NpcMoveCodes.movePerm1Labels(false).length;
+		int names = NpcMoveCodes.movePerm1Labels(GameType.ORAS).length;
 		StringBuilder unnamed = new StringBuilder();
 		for (java.util.Map.Entry<Integer, Integer> en : move1.entrySet()) {
 			if (en.getKey() < 0 || en.getKey() >= names) {

@@ -43,22 +43,38 @@ public class ZoneCloner {
 		if (src == null || dst == null || master == null) {
 			throw new IOException("Could not extract the required ZoneData files from the workspace.");
 		}
-		cloneIntoFiles(src, dst, master, srcIndex, dstIndex, Workspace.isOA());
+		//not "is this ORAS" but "does this game's zone header carry the zone
+		//index in its unknownFlags bits" - a measured per-game fact, and false
+		//for a game nobody has measured, which copies the word verbatim
+		cloneIntoFiles(src, dst, master, srcIndex, dstIndex,
+				Workspace.profile().zoneNumberInUnknownFlags());
 		Workspace.addPersist(dst);
 		Workspace.addPersist(master);
 	}
 
 	/**
-	 * GARC index of the master zone-header table - same branching as
-	 * ZoneLoadingPanel.loadEverything()/store(): the last entry on XY, the
+	 * GARC index of the master zone-header table: the last entry on XY, the
 	 * second-to-last on ORAS (whose last entry is the "EN" encounter pack).
+	 *
+	 * <p>The count comes from the open game's profile through
+	 * {@link ZoneTables}, not from {@code isXY() ? 1 : 2}. That ternary had two
+	 * answers for four games and gave Sun/Moon ORAS's, which would have named
+	 * an ordinary zone as the master table.
+	 *
+	 * @throws IllegalStateException when no workspace is open, or the open game
+	 * has no measured value - the same refusal {@link ZoneTables} words, raised
+	 * unchecked because this method's callers cannot report an IOException
 	 */
 	public static int getMasterIndex() {
 		ctrmap.formats.garc.GARC zoArc = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		if (zoArc == null) {
 			throw new IllegalStateException("No workspace is loaded (ZoneData archive unavailable).");
 		}
-		return zoArc.length - (Workspace.isXY() ? 1 : 2);
+		try {
+			return ZoneTables.masterIndex(zoArc);
+		} catch (IOException ex) {
+			throw new IllegalStateException(ex.getMessage(), ex);
+		}
 	}
 
 	/**

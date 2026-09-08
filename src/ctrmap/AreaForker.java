@@ -139,7 +139,7 @@ public class AreaForker {
 		if (zo == null) {
 			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
 		}
-		int zoneCount = zo.length - 2;
+		int zoneCount = ZoneTables.zoneCount(zo);
 		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
@@ -221,16 +221,17 @@ public class AreaForker {
 	 * repoints the zone at them. Pack the Workspace afterwards.
 	 */
 	public static ForkResult forkArea(int zoneIndex) throws IOException {
-		if (!Workspace.isOA()) {
-			throw new IOException("Area fork is ORAS-only in v1.");
-		}
+		//asks what this game CAN DO, not which game it is: a gate reading
+		//"not ORAS" refuses XY and Sun/Moon for the same reason and tells the
+		//user neither of them
+		requireForkSupport();
 		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		GARC ad = Workspace.getArchive(ArchiveType.AREA_DATA);
 		GARC np = Workspace.getArchive(ArchiveType.NPC_REGISTRIES);
 		if (zo == null || ad == null || np == null) {
 			throw new IOException("No workspace is loaded (ZoneData/AreaData/NPCRegistries unavailable).");
 		}
-		int zoneCount = zo.length - 2;
+		int zoneCount = ZoneTables.zoneCount(zo);
 		if (zoneIndex < 0 || zoneIndex >= zoneCount) {
 			throw new IOException("Zone " + zoneIndex + " out of range (0.." + (zoneCount - 1) + ").");
 		}
@@ -318,7 +319,7 @@ public class AreaForker {
 
 	/** Repoints a zone's areadataID in the master zone-header table file. */
 	public static void repointMasterArea(GARC zo, int zoneIndex, int newArea) throws IOException {
-		int masterIndex = zo.length - 2;
+		int masterIndex = ZoneTables.masterIndex(zo);
 		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
@@ -361,5 +362,28 @@ public class AreaForker {
 		return m;
 	}
 
-
+	/**
+	 * Refuses an area fork, in the loaded game's own name, when that game has
+	 * no verified fork support.
+	 *
+	 * <p>The old sentence was "Area fork is ORAS-only in v1." - true, and it
+	 * told a user who had opened X/Y nothing about what they had opened or why
+	 * it was refused, and it would have said the same to Sun/Moon while the
+	 * gate it guarded ({@code !Workspace.isOA()}) lumped every non-ORAS game
+	 * together without asking any of them anything.
+	 */
+	static void requireForkSupport() throws IOException {
+		if (!Workspace.isValid()) {
+			throw new IOException("No workspace is loaded, so there is no game to ask.");
+		}
+		ctrmap.gamedef.GameProfile p = Workspace.profile();
+		if (!p.supports(ctrmap.gamedef.GameProfile.Feature.AREA_FORK)) {
+			throw new IOException("Forking an area is not available for " + p.displayName() + "."
+					+ "\n\nGiving one zone its own private copy of a shared area appends to four"
+					+ " archives and rewrites the engine's global per-area table. Every offset"
+					+ " it uses was measured on Omega Ruby / Alpha Sapphire and none of them has"
+					+ " been checked against " + p.displayName() + ", so CTRMap will not write"
+					+ " them there.");
+		}
+	}
 }

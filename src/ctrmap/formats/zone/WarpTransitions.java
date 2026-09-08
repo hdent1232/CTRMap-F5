@@ -1,5 +1,7 @@
 package ctrmap.formats.zone;
 
+import ctrmap.gamedef.GameType;
+
 /**
  * A warp's transition code ({@link ZoneEntities.Warp#transitionType}) and the
  * name the editor shows for it - one table, read in both directions.
@@ -34,6 +36,20 @@ package ctrmap.formats.zone;
  *
  * <p>The names are the ones the form always showed; only the code a name
  * writes back has changed, and only where the two old directions disagreed.
+ *
+ * <h2>Why every method takes a GameType</h2>
+ * They used to take {@code boolean xy}, and false meant "not XY" - which the
+ * callers filled in with {@code Workspace.isXY()}. Sun/Moon and Ultra Sun/Ultra
+ * Moon answer false to that, so they were served ORAS's extension rows: names
+ * for camera moves nobody has verified exist in Gen 7, writing ORAS's codes
+ * into a Gen 7 warp record. Nobody chose that; it fell out of a boolean with
+ * only two answers being asked a question with four.
+ *
+ * <p>A GameType has as many answers as there are games, and one more: null,
+ * for no workspace open. A game this class has no rows for - which today is
+ * every game but XY and ORAS - gets {@link #BASE_LABELS the shared six} and
+ * nothing else. Six real rows is a short dropdown; six rows plus eleven from
+ * another game is a wrong one, and the user cannot tell them apart by looking.
  */
 public final class WarpTransitions {
 
@@ -88,19 +104,28 @@ public final class WarpTransitions {
 		"Camera zoom out"
 	};
 
-	/** The dropdown's rows, in order: the shared six, then the game's own. */
-	public static String[] labels(boolean xy) {
-		return concat(BASE_LABELS, xy ? XY_LABELS : ORAS_LABELS);
+	/** No rows: the answer for a game whose extensions nobody has measured. */
+	private static final int[] NO_RAWS = {};
+	private static final String[] NO_LABELS = {};
+
+	/**
+	 * The dropdown's rows, in order: the shared six, then the game's own.
+	 *
+	 * @param game the loaded game, or null for none. A game with no measured
+	 * extension rows gets the shared six alone - never another game's.
+	 */
+	public static String[] labels(GameType game) {
+		return concat(BASE_LABELS, extLabels(game));
 	}
 
 	/** The code each row of {@link #labels} writes, in the same order. */
-	public static int[] raws(boolean xy) {
-		return concat(BASE_RAWS, xy ? XY_RAWS : ORAS_RAWS);
+	public static int[] raws(GameType game) {
+		return concat(BASE_RAWS, extRaws(game));
 	}
 
 	/** The row that shows {@code raw}, or -1 when the table has no name for it. */
-	public static int index(int raw, boolean xy) {
-		int[] raws = raws(xy);
+	public static int index(int raw, GameType game) {
+		int[] raws = raws(game);
 		for (int i = 0; i < raws.length; i++) {
 			if (raws[i] == raw) {
 				return i;
@@ -110,9 +135,44 @@ public final class WarpTransitions {
 	}
 
 	/** The code row {@code index} writes, or -1 for no selection or a row past the end. */
-	public static int raw(int index, boolean xy) {
-		int[] raws = raws(xy);
+	public static int raw(int index, GameType game) {
+		int[] raws = raws(game);
 		return index >= 0 && index < raws.length ? raws[index] : -1;
+	}
+
+	/**
+	 * The rows this game adds to the shared six, or none.
+	 *
+	 * <p>Spelled as an explicit switch with a default that adds NOTHING, rather
+	 * than a ternary: the point of the change is that an unlisted game must not
+	 * silently inherit whichever branch happened to be the else.
+	 */
+	private static String[] extLabels(GameType game) {
+		if (game == null) {
+			return NO_LABELS;
+		}
+		switch (game) {
+			case XY:
+				return XY_LABELS;
+			case ORAS:
+				return ORAS_LABELS;
+			default:
+				return NO_LABELS; //SM/USUM: no transition table measured yet
+		}
+	}
+
+	private static int[] extRaws(GameType game) {
+		if (game == null) {
+			return NO_RAWS;
+		}
+		switch (game) {
+			case XY:
+				return XY_RAWS;
+			case ORAS:
+				return ORAS_RAWS;
+			default:
+				return NO_RAWS;
+		}
 	}
 
 	private static String[] concat(String[] a, String[] b) {

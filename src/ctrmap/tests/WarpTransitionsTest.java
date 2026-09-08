@@ -42,10 +42,10 @@ public class WarpTransitionsTest {
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
-		tableIsABijection(true, "XY");
-		tableIsABijection(false, "ORAS");
-		rowsAndCodesLineUp(true, "XY");
-		rowsAndCodesLineUp(false, "ORAS");
+		tableIsABijection(GameType.XY, "XY");
+		tableIsABijection(GameType.ORAS, "ORAS");
+		rowsAndCodesLineUp(GameType.XY, "XY");
+		rowsAndCodesLineUp(GameType.ORAS, "ORAS");
 		theFormAsksTheTable();
 		theFormKeepsACodeItCannotName();
 
@@ -63,12 +63,12 @@ public class WarpTransitionsTest {
 	}
 
 	/** Row to code to row, and code to row to code - the property the switches broke. */
-	static void tableIsABijection(boolean xy, String game) {
-		int[] raws = WarpTransitions.raws(xy);
+	static void tableIsABijection(GameType g, String game) {
+		int[] raws = WarpTransitions.raws(g);
 		int bad = 0;
 		for (int row = 0; row < raws.length; row++) {
-			int code = WarpTransitions.raw(row, xy);
-			int back = WarpTransitions.index(code, xy);
+			int code = WarpTransitions.raw(row, g);
+			int back = WarpTransitions.index(code, g);
 			if (back != row) {
 				System.out.println("    " + game + " row " + row + " writes code " + code + ", which shows as row " + back);
 				bad++;
@@ -79,12 +79,12 @@ public class WarpTransitionsTest {
 		bad = 0;
 		int known = 0;
 		for (int code = 0; code <= PROBE_CEILING; code++) {
-			int row = WarpTransitions.index(code, xy);
+			int row = WarpTransitions.index(code, g);
 			if (row < 0) {
 				continue;
 			}
 			known++;
-			int back = WarpTransitions.raw(row, xy);
+			int back = WarpTransitions.raw(row, g);
 			if (back != code) {
 				System.out.println("    " + game + " code " + code + " shows as row " + row + ", which writes back code " + back);
 				bad++;
@@ -92,17 +92,17 @@ public class WarpTransitionsTest {
 		}
 		check(bad == 0, game + ": all " + known + " named codes survive a trip through the dropdown");
 		check(known == raws.length, game + ": exactly one code per row (" + known + " named, " + raws.length + " rows)");
-		check(WarpTransitions.index(PROBE_CEILING + 1, xy) == -1, game + ": a code with no name says so rather than picking a neighbour");
-		check(WarpTransitions.raw(-1, xy) == -1 && WarpTransitions.raw(raws.length, xy) == -1,
+		check(WarpTransitions.index(PROBE_CEILING + 1, g) == -1, game + ": a code with no name says so rather than picking a neighbour");
+		check(WarpTransitions.raw(-1, g) == -1 && WarpTransitions.raw(raws.length, g) == -1,
 				game + ": no selection, and a row past the end, write no code");
 		//the defect that was measured on the old XY switch: 55 must be writable
-		check(WarpTransitions.index(55, xy) >= 0 && WarpTransitions.raw(WarpTransitions.index(55, xy), xy) == 55,
+		check(WarpTransitions.index(55, g) >= 0 && WarpTransitions.raw(WarpTransitions.index(55, g), g) == 55,
 				game + ": code 55 has a row, and that row writes 55 back");
 	}
 
-	static void rowsAndCodesLineUp(boolean xy, String game) {
-		String[] labels = WarpTransitions.labels(xy);
-		int[] raws = WarpTransitions.raws(xy);
+	static void rowsAndCodesLineUp(GameType g, String game) {
+		String[] labels = WarpTransitions.labels(g);
+		int[] raws = WarpTransitions.raws(g);
 		check(labels.length == raws.length, game + ": " + labels.length + " names for " + raws.length + " codes - one name per code");
 		check(labels.length >= 17, game + ": the list is populated (" + labels.length + " rows)");
 		for (String l : labels) {
@@ -119,18 +119,17 @@ public class WarpTransitionsTest {
 	static void theFormAsksTheTable() throws Exception {
 		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
 			game(g);
-			boolean xy = g == GameType.XY;
 			WarpEditForm form = new WarpEditForm();
 			form.fillTransitionDropdown();
 			int bad = 0;
 			for (int code = 0; code <= PROBE_CEILING; code++) {
-				bad += form.getTransitionIndex(code) == WarpTransitions.index(code, xy) ? 0 : 1;
+				bad += form.getTransitionIndex(code) == WarpTransitions.index(code, g) ? 0 : 1;
 			}
-			for (int row = -1; row <= WarpTransitions.raws(xy).length; row++) {
-				bad += form.getTransitionRaw(row) == WarpTransitions.raw(row, xy) ? 0 : 1;
+			for (int row = -1; row <= WarpTransitions.raws(g).length; row++) {
+				bad += form.getTransitionRaw(row) == WarpTransitions.raw(row, g) ? 0 : 1;
 			}
 			check(bad == 0, g + ": the form's dropdown translation is the table's, not a copy of it");
-			check(form.transitionModel.getSize() == WarpTransitions.labels(xy).length,
+			check(form.transitionModel.getSize() == WarpTransitions.labels(g).length,
 					g + ": the dropdown has one row per table row (" + form.transitionModel.getSize() + ")");
 		}
 	}
@@ -152,11 +151,11 @@ public class WarpTransitionsTest {
 		form.fillTransitionDropdown();
 		check(form.transitionToWrite(-1, 99) == 99, "XY: no selection keeps the record's code 99, not -1: " + form.transitionToWrite(-1, 99));
 		check(form.transitionToWrite(-1, 0) == 0, "XY: no selection keeps code 0 too");
-		int row55 = WarpTransitions.index(55, true);
+		int row55 = WarpTransitions.index(55, GameType.XY);
 		check(form.transitionToWrite(row55, 99) == 55, "XY: a selected row writes its own code: " + form.transitionToWrite(row55, 99));
 		game(GameType.ORAS);
 		check(form.transitionToWrite(-1, 26) == 26, "ORAS: no selection keeps the record's code 26");
-		check(form.transitionToWrite(WarpTransitions.index(26, false), 0) == 26, "ORAS: the row for 26 writes 26");
+		check(form.transitionToWrite(WarpTransitions.index(26, GameType.ORAS), 0) == 26, "ORAS: the row for 26 writes 26");
 	}
 
 	/**
@@ -202,8 +201,8 @@ public class WarpTransitionsTest {
 		int bad = 0;
 		for (java.util.Map.Entry<Integer, Integer> en : codes.entrySet()) {
 			int code = en.getKey();
-			int row = WarpTransitions.index(code, false);
-			int back = WarpTransitions.raw(row, false);
+			int row = WarpTransitions.index(code, GameType.ORAS);
+			int back = WarpTransitions.raw(row, GameType.ORAS);
 			if (row < 0 || back != code) {
 				System.out.println("    code " + code + " on " + en.getValue() + " warp(s): row " + row + ", writes back " + back);
 				bad++;

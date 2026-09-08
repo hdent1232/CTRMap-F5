@@ -208,13 +208,23 @@ public class TextEditor extends javax.swing.JPanel {
 		return true;
 	}
 
+	/**
+	 * Whether the entry just saved is the location-name table, so the cached
+	 * copy the whole editor reads names from is reloaded.
+	 *
+	 * <p>This used to carry its own copy of three GameText indices behind an
+	 * {@code isXY() / isOADemo()} ladder - the numbers 72, 91 and 90, in a class
+	 * that has no business knowing any of them. Two costs, both real: an ORAS
+	 * demo whose entry 90 was edited fell through to the retail branch and
+	 * reloaded nothing, and Sun/Moon answered false to both gates and so
+	 * declared ORAS's entry 90 to be its location names. It asks
+	 * {@link LocationNames#gametextIndex} now, which resolves game AND edition
+	 * from the profile - the same number the reload it triggers will read from.
+	 *
+	 * <p>A game with no measured location-name entry answers -1, which no saved
+	 * entry index can equal, so nothing is reloaded and nothing is claimed.
+	 */
 	private boolean isLocationNamesFile(int idx) {
-		if (Workspace.isXY()) {
-			return idx == 72;
-		} else if (Workspace.isOADemo()) {
-			return idx == 91;
-		} else {
-			return idx == 90;
-		}
+		return idx >= 0 && idx == LocationNames.gametextIndex();
 	}
 }

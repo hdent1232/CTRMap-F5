@@ -3,7 +3,9 @@ package ctrmap.tests;
 import ctrmap.CtrmapMainframe;
 import ctrmap.GeometryForker;
 import ctrmap.Ui;
+import ctrmap.Workspace;
 import ctrmap.ZoneManager;
+import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.List;
@@ -34,6 +36,12 @@ import java.util.List;
  * failure is said through {@link Ui}, so both are facts a headless suite can
  * check. Nothing about the dialogs themselves changed.
  *
+ * <p>It also covers the sentence a menu item gives a user whose game the editor
+ * cannot work on - see {@link #aRefusedEditorNamesTheGameAndWhatIsMissing}. That
+ * is the same kind of claim: the only thing the user is told, said from behind a
+ * modal dialog, and for four games it was one sentence that was true for none of
+ * them.
+ *
  * Usage: java ctrmap.tests.MainframeReportsTest &lt;romfs-root&gt;
  */
 public class MainframeReportsTest {
@@ -49,6 +57,12 @@ public class MainframeReportsTest {
 		//needs no game: the rename result is a plain record, and what the user
 		//is told about it is the thing under test
 		aRenameThatMovedOtherZonesSaysSo();
+
+		//nor do these: a game the editor cannot do the job for is a session, not
+		//a dump. Run before the dump gate so they are measured even on a machine
+		//that has no corpus.
+		aRefusedEditorNamesTheGameAndWhatIsMissing();
+		aGameThatCannotForkIsNotOfferedTheForkPrompt();
 
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
@@ -282,6 +296,143 @@ public class MainframeReportsTest {
 		for (String s : new String[]{said, solo}) {
 			check(s.startsWith("Zone "), "every one names the zone it renamed first: " + firstLine(s));
 			check(s.contains("Deploy to emulator"), "and says what to do next to see it in game");
+		}
+	}
+
+	/**
+	 * The five Game Data / area editors, opened on a game they cannot edit,
+	 * must name THAT GAME and say what has not been measured for it.
+	 *
+	 * <p>WHY. Each one opened with {@code !Workspace.isValid() || !isOA()} and
+	 * said "Load an ORAS workspace first." That sentence is wrong in three ways
+	 * at once for a user who has X/Y open: a workspace IS loaded, so the
+	 * instruction cannot be followed; it says nothing about what the editor
+	 * would have needed; and Sun/Moon - a game whose overworld is not even the
+	 * same format generation - was told exactly the same thing, so the message
+	 * carried no information about the game at all. It was the shape of a
+	 * boolean, not an answer. The gates now ask the profile for the CAPABILITY
+	 * (TRAINER_EDITING, MAISON, CODE_PATCHES, AREA_ENV, ENCOUNTERS), which has a
+	 * third answer - "nobody measured that for this game" - and the refusal is
+	 * built out of it.
+	 *
+	 * <p>Sun/Moon is the game driven here on purpose: it is the one whose
+	 * profile answers false to every feature and null to every path, so a gate
+	 * that still asked "is it ORAS" and a gate that asks the profile agree on
+	 * WHETHER to refuse and disagree only on what they say. That is the whole
+	 * difference this measures.
+	 *
+	 * <p>The dump is not needed: none of these gates reads an archive before
+	 * refusing, and that is itself worth pinning down - a refusal that had to
+	 * open a GARC first would fail on the game it exists to refuse.
+	 */
+	static void aRefusedEditorNamesTheGameAndWhatIsMissing() throws Exception {
+		//with nothing open at all, the instruction "load a workspace" is the
+		//true one - and the profile must not be asked for a game that is null
+		Workspace.reset();
+		for (String[] c : EDITORS) {
+			List<String> said = Ui.record();
+			try {
+				openEditor(c[0]);
+			} finally {
+				Ui.stopRecording();
+			}
+			check(said.size() == 1 && said.get(0).startsWith(c[1] + ": Load a workspace first"),
+					"with no workspace open, " + c[0] + " says to load one: " + said);
+		}
+
+		//...and with Sun/Moon open, the refusal is about Sun/Moon
+		File root = Scratch.dir("ctrmap_unmeasured_game");
+		Sessions.bare(new File(root, "ws"), new File(root, "game"), GameType.SM);
+		try {
+			for (String[] c : EDITORS) {
+				List<String> said = Ui.record();
+				try {
+					openEditor(c[0]);
+				} finally {
+					Ui.stopRecording();
+				}
+				check(said.size() == 1, c[0] + " on Sun/Moon says exactly one thing: " + said);
+				String msg = said.isEmpty() ? "" : said.get(0);
+				check(msg.startsWith(c[1] + ": "),
+						"under the title of the editor that was opened: " + firstLine(msg));
+				check(msg.contains("Sun / Moon"),
+						"and names the game the user actually has open: " + firstLine(msg));
+				check(msg.contains(c[2]),
+						"and says which capability is missing (\"" + c[2] + "\"): " + firstLine(msg));
+				check(!msg.contains("Load an ORAS workspace first"),
+						"and does NOT tell a user with a workspace open to load one: " + firstLine(msg));
+			}
+		} finally {
+			Workspace.reset();
+		}
+	}
+
+	/**
+	 * A game that cannot fork an area is not OFFERED the fork.
+	 *
+	 * <p>{@link ctrmap.humaninterface.AreaForkPrompt#ensurePrivate} gated itself
+	 * on {@code Workspace.isOA()}, which is the same defect wearing a different
+	 * hat: the prompt is an OFFER, and offering "Give this zone its own area" to
+	 * a game whose {@link ctrmap.AreaForker} refuses outright produces a button
+	 * that can only ever fail. It now asks whether this game supports
+	 * AREA_FORK. On Sun/Moon it must hand back the shared area untouched and say
+	 * nothing at all - no question, and above all no fork.
+	 *
+	 * <p>HONESTLY: on the four profiles that exist today the two forms agree,
+	 * because ORAS is the only game that both IS ORAS and supports AREA_FORK.
+	 * This is a contract pinned before it is load-bearing - it starts telling
+	 * the two apart the day a second game's fork offsets are measured and its
+	 * flag flips, which is exactly when nobody will be looking at this prompt.
+	 */
+	static void aGameThatCannotForkIsNotOfferedTheForkPrompt() throws Exception {
+		File root = Scratch.dir("ctrmap_unmeasured_fork");
+		Sessions.bare(new File(root, "ws"), new File(root, "game"), GameType.SM);
+		try {
+			List<String> said = Ui.record();
+			ctrmap.AreaForker.ForkResult r;
+			try {
+				r = ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(null, 10, 7, "a test edit");
+			} finally {
+				Ui.stopRecording();
+			}
+			check(said.isEmpty(),
+					"a game that cannot fork an area is asked nothing about forking one: " + said);
+			check(r != null && !r.forked && r.newArea == 7 && r.oldArea == 7 && r.zoneIndex == 10,
+					"and the caller is handed the area it already had, unforked: "
+					+ (r == null ? "null" : r.newArea + ", forked=" + r.forked));
+		} finally {
+			Workspace.reset();
+		}
+	}
+
+	/**
+	 * The editors driven above, as {which, dialog title, a phrase from the
+	 * missing capability}. The third column is what makes the refusal worth
+	 * reading: without it the message would name the game and still not say
+	 * what the editor needed.
+	 */
+	private static final String[][] EDITORS = {
+		{"trainer", "Trainer editor", "trainer archives are located"},
+		{"maison", "Battle facility opponents", "opponent pools"},
+		{"shop", "Shop editor", "live in the executable"},
+		{"lighting", "Area fog & lighting", "AreaData subfile 4"},
+		{"encounters", "Wild encounters", "wild-encounter pack"},
+	};
+
+	/** Opens one of {@link #EDITORS} with no parent window, as the menu does. */
+	static void openEditor(String which) {
+		if ("trainer".equals(which)) {
+			ctrmap.humaninterface.TrainerEditDialog.showForSelection(null);
+		} else if ("maison".equals(which)) {
+			ctrmap.humaninterface.MaisonEditDialog.show(null);
+		} else if ("shop".equals(which)) {
+			ctrmap.humaninterface.ShopEditDialog.show(null);
+		} else if ("lighting".equals(which)) {
+			ctrmap.humaninterface.AreaLightingDialog.show(null);
+		} else if ("encounters".equals(which)) {
+			ctrmap.humaninterface.EncounterEditDialog.show(null);
+		} else {
+			throw new IllegalArgumentException("no editor named " + which);
 		}
 	}
 

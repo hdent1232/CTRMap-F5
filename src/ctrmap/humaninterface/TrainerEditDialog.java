@@ -34,8 +34,20 @@ public class TrainerEditDialog {
 
 	/** Opens the editor, defaulting to the selected NPC's trainer when it is one. */
 	public static void showForSelection(Frame parent) {
-		if (!Workspace.isValid() || !Workspace.isOA()) {
-			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Trainer editor");
+		//TRAINER_EDITING, not "is it ORAS". "Load an ORAS workspace first" was
+		//an instruction a user with X/Y open could not act on and was not even
+		//true - a workspace WAS loaded - and Sun/Moon got the same sentence.
+		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
+		if (prof == null) {
+			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).", "Trainer editor");
+			return;
+		}
+		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.TRAINER_EDITING)) {
+			ctrmap.Ui.error(parent, "Editing trainers is not available for " + prof.displayName() + "."
+					+ "\n\nThe trainer archives are located, and their entry and party-member"
+					+ " record layouts measured, for Omega Ruby / Alpha Sapphire only."
+					+ "\n\nCTRMap refuses here rather than writing bytes into a guess.",
+					"Trainer editor");
 			return;
 		}
 		if (Workspace.getArchive(ArchiveType.TRAINER_DATA) == null

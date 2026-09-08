@@ -3,7 +3,6 @@ package ctrmap.formats.text;
 import ctrmap.Workspace;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
-import ctrmap.gamedef.OrasProfile;
 import java.io.File;
 
 /**
@@ -24,12 +23,19 @@ public class LocationNames {
 	 */
 	private static TextFile textfile;
 
-	/** The GAMETEXT entry holding location names for the loaded game. */
+	/**
+	 * The GAMETEXT entry holding location names for the loaded game AND the
+	 * loaded EDITION of it.
+	 *
+	 * <p>This used to read {@code if (isOA() && isOADemo())} and answer the
+	 * ORAS demo's entry itself, which put one game's table numbers in a class
+	 * every game shares and would have needed a second special case beside it
+	 * for the next game that ships a demo. The profile answers both halves now:
+	 * which game, and which edition of it.
+	 */
 	public static int gametextIndex() {
-		if (Workspace.isOA() && Workspace.isOADemo()) {
-			return OrasProfile.DEMO_LOCATION_NAMES;
-		}
-		return Workspace.profile().textIndex(GameProfile.TextIndex.LOCATION_NAMES);
+		return Workspace.profile().textIndex(GameProfile.TextIndex.LOCATION_NAMES,
+				Workspace.variant());
 	}
 
 	/** (Re)loads the names from the open workspace's GAMETEXT. */
