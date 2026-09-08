@@ -84,7 +84,7 @@ public class ItemEditDialog {
 		}
 		final ItemEditSession s;
 		try {
-			s = ItemEditSession.openWorkspace();
+			s = ItemEditSession.open(Workspace.session());
 		} catch (Exception ex) {
 			Ui.error(parent, "Could not read the item table:\n" + ex.getMessage(), "Item editor");
 			return;

@@ -72,4 +72,34 @@ public interface GameFiles {
 
 	/** The directory holding the untouched copy of the game's archives, for a class that diffs against what shipped; null when no snapshot was taken. */
 	File pristine();
+
+	/**
+	 * A directory, named by the class asking, for files that must outlive
+	 * every cleaning of the workspace; null when this game has no workspace
+	 * to keep them in. Not created here: the class creates it the first time
+	 * it has something to keep, so asking costs nothing and leaves nothing.
+	 *
+	 * <p>It is not {@link #scratch()}, and must not be: scratch is emptied by
+	 * every clean, and so is every extraction directory, and what goes here
+	 * is exactly what a clean must leave alone - the item editor's copy of
+	 * its archive as it was before the first in-place write, which "revert to
+	 * retail" reads and the deployer diffs against. A copy kept in a
+	 * directory the next clean empties is no copy.
+	 *
+	 * <p>It is not {@link #pristine()} either. That snapshot has a lifecycle
+	 * of its own: taken once when the workspace opens, stamped, never
+	 * completed afterwards, discarded whole when the workspace is repointed
+	 * at another game. The item baseline is taken at a different moment
+	 * (the first write), under its own rule about never being retaken, and
+	 * every existing workspace already holds it beside the snapshot, not
+	 * inside it; moving it under the snapshot would orphan those copies, and
+	 * an orphaned copy with its "already edited" mark gone is a baseline
+	 * recaptured from an edited game - the contamination the mark exists to
+	 * prevent. One directory per lifecycle, so neither can quietly delete
+	 * the other's evidence.
+	 *
+	 * @param name one path segment; the implementation refuses a name that
+	 * belongs to something cleaning empties
+	 */
+	File durable(String name);
 }

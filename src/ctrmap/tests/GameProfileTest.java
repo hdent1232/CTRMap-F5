@@ -254,11 +254,11 @@ public class GameProfileTest {
 		//and the workspace hands the profile that edition
 		Sessions.bare(Scratch.dir("ctrmap_gameprofile_ws"), demo, GameType.ORAS);
 		check(Workspace.variant() == GameProfile.Variant.DEMO, "an open ORAS demo session reports DEMO");
-		check(ctrmap.formats.text.LocationNames.gametextIndex() == OrasProfile.DEMO_LOCATION_NAMES,
+		check(ctrmap.formats.text.LocationNames.gametextIndex(Workspace.session()) == OrasProfile.DEMO_LOCATION_NAMES,
 				"and the location-name accessor asks for the demo's entry");
 		Sessions.bare(Scratch.dir("ctrmap_gameprofile_ws"), retail, GameType.ORAS);
 		check(Workspace.variant() == GameProfile.Variant.RETAIL, "a retail session reports RETAIL");
-		check(ctrmap.formats.text.LocationNames.gametextIndex()
+		check(ctrmap.formats.text.LocationNames.gametextIndex(Workspace.session())
 				== oras.textIndex(GameProfile.TextIndex.LOCATION_NAMES),
 				"and the accessor asks for the retail entry");
 		Scratch.deleteTree(demo);

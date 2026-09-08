@@ -59,12 +59,14 @@ public class GameFilesSeamTest {
 	 * before this seam existed, 39 across 15 once MapMatrix was handed its game
 	 * and the container base kept only its transitional constructors' one,
 	 * 31 across 13 once BchTexturePack and MaisonPoolGuard were handed theirs
-	 * ({@link HandedGameTest} is their proof).
+	 * ({@link HandedGameTest} is their proof), 15 across 9 once ItemTable,
+	 * ItemText, PokeData and LocationNames were handed theirs (the same suite
+	 * is their proof; {@link GameFiles#durable} was added for the item baseline).
 	 * LOWER BOTH as classes are migrated; never raise either without saying in
 	 * the commit message which class went back to the global and why it had to.
 	 */
-	private static final int FORMATS_EDGES = 31;
-	private static final int FORMATS_CLASSES = 13;
+	private static final int FORMATS_EDGES = 15;
+	private static final int FORMATS_CLASSES = 9;
 
 	private static final String WORKSPACE = "ctrmap/Workspace";
 	private static final String CONTAINER = "ctrmap/formats/containers/AbstractGamefreakContainer";
@@ -205,6 +207,18 @@ public class GameFilesSeamTest {
 		handed.edited(e);
 		check(s.isPersisted(e) && s.persistPaths().size() == 1, "edited() marks the file for the next pack, once");
 		check(handed.variant() == GameProfile.Variant.RETAIL, "variant() probes the game folder: an empty one is retail");
+		check(new File(ws, "original_items").equals(handed.durable("original_items")),
+				"durable() is a directory under the workspace folder, by the name asked for ("
+				+ handed.durable("original_items") + ")");
+		check(!handed.durable("original_items").exists(), "not created by asking");
+		for (String cleaned : new String[]{"temp", "areadata", s.originalSnapshotDir().getName()}) {
+			try {
+				handed.durable(cleaned);
+				check(false, "durable() refuses \"" + cleaned + "\", which cleaning empties or the snapshot owns (it handed it out)");
+			} catch (IllegalArgumentException ex) {
+				check(true, "durable() refuses \"" + cleaned + "\", which cleaning empties or the snapshot owns: " + ex.getMessage());
+			}
+		}
 		check(Workspace.session() == null, "none of which needed a workspace open");
 	}
 

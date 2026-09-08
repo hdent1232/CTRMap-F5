@@ -88,7 +88,7 @@ public class ZoneLoadingStateTest {
 			System.out.println("  skip: no dump at " + dump + " - the state transitions need a zone table");
 		} else {
 			ScratchGame.open(dump);
-			LocationNames.loadFromGarc();
+			LocationNames.loadFromGarc(Workspace.session());
 			ZoneLoadingPanel pnl = new ZoneLoadingPanel();
 			CtrmapMainframe.mZonePnl = pnl;
 			CtrmapMainframe.mNPCEditForm = new NPCEditForm();

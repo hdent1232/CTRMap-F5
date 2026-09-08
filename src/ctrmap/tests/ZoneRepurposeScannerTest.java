@@ -164,7 +164,7 @@ public class ZoneRepurposeScannerTest {
 
 		//the location-name table, read with the other text parser in this tree
 		File gtFile = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT,
-				ctrmap.formats.text.LocationNames.gametextIndex());
+				ctrmap.formats.text.LocationNames.gametextIndex(Workspace.session()));
 		GFMessageFile names = new GFMessageFile(readAll(gtFile));
 
 		List<Integer> expectedIndices = new ArrayList<>();

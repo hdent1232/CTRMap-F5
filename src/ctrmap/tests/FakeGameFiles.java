@@ -181,6 +181,12 @@ final class FakeGameFiles implements GameFiles {
 		return pristine;
 	}
 
+	/** Under this game's root, apart from scratch and the staged entries, so a clean of either would not reach it. */
+	@Override
+	public File durable(String name) {
+		return new File(new File(root, "durable"), name);
+	}
+
 	@Override
 	public String toString() {
 		return "FakeGameFiles[" + profile.displayName() + " under " + root + "]";

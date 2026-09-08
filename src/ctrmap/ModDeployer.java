@@ -171,9 +171,9 @@ public class ModDeployer {
 		//they are deliberately not part of the snapshot's contract (see
 		//MODDABLE_IN_PLACE). No copy means the editor has never written the
 		//archive, so there is nothing of the user's in it and nothing to ship.
-		if (ctrmap.formats.pokedata.ItemTable.changedSinceBaseline()) {
+		if (ctrmap.formats.pokedata.ItemTable.changedSinceBaseline(Workspace.session())) {
 			String rel = Workspace.getArchivePath(ArchiveType.ITEM_DATA, Workspace.game());
-			File live = ctrmap.formats.pokedata.ItemTable.archiveFile();
+			File live = ctrmap.formats.pokedata.ItemTable.archiveFile(Workspace.session());
 			if (rel != null && live != null) {
 				try {
 					copyFile(live, new File(romfsOut.getAbsolutePath() + rel));

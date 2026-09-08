@@ -534,6 +534,33 @@ public final class WorkspaceSession implements GameFiles {
 		return snap.isDirectory() ? snap : null;
 	}
 
+	/**
+	 * A directory under the workspace folder that {@link #cleanAll} and
+	 * {@link #cleanUnchanged} never touch: they walk {@link #WORKSPACE_SUBDIRS}
+	 * and nothing else. A name from that list, or the pristine snapshot's,
+	 * is refused rather than handed out, because a class that keeps its
+	 * pre-edit copy in a directory the next clean empties has no pre-edit
+	 * copy and no way of knowing it.
+	 */
+	@Override
+	public File durable(String name) {
+		if (name == null || name.isEmpty() || name.indexOf('/') >= 0 || name.indexOf('\\') >= 0
+				|| ".".equals(name) || "..".equals(name)) {
+			throw new IllegalArgumentException("a durable directory is named by one path segment, not \"" + name + "\"");
+		}
+		for (String sub : WORKSPACE_SUBDIRS) {
+			if (sub.equals(name)) {
+				throw new IllegalArgumentException("\"" + name + "\" is a directory cleaning the workspace empties;"
+						+ " nothing kept there is durable");
+			}
+		}
+		if (originalSnapshotDir().getName().equals(name)) {
+			throw new IllegalArgumentException("\"" + name + "\" is the pristine snapshot, which is taken and discarded"
+					+ " on its own schedule; a class's own files do not belong inside it");
+		}
+		return new File(workspaceDir, name);
+	}
+
 	/** True when an extracted file is marked as edited - what a pack writes back. */
 	public boolean isPersisted(File f) {
 		return persistPaths.contains(f.getAbsolutePath());

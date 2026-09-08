@@ -1246,7 +1246,7 @@ public class CtrmapMainframe {
 		}
 		try {
 			ZoneManager.RenameResult r = ZoneManager.renameZone(Workspace.session(), idx, name);
-			ctrmap.formats.text.LocationNames.loadFromGarc(); // refresh the dropdown name cache
+			ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session()); // refresh the dropdown name cache
 			//Both halves of this line were improved independently and both are
 			//kept: the text is built by renameZoneReport, which a suite can call
 			//without a window, and it is delivered through Ui, so a suite can

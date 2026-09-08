@@ -90,7 +90,7 @@ public class PropEditFormGuardsTest {
 			return;
 		}
 		ScratchGame.open(dump);
-		ctrmap.formats.text.LocationNames.loadFromGarc();
+		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
 		//a map view with no matrix: that is what sends the save to the region's
 		//own GR rather than through the matrix distributor
 		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();

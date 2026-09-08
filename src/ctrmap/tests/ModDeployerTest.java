@@ -194,15 +194,22 @@ public class ModDeployerTest {
 		//done. Asked with the game folder pointed at an empty directory, so no
 		//archive exists to compare and the deploy costs nothing: the whole point
 		//of this call is the code-patch branch.
+		//The deployer follows the OPEN SESSION, not the path setting: repointing
+		//only the setting left the session on the scratch game, whose edited item
+		//archive then shipped. The empty folder must be the session as well.
 		String heldPath = Workspace.GAMEDIR_PATH;
+		WorkspaceSession heldSession = Workspace.session();
 		try {
-			Workspace.GAMEDIR_PATH = Scratch.dir("ctrmap_nogame").getAbsolutePath();
+			File noGame = Scratch.dir("ctrmap_nogame");
+			Workspace.GAMEDIR_PATH = noGame.getAbsolutePath();
+			Sessions.bare(heldSession.workspaceDir(), noGame, GameType.ORAS);
 			ModDeployer.Result r2 = ModDeployer.deploy(modRoot, new File(ips.getParentFile(), "absent.ips"));
 			check(!r2.codeIpsDeployed, "a code patch that does not exist is passed over quietly");
 			check(r2.deployed.isEmpty() && r2.unchanged == 0 && r2.skipped.isEmpty(),
 					"a game folder with no archives in it deploys nothing and reports nothing skipped");
 		} finally {
 			Workspace.GAMEDIR_PATH = heldPath;
+			Workspace.install(heldSession);
 		}
 	}
 
@@ -226,18 +233,18 @@ public class ModDeployerTest {
 		check(rel != null, "ORAS has an ItemData archive at " + rel);
 		File live = new File(Workspace.GAMEDIR_PATH + rel);
 		live.getParentFile().mkdirs();
-		File baseline = new File(ctrmap.formats.pokedata.ItemTable.baselineDir(), "itemdata.garc");
+		File baseline = new File(ctrmap.formats.pokedata.ItemTable.baselineDir(Workspace.session()), "itemdata.garc");
 		baseline.getParentFile().mkdirs();
 
 		byte[] pristine = new byte[]{'C', 'R', 'A', 'G', 0, 1, 2, 3};
 		Files.write(live.toPath(), pristine);
 		Files.write(baseline.toPath(), pristine);
-		check(!ctrmap.formats.pokedata.ItemTable.changedSinceBaseline(),
+		check(!ctrmap.formats.pokedata.ItemTable.changedSinceBaseline(Workspace.session()),
 				"an item archive matching its pre-edit copy counts as unedited");
 
 		byte[] edited = new byte[]{'C', 'R', 'A', 'G', 0, 1, 2, 9};
 		Files.write(live.toPath(), edited);
-		check(ctrmap.formats.pokedata.ItemTable.changedSinceBaseline(),
+		check(ctrmap.formats.pokedata.ItemTable.changedSinceBaseline(Workspace.session()),
 				"an item archive that differs from its pre-edit copy counts as edited");
 		return rel;
 	}

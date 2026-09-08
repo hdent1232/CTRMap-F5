@@ -1,5 +1,6 @@
 package ctrmap.formats.pokedata;
 
+import ctrmap.formats.GameFiles;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -19,6 +20,11 @@ import java.util.List;
  * rewrite of that whole text file into the workspace, which the next pack
  * ships. Writing a line that did not change would stage a 776-line file for
  * nothing and make every pack after it carry the text archive.
+ *
+ * <p>The session is handed the {@link GameFiles} it edits and keeps it,
+ * because a save writes text into that game's workspace; it does not fetch
+ * the open game from the application, so a suite can hand it a fake and read
+ * back what was staged.
  */
 public final class ItemEditSession {
 
@@ -27,6 +33,7 @@ public final class ItemEditSession {
 		RECORD, NAME, DESCRIPTION
 	}
 
+	private final GameFiles game;
 	public final ItemTable table;
 	/** The name list, kept in step with what has been saved. Read it; the session updates it. */
 	public final List<String> names;
@@ -35,7 +42,12 @@ public final class ItemEditSession {
 	/** The ids that can take a new item; see {@link ItemTable#freeSlots}. */
 	public final List<Integer> free;
 
-	public ItemEditSession(ItemTable table, List<String> names, List<String> descs) {
+	public ItemEditSession(GameFiles game, ItemTable table, List<String> names, List<String> descs) {
+		if (game == null) {
+			throw new IllegalArgumentException("an item edit session was handed no game; a name saved through"
+					+ " it would be staged nowhere and packed by nothing");
+		}
+		this.game = game;
 		this.table = table;
 		this.names = names;
 		this.descs = descs;
@@ -43,17 +55,17 @@ public final class ItemEditSession {
 	}
 
 	/**
-	 * The live workspace's items, or null when this game has no VERIFIED item
+	 * The handed game's items, or null when that game has no VERIFIED item
 	 * table - the caller has to say that to the user; see
-	 * {@link ItemTable#openWorkspace}.
+	 * {@link ItemTable#open(GameFiles)}.
 	 */
-	public static ItemEditSession openWorkspace() throws IOException {
-		ItemTable t = ItemTable.openWorkspace();
+	public static ItemEditSession open(GameFiles game) throws IOException {
+		ItemTable t = ItemTable.open(game);
 		if (t == null) {
 			return null;
 		}
-		return new ItemEditSession(t, ItemText.read(ItemText.Which.NAMES),
-				ItemText.read(ItemText.Which.DESCRIPTIONS));
+		return new ItemEditSession(game, t, ItemText.read(game, ItemText.Which.NAMES),
+				ItemText.read(game, ItemText.Which.DESCRIPTIONS));
 	}
 
 	public int count() {
@@ -79,9 +91,9 @@ public final class ItemEditSession {
 		return free.contains(id);
 	}
 
-	/** The record as it was before the first edit in this workspace, or null when no copy was taken. */
+	/** The record as it was before the first edit in this table's workspace, or null when no copy was taken. */
 	public byte[] baselineRecord(int id) {
-		return ItemTable.baselineRecord(id);
+		return table.baselineRecord(id);
 	}
 
 	/**
@@ -98,12 +110,12 @@ public final class ItemEditSession {
 			changed.add(Changed.RECORD);
 		}
 		if (id < names.size() && !name.equals(names.get(id))) {
-			ItemText.setLine(ItemText.Which.NAMES, id, name);
+			ItemText.setLine(game, ItemText.Which.NAMES, id, name);
 			names.set(id, name);
 			changed.add(Changed.NAME);
 		}
 		if (id < descs.size() && !desc.equals(descs.get(id))) {
-			ItemText.setLine(ItemText.Which.DESCRIPTIONS, id, desc);
+			ItemText.setLine(game, ItemText.Which.DESCRIPTIONS, id, desc);
 			descs.set(id, desc);
 			changed.add(Changed.DESCRIPTION);
 		}

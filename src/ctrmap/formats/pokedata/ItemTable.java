@@ -1,8 +1,9 @@
 package ctrmap.formats.pokedata;
 
-import ctrmap.Workspace;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameProfile;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -39,10 +40,21 @@ import java.util.List;
  * the copy has been deleted after edits were made, it is NOT retaken - a
  * baseline captured from an edited game is worse than an absent one, which is
  * the lesson {@code Workspace.snapshotMissingArchives} was written for.
+ *
+ * <p>WHOSE GAME. Every static entry point is handed the {@link GameFiles} it
+ * works on. This class used to fetch the open game from the application's
+ * global session holder itself - the archive from its game folder, the
+ * baseline from its workspace folder, the feature gate from its profile - so
+ * "revert to retail" and "does deploy need to ship this" could only ever be
+ * asked about the one game the application had open, and no suite could hand
+ * it a table of its own without first installing a workspace in the global.
+ * Handed, it answers for the game it was handed; handed nothing, it refuses in
+ * words, because a null there used to read as "no workspace, so nothing to
+ * ship" and hid the caller that forgot to pass one.
  */
 public final class ItemTable {
 
-	/** Folder inside the workspace holding the pre-edit copy of the item archive. */
+	/** The class's own directory inside the workspace, holding the pre-edit copy; see {@link GameFiles#durable}. */
 	private static final String BASELINE_DIR = "original_items";
 	private static final String BASELINE_NAME = "itemdata.garc";
 	/** Written beside the baseline the first time this class saves, and never removed. */
@@ -61,52 +73,45 @@ public final class ItemTable {
 	// ---- finding it --------------------------------------------------------
 
 	/**
-	 * The item archive in the loaded game directory, or null when this game has
-	 * no verified location for it.
+	 * The handed game's item archive on disk, or null when that game has no
+	 * verified location for it or the file is not there.
 	 *
-	 * <p>The path is the profile's answer, never a literal here: a null from the
-	 * profile means "not present or not yet verified for this game" and is
-	 * treated as absence, not as an invitation to guess.
+	 * <p>The location is the game's answer, never a literal here: a null from
+	 * it means "not present or not yet verified for this game" and is treated
+	 * as absence, not as an invitation to guess.
 	 */
-	public static File archiveFile() {
-		if (Workspace.GAMEDIR_PATH == null || Workspace.game() == null) {
-			return null;
-		}
-		String rel = Workspace.getArchivePath(ArchiveType.ITEM_DATA, Workspace.game());
-		if (rel == null) {
-			return null;
-		}
-		File f = new File(Workspace.GAMEDIR_PATH + rel);
-		return f.isFile() ? f : null;
-	}
-
-	/** Where the pre-edit copy lives for the loaded workspace, or null without one. */
-	public static File baselineDir() {
-		if (Workspace.WORKSPACE_PATH == null) {
-			return null;
-		}
-		return new File(Workspace.WORKSPACE_PATH, BASELINE_DIR);
+	public static File archiveFile(GameFiles game) {
+		File f = handed(game, "archiveFile").archiveFile(ArchiveType.ITEM_DATA);
+		return f != null && f.isFile() ? f : null;
 	}
 
 	/**
-	 * Opens the loaded workspace's item table, or null when there is none this
+	 * Where the pre-edit copy lives for the handed game, or null when that
+	 * game has no workspace to keep one in. A directory cleaning never
+	 * empties, by the contract of {@link GameFiles#durable}: the copy is the
+	 * only record of what the archive held before this editor touched it.
+	 */
+	public static File baselineDir(GameFiles game) {
+		return handed(game, "baselineDir").durable(BASELINE_DIR);
+	}
+
+	/**
+	 * Opens the handed game's item table, or null when there is none this
 	 * editor is allowed to write.
 	 *
-	 * <p>Gated on {@link ctrmap.gamedef.GameProfile.Feature#ITEM_EDITING} and
-	 * not merely on the path existing. XY's item archive is a location CITED
-	 * from pk3DS that nobody has measured against an XY dump here, and the
-	 * profile says so in a comment - a path good enough to look at and not good
-	 * enough to poke 36 bytes into. Null here becomes a sentence in the editor
-	 * rather than a write through a guess.
+	 * <p>Gated on {@link GameProfile.Feature#ITEM_EDITING} and not merely on
+	 * the path existing. XY's item archive is a location CITED from pk3DS that
+	 * nobody has measured against an XY dump here, and the profile says so in
+	 * a comment - a path good enough to look at and not good enough to poke 36
+	 * bytes into. Null here becomes a sentence in the editor rather than a
+	 * write through a guess.
 	 */
-	public static ItemTable openWorkspace() throws IOException {
-		if (Workspace.game() == null
-				|| !Workspace.profile().supports(
-						ctrmap.gamedef.GameProfile.Feature.ITEM_EDITING)) {
+	public static ItemTable open(GameFiles game) throws IOException {
+		if (!handed(game, "open").profile().supports(GameProfile.Feature.ITEM_EDITING)) {
 			return null;
 		}
-		File f = archiveFile();
-		return f == null ? null : open(f, baselineDir());
+		File f = archiveFile(game);
+		return f == null ? null : open(f, baselineDir(game));
 	}
 
 	/**
@@ -115,6 +120,9 @@ public final class ItemTable {
 	 * <p>Compression sniffing is OFF. An item record is 36 arbitrary bytes and
 	 * may legitimately begin with 0x11, which the sniffer reads as an LZ11
 	 * header; the trainer archives are opened the same way for the same reason.
+	 *
+	 * @param baselineDir where the pre-edit copy is kept, or null for a caller
+	 * (a suite, a tool) that wants no copy taken
 	 */
 	public static ItemTable open(File garcFile, File baselineDir) throws IOException {
 		if (garcFile == null || !garcFile.isFile()) {
@@ -123,6 +131,21 @@ public final class ItemTable {
 		ItemTable t = new ItemTable(garcFile, baselineDir);
 		t.reload();
 		return t;
+	}
+
+	/**
+	 * The refusal every static entry point starts with. A null game used to
+	 * mean "no workspace is open" and answered null or false from each of
+	 * them, which is indistinguishable from "this game has no item table" and
+	 * let a caller that forgot to hand one in look like a game that lacked it.
+	 */
+	private static GameFiles handed(GameFiles game, String what) {
+		if (game == null) {
+			throw new IllegalArgumentException("ItemTable." + what + " was handed no game. The item archive, its"
+					+ " pre-edit copy and the feature gate all belong to a game, and there is nothing to"
+					+ " answer for without one.");
+		}
+		return game;
 	}
 
 	private void reload() throws IOException {
@@ -222,6 +245,10 @@ public final class ItemTable {
 	 * reported success and did nothing is the failure this project keeps
 	 * finding, so this one confirms itself rather than trusting the file
 	 * system.
+	 *
+	 * <p>Nothing is reported as edited to the game: the archive is written
+	 * where it lives, not staged for a pack, and a pack that heard of it would
+	 * look for an extracted file that does not exist.
 	 */
 	public void writeRecord(int id, byte[] rec) throws IOException {
 		if (rec == null || rec.length != ItemData.SIZE) {
@@ -328,9 +355,8 @@ public final class ItemTable {
 
 	// ---- the baseline, for reverting and for deciding what to deploy --------
 
-	/** The pre-edit copy for the loaded workspace, or null when none was taken. */
-	public static File baselineArchive() {
-		File dir = baselineDir();
+	/** The pre-edit copy in a baseline directory, or null when none was taken (or there is no directory). */
+	private static File baselineIn(File dir) {
 		if (dir == null) {
 			return null;
 		}
@@ -338,11 +364,26 @@ public final class ItemTable {
 		return f.isFile() ? f : null;
 	}
 
+	/** The pre-edit copy for the handed game, or null when none was taken. */
+	public static File baselineArchive(GameFiles game) {
+		return baselineIn(baselineDir(game));
+	}
+
+	/** The pre-edit copy this table would revert to, or null when none was taken. */
+	public File baselineArchive() {
+		return baselineIn(baselineDir);
+	}
+
 	/**
-	 * One record as it was before this workspace ever edited items, or null when
-	 * there is no baseline to read it from.
+	 * One record as it was before this table's game ever edited items, or
+	 * null when there is no baseline to read it from.
+	 *
+	 * <p>An instance method on purpose: the copy belongs to the baseline
+	 * directory this table was opened with, and a static that answered from
+	 * the application's workspace could show one game's retail record beside
+	 * another game's table.
 	 */
-	public static byte[] baselineRecord(int id) {
+	public byte[] baselineRecord(int id) {
 		File f = baselineArchive();
 		if (f == null) {
 			return null;
@@ -360,15 +401,15 @@ public final class ItemTable {
 	}
 
 	/**
-	 * True when the live item archive differs from the copy taken before the
-	 * first edit - i.e. when a deploy needs to carry it.
+	 * True when the handed game's live item archive differs from the copy
+	 * taken before the first edit - i.e. when a deploy needs to carry it.
 	 *
 	 * <p>False when no baseline exists, because no baseline means this editor
 	 * has never written the archive, so there is nothing of the user's in it.
 	 */
-	public static boolean changedSinceBaseline() {
-		File base = baselineArchive();
-		File live = archiveFile();
+	public static boolean changedSinceBaseline(GameFiles game) {
+		File base = baselineArchive(handed(game, "changedSinceBaseline"));
+		File live = archiveFile(game);
 		if (base == null || live == null) {
 			return false;
 		}

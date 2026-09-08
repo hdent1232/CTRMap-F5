@@ -203,7 +203,7 @@ public class TextEditor extends javax.swing.JPanel {
 		Workspace.addPersist(f);
 		modified = false;
 		if (isLocationNamesFile(loadedIdx)) {
-			LocationNames.loadFromGarc();
+			LocationNames.loadFromGarc(Workspace.session());
 		}
 		return true;
 	}
@@ -225,6 +225,6 @@ public class TextEditor extends javax.swing.JPanel {
 	 * entry index can equal, so nothing is reloaded and nothing is claimed.
 	 */
 	private boolean isLocationNamesFile(int idx) {
-		return idx >= 0 && idx == LocationNames.gametextIndex();
+		return idx >= 0 && idx == LocationNames.gametextIndex(Workspace.session());
 	}
 }

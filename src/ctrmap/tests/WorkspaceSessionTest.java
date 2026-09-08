@@ -74,7 +74,7 @@ public class WorkspaceSessionTest {
 	 * raise it without saying in the commit message which file went back to
 	 * the global and why it had to.
 	 */
-	private static final int FILES_REACHING_WORKSPACE = 55; //GARC, WorkspaceIntegrity, ZoneManager, MapResizer, MapMatrix, BchTexturePack, MaisonPoolGuard handed what they read
+	private static final int FILES_REACHING_WORKSPACE = 51; //GARC, WorkspaceIntegrity, ZoneManager, MapResizer, MapMatrix, BchTexturePack, MaisonPoolGuard, ItemTable, ItemText, PokeData, LocationNames handed what they read
 
 	static int fails = 0;
 
@@ -267,6 +267,19 @@ public class WorkspaceSessionTest {
 		check(new File(ws, "areadata").isDirectory() && new File(ws, "temp").isDirectory(),
 				"and a validated workspace has its extraction directories");
 		check(said.isEmpty(), "with nothing to complain about; said " + said);
+		//the two tables derived from the game are loaded by validate, handed the
+		//session it opened: neither LocationNames nor PokeData reads the global
+		//any more, so a validate that forgot would leave the dropdowns refusing
+		String name0;
+		try {
+			name0 = ctrmap.formats.text.LocationNames.getLocName(0);
+		} catch (IllegalStateException ex) {
+			name0 = null;
+		}
+		check(name0 != null, "validate loaded the location names from the session it opened"
+				+ (name0 == null ? " (a name is refused)" : " (line 0 answers, " + name0.length() + " chars)"));
+		check(ctrmap.formats.pokedata.PokeData.available(),
+				"and the Pokemon reference tables, from the game folder it opened");
 	}
 
 	// ------------------------------------------------------- 5. the seam inside the new class
