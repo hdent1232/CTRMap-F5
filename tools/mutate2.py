@@ -1775,7 +1775,10 @@ live = build_live(lines_)
 # the ratchet knows to say so instead.
 for _p, _f in live.items():
     _abs = WT / _p
-    _f["sha256"] = hashlib.sha256(_abs.read_bytes()).hexdigest() if _abs.is_file() else ""
+    # require_build.digest_bytes, not read_bytes: the baseline must not go stale
+    # because a checkout handed the file CRLF where the sweep saw LF
+    _f["sha256"] = (hashlib.sha256(require_build.digest_bytes(_abs)).hexdigest()
+                    if _abs.is_file() else "")
 
 regressed, fresh_holes = [], []
 if BASELINE.exists():

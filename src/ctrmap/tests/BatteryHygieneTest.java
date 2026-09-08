@@ -104,6 +104,8 @@ public class BatteryHygieneTest {
 				}
 			}
 		}
+		theDigestIgnoresLineEndingsButOnlyForText();
+		aCopyWithNoRepositoryStillStamps(repo);
 		builtByTheBattery(repo);
 		noOrphanClassFiles(repo, root);
 		noDialogsUnderTest(new File(root, "ctrmap"));
@@ -465,6 +467,136 @@ public class BatteryHygieneTest {
 				"only the application enables dialogs; found " + callers);
 	}
 
+	/**
+	 * A source file re-saved with the other line endings is not a file that
+	 * changed - and a class file with a 0x0D in it still is.
+	 *
+	 * <p>WHY BOTH HALVES. git normalises endings on commit and restores them
+	 * per checkout, so the same commit can hand two machines different bytes.
+	 * Hashing those bytes made the stamp and the mutation baseline say a file
+	 * had been edited when nothing had; on 2026-09-07 seven files a sed pass
+	 * left as LF failed MutationBaselineTest for a reason that had nothing to
+	 * do with the code. Ignoring CR everywhere would be the other mistake: a
+	 * .class or a .png differing only in 0x0D bytes IS a different file, and a
+	 * digest that could not say so would be worth less than the one it replaced.
+	 */
+	static void theDigestIgnoresLineEndingsButOnlyForText() throws Exception {
+		System.out.println("--- endings are not content, for the files where they are not content");
+		File dir = Scratch.dir("digest-endings");
+		byte[] lf = "class A {\n\tint x;\n}\n".getBytes(StandardCharsets.UTF_8);
+		byte[] crlf = "class A {\r\n\tint x;\r\n}\r\n".getBytes(StandardCharsets.UTF_8);
+
+		File a = new File(dir, "A.java");
+		File b = new File(dir, "B.java");
+		Files.write(a.toPath(), lf);
+		Files.write(b.toPath(), crlf);
+		check(!java.util.Arrays.equals(Files.readAllBytes(a.toPath()), Files.readAllBytes(b.toPath())),
+				"the two files really do differ on disk, or this proves nothing");
+		check(java.util.Arrays.equals(digestBytes(a.toPath()), digestBytes(b.toPath())),
+				"the same source saved LF and CRLF hashes the same");
+
+		File c = new File(dir, "A.class");
+		File d = new File(dir, "B.class");
+		Files.write(c.toPath(), lf);
+		Files.write(d.toPath(), crlf);
+		check(!java.util.Arrays.equals(digestBytes(c.toPath()), digestBytes(d.toPath())),
+				"but two class files differing by a 0x0D still hash differently");
+
+		//and the text rule must not quietly become "every file": a name that
+		//merely CONTAINS .java is not a .java
+		File e = new File(dir, "A.java.class");
+		Files.write(e.toPath(), crlf);
+		check(!java.util.Arrays.equals(digestBytes(c.toPath()), digestBytes(e.toPath())),
+				"the rule reads the extension, not the name");
+		Scratch.deleteTree(dir);
+	}
+
+	/**
+	 * build.ps1 stamps a copy that is not a git repository, instead of dying
+	 * between compiling and stamping.
+	 *
+	 * <p>WHY THIS EXISTS. Downloading the source as a zip, or exporting it with
+	 * {@code git archive}, gives a directory with no {@code .git} - the ordinary
+	 * path for someone who is not a git user. {@code git rev-parse HEAD} then
+	 * writes to stderr, and PowerShell with {@code $ErrorActionPreference =
+	 * "Stop"} turns a native command's stderr into a TERMINATING error. So
+	 * build.ps1 compiled 834 classes, died before writing the stamp, never
+	 * printed "Build OK", and test.ps1 reported "build\classes carries no stamp
+	 * - it was not produced by build.ps1". Every word of that is true and all of
+	 * it points away from the cause.
+	 *
+	 * <p>This runs the real stamp.ps1 against a scratch directory with no
+	 * repository in it, and asks for the file it should have written.
+	 */
+	static void aCopyWithNoRepositoryStillStamps(File repo) throws Exception {
+		System.out.println("--- and a copy with no .git in it still gets stamped");
+		File stamp = new File(repo, "stamp.ps1");
+		if (!stamp.isFile()) {
+			check(false, "no stamp.ps1 at " + stamp.getPath());
+			return;
+		}
+		File dir = Scratch.dir("stamp-nogit");
+		File classes = new File(dir, "build/classes");
+		check(new File(dir, "src").mkdirs() && classes.mkdirs(), "a scratch tree with src and build/classes");
+		Files.write(new File(dir, "src/A.java").toPath(), "class A {}\n".getBytes(StandardCharsets.UTF_8));
+		Files.write(new File(classes, "A.class").toPath(), new byte[]{1, 2, 3});
+		check(!new File(dir, ".git").exists(), "and no repository anywhere in it");
+
+		ProcessBuilder pb = new ProcessBuilder("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+				"-Command", ". '" + stamp.getAbsolutePath() + "'; $ErrorActionPreference = 'Stop'; "
+				+ "Write-BuildStamp '" + dir.getAbsolutePath() + "'");
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		StringBuilder said = new StringBuilder();
+		try (java.io.BufferedReader r = new java.io.BufferedReader(
+				new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+			for (String line = r.readLine(); line != null; line = r.readLine()) {
+				said.append(line).append('\n');
+			}
+		}
+		int code = p.waitFor();
+		File written = new File(classes, ".built-by-build-ps1");
+		check(code == 0, "stamp.ps1 finishes rather than throwing on the missing repository (exit "
+				+ code + ") " + said.toString().trim());
+		check(written.isFile(), "and the stamp exists, which is what build.ps1 dies before doing");
+		if (written.isFile()) {
+			String text = new String(Files.readAllBytes(written.toPath()), StandardCharsets.UTF_8);
+			check(text.contains("sha=unknown"), "recording the commit as unknown, a branch the stamp "
+					+ "already had and could never reach: " + text.replace("\n", " | ").trim());
+		}
+		Scratch.deleteTree(dir);
+	}
+
+	/**
+	 * The bytes a digest is taken over. stamp.ps1's rule: a file whose name ends
+	 * in .java .form .properties .tsv .md or .txt is hashed with every CR byte
+	 * removed, because line endings are not content - git normalises them on
+	 * commit and restores them per checkout, so the same commit would otherwise
+	 * hash differently on two machines. Everything else is hashed byte for byte.
+	 */
+	static byte[] digestBytes(java.nio.file.Path p) throws Exception {
+		byte[] b = Files.readAllBytes(p);
+		String name = p.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+		boolean text = false;
+		for (String e : new String[]{".java", ".form", ".properties", ".tsv", ".md", ".txt"}) {
+			if (name.endsWith(e)) {
+				text = true;
+				break;
+			}
+		}
+		if (!text) {
+			return b;
+		}
+		byte[] out = new byte[b.length];
+		int n = 0;
+		for (byte x : b) {
+			if (x != 13) {
+				out[n++] = x;
+			}
+		}
+		return java.util.Arrays.copyOf(out, n);
+	}
+
 	/** stamp.ps1's digest: sorted "relpath:sha256" lines, sha256 of the manifest. */
 	static String treeDigest(File root, String exclude) throws Exception {
 		java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
@@ -479,7 +611,7 @@ public class BatteryHygieneTest {
 				if (rel.equals(exclude)) {
 					continue;
 				}
-				lines.add(rel + ":" + hex(sha.digest(Files.readAllBytes(p))) + "\n");
+				lines.add(rel + ":" + hex(sha.digest(digestBytes(p))) + "\n");
 			}
 		}
 		java.util.Collections.sort(lines);

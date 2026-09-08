@@ -167,7 +167,9 @@ public class MutationBaselineTest {
 			} else {
 				java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
 				StringBuilder hex = new StringBuilder();
-				for (byte b : sha.digest(Files.readAllBytes(onDisk.toPath()))) {
+				//the same rule stamp.ps1 uses, through the same helper: a file
+				//re-saved with different line endings is not a file that changed
+				for (byte b : sha.digest(BatteryHygieneTest.digestBytes(onDisk.toPath()))) {
 					hex.append(String.format("%02x", b));
 				}
 				check(hex.toString().equals(hm.group(1)), path
