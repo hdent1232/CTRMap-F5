@@ -36,6 +36,9 @@ import java.util.TreeMap;
  * Usage: java ctrmap.tests.WarpTransitionsTest &lt;pristine-garc-root&gt;
  */
 public class WarpTransitionsTest {
+	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
+	static final Redraws REDRAW = new Redraws();
+
 
 	/** Highest code worth probing; the table's largest is 57. */
 	private static final int PROBE_CEILING = 96;
@@ -120,7 +123,7 @@ public class WarpTransitionsTest {
 	static void theFormAsksTheTable() throws Exception {
 		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
 			game(g);
-			WarpEditForm form = new WarpEditForm(new LoadedZone());
+			WarpEditForm form = new WarpEditForm(new LoadedZone(), REDRAW);
 			form.fillTransitionDropdown();
 			int bad = 0;
 			for (int code = 0; code <= PROBE_CEILING; code++) {
@@ -148,7 +151,7 @@ public class WarpTransitionsTest {
 	 */
 	static void theFormKeepsACodeItCannotName() throws Exception {
 		game(GameType.XY);
-		WarpEditForm form = new WarpEditForm(new LoadedZone());
+		WarpEditForm form = new WarpEditForm(new LoadedZone(), REDRAW);
 		form.fillTransitionDropdown();
 		check(form.transitionToWrite(-1, 99) == 99, "XY: no selection keeps the record's code 99, not -1: " + form.transitionToWrite(-1, 99));
 		check(form.transitionToWrite(-1, 0) == 0, "XY: no selection keeps code 0 too");

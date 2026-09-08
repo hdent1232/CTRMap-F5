@@ -62,6 +62,9 @@ import javax.swing.JOptionPane;
  * Usage: java ctrmap.tests.DialogSeamTest [src-root]   (default "src")
  */
 public class DialogSeamTest {
+	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
+	static final Redraws REDRAW = new Redraws();
+
 	/** The tool this suite holds: its own, so another suite may hold another. */
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
 
@@ -439,7 +442,7 @@ public class DialogSeamTest {
 		//them and never reaches the game it is handed
 		NPCRegistry reg = new NPCRegistry(f, new FakeGameFiles());
 		reg.modified = true;
-		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS);
+		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW);
 		form.reg = reg;
 		boolean stored;
 		List<String> said = Ui.record();

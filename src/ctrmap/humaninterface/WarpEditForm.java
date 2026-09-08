@@ -75,7 +75,11 @@ public class WarpEditForm extends javax.swing.JPanel {
 	/** The zone owner this form was handed; its table names the warp destinations. */
 	private final LoadedZone loadedZone;
 
-	public WarpEditForm(LoadedZone loadedZone) {
+	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
+	private final Redraw redraw;
+
+	public WarpEditForm(LoadedZone loadedZone, Redraw redraw) {
+		this.redraw = redraw;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("WarpEditForm must be handed a LoadedZone");
 		}
@@ -470,9 +474,7 @@ public class WarpEditForm extends javax.swing.JPanel {
 	 * frame.repaint() threw before any of them could be asked what they did.
 	 */
 	private void repaintFrame() {
-		if (frame != null) {
-			frame.repaint();
-		}
+		redraw.all();
 	}
 
 

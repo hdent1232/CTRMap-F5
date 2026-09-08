@@ -22,7 +22,11 @@ public class TriggerEditForm extends javax.swing.JPanel {
 	/** The zone owner this form was handed; its open zone's script fills the script dropdown. */
 	private final LoadedZone loadedZone;
 
-	public TriggerEditForm(LoadedZone loadedZone) {
+	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
+	private final Redraw redraw;
+
+	public TriggerEditForm(LoadedZone loadedZone, Redraw redraw) {
+		this.redraw = redraw;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("TriggerEditForm must be handed a LoadedZone");
 		}
@@ -409,13 +413,13 @@ public class TriggerEditForm extends javax.swing.JPanel {
 			if (entryBox.getItemCount() > 0) {
 				showEntry(0);
 			}
-			frame.repaint();
+			redraw.all();
 		}
 	}
 
 	private void btnSaveActionPerformed(java.awt.event.ActionEvent evt) {
 		saveEntry();
-		frame.repaint();
+		redraw.all();
 	}
 
 	private void btnAddActionPerformed(java.awt.event.ActionEvent evt) {
@@ -432,7 +436,7 @@ public class TriggerEditForm extends javax.swing.JPanel {
 			}
 			addNamedTriggerEntry(t, currentList().size() - 1);
 			setTrigger(entryBox.getItemCount() - 1);
-			frame.repaint();
+			redraw.all();
 			e.modified = true;
 		}
 	}
@@ -458,7 +462,7 @@ public class TriggerEditForm extends javax.swing.JPanel {
 			} else {
 				entryBox.setSelectedIndex(entryBox.getSelectedIndex());
 			}
-			frame.repaint();
+			redraw.all();
 			e.modified = true;
 		}
 	}

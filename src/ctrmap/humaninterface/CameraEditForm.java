@@ -24,7 +24,11 @@ public class CameraEditForm extends javax.swing.JPanel {
 	public int camIndex = -1;
 	public boolean loaded = false;
 
-	public CameraEditForm() {
+	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
+	private final Redraw redraw;
+
+	public CameraEditForm(Redraw redraw) {
+		this.redraw = redraw;
 		initComponents();
 		setFloatValueClass(new JFormattedTextField[]{pitchShift1, pitchShift2, yawShift1, yawShift2, plrDist1, plrDist2, pitch1, pitch2, yaw1, yaw2, roll1, roll2});
 		((NumberFormatter) transTime.getFormatter()).setValueClass(Integer.class);
@@ -117,7 +121,7 @@ public class CameraEditForm extends javax.swing.JPanel {
 		if (!neutralCheckbox.isSelected()){
 			setActiveEnabled();
 		}
-		CtrmapMainframe.frame.repaint();
+		redraw.all();
 	}
 
 	public void commitAndSwitch(int switchNum) {
