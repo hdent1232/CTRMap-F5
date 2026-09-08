@@ -240,7 +240,7 @@ public class MaisonEditDialog {
 					sets[i] = new MaisonSet();
 				}
 			}
-			guard = ctrmap.formats.maison.MaisonPoolGuard.load(POOLS[idx], PAIRED_LISTS[idx], sets);
+			guard = ctrmap.formats.maison.MaisonPoolGuard.load(Workspace.session(), POOLS[idx], PAIRED_LISTS[idx], sets);
 			dirty = false;
 			fireTableDataChanged();
 		}

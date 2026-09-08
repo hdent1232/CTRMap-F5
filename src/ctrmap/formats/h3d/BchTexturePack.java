@@ -1,6 +1,11 @@
 package ctrmap.formats.h3d;
 
+import ctrmap.formats.GameFiles;
+import ctrmap.formats.containers.AD;
+import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameProfile;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -342,8 +347,20 @@ public class BchTexturePack {
 	 * appended zone sharing an area went unnoticed (so it was not protected).
 	 * What matters is whether another map depends on the area, not where its
 	 * index falls.
+	 *
+	 * <p>{@code files} is the game whose zone table is read. It used to be
+	 * fetched from the application's global session holder inside this method,
+	 * so the guard could only ever be asked about the one game the application
+	 * had open, and no suite could hand it a zone table of its own to be judged
+	 * against; now it answers for whatever it is handed. A null is refused by
+	 * {@link #handed}, never answered: with no game to ask, the only answer
+	 * available is "nobody", and "nobody" is the answer that put 855 KB of
+	 * textures into Mauville City's area.
 	 */
-	public static String zonesUsingArea(int area, int editingZone) {
+	public static String zonesUsingArea(GameFiles files, int area, int editingZone) {
+		//refused before the try below: the catch at its end exists for the
+		//guard's own failures, and a caller that handed nothing is not one
+		handed(files);
 		try {
 			//This scan only means anything where an area CAN be forked: it
 			//exists to say "carrying a texture in here would change somebody
@@ -352,16 +369,12 @@ public class BchTexturePack {
 			//what stops the master-table index below being computed from
 			//another game's number - which on XY would parse an ordinary zone
 			//as the master table and invent sharers out of it.
-			if (!ctrmap.Workspace.isValid()) {
-				return null; //no game open: there is no profile to ask, and the
-				//catch below must stay a last resort rather than the normal path
-			}
-			ctrmap.gamedef.GameProfile prof = ctrmap.Workspace.profile();
-			if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.AREA_FORK)
+			GameProfile prof = files.profile();
+			if (!prof.supports(GameProfile.Feature.AREA_FORK)
 					|| prof.zoneDataTrailingEntries() < 0) {
 				return null;
 			}
-			ctrmap.formats.garc.GARC zo = ctrmap.Workspace.getArchive(ArchiveType.ZONE_DATA);
+			GARC zo = files.archive(ArchiveType.ZONE_DATA);
 			if (zo == null) {
 				return null;
 			}
@@ -372,8 +385,7 @@ public class BchTexturePack {
 			//already been changed - and refuse a carry into an area the zone no
 			//longer shares with anybody.
 			byte[] master = null;
-			java.io.File mf = ctrmap.Workspace.getWorkspaceFile(
-					ArchiveType.ZONE_DATA, masterIndex);
+			File mf = files.staged(ArchiveType.ZONE_DATA, masterIndex);
 			if (mf != null && mf.isFile()) {
 				try {
 					master = java.nio.file.Files.readAllBytes(mf.toPath());
@@ -402,24 +414,54 @@ public class BchTexturePack {
 	}
 
 	/**
+	 * The game every area-level operation of this class must be handed: the
+	 * one whose zone table decides what is shared and whose area files are
+	 * grown and reported for packing.
+	 *
+	 * <p>Null is refused here rather than worked around, because each caller
+	 * below would have to work around it in the one direction that fails
+	 * silently: the shared-area check would answer "nobody" for every area,
+	 * and a carry would write its pack and record the write for no pack. Both
+	 * were measured before this seam existed - the first grew the area behind
+	 * fifteen other zones, the second left an Apply that said "+3 textures
+	 * carried" over a map that drew white.
+	 */
+	private static GameFiles handed(GameFiles files) {
+		if (files == null) {
+			throw new IllegalArgumentException("the area texture operations must be handed the game whose"
+					+ " zone table and area files they read; handed null, the shared-area check could only"
+					+ " answer 'nobody' and a carry would be recorded for no pack");
+		}
+		return files;
+	}
+
+	/**
 	 * Variant taking the target's LIVE AD container: when a loaded zone's
 	 * areadata instance covers the target area, pass it - growing a subfile
 	 * through a separate instance would leave the live one's cached offsets
 	 * stale, and its next write would silently truncate the pack.
+	 *
+	 * <p>{@code files} is the game whose area files are read and grown; the
+	 * write is reported to it, which is what gets the grown pack into the next
+	 * pack of the archive. Before this parameter existed the report went to
+	 * the application's global session holder, and a carry made with no
+	 * workspace open was written to the extracted file and recorded nowhere.
 	 */
-	public static String carryToArea(int donorArea, int targetArea, List<String> needed,
-			ctrmap.formats.containers.AD liveTarget, int editingZone) throws Exception {
-		java.io.File tgtFile = ctrmap.Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, targetArea);
+	public static String carryToArea(GameFiles files, int donorArea, int targetArea, List<String> needed,
+			AD liveTarget, int editingZone) throws Exception {
+		handed(files);
+		File tgtFile = files.staged(ArchiveType.AREA_DATA, targetArea);
 		if (tgtFile == null) {
-			throw new IllegalStateException("area files unavailable");
+			throw new IllegalStateException("area " + targetArea + " is not available from this game"
+					+ " (its area archive is not open)");
 		}
-		ctrmap.formats.containers.AD tgt = liveTarget != null ? liveTarget : new ctrmap.formats.containers.AD(tgtFile);
-		Carry c = planCarry(donorArea, targetArea, needed, tgt.getFile(11), tgt.getFile(1), editingZone);
+		AD tgt = liveTarget != null ? liveTarget : new AD(tgtFile, files);
+		Carry c = planCarry(files, donorArea, targetArea, needed, tgt.getFile(11), tgt.getFile(1), editingZone);
 		if (c.pack != null) {
 			if (!tgt.storeFile(c.subfile, c.pack)) {
 				throw new IllegalStateException("could not write area " + targetArea);
 			}
-			ctrmap.Workspace.addPersist(tgtFile);
+			files.edited(tgtFile);
 		}
 		return c.note;
 	}
@@ -449,15 +491,19 @@ public class BchTexturePack {
 	 * already holds under a different picture than the donor's - importing
 	 * cannot fix that one, but the user has to be told which version they are
 	 * looking at.
+	 *
+	 * <p>{@code files} is the game the donor area is read from and whose zone
+	 * table the shared-area refusal consults; see {@link #zonesUsingArea}.
 	 */
-	public static Carry planCarry(int donorArea, int targetArea, List<String> needed,
+	public static Carry planCarry(GameFiles files, int donorArea, int targetArea, List<String> needed,
 			byte[] targetWorldPack, byte[] targetPropPack, int editingZone) throws Exception {
-		assertNotShared(targetArea, editingZone);
-		java.io.File donFile = ctrmap.Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, donorArea);
+		assertNotShared(files, targetArea, editingZone);
+		File donFile = files.staged(ArchiveType.AREA_DATA, donorArea);
 		if (donFile == null) {
-			throw new IllegalStateException("area files unavailable");
+			throw new IllegalStateException("donor area " + donorArea + " is not available from this game"
+					+ " (its area archive is not open)");
 		}
-		ctrmap.formats.containers.AD don = new ctrmap.formats.containers.AD(donFile);
+		AD don = new AD(donFile, files);
 		byte[] donPack = don.getFile(11);
 		if (donPack == null || !isTexturePack(donPack)) {
 			donPack = don.getFile(1);
@@ -488,9 +534,12 @@ public class BchTexturePack {
 	 * zone's area first (AreaForker) so it has one of its own. Every path that
 	 * writes an area's textures or prop registry goes through here, not just
 	 * the terrain carry.
+	 *
+	 * <p>{@code files} is the game whose zone table answers; see
+	 * {@link #zonesUsingArea} for why it is handed in and why null is refused.
 	 */
-	public static void assertNotShared(int targetArea, int editingZone) {
-		String shared = zonesUsingArea(targetArea, editingZone);
+	public static void assertNotShared(GameFiles files, int targetArea, int editingZone) {
+		String shared = zonesUsingArea(files, targetArea, editingZone);
 		if (shared != null) {
 			throw new IllegalStateException("Area " + targetArea + " is also used by "
 					+ shared + ".\nCarrying textures into it would change those maps."
@@ -564,10 +613,13 @@ public class BchTexturePack {
 	 * with a door (400 of ~535 zones sit on a shared area) silently grew an
 	 * area other maps draw from. The pack-level {@link #importTextures} stays
 	 * for the format tests, which have no area to ask about.
+	 *
+	 * <p>{@code files} is the game whose zone table answers the shared-area
+	 * question; see {@link #zonesUsingArea}.
 	 */
-	public static byte[] importIntoArea(int targetArea, int editingZone, byte[] targetPack,
+	public static byte[] importIntoArea(GameFiles files, int targetArea, int editingZone, byte[] targetPack,
 			byte[] donorPack, List<String> textureNames) {
-		assertNotShared(targetArea, editingZone);
+		assertNotShared(files, targetArea, editingZone);
 		return importTextures(targetPack, donorPack, textureNames);
 	}
 

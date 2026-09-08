@@ -61,7 +61,7 @@ public class TextureCarryGuardsTest {
 			return;
 		}
 		int zone = zoneOn(target);
-		check(BchTexturePack.zonesUsingArea(target, zone) == null,
+		check(BchTexturePack.zonesUsingArea(Workspace.session(), target, zone) == null,
 				"area " + target + " is zone " + zone + "'s alone, so a carry into it is allowed");
 
 		Set<String> held = namesOf(target);
@@ -109,7 +109,7 @@ public class TextureCarryGuardsTest {
 		check(tgtFile != null && tgtFile.isFile(), "the target area has a workspace file to grow (" + tgtFile + ")");
 		String note;
 		try {
-			note = BchTexturePack.carryToArea(donor, target, needed, null, zone);
+			note = BchTexturePack.carryToArea(Workspace.session(), donor, target, needed, null, zone);
 		} catch (Exception ex) {
 			check(false, "a carry into an area nobody else uses is not refused; it threw " + ex);
 			return;
@@ -141,7 +141,7 @@ public class TextureCarryGuardsTest {
 			return;
 		}
 		try {
-			note = BchTexturePack.carryToArea(donor, target, needed, null, zone);
+			note = BchTexturePack.carryToArea(Workspace.session(), donor, target, needed, null, zone);
 		} catch (Exception ex) {
 			thrown = ex;
 		} finally {

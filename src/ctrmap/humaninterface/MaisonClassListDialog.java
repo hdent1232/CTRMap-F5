@@ -180,7 +180,7 @@ public class MaisonClassListDialog {
 					lists[i] = new MaisonClassList();
 				}
 			}
-			vanilla = ctrmap.formats.maison.MaisonPoolGuard.readSnapshotLists(TABLES[idx]);
+			vanilla = ctrmap.formats.maison.MaisonPoolGuard.readSnapshotLists(Workspace.session(), TABLES[idx]);
 			dirty = false;
 			fireTableDataChanged();
 		}

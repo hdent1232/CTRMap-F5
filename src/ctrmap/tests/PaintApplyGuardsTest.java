@@ -313,7 +313,7 @@ public class PaintApplyGuardsTest {
 		int shared = -1, own = -1;
 		for (int z = 0; z < zo.length - 2 && (shared < 0 || own < 0); z++) {
 			int area = ctrmap.AreaForker.currentArea(z);
-			boolean many = BchTexturePack.zonesUsingArea(area, z) != null;
+			boolean many = BchTexturePack.zonesUsingArea(Workspace.session(), area, z) != null;
 			shared = many && shared < 0 ? z : shared;
 			own = !many && own < 0 ? z : own;
 		}
@@ -535,7 +535,7 @@ public class PaintApplyGuardsTest {
 		check(stop != null && stop.getMessage() != null && stop.getMessage().contains(name),
 				"importing a name the target already holds with different pixels is refused: " + stop);
 		int zone = privateAreaZone(holder);
-		BchTexturePack.Carry carry = BchTexturePack.planCarry(other, holder, one,
+		BchTexturePack.Carry carry = BchTexturePack.planCarry(Workspace.session(), other, holder, one,
 				areaPack(holder), PropDatabase.getSubfile(ad.getDecompressedEntry(holder), 1), zone);
 		check(carry.note.contains(name) && carry.note.contains(String.valueOf(other)),
 				"a carry that meets one reports it, naming the texture and both areas: " + carry.note.trim());
@@ -544,7 +544,7 @@ public class PaintApplyGuardsTest {
 	/** A zone whose area is exactly this one and nobody else's, or -1. */
 	static int privateAreaZone(int area) throws Exception {
 		for (int z = 0; z < zo.length - 2; z++) {
-			if (ctrmap.AreaForker.currentArea(z) == area && BchTexturePack.zonesUsingArea(area, z) == null) {
+			if (ctrmap.AreaForker.currentArea(z) == area && BchTexturePack.zonesUsingArea(Workspace.session(), area, z) == null) {
 				return z;
 			}
 		}
@@ -561,7 +561,7 @@ public class PaintApplyGuardsTest {
 	/** What assertNotShared does to the zone's area, or null when it allows it. */
 	static Exception refusal(int zoneIndex) throws Exception {
 		try {
-			BchTexturePack.assertNotShared(ctrmap.AreaForker.currentArea(zoneIndex), zoneIndex);
+			BchTexturePack.assertNotShared(Workspace.session(), ctrmap.AreaForker.currentArea(zoneIndex), zoneIndex);
 			return null;
 		} catch (Exception ex) {
 			return ex;

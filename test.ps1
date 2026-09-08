@@ -101,6 +101,7 @@ $suites = @(
     @{ n = "Battery hygiene (temp paths, corpus args)"; c = "ctrmap.tests.BatteryHygieneTest"; a = @("src") },
     @{ n = "ClassFileScanner (bytecode sees what a grep cannot)"; c = "ctrmap.tests.ClassFileScannerTest"; a = @("src", "build\classes") },
     @{ n = "GameFilesSeam (the format layer is handed its game, never fetches it)"; c = "ctrmap.tests.GameFilesSeamTest"; a = @("src", "build\classes") },
+    @{ n = "HandedGame (two more format classes handed their game)"; c = "ctrmap.tests.HandedGameTest"; a = @() },
     @{ n = "GlobalState (the public-static ceiling, and Workspace.reset)"; c = "ctrmap.tests.GlobalStateTest"; a = @("src", "build\classes") },
     @{ n = "MainframeShape (menus and toolbars, built headless)"; c = "ctrmap.tests.MainframeShapeTest"; a = @("src") },
     @{ n = "Ui output paths (printed, and shown)"; c = "ctrmap.tests.UiOutputTest";           a = @() },
