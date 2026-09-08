@@ -54,6 +54,9 @@ import ctrmap.formats.tilemap.PaintedHeights;
  * Usage: java ctrmap.tests.PaintFormGuardsTest &lt;pristine-dump-root&gt;
  */
 public class PaintFormGuardsTest {
+	/** The editor set the panels here flush: it records instead of saving. */
+	static final RecordingEditors EDITORS = new RecordingEditors();
+
 	/** The tool this suite holds: its own, so another suite may hold another. */
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
 
@@ -86,10 +89,10 @@ public class PaintFormGuardsTest {
 	static PaintForm document() throws Exception {
 		LoadedZone lz = new LoadedZone();
 		lz.open(ZONE, null);                      //zone ZONE's index and no zone object: the document reads the index
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mTileMapPanel = null;
-		PaintForm form = new PaintForm(lz);
+		PaintForm form = new PaintForm(lz, EDITORS);
 		set(form, "seededZone", ZONE);
 		TilePalette[][] grid = (TilePalette[][]) get(form, "grid");
 		for (TilePalette[] row : grid) {
@@ -326,7 +329,7 @@ public class PaintFormGuardsTest {
 		PaintApplyGuardsTest.openWorkspace(dump);
 		PaintApplyGuardsTest.open(74);
 		CtrmapMainframe.mTileMapPanel = null;
-		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded);
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS);
 		Method seed = PaintForm.class.getDeclaredMethod("seed");
 		seed.setAccessible(true);
 		seed.invoke(form);

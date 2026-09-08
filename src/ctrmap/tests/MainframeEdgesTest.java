@@ -51,19 +51,19 @@ public class MainframeEdgesTest {
 			"the list of things the 3D view draws; the map view adds itself to it"},
 		{"m3DDebugPanel", "NPCEditForm,PropEditForm,TileMapPanel,ZoneLoadingPanel",
 			"the 3D view, for binding the navigator gizmo to the record being edited"},
-		{"mCamEditForm", "PaintForm,ZoneLoadingPanel",
-			"the camera form, flushed as part of a bigger save"},
+		{"mCamEditForm", "ZoneLoadingPanel",
+			"the camera form, stored once as the zone switches"},
 		{"mCollEditPanel", "TileMapPanel",
 			"the collision editor, which the map view draws alongside"},
-		{"mMtxEditForm", "MapMatrixPanel,MatrixPanelInputManager,MatrixSelector,PaintForm,ZoneLoadingPanel",
+		{"mMtxEditForm", "MapMatrixPanel,MatrixPanelInputManager,MatrixSelector",
 			"the matrix form: the matrix panel, its router and its selector are three halves of one editor"},
 		{"mMtxPanel", "MatrixEditForm,MatrixSelector,ZoneLoadingPanel",
 			"the matrix panel, the other half of the same editor"},
-		{"mNPCEditForm", "PaintForm,TileMapPanel,TrainerEditDialog,ZoneLoadingPanel",
-			"the NPC editor, saved with the zone and drawn over the map"},
+		{"mNPCEditForm", "TileMapPanel,TrainerEditDialog,ZoneLoadingPanel",
+			"the NPC editor, loaded with the zone and drawn over the map"},
 		{"mPaintForm", "ZoneLoadingPanel", "the painter, cancelled when a zone closes"},
-		{"mPropEditForm", "PaintForm,TileMapPanel,ZoneLoadingPanel",
-			"the prop editor, saved with the zone and drawn over the map"},
+		{"mPropEditForm", "TileMapPanel",
+			"the prop editor, drawn over the map"},
 		{"mScriptPnl", "NPCEditForm,ZoneLoadingPanel",
 			"the script editor, which an NPC's script edits go through"},
 		{"mTileEditForm", "Selector,TileMapPanel,TileUndo,WorkspaceSettings",
@@ -75,7 +75,7 @@ public class MainframeEdgesTest {
 		{"mTilemapScrollPane", "TileMapPanel", "its own scroll pane, for the viewport size"},
 		{"mTriggerEditForm", "ZoneLoadingPanel", "the trigger editor, loaded and cleared with the zone"},
 		{"mWarpEditForm", "ZoneLoadingPanel", "the warp editor, loaded and cleared with the zone"},
-		{"mZonePnl", "NPCEditForm,PaintForm,ScriptEditor,SetupWizard,TilePainterForm",
+		{"mZonePnl", "NPCEditForm,ScriptEditor,SetupWizard,TilePainterForm",
 			"the Zone tab as an OPERATION - its save, its rebuild, its zone count. None of them is zone"
 			+ " state: that has an owner (LoadedZoneTest)"},
 		{"worldToolbar", "TileEditForm", "the tool row, asked to select the Set tool"},
@@ -84,9 +84,12 @@ public class MainframeEdgesTest {
 	/**
 	 * Field references from outside, counted with duplicates: the number above
 	 * is classes, this is call sites. Measured 2026-09-08 at 108 before the
-	 * decoupling steps, 64 after them.
+	 * decoupling steps, 64 after them, and 55 once the five copies
+	 * of the editor flush became one owner ({@link ctrmap.humaninterface.OpenEditors}):
+	 * the map painter left this list entirely, and the Zone tab stopped naming
+	 * the matrix and prop forms.
 	 */
-	private static final int REFERENCES = 64;
+	private static final int REFERENCES = 55;
 
 	/** Public static fields on the window. 91 before the structure sweep, 22 after it, 21 now. */
 	private static final int PUBLIC_STATICS = 21;

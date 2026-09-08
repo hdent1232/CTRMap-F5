@@ -69,6 +69,9 @@ import java.util.TreeSet;
  *        (classes-root defaults to "build/classes")
  */
 public class LoadedZoneTest {
+	/** The editor set the panels here flush: it records instead of saving. */
+	static final RecordingEditors EDITORS = new RecordingEditors();
+
 	/** The tool this suite holds: its own, so another suite may hold another. */
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
 
@@ -120,8 +123,9 @@ public class LoadedZoneTest {
 	 * every one is an operation the panel performs, which is step F's work
 	 * (the panel itself gets an owner and these are handed it):
 	 * <ul>
-	 * <li>{@code NPCEditForm}, {@code PaintForm}, {@code ScriptEditor} -
-	 * {@code store(...)}, the Zone tab's save, run as part of a bigger save.
+	 * <li>{@code NPCEditForm}, {@code ScriptEditor} - {@code store(...)}, the
+	 * Zone tab's save, run as part of a bigger save. The map painter was here
+	 * too until the flush got an owner; it asks that instead.
 	 * <li>{@code TilePainterForm} - {@code loadEverything}/{@code selectZone}
 	 * after it has written new zones, and {@code clearForkDecline}.
 	 * <li>{@code SetupWizard} - {@code getLoadedZoneCount}, to say how many
@@ -134,7 +138,6 @@ public class LoadedZoneTest {
 	 */
 	private static final String[] STATIC_READERS = {
 		"ctrmap/humaninterface/NPCEditForm",
-		"ctrmap/humaninterface/PaintForm",
 		"ctrmap/humaninterface/ScriptEditor",
 		"ctrmap/humaninterface/TilePainterForm",
 		"ctrmap/setup/SetupWizard"
@@ -447,8 +450,8 @@ public class LoadedZoneTest {
 		try {
 			LoadedZone a = new LoadedZone();
 			LoadedZone b = new LoadedZone();
-			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS);
-			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS);
+			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS, EDITORS);
+			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS, EDITORS);
 
 			//the offer walks the whole table, so give both owners the same first
 			//forty zones - reading all 536 would cost the suite a minute and prove
@@ -625,6 +628,8 @@ public class LoadedZoneTest {
 				args[i] = new ctrmap.humaninterface.tools.ToolSelection();
 			} else if (types[i] == ctrmap.humaninterface.Redraw.class) {
 				args[i] = new Redraws();
+			} else if (types[i] == ctrmap.humaninterface.OpenEditors.class) {
+				args[i] = new RecordingEditors();
 			} else {
 				throw new IllegalStateException(ctor.getDeclaringClass().getName()
 						+ " is handed a " + types[i].getName()

@@ -61,6 +61,9 @@ import javax.swing.JRadioButton;
  * Usage: java ctrmap.tests.MatrixEditFormGuardsTest &lt;pristine dump root&gt;
  */
 public class MatrixEditFormGuardsTest {
+	/** The editor set the panels here flush: it records instead of saving. */
+	static final RecordingEditors EDITORS = new RecordingEditors();
+
 	/** The tool this suite holds: its own, so another suite may hold another. */
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
 
@@ -424,7 +427,7 @@ public class MatrixEditFormGuardsTest {
 		Arrays.fill(rows, oneZone);
 		LoadedZone lz = new LoadedZone();
 		lz.table(rows);
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS);
 		CtrmapMainframe.mZonePnl = pnl;
 		f.form = new MatrixEditForm(lz);
 		CtrmapMainframe.mMtxEditForm = f.form;

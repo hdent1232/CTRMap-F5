@@ -65,6 +65,9 @@ import ctrmap.formats.tilemap.PaintedHeights;
  * Usage: java ctrmap.tests.PaintApplyGuardsTest &lt;pristine-dump-root&gt; [src]
  */
 public class PaintApplyGuardsTest {
+	/** The editor set the panels here flush: it records instead of saving. */
+	static final RecordingEditors EDITORS = new RecordingEditors();
+
 	/** The tool this suite holds: its own, so another suite may hold another. */
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
 
@@ -874,7 +877,7 @@ public class PaintApplyGuardsTest {
 			throw new IllegalStateException("prop database did not build");
 		}
 		loaded = new LoadedZone();
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(loaded, TOOLS);
+		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(loaded, TOOLS, EDITORS);
 		for (int[] row : ramp) {
 			Arrays.fill(row, PaintedRegionBuilder.NO_RAMP);
 		}

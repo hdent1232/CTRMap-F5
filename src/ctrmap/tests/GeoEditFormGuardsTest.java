@@ -56,6 +56,9 @@ import javax.swing.JSpinner;
  * Usage: java ctrmap.tests.GeoEditFormGuardsTest &lt;pristine dump root&gt;
  */
 public class GeoEditFormGuardsTest {
+	/** The editor set the panels here flush: it records instead of saving. */
+	static final RecordingEditors EDITORS = new RecordingEditors();
+
 
 	/** The zone owner every panel and form built here shares, as the window's would. */
 	static final LoadedZone LOADED = new LoadedZone();
@@ -82,7 +85,7 @@ public class GeoEditFormGuardsTest {
 		ScratchGame.open(dump);
 		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
 		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(LOADED, TOOLS);
+		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS);
 
 		theRegionIsTheOneTheseChecksDescribe();
 		aSelectionNamesItsRegionAndCountsWhatIsInIt();

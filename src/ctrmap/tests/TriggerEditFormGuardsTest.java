@@ -62,6 +62,9 @@ import javax.swing.JFormattedTextField;
  * Usage: java ctrmap.tests.TriggerEditFormGuardsTest &lt;pristine dump root&gt;
  */
 public class TriggerEditFormGuardsTest {
+	/** The editor set the panels here flush: it records instead of saving. */
+	static final RecordingEditors EDITORS = new RecordingEditors();
+
 	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
 	static final Redraws REDRAW = new Redraws();
 
@@ -394,7 +397,7 @@ public class TriggerEditFormGuardsTest {
 	static Zone openZone(GARC zo, int index) throws Exception {
 		File f = Scratch.file("ctrmap_trigform");
 		Files.write(f.toPath(), zo.getDecompressedEntry(index));
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS);
 		Zone[] table = new Zone[index + 1];
 		table[index] = new Zone(new ZO(f, Workspace.session()), Workspace.game());
 		LOADED.table(table);

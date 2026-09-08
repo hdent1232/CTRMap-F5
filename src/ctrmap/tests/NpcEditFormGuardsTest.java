@@ -114,6 +114,9 @@ import javax.swing.JSpinner;
  * Usage: java ctrmap.tests.NpcEditFormGuardsTest &lt;pristine dump root&gt;
  */
 public class NpcEditFormGuardsTest {
+	/** The editor set the panels here flush: it records instead of saving. */
+	static final RecordingEditors EDITORS = new RecordingEditors();
+
 	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
 	static final Redraws REDRAW = new Redraws();
 
@@ -1230,7 +1233,7 @@ public class NpcEditFormGuardsTest {
 
 	/** Zone index as the editor holds it: a ZoneLoadingPanel with that zone open, in CtrmapMainframe.mZonePnl. */
 	static Zone openZone(GARC zo, int index) throws Exception {
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS);
 		Zone[] table = new Zone[index + 1];
 		table[index] = new Zone(new ZO(temp(zo.getDecompressedEntry(index)), Workspace.session()), Workspace.game());
 		LOADED.table(table);

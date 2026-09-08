@@ -92,7 +92,11 @@ public class PaintForm extends JPanel {
 	/** The zone owner this painter was handed: the open zone, its index, its area. */
 	private final LoadedZone loadedZone;
 
-	public PaintForm(LoadedZone loadedZone) {
+	/** The editors that hold unsaved work, handed in: this class flushes them, it does not own them. */
+	private final OpenEditors openEditors;
+
+	public PaintForm(LoadedZone loadedZone, OpenEditors openEditors) {
+		this.openEditors = openEditors;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("PaintForm must be handed a LoadedZone");
 		}
@@ -981,8 +985,7 @@ public class PaintForm extends JPanel {
 			return;
 		}
 		//the apply reads/forks the last-SAVED workspace bytes - flush pending edits
-		if (!(mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true)
-				&& mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && mZonePnl.store(true))) {
+		if (!openEditors.saveAll(true)) {
 			return;
 		}
 		try {
