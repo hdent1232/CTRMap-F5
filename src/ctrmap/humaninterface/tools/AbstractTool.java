@@ -47,6 +47,25 @@ public abstract class AbstractTool {
 		onToolInit();
 	}
 
+	/**
+	 * The open zone changed under this tool, which is still held.
+	 *
+	 * <p>Not abstract, because for nine of the ten tools there is nothing to do:
+	 * they read the map view when they are used, so the next click already sees
+	 * the new zone. The painter is the exception - it holds a DOCUMENT seeded
+	 * from the zone that was open when it started, and left alone it keeps
+	 * showing, and guarding against, a zone the user has navigated away from.
+	 *
+	 * <p>WHY THIS IS THE TOOL'S BUSINESS AND NOT THE ZONE TAB'S. The Zone tab
+	 * used to ask {@code tools.holding(PaintTool.class)} and then reach into the
+	 * main window for the painter's form. That is the Zone tab knowing which
+	 * tools exist and which of them care - so adding an eleventh tool that also
+	 * needs re-seeding would have meant editing the zone switch. Now the zone
+	 * switch says what happened and each tool decides what that means for it.
+	 */
+	public void onZoneChanged() {
+	}
+
 	public abstract void onToolInit();
 
 	public abstract void onToolShutdown();
