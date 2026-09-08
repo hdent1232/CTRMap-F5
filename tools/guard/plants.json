@@ -1,0 +1,138 @@
+{
+ "_why": [
+  "A guard is proven by breaking the thing it guards and watching it go red. This project does that",
+  "and writes what the guard said into the commit message - which is real, and one-time. It cannot be",
+  "re-executed. A guard proven in one month and quietly hollowed out in the next looks exactly like a",
+  "guard that still works: the suite is green either way.",
+  "",
+  "This ledger is those proofs, kept as data. Each plant is the exact text substitution that puts the",
+  "defect back, and the suite that must go RED when it is there. tools/guard/replant.py applies one,",
+  "requires the named suite to fail, restores the file byte-for-byte and verifies the restore.",
+  "",
+  "TWO RATCHETS, and both may only fall. `owed` is the number of registered suites with no plant at",
+  "all - the honest size of what this ledger does not yet cover. `owed_generalisation` counts plants",
+  "marked site_only: the defect was put back at exactly the place it was found, and nothing shows the",
+  "guard would catch the same defect somewhere else. PlantLedgerTest holds both to their ceilings and",
+  "checks every plant still matches its file exactly once, which is cheap; replant.py actually runs",
+  "them, which is not."
+ ],
+ "owed_ceiling": 120,
+ "owed_generalisation_ceiling": 3,
+ "plants": [
+  {
+   "id": "zone-broadcast-clear-skips-editors",
+   "why": "The Zone tab's unload named three of seven editors. The four it did not name were an absence, not a decision, and an editor left showing a zone that is no longer open is what the save path then trusts.",
+   "file": "src/ctrmap/humaninterface/ZoneEditors.java",
+   "find": "\tpublic void clear() {\n\t\tfor (ZoneView v : views) {\n\t\t\tv.clear();\n\t\t}\n\t}",
+   "replace": "\tpublic void clear() {\n\t\tviews.get(0).clear();\n\t}",
+   "suite": "ctrmap.tests.OpenEditorsTest",
+   "args": [],
+   "must_say": "every editor is asked"
+  },
+  {
+   "id": "zone-broadcast-show-out-of-order",
+   "why": "The matrix panel is handed the map view's matrix, so the map view has to have loaded first. That dependency used to be two adjacent lines inside a worker thread and is now the order of two list entries, where nothing about it looks load-bearing.",
+   "file": "src/ctrmap/humaninterface/ZoneEditors.java",
+   "find": "\tpublic void show(Zone zone) {\n\t\tfor (ZoneView v : views) {\n\t\t\tv.show(zone);\n\t\t}\n\t}",
+   "replace": "\tpublic void show(Zone zone) {\n\t\tfor (int i = views.size() - 1; i >= 0; i--) {\n\t\t\tviews.get(i).show(zone);\n\t\t}\n\t}",
+   "suite": "ctrmap.tests.OpenEditorsTest",
+   "args": [],
+   "must_say": "told before the matrix panel"
+  },
+  {
+   "id": "zone-broadcast-empty-set-accepted",
+   "why": "An empty set of zone editors would show a zone to nobody and report success forever.",
+   "file": "src/ctrmap/humaninterface/ZoneEditors.java",
+   "find": "\t\tif (views == null || views.isEmpty()) {\n\t\t\tthrow new IllegalArgumentException(\"the zone editor set cannot be empty - name the editors that show a zone\");\n\t\t}\n",
+   "replace": "",
+   "suite": "ctrmap.tests.OpenEditorsTest",
+   "args": [],
+   "must_say": "show a zone to nobody"
+  },
+  {
+   "id": "editor-flush-ignores-a-refusal",
+   "why": "The five copies of the && chain got one thing right: short-circuiting. An editor that could not save must not be followed by a reload that throws its work away.",
+   "file": "src/ctrmap/humaninterface/OpenEditors.java",
+   "find": "\t\t\tif (!e.save(askFirst)) {\n\t\t\t\treturn false;\n\t\t\t}",
+   "replace": "\t\t\te.save(askFirst);",
+   "suite": "ctrmap.tests.OpenEditorsTest",
+   "args": [],
+   "must_say": "never asked"
+  },
+  {
+   "id": "zone-tab-accepts-no-editors",
+   "why": "The window handed the Zone tab null for both lists and nothing failed until the user asked for a save or a zone switch.",
+   "file": "src/ctrmap/humaninterface/ZoneLoadingPanel.java",
+   "find": "\t\tif (openEditors == null || zoneEditors == null) {\n\t\t\tthrow new IllegalArgumentException(\"the Zone tab must be handed the editors it saves and shows\"\n\t\t\t\t+ \" - openEditors=\" + openEditors + \", zoneEditors=\" + zoneEditors);\n\t\t}\n",
+   "replace": "",
+   "suite": "ctrmap.tests.ZoneLoadingStateTest",
+   "args": ["${PRISTINE}"],
+   "must_say": "with nothing to save"
+  },
+  {
+   "id": "painter-accepts-no-editors",
+   "why": "Applying a paint flushes every open editor first and gives up if one refuses. Built with none, the painter would throw at apply time, having already let the user paint.",
+   "file": "src/ctrmap/humaninterface/PaintForm.java",
+   "find": "\t\tif (openEditors == null) {\n\t\t\tthrow new IllegalArgumentException(\"PaintForm must be handed the editors it flushes before it applies\");\n\t\t}\n",
+   "replace": "",
+   "suite": "ctrmap.tests.PaintFormGuardsTest",
+   "args": ["${PRISTINE}"],
+   "must_say": "flushes them before it writes anything"
+  },
+  {
+   "id": "window-hands-a-static-it-has-not-built",
+   "why": "The defect the decoupling steps introduced twice: a list built where it reads best, sixty lines after the classes handed it. Put back one line apart, which is the tightest case the rule has to catch.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\topenEditors = editors;\n\n\t\tmZonePnl = new ZoneLoadingPanel(loadedZone, tools, editors, zoneViews);",
+   "replace": "\t\tmZonePnl = new ZoneLoadingPanel(loadedZone, tools, openEditors, zoneViews);\n\t\topenEditors = editors;",
+   "suite": "ctrmap.tests.MainframeEdgesTest",
+   "args": ["build/classes"],
+   "must_say": "does not build until line"
+  },
+  {
+   "id": "digest-stops-ignoring-line-endings",
+   "why": "git normalises endings on commit and restores them per checkout, so hashing raw bytes made the stamp and the mutation baseline say a file had been edited when nothing had.",
+   "file": "src/ctrmap/tests/BatteryHygieneTest.java",
+   "find": "\t\tif (!text) {\n\t\t\treturn b;\n\t\t}",
+   "replace": "\t\tif (true) {\n\t\t\treturn b;\n\t\t}",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": ["src"],
+   "must_say": "saved LF and CRLF hashes the same",
+   "site_only": true
+  },
+  {
+   "id": "digest-ignores-line-endings-everywhere",
+   "why": "The other half of the same rule. A .class or a .png differing only in 0x0D bytes IS a different file, and a digest that could not say so would be worth less than the one it replaced.",
+   "file": "src/ctrmap/tests/BatteryHygieneTest.java",
+   "find": "\t\tboolean text = false;",
+   "replace": "\t\tboolean text = true;",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": ["src"],
+   "must_say": "class files differing by a 0x0D",
+   "site_only": true
+  },
+  {
+   "id": "ledger-stops-noticing-a-rotted-plant",
+   "why": "The ledger's whole value is that a plant which no longer matches its file is a REFUSAL rather than a skip. A rotted plant that is quietly passed over turns this ledger into a list of proofs nobody re-runs, which is the exact thing it exists to replace.",
+   "file": "tools/guard/replant.py",
+   "find": "        if hits != 1:\n            bad.append(",
+   "replace": "        if False:\n            bad.append(",
+   "suite": "ctrmap.tests.PlantLedgerTest",
+   "args": ["."],
+   "must_say": "the ledger's self-test passes",
+   "no_rebuild": true
+  },
+  {
+   "id": "stamp-dies-on-a-copy-with-no-repository",
+   "why": "Downloading the source as a zip gives a directory with no .git. git wrote to stderr, PowerShell's Stop preference turned that into a terminating error, and build.ps1 died after compiling and before stamping - then test.ps1 blamed the stamp.",
+   "file": "stamp.ps1",
+   "find": "    $head = \"unknown\"\n    $prev = $ErrorActionPreference\n    try {\n        $ErrorActionPreference = \"Continue\"\n        $found = (& git -C $Root rev-parse HEAD 2>$null)\n        if ($LASTEXITCODE -eq 0 -and $found) { $head = ([string]$found).Trim() }\n    } catch {\n        $head = \"unknown\"\n    } finally {\n        $ErrorActionPreference = $prev\n    }",
+   "replace": "    $head = (& git -C $Root rev-parse HEAD 2>$null)\n    if (-not $head) { $head = \"unknown\" }",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": ["src"],
+   "must_say": "finishes rather than throwing",
+   "no_rebuild": true,
+   "site_only": true
+  }
+ ]
+}
