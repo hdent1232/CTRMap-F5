@@ -198,7 +198,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 				}
 				zones = new Zone[totalZones]; //last file is not a ZO
 				for (int i = 0; i < totalZones; i++) {
-					ZO zo = new ZO(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, i));
+					ZO zo = new ZO(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, i), Workspace.session());
 					zones[i] = new Zone(zo, Workspace.game());
 					//unknown flags 1024 == 8192 ???, 4096, 16384 always 0, >> 20 lumi warp zone?,
 					String name = LocationNames.getLocName(zones[i].header.parentMap) + " - " + i;

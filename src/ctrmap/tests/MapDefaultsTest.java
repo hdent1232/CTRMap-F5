@@ -111,6 +111,9 @@ public class MapDefaultsTest {
 		File tmp = Scratch.file("ctrmap_mapdefaults");
 		int read = 0, populated = 0;
 		StringBuilder bad = new StringBuilder();
+		//a scratch game for the matrix containers to report to: this suite
+		//deliberately opens no workspace, and a container cannot be made without one
+		FakeGameFiles game = new FakeGameFiles();
 		for (int i = 0; i < mm.length; i++) {
 			byte[] raw = mm.getDecompressedEntry(i);
 			if (raw == null || raw.length < 8) {
@@ -124,7 +127,7 @@ public class MapDefaultsTest {
 			}
 			MapMatrix parsed;
 			try {
-				parsed = new MapMatrix(new MM(tmp), null); //the grid only: nothing to open regions from, and none wanted
+				parsed = new MapMatrix(new MM(tmp, game), null); //the grid only: nothing to open regions from, and none wanted
 			} catch (Exception ex) {
 				continue;
 			}

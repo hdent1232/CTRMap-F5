@@ -59,6 +59,8 @@ public class BuildingCatalogTest {
 		int misnamed = 0, unmatched = 0;
 		String misnamedExample = null;
 		File rf = Scratch.file("bcat_region");
+		//a scratch game for the region containers to report to: nothing here opens a workspace
+		FakeGameFiles game = new FakeGameFiles();
 		for (BuildingCatalog.Entry e : entries) {
 			try {
 				// extract straight from the pristine GARC (the runtime path minus Workspace)
@@ -66,7 +68,7 @@ public class BuildingCatalogTest {
 				try (FileOutputStream fo = new FileOutputStream(rf)) {
 					fo.write(regionBytes);
 				}
-				MapPrefab p = MapPrefab.extract(new GR(rf), e.tx0, e.ty0, e.tx1, e.ty1, e.name);
+				MapPrefab p = MapPrefab.extract(new GR(rf, game), e.tx0, e.ty0, e.tx1, e.ty1, e.name);
 				if (p == null || p.pieces.isEmpty()) {
 					throw new IllegalStateException("no geometry in the box");
 				}
@@ -101,7 +103,7 @@ public class BuildingCatalogTest {
 				// the name has to describe what dominates the cut, not its
 				// smallest recognisable part
 				if (e.auto) {
-					String dominant = dominantKind(new GR(rf), e);
+					String dominant = dominantKind(new GR(rf, game), e);
 					if (dominant == null) {
 						unmatched++;
 					} else if (!dominant.equals(e.kind)) {

@@ -222,7 +222,7 @@ public class TileMapPanelStateTest {
 		GR wasOpen = panel.mainGR;
 		editATile(panel);
 
-		GR other = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 157));
+		GR other = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 157), Workspace.session());
 		List<String> said = Ui.record(JOptionPane.CANCEL_OPTION);
 		try {
 			panel.loadTileMap(other);
@@ -580,7 +580,7 @@ public class TileMapPanelStateTest {
 	/** A panel holding one region, the way loadTileMap leaves it. */
 	static TileMapPanel single(int regionId) throws Exception {
 		TileMapPanel panel = new TileMapPanel();
-		GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, regionId));
+		GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, regionId), Workspace.session());
 		panel.mode = TileMapPanel.ViewportMode.SINGLE;
 		panel.mainGR = gr;
 		panel.tilemaps = new Tilemap[1][1];
@@ -594,10 +594,10 @@ public class TileMapPanelStateTest {
 	/** A panel holding the whole of zone 15's map, the way loadMatrix leaves it. */
 	static TileMapPanel multi() throws Exception {
 		ctrmap.formats.zone.Zone z = new ctrmap.formats.zone.Zone(
-				new ctrmap.formats.containers.ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(ZONE))),
+				new ctrmap.formats.containers.ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(ZONE)), Workspace.session()),
 				Workspace.game());
 		File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, z.header.mapmatrixID);
-		return over(new MapMatrix(new MM(mmFile), Workspace.session()));
+		return over(new MapMatrix(new MM(mmFile, Workspace.session()), Workspace.session()));
 	}
 
 	/** A panel over a parsed map matrix, the way loadMatrix leaves one. */
@@ -635,7 +635,7 @@ public class TileMapPanelStateTest {
 			if (f == null || !f.isFile()) {
 				continue;
 			}
-			MapMatrix mm = new MapMatrix(new MM(f), Workspace.session());
+			MapMatrix mm = new MapMatrix(new MM(f, Workspace.session()), Workspace.session());
 			if (mm.width * mm.height < 2 || mm.width * mm.height > 8) {
 				continue;
 			}

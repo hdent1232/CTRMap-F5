@@ -329,7 +329,7 @@ public class PaintFormGuardsTest {
 		if (cell == null) {
 			return;
 		}
-		GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, cell[0]));
+		GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, cell[0]), Workspace.session());
 		int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(gr.getFile(2), gr.getFile(0), new int[DIM][DIM]);
 		check(borrowed > 0, "fixture: region " + cell[0] + " has tiles with no ground of their own (" + borrowed + ")");
 		String label = ((JLabel) get(form, "zoneLabel")).getText();

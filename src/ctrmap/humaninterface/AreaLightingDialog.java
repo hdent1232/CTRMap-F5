@@ -70,7 +70,7 @@ public class AreaLightingDialog {
 		final byte[] sub4;
 		final AreaEnv env;
 		try {
-			ad = new AD(areaFile);
+			ad = new AD(areaFile, Workspace.session());
 			sub4 = ad.getFile(4);
 			env = AreaEnv.read(sub4);
 		} catch (Exception ex) {

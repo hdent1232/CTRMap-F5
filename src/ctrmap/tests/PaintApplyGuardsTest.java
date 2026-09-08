@@ -215,7 +215,7 @@ public class PaintApplyGuardsTest {
 		paintSand();
 		TerrainCatalog.Donor sand = TerrainCatalog.donors().get(TilePalette.SAND);
 		List<String> needed = TerrainCatalog.ensureMaterial(Workspace.session(), new GR(Workspace.getWorkspaceFile(
-				ArchiveType.FIELD_DATA, 153)).getFile(1), TilePalette.SAND).texturesNeeded;
+				ArchiveType.FIELD_DATA, 153), Workspace.session()).getFile(1), TilePalette.SAND).texturesNeeded;
 		check(sand != null && !needed.isEmpty(), "the SAND brush imports a donor material that needs textures: " + needed);
 		int lacking = areaLacking(needed);
 		File donorFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, sand.donorArea);
@@ -243,7 +243,7 @@ public class PaintApplyGuardsTest {
 		check(stop == null, "Apply on a private zone succeeds (stopped by: " + stop + ")");
 		File region = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 153);
 		check(newlyPersisted(before).contains(region.getAbsolutePath()), "region 153 was written");
-		check(sandTriangles(new GR(region).getFile(1)) > 0, "and it carries the painted sand floor");
+		check(sandTriangles(new GR(region, Workspace.session()).getFile(1)) > 0, "and it carries the painted sand floor");
 		File area = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, 21);
 		check(newlyPersisted(before).contains(area.getAbsolutePath()), "area 21 was written");
 		check(!needed.isEmpty() && areaTextures(Files.readAllBytes(area.toPath())).containsAll(needed),
@@ -260,7 +260,7 @@ public class PaintApplyGuardsTest {
 	 */
 	static void retryStillAsksForTheTextures() throws Exception {
 		byte[] painted = new GR(Workspace.getWorkspaceFile(
-				ArchiveType.FIELD_DATA, 153)).getFile(1);
+				ArchiveType.FIELD_DATA, 153), Workspace.session()).getFile(1);
 		List<String> needed = TerrainCatalog.ensureMaterial(Workspace.session(), PropDatabase.getSubfile(
 				gr.getDecompressedEntry(153), 1), TilePalette.SAND).texturesNeeded;
 		TerrainCatalog.ImportResult again = TerrainCatalog.ensureMaterial(Workspace.session(), painted, TilePalette.SAND);
@@ -292,7 +292,7 @@ public class PaintApplyGuardsTest {
 		File painted = null;
 		String fd = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA).getAbsolutePath();
 		for (String p : newlyPersisted(before)) {
-			if (p.startsWith(fd) && sandTriangles(new GR(new File(p)).getFile(1)) > 0) {
+			if (p.startsWith(fd) && sandTriangles(new GR(new File(p), Workspace.session()).getFile(1)) > 0) {
 				painted = new File(p);
 			}
 		}
@@ -383,7 +383,7 @@ public class PaintApplyGuardsTest {
 		}
 		check(stop == null, "an Apply whose door wiring cannot run still reports success (stopped by: " + stop + ")");
 		File region = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 153);
-		check(sandTriangles(new GR(region).getFile(1)) > 0, "and the map it wrote is on disk");
+		check(sandTriangles(new GR(region, Workspace.session()).getFile(1)) > 0, "and the map it wrote is on disk");
 		check(report != null && report.contains("Door wiring failed"),
 				"and the wiring that failed is a line in the result, not a lost message: " + report);
 	}
@@ -610,7 +610,7 @@ public class PaintApplyGuardsTest {
 		forget(ArchiveType.AREA_DATA, 22);
 		open(17);
 		paintSand();
-		GR region = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 154));
+		GR region = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 154), Workspace.session());
 		int borrowed = PaintedRegionBuilder.borrowedGroundTiles(region.getFile(2), region.getFile(0), touched);
 		check(borrowed > 0, "fixture: the painted tiles include " + borrowed + " with no ground of their own");
 		Exception stop = apply(17, new ArrayList<TilePainterForm.Placed>());
@@ -773,7 +773,7 @@ public class PaintApplyGuardsTest {
 	static boolean registersProp(int area, int model) throws Exception {
 		ctrmap.formats.propdata.ADPropRegistry reg = new ctrmap.formats.propdata.ADPropRegistry(
 				new ctrmap.formats.containers.AD(Workspace.getWorkspaceFile(
-						ArchiveType.AREA_DATA, area)));
+						ArchiveType.AREA_DATA, area), Workspace.session()));
 		for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
 			if (e.model == model) {
 				return true;
@@ -826,7 +826,7 @@ public class PaintApplyGuardsTest {
 		int now = ctrmap.AreaForker.currentArea(74);
 		check(now != 43, "zone 74 now has an area of its own (" + now + ")");
 		check(sandTriangles(new GR(Workspace.getWorkspaceFile(
-				ArchiveType.FIELD_DATA, 272)).getFile(1)) > 0, "and its map carries the painted sand floor");
+				ArchiveType.FIELD_DATA, 272), Workspace.session()).getFile(1)) > 0, "and its map carries the painted sand floor");
 	}
 
 	/** True when one of the messages the program gave contains the text. */
@@ -877,7 +877,7 @@ public class PaintApplyGuardsTest {
 	/** Loads a zone into the panel the painter reads, as the editor would. */
 	static void open(int zoneIndex) throws Exception {
 		CtrmapMainframe.mZonePnl.zone = new Zone(new ZO(Workspace.getWorkspaceFile(
-				ArchiveType.ZONE_DATA, zoneIndex)), Workspace.game());
+				ArchiveType.ZONE_DATA, zoneIndex), Workspace.session()), Workspace.game());
 		CtrmapMainframe.mZonePnl.zoneIndex = zoneIndex;
 	}
 

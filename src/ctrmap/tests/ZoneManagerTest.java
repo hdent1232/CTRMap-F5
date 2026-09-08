@@ -107,7 +107,7 @@ public class ZoneManagerTest {
 	private static void clearEmptiesOnlyTheRecords() throws IOException {
 		int zone = 1;
 		File zf = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zone);
-		ZO before = new ZO(zf);
+		ZO before = new ZO(zf, Workspace.session());
 		byte[][] subfilesBefore = new byte[before.len][];
 		for (int i = 0; i < before.len; i++) {
 			subfilesBefore[i] = before.getFile(i);
@@ -129,7 +129,7 @@ public class ZoneManagerTest {
 		expected[0] = 8;
 		System.arraycopy(subfilesBefore[1], 12 + recordBytes, expected, 12, expected.length - 12);
 
-		ZO after = new ZO(zf);
+		ZO after = new ZO(zf, Workspace.session());
 		check(after.len == before.len, "the container still holds " + after.len + " subfiles");
 		check(Arrays.equals(expected, after.getFile(1)),
 				"the emptied entity block is a zeroed header plus the script, byte for byte ("
@@ -271,7 +271,7 @@ public class ZoneManagerTest {
 		int packedBefore = u16(masterBefore, rowOff + PARENT_OFF);
 		int parentBefore = packedBefore & PARENT_MASK;
 		File zf = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zone);
-		ZO zoBefore = new ZO(zf);
+		ZO zoBefore = new ZO(zf, Workspace.session());
 		byte[][] subfilesBefore = new byte[zoBefore.len][];
 		for (int i = 0; i < zoBefore.len; i++) {
 			subfilesBefore[i] = zoBefore.getFile(i);
@@ -327,7 +327,7 @@ public class ZoneManagerTest {
 				strayMasterBytes + " master byte(s) outside row " + zone + "'s parentMap changed");
 
 		//the ZO header carries the same repoint, and nothing else in the container moves
-		ZO zoAfter = new ZO(zf);
+		ZO zoAfter = new ZO(zf, Workspace.session());
 		check(zoAfter.len == zoBefore.len, "the container still holds " + zoAfter.len + " subfiles");
 		byte[] hdrBefore = subfilesBefore[0];
 		byte[] hdrAfter = zoAfter.getFile(0);

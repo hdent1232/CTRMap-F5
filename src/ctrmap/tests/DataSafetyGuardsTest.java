@@ -269,7 +269,7 @@ public class DataSafetyGuardsTest {
 		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel();
 		zonePnl.zones = new Zone[3];
 		for (int i = 0; i < zonePnl.zones.length; i++) {
-			zonePnl.zones[i] = new Zone(new ZO(temp(zo.getDecompressedEntry(i))), Workspace.game());
+			zonePnl.zones[i] = new Zone(new ZO(temp(zo.getDecompressedEntry(i)), Workspace.session()), Workspace.game());
 		}
 		zonePnl.zoneIndex = 2;
 		CtrmapMainframe.mZonePnl = zonePnl;
@@ -705,11 +705,11 @@ public class DataSafetyGuardsTest {
 
 			//a real zone, then the damage: an area id AreaData does not have
 			int noSuchArea = Workspace.getArchive(ArchiveType.AREA_DATA).length + 21;
-			Zone broken = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
+			Zone broken = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15)), Workspace.session()), Workspace.game());
 			broken.header.areadataID = noSuchArea;
 			//the same failure, reproduced here, so the report can be required to
 			//carry what actually went wrong rather than a fixed sentence
-			Zone probe = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
+			Zone probe = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15)), Workspace.session()), Workspace.game());
 			probe.header.areadataID = noSuchArea;
 			String cause = "";
 			try {
@@ -722,7 +722,7 @@ public class DataSafetyGuardsTest {
 			pnl.zones = new Zone[]{null, broken};
 			fill(pnl, "zoneList", 2);
 			//the editors are showing the zone the user had open
-			Zone open = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15))), Workspace.game());
+			Zone open = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15)), Workspace.session()), Workspace.game());
 			CtrmapMainframe.mNPCEditForm.loadFromEntities(open.entities, null);
 			check(CtrmapMainframe.mNPCEditForm.loaded, "the NPC editor is showing a zone before the failed load");
 			setField(pnl, "loaded", true);
@@ -811,7 +811,7 @@ public class DataSafetyGuardsTest {
 		//a real retail matrix, regions left unresolved (no extracted workspace here):
 		//handed no game to open them from, rather than the session uninstalled around the parse
 		ctrmap.formats.mapmatrix.MapMatrix mm = new ctrmap.formats.mapmatrix.MapMatrix(
-				new ctrmap.formats.containers.MM(temp(mmGarc.getDecompressedEntry(14))), null);
+				new ctrmap.formats.containers.MM(temp(mmGarc.getDecompressedEntry(14)), Workspace.session()), null);
 		short before = mm.ids.get(0, 0);
 
 		ctrmap.humaninterface.MatrixEditForm form = new ctrmap.humaninterface.MatrixEditForm();

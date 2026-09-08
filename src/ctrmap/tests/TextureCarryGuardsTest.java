@@ -206,7 +206,7 @@ public class TextureCarryGuardsTest {
 	/** The same, read back from the container on disk. */
 	static Set<String> namesOnDisk(File adFile) {
 		Set<String> names = new LinkedHashSet<>();
-		AD ad = new AD(adFile);
+		AD ad = new AD(adFile, Workspace.session());
 		for (int sub : new int[]{11, 1}) {
 			addNames(ad.getFile(sub), names);
 		}

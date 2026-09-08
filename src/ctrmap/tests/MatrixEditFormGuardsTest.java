@@ -397,7 +397,7 @@ public class MatrixEditFormGuardsTest {
 		File onDisk = Scratch.file("ctrmap_mtxform");
 		java.nio.file.Files.write(onDisk.toPath(),
 				Workspace.getArchive(ArchiveType.MAP_MATRIX).getDecompressedEntry(MATRIX));
-		f.file = new MM(onDisk);
+		f.file = new MM(onDisk, Workspace.session());
 		//the grid only, no region opened per cell: what "no workspace is open"
 		//used to mean to this parse, now said to it directly instead of by
 		//uninstalling the session around the call
@@ -414,7 +414,7 @@ public class MatrixEditFormGuardsTest {
 			File zf = Scratch.file("ctrmap_mtxzone");
 			java.nio.file.Files.write(zf.toPath(),
 					Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(0));
-			oneZone = new Zone(new ctrmap.formats.containers.ZO(zf), Workspace.game());
+			oneZone = new Zone(new ctrmap.formats.containers.ZO(zf, Workspace.session()), Workspace.game());
 		}
 		Zone[] rows = new Zone[maxZone + 1];
 		Arrays.fill(rows, oneZone);

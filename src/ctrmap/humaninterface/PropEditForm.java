@@ -404,7 +404,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			//registry loader does, so rendering does not depend on the
 			//uid==modelIndex failsafe (ref can differ from model on collision)
 			try {
-				BCHFile mdlBch = new BCHFile(new BM(Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, imported.model)).getFile(0));
+				BCHFile mdlBch = new BCHFile(new BM(Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, imported.model), Workspace.session()).getFile(0));
 				if (!mdlBch.models.isEmpty()) {
 					H3DModel mdl = mdlBch.models.get(0);
 					mdl.setMaterialTextures(mdlBch.textures);
@@ -864,7 +864,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 			File f = Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, mdlIndex);
 			if (f.exists()) {
-				BCHFile bch = new BCHFile(new BM(f).getFile(0));
+				BCHFile bch = new BCHFile(new BM(f, Workspace.session()).getFile(0));
 				bch.models.get(0).setMaterialTextures(bch.textures);
 				bch.models.get(0).setMaterialTextures(propTextures);
 				bch.models.get(0).makeAllBOs();

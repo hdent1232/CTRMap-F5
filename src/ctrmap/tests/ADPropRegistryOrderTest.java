@@ -97,8 +97,10 @@ public class ADPropRegistryOrderTest {
 		os.write(adBytes);
 		os.close();
 
+		//a scratch game for the containers to report to: nothing here opens a workspace
+		FakeGameFiles game = new FakeGameFiles();
 		try {
-			AD ad = new AD(tmp);
+			AD ad = new AD(tmp, game);
 			byte[] file0Before = ad.getFile(0);
 			if (file0Before == null || file0Before.length < 4) {
 				System.out.println("FAIL: could not read AD file 0 of entry " + index);
@@ -115,7 +117,7 @@ public class ADPropRegistryOrderTest {
 			reg.modified = true;
 			reg.write();
 
-			AD ad2 = new AD(tmp);
+			AD ad2 = new AD(tmp, game);
 			byte[] file0After = ad2.getFile(0);
 			if (!Arrays.equals(file0Before, file0After)) {
 				System.out.println("FAIL: entry " + index + " registry payload (AD file 0) is not byte-identical after write()");

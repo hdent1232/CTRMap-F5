@@ -85,6 +85,20 @@ import javax.swing.filechooser.FileFilter;
 public class CtrmapMainframe {
 
 	public static JFrame frame;
+	/**
+	 * The open game, handed to this window when a workspace opens and dropped
+	 * when it closes: the ONE place the window keeps it. Every action that
+	 * hands the game on - to a container it opens, the zone manager, the
+	 * resizer, the location-name reload - reads this field. Each used to
+	 * resolve {@code Workspace.session()} for itself at the moment of the
+	 * click: five lookups of the same global under a longer name, which the
+	 * container constructors' migration would have made fifteen, and not one
+	 * of which a suite could hand a different game. The window is the top of
+	 * the program and legitimately owns the reference; what it must not do is
+	 * fetch it in N places. Assigned in {@link #onWorkspaceOpened} and nowhere
+	 * else, and private, so nothing below the window can read it as a global.
+	 */
+	private static WorkspaceSession game;
 	private static JTabbedPane tabs;
 
 	/** The World Editor's tool row: the one handle for "pick this tool" and "which view is up". */
@@ -592,12 +606,12 @@ public class CtrmapMainframe {
 	}
 
 	private static void openGrAction() {
-		if (!Workspace.isValid() && !Utils.confirmOpenWithoutWorkspace("Open GR Mapfile")) {
+		if (!gameOpen("Open GR Mapfile")) {
 			return;
 		}
 		File f = picked(openDialog("LAST_DIR_GR", "Open GR/153/bin mapfile"), "LAST_DIR_GR");
 		if (f != null) {
-			GR mainGR = new GR(f);
+			GR mainGR = new GR(f, game);
 			frame.setTitle("GfMap Editor - " + mainGR.getOriginFile().getName());
 			mTileMapPanel.loadTileMap(mainGR);
 			mCollEditPanel.unload();
@@ -607,7 +621,7 @@ public class CtrmapMainframe {
 	}
 
 	private static void openMapMatrixAction() {
-		if (!Workspace.isValid() && !Utils.confirmOpenWithoutWorkspace("Open MapMatrix")) {
+		if (!gameOpen("Open MapMatrix")) {
 			return;
 		}
 		File f = picked(openDialog("LAST_DIR_MM", "Open MM file"), "LAST_DIR_MM");
@@ -662,7 +676,7 @@ public class CtrmapMainframe {
 						+ "different things in each of them, so CTRMap will not guess one for it.");
 				return;
 			}
-			mZonePnl.loadZone(new Zone(new ZO(f), Workspace.game()));
+			mZonePnl.loadZone(new Zone(new ZO(f, game), Workspace.game()));
 		}
 	}
 
@@ -768,7 +782,7 @@ public class CtrmapMainframe {
 			ctrmap.formats.containers.AD ad = mZonePnl.zone.header.areadata != null
 					? mZonePnl.zone.header.areadata
 					: new ctrmap.formats.containers.AD(Workspace.getWorkspaceFile(
-							ArchiveType.AREA_DATA, mZonePnl.zone.header.areadataID));
+							ArchiveType.AREA_DATA, mZonePnl.zone.header.areadataID), game);
 			ctrmap.formats.area.AreaEnv env = ctrmap.formats.area.AreaEnv.read(ad.getFile(4));
 			m3DDebugPanel.setFog(env.fogColor[0], env.fogColor[1], env.fogColor[2], env.fogNear, env.fogFar);
 		} catch (Exception ex) {
@@ -819,15 +833,46 @@ public class CtrmapMainframe {
 	}
 
 	/**
-	 * What the main window does once a workspace has opened: the panels that
-	 * read from it load. Called by {@link Workspace#validate} on success, and
-	 * only when the window exists - a headless suite validates without one.
+	 * Hands the main window the session that just became the open game - or
+	 * null, when the workspace closed or failed to open - and, when the
+	 * window exists, loads the panels that read from it.
+	 *
+	 * <p>Called from {@link Workspace#install}, the one place a session
+	 * becomes current, so the application and a suite hand the window its
+	 * game the same way, and a headless suite (no window, no panels) still
+	 * hands it: that is why the assignment is unguarded and the panel loading
+	 * is not. {@link Workspace#validate} goes through install only once the
+	 * tables derived from the game are loaded, which is why the zone dropdown
+	 * has its names when it fills.
 	 */
-	public static void onWorkspaceOpened() {
+	public static void onWorkspaceOpened(WorkspaceSession opened) {
+		game = opened;
+		if (opened == null || frame == null) {
+			return;
+		}
 		mBuilder.loadGARCs();
 		mZonePnl.loadEverything();
 		mTextEditor.loadGarc();
 		showZoneLoadingHint();
+	}
+
+	/**
+	 * True when a game is open. Otherwise says so under {@code title} and
+	 * returns false, because the actions that open a loose container file
+	 * cannot go on without one: a container is handed the game it reports its
+	 * writes to and extracts its subfiles into, and there is none. Open GR
+	 * Mapfile and Open MapMatrix used to ask "continue anyway?" and then open
+	 * the file through a container that reported to nobody, so an edit made
+	 * through it was written into the loose file and recorded nowhere.
+	 */
+	private static boolean gameOpen(String title) {
+		if (game != null) {
+			return true;
+		}
+		Ui.error(frame, "Open a workspace first (Options > Workspace settings).\n\n"
+				+ "A container opened outside a workspace has nowhere to record an edit and\n"
+				+ "nowhere to extract its subfiles to, so CTRMap will not open one.", title);
+		return false;
 	}
 
 	/** Drops everything the editor panels hold from the workspace, ahead of a clean. */
@@ -1163,8 +1208,11 @@ public class CtrmapMainframe {
 	 * editor ignored my click" could be deleted with nothing noticing.
 	 */
 	public static boolean openMapMatrixFile(File f) {
+		if (!gameOpen("Open MapMatrix")) {
+			return false;
+		}
 		try {
-			mTileMapPanel.loadMatrix(new MapMatrix(new MM(f), Workspace.session()), null, null, null);
+			mTileMapPanel.loadMatrix(new MapMatrix(new MM(f, game), game), null, null, null);
 		} catch (RuntimeException ex) {
 			//a container that is not a map matrix usually fails on a bare
 			//dereference, whose getMessage() is null - "null" in a dialog is
@@ -1245,8 +1293,8 @@ public class CtrmapMainframe {
 			return;
 		}
 		try {
-			ZoneManager.RenameResult r = ZoneManager.renameZone(Workspace.session(), idx, name);
-			ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session()); // refresh the dropdown name cache
+			ZoneManager.RenameResult r = ZoneManager.renameZone(game, idx, name);
+			ctrmap.formats.text.LocationNames.loadFromGarc(game); // refresh the dropdown name cache
 			//Both halves of this line were improved independently and both are
 			//kept: the text is built by renameZoneReport, which a suite can call
 			//without a window, and it is delivered through Ui, so a suite can
@@ -1490,7 +1538,7 @@ public class CtrmapMainframe {
 		}
 		int idx = (Integer) idSpinner.getValue();
 		try {
-			int removed = ZoneManager.clearZone(Workspace.session(), idx);
+			int removed = ZoneManager.clearZone(game, idx);
 			Ui.message(frame,
 					"Zone " + idx + " emptied - removed " + removed + " placed object(s).\n\n"
 					+ "Run File > Deploy to emulator (it packs first) to apply.\n"
@@ -1607,7 +1655,7 @@ public class CtrmapMainframe {
 			return;
 		}
 		try {
-			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id));
+			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id), game);
 			byte[] model = gr.getFile(1);
 			if (!ctrmap.formats.h3d.BchMapModel.isMapModel(model)) {
 				Ui.error(frame, "FieldData region " + id + " has no editable map model.", "Export map to OBJ");
@@ -1667,7 +1715,7 @@ public class CtrmapMainframe {
 				r.close();
 			}
 			File grFile = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id);
-			GR gr = new GR(grFile);
+			GR gr = new GR(grFile, game);
 			byte[] model = gr.getFile(1);
 			if (!ctrmap.formats.h3d.BchMapModel.isMapModel(model)) {
 				Ui.error(frame, "FieldData region " + id + " has no editable map model.", "Import OBJ");
@@ -1709,7 +1757,7 @@ public class CtrmapMainframe {
 						"Cancel imports only the groups whose materials already exist."
 					};
 					if (JOptionPane.showConfirmDialog(frame, tForm, "New materials", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION) {
-						GR tgr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, (Integer) tRegion.getValue()));
+						GR tgr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, (Integer) tRegion.getValue()), game);
 						byte[] tm = tgr.getFile(1);
 						if (ctrmap.formats.h3d.BchMapModel.isMapModel(tm)) {
 							templateModel = tm;
@@ -1774,7 +1822,7 @@ public class CtrmapMainframe {
 			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
 			int rid = ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(
 					java.nio.file.Files.readAllBytes(mmFile.toPath()));
-			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, rid));
+			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, rid), game);
 			probe = new ctrmap.formats.h3d.BchMapModel(gr.getFile(1));
 		} catch (Exception ex) {
 			Ui.error(frame, "Could not inspect the zone's map:\n" + ex.getMessage(), "Blank map canvas");
@@ -1847,7 +1895,7 @@ public class CtrmapMainframe {
 			File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
 			for (int newRegion : r.newRegions) {
 				File f = new File(fdDir, String.valueOf(newRegion));
-				GR gr = new GR(f);
+				GR gr = new GR(f, game);
 				byte[] template = gr.getFile(1);
 				if (!ctrmap.formats.h3d.BchMapModel.isMapModel(template)) {
 					continue;
@@ -2055,7 +2103,7 @@ public class CtrmapMainframe {
 			return;
 		}
 		try {
-			final MapResizer.ResizeResult r = MapResizer.resize(Workspace.session(), zoneIndex, (Integer) wSpin.getValue(), (Integer) hSpin.getValue());
+			final MapResizer.ResizeResult r = MapResizer.resize(game, zoneIndex, (Integer) wSpin.getValue(), (Integer) hSpin.getValue());
 			Workspace.packWorkspace(new Runnable() {
 				@Override
 				public void run() {
@@ -2143,7 +2191,7 @@ public class CtrmapMainframe {
 		}
 		try {
 			File grFile = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id);
-			GR gr = new GR(grFile);
+			GR gr = new GR(grFile, game);
 			if (gr.len < 2) {
 				Ui.error(frame, "FieldData entry " + id + " is not a map region container.", "Import map model");
 				return;

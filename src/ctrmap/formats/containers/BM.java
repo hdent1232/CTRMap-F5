@@ -15,11 +15,6 @@ public class BM extends AbstractGamefreakContainer {
 		super(f, files);
 	}
 
-	/** Transitional: see {@link AbstractGamefreakContainer}. */
-	public BM(File f) {
-		super(f);
-	}
-
 	@Override
 	public short getHeader() {
 		return 0x424D;

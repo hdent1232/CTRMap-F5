@@ -31,6 +31,8 @@ public class GfCollLegacyBridgeTest {
 		GARC garc = new GARC(garcFile);
 		int tested = 0, ok = 0, failures = 0;
 		long collapsedDupes = 0;
+		//a scratch game for the containers to report their writes to: nothing here opens a workspace
+		FakeGameFiles game = new FakeGameFiles();
 		for (int i = 0; i < garc.length; i += step) {
 			byte[] entry = garc.getDecompressedEntry(i);
 			int count = (entry[2] & 0xFF) | ((entry[3] & 0xFF) << 8);
@@ -47,10 +49,10 @@ public class GfCollLegacyBridgeTest {
 				try (FileOutputStream fos = new FileOutputStream(f)) {
 					fos.write(entry);
 				}
-				GR gr = new GR(f);
+				GR gr = new GR(f, game);
 				GRCollisionFile legacy = new GRCollisionFile(gr);
 				legacy.write(); //the FIXED path - routes through GfColl.build
-				byte[] rebuilt = new GR(f).getFile(2);
+				byte[] rebuilt = new GR(f, game).getFile(2);
 
 				GfColl a = new GfColl(retail), b = new GfColl(rebuilt);
 				Set<Long> setA = triSet(a), setB = triSet(b);

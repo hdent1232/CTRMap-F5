@@ -188,7 +188,7 @@ public class NpcMoveCodesTest {
 			}
 			ZoneEntities e;
 			try {
-				e = new Zone(new ZO(tmp), Workspace.game()).entities;
+				e = new Zone(new ZO(tmp, Workspace.session()), Workspace.game()).entities;
 			} catch (Exception ex) {
 				continue;
 			}

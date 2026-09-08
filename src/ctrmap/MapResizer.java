@@ -229,7 +229,7 @@ public class MapResizer {
 		for (int id : newIds) {
 			File f = new File(fdDir, String.valueOf(id));
 			Files.write(f.toPath(), templateGr);
-			GR reg = new GR(f);
+			GR reg = new GR(f, ws);
 			byte[] template = reg.getFile(1);
 			if (BchMapModel.isMapModel(template)) {
 				BchMapModel tm = new BchMapModel(template);

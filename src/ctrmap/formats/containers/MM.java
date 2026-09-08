@@ -33,18 +33,6 @@ public class MM extends AbstractGamefreakContainer{
 		this.type = type;
 	}
 
-	/** Transitional: see {@link AbstractGamefreakContainer}. */
-	public MM(File f) {
-		super(f);
-		type = sniffType();
-	}
-
-	/** Transitional: see {@link AbstractGamefreakContainer}. */
-	public MM(File f, int len, int type){
-		super(f, len);
-		this.type = type;
-	}
-
 	/** A move model's first subfile is a BCH model; a map matrix's is not. */
 	private int sniffType() {
 		if (Utils.checkBCHMagic(getFile(0))){

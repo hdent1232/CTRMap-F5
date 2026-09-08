@@ -63,7 +63,9 @@ public class MapModelImportTest {
 	private static void testRegion(File tmp, byte[] grBytes, int idx) throws Exception {
 		File grFile = new File(tmp, "gr" + idx);
 		write(grFile, grBytes);
-		GR gr = new GR(grFile);
+		//a scratch game for the containers to report their writes to: nothing here opens a workspace
+		FakeGameFiles game = new FakeGameFiles();
+		GR gr = new GR(grFile, game);
 		int subs = gr.len;
 		check(subs >= 2, "region " + idx + ": GR has a model subfile (len=" + subs + ")");
 
@@ -76,14 +78,14 @@ public class MapModelImportTest {
 
 		//1. no-op store of subfile 1 -> every subfile byte-identical
 		gr.storeFile(1, origModel);
-		GR after1 = new GR(grFile);
+		GR after1 = new GR(grFile, game);
 		check(subfilesEqual(after1, orig, 1, idx), "region " + idx + ": no-op model store preserves every subfile");
 
 		//2. same-length replacement (flip a middle byte) -> other subfiles exact, model updated
 		byte[] flipped = origModel.clone();
 		flipped[flipped.length / 2] ^= 0x5A;
 		gr.storeFile(1, flipped);
-		GR after2 = new GR(grFile);
+		GR after2 = new GR(grFile, game);
 		check(Arrays.equals(after2.getFile(1), flipped), "region " + idx + ": same-length replace lands in slot 1");
 		check(subfilesEqual(after2, orig, 1, idx), "region " + idx + ": same-length replace preserves siblings");
 
@@ -93,13 +95,13 @@ public class MapModelImportTest {
 		//its own internal length). Verify prefix + zero padding, not exact equality.
 		byte[] bigger = Arrays.copyOf(origModel, origModel.length + 40);
 		gr.storeFile(1, bigger);
-		GR after3 = new GR(grFile);
+		GR after3 = new GR(grFile, game);
 		check(startsWithThenZero(after3.getFile(1), bigger), "region " + idx + ": different-length replace holds the model (+ zero pad) in slot 1");
 		check(subfilesEqual(after3, orig, 1, idx), "region " + idx + ": different-length replace preserves siblings");
 
 		//4. restore original -> the whole container matches the pristine bytes for all subfiles
 		gr.storeFile(1, origModel);
-		GR restored = new GR(grFile);
+		GR restored = new GR(grFile, game);
 		boolean allBack = true;
 		for (int i = 0; i < subs; i++) {
 			if (!Arrays.equals(restored.getFile(i), orig[i])) {

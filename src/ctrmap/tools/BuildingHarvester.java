@@ -153,6 +153,10 @@ public class BuildingHarvester {
 		RegionFactory.BlankContent base = PaintedRegionBuilder.build(grassDonor, grass, null, null, TerrainLighting.daytime(), false);
 		File tmpDir = new File(System.getProperty("java.io.tmpdir"), "ctrmap_harvest");
 		tmpDir.mkdirs();
+		//the region containers cut from are handed a session over the dump
+		//being harvested, with no archive open and nothing to pack: a container
+		//cannot be made without one, and this tool has no workspace to offer
+		ctrmap.WorkspaceSession harvested = new ctrmap.WorkspaceSession(tmpDir, new File(romfs), game, null);
 
 		List<String> rows = new ArrayList<>();
 		Map<String, Integer> nameSeq = new HashMap<>();
@@ -167,7 +171,7 @@ public class BuildingHarvester {
 						fo.write(gr.getDecompressedEntry(c.region));
 					}
 				}
-				GR reg = new GR(tmp);
+				GR reg = new GR(tmp, harvested);
 				MapPrefab p = MapPrefab.extract(reg, c.comp.tx0, c.comp.ty0, c.comp.tx1, c.comp.ty1, "harvest");
 				if (p == null) {
 					dropped++;

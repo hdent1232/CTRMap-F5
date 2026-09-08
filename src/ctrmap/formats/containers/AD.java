@@ -42,11 +42,6 @@ public class AD extends AbstractGamefreakContainer{
 		super(f, files);
 	}
 
-	/** Transitional: see {@link AbstractGamefreakContainer}. */
-	public AD(File f) {
-		super(f);
-	}
-
 	@Override
 	public short getHeader() {
 		return 0x4144;

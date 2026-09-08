@@ -74,7 +74,7 @@ public class WorkspaceSessionTest {
 	 * raise it without saying in the commit message which file went back to
 	 * the global and why it had to.
 	 */
-	private static final int FILES_REACHING_WORKSPACE = 43; //GARC, WorkspaceIntegrity, ZoneManager, MapResizer, MapMatrix, BchTexturePack, MaisonPoolGuard, ItemTable, ItemText, PokeData, LocationNames, ADPropRegistry, GRProp, PropDatabase, NPCRegistry, MoveModelPool, NpcTemplates, ZoneHeader, BuildingCatalog handed what they read
+	private static final int FILES_REACHING_WORKSPACE = 42; //GARC, WorkspaceIntegrity, ZoneManager, MapResizer, MapMatrix, BchTexturePack, MaisonPoolGuard, ItemTable, ItemText, PokeData, LocationNames, ADPropRegistry, GRProp, PropDatabase, NPCRegistry, MoveModelPool, NpcTemplates, ZoneHeader, BuildingCatalog handed what they read; AbstractGamefreakContainer's transitional constructors, the format layer's last reach, deleted
 
 	static int fails = 0;
 

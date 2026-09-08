@@ -663,7 +663,7 @@ public class PlacementGuardsTest {
 			try (FileOutputStream fo = new FileOutputStream(f)) {
 				fo.write(garc.getDecompressedEntry(id));
 			}
-			gr = new GR(f);
+			gr = new GR(f, Workspace.session());
 			regions.put(id, gr);
 		}
 		return gr;

@@ -441,7 +441,7 @@ public class PropEditFormGuardsTest {
 		File onDisk = Scratch.file("ctrmap_propform");
 		java.nio.file.Files.write(onDisk.toPath(),
 				Workspace.getArchive(ArchiveType.FIELD_DATA).getDecompressedEntry(REGION));
-		return new GR(onDisk);
+		return new GR(onDisk, Workspace.session());
 	}
 
 	/**
@@ -483,7 +483,7 @@ public class PropEditFormGuardsTest {
 
 	/** Area {@link #AREA}'s prop registry, without its models: the meshes are not what is under test. */
 	static ADPropRegistry registry() throws Exception {
-		return new ADPropRegistry(new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AREA)));
+		return new ADPropRegistry(new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AREA), Workspace.session()));
 	}
 
 	/** Types into one of the form's number fields the way the widget itself would. */

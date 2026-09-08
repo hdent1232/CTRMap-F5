@@ -94,7 +94,7 @@ public class TilePainterForm {
 					continue;
 				}
 				try {
-					byte[] model = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id)).getFile(1);
+					byte[] model = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id), Workspace.session()).getFile(1);
 					if (BchMapModel.isMapModel(model)) {
 						String n = new BchMapModel(model).getModelName();
 						if (n != null && !n.isEmpty()) {
@@ -123,7 +123,7 @@ public class TilePainterForm {
 				&& f.equals(mZonePnl.zone.header.areadata.getOriginFile())) {
 			return mZonePnl.zone.header.areadata;
 		}
-		return new ctrmap.formats.containers.AD(f);
+		return new ctrmap.formats.containers.AD(f, Workspace.session());
 	}
 
 	/** True if painted water will actually scroll: every one of the zone's map
@@ -392,7 +392,7 @@ public class TilePainterForm {
 			for (int newRegion : src.newRegions) {
 				File f = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, newRegion);
 				if (f != null) {
-					GR gr = new GR(f);
+					GR gr = new GR(f, Workspace.session());
 					if (BchMapModel.isMapModel(gr.getFile(1))) {
 						floorY = PaintedRegionBuilder.floorYGrid(gr.getFile(2), gr.getFile(0), height);
 						break;
@@ -426,7 +426,7 @@ public class TilePainterForm {
 			if (f == null) {
 				continue;
 			}
-			GR gr = new GR(f);
+			GR gr = new GR(f, Workspace.session());
 			byte[] donor = gr.getFile(1);
 			if (!BchMapModel.isMapModel(donor)) {
 				continue;
@@ -511,7 +511,7 @@ public class TilePainterForm {
 		GeometryForker.ForkResult r = GeometryForker.ensurePrivate(zoneIndex);
 		for (StagedRegion s : staged) {
 			int dest = destRegion(r, s.srcRegion);
-			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, dest));
+			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, dest), Workspace.session());
 			boolean ok = gr.storeFile(1, s.model);
 			ok &= gr.storeFile(2, s.collision);
 			ok &= gr.storeFile(0, s.tilemap);
@@ -764,7 +764,7 @@ public class TilePainterForm {
 	/** Seeds the grid from the region's existing tilemap tuples (reverse lookup). */
 	static void loadFromRegion(int region, TilePalette[][] grid) {
 		try {
-			GR gr = new GR(new File(Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA), String.valueOf(region)));
+			GR gr = new GR(new File(Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA), String.valueOf(region)), Workspace.session());
 			byte[] tm = gr.getFile(0);
 			if (tm == null || tm.length < 8) {
 				return;
@@ -1078,7 +1078,7 @@ public class TilePainterForm {
 		if (mZonePnl != null && mZonePnl.zone != null && mZonePnl.zoneIndex == zoneIndex && mZonePnl.zone.file != null) {
 			return mZonePnl.zone.file;
 		}
-		return new ctrmap.formats.containers.ZO(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex));
+		return new ctrmap.formats.containers.ZO(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex), Workspace.session());
 	}
 
 	static String escapeTypedText(String text) {

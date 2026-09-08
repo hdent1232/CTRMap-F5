@@ -13,12 +13,6 @@ public class DefaultGamefreakContainer extends AbstractGamefreakContainer{
 		this.magic = magic;
 	}
 
-	/** Transitional: see {@link AbstractGamefreakContainer}. */
-	public DefaultGamefreakContainer(File f, short magic){
-		super(f);
-		this.magic = magic;
-	}
-	
 	@Override
 	public short getHeader() {
 		return magic;

@@ -144,12 +144,34 @@ public final class ClassFileScanner {
 		public final List<Ref> refs;
 		/** Every string constant in its constant pool, folded as javac left it. */
 		public final List<String> strings;
+		/**
+		 * Every class this one names WITHOUT touching a member of it: the
+		 * Class constants (a {@code new}, a cast, an {@code instanceof}, a
+		 * caught exception, the superclass and every {@code implements}) and
+		 * every class type spelled inside a descriptor or generic signature
+		 * (a field's type, a parameter, a return type, a local's type).
+		 * {@link #refs} cannot see these: a class that only implements an
+		 * interface, or only passes one of its objects through, holds no
+		 * Fieldref or Methodref to it at all, and a layering rule that
+		 * counted members alone would pass it.
+		 */
+		public final Set<String> classes;
+		/**
+		 * The methods and constructors this class declares, as
+		 * {@link Ref}s whose owner is this class; the descriptor says what
+		 * each is HANDED, which is how a guard tells a class given its game
+		 * as a parameter from one that fetches it.
+		 */
+		public final List<Ref> declares;
 
-		ClassFile(String name, List<Member> globals, List<Ref> refs, List<String> strings) {
+		ClassFile(String name, List<Member> globals, List<Ref> refs, List<String> strings,
+				Set<String> classes, List<Ref> declares) {
 			this.name = name;
 			this.globals = Collections.unmodifiableList(globals);
 			this.refs = Collections.unmodifiableList(refs);
 			this.strings = Collections.unmodifiableList(strings);
+			this.classes = Collections.unmodifiableSet(classes);
+			this.declares = Collections.unmodifiableList(declares);
 		}
 
 		/**
@@ -259,12 +281,20 @@ public final class ClassFileScanner {
 			}
 			List<Ref> refs = new ArrayList<>();
 			List<String> strings = new ArrayList<>();
+			Set<String> classes = new LinkedHashSet<>();
 			for (int i = 1; i < cpCount; i++) {
 				if (tag[i] == 8) {
 					strings.add(utf[a[i]]);
 				} else if (tag[i] == 9 || tag[i] == 10 || tag[i] == 11) {
 					int nt = b[i];
 					refs.add(new Ref(utf[a[a[i]]], utf[a[nt]], utf[b[nt]], tag[i] != 9));
+				} else if (tag[i] == 7) {
+					//a Class constant names the class bare, or as an array descriptor
+					classesIn(utf[a[i]].startsWith("[") ? utf[a[i]] : "L" + utf[a[i]] + ";", classes);
+				} else if (tag[i] == 12) {
+					classesIn(utf[b[i]], classes); //a NameAndType's descriptor
+				} else if (tag[i] == 1 && utf[i] != null && utf[i].startsWith("(")) {
+					classesIn(utf[i], classes); //a method descriptor or signature nothing else reached
 				}
 			}
 			skip(in, 6);                          //access flags, this class, super class
@@ -274,7 +304,7 @@ public final class ClassFileScanner {
 			for (int i = 0; i < fieldCount; i++) {
 				int flags = in.readUnsignedShort();
 				String name = utf[in.readUnsignedShort()];
-				skip(in, 2); //descriptor
+				classesIn(utf[in.readUnsignedShort()], classes); //the field's type
 				skipAttributes(in);
 				boolean mutableGlobal = (flags & ACC_PUBLIC) != 0 && (flags & ACC_STATIC) != 0
 						&& (flags & ACC_FINAL) == 0 && (flags & ACC_SYNTHETIC) == 0;
@@ -282,9 +312,44 @@ public final class ClassFileScanner {
 					globals.add(new Member(internalName, name));
 				}
 			}
-			return new ClassFile(internalName, globals, refs, strings);
+			List<Ref> declares = new ArrayList<>();
+			int methodCount = in.readUnsignedShort();
+			for (int i = 0; i < methodCount; i++) {
+				skip(in, 2); //access flags
+				String name = utf[in.readUnsignedShort()];
+				String descriptor = utf[in.readUnsignedShort()];
+				skipAttributes(in);
+				classesIn(descriptor, classes);
+				declares.add(new Ref(internalName, name, descriptor, true));
+			}
+			return new ClassFile(internalName, globals, refs, strings, classes, declares);
 		} finally {
 			in.close();
+		}
+	}
+
+	/**
+	 * Adds every class type spelled in a descriptor or a generic signature:
+	 * each {@code Lname;} and, inside a signature, each {@code Lname<}.
+	 * Primitives and type variables are not classes and are skipped.
+	 */
+	static void classesIn(String descriptor, Set<String> out) {
+		if (descriptor == null) {
+			return;
+		}
+		int i = 0;
+		while ((i = descriptor.indexOf('L', i)) >= 0) {
+			int end = i + 1;
+			while (end < descriptor.length() && descriptor.charAt(end) != ';' && descriptor.charAt(end) != '<') {
+				end++;
+			}
+			String name = descriptor.substring(i + 1, end);
+			//"L" is also how a signature spells a type variable's bound and
+			//a plain letter inside a name; only a slash-shaped name is a class
+			if (name.indexOf('/') > 0 || name.startsWith("ctrmap")) {
+				out.add(name);
+			}
+			i = end;
 		}
 	}
 
@@ -322,6 +387,25 @@ public final class ClassFileScanner {
 			for (Ref r : cf.refs) {
 				if (r.owner.equals(owner)) {
 					out.add(new Member(cf.topLevel(), r.name));
+				}
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Every distinct (referencing top-level class, named class) pair where the
+	 * named class satisfies {@code target} - a class reference with or without
+	 * a member edge behind it. {@code implements ctrmap/humaninterface/MapObject}
+	 * is one of these and nothing in {@link #edgesTo}, which is why a layering
+	 * rule asks both.
+	 */
+	public static Set<Member> classEdgesTo(List<ClassFile> classes, java.util.function.Predicate<String> target) {
+		Set<Member> out = new LinkedHashSet<>();
+		for (ClassFile cf : classes) {
+			for (String c : cf.classes) {
+				if (target.test(c)) {
+					out.add(new Member(cf.topLevel(), c));
 				}
 			}
 		}

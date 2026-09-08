@@ -53,7 +53,7 @@ public class ZoneManager {
 		if (zf == null) {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
-		ZO zo = new ZO(zf);
+		ZO zo = new ZO(zf, ws);
 		ZoneEntities ent = new ZoneEntities(zo.getFile(1));
 		int removed = ent.furniture.size() + ent.npcs.size() + ent.warps.size()
 				+ ent.triggers1.size() + ent.triggers2.size();
@@ -191,7 +191,7 @@ public class ZoneManager {
 	private static void repointParentMap(WorkspaceSession ws, int zoneIndex, File masterFile, byte[] master, int rowOff, int newParent) throws IOException {
 		// ZO header (subfile 0)
 		File zf = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
-		ZO zo = new ZO(zf);
+		ZO zo = new ZO(zf, ws);
 		byte[] hdr = zo.getFile(0);
 		setParentMap(hdr, 0, newParent);
 		if (!zo.storeFile(0, hdr)) {

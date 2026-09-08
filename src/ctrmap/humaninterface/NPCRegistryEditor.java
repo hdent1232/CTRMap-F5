@@ -93,7 +93,7 @@ public class NPCRegistryEditor extends javax.swing.JFrame {
 		e = entry;
 		File bchFile = Workspace.getWorkspaceFile(ArchiveType.MOVE_MODELS, entry.model);
 		if (bchFile.exists()) {
-			BCHFile mdlBch = new BCHFile(new MM(bchFile).getFile(0));
+			BCHFile mdlBch = new BCHFile(new MM(bchFile, Workspace.session()).getFile(0));
 			mdlBch.models.get(0).setMaterialTextures(mdlBch.textures);
 			customH3DPreview1.loadModel(mdlBch.models.get(0));
 		} else {

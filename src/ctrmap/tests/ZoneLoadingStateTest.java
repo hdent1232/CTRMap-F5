@@ -643,7 +643,7 @@ public class ZoneLoadingStateTest {
 	}
 
 	static Zone zoneAt(int index) throws Exception {
-		return new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(index))), Workspace.game());
+		return new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(index)), Workspace.session()), Workspace.game());
 	}
 
 	/** Presses one of the panel's buttons, whatever it throws coming back as a message. */

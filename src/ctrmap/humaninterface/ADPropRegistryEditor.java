@@ -87,7 +87,7 @@ public class ADPropRegistryEditor extends javax.swing.JFrame {
 	public H3DModel getH3DModel(int model) {
 		File bchFile = Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, model);
 		if (bchFile.exists()) {
-			BCHFile mdlBch = new BCHFile(new BM(bchFile).getFile(0));
+			BCHFile mdlBch = new BCHFile(new BM(bchFile, Workspace.session()).getFile(0));
 			mdlBch.models.get(0).setMaterialTextures(mdlBch.textures);
 			mdlBch.models.get(0).setMaterialTextures(propTextures);
 			return mdlBch.models.get(0);
