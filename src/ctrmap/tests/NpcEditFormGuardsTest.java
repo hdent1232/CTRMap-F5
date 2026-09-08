@@ -26,6 +26,14 @@ import ctrmap.formats.zone.Zone;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameType;
+import ctrmap.humaninterface.ChallengeForm;
+import ctrmap.humaninterface.ChallengeInput;
+import ctrmap.humaninterface.DialogueForm;
+import ctrmap.humaninterface.GiveBpForm;
+import ctrmap.humaninterface.GiverForm;
+import ctrmap.humaninterface.SignForm;
+import ctrmap.humaninterface.TalkerForm;
+import ctrmap.humaninterface.TrainerForm;
 import ctrmap.humaninterface.NPCEditForm;
 import ctrmap.humaninterface.Selector;
 import ctrmap.humaninterface.TileMapPanel;
@@ -711,24 +719,32 @@ public class NpcEditFormGuardsTest {
 		Point pos = new Point(12, 34);
 		int npcs = e.npcs.size();
 
-		//the forms build without a window, with the defaults the handler relies on
-		NPCEditForm.GiveBpForm giveBp = form.new GiveBpForm();
+		//the forms build without a window, with the defaults the handler relies on.
+		//Each model picker starts a live preview on a thread that is not a daemon,
+		//so the list they register with is one this suite owns and stops below -
+		//the same contract NPCEditForm.disposePreviews keeps for the editor.
+		List<ctrmap.humaninterface.CustomH3DPreview> previews = new ArrayList<>();
+		GiveBpForm giveBp = new GiveBpForm(null, previews);
 		check(giveBp.amount() == 20 && giveBp.model() < 0, "the Give BP form starts at 20 BP with no model chosen");
-		NPCEditForm.TrainerForm trainer = form.new TrainerForm();
+		TrainerForm trainer = new TrainerForm(null, previews);
 		check(trainer.trainer() == 1 && trainer.sight() == 0 && trainer.facing() == 0 && !trainer.pair(),
 				"the trainer form starts at trainer 1, no sight range, facing down, no partner");
-		NPCEditForm.GiverForm giver = form.new GiverForm();
+		GiverForm giver = new GiverForm(null, previews);
 		check(giver.item() == 1 && giver.count() == 1, "the item-giver form starts at item 1, quantity 1");
-		NPCEditForm.SignForm sign = form.new SignForm();
+		SignForm sign = new SignForm();
 		check(sign.signType() == NpcTemplates.SIGN_TYPES[0] && sign.text().isEmpty(), "the sign form starts on the first style, empty");
-		NPCEditForm.ChallengeInput in = form.new ChallengeForm().input();
+		ChallengeInput in = new ChallengeForm(null, previews).input();
 		check(in.trainerIds.isEmpty() && in.bpPerWin == 3 && in.milestone == 0 && in.milestoneBonus == 20 && !in.loseWhiteout
 				&& in.model < 0 && Integer.parseInt(in.streakWorkHex, 16) == GauntletScriptWizard.DEFAULT_STREAK_WORK,
 				"the challenge form starts with an empty lineup, 3 BP a win, no bonus, the default streak variable");
-		NPCEditForm.TalkerForm talker = form.new TalkerForm(-1);
+		TalkerForm talker = new TalkerForm(null, previews, -1);
 		check(talker.text().isEmpty() && talker.model() < 0, "the talker form starts empty with no model");
-		NPCEditForm.DialogueForm dialogue = new NPCEditForm.DialogueForm("as it is");
+		DialogueForm dialogue = new DialogueForm("as it is");
 		check("as it is".equals(dialogue.text()), "the dialogue form starts with the line as it is");
+
+		for (ctrmap.humaninterface.CustomH3DPreview p : previews) {
+			p.stop();
+		}
 
 		//refusals, each said through Ui and each placing nothing
 		List<String> said = ctrmap.Ui.record();
@@ -745,7 +761,7 @@ public class NpcEditFormGuardsTest {
 					"an item giver with no model is refused: " + last(said));
 			check(form.addTalker(zone, null, "Hi", -1, null, pos) == null && last(said).contains("Select an overworld model first"),
 					"a talker with no model is refused before its text is looked at: " + last(said));
-			NPCEditForm.ChallengeInput bad = new NPCEditForm.ChallengeInput();
+			ChallengeInput bad = new ChallengeInput();
 			check(form.addChallenge(zone, bad, pos) == null && last(said).contains("Add at least one trainer"),
 					"a challenge with an empty lineup is refused: " + last(said));
 			bad.trainerIds.add(5);
@@ -1106,10 +1122,10 @@ public class NpcEditFormGuardsTest {
 				"the form is on a registry that is already full (" + full.entries.size()
 				+ " of " + NPCRegistry.MAX_ENTRIES + ")");
 
-		Constructor<?> ctor = Class.forName("ctrmap.humaninterface.NPCEditForm$ModelPicker")
-				.getDeclaredConstructor(NPCEditForm.class, int.class);
-		ctor.setAccessible(true);
-		Object picker = ctor.newInstance(form, -1);
+		//the picker is an ordinary class now: this had to reach it by its nested
+		//name and hand it an editor instance, because it was an inner class
+		List<ctrmap.humaninterface.CustomH3DPreview> pickerPreviews = new ArrayList<>();
+		Object picker = new ctrmap.humaninterface.ModelPicker(full, pickerPreviews, -1);
 		try {
 			((List<int[]>) field(picker, "poolExtra")).add(new int[]{1, GLOBAL_MODEL});
 			((List<String>) field(picker, "poolExtraLabels")).add("[+] model " + GLOBAL_MODEL);
@@ -1141,6 +1157,9 @@ public class NpcEditFormGuardsTest {
 			try {
 				uid = (Integer) invoke(picker, "getSelectedUid");
 			} finally {
+			for (ctrmap.humaninterface.CustomH3DPreview p : pickerPreviews) {
+				p.stop();
+			}
 				ctrmap.Ui.stopRecording();
 			}
 			check(uid < 0, "picking a model the full registry cannot take hands back no uid: " + uid);

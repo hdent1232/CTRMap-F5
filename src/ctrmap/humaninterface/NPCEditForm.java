@@ -770,7 +770,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * Multi-line text typed into a dialog uses real newlines; the message
 	 * files store them as the \n escape (same form the TextEditor shows).
 	 */
-	private static String escapeTypedText(String text) {
+	static String escapeTypedText(String text) {
 		return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n");
 	}
 
@@ -805,21 +805,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		updateDialogueSection();
 	}
 
-	/** The dialogue editor's form: the line, as it is, to retype. */
-	public static final class DialogueForm {
-
-		public final JScrollPane panel;
-		private final JTextArea text;
-
-		public DialogueForm(String currentLine) {
-			text = textArea(currentLine, 5);
-			panel = new JScrollPane(text);
-		}
-
-		public String text() {
-			return text.getText();
-		}
-	}
 
 	/** What {@link #editDialogue} did. */
 	public enum DialogueEdit {
@@ -951,7 +936,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "Story text file " + zone.header.textID + " could not be read.", "Add talking NPC");
 			return;
 		}
-		TalkerForm form = new TalkerForm((npc != null) ? npc.model : -1);
+		TalkerForm form = new TalkerForm(reg, activePreviews, (npc != null) ? npc.model : -1);
 		if (!showForm(form.panel, "Add talking NPC")) {
 			return;
 		}
@@ -962,28 +947,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-	/** The talking-NPC form: the dialogue text and the model. */
-	public final class TalkerForm {
-
-		public final JPanel panel = stackedForm();
-		private final JTextArea text = textArea("", 5);
-		private final ModelPicker model;
-
-		public TalkerForm(int defaultModel) {
-			model = new ModelPicker(defaultModel);
-			addLabeled(panel, "Dialogue text:", new JScrollPane(text));
-			addLabeled(panel, "Model (type to search) - preview below:", model);
-			panel.add(hint("<html>The NPC is placed at the centre of the current view.<br>Only registered overworld models are listed.</html>"));
-		}
-
-		public String text() {
-			return text.getText();
-		}
-
-		public int model() {
-			return model.getSelectedUid();
-		}
-	}
 
 	/**
 	 * The talking-NPC wizard past its form: refuses a missing model or text
@@ -1069,28 +1032,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-	/** The sign form: the text and the sign style. */
-	public final class SignForm {
-
-		public final JPanel panel = stackedForm();
-		private final JTextArea text = textArea("", 5);
-		private final javax.swing.JComboBox<String> style = new javax.swing.JComboBox<>(NpcTemplates.SIGN_TYPE_LABELS);
-
-		public SignForm() {
-			addLabeled(panel, "Sign text:", new JScrollPane(text));
-			addLabeled(panel, "Sign style:", style);
-			panel.add(hint("<html>A sign furniture object is placed at the centre of the current view.<br>Edit its exact tile with the Prop tool.</html>"));
-		}
-
-		public String text() {
-			return text.getText();
-		}
-
-		/** The engine's sign type for the chosen style - see {@link NpcTemplates#SIGN_TYPES}. */
-		public int signType() {
-			return NpcTemplates.SIGN_TYPES[Math.max(0, style.getSelectedIndex())];
-		}
-	}
 
 	/**
 	 * The sign wizard past its form: refuses text that will not encode
@@ -1135,7 +1076,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "This zone's script has no give-item routine (120 of 536 vanilla zones have one).\nPick a zone that already gives an item, or use pk3DS to place items differently.", "Add item giver");
 			return;
 		}
-		GiverForm form = new GiverForm();
+		GiverForm form = new GiverForm(reg, activePreviews);
 		if (!showForm(form.panel, "Add item giver")) {
 			return;
 		}
@@ -1144,33 +1085,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-	/** The item-giver form: which item, how many, which model. */
-	public final class GiverForm {
-
-		public final JPanel panel = stackedForm();
-		private final IdChooser item = new IdChooser(loadGameTextNames(NpcTemplates.gametextItemNames(Workspace.profile())), NpcTemplates.ITEM_ID_MAX, 1);
-		private final JSpinner count = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 99, 1));
-		private final ModelPicker model = new ModelPicker(-1);
-
-		public GiverForm() {
-			addLabeled(panel, "Item (type to search):", item);
-			addLabeled(panel, "Quantity:", count);
-			addLabeled(panel, "NPC model (type to search; preview below):", model);
-			panel.add(hint("<html>The NPC is placed at the centre of the view and gives the item<br>each time it is talked to (no one-time flag yet).</html>"));
-		}
-
-		public int item() {
-			return item.getId();
-		}
-
-		public int count() {
-			return (Integer) count.getValue();
-		}
-
-		public int model() {
-			return model.getSelectedUid();
-		}
-	}
 
 	/**
 	 * The item-giver wizard past its form: refuses a missing item or model
@@ -1208,7 +1122,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * win, streak reset on a loss. See {@link GauntletScriptWizard}.
 	 */
 	private void addChallengeTemplate(Zone zone) {
-		ChallengeForm form = new ChallengeForm();
+		ChallengeForm form = new ChallengeForm(reg, activePreviews);
 		if (!showForm(form.panel, "Add battle challenge")) {
 			return;
 		}
@@ -1217,102 +1131,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-	/** What the battle-challenge form collects, as values. */
-	public static final class ChallengeInput {
 
-		public final java.util.List<Integer> trainerIds = new java.util.ArrayList<>();
-		public int bpPerWin = 3;
-		public int milestone = 0;
-		public int milestoneBonus = 20;
-		/** The streak save variable as typed: hex, with or without 0x. */
-		public String streakWorkHex = Integer.toHexString(ctrmap.formats.scripts.GauntletScriptWizard.DEFAULT_STREAK_WORK);
-		public boolean loseWhiteout = false;
-		public String intro = "", win = "", lose = "";
-		public int model = -1;
-	}
-
-	/** The battle-challenge form: the lineup, the BP rules, the three texts, the streak variable, the model. */
-	public final class ChallengeForm {
-
-		public final JPanel panel = stackedForm();
-		private final java.util.List<Integer> trainerIds = new java.util.ArrayList<>();
-		private final JSpinner bp = new JSpinner(new javax.swing.SpinnerNumberModel(3, 0, 999, 1));
-		private final JSpinner milestone = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 99, 1));
-		private final JSpinner bonus = new JSpinner(new javax.swing.SpinnerNumberModel(20, 0, 9999, 1));
-		private final javax.swing.JCheckBox whiteout = new javax.swing.JCheckBox("White out on defeat (engine loss handler)");
-		private final JTextArea intro = textArea("", 2);
-		private final JTextArea win = textArea("", 2);
-		private final JTextArea lose = textArea("", 2);
-		private final javax.swing.JTextField workVar = new javax.swing.JTextField(
-				Integer.toHexString(ctrmap.formats.scripts.GauntletScriptWizard.DEFAULT_STREAK_WORK), 6);
-		private final ModelPicker model = new ModelPicker(-1);
-
-		public ChallengeForm() {
-			final IdChooser idChooser = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames(Workspace.profile())), NpcTemplates.TRAINER_ID_MAX, 1);
-			final javax.swing.DefaultListModel<String> listModel = new javax.swing.DefaultListModel<>();
-			final java.util.List<String> trainerNames = loadGameTextNames(NpcTemplates.gametextTrainerNames(Workspace.profile()));
-			final javax.swing.JList<String> trainerList = new javax.swing.JList<>(listModel);
-			trainerList.setVisibleRowCount(5);
-			javax.swing.JButton addBtn = new javax.swing.JButton("Add to lineup");
-			javax.swing.JButton removeBtn = new javax.swing.JButton("Remove selected");
-			addBtn.addActionListener(ev -> {
-				int tid = idChooser.getId();
-				if (tid >= 1 && tid <= 949) {
-					trainerIds.add(tid);
-					listModel.addElement("#" + trainerIds.size() + "  " + tid
-							+ (trainerNames != null && tid < trainerNames.size() && trainerNames.get(tid) != null && !trainerNames.get(tid).isEmpty()
-							? " " + trainerNames.get(tid) : ""));
-				}
-			});
-			removeBtn.addActionListener(ev -> {
-				int i = trainerList.getSelectedIndex();
-				if (i >= 0) {
-					trainerIds.remove(i);
-					listModel.remove(i);
-				}
-			});
-			addLabeled(panel, "Lineup (battle 1, 2, ... - the last repeats until a loss):", idChooser);
-			JPanel listBtns = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 0));
-			listBtns.add(addBtn);
-			listBtns.add(removeBtn);
-			listBtns.setAlignmentX(LEFT_ALIGNMENT);
-			panel.add(listBtns);
-			JScrollPane listScroll = new JScrollPane(trainerList);
-			listScroll.setAlignmentX(LEFT_ALIGNMENT);
-			panel.add(listScroll);
-			addLabeled(panel, "BP per win (0 = none):", bp);
-			addLabeled(panel, "Bonus at streak (0 = no bonus):", milestone);
-			addLabeled(panel, "Bonus BP:", bonus);
-			addLabeled(panel, "Intro text (empty = none):", new JScrollPane(intro));
-			addLabeled(panel, "Win text (empty = none):", new JScrollPane(win));
-			addLabeled(panel, "Lose text (empty = none):", new JScrollPane(lose));
-			addLabeled(panel, "Streak save variable (hex; script-corpus-free default):", workVar);
-			whiteout.setAlignmentX(LEFT_ALIGNMENT);
-			panel.add(whiteout);
-			addLabeled(panel, "NPC model (type to search; preview below):", model);
-			panel.add(hint("<html>The lineup takes ANY trainer entry: retail trainers (Youngsters, Ace Trainers...)<br>"
-					+ "work AS-IS and are not modified by battling them here; for custom competitors,<br>"
-					+ "repurpose a blank-named entry in Game Data -> Trainers (set its class, name and<br>"
-					+ "team there - the class gives it the Youngster/Ace Trainer/... battle identity).<br>"
-					+ "Fully independent of the retail facilities' shared pools - vanilla stays untouched.<br>"
-					+ "Each talk = one battle at the current streak. UNPROVEN IN-GAME - test it first.</html>"));
-		}
-
-		public ChallengeInput input() {
-			ChallengeInput in = new ChallengeInput();
-			in.trainerIds.addAll(trainerIds);
-			in.bpPerWin = (Integer) bp.getValue();
-			in.milestone = (Integer) milestone.getValue();
-			in.milestoneBonus = (Integer) bonus.getValue();
-			in.streakWorkHex = workVar.getText();
-			in.loseWhiteout = whiteout.isSelected();
-			in.intro = intro.getText();
-			in.win = win.getText();
-			in.lose = lose.getText();
-			in.model = model.getSelectedUid();
-			return in;
-		}
-	}
 
 	/**
 	 * The battle-challenge wizard past its form: refuses an empty lineup, a
@@ -1437,7 +1256,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * and for testing BP-driven shops/facilities.
 	 */
 	private void addGiveBpTemplate(Zone zone) {
-		GiveBpForm form = new GiveBpForm();
+		GiveBpForm form = new GiveBpForm(reg, activePreviews);
 		if (!showForm(form.panel, "Add Give BP")) {
 			return;
 		}
@@ -1446,27 +1265,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-	/** The Give-BP form: how many points, and which model. */
-	public final class GiveBpForm {
-
-		public final JPanel panel = stackedForm();
-		private final JSpinner amount = new JSpinner(new javax.swing.SpinnerNumberModel(20, 1, 9999, 1));
-		private final ModelPicker model = new ModelPicker(-1);
-
-		public GiveBpForm() {
-			addLabeled(panel, "Battle Points to give:", amount);
-			addLabeled(panel, "NPC model (type to search; preview below):", model);
-			panel.add(hint("<html>The NPC adds this many BP each time it is talked to (no one-time flag yet;<br>the game caps total BP at 9999). Uses the engine's own BP natives.</html>"));
-		}
-
-		public int amount() {
-			return (Integer) amount.getValue();
-		}
-
-		public int model() {
-			return model.getSelectedUid();
-		}
-	}
 
 	/**
 	 * The Give-BP wizard past its form: refuses a missing model (saying so),
@@ -1497,7 +1295,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * optional double-battle partner. No script surgery.
 	 */
 	private void addTrainerTemplate(Zone zone) {
-		TrainerForm form = new TrainerForm();
+		TrainerForm form = new TrainerForm(reg, activePreviews);
 		if (!showForm(form.panel, "Add trainer")) {
 			return;
 		}
@@ -1508,47 +1306,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-	/** The trainer form: which trainer, model, sight range, facing, and whether a double-battle partner comes too. */
-	public final class TrainerForm {
-
-		public final JPanel panel = stackedForm();
-		private final IdChooser trainer = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames(Workspace.profile())), NpcTemplates.TRAINER_ID_MAX, 1);
-		private final ModelPicker model = new ModelPicker(-1);
-		private final JSpinner sight = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 8, 1));
-		private final javax.swing.JComboBox<String> facing = new javax.swing.JComboBox<>(new String[]{"Down", "Up", "Left", "Right"});
-		private final javax.swing.JCheckBox pair = new javax.swing.JCheckBox("Add double-battle partner (script 5000 + ID) beside it");
-
-		public TrainerForm() {
-			addLabeled(panel, "Trainer (type to search; edit party/class in pk3DS):", trainer);
-			addLabeled(panel, "NPC model (type to search; preview below):", model);
-			addLabeled(panel, "Sight range (0 = battle on talk only):", sight);
-			addLabeled(panel, "Facing:", facing);
-			pair.setAlignmentX(LEFT_ALIGNMENT);
-			panel.add(pair);
-			panel.add(hint("<html>Places the overworld trainer NPC only. The battle exists only if<br>trainer data slot ID is valid (set it in pk3DS).</html>"));
-		}
-
-		public int trainer() {
-			return trainer.getId();
-		}
-
-		public int model() {
-			return model.getSelectedUid();
-		}
-
-		public int sight() {
-			return (Integer) sight.getValue();
-		}
-
-		/** 0=down 1=up 2=left 3=right. */
-		public int facing() {
-			return Math.max(0, facing.getSelectedIndex());
-		}
-
-		public boolean pair() {
-			return pair.isSelected();
-		}
-	}
 
 	/**
 	 * The trainer wizard past its form: refuses a missing trainer or model
@@ -1626,7 +1383,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * and a game whose indices someone fills in later gets its names without
 	 * anyone remembering to widen a game check here.
 	 */
-	private java.util.List<String> loadGameTextNames(int fileIndex) {
+	static java.util.List<String> loadGameTextNames(int fileIndex) {
 		if (fileIndex < 0 || Workspace.getArchive(ArchiveType.GAMETEXT) == null) {
 			return null;
 		}
@@ -1638,91 +1395,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-	/**
-	 * A searchable ID picker: a filter field over a "id: name" list when names
-	 * are available, or a plain numeric spinner otherwise. getId() returns the
-	 * chosen 1-based ID, or -1 when the filtered list has no selection.
-	 */
-	private static class IdChooser extends JPanel {
 
-		private javax.swing.JList<String> list;
-		private final java.util.List<Integer> ids = new java.util.ArrayList<>();
-		private JSpinner spinner;
-
-		IdChooser(java.util.List<String> names, int maxId, int defaultId) {
-			setLayout(new java.awt.BorderLayout());
-			if (names == null || names.size() <= 1) {
-				spinner = new JSpinner(new javax.swing.SpinnerNumberModel(defaultId, 1, maxId, 1));
-				add(spinner, java.awt.BorderLayout.CENTER);
-				return;
-			}
-			final java.util.List<String> entries = new java.util.ArrayList<>();
-			final java.util.List<Integer> baseIds = new java.util.ArrayList<>();
-			for (int i = 1; i <= maxId && i < names.size(); i++) {
-				String nm = names.get(i);
-				if (nm == null || nm.isEmpty() || nm.equals("-")) {
-					continue;
-				}
-				entries.add(i + ": " + nm);
-				baseIds.add(i);
-			}
-			final javax.swing.DefaultListModel<String> model = new javax.swing.DefaultListModel<>();
-			list = new javax.swing.JList<>(model);
-			list.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
-			final javax.swing.JTextField filter = new javax.swing.JTextField();
-			final Runnable rebuild = new Runnable() {
-				@Override
-				public void run() {
-					String f = filter.getText().toLowerCase();
-					model.clear();
-					ids.clear();
-					for (int k = 0; k < entries.size(); k++) {
-						if (f.isEmpty() || entries.get(k).toLowerCase().contains(f)) {
-							model.addElement(entries.get(k));
-							ids.add(baseIds.get(k));
-						}
-					}
-					if (!model.isEmpty() && list.getSelectedIndex() < 0) {
-						list.setSelectedIndex(0);
-					}
-				}
-			};
-			filter.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-				@Override public void insertUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
-				@Override public void removeUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
-				@Override public void changedUpdate(javax.swing.event.DocumentEvent e) { rebuild.run(); }
-			});
-			rebuild.run();
-			for (int k = 0; k < ids.size(); k++) {
-				if (ids.get(k) == defaultId) {
-					list.setSelectedIndex(k);
-					break;
-				}
-			}
-			add(filter, java.awt.BorderLayout.NORTH);
-			JScrollPane sc = new JScrollPane(list);
-			sc.setPreferredSize(new java.awt.Dimension(280, 150));
-			add(sc, java.awt.BorderLayout.CENTER);
-		}
-
-		int getId() {
-			if (spinner != null) {
-				return (Integer) spinner.getValue();
-			}
-			int sel = list.getSelectedIndex();
-			return (sel >= 0 && sel < ids.size()) ? ids.get(sel) : -1;
-		}
-	}
-
-	private void addLabeled(JPanel panel, String label, java.awt.Component field) {
-		JLabel l = new JLabel(label);
-		l.setAlignmentX(LEFT_ALIGNMENT);
-		panel.add(l);
-		if (field instanceof javax.swing.JComponent) {
-			((javax.swing.JComponent) field).setAlignmentX(LEFT_ALIGNMENT);
-		}
-		panel.add(field);
-	}
 
 	private final java.util.List<CustomH3DPreview> activePreviews = new java.util.ArrayList<>();
 
@@ -1786,198 +1459,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	/** A form's widgets stacked top to bottom, each behind its label. */
-	private JPanel stackedForm() {
-		JPanel panel = new JPanel();
-		panel.setLayout(new javax.swing.BoxLayout(panel, javax.swing.BoxLayout.Y_AXIS));
-		return panel;
-	}
 
-	private static JLabel hint(String html) {
-		JLabel hint = new JLabel(html);
-		hint.setAlignmentX(LEFT_ALIGNMENT);
-		return hint;
-	}
 
-	private static JTextArea textArea(String text, int rows) {
-		JTextArea ta = new JTextArea(text, rows, 40);
-		ta.setLineWrap(true);
-		ta.setWrapStyleWord(true);
-		return ta;
-	}
 
-	/**
-	 * A searchable NPC-model picker with a live 3D preview. Lists ONLY the
-	 * registered overworld models (from the NPC registry) as "UID: name" - so
-	 * empty/unregistered UIDs never clutter the browser - and previews the
-	 * selection. Names come from each model's embedded BCH name.
-	 */
-	private class ModelPicker extends JPanel {
-
-		private final javax.swing.JList<String> list = new javax.swing.JList<>();
-		// each entry is {kind, value}: kind 0 = registered UID, kind 1 = global MoveModels index
-		private final List<int[]> visibleEntries = new ArrayList<>();
-		private final List<int[]> allEntries = new ArrayList<>();
-		private final List<String> allLabels = new ArrayList<>();
-		private final List<int[]> registered = new ArrayList<>();
-		private final List<String> registeredLabels = new ArrayList<>();
-		private final List<int[]> poolExtra = new ArrayList<>();
-		private final List<String> poolExtraLabels = new ArrayList<>();
-		private boolean poolLoaded = false;
-		private final CustomH3DPreview preview = new CustomH3DPreview();
-		private final javax.swing.JTextField filter = new javax.swing.JTextField();
-		private final javax.swing.JCheckBox showAll = new javax.swing.JCheckBox("Browse ALL game NPC models (adds the one you pick to this area)");
-		private final javax.swing.DefaultListModel<String> listModel = new javax.swing.DefaultListModel<>();
-
-		ModelPicker(int defaultUid) {
-			setLayout(new java.awt.BorderLayout());
-			if (reg != null) {
-				List<Integer> keys = new ArrayList<>(reg.entries.keySet());
-				Collections.sort(keys);
-				for (int uid : keys) {
-					H3DModel m = reg.getModel(uid);
-					String nm = (m != null && m.name != null) ? m.name.trim() : "";
-					registered.add(new int[]{0, uid});
-					registeredLabels.add(uid + (nm.isEmpty() ? "" : ": " + nm));
-				}
-			}
-			list.setModel(listModel);
-			list.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
-			filter.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-				@Override public void insertUpdate(javax.swing.event.DocumentEvent e) { rebuild(); }
-				@Override public void removeUpdate(javax.swing.event.DocumentEvent e) { rebuild(); }
-				@Override public void changedUpdate(javax.swing.event.DocumentEvent e) { rebuild(); }
-			});
-			showAll.addActionListener((java.awt.event.ActionEvent e) -> {
-				if (showAll.isSelected() && !poolLoaded) {
-					setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.WAIT_CURSOR));
-					try {
-						loadFullPool();
-					} finally {
-						setCursor(java.awt.Cursor.getDefaultCursor());
-					}
-				}
-				buildEntries();
-				rebuild();
-			});
-			list.addListSelectionListener((javax.swing.event.ListSelectionEvent e) -> {
-				if (!e.getValueIsAdjusting()) {
-					updatePreview();
-				}
-			});
-			buildEntries();
-			rebuild();
-			for (int k = 0; k < visibleEntries.size(); k++) {
-				int[] en = visibleEntries.get(k);
-				if (en[0] == 0 && en[1] == defaultUid) {
-					list.setSelectedIndex(k);
-					break;
-				}
-			}
-			JScrollPane listScroll = new JScrollPane(list);
-			listScroll.setPreferredSize(new java.awt.Dimension(300, 120));
-			preview.setPreferredSize(new java.awt.Dimension(300, 190));
-			javax.swing.JPanel top = new javax.swing.JPanel(new java.awt.BorderLayout());
-			top.add(filter, java.awt.BorderLayout.NORTH);
-			top.add(showAll, java.awt.BorderLayout.SOUTH);
-			add(top, java.awt.BorderLayout.NORTH);
-			add(listScroll, java.awt.BorderLayout.CENTER);
-			add(preview, java.awt.BorderLayout.SOUTH);
-			activePreviews.add(preview);
-			updatePreview();
-		}
-
-		private void loadFullPool() {
-			poolExtra.clear();
-			poolExtraLabels.clear();
-			java.util.Set<Integer> already = new java.util.HashSet<>();
-			if (reg != null) {
-				for (NPCRegistry.NPCRegistryEntry en : reg.entries.values()) {
-					already.add(en.model);
-				}
-			}
-			int n = ctrmap.formats.npcreg.MoveModelPool.size(Workspace.session());
-			for (int i = 0; i < n; i++) {
-				if (already.contains(i)) {
-					continue; //already offered via the registered list
-				}
-				String nm = ctrmap.formats.npcreg.MoveModelPool.name(Workspace.session(), i);
-				poolExtra.add(new int[]{1, i});
-				poolExtraLabels.add("[+] model " + i + (nm == null || nm.isEmpty() ? "" : ": " + nm));
-			}
-			poolLoaded = true;
-		}
-
-		private void buildEntries() {
-			allEntries.clear();
-			allLabels.clear();
-			allEntries.addAll(registered);
-			allLabels.addAll(registeredLabels);
-			if (showAll.isSelected()) {
-				allEntries.addAll(poolExtra);
-				allLabels.addAll(poolExtraLabels);
-			}
-		}
-
-		private void rebuild() {
-			String f = filter.getText().toLowerCase();
-			listModel.clear();
-			visibleEntries.clear();
-			for (int k = 0; k < allEntries.size(); k++) {
-				if (f.isEmpty() || allLabels.get(k).toLowerCase().contains(f)) {
-					listModel.addElement(allLabels.get(k));
-					visibleEntries.add(allEntries.get(k));
-				}
-			}
-			if (!listModel.isEmpty() && list.getSelectedIndex() < 0) {
-				list.setSelectedIndex(0);
-			}
-		}
-
-		/**
-		 * The chosen UID. If the user picked a global model that is not yet in this
-		 * area, it is registered on demand (and the new UID returned). Returns -1
-		 * when nothing valid is selected or the area's registry is full.
-		 */
-		int getSelectedUid() {
-			int s = list.getSelectedIndex();
-			if (s < 0 || s >= visibleEntries.size()) {
-				return -1;
-			}
-			int[] en = visibleEntries.get(s);
-			if (en[0] == 0) {
-				return en[1]; //already a registered UID
-			}
-			int uid = (reg != null) ? reg.registerModel(en[1]) : -1;
-			if (uid < 0) {
-				//through Ui, not JOptionPane: this is the only thing that
-				//distinguishes "the model you picked is now on the NPC" from
-				//"nothing happened", and a bare dialog is neither reachable nor
-				//observable from a guard
-				ctrmap.Ui.error(this,
-						"This area's NPC registry is full (max " + NPCRegistry.MAX_ENTRIES + " unique models).\n"
-						+ "Remove an unused model in the NPC registry editor and try again.",
-						"Registry full");
-			}
-			return uid;
-		}
-
-		boolean hasModels() {
-			return !registered.isEmpty();
-		}
-
-		private void updatePreview() {
-			int s = list.getSelectedIndex();
-			if (s < 0 || s >= visibleEntries.size()) {
-				preview.loadModel(null);
-				return;
-			}
-			int[] en = visibleEntries.get(s);
-			H3DModel m = (en[0] == 0)
-					? ((reg != null) ? reg.loadFreshModel(en[1]) : null)
-					: NPCRegistry.loadFreshModelByIndex(Workspace.session(), en[1]);
-			preview.loadModel(m);
-		}
-	}
 
 	private void scrDropdownActionPerformed(java.awt.event.ActionEvent evt) {
 		if (loaded && !scrDropdownLoading && scrDropdown.getSelectedIndex() != -1) {
