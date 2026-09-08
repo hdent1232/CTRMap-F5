@@ -200,12 +200,18 @@ public class TileMapPanelStateTest {
 		check(!ok && panel.tilemaps[0][0].modified,
 				"a closed dialog is treated as cancel, not as permission to discard");
 
-		//PINNED AS IS: dialog=false writes nothing here, unlike the matrix path
+		//RETARGETED. This read "PINNED AS IS: dialog=false writes nothing here,
+		//unlike the matrix path" - the asymmetry was seen, written down and
+		//left standing. It was not an asymmetry, it was data loss: File > Save
+		//is openEditors.saveAll(FALSE), so every tile edit made to a loose GR
+		//map was reported saved and thrown away, and the matrix path a few
+		//lines up never had the problem, so nobody with a zone open could see
+		//it. The flag means "may I ask", not "may I write".
 		ok = panel.saveTileMap(false);
 		check(ok, "asked not to prompt, the single-region save returns true");
-		check(Arrays.equals(panel.mainGR.getFile(0), pristine),
-				"but writes nothing at all - PINNED as it behaves, not as it reads");
-		check(panel.tilemaps[0][0].modified, "and leaves the region marked modified");
+		check(!Arrays.equals(panel.mainGR.getFile(0), pristine),
+				"AND WRITES: a flush that asks nobody still has to save");
+		check(!panel.tilemaps[0][0].modified, "with nothing left pending afterwards");
 	}
 
 	/**

@@ -68,6 +68,9 @@ import javax.swing.JOptionPane;
  * Usage: java ctrmap.tests.ZoneLoadingStateTest &lt;pristine dump root&gt;
  */
 public class ZoneLoadingStateTest {
+
+	/** The 3D gizmo these forms move, so what they told it can be read back. */
+	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
 	static final ZoneEditorsSpy ZONE_EDITORS = new ZoneEditorsSpy();
 
@@ -104,9 +107,9 @@ public class ZoneLoadingStateTest {
 			ScratchGame.open(dump);
 			LocationNames.loadFromGarc(Workspace.session());
 			LoadedZone lz = new LoadedZone();
-			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS);
+			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 			CtrmapMainframe.mZonePnl = pnl;
-			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW);
+			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI);
 			CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW);
 			CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW);
 
@@ -148,7 +151,7 @@ public class ZoneLoadingStateTest {
 	/** What building a Zone tab with these two says, or that it said nothing. */
 	static String refusal(ctrmap.humaninterface.OpenEditors editors, ctrmap.humaninterface.ZoneEditors views) {
 		try {
-			new ZoneLoadingPanel(new LoadedZone(), TOOLS, editors, views);
+			new ZoneLoadingPanel(new LoadedZone(), TOOLS, editors, views, NAVI);
 		} catch (IllegalArgumentException refused) {
 			return String.valueOf(refused.getMessage());
 		}
@@ -168,7 +171,7 @@ public class ZoneLoadingStateTest {
 	static void aFreshPanelHoldsNoZone() {
 		System.out.println("--- a panel that has never been given a game");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		check(lz.count() == 0, "no zone table");
 		check(lz.open() == null, "no open zone");
 		check(lz.index() == -1, "and the index is -1, not 0 - nothing is open (got " + lz.index() + ")");
@@ -192,7 +195,7 @@ public class ZoneLoadingStateTest {
 	 */
 	static void theDropdownTablesAgreeWithThemselves() throws Exception {
 		System.out.println("--- the weather and map-type tables agree with themselves");
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.XY);
@@ -259,7 +262,7 @@ public class ZoneLoadingStateTest {
 	static void theZoneButtonsRefuseWhatTheyCannotDo() throws Exception {
 		System.out.println("--- the Clone and Add buttons refuse before they flush anything");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.ORAS);

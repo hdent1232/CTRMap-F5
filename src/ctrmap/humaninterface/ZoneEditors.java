@@ -38,6 +38,18 @@ public class ZoneEditors {
 
 		/** Show nothing: no zone is open. */
 		void clear();
+
+		/**
+		 * Push what this editor is holding into the zone, before the zone is
+		 * written. Answer false, having said why, when the record cannot be
+		 * committed - the save then stops rather than writing without it.
+		 *
+		 * <p>Most editors hold nothing of the kind and answer true in a line
+		 * that says so, the same way {@link #clear()} does. The point is that
+		 * they are all ASKED: the zone save used to name two of the three forms
+		 * that DO hold a part-typed record, and the third was simply absent.
+		 */
+		boolean commit();
 	}
 
 	private final List<ZoneView> views;
@@ -70,6 +82,25 @@ public class ZoneEditors {
 		for (ZoneView v : views) {
 			v.clear();
 		}
+	}
+
+	/**
+	 * Commits what every editor is holding, stopping at the first refusal.
+	 *
+	 * <p>WHY A REFUSAL STOPS THE SAVE. The zone save called two of these forms
+	 * by name and threw away the boolean one of them returned - three lines
+	 * above another refusal it honoured. The NPC form answers false, having
+	 * already told the user "Script not defined", when a record would point at a
+	 * script the zone does not define; the zone was then written anyway. The
+	 * user saw a warning and a saved zone and had no way to tell which had won.
+	 */
+	public boolean commit() {
+		for (ZoneView v : views) {
+			if (!v.commit()) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** How many editors show the zone; the guard checks the count it was built with. */

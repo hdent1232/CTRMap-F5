@@ -54,7 +54,14 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	/** The editors that show the open zone, handed in: this panel says which zone, not how to show it. */
 	private final ZoneEditors zoneEditors;
 
-	public ZoneLoadingPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, OpenEditors openEditors, ZoneEditors zoneEditors) {
+	/** The 3D gizmo, handed in: a zone switch lets go of whatever it was over. */
+	private final Navigator navi;
+
+	public ZoneLoadingPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, OpenEditors openEditors, ZoneEditors zoneEditors, Navigator navi) {
+		if (navi == null) {
+			throw new IllegalArgumentException("the Zone tab must be handed a Navigator - it lets the gizmo go");
+		}
+		this.navi = navi;
 		if (openEditors == null || zoneEditors == null) {
 			throw new IllegalArgumentException("the Zone tab must be handed the editors it saves and shows"
 				+ " - openEditors=" + openEditors + ", zoneEditors=" + zoneEditors);
@@ -360,8 +367,12 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		zone.header.Y2 = (Integer) y2.getValue();
 		zone.header.Z2 = (Integer) z2.getValue();
 
-		mNPCEditForm.saveEntry();
-		mTriggerEditForm.saveEntry();
+		//commit what the editors are holding before the zone is written. This
+		//named two forms by name and threw away the boolean one of them
+		//returned; the warp form was not named at all
+		if (!zoneEditors.commit()) {
+			return false;
+		}
 		boolean stored;
 		try {
 			stored = storeZone(dialog);
@@ -1200,7 +1211,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						z.s.decompressThis();
 						progress.setBarPercent(100);
 						zoneEditors.show(z);
-						m3DDebugPanel.bindNavi(null);
+						navi.follow(null);   //the record it was over belongs to the zone being closed
 						System.gc();
 						m3DDebugPanel.reload = true;
 						mTileMapPanel.update = true;

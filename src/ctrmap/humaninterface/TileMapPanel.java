@@ -447,21 +447,35 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		}
 	}
 
+	/**
+	 * Writes the tilemap back, asking first only when {@code dialog} says to.
+	 *
+	 * <p>THE FLAG MEANS "MAY I ASK", NOT "MAY I WRITE". The whole save used to
+	 * sit inside {@code modified && dialog}, so a flush that asks nothing - which
+	 * is exactly what File &gt; Save is, {@code openEditors.saveAll(false)} -
+	 * fell straight through to {@code return true} and reported every tile edit
+	 * on a loose GR map as saved while writing none of them. The matrix path a
+	 * few lines up never had this problem, so the bug was invisible unless you
+	 * had opened a single region through File &gt; Open GR Mapfile.
+	 */
 	public boolean saveTileMap(boolean dialog) {
 		if (loaded) {
 			if (mode == ViewportMode.MULTI) {
 				return saveMatrix(dialog);
-			} else {
-				if (tilemaps[0][0].modified && dialog) {
-					switch (ctrmap.Ui.askToKeep(true, "Tilemap")) {
-						case SAVE:
-							mainGR.storeFile(0, tilemaps[0][0].assembleTilemap());
-						case DISCARD:
-							tilemaps[0][0].modified = false;
-							return true;
-						default:
-							return false;
-					}
+			} else if (tilemaps[0][0].modified) {
+				if (!dialog) {
+					mainGR.storeFile(0, tilemaps[0][0].assembleTilemap());
+					tilemaps[0][0].modified = false;
+					return true;
+				}
+				switch (ctrmap.Ui.askToKeep(true, "Tilemap")) {
+					case SAVE:
+						mainGR.storeFile(0, tilemaps[0][0].assembleTilemap());
+					case DISCARD:
+						tilemaps[0][0].modified = false;
+						return true;
+					default:
+						return false;
 				}
 			}
 		}

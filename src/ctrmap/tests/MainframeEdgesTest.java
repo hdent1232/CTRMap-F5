@@ -49,8 +49,9 @@ public class MainframeEdgesTest {
 	private static final String[][] REACHES = {
 		{"CM3DComponents", "TileMapPanel",
 			"the list of things the 3D view draws; the map view adds itself to it"},
-		{"m3DDebugPanel", "NPCEditForm,PropEditForm,TileMapPanel,ZoneLoadingPanel",
-			"the 3D view, for binding the navigator gizmo to the record being edited"},
+		{"m3DDebugPanel", "TileMapPanel,ZoneLoadingPanel",
+			"the 3D view: the map view points its camera and repaints it, and the Zone tab marks"
+			+ " its buffers dirty. The GIZMO half has an owner now (Navigator)"},
 		{"mCamEditForm", "ZoneLoadingPanel",
 			"the camera form, stored once as the zone switches"},
 		{"mCollEditPanel", "TileMapPanel",
@@ -59,7 +60,7 @@ public class MainframeEdgesTest {
 			"the matrix form: the matrix panel, its router and its selector are three halves of one editor"},
 		{"mMtxPanel", "MatrixEditForm,MatrixSelector",
 			"the matrix panel, the other half of the same editor"},
-		{"mNPCEditForm", "TileMapPanel,TrainerEditDialog,ZoneLoadingPanel",
+		{"mNPCEditForm", "TileMapPanel,TrainerEditDialog",
 			"the NPC editor, loaded with the zone and drawn over the map"},
 		{"mPaintForm", "ZoneLoadingPanel", "the painter, cancelled when a zone closes"},
 		{"mPropEditForm", "TileMapPanel",
@@ -73,7 +74,6 @@ public class MainframeEdgesTest {
 			"THE map view: every editor that draws on it or reads a tile from it. The tangle - it reads"
 			+ " four of these back"},
 		{"mTilemapScrollPane", "TileMapPanel", "its own scroll pane, for the viewport size"},
-		{"mTriggerEditForm", "ZoneLoadingPanel", "the trigger editor, loaded and cleared with the zone"},
 				{"mZonePnl", "NPCEditForm,ScriptEditor,SetupWizard,TilePainterForm",
 			"the Zone tab as an OPERATION - its save, its rebuild, its zone count. None of them is zone"
 			+ " state: that has an owner (LoadedZoneTest)"},
@@ -86,11 +86,14 @@ public class MainframeEdgesTest {
 	 * decoupling steps, 64 after them, 55 once the five copies of the editor
 	 * flush became one owner ({@link ctrmap.humaninterface.OpenEditors}), and 49
 	 * once "show this zone" and "show nothing" became another
-	 * ({@link ctrmap.humaninterface.ZoneEditors}). The map painter left this
-	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script
-	 * and matrix-panel editors.
+	 * ({@link ctrmap.humaninterface.ZoneEditors}), 47 once that owner also said
+	 * what "commit what you are holding" means, and 45 once the 3D gizmo became
+	 * {@link ctrmap.humaninterface.Navigator} - five copies of the same reach,
+	 * two of which guarded against a null panel and three of which did not. The map painter left this
+	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
+	 * matrix-panel, NPC and trigger editors.
 	 */
-	private static final int REFERENCES = 49;
+	private static final int REFERENCES = 45;
 
 	/** Public static fields on the window. 91 before the structure sweep, 22 after it, 21 now. */
 	private static final int PUBLIC_STATICS = 21;

@@ -61,6 +61,9 @@ import javax.swing.JOptionPane;
  * Usage: java ctrmap.tests.DialogSeamTest [src-root]   (default "src")
  */
 public class DialogSeamTest {
+
+	/** The 3D gizmo these forms move, so what they told it can be read back. */
+	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
 	static final Redraws REDRAW = new Redraws();
 
@@ -441,7 +444,7 @@ public class DialogSeamTest {
 		//them and never reaches the game it is handed
 		NPCRegistry reg = new NPCRegistry(f, new FakeGameFiles());
 		reg.modified = true;
-		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW);
+		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW, NAVI);
 		form.reg = reg;
 		boolean stored;
 		List<String> said = Ui.record();

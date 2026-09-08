@@ -81,9 +81,27 @@ def build():
     return ("Build OK" in out), out
 
 
+#: A planted suite that never finishes is not a proof. A suite whose main() throws
+#: leaves its JOGL animator threads running and the JVM alive for ever, so "still
+#: going" and "caught it" look identical from here - and the first plant that did
+#: this sat for twenty minutes looking like a slow pass.
+SUITE_TIMEOUT = 600
+
+
 def run_suite(cls, args, java):
+    """(exit code or None when it never finished, everything it said)."""
     command = [java, "-Xmx4g", "-Djava.awt.headless=true", "-cp", LIBS, cls] + args
-    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, errors="replace")
+    try:
+        done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
+                              errors="replace", timeout=SUITE_TIMEOUT)
+    except subprocess.TimeoutExpired as late:
+        out = late.stdout or ""
+        err = late.stderr or ""
+        if isinstance(out, bytes):
+            out = out.decode("utf-8", "replace")
+        if isinstance(err, bytes):
+            err = err.decode("utf-8", "replace")
+        return None, out + err
     return done.returncode, (done.stdout or "") + (done.stderr or "")
 
 
@@ -151,6 +169,12 @@ def replant(p, java, pristine):
                 print("     and 'it failed' means only that javac did.")
                 return False
         code, said = run_suite(p["suite"], expand(p.get("args", []), pristine), java)
+        if code is None:
+            print("     HUNG: %s never finished in %ds with the defect back." % (p["suite"], SUITE_TIMEOUT))
+            print("     Never scored as a kill. A suite that hangs under a plant is telling you")
+            print("     something - usually that a thrown section leaves non-daemon threads")
+            print("     running - and that is a defect in the suite, not a proof about the guard.")
+            return False
         noticed = code != 0
         named = p["must_say"] in said
         if noticed and named:

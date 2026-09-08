@@ -87,6 +87,9 @@ import javax.swing.SwingWorker;
  * The worker check reads src/ from the working directory.
  */
 public class DataSafetyGuardsTest {
+
+	/** The 3D gizmo these forms move, so what they told it can be read back. */
+	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
 	static final ZoneEditorsSpy ZONE_EDITORS = new ZoneEditorsSpy();
 
@@ -280,7 +283,7 @@ public class DataSafetyGuardsTest {
 		LocationNames.load(temp(texts.getDecompressedEntry(LocationNames.gametextIndex(Workspace.session()))));
 		//three zones make a zone table; the editor is told zone 2 is open
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS);
+		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		Zone[] table = new Zone[3];
 		for (int i = 0; i < table.length; i++) {
 			table[i] = new Zone(new ZO(temp(zo.getDecompressedEntry(i)), Workspace.session()), Workspace.game());
@@ -444,7 +447,7 @@ public class DataSafetyGuardsTest {
 		//first - its dropdowns filled the way the zone loader fills them, one
 		//town-map group per zone slot; the entity forms it saves through are
 		//empty and save nothing.
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI);
 		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW);
 		fill(zonePnl, "tmg", 600);
 		fill(zonePnl, "type", 8);
@@ -713,13 +716,13 @@ public class DataSafetyGuardsTest {
 		}
 		scratchGameOnce(dump);
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm(REDRAW);
 		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS);
 		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm(lz);
-		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS, REDRAW);
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW);
+		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS, REDRAW, NAVI);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI);
 		CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW);
 		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW);
 		//PropEditForm's generated initComponents builds a CustomH3DPreview,
