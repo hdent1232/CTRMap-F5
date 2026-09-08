@@ -109,6 +109,7 @@ public class MainframeEdgesTest {
 		nothingOutsideTheWindowWritesItsStatics(classes);
 		theWindowKeepsNoMoreStaticsThanRecorded();
 		nothingIsHandedAStaticTheWindowHasNotBuiltYet(new File(args.length > 1 ? args[1] : "src"));
+		theRuleSeesTheShapesItUsedToMiss();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -237,6 +238,20 @@ public class MainframeEdgesTest {
 		}
 		r.close();
 
+		List<String> handedEarly = handedTooEarly(lines);
+		check(handedEarly.isEmpty(), "every static handed to something the window builds is already built "
+				+ handedEarly);
+	}
+
+	/**
+	 * The rule itself, over any source: which lines hand a static that the
+	 * method they sit in has not assigned yet.
+	 *
+	 * <p>Separated from the file reading ON PURPOSE, because a rule that can
+	 * only be run against the one file it polices cannot be shown to work. The
+	 * section below hands it four small sources whose answers are known.
+	 */
+	static List<String> handedTooEarly(List<String> lines) {
 		java.util.regex.Pattern decl = java.util.regex.Pattern.compile(
 				"^\\s*(?:public|private|protected)\\s+static\\s+(?:final\\s+)?[\\w.<>\\[\\]]+\\s+(\\w+)\\s*[;=]");
 		Set<String> statics = new TreeSet<>();
@@ -255,8 +270,8 @@ public class MainframeEdgesTest {
 			}
 		}
 		if (start < 0) {
-			check(false, "no createAndShowGUI() in " + f.getPath() + " - this rule reads that method by name");
-			return;
+			return java.util.Collections.singletonList(
+					"no createAndShowGUI() - this rule reads that method by name");
 		}
 		int end = lines.size() - 1;
 		int depth = 0;
@@ -280,36 +295,81 @@ public class MainframeEdgesTest {
 		}
 
 		List<String> handedEarly = new ArrayList<>();
-		java.util.regex.Pattern made = java.util.regex.Pattern.compile("new\\s+[\\w.]+\\s*\\(");
+		//BOTH shapes of handing something over: `new X(a, b)` and `x.setY(a)`. The
+		//first version of this rule read only constructors, and a static passed to
+		//a setter after construction went straight past it - the same null, one
+		//line later.
+		java.util.regex.Pattern made = java.util.regex.Pattern.compile("(?:new\\s+[\\w.]+|\\.\\w+)\\s*\\(");
 		java.util.regex.Pattern word = java.util.regex.Pattern.compile("\\b(\\w+)\\b");
+		//How deep inside a lambda body or an anonymous class we are. Those bodies
+		//run when they are CALLED, not here, so a static one of them names may
+		//legitimately be assigned further down - that is exactly how the two editor
+		//lists can be built before the editors they name. Anything at the method's
+		//own level is evaluated NOW and is the rule's business.
+		java.util.ArrayDeque<Integer> deferred = new java.util.ArrayDeque<>();
+		int brace = 0;
 		for (int i = start; i <= end; i++) {
-			java.util.regex.Matcher m = made.matcher(lines.get(i));
-			while (m.find()) {
-				String args = arguments(lines, i, m.end());
-				if (args == null || args.contains("->") || args.contains("() {")) {
-					continue;
-				}
-				java.util.regex.Matcher w = word.matcher(args);
-				while (w.find()) {
-					String name = w.group(1);
-					Integer at = assignedAt.get(name);
-					if (at != null && at > i) {
-						handedEarly.add("line " + (i + 1) + " hands " + name
-								+ ", which this method does not build until line " + (at + 1));
+			String line = lines.get(i);
+			if (deferred.isEmpty()) {
+				java.util.regex.Matcher m = made.matcher(line);
+				while (m.find()) {
+					String args = arguments(lines, i, m.end());
+					if (args == null) {
+						continue;
+					}
+					//SEGMENT BY SEGMENT, not all-or-nothing. Skipping a lambda is
+					//right; skipping its plain siblings because it is there is not,
+					//and new Foo(mBar, () -> mBaz) is the shape every remaining
+					//cluster wants to write.
+					for (String arg : topLevelArgs(args)) {
+						if (arg.contains("->") || arg.contains("() {")) {
+							continue;
+						}
+						java.util.regex.Matcher w = word.matcher(arg);
+						while (w.find()) {
+							String name = w.group(1);
+							Integer at = assignedAt.get(name);
+							if (at != null && at > i) {
+								handedEarly.add("line " + (i + 1) + " hands " + name
+										+ ", which this method does not build until line " + (at + 1));
+							}
+						}
 					}
 				}
 			}
+			for (int j = 0; j < line.length(); j++) {
+				char c = line.charAt(j);
+				if (c == '{') {
+					brace++;
+				} else if (c == '}') {
+					brace--;
+					while (!deferred.isEmpty() && brace < deferred.peek()) {
+						deferred.pop();
+					}
+				}
+			}
+			if (opensADeferredBody(line)) {
+				deferred.push(brace);
+			}
 		}
 
-		check(handedEarly.isEmpty(), "every static handed to something the window builds is already built ("
-				+ statics.size() + " statics, " + assignedAt.size() + " of them made here) " + handedEarly);
+		return handedEarly;
 	}
 
-	/** The argument text of a call whose open paren ends at {@code from}, across continuation lines. */
+	/**
+	 * The argument text of a call whose open paren ends at {@code from}, across
+	 * continuation lines.
+	 *
+	 * <p>The cap was eight lines and is now sixty. An argument list longer than
+	 * eight lines is not exotic here - the window's own editor lists run to
+	 * thirty - and giving up returned null, which the caller read as "nothing to
+	 * check". A rule that goes quiet on the largest calls in the file is worst
+	 * exactly where it is needed most.
+	 */
 	static String arguments(List<String> lines, int line, int from) {
 		StringBuilder sb = new StringBuilder();
 		int depth = 1;
-		for (int i = line; i < lines.size() && i < line + 8; i++) {
+		for (int i = line; i < lines.size() && i < line + 60; i++) {
 			String s = lines.get(i);
 			for (int j = (i == line ? from : 0); j < s.length(); j++) {
 				char c = s.charAt(j);
@@ -326,6 +386,116 @@ public class MainframeEdgesTest {
 			sb.append(' ');
 		}
 		return null;
+	}
+
+	/**
+	 * The rule catches the three shapes it used to miss, and still does not
+	 * flag the one it must not.
+	 *
+	 * <p>WHY THIS SECTION EXISTS. The rule above is a ratchet over one file, so
+	 * "it passes" says nothing about what it can SEE. Three holes were found in
+	 * it by reading it rather than by running it, and every one of them was in
+	 * the direction that lets the original defect back in: it read only
+	 * {@code new X(...)} and never a setter; one lambda anywhere in an argument
+	 * list excused every plain argument beside it; and it gave up after eight
+	 * continuation lines, which is shorter than the window's own editor lists.
+	 * A rule that goes quiet on the largest calls in the file is worst exactly
+	 * where it is needed.
+	 *
+	 * <p>The fourth case is the one that must NOT fire: a lambda body naming a
+	 * static assigned further down is correct, because the body runs when it is
+	 * called. That is how both editor lists can be built before the editors they
+	 * name, and a rule that forbade it would forbid the fix it exists to protect.
+	 */
+	static void theRuleSeesTheShapesItUsedToMiss() {
+		System.out.println("--- and the rule can see the shapes it used to miss");
+
+		check(!handedTooEarly(source(
+				"mPanel.setEditor(mLate);",
+				"mLate = new Editor();")).isEmpty(),
+				"a static handed to a SETTER before it is built is caught");
+
+		check(!handedTooEarly(source(
+				"mPanel = new Panel(mLate, () -> mAnything.go());",
+				"mLate = new Editor();")).isEmpty(),
+				"and a plain argument beside a lambda is still checked");
+
+		StringBuilder longCall = new StringBuilder("mPanel = new Panel(");
+		for (int i = 0; i < 30; i++) {
+			longCall.append("\n\t\t\t\tfiller,");
+		}
+		check(!handedTooEarly(source(longCall + "\n\t\t\t\tmLate);", "mLate = new Editor();")).isEmpty(),
+				"and an argument list thirty lines long does not fall off the end of the scan");
+
+		check(handedTooEarly(source(
+				"mPanel = new Panel(java.util.Arrays.asList(",
+				"\t\t() -> mLate.go()));",
+				"mLate = new Editor();")).isEmpty(),
+				"while a lambda BODY naming a static built later is left alone - that is the fix, not the defect");
+	}
+
+	/** A one-method window whose statics are all declared, for the section above. */
+	static List<String> source(String... body) {
+		List<String> lines = new ArrayList<>(Arrays.asList(
+				"public class W {",
+				"\tpublic static Editor mLate;",
+				"\tpublic static Panel mPanel;",
+				"\tpublic static Object mAnything;",
+				"\tpublic static Object filler;",
+				"",
+				"\tprivate static void createAndShowGUI() {"));
+		for (String line : body) {
+			for (String one : line.split("\n")) {
+				lines.add("\t\t" + one);
+			}
+		}
+		lines.add("\t}");
+		lines.add("}");
+		return lines;
+	}
+
+	/**
+	 * An argument list split at its top-level commas, so one lambda in it does
+	 * not excuse the arguments beside it.
+	 */
+	static List<String> topLevelArgs(String args) {
+		List<String> out = new ArrayList<>();
+		int depth = 0;
+		int from = 0;
+		for (int i = 0; i < args.length(); i++) {
+			char c = args.charAt(i);
+			if (c == '(' || c == '[' || c == '{') {
+				depth++;
+			} else if (c == ')' || c == ']' || c == '}') {
+				depth--;
+			} else if (c == ',' && depth == 0) {
+				out.add(args.substring(from, i));
+				from = i + 1;
+			}
+		}
+		out.add(args.substring(from));
+		return out;
+	}
+
+	/**
+	 * Whether this line opens a body that runs later - a lambda block or an
+	 * anonymous class. Its contents are not evaluated where they are written,
+	 * which is the one legitimate reason to name a static that is assigned
+	 * further down.
+	 */
+	static boolean opensADeferredBody(String line) {
+		String s = line.trim();
+		if (!s.endsWith("{")) {
+			return false;
+		}
+		//A LAMBDA BLOCK OR AN ANONYMOUS CLASS, and nothing else. The first version
+		//of this test asked whether the line ended "() {", which is also how every
+		//no-argument method declaration ends - including createAndShowGUI's own.
+		//So the whole method was marked deferred at its first line and the rule
+		//silently checked nothing while reporting no problems, which is the exact
+		//failure this suite exists to make impossible. The section that hands this
+		//rule a synthetic source is what caught it.
+		return s.contains("->") || s.contains("new ");
 	}
 
 	static int count(String s, char c) {
