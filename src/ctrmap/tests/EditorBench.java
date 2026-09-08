@@ -82,6 +82,9 @@ final class EditorBench {
 
 	/** The zone owner every panel and form built here shares, as the window's would. */
 	static final LoadedZone LOADED = new LoadedZone();
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
 
 	static BenchMap map;
 	static BenchPaintForm paint;
@@ -130,16 +133,16 @@ final class EditorBench {
 		//classpath does not carry
 		CtrmapMainframe.m3DDebugPanel = null;
 
-		CtrmapMainframe.mTileEditForm = tiles = new TileEditForm();
+		CtrmapMainframe.mTileEditForm = tiles = new TileEditForm(TOOLS);
 		CtrmapMainframe.mPaintForm = paint = new BenchPaintForm();
 		CtrmapMainframe.mCamEditForm = cam = new BenchCamForm();
 		CtrmapMainframe.mCamScrollPane = new JScrollPane(CtrmapMainframe.mCamEditForm);
 		CtrmapMainframe.mPropEditForm = prop = new BenchPropForm();
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS);
 		CtrmapMainframe.mWarpEditForm = warps = new WarpEditForm(LOADED);
 		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm(LOADED);
 		CtrmapMainframe.mGeoEditForm = geo = new GeoEditForm(LOADED);
-		CtrmapMainframe.mCollEditPanel = new CollEditPanel();
+		CtrmapMainframe.mCollEditPanel = new CollEditPanel(TOOLS);
 		CtrmapMainframe.mMtxEditForm = new MatrixEditForm(LOADED);
 		//the "Current tool" label is this row's, not the window's, and the row
 		//is what TileEditForm asks for the Set tool
@@ -441,7 +444,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchMap() {
-			super(LOADED);
+			super(LOADED, TOOLS);
 		}
 		int renders = 0;
 		int repaints = 0;
@@ -543,7 +546,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchPropForm() {
-			super(LOADED);
+			super(LOADED, TOOLS);
 		}
 		final List<String> calls = new ArrayList<String>();
 

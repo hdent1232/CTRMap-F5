@@ -34,7 +34,11 @@ public class CollEditPanel extends javax.swing.JPanel {
 	/**
 	 * Creates new form CollEditPanel
 	 */
-	public CollEditPanel() {
+	/** Which tool the editor is holding, handed in: this class only asks. */
+	private final ctrmap.humaninterface.tools.ToolSelection tools;
+
+	public CollEditPanel(ctrmap.humaninterface.tools.ToolSelection tools) {
+		this.tools = tools;
 		initComponents();
 		meshTree.addTreeSelectionListener((TreeSelectionEvent e) -> {
 			DefaultMutableTreeNode node = (DefaultMutableTreeNode) meshTree.getLastSelectedPathComponent();
@@ -518,7 +522,7 @@ public class CollEditPanel extends javax.swing.JPanel {
     }//GEN-LAST:event_btnNewTriangleActionPerformed
 
     private void btnFillCoordsActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnFillCoordsActionPerformed
-		AbstractTool tool = CtrmapMainframe.tool;
+		AbstractTool tool = tools.current();
 		if (tool != null && tool instanceof FillTool && selectedMesh != -1) {
 			FillTool t = (FillTool) tool;
 			if (t.lastX != -1) {

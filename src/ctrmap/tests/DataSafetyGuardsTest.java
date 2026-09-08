@@ -87,6 +87,9 @@ import javax.swing.SwingWorker;
  * The worker check reads src/ from the working directory.
  */
 public class DataSafetyGuardsTest {
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
 
 	static int fails = 0;
 	/** A SwingWorker completion hook; the same shape whatever the class extends. */
@@ -268,7 +271,7 @@ public class DataSafetyGuardsTest {
 		LocationNames.load(temp(texts.getDecompressedEntry(LocationNames.gametextIndex(Workspace.session()))));
 		//three zones make a zone table; the editor is told zone 2 is open
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz);
+		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz, TOOLS);
 		Zone[] table = new Zone[3];
 		for (int i = 0; i < table.length; i++) {
 			table[i] = new Zone(new ZO(temp(zo.getDecompressedEntry(i)), Workspace.session()), Workspace.game());
@@ -369,7 +372,7 @@ public class DataSafetyGuardsTest {
 		//thread, and nothing else in this suite presses the button: every other
 		//check calls addEntry directly and never reaches it.
 		CtrmapMainframe.mTilemapScrollPane = new JScrollPane();
-		TileMapPanel map = new TileMapPanel(new LoadedZone());
+		TileMapPanel map = new TileMapPanel(new LoadedZone(), TOOLS);
 		map.height = 40;
 		CtrmapMainframe.mTileMapPanel = map;
 		Throwable threw = pressAdd(blank);
@@ -420,7 +423,7 @@ public class DataSafetyGuardsTest {
 		//first - its dropdowns filled the way the zone loader fills them, one
 		//town-map group per zone slot; the entity forms it saves through are
 		//empty and save nothing.
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS);
 		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz);
 		fill(zonePnl, "tmg", 600);
 		fill(zonePnl, "type", 8);
@@ -524,7 +527,7 @@ public class DataSafetyGuardsTest {
 	 * are still untested.
 	 */
 	static void mapLoadFailuresSurface() throws Exception {
-		TileMapPanel panel = new TileMapPanel(new LoadedZone());
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS);
 		panel.loaded = true;
 		panel.width = 40;
 		panel.height = 40;
@@ -689,13 +692,13 @@ public class DataSafetyGuardsTest {
 		}
 		scratchGameOnce(dump);
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm();
-		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz);
+		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS);
 		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm(lz);
-		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz);
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz);
+		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS);
 		CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz);
 		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz);
 		//PropEditForm's generated initComponents builds a CustomH3DPreview,

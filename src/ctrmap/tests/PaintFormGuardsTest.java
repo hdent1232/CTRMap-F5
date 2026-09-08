@@ -53,6 +53,9 @@ import javax.swing.JLabel;
  * Usage: java ctrmap.tests.PaintFormGuardsTest &lt;pristine-dump-root&gt;
  */
 public class PaintFormGuardsTest {
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
 
 	static final int DIM = PaintedRegionBuilder.DIM;
 	static final int ZONE = 7;
@@ -82,7 +85,7 @@ public class PaintFormGuardsTest {
 	static PaintForm document() throws Exception {
 		LoadedZone lz = new LoadedZone();
 		lz.open(ZONE, null);                      //zone ZONE's index and no zone object: the document reads the index
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mTileMapPanel = null;
 		PaintForm form = new PaintForm(lz);
@@ -279,7 +282,7 @@ public class PaintFormGuardsTest {
 	 */
 	static void aRefusedApplySaysSoAndPutsTheMapBack() throws Exception {
 		PaintForm form = document();
-		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(new LoadedZone());
+		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(new LoadedZone(), TOOLS);
 		set(form, "previewInScene", true);
 		set(form, "originalModel", new byte[]{1, 2, 3, 4});
 		List<String> said = ctrmap.Ui.record();

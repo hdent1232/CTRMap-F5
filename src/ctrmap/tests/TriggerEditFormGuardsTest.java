@@ -65,6 +65,9 @@ public class TriggerEditFormGuardsTest {
 
 	/** The zone owner every panel and form built here shares, as the window's would. */
 	static final LoadedZone LOADED = new LoadedZone();
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
 
 	/** Petalburg Gym: 3 interaction triggers, 4 step-on ones, 2 props, 25 NPCs, 3 warps. */
 	static final int ZONE = 48;
@@ -345,7 +348,7 @@ public class TriggerEditFormGuardsTest {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
 		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
-		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(LOADED);
+		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(LOADED, TOOLS);
 		TriggerEditForm form = new TriggerEditForm(LOADED);
 		form.loadFromEntities(e);
 		int before = e.triggers1.size();
@@ -390,7 +393,7 @@ public class TriggerEditFormGuardsTest {
 	static Zone openZone(GARC zo, int index) throws Exception {
 		File f = Scratch.file("ctrmap_trigform");
 		Files.write(f.toPath(), zo.getDecompressedEntry(index));
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS);
 		Zone[] table = new Zone[index + 1];
 		table[index] = new Zone(new ZO(f, Workspace.session()), Workspace.game());
 		LOADED.table(table);

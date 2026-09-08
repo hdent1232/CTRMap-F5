@@ -62,6 +62,9 @@ import javax.swing.JOptionPane;
  * Usage: java ctrmap.tests.DialogSeamTest [src-root]   (default "src")
  */
 public class DialogSeamTest {
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
 
 	/**
 	 * The raw calls that stay raw, as {file, message-argument source, count,
@@ -436,7 +439,7 @@ public class DialogSeamTest {
 		//them and never reaches the game it is handed
 		NPCRegistry reg = new NPCRegistry(f, new FakeGameFiles());
 		reg.modified = true;
-		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone());
+		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS);
 		form.reg = reg;
 		boolean stored;
 		List<String> said = Ui.record();

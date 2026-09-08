@@ -59,8 +59,8 @@ import ctrmap.humaninterface.WorldEditorToolbar;
 import ctrmap.humaninterface.WorkspaceSettings;
 import ctrmap.humaninterface.ZoneLoadingPanel;
 import ctrmap.humaninterface.builder.Builder;
-import ctrmap.humaninterface.tools.AbstractTool;
 import ctrmap.humaninterface.tools.SetTool;
+import ctrmap.humaninterface.tools.ToolSelection;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.event.WindowAdapter;
@@ -112,6 +112,15 @@ public class CtrmapMainframe {
 	 * the window can read it as a global.
 	 */
 	private static LoadedZone loadedZone;
+	/**
+	 * Which editing tool the World Editor is holding, made ONCE here and
+	 * handed to the nine classes that ask which it is and to the mouse router
+	 * that changes it. It used to be a public mutable static of this class -
+	 * the one the router assigned from ten places - so no suite could hold two
+	 * tools, and "the NPC form marks its NPC while the NPC tool is up" had to
+	 * be asserted by writing to this window's field.
+	 */
+	private static ToolSelection tools;
 	private static JTabbedPane tabs;
 
 	/** The World Editor's tool row: the one handle for "pick this tool" and "which view is up". */
@@ -150,7 +159,6 @@ public class CtrmapMainframe {
 	private static JPanel mtxEditMasterPnl;
 	private static JSplitPane jsp3;
 
-	public static AbstractTool tool;
 
 	/**
 	 * Everything the 3D view draws. FINAL because the renderer is handed this
@@ -203,30 +211,31 @@ public class CtrmapMainframe {
 		collEditMasterPnl = new JPanel(new BorderLayout());
 		mtxEditMasterPnl = new JPanel(new BorderLayout());
 		bindLoadedZone(new LoadedZone());
-		mZonePnl = new ZoneLoadingPanel(loadedZone);
+		tools = new ToolSelection();
+		mZonePnl = new ZoneLoadingPanel(loadedZone, tools);
 		mScriptPnl = new ScriptEditor();
 		mTextEditor = new TextEditor();
 		mBuilder = new Builder();
 
 		frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		frame.setLocationByPlatform(true);
-		mTileMapPanel = new TileMapPanel(loadedZone);
+		mTileMapPanel = new TileMapPanel(loadedZone, tools);
 		mTilemapScrollPane = new JScrollPane();
 		mMtxPanel = new MapMatrixPanel();
 		mMtxEditForm = new MatrixEditForm(loadedZone);
 		JScrollPane mtxScroll = new JScrollPane();
 		mCamScrollPane = new JScrollPane();
-		mTileEditForm = new TileEditForm();
+		mTileEditForm = new TileEditForm(tools);
 		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone);
 		mCamEditForm = new CameraEditForm();
-		mPropEditForm = new PropEditForm(loadedZone);
-		mNPCEditForm = new NPCEditForm(loadedZone);
+		mPropEditForm = new PropEditForm(loadedZone, tools);
+		mNPCEditForm = new NPCEditForm(loadedZone, tools);
 		mWarpEditForm = new WarpEditForm(loadedZone);
 		mTriggerEditForm = new TriggerEditForm(loadedZone);
 		mGeoEditForm = new GeoEditForm(loadedZone);
-		mCollEditPanel = new CollEditPanel();
+		mCollEditPanel = new CollEditPanel(tools);
 		GLPanel glPanel = new GLPanel(mCollEditPanel);
-		m3DDebugPanel = new H3DRenderingPanel(CM3DComponents);
+		m3DDebugPanel = new H3DRenderingPanel(CM3DComponents, tools);
 		jsp = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
 		mTilemapScrollPane.setViewportView(mTileMapPanel);
 		mtxScroll.setViewportView(mMtxPanel);
@@ -239,8 +248,8 @@ public class CtrmapMainframe {
 
 		//each input manager registers itself as its panel's listener; only the
 		//tile map's is needed again, by the tool row
-		TilemapPanelInputManager tilemapInput = new TilemapPanelInputManager(mTileMapPanel);
-		new CM3DInputManager(m3DDebugPanel);
+		TilemapPanelInputManager tilemapInput = new TilemapPanelInputManager(mTileMapPanel, tools);
+		new CM3DInputManager(m3DDebugPanel, tools);
 		new CollInputManager(glPanel);
 		new MatrixPanelInputManager(mMtxPanel);
 
@@ -358,7 +367,7 @@ public class CtrmapMainframe {
 				showView3D(true);
 			}
 		});
-		tool = new SetTool();
+		tools.switchTo(SetTool::new);
 		frame.getRootPane().setFocusable(true);
 		frame.addComponentListener(new ComponentAdapter() {
 			@Override

@@ -61,6 +61,9 @@ import javax.swing.JRadioButton;
  * Usage: java ctrmap.tests.MatrixEditFormGuardsTest &lt;pristine dump root&gt;
  */
 public class MatrixEditFormGuardsTest {
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
 
 	/** 8x8 regions, hasLOD 1 (so it carries the zone-switch and LOD layers), 3 camera boundaries. */
 	static final int MATRIX = 1;
@@ -421,7 +424,7 @@ public class MatrixEditFormGuardsTest {
 		Arrays.fill(rows, oneZone);
 		LoadedZone lz = new LoadedZone();
 		lz.table(rows);
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
 		CtrmapMainframe.mZonePnl = pnl;
 		f.form = new MatrixEditForm(lz);
 		CtrmapMainframe.mMtxEditForm = f.form;

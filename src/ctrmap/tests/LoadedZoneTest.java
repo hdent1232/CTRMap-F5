@@ -69,6 +69,9 @@ import java.util.TreeSet;
  *        (classes-root defaults to "build/classes")
  */
 public class LoadedZoneTest {
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
 
 	/** A zone whose map matrix is shared with others in the retail game. */
 	private static final int SHARED_ZONE = 10;
@@ -444,8 +447,8 @@ public class LoadedZoneTest {
 		try {
 			LoadedZone a = new LoadedZone();
 			LoadedZone b = new LoadedZone();
-			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a);
-			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b);
+			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS);
+			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS);
 
 			//the offer walks the whole table, so give both owners the same first
 			//forty zones - reading all 536 would cost the suite a minute and prove
@@ -543,9 +546,9 @@ public class LoadedZoneTest {
 		try {
 			for (String name : KEEPERS) {
 				Class<?> c = Class.forName(name);
-				Constructor<?> ctor = c.getConstructor(LoadedZone.class);
-				Object first = ctor.newInstance(a);
-				Object second = ctor.newInstance(b);
+				Constructor<?> ctor = handedCtor(c);
+				Object first = ctor.newInstance(argsFor(ctor, a));
+				Object second = ctor.newInstance(argsFor(ctor, b));
 				if (first instanceof PropEditForm) {
 					propA = (PropEditForm) first;
 					propB = (PropEditForm) second;
@@ -554,7 +557,7 @@ public class LoadedZoneTest {
 						simple(name) + ": two of them exist at once, each over its own owner");
 				String refusal = refusedBy(() -> {
 					try {
-						ctor.newInstance((Object) null);
+						ctor.newInstance(argsFor(ctor, null));
 					} catch (java.lang.reflect.InvocationTargetException ex) {
 						throw (RuntimeException) ex.getCause();
 					} catch (ReflectiveOperationException ex) {
@@ -588,6 +591,45 @@ public class LoadedZoneTest {
 		} catch (Exception ex) {
 			System.out.println("  note: the prop preview could not be stopped (" + ex + ")");
 		}
+	}
+
+	/**
+	 * The constructor a reader is handed its owner through - whatever else it
+	 * is handed with it. Asking for {@code getConstructor(LoadedZone.class)}
+	 * pinned the SHAPE of the constructor rather than the property this suite
+	 * exists to assert, and went red the moment a reader was handed a second
+	 * collaborator.
+	 */
+	static Constructor<?> handedCtor(Class<?> c) {
+		for (Constructor<?> ctor : c.getConstructors()) {
+			if (Arrays.asList(ctor.getParameterTypes()).contains(LoadedZone.class)) {
+				return ctor;
+			}
+		}
+		throw new IllegalStateException(c.getName() + " has no public constructor taking a LoadedZone");
+	}
+
+	/**
+	 * That constructor's arguments: the owner where it asks for one, and a
+	 * fresh one of whatever else it asks for. A collaborator this does not
+	 * know how to build is named, rather than passed null and blamed on the
+	 * class under test.
+	 */
+	static Object[] argsFor(Constructor<?> ctor, LoadedZone owner) {
+		Class<?>[] types = ctor.getParameterTypes();
+		Object[] args = new Object[types.length];
+		for (int i = 0; i < types.length; i++) {
+			if (types[i] == LoadedZone.class) {
+				args[i] = owner;
+			} else if (types[i] == ctrmap.humaninterface.tools.ToolSelection.class) {
+				args[i] = new ctrmap.humaninterface.tools.ToolSelection();
+			} else {
+				throw new IllegalStateException(ctor.getDeclaringClass().getName()
+						+ " is handed a " + types[i].getName()
+						+ ", which this suite does not know how to build - teach it here");
+			}
+		}
+		return args;
 	}
 
 	/** The one LoadedZone field of a reader, whatever it called it. */

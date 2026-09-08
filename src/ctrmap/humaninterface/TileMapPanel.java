@@ -99,8 +99,12 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	/** The zone owner this view was handed; opening a bare GR file lets its zone go. */
 	private final LoadedZone loadedZone;
 
-	public TileMapPanel(LoadedZone loadedZone) {
+	/** Which tool the editor is holding, handed in: this class only asks. */
+	private final ctrmap.humaninterface.tools.ToolSelection tools;
+
+	public TileMapPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools) {
 		super();
+		this.tools = tools;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("TileMapPanel must be handed a LoadedZone");
 		}
@@ -666,7 +670,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			BufferedImage crop2;
 			double globimgdim = tilemapScaledImage.getHeight() / (double) height;
 			int gidround = (int) Math.round(globimgdim);
-			if (CM2DTempImage != null && (CtrmapMainframe.tool.CM2DNoUpdate || Selector.getSelectorCM2DRenderOptimizationFlag())) {
+			if (CM2DTempImage != null && (tools.current().CM2DNoUpdate || Selector.getSelectorCM2DRenderOptimizationFlag())) {
 				crop2 = CM2DTempImage;
 			} else {
 				CM2DDrawable.display();
@@ -693,9 +697,9 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 
 			CM2DTempImage = crop2;
 
-			CtrmapMainframe.tool.drawOverlay(g, imgstartx, imgstarty, globimgdim);
+			tools.current().drawOverlay(g, imgstartx, imgstarty, globimgdim);
 			g.setColor(Color.RED);
-			if (CtrmapMainframe.tool.getSelectorEnabled()) {
+			if (tools.current().getSelectorEnabled()) {
 				if (Selector.hilightTileX != -1) {
 					g.drawRect(imgstartx + (int) Math.round(Selector.hilightTileX * globimgdim), imgstarty + (int) Math.round(Selector.hilightTileY * globimgdim), gidround, gidround);
 				}

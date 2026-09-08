@@ -12,6 +12,7 @@ import javax.swing.event.MouseInputListener;
 
 import static ctrmap.CtrmapMainframe.*;
 import ctrmap.humaninterface.tools.CameraTool;
+import ctrmap.humaninterface.tools.ToolSelection;
 import ctrmap.humaninterface.tools.EditTool;
 import ctrmap.humaninterface.tools.FillTool;
 import ctrmap.humaninterface.tools.GeoTool;
@@ -26,8 +27,12 @@ import ctrmap.humaninterface.tools.WarpTool;
  */
 public class TilemapPanelInputManager implements MouseWheelListener, MouseMotionListener, MouseInputListener, ActionListener {
 	
-	public TilemapPanelInputManager(TileMapPanel parent){
+	/** The tool being driven: this class is the one that changes it. */
+	private final ToolSelection tools;
+
+	public TilemapPanelInputManager(TileMapPanel parent, ToolSelection tools){
 		super();
+		this.tools = tools;
 		parent.addMouseWheelListener(this);
 		parent.addMouseMotionListener(this);
 		parent.addMouseListener(this);
@@ -41,7 +46,7 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 	@Override
 	public void mouseDragged(MouseEvent e) {
 		moveSelector(e);
-		CtrmapMainframe.tool.onTileMouseDragged(e);
+		tools.current().onTileMouseDragged(e);
 	}
 	
 	@Override
@@ -65,9 +70,9 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 	@Override
 	public void mouseClicked(MouseEvent e) {
 		if (Selector.hilightTileX == -1) {
-			CtrmapMainframe.tool.fireCancel();
+			tools.current().fireCancel();
 		}
-		CtrmapMainframe.tool.onTileClick(e);
+		tools.current().onTileClick(e);
 	}
 	
 	@Override
@@ -82,48 +87,51 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 	
 	@Override
 	public void mousePressed(MouseEvent e) {
-		CtrmapMainframe.tool.onTileMouseDown(e);
+		tools.current().onTileMouseDown(e);
 	}
 	
 	@Override
 	public void mouseReleased(MouseEvent e) {
-		CtrmapMainframe.tool.onTileMouseUp(e);
+		tools.current().onTileMouseUp(e);
 	}
 	
 	@Override
 	public void actionPerformed(ActionEvent e) {
-		CtrmapMainframe.tool.onToolShutdown();
+		//the outgoing tool is put down BEFORE the incoming one is built, which
+		//is why these are suppliers: the constructor of a tool puts its own
+		//form in the editor's pane, and a shutdown running after that would
+		//take it straight back out. ToolSelection keeps that order.
 		boolean switchCam = false;
 		switch (e.getActionCommand()) {
 			case ("edit"):
-				CtrmapMainframe.tool = new EditTool();
+				tools.switchTo(EditTool::new);
 				break;
 			case ("set"):
-				CtrmapMainframe.tool = new SetTool();
+				tools.switchTo(SetTool::new);
 				break;
 			case ("fill"):
-				CtrmapMainframe.tool = new FillTool();
+				tools.switchTo(FillTool::new);
 				break;
 			case ("cam"):
-				CtrmapMainframe.tool = new CameraTool();
+				tools.switchTo(CameraTool::new);
 				break;
 			case ("prop"):
-				CtrmapMainframe.tool = new PropTool();
+				tools.switchTo(PropTool::new);
 				break;
 			case ("npc"):
-				CtrmapMainframe.tool = new NPCTool();
+				tools.switchTo(NPCTool::new);
 				break;
 			case ("warp"):
-				CtrmapMainframe.tool = new WarpTool();
+				tools.switchTo(WarpTool::new);
 				break;
 			case ("trigger"):
-				CtrmapMainframe.tool = new TriggerTool();
+				tools.switchTo(TriggerTool::new);
 				break;
 			case ("paint"):
-				CtrmapMainframe.tool = new ctrmap.humaninterface.tools.PaintTool();
+				tools.switchTo(ctrmap.humaninterface.tools.PaintTool::new);
 				break;
 			case ("geo"):
-				CtrmapMainframe.tool = new GeoTool();
+				tools.switchTo(GeoTool::new);
 				break;
 		}
 	}

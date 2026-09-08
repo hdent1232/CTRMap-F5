@@ -31,8 +31,12 @@ public class CM3DInputManager implements MouseWheelListener, MouseMotionListener
 	
 	private H3DRenderingPanel m3DDebugPanel;
 
-	public CM3DInputManager(H3DRenderingPanel parent){
+	/** Which tool the editor is holding, handed in: this class only asks. */
+	private final ctrmap.humaninterface.tools.ToolSelection tools;
+
+	public CM3DInputManager(H3DRenderingPanel parent, ctrmap.humaninterface.tools.ToolSelection tools){
 		super();
+		this.tools = tools;
 		m3DDebugPanel = parent;
 		parent.addMouseWheelListener(this);
 		parent.addMouseMotionListener(this);
@@ -85,7 +89,7 @@ public class CM3DInputManager implements MouseWheelListener, MouseMotionListener
 			m3DDebugPanel.translateX = originScaleX + (e.getX() - originMouseX);
 			m3DDebugPanel.translateY = originScaleY - (e.getY() - originMouseY);
 		} else if (SwingUtilities.isLeftMouseButton(e)) {
-			if (!CtrmapMainframe.tool.getNaviEnabled() || !navi) {
+			if (!tools.current().getNaviEnabled() || !navi) {
 				m3DDebugPanel.rotateY = (originRotateY + (e.getX() - originMouseX) / 2f) % 360f;
 				m3DDebugPanel.rotateX = Math.max(-90f, Math.min(90f, originRotateX + (e.getY() - originMouseY) / 2f)) % 360f;
 			}

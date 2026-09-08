@@ -64,6 +64,9 @@ import java.util.TreeSet;
  * Usage: java ctrmap.tests.PaintApplyGuardsTest &lt;pristine-dump-root&gt; [src]
  */
 public class PaintApplyGuardsTest {
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
 
 	static final int DIM = PaintedRegionBuilder.DIM;
 
@@ -870,7 +873,7 @@ public class PaintApplyGuardsTest {
 			throw new IllegalStateException("prop database did not build");
 		}
 		loaded = new LoadedZone();
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(loaded);
+		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(loaded, TOOLS);
 		for (int[] row : ramp) {
 			Arrays.fill(row, PaintedRegionBuilder.NO_RAMP);
 		}
