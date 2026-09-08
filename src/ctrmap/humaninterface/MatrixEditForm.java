@@ -1,6 +1,7 @@
 package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
+import ctrmap.LoadedZone;
 import ctrmap.Utils;
 import ctrmap.formats.mapmatrix.MapMatrix;
 import ctrmap.formats.mapmatrix.MatrixCameraBoundaries;
@@ -29,7 +30,14 @@ public class MatrixEditForm extends javax.swing.JPanel {
 	/**
 	 * Creates new form MatrixEditForm
 	 */
-	public MatrixEditForm() {
+	/** The zone owner this form was handed; its table fills the zone-reference dropdown. */
+	private final LoadedZone loadedZone;
+
+	public MatrixEditForm(LoadedZone loadedZone) {
+		if (loadedZone == null) {
+			throw new IllegalArgumentException("MatrixEditForm must be handed a LoadedZone");
+		}
+		this.loadedZone = loadedZone;
 		initComponents();
 		setFloatValueClass(new JFormattedTextField[]{northBound, southBound, westBound, eastBound});
 	}
@@ -50,9 +58,9 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			boundEntryBox.removeAllItems();
 			if (mm != null) {
 				allowExtended.setSelected(mm.hasLOD == 1);
-				if (mZonePnl.zones != null) {
-					for (int i = 0; i < mZonePnl.zones.length; i++) {
-						zoneRefDropdown.addItem(i + " - " + LocationNames.getLocName(mZonePnl.zones[i].header.parentMap));
+				if (loadedZone.count() > 0) {
+					for (int i = 0; i < loadedZone.count(); i++) {
+						zoneRefDropdown.addItem(i + " - " + LocationNames.getLocName(loadedZone.at(i).header.parentMap));
 					}
 				}
 				for (int i = 0; i < mm.cambounds.size(); i++) {

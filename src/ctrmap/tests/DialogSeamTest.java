@@ -360,7 +360,7 @@ public class DialogSeamTest {
 		//them and never reaches the game it is handed
 		NPCRegistry reg = new NPCRegistry(f, new FakeGameFiles());
 		reg.modified = true;
-		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm();
+		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone());
 		form.reg = reg;
 		boolean stored;
 		List<String> said = Ui.record();

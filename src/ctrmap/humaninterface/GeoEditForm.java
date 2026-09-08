@@ -1,5 +1,6 @@
 package ctrmap.humaninterface;
 
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.gfcollision.GfColl;
@@ -83,7 +84,14 @@ public class GeoEditForm extends JPanel {
 	/** In-session prefab clipboard (survives zone switches; files survive everything). */
 	private static ctrmap.formats.h3d.MapPrefab clipboard;
 
-	public GeoEditForm() {
+	/** The zone owner this form was handed: the open zone's area, for texture carry, and its index. */
+	private final LoadedZone loadedZone;
+
+	public GeoEditForm(LoadedZone loadedZone) {
+		if (loadedZone == null) {
+			throw new IllegalArgumentException("GeoEditForm must be handed a LoadedZone");
+		}
+		this.loadedZone = loadedZone;
 		setBorder(BorderFactory.createTitledBorder("Map geometry"));
 		setLayout(new GridBagLayout());
 		GridBagConstraints c = new GridBagConstraints();
@@ -172,8 +180,8 @@ public class GeoEditForm extends JPanel {
 				return;
 			}
 			p.sourceRegion = regionId;
-			if (mZonePnl != null && mZonePnl.zone != null) {
-				p.donorArea = mZonePnl.zone.header.areadataID; //for cross-area texture carry
+			if (loadedZone.isOpen()) {
+				p.donorArea = loadedZone.open().header.areadataID; //for cross-area texture carry
 			}
 			clipboard = p;
 			StringBuilder mats = new StringBuilder();
@@ -321,10 +329,10 @@ public class GeoEditForm extends JPanel {
 			//textures - import any the target area's packs lack, or the game hardlocks
 			String texNote = "";
 			if (!r.texturesNeeded.isEmpty() && p.donorArea >= 0
-					&& mZonePnl != null && mZonePnl.zone != null
-					&& mZonePnl.zone.header.areadataID != p.donorArea) {
+					&& loadedZone.isOpen()
+					&& loadedZone.open().header.areadataID != p.donorArea) {
 				try {
-					texNote = carryTextures(p.donorArea, mZonePnl.zone.header.areadataID, r.texturesNeeded);
+					texNote = carryTextures(p.donorArea, loadedZone.open().header.areadataID, r.texturesNeeded);
 				} catch (Exception ex) {
 					texNote = "  TEXTURE CARRY FAILED (" + ex.getMessage() + ") - the stamped pieces may hardlock; undo if unsure!";
 				}
@@ -583,12 +591,13 @@ public class GeoEditForm extends JPanel {
 	private String carryTextures(int donorArea, int targetArea, List<String> needed) throws Exception {
 		//pass the loaded zone's LIVE areadata when it covers the target, so its
 		//cached subfile offsets stay coherent when the pack grows
-		ctrmap.formats.containers.AD live = (mZonePnl != null && mZonePnl.zone != null
-				&& mZonePnl.zone.header != null && mZonePnl.zone.header.areadata != null
-				&& mZonePnl.zone.header.areadataID == targetArea) ? mZonePnl.zone.header.areadata : null;
-		//the zone being edited is the panel's loaded one here; the guard needs it
-		//so it does not read this zone's own row as another map depending on the area
-		int editingZone = mZonePnl != null ? mZonePnl.zoneIndex : -1;
+		ctrmap.formats.zone.Zone open = loadedZone.open();
+		ctrmap.formats.containers.AD live = (open != null
+				&& open.header != null && open.header.areadata != null
+				&& open.header.areadataID == targetArea) ? open.header.areadata : null;
+		//the zone being edited is the open one here; the guard needs it so it
+		//does not read this zone's own row as another map depending on the area
+		int editingZone = loadedZone.index();
 		return ctrmap.formats.h3d.BchTexturePack.carryToArea(Workspace.session(), donorArea, targetArea, needed, live, editingZone);
 	}
 

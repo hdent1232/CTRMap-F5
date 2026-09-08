@@ -217,7 +217,8 @@ $suites = @(
     @{ n = "TilemapInputRouter (mouse to tool)"; c = "ctrmap.tests.TilemapInputRouterTest"; a = @() },
     @{ n = "MainframeActions (what each action does and refuses)"; c = "ctrmap.tests.MainframeActionGuardsTest"; a = @($pristine) },
     @{ n = "TileMapPanelState (lookups, save, refresh)"; c = "ctrmap.tests.TileMapPanelStateTest"; a = @($pristine) },
-    @{ n = "ZoneLoadingState (loaded-zone transitions)"; c = "ctrmap.tests.ZoneLoadingStateTest"; a = @($pristine) }
+    @{ n = "ZoneLoadingState (loaded-zone transitions)"; c = "ctrmap.tests.ZoneLoadingStateTest"; a = @($pristine) },
+    @{ n = "LoadedZone (one owner, handed to every reader)"; c = "ctrmap.tests.LoadedZoneTest"; a = @($pristine, "build\classes") }
 )
 
 # -Order re-runs the same suites in a different sequence. Every suite is its

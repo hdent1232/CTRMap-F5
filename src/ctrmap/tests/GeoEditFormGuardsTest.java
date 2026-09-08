@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.gfcollision.GfColl;
@@ -56,6 +57,9 @@ import javax.swing.JSpinner;
  */
 public class GeoEditFormGuardsTest {
 
+	/** The zone owner every panel and form built here shares, as the window's would. */
+	static final LoadedZone LOADED = new LoadedZone();
+
 	/** A map model, one collision layer, a tilemap and two props: everything the tool touches. */
 	static final int REGION = 7;
 	/** The dragged rectangle: the middle of the cell, where every region has geometry. */
@@ -75,7 +79,7 @@ public class GeoEditFormGuardsTest {
 		ScratchGame.open(dump);
 		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
 		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel();
+		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(LOADED);
 
 		theRegionIsTheOneTheseChecksDescribe();
 		aSelectionNamesItsRegionAndCountsWhatIsInIt();
@@ -383,11 +387,11 @@ public class GeoEditFormGuardsTest {
 		f.tiles0 = f.gr.getFile(0);
 		f.model0 = f.gr.getFile(1);
 		f.coll0 = f.gr.getFile(2);
-		TileMapPanel view = new TileMapPanel();
+		TileMapPanel view = new TileMapPanel(LOADED);
 		view.mainGR = f.gr;
 		view.tilemaps = new Tilemap[][]{{new Tilemap(f.gr)}};
 		CtrmapMainframe.mTileMapPanel = view;
-		f.form = new GeoEditForm();
+		f.form = new GeoEditForm(LOADED);
 		CtrmapMainframe.mGeoEditForm = f.form;
 		return f;
 	}

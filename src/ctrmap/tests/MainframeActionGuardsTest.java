@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.Ui;
 import ctrmap.Workspace;
 import ctrmap.gamedef.ArchiveType;
@@ -459,7 +460,7 @@ public class MainframeActionGuardsTest {
 	 * The three actions that operate on the LOADED zone must say which tab to
 	 * open, not just that something is missing.
 	 *
-	 * <p>Each of them reads {@code mZonePnl.zone} or {@code mZonePnl.zoneIndex}
+	 * <p>Each of them reads the open zone or its index off the owner the window is handed
 	 * one line later. With no zone open that is a null dereference on the event
 	 * thread; with the guard it is a sentence naming the tab, which is the only
 	 * thing a user who has just loaded a workspace needs to hear.
@@ -467,15 +468,18 @@ public class MainframeActionGuardsTest {
 	static void theActionsThatNeedAZoneSayWhichTab() throws Exception {
 		System.out.println("--- the zone-scoped actions name the tab to open");
 		CtrmapMainframe.mZonePnl = null;
+		CtrmapMainframe.bindLoadedZone(null);
 		refuses("blankCanvasAction", "Blank map canvas: Load the zone first (Zone tab).");
 		refuses("resizeMapAction", "Resize map: Load the zone first (Zone tab).");
 		refuses("setupFacilityAction", "Set up Battle facility: Load the base zone to convert first (Zone tab).");
 
 		//a panel with no zone selected is the same situation, and must read the
 		//same way: zoneIndex is -1 until the dropdown has been used
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
+		LoadedZone lz = new LoadedZone();
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
 		CtrmapMainframe.mZonePnl = pnl;
-		check(pnl.zoneIndex == -1 && pnl.zone == null, "a fresh zone panel holds no zone");
+		CtrmapMainframe.bindLoadedZone(lz);
+		check(lz.index() == -1 && lz.open() == null, "a fresh zone panel holds no zone");
 		refuses("blankCanvasAction", "Blank map canvas: Load the zone first (Zone tab).");
 		refuses("setupFacilityAction", "Set up Battle facility: Load the base zone to convert first (Zone tab).");
 	}
@@ -493,14 +497,16 @@ public class MainframeActionGuardsTest {
 	 */
 	static void facilitySetupRefusesAnAppendedZone() throws Exception {
 		System.out.println("--- a facility refuses an appended zone, and says where to put it instead");
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
+		LoadedZone lz = new LoadedZone();
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
 		int baseZones = Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2;
-		pnl.zoneIndex = baseZones + 4;
+		lz.open(baseZones + 4, null);
 		CtrmapMainframe.mZonePnl = pnl;
+		CtrmapMainframe.bindLoadedZone(lz);
 
 		List<String> said = record("setupFacilityAction");
 		check(said.size() == 1 && said.get(0).startsWith("Set up Battle facility: This is an appended zone (index "
-				+ pnl.zoneIndex + ")"),
+				+ lz.index() + ")"),
 				"an appended zone is refused by index: " + first(said));
 		check(said.size() == 1 && said.get(0).contains("cannot run field"),
 				"because appended zones cannot run scripts");
@@ -536,9 +542,11 @@ public class MainframeActionGuardsTest {
 	 */
 	static void facilitySetupOffersBothWaysAndActsOnNeitherUnasked() throws Exception {
 		System.out.println("--- the facility action offers two paths and acts on neither unasked");
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
-		pnl.zoneIndex = 100; //a base zone, well under the stock bound
+		LoadedZone lz = new LoadedZone();
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
+		lz.open(100, null); //a base zone, well under the stock bound
 		CtrmapMainframe.mZonePnl = pnl;
+		CtrmapMainframe.bindLoadedZone(lz);
 
 		List<String> said = record("setupFacilityAction");
 		check(said.size() == 1 && said.get(0).startsWith("Set up Battle facility: How should this facility's battles work?"),
@@ -567,7 +575,7 @@ public class MainframeActionGuardsTest {
 		check(said.size() == 3, "and an unanswered confirmation clones nothing");
 
 		//the source zone cannot be its own destination
-		pnl.zoneIndex = MAISON_LOBBY_ZONE;
+		lz.open(MAISON_LOBBY_ZONE, null);
 		said = record("setupFacilityAction", 1, "Battle Maison (5 formats, Chatelaines)");
 		check(said.size() == 3 && said.get(2).equals(
 				"Set up Battle facility: That IS the source facility zone - pick a different base zone to convert."),
@@ -604,18 +612,20 @@ public class MainframeActionGuardsTest {
 	static void theObjToolsDefaultToTheLoadedZonesRegion() throws Exception {
 		System.out.println("--- the OBJ tools default to the loaded zone's own map region");
 		CtrmapMainframe.mZonePnl = null;
-		check(defaultRegion() == -1, "with no zone panel at all the default is -1, not a guess");
+		CtrmapMainframe.bindLoadedZone(null);
+		check(defaultRegion() == -1, "with no zone owner at all the default is -1, not a guess");
 
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
+		LoadedZone lz = new LoadedZone();
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
 		CtrmapMainframe.mZonePnl = pnl;
-		check(defaultRegion() == -1, "with a panel holding no zone it is still -1");
+		CtrmapMainframe.bindLoadedZone(lz);
+		check(defaultRegion() == -1, "with an owner holding no zone it is still -1");
 
 		int zoneIndex = 15; //Mauville: its map matrix is its own in the retail game
 		ctrmap.formats.zone.Zone z = new ctrmap.formats.zone.Zone(
 				new ctrmap.formats.containers.ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(zoneIndex)), Workspace.session()),
 				Workspace.game());
-		pnl.zone = z;
-		pnl.zoneIndex = zoneIndex;
+		lz.open(zoneIndex, z);
 		int expected = ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(
 				java.nio.file.Files.readAllBytes(Workspace.getWorkspaceFile(
 						ArchiveType.MAP_MATRIX, z.header.mapmatrixID).toPath()));
@@ -625,7 +635,7 @@ public class MainframeActionGuardsTest {
 				"and that is what the OBJ tools offer (got " + defaultRegion() + ")");
 
 		//a header naming a matrix the archive does not have must fall back, not throw
-		pnl.zone.header.mapmatrixID = Workspace.getArchive(ArchiveType.MAP_MATRIX).length + 40;
+		lz.open().header.mapmatrixID = Workspace.getArchive(ArchiveType.MAP_MATRIX).length + 40;
 		check(defaultRegion() == -1,
 				"a header naming a matrix that does not exist falls back to -1 rather than throwing");
 	}

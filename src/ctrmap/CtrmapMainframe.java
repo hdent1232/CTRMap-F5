@@ -99,6 +99,19 @@ public class CtrmapMainframe {
 	 * else, and private, so nothing below the window can read it as a global.
 	 */
 	private static WorkspaceSession game;
+
+	/**
+	 * The loaded-zone state - the zone table, the open zone and its index -
+	 * made ONCE, in {@link #createAndShowGUI}, and handed to the Zone tab and
+	 * to every editor that reads it. The window's own actions (the spinner
+	 * defaults, the fog refresh, the OBJ region default, blank canvas, resize,
+	 * facility setup) read this field; they used to read the panel's three
+	 * public fields through {@link #mZonePnl}, the same global under a longer
+	 * name, and no suite could hand them a different zone. Assigned through
+	 * {@link #bindLoadedZone} and nowhere else, and private, so nothing below
+	 * the window can read it as a global.
+	 */
+	private static LoadedZone loadedZone;
 	private static JTabbedPane tabs;
 
 	/** The World Editor's tool row: the one handle for "pick this tool" and "which view is up". */
@@ -169,6 +182,16 @@ public class CtrmapMainframe {
 		createAndShowGUI();
 	}
 
+	/**
+	 * Hands the window the zone owner its actions read. The application calls
+	 * this once, from {@link #createAndShowGUI}, with the owner it then hands
+	 * the panels; a suite driving an action by name hands its own, or null
+	 * for "no owner at all", which every zone-scoped action refuses in words.
+	 */
+	public static void bindLoadedZone(LoadedZone owner) {
+		loadedZone = owner;
+	}
+
 	private static void createAndShowGUI() {
 		Workspace.loadWorkspace();
 		frame = new JFrame("CTRMap Editor");
@@ -176,27 +199,28 @@ public class CtrmapMainframe {
 		tileEditMasterPnl = new JPanel(new BorderLayout());
 		collEditMasterPnl = new JPanel(new BorderLayout());
 		mtxEditMasterPnl = new JPanel(new BorderLayout());
-		mZonePnl = new ZoneLoadingPanel();
+		bindLoadedZone(new LoadedZone());
+		mZonePnl = new ZoneLoadingPanel(loadedZone);
 		mScriptPnl = new ScriptEditor();
 		mTextEditor = new TextEditor();
 		mBuilder = new Builder();
 
 		frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		frame.setLocationByPlatform(true);
-		mTileMapPanel = new TileMapPanel();
+		mTileMapPanel = new TileMapPanel(loadedZone);
 		mTilemapScrollPane = new JScrollPane();
 		mMtxPanel = new MapMatrixPanel();
-		mMtxEditForm = new MatrixEditForm();
+		mMtxEditForm = new MatrixEditForm(loadedZone);
 		JScrollPane mtxScroll = new JScrollPane();
 		mCamScrollPane = new JScrollPane();
 		mTileEditForm = new TileEditForm();
-		mPaintForm = new ctrmap.humaninterface.PaintForm();
+		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone);
 		mCamEditForm = new CameraEditForm();
-		mPropEditForm = new PropEditForm();
-		mNPCEditForm = new NPCEditForm();
-		mWarpEditForm = new WarpEditForm();
-		mTriggerEditForm = new TriggerEditForm();
-		mGeoEditForm = new GeoEditForm();
+		mPropEditForm = new PropEditForm(loadedZone);
+		mNPCEditForm = new NPCEditForm(loadedZone);
+		mWarpEditForm = new WarpEditForm(loadedZone);
+		mTriggerEditForm = new TriggerEditForm(loadedZone);
+		mGeoEditForm = new GeoEditForm(loadedZone);
 		mCollEditPanel = new CollEditPanel();
 		GLPanel glPanel = new GLPanel(mCollEditPanel);
 		m3DDebugPanel = new H3DRenderingPanel(CM3DComponents);
@@ -384,7 +408,7 @@ public class CtrmapMainframe {
 		map.add(item("Map Builder (this zone)", CtrmapMainframe::openMapBuilderAction));
 		map.add(item("Blank map canvas (this zone)...", CtrmapMainframe::blankCanvasAction));
 		map.add(item("Resize map (this zone)...", CtrmapMainframe::resizeMapAction));
-		map.add(item("Edit area fog & lighting...", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame)));
+		map.add(item("Edit area fog & lighting...", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame, loadedZone)));
 		map.add(item("Fork map geometry (make zone independent)...", CtrmapMainframe::forkGeometryAction));
 		map.addSeparator();
 		map.add(item("Import map model (.bch)...", CtrmapMainframe::importMapModelAction));
@@ -405,7 +429,7 @@ public class CtrmapMainframe {
 		data.add(item("Edit battle facility opponents...", () -> ctrmap.humaninterface.MaisonEditDialog.show(frame)));
 		data.add(item("Edit shop inventories (Marts)...", () -> ctrmap.humaninterface.ShopEditDialog.show(frame)));
 		data.add(item("Edit items (price, effects, name)...", () -> ctrmap.humaninterface.ItemEditDialog.show(frame)));
-		data.add(item("Edit wild encounters (this zone)...", () -> ctrmap.humaninterface.EncounterEditDialog.show(frame)));
+		data.add(item("Edit wild encounters (this zone)...", () -> ctrmap.humaninterface.EncounterEditDialog.show(frame, loadedZone)));
 
 		JMenu options = new JMenu("Options");
 		//the wizard sits above the raw path dialog it replaces for beginners:
@@ -457,8 +481,8 @@ public class CtrmapMainframe {
 		bar.add(new JLabel(" Map:  "));
 		bar.add(barButton("Blank canvas", "Replace this zone's map with a blank canvas cloned from a template route.", CtrmapMainframe::blankCanvasAction));
 		bar.add(barButton("Resize map", "Resize this zone's map (grow/shrink its region grid).", CtrmapMainframe::resizeMapAction));
-		bar.add(barButton("Fog & lighting", "Pick a GameFreak atmosphere with live preview, or hand-tune fog and ambient light.", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame)));
-		bar.add(barButton("Encounters", "Edit this zone's wild Pokemon encounter slots.", () -> ctrmap.humaninterface.EncounterEditDialog.show(frame)));
+		bar.add(barButton("Fog & lighting", "Pick a GameFreak atmosphere with live preview, or hand-tune fog and ambient light.", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame, loadedZone)));
+		bar.add(barButton("Encounters", "Edit this zone's wild Pokemon encounter slots.", () -> ctrmap.humaninterface.EncounterEditDialog.show(frame, loadedZone)));
 		bar.add(barButton("Fork geometry", "Give this zone its own private map so edits stop affecting the source town.", CtrmapMainframe::forkGeometryAction));
 		return bar;
 	}
@@ -501,7 +525,7 @@ public class CtrmapMainframe {
 	private static JPanel buildExtrasTab() {
 		JPanel tab = new JPanel(new BorderLayout());
 		tab.add(buildExtrasBar(), BorderLayout.NORTH);
-		tab.add(new ExtrasPanel(mZonePnl), BorderLayout.CENTER);
+		tab.add(new ExtrasPanel(loadedZone), BorderLayout.CENTER);
 		return tab;
 	}
 
@@ -775,14 +799,15 @@ public class CtrmapMainframe {
 			return;
 		}
 		try {
-			if (!Workspace.isValid() || mZonePnl == null || mZonePnl.zone == null || mZonePnl.zone.header == null) {
+			Zone open = loadedZone == null ? null : loadedZone.open();
+			if (!Workspace.isValid() || open == null || open.header == null) {
 				m3DDebugPanel.clearFog();
 				return;
 			}
-			ctrmap.formats.containers.AD ad = mZonePnl.zone.header.areadata != null
-					? mZonePnl.zone.header.areadata
+			ctrmap.formats.containers.AD ad = open.header.areadata != null
+					? open.header.areadata
 					: new ctrmap.formats.containers.AD(Workspace.getWorkspaceFile(
-							ArchiveType.AREA_DATA, mZonePnl.zone.header.areadataID), game);
+							ArchiveType.AREA_DATA, open.header.areadataID), game);
 			ctrmap.formats.area.AreaEnv env = ctrmap.formats.area.AreaEnv.read(ad.getFile(4));
 			m3DDebugPanel.setFog(env.fogColor[0], env.fogColor[1], env.fogColor[2], env.fogNear, env.fogFar);
 		} catch (Exception ex) {
@@ -810,7 +835,7 @@ public class CtrmapMainframe {
 				+ "Four empty ids can hold a new item; the icon is the one part that needs a code.ips patch.</html>",
 				"Item editor", e -> ctrmap.humaninterface.ItemEditDialog.show(frame));
 		addGameDataEntry(p, "Wild Pokemon", "Edit the loaded zone's wild encounter slots (grass, surf, fishing...).",
-				"Wild encounters (this zone)", e -> ctrmap.humaninterface.EncounterEditDialog.show(frame));
+				"Wild encounters (this zone)", e -> ctrmap.humaninterface.EncounterEditDialog.show(frame, loadedZone));
 		p.add(javax.swing.Box.createVerticalGlue());
 		return p;
 	}
@@ -1121,7 +1146,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, Ui.reason(ex), "Fork map geometry");
 			return;
 		}
-		int def = (mZonePnl != null && mZonePnl.zoneIndex >= 0 && mZonePnl.zoneIndex < zoneCount) ? mZonePnl.zoneIndex : 0;
+		int def = (loadedZone != null && loadedZone.index() >= 0 && loadedZone.index() < zoneCount) ? loadedZone.index() : 0;
 		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def, 0, zoneCount - 1, 1));
 		Object[] form = {
 			"Give this zone its OWN private map geometry.",
@@ -1270,7 +1295,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, Ui.reason(ex), "Rename zone");
 			return;
 		}
-		int def = (mZonePnl != null && mZonePnl.zoneIndex >= 0 && mZonePnl.zoneIndex < zoneCount) ? mZonePnl.zoneIndex : 0;
+		int def = (loadedZone != null && loadedZone.index() >= 0 && loadedZone.index() < zoneCount) ? loadedZone.index() : 0;
 		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def, 0, zoneCount - 1, 1));
 		javax.swing.JTextField nameField = new javax.swing.JTextField(24);
 		Object[] form = {
@@ -1522,7 +1547,7 @@ public class CtrmapMainframe {
 			Ui.error(frame, Ui.reason(ex), "Empty zone");
 			return;
 		}
-		int def = (mZonePnl != null && mZonePnl.zoneIndex >= 0 && mZonePnl.zoneIndex < zoneCount) ? mZonePnl.zoneIndex : 0;
+		int def = (loadedZone != null && loadedZone.index() >= 0 && loadedZone.index() < zoneCount) ? loadedZone.index() : 0;
 		javax.swing.JSpinner idSpinner = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(def, 0, zoneCount - 1, 1));
 		Object[] form = {
 			"Clear a zone's placed content: NPCs, warps, triggers and props.",
@@ -1611,10 +1636,10 @@ public class CtrmapMainframe {
 	 */
 	private static int defaultRegionForLoadedZone() {
 		try {
-			if (mZonePnl == null || mZonePnl.zone == null) {
+			if (loadedZone == null || loadedZone.open() == null) {
 				return -1;
 			}
-			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loadedZone.open().header.mapmatrixID);
 			if (mmFile == null) {
 				return -1;
 			}
@@ -1811,15 +1836,15 @@ public class CtrmapMainframe {
 				+ " / Alpha Sapphire.")) {
 			return;
 		}
-		if (mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
+		if (loadedZone == null || !loadedZone.isOpen() || loadedZone.index() < 0) {
 			Ui.error(frame, "Load the zone first (Zone tab).", "Blank map canvas");
 			return;
 		}
-		final int zoneIndex = mZonePnl.zoneIndex;
+		final int zoneIndex = loadedZone.index();
 		//ground-material picker from the zone's first region model
 		ctrmap.formats.h3d.BchMapModel probe;
 		try {
-			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loadedZone.open().header.mapmatrixID);
 			int rid = ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(
 					java.nio.file.Files.readAllBytes(mmFile.toPath()));
 			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, rid), game);
@@ -1969,11 +1994,11 @@ public class CtrmapMainframe {
 				+ " Sapphire.")) {
 			return;
 		}
-		if (mZonePnl == null || mZonePnl.zoneIndex < 0) {
+		if (loadedZone == null || loadedZone.index() < 0) {
 			Ui.error(frame, "Load the base zone to convert first (Zone tab).", "Set up Battle facility");
 			return;
 		}
-		final int dstIndex = mZonePnl.zoneIndex;
+		final int dstIndex = loadedZone.index();
 		int baseZones;
 		try {
 			baseZones = ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
@@ -2081,11 +2106,11 @@ public class CtrmapMainframe {
 				+ " Ruby / Alpha Sapphire.")) {
 			return;
 		}
-		if (mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
+		if (loadedZone == null || !loadedZone.isOpen() || loadedZone.index() < 0) {
 			Ui.error(frame, "Load the zone first (Zone tab).", "Resize map");
 			return;
 		}
-		final int zoneIndex = mZonePnl.zoneIndex;
+		final int zoneIndex = loadedZone.index();
 		javax.swing.JSpinner wSpin = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(2, 1, 4, 1));
 		javax.swing.JSpinner hSpin = new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 4, 1));
 		Object[] form = {

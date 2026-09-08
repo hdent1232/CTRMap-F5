@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.scripts.GFLPawnScript;
 import ctrmap.formats.scripts.PawnAssembly;
@@ -220,7 +221,7 @@ public class ScriptAssemblerGuardTest {
 			System.out.println("  skip: no zone script with a PUSH_C to mistype");
 			return;
 		}
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel();
+		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(new LoadedZone());
 		ScriptEditor ed = new ScriptEditor();
 		ed.loadScript(s);
 		flush();

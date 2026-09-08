@@ -77,7 +77,7 @@ public class DoorPropGuardsTest {
 				+ ") draws area " + TARGET_AREA + "'s " + clash);
 
 		StringBuilder note = new StringBuilder();
-		TilePainterForm.StagedArea area = new TilePainterForm.StagedArea(TARGET_AREA, zone);
+		TilePainterForm.StagedArea area = new TilePainterForm.StagedArea(new ctrmap.LoadedZone(), TARGET_AREA, zone);
 		TilePainterForm.ensureDoorPropRegistered(door.doorProp, area, note);
 		check(note.toString().contains(clash), "registering the door tells the user it will draw the area's " + clash + " - note: " + note);
 

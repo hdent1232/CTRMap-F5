@@ -1,5 +1,6 @@
 package ctrmap.humaninterface;
 
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.area.AreaEnv;
 import ctrmap.formats.garc.GARC;
@@ -33,7 +34,6 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
 import static ctrmap.CtrmapMainframe.mTileMapPanel;
-import static ctrmap.CtrmapMainframe.mZonePnl;
 import static ctrmap.formats.LittleEndian.u16;
 import static ctrmap.formats.LittleEndian.i32;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
@@ -53,8 +53,8 @@ public class GfEnvPicker {
 	public static final byte[] CUSTOM = new byte[0];
 
 	/** Opens the picker; returns the chosen zone's full 2944-byte env block, or null. */
-	public static byte[] pick(Dialog parent) {
-		return pick((java.awt.Window) parent, false);
+	public static byte[] pick(Dialog parent, LoadedZone loaded) {
+		return pick((java.awt.Window) parent, false, loaded);
 	}
 
 	/**
@@ -62,7 +62,10 @@ public class GfEnvPicker {
 	 * user pressed "Custom settings..." (offered only when {@code offerCustom}),
 	 * or null on cancel.
 	 */
-	public static byte[] pick(java.awt.Window parent, boolean offerCustom) {
+	public static byte[] pick(java.awt.Window parent, boolean offerCustom, LoadedZone loaded) {
+		if (loaded == null) {
+			throw new IllegalArgumentException("GfEnvPicker must be handed the LoadedZone");
+		}
 		final GARC zoG = pristineOrLive(ArchiveType.ZONE_DATA);
 		final GARC adG = pristineOrLive(ArchiveType.AREA_DATA);
 		if (zoG == null || adG == null) {
@@ -91,7 +94,7 @@ public class GfEnvPicker {
 
 		// live preview: the USER'S CURRENT zone geometry, re-fogged per selection,
 		// so they see each atmosphere on their own map. Falls back to a card.
-		final byte[] curModel = currentZoneModel();
+		final byte[] curModel = currentZoneModel(loaded);
 		final List<ctrmap.formats.h3d.texturing.H3DTexture> curTex = mTileMapPanel == null ? null : mTileMapPanel.getWorldTextures();
 		final MapPreview3D view3d = (curModel != null) ? new MapPreview3D() : null;
 		if (view3d != null) {
@@ -225,12 +228,12 @@ public class GfEnvPicker {
 	}
 
 	/** The loaded zone's first region map model (for the live atmosphere preview), or null. */
-	private static byte[] currentZoneModel() {
+	private static byte[] currentZoneModel(LoadedZone loaded) {
 		try {
-			if (mZonePnl == null || mZonePnl.zone == null) {
+			if (loaded.open() == null) {
 				return null;
 			}
-			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loaded.open().header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
 			int s0 = i32(mm, 4);
 			int w = u16(mm, s0 + 4), h = u16(mm, s0 + 6);

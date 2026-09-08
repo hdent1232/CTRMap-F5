@@ -1,5 +1,6 @@
 package ctrmap.humaninterface;
 
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.area.AreaEnv;
 import ctrmap.formats.containers.AD;
@@ -20,7 +21,6 @@ import javax.swing.JPanel;
 import javax.swing.JSpinner;
 import javax.swing.SpinnerNumberModel;
 
-import static ctrmap.CtrmapMainframe.*;
 
 /**
  * Edits a zone's AREA fog + ambient lighting - the per-area environment
@@ -33,7 +33,10 @@ import static ctrmap.CtrmapMainframe.*;
  */
 public class AreaLightingDialog {
 
-	public static void show(Frame parent) {
+	public static void show(Frame parent, LoadedZone loaded) {
+		if (loaded == null) {
+			throw new IllegalArgumentException("AreaLightingDialog must be handed the LoadedZone");
+		}
 		//AREA_ENV, not "is it ORAS": what this needs is a game whose AreaData
 		//subfile 4 has been decoded. Asking which game it is answered false for
 		//Sun/Moon and X/Y alike and told both of them to load ORAS.
@@ -53,14 +56,14 @@ public class AreaLightingDialog {
 					"Area fog & lighting");
 			return;
 		}
-		if (mZonePnl == null || mZonePnl.zone == null) {
+		if (loaded.open() == null) {
 			ctrmap.Ui.error(parent, "Load a zone first (Zone tab).", "Area fog & lighting");
 			return;
 		}
 		//this zone's atmosphere must be ITS OWN: an area shared with other zones
 		//gets forked first, so the edit cannot leak into them
-		final ctrmap.AreaForker.ForkResult fork = AreaForkPrompt.ensurePrivate(parent, mZonePnl.zoneIndex,
-				mZonePnl.zone.header.areadataID, "changing the fog and lighting");
+		final ctrmap.AreaForker.ForkResult fork = AreaForkPrompt.ensurePrivate(loaded, parent, loaded.index(),
+				loaded.open().header.areadataID, "changing the fog and lighting");
 		if (fork == null) {
 			return;
 		}
@@ -80,7 +83,7 @@ public class AreaLightingDialog {
 
 		//VISUAL FIRST: the GameFreak atmosphere picker (live preview of this
 		//zone under each preset); hand-tuning sits behind "Custom settings..."
-		byte[] picked = GfEnvPicker.pick(parent, true);
+		byte[] picked = GfEnvPicker.pick(parent, true, loaded);
 		if (picked == null) {
 			return;
 		}
@@ -170,7 +173,7 @@ public class AreaLightingDialog {
 		dlg.add(buttons, BorderLayout.SOUTH);
 
 		copyGf.addActionListener(e -> {
-			byte[] src = GfEnvPicker.pick(dlg);
+			byte[] src = GfEnvPicker.pick(dlg, loaded);
 			if (src != null && src.length == sub4.length) {
 				// take GameFreak's COMPLETE environment (all 736 floats: colors,
 				// light directions, hemisphere, ranges) - fine-tune on top if wanted

@@ -3,6 +3,7 @@ package ctrmap.humaninterface;
 import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.glu.gl2.GLUgl2;
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.Utils;
 import ctrmap.formats.propdata.GRProp;
@@ -72,7 +73,14 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	private boolean paletteLoading = false;
 
-	public PropEditForm() {
+	/** The zone owner this form was handed: the open zone's header and area, and the table, for the area's name. */
+	private final LoadedZone loadedZone;
+
+	public PropEditForm(LoadedZone loadedZone) {
+		if (loadedZone == null) {
+			throw new IllegalArgumentException("PropEditForm must be handed a LoadedZone");
+		}
+		this.loadedZone = loadedZone;
 		initComponents();
 		//affordance for the lazy database build - the list is not just empty
 		DefaultListModel<String> placeholderModel = new DefaultListModel<>();
@@ -485,7 +493,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			inline.append(tex);
 		}
 		PropDatabase db = PropDatabase.get(Workspace.session());
-		ZoneHeader header = (CtrmapMainframe.mZonePnl != null && CtrmapMainframe.mZonePnl.zone != null) ? CtrmapMainframe.mZonePnl.zone.header : null;
+		ZoneHeader header = loadedZone.isOpen() ? loadedZone.open().header : null;
 		if (db == null || header == null || header.areadata == null) {
 			ctrmap.Ui.error(this,
 					"This prop needs textures that this area does not have:" + list
@@ -508,7 +516,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		//import dialog, so the user is not talked into an import that the
 		//shared-area rule then refuses.
 		if (refuseSharedArea(this, header.areadataID,
-				CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1,
+				loadedZone.index(),
 				getAreaDisplayName(header.areadataID), inline.toString())) {
 			return false;
 		}
@@ -547,7 +555,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 						"Prop textures", JOptionPane.INFORMATION_MESSAGE);
 			}
 			byte[] merged = BchTexturePack.importIntoArea(Workspace.session(), header.areadataID,
-					CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1,
+					loadedZone.index(),
 					targetPack, donorPack, missing);
 			if (merged != targetPack) { //already-present names are a no-op (same array returned)
 				//decode and verify the merged pack BEFORE storing anything
@@ -589,10 +597,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * Human-readable label for an AreaData index: the location name of the
 	 * first zone that uses the area, plus the raw index.
 	 */
-	private static String getAreaDisplayName(int area) {
+	private String getAreaDisplayName(int area) {
 		try {
-			if (CtrmapMainframe.mZonePnl != null && CtrmapMainframe.mZonePnl.zones != null) {
-				for (Zone z : CtrmapMainframe.mZonePnl.zones) {
+			if (loadedZone.count() > 0) {
+				for (int i = 0; i < loadedZone.count(); i++) {
+					Zone z = loadedZone.at(i);
 					if (z != null && z.header != null && z.header.areadataID == area) {
 						return LocationNames.getLocName(z.header.parentMap) + " (area " + area + ")";
 					}
@@ -903,8 +912,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		try {
 			PropDatabase db = PropDatabase.get(Workspace.session());
 			PropDatabase.PropModel pm = db == null ? null : db.getModel(uid);
-			ZoneHeader header = (CtrmapMainframe.mZonePnl != null && CtrmapMainframe.mZonePnl.zone != null)
-					? CtrmapMainframe.mZonePnl.zone.header : null;
+			ZoneHeader header = loadedZone.isOpen() ? loadedZone.open().header : null;
 			//textures first - all-or-nothing before any registry write
 			if (pm != null && Workspace.getArchive(ArchiveType.BUILDING_MODELS) != null) {
 				java.util.Set<String> available = new java.util.HashSet<>();
@@ -940,7 +948,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 								"Prop textures", JOptionPane.INFORMATION_MESSAGE);
 					}
 					byte[] merged = BchTexturePack.importIntoArea(Workspace.session(), header.areadataID,
-							CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1,
+							loadedZone.index(),
 							targetPack, donorPack, missing);
 					if (merged != targetPack) {
 						BCHFile packBch = new BCHFile(merged);

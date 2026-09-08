@@ -3,6 +3,7 @@ package ctrmap.humaninterface;
 import com.jogamp.opengl.GL2;
 import com.jogamp.opengl.glu.gl2.GLUgl2;
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.formats.npcreg.NPCRegistry;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.gamedef.ArchiveType;
@@ -73,7 +74,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private GFMessageFile storyFile;
 	private int storyFileTextID = -1;
 
-	public NPCEditForm() {
+	/** The zone owner this form was handed; its open zone's script fills the script dropdown. */
+	private final LoadedZone loadedZone;
+
+	public NPCEditForm(LoadedZone loadedZone) {
+		if (loadedZone == null) {
+			throw new IllegalArgumentException("NPCEditForm must be handed a LoadedZone");
+		}
+		this.loadedZone = loadedZone;
 		initComponents();
 		setIntegerValueClass(new JFormattedTextField[]{x, y, areaW, areaH, mot, mp2, u10, u12, areaSX, areaSY, zl2, zl3, hostZone, originZone, linkedZone, linkID});
 		((NumberFormatter) altitude.getFormatter()).setValueClass(Float.class);
@@ -507,10 +515,10 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	private Zone getLoadedZone() {
-		if (!Workspace.isValid() || mZonePnl == null) {
+		if (!Workspace.isValid()) {
 			return null;
 		}
-		return mZonePnl.zone;
+		return loadedZone.open();
 	}
 
 	private void populateScriptDropdown() {

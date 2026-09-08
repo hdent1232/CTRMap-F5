@@ -1,5 +1,6 @@
 package ctrmap.humaninterface;
 
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.ZoneAppender;
 import ctrmap.formats.encounters.EncounterTable;
@@ -22,7 +23,6 @@ import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.table.AbstractTableModel;
 
-import static ctrmap.CtrmapMainframe.*;
 
 /**
  * The wild-encounter editor: a per-zone table of all 61 encounter slots
@@ -36,7 +36,10 @@ import static ctrmap.CtrmapMainframe.*;
 public class EncounterEditDialog {
 
 	/** Opens the editor for the currently loaded zone. */
-	public static void show(Frame parent) {
+	public static void show(Frame parent, LoadedZone loaded) {
+		if (loaded == null) {
+			throw new IllegalArgumentException("EncounterEditDialog must be handed the LoadedZone");
+		}
 		//ENCOUNTERS, not "is it ORAS": the EN pack's slot in the zone archive
 		//and its 61-slot record layout were measured on ORAS and checked
 		//nowhere else. The old gate said "Load an ORAS workspace first" to a
@@ -57,11 +60,11 @@ public class EncounterEditDialog {
 					"Wild encounters");
 			return;
 		}
-		if (mZonePnl == null || mZonePnl.zoneIndex < 0) {
+		if (loaded.index() < 0) {
 			ctrmap.Ui.error(parent, "Load a zone first (Zone tab).", "Wild encounters");
 			return;
 		}
-		final int zoneIndex = mZonePnl.zoneIndex;
+		final int zoneIndex = loaded.index();
 		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 		//the zone count comes from the profile's MEASURED trailing-entry number,
 		//not from a "2" written into the arithmetic; the EN pack is the last

@@ -280,11 +280,11 @@ public class MapPrefabTest {
 	 * and panel each time, so one stamp never lands on another's model.
 	 */
 	private static String stampInto(GR region, MapPrefab p) throws Exception {
-		ctrmap.humaninterface.TileMapPanel panel = new ctrmap.humaninterface.TileMapPanel();
+		ctrmap.humaninterface.TileMapPanel panel = new ctrmap.humaninterface.TileMapPanel(new ctrmap.LoadedZone());
 		panel.mainGR = region;
 		ctrmap.CtrmapMainframe.mTileMapPanel = panel;
 		ctrmap.CtrmapMainframe.mZonePnl = null;
-		ctrmap.humaninterface.GeoEditForm form = new ctrmap.humaninterface.GeoEditForm();
+		ctrmap.humaninterface.GeoEditForm form = new ctrmap.humaninterface.GeoEditForm(new ctrmap.LoadedZone());
 		form.setSelection(2, 2, 5, 5);
 		form.stampHere(p);
 		java.lang.reflect.Field f = ctrmap.humaninterface.GeoEditForm.class.getDeclaredField("status");

@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.formats.tilemap.Tilemap;
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.humaninterface.CollEditPanel;
@@ -79,6 +80,9 @@ import javax.swing.JSplitPane;
  */
 final class EditorBench {
 
+	/** The zone owner every panel and form built here shares, as the window's would. */
+	static final LoadedZone LOADED = new LoadedZone();
+
 	static BenchMap map;
 	static BenchPaintForm paint;
 	static BenchPropForm prop;
@@ -131,12 +135,12 @@ final class EditorBench {
 		CtrmapMainframe.mCamEditForm = cam = new BenchCamForm();
 		CtrmapMainframe.mCamScrollPane = new JScrollPane(CtrmapMainframe.mCamEditForm);
 		CtrmapMainframe.mPropEditForm = prop = new BenchPropForm();
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm();
-		CtrmapMainframe.mWarpEditForm = warps = new WarpEditForm();
-		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm();
-		CtrmapMainframe.mGeoEditForm = geo = new GeoEditForm();
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED);
+		CtrmapMainframe.mWarpEditForm = warps = new WarpEditForm(LOADED);
+		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm(LOADED);
+		CtrmapMainframe.mGeoEditForm = geo = new GeoEditForm(LOADED);
 		CtrmapMainframe.mCollEditPanel = new CollEditPanel();
-		CtrmapMainframe.mMtxEditForm = new MatrixEditForm();
+		CtrmapMainframe.mMtxEditForm = new MatrixEditForm(LOADED);
 		//the "Current tool" label is this row's, not the window's, and the row
 		//is what TileEditForm asks for the Set tool
 		CtrmapMainframe.worldToolbar = toolbar = new WorldEditorToolbar(
@@ -435,6 +439,10 @@ final class EditorBench {
 	static final class BenchMap extends TileMapPanel {
 
 		private static final long serialVersionUID = 1L;
+
+		BenchMap() {
+			super(LOADED);
+		}
 		int renders = 0;
 		int repaints = 0;
 
@@ -482,6 +490,10 @@ final class EditorBench {
 	static final class BenchPaintForm extends PaintForm {
 
 		private static final long serialVersionUID = 1L;
+
+		BenchPaintForm() {
+			super(LOADED);
+		}
 		final List<String> calls = new ArrayList<String>();
 
 		@Override
@@ -529,6 +541,10 @@ final class EditorBench {
 	static final class BenchPropForm extends PropEditForm {
 
 		private static final long serialVersionUID = 1L;
+
+		BenchPropForm() {
+			super(LOADED);
+		}
 		final List<String> calls = new ArrayList<String>();
 
 		@Override
