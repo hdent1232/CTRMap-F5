@@ -160,6 +160,50 @@ built as locals now, which the compiler will not let anyone read too early,
 and `MainframeEdgesTest` carries the general rule: nothing the window builds
 may be handed a static that method has not assigned yet.
 
+## Long methods, assessed one at a time
+
+41 hand-written methods run to 120 lines or more. (A further 15 are NetBeans
+`initComponents` blocks, paired with `.form` files and not editable by hand.)
+Length on its own is not a defect and this list is not a target: splitting a
+method without moving an edge is relocation, and the campaign's standard is
+coupling, not lines. Each was read and put in one of four groups.
+
+**Sequences that are genuinely one thing (12 in `ctrmap.formats`, ~2,200
+lines).** `PawnInstruction.getDisassembly`, `BchModelAppender.append`, the
+`BCHFile` constructor, the wrapper injectors, `BchTexturePack.emit`,
+`MapPrefab.extract`. These are binary format walks: a long, ordered sequence of
+field reads with no branch worth naming. Cutting them yields helpers that are
+called once, from one place, in one order — which is the same method with more
+places to look. **Left alone, deliberately.**
+
+**Dialogs that build a form and read it back (9, ~1,560 lines).**
+`ItemEditDialog.show`, `BuildingPaletteDialog.pick`, `AreaLightingDialog.show`,
+and six siblings. These are `initComponents` written by hand rather than by
+NetBeans, and they carry the same shape: lay out widgets, wire listeners, block,
+read the values. The layout half could be extracted, and the honest reason it
+has not been is that it buys nothing measurable — the coupling is already
+one-way and local. **Left alone; revisit only if one of them gains logic.**
+
+**Suites (8, ~1,440 lines).** A suite section is a narrative and reads better
+whole; `injectAndVerify` and `truncatedCasetbl` are single scenarios. The one
+that deserved splitting was `MainframeEdgesTest.handedTooEarly` at 290 lines,
+and it got it: the rule is now a function over any source it is handed, which is
+what let its own blind spot be found. **Left alone otherwise.**
+
+**The window and its panels (9, ~1,460 lines) — where the real work was.**
+`createAndShowGUI` was 395 lines and is 251: the two editor lists it carried are
+now `buildOpenEditors()` and `buildZoneEditors()`, so the wiring method wires
+and the lists say what they mean somewhere a reader can find them. That split is
+not cosmetic — the caller still assigns each to a local and hands the local on,
+which is what makes the compiler prove nothing is handed them before they exist.
+
+Still long and still worth someone's attention, with the reason each is hard:
+`ZoneLoadingPanel.loadEverything` and `btnAddZoneActionPerformed` (a worker
+thread plus progress reporting plus the operation, three concerns in one body);
+`CtrmapMainframe.blankCanvasAction`; the `PaintForm`, `CollEditPanel` and
+`TileEditForm` constructors, which are hand-written layout in the dialog mould.
+None of them is a coupling problem, which is why none was taken here.
+
 ## Global mutable state (measured, and where the line is)
 
 CTRMap keeps a lot in `public static` fields. Measured from the compiled
