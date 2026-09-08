@@ -10,13 +10,27 @@ how a sweep once reported a guard suite red against a stale catalogue that no
 battery had ever seen.
 
 The digest algorithm is defined in stamp.ps1 and mirrored in
-BatteryHygieneTest.builtByTheBattery; keep all three identical.
+BatteryHygieneTest.builtByTheBattery; keep all three identical. Its per-file
+half is mirrored again in MutationBaselineTest and tools/mutate2.py, which
+import digest_bytes from here rather than writing a sixth copy.
 """
 import hashlib
 import subprocess
 from pathlib import Path
 
 STAMP = ".built-by-build-ps1"
+
+# The extensions whose CRs are not content - see stamp.ps1 for why line endings
+# are not part of a file's identity here. Binary files are hashed byte for byte.
+TEXT_DIGEST_EXT = (".java", ".form", ".properties", ".tsv", ".md", ".txt")
+
+
+def digest_bytes(path):
+    """The bytes a digest is taken over: text files with every CR removed."""
+    data = Path(path).read_bytes()
+    if str(path).lower().endswith(TEXT_DIGEST_EXT):
+        return data.replace(b"\r", b"")
+    return data
 
 
 def tree_digest(root, exclude=""):
@@ -28,7 +42,7 @@ def tree_digest(root, exclude=""):
         rel = p.relative_to(root).as_posix()
         if rel == exclude:
             continue
-        lines.append(rel + ":" + hashlib.sha256(p.read_bytes()).hexdigest() + "\n")
+        lines.append(rel + ":" + hashlib.sha256(digest_bytes(p)).hexdigest() + "\n")
     lines.sort()                          # code-point order == ordinal for these paths
     return hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
 
