@@ -2,7 +2,7 @@ package ctrmap.humaninterface.tools;
 
 import java.util.Arrays;
 
-import static ctrmap.CtrmapMainframe.*;
+import ctrmap.humaninterface.TileEditForm;
 import ctrmap.formats.tilemap.Tilemap;
 import ctrmap.humaninterface.Selector;
 import java.awt.Graphics;
@@ -10,12 +10,20 @@ import java.awt.event.MouseEvent;
 import javax.swing.SwingUtilities;
 
 public class SetTool extends AbstractTool {
+
+	/** The tile inspector holding the bytes it stamps. */
+	private final TileEditForm form;
+
+	public SetTool(ToolHost host, TileEditForm form) {
+		super(host);
+		this.form = form;
+	}
 	public byte[] actTileData = new byte[4];
 	@Override
 	public void onToolInit() {
-		switchToolUI(mTileEditForm);
-		mTileEditForm.makeTile();
-		mTileEditForm.lockTile(true);
+		host.showToolUi(form);
+		form.makeTile();
+		form.lockTile(true);
 	}
 	
 	@Override
@@ -51,7 +59,7 @@ public class SetTool extends AbstractTool {
 
 	private void updateTile(){
 		if (Selector.hilightTileX != -1) {
-			Tilemap tm = mTileMapPanel.getRegionForTile(Selector.hilightTileX, Selector.hilightTileY);
+			Tilemap tm = host.map().getRegionForTile(Selector.hilightTileX, Selector.hilightTileY);
 			if (tm == null){
 				return;
 			}
@@ -61,20 +69,20 @@ public class SetTool extends AbstractTool {
 				tm.setTileData(lx, ly, actTileData);
 				ctrmap.humaninterface.TileUndo.record(tm, lx, ly, before, actTileData);
 				tm.updateImage();
-				mTileMapPanel.perfScale(mTileMapPanel.tilemapScale, Selector.hilightTileX / 40, Selector.hilightTileY / 40);
+				host.map().perfScale(host.map().tilemapScale, Selector.hilightTileX / 40, Selector.hilightTileY / 40);
 			}
 		}
 	}
 
 	@Override
 	public void onToolShutdown() {
-		mTileEditForm.lockTile(false);
+		form.lockTile(false);
 		Selector.unfocus();
 	}
 
 	@Override
 	public void fireCancel() {
-		mTileEditForm.lockTile(false);
+		form.lockTile(false);
 		Selector.unfocus();
 	}
 

@@ -1,6 +1,6 @@
 package ctrmap.humaninterface.tools;
 
-import static ctrmap.CtrmapMainframe.*;
+import ctrmap.humaninterface.CameraEditForm;
 import ctrmap.formats.cameradata.CameraData;
 import ctrmap.humaninterface.Selector;
 import java.awt.Color;
@@ -12,9 +12,21 @@ import java.util.Collections;
 
 public class CameraTool extends AbstractTool {
 
+	/** The camera editor it switches between cameras. */
+	private final CameraEditForm form;
+
+	/** Handed alongside the form: the scroll pane the camera editor is shown in. */
+	private final javax.swing.JScrollPane pane;
+
+	public CameraTool(ToolHost host, CameraEditForm form, javax.swing.JScrollPane pane) {
+		super(host);
+		this.form = form;
+		this.pane = pane;
+	}
+
 	@Override
 	public void onToolInit() {
-		switchToolUI(mCamScrollPane);
+		host.showToolUi(pane);
 	}
 
 	@Override
@@ -26,18 +38,18 @@ public class CameraTool extends AbstractTool {
 
 	@Override
 	public void drawOverlay(Graphics g, int imgstartx, int imgstarty, double globimgdim) {
-		if (mTileMapPanel.loaded) {
+		if (host.map().loaded) {
 			ArrayList<Byte> layers = new ArrayList<>();
-			for (int i = 0; i < mCamEditForm.f.camData.size(); i++) {
-				byte layer = (byte) mCamEditForm.f.camData.get(i).layer;
+			for (int i = 0; i < form.f.camData.size(); i++) {
+				byte layer = (byte) form.f.camData.get(i).layer;
 				if (!layers.contains(layer)) {
 					layers.add(layer);
 				}
 			}
 			Collections.sort(layers);
 			layers.forEach((layer) -> {
-				for (int i = 0; i < mCamEditForm.f.camData.size(); i++) {
-					CameraData cam = mCamEditForm.f.camData.get(i);
+				for (int i = 0; i < form.f.camData.size(); i++) {
+					CameraData cam = form.f.camData.get(i);
 					if (cam.layer != layer) {
 						continue;
 					}
@@ -53,8 +65,8 @@ public class CameraTool extends AbstractTool {
 					g.drawString("C" + String.valueOf(i), xdraw + 1, ydraw + Math.min(h / 2, 20));
 				}
 			});
-			if (mCamEditForm.cam != null) {
-				CameraData cam = mCamEditForm.cam;
+			if (form.cam != null) {
+				CameraData cam = form.cam;
 				g.setColor(new Color(0xff0000));
 				g.drawRect(imgstartx + (int) Math.round(cam.boundX1 * globimgdim), imgstarty + (int) Math.round(cam.boundY1 * globimgdim),
 						(int) Math.round((cam.boundX2 - cam.boundX1 + 1) * globimgdim), (int) Math.round((cam.boundY2 - cam.boundY1 + 1) * globimgdim));
@@ -64,12 +76,12 @@ public class CameraTool extends AbstractTool {
 
 	@Override
 	public void onTileClick(MouseEvent e) {
-		for (int i = 0; i < mCamEditForm.f.camData.size(); i++) {
-			CameraData cam = mCamEditForm.f.camData.get(i);
+		for (int i = 0; i < form.f.camData.size(); i++) {
+			CameraData cam = form.f.camData.get(i);
 			if (Selector.hilightTileX >= cam.boundX1 && Selector.hilightTileX <= cam.boundX2 && Selector.hilightTileY >= cam.boundY1 && Selector.hilightTileY <= cam.boundY2
-					&& mCamEditForm.cam != cam) {
-				mCamEditForm.commitAndSwitch(i);
-				frame.repaint();
+					&& form.cam != cam) {
+				form.commitAndSwitch(i);
+				host.redraw();
 				break;
 			}
 		}
@@ -94,7 +106,7 @@ public class CameraTool extends AbstractTool {
 
 	@Override
 	public void updateComponents() {
-		mCamEditForm.showCamera(mCamEditForm.camIndex, false);
+		form.showCamera(form.camIndex, false);
 	}
 
 	@Override

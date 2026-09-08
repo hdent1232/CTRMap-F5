@@ -114,6 +114,13 @@ final class EditorBench {
 	 */
 	static ActionListener toolSwitch;
 
+
+	/** The editor the bench's tools work inside, recording what they ask for. */
+	static final RecordingHost HOST = new RecordingHost();
+
+	/** Builds a tool over the bench's own forms. */
+	static ctrmap.humaninterface.tools.ToolBox BOX;
+
 	private static boolean installed = false;
 	private static boolean frameOk = false;
 
@@ -201,9 +208,20 @@ final class EditorBench {
 		mainframeField("jsp3", mtxSplit);
 
 		if (!GraphicsEnvironment.isHeadless()) {
-			CtrmapMainframe.frame = new JFrame();
+			//the window's frame is private now: nothing below the window reaches
+			//it, and this bench stands IN for the window, so it goes through the
+			//same door it uses for the master panels and the splits
+			mainframeField("frame", new JFrame());
 			frameOk = true;
 		}
+
+		HOST.map = map;
+		//with a window, the bench does the real split too, so the checks that
+		//read it keep reading it; without one, the record is the whole answer
+		HOST.alsoReally = frameOk;
+		BOX = new ctrmap.humaninterface.tools.ToolBox(HOST, tiles, geo,
+				(ctrmap.humaninterface.NPCEditForm) CtrmapMainframe.mNPCEditForm, prop, warps, triggers,
+				paint, cam, CtrmapMainframe.mCamScrollPane);
 	}
 
 	private static JSplitPane split(java.awt.Component left, java.awt.Component right) {
@@ -315,8 +333,9 @@ final class EditorBench {
 		} catch (Throwable t) {
 			System.out.println("  note: could not stop the prop preview animator: " + t);
 		}
-		if (CtrmapMainframe.frame != null) {
-			CtrmapMainframe.frame.dispose();
+		JFrame built = (JFrame) mainframeField("frame");
+		if (built != null) {
+			built.dispose();
 		}
 	}
 

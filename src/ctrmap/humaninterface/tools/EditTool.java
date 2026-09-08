@@ -1,6 +1,6 @@
 package ctrmap.humaninterface.tools;
 
-import static ctrmap.CtrmapMainframe.*;
+import ctrmap.humaninterface.TileEditForm;
 import ctrmap.humaninterface.Selector;
 import java.awt.Graphics;
 import java.awt.event.MouseEvent;
@@ -8,10 +8,18 @@ import javax.swing.SwingUtilities;
 
 public class EditTool extends AbstractTool {
 
+	/** The tile inspector it locks and unlocks. */
+	private final TileEditForm form;
+
+	public EditTool(ToolHost host, TileEditForm form) {
+		super(host);
+		this.form = form;
+	}
+
 	@Override
 	public void onToolInit() {
-		switchToolUI(mTileEditForm);
-		mTileEditForm.lockTile(false);
+		host.showToolUi(form);
+		form.lockTile(false);
 	}
 
 	@Override
@@ -38,13 +46,13 @@ public class EditTool extends AbstractTool {
 
 	@Override
 	public void onToolShutdown() {
-		mTileEditForm.lockTile(false);
+		form.lockTile(false);
 		Selector.unfocus();
 	}
 
 	@Override
 	public void fireCancel() {
-		mTileEditForm.lockTile(false);
+		form.lockTile(false);
 		Selector.unfocus();
 	}
 

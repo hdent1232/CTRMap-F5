@@ -86,7 +86,7 @@ public class TilemapInputRouterTest {
 		int wheelBefore = EditorBench.map.getMouseWheelListeners().length;
 		int motionBefore = EditorBench.map.getMouseMotionListeners().length;
 		int mouseBefore = EditorBench.map.getMouseListeners().length;
-		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map, EditorBench.TOOLS);
+		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map, EditorBench.TOOLS, EditorBench.BOX);
 		check(Arrays.asList(EditorBench.map.getMouseWheelListeners()).contains(router)
 				&& EditorBench.map.getMouseWheelListeners().length == wheelBefore + 1,
 				"the router subscribes to the map view's wheel");
@@ -373,7 +373,7 @@ public class TilemapInputRouterTest {
 	 * handlers directly and one synthetic event cannot be delivered twice.
 	 */
 	static TilemapPanelInputManager router() {
-		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map, EditorBench.TOOLS);
+		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map, EditorBench.TOOLS, EditorBench.BOX);
 		EditorBench.map.removeMouseWheelListener(router);
 		EditorBench.map.removeMouseMotionListener(router);
 		EditorBench.map.removeMouseListener(router);
@@ -394,6 +394,10 @@ public class TilemapInputRouterTest {
 	static final class SpyTool extends AbstractTool {
 
 		final List<String> calls = new ArrayList<String>();
+
+		SpyTool() {
+			super(new RecordingHost(EditorBench.map));
+		}
 
 		@Override
 		public void onToolInit() {

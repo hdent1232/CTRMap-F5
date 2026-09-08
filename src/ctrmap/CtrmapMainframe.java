@@ -60,7 +60,8 @@ import ctrmap.humaninterface.WorldEditorToolbar;
 import ctrmap.humaninterface.WorkspaceSettings;
 import ctrmap.humaninterface.ZoneLoadingPanel;
 import ctrmap.humaninterface.builder.Builder;
-import ctrmap.humaninterface.tools.SetTool;
+import ctrmap.humaninterface.tools.ToolBox;
+import ctrmap.humaninterface.tools.ToolHost;
 import ctrmap.humaninterface.tools.ToolSelection;
 import java.awt.Desktop;
 import java.awt.Dimension;
@@ -85,7 +86,15 @@ import javax.swing.filechooser.FileFilter;
  */
 public class CtrmapMainframe {
 
-	public static JFrame frame;
+	/**
+	 * The editor's window. PRIVATE: nothing below the window reaches it any
+	 * more. Fourteen classes did - five dialog parents, which the dialog seam
+	 * holds now, and nine repaints, which are a capability the forms and tools
+	 * are handed. Both mattered for the same reason: a JFrame cannot be built
+	 * without a display, so every line that touched one was a line no headless
+	 * suite could reach.
+	 */
+	private static JFrame frame;
 	/**
 	 * The open game, handed to this window when a workspace opens and dropped
 	 * when it closes: the ONE place the window keeps it. Every action that
@@ -265,7 +274,35 @@ public class CtrmapMainframe {
 
 		//each input manager registers itself as its panel's listener; only the
 		//tile map's is needed again, by the tool row
-		TilemapPanelInputManager tilemapInput = new TilemapPanelInputManager(mTileMapPanel, tools);
+		//the editor a tool works inside, and the box that knows which form each
+		//tool drives. Both are built here because this is where the parts are;
+		//a tool now takes them and reaches for nothing.
+		ToolHost toolHost = new ToolHost() {
+			@Override
+			public void showToolUi(JComponent form) {
+				switchToolUI(form);
+			}
+
+			@Override
+			public void redraw() {
+				redraw.all();
+			}
+
+			@Override
+			public void releaseNavi() {
+				if (m3DDebugPanel != null) {
+					m3DDebugPanel.bindNavi(null);
+				}
+			}
+
+			@Override
+			public TileMapPanel map() {
+				return mTileMapPanel;
+			}
+		};
+		ToolBox toolBox = new ToolBox(toolHost, mTileEditForm, mGeoEditForm, mNPCEditForm, mPropEditForm,
+				mWarpEditForm, mTriggerEditForm, mPaintForm, mCamEditForm, mCamScrollPane);
+		TilemapPanelInputManager tilemapInput = new TilemapPanelInputManager(mTileMapPanel, tools, toolBox);
 		new CM3DInputManager(m3DDebugPanel, tools);
 		new CollInputManager(glPanel);
 		new MatrixPanelInputManager(mMtxPanel);
@@ -384,7 +421,7 @@ public class CtrmapMainframe {
 				showView3D(true);
 			}
 		});
-		tools.switchTo(SetTool::new);
+		tools.switchTo(toolBox::set);
 		frame.getRootPane().setFocusable(true);
 		frame.addComponentListener(new ComponentAdapter() {
 			@Override

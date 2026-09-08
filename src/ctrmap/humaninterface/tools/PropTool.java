@@ -1,13 +1,21 @@
 package ctrmap.humaninterface.tools;
 
 import java.awt.event.MouseEvent;
-import static ctrmap.CtrmapMainframe.*;
+import ctrmap.humaninterface.PropEditForm;
 import ctrmap.formats.propdata.GRProp;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics;
 
 public class PropTool extends AbstractTool {
+
+	/** The prop editor whose prop it drags. */
+	private final PropEditForm form;
+
+	public PropTool(ToolHost host, PropEditForm form) {
+		super(host);
+		this.form = form;
+	}
 	
 	private boolean dragging = false;
 	private boolean isDownOnProp = false;
@@ -16,8 +24,8 @@ public class PropTool extends AbstractTool {
 	
 	@Override
 	public void onToolInit() {
-		switchToolUI(mPropEditForm);
-		mPropEditForm.saveAndRefresh();
+		host.showToolUi(form);
+		form.saveAndRefresh();
 	}
 
 	@Override
@@ -29,26 +37,26 @@ public class PropTool extends AbstractTool {
 
 	@Override
 	public void drawOverlay(Graphics g, int imgstartx, int imgstarty, double globimgdim){
-		if (mTileMapPanel.loaded && mPropEditForm.loaded){
-			for (int i = 0; i < mPropEditForm.props.props.size(); i++){
-				GRProp prop = mPropEditForm.props.props.get(i);
+		if (host.map().loaded && form.loaded){
+			for (int i = 0; i < form.props.props.size(); i++){
+				GRProp prop = form.props.props.get(i);
 				double transformFrom720Space = 400d/720d;
 				g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, (int)globimgdim));
 				int textWidth = g.getFontMetrics().stringWidth(prop.name);
-				int x = (int)(imgstartx + prop.x * mTileMapPanel.tilemapScale * transformFrom720Space - textWidth/2d);
-				int y = (int)(imgstarty + prop.z * mTileMapPanel.tilemapScale * transformFrom720Space);
+				int x = (int)(imgstartx + prop.x * host.map().tilemapScale * transformFrom720Space - textWidth/2d);
+				int y = (int)(imgstarty + prop.z * host.map().tilemapScale * transformFrom720Space);
 				prop.nameWidth = textWidth;
 				prop.nameHeight = (int)globimgdim;
 				g.setColor(Color.WHITE);
 				g.fillRect(x, y, textWidth, (int)globimgdim + 2);
-				g.setColor((i == mPropEditForm.propIndex) ? Color.RED : Color.BLACK);
+				g.setColor((i == form.propIndex) ? Color.RED : Color.BLACK);
 				g.drawRect(x, y, textWidth, (int)globimgdim + 2);
 				g.setColor(Color.BLACK);
 				g.drawString(prop.name, x, y + (int)globimgdim + 1);
-				if (dragging && mPropEditForm.propIndex == i){
+				if (dragging && form.propIndex == i){
 					g.setColor(Color.RED);
-					g.drawLine(0, y, imgstartx + mTileMapPanel.tilemapScaledImage.getWidth(), y);
-					g.drawLine((int)(x + textWidth/2d), 0, (int)(x + textWidth/2d), imgstarty + mTileMapPanel.tilemapScaledImage.getHeight());
+					g.drawLine(0, y, imgstartx + host.map().tilemapScaledImage.getWidth(), y);
+					g.drawLine((int)(x + textWidth/2d), 0, (int)(x + textWidth/2d), imgstarty + host.map().tilemapScaledImage.getHeight());
 				}
 			}
 		}
@@ -60,18 +68,18 @@ public class PropTool extends AbstractTool {
 
 	@Override
 	public void onTileMouseDown(MouseEvent e) {
-		if (mPropEditForm.loaded){
-			for (int i = 0; i < mPropEditForm.props.props.size(); i++){
-				GRProp prop = mPropEditForm.props.props.get(i);
-				int imgstartx = (mTileMapPanel.getWidth() - mTileMapPanel.tilemapScaledImage.getWidth()) / 2;
-				int imgstarty = (mTileMapPanel.getHeight() - mTileMapPanel.tilemapScaledImage.getHeight()) / 2;
-				double xBase = prop.x * 400d/720d * mTileMapPanel.tilemapScale + imgstartx;
-				double yBase = prop.z * 400d/720d * mTileMapPanel.tilemapScale + imgstarty;
+		if (form.loaded){
+			for (int i = 0; i < form.props.props.size(); i++){
+				GRProp prop = form.props.props.get(i);
+				int imgstartx = (host.map().getWidth() - host.map().tilemapScaledImage.getWidth()) / 2;
+				int imgstarty = (host.map().getHeight() - host.map().tilemapScaledImage.getHeight()) / 2;
+				double xBase = prop.x * 400d/720d * host.map().tilemapScale + imgstartx;
+				double yBase = prop.z * 400d/720d * host.map().tilemapScale + imgstarty;
 				if (e.getX() > xBase - prop.nameWidth/2 && e.getX() < xBase + prop.nameWidth/2 && e.getY() > yBase && e.getY() < yBase + prop.nameHeight){
 					isDownOnProp = true;
 					xshift = (xBase - e.getX()); //xBase is in the center
 					yshift = (yBase - e.getY());
-					mPropEditForm.setProp(i);
+					form.setProp(i);
 					break;
 				}
 			}
@@ -82,20 +90,20 @@ public class PropTool extends AbstractTool {
 	public void onTileMouseUp(MouseEvent e) {
 		dragging = false;
 		isDownOnProp = false;
-		frame.repaint();
+		host.redraw();
 	}
 
 	@Override
 	public void onTileMouseDragged(MouseEvent e) {
-		if (mPropEditForm.prop == null || !mPropEditForm.loaded || !isDownOnProp) return;
+		if (form.prop == null || !form.loaded || !isDownOnProp) return;
 		dragging = true;
-		int imgstartx = (mTileMapPanel.getWidth() - mTileMapPanel.tilemapScaledImage.getWidth()) / 2;
-		int imgstarty = (mTileMapPanel.getHeight() - mTileMapPanel.tilemapScaledImage.getHeight()) / 2;
-		mPropEditForm.prop.x = (float)((e.getX() - imgstartx + xshift) * (720f/400f) / mTileMapPanel.tilemapScale);
-		mPropEditForm.prop.z = (float)((e.getY() - imgstarty + yshift) * (720f/400f) / mTileMapPanel.tilemapScale);
-		mPropEditForm.props.modified = true;
-		mPropEditForm.showProp(mPropEditForm.propIndex);
-		mTileMapPanel.renderTileMap();
+		int imgstartx = (host.map().getWidth() - host.map().tilemapScaledImage.getWidth()) / 2;
+		int imgstarty = (host.map().getHeight() - host.map().tilemapScaledImage.getHeight()) / 2;
+		form.prop.x = (float)((e.getX() - imgstartx + xshift) * (720f/400f) / host.map().tilemapScale);
+		form.prop.z = (float)((e.getY() - imgstarty + yshift) * (720f/400f) / host.map().tilemapScale);
+		form.props.modified = true;
+		form.showProp(form.propIndex);
+		host.map().renderTileMap();
 	}
 
 	@Override
@@ -105,8 +113,8 @@ public class PropTool extends AbstractTool {
 
 	@Override
 	public void updateComponents() {
-		mPropEditForm.props.modified = true;
-		mPropEditForm.showProp(mPropEditForm.propIndex);
+		form.props.modified = true;
+		form.showProp(form.propIndex);
 	}
 	
 	@Override

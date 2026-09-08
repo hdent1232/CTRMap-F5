@@ -184,6 +184,7 @@ public class EditToolGuardsTest {
 		private final String name;
 
 		SpySwitchTool(java.util.List<String> log, String name) {
+			super(EditorBench.HOST);
 			this.log = log;
 			this.name = name;
 			log.add("init:" + name);
@@ -800,12 +801,16 @@ public class EditToolGuardsTest {
 	 * JFrame, and the warp, trigger and camera hit tests all repaint it.
 	 */
 	static void withTheWindow(File dump) throws Exception {
+		//tool startup used to be in here too: it asserted which form reached the
+		//window's split pane, and switchToolUI revalidates a JFrame. A tool is
+		//handed the editor it works in now, so what it SHOWS is a record on the
+		//host and the check runs with no display at all.
+		toolStartupSwitchesTheSidePanel();
 		if (!EditorBench.frameAvailable()) {
-			System.out.println("  skip: no display, and every onToolInit revalidates the mainframe's JFrame"
-					+ " - tool startup, the warp and trigger hit tests and the camera tool are not measured here");
+			System.out.println("  skip: no display - the warp and trigger hit tests and the camera tool"
+					+ " read the map view's own rendered image, which needs one");
 			return;
 		}
-		toolStartupSwitchesTheSidePanel();
 		warpToolPicksTheWarpUnderTheCursor();
 		triggerToolPicksTheTriggerUnderTheCursor();
 		cameraToolSwitchesCamera(dump);
@@ -819,37 +824,56 @@ public class EditToolGuardsTest {
 	 */
 	static void toolStartupSwitchesTheSidePanel() throws Exception {
 		EditorBench.paint.calls.clear();
-		new PaintTool();
-		check(rightForm() == CtrmapMainframe.mPaintForm, "the Paint tool puts the painter in the side panel");
+		start(EditorBench.BOX.paint());
+		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mPaintForm,
+				"the Paint tool puts the painter in the side panel");
 		check(EditorBench.paint.calls.equals(Arrays.asList("activate")), "and activates it: " + EditorBench.paint.calls);
 
 		EditorBench.tiles.lockTile(false);
-		new SetTool();
-		check(rightForm() == CtrmapMainframe.mTileEditForm, "the Set tool puts the tile inspector in the side panel");
+		start(EditorBench.BOX.set());
+		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mTileEditForm,
+				"the Set tool puts the tile inspector in the side panel");
 		check(Boolean.TRUE.equals(EditorBench.field(EditorBench.tiles, "isLocked")),
 				"and locks it, so hovering the map no longer overwrites the bytes being stamped");
 
-		new GeoTool();
-		check(rightForm() == CtrmapMainframe.mGeoEditForm, "the Geometry tool puts the geometry form in the side panel");
+		start(EditorBench.BOX.geometry());
+		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mGeoEditForm,
+				"the Geometry tool puts the geometry form in the side panel");
 
 		EditorBench.prop.calls.clear();
-		new PropTool();
-		check(rightForm() == CtrmapMainframe.mPropEditForm, "the Prop tool puts the prop form in the side panel");
+		start(EditorBench.BOX.prop());
+		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mPropEditForm,
+				"the Prop tool puts the prop form in the side panel");
 		check(EditorBench.prop.calls.equals(Arrays.asList("saveAndRefresh")),
 				"and saves and refreshes it: " + EditorBench.prop.calls);
 
-		new WarpTool();
-		check(rightForm() == CtrmapMainframe.mWarpEditForm, "the Warp tool puts the warp form in the side panel");
+		start(EditorBench.BOX.warp());
+		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mWarpEditForm,
+				"the Warp tool puts the warp form in the side panel");
 
-		new TriggerTool();
-		check(rightForm() == CtrmapMainframe.mTriggerEditForm, "the Trigger tool puts the trigger form in the side panel");
+		start(EditorBench.BOX.trigger());
+		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mTriggerEditForm,
+				"the Trigger tool puts the trigger form in the side panel");
 
-		new CameraTool();
-		check(rightForm() == CtrmapMainframe.mCamScrollPane, "the Camera tool puts the camera form in the side panel");
+		start(EditorBench.BOX.camera());
+		check(EditorBench.HOST.lastShown() == CtrmapMainframe.mCamScrollPane,
+				"the Camera tool puts the camera form in the side panel");
 
-		new SetTool().onToolShutdown();
+		//every one of those let go of the 3D navigator on its way in, which is
+		//the other half of taking a tool in hand
+		check(EditorBench.HOST.naviReleases >= 7,
+				"and each of them released the 3D navigator as it started ("
+				+ EditorBench.HOST.naviReleases + ")");
+
+		start(EditorBench.BOX.set()).onToolShutdown();
 		check(Boolean.FALSE.equals(EditorBench.field(EditorBench.tiles, "isLocked")),
 				"leaving the Set tool unlocks the tile inspector again");
+	}
+
+	/** Takes a tool in hand, which is what the selection does once it has built one. */
+	static AbstractTool start(AbstractTool tool) {
+		tool.start();
+		return tool;
 	}
 
 	/** The side panel's component, unwrapped from the scroll pane switchToolUI puts round a bare form. */
@@ -1133,66 +1157,39 @@ public class EditToolGuardsTest {
 	// ---- tools built without their side panel -------------------------------
 
 	/*
-	 * Every tool below stubs out onToolInit, which is what AbstractTool's
-	 * constructor calls and what needs the mainframe's JFrame. The real
-	 * onToolInit of each is driven in toolStartupSwitchesTheSidePanel, where a
-	 * window is available; splitting it this way is what lets the rest of the
-	 * suite run with no display at all.
+	 * Every tool below is BUILT and not started. Each used to stub out
+	 * onToolInit, "which is what AbstractTool's constructor calls and what
+	 * needs the mainframe's JFrame" - a tool could not be made without one.
+	 * A tool is handed its editor now and its setup runs in start(), which the
+	 * selection calls, so building one is free and the stubs are gone with the
+	 * reason for them.
 	 */
 	static PaintTool paintTool() {
-		return new PaintTool() {
-			@Override
-			public void onToolInit() {
-			}
-		};
+		return (PaintTool) EditorBench.BOX.paint();
 	}
 
 	static SetTool setTool() {
-		return new SetTool() {
-			@Override
-			public void onToolInit() {
-			}
-		};
+		return (SetTool) EditorBench.BOX.set();
 	}
 
 	static GeoTool geoTool() {
-		return new GeoTool() {
-			@Override
-			public void onToolInit() {
-			}
-		};
+		return (GeoTool) EditorBench.BOX.geometry();
 	}
 
 	static PropTool propTool() {
-		return new PropTool() {
-			@Override
-			public void onToolInit() {
-			}
-		};
+		return (PropTool) EditorBench.BOX.prop();
 	}
 
 	static TriggerTool triggerTool() {
-		return new TriggerTool() {
-			@Override
-			public void onToolInit() {
-			}
-		};
+		return (TriggerTool) EditorBench.BOX.trigger();
 	}
 
 	static WarpTool warpTool() {
-		return new WarpTool() {
-			@Override
-			public void onToolInit() {
-			}
-		};
+		return (WarpTool) EditorBench.BOX.warp();
 	}
 
 	static CameraTool cameraTool() {
-		return new CameraTool() {
-			@Override
-			public void onToolInit() {
-			}
-		};
+		return (CameraTool) EditorBench.BOX.camera();
 	}
 
 	/** One pixel, without the alpha byte a TYPE_INT_RGB image reports as opaque. */

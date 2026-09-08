@@ -12,6 +12,7 @@ import javax.swing.event.MouseInputListener;
 
 import static ctrmap.CtrmapMainframe.*;
 import ctrmap.humaninterface.tools.CameraTool;
+import ctrmap.humaninterface.tools.ToolBox;
 import ctrmap.humaninterface.tools.ToolSelection;
 import ctrmap.humaninterface.tools.EditTool;
 import ctrmap.humaninterface.tools.FillTool;
@@ -30,9 +31,13 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 	/** The tool being driven: this class is the one that changes it. */
 	private final ToolSelection tools;
 
-	public TilemapPanelInputManager(TileMapPanel parent, ToolSelection tools){
+	/** Where a tool comes from: this class picks one, it does not know how to build one. */
+	private final ToolBox box;
+
+	public TilemapPanelInputManager(TileMapPanel parent, ToolSelection tools, ToolBox box){
 		super();
 		this.tools = tools;
+		this.box = box;
 		parent.addMouseWheelListener(this);
 		parent.addMouseMotionListener(this);
 		parent.addMouseListener(this);
@@ -104,34 +109,34 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 		boolean switchCam = false;
 		switch (e.getActionCommand()) {
 			case ("edit"):
-				tools.switchTo(EditTool::new);
+				tools.switchTo(box::edit);
 				break;
 			case ("set"):
-				tools.switchTo(SetTool::new);
+				tools.switchTo(box::set);
 				break;
 			case ("fill"):
-				tools.switchTo(FillTool::new);
+				tools.switchTo(box::fill);
 				break;
 			case ("cam"):
-				tools.switchTo(CameraTool::new);
+				tools.switchTo(box::camera);
 				break;
 			case ("prop"):
-				tools.switchTo(PropTool::new);
+				tools.switchTo(box::prop);
 				break;
 			case ("npc"):
-				tools.switchTo(NPCTool::new);
+				tools.switchTo(box::npc);
 				break;
 			case ("warp"):
-				tools.switchTo(WarpTool::new);
+				tools.switchTo(box::warp);
 				break;
 			case ("trigger"):
-				tools.switchTo(TriggerTool::new);
+				tools.switchTo(box::trigger);
 				break;
 			case ("paint"):
-				tools.switchTo(ctrmap.humaninterface.tools.PaintTool::new);
+				tools.switchTo(box::paint);
 				break;
 			case ("geo"):
-				tools.switchTo(GeoTool::new);
+				tools.switchTo(box::geometry);
 				break;
 		}
 	}

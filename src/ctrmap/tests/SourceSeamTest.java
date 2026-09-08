@@ -91,8 +91,9 @@ public class SourceSeamTest {
 		int asking = noApplicationClassAsksWhichGameIsLoaded(classes);
 		int above = noFormatClassReachesAboveItself(classes);
 		int facade = theFacadeDoesNotKnowTheWindow(classes);
+		int toolReach = theToolsDoNotKnowTheWindow(classes);
 
-		boolean ok = violations.isEmpty() && asking == 0 && above == 0 && facade == 0;
+		boolean ok = violations.isEmpty() && asking == 0 && above == 0 && facade == 0 && toolReach == 0;
 		System.out.println(ok ? "ALL PASS" : "FAILURES PRESENT");
 		if (!ok) {
 			System.exit(1);
@@ -338,6 +339,7 @@ public class SourceSeamTest {
 	private static final String FORMATS = "ctrmap/formats/";
 	private static final String HUMANINTERFACE = "ctrmap/humaninterface/";
 	private static final String MAINFRAME = "ctrmap/CtrmapMainframe";
+	private static final String TOOLS = "ctrmap/humaninterface/tools/";
 	private static final String UI = "ctrmap/Ui";
 	private static final String UTILS = "ctrmap/Utils";
 	private static final String KEEP = "ctrmap/Utils$Keep";
@@ -437,6 +439,58 @@ public class SourceSeamTest {
 		}
 		System.out.println("facade rule: " + found.size() + " reference(s) from " + WORKSPACE
 				+ " to " + MAINFRAME);
+		return found.size();
+	}
+
+	/**
+	 * No editing tool names the main window.
+	 *
+	 * <p>Every class in {@code ctrmap.humaninterface.tools} opened with
+	 * {@code import static ctrmap.CtrmapMainframe.*} and read the window's
+	 * statics for the map view, the side panel, the JFrame and the form it
+	 * drives - and {@code AbstractTool}'s constructor called
+	 * {@code onToolInit}, which put the form in the window's split. So a tool
+	 * could not be BUILT until nine forms, three split panes, three master
+	 * panels and a scroll pane existed, and not at all without a display.
+	 * That is why the bench that stands in for the window exists, and why
+	 * seven of the eight classes it serves had been at zero coverage: not
+	 * because they are hard to assert, but because nothing could make one.
+	 *
+	 * <p>A tool is handed {@link ctrmap.humaninterface.tools.ToolHost} and its
+	 * own form now. Zero, with no allowed exceptions: a tool that needs
+	 * something from the editor asks the host, and the host is what a suite
+	 * replaces.
+	 */
+	static int theToolsDoNotKnowTheWindow(File classesRoot) throws Exception {
+		if (!new File(classesRoot, MAINFRAME + ".class").isFile()) {
+			System.out.println("  FAIL: no compiled " + MAINFRAME + ".class under "
+					+ classesRoot.getAbsolutePath() + " - run build.ps1 first");
+			return 1;
+		}
+		List<String> found = new ArrayList<>();
+		int tools = 0;
+		for (ClassFileScanner.ClassFile cf : ClassFileScanner.application(classesRoot)) {
+			if (!cf.name.startsWith(TOOLS)) {
+				continue;
+			}
+			tools++;
+			for (ClassFileScanner.Ref r : cf.refs) {
+				if (r.owner.equals(MAINFRAME)) {
+					found.add(cf.name + (r.method ? " calls " : " reads ") + r.owner + "." + r.name);
+				}
+			}
+			for (String c : cf.classes) {
+				if (c.equals(MAINFRAME)) {
+					found.add(cf.name + " names " + c);
+				}
+			}
+		}
+		for (String f : found) {
+			System.out.println("  TOOL: " + f
+					+ " - a tool is handed the editor it works in; ask the ToolHost, or take it in the constructor");
+		}
+		System.out.println("tool rule: " + tools + " tool class file(s) read, " + found.size()
+				+ " reference(s) to " + MAINFRAME);
 		return found.size();
 	}
 

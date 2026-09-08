@@ -37,14 +37,19 @@ public final class ToolSelection {
 
 	/**
 	 * Puts down what is held - telling it so - and picks up what the supplier
-	 * builds, in that order. See the class comment for why the order is the
-	 * contract and not an implementation detail.
+	 * builds, in that order, then starts it. See the class comment for why the
+	 * order is the contract and not an implementation detail; a tool's setup
+	 * runs in {@link AbstractTool#start}, after it has been built and handed
+	 * its form, and this is the one place that calls it.
 	 */
 	public void switchTo(Supplier<AbstractTool> next) {
 		if (held != null) {
 			held.onToolShutdown();
 		}
 		held = next.get();
+		if (held != null) {
+			held.start();
+		}
 	}
 
 	/**
