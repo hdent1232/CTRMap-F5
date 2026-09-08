@@ -79,6 +79,9 @@ import javax.swing.JSplitPane;
  * there; a mutation sweep is headless and they do not.
  */
 final class EditorBench {
+
+	/** The 3D gizmo these forms move, so what they told it can be read back. */
+	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editor set the panels here flush: it records instead of saving. */
 	static final RecordingEditors EDITORS = new RecordingEditors();
 
@@ -151,7 +154,7 @@ final class EditorBench {
 		CtrmapMainframe.mCamEditForm = cam = new BenchCamForm();
 		CtrmapMainframe.mCamScrollPane = new JScrollPane(CtrmapMainframe.mCamEditForm);
 		CtrmapMainframe.mPropEditForm = prop = new BenchPropForm();
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS, REDRAW);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI);
 		CtrmapMainframe.mWarpEditForm = warps = new WarpEditForm(LOADED, REDRAW);
 		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm(LOADED, REDRAW);
 		CtrmapMainframe.mGeoEditForm = geo = new GeoEditForm(LOADED);
@@ -571,7 +574,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchPropForm() {
-			super(LOADED, TOOLS, REDRAW);
+			super(LOADED, TOOLS, REDRAW, NAVI);
 		}
 		final List<String> calls = new ArrayList<String>();
 

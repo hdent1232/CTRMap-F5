@@ -48,6 +48,9 @@ import java.util.TreeMap;
  * Usage: java ctrmap.tests.NpcMoveCodesTest &lt;romfs-root&gt;
  */
 public class NpcMoveCodesTest {
+
+	/** The 3D gizmo these forms move, so what they told it can be read back. */
+	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
 	static final Redraws REDRAW = new Redraws();
 
@@ -154,7 +157,7 @@ public class NpcMoveCodesTest {
 	static void theFormAsksTheTable() {
 		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
 			Sessions.bare(new File("no-workspace"), new File("no-game"), g);
-			NPCEditForm form = new NPCEditForm(new LoadedZone(), TOOLS, REDRAW);
+			NPCEditForm form = new NPCEditForm(new LoadedZone(), TOOLS, REDRAW, NAVI);
 			int bad = 0;
 			for (int code = 0; code <= PROBE_CEILING; code++) {
 				bad += form.getMot2Index(code) == NpcMoveCodes.movePerm2Index(code, g) ? 0 : 1;

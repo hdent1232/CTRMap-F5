@@ -54,6 +54,9 @@ import ctrmap.formats.tilemap.PaintedHeights;
  * Usage: java ctrmap.tests.PaintFormGuardsTest &lt;pristine-dump-root&gt;
  */
 public class PaintFormGuardsTest {
+
+	/** The 3D gizmo these forms move, so what they told it can be read back. */
+	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
 	static final ZoneEditorsSpy ZONE_EDITORS = new ZoneEditorsSpy();
 
@@ -112,7 +115,7 @@ public class PaintFormGuardsTest {
 	static PaintForm document() throws Exception {
 		LoadedZone lz = new LoadedZone();
 		lz.open(ZONE, null);                      //zone ZONE's index and no zone object: the document reads the index
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mTileMapPanel = null;
 		PaintForm form = new PaintForm(lz, EDITORS);

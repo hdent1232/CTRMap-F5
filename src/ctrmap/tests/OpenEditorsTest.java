@@ -45,6 +45,8 @@ public class OpenEditorsTest {
 		everyZoneEditorIsToldInOrder();
 		everyZoneEditorIsToldWhenNothingIsOpen();
 		anEmptyZoneSetIsRefused();
+		everyRecordFormIsAskedToCommit();
+		aRefusalToCommitStopsTheZoneBeingWritten();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -167,9 +169,46 @@ public class OpenEditorsTest {
 		check(said.contains("cannot be empty"), "because it would silently show a zone to nobody: " + said);
 	}
 
+	/**
+	 * Every editor that holds a part-typed record is asked to commit it before
+	 * the zone is written, and a refusal stops the ones after it.
+	 *
+	 * <p>WHY. The zone save named the NPC form and the trigger form by hand and
+	 * stopped. The WARP form was not named at all, so warp values a user had
+	 * typed and not pressed Save on were dropped with no warning - and the NPC
+	 * form's answer was thrown away three lines above another refusal that WAS
+	 * honoured, so an NPC pointing at a script the zone does not define showed
+	 * "Script not defined" and the zone was written anyway. The user saw a
+	 * warning and a saved zone with no way to tell which had won.
+	 */
+	static void everyRecordFormIsAskedToCommit() {
+		System.out.println("--- committing what the editors hold reaches all of them, in order");
+		List<String> told = new ArrayList<>();
+		ZoneEditors editors = new ZoneEditors(Arrays.<ZoneEditors.ZoneView>asList(
+				view(told, "map"), view(told, "npcs"), view(told, "warps"), view(told, "triggers")));
+		check(editors.commit(), "the commit succeeds when none of them refuses");
+		check(told.equals(Arrays.asList("commit:map", "commit:npcs", "commit:warps", "commit:triggers")),
+				"and every one of them was asked, the warp form included: " + told);
+	}
+
+	static void aRefusalToCommitStopsTheZoneBeingWritten() {
+		System.out.println("--- and a refusal stops the editors after it, and the save");
+		List<String> told = new ArrayList<>();
+		ZoneEditors editors = new ZoneEditors(Arrays.<ZoneEditors.ZoneView>asList(
+				view(told, "map"), view(told, "npcs", "npcs"), view(told, "warps"), view(told, "triggers")));
+		check(!editors.commit(), "the commit answers false, so the caller does not write the zone");
+		check(told.equals(Arrays.asList("commit:map", "commit:npcs")),
+				"and the editors after the refusal were never asked: " + told);
+	}
+
 	// ---- plumbing ----------------------------------------------------------
 	/** An editor that writes down what it was told about the zone. */
 	static ZoneEditors.ZoneView view(List<String> log, String name) {
+		return view(log, name, null);
+	}
+
+	/** The same, but this one refuses to commit - the NPC form's answer. */
+	static ZoneEditors.ZoneView view(List<String> log, String name, String refuses) {
 		return new ZoneEditors.ZoneView() {
 			@Override
 			public void show(ctrmap.formats.zone.Zone zone) {
@@ -179,6 +218,12 @@ public class OpenEditorsTest {
 			@Override
 			public void clear() {
 				log.add("clear:" + name);
+			}
+
+			@Override
+			public boolean commit() {
+				log.add("commit:" + name);
+				return !name.equals(refuses);
 			}
 		};
 	}

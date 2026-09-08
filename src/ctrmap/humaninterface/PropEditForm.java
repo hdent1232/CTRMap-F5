@@ -58,6 +58,14 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	public int propIndex;
 	public boolean loaded = false;
 
+	/**
+	 * Whether a failed {@code showProp} has already been reported for this
+	 * region. One report, not one per drag: {@code showProp} runs on every mouse
+	 * move while a prop is dragged, and a dialog per frame would be worse than
+	 * the silence it replaces.
+	 */
+	private boolean saidAShowFailed = false;
+
 	public List<H3DTexture> propTextures = new ArrayList<>();
 
 	/**
@@ -81,7 +89,15 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
 	private final Redraw redraw;
 
-	public PropEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw) {
+	/** The 3D gizmo, handed in. Its two reaches here had no null guard at all. */
+	private final Navigator navi;
+
+	public PropEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
+			Navigator navi) {
+		if (navi == null) {
+			throw new IllegalArgumentException("PropEditForm must be handed a Navigator - the gizmo it moves");
+		}
+		this.navi = navi;
 		this.redraw = redraw;
 		this.tools = tools;
 		if (loadedZone == null) {
@@ -633,6 +649,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	public void loadDataFile(GRPropData f, ADPropRegistry reg, List<H3DTexture> propTextures) {
+		saidAShowFailed = false;   //a new region gets its own first report
 		this.propTextures = propTextures;
 		models.clear();
 		this.reg = reg;
@@ -687,7 +704,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		m.rotationX = p.rotateX;
 		m.rotationY = p.rotateY;
 		m.rotationZ = p.rotateZ;
-		CtrmapMainframe.m3DDebugPanel.navi.synchronizeNavi();
+		//the record moved, so the gizmo re-reads its position from it
+		navi.resync();
 	}
 
 	public void setProp(int index) {
@@ -856,17 +874,46 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			sy.setValue(prop.scaleY);
 			sz.setValue(prop.scaleZ);
 			updateModel(index);
-			CtrmapMainframe.m3DDebugPanel.bindNavi(props.props.get(entryBox.getSelectedIndex()));
+			//the gizmo follows the prop THIS CALL was asked to show. It used to
+			//index the list a second time through the selection box - two sources
+			//for one identity, so when they disagreed the gizmo stood over a
+			//different prop than the form displayed, and when the box had no
+			//selection it was get(-1), thrown and swallowed below
+			navi.follow(prop);
 			redraw.all();
 			loaded = true;
-		} catch (Exception e) {
-			e.printStackTrace();
+		} catch (Exception failed) {
+			//WHAT THIS USED TO DO. propIndex, prop and all twelve widgets already
+			//carried the new prop; only redraw.all() and loaded = true were
+			//skipped. So the form LOOKED like it had switched and was inert: with
+			//loaded false the entry box stops switching props, Save is a no-op,
+			//the coordinate fields stop writing through, and both prop tools stop
+			//selecting and dragging. The user got an editor that responds to
+			//nothing and says nothing, and the only trace was stderr.
+			//Now it holds nothing, and says so once rather than once per drag.
+			propIndex = -1;
+			prop = null;
+			loaded = false;
+			if (!saidAShowFailed) {
+				saidAShowFailed = true;
+				ctrmap.Ui.error(this, "Prop " + index + " could not be shown:" + '\n' + failed
+						+ '\n' + "The prop editor is holding nothing until another prop is picked.",
+						"Prop editor");
+			}
 		}
 	}
 
+
+
 	public void updateModel(int index) {
 		if (index > models.size() - 1) {
+			//AND STOP. Without this return the method carried on into
+			//models.set(index, ...) with the very index it had just decided was
+			//past the end, threw IndexOutOfBounds, and the throw was swallowed by
+			//showProp's catch-all - which is what left the form permanently inert.
+			//Loading a null model is the whole of what this branch meant to do.
 			PropPreview.loadModel(null);
+			return;
 		}
 		if (reg != null) {
 			models.set(index, reg.getModel(props.props.get(index).uid));
@@ -882,7 +929,14 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			if (f.exists()) {
 				BCHFile bch = new BCHFile(new BM(f, Workspace.session()).getFile(0));
 				bch.models.get(0).setMaterialTextures(bch.textures);
-				bch.models.get(0).setMaterialTextures(propTextures);
+				if (propTextures != null) {
+					//A REGION OPENED ON ITS OWN HAS NONE. File > Open GR Mapfile passes
+					//null here, and so does every suite that is not testing meshes;
+					//setMaterialTextures then threw inside, straight into showProp's
+					//catch-all, which is what left the whole prop editor inert. The
+					//line above has already applied the model's own textures.
+					bch.models.get(0).setMaterialTextures(propTextures);
+				}
 				bch.models.get(0).makeAllBOs();
 				models.set(index, bch.models.get(0));
 			}

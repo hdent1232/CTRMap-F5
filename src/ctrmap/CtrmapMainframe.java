@@ -39,6 +39,8 @@ import ctrmap.humaninterface.CM3DRenderable;
 import ctrmap.humaninterface.CameraEditForm;
 import ctrmap.humaninterface.CollEditPanel;
 import ctrmap.humaninterface.OpenEditors;
+import ctrmap.humaninterface.MapObject;
+import ctrmap.humaninterface.Navigator;
 import ctrmap.humaninterface.Redraw;
 import ctrmap.humaninterface.ZoneEditors;
 import ctrmap.humaninterface.CollInputManager;
@@ -158,6 +160,14 @@ public class CtrmapMainframe {
 	 * those lines was unreachable from a headless suite.
 	 */
 	private static Redraw redraw;
+
+	/**
+	 * The 3D gizmo, made ONCE here and handed to the three forms that used to
+	 * reach for the panel themselves. The null guard is in the implementation
+	 * below and nowhere else - see {@link Navigator} for the five copies that
+	 * disagreed about whether to have one.
+	 */
+	private static Navigator navigator;
 	private static JTabbedPane tabs;
 
 	/** The World Editor's tool row: the one handle for "pick this tool" and "which view is up". */
@@ -293,6 +303,11 @@ public class CtrmapMainframe {
 						//cleared it, and blanking the viewport on a failed load would
 						//hide the map the user still has open
 					}
+
+					@Override
+					public boolean commit() {
+						return true;   //its tiles are flushed through OpenEditors, not here
+					}
 				},
 				new ZoneEditors.ZoneView() {
 					@Override
@@ -303,6 +318,11 @@ public class CtrmapMainframe {
 					@Override
 					public void clear() {
 						//paired with the map view above, and cleared with it: neither was
+					}
+
+					@Override
+					public boolean commit() {
+						return true;   //it shows the matrix; it holds no part-typed record
 					}
 				},
 				new ZoneEditors.ZoneView() {
@@ -316,6 +336,11 @@ public class CtrmapMainframe {
 						//the camera form was not cleared either; its own store() refuses
 						//when it holds nothing, which is what stood in for clearing
 					}
+
+					@Override
+					public boolean commit() {
+						return true;   //flushed through OpenEditors before the zone is written
+					}
 				},
 				new ZoneEditors.ZoneView() {
 					@Override
@@ -326,6 +351,13 @@ public class CtrmapMainframe {
 					@Override
 					public void clear() {
 						mNPCEditForm.loadFromEntities(null, null);
+					}
+
+					@Override
+					public boolean commit() {
+						//the ONE that can refuse: an NPC pointing at a script this zone does
+						//not define. It has already said so by the time it answers
+						return mNPCEditForm.saveEntry();
 					}
 				},
 				new ZoneEditors.ZoneView() {
@@ -338,6 +370,15 @@ public class CtrmapMainframe {
 					public void clear() {
 						mWarpEditForm.loadFromEntities(null);
 					}
+
+					@Override
+					public boolean commit() {
+						//THE ONE THAT WAS MISSING. The zone save named the NPC form and the
+						//trigger form and stopped, so warp values the user had typed and not
+						//pressed Save on were dropped with no warning at all
+						mWarpEditForm.saveEntry();
+						return true;
+					}
 				},
 				new ZoneEditors.ZoneView() {
 					@Override
@@ -348,6 +389,12 @@ public class CtrmapMainframe {
 					@Override
 					public void clear() {
 						mTriggerEditForm.loadFromEntities(null);
+					}
+
+					@Override
+					public boolean commit() {
+						mTriggerEditForm.saveEntry();
+						return true;
 					}
 				},
 				new ZoneEditors.ZoneView() {
@@ -360,12 +407,37 @@ public class CtrmapMainframe {
 					public void clear() {
 						//the script editor holds the zone's script; it was not cleared
 					}
+
+					@Override
+					public boolean commit() {
+						return true;   //its edits go through the script editor's own save
+					}
 				}));
 		//and the window keeps the flush for its own File > Save and close handler,
 		//which run long after this method has returned.
 		openEditors = editors;
 
-		mZonePnl = new ZoneLoadingPanel(loadedZone, tools, editors, zoneViews);
+		//An anonymous class rather than a value, ON PURPOSE and not by accident:
+		//the 3D panel is not built until sixty lines below, and this body reads it
+		//when it is CALLED - which is after a zone or a record exists to follow.
+		//Handing the panel itself here would hand null, which is the mistake this
+		//window has already made once (MainframeEdgesTest section 4).
+		navigator = new Navigator() {
+			@Override
+			public void follow(MapObject o) {
+				if (m3DDebugPanel != null) {
+					m3DDebugPanel.bindNavi(o);
+				}
+			}
+
+			@Override
+			public void resync() {
+				if (m3DDebugPanel != null) {
+					m3DDebugPanel.navi.synchronizeNavi();
+				}
+			}
+		};
+		mZonePnl = new ZoneLoadingPanel(loadedZone, tools, editors, zoneViews, navigator);
 		mScriptPnl = new ScriptEditor();
 		mTextEditor = new TextEditor();
 		mBuilder = new Builder();
@@ -381,8 +453,8 @@ public class CtrmapMainframe {
 		mTileEditForm = new TileEditForm(tools);
 		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors);
 		mCamEditForm = new CameraEditForm(redraw);
-		mPropEditForm = new PropEditForm(loadedZone, tools, redraw);
-		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw);
+		mPropEditForm = new PropEditForm(loadedZone, tools, redraw, navigator);
+		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw, navigator);
 		mWarpEditForm = new WarpEditForm(loadedZone, redraw);
 		mTriggerEditForm = new TriggerEditForm(loadedZone, redraw);
 		mGeoEditForm = new GeoEditForm(loadedZone);
@@ -417,9 +489,8 @@ public class CtrmapMainframe {
 
 			@Override
 			public void releaseNavi() {
-				if (m3DDebugPanel != null) {
-					m3DDebugPanel.bindNavi(null);
-				}
+				//the fifth copy of the same guarded reach, now the same object
+				navigator.follow(null);
 			}
 
 			@Override

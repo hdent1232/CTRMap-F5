@@ -34,12 +34,32 @@ class ZoneEditorsSpy extends ZoneEditors {
 			@Override
 			public void clear() {
 			}
+
+			@Override
+			public boolean commit() {
+				return true;
+			}
 		}));
 	}
 
 	@Override
 	public void show(Zone zone) {
 		calls.add("show");
+	}
+
+	@Override
+	public boolean commit() {
+		calls.add("commit");
+		//what the Zone tab's save used to do by name, so the suites that assert
+		//on those forms' records keep asserting the same thing
+		boolean ok = CtrmapMainframe.mNPCEditForm == null || CtrmapMainframe.mNPCEditForm.saveEntry();
+		if (CtrmapMainframe.mWarpEditForm != null) {
+			CtrmapMainframe.mWarpEditForm.saveEntry();
+		}
+		if (CtrmapMainframe.mTriggerEditForm != null) {
+			CtrmapMainframe.mTriggerEditForm.saveEntry();
+		}
+		return ok;
 	}
 
 	@Override

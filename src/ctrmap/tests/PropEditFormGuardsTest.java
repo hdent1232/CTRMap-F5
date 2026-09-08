@@ -64,15 +64,19 @@ import javax.swing.JSpinner;
  * <li>{@code unload()} leaves nothing of the old region behind.</li>
  * </ol>
  *
- * <p>The form cannot finish opening a prop without the application's main
- * window: {@code showProp} ends with {@code CtrmapMainframe.frame.repaint()}
- * inside its own catch-all, so {@code loaded} stays false. The suite therefore
- * arms {@code loaded} by hand - it is a public field, and true is the state a
- * real window leaves it in. Everything else is the form's own code.
+ * <p>THIS SUITE USED TO ARM {@code loaded} BY HAND, and said so here, because
+ * showProp could not finish: updateModel fell through its own out-of-range
+ * branch into an IndexOutOfBounds, and showProp's catch-all swallowed it before
+ * {@code loaded = true}. That is fixed, the workaround is gone, and
+ * {@link #openingARegionLeavesTheFormLive} is what would notice it coming back.
+ * The single-region fixture no longer sets the flag at all.
  *
  * Usage: java ctrmap.tests.PropEditFormGuardsTest &lt;pristine dump root&gt;
  */
 public class PropEditFormGuardsTest {
+
+	/** The 3D gizmo these forms move, so what they told it can be read back. */
+	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
 	static final Redraws REDRAW = new Redraws();
 
@@ -92,7 +96,29 @@ public class PropEditFormGuardsTest {
 
 	static int fails = 0;
 
+	/**
+	 * The suite exits even when a section throws.
+	 *
+	 * <p>WHY THIS WRAPPER EXISTS. This suite builds a GL preview and a 3D view,
+	 * both of which keep non-daemon threads alive, and it relies on the
+	 * {@code System.exit} at the end of {@link #run} to stop them. An exception
+	 * escaping a section skipped that exit, so the JVM stayed up for ever with
+	 * the verdict already printed - and from outside, a suite that hangs and a
+	 * suite that is merely slow look exactly the same. One planted defect sat
+	 * for twenty minutes looking like a slow pass before anyone asked.
+	 */
 	public static void main(String[] args) throws Exception {
+		try {
+			run(args);
+		} catch (Throwable thrown) {
+			System.out.println("  FAIL: a section threw, which is a failure and not a hang: " + thrown);
+			thrown.printStackTrace();
+			System.out.println("FAILURES PRESENT (" + (fails + 1) + ")");
+			System.exit(1);
+		}
+	}
+
+	static void run(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "no-dump-given");
 		if (!dump.isDirectory()) {
 			System.out.println("  skip: no dump at " + dump + " - the prop form checks need FieldData region " + REGION);
@@ -106,12 +132,14 @@ public class PropEditFormGuardsTest {
 		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
 		CtrmapMainframe.mTileMapPanel = new TileMapPanel(LOADED, TOOLS);
 		//the 3D view the form pushes every edit into. Constructible with no
-		//display; the window it lives in is not, which is why loaded is armed
-		//by hand below.
+		//display; the window it lives in is not. The form no longer needs
+		//loaded armed by hand - see openingARegionLeavesTheFormLive.
 		CtrmapMainframe.m3DDebugPanel = new H3DRenderingPanel(new ArrayList<CM3DRenderable>(), TOOLS);
 
 		theRegionIsTheOneTheseChecksDescribe();
 		openingARegionShowsTheFirstProp();
+		openingARegionLeavesTheFormLive();
+		theGizmoFollowsThePropTheFormShows();
 		saveWithNothingTypedWritesNothing();
 		saveWritesTheWidgetTextNotTheRecord();
 		saveWritesTheTypedNumbersAndZeroesTheUnknownTail();
@@ -470,7 +498,7 @@ public class PropEditFormGuardsTest {
 	static Fixture open(boolean arm) throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm(LOADED, TOOLS, REDRAW);
+		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI);
 		CtrmapMainframe.mPropEditForm = f.form;
 		f.form.loadDataFile(new ctrmap.formats.propdata.GRPropData(f.gr), registry(), null);
 		f.form.gr = f.gr;
@@ -479,15 +507,70 @@ public class PropEditFormGuardsTest {
 		return f;
 	}
 
+	/**
+	 * Opening a region leaves the form LIVE, without the suite arming it.
+	 *
+	 * <p>WHY THIS IS THE PROOF. This suite used to set {@code loaded = true} by
+	 * hand, and its own javadoc explained why: showProp could not finish. It
+	 * called updateModel, which decided the prop had no model slot, loaded a null
+	 * model, and then carried on into models.set() with the very index it had
+	 * just rejected. IndexOutOfBounds, straight into showProp's catch-all - so
+	 * redraw and {@code loaded = true} never ran, while propIndex, prop and all
+	 * twelve widgets already held the new prop. A form that looks switched and
+	 * does nothing.
+	 *
+	 * <p>With loaded false the entry box stops switching props, Save is a no-op,
+	 * the coordinate fields stop writing through, and both prop tools stop
+	 * selecting and dragging - so the workaround in this suite was standing in
+	 * for a form the user could not have used either.
+	 */
+	static void openingARegionLeavesTheFormLive() throws Exception {
+		System.out.println("--- opening a region leaves the form live, with nothing armed by hand");
+		Fixture f = openSingleRegion();
+		check(f.form.loaded, "showProp finished on its own and the form reports itself loaded");
+		check(f.form.prop != null, "and it is holding the prop it showed");
+		check(f.form.propIndex == 0, "which is the one it was asked for (" + f.form.propIndex + ")");
+	}
+
+	/**
+	 * The 3D gizmo stands over the prop the form is showing.
+	 *
+	 * <p>THIS COULD NOT BE ASSERTED AT ALL until the gizmo became something the
+	 * form is handed. It was a reach into the main window for a JOGL panel, so a
+	 * headless suite got a null, an unguarded dereference, and an exception
+	 * swallowed by showProp's catch-all - and every other assertion about the
+	 * form still passed while the editor sat inert.
+	 *
+	 * <p>It also pins WHICH prop. The bind used to index the list a second time
+	 * through the selection box while the rest of the method used the parameter
+	 * it was given: two sources for one identity, so when they disagreed the
+	 * gizmo stood over a different prop than the one on screen.
+	 */
+	static void theGizmoFollowsThePropTheFormShows() throws Exception {
+		System.out.println("--- the 3D gizmo follows the prop the form is showing");
+		NAVI.reset();
+		Fixture f = openSingleRegion();
+		check(!NAVI.followed.isEmpty(), "opening a region tells the gizmo what to follow");
+		check(NAVI.following() == f.form.prop,
+				"and it is the very prop the form is holding, not another one at the same index");
+
+		f.form.showProp(1);
+		check(NAVI.following() == f.form.prop,
+				"showing a different prop moves it to that one (" + f.form.propIndex + ")");
+		check(NAVI.following() != null, "which is a record, not nothing");
+	}
+
 	/** The region the way File &gt; Open GR opens it: no registry at all. */
 	static Fixture openSingleRegion() throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm(LOADED, TOOLS, REDRAW);
+		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI);
 		CtrmapMainframe.mPropEditForm = f.form;
 		f.form.loadDataFile(f.gr, null);
 		f.before = f.propdata();
-		f.form.loaded = true;
+		//NOT armed by hand any more: showProp finishes now, so the form arms
+		//itself exactly as a real window leaves it. See
+		//openingARegionLeavesTheFormLive for what this line was standing in for.
 		return f;
 	}
 

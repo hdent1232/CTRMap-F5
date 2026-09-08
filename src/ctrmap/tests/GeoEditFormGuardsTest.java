@@ -56,6 +56,9 @@ import javax.swing.JSpinner;
  * Usage: java ctrmap.tests.GeoEditFormGuardsTest &lt;pristine dump root&gt;
  */
 public class GeoEditFormGuardsTest {
+
+	/** The 3D gizmo these forms move, so what they told it can be read back. */
+	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
 	static final ZoneEditorsSpy ZONE_EDITORS = new ZoneEditorsSpy();
 
@@ -88,7 +91,7 @@ public class GeoEditFormGuardsTest {
 		ScratchGame.open(dump);
 		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
 		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS);
+		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 
 		theRegionIsTheOneTheseChecksDescribe();
 		aSelectionNamesItsRegionAndCountsWhatIsInIt();

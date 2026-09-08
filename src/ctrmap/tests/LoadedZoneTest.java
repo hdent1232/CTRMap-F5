@@ -69,6 +69,9 @@ import java.util.TreeSet;
  *        (classes-root defaults to "build/classes")
  */
 public class LoadedZoneTest {
+
+	/** The 3D gizmo these forms move, so what they told it can be read back. */
+	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
 	static final ZoneEditorsSpy ZONE_EDITORS = new ZoneEditorsSpy();
 
@@ -453,8 +456,8 @@ public class LoadedZoneTest {
 		try {
 			LoadedZone a = new LoadedZone();
 			LoadedZone b = new LoadedZone();
-			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS, EDITORS, ZONE_EDITORS);
-			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS, EDITORS, ZONE_EDITORS);
+			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 
 			//the offer walks the whole table, so give both owners the same first
 			//forty zones - reading all 536 would cost the suite a minute and prove
@@ -635,6 +638,8 @@ public class LoadedZoneTest {
 				args[i] = new RecordingEditors();
 			} else if (types[i] == ctrmap.humaninterface.ZoneEditors.class) {
 				args[i] = new ZoneEditorsSpy();
+			} else if (types[i] == ctrmap.humaninterface.Navigator.class) {
+				args[i] = new RecordingNavi();
 			} else {
 				throw new IllegalStateException(ctor.getDeclaringClass().getName()
 						+ " is handed a " + types[i].getName()

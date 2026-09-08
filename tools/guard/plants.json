@@ -16,7 +16,7 @@
   "checks every plant still matches its file exactly once, which is cheap; replant.py actually runs",
   "them, which is not."
  ],
- "owed_ceiling": 120,
+ "owed_ceiling": 118,
  "owed_generalisation_ceiling": 3,
  "plants": [
   {
@@ -66,7 +66,9 @@
    "find": "\t\tif (openEditors == null || zoneEditors == null) {\n\t\t\tthrow new IllegalArgumentException(\"the Zone tab must be handed the editors it saves and shows\"\n\t\t\t\t+ \" - openEditors=\" + openEditors + \", zoneEditors=\" + zoneEditors);\n\t\t}\n",
    "replace": "",
    "suite": "ctrmap.tests.ZoneLoadingStateTest",
-   "args": ["${PRISTINE}"],
+   "args": [
+    "${PRISTINE}"
+   ],
    "must_say": "with nothing to save"
   },
   {
@@ -76,17 +78,21 @@
    "find": "\t\tif (openEditors == null) {\n\t\t\tthrow new IllegalArgumentException(\"PaintForm must be handed the editors it flushes before it applies\");\n\t\t}\n",
    "replace": "",
    "suite": "ctrmap.tests.PaintFormGuardsTest",
-   "args": ["${PRISTINE}"],
+   "args": [
+    "${PRISTINE}"
+   ],
    "must_say": "flushes them before it writes anything"
   },
   {
    "id": "window-hands-a-static-it-has-not-built",
-   "why": "The defect the decoupling steps introduced twice: a list built where it reads best, sixty lines after the classes handed it. Put back one line apart, which is the tightest case the rule has to catch.",
+   "why": "The defect the decoupling steps introduced twice: something built and handed a window static sixty lines before that static is assigned. Put back as a SETTER handoff, which is the shape the first version of the rule could not see at all.",
    "file": "src/ctrmap/CtrmapMainframe.java",
-   "find": "\t\topenEditors = editors;\n\n\t\tmZonePnl = new ZoneLoadingPanel(loadedZone, tools, editors, zoneViews);",
-   "replace": "\t\tmZonePnl = new ZoneLoadingPanel(loadedZone, tools, openEditors, zoneViews);\n\t\topenEditors = editors;",
+   "find": "\t\tmZonePnl = new ZoneLoadingPanel(loadedZone, tools, editors, zoneViews, navigator);",
+   "replace": "\t\tmZonePnl = new ZoneLoadingPanel(loadedZone, tools, editors, zoneViews, navigator);\n\t\tmTileMapPanel.setToolTipText(String.valueOf(mBuilder));",
    "suite": "ctrmap.tests.MainframeEdgesTest",
-   "args": ["build/classes"],
+   "args": [
+    "build/classes"
+   ],
    "must_say": "does not build until line"
   },
   {
@@ -96,7 +102,9 @@
    "find": "\t\tif (!text) {\n\t\t\treturn b;\n\t\t}",
    "replace": "\t\tif (true) {\n\t\t\treturn b;\n\t\t}",
    "suite": "ctrmap.tests.BatteryHygieneTest",
-   "args": ["src"],
+   "args": [
+    "src"
+   ],
    "must_say": "saved LF and CRLF hashes the same",
    "site_only": true
   },
@@ -107,7 +115,9 @@
    "find": "\t\tboolean text = false;",
    "replace": "\t\tboolean text = true;",
    "suite": "ctrmap.tests.BatteryHygieneTest",
-   "args": ["src"],
+   "args": [
+    "src"
+   ],
    "must_say": "class files differing by a 0x0D",
    "site_only": true
   },
@@ -118,7 +128,9 @@
    "find": "        if hits != 1:\n            bad.append(",
    "replace": "        if False:\n            bad.append(",
    "suite": "ctrmap.tests.PlantLedgerTest",
-   "args": ["."],
+   "args": [
+    "."
+   ],
    "must_say": "the ledger's self-test passes",
    "no_rebuild": true
   },
@@ -129,10 +141,70 @@
    "find": "    $head = \"unknown\"\n    $prev = $ErrorActionPreference\n    try {\n        $ErrorActionPreference = \"Continue\"\n        $found = (& git -C $Root rev-parse HEAD 2>$null)\n        if ($LASTEXITCODE -eq 0 -and $found) { $head = ([string]$found).Trim() }\n    } catch {\n        $head = \"unknown\"\n    } finally {\n        $ErrorActionPreference = $prev\n    }",
    "replace": "    $head = (& git -C $Root rev-parse HEAD 2>$null)\n    if (-not $head) { $head = \"unknown\" }",
    "suite": "ctrmap.tests.BatteryHygieneTest",
-   "args": ["src"],
+   "args": [
+    "src"
+   ],
    "must_say": "finishes rather than throwing",
    "no_rebuild": true,
    "site_only": true
+  },
+  {
+   "id": "zone-save-ignores-a-refusal-to-commit",
+   "why": "The zone save threw away the boolean the NPC form returned, three lines above another refusal it honoured: an NPC pointing at a script the zone does not define showed 'Script not defined' and the zone was written anyway.",
+   "file": "src/ctrmap/humaninterface/ZoneEditors.java",
+   "find": "\tpublic boolean commit() {\n\t\tfor (ZoneView v : views) {\n\t\t\tif (!v.commit()) {\n\t\t\t\treturn false;\n\t\t\t}\n\t\t}\n\t\treturn true;\n\t}",
+   "replace": "\tpublic boolean commit() {\n\t\tfor (ZoneView v : views) {\n\t\t\tv.commit();\n\t\t}\n\t\treturn true;\n\t}",
+   "suite": "ctrmap.tests.OpenEditorsTest",
+   "args": [],
+   "must_say": "never asked"
+  },
+  {
+   "id": "file-save-discards-tile-edits",
+   "why": "File > Save is openEditors.saveAll(FALSE). The whole single-region save sat inside 'modified && dialog', so a flush that asks nothing fell through to 'return true' and reported every tile edit on a loose GR map as saved while writing none of them.",
+   "file": "src/ctrmap/humaninterface/TileMapPanel.java",
+   "find": "\t\t\t} else if (tilemaps[0][0].modified) {\n\t\t\t\tif (!dialog) {",
+   "replace": "\t\t\t} else if (tilemaps[0][0].modified && dialog) {\n\t\t\t\tif (false) {",
+   "suite": "ctrmap.tests.TileMapPanelStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "AND WRITES"
+  },
+  {
+   "id": "prop-textures-assumed-present",
+   "why": "A region opened on its own has no prop textures - File > Open GR Mapfile passes null. setMaterialTextures then threw inside, straight into showProp's catch-all, and the whole prop editor was left permanently inert with only a stack trace on stderr.",
+   "file": "src/ctrmap/humaninterface/PropEditForm.java",
+   "find": "\t\t\t\tif (propTextures != null) {\n\t\t\t\t\t//A REGION OPENED ON ITS OWN HAS NONE.",
+   "replace": "\t\t\t\tif (true) {\n\t\t\t\t\t//A REGION OPENED ON ITS OWN HAS NONE.",
+   "suite": "ctrmap.tests.PropEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "showProp finished on its own"
+  },
+  {
+   "id": "update-model-falls-past-its-own-guard",
+   "why": "updateModel decided the prop had no model slot, loaded a null model, and then carried straight on into models.set() with the very index it had just rejected.",
+   "file": "src/ctrmap/humaninterface/PropEditForm.java",
+   "find": "\t\t\tPropPreview.loadModel(null);\n\t\t\treturn;",
+   "replace": "\t\t\tPropPreview.loadModel(null);",
+   "suite": "ctrmap.tests.PropEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "showProp finished on its own"
+  },
+  {
+   "id": "gizmo-follows-nothing",
+   "why": "The gizmo used to be bound by indexing the prop list a second time through the selection box, while the rest of showProp used the index it was given. Two sources for one identity: when they disagreed the gizmo stood over a different prop than the form displayed, and with no selection at all it was get(-1), thrown and swallowed.",
+   "file": "src/ctrmap/humaninterface/PropEditForm.java",
+   "find": "\t\t\tnavi.follow(prop);",
+   "replace": "\t\t\tnavi.follow(null);",
+   "suite": "ctrmap.tests.PropEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the very prop the form is holding"
   }
  ]
 }

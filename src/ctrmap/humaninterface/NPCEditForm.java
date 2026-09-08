@@ -82,7 +82,15 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
 	private final Redraw redraw;
 
-	public NPCEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw) {
+	/** The 3D gizmo, handed in: this form says which record it follows, not how. */
+	private final Navigator navi;
+
+	public NPCEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
+			Navigator navi) {
+		if (navi == null) {
+			throw new IllegalArgumentException("NPCEditForm must be handed a Navigator - the gizmo it moves");
+		}
+		this.navi = navi;
 		this.redraw = redraw;
 		this.tools = tools;
 		if (loadedZone == null) {
@@ -260,7 +268,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		//altitude from the ground it is handed here: the panel's meshes when
 		//there is a panel, nothing (altitude kept) in a guard test without one
 		e.npcs.get(index).standOn(mTileMapPanel == null ? null : mTileMapPanel::getHeightAtWorldLoc);
-		bindNavi(e.npcs.get(index));
+		navi.follow(e.npcs.get(index));
 		syncScrDropdown(npc.script);
 		updateDialogueSection();
 		loaded = true;
@@ -275,16 +283,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	private H3DModel modelAt(int index) {
 		return reg == null ? null : reg.getModel(e.npcs.get(index).model);
-	}
-
-	/**
-	 * The 3D navi gizmo follows the selected NPC. The guard tests drive this
-	 * form with no 3D panel and no window, so both are optional here.
-	 */
-	private void bindNavi(MapObject o) {
-		if (m3DDebugPanel != null) {
-			m3DDebugPanel.bindNavi(o);
-		}
 	}
 
 	private void repaintFrame() {
@@ -442,7 +440,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (e.npcs.isEmpty()) {
 			npc = null;
 			npcIndex = -1;
-			bindNavi(null);
+			navi.follow(null);
 			updateDialogueSection();
 		} else {
 			entryBox.setSelectedIndex(Math.min(idx, e.npcs.size() - 1));
