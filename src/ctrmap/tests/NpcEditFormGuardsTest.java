@@ -436,7 +436,7 @@ public class NpcEditFormGuardsTest {
 	 */
 	static void missingRegistryEntryAsksFirst(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
-		NPCRegistry reg = new NPCRegistry(temp(new byte[0]));
+		NPCRegistry reg = new NPCRegistry(temp(new byte[0]), Workspace.session());
 		check(reg.entries.isEmpty(), "an empty registry has no entry for NPC 0's MoveModel");
 
 		NPCEditForm form = new NPCEditForm();
@@ -1070,7 +1070,7 @@ public class NpcEditFormGuardsTest {
 	static void aFullRegistryRefusesTheModelAndSaysSo(GARC zo) throws Exception {
 		final int GLOBAL_MODEL = 5; //not one of the fillers below, so it is not already registered
 		Zone zone = openZone(zo, ZONE);
-		NPCRegistry full = new NPCRegistry(temp(new byte[0]));
+		NPCRegistry full = new NPCRegistry(temp(new byte[0]), Workspace.session());
 		for (int uid = 1000; uid < 1000 + NPCRegistry.MAX_ENTRIES; uid++) {
 			NPCRegistry.NPCRegistryEntry filler = new NPCRegistry.NPCRegistryEntry();
 			filler.uid = uid;
@@ -1204,7 +1204,7 @@ public class NpcEditFormGuardsTest {
 	 */
 	static NPCRegistry registryFor(ZoneEntities e, GARC gr) throws Exception {
 		byte[] bch = mapModel(gr);
-		NPCRegistry reg = new NPCRegistry(temp(new byte[0]));
+		NPCRegistry reg = new NPCRegistry(temp(new byte[0]), Workspace.session());
 		for (ZoneEntities.NPC npc : e.npcs) {
 			if (reg.entries.containsKey(npc.model)) {
 				continue;

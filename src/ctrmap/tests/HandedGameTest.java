@@ -1,5 +1,6 @@
 package ctrmap.tests;
 
+import ctrmap.LittleEndianDataOutputStream;
 import ctrmap.Workspace;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.AD;
@@ -8,16 +9,23 @@ import ctrmap.formats.h3d.BchTexturePack;
 import ctrmap.formats.maison.MaisonClassList;
 import ctrmap.formats.maison.MaisonPoolGuard;
 import ctrmap.formats.maison.MaisonSet;
+import ctrmap.formats.npcreg.MoveModelPool;
+import ctrmap.formats.npcreg.NPCRegistry;
 import ctrmap.formats.pokedata.ItemData;
 import ctrmap.formats.pokedata.ItemEditSession;
 import ctrmap.formats.pokedata.ItemTable;
 import ctrmap.formats.pokedata.ItemText;
 import ctrmap.formats.pokedata.PokeData;
+import ctrmap.formats.propdata.ADPropRegistry;
+import ctrmap.formats.propdata.GRProp;
+import ctrmap.formats.propdata.PropDatabase;
+import ctrmap.formats.scripts.NpcTemplates;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.text.LocationNames;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
 import ctrmap.gamedef.GameType;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -37,6 +45,25 @@ import static ctrmap.formats.LittleEndian.putU16;
  * item table {@link ItemTable}, the item text {@link ItemText}, the edit
  * session over both {@link ItemEditSession}, the Pokemon reference tables
  * {@link PokeData} and the location names {@link LocationNames}.
+ *
+ * <p>THE PROPS AND THE NPCS (sections 12 to 17). Six more classes fetched the
+ * open game themselves: {@link NpcTemplates} took two text indices from the
+ * global's profile; {@link PropDatabase} gated on {@code Workspace.isValid}
+ * and built itself from the global's archives, cached with no memory of which
+ * game, so a second game got the first's props; {@link MoveModelPool} read the
+ * global's archive and workspace files, and asked before a workspace was open
+ * cached an empty list for the session; {@link ADPropRegistry} and
+ * {@link GRProp} read every model from the global's workspace file, so a prop
+ * could only be drawn or named from the application's game; and
+ * {@link NPCRegistry} read its models from and recorded its writes in the
+ * global, and asked the user whether to keep its changes from inside the
+ * format layer, where no suite could answer. Each is handed what it needs now:
+ * the profile, or the {@link GameFiles}. The registry's question moved to the
+ * NPC form; the registry only {@link NPCRegistry#store writes} or
+ * {@link NPCRegistry#discard forgets} and says which. The sections hand each
+ * class two fakes and read two answers; where the answer is a model, and no
+ * mesh can be built without a dump, what is read back is which game's file
+ * the class staged its model from. Proven by breaking, see each section.
  *
  * <p>THE TABLES (sections 6 to 10). Each of the four fetched the open game
  * from {@link Workspace}'s statics itself. ItemTable found its archive in the
@@ -118,6 +145,12 @@ public class HandedGameTest {
 			thePokeDataAnswersForTheGameItIsHanded();
 			theLocationNamesLoadFromTheGameTheyAreHanded();
 			theTablesRefuseToBeHandedNothing();
+			theNpcTemplatesIndexTheTextOfTheProfileTheyAreHanded();
+			thePropDatabaseIsBuiltFromTheGameItIsHanded();
+			theMoveModelPoolListsTheGameItIsHanded();
+			thePropRegistryAndItsPropsReadTheGameTheyAreHanded();
+			theNpcRegistryReadsAndWritesTheGameItIsHanded();
+			thePropsAndNpcsRefuseToBeHandedNothing();
 		} finally {
 			Workspace.reset();
 		}
@@ -571,6 +604,404 @@ public class HandedGameTest {
 		refuses("PokeData.load", () -> PokeData.load(null));
 		refuses("LocationNames.gametextIndex", () -> LocationNames.gametextIndex(null));
 		refuses("LocationNames.loadFromGarc", () -> LocationNames.loadFromGarc(null));
+	}
+
+	// ------------------------------------------------ 12. the NPC templates
+	static void theNpcTemplatesIndexTheTextOfTheProfileTheyAreHanded() throws Exception {
+		System.out.println("--- the NPC templates index the text lists of the profile they are handed, with no workspace open");
+		check(!Workspace.isValid() && Workspace.session() == null, "no workspace is open");
+		FakeGameFiles fake = new FakeGameFiles();
+		int trainers = ORAS.textIndex(GameProfile.TextIndex.TRAINER_NAMES);
+		int items = ORAS.textIndex(GameProfile.TextIndex.ITEM_NAMES);
+		check(trainers >= 0 && items >= 0, "the fixture rests on ORAS having verified both lists (" + trainers + ", " + items + ")");
+		check(NpcTemplates.gametextTrainerNames(fake.profile()) == trainers,
+				"the trainer-name index is the handed profile's (" + NpcTemplates.gametextTrainerNames(fake.profile()) + ")");
+		check(NpcTemplates.gametextItemNames(fake.profile()) == items,
+				"and so is the item-name index (" + NpcTemplates.gametextItemNames(fake.profile()) + ")");
+
+		//a DIFFERENT game: one whose lists nobody has verified answers -1, not ORAS's number
+		FakeGameFiles other = new FakeGameFiles().profile(GameProfile.of(GameType.XY));
+		check(NpcTemplates.gametextTrainerNames(other.profile()) == -1 && NpcTemplates.gametextItemNames(other.profile()) == -1,
+				"handed another game's profile, the indices are that game's: unverified, so -1 ("
+				+ NpcTemplates.gametextTrainerNames(other.profile()) + ", " + NpcTemplates.gametextItemNames(other.profile()) + ")");
+		check(NpcTemplates.gametextTrainerNames(fake.profile()) == trainers, "and the first game's answer is unchanged");
+		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
+				"after all of it no workspace is open and nothing reached the global");
+	}
+
+	// ------------------------------------------------ 13. the prop database
+	static void thePropDatabaseIsBuiltFromTheGameItIsHanded() throws Exception {
+		System.out.println("--- the prop database is built from the archives of the game it is handed, and remembers which");
+		PropDatabase.invalidate();
+		FakeGameFiles fake = propGame(1, "pc01", "tree01");
+		check(!PropDatabase.isBuilt(fake), "nothing is built for a game nobody has asked about");
+		PropDatabase db = PropDatabase.get(fake);
+		check(db != null && db.models.size() == 3 && "pc01".equals(db.getModel(1).name) && "tree01".equals(db.getModel(2).name),
+				"the database names the handed game's models (" + (db == null ? "null" : db.getModel(1).name + ", " + db.getModel(2).name) + ")");
+		if (db == null) {
+			return;
+		}
+		check(db.getModel(1).donorAreas.equals(Arrays.asList(0)) && db.getModel(2).donorAreas.equals(Arrays.asList(1)),
+				"and which of its areas registers each (" + db.getModel(1).donorAreas + ", " + db.getModel(2).donorAreas + ")");
+		check(db.getModel(1).template != null && (db.getModel(1).template[2] & 0xFF) == 1,
+				"and keeps a registry entry to import each by");
+		check(PropDatabase.get(fake) == db && PropDatabase.isBuilt(fake),
+				"asked again for the same game, it is the cached database");
+
+		//a DIFFERENT game
+		FakeGameFiles other = propGame(1, "bench01", "lamp01");
+		PropDatabase o = PropDatabase.get(other);
+		check(o != null && o != db && "bench01".equals(o.getModel(1).name),
+				"handed another game, the database is that game's (" + (o == null ? "null" : o.getModel(1).name) + ")");
+		check(PropDatabase.isBuilt(other) && !PropDatabase.isBuilt(fake),
+				"and the cache knows which game it now holds");
+		PropDatabase again = PropDatabase.get(fake);
+		check(again != o && "pc01".equals(again.getModel(1).name),
+				"handed the first game again, the first game's, rebuilt (" + again.getModel(1).name + ")");
+
+		//a game with neither archive open: no database, not the last game's
+		check(PropDatabase.get(new FakeGameFiles()) == null, "a game with no archives open has no database, not the last game's");
+		check("pc01".equals(PropDatabase.get(fake).getModel(1).name), "and asking for it did not disturb the first game's");
+		PropDatabase.invalidate();
+		check(!PropDatabase.isBuilt(fake), "invalidate() forgets it");
+		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
+				"after all of it no workspace is open and nothing reached the global");
+	}
+
+	// ------------------------------------------------ 14. the move-model pool
+	static void theMoveModelPoolListsTheGameItIsHanded() throws Exception {
+		System.out.println("--- the move-model pool lists the models of the game it is handed, read through its staged copies");
+		MoveModelPool.invalidate();
+		FakeGameFiles fake = npcGame("hero", "rival");
+		check(MoveModelPool.size(fake) == 2 && "hero".equals(MoveModelPool.name(fake, 0)) && "rival".equals(MoveModelPool.name(fake, 1)),
+				"the pool is the handed game's (" + MoveModelPool.size(fake) + ": " + MoveModelPool.name(fake, 0) + ", " + MoveModelPool.name(fake, 1) + ")");
+		check(stagedOnDisk(fake, ArchiveType.MOVE_MODELS, 0) && stagedOnDisk(fake, ArchiveType.MOVE_MODELS, 1),
+				"read through the game's staged copies, so an edited model would be named by what the workspace holds");
+		check(MoveModelPool.name(fake, 2) == null && MoveModelPool.name(fake, -1) == null, "an index past the pool has no name");
+
+		//a DIFFERENT game
+		FakeGameFiles other = npcGame("mom", "prof", "clerk");
+		check(MoveModelPool.size(other) == 3 && "prof".equals(MoveModelPool.name(other, 1)),
+				"handed another game, the pool is that game's (" + MoveModelPool.size(other) + ": " + MoveModelPool.name(other, 1) + ")");
+		check("hero".equals(MoveModelPool.name(fake, 0)) && MoveModelPool.size(fake) == 2,
+				"and handed the first again, the first game's");
+		check(MoveModelPool.size(new FakeGameFiles()) == 0, "a game with no MoveModels archive open lists nothing, not the last game's");
+		MoveModelPool.invalidate();
+		check(MoveModelPool.size(fake) == 2, "after invalidate() the pool reloads from the game it is handed");
+		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
+				"after all of it no workspace is open and nothing reached the global");
+	}
+
+	// ------------------------------------------------ 15. the prop registry and its props
+	static void thePropRegistryAndItsPropsReadTheGameTheyAreHanded() throws Exception {
+		System.out.println("--- a prop registry stages its models from the game it is handed, and a prop is named from it");
+		//area 0 registers reference 5 as model 1 ("pc01"); area 1 reference 6 as model 2 ("tree01");
+		//area 2 reference 7 as model 3 ("sign01"), which nothing below stages in THIS game
+		FakeGameFiles fake = propGame(0, "pc01", "tree01", "sign01");
+		File areaFile = fake.staged(ArchiveType.AREA_DATA, 0);
+		ADPropRegistry reg = new ADPropRegistry(new AD(areaFile, fake), null, fake);
+		check(reg.entries.size() == 1 && reg.entries.get(5) != null && reg.entries.get(5).model == 1,
+				"the registry reads its entries (" + reg.entries.keySet() + ")");
+		check(stagedOnDisk(fake, ArchiveType.BUILDING_MODELS, 1) && !stagedOnDisk(fake, ArchiveType.BUILDING_MODELS, 2),
+				"and staged reference 5's model, BuildingModels entry 1, from the handed game - and no other");
+		check(reg.models.isEmpty(), "the fixture model has no mesh, so nothing was cached to draw; the mesh is not what is under test");
+
+		GRProp byRegistry = new GRProp();
+		byRegistry.uid = 5;
+		byRegistry.updateName(reg, fake);
+		check("pc01".equals(byRegistry.name), "a prop is named by the model its registry entry maps to, read from the handed game (" + byRegistry.name + ")");
+		GRProp byUid = new GRProp();
+		byUid.uid = 2;
+		byUid.updateName(reg, fake);
+		check("tree01".equals(byUid.name), "a uid the registry lacks is named by the BuildingModels entry of the uid itself (" + byUid.name + ")");
+		GRProp noRegistry = new GRProp();
+		noRegistry.uid = 1;
+		noRegistry.updateName(null, fake);
+		check("pc01".equals(noRegistry.name), "and with no registry at all, by uid (" + noRegistry.name + ")");
+		GRProp missing = new GRProp();
+		missing.uid = 9;
+		missing.updateName(reg, fake);
+		check("Model not found".equals(missing.name), "a model the game does not hold is said so, not guessed (" + missing.name + ")");
+
+		//a DIFFERENT game: the same prop and the same registry, named from that game
+		FakeGameFiles other = propGame(0, "bench01", "lamp01", "post01");
+		GRProp elsewhere = new GRProp();
+		elsewhere.uid = 5;
+		elsewhere.updateName(reg, other);
+		check("bench01".equals(elsewhere.name), "handed another game, the same prop and registry are named from that game (" + elsewhere.name + ")");
+		check("pc01".equals(byRegistry.name), "and the first game's name is unchanged");
+		//area 2's registry names model 3, an entry both games hold and nothing above has staged in either
+		check(!stagedOnDisk(fake, ArchiveType.BUILDING_MODELS, 3) && !stagedOnDisk(other, ArchiveType.BUILDING_MODELS, 3),
+				"neither game has staged BuildingModels entry 3 yet");
+		ADPropRegistry o = new ADPropRegistry(new AD(other.staged(ArchiveType.AREA_DATA, 2), other), null, other);
+		check(o.entries.get(7) != null && o.entries.get(7).model == 3
+				&& stagedOnDisk(other, ArchiveType.BUILDING_MODELS, 3) && !stagedOnDisk(fake, ArchiveType.BUILDING_MODELS, 3),
+				"a registry handed the other game stages its model there, and not in the first");
+
+		//entries only: no model read, no game needed
+		FakeGameFiles bare = propGame(0, "x", "y");
+		ADPropRegistry entriesOnly = new ADPropRegistry(new AD(bare.staged(ArchiveType.AREA_DATA, 0), bare));
+		check(entriesOnly.entries.size() == 1 && !stagedOnDisk(bare, ArchiveType.BUILDING_MODELS, 1),
+				"the entries-only registry reads the table and stages no model");
+
+		//a model the handed game does not hold: refused in words, not a null offset table
+		FakeGameFiles lacking = new FakeGameFiles().plant(ArchiveType.AREA_DATA, 0, container("AD", areaRegistry(5, 1), new byte[0]));
+		try {
+			new ADPropRegistry(new AD(lacking.staged(ArchiveType.AREA_DATA, 0), lacking), null, lacking);
+			check(false, "a registry naming a model the game has not staged is refused (it loaded)");
+		} catch (IllegalStateException ex) {
+			check(String.valueOf(ex.getMessage()).contains("entry 1"),
+					"a registry naming a model the game has not staged is refused in words: " + firstLine(ex));
+		}
+
+		//a write goes to the game the registry's container was handed
+		reg.entries.get(5).eventScr1 = 3;
+		reg.modified = true;
+		reg.write();
+		check(fake.edited().size() == 1 && fake.edited().get(0).equals(areaFile.getAbsoluteFile()),
+				"writing the registry reports the area file to the handed game (" + fake.edited() + ")");
+		check(new ADPropRegistry(new AD(areaFile, fake)).entries.get(5).eventScr1 == 3, "and reads back from disk");
+		check(Workspace.persistPaths().isEmpty(), "and nothing reached the global's edited-file list");
+		check(Workspace.session() == null, "after all of it no workspace is open");
+	}
+
+	// ------------------------------------------------ 16. the NPC registry
+	static void theNpcRegistryReadsAndWritesTheGameItIsHanded() throws Exception {
+		System.out.println("--- an NPC registry stages its models from, and reports its writes to, the game it is handed; no dialog anywhere");
+		//recorded, with no answers, for the whole section: the registry used to ask
+		//"keep the changes?" from inside store(), and a suite that does not listen
+		//for that cannot tell "the question moved to the form" from "the question
+		//is still here and a closed dialog is refusing every write"
+		List<String> said = ctrmap.Ui.record();
+		try {
+			npcRegistryHandedTwoGames();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.isEmpty(), "and no dialog seam was involved in any of it - the question belongs to the NPC form, not here (said " + said + ")");
+	}
+
+	/** The body of section 16, run while {@code Ui} is recording. */
+	static void npcRegistryHandedTwoGames() throws Exception {
+		//MoveModels 0 "hero", 1 "rival"; registry 3 maps uid 7 to model 1
+		FakeGameFiles fake = npcGame("hero", "rival").plant(ArchiveType.NPC_REGISTRIES, 3, registryBytes(npcEntry(7, 1)));
+		File f = fake.staged(ArchiveType.NPC_REGISTRIES, 3);
+		NPCRegistry reg = new NPCRegistry(f, fake);
+		check(reg.entries.size() == 1 && reg.entries.get(7) != null && reg.entries.get(7).model == 1,
+				"the registry reads its entries (" + reg.entries.keySet() + ")");
+		check(stagedOnDisk(fake, ArchiveType.MOVE_MODELS, 1) && !stagedOnDisk(fake, ArchiveType.MOVE_MODELS, 0),
+				"and staged uid 7's model, MoveModels entry 1, from the handed game - and no other");
+		check(reg.models.isEmpty(), "the fixture model has no mesh, so nothing was cached to draw; the mesh is not what is under test");
+		check(!reg.modified && !reg.store() && fake.edited().isEmpty(),
+				"with nothing modified, store() writes nothing and says so");
+
+		int uid = reg.registerModel(0);
+		check(uid == 0 && reg.modified && stagedOnDisk(fake, ArchiveType.MOVE_MODELS, 0),
+				"registering a pool model stages it from the handed game (uid " + uid + ")");
+		check(reg.store() && !reg.modified, "store() writes the modified registry and says so");
+		check(fake.edited().size() == 1 && fake.edited().get(0).equals(f.getAbsoluteFile()),
+				"and reports the file, and only it, to the handed game (" + fake.edited() + ")");
+		check(Workspace.persistPaths().isEmpty(), "and nothing reached the global's edited-file list");
+		check(new NPCRegistry(f, fake).entries.keySet().equals(new java.util.HashSet<>(Arrays.asList(0, 7))),
+				"read back from disk, both entries are there");
+
+		//the decision "discard": nothing written, nothing reported, and said so
+		int heard = fake.edited().size();
+		byte[] onDisk = Files.readAllBytes(f.toPath());
+		reg.entries.remove(0);
+		reg.modified = true;
+		check(reg.discard() && !reg.modified, "discard() forgets the change and says there was one");
+		check(Arrays.equals(onDisk, Files.readAllBytes(f.toPath())) && fake.edited().size() == heard,
+				"and wrote nothing and reported nothing");
+		check(!reg.discard() && !reg.store() && fake.edited().size() == heard,
+				"after it there is nothing to forget and nothing to write");
+
+		//a DIFFERENT game
+		FakeGameFiles other = npcGame("mom", "prof", "clerk").plant(ArchiveType.NPC_REGISTRIES, 3, registryBytes(npcEntry(4, 2)));
+		File of = other.staged(ArchiveType.NPC_REGISTRIES, 3);
+		NPCRegistry o = new NPCRegistry(of, other);
+		check(o.entries.get(4) != null && o.entries.get(4).model == 2
+				&& stagedOnDisk(other, ArchiveType.MOVE_MODELS, 2) && !stagedOnDisk(fake, ArchiveType.MOVE_MODELS, 2),
+				"handed another game, a registry stages its models there, and not in the first");
+		o.modified = true;
+		check(o.store() && other.edited().size() == 1 && other.edited().get(0).equals(of.getAbsoluteFile()) && fake.edited().size() == heard,
+				"and reports its write there, not to the first (" + other.edited() + ")");
+		check(NPCRegistry.loadFreshModelByIndex(other, 0) == null && stagedOnDisk(other, ArchiveType.MOVE_MODELS, 0),
+				"a fresh preview stages its model from the game it is handed (no mesh in the fixture, so null)");
+
+		//a model the handed game does not hold: refused in words
+		FakeGameFiles lacking = new FakeGameFiles().plant(ArchiveType.NPC_REGISTRIES, 3, registryBytes(npcEntry(7, 1)));
+		try {
+			new NPCRegistry(lacking.staged(ArchiveType.NPC_REGISTRIES, 3), lacking);
+			check(false, "a registry naming a model the game has not staged is refused (it loaded)");
+		} catch (IllegalStateException ex) {
+			check(String.valueOf(ex.getMessage()).contains("MoveModels entry 1"),
+					"a registry naming a model the game has not staged is refused in words: " + firstLine(ex));
+		}
+
+		//a write that fails is thrown with its reason, not logged and reported as done
+		File blocked = Scratch.file("ctrmap_handed_npcreg_blocked");
+		NPCRegistry unwritable = new NPCRegistry(blocked, fake);
+		unwritable.modified = true;
+		Files.delete(blocked.toPath());
+		blocked.mkdir();
+		try {
+			unwritable.store();
+			check(false, "a write the file system refuses is thrown (it was reported as done)");
+		} catch (IOException ex) {
+			check(unwritable.modified && fake.edited().size() == heard,
+					"a write the file system refuses is thrown, the registry stays modified and nothing is reported: " + firstLine(ex));
+		}
+		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
+				"after all of it no workspace is open and nothing reached the global");
+	}
+
+	// ------------------------------------------------ 17. null is refused
+	static void thePropsAndNpcsRefuseToBeHandedNothing() throws Exception {
+		System.out.println("--- the prop and NPC classes handed null refuse in words, rather than answering for no game");
+		FakeGameFiles kit = propGame(0, "x");
+		AD area = new AD(kit.staged(ArchiveType.AREA_DATA, 0), kit);
+		File regFile = Scratch.file("ctrmap_handed_npcreg_null");
+		refuses("NpcTemplates.gametextTrainerNames", () -> NpcTemplates.gametextTrainerNames(null));
+		refuses("NpcTemplates.gametextItemNames", () -> NpcTemplates.gametextItemNames(null));
+		refuses("PropDatabase.get", () -> PropDatabase.get(null));
+		refuses("MoveModelPool.size", () -> MoveModelPool.size(null));
+		refuses("MoveModelPool.name", () -> MoveModelPool.name(null, 0));
+		refuses("ADPropRegistry", () -> new ADPropRegistry(area, null, (GameFiles) null));
+		refuses("GRProp.updateName", () -> new GRProp().updateName(null, null));
+		refuses("NPCRegistry", () -> new NPCRegistry(regFile, null));
+		refuses("NPCRegistry.loadFreshModelByIndex", () -> NPCRegistry.loadFreshModelByIndex(null, 0));
+	}
+
+	// ------------------------------------------------ fixtures for the props and NPCs
+
+	/**
+	 * A BCH that {@link ctrmap.formats.h3d.H3DModelNameGet} names {@code name}
+	 * and {@link ctrmap.formats.h3d.BCHFile} parses without error: a header
+	 * for backward-compatibility 0x21, an empty relocation table, a content
+	 * header whose model pointer table points at one model header whose name
+	 * sits at string-table offset 0. {@code modelCount} is what the content
+	 * header claims: 0 for a class that runs the full parser (a model with no
+	 * mesh cannot be built by hand, and the parser reads none when told there
+	 * are none), 1 for {@link PropDatabase}, which never runs it but gates the
+	 * name read on the count.
+	 */
+	static byte[] bch(String name, int modelCount) throws IOException {
+		int main = 0x44;
+		int ptrTable = main + 45 * 4;
+		int model0 = ptrTable + 4;
+		int nameField = model0 + 0x84;
+		int strTable = nameField + 4;
+		byte[] nm = name.getBytes("US-ASCII");
+		byte[] b = new byte[strTable + nm.length + 1];
+		b[0] = 'B';
+		b[1] = 'C';
+		b[2] = 'H';
+		b[4] = 0x21;
+		b[5] = 0x21;
+		putI32(b, 8, main);
+		putI32(b, 12, strTable);
+		putI32(b, 32, 45 * 4);
+		putI32(b, 36, nm.length + 1);
+		putI32(b, main, ptrTable - main);
+		putI32(b, main + 4, modelCount);
+		putI32(b, ptrTable, model0 - main);
+		putI32(b, nameField, 0);
+		System.arraycopy(nm, 0, b, strTable, nm.length);
+		return b;
+	}
+
+	/** A GF mini container of these subfiles in the layout the container base reads: two magic bytes, u16 count, count+1 offsets. */
+	static byte[] container(String magic, byte[]... subs) {
+		int n = subs.length;
+		int[] off = new int[n + 1];
+		off[0] = 4 + (n + 1) * 4;
+		for (int i = 0; i < n; i++) {
+			off[i + 1] = off[i] + subs[i].length;
+		}
+		byte[] o = new byte[off[n]];
+		o[0] = (byte) magic.charAt(0);
+		o[1] = (byte) magic.charAt(1);
+		putU16(o, 2, n);
+		for (int i = 0; i <= n; i++) {
+			putI32(o, 4 + 4 * i, off[i]);
+		}
+		for (int i = 0; i < n; i++) {
+			System.arraycopy(subs[i], 0, o, off[i], subs[i].length);
+		}
+		return o;
+	}
+
+	/** An AD prop registry (subfile 0) of one 0x50-byte entry: reference, model, the rest zero. */
+	static byte[] areaRegistry(int reference, int model) {
+		byte[] r = new byte[4 + 0x50];
+		putI32(r, 0, 1);
+		putU16(r, 4, reference);
+		putU16(r, 6, model);
+		return r;
+	}
+
+	/**
+	 * A game whose BuildingModels archive holds the dummy and then one model
+	 * per name (entry 1 + i is names[i]), and whose AreaData holds one area
+	 * per name, area i registering prop reference 5 + i as model 1 + i, with
+	 * an empty texture pack.
+	 */
+	static FakeGameFiles propGame(int bchModelCount, String... names) throws Exception {
+		FakeGameFiles g = new FakeGameFiles();
+		byte[][] bm = new byte[names.length + 1][];
+		bm[0] = container("BM", bch(PropDatabase.DUMMY_MODEL_NAME, bchModelCount));
+		byte[][] ad = new byte[names.length][];
+		for (int i = 0; i < names.length; i++) {
+			bm[i + 1] = container("BM", bch(names[i], bchModelCount));
+			ad[i] = container("AD", areaRegistry(5 + i, 1 + i), new byte[0]);
+		}
+		File bmFile = new File(g.root(), "buildingmodels.garc");
+		writeGarc(bmFile, bm);
+		File adFile = new File(g.root(), "areadata.garc");
+		writeGarc(adFile, ad);
+		return g.open(ArchiveType.BUILDING_MODELS, new GARC(bmFile)).open(ArchiveType.AREA_DATA, new GARC(adFile));
+	}
+
+	/** A game whose MoveModels archive holds one model per name, each a container round a BCH with no mesh. */
+	static FakeGameFiles npcGame(String... names) throws Exception {
+		FakeGameFiles g = new FakeGameFiles();
+		byte[][] mm = new byte[names.length][];
+		for (int i = 0; i < names.length; i++) {
+			mm[i] = container("MM", bch(names[i], 0));
+		}
+		File f = new File(g.root(), "movemodels.garc");
+		writeGarc(f, mm);
+		return g.open(ArchiveType.MOVE_MODELS, new GARC(f));
+	}
+
+	/** A registry file of these entries, as {@link NPCRegistry} reads and writes them. */
+	static byte[] registryBytes(NPCRegistry.NPCRegistryEntry... entries) throws IOException {
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		LittleEndianDataOutputStream dos = new LittleEndianDataOutputStream(baos);
+		for (NPCRegistry.NPCRegistryEntry e : entries) {
+			e.write(dos);
+		}
+		dos.close();
+		return baos.toByteArray();
+	}
+
+	static NPCRegistry.NPCRegistryEntry npcEntry(int uid, int model) {
+		NPCRegistry.NPCRegistryEntry e = new NPCRegistry.NPCRegistryEntry();
+		e.uid = uid;
+		e.model = model;
+		return e;
+	}
+
+	/**
+	 * Whether the fake has extracted this entry to its staging area. The fake
+	 * stages under {@code root/<type>/<entry>}; looked at here directly rather
+	 * than through {@code staged()}, which would extract it in the asking.
+	 * This is how "which game did the class read its model from" is measured
+	 * for a class whose only other output is a mesh no fixture can build.
+	 */
+	static boolean stagedOnDisk(FakeGameFiles g, ArchiveType type, int entry) {
+		return new File(new File(g.root(), type.name().toLowerCase()), String.valueOf(entry)).isFile();
 	}
 
 	// ------------------------------------------------ fixtures for the tables

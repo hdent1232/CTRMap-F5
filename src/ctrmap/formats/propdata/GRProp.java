@@ -1,9 +1,8 @@
 package ctrmap.formats.propdata;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.LittleEndianDataOutputStream;
-import ctrmap.Workspace;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.BM;
 import ctrmap.formats.h3d.H3DModelNameGet;
 import ctrmap.gamedef.ArchiveType;
@@ -62,19 +61,32 @@ public class GRProp implements MapObject{
 		unknown = 0;
 	}
 
-	public void updateName(ADPropRegistry reg) {
-		File f;
-		if (reg != null && reg.entries.containsKey(uid)) {
-			f = Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, reg.entries.get(uid).model);
-		} //not in registry, try the fallback method with UID only
-		else {
-			f = Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, uid);
+	/**
+	 * Reads this prop's display name from its model in the handed game: the
+	 * model the registry maps its uid to, or - not in the registry - the
+	 * BuildingModels entry of the uid itself.
+	 *
+	 * <p>Handed the game rather than fetching the application's: this used to
+	 * read the global's workspace file, so a prop could only ever be named
+	 * from the application's game, and with no workspace open every prop was
+	 * "Model not found". {@code ctrmap.tests.HandedGameTest} hands it two games
+	 * and reads two names.
+	 *
+	 * @param reg the area's registry, or null to name by uid alone
+	 * @param files the game the model is read from; null is refused in words
+	 */
+	public void updateName(ADPropRegistry reg, GameFiles files) {
+		if (files == null) {
+			throw new IllegalArgumentException("a prop must be handed the game its model is read from;"
+					+ " handed null, there is no model to name it by");
 		}
+		int model = (reg != null && reg.entries.containsKey(uid)) ? reg.entries.get(uid).model : uid;
+		File f = files.staged(ArchiveType.BUILDING_MODELS, model);
 		if (f == null || !f.exists()) {
 			name = "Model not found";
 			return;
 		}
-		name = H3DModelNameGet.H3DModelNameGet(new BM(f).getFile(0));
+		name = H3DModelNameGet.H3DModelNameGet(new BM(f, files).getFile(0));
 	}
 
 	public void write(LittleEndianDataOutputStream dos) {

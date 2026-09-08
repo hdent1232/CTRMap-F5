@@ -483,7 +483,7 @@ public class PropEditFormGuardsTest {
 
 	/** Area {@link #AREA}'s prop registry, without its models: the meshes are not what is under test. */
 	static ADPropRegistry registry() throws Exception {
-		return new ADPropRegistry(new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AREA)), null, false);
+		return new ADPropRegistry(new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AREA)));
 	}
 
 	/** Types into one of the form's number fields the way the widget itself would. */

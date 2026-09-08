@@ -341,9 +341,14 @@ public class DialogSeamTest {
 	}
 
 	/**
-	 * The one place this rule can be proved rather than read: NPCRegistry.store
-	 * asks before writing, and used to run off the end of its switch when the
-	 * answer was "closed". Under a suite, "closed" is the only answer there is.
+	 * The one place this rule can be proved rather than read: saving the NPC
+	 * registry asks before writing, and the registry's own store() used to run
+	 * off the end of its switch when the answer was "closed". The question has
+	 * since moved out of the format class into the NPC form, which owns the
+	 * window: {@link NPCRegistry} now only writes or forgets and says which, and
+	 * {@code NPCEditForm.saveRegistry} asks and passes the decision down. So the
+	 * form is what is driven here, with the registry handed a scratch game and
+	 * no workspace open. Under a suite, "closed" is the only answer there is.
 	 */
 	static void closedMeansTheRegistryIsNotWritten() throws Exception {
 		File f = Scratch.file("dialogseam_reg");
@@ -352,18 +357,21 @@ public class DialogSeamTest {
 			out.write(before);
 		}
 		//shorter than one 0x18-byte entry, so the constructor reads none of
-		//them and never reaches the workspace
-		NPCRegistry reg = new NPCRegistry(f);
+		//them and never reaches the game it is handed
+		NPCRegistry reg = new NPCRegistry(f, new FakeGameFiles());
 		reg.modified = true;
+		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm();
+		form.reg = reg;
 		boolean stored;
 		List<String> said = Ui.record();
 		try {
-			stored = reg.store(true);
+			stored = form.saveRegistry(true);
 		} finally {
 			Ui.stopRecording();
 		}
-		check(!said.isEmpty(), "storing with dialogs asks before it writes: " + said);
+		check(!said.isEmpty(), "saving with dialogs asks before it writes: " + said);
 		check(!stored, "an unanswered save prompt reports that it did NOT store");
+		check(reg.modified, "and the registry still knows it has unsaved changes");
 		check(Arrays.equals(before, Files.readAllBytes(f.toPath())),
 				"and the file on disk is untouched (" + f.length() + " bytes)");
 	}

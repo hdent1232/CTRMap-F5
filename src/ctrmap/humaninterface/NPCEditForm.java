@@ -333,11 +333,40 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		return true;
 	}
 
+	/**
+	 * Saves the area's NPC registry when it was modified, asking first when a
+	 * dialog is wanted. The question used to be asked by the registry itself,
+	 * from inside the format layer, where no suite could answer it and no
+	 * caller could decide for it; this form owns the window, so this form
+	 * asks, through the one seam ({@link Utils#askToKeep}, which holds the rule
+	 * that a closed or unanswered question is a cancel), and passes the
+	 * decision down. A write the registry could not make is reported here and
+	 * stops the save sequence, where it used to be logged and walked past.
+	 *
+	 * @return true when the save sequence may continue: written, discarded, or
+	 * nothing to save; false when the user cancelled or the write failed
+	 */
 	public boolean saveRegistry(boolean dialog) {
-		if (reg == null) {
+		if (reg == null || !reg.modified) {
 			return true;
 		}
-		return reg.store(dialog);
+		switch (Utils.askToKeep(dialog, "NPC registry")) {
+			case DISCARD:
+				reg.discard();
+				return true;
+			case CANCEL:
+				return false;
+			default:
+				break;
+		}
+		try {
+			reg.store();
+			return true;
+		} catch (IOException ex) {
+			ctrmap.Ui.error(this, "The NPC registry could not be written: " + ctrmap.Ui.reason(ex),
+					"NPC registry not saved");
+			return false;
+		}
 	}
 
 	/**
@@ -1102,7 +1131,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	public final class GiverForm {
 
 		public final JPanel panel = stackedForm();
-		private final IdChooser item = new IdChooser(loadGameTextNames(NpcTemplates.gametextItemNames()), NpcTemplates.ITEM_ID_MAX, 1);
+		private final IdChooser item = new IdChooser(loadGameTextNames(NpcTemplates.gametextItemNames(Workspace.profile())), NpcTemplates.ITEM_ID_MAX, 1);
 		private final JSpinner count = new JSpinner(new javax.swing.SpinnerNumberModel(1, 1, 99, 1));
 		private final ModelPicker model = new ModelPicker(-1);
 
@@ -1202,9 +1231,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		private final ModelPicker model = new ModelPicker(-1);
 
 		public ChallengeForm() {
-			final IdChooser idChooser = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames()), NpcTemplates.TRAINER_ID_MAX, 1);
+			final IdChooser idChooser = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames(Workspace.profile())), NpcTemplates.TRAINER_ID_MAX, 1);
 			final javax.swing.DefaultListModel<String> listModel = new javax.swing.DefaultListModel<>();
-			final java.util.List<String> trainerNames = loadGameTextNames(NpcTemplates.gametextTrainerNames());
+			final java.util.List<String> trainerNames = loadGameTextNames(NpcTemplates.gametextTrainerNames(Workspace.profile()));
 			final javax.swing.JList<String> trainerList = new javax.swing.JList<>(listModel);
 			trainerList.setVisibleRowCount(5);
 			javax.swing.JButton addBtn = new javax.swing.JButton("Add to lineup");
@@ -1466,7 +1495,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	public final class TrainerForm {
 
 		public final JPanel panel = stackedForm();
-		private final IdChooser trainer = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames()), NpcTemplates.TRAINER_ID_MAX, 1);
+		private final IdChooser trainer = new IdChooser(loadGameTextNames(NpcTemplates.gametextTrainerNames(Workspace.profile())), NpcTemplates.TRAINER_ID_MAX, 1);
 		private final ModelPicker model = new ModelPicker(-1);
 		private final JSpinner sight = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, 8, 1));
 		private final javax.swing.JComboBox<String> facing = new javax.swing.JComboBox<>(new String[]{"Down", "Up", "Left", "Right"});
@@ -1575,7 +1604,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * indices differ on X/Y. They do, but "which game is this" was never the
 	 * question: the question is whether an index EXISTS for the table being
 	 * asked for. The callers already get theirs from the profile
-	 * ({@code NpcTemplates.gametextItemNames()} and friends), which answers -1
+	 * ({@code NpcTemplates.gametextItemNames(Workspace.profile())} and friends), which answers -1
 	 * for a game nobody has measured - so the absent index is the thing to test,
 	 * and a game whose indices someone fills in later gets its names without
 	 * anyone remembering to widen a game check here.
@@ -1849,12 +1878,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					already.add(en.model);
 				}
 			}
-			int n = ctrmap.formats.npcreg.MoveModelPool.size();
+			int n = ctrmap.formats.npcreg.MoveModelPool.size(Workspace.session());
 			for (int i = 0; i < n; i++) {
 				if (already.contains(i)) {
 					continue; //already offered via the registered list
 				}
-				String nm = ctrmap.formats.npcreg.MoveModelPool.name(i);
+				String nm = ctrmap.formats.npcreg.MoveModelPool.name(Workspace.session(), i);
 				poolExtra.add(new int[]{1, i});
 				poolExtraLabels.add("[+] model " + i + (nm == null || nm.isEmpty() ? "" : ": " + nm));
 			}
@@ -1928,7 +1957,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			int[] en = visibleEntries.get(s);
 			H3DModel m = (en[0] == 0)
 					? ((reg != null) ? reg.loadFreshModel(en[1]) : null)
-					: NPCRegistry.loadFreshModelByIndex(en[1]);
+					: NPCRegistry.loadFreshModelByIndex(Workspace.session(), en[1]);
 			preview.loadModel(m);
 		}
 	}

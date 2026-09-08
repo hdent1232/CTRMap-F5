@@ -248,7 +248,7 @@ public class ZoneHeader {
 		} else {
 			worldTextures.addAll(new BCHFile(wTex).textures);
 		}
-		npcreg = new NPCRegistry(Workspace.getWorkspaceFile(ArchiveType.NPC_REGISTRIES, areadataID));
+		npcreg = new NPCRegistry(Workspace.getWorkspaceFile(ArchiveType.NPC_REGISTRIES, areadataID), Workspace.session());
 		mapmatrix = new MM(Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mapmatrixID));
 	}
 
