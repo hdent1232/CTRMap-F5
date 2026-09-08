@@ -17,9 +17,8 @@ import javax.swing.JScrollPane;
  * 2840 lines. Each was an inner class reading the editor it sat in through
  * synthetic bridges, so none could be built without one; each is handed what
  * it needs now and is an ordinary class in a file of its own.
- */
-/**
- * A searchable NPC-model picker with a live 3D preview. Lists ONLY the
+ *
+ * <p>A searchable NPC-model picker with a live 3D preview. Lists ONLY the
  * registered overworld models (from the NPC registry) as "UID: name" - so
  * empty/unregistered UIDs never clutter the browser - and previews the
  * selection. Names come from each model's embedded BCH name.
@@ -46,7 +45,11 @@ public final class ModelPicker extends JPanel {
 	/** Where a live preview registers itself, so the form that built it can stop them all. */
 	private final List<CustomH3DPreview> livePreviews;
 
-	public ModelPicker(NPCRegistry reg, List<CustomH3DPreview> livePreviews, int defaultUid) {
+	/** The open game, for the model pool this browses; handed in like everything else here. */
+	private final ctrmap.formats.GameFiles game;
+
+	public ModelPicker(NPCRegistry reg, List<CustomH3DPreview> livePreviews, ctrmap.formats.GameFiles game, int defaultUid) {
+		this.game = game;
 		this.reg = reg;
 		this.livePreviews = livePreviews;
 		setLayout(new java.awt.BorderLayout());
@@ -115,12 +118,12 @@ public final class ModelPicker extends JPanel {
 				already.add(en.model);
 			}
 		}
-		int n = ctrmap.formats.npcreg.MoveModelPool.size(Workspace.session());
+		int n = ctrmap.formats.npcreg.MoveModelPool.size(game);
 		for (int i = 0; i < n; i++) {
 			if (already.contains(i)) {
 				continue; //already offered via the registered list
 			}
-			String nm = ctrmap.formats.npcreg.MoveModelPool.name(Workspace.session(), i);
+			String nm = ctrmap.formats.npcreg.MoveModelPool.name(game, i);
 			poolExtra.add(new int[]{1, i});
 			poolExtraLabels.add("[+] model " + i + (nm == null || nm.isEmpty() ? "" : ": " + nm));
 		}
@@ -194,7 +197,7 @@ public final class ModelPicker extends JPanel {
 		int[] en = visibleEntries.get(s);
 		H3DModel m = (en[0] == 0)
 				? ((reg != null) ? reg.loadFreshModel(en[1]) : null)
-				: NPCRegistry.loadFreshModelByIndex(Workspace.session(), en[1]);
+				: NPCRegistry.loadFreshModelByIndex(game, en[1]);
 		preview.loadModel(m);
 	}
 }

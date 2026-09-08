@@ -11,9 +11,8 @@ import javax.swing.JSpinner;
  * 2840 lines. Each was an inner class reading the editor it sat in through
  * synthetic bridges, so none could be built without one; each is handed what
  * it needs now and is an ordinary class in a file of its own.
- */
-/**
- * A searchable ID picker: a filter field over a "id: name" list when names
+ *
+ * <p>A searchable ID picker: a filter field over a "id: name" list when names
  * are available, or a plain numeric spinner otherwise. getId() returns the
  * chosen 1-based ID, or -1 when the filtered list has no selection.
  */

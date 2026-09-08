@@ -24,10 +24,14 @@ public final class GiveBpForm {
 
 	private final ModelPicker model;
 
-	public GiveBpForm(NPCRegistry reg, List<CustomH3DPreview> livePreviews) {
+	/** The open game the model picker browses; handed in, never fetched. */
+	private final ctrmap.formats.GameFiles game;
+
+	public GiveBpForm(ctrmap.formats.GameFiles game, NPCRegistry reg, List<CustomH3DPreview> livePreviews) {
+		this.game = game;
 		this.reg = reg;
 		this.livePreviews = livePreviews;
-		this.model = new ModelPicker(reg, livePreviews, -1);
+		this.model = new ModelPicker(reg, livePreviews, game, -1);
 		Forms.addLabeled(panel, "Battle Points to give:", amount);
 		Forms.addLabeled(panel, "NPC model (type to search; preview below):", model);
 		panel.add(Forms.hint("<html>The NPC adds this many BP each time it is talked to (no one-time flag yet;<br>the game caps total BP at 9999). Uses the engine's own BP natives.</html>"));

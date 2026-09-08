@@ -19,7 +19,7 @@ import javax.swing.JSpinner;
 public final class TrainerForm {
 
 	public final JPanel panel = Forms.stackedForm();
-	private final IdChooser trainer = new IdChooser(NPCEditForm.loadGameTextNames(NpcTemplates.gametextTrainerNames(Workspace.profile())), NpcTemplates.TRAINER_ID_MAX, 1);
+	private final IdChooser trainer;
 	/** The registry the model picker lists, and the previews it registers - the editor's, handed in. */
 	private final NPCRegistry reg;
 	private final List<CustomH3DPreview> livePreviews;
@@ -29,10 +29,15 @@ public final class TrainerForm {
 	private final javax.swing.JComboBox<String> facing = new javax.swing.JComboBox<>(new String[]{"Down", "Up", "Left", "Right"});
 	private final javax.swing.JCheckBox pair = new javax.swing.JCheckBox("Add double-battle partner (script 5000 + ID) beside it");
 
-	public TrainerForm(NPCRegistry reg, List<CustomH3DPreview> livePreviews) {
+	/** The open game the model picker browses; handed in, never fetched. */
+	private final ctrmap.formats.GameFiles game;
+
+	public TrainerForm(ctrmap.formats.GameFiles game, NPCRegistry reg, List<CustomH3DPreview> livePreviews, List<String> trainerNames) {
+		this.game = game;
+		this.trainer = new IdChooser(trainerNames, NpcTemplates.TRAINER_ID_MAX, 1);
 		this.reg = reg;
 		this.livePreviews = livePreviews;
-		this.model = new ModelPicker(reg, livePreviews, -1);
+		this.model = new ModelPicker(reg, livePreviews, game, -1);
 		Forms.addLabeled(panel, "Trainer (type to search; edit party/class in pk3DS):", trainer);
 		Forms.addLabeled(panel, "NPC model (type to search; preview below):", model);
 		Forms.addLabeled(panel, "Sight range (0 = battle on talk only):", sight);
