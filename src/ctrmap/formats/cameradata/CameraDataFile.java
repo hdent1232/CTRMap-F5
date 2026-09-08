@@ -5,7 +5,6 @@ import java.io.IOException;
 
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.LittleEndianDataOutputStream;
-import ctrmap.Utils;
 import ctrmap.formats.containers.AD;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;

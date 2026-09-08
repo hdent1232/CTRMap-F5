@@ -721,7 +721,7 @@ public class CtrmapMainframe {
 	}
 
 	private static void openZoneAction() {
-		if (!Workspace.isValid() && !Utils.confirmOpenWithoutWorkspace("Open Zone")) {
+		if (!Workspace.isValid() && !ctrmap.Ui.confirmOpenWithoutWorkspace("Open Zone")) {
 			return;
 		}
 		//the loose ZO files live in the workspace, never in the RomFS - start there when we can
@@ -746,13 +746,13 @@ public class CtrmapMainframe {
 		});
 		File f = picked(jfc, "LAST_DIR_ZO");
 		if (f != null) {
-			if (!Utils.checkMagicLE16(f, 0x5a4f)) {
-				Utils.showErrorMessage("Not a ZO file", f.getName()
+			if (!ctrmap.util.Bytes.checkMagicLE16(f, 0x5a4f)) {
+				Ui.error(f.getName()
 						+ " is not a zone mini-pack.\n\n"
 						+ "The RomFS only holds packed GARC archives, not single zone files, so pointing\n"
 						+ "this dialog at the game directory can never work.\n"
 						+ (zoneDir != null ? ("Extracted zone files live in " + zoneDir.getAbsolutePath() + "\n") : "")
-						+ "\nThe normal way to open a map is the zone dropdown in the \"Zone Loader\" tab.");
+						+ "\nThe normal way to open a map is the zone dropdown in the \"Zone Loader\" tab.", "Not a ZO file");
 				return;
 			}
 			//WAS "isValid() ? game() : GameType.ORAS". A .zo does not record
@@ -761,9 +761,9 @@ public class CtrmapMainframe {
 			//if it is then saved, the wrong bits written into its header. With
 			//no workspace open there is nothing to read that from, so say so.
 			if (!Workspace.isValid()) {
-				Utils.showErrorMessage("No workspace", "Open a workspace first (Options > Workspace settings).\n\n"
+				Ui.error("Open a workspace first (Options > Workspace settings).\n\n"
 						+ "A .zo file does not say which game it belongs to, and a zone header means\n"
-						+ "different things in each of them, so CTRMap will not guess one for it.");
+						+ "different things in each of them, so CTRMap will not guess one for it.", "No workspace");
 				return;
 			}
 			mZonePnl.loadZone(new Zone(new ZO(f, game), Workspace.game()));
@@ -846,7 +846,7 @@ public class CtrmapMainframe {
 				Logger.getLogger(CtrmapMainframe.class.getName()).log(Level.SEVERE, null, ex);
 			}
 		} else {
-			Utils.showErrorMessage("Browser open error", "Your system either does not support the Java Desktop API or you do not have a suitable browser installed.");
+			Ui.error("Your system either does not support the Java Desktop API or you do not have a suitable browser installed.", "Browser open error");
 		}
 	}
 
@@ -986,10 +986,10 @@ public class CtrmapMainframe {
 		Preferences hintPrefs = Preferences.userRoot().node(CtrmapMainframe.class.getName());
 		if (!hintPrefs.getBoolean("ZONE_HINT_SHOWN", false)) {
 			hintPrefs.putBoolean("ZONE_HINT_SHOWN", true);
-			Utils.showInfoMessage("Opening a zone", "Workspace loaded.\n\n"
+			Ui.message("Workspace loaded.\n\n"
 					+ "Pick a map from the zone dropdown at the top of the \"Zone Loader\" tab.\n"
 					+ "That loads the world, matrix, collisions and entities for editing.\n\n"
-					+ "(File > Open Zone is only for single loose ZO files.)");
+					+ "(File > Open Zone is only for single loose ZO files.)", "Opening a zone", JOptionPane.INFORMATION_MESSAGE);
 		}
 	}
 

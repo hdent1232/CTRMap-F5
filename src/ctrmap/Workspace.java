@@ -91,7 +91,7 @@ public class Workspace {
 		} else {
 			return new EditorTileset(ResourceAccess.getStream("DefaultTileset.mets"));
 		}
-		Utils.showErrorMessage("Invalid tileset", "The tileset is corrupt. Restoring defaults.");
+		Ui.error("The tileset is corrupt. Restoring defaults.", "Invalid tileset");
 		TILESET_DEFAULT = true;
 		return new EditorTileset(ResourceAccess.getStream("DefaultTileset.mets"));
 	}

@@ -5,7 +5,6 @@ import com.jogamp.opengl.glu.gl2.GLUgl2;
 import ctrmap.CtrmapMainframe;
 import ctrmap.LoadedZone;
 import ctrmap.LittleEndianDataInputStream;
-import ctrmap.Utils;
 import ctrmap.formats.propdata.GRProp;
 import ctrmap.formats.propdata.GRPropData;
 import ctrmap.Workspace;
@@ -103,8 +102,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		x.getDocument().addDocumentListener(new DocumentListener() {
 			@Override
 			public void insertUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.x != Utils.getFloatFromDocument(x)) {
-					prop.x = Utils.getFloatFromDocument(x);
+				if (loaded && prop != null && prop.x != ctrmap.humaninterface.Forms.getFloatFromDocument(x)) {
+					prop.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 				}
@@ -113,8 +112,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 			@Override
 			public void removeUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.x != Utils.getFloatFromDocument(x)) {
-					prop.x = Utils.getFloatFromDocument(x);
+				if (loaded && prop != null && prop.x != ctrmap.humaninterface.Forms.getFloatFromDocument(x)) {
+					prop.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 				}
@@ -128,8 +127,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		y.getDocument().addDocumentListener(new DocumentListener() {
 			@Override
 			public void insertUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.y != Utils.getFloatFromDocument(y)) {
-					prop.y = Utils.getFloatFromDocument(y);
+				if (loaded && prop != null && prop.y != ctrmap.humaninterface.Forms.getFloatFromDocument(y)) {
+					prop.y = ctrmap.humaninterface.Forms.getFloatFromDocument(y);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 				}
@@ -138,8 +137,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 			@Override
 			public void removeUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.y != Utils.getFloatFromDocument(y)) {
-					prop.y = Utils.getFloatFromDocument(y);
+				if (loaded && prop != null && prop.y != ctrmap.humaninterface.Forms.getFloatFromDocument(y)) {
+					prop.y = ctrmap.humaninterface.Forms.getFloatFromDocument(y);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 				}
@@ -153,8 +152,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		z.getDocument().addDocumentListener(new DocumentListener() {
 			@Override
 			public void insertUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.z != Utils.getFloatFromDocument(z)) {
-					prop.z = Utils.getFloatFromDocument(z);
+				if (loaded && prop != null && prop.z != ctrmap.humaninterface.Forms.getFloatFromDocument(z)) {
+					prop.z = ctrmap.humaninterface.Forms.getFloatFromDocument(z);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 				}
@@ -163,8 +162,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 			@Override
 			public void removeUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.z != Utils.getFloatFromDocument(z)) {
-					prop.z = Utils.getFloatFromDocument(z);
+				if (loaded && prop != null && prop.z != ctrmap.humaninterface.Forms.getFloatFromDocument(z)) {
+					prop.z = ctrmap.humaninterface.Forms.getFloatFromDocument(z);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 				}
@@ -702,15 +701,15 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		GRProp prop2 = new GRProp();
 		prop2.uid = (Integer) mdlNum.getValue();
 		prop2.updateName(reg, Workspace.session());
-		prop2.x = Utils.getFloatFromDocument(x);
-		prop2.y = Utils.getFloatFromDocument(y);
-		prop2.z = Utils.getFloatFromDocument(z);
-		prop2.rotateX = Utils.getFloatFromDocument(rx);
-		prop2.rotateY = Utils.getFloatFromDocument(ry);
-		prop2.rotateZ = Utils.getFloatFromDocument(rz);
-		prop2.scaleX = Utils.getFloatFromDocument(sx);
-		prop2.scaleY = Utils.getFloatFromDocument(sy);
-		prop2.scaleZ = Utils.getFloatFromDocument(sz);
+		prop2.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);
+		prop2.y = ctrmap.humaninterface.Forms.getFloatFromDocument(y);
+		prop2.z = ctrmap.humaninterface.Forms.getFloatFromDocument(z);
+		prop2.rotateX = ctrmap.humaninterface.Forms.getFloatFromDocument(rx);
+		prop2.rotateY = ctrmap.humaninterface.Forms.getFloatFromDocument(ry);
+		prop2.rotateZ = ctrmap.humaninterface.Forms.getFloatFromDocument(rz);
+		prop2.scaleX = ctrmap.humaninterface.Forms.getFloatFromDocument(sx);
+		prop2.scaleY = ctrmap.humaninterface.Forms.getFloatFromDocument(sy);
+		prop2.scaleZ = ctrmap.humaninterface.Forms.getFloatFromDocument(sz);
 		if (!equalsData(prop, prop2)) {
 			int idx = props.props.indexOf(prop);
 			prop = prop2;
@@ -725,7 +724,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (props != null) {
 			saveProp();
 			if (props.modified) {
-				switch (Utils.askToKeep(dialog, "Prop data")) {
+				switch (ctrmap.Ui.askToKeep(dialog, "Prop data")) {
 					case SAVE:
 						if (CtrmapMainframe.mTileMapPanel.mm != null) {
 							props.write(CtrmapMainframe.mTileMapPanel.mm);
@@ -741,7 +740,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				props.modified = false;
 			}
 			if (reg != null && reg.modified) {
-				switch (Utils.askToKeep(dialog, "Prop registry")) {
+				switch (ctrmap.Ui.askToKeep(dialog, "Prop registry")) {
 					case DISCARD:
 						reg.modified = false;
 						return true;
@@ -1433,7 +1432,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			GRProp p = props.props.get(i);
 			float[][] box = models.get(i).boxVectors;
 			boolean sysout = (p.name.equals("t101_bm_trees"));
-			if (Utils.isBoxSelected(box, e, parent, new Vec3f(p.x, p.y, p.z), new Vec3f(p.scaleX, p.scaleY, p.scaleZ), new Vec3f(p.rotateX, p.rotateY, p.rotateZ), mvMatrix, projMatrix, view)) {
+			if (ctrmap.humaninterface.Picking.isBoxSelected(box, e, parent, new Vec3f(p.x, p.y, p.z), new Vec3f(p.scaleX, p.scaleY, p.scaleZ), new Vec3f(p.rotateX, p.rotateY, p.rotateZ), mvMatrix, projMatrix, view)) {
 				H3DModel m = models.get(i);
 				//GLU is buggy and sometimes completely fucks up the maths in certain camera angles. We can work around this by checking if the actual object is seen by the camera.
 				boolean allow = false;
@@ -1454,7 +1453,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				if (!allow) {
 					continue;
 				}
-				double dist = Utils.getDistanceFromVector(new Vec3f(p.x, p.y, p.z), cameraVec);
+				double dist = ctrmap.humaninterface.Picking.getDistanceFromVector(new Vec3f(p.x, p.y, p.z), cameraVec);
 				if (Math.abs(dist) < closestDist && i != propIndex) {
 					closestDist = Math.abs(dist);
 					closestIdx = i;

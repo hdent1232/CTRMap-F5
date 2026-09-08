@@ -317,24 +317,19 @@ public class SourceSeamTest {
 	private static final int ALLOWED_ABOVE_CEILING = 2;
 
 	/**
-	 * The members of {@code ctrmap.Utils} the format layer may use: pure byte
-	 * and number helpers, measured 2026-09-08 as the ONLY ones it does use.
-	 * Utils also holds a dialog wrapper ({@code askToKeep}, answered with its
-	 * {@code Keep} enum), and a dialog reached through a helper's name is still
-	 * a dialog in the format layer. Naming the helpers that are allowed, rather
-	 * than the wrappers that are not, means a wrapper added to Utils tomorrow
-	 * is refused here before anyone has to know it exists.
+	 * The class the format layer used to be allowed only PART of.
+	 *
+	 * <p>{@code ctrmap.Utils} held five unrelated groups: byte helpers the
+	 * format layer reads with, two dialog wrappers, Swing form helpers, the 3D
+	 * picking maths, and a directory helper. This rule therefore had to name
+	 * the members that were allowed - a dialog reached through a helper's name
+	 * is still a dialog - and count the edges to them. The split made that
+	 * structural: the pure helpers are {@link ctrmap.util.Bytes}, which needs
+	 * no game, no window and no display, and the "keep the changes?" question
+	 * is on the dialog seam, which this rule already forbids. What is left to
+	 * assert is that the class did not come back.
 	 */
-	private static final String[] PURE_UTILS = {
-		"ba2int", "checkBCHMagic", "getPadding", "impreciseFloatEquals", "isUTF8Capital"
-	};
-	/**
-	 * Distinct (format class, Utils member) edges, measured 2026-09-08: seven
-	 * classes, one helper each (WavefrontOBJ, CameraCoordinates,
-	 * AbstractGamefreakContainer, ContainerIdentifier, MM, Tilemap, ZoneHeader).
-	 * Lower it when one stops; raising it is a review.
-	 */
-	private static final int PURE_UTILS_EDGES = 7;
+	private static final String GONE_UTILS = "ctrmap/Utils";
 
 	private static final String FORMATS = "ctrmap/formats/";
 	private static final String HUMANINTERFACE = "ctrmap/humaninterface/";
@@ -504,7 +499,6 @@ public class SourceSeamTest {
 		List<ClassFileScanner.ClassFile> app = ClassFileScanner.application(classesRoot);
 		List<String> above = new ArrayList<>();
 		Set<String> allowedSeen = new LinkedHashSet<>();
-		Map<String, Set<String>> utilsUsed = new LinkedHashMap<>();
 		int formatClasses = 0;
 		for (ClassFileScanner.ClassFile cf : app) {
 			if (!cf.name.startsWith(FORMATS)) {
@@ -513,22 +507,13 @@ public class SourceSeamTest {
 			formatClasses++;
 			Set<String> memberOwners = new LinkedHashSet<>();
 			for (ClassFileScanner.Ref r : cf.refs) {
-				boolean wrapper = r.owner.equals(UTILS) && r.name.equals(ASK_TO_KEEP);
-				if (isAbove(r.owner) || wrapper) {
+				if (isAbove(r.owner)) {
 					memberOwners.add(r.owner);
 					above.add(cf.topLevel() + (r.method ? " calls " : " reads ") + r.owner + "." + r.name);
 				}
-				if (r.owner.equals(UTILS)) {
-					Set<String> names = utilsUsed.get(cf.topLevel());
-					if (names == null) {
-						names = new LinkedHashSet<>();
-						utilsUsed.put(cf.topLevel(), names);
-					}
-					names.add(r.name);
-				}
 			}
 			for (String c : cf.classes) {
-				if (!(isAbove(c) || c.equals(KEEP)) || memberOwners.contains(c)) {
+				if (!isAbove(c) || memberOwners.contains(c)) {
 					continue;
 				}
 				if (allowedAbove(cf.topLevel(), c) != null) {
@@ -558,35 +543,17 @@ public class SourceSeamTest {
 					+ " - " + ALLOWED_ABOVE.length + " entries");
 		}
 
-		//Utils: only the named pure helpers, over exactly the recorded number of edges
-		Set<String> pure = new LinkedHashSet<>(java.util.Arrays.asList(PURE_UTILS));
-		Set<String> names = new java.util.TreeSet<>();
-		int utilsEdges = 0;
-		List<String> impure = new ArrayList<>();
-		for (Map.Entry<String, Set<String>> e : utilsUsed.entrySet()) {
-			for (String n : e.getValue()) {
-				names.add(n);
-				utilsEdges++;
-				if (!pure.contains(n)) {
-					impure.add(e.getKey() + " uses Utils." + n);
-				}
-			}
-		}
-		for (String v : impure) {
-			System.out.println("  ABOVE: " + v + " - not one of the pure helpers " + pure
-					+ "; a dialog wrapper reached through a helper's name is still a dialog");
-		}
-		boolean utilsOk = impure.isEmpty() && utilsEdges == PURE_UTILS_EDGES;
-		if (utilsEdges != PURE_UTILS_EDGES) {
-			System.out.println("  ABOVE: the format layer holds " + utilsEdges + " (class, Utils member) edges, "
-					+ PURE_UTILS_EDGES + " recorded - " + (utilsEdges < PURE_UTILS_EDGES
-							? "lower PURE_UTILS_EDGES" : "a new use of Utils in the format layer is a review"));
+		//the class this rule used to defend a part of does not exist any more
+		boolean utilsOk = !new File(classesRoot, GONE_UTILS + ".class").isFile();
+		if (!utilsOk) {
+			System.out.println("  ABOVE: " + GONE_UTILS + " is back. It was five unrelated groups in one class,"
+					+ " and the format layer could reach a dialog through it; the split put the pure helpers in"
+					+ " ctrmap.util.Bytes and the questions on the dialog seam");
 		}
 
 		System.out.println("layering rule: " + formatClasses + " format class file(s) read, " + above.size()
 				+ " reaching above the format layer, " + allowedSeen.size() + " of " + ALLOWED_ABOVE.length
-				+ " allowed exception(s) still present; Utils members used: " + names + " over " + utilsEdges
-				+ " edge(s)");
+				+ " allowed exception(s) still present; ctrmap/Utils gone: " + utilsOk);
 		return above.size() + (argued ? 0 : 1) + (utilsOk ? 0 : 1);
 	}
 

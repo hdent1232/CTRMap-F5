@@ -134,7 +134,9 @@ public class MainframeShapeTest {
 		actionRow("Zone Loader", CtrmapMainframe.buildZoneActionsBar(), EXPECTED_ZONE_ROW);
 		actionRow("Extras", CtrmapMainframe.buildExtrasBar(), EXPECTED_EXTRAS_ROW);
 		shape(new File(src, "ctrmap/CtrmapMainframe.java"));
-		utilsFree(new File(src, "ctrmap/Utils.java"));
+		windowFree(new File(src, "ctrmap/util/Bytes.java"));
+		windowFree(new File(src, "ctrmap/humaninterface/Forms.java"));
+		windowFree(new File(src, "ctrmap/humaninterface/Picking.java"));
 		ceiling();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -355,13 +357,21 @@ public class MainframeShapeTest {
 	 * the window a dependency of everything. It no longer names the window
 	 * at all.
 	 */
-	static void utilsFree(File utils) throws Exception {
-		if (!utils.isFile()) {
-			check(false, "Utils is at " + utils);
+	/**
+	 * A shared helper does not depend on the main window.
+	 *
+	 * <p>This used to ask it of {@code ctrmap.Utils}, one class holding five
+	 * unrelated groups - byte helpers the format layer reads with, dialog
+	 * wrappers, Swing form bits, the 3D picking maths. The split gave each
+	 * group its own file, so the question is asked of each of them.
+	 */
+	static void windowFree(File helper) throws Exception {
+		if (!helper.isFile()) {
+			check(false, "helper is at " + helper);
 			return;
 		}
-		String text = SourceSeamTest.stripComments(new String(Files.readAllBytes(utils.toPath()), StandardCharsets.UTF_8));
-		check(!text.contains("CtrmapMainframe"), "Utils does not depend on the main window");
+		String text = SourceSeamTest.stripComments(new String(Files.readAllBytes(helper.toPath()), StandardCharsets.UTF_8));
+		check(!text.contains("CtrmapMainframe"), helper.getName() + " does not depend on the main window");
 	}
 
 	// --------------------------------------------------------------- ceiling

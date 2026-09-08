@@ -1,7 +1,6 @@
 package ctrmap.humaninterface;
 
 import ctrmap.CtrmapMainframe;
-import ctrmap.Utils;
 import ctrmap.formats.cameradata.CameraData;
 import ctrmap.formats.cameradata.CameraDataFile;
 import java.awt.Component;
@@ -234,7 +233,7 @@ public class CameraEditForm extends javax.swing.JPanel {
 		if (f != null) {
 			saveCamera();
 			if (f.modified) {
-				switch (Utils.askToKeep(dialog, "Camera data")) {
+				switch (ctrmap.Ui.askToKeep(dialog, "Camera data")) {
 					case DISCARD:
 						f.modified = false;
 						return true;

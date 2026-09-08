@@ -2,7 +2,6 @@ package ctrmap.formats.zone;
 
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.LittleEndianDataOutputStream;
-import ctrmap.Utils;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.containers.MM;
@@ -252,7 +251,7 @@ public class ZoneHeader {
 		}
 		areadata = new AD(files.staged(ArchiveType.AREA_DATA, areadataID), files);
 		byte[] adbch1 = areadata.getFile(1);
-		if (Utils.checkBCHMagic(adbch1)) {
+		if (ctrmap.util.Bytes.checkBCHMagic(adbch1)) {
 			BCHFile adbch1bch = new BCHFile(adbch1);
 			if (adbch1bch.errorlevel == 0) {
 				propTextures.addAll(adbch1bch.textures);

@@ -1,6 +1,5 @@
 package ctrmap.humaninterface;
 
-import ctrmap.Utils;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.MM;
 import ctrmap.formats.h3d.BCHFile;
@@ -131,7 +130,7 @@ public class NPCRegistryEditor extends javax.swing.JFrame {
 			e2.uC = e.uC;
 			e2.u11 = e.u11;
 			if (!e2.equals(e)) {
-				switch (Utils.askToKeep(dialog, "NPC registry")) {
+				switch (ctrmap.Ui.askToKeep(dialog, "NPC registry")) {
 					case DISCARD:
 						return true;
 					case CANCEL:

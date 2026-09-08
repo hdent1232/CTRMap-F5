@@ -335,6 +335,60 @@ public final class Ui {
 		sink = custom;
 	}
 
+	/** The user's answer to "keep the changes to X?" - see {@link #askToKeep}. */
+	public enum Keep {
+		SAVE, DISCARD, CANCEL
+	}
+
+	/**
+	 * Asks whether the changes to {@code changeSubject} should be kept - or,
+	 * when the caller wants no dialog, answers SAVE without asking.
+	 *
+	 * <p>WHY THIS EXISTS. Eleven store() methods asked this question, and each
+	 * one switched on JOptionPane's integer answer by hand, which meant each
+	 * one had to remember on its own that a CLOSED dialog is a cancel: the X
+	 * button is not consent, and a headless caller - which gets CLOSED by
+	 * definition - must never find its file written. One of them forgot
+	 * (NPCRegistry.store, the case DialogSeamTest proves), its switch ran off
+	 * the end, and closing the dialog saved the registry. The rule is written
+	 * once, here, and a caller that cannot see JOptionPane cannot get it wrong.
+	 *
+	 * <p>It lived on {@code ctrmap.Utils} until the package split, which had
+	 * put the one question this program asks about unsaved work in the same
+	 * class as the byte helpers the format layer reads with.
+	 */
+	public static Keep askToKeep(boolean dialog, String changeSubject) {
+		if (!dialog) {
+			return Keep.SAVE;
+		}
+		switch (confirm(changeSubject + " has been modified. Do you want to keep the changes?", "Save changes",
+				JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE)) {
+			case JOptionPane.YES_OPTION:
+				return Keep.SAVE;
+			case JOptionPane.NO_OPTION:
+				return Keep.DISCARD;
+			//closing the dialog is cancel, never "write it anyway"
+			case JOptionPane.CLOSED_OPTION:
+			case JOptionPane.CANCEL_OPTION:
+			default:
+				return Keep.CANCEL;
+		}
+	}
+
+	/**
+	 * Explains that no workspace is loaded when a File menu open action is
+	 * triggered. Returns true if the user still wants to open a loose file.
+	 */
+	public static boolean confirmOpenWithoutWorkspace(String action) {
+		return confirm(
+				"No workspace is loaded, so \"" + action + "\" can only open a single loose file.\n\n"
+				+ "To edit a game, first set the RomFS (game directory) and workspace paths in\n"
+				+ "Options > Workspace settings. CTRMap then unpacks the game's GARC archives into\n"
+				+ "the workspace, and you pick a map from the zone dropdown in the \"Zone Loader\" tab.\n\n"
+				+ "Continue anyway to open a loose file?",
+				"No workspace loaded", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
+	}
+
 	/** Back to real dialogs. */
 	public static void stopRecording() {
 		sink = null;

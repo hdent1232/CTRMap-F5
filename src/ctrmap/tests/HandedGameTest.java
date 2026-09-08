@@ -1252,7 +1252,7 @@ public class HandedGameTest {
 						}
 					}
 					if (r.owner.equals("ctrmap/Utils") && r.name.equals("askToKeep")) {
-						reaches.add("Utils.askToKeep");
+						reaches.add("ctrmap.Ui.askToKeep");
 					}
 				}
 			}

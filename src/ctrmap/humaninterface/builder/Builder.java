@@ -1,6 +1,5 @@
 package ctrmap.humaninterface.builder;
 
-import ctrmap.Utils;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.AbstractGamefreakContainer;
 import ctrmap.formats.containers.ContainerIdentifier;
@@ -71,7 +70,7 @@ public class Builder extends javax.swing.JPanel {
 						if (in.available() > 3) {
 							in.read(magicarr);
 						}
-						if (Utils.isUTF8Capital(magicarr[0]) && Utils.isUTF8Capital(magicarr[1]) && !Utils.isUTF8Capital(magicarr[2])) {
+						if (ctrmap.util.Bytes.isUTF8Capital(magicarr[0]) && ctrmap.util.Bytes.isUTF8Capital(magicarr[1]) && !ctrmap.util.Bytes.isUTF8Capital(magicarr[2])) {
 							loadContainer(ContainerIdentifier.makeAGFC(decFile, magicarr, Workspace.session()));
 						}
 						in.close();
@@ -103,7 +102,7 @@ public class Builder extends javax.swing.JPanel {
 			StringBuilder name = new StringBuilder();
 			name.append(i);
 			String type = "";
-			if (Utils.checkBCHMagic(file)) {
+			if (ctrmap.util.Bytes.checkBCHMagic(file)) {
 				BCHFile bch = new BCHFile(file);
 				bf.bchData = bch;
 				Iterator mdlIt = bch.models.iterator();
@@ -128,9 +127,9 @@ public class Builder extends javax.swing.JPanel {
 						}
 					}
 				}
-			} else if (Utils.checkMagic(file, "coll")) {
+			} else if (ctrmap.util.Bytes.checkMagic(file, "coll")) {
 				bf.type = ContentType.COLLISION;
-			} else if (Utils.checkMagic(file, "CGFX")) {
+			} else if (ctrmap.util.Bytes.checkMagic(file, "CGFX")) {
 				bf.type = ContentType.CGFX;
 			} else if (file.length >= 6400 && file[0] == 0x28 && file[1] == 0x0 && file[2] == 0x28 && file[3] == 0x0) {
 				bf.type = ContentType.TILEMAP;

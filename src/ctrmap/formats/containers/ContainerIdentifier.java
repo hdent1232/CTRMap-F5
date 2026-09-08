@@ -1,6 +1,5 @@
 package ctrmap.formats.containers;
 
-import ctrmap.Utils;
 import ctrmap.formats.GameFiles;
 import java.io.File;
 import java.io.FileInputStream;
@@ -24,7 +23,7 @@ public class ContainerIdentifier {
 
 	/** The container at {@code f} whose magic is {@code magic}, reporting its writes to {@code files}; null when the magic is not a container's. */
 	public static AbstractGamefreakContainer makeAGFC(File f, byte[] magic, GameFiles files) {
-		if (Utils.isUTF8Capital(magic[0]) && Utils.isUTF8Capital(magic[1])) {
+		if (ctrmap.util.Bytes.isUTF8Capital(magic[0]) && ctrmap.util.Bytes.isUTF8Capital(magic[1])) {
 			String magicStr = new String(new byte[]{magic[0], magic[1]});
 			switch (magicStr) {
 				case "AD":

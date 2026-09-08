@@ -208,7 +208,7 @@ $suites = @(
     @{ n = "ZoneManager (clear, rename, repoint - by bytes)"; c = "ctrmap.tests.ZoneManagerTest"; a = @($pristine) },
     @{ n = "ZoneRepurposeScanner (which zones are reusable)"; c = "ctrmap.tests.ZoneRepurposeScannerTest"; a = @($pristine) },
     @{ n = "ModDeployer (only edited archives ship)"; c = "ctrmap.tests.ModDeployerTest"; a = @($pristine) },
-    @{ n = "Utils (the five unrelated helper groups)"; c = "ctrmap.tests.UtilsTest"; a = @() },
+    @{ n = "Helpers (the five groups Utils was split into)"; c = "ctrmap.tests.UtilsTest"; a = @() },
     @{ n = "PropEditForm (what the prop form writes)"; c = "ctrmap.tests.PropEditFormGuardsTest"; a = @($pristine) },
     @{ n = "MatrixEditForm (what the matrix form writes)"; c = "ctrmap.tests.MatrixEditFormGuardsTest"; a = @($pristine) },
     @{ n = "TriggerEditForm (what the trigger form writes)"; c = "ctrmap.tests.TriggerEditFormGuardsTest"; a = @($pristine) },
