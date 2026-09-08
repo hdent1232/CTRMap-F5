@@ -461,7 +461,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	public static boolean refuseSharedArea(java.awt.Component parent, int areaId, int zoneIndex,
 			String areaName, String inlineTextures) {
-		String shared = BchTexturePack.zonesUsingArea(areaId, zoneIndex);
+		String shared = BchTexturePack.zonesUsingArea(Workspace.session(), areaId, zoneIndex);
 		if (shared != null) {
 			ctrmap.Ui.error(parent,
 					"This prop needs textures this area does not have (" + inlineTextures + "),\n"
@@ -546,7 +546,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				ctrmap.Ui.message(this, "This prop will draw the area's " + c + ", not its own - the two textures share a name and differ.",
 						"Prop textures", JOptionPane.INFORMATION_MESSAGE);
 			}
-			byte[] merged = BchTexturePack.importIntoArea(header.areadataID,
+			byte[] merged = BchTexturePack.importIntoArea(Workspace.session(), header.areadataID,
 					CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1,
 					targetPack, donorPack, missing);
 			if (merged != targetPack) { //already-present names are a no-op (same array returned)
@@ -939,7 +939,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 						ctrmap.Ui.message(this, "This prop will draw the area's " + c + ", not its own - the two textures share a name and differ.",
 								"Prop textures", JOptionPane.INFORMATION_MESSAGE);
 					}
-					byte[] merged = BchTexturePack.importIntoArea(header.areadataID,
+					byte[] merged = BchTexturePack.importIntoArea(Workspace.session(), header.areadataID,
 							CtrmapMainframe.mZonePnl != null ? CtrmapMainframe.mZonePnl.zoneIndex : -1,
 							targetPack, donorPack, missing);
 					if (merged != targetPack) {

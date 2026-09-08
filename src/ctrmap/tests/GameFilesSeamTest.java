@@ -57,12 +57,14 @@ public class GameFilesSeamTest {
 	 * Distinct (format class, Workspace member) edges in the compiled program,
 	 * measured 2026-09-08 by {@link ClassFileScanner} - 42 across 16 classes
 	 * before this seam existed, 39 across 15 once MapMatrix was handed its game
-	 * and the container base kept only its transitional constructors' one.
+	 * and the container base kept only its transitional constructors' one,
+	 * 31 across 13 once BchTexturePack and MaisonPoolGuard were handed theirs
+	 * ({@link HandedGameTest} is their proof).
 	 * LOWER BOTH as classes are migrated; never raise either without saying in
 	 * the commit message which class went back to the global and why it had to.
 	 */
-	private static final int FORMATS_EDGES = 39;
-	private static final int FORMATS_CLASSES = 15;
+	private static final int FORMATS_EDGES = 31;
+	private static final int FORMATS_CLASSES = 13;
 
 	private static final String WORKSPACE = "ctrmap/Workspace";
 	private static final String CONTAINER = "ctrmap/formats/containers/AbstractGamefreakContainer";

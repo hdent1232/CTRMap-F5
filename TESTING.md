@@ -2,7 +2,7 @@
 
 Two halves, and they answer different questions.
 
-- **The offline battery** — 120 headless suites, run on your machine against a
+- **The offline battery** — 121 headless suites, run on your machine against a
   real dump, answering *"does the code still do what it says?"*. That is the
   first half of this file.
 - **The in-emulator checklist** — everything only the real game engine can

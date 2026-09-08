@@ -315,7 +315,7 @@ public class TilePainterForm {
 		void stage(int num, byte[] data) {
 			//every area write goes through here, so the shared-area rule cannot
 			//be walked around by a path that does its own storeFile
-			ctrmap.formats.h3d.BchTexturePack.assertNotShared(areaId, editingZone);
+			ctrmap.formats.h3d.BchTexturePack.assertNotShared(Workspace.session(), areaId, editingZone);
 			pending.put(num, data);
 		}
 
@@ -477,7 +477,7 @@ public class TilePainterForm {
 				throw new IllegalStateException("Apply cancelled - nothing was changed.");
 			}
 			zoneArea = owned.newArea;
-			String shared = ctrmap.formats.h3d.BchTexturePack.zonesUsingArea(zoneArea, zoneIndex);
+			String shared = ctrmap.formats.h3d.BchTexturePack.zonesUsingArea(Workspace.session(), zoneArea, zoneIndex);
 			if (shared != null) {
 				throw new IllegalStateException("Area " + zoneArea + " is also used by " + shared
 						+ ".\nThis map's textures and door props cannot go into it without changing"
@@ -497,7 +497,7 @@ public class TilePainterForm {
 				continue;
 			}
 			ctrmap.formats.h3d.BchTexturePack.Carry carry = ctrmap.formats.h3d.BchTexturePack.planCarry(
-					en.getKey(), zoneArea, new java.util.ArrayList<>(en.getValue()),
+					Workspace.session(), en.getKey(), zoneArea, new java.util.ArrayList<>(en.getValue()),
 					area.file(11), area.file(1), zoneIndex);
 			if (carry.pack != null) {
 				area.stage(carry.subfile, carry.pack);
@@ -927,7 +927,7 @@ public class TilePainterForm {
 			}
 			byte[] donorPack = propPackOf(donorArea);
 			byte[] merged = ctrmap.formats.h3d.BchTexturePack.importIntoArea(
-					area.areaId, area.editingZone, targetPack, donorPack, missing);
+					Workspace.session(), area.areaId, area.editingZone, targetPack, donorPack, missing);
 			if (merged != targetPack) {
 				ctrmap.formats.h3d.BCHFile check = new ctrmap.formats.h3d.BCHFile(merged);
 				if (check.errorlevel != 0) {
