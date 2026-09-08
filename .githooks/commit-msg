@@ -1,0 +1,7 @@
+#!/bin/sh
+# Refuse a commit that fixes something and cannot notice the second one, and refuse a test count
+# that does not match the last recorded run. See tools/guard/commit_guard.py for what each
+# refusal cost the project it came from.
+#
+# Wire with:  git config core.hooksPath .githooks
+exec python tools/guard/commit_guard.py "$1"

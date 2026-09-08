@@ -2,7 +2,7 @@
 
 Two halves, and they answer different questions.
 
-- **The offline battery** — 124 headless suites, run on your machine against a
+- **The offline battery** — 125 headless suites, run on your machine against a
   real dump, answering *"does the code still do what it says?"*. That is the
   first half of this file.
 - **The in-emulator checklist** — everything only the real game engine can
@@ -103,6 +103,12 @@ Five families, and they assert different kinds of thing:
    - `BatteryHygieneTest` — how a suite may touch the machine, that every
      suite is registered with its corpus, that `build\classes` came from
      `build.ps1`, and that the counts the docs publish match the data.
+   - `CommitGuardTest` — the `commit-msg` hook refuses what it says it
+     refuses. It builds a scratch repository, stages exactly what each case
+     means to stage, and runs the real guard there, because driving it against
+     this working tree would make the answers depend on whatever you happened
+     to have staged. An unwired hook is the first thing it checks: every
+     refusal can be perfect and none of them will ever run.
    - `MutationBaselineTest` — below.
    - `SnapshotIntegrityTest`, `UiOutputTest`, `VaultGuardsTest` — the pristine
      backup, and that a message the user should see is actually reachable.

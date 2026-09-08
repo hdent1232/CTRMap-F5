@@ -30,3 +30,7 @@ hs_err_pid*
 
 # Python bytecode from tools/
 __pycache__/
+
+# What the last battery run said, so a commit message claiming a count can be
+# checked against a real run. A local measurement, not a fact about the repo.
+.last-suite-run
