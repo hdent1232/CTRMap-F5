@@ -51,8 +51,16 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	/** The editors that hold unsaved work, handed in: this class flushes them, it does not own them. */
 	private final OpenEditors openEditors;
 
-	public ZoneLoadingPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, OpenEditors openEditors) {
+	/** The editors that show the open zone, handed in: this panel says which zone, not how to show it. */
+	private final ZoneEditors zoneEditors;
+
+	public ZoneLoadingPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, OpenEditors openEditors, ZoneEditors zoneEditors) {
+		if (openEditors == null || zoneEditors == null) {
+			throw new IllegalArgumentException("the Zone tab must be handed the editors it saves and shows"
+				+ " - openEditors=" + openEditors + ", zoneEditors=" + zoneEditors);
+		}
 		this.openEditors = openEditors;
+		this.zoneEditors = zoneEditors;
 		this.tools = tools;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("ZoneLoadingPanel must be handed a LoadedZone");
@@ -1191,13 +1199,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						z.header.fetchArchives(Workspace.session());
 						z.s.decompressThis();
 						progress.setBarPercent(100);
-						mTileMapPanel.loadMatrix(new MapMatrix(z.header.mapmatrix, Workspace.session()), new ADPropRegistry(z.header.areadata, z.header.propTextures, Workspace.session()), z.header.worldTextures, z.header.propTextures);
-						mMtxPanel.loadMatrix(mTileMapPanel.mm);
-						mCamEditForm.loadDataFile(new CameraDataFile(z.header.areadata));
-						mNPCEditForm.loadFromEntities(z.entities, z.header.npcreg);
-						mWarpEditForm.loadFromEntities(z.entities);
-						mTriggerEditForm.loadFromEntities(z.entities);
-						mScriptPnl.loadScript(z.s);
+						zoneEditors.show(z);
 						m3DDebugPanel.bindNavi(null);
 						System.gc();
 						m3DDebugPanel.reload = true;
@@ -1218,9 +1220,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 */
 	private void unloadZone() {
 		loadedZone.close();
-		mNPCEditForm.loadFromEntities(null, null);
-		mWarpEditForm.loadFromEntities(null);
-		mTriggerEditForm.loadFromEntities(null);
+		zoneEditors.clear();
 		zoneList.setSelectedIndex(-1);
 	}
 

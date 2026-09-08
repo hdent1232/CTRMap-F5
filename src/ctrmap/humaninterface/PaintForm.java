@@ -96,6 +96,9 @@ public class PaintForm extends JPanel {
 	private final OpenEditors openEditors;
 
 	public PaintForm(LoadedZone loadedZone, OpenEditors openEditors) {
+		if (openEditors == null) {
+			throw new IllegalArgumentException("PaintForm must be handed the editors it flushes before it applies");
+		}
 		this.openEditors = openEditors;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("PaintForm must be handed a LoadedZone");

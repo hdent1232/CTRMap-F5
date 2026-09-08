@@ -68,6 +68,9 @@ import javax.swing.JOptionPane;
  * Usage: java ctrmap.tests.ZoneLoadingStateTest &lt;pristine dump root&gt;
  */
 public class ZoneLoadingStateTest {
+	/** The editors that show the zone, for the panels here: a spy that records and clears. */
+	static final ZoneEditorsSpy ZONE_EDITORS = new ZoneEditorsSpy();
+
 	/** The editor set the panels here flush: it records instead of saving. */
 	static final RecordingEditors EDITORS = new RecordingEditors();
 
@@ -93,6 +96,7 @@ public class ZoneLoadingStateTest {
 		aFreshPanelHoldsNoZone();
 		theDropdownTablesAgreeWithThemselves();
 		theZoneButtonsRefuseWhatTheyCannotDo();
+		theZoneTabRefusesToBeBuiltWithoutTheEditors();
 
 		if (!dump.isDirectory()) {
 			System.out.println("  skip: no dump at " + dump + " - the state transitions need a zone table");
@@ -100,7 +104,7 @@ public class ZoneLoadingStateTest {
 			ScratchGame.open(dump);
 			LocationNames.loadFromGarc(Workspace.session());
 			LoadedZone lz = new LoadedZone();
-			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS);
+			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS);
 			CtrmapMainframe.mZonePnl = pnl;
 			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW);
 			CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW);
@@ -122,6 +126,35 @@ public class ZoneLoadingStateTest {
 		}
 	}
 
+	/**
+	 * The Zone tab refuses to be built without the editors it saves and the
+	 * editors it shows a zone to.
+	 *
+	 * <p>WHY: it was handed null for both. The window assigned the two lists
+	 * where they read best - after the editors they name - and built the Zone
+	 * tab sixty lines earlier, so every save and every zone switch would have
+	 * thrown at the moment the user asked for it. The window's own rule
+	 * (MainframeEdgesTest) is what stops that being written again; this is the
+	 * second line, for anything that builds a Zone tab some other way.
+	 */
+	static void theZoneTabRefusesToBeBuiltWithoutTheEditors() {
+		System.out.println("--- the Zone tab refuses to be built without the editors it saves and shows");
+		check(refusal(null, ZONE_EDITORS).contains("must be handed the editors"),
+				"with nothing to save: " + refusal(null, ZONE_EDITORS));
+		check(refusal(EDITORS, null).contains("must be handed the editors"),
+				"and with nobody to show a zone to: " + refusal(EDITORS, null));
+	}
+
+	/** What building a Zone tab with these two says, or that it said nothing. */
+	static String refusal(ctrmap.humaninterface.OpenEditors editors, ctrmap.humaninterface.ZoneEditors views) {
+		try {
+			new ZoneLoadingPanel(new LoadedZone(), TOOLS, editors, views);
+		} catch (IllegalArgumentException refused) {
+			return String.valueOf(refused.getMessage());
+		}
+		return "(nothing was thrown)";
+	}
+
 	// ---- states reachable without a game ------------------------------------
 
 	/**
@@ -135,7 +168,7 @@ public class ZoneLoadingStateTest {
 	static void aFreshPanelHoldsNoZone() {
 		System.out.println("--- a panel that has never been given a game");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS);
 		check(lz.count() == 0, "no zone table");
 		check(lz.open() == null, "no open zone");
 		check(lz.index() == -1, "and the index is -1, not 0 - nothing is open (got " + lz.index() + ")");
@@ -159,7 +192,7 @@ public class ZoneLoadingStateTest {
 	 */
 	static void theDropdownTablesAgreeWithThemselves() throws Exception {
 		System.out.println("--- the weather and map-type tables agree with themselves");
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS);
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.XY);
@@ -226,7 +259,7 @@ public class ZoneLoadingStateTest {
 	static void theZoneButtonsRefuseWhatTheyCannotDo() throws Exception {
 		System.out.println("--- the Clone and Add buttons refuse before they flush anything");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS);
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.ORAS);

@@ -57,14 +57,14 @@ public class MainframeEdgesTest {
 			"the collision editor, which the map view draws alongside"},
 		{"mMtxEditForm", "MapMatrixPanel,MatrixPanelInputManager,MatrixSelector",
 			"the matrix form: the matrix panel, its router and its selector are three halves of one editor"},
-		{"mMtxPanel", "MatrixEditForm,MatrixSelector,ZoneLoadingPanel",
+		{"mMtxPanel", "MatrixEditForm,MatrixSelector",
 			"the matrix panel, the other half of the same editor"},
 		{"mNPCEditForm", "TileMapPanel,TrainerEditDialog,ZoneLoadingPanel",
 			"the NPC editor, loaded with the zone and drawn over the map"},
 		{"mPaintForm", "ZoneLoadingPanel", "the painter, cancelled when a zone closes"},
 		{"mPropEditForm", "TileMapPanel",
 			"the prop editor, drawn over the map"},
-		{"mScriptPnl", "NPCEditForm,ZoneLoadingPanel",
+		{"mScriptPnl", "NPCEditForm",
 			"the script editor, which an NPC's script edits go through"},
 		{"mTileEditForm", "Selector,TileMapPanel,TileUndo,WorkspaceSettings",
 			"the tile inspector, which the selector and the undo stack update"},
@@ -74,8 +74,7 @@ public class MainframeEdgesTest {
 			+ " four of these back"},
 		{"mTilemapScrollPane", "TileMapPanel", "its own scroll pane, for the viewport size"},
 		{"mTriggerEditForm", "ZoneLoadingPanel", "the trigger editor, loaded and cleared with the zone"},
-		{"mWarpEditForm", "ZoneLoadingPanel", "the warp editor, loaded and cleared with the zone"},
-		{"mZonePnl", "NPCEditForm,ScriptEditor,SetupWizard,TilePainterForm",
+				{"mZonePnl", "NPCEditForm,ScriptEditor,SetupWizard,TilePainterForm",
 			"the Zone tab as an OPERATION - its save, its rebuild, its zone count. None of them is zone"
 			+ " state: that has an owner (LoadedZoneTest)"},
 		{"worldToolbar", "TileEditForm", "the tool row, asked to select the Set tool"},
@@ -84,12 +83,14 @@ public class MainframeEdgesTest {
 	/**
 	 * Field references from outside, counted with duplicates: the number above
 	 * is classes, this is call sites. Measured 2026-09-08 at 108 before the
-	 * decoupling steps, 64 after them, and 55 once the five copies
-	 * of the editor flush became one owner ({@link ctrmap.humaninterface.OpenEditors}):
-	 * the map painter left this list entirely, and the Zone tab stopped naming
-	 * the matrix and prop forms.
+	 * decoupling steps, 64 after them, 55 once the five copies of the editor
+	 * flush became one owner ({@link ctrmap.humaninterface.OpenEditors}), and 49
+	 * once "show this zone" and "show nothing" became another
+	 * ({@link ctrmap.humaninterface.ZoneEditors}). The map painter left this
+	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script
+	 * and matrix-panel editors.
 	 */
-	private static final int REFERENCES = 55;
+	private static final int REFERENCES = 49;
 
 	/** Public static fields on the window. 91 before the structure sweep, 22 after it, 21 now. */
 	private static final int PUBLIC_STATICS = 21;
@@ -107,6 +108,7 @@ public class MainframeEdgesTest {
 		everyReachIntoTheWindowIsNamed(classes);
 		nothingOutsideTheWindowWritesItsStatics(classes);
 		theWindowKeepsNoMoreStaticsThanRecorded();
+		nothingIsHandedAStaticTheWindowHasNotBuiltYet(new File(args.length > 1 ? args[1] : "src"));
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -190,6 +192,150 @@ public class MainframeEdgesTest {
 			}
 		}
 		check(writers.isEmpty(), "the one static anything outside the window used to WRITE is gone " + writers);
+	}
+
+	// ------------------------------------------- 4. built before it is handed
+	/**
+	 * Nothing the window builds is handed one of the window's own statics
+	 * before that static has been assigned.
+	 *
+	 * <p>WHY THIS RULE EXISTS. It is the defect the decoupling steps
+	 * themselves introduced, twice. Handing a collaborator in instead of
+	 * letting it reach for a global is the whole point of those steps, but
+	 * the collaborator has to EXIST when it is handed over, and the window
+	 * builds thirty-one of its statics in one method. The two new owners were
+	 * assigned where their lists read best - after the editors they name - and
+	 * the Zone tab and the map painter, built sixty lines earlier, were handed
+	 * null. Nothing failed at startup. Every save, every zone switch and every
+	 * paint apply would have thrown, and no suite could see it, because every
+	 * suite builds those panels itself and hands them real ones.
+	 *
+	 * <p>So the rule is checked over the window's SOURCE, in the order it is
+	 * written: for every {@code new X(...)} in {@code createAndShowGUI}, an
+	 * argument that names a static of this class must already have been
+	 * assigned above it - by ANY assignment, not only a {@code new}: building
+	 * the list into a local and then copying it into the field one line too
+	 * late is the same null with more steps. Arguments are read across
+	 * continuation lines, and a
+	 * call whose arguments contain a lambda or an anonymous class is skipped
+	 * on purpose: those bodies read their statics when they are CALLED, not
+	 * when they are made, which is exactly why both lists could be built where
+	 * they were and still name editors that do not exist yet.
+	 */
+	static void nothingIsHandedAStaticTheWindowHasNotBuiltYet(File srcRoot) throws Exception {
+		System.out.println("--- and nothing is handed a static the window has not built yet");
+		File f = new File(srcRoot, WINDOW + ".java");
+		if (!f.isFile()) {
+			check(false, "no " + f.getPath() + " to read - this rule is checked over source, not class files");
+			return;
+		}
+		List<String> lines = new ArrayList<>();
+		java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(
+				new java.io.FileInputStream(f), "UTF-8"));
+		for (String line = r.readLine(); line != null; line = r.readLine()) {
+			lines.add(line);
+		}
+		r.close();
+
+		java.util.regex.Pattern decl = java.util.regex.Pattern.compile(
+				"^\\s*(?:public|private|protected)\\s+static\\s+(?:final\\s+)?[\\w.<>\\[\\]]+\\s+(\\w+)\\s*[;=]");
+		Set<String> statics = new TreeSet<>();
+		for (String line : lines) {
+			java.util.regex.Matcher m = decl.matcher(line);
+			if (m.find()) {
+				statics.add(m.group(1));
+			}
+		}
+
+		int start = -1;
+		for (int i = 0; i < lines.size(); i++) {
+			if (lines.get(i).contains("private static void createAndShowGUI()")) {
+				start = i;
+				break;
+			}
+		}
+		if (start < 0) {
+			check(false, "no createAndShowGUI() in " + f.getPath() + " - this rule reads that method by name");
+			return;
+		}
+		int end = lines.size() - 1;
+		int depth = 0;
+		for (int i = start; i < lines.size(); i++) {
+			depth += count(lines.get(i), '{') - count(lines.get(i), '}');
+			if (i > start && depth == 0) {
+				end = i;
+				break;
+			}
+		}
+
+		Map<String, Integer> assignedAt = new TreeMap<>();
+		java.util.regex.Pattern assign = java.util.regex.Pattern.compile("(?:^|[^.=!<>+\\-*/&|^\\w])(\\w+)\\s*=[^=]");
+		for (int i = start; i <= end; i++) {
+			java.util.regex.Matcher m = assign.matcher(lines.get(i));
+			while (m.find()) {
+				if (statics.contains(m.group(1)) && !assignedAt.containsKey(m.group(1))) {
+					assignedAt.put(m.group(1), i);
+				}
+			}
+		}
+
+		List<String> handedEarly = new ArrayList<>();
+		java.util.regex.Pattern made = java.util.regex.Pattern.compile("new\\s+[\\w.]+\\s*\\(");
+		java.util.regex.Pattern word = java.util.regex.Pattern.compile("\\b(\\w+)\\b");
+		for (int i = start; i <= end; i++) {
+			java.util.regex.Matcher m = made.matcher(lines.get(i));
+			while (m.find()) {
+				String args = arguments(lines, i, m.end());
+				if (args == null || args.contains("->") || args.contains("() {")) {
+					continue;
+				}
+				java.util.regex.Matcher w = word.matcher(args);
+				while (w.find()) {
+					String name = w.group(1);
+					Integer at = assignedAt.get(name);
+					if (at != null && at > i) {
+						handedEarly.add("line " + (i + 1) + " hands " + name
+								+ ", which this method does not build until line " + (at + 1));
+					}
+				}
+			}
+		}
+
+		check(handedEarly.isEmpty(), "every static handed to something the window builds is already built ("
+				+ statics.size() + " statics, " + assignedAt.size() + " of them made here) " + handedEarly);
+	}
+
+	/** The argument text of a call whose open paren ends at {@code from}, across continuation lines. */
+	static String arguments(List<String> lines, int line, int from) {
+		StringBuilder sb = new StringBuilder();
+		int depth = 1;
+		for (int i = line; i < lines.size() && i < line + 8; i++) {
+			String s = lines.get(i);
+			for (int j = (i == line ? from : 0); j < s.length(); j++) {
+				char c = s.charAt(j);
+				if (c == '(') {
+					depth++;
+				} else if (c == ')') {
+					depth--;
+					if (depth == 0) {
+						return sb.toString();
+					}
+				}
+				sb.append(c);
+			}
+			sb.append(' ');
+		}
+		return null;
+	}
+
+	static int count(String s, char c) {
+		int n = 0;
+		for (int i = 0; i < s.length(); i++) {
+			if (s.charAt(i) == c) {
+				n++;
+			}
+		}
+		return n;
 	}
 
 	// -------------------------------------------------------- 3. the window's own
