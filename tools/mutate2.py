@@ -1758,7 +1758,15 @@ for d in survived:
     print("   %-26s L%-5d %-13s %s" % (d["file"], d["line"], d["kind"], d["code"][:70]))
 
 # ---- the ratchet -------------------------------------------------------------
-BASELINE = BASE / "wt/_state/mutation_baseline.json"
+# THE ONE COPY. This used to be BASE / "wt/_state/mutation_baseline.json" while
+# MutationBaselineTest read CTRMap/mutation_baseline.json, and the two were kept
+# equal BY HAND. They happened to be byte-identical, which is not a property -
+# it is a coincidence that survives until the first sweep nobody copies out, and
+# then the sweep writes one record while the battery checks another and neither
+# says so. The sweep now writes the file the battery reads, found from this
+# script's own location rather than from a spelled-out path, so moving the repo
+# cannot separate them again. MutationBaselineTest asserts the two agree.
+BASELINE = Path(__file__).resolve().parent.parent / "mutation_baseline.json"
 live = build_live(lines_)
 
 # The baseline names the sources it measured. MutationBaselineTest refuses a

@@ -90,6 +90,8 @@ public class MutationBaselineTest {
 			System.out.println("ALL PASS");
 			return;
 		}
+		thereIsOneBaselineAndTheSweepWritesIt(repo);
+
 		String json = new String(Files.readAllBytes(baseline.toPath()), StandardCharsets.UTF_8);
 
 		//The baseline must still describe the files it measured - each one, by
@@ -243,6 +245,46 @@ public class MutationBaselineTest {
 			}
 		}
 		return out.toString();
+	}
+
+	/**
+	 * The sweep writes the baseline this suite reads, and there is one of it.
+	 *
+	 * <p>WHY. tools/mutate2.py wrote {@code wt/_state/mutation_baseline.json}
+	 * while this suite read {@code mutation_baseline.json} beside the repo, and
+	 * the two were kept equal BY HAND. They happened to be byte-identical, which
+	 * is not a property - it is a coincidence that lasts until the first sweep
+	 * whose output nobody copies across. After that the sweep writes one record
+	 * and the battery checks another, both are internally consistent, and
+	 * nothing anywhere says they disagree. A ratchet with two copies is not a
+	 * ratchet.
+	 *
+	 * <p>The sweep now derives the path from its own location, so moving the
+	 * repository cannot separate them again, and this checks that it still does.
+	 */
+	static void thereIsOneBaselineAndTheSweepWritesIt(File repo) throws Exception {
+		System.out.println("--- the sweep writes the baseline this suite reads, and there is one of it");
+		File tool = new File(repo, "tools/mutate2.py");
+		if (!tool.isFile()) {
+			check(false, "no " + tool.getPath() + " - the sweep that writes this record is missing");
+			return;
+		}
+		String text = new String(Files.readAllBytes(tool.toPath()), StandardCharsets.UTF_8);
+		check(text.contains("BASELINE = Path(__file__).resolve().parent.parent / \"mutation_baseline.json\""),
+				"the sweep writes the baseline beside the repo it lives in, found from its own path");
+		//CODE lines only: the comment above that line records what the path used
+		//to be and why it moved, which is worth keeping and is not a second copy
+		String second = "";
+		for (String line : text.split("\n")) {
+			if (!line.trim().startsWith("#") && line.contains("wt/_state/mutation_baseline.json")) {
+				second = line.trim();
+			}
+		}
+		check(second.isEmpty(),
+				"and no line of it names a second copy for anyone to keep equal by hand: " + second);
+		File stale = new File(repo.getParentFile() == null ? new File("..") : repo.getParentFile(),
+				"wt/_state/mutation_baseline.json");
+		check(!stale.isFile(), "and the copy that used to be kept in step is gone (" + stale.getPath() + ")");
 	}
 
 	static void check(boolean ok, String what) {
