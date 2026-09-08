@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
+import ctrmap.formats.tilemap.PaintedMaterials;
 
 /**
  * Proves EVERY terrain brush can paint on ANY map: for each hostile target (an
@@ -81,7 +82,7 @@ public class TerrainImportTest {
 			}
 			for (TilePalette brush : TilePalette.brushes()) {
 				try {
-					boolean had = PaintedRegionBuilder.hasMaterialFor(new BchMapModel(model), brush);
+					boolean had = PaintedMaterials.hasMaterialFor(new BchMapModel(model), brush);
 					TerrainCatalog.ImportResult r = TerrainCatalog.ensureMaterial(ctrmap.Workspace.session(), model, brush);
 					if (had) {
 						already++;
@@ -101,7 +102,7 @@ public class TerrainImportTest {
 					if (new BCHFile(m2).errorlevel != 0) {
 						throw new IllegalStateException("render parser rejected the imported model");
 					}
-					if (!PaintedRegionBuilder.hasMaterialFor(new BchMapModel(m2), brush)) {
+					if (!PaintedMaterials.hasMaterialFor(new BchMapModel(m2), brush)) {
 						throw new IllegalStateException("brush still does not resolve after import");
 					}
 					if (r.injected) {

@@ -10,6 +10,7 @@ import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.util.Arrays;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
+import ctrmap.formats.tilemap.PaintedMaterials;
 
 /**
  * An imported brush must paint at the scale its DONOR was authored at.
@@ -98,7 +99,7 @@ public class UvScaleTest {
 							continue;
 						}
 						mesh = i;
-						float[] got = PaintedRegionBuilder.uvScaleOf(ctrmap.Workspace.session(), m, i);
+						float[] got = PaintedMaterials.uvScaleOf(ctrmap.Workspace.session(), m, i);
 						compared++;
 						if (Math.abs(got[0] - want[0]) < 1e-6f && Math.abs(got[1] - want[1]) < 1e-6f) {
 							matched++;

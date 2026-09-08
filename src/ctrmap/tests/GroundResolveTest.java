@@ -7,6 +7,7 @@ import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
 import java.util.Arrays;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
+import ctrmap.formats.tilemap.PaintedMaterials;
 
 /**
  * A ground brush must never resolve to a cliff face.
@@ -67,11 +68,11 @@ public class GroundResolveTest {
 				continue;
 			}
 			for (TilePalette t : GROUND) {
-				int mesh = PaintedRegionBuilder.resolvedGroundMesh(m, t);
+				int mesh = PaintedMaterials.resolvedGroundMesh(m, t);
 				if (mesh < 0) {
 					continue; //no native match; the brush imports a donor instead
 				}
-				double flat = PaintedRegionBuilder.meshFlatness(m, mesh);
+				double flat = PaintedMaterials.meshFlatness(m, mesh);
 				if (flat < 0) {
 					continue; //no measurable surface (an empty imported placeholder)
 				}

@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import ctrmap.formats.tilemap.PaintedHeights;
 
 /**
  * Apply in the Map Builder must be all-or-nothing. Each of these was a live
@@ -615,7 +616,7 @@ public class PaintApplyGuardsTest {
 		open(17);
 		paintSand();
 		GR region = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, 154), Workspace.session());
-		int borrowed = PaintedRegionBuilder.borrowedGroundTiles(region.getFile(2), region.getFile(0), touched);
+		int borrowed = PaintedHeights.borrowedGroundTiles(region.getFile(2), region.getFile(0), touched);
 		check(borrowed > 0, "fixture: the painted tiles include " + borrowed + " with no ground of their own");
 		Exception stop = apply(17, new ArrayList<TilePainterForm.Placed>());
 		check(stop == null, "the Apply went through (stopped by: " + stop + ")");
