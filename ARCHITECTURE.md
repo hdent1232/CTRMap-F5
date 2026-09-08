@@ -10,9 +10,11 @@ the other games can be added without untangling anything.
 
 ```
 src/ctrmap/          the program            build.ps1   compile (never a bare javac)
-  gamedef/           per-game profiles      test.ps1    the 104-suite battery
+  gamedef/           per-game profiles      test.ps1    the 123-suite battery
   formats/           readers and writers    stamp.ps1   "these classes came from these sources"
   humaninterface/    the Swing UI           package.ps1 cut a release
+    tools/           the ten editing tools
+  util/              pure helpers: no game, no window, no display
   tests/             the battery
 tools/mutate2.py     the mutation sweep + its own --selftest
 mutation_baseline.json   what the last sweep measured; MutationBaselineTest guards it
@@ -107,16 +109,51 @@ what the list said when it was written.*
 - `ExtrasPanel` injects the XY Lumiose camera-collision dummy into every
   AreaData regardless of game (upstream behavior, unreviewed).
 
+## Who owns what
+
+The editor's state has owners, and a guard names each. "Handed" means a class
+takes the thing in its constructor or at the call, and could be handed a
+different one by a test; a class that fetches a global is not handed anything,
+however the expression is spelled.
+
+| What | Who owns it | Handed to | The guard |
+|---|---|---|---|
+| the open game | `WorkspaceSession` | 30 classes, 25 of them in `formats` through `GameFiles` | `GameFilesSeamTest`, `HandedGameTest` |
+| the loaded zone | `ctrmap.LoadedZone` | 10 classes keep one, 5 take one at the call | `LoadedZoneTest` |
+| the held tool | `ToolSelection` | the mouse router and 8 readers | `EditToolGuardsTest` |
+| the editor around a tool | `ToolHost` + `ToolBox` | all 10 tools | `SourceSeamTest` (tools rule) |
+| "draw it again" | `ctrmap.humaninterface.Redraw` | 5 editor forms | `DataSafetyGuardsTest` |
+| the window a dialog belongs to | `ctrmap.Ui` | every unparented call | `DialogSeamTest` (rule six) |
+| which game is loaded | `ctrmap.gamedef.GameProfile` | asked, never guessed | `SourceSeamTest` (game-identity rule) |
+
+Three properties follow, each with a rule that keeps it true:
+
+* **The format layer reaches the global nowhere** - 0 classes, 0 edges, by
+  equality rather than as a ceiling, and no class under `ctrmap.formats` may
+  name the UI package, the window, the dialog seam or the global at all.
+* **The workspace facade does not know the window** - 0 references. It answers
+  with the session it opened and the caller tells the window, which is why a
+  clean now runs headless where the suite recorded it could not.
+* **The tools do not know the window** - 0 references, which is what lets the
+  checks about what a tool does as it starts run with no display at all.
+
+What still reaches into `CtrmapMainframe` is 64 field references over 17
+fields, and `MainframeEdgesTest` names every one with the classes that read it
+and what for. That is a real tangle rather than an oversight: the map view
+reads the NPC form and the NPC form reads the map view, so no order of
+constructors hands them to each other. Breaking it needs a decision about
+which of them owns what.
+
 ## Global mutable state (measured, and where the line is)
 
 CTRMap keeps a lot in `public static` fields. Measured from the compiled
 classes (`ctrmap.tests.GlobalStateTest`, which counts fields rather than
-grepping lines), there are **38 public static mutable fields outside
+grepping lines), there are **36 public static mutable fields outside
 `ctrmap.tests`**, and they are not scattered - they sit in four classes:
 
 | where | count | what it is |
 |---|---|---|
-| `CtrmapMainframe` | 22 | The frame, the world toolbar, the current `tool`, two scroll panes and seventeen panels and editor forms other classes reach (tilemap, tile, camera, prop, NPC, warp, trigger, geometry, collision, matrix, zone list, script, text, builder, 3D debug). Each panel is assigned once while the window is built; `tool` changes with every tool switch. The 38 menu items, the tool-row buttons and the split-pane and tab plumbing that used to sit here are locals of their builders or private, and `MainframeShapeTest` ratchets this class on its own. |
+| `CtrmapMainframe` | 20 | The world toolbar, two scroll panes and seventeen panels and editor forms other classes reach (tilemap, tile, camera, prop, NPC, warp, trigger, geometry, collision, matrix, zone list, script, text, builder, 3D debug). Each panel is assigned once while the window is built. The frame is PRIVATE (nothing below the window needs it: the dialog seam holds the window a dialog belongs to, and "draw it again" is a capability the forms and tools are handed) and the held tool is an owner of its own (`ToolSelection`), which is why this is 20 and not 22. The 38 menu items, the tool-row buttons and the split-pane and tab plumbing that used to sit here are locals of their builders or private, and `MainframeShapeTest` ratchets this class on its own. |
 | `Workspace` | 5 | The settings: the four paths and the tileset flag kept in `java.util.prefs`, written by the settings dialog and the setup wizard. The open game itself - paths, `GameType`, archive `File`s, `GARC` handles, the edited-file list - is a `WorkspaceSession` instance (below), not a static. |
 | `Selector`, `MatrixSelector` | 11 | The 2D cursor: selected/highlighted tile and region coordinates, rewritten on every mouse move. Genuinely per-interaction mutable state, confined to the two panels that own it. |
 

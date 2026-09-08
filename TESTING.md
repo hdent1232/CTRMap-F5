@@ -74,7 +74,7 @@ suite that names the dump is registered in `test.ps1` without a path to one.
 
 ## What the guards mean
 
-Four families, and they assert different kinds of thing:
+Five families, and they assert different kinds of thing:
 
 1. **Corpus round-trips** (`ZoneEntitiesRoundTrip`, `GFMessageFileRoundTrip`,
    `TrainerData`, `AreaEnv`, `GfColl`…) — parse then re-serialize every record
@@ -106,6 +106,27 @@ Four families, and they assert different kinds of thing:
    - `MutationBaselineTest` — below.
    - `SnapshotIntegrityTest`, `UiOutputTest`, `VaultGuardsTest` — the pristine
      backup, and that a message the user should see is actually reachable.
+5. **Ownership guards**, which assert that a class is HANDED what it uses
+   rather than fetching it from a global. The test is always the same: can two
+   of them exist at once, holding different things? A class that reads a static
+   cannot, however the expression is spelled.
+   - `GameFilesSeamTest` / `HandedGameTest` — the format layer is handed its
+     game and reaches `Workspace` nowhere: 0 classes, 0 edges, by equality.
+   - `LoadedZoneTest` — the loaded zone has one owner; two panels over two
+     owners answer about their own zone, and the bytecode says exactly one
+     class makes an owner and exactly five still name the Zone tab's static.
+   - `EditToolGuardsTest` — which tool is held is an object, two selections
+     hold two tools, and a switch shuts the outgoing one down BEFORE building
+     the incoming one, which is the order a tool's setup depends on.
+   - `MainframeEdgesTest` — what still reaches into the main window, field by
+     field, with the classes that read each and what for, by equality. This one
+     is a ratchet over a tangle that is not finished: see ARCHITECTURE.md.
+   - `SourceSeamTest`'s later rules — the format layer may not name the UI, the
+     window, the dialog seam or the global; the workspace facade may not name
+     the window; the editing tools may not name the window. All zero, no
+     exceptions, all read from bytecode.
+   - `DialogSeamTest` rule six — a dialog opened without naming a window is
+     parented to the one the application gave the seam.
 
 ## The mutation sweep, and what to do when `MutationBaselineTest` fails
 
