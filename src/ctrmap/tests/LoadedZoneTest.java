@@ -69,6 +69,9 @@ import java.util.TreeSet;
  *        (classes-root defaults to "build/classes")
  */
 public class LoadedZoneTest {
+	/** The editors that show the zone, for the panels here: a spy that records and clears. */
+	static final ZoneEditorsSpy ZONE_EDITORS = new ZoneEditorsSpy();
+
 	/** The editor set the panels here flush: it records instead of saving. */
 	static final RecordingEditors EDITORS = new RecordingEditors();
 
@@ -450,8 +453,8 @@ public class LoadedZoneTest {
 		try {
 			LoadedZone a = new LoadedZone();
 			LoadedZone b = new LoadedZone();
-			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS, EDITORS);
-			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS, EDITORS);
+			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS, EDITORS, ZONE_EDITORS);
+			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS, EDITORS, ZONE_EDITORS);
 
 			//the offer walks the whole table, so give both owners the same first
 			//forty zones - reading all 536 would cost the suite a minute and prove
@@ -630,6 +633,8 @@ public class LoadedZoneTest {
 				args[i] = new Redraws();
 			} else if (types[i] == ctrmap.humaninterface.OpenEditors.class) {
 				args[i] = new RecordingEditors();
+			} else if (types[i] == ctrmap.humaninterface.ZoneEditors.class) {
+				args[i] = new ZoneEditorsSpy();
 			} else {
 				throw new IllegalStateException(ctor.getDeclaringClass().getName()
 						+ " is handed a " + types[i].getName()

@@ -54,6 +54,9 @@ import ctrmap.formats.tilemap.PaintedHeights;
  * Usage: java ctrmap.tests.PaintFormGuardsTest &lt;pristine-dump-root&gt;
  */
 public class PaintFormGuardsTest {
+	/** The editors that show the zone, for the panels here: a spy that records and clears. */
+	static final ZoneEditorsSpy ZONE_EDITORS = new ZoneEditorsSpy();
+
 	/** The editor set the panels here flush: it records instead of saving. */
 	static final RecordingEditors EDITORS = new RecordingEditors();
 
@@ -71,6 +74,7 @@ public class PaintFormGuardsTest {
 		System.setProperty("java.awt.headless", "true");
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		aDocumentWithNoMapView();
+		thePainterRefusesToBeBuiltWithoutTheEditors();
 		rampToolTurnsAndSays();
 		dragSettlesRamps();
 		fillAllSettlesRamps();
@@ -85,11 +89,30 @@ public class PaintFormGuardsTest {
 		}
 	}
 
+	/**
+	 * The painter refuses to be built without the editors it flushes.
+	 *
+	 * <p>Applying a paint saves every open editor first and gives up if one
+	 * refuses - that is the whole reason it holds the list. Built with none it
+	 * would throw at apply time instead, having already let the user paint.
+	 */
+	static void thePainterRefusesToBeBuiltWithoutTheEditors() {
+		System.out.println("--- the painter refuses to be built without the editors it flushes");
+		String said = "(nothing was thrown)";
+		try {
+			new PaintForm(new LoadedZone(), null);
+		} catch (IllegalArgumentException refused) {
+			said = String.valueOf(refused.getMessage());
+		}
+		check(said.contains("must be handed the editors"),
+				"because an apply flushes them before it writes anything: " + said);
+	}
+
 	/** A form seeded by hand: zone ZONE open, cell (0,0), all grass at level 0, no ramps. */
 	static PaintForm document() throws Exception {
 		LoadedZone lz = new LoadedZone();
 		lz.open(ZONE, null);                      //zone ZONE's index and no zone object: the document reads the index
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mTileMapPanel = null;
 		PaintForm form = new PaintForm(lz, EDITORS);

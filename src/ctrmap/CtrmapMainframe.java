@@ -40,6 +40,7 @@ import ctrmap.humaninterface.CameraEditForm;
 import ctrmap.humaninterface.CollEditPanel;
 import ctrmap.humaninterface.OpenEditors;
 import ctrmap.humaninterface.Redraw;
+import ctrmap.humaninterface.ZoneEditors;
 import ctrmap.humaninterface.CollInputManager;
 import ctrmap.humaninterface.ExtrasPanel;
 import ctrmap.humaninterface.GLPanel;
@@ -137,6 +138,15 @@ public class CtrmapMainframe {
 	 * to the two classes that flush them before they reload or apply. See
 	 * {@link OpenEditors} for the five copies of the chain it replaces and
 	 * what they disagreed about.
+	 *
+	 * <p>ASSIGNED FROM A LOCAL, and the two classes handed it get the local,
+	 * not this field. That is not a style: when this field was assigned where
+	 * the list is easiest to read - after the editors it names - the Zone tab
+	 * and the map painter were built sixty lines earlier and were handed null,
+	 * so every save, every zone switch and every paint apply threw. A field
+	 * read before it is written is a null the compiler cannot see; a local
+	 * read before it is written does not compile. The field remains only
+	 * because File &gt; Save and the close handler are other methods.
 	 */
 	private static OpenEditors openEditors;
 	private static ToolSelection tools;
@@ -247,7 +257,115 @@ public class CtrmapMainframe {
 				frame.repaint();
 			}
 		};
-		mZonePnl = new ZoneLoadingPanel(loadedZone, tools, openEditors);
+		//the editors that hold unsaved work, in the order they are written. One
+		//list, because five copies of the chain disagreed about which editors
+		//counted and in which order - see OpenEditors.
+		final OpenEditors editors = new OpenEditors(java.util.Arrays.<OpenEditors.Editable>asList(
+				ask -> mCamEditForm.store(ask),
+				ask -> mTileMapPanel.saveTileMap(ask),
+				ask -> mMtxEditForm.store(ask),
+				ask -> {
+					mCollEditPanel.store();
+					return true;
+				},
+				ask -> mPropEditForm.store(ask),
+				ask -> mNPCEditForm.saveRegistry(ask),
+				ask -> mZonePnl.store(ask),
+				ask -> mTextEditor.store(ask)));
+		//what "show this zone" means, editor by editor, in the order they must run:
+		//the matrix panel is handed the map view's matrix, so the map view is first.
+		//Four of them clear to nothing today; each says so rather than being absent
+		//from a shorter list, which is what the Zone tab's unload used to be.
+		final ZoneEditors zoneViews = new ZoneEditors(java.util.Arrays.<ZoneEditors.ZoneView>asList(
+				new ZoneEditors.ZoneView() {
+					@Override
+					public void show(ctrmap.formats.zone.Zone z) {
+						mTileMapPanel.loadMatrix(
+								new ctrmap.formats.mapmatrix.MapMatrix(z.header.mapmatrix, Workspace.session()),
+								new ctrmap.formats.propdata.ADPropRegistry(z.header.areadata, z.header.propTextures,
+										Workspace.session()),
+								z.header.worldTextures, z.header.propTextures);
+					}
+
+					@Override
+					public void clear() {
+						//the map view keeps the map it drew: the Zone tab's unload never
+						//cleared it, and blanking the viewport on a failed load would
+						//hide the map the user still has open
+					}
+				},
+				new ZoneEditors.ZoneView() {
+					@Override
+					public void show(ctrmap.formats.zone.Zone z) {
+						mMtxPanel.loadMatrix(mTileMapPanel.mm);
+					}
+
+					@Override
+					public void clear() {
+						//paired with the map view above, and cleared with it: neither was
+					}
+				},
+				new ZoneEditors.ZoneView() {
+					@Override
+					public void show(ctrmap.formats.zone.Zone z) {
+						mCamEditForm.loadDataFile(new ctrmap.formats.cameradata.CameraDataFile(z.header.areadata));
+					}
+
+					@Override
+					public void clear() {
+						//the camera form was not cleared either; its own store() refuses
+						//when it holds nothing, which is what stood in for clearing
+					}
+				},
+				new ZoneEditors.ZoneView() {
+					@Override
+					public void show(ctrmap.formats.zone.Zone z) {
+						mNPCEditForm.loadFromEntities(z.entities, z.header.npcreg);
+					}
+
+					@Override
+					public void clear() {
+						mNPCEditForm.loadFromEntities(null, null);
+					}
+				},
+				new ZoneEditors.ZoneView() {
+					@Override
+					public void show(ctrmap.formats.zone.Zone z) {
+						mWarpEditForm.loadFromEntities(z.entities);
+					}
+
+					@Override
+					public void clear() {
+						mWarpEditForm.loadFromEntities(null);
+					}
+				},
+				new ZoneEditors.ZoneView() {
+					@Override
+					public void show(ctrmap.formats.zone.Zone z) {
+						mTriggerEditForm.loadFromEntities(z.entities);
+					}
+
+					@Override
+					public void clear() {
+						mTriggerEditForm.loadFromEntities(null);
+					}
+				},
+				new ZoneEditors.ZoneView() {
+					@Override
+					public void show(ctrmap.formats.zone.Zone z) {
+						mScriptPnl.loadScript(z.s);
+					}
+
+					@Override
+					public void clear() {
+						//the script editor holds the zone's script; it was not cleared
+					}
+				}));
+		//and the window keeps the flush for its own File > Save and close handler,
+		//which run long after this method has returned.
+		openEditors = editors;
+
+		mZonePnl = new ZoneLoadingPanel(loadedZone, tools, editors, zoneViews);
 		mScriptPnl = new ScriptEditor();
 		mTextEditor = new TextEditor();
 		mBuilder = new Builder();
@@ -261,7 +379,7 @@ public class CtrmapMainframe {
 		JScrollPane mtxScroll = new JScrollPane();
 		mCamScrollPane = new JScrollPane();
 		mTileEditForm = new TileEditForm(tools);
-		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, openEditors);
+		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors);
 		mCamEditForm = new CameraEditForm(redraw);
 		mPropEditForm = new PropEditForm(loadedZone, tools, redraw);
 		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw);
@@ -309,21 +427,6 @@ public class CtrmapMainframe {
 				return mTileMapPanel;
 			}
 		};
-		//the editors that hold unsaved work, in the order they are written. One
-		//list, because five copies of the chain disagreed about which editors
-		//counted and in which order - see OpenEditors.
-		openEditors = new OpenEditors(java.util.Arrays.<OpenEditors.Editable>asList(
-				ask -> mCamEditForm.store(ask),
-				ask -> mTileMapPanel.saveTileMap(ask),
-				ask -> mMtxEditForm.store(ask),
-				ask -> {
-					mCollEditPanel.store();
-					return true;
-				},
-				ask -> mPropEditForm.store(ask),
-				ask -> mNPCEditForm.saveRegistry(ask),
-				ask -> mZonePnl.store(ask),
-				ask -> mTextEditor.store(ask)));
 		ToolBox toolBox = new ToolBox(toolHost, mTileEditForm, mGeoEditForm, mNPCEditForm, mPropEditForm,
 				mWarpEditForm, mTriggerEditForm, mPaintForm, mCamEditForm, mCamScrollPane);
 		TilemapPanelInputManager tilemapInput = new TilemapPanelInputManager(mTileMapPanel, tools, toolBox);

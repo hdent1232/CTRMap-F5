@@ -137,12 +137,28 @@ Three properties follow, each with a rule that keeps it true:
 * **The tools do not know the window** - 0 references, which is what lets the
   checks about what a tool does as it starts run with no display at all.
 
-What still reaches into `CtrmapMainframe` is 64 field references over 17
+What still reaches into `CtrmapMainframe` is 49 field references over 16
 fields, and `MainframeEdgesTest` names every one with the classes that read it
-and what for. That is a real tangle rather than an oversight: the map view
-reads the NPC form and the NPC form reads the map view, so no order of
+and what for. Part of that is a real tangle rather than an oversight: the map
+view reads the NPC form and the NPC form reads the map view, so no order of
 constructors hands them to each other. Breaking it needs a decision about
 which of them owns what.
+
+Two of the clusters inside it were not tangles at all, only one idea written
+out many times, and each became an owner the window builds and hands over:
+`OpenEditors` ("save what the editors hold, and stop if one refuses", five
+copies that disagreed about which editors counted) and `ZoneEditors` ("show
+this zone" and "show nothing", seven editors named by hand and three of them
+named again to clear). Together they took 15 of the references.
+
+Handing a collaborator in moves a risk rather than removing it: from "does
+this class reach for a global" to "does the thing it is handed EXIST yet". The
+window builds thirty-odd of its statics in one method, and both new lists were
+first built after the editors they name — sixty lines after the Zone tab and
+the painter that are handed them, which were handed null. So the lists are
+built as locals now, which the compiler will not let anyone read too early,
+and `MainframeEdgesTest` carries the general rule: nothing the window builds
+may be handed a static that method has not assigned yet.
 
 ## Global mutable state (measured, and where the line is)
 

@@ -57,6 +57,9 @@ import static ctrmap.formats.containers.ContainerBytes.subfile;
  * Usage: java ctrmap.tests.ScriptAssemblerGuardTest &lt;path-to-zonedata-a013-garc&gt;
  */
 public class ScriptAssemblerGuardTest {
+	/** The editors that show the zone, for the panels here: a spy that records and clears. */
+	static final ZoneEditorsSpy ZONE_EDITORS = new ZoneEditorsSpy();
+
 	/** The editor set the panels here flush: it records instead of saving. */
 	static final RecordingEditors EDITORS = new RecordingEditors();
 
@@ -227,7 +230,7 @@ public class ScriptAssemblerGuardTest {
 			System.out.println("  skip: no zone script with a PUSH_C to mistype");
 			return;
 		}
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS);
+		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS);
 		ScriptEditor ed = new ScriptEditor();
 		ed.loadScript(s);
 		flush();

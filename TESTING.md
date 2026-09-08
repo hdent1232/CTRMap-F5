@@ -120,7 +120,15 @@ Five families, and they assert different kinds of thing:
      the incoming one, which is the order a tool's setup depends on.
    - `MainframeEdgesTest` — what still reaches into the main window, field by
      field, with the classes that read each and what for, by equality. This one
-     is a ratchet over a tangle that is not finished: see ARCHITECTURE.md.
+     is a ratchet over a tangle that is not finished: see ARCHITECTURE.md. Its
+     fourth rule reads the window's own source and refuses to let anything the
+     window builds be handed a static that method has not assigned yet — the
+     defect that shipped once, when a list was built where it read best and
+     the two classes handed it were built sixty lines earlier.
+   - `OpenEditorsTest` — "save what the editors hold" and "show this zone" are
+     each one list in one order: every editor is asked, a refusal stops the
+     ones after it and the caller's reload, an empty set is refused rather
+     than answering "everything saved" forever.
    - `SourceSeamTest`'s later rules — the format layer may not name the UI, the
      window, the dialog seam or the global; the workspace facade may not name
      the window; the editing tools may not name the window. All zero, no

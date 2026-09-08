@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.humaninterface.OpenEditors;
+import ctrmap.humaninterface.ZoneEditors;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -24,6 +25,10 @@ import java.util.List;
  * caller's reload. An editor that could not save must not be followed by a
  * reload that throws its work away. This suite holds the owner to that.
  *
+ * <p>The same suite holds {@link ZoneEditors}, the other half of the pair: one
+ * says what "save what is open" means, the other what "show this zone" means,
+ * and both replaced a list the Zone tab spelled out by name.
+ *
  * <p>ORDER: needs no game, no dump and no display; it builds its own editors.
  *
  * Usage: java ctrmap.tests.OpenEditorsTest
@@ -37,6 +42,9 @@ public class OpenEditorsTest {
 		aRefusalStopsTheOnesAfterIt();
 		theQuestionIsPassedThrough();
 		anEmptySetIsRefused();
+		everyZoneEditorIsToldInOrder();
+		everyZoneEditorIsToldWhenNothingIsOpen();
+		anEmptyZoneSetIsRefused();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -112,7 +120,69 @@ public class OpenEditorsTest {
 				"because an empty set would answer 'everything saved' forever: " + said);
 	}
 
+	// ------------------------------------------------------- 5. showing a zone
+	/**
+	 * "Show this zone" reaches every editor that shows one, in the order the
+	 * list gives - and the order is a dependency, not a preference: the matrix
+	 * panel is handed the map view's matrix, so the map view has to have
+	 * loaded first. That used to be two adjacent lines inside a worker thread.
+	 */
+	static void everyZoneEditorIsToldInOrder() {
+		System.out.println("--- showing a zone reaches every editor that shows one, in order");
+		List<String> told = new ArrayList<>();
+		ZoneEditors editors = new ZoneEditors(Arrays.<ZoneEditors.ZoneView>asList(
+				view(told, "map"), view(told, "matrix panel"), view(told, "camera"),
+				view(told, "npcs"), view(told, "warps"), view(told, "triggers"), view(told, "script")));
+		check(editors.size() == 7, "the set holds the seven editors that show a zone (" + editors.size() + ")");
+		editors.show(null);
+		check(told.equals(Arrays.asList("show:map", "show:matrix panel", "show:camera",
+				"show:npcs", "show:warps", "show:triggers", "show:script")),
+				"the map view is told before the matrix panel, which is handed its matrix: " + told);
+	}
+
+	/**
+	 * And "show nothing" reaches all seven as well. The Zone tab's unload named
+	 * three of them; the other four were an absence rather than a decision, and
+	 * an editor left showing a zone that is no longer open is what the save
+	 * path then trusts.
+	 */
+	static void everyZoneEditorIsToldWhenNothingIsOpen() {
+		System.out.println("--- and so does showing nothing, to all of them");
+		List<String> told = new ArrayList<>();
+		ZoneEditors editors = new ZoneEditors(Arrays.<ZoneEditors.ZoneView>asList(
+				view(told, "map"), view(told, "npcs"), view(told, "warps")));
+		editors.clear();
+		check(told.equals(Arrays.asList("clear:map", "clear:npcs", "clear:warps")),
+				"every editor is asked, whatever clearing means for each: " + told);
+	}
+
+	static void anEmptyZoneSetIsRefused() {
+		System.out.println("--- an empty zone-editor set is refused too");
+		String said = "(nothing was thrown)";
+		try {
+			new ZoneEditors(new ArrayList<ZoneEditors.ZoneView>());
+		} catch (IllegalArgumentException refused) {
+			said = String.valueOf(refused.getMessage());
+		}
+		check(said.contains("cannot be empty"), "because it would silently show a zone to nobody: " + said);
+	}
+
 	// ---- plumbing ----------------------------------------------------------
+	/** An editor that writes down what it was told about the zone. */
+	static ZoneEditors.ZoneView view(List<String> log, String name) {
+		return new ZoneEditors.ZoneView() {
+			@Override
+			public void show(ctrmap.formats.zone.Zone zone) {
+				log.add("show:" + name);
+			}
+
+			@Override
+			public void clear() {
+				log.add("clear:" + name);
+			}
+		};
+	}
+
 	/** An editor that writes down that it was asked, and answers as told. */
 	static OpenEditors.Editable say(List<String> log, String name, boolean answer) {
 		return ask -> {
