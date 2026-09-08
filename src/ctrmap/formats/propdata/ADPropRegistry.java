@@ -2,7 +2,7 @@ package ctrmap.formats.propdata;
 
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.LittleEndianDataOutputStream;
-import ctrmap.Workspace;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.containers.BM;
 import ctrmap.formats.h3d.BCHFile;
@@ -11,6 +11,7 @@ import ctrmap.formats.h3d.texturing.H3DTexture;
 import ctrmap.gamedef.ArchiveType;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -30,11 +31,40 @@ public class ADPropRegistry {
 	public Map<Integer, H3DModel> models = new HashMap<>();
 	public boolean modified = false;
 
-	public ADPropRegistry(AD ad, List<H3DTexture> textures) {
-		this(ad, textures, true);
+	/**
+	 * The registry's entries only: no model is read, so no game is needed.
+	 * What a tool that edits or inspects the table wants.
+	 */
+	public ADPropRegistry(AD ad) {
+		this(ad, null, null, false);
 	}
 
-	public ADPropRegistry(AD ad, List<H3DTexture> textures, boolean loadModels) {
+	/**
+	 * The registry's entries and, for each, its model read from the handed
+	 * game's staged BuildingModels entry, textured with the area's prop
+	 * textures. What the viewport wants.
+	 *
+	 * <p>Handed the game rather than fetching the application's: the models
+	 * used to come from the global's workspace file, so the registry could only
+	 * ever draw the application's game. {@code ctrmap.tests.HandedGameTest}
+	 * hands it two games and reads which one each model was staged from.
+	 *
+	 * @param files the game the models are read from; null is refused in words
+	 */
+	public ADPropRegistry(AD ad, List<H3DTexture> textures, GameFiles files) {
+		this(ad, textures, handed(files), true);
+	}
+
+	/** A handed game must exist when models are wanted: null here would be a registry drawn from no game at all. */
+	private static GameFiles handed(GameFiles files) {
+		if (files == null) {
+			throw new IllegalArgumentException("a prop registry that loads its models must be handed the game"
+					+ " they are read from; handed null, there is no model to read (use the entries-only constructor)");
+		}
+		return files;
+	}
+
+	private ADPropRegistry(AD ad, List<H3DTexture> textures, GameFiles files, boolean loadModels) {
 		try {
 			f = ad;
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(ad.getFile(0)));
@@ -48,7 +78,14 @@ public class ADPropRegistry {
 				if (!loadModels) {
 					continue;
 				}
-				BCHFile bch = new BCHFile(new BM(Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, entry.model)).getFile(0));
+				File model = files.staged(ArchiveType.BUILDING_MODELS, entry.model);
+				if (model == null || !model.isFile()) {
+					//refused in words, where the container base would have died on a
+					//null offset table: a registry naming a model the game does not hold
+					throw new IllegalStateException("prop reference " + entry.reference + " names BuildingModels entry "
+							+ entry.model + ", which the handed game has not staged (" + model + ")");
+				}
+				BCHFile bch = new BCHFile(new BM(model, files).getFile(0));
 				if (!bch.models.isEmpty()){
 					bch.models.get(0).setMaterialTextures(bch.textures);
 					if (textures != null){

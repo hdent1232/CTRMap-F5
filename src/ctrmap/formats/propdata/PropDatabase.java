@@ -1,6 +1,6 @@
 package ctrmap.formats.propdata;
 
-import ctrmap.Workspace;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.H3DModelNameGet;
 import ctrmap.gamedef.ArchiveType;
@@ -24,18 +24,27 @@ import static ctrmap.formats.LittleEndian.i32;
  * an area that does not have it yet).
  *
  * Everything here is built with lightweight static parses of the raw GARC
- * entries - no BCH model/texture decoding, no GL buffering and no Workspace
+ * entries - no BCH model/texture decoding, no GL buffering and no workspace
  * file extraction, so building the whole database only costs the LZ11
  * decompression of the archives. The database is built lazily on first use
- * and cached in memory for the session (no flat-file cache - registry or
- * archive edits would silently invalidate it; call invalidate() after
- * repacking instead).
+ * from the {@link GameFiles} it is handed and cached in memory for that game
+ * (no flat-file cache - registry or archive edits would silently invalidate
+ * it; call invalidate() after repacking instead).
  */
 public class PropDatabase {
 
 	public static final String DUMMY_MODEL_NAME = "com_bm_dummy";
 
 	private static PropDatabase instance;
+	/**
+	 * The game {@link #instance} was built from, by identity. The cache used
+	 * to be keyed on nothing: built once from the global's archives, it was
+	 * handed back for whatever game was asked about next, so a second game in
+	 * the same JVM got the first game's prop names until something called
+	 * {@link #invalidate}. Remembering who it was built for makes the answer
+	 * the handed game's, and {@code ctrmap.tests.HandedGameTest} hands two.
+	 */
+	private static GameFiles builtFor;
 
 	/**
 	 * One entry per BuildingModels GARC index.
@@ -51,18 +60,40 @@ public class PropDatabase {
 	}
 
 	/**
-	 * Gets the session-cached database, building it from the Workspace GARCs
-	 * on first use. Returns null if the workspace is not validated yet.
+	 * The database of the handed game, built from its BuildingModels and
+	 * AreaData archives on first use and cached until {@link #invalidate} or
+	 * until a different game is handed in. Null when the handed game has not
+	 * opened both archives: absence, for the caller to say in words, never a
+	 * database built from another game.
+	 *
+	 * <p>Handed the game rather than fetching the application's: this used to
+	 * gate on {@code Workspace.isValid()} and read the global's archives, so
+	 * the palette could only ever describe the application's game and no suite
+	 * could hand it a pool of its own.
+	 *
+	 * @param files the game to build from; null is refused in words
 	 */
-	public static synchronized PropDatabase get() {
-		if (instance == null && Workspace.isValid() && Workspace.getArchive(ArchiveType.BUILDING_MODELS) != null && Workspace.getArchive(ArchiveType.AREA_DATA) != null) {
-			instance = build(Workspace.getArchive(ArchiveType.BUILDING_MODELS), Workspace.getArchive(ArchiveType.AREA_DATA));
+	public static synchronized PropDatabase get(GameFiles files) {
+		if (files == null) {
+			throw new IllegalArgumentException("the prop database must be handed the game it is built from;"
+					+ " handed null, there is no archive to read and no game to answer for");
 		}
+		if (instance != null && builtFor == files) {
+			return instance;
+		}
+		GARC bm = files.archive(ArchiveType.BUILDING_MODELS);
+		GARC ad = files.archive(ArchiveType.AREA_DATA);
+		if (bm == null || ad == null) {
+			return null;
+		}
+		instance = build(bm, ad);
+		builtFor = files;
 		return instance;
 	}
 
-	public static synchronized boolean isBuilt() {
-		return instance != null;
+	/** Whether {@link #get} would answer from the cache for this game, without building anything. */
+	public static synchronized boolean isBuilt(GameFiles files) {
+		return instance != null && builtFor == files;
 	}
 
 	/**
@@ -71,6 +102,7 @@ public class PropDatabase {
 	 */
 	public static synchronized void invalidate() {
 		instance = null;
+		builtFor = null;
 	}
 
 	/**

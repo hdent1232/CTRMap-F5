@@ -1,6 +1,7 @@
 package ctrmap.formats.scripts;
 
 import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.gamedef.GameProfile;
 
 /**
  * The v1 NPC template library: one factory per template validated by the
@@ -106,16 +107,35 @@ public class NpcTemplates {
 	public static final int ITEM_ID_MAX = 775;
 
 	/**
-	 * GAMETEXT file index of the trainer-name list for the loaded game (on
+	 * GAMETEXT file index of the trainer-name list for the handed game (on
 	 * ORAS: 950 lines; tid 7 = Calvin verified against the Route 102 NPC).
+	 *
+	 * <p>Handed the profile rather than fetching the application's: these two
+	 * indices were the only thing this class took from the open workspace, and
+	 * taking it from the global meant the answer was always the application's
+	 * game, never one a suite handed in, and refused with a workspace error
+	 * when no game was open. The profile is all the class needs, so the profile
+	 * is what it is handed; {@code ctrmap.tests.HandedGameTest} hands it two.
+	 *
+	 * @param profile the game's answers; null is refused in words, never
+	 * answered from another game
 	 */
-	public static int gametextTrainerNames() {
-		return ctrmap.Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_NAMES);
+	public static int gametextTrainerNames(GameProfile profile) {
+		return handed(profile).textIndex(GameProfile.TextIndex.TRAINER_NAMES);
 	}
 
-	/** GAMETEXT file index of the item-name list (on ORAS: 776 lines). */
-	public static int gametextItemNames() {
-		return ctrmap.Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES);
+	/** GAMETEXT file index of the item-name list of the handed game (on ORAS: 776 lines). See {@link #gametextTrainerNames}. */
+	public static int gametextItemNames(GameProfile profile) {
+		return handed(profile).textIndex(GameProfile.TextIndex.ITEM_NAMES);
+	}
+
+	/** A handed profile must exist: null here would be an index guessed for no game at all. */
+	private static GameProfile handed(GameProfile profile) {
+		if (profile == null) {
+			throw new IllegalArgumentException("NpcTemplates must be handed the profile of the game whose text it"
+					+ " indexes; handed null, there is no game to answer for");
+		}
+		return profile;
 	}
 
 	/**

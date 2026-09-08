@@ -89,7 +89,7 @@ public class DoorPropGuardsTest {
 
 	/** The door prop's model bytes, by name - the lookup the door path itself makes. */
 	static byte[] modelOf(String propName, int area) throws Exception {
-		PropDatabase db = PropDatabase.get();
+		PropDatabase db = PropDatabase.get(Workspace.session());
 		if (db == null) {
 			throw new IllegalStateException("prop database unavailable");
 		}

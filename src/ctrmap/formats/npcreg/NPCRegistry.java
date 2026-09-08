@@ -1,10 +1,8 @@
 package ctrmap.formats.npcreg;
 
-import ctrmap.CtrmapMainframe;
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.LittleEndianDataOutputStream;
-import ctrmap.Utils;
-import ctrmap.Workspace;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.MM;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.model.H3DModel;
@@ -21,6 +19,17 @@ import java.util.logging.Logger;
 /**
  * Provides access to and manipulation of MoveModel/NPC registry, specified in a
  * Zone header by the shared AD ushort.
+ *
+ * <p>Handed the game its models come from and its writes go to, rather than
+ * fetching the application's: every model used to be read from the global's
+ * workspace file and every write recorded in the global's edited-file list,
+ * so a registry could only ever belong to the application's game, and a
+ * write made with no workspace open was recorded nowhere. It also asked the
+ * user whether to keep its changes, from inside the format layer, which no
+ * suite could answer and no caller could decide for it; the question now
+ * belongs to the window that owns it (the NPC form), and this class only
+ * {@link #store() writes} or {@link #discard() forgets} and says which.
+ * {@code ctrmap.tests.HandedGameTest} hands it two games.
  */
 public class NPCRegistry {
 
@@ -28,21 +37,25 @@ public class NPCRegistry {
 	public Map<Integer, H3DModel> models = new HashMap<>();
 	public boolean modified = false;
 	private File f;
+	/** The game the models are staged in and the write is reported to. */
+	private final GameFiles files;
 
-	public NPCRegistry(File f) {
+	/**
+	 * Reads the registry at {@code f} and, for each entry, its model from the
+	 * handed game's staged MoveModels entry.
+	 *
+	 * @param files the game; null is refused in words
+	 */
+	public NPCRegistry(File f, GameFiles files) {
 		this.f = f;
+		this.files = handed(files);
 		try {
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(f));
 			//this struct does not describe length in any way. idk why. it works when I add new entries, so it's not described anywhere, even externally.
 			while (dis.available() >= 0x18) {
 				NPCRegistryEntry e = new NPCRegistryEntry(dis);
 				entries.put(e.uid, e);
-				BCHFile bch = new BCHFile(new MM(Workspace.getWorkspaceFile(ArchiveType.MOVE_MODELS, e.model)).getFile(0));
-				if (!bch.models.isEmpty()) {
-					bch.models.get(0).setMaterialTextures(bch.textures);
-					bch.models.get(0).makeAllBOs();
-					models.put(e.uid, bch.models.get(0));
-				}
+				mapModel(e.uid, e.model);
 			}
 			dis.close();
 		} catch (IOException ex) {
@@ -50,8 +63,32 @@ public class NPCRegistry {
 		}
 	}
 
+	/** A handed game must exist: null here would be models read from nowhere and a write nobody packs. */
+	private static GameFiles handed(GameFiles files) {
+		if (files == null) {
+			throw new IllegalArgumentException("an NPC registry must be handed the game its models are staged in"
+					+ " and its writes are reported to; handed null, every edit through it would go unrecorded and unpacked");
+		}
+		return files;
+	}
+
+	/**
+	 * The BCH of one MoveModels entry, from the handed game's staged copy.
+	 * Refuses in words where the container base would have died on a null
+	 * offset table: an entry the game has not staged is a registry naming a
+	 * model the game does not hold.
+	 */
+	private static BCHFile moveModel(GameFiles files, int moveModelsIndex) {
+		File staged = files.staged(ArchiveType.MOVE_MODELS, moveModelsIndex);
+		if (staged == null || !staged.isFile()) {
+			throw new IllegalStateException("MoveModels entry " + moveModelsIndex
+					+ " is not staged in the handed game (" + staged + ")");
+		}
+		return new BCHFile(new MM(staged, files).getFile(0));
+	}
+
 	public void mapModel(int uid, int mdlnum) {
-		BCHFile bch = new BCHFile(new MM(Workspace.getWorkspaceFile(ArchiveType.MOVE_MODELS, mdlnum)).getFile(0));
+		BCHFile bch = moveModel(files, mdlnum);
 		if (!bch.models.isEmpty()) {
 			bch.models.get(0).setMaterialTextures(bch.textures);
 			bch.models.get(0).makeAllBOs();
@@ -104,13 +141,14 @@ public class NPCRegistry {
 	}
 
 	/**
-	 * Loads a fresh, uncached H3DModel straight from a global MoveModels index
-	 * (for previewing a model that is not yet registered in this area). Returns
-	 * null if the index has no mesh.
+	 * Loads a fresh, uncached H3DModel straight from a MoveModels index of the
+	 * handed game (for previewing a model that is not yet registered in this
+	 * area). Returns null if the index has no mesh; refuses null in words.
 	 */
-	public static H3DModel loadFreshModelByIndex(int moveModelsIndex) {
+	public static H3DModel loadFreshModelByIndex(GameFiles files, int moveModelsIndex) {
+		handed(files);
 		try {
-			BCHFile bch = new BCHFile(new MM(Workspace.getWorkspaceFile(ArchiveType.MOVE_MODELS, moveModelsIndex)).getFile(0));
+			BCHFile bch = moveModel(files, moveModelsIndex);
 			if (bch.models.isEmpty()) {
 				return null;
 			}
@@ -135,7 +173,7 @@ public class NPCRegistry {
 			return null;
 		}
 		try {
-			BCHFile bch = new BCHFile(new MM(Workspace.getWorkspaceFile(ArchiveType.MOVE_MODELS, e.model)).getFile(0));
+			BCHFile bch = moveModel(files, e.model);
 			if (bch.models.isEmpty()) {
 				return null;
 			}
@@ -147,30 +185,50 @@ public class NPCRegistry {
 		}
 	}
 
-	public boolean store(boolean dialog) {
+	/**
+	 * Writes the registry to its file and reports the write to the handed
+	 * game, when there are changes to write.
+	 *
+	 * <p>This used to ask the user first, from inside the format layer, and
+	 * used to log a failed write and answer as if it had succeeded, so the
+	 * caller's save sequence carried on over a registry that was never
+	 * written. Now the decision is the caller's and the failure is theirs to
+	 * report: nothing here shows a person anything.
+	 *
+	 * @return true when the file was written, false when nothing was modified
+	 * and nothing was written
+	 * @throws IOException when the file could not be written; the registry
+	 * stays marked modified and nothing is reported edited
+	 */
+	public boolean store() throws IOException {
 		if (!modified) {
-			return true;
+			return false;
 		}
-		//a closed dialog is CANCEL inside askToKeep. This switch used to handle
-		//it by hand and once did not, so the X button meant "save" - and a
-		//headless caller, which gets a closed dialog by definition, wrote the
-		//file with nobody there. DialogSeamTest holds the case.
-		switch (Utils.askToKeep(dialog, "NPC registry")) {
-			case DISCARD:
-				modified = false;
-				return true;
-			case CANCEL:
-				return false;
-		}
-		Workspace.addPersist(f);
+		LittleEndianDataOutputStream dos = new LittleEndianDataOutputStream(new FileOutputStream(f));
 		try {
-			LittleEndianDataOutputStream dos = new LittleEndianDataOutputStream(new FileOutputStream(f));
 			for (Map.Entry<Integer, NPCRegistryEntry> e : entries.entrySet()) {
 				e.getValue().write(dos);
 			}
+		} finally {
 			dos.close();
-		} catch (IOException ex) {
-			Logger.getLogger(NPCRegistry.class.getName()).log(Level.SEVERE, null, ex);
+		}
+		//reported after the write, not before: a mark taken first and then a
+		//failed write would send the next pack an unwritten file
+		files.edited(f);
+		modified = false;
+		return true;
+	}
+
+	/**
+	 * Forgets that the registry was modified without writing anything; the
+	 * in-memory entries are left as they are, for a caller that reloads them.
+	 *
+	 * @return true when there were changes to forget, false when the
+	 * registry was not modified
+	 */
+	public boolean discard() {
+		if (!modified) {
+			return false;
 		}
 		modified = false;
 		return true;

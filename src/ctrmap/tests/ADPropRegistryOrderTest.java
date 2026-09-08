@@ -105,7 +105,7 @@ public class ADPropRegistryOrderTest {
 				return false;
 			}
 
-			ADPropRegistry reg = new ADPropRegistry(ad, null, false);
+			ADPropRegistry reg = new ADPropRegistry(ad);
 			if (reg.entries.isEmpty()) {
 				System.out.println("FAIL: entry " + index + " registry parsed 0 entries");
 				return false;

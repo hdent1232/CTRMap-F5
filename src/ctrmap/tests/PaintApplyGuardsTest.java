@@ -710,7 +710,7 @@ public class PaintApplyGuardsTest {
 	 * door prop alone.
 	 */
 	static void aDoorPropTheAreaHasNotRegisteredIsAnAreaWrite() throws Exception {
-		PropDatabase db = PropDatabase.get();
+		PropDatabase db = PropDatabase.get(Workspace.session());
 		BuildingCatalog.Entry door = null;
 		int model = -1;
 		for (BuildingCatalog.Entry e : BuildingCatalog.entries()) {
@@ -773,7 +773,7 @@ public class PaintApplyGuardsTest {
 	static boolean registersProp(int area, int model) throws Exception {
 		ctrmap.formats.propdata.ADPropRegistry reg = new ctrmap.formats.propdata.ADPropRegistry(
 				new ctrmap.formats.containers.AD(Workspace.getWorkspaceFile(
-						ArchiveType.AREA_DATA, area)), null, false);
+						ArchiveType.AREA_DATA, area)));
 		for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
 			if (e.model == model) {
 				return true;
@@ -865,7 +865,7 @@ public class PaintApplyGuardsTest {
 		gr = session.getArchive(ArchiveType.FIELD_DATA);
 		zo = session.getArchive(ArchiveType.ZONE_DATA);
 		//the prop database builds only behind an open workspace
-		if (PropDatabase.get() == null) {
+		if (PropDatabase.get(Workspace.session()) == null) {
 			throw new IllegalStateException("prop database did not build");
 		}
 		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel();

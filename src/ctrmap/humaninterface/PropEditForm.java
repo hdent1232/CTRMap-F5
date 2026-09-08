@@ -204,7 +204,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * archives are loaded.
 	 */
 	public void ensurePaletteLoaded() {
-		if (PropDatabase.isBuilt()) {
+		if (PropDatabase.isBuilt(Workspace.session())) {
 			if (paletteEntries.length == 0 && paletteFilter.getText().isEmpty()) {
 				refreshPalette();
 			}
@@ -221,7 +221,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		new javax.swing.SwingWorker<PropDatabase, Void>() {
 			@Override
 			protected PropDatabase doInBackground() {
-				return PropDatabase.get();
+				return PropDatabase.get(Workspace.session());
 			}
 
 			@Override
@@ -261,10 +261,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	};
 
 	private void refreshPalette() {
-		if (!PropDatabase.isBuilt()) {
+		if (!PropDatabase.isBuilt(Workspace.session())) {
 			return;
 		}
-		PropDatabase db = PropDatabase.get();
+		PropDatabase db = PropDatabase.get(Workspace.session());
 		if (db == null) {
 			return;
 		}
@@ -426,7 +426,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		Point defaultPos = CtrmapMainframe.mTileMapPanel.getWorldLocAtViewportCentre();
 		newProp.x = defaultPos.x;
 		newProp.z = defaultPos.y;
-		newProp.updateName(reg);
+		newProp.updateName(reg, Workspace.session());
 		props.props.add(newProp);
 		models.add(reg.getModel(uid));
 		entryBox.addItem(String.valueOf(props.props.size() - 1));
@@ -484,7 +484,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 			inline.append(tex);
 		}
-		PropDatabase db = PropDatabase.get();
+		PropDatabase db = PropDatabase.get(Workspace.session());
 		ZoneHeader header = (CtrmapMainframe.mZonePnl != null && CtrmapMainframe.mZonePnl.zone != null) ? CtrmapMainframe.mZonePnl.zone.header : null;
 		if (db == null || header == null || header.areadata == null) {
 			ctrmap.Ui.error(this,
@@ -624,7 +624,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		loaded = false;
 		props = f;
 		for (int i = 0; i < props.props.size(); i++) {
-			props.props.get(i).updateName(reg); //even if reg is null, the method handles it and (inaccurately) assigns the name by UID
+			props.props.get(i).updateName(reg, Workspace.session()); //even if reg is null, the method handles it and (inaccurately) assigns the name by UID
 			if (reg != null) {
 				H3DModel model = reg.getModel(props.props.get(i).uid);
 				models.add(model);
@@ -684,7 +684,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		GRProp prop2 = new GRProp();
 		prop2.uid = (Integer) mdlNum.getValue();
-		prop2.updateName(reg);
+		prop2.updateName(reg, Workspace.session());
 		prop2.x = Utils.getFloatFromDocument(x);
 		prop2.y = Utils.getFloatFromDocument(y);
 		prop2.z = Utils.getFloatFromDocument(z);
@@ -828,7 +828,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 			loaded = false;
 			mdlNum.setValue(prop.uid);
-			prop.updateName(reg);
+			prop.updateName(reg, Workspace.session());
 			mdlName.setText(prop.name);
 			x.setValue(prop.x);
 			y.setValue(prop.y);
@@ -901,7 +901,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	private ADPropRegistry.ADPropRegistryEntry autoRegisterProp(int uid) {
 		try {
-			PropDatabase db = PropDatabase.get();
+			PropDatabase db = PropDatabase.get(Workspace.session());
 			PropDatabase.PropModel pm = db == null ? null : db.getModel(uid);
 			ZoneHeader header = (CtrmapMainframe.mZonePnl != null && CtrmapMainframe.mZonePnl.zone != null)
 					? CtrmapMainframe.mZonePnl.zone.header : null;
@@ -1343,7 +1343,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		Point defaultPos = CtrmapMainframe.mTileMapPanel.getWorldLocAtViewportCentre();
 		newProp.x = defaultPos.x;
 		newProp.z = defaultPos.y;
-		newProp.updateName(reg);
+		newProp.updateName(reg, Workspace.session());
 		props.props.add(newProp);
 		models.add(reg.getModel(newProp.uid));
 		entryBox.addItem(String.valueOf(props.props.size() - 1));

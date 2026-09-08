@@ -321,7 +321,7 @@ public class TilePainterForm {
 
 		ctrmap.formats.propdata.ADPropRegistry registry() {
 			if (registry == null) {
-				registry = new ctrmap.formats.propdata.ADPropRegistry(ad, null, false);
+				registry = new ctrmap.formats.propdata.ADPropRegistry(ad);
 			}
 			return registry;
 		}
@@ -629,7 +629,7 @@ public class TilePainterForm {
 				return true;
 			}
 		}
-		ctrmap.formats.propdata.PropDatabase db = ctrmap.formats.propdata.PropDatabase.get();
+		ctrmap.formats.propdata.PropDatabase db = ctrmap.formats.propdata.PropDatabase.get(Workspace.session());
 		if (db == null) {
 			return false;
 		}
@@ -640,7 +640,7 @@ public class TilePainterForm {
 				continue; //no door, or a model buildDoorProps will report as missing
 			}
 			if (reg == null) {
-				reg = new ctrmap.formats.propdata.ADPropRegistry(ad, null, false);
+				reg = new ctrmap.formats.propdata.ADPropRegistry(ad);
 			}
 			boolean registered = false;
 			for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
@@ -889,7 +889,7 @@ public class TilePainterForm {
 	}
 
 	public static int ensureDoorPropRegistered(String propModelName, StagedArea area, StringBuilder note) throws Exception {
-		ctrmap.formats.propdata.PropDatabase db = ctrmap.formats.propdata.PropDatabase.get();
+		ctrmap.formats.propdata.PropDatabase db = ctrmap.formats.propdata.PropDatabase.get(Workspace.session());
 		if (db == null) {
 			throw new IllegalStateException("prop database unavailable");
 		}

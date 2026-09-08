@@ -61,12 +61,16 @@ public class GameFilesSeamTest {
 	 * 31 across 13 once BchTexturePack and MaisonPoolGuard were handed theirs
 	 * ({@link HandedGameTest} is their proof), 15 across 9 once ItemTable,
 	 * ItemText, PokeData and LocationNames were handed theirs (the same suite
-	 * is their proof; {@link GameFiles#durable} was added for the item baseline).
+	 * is their proof; {@link GameFiles#durable} was added for the item baseline),
+	 * 7 across 3 once ADPropRegistry, GRProp, PropDatabase, NPCRegistry,
+	 * MoveModelPool and NpcTemplates were handed theirs (the same suite again;
+	 * their nine edges went, and ZoneHeader, not yet moved, gained the one
+	 * session() it hands the registry it builds).
 	 * LOWER BOTH as classes are migrated; never raise either without saying in
 	 * the commit message which class went back to the global and why it had to.
 	 */
-	private static final int FORMATS_EDGES = 15;
-	private static final int FORMATS_CLASSES = 9;
+	private static final int FORMATS_EDGES = 7;
+	private static final int FORMATS_CLASSES = 3;
 
 	private static final String WORKSPACE = "ctrmap/Workspace";
 	private static final String CONTAINER = "ctrmap/formats/containers/AbstractGamefreakContainer";
