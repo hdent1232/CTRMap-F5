@@ -22,11 +22,21 @@ import java.util.TreeSet;
  * field references, and one of them - the held tool - was WRITTEN from outside
  * as well. The decoupling steps took the ones with an owner: the loaded zone,
  * the held tool, the dialog parent, the redraw, and everything the ten editing
- * tools used. What remains is a genuine tangle rather than an oversight, and it
- * is written down here rather than left to a number: the map view reads the NPC
- * form and the NPC form reads the map view, so no order of constructors can
- * hand them to each other. Breaking that needs a decision about which of them
- * owns what, which is a design step and not a migration.
+ * tools used. What remains is written down here rather than left to a number.
+ *
+ * <p>THIS PARAGRAPH USED TO SAY the rest was a genuine tangle because "the map
+ * view reads the NPC form and the NPC form reads the map view, so no order of
+ * constructors can hand them to each other". That was measured once and then
+ * quoted for weeks. It is not true: {@code TileMapPanel} reads
+ * {@code mNPCEditForm} at exactly ONE line - the entity clear in
+ * {@code loadTileMap} - and that line is character-for-character what the NPC
+ * form's own {@code ZoneEditors.ZoneView.clear()} already does. The cycle is one
+ * line deep on that side and removable. Some of what is left IS a real cycle
+ * needing an ownership decision - the tile cursor, wanted by both the map view
+ * and the tile inspector, has no construction order that satisfies both - but
+ * this suite's headline reason must name a cycle that still exists. A ratchet
+ * whose stated justification has expired outlives its own argument, and looks
+ * authoritative while doing it.
  *
  * <p>So this suite is a ratchet, not a target. Every remaining field is listed
  * with its readers and what they use it for, asserted with EQUALITY: a reader
@@ -52,8 +62,6 @@ public class MainframeEdgesTest {
 		{"m3DDebugPanel", "TileMapPanel,ZoneLoadingPanel",
 			"the 3D view: the map view points its camera and repaints it, and the Zone tab marks"
 			+ " its buffers dirty. The GIZMO half has an owner now (Navigator)"},
-		{"mCamEditForm", "ZoneLoadingPanel",
-			"the camera form, stored once as the zone switches"},
 		{"mCollEditPanel", "TileMapPanel",
 			"the collision editor, which the map view draws alongside"},
 		{"mMtxEditForm", "MapMatrixPanel,MatrixPanelInputManager,MatrixSelector",
@@ -70,7 +78,7 @@ public class MainframeEdgesTest {
 		{"mTileEditForm", "Selector,TileMapPanel,TileUndo,WorkspaceSettings",
 			"the tile inspector, which the selector and the undo stack update"},
 		{"mTileMapPanel", "GeoEditForm,GfEnvPicker,NPCEditForm,PaintForm,PropEditForm,Selector,TileEditForm,"
-			+ "TileMapPanel,TileUndo,TriggerEditForm,WarpEditForm,WorkspaceSettings,ZoneLoadingPanel",
+			+ "TileUndo,TriggerEditForm,WarpEditForm,WorkspaceSettings,ZoneLoadingPanel",
 			"THE map view: every editor that draws on it or reads a tile from it. The tangle - it reads"
 			+ " four of these back"},
 		{"mTilemapScrollPane", "TileMapPanel", "its own scroll pane, for the viewport size"},
@@ -81,8 +89,20 @@ public class MainframeEdgesTest {
 	};
 
 	/**
-	 * Field references from outside, counted with duplicates: the number above
-	 * is classes, this is call sites. Measured 2026-09-08 at 108 before the
+	 * How many DISTINCT (class file, field) pairs reach in from outside.
+	 *
+	 * <p>THIS IS NOT A COUNT OF CALL SITES, and this javadoc said it was for
+	 * three commits. {@link ClassFileScanner.ClassFile#refs} is the constant
+	 * pool, and javac emits one Fieldref per (class file, field) however many
+	 * times the field is read. Two consequences worth having in front of you
+	 * before planning any of this work: an anonymous inner class is its own
+	 * class file and therefore its own reference, while a Java 8 lambda is not -
+	 * it compiles to a synthetic method in the enclosing class. And a change
+	 * removes a reference only when it removes the LAST read of that field from
+	 * that one class file, which is why fifteen reads in one class fall to zero
+	 * together or not at all.
+	 *
+	 * <p>Measured 2026-09-08 at 108 before the
 	 * decoupling steps, 64 after them, 55 once the five copies of the editor
 	 * flush became one owner ({@link ctrmap.humaninterface.OpenEditors}), and 49
 	 * once "show this zone" and "show nothing" became another
@@ -93,10 +113,16 @@ public class MainframeEdgesTest {
 	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
 	 * matrix-panel, NPC and trigger editors.
 	 */
-	private static final int REFERENCES = 45;
+	private static final int REFERENCES = 44;
 
-	/** Public static fields on the window. 91 before the structure sweep, 22 after it, 21 now. */
-	private static final int PUBLIC_STATICS = 21;
+	/**
+	 * Public static fields on the window: 91 before the structure sweep, 22 after
+	 * it, 21 for a long time, 19 now. The two that went - the text editor and the
+	 * map builder - had ZERO readers anywhere, program or suite. Nobody proposed
+	 * them because nobody had counted; a public static with no readers is not
+	 * coupling anyone has, it is coupling nobody has had to argue against.
+	 */
+	private static final int PUBLIC_STATICS = 19;
 
 	static int fails = 0;
 

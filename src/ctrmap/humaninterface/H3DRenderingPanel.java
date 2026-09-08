@@ -8,7 +8,6 @@ import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLJPanel;
 import com.jogamp.opengl.glu.GLU;
 import com.jogamp.opengl.util.FPSAnimator;
-import ctrmap.CtrmapMainframe;
 
 import ctrmap.Workspace;
 import ctrmap.formats.h3d.BCHFile;

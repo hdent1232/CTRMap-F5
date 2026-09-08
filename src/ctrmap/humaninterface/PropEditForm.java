@@ -748,6 +748,24 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 							props.write(CtrmapMainframe.mTileMapPanel.mm);
 						} else if (gr != null) {
 							props.write();
+						} else {
+							//ANSWERING "SAVE" AND WRITING NOTHING IS THE FAILURE THIS SWITCH
+							//COULD STILL CAUSE. The two branches above are the only ways these
+							//props reach a file: through the open matrix's regions, or through
+							//the single GR this form was handed. With neither - which is what a
+							//matrix load that failed part-way leaves behind, because awaitLoad
+							//calls unload() and that sets mm to null while the prop data from the
+							//previous zone stays loaded here - the switch fell straight through to
+							//"props.modified = false" below, so every prop the user had moved,
+							//added or removed was discarded AND marked clean, with nothing said
+							//anywhere: not a dialog, not a log line. Refusing keeps the edits (the
+							//modified flag is never reached) and stops the save chain, which is
+							//what every other refusal in this program already does.
+							ctrmap.Ui.error(this, "The prop edits were NOT saved: there is no map"
+									+ " open to write them into.\n\nThis happens after a map that failed"
+									+ " to load. Open a zone or a GR map file again and the props will"
+									+ " have somewhere to go.", "Prop data");
+							return false;
 						}
 						break;
 					case DISCARD:
@@ -1394,14 +1412,29 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
     }//GEN-LAST:event_btnSaveActionPerformed
 
     private void btnRemEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemEntryActionPerformed
-		models.remove(entryBox.getSelectedIndex());
-		props.props.remove(entryBox.getSelectedIndex());
-		entryBox.removeItemAt(entryBox.getSelectedIndex());
-		if (entryBox.getSelectedIndex() >= entryBox.getItemCount()) {
-			entryBox.setSelectedIndex(entryBox.getSelectedIndex() - 1);
-		} else {
-			entryBox.setSelectedIndex(entryBox.getSelectedIndex());
-		}
+		int removed = entryBox.getSelectedIndex();
+		//THE BOX AND THE LIST MUST NOT DISAGREE WHILE A LISTENER IS RUNNING.
+		//DefaultComboBoxModel.removeElementAt picks the replacement selection
+		//BEFORE it removes the item, so the box fired its ActionEvent while it
+		//still held both entries. Removing prop 0 of 2 therefore re-entered
+		//showProp with index 1 against a props list already down to one prop:
+		//showProp took its "no such prop" early return, left prop null and
+		//propIndex past the end, and the corrective setSelectedIndex that used to
+		//stand here was a no-op that fired nothing. What that cost: the form went
+		//on displaying the prop that had just been deleted, the gizmo went on
+		//following it, the surviving prop could not be picked from the box (it was
+		//already the selection) and neither prop tool could reach it either, since
+		//setProp is setSelectedIndex. It also ran saveProp against a prop already
+		//removed from the list, which is props.props.set(-1, prop) whenever a
+		//coordinate had been typed and not saved. Muting the box for the removal
+		//and then showing the final selection once, by hand, is what btnNewEntry
+		//already does for the other direction.
+		loaded = false;
+		models.remove(removed);
+		props.props.remove(removed);
+		entryBox.removeItemAt(removed);
+		loaded = true;
+		showProp(entryBox.getSelectedIndex());
 		props.modified = true;
     }//GEN-LAST:event_btnRemEntryActionPerformed
 

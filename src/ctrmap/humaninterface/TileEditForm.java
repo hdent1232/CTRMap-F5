@@ -289,11 +289,28 @@ public class TileEditForm extends javax.swing.JPanel {
 		}
 		tileList.setModel(models[result]);
 		if (Selector.selTileX != -1 && result != 12) {
-			//programmatic selection (inspector display) - must not trip the
-			//pick-a-brush listener (which would switch tools on hover)
-			suppressListEvents = true;
-			tileList.setSelectedValue(tileset.getTemplate(ctrmap.util.Bytes.ba2int(mTileMapPanel.getRegionForTile(Selector.selTileX, Selector.selTileY).getTileData(Selector.selTileX % 40, Selector.selTileY % 40))).name, true);
-			suppressListEvents = false;
+			//THE CURSOR OUTLIVES THE MAP IT WAS SET ON. Selector.selTileX/selTileY
+			//are statics and nothing resets them when a zone is loaded - loadMatrix
+			//clears the tile undo history and leaves the cursor exactly where it
+			//was - so a tile picked on a wide matrix is still "selected" after a
+			//switch to a smaller one. This line then indexed the NEW map with the
+			//OLD coordinates: ArrayIndexOutOfBounds out of getRegionForTile when
+			//the cell is off the new map, NullPointerException when the cell is on
+			//it but holds no region. Either one came out of a category radio click,
+			//on the event thread, and left the form half-updated with nothing but a
+			//stack trace on stderr to show for it. The three other readers of this
+			//same lookup in this file already fetch it into a local and check it;
+			//this was the one that never did. No region under the cursor means
+			//there is simply no template to highlight, which is not a failure.
+			Tilemap region = Selector.selTileX < mTileMapPanel.width && Selector.selTileY < mTileMapPanel.height
+					? mTileMapPanel.getRegionForTile(Selector.selTileX, Selector.selTileY) : null;
+			if (region != null) {
+				//programmatic selection (inspector display) - must not trip the
+				//pick-a-brush listener (which would switch tools on hover)
+				suppressListEvents = true;
+				tileList.setSelectedValue(tileset.getTemplate(ctrmap.util.Bytes.ba2int(region.getTileData(Selector.selTileX % 40, Selector.selTileY % 40))).name, true);
+				suppressListEvents = false;
+			}
 		}
 		return result != 12;
 	}
