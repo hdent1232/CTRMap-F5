@@ -99,6 +99,7 @@ $suites = @(
     @{ n = "ItemEdit (in place, four free slots)"; c = "ctrmap.tests.ItemEditTest"; a = @($gamedir) },
     @{ n = "ItemIconPatch (code.bin, zero slack)"; c = "ctrmap.tests.ItemIconPatchTest"; a = @($code) },
     @{ n = "Battery hygiene (temp paths, corpus args)"; c = "ctrmap.tests.BatteryHygieneTest"; a = @("src") },
+    @{ n = "Commit gate (the hook refuses what it says it refuses)"; c = "ctrmap.tests.CommitGuardTest"; a = @(".") },
     @{ n = "ClassFileScanner (bytecode sees what a grep cannot)"; c = "ctrmap.tests.ClassFileScannerTest"; a = @("src", "build\classes") },
     @{ n = "GameFilesSeam (the format layer is handed its game, never fetches it)"; c = "ctrmap.tests.GameFilesSeamTest"; a = @("src", "build\classes") },
     @{ n = "HandedGame (two more format classes handed their game)"; c = "ctrmap.tests.HandedGameTest"; a = @() },
