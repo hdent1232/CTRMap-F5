@@ -1164,7 +1164,7 @@ public class CtrmapMainframe {
 	 */
 	public static boolean openMapMatrixFile(File f) {
 		try {
-			mTileMapPanel.loadMatrix(new MapMatrix(new MM(f)), null, null, null);
+			mTileMapPanel.loadMatrix(new MapMatrix(new MM(f), Workspace.session()), null, null, null);
 		} catch (RuntimeException ex) {
 			//a container that is not a map matrix usually fails on a bare
 			//dereference, whose getMessage() is null - "null" in a dialog is

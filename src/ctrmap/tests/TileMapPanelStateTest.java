@@ -597,7 +597,7 @@ public class TileMapPanelStateTest {
 				new ctrmap.formats.containers.ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(ZONE))),
 				Workspace.game());
 		File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, z.header.mapmatrixID);
-		return over(new MapMatrix(new MM(mmFile)));
+		return over(new MapMatrix(new MM(mmFile), Workspace.session()));
 	}
 
 	/** A panel over a parsed map matrix, the way loadMatrix leaves one. */
@@ -635,7 +635,7 @@ public class TileMapPanelStateTest {
 			if (f == null || !f.isFile()) {
 				continue;
 			}
-			MapMatrix mm = new MapMatrix(new MM(f));
+			MapMatrix mm = new MapMatrix(new MM(f), Workspace.session());
 			if (mm.width * mm.height < 2 || mm.width * mm.height > 8) {
 				continue;
 			}

@@ -7,7 +7,7 @@ package ctrmap.formats.mapmatrix;
 
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.LittleEndianDataOutputStream;
-import ctrmap.Workspace;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.containers.MM;
 import ctrmap.gamedef.ArchiveType;
@@ -36,7 +36,25 @@ public class MapMatrix {
 
 	private int boundaryEntries;
 
-	public MapMatrix(MM f) {
+	/**
+	 * Reads a map matrix, opening each populated cell's region container
+	 * through {@code files}.
+	 *
+	 * <p>Being handed {@code files} is what makes this class testable. It used
+	 * to ask the application's global whether a workspace was open and fetch
+	 * each region's extracted file from it, so a matrix could not be parsed
+	 * with its regions in a test without a live workspace installed in the
+	 * global first, and could not be pointed at a different game at all.
+	 * Handed its GameFiles it opens each region from whatever it was given,
+	 * and the GR it opens reports its own writes there too.
+	 *
+	 * @param files where the regions are staged, and who hears when one is
+	 * written. Null reads the GRID ONLY, every region left null: what the
+	 * builder's blank matrix and a suite reading a matrix straight out of the
+	 * dump want, and what "no workspace open" used to mean here - except that
+	 * now it is the caller's stated choice, not a global's state.
+	 */
+	public MapMatrix(MM f, GameFiles files) {
 		file = f;
 		try {
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(f.getFile(0)));
@@ -51,8 +69,8 @@ public class MapMatrix {
 			for (int i = 0; i < height; i++) {
 				for (int j = 0; j < width; j++) {
 					ids.set(j, i, dis.readShort());
-					if (Workspace.isValid() && ids.get(j, i) != -1) {
-						regions.set(j, i, new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, ids.get(j, i))));
+					if (files != null && ids.get(j, i) != -1) {
+						regions.set(j, i, new GR(files.staged(ArchiveType.FIELD_DATA, ids.get(j, i)), files));
 					}
 				}
 			}

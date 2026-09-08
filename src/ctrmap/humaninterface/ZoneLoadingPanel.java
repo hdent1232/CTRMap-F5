@@ -1119,7 +1119,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						z.header.fetchArchives();
 						z.s.decompressThis();
 						progress.setBarPercent(100);
-						mTileMapPanel.loadMatrix(new MapMatrix(z.header.mapmatrix), new ADPropRegistry(z.header.areadata, z.header.propTextures), z.header.worldTextures, z.header.propTextures);
+						mTileMapPanel.loadMatrix(new MapMatrix(z.header.mapmatrix, Workspace.session()), new ADPropRegistry(z.header.areadata, z.header.propTextures), z.header.worldTextures, z.header.propTextures);
 						mMtxPanel.loadMatrix(mTileMapPanel.mm);
 						mCamEditForm.loadDataFile(new CameraDataFile(z.header.areadata));
 						mNPCEditForm.loadFromEntities(z.entities, z.header.npcreg);

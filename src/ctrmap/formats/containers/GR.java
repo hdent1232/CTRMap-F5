@@ -1,5 +1,6 @@
 package ctrmap.formats.containers;
 
+import ctrmap.formats.GameFiles;
 import java.io.File;
 
 /**
@@ -25,10 +26,22 @@ public class GR extends AbstractGamefreakContainer{
 		ContentType.H3D_MODEL
 	};
 	
+	/** Opens a region container that reports its writes to {@code files}. */
+	public GR(File f, GameFiles files) {
+		super(f, files);
+	}
+
+	/** Creates an empty region container of {@code len} slots that reports its writes to {@code files}. */
+	public GR(File f, int len, GameFiles files) {
+		super(f, len, files);
+	}
+
+	/** Transitional: see {@link AbstractGamefreakContainer}. */
 	public GR(File f) {
 		super(f);
 	}
-	
+
+	/** Transitional: see {@link AbstractGamefreakContainer}. */
 	public GR(File f, int len){
 		super(f, len);
 	}
