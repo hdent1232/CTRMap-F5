@@ -420,6 +420,33 @@ public class CtrmapMainframe {
 					public boolean commit() {
 						return true;   //its edits go through the script editor's own save
 					}
+				},
+				new ZoneEditors.ZoneView() {
+					@Override
+					public void show(ctrmap.formats.zone.Zone z) {
+						//LAST, and last for a reason: both views must rebuild from what the
+						//seven entries above just loaded, so this cannot run before them.
+						//These two lines were written by hand at the end of the zone-switch
+						//worker, after it had already said "show this zone" - the eighth and
+						//ninth things that happen when a zone is shown, left out of the list
+						//because the list did not exist yet when they were written.
+						//Note reload is a public mutable field on ANOTHER object, written
+						//from outside through this window's static: the "nothing outside
+						//writes our statics" rule could never see it, because the static it
+						//goes through is only being READ.
+						m3DDebugPanel.reload = true;
+						mTileMapPanel.update = true;
+					}
+
+					@Override
+					public void clear() {
+						//nothing was open, so nothing the views drew is stale
+					}
+
+					@Override
+					public boolean commit() {
+						return true;   //dirty flags hold no record
+					}
 				}));
 	}
 

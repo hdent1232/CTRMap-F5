@@ -53,6 +53,19 @@ public final class ToolSelection {
 	}
 
 	/**
+	 * Tells whatever is held that the open zone changed underneath it.
+	 *
+	 * <p>Nothing is picked up or put down: the tool stays. See
+	 * {@link AbstractTool#onZoneChanged} for why the tool decides what this
+	 * means rather than the caller deciding for it.
+	 */
+	public void zoneChanged() {
+		if (held != null) {
+			held.onZoneChanged();
+		}
+	}
+
+	/**
 	 * Puts down what is held without picking anything up, and WITHOUT telling
 	 * it: this is "there is no editor any more", not a tool switch. The
 	 * application never does it; a suite does, to assert what a class does

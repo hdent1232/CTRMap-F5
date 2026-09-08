@@ -85,6 +85,7 @@ public class EditToolGuardsTest {
 		EditorBench.install();
 		try {
 			theSelectionHoldsOneToolAndSaysSo();
+		aZoneSwitchTellsTheHeldTool();
 			everyToolAnswersForItself();
 			paintToolHandsGesturesToTheForm();
 			setToolWritesTheTileBytes();
@@ -178,7 +179,56 @@ public class EditToolGuardsTest {
 	}
 
 	/** A tool that records what it was told and when, and touches no editor. */
-	static final class SpySwitchTool extends AbstractTool {
+	/**
+	 * A zone switch tells the tool that is held, and the tool decides what that
+	 * means for it.
+	 *
+	 * <p>WHY THIS SEAM EXISTS. The zone switch used to ask
+	 * {@code tools.holding(PaintTool.class)} and then reach into the main window
+	 * for the painter's form to re-seed it. That is the Zone tab knowing which
+	 * tools exist and which of them care about a zone change - so an eleventh
+	 * tool needing the same thing would have meant editing the zone switch, and
+	 * forgetting to would have left it showing a zone the user had left, with
+	 * nothing anywhere to say so.
+	 *
+	 * <p>Nine of the ten tools do nothing here ON PURPOSE: they read the map view
+	 * when they are used, so the next click already sees the new zone. The
+	 * painter is the exception because it holds a DOCUMENT seeded from the zone
+	 * that was open when it started.
+	 */
+	static void aZoneSwitchTellsTheHeldTool() {
+		final java.util.List<String> told = new java.util.ArrayList<String>();
+		ctrmap.humaninterface.tools.ToolSelection sel = new ctrmap.humaninterface.tools.ToolSelection();
+
+		sel.zoneChanged();
+		check(told.isEmpty(), "with no tool held it tells nobody, and does not throw: " + told);
+
+		java.util.List<String> order = new java.util.ArrayList<String>();
+		AbstractTool caring = new SpySwitchTool(order, "caring") {
+			@Override
+			public void onZoneChanged() {
+				told.add("caring");
+			}
+		};
+		sel.switchTo(() -> caring);
+		sel.zoneChanged();
+		check(told.equals(Arrays.asList("caring")), "the held tool is told exactly once: " + told);
+		check(sel.current() == caring, "and it is still held - this is not a tool switch");
+
+		sel.switchTo(() -> new SpySwitchTool(order, "other"));
+		sel.zoneChanged();
+		check(told.equals(Arrays.asList("caring")),
+			"the tool that was put down is not told again: " + told);
+
+		//the nine that do nothing: the default must be a no-op, not abstract, or
+		//every tool would have to write an empty method to say it does not care
+		sel.zoneChanged();
+		check(told.equals(Arrays.asList("caring")),
+			"and a tool that does not override it does nothing, rather than being made to say so");
+	}
+
+	/** Not final: the zone-change section subclasses it to record that one call. */
+	static class SpySwitchTool extends AbstractTool {
 
 		private final java.util.List<String> log;
 		private final String name;

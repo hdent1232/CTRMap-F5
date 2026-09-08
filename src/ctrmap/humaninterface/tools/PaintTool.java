@@ -55,6 +55,14 @@ public class PaintTool extends AbstractTool {
 	}
 
 	@Override
+	public void onZoneChanged() {
+		//the document was seeded from the zone that was open when this tool
+		//started; re-seed it or the panel keeps showing, and guarding against,
+		//a zone the user has navigated away from
+		form.activate();
+	}
+
+	@Override
 	public void onToolShutdown() {
 		form.deactivate();
 		Selector.unfocus();

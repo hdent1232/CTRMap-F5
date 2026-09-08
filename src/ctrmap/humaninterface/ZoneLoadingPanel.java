@@ -1218,12 +1218,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						//forking is the safe default: a shared map means edits here
 						//would silently change other zones too
 						offerForkIfShared();
-						//an active Map Builder must re-seed onto the NEW zone -
-						//otherwise its panel keeps showing (and guarding against)
-						//the previously painted zone
-						if (tools.holding(ctrmap.humaninterface.tools.PaintTool.class)) {
-							mPaintForm.activate();
-						}
+						//whatever tool is held may need to re-seed onto the NEW zone. This
+						//used to name the painter and reach into the window for its form,
+						//which meant the zone switch knew which tools exist and which of
+						//them care
+						tools.zoneChanged();
 						//show this zone's own atmosphere in the 3D view
 						ctrmap.CtrmapMainframe.refreshSceneFog();
 					}
@@ -1251,8 +1250,6 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						zoneEditors.show(z);
 						navi.follow(null);   //the record it was over belongs to the zone being closed
 						System.gc();
-						m3DDebugPanel.reload = true;
-						mTileMapPanel.update = true;
 						return null;
 					}
 				};

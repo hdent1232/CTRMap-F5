@@ -59,9 +59,9 @@ public class MainframeEdgesTest {
 	private static final String[][] REACHES = {
 		{"CM3DComponents", "TileMapPanel",
 			"the list of things the 3D view draws; the map view adds itself to it"},
-		{"m3DDebugPanel", "TileMapPanel,ZoneLoadingPanel",
-			"the 3D view: the map view points its camera and repaints it, and the Zone tab marks"
-			+ " its buffers dirty. The GIZMO half has an owner now (Navigator)"},
+		{"m3DDebugPanel", "TileMapPanel",
+			"the 3D view: the map view points its camera at a new map and repaints it. The gizmo"
+			+ " half has an owner (Navigator) and the stale-buffer half is a ZoneEditors entry"},
 		{"mCollEditPanel", "TileMapPanel",
 			"the collision editor, which the map view draws alongside"},
 		{"mMtxEditForm", "MapMatrixPanel,MatrixPanelInputManager,MatrixSelector",
@@ -70,7 +70,6 @@ public class MainframeEdgesTest {
 			"the matrix panel, the other half of the same editor"},
 		{"mNPCEditForm", "TileMapPanel,TrainerEditDialog",
 			"the NPC editor, loaded with the zone and drawn over the map"},
-		{"mPaintForm", "ZoneLoadingPanel", "the painter, cancelled when a zone closes"},
 		{"mPropEditForm", "TileMapPanel",
 			"the prop editor, drawn over the map"},
 		{"mScriptPnl", "NPCEditForm",
@@ -78,7 +77,7 @@ public class MainframeEdgesTest {
 		{"mTileEditForm", "Selector,TileMapPanel,TileUndo,WorkspaceSettings",
 			"the tile inspector, which the selector and the undo stack update"},
 		{"mTileMapPanel", "GeoEditForm,GfEnvPicker,NPCEditForm,PaintForm,PropEditForm,Selector,TileEditForm,"
-			+ "TileUndo,TriggerEditForm,WarpEditForm,WorkspaceSettings,ZoneLoadingPanel",
+			+ "TileUndo,TriggerEditForm,WarpEditForm,WorkspaceSettings",
 			"THE map view: every editor that draws on it or reads a tile from it. The tangle - it reads"
 			+ " four of these back"},
 		{"mTilemapScrollPane", "TileMapPanel", "its own scroll pane, for the viewport size"},
@@ -113,7 +112,7 @@ public class MainframeEdgesTest {
 	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
 	 * matrix-panel, NPC and trigger editors.
 	 */
-	private static final int REFERENCES = 44;
+	private static final int REFERENCES = 41;
 
 	/**
 	 * Public static fields on the window: 91 before the structure sweep, 22 after
