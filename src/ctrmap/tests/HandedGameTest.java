@@ -4,8 +4,11 @@ import ctrmap.LittleEndianDataOutputStream;
 import ctrmap.Workspace;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.AD;
+import ctrmap.formats.containers.GR;
+import ctrmap.formats.containers.ZO;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchTexturePack;
+import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.maison.MaisonClassList;
 import ctrmap.formats.maison.MaisonPoolGuard;
 import ctrmap.formats.maison.MaisonSet;
@@ -22,9 +25,15 @@ import ctrmap.formats.propdata.PropDatabase;
 import ctrmap.formats.scripts.NpcTemplates;
 import ctrmap.formats.text.GFMessageFile;
 import ctrmap.formats.text.LocationNames;
+import ctrmap.formats.tilemap.TerrainCatalog;
+import ctrmap.formats.tilemap.Tilemap;
+import ctrmap.formats.zone.Zone;
+import ctrmap.formats.zone.ZoneEntities;
+import ctrmap.formats.zone.ZoneHeader;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
 import ctrmap.gamedef.GameType;
+import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -64,6 +73,25 @@ import static ctrmap.formats.LittleEndian.putU16;
  * class two fakes and read two answers; where the answer is a model, and no
  * mesh can be built without a dump, what is read back is which game's file
  * the class staged its model from. Proven by breaking, see each section.
+ *
+ * <p>THE ZONE, THE CATALOGS AND THE WIDGET READS (sections 18 to 23). Six
+ * more classes reached past the format layer: {@link ZoneHeader} opened its
+ * area, registry and matrix from the global; {@link BuildingCatalog} resolved
+ * the pristine snapshot, its archive path and its scratch directory from the
+ * global, and {@link TerrainCatalog} cut every donor through it and opened an
+ * error dialog from seven places; {@link Zone} asked "keep the changes?" twice
+ * and reported a refused record itself, from inside the format layer;
+ * {@link ZoneEntities.NPC} read its altitude off the application's map
+ * panel; {@link Tilemap} read its colours off the application's tile form;
+ * and the three script transplants called a pure renumbering that lived in
+ * the script editor window. Each is handed what it needs now: the game, the
+ * decision, a {@link ZoneEntities.GroundHeight}, a {@link Tilemap.TileColors};
+ * the renumbering lives with the script it renumbers. The sections hand each
+ * class two of whatever it needs and read two answers; the zone's and the
+ * catalogs' run under {@code Ui.record()} and assert nothing was asked or
+ * shown; the last measures, in the bytecode, that none of the nine classes
+ * references the global, the main frame, the dialog seam, the keep question
+ * or any window class. Proven by breaking, see each section.
  *
  * <p>THE TABLES (sections 6 to 10). Each of the four fetched the open game
  * from {@link Workspace}'s statics itself. ItemTable found its archive in the
@@ -151,6 +179,12 @@ public class HandedGameTest {
 			thePropRegistryAndItsPropsReadTheGameTheyAreHanded();
 			theNpcRegistryReadsAndWritesTheGameItIsHanded();
 			thePropsAndNpcsRefuseToBeHandedNothing();
+			theZoneHeaderOpensTheArchivesOfTheGameItIsHanded();
+			theCatalogsCutFromTheSnapshotOfTheGameTheyAreHanded();
+			theZoneWritesWhatItIsToldAndAsksNothing();
+			theNpcStandsOnTheGroundItIsHanded();
+			theTilemapIsPicturedInTheColoursItIsHanded();
+			theMigratedClassesReachNoWindow();
 		} finally {
 			Workspace.reset();
 		}
@@ -873,6 +907,413 @@ public class HandedGameTest {
 		refuses("NPCRegistry.loadFreshModelByIndex", () -> NPCRegistry.loadFreshModelByIndex(null, 0));
 	}
 
+	// ------------------------------------------------ 18. the zone header
+	static void theZoneHeaderOpensTheArchivesOfTheGameItIsHanded() throws Exception {
+		System.out.println("--- a zone header opens the area, registry and matrix of the game it is handed, with no workspace open");
+		check(!Workspace.isValid() && Workspace.session() == null, "no workspace is open");
+		//MoveModels 0 "hero", 1 "rival"; area 5; registry 5 maps uid 7 to model 1; matrix 9
+		FakeGameFiles fake = zoneWorld(npcEntry(7, 1), "hero", "rival");
+		ZoneHeader h = new ZoneHeader(new byte[0x38], GameType.ORAS);
+		h.areadataID = 5;
+		h.mapmatrixID = 9;
+		h.fetchArchives(fake);
+		check(h.areadata != null && h.npcreg != null && h.mapmatrix != null, "the header opened its area, registry and matrix");
+		check(h.areadata != null && h.areadata.getOriginFile().getAbsoluteFile().equals(fake.staged(ArchiveType.AREA_DATA, 5).getAbsoluteFile()),
+				"the area is the handed game's staged entry 5 (" + (h.areadata == null ? "null" : h.areadata.getOriginFile()) + ")");
+		check(h.mapmatrix != null && h.mapmatrix.getOriginFile().getAbsoluteFile().equals(fake.staged(ArchiveType.MAP_MATRIX, 9).getAbsoluteFile()),
+				"and the matrix its staged entry 9");
+		check(h.npcreg != null && h.npcreg.entries.size() == 1 && h.npcreg.entries.get(7) != null && h.npcreg.entries.get(7).model == 1,
+				"the registry is the handed game's (uids " + (h.npcreg == null ? "none" : h.npcreg.entries.keySet()) + ")");
+		check(stagedOnDisk(fake, ArchiveType.MOVE_MODELS, 1) && !stagedOnDisk(fake, ArchiveType.MOVE_MODELS, 0),
+				"and its model, MoveModels entry 1, was staged from the handed game - and no other");
+		check(h.propTextures.isEmpty() && h.worldTextures.isEmpty(), "the fixture packs hold no textures, and none were invented");
+		check(fake.edited().isEmpty() && Workspace.persistPaths().isEmpty(), "opening reported no write, to the handed game or to the global");
+
+		//a DIFFERENT game: registry 5 maps uid 4 to model 2
+		FakeGameFiles other = zoneWorld(npcEntry(4, 2), "mom", "prof", "clerk");
+		ZoneHeader o = new ZoneHeader(new byte[0x38], GameType.ORAS);
+		o.areadataID = 5;
+		o.mapmatrixID = 9;
+		o.fetchArchives(other);
+		check(o.npcreg != null && o.npcreg.entries.get(4) != null && o.npcreg.entries.get(4).model == 2
+				&& stagedOnDisk(other, ArchiveType.MOVE_MODELS, 2) && !stagedOnDisk(fake, ArchiveType.MOVE_MODELS, 2),
+				"handed another game, the same header opens that game's registry and stages its model there, not in the first");
+		check(h.npcreg != null && h.npcreg.entries.get(7) != null && h.npcreg.entries.get(4) == null, "and the first header's registry is unchanged");
+
+		//a write through what the header opened goes to the game the header was handed
+		if (h.npcreg != null) {
+			h.npcreg.modified = true;
+			h.npcreg.store();
+			check(fake.edited().size() == 1 && fake.edited().get(0).equals(fake.staged(ArchiveType.NPC_REGISTRIES, 5).getAbsoluteFile())
+					&& other.edited().isEmpty(),
+					"a write through the registry the header opened reports to the game the header was handed (" + fake.edited() + ")");
+		}
+		refuses("ZoneHeader.fetchArchives", () -> h.fetchArchives(null));
+		h.freeArchives();
+		check(h.areadata == null && h.npcreg == null && h.mapmatrix == null, "freeArchives() lets go of all three");
+		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
+				"after all of it no workspace is open and nothing reached the global");
+	}
+
+	// ------------------------------------------------ 19. the catalogs
+	static void theCatalogsCutFromTheSnapshotOfTheGameTheyAreHanded() throws Exception {
+		System.out.println("--- the building and terrain catalogs cut donors from the pristine snapshot of the game they are handed, and show nobody anything");
+		//recorded, with no answers, for the whole section: the terrain catalog
+		//used to open an error dialog from seven places, and a suite that does
+		//not listen for that cannot tell "the report moved to the window" from
+		//"the report is still here"
+		List<String> said = ctrmap.Ui.record();
+		try {
+			catalogsHandedTwoGames();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.isEmpty(), "and no dialog seam was involved in any of it - the catalogs return or throw, and the window reports (said " + said + ")");
+	}
+
+	/** The body of section 19, run while {@code Ui} is recording. */
+	static void catalogsHandedTwoGames() throws Exception {
+		check(!BuildingCatalog.canCutDonor(null), "handed no game there is nothing to cut from: false, and silently (the noise suite pins the silence)");
+		check(!BuildingCatalog.canCutDonor(new FakeGameFiles()), "a game with no snapshot has nothing to cut from");
+		check(!BuildingCatalog.canCutDonor(new FakeGameFiles().withPristine()), "and neither has a snapshot that does not hold the field archive");
+
+		//a snapshot holding two regions; region 1's model slot says "one"
+		FakeGameFiles fake = new FakeGameFiles().withPristine();
+		pristineArchive(fake, ArchiveType.FIELD_DATA, region("zero"), region("one"));
+		check(BuildingCatalog.canCutDonor(fake), "a snapshot holding the field archive can be cut from");
+		GR one = BuildingCatalog.pristineRegion(fake, 1);
+		check(one != null && startsWith(one.getFile(1), "one"), "region 1 is cut from the handed game's snapshot");
+		check(one != null && fake.scratch().equals(one.getOriginFile().getParentFile()),
+				"and staged in the handed game's scratch directory (" + (one == null ? "null" : one.getOriginFile()) + ")");
+		check(BuildingCatalog.pristineRegion(fake, 5) == null, "a region the snapshot does not hold is null, not a guess");
+		BuildingCatalog.Entry entry = new BuildingCatalog.Entry();
+		entry.name = "fixture";
+		entry.donorRegion = 1;
+		check(BuildingCatalog.extract(fake, entry) == null, "an entry whose donor holds no map model cuts nothing, quietly");
+		check(BuildingCatalog.extract(null, entry) == null, "and handed no game, nothing is cut at all");
+
+		//a DIFFERENT game: region 1 says "eins"
+		FakeGameFiles other = new FakeGameFiles().withPristine();
+		pristineArchive(other, ArchiveType.FIELD_DATA, region("null"), region("eins"));
+		GR eins = BuildingCatalog.pristineRegion(other, 1);
+		check(eins != null && startsWith(eins.getFile(1), "eins") && other.scratch().equals(eins.getOriginFile().getParentFile()),
+				"handed another game, the same region is that game's, staged in that game's scratch");
+		GR again = BuildingCatalog.pristineRegion(fake, 1);
+		check(again != null && startsWith(again.getFile(1), "one"), "and the first game's is unchanged");
+		check(fake.edited().isEmpty() && other.edited().isEmpty() && Workspace.persistPaths().isEmpty(),
+				"cutting reported no write anywhere");
+
+		//the terrain catalog over two fresh snapshots: which game it read is
+		//measured by the container it staged, since the fixture region is no
+		//map model and yields no texture names
+		TerrainCatalog.Donor d = new TerrainCatalog.Donor();
+		d.donorRegion = 1;
+		d.donorMesh = 0;
+		d.injectName = "ctr_handed";
+		check(TerrainCatalog.donorTextures(null, d).isEmpty() && TerrainCatalog.donorUvScale(null, d.injectName) == null,
+				"handed no game, the terrain catalog has no donor textures and no donor scale to give");
+		TerrainCatalog.ImportResult untouched = TerrainCatalog.ensureCliffMaterial(null, new byte[]{'B'});
+		check(untouched.model.length == 1 && untouched.model[0] == 'B' && !untouched.injected && untouched.texturesNeeded.isEmpty(),
+				"and a model asked for the cliff material is handed back exactly as it was");
+		FakeGameFiles ta = new FakeGameFiles().withPristine();
+		pristineArchive(ta, ArchiveType.FIELD_DATA, region("zero"), region("one"));
+		FakeGameFiles tb = new FakeGameFiles().withPristine();
+		pristineArchive(tb, ArchiveType.FIELD_DATA, region("null"), region("eins"));
+		File cutA = new File(ta.scratch(), "bcat_region_1");
+		File cutB = new File(tb.scratch(), "bcat_region_1");
+		check(!cutA.exists() && !cutB.exists(), "nothing has been cut from either game yet");
+		List<String> names = TerrainCatalog.donorTextures(ta, d);
+		check(names.isEmpty() && cutA.isFile() && !cutB.exists(),
+				"asked for a donor's textures, the terrain catalog cut the donor from the handed game's snapshot into its scratch, and not the other's");
+		check(startsWith(Files.readAllBytes(cutA.toPath()), "GR"), "what it cut is the region container");
+		TerrainCatalog.donorTextures(tb, d);
+		check(cutB.isFile() && startsWith(new GR(cutB, tb).getFile(1), "eins"), "handed the other game, it cuts from that one");
+
+		//a real failure is THROWN with its reason, not shown. Two of them: a
+		//model that is one byte, with a snapshot present to cut from; and a
+		//game whose scratch directory is a file, so the cut donor cannot be
+		//staged (a truncated archive would not do: GARC swallows that itself)
+		TerrainCatalog.Donor cliff = TerrainCatalog.cliffDonor();
+		check(cliff != null, "the table names a CLIFF donor (" + (cliff == null ? "none" : cliff.injectName + " in region " + cliff.donorRegion) + ")");
+		try {
+			TerrainCatalog.ensureCliffMaterial(ta, new byte[]{'B'});
+			check(false, "a cliff import that fails with a snapshot present is thrown (it returned)");
+		} catch (IllegalStateException ex) {
+			check(cliff != null && String.valueOf(ex.getMessage()).contains(cliff.injectName),
+					"a cliff import that fails with a snapshot present is thrown, naming the material: " + firstLine(ex));
+		}
+		try {
+			TerrainCatalog.ensureMaterial(ta, new byte[]{'B'}, ctrmap.formats.tilemap.TilePalette.GRASS);
+			check(false, "a brush import that fails is thrown (it returned)");
+		} catch (IllegalStateException ex) {
+			check(String.valueOf(ex.getMessage()).contains("GRASS"), "a brush import that fails is thrown, naming the brush: " + firstLine(ex));
+		}
+		FakeGameFiles unstageable = new FakeGameFiles().withPristine();
+		byte[][] regions = new byte[(cliff == null ? 1 : cliff.donorRegion) + 1][];
+		Arrays.fill(regions, region("x"));
+		pristineArchive(unstageable, ArchiveType.FIELD_DATA, regions);
+		check(unstageable.scratch().delete() && unstageable.scratch().createNewFile(),
+				"the fixture's scratch directory is now a file, so nothing can be staged in it");
+		check(BuildingCatalog.canCutDonor(unstageable), "and its snapshot can still be asked");
+		try {
+			TerrainCatalog.donorTextures(unstageable, d);
+			check(false, "a donor that cannot be staged is thrown (it answered)");
+		} catch (IllegalStateException ex) {
+			check(String.valueOf(ex.getMessage()).contains("region 1") && String.valueOf(ex.getMessage()).contains(d.injectName),
+					"a donor that cannot be staged is thrown with its reason, for the window to report: " + firstLine(ex));
+		}
+		try {
+			TerrainCatalog.donorUvScale(unstageable, cliff == null ? "ctr_gake" : cliff.injectName);
+			check(false, "a donor scale that cannot be measured is thrown (it answered)");
+		} catch (IllegalStateException ex) {
+			check(String.valueOf(ex.getMessage()).contains("texture scale"),
+					"a donor scale that cannot be measured is thrown with its reason: " + firstLine(ex));
+		}
+		try {
+			TerrainCatalog.ensureCliffMaterial(unstageable, new byte[]{'B'});
+			check(false, "and so is a cliff import whose donor cannot be staged (it returned)");
+		} catch (IllegalStateException ex) {
+			check(true, "and so is a cliff import whose donor cannot be staged: " + firstLine(ex));
+		}
+		refuses("BuildingCatalog.pristineRegion", () -> BuildingCatalog.pristineRegion(null, 1));
+		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
+				"after all of it no workspace is open and nothing reached the global");
+	}
+
+	// ------------------------------------------------ 20. the zone
+	static void theZoneWritesWhatItIsToldAndAsksNothing() throws Exception {
+		System.out.println("--- a zone writes the parts it is told to into the game it is handed, throws when a record refuses, and asks nothing");
+		//recorded, with no answers, for the whole section: the zone used to ask
+		//"keep the changes?" twice from inside store(), and a suite that does
+		//not listen for that cannot tell "the question moved to the panel" from
+		//"the question is still here and a closed dialog is cancelling the save"
+		List<String> said = ctrmap.Ui.record();
+		try {
+			zoneHandedTwoGames();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.isEmpty(), "and no dialog seam was involved in any of it - the questions belong to the zone panel, not here (said " + said + ")");
+	}
+
+	/** The body of section 20, run while {@code Ui} is recording. */
+	static void zoneHandedTwoGames() throws Exception {
+		FakeGameFiles fake = new FakeGameFiles().plant(ArchiveType.ZONE_DATA, 3, zoneBytes());
+		File f = fake.staged(ArchiveType.ZONE_DATA, 3);
+		Zone z = new Zone(new ZO(f, fake), GameType.ORAS);
+		check(z.changed().isEmpty(), "a zone just read has nothing changed (" + z.changed() + ")");
+		check(z.store().isEmpty() && fake.edited().isEmpty(),
+				"store() with nothing changed writes no part and reports nothing, the script being what it was");
+
+		z.header.weather = 3;
+		check(z.changed().equals(EnumSet.of(Zone.Part.HEADER)), "a changed header is reported as changed (" + z.changed() + ")");
+		byte[] before = Files.readAllBytes(f.toPath());
+		check(z.store(EnumSet.noneOf(Zone.Part.class)).isEmpty() && Arrays.equals(before, Files.readAllBytes(f.toPath())) && fake.edited().isEmpty(),
+				"told to keep nothing, it writes nothing and reports nothing");
+		check(z.changed().contains(Zone.Part.HEADER), "and the header stays changed - leaving it out is not forgetting it");
+		check(z.store(EnumSet.of(Zone.Part.HEADER)).equals(EnumSet.of(Zone.Part.HEADER)), "told to keep the header, it writes the header and says so");
+		check(fake.edited().size() == 1 && fake.edited().get(0).equals(f.getAbsoluteFile()),
+				"reporting the zone file, and only it, to the handed game (" + fake.edited() + ")");
+		check(Workspace.persistPaths().isEmpty(), "and nothing reached the global's edited-file list");
+		Zone reread = new Zone(new ZO(f, fake), GameType.ORAS);
+		check(reread.header.weather == 3 && reread.changed().isEmpty(), "read back from disk, the header holds the change and nothing is changed any more");
+
+		//a record that refuses: a warp with no destination
+		z.entities.warps.add(new ZoneEntities.Warp());
+		z.entities.modified = true;
+		check(z.changed().equals(EnumSet.of(Zone.Part.ENTITIES)), "modified entities are reported as changed (" + z.changed() + ")");
+		before = Files.readAllBytes(f.toPath());
+		int heard = fake.edited().size();
+		try {
+			z.store();
+			check(false, "a warp with no destination is refused (it was written)");
+		} catch (IllegalStateException ex) {
+			check(String.valueOf(ex.getMessage()).contains("no destination"),
+					"a warp with no destination is refused with the record's own reason, thrown for the window to report: " + firstLine(ex));
+		}
+		check(Arrays.equals(before, Files.readAllBytes(f.toPath())) && fake.edited().size() == heard && z.entities.modified,
+				"and nothing was written, nothing reported, and the entities stay modified");
+
+		//the decision "discard": nothing written, said so
+		check(z.discardEntities() && !z.entities.modified && z.changed().isEmpty(), "discardEntities() forgets the change and says there was one");
+		check(!z.discardEntities(), "and after it there is nothing to forget");
+
+		//given a destination, the entities are written
+		ZoneEntities.Warp w = z.entities.warps.get(z.entities.warps.size() - 1);
+		w.targetZone = 1;
+		w.targetWarpId = 0;
+		z.entities.modified = true;
+		check(z.store().equals(EnumSet.of(Zone.Part.ENTITIES)) && !z.entities.modified,
+				"with every record serialisable, store() writes the entities and forgets the mark");
+		check(new Zone(new ZO(f, fake), GameType.ORAS).entities.warps.size() == 1, "read back, the warp is there");
+
+		//a DIFFERENT game: the same zone, changed differently, written there and not here
+		FakeGameFiles other = new FakeGameFiles().plant(ArchiveType.ZONE_DATA, 3, zoneBytes());
+		File of = other.staged(ArchiveType.ZONE_DATA, 3);
+		Zone o = new Zone(new ZO(of, other), GameType.ORAS);
+		o.header.weather = 5;
+		heard = fake.edited().size();
+		check(o.store().equals(EnumSet.of(Zone.Part.HEADER)) && other.edited().size() == 1
+				&& other.edited().get(0).equals(of.getAbsoluteFile()) && fake.edited().size() == heard,
+				"handed another game, a zone reports its write there, not to the first (" + other.edited() + ")");
+		check(new Zone(new ZO(f, fake), GameType.ORAS).header.weather == 3 && new Zone(new ZO(of, other), GameType.ORAS).header.weather == 5,
+				"and each game's zone holds its own header");
+		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
+				"after all of it no workspace is open and nothing reached the global");
+	}
+
+	// ------------------------------------------------ 21. the NPC's ground
+	static void theNpcStandsOnTheGroundItIsHanded() {
+		System.out.println("--- an NPC takes its altitude from the ground it is handed, with no map panel anywhere");
+		check(ctrmap.CtrmapMainframe.mTileMapPanel == null, "there is no map panel to read");
+		ZoneEntities.NPC npc = new ZoneEntities.NPC();
+		npc.z3DCoordinate = 12.5f;
+		npc.setYFromColl(180f, 1800f, (x, z) -> 7f);
+		check(npc.z3DCoordinate == 7f, "handed ground at 7, the NPC stands at 7 (" + npc.z3DCoordinate + ")");
+		npc.setYFromColl(180f, 1800f, (x, z) -> Float.NaN);
+		check(npc.z3DCoordinate == 7f, "handed ground with no answer, it keeps its altitude");
+		npc.setYFromColl(180f, 1800f, (x, z) -> 9f);
+		check(npc.z3DCoordinate == 9f, "handed other ground, it stands on that one (" + npc.z3DCoordinate + ")");
+
+		//the map view moves it through MapObject, which takes the ground it was handed with standOn
+		npc.z3DCoordinate = 12.5f;
+		npc.setX(180f);
+		check(npc.xTile == 10 && npc.z3DCoordinate == 12.5f, "moved before any ground was handed, it keeps its altitude - no window, no NaN");
+		npc.standOn((x, z) -> x + z);
+		npc.setX(180f);
+		check(npc.z3DCoordinate == 180f, "handed ground with standOn, a move through the map view stands it on it (" + npc.z3DCoordinate + ")");
+		npc.standOn((x, z) -> 4f);
+		npc.setZ(360f);
+		check(npc.yTile == 20 && npc.z3DCoordinate == 4f, "handed other ground, it stands on that (" + npc.z3DCoordinate + ")");
+		npc.standOn(null);
+		npc.setX(360f);
+		check(npc.xTile == 20 && npc.z3DCoordinate == 4f, "handed no ground again, it keeps its altitude");
+		refuses("NPC.setYFromColl", () -> npc.setYFromColl(0f, 0f, null));
+		check(ctrmap.CtrmapMainframe.mTileMapPanel == null, "and none of it needed a map panel");
+	}
+
+	// ------------------------------------------------ 22. the region's picture
+	static void theTilemapIsPicturedInTheColoursItIsHanded() {
+		System.out.println("--- a region's picture is painted in the colours it is handed, with no tile form anywhere");
+		check(ctrmap.CtrmapMainframe.mTileEditForm == null, "there is no tile form to read");
+		Tilemap blue = new Tilemap(null, 40, 40, tile -> Color.BLUE);
+		check(blue.getImage().getRGB(5, 5) == Color.BLUE.getRGB() && blue.getImage().getRGB(395, 395) == Color.BLUE.getRGB(),
+				"handed blue, every tile is blue");
+		Tilemap keyed = new Tilemap(null, 40, 40, tile -> tile == 0x21000001 ? Color.GREEN : Color.RED);
+		check(keyed.getImage().getRGB(5, 5) == Color.GREEN.getRGB(),
+				"handed a palette, a tile's own value picks its colour (a fresh region is all unwalkable 0x21000001)");
+		keyed.setTileData(0, 0, new byte[]{0, 0, 0, 0});
+		keyed.updateImage();
+		check(keyed.getImage().getRGB(5, 5) == Color.RED.getRGB() && keyed.getImage().getRGB(15, 15) == Color.GREEN.getRGB(),
+				"and a repaint after an edit asks the handed palette again");
+		Tilemap none = new Tilemap(null, 40, 40);
+		none.updateImage();
+		check(none.getImage().getRGB(5, 5) == Color.BLACK.getRGB(),
+				"handed no colours, the data is held without a picture, and nothing is read from anywhere");
+		check(ctrmap.CtrmapMainframe.mTileEditForm == null, "and none of it needed a tile form");
+	}
+
+	// ------------------------------------------------ 23. the bytecode
+	/**
+	 * The nine classes moved in this step reference neither the global, the
+	 * main frame, the dialog seam, the keep question nor any window class -
+	 * measured in the compiled program, where a static import cannot hide a
+	 * read. {@code MapObject}, which the NPC implements and a later step
+	 * moves, is a class constant and not a member reference, so it is not
+	 * counted here by construction.
+	 */
+	static void theMigratedClassesReachNoWindow() throws Exception {
+		System.out.println("--- the classes migrated here reach neither the global nor the window layer, measured in the bytecode");
+		File classes = new File("build/classes");
+		if (!new File(classes, "ctrmap/Workspace.class").isFile()) {
+			//never "0 edges found in nothing"
+			check(false, "there is a compiled program to measure - no ctrmap/Workspace.class under "
+					+ classes.getAbsolutePath() + " (run build.ps1, and run this suite from the repo root)");
+			return;
+		}
+		List<ClassFileScanner.ClassFile> app = ClassFileScanner.application(classes);
+		String[] migrated = {"ctrmap/formats/zone/ZoneHeader", "ctrmap/formats/h3d/BuildingCatalog",
+			"ctrmap/formats/tilemap/TerrainCatalog", "ctrmap/formats/zone/Zone", "ctrmap/formats/zone/ZoneEntities",
+			"ctrmap/formats/tilemap/Tilemap", "ctrmap/formats/scripts/MsgWrapperInjector",
+			"ctrmap/formats/scripts/SignWrapperInjector", "ctrmap/formats/scripts/TalkerScriptWizard"};
+		String[] forbidden = {"ctrmap/Workspace", "ctrmap/CtrmapMainframe", "ctrmap/Ui", "ctrmap/humaninterface/"};
+		for (String m : migrated) {
+			List<String> reaches = new ArrayList<>();
+			boolean compiled = false;
+			for (ClassFileScanner.ClassFile cf : app) {
+				if (!cf.topLevel().equals(m)) {
+					continue;
+				}
+				compiled = true;
+				for (ClassFileScanner.Ref r : cf.refs) {
+					for (String owner : forbidden) {
+						if (owner.endsWith("/") ? r.owner.startsWith(owner) : r.owner.equals(owner)) {
+							reaches.add(r.owner.substring(r.owner.lastIndexOf('/') + 1) + "." + r.name);
+						}
+					}
+					if (r.owner.equals("ctrmap/Utils") && r.name.equals("askToKeep")) {
+						reaches.add("Utils.askToKeep");
+					}
+				}
+			}
+			check(compiled && reaches.isEmpty(), m.substring(m.lastIndexOf('/') + 1)
+					+ " reaches neither the global, the main frame, the dialog seam, the keep question nor any window class"
+					+ (compiled ? "" : " (it is not compiled)") + (reaches.isEmpty() ? "" : " - it reaches " + reaches));
+		}
+	}
+
+	// ------------------------------------------------ fixtures for the zone, the catalogs and the picture
+
+	/**
+	 * A game whose MoveModels hold one model per name, whose AreaData entry 5
+	 * is an area with nothing in its prop-texture slot and a world pack with
+	 * no textures, whose NPC registry 5 holds {@code entry}, and whose MapMatrix
+	 * entry 9 is a matrix container: everything a zone header opens.
+	 */
+	static FakeGameFiles zoneWorld(NPCRegistry.NPCRegistryEntry entry, String... moveModels) throws Exception {
+		byte[][] subs = new byte[12][];
+		Arrays.fill(subs, new byte[0]);
+		subs[11] = bch("world", 0);
+		return npcGame(moveModels)
+				.plant(ArchiveType.AREA_DATA, 5, container("AD", subs))
+				.plant(ArchiveType.NPC_REGISTRIES, 5, registryBytes(entry))
+				.plant(ArchiveType.MAP_MATRIX, 9, container("MM", new byte[]{0, 0, 0, 0}, new byte[0]));
+	}
+
+	/** A seven-slot region container whose model slot (1) holds a word rather than a model. */
+	static byte[] region(String word) {
+		return container("GR", new byte[0], bytes(word), new byte[0], new byte[0], new byte[0], new byte[0], new byte[0]);
+	}
+
+	/**
+	 * A zone container: an all-zero header, an entity section with no records
+	 * and the smallest script the parser reads, and that script again as the
+	 * map script. An AMX header is 0x3C bytes; with every offset pointing at
+	 * its end there are no entries, no code and no data, and it writes back
+	 * byte for byte.
+	 */
+	static byte[] zoneBytes() {
+		byte[] script = amx();
+		byte[] entities = new byte[12 + script.length];
+		putI32(entities, 0, 8);
+		System.arraycopy(script, 0, entities, 12, script.length);
+		return container("ZO", new byte[0x38], entities, script);
+	}
+
+	static byte[] amx() {
+		byte[] b = new byte[0x3C];
+		putI32(b, 0, 0x3C);
+		putU16(b, 4, 0xF1E0);
+		b[6] = 8;
+		b[7] = 8;
+		putU16(b, 10, 8);
+		for (int off = 12; off < 0x3C; off += 4) {
+			putI32(b, off, 0x3C);
+		}
+		putI32(b, 28, 0); //main entry point
+		return b;
+	}
+
 	// ------------------------------------------------ fixtures for the props and NPCs
 
 	/**
@@ -1272,6 +1713,23 @@ public class HandedGameTest {
 		String m = String.valueOf(ex.getMessage());
 		int nl = m.indexOf('\n');
 		return nl < 0 ? m : m.substring(0, nl);
+	}
+
+	static byte[] bytes(String s) {
+		return s.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+	}
+
+	static boolean startsWith(byte[] data, String word) {
+		byte[] w = bytes(word);
+		if (data == null || data.length < w.length) {
+			return false;
+		}
+		for (int i = 0; i < w.length; i++) {
+			if (data[i] != w[i]) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	static void check(boolean ok, String what) {

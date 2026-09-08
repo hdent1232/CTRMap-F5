@@ -241,6 +241,10 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 		}
 		updateH3D(index);
+		//the gizmo drags the NPC through MapObject, and the NPC takes its
+		//altitude from the ground it is handed here: the panel's meshes when
+		//there is a panel, nothing (altitude kept) in a guard test without one
+		e.npcs.get(index).standOn(mTileMapPanel == null ? null : mTileMapPanel::getHeightAtWorldLoc);
 		bindNavi(e.npcs.get(index));
 		syncScrDropdown(npc.script);
 		updateDialogueSection();

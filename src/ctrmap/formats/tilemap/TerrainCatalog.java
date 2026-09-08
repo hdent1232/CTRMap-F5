@@ -1,6 +1,6 @@
 package ctrmap.formats.tilemap;
 
-import ctrmap.Ui;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.BchModelAppender;
@@ -29,8 +29,41 @@ import java.util.Scanner;
  * existing name-based resolver finds it with no special casing, and injection
  * is idempotent: a map that already has (or has been given) the material is
  * returned untouched.
+ *
+ * <p>Every cut is made from the game the caller HANDS in, through
+ * {@link BuildingCatalog}; a null game means "nothing to cut from yet" and is
+ * answered quietly with the model unchanged, which is what a build made
+ * before any workspace exists gets. And nothing here shows a person anything:
+ * this class used to open an error dialog from seven places, from inside the
+ * format layer, where no suite could see it and no caller could decide what
+ * to do about it. A real failure - a snapshot that will not parse, a table
+ * that will not read - is now THROWN with its reason, and the caller that
+ * owns a window reports it. The caches are per handed game: a second game
+ * gets its own measurements, not the first game's.
  */
 public class TerrainCatalog {
+
+	/**
+	 * The game the two caches below were filled from. Identity, not equality:
+	 * two sessions over one folder are two games, and a cache keyed by nothing
+	 * handed the second game the first's answers.
+	 */
+	private static GameFiles cachedFor;
+
+	/** Empties the caches when a different game is handed than the one they were filled from. */
+	private static synchronized void cachesFor(GameFiles files) {
+		if (files != cachedFor) {
+			uvScaleCache.clear();
+			donorTextureCache.clear();
+			cachedFor = files;
+		}
+	}
+
+	/** What a report says about an exception: its message, or the exception itself when it gave none. */
+	private static String reason(Throwable ex) {
+		String m = ex.getMessage();
+		return m == null || m.trim().isEmpty() ? ex.toString() : m;
+	}
 
 	/**
 	 * The donor table to read, which is normally the one built into the jar.
@@ -91,20 +124,27 @@ public class TerrainCatalog {
 	 * on precisely the brushes the editor adds, and the reason imported
 	 * boardwalk planks came out twice the size of the retail ones beside them.
 	 *
-	 * <p>Measured lazily from the pristine dump and cached; a null result is
-	 * cached too, so a missing snapshot costs one attempt rather than one per
-	 * painted tile.
+	 * <p>Measured lazily from the pristine snapshot of the handed game and
+	 * cached; a null result is cached too, so a donor with nothing to measure
+	 * costs one attempt rather than one per painted tile.
+	 *
+	 * @param files the game whose snapshot the donor is cut from; null, or a
+	 * game with no snapshot, answers null and caches nothing
+	 * @throws IllegalStateException when the donor region cannot be read or
+	 * parsed: tiles painted with the brush would come out at the wrong size,
+	 * and the caller that owns a window says so
 	 */
-	public static synchronized float[] donorUvScale(String injectName) {
+	public static synchronized float[] donorUvScale(GameFiles files, String injectName) {
 		if (injectName == null) {
 			return null;
 		}
+		cachesFor(files);
 		if (uvScaleCache.containsKey(injectName)) {
 			return uvScaleCache.get(injectName);
 		}
-		if (!BuildingCatalog.canCutDonor()) {
+		if (!BuildingCatalog.canCutDonor(files)) {
 			//too early to measure anything; NOT cached, so the first call made
-			//with a workspace open still gets a real answer
+			//with a game handed still gets a real answer
 			return null;
 		}
 		float[] out = null;
@@ -113,7 +153,7 @@ public class TerrainCatalog {
 				continue;
 			}
 			try {
-				GR gr = BuildingCatalog.pristineRegion(d.donorRegion);
+				GR gr = BuildingCatalog.pristineRegion(files, d.donorRegion);
 				if (gr != null) {
 					byte[] dm = gr.getFile(1);
 					if (BchMapModel.isMapModel(dm)) {
@@ -121,15 +161,13 @@ public class TerrainCatalog {
 						if (d.donorMesh >= 0 && d.donorMesh < m.meshCount) {
 							//the donor mesh has real geometry, so this measures
 							//rather than recursing back into this method
-							out = PaintedRegionBuilder.measureUvScale(m, m.geometry().get(d.donorMesh));
+							out = PaintedRegionBuilder.measureUvScale(files, m, m.geometry().get(d.donorMesh));
 						}
 					}
 				}
 			} catch (Exception ex) {
-				Ui.error(null, "Could not measure the donor texture scale for \"" + injectName
-						+ "\" in the pristine copy of region " + d.donorRegion + ".\n"
-						+ "Tiles painted with this brush may come out at the wrong size.\n" + ex,
-						"Terrain import");
+				throw new IllegalStateException("Could not measure the donor texture scale for \"" + injectName
+						+ "\" in the pristine copy of region " + d.donorRegion + ": " + reason(ex), ex);
 			}
 			break;
 		}
@@ -148,13 +186,20 @@ public class TerrainCatalog {
 
 	private static Map<TilePalette, Donor> donors;
 
+	/**
+	 * The brush donors, read once from the table.
+	 *
+	 * @throws IllegalStateException when the table cannot be read, naming the
+	 * reason; nothing is cached then, so a repaired table is read next time
+	 */
 	public static synchronized Map<TilePalette, Donor> donors() {
 		if (donors != null) {
 			return donors;
 		}
-		donors = new LinkedHashMap<>();
+		Map<TilePalette, Donor> read = new LinkedHashMap<>();
 		try (InputStream in = openCatalog()) {
 			if (in == null) {
+				donors = read;
 				return donors;
 			}
 			Scanner sc = new Scanner(in, "UTF-8");
@@ -182,14 +227,15 @@ public class TerrainCatalog {
 				}
 					d.material = f[4];
 					d.injectName = f[5];
-					donors.put(d.brush, d);
+					read.put(d.brush, d);
 				} catch (IllegalArgumentException ignore) {
 				}
 			}
 		} catch (Exception ex) {
-			Ui.error(null, "The terrain donor table could not be read, so no brush can be"
-					+ " given to a map that lacks its material.\n" + ex, "Terrain import");
+			throw new IllegalStateException("The terrain donor table could not be read, so no brush can be"
+					+ " given to a map that lacks its material: " + reason(ex), ex);
 		}
+		donors = read;
 		return donors;
 	}
 
@@ -216,9 +262,9 @@ public class TerrainCatalog {
 		if (cliffLoaded) {
 			return cliffDonor;
 		}
-		cliffLoaded = true;
 		try (InputStream in = openCatalog()) {
 			if (in == null) {
+				cliffLoaded = true;
 				return null;
 			}
 			Scanner sc = new Scanner(in, "UTF-8");
@@ -249,19 +295,14 @@ public class TerrainCatalog {
 				break;
 			}
 		} catch (Exception ex) {
-			Ui.error(null, "The CLIFF row of the terrain donor table could not be read;"
-					+ " generated cliffs will keep whatever rock the map already has.\n" + ex,
-					"Terrain import");
+			//not marked loaded: a repaired table is read next time
+			throw new IllegalStateException("The CLIFF row of the terrain donor table could not be read;"
+					+ " generated cliffs would keep whatever rock the map already has: " + reason(ex), ex);
 		}
+		cliffLoaded = true;
 		return cliffDonor;
 	}
 
-	/**
-	 * Gives a model the catalog's cliff material if it does not already carry
-	 * it. Same machinery as {@link #ensureMaterial}: the donor's geometry is
-	 * thrown away and the painter fills the empty mesh with the cliff quads it
-	 * raises between elevations.
-	 */
 	/** Why the cliff import gave up, when -Dcliffdebug is set. */
 	private static void say(String why) {
 		if (System.getProperty("cliffdebug") != null) {
@@ -286,13 +327,18 @@ public class TerrainCatalog {
 
 	public static synchronized Donor churnDonor() {
 		if (!churnLoaded) {
-			churnLoaded = true;
+			//marked loaded only once the row was read: a table that throws is read again next time
 			churnDonor = rowNamed("LAVA_CHURN");
+			churnLoaded = true;
 		}
 		return churnDonor;
 	}
 
-	/** One non-brush row of the table, read by its leading keyword. */
+	/**
+	 * One non-brush row of the table, read by its leading keyword.
+	 *
+	 * @throws IllegalStateException when the table cannot be read
+	 */
 	private static Donor rowNamed(String key) {
 		try (InputStream in = openCatalog()) {
 			if (in == null) {
@@ -317,31 +363,46 @@ public class TerrainCatalog {
 				return d;
 			}
 		} catch (Exception ex) {
-			Ui.error(null, "The " + key + " row of the terrain donor table could not be read.\n" + ex,
-					"Terrain import");
+			throw new IllegalStateException("The " + key + " row of the terrain donor table could not be read: "
+					+ reason(ex), ex);
 		}
 		return null;
 	}
 
-	public static ImportResult ensureChurnMaterial(byte[] model) {
-		return ensureNamedMaterial(model, churnDonor());
+	/**
+	 * Gives a model the catalogue's lava-churn overlay material, cut from the
+	 * handed game, if it does not already carry it. See {@link #ensureCliffMaterial}.
+	 */
+	public static ImportResult ensureChurnMaterial(GameFiles files, byte[] model) {
+		return ensureNamedMaterial(files, model, churnDonor());
 	}
 
-	public static ImportResult ensureCliffMaterial(byte[] model) {
-		return ensureNamedMaterial(model, cliffDonor());
+	/**
+	 * Gives a model the catalog's cliff material, cut from the handed game, if
+	 * it does not already carry it. Same machinery as {@link #ensureMaterial}:
+	 * the donor's geometry is thrown away and the painter fills the empty mesh
+	 * with the cliff quads it raises between elevations.
+	 *
+	 * @param files the game whose snapshot the donor is cut from; null, or a
+	 * game with no snapshot, returns the model unchanged and says nothing
+	 * @throws IllegalStateException when there was a snapshot to cut from and
+	 * the import failed, naming the material, the region and the reason
+	 */
+	public static ImportResult ensureCliffMaterial(GameFiles files, byte[] model) {
+		return ensureNamedMaterial(files, model, cliffDonor());
 	}
 
-	private static ImportResult ensureNamedMaterial(byte[] model, Donor d) {
+	private static ImportResult ensureNamedMaterial(GameFiles files, byte[] model, Donor d) {
 		ImportResult r = new ImportResult();
 		r.model = model;
 		if (d == null) {
 			say("no CLIFF row in the catalogue");
 			return r;
 		}
-		if (!BuildingCatalog.canCutDonor()) {
-			//no workspace open yet, so there is no pristine snapshot to cut the
-			//donor out of. Asking anyway is what printed "cliff import failed"
-			//on every single build; the painter's own fallback covers it.
+		if (!BuildingCatalog.canCutDonor(files)) {
+			//no game handed, or none with a snapshot, so there is nothing to
+			//cut the donor out of. Asking anyway is what printed "cliff import
+			//failed" on every single build; the painter's own fallback covers it.
 			say("no pristine snapshot to cut " + d.injectName + " from");
 			return r;
 		}
@@ -352,11 +413,11 @@ public class TerrainCatalog {
 					//already imported - but its textures still belong to the
 					//donor's area, which this model cannot vouch for
 					r.donorArea = d.donorArea;
-					r.texturesNeeded.addAll(donorTextures(d));
+					r.texturesNeeded.addAll(donorTextures(files, d));
 					return r;
 				}
 			}
-			GR donorGr = BuildingCatalog.pristineRegion(d.donorRegion);
+			GR donorGr = BuildingCatalog.pristineRegion(files, d.donorRegion);
 			if (donorGr == null) {
 				say("donor region " + d.donorRegion + " could not be opened");
 				return r;
@@ -393,10 +454,11 @@ public class TerrainCatalog {
 			r.donorArea = d.donorArea;
 			r.texturesNeeded.addAll(textureNamesOf(new BchMapModel(donorModel), d.donorMesh));
 		} catch (Exception ex) {
-			Ui.error(null, "Could not import the terrain material \"" + d.injectName
-					+ "\" from the pristine copy of region " + d.donorRegion + ".\n"
-					+ "This map keeps the material it already had, which may be the wrong rock.\n" + ex,
-					"Terrain import failed");
+			//thrown, not shown: the map would otherwise keep the material it
+			//already had, which may be the wrong rock, and the caller that owns
+			//a window is the one to say so
+			throw new IllegalStateException("Could not import the terrain material \"" + d.injectName
+					+ "\" from the pristine copy of region " + d.donorRegion + ": " + reason(ex), ex);
 		}
 		return r;
 	}
@@ -412,8 +474,14 @@ public class TerrainCatalog {
 	 * for: after an Apply whose carry was refused, the material is on disk and
 	 * the texture is not, and an early return that said "nothing needed" made
 	 * the retry paint the same white floor and call it done.
+	 *
+	 * @param files the game whose snapshot the donor is cut from; null, or a
+	 * game with no snapshot, returns the model unchanged and says nothing
+	 * @throws IllegalStateException when the import failed, naming the brush
+	 * and the reason: painting would otherwise fall back to a material the map
+	 * already has, and the caller that owns a window is the one to say so
 	 */
-	public static ImportResult ensureMaterial(byte[] model, TilePalette brush) {
+	public static ImportResult ensureMaterial(GameFiles files, byte[] model, TilePalette brush) {
 		ImportResult r = new ImportResult();
 		r.model = model;
 		try {
@@ -427,7 +495,7 @@ public class TerrainCatalog {
 					String n = probe.getMaterialName(probe.getMeshMaterialIndex(i));
 					if (d.injectName.equals(n)) {
 						r.donorArea = d.donorArea;
-						r.texturesNeeded.addAll(donorTextures(d));
+						r.texturesNeeded.addAll(donorTextures(files, d));
 						return r;
 					}
 				}
@@ -438,10 +506,10 @@ public class TerrainCatalog {
 			if (d == null) {
 				return r;
 			}
-			if (!BuildingCatalog.canCutDonor()) {
+			if (!BuildingCatalog.canCutDonor(files)) {
 				return r; //no snapshot to cut from yet - see ensureNamedMaterial
 			}
-			GR donorGr = BuildingCatalog.pristineRegion(d.donorRegion);
+			GR donorGr = BuildingCatalog.pristineRegion(files, d.donorRegion);
 			if (donorGr == null) {
 				return r;
 			}
@@ -479,38 +547,45 @@ public class TerrainCatalog {
 			r.donorArea = d.donorArea;
 			r.texturesNeeded.addAll(textureNamesOf(new BchMapModel(donorModel), d.donorMesh));
 		} catch (Exception ex) {
-			Ui.error(null, "Could not import a " + brush + " material into this map.\n"
-					+ "Painting with that brush will fall back to a material the map already has.\n" + ex,
-					"Terrain import failed");
+			throw new IllegalStateException("Could not import a " + brush + " material into this map: "
+					+ reason(ex), ex);
 		}
 		return r;
 	}
 
 	private static final Map<String, List<String>> donorTextureCache = new LinkedHashMap<>();
 
-	/** The textures a donor's material references, cached: a caller that only
-	 *  wants to know what to carry must not pay for a region read every time. */
-	public static synchronized List<String> donorTextures(Donor d) {
+	/**
+	 * The textures a donor's material references, read from the handed game's
+	 * snapshot and cached per game: a caller that only wants to know what to
+	 * carry must not pay for a region read every time.
+	 *
+	 * @param files the game whose snapshot is read; null, or a game with no
+	 * snapshot, answers an empty list and caches nothing
+	 * @throws IllegalStateException when the donor region cannot be read:
+	 * painted tiles using the material would come out white, and the caller
+	 * that owns a window says so
+	 */
+	public static synchronized List<String> donorTextures(GameFiles files, Donor d) {
+		cachesFor(files);
 		String key = d.donorRegion + ":" + d.donorMesh;
 		List<String> cached = donorTextureCache.get(key);
 		if (cached != null) {
 			return cached;
 		}
 		List<String> names = new ArrayList<>();
-		if (!BuildingCatalog.canCutDonor()) {
-			return names; //not cached - a later call with a workspace may do better
+		if (!BuildingCatalog.canCutDonor(files)) {
+			return names; //not cached - a later call with a game handed may do better
 		}
 		try {
-			GR donorGr = BuildingCatalog.pristineRegion(d.donorRegion);
+			GR donorGr = BuildingCatalog.pristineRegion(files, d.donorRegion);
 			byte[] donorModel = donorGr == null ? null : donorGr.getFile(1);
 			if (donorModel != null && BchMapModel.isMapModel(donorModel)) {
 				names = textureNamesOf(new BchMapModel(donorModel), d.donorMesh);
 			}
 		} catch (Exception ex) {
-			Ui.error(null, "Could not read the textures the \"" + d.injectName + "\" material needs"
-					+ " from the pristine copy of region " + d.donorRegion + ".\n"
-					+ "Painted tiles using it may come out white.\n" + ex, "Terrain import failed");
-			return names; //not cached - a later call with a workspace may do better
+			throw new IllegalStateException("Could not read the textures the \"" + d.injectName + "\" material needs"
+					+ " from the pristine copy of region " + d.donorRegion + ": " + reason(ex), ex);
 		}
 		donorTextureCache.put(key, names);
 		return names;

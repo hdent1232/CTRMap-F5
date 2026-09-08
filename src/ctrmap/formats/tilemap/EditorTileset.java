@@ -10,7 +10,7 @@ import java.io.InputStream;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class EditorTileset {
+public class EditorTileset implements Tilemap.TileColors {
 
 	public TileTemplate[] tiles;
 
@@ -71,6 +71,12 @@ public class EditorTileset {
 		return null;
 	}
 	
+	/** The colour a region's picture draws a tile in: {@link #getSimpleColor}. */
+	@Override
+	public Color colorOf(int tile) {
+		return getSimpleColor(tile);
+	}
+
 	public Color getSimpleColor(int binary){
 		int imperfectMatch = -1;
 		for (int i = 0; i < tiles.length; i++) {

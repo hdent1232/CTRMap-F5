@@ -1,5 +1,6 @@
 package ctrmap.formats.tilemap;
 
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.gfcollision.GfColl;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.MapModelObj;
@@ -85,12 +86,38 @@ public class PaintedRegionBuilder {
 	}
 
 	/**
+	 * A build with NO game handed: nothing is cut from any pristine snapshot,
+	 * so the cliff faces and the lava overlay keep whatever material the donor
+	 * model already carries. That is exactly what a build made before a
+	 * workspace exists always got; a caller with a game open hands it to
+	 * {@link #build(GameFiles, byte[], TilePalette[][], int[][], int[][], TerrainLighting, boolean)}.
+	 *
 	 * @param edges when true (and the donor carries a grass-edge material), lay
 	 *              GameFreak-style transition strips along grass&harr;dirt/sand seams
 	 *              (the projected "blend" edge). Ignored if the tileset donor has
 	 *              no edge material.
 	 */
 	public static RegionFactory.BlankContent build(byte[] donorModel, TilePalette[][] grid, int[][] height, int[][] ramp, TerrainLighting light, boolean edges) {
+		return build(null, donorModel, grid, height, ramp, light, edges);
+	}
+
+	/**
+	 * The full build, cutting the catalogue's cliff and lava-churn materials
+	 * from the pristine snapshot of the handed game.
+	 *
+	 * <p>The game is a parameter rather than fetched: {@link TerrainCatalog}
+	 * used to resolve the snapshot from the application's global session, so
+	 * a build could only ever cut from the application's game. This is the
+	 * smallest change that lets a handed game reach it; the rest of this class
+	 * is a later step's.
+	 *
+	 * @param files the game whose snapshot the catalogue cuts from; null means
+	 *              nothing is cut, as above
+	 * @throws IllegalStateException when there was a snapshot to cut from and
+	 *              a catalogue import failed, with the reason; the caller that
+	 *              owns a window reports it
+	 */
+	public static RegionFactory.BlankContent build(GameFiles files, byte[] donorModel, TilePalette[][] grid, int[][] height, int[][] ramp, TerrainLighting light, boolean edges) {
 		if (height == null) {
 			height = new int[DIM][DIM];
 		}
@@ -98,7 +125,7 @@ public class PaintedRegionBuilder {
 			ramp = noRamps();
 		}
 		RegionFactory.BlankContent out = new RegionFactory.BlankContent();
-		out.model = buildModel(donorModel, grid, height, ramp, null, null, null, light, edges);
+		out.model = buildModel(files, donorModel, grid, height, ramp, null, null, null, light, edges);
 		out.collision = buildCollision(grid, height, ramp);
 		out.tilemap = buildTilemap(grid);
 		out.props = new byte[]{0, 0, 0, 0};
@@ -125,8 +152,14 @@ public class PaintedRegionBuilder {
 	 */
 	public static RegionFactory.BlankContent buildComposite(byte[] donorModel, byte[] donorCollision, byte[] donorTilemap,
 			TilePalette[][] grid, int[][] height, int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
+		return buildComposite(null, donorModel, donorCollision, donorTilemap, grid, height, ramp, touched, light, edges);
+	}
+
+	/** The composite build cutting the catalogue's materials from the handed game; see {@link #build(GameFiles, byte[], TilePalette[][], int[][], int[][], TerrainLighting, boolean)}. */
+	public static RegionFactory.BlankContent buildComposite(GameFiles files, byte[] donorModel, byte[] donorCollision, byte[] donorTilemap,
+			TilePalette[][] grid, int[][] height, int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
 		if (touched == null) {
-			return build(donorModel, grid, height, ramp, light, edges);
+			return build(files, donorModel, grid, height, ramp, light, edges);
 		}
 		if (height == null) {
 			height = new int[DIM][DIM];
@@ -152,7 +185,7 @@ public class PaintedRegionBuilder {
 		float[][] baseY = sampleBaseY(donorCollision);
 		float[][] ground = nearestGround(baseY, walkableTiles(donorTilemap));
 		out.borrowedGround = borrowedGroundTiles(baseY, ground, touched);
-		out.model = buildModel(donorModel, grid, height, ramp, touched, baseY, ground, light, edges);
+		out.model = buildModel(files, donorModel, grid, height, ramp, touched, baseY, ground, light, edges);
 		out.collision = buildCollisionComposite(donorCollision, grid, height, ramp, touched, baseY, ground);
 		out.tilemap = buildTilemapComposite(donorTilemap, grid, touched);
 		out.props = new byte[]{0, 0, 0, 0};
@@ -166,6 +199,12 @@ public class PaintedRegionBuilder {
 	 */
 	public static byte[] buildModelOnly(byte[] donorModel, byte[] donorCollision, byte[] donorTilemap, TilePalette[][] grid,
 			int[][] height, int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
+		return buildModelOnly(null, donorModel, donorCollision, donorTilemap, grid, height, ramp, touched, light, edges);
+	}
+
+	/** The model-only build cutting the catalogue's materials from the handed game; see {@link #build(GameFiles, byte[], TilePalette[][], int[][], int[][], TerrainLighting, boolean)}. */
+	public static byte[] buildModelOnly(GameFiles files, byte[] donorModel, byte[] donorCollision, byte[] donorTilemap, TilePalette[][] grid,
+			int[][] height, int[][] ramp, boolean[][] touched, TerrainLighting light, boolean edges) {
 		if (height == null) {
 			height = new int[DIM][DIM];
 		}
@@ -174,7 +213,7 @@ public class PaintedRegionBuilder {
 		}
 		float[][] baseY = touched != null ? sampleBaseY(donorCollision) : null;
 		float[][] ground = baseY != null ? nearestGround(baseY, walkableTiles(donorTilemap)) : null;
-		return buildModel(donorModel, grid, height, ramp, touched, baseY, ground, light, edges);
+		return buildModel(files, donorModel, grid, height, ramp, touched, baseY, ground, light, edges);
 	}
 
 	// ---- retail surface heights (composite frame) -------------------------
@@ -486,8 +525,9 @@ public class PaintedRegionBuilder {
 	// ---- visual model -----------------------------------------------------
 
 	/** {@code baseY} is the raw per-tile sample and {@code ground} its filled
-	 *  copy ({@link #nearestGround}); both null for a from-scratch build. */
-	static byte[] buildModel(byte[] donorModel, TilePalette[][] grid, int[][] height, int[][] ramp,
+	 *  copy ({@link #nearestGround}); both null for a from-scratch build.
+	 *  {@code files} is the game the catalogue cuts from, or null for none. */
+	static byte[] buildModel(GameFiles files, byte[] donorModel, TilePalette[][] grid, int[][] height, int[][] ramp,
 			boolean[][] touched, float[][] baseY, float[][] ground, TerrainLighting light, boolean edges) {
 		//Give the model the catalogue's cliff material before anything looks for
 		//one. TerrainCatalog.ensureCliffMaterial existed but was never called
@@ -496,12 +536,12 @@ public class PaintedRegionBuilder {
 		//colour of whatever rock the template region happened to carry. That is
 		//exactly the thing the comment inside resolveCliffMesh says it is there
 		//to prevent.
-		TerrainCatalog.ImportResult cliffImport = TerrainCatalog.ensureCliffMaterial(donorModel);
+		TerrainCatalog.ImportResult cliffImport = TerrainCatalog.ensureCliffMaterial(files, donorModel);
 		if (cliffImport != null && cliffImport.model != null) {
 			donorModel = cliffImport.model;
 		}
 		//and vanilla's ADDITIVE molten overlay, if the palette names one
-		TerrainCatalog.ImportResult churnImport = TerrainCatalog.ensureChurnMaterial(donorModel);
+		TerrainCatalog.ImportResult churnImport = TerrainCatalog.ensureChurnMaterial(files, donorModel);
 		if (churnImport != null && churnImport.model != null) {
 			donorModel = churnImport.model;
 		}
@@ -798,7 +838,7 @@ public class PaintedRegionBuilder {
 			}
 			List<Quad> quads = quadsByMesh.get(mi);
 			if (touched != null) {
-				current = compositeMesh(m, g, mi, quads, mi == edgeMesh ? rectsEdge : rects,
+				current = compositeMesh(files, m, g, mi, quads, mi == edgeMesh ? rectsEdge : rects,
 						overheadY, light, true);
 				continue;
 			}
@@ -824,7 +864,7 @@ public class PaintedRegionBuilder {
 			//the floor: measureUvScale read the donor mesh, clampScale let the
 			//result fall as low as 1/720, and the entire floor ended up sampling
 			//a 0.02-by-0.04 patch of its texture, i.e. one flat colour.
-			MapModelObj.ObjMesh om = meshFromQuads(m, g, quads, true);
+			MapModelObj.ObjMesh om = meshFromQuads(files, m, g, quads, true);
 			byte[] vtx = MapModelObjImporter.buildVertexBytes(m, g, om);
 			bakeQuadLighting(m, g, vtx, quads, light);
 			current = m.setMeshGeometry(mi, vtx, om.triangles);
@@ -906,7 +946,7 @@ public class PaintedRegionBuilder {
 	 * appended. A mesh with nothing cut and nothing generated is left
 	 * byte-identical.
 	 */
-	private static byte[] compositeMesh(BchMapModel m, BchMapModel.MeshGeom g, int mi,
+	private static byte[] compositeMesh(GameFiles files, BchMapModel m, BchMapModel.MeshGeom g, int mi,
 			List<Quad> quads, List<float[]> rects, float overheadY, TerrainLighting light, boolean rawUv) {
 		int[] tris = m.getTriangles(mi);
 		float[][] pos = m.getVertexPositions(mi);
@@ -1018,7 +1058,7 @@ public class PaintedRegionBuilder {
 		byte[] genVtx = new byte[0];
 		int[] genTris = new int[0];
 		if (anyGen) {
-			MapModelObj.ObjMesh om = meshFromQuads(m, g, quads, rawUv);
+			MapModelObj.ObjMesh om = meshFromQuads(files, m, g, quads, rawUv);
 			genVtx = MapModelObjImporter.buildVertexBytes(m, g, om);
 			bakeQuadLighting(m, g, genVtx, quads, light);
 			genTris = om.triangles;
@@ -1286,8 +1326,8 @@ public class PaintedRegionBuilder {
 	/** Assembles an ObjMesh (positions/UVs/normals/tris) from a list of quads.
 	 *  When {@code rawUv}, the quads' authored UVs pass through unscaled (edge
 	 *  strips already carry seam-space UVs); otherwise UVs are world-projected. */
-	static MapModelObj.ObjMesh meshFromQuads(BchMapModel model, BchMapModel.MeshGeom g, List<Quad> quads, boolean rawUv) {
-		float[] scale = rawUv ? new float[]{1f, 1f} : measureUvScale(model, g);
+	static MapModelObj.ObjMesh meshFromQuads(GameFiles files, BchMapModel model, BchMapModel.MeshGeom g, List<Quad> quads, boolean rawUv) {
+		float[] scale = rawUv ? new float[]{1f, 1f} : measureUvScale(files, model, g);
 		MapModelObj.ObjMesh om = new MapModelObj.ObjMesh();
 		om.meshIndex = g.meshIndex;
 		int n = quads.size();
@@ -3217,10 +3257,13 @@ public class PaintedRegionBuilder {
 	 * the donor's scale instead of taking the default, or every imported brush
 	 * paints at twice retail density.
 	 *
+	 * @param files the game whose pristine snapshot holds the donor an imported
+	 *         material's scale is measured from; null means no donor can be
+	 *         read and the default stands
 	 * @return two positive scales, each already passed through
 	 *         {@link #clampScale}; never null
 	 */
-	static float[] measureUvScale(BchMapModel model, BchMapModel.MeshGeom g) {
+	static float[] measureUvScale(GameFiles files, BchMapModel model, BchMapModel.MeshGeom g) {
 		BchMapModel.MeshAttr uv = model.findAttr(g.meshIndex, 4);
 		float def = 1f / 36f;
 		if (uv == null || uv.type != 3 || g.vertexCount < 3) {
@@ -3231,7 +3274,7 @@ public class PaintedRegionBuilder {
 			//world-projected ground is authored at about 1/72: a consistent 2x
 			//texture-scale error on exactly the brushes the editor adds. The
 			//donor still knows its own scale, so ask the catalog for it.
-			float[] donor = TerrainCatalog.donorUvScale(
+			float[] donor = TerrainCatalog.donorUvScale(files,
 					model.getMaterialName(model.getMeshMaterialIndex(g.meshIndex)));
 			return donor != null ? donor : new float[]{def, def};
 		}
@@ -3312,9 +3355,14 @@ public class PaintedRegionBuilder {
 		return flatFraction(model, meshIndex);
 	}
 
-	/** @see #measureUvScale */
+	/** {@link #measureUvScale} with no game handed: an imported material's donor cannot be read, so it measures at the default. */
 	public static float[] uvScaleOf(BchMapModel model, int meshIndex) {
-		return measureUvScale(model, model.geometry().get(meshIndex));
+		return uvScaleOf(null, model, meshIndex);
+	}
+
+	/** @see #measureUvScale */
+	public static float[] uvScaleOf(GameFiles files, BchMapModel model, int meshIndex) {
+		return measureUvScale(files, model, model.geometry().get(meshIndex));
 	}
 
 	/**

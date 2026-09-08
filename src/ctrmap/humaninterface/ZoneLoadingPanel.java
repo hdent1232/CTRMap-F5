@@ -1,6 +1,7 @@
 package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
+import ctrmap.Utils;
 import ctrmap.Workspace;
 import ctrmap.ZoneAppender;
 import ctrmap.ZoneCloner;
@@ -18,6 +19,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.DefaultComboBoxModel;
@@ -332,7 +334,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		mTriggerEditForm.saveEntry();
 		boolean stored;
 		try {
-			stored = zone.store(dialog);
+			stored = storeZone(dialog);
 		} catch (IllegalStateException ex) {
 			//a record that refuses to serialise - a warp with no destination -
 			//used to leave here as an uncaught exception on stderr, and the
@@ -374,6 +376,53 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		} else {
 			return false;
 		}
+	}
+
+	/**
+	 * Asks, when a dialog is wanted, whether to keep the zone header and
+	 * whether to keep the entity data, and hands the decisions to the zone.
+	 * The questions used to be asked by {@link Zone} itself, from inside the
+	 * format layer, where no suite could answer them and no caller could
+	 * decide for it; this panel owns the window, so this panel asks, through
+	 * the one seam ({@link Utils#askToKeep}, which holds the rule that a closed
+	 * or unanswered question is a cancel), and passes the decisions down.
+	 *
+	 * @return true when the zone was written (whatever was kept), false when
+	 * the user cancelled and nothing was written
+	 * @throws IllegalStateException from the zone when the entities will not
+	 * serialise; nothing is written then, and the caller reports it
+	 */
+	private boolean storeZone(boolean dialog) {
+		EnumSet<Zone.Part> changed = zone.changed();
+		EnumSet<Zone.Part> keep = EnumSet.noneOf(Zone.Part.class);
+		if (changed.contains(Zone.Part.HEADER)) {
+			switch (Utils.askToKeep(dialog, "Zone header")) {
+				case SAVE:
+					keep.add(Zone.Part.HEADER);
+					break;
+				//cancel stops the save rather than quietly dropping this piece of it
+				case CANCEL:
+					return false;
+				default:
+					break;
+			}
+		}
+		if (changed.contains(Zone.Part.ENTITIES)) {
+			switch (Utils.askToKeep(dialog, "Entity data")) {
+				case SAVE:
+					keep.add(Zone.Part.ENTITIES);
+					break;
+				case DISCARD:
+					zone.discardEntities();
+					break;
+				case CANCEL:
+					return false;
+				default:
+					break;
+			}
+		}
+		zone.store(keep);
+		return true;
 	}
 
 	public void setIntValueClass(JFormattedTextField[] fields) {
@@ -1116,7 +1165,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						loadZone(z);
 						zoneIndex = zoneList.getSelectedIndex();
 						progress.setBarPercent(50);
-						z.header.fetchArchives();
+						z.header.fetchArchives(Workspace.session());
 						z.s.decompressThis();
 						progress.setBarPercent(100);
 						mTileMapPanel.loadMatrix(new MapMatrix(z.header.mapmatrix, Workspace.session()), new ADPropRegistry(z.header.areadata, z.header.propTextures, Workspace.session()), z.header.worldTextures, z.header.propTextures);

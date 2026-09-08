@@ -65,12 +65,15 @@ public class GameFilesSeamTest {
 	 * 7 across 3 once ADPropRegistry, GRProp, PropDatabase, NPCRegistry,
 	 * MoveModelPool and NpcTemplates were handed theirs (the same suite again;
 	 * their nine edges went, and ZoneHeader, not yet moved, gained the one
-	 * session() it hands the registry it builds).
+	 * session() it hands the registry it builds), 1 across 1 once ZoneHeader
+	 * and BuildingCatalog (through TerrainCatalog) were handed theirs (the same
+	 * suite, sections 18 and 19): what is left is the container base's
+	 * transitional constructor, which the finisher deletes.
 	 * LOWER BOTH as classes are migrated; never raise either without saying in
 	 * the commit message which class went back to the global and why it had to.
 	 */
-	private static final int FORMATS_EDGES = 7;
-	private static final int FORMATS_CLASSES = 3;
+	private static final int FORMATS_EDGES = 1;
+	private static final int FORMATS_CLASSES = 1;
 
 	private static final String WORKSPACE = "ctrmap/Workspace";
 	private static final String CONTAINER = "ctrmap/formats/containers/AbstractGamefreakContainer";

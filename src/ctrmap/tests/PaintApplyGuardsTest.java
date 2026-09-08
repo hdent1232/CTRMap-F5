@@ -214,7 +214,7 @@ public class PaintApplyGuardsTest {
 		open(15);
 		paintSand();
 		TerrainCatalog.Donor sand = TerrainCatalog.donors().get(TilePalette.SAND);
-		List<String> needed = TerrainCatalog.ensureMaterial(new GR(Workspace.getWorkspaceFile(
+		List<String> needed = TerrainCatalog.ensureMaterial(Workspace.session(), new GR(Workspace.getWorkspaceFile(
 				ArchiveType.FIELD_DATA, 153)).getFile(1), TilePalette.SAND).texturesNeeded;
 		check(sand != null && !needed.isEmpty(), "the SAND brush imports a donor material that needs textures: " + needed);
 		int lacking = areaLacking(needed);
@@ -235,7 +235,7 @@ public class PaintApplyGuardsTest {
 		open(15);
 		paintSand();
 		//what the pristine map will need, read before anything paints it
-		List<String> needed = TerrainCatalog.ensureMaterial(PropDatabase.getSubfile(
+		List<String> needed = TerrainCatalog.ensureMaterial(Workspace.session(), PropDatabase.getSubfile(
 				gr.getDecompressedEntry(153), 1), TilePalette.SAND).texturesNeeded;
 		forget(ArchiveType.FIELD_DATA, 153);
 		List<String> before = new ArrayList<>(Workspace.persistPaths());
@@ -261,9 +261,9 @@ public class PaintApplyGuardsTest {
 	static void retryStillAsksForTheTextures() throws Exception {
 		byte[] painted = new GR(Workspace.getWorkspaceFile(
 				ArchiveType.FIELD_DATA, 153)).getFile(1);
-		List<String> needed = TerrainCatalog.ensureMaterial(PropDatabase.getSubfile(
+		List<String> needed = TerrainCatalog.ensureMaterial(Workspace.session(), PropDatabase.getSubfile(
 				gr.getDecompressedEntry(153), 1), TilePalette.SAND).texturesNeeded;
-		TerrainCatalog.ImportResult again = TerrainCatalog.ensureMaterial(painted, TilePalette.SAND);
+		TerrainCatalog.ImportResult again = TerrainCatalog.ensureMaterial(Workspace.session(), painted, TilePalette.SAND);
 		check(!again.injected && again.texturesNeeded.equals(needed),
 				"a map that already carries the brush's material still reports its textures "
 				+ again.texturesNeeded + " (the donor's are " + needed + ")");
@@ -457,7 +457,7 @@ public class PaintApplyGuardsTest {
 	 * the condition this editor's own prop code calls a hardlock on area load.
 	 */
 	static void paintedCliffsCarryTheirTexture() throws Exception {
-		List<String> needed = TerrainCatalog.donorTextures(TerrainCatalog.cliffDonor());
+		List<String> needed = TerrainCatalog.donorTextures(Workspace.session(), TerrainCatalog.cliffDonor());
 		check(!needed.isEmpty(), "the generated cliff faces need the donor's texture(s) " + needed);
 		forget(ArchiveType.FIELD_DATA, 153);
 		forget(ArchiveType.AREA_DATA, 21);

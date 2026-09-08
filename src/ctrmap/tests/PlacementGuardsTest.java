@@ -716,7 +716,7 @@ public class PlacementGuardsTest {
 		for (TilePalette[] row : grid) {
 			Arrays.fill(row, TilePalette.PATH);
 		}
-		return PaintedRegionBuilder.build(tileset, grid, new int[DIM][DIM], null, TerrainLighting.daytime(), false);
+		return PaintedRegionBuilder.build(Workspace.session(), tileset, grid, new int[DIM][DIM], null, TerrainLighting.daytime(), false);
 	}
 
 	static byte[] tile(byte[] tilemap, int x, int y) {

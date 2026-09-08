@@ -442,8 +442,8 @@ public class TilePainterForm {
 			//with whatever mesh happened to be biggest
 			donor = importBrushMaterials(donor, grid, touched, texNeeds);
 			RegionFactory.BlankContent bc = composite
-					? PaintedRegionBuilder.buildComposite(donor, gr.getFile(2), gr.getFile(0), grid, height, ramp, touched, lighting, edges)
-					: PaintedRegionBuilder.build(donor, grid, height, ramp, lighting, edges);
+					? PaintedRegionBuilder.buildComposite(Workspace.session(), donor, gr.getFile(2), gr.getFile(0), grid, height, ramp, touched, lighting, edges)
+					: PaintedRegionBuilder.build(Workspace.session(), donor, grid, height, ramp, lighting, edges);
 			borrowedGround += bc.borrowedGround;
 			if (!placed.isEmpty()) {
 				stampNote = stampPlaced(bc, placed, height, floorY, texNeeds);
@@ -732,7 +732,7 @@ public class TilePainterForm {
 		byte[] out = model;
 		for (TilePalette t : used) {
 			ctrmap.formats.tilemap.TerrainCatalog.ImportResult r
-					= ctrmap.formats.tilemap.TerrainCatalog.ensureMaterial(out, t);
+					= ctrmap.formats.tilemap.TerrainCatalog.ensureMaterial(Workspace.session(), out, t);
 			out = r.model;
 			recordNeeds(r, texNeeds);
 		}
@@ -743,11 +743,11 @@ public class TilePainterForm {
 		//the carry hears about them; the build's own calls then find the
 		//material already present and change nothing.
 		ctrmap.formats.tilemap.TerrainCatalog.ImportResult cliff
-				= ctrmap.formats.tilemap.TerrainCatalog.ensureCliffMaterial(out);
+				= ctrmap.formats.tilemap.TerrainCatalog.ensureCliffMaterial(Workspace.session(), out);
 		out = cliff.model;
 		recordNeeds(cliff, texNeeds);
 		ctrmap.formats.tilemap.TerrainCatalog.ImportResult churn
-				= ctrmap.formats.tilemap.TerrainCatalog.ensureChurnMaterial(out);
+				= ctrmap.formats.tilemap.TerrainCatalog.ensureChurnMaterial(Workspace.session(), out);
 		out = churn.model;
 		recordNeeds(churn, texNeeds);
 		return out;

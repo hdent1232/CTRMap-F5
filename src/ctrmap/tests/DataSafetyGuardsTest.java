@@ -387,22 +387,28 @@ public class DataSafetyGuardsTest {
 		WarpTool.paintWarps(img.getGraphics(), 0, 0, 12);
 		int bx = (int) Math.round(12 * ((a.x - 9f) / 18f)), by = (int) Math.round(12 * ((a.y - 9f) / 18f));
 		check(new Color(img.getRGB(bx + 10, by + 2)).equals(Color.WHITE), "and draws the loaded zone's warp as a box on its tile");
-		//THE REFUSAL MUST REACH THE USER, not just happen.
-		//Every check above proves the zone refuses to save a broken record. None
-		//of them proved the user is told, and mutation testing showed why that
-		//mattered: deleting the dialog at Zone:51 and the one at
-		//ZoneLoadingPanel:322 left the entire battery green. A refusal nobody
-		//sees is the same silent failure the refusal was added to prevent - the
-		//edit looks saved and is not.
+		//THE REFUSAL MUST REACH THE USER, not just happen. Mutation testing showed
+		//why: deleting the dialogs once left the entire battery green, and a
+		//refusal nobody sees is the silent failure the refusal exists to prevent.
+		//Since the format layer stopped opening dialogs, that duty is the PANEL's:
+		//ZoneLoadingPanel.storeZone asks and reports, and the check on it in this
+		//suite proves the user is told. Zone itself now throws with the reason and
+		//says nothing, so a dialog reappearing below the seam is the regression here.
 		ZoneEntities.Warp mute = new ZoneEntities.Warp();
 		e.warps.add(mute);
 		e.warpCount++;
 		zonePnl.zones[2].entities.modified = true;
 		List<String> said = ctrmap.Ui.record();
 		try {
-			boolean saved = zonePnl.zones[2].store(false);
-			check(!saved, "a zone holding a record it cannot serialise reports that it did not save");
-			check(!said.isEmpty(), "and says so where the user can see it: " + said);
+			String reason = null;
+			try {
+				zonePnl.zones[2].store();
+			} catch (IllegalStateException refused) {
+				reason = String.valueOf(refused.getMessage());
+			}
+			check(reason != null, "a zone holding a record it cannot serialise refuses to save");
+			check(reason != null && reason.contains("no destination"), "and the refusal names the record (" + reason + ")");
+			check(said.isEmpty(), "and the format class shows nothing itself - reporting is the panel's, proved elsewhere in this suite; it said " + said);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -707,7 +713,7 @@ public class DataSafetyGuardsTest {
 			probe.header.areadataID = noSuchArea;
 			String cause = "";
 			try {
-				probe.header.fetchArchives();
+				probe.header.fetchArchives(Workspace.session());
 			} catch (Throwable t) {
 				cause = String.valueOf(t);
 			}

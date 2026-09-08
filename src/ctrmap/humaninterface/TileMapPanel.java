@@ -163,7 +163,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		}
 		colls = new GRCollisionFile[1][1];
 		colls[0][0] = new GRCollisionFile(file);
-		tilemaps[0][0] = new Tilemap(file);
+		tilemaps[0][0] = new Tilemap(file, tileColors());
 		tilemapImage = tilemaps[0][0].getImage();
 		tilemapScaledImage = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration().createCompatibleImage(400, 400);
 		scaleImage(1);
@@ -354,7 +354,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 				for (int i = 0; i < mm.height; i++) {
 					for (int j = 0; j < mm.width; j++) {
 						if (mm.ids.get(j, i) != -1) {
-							tilemaps[j][i] = new Tilemap(mm.regions.get(j, i));
+							tilemaps[j][i] = new Tilemap(mm.regions.get(j, i), tileColors());
 							byte[] tg = mm.regions.get(j, i).getFile(5);
 							if (tg.length > 0 && tg[0] == 'B' && tg[1] == 'C' && tg[2] == 'H') {
 								BCHFile tgbch = new BCHFile(tg);
@@ -527,6 +527,15 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 
 	public float getHeightAtWorldLoc(float x, float z) {
 		return getHeightAtWorldLoc(colls, x, z);
+	}
+
+	/**
+	 * The colours a region's picture is painted in: the tile form's tileset,
+	 * or nothing (no picture) when the form is not there, which is how a
+	 * headless test holds the data. The region used to read the form itself.
+	 */
+	static Tilemap.TileColors tileColors() {
+		return mTileEditForm == null ? null : mTileEditForm.tileset;
 	}
 
 	/**

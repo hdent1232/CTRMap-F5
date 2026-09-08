@@ -791,7 +791,7 @@ public class PaintForm extends JPanel {
 					//the live preview paints with the same imported materials the
 					//Apply will use, so what you see is what you get
 					byte[] src = TilePainterForm.importBrushMaterials(donor, g2, t2, null);
-					byte[] model = PaintedRegionBuilder.buildModelOnly(src, coll, tmap, g2, h2, r2, t2, l2, edgesNow);
+					byte[] model = PaintedRegionBuilder.buildModelOnly(Workspace.session(), src, coll, tmap, g2, h2, r2, t2, l2, edgesNow);
 					java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extra = null;
 					if (!p2.isEmpty()) {
 						ctrmap.formats.h3d.RegionFactory.BlankContent bc = new ctrmap.formats.h3d.RegionFactory.BlankContent();

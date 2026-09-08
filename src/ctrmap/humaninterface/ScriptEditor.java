@@ -473,16 +473,9 @@ public class ScriptEditor extends javax.swing.JPanel {
 		}
 	}
 
+	/** The renumbering now lives with the script it renumbers: {@link GFLPawnScript#setPtrsByIndex}. */
 	public static void setPtrsByIndex(List<PawnInstruction> instructions) {
-		int currentPtr = 0;
-		for (int i = 0; i < instructions.size(); i++) {
-			PawnInstruction ins = instructions.get(i);
-			ins.pointer = currentPtr;
-			currentPtr += 4;
-			if (!ins.hasCompressedArgument) {
-				currentPtr += ins.argumentCount * 4;
-			}
-		}
+		GFLPawnScript.setPtrsByIndex(instructions);
 	}
 
 	public static int getPtrByLine(List<PawnSubroutine> subs, int line) {

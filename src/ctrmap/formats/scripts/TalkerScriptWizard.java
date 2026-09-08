@@ -1,6 +1,5 @@
 package ctrmap.formats.scripts;
 
-import ctrmap.humaninterface.ScriptEditor;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -13,10 +12,10 @@ import java.util.Map;
  * the end of the code section (before data), grows main's dispatch CASETBL by
  * one sorted case pair for a freshly allocated user script ID and re-fixes
  * every relative branch operand through the PawnInstruction listener chain
- * (the ScriptEditor.updateDocument idiom: setPtrsByIndex +
- * callInstructionListeners). The publics' absolute code addresses, which no
- * listener owns, are re-pointed manually. Everything happens in memory; the
- * caller decides where the script bytes go.
+ * (the renumbering idiom the script editor's updateDocument also uses:
+ * GFLPawnScript.setPtrsByIndex + callInstructionListeners). The publics'
+ * absolute code addresses, which no listener owns, are re-pointed manually.
+ * Everything happens in memory; the caller decides where the script bytes go.
  */
 public class TalkerScriptWizard {
 
@@ -228,7 +227,7 @@ public class TalkerScriptWizard {
 		ct.argumentCount = newArgs.length;
 
 		//renumber and let the listeners re-fix all relative branch operands
-		ScriptEditor.setPtrsByIndex(script.instructions);
+		GFLPawnScript.setPtrsByIndex(script.instructions);
 		script.callInstructionListeners();
 		//the CaseListener snapshot predates the insertion, so it only fixes
 		//the pre-existing keys - point the new pair at the new TRAMPOLINE
