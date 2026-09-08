@@ -3,7 +3,7 @@ package ctrmap.formats.zone;
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.LittleEndianDataOutputStream;
 import ctrmap.Utils;
-import ctrmap.Workspace;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.containers.MM;
 import ctrmap.formats.garc.LZ11;
@@ -231,8 +231,26 @@ public class ZoneHeader {
 		//unknownFlags = unknownFlags & 0x7FFFFF | (OAZoneNumber << 21);
 	}
 
-	public void fetchArchives() {
-		areadata = new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, areadataID));
+	/**
+	 * Opens the area, NPC registry and map matrix this header names, from the
+	 * staged copies of the game it is handed.
+	 *
+	 * <p>Handed, rather than fetched: this used to take all three from the
+	 * application's global session, so a header could only ever open the
+	 * application's game, and a suite wanting to see which area a header
+	 * resolved to had to install a workspace first.
+	 * {@code ctrmap.tests.HandedGameTest} hands it two games.
+	 *
+	 * @param files the game whose staged entries are opened; null is refused
+	 * in words, because a header that opened nothing and said nothing is a
+	 * zone the loader reports as empty
+	 */
+	public void fetchArchives(GameFiles files) {
+		if (files == null) {
+			throw new IllegalArgumentException("a zone header must be handed the game its area, registry and"
+					+ " matrix are staged in; handed null it would open nothing and say nothing");
+		}
+		areadata = new AD(files.staged(ArchiveType.AREA_DATA, areadataID), files);
 		byte[] adbch1 = areadata.getFile(1);
 		if (Utils.checkBCHMagic(adbch1)) {
 			BCHFile adbch1bch = new BCHFile(adbch1);
@@ -248,8 +266,8 @@ public class ZoneHeader {
 		} else {
 			worldTextures.addAll(new BCHFile(wTex).textures);
 		}
-		npcreg = new NPCRegistry(Workspace.getWorkspaceFile(ArchiveType.NPC_REGISTRIES, areadataID), Workspace.session());
-		mapmatrix = new MM(Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mapmatrixID));
+		npcreg = new NPCRegistry(files.staged(ArchiveType.NPC_REGISTRIES, areadataID), files);
+		mapmatrix = new MM(files.staged(ArchiveType.MAP_MATRIX, mapmatrixID), files);
 	}
 
 	public void freeArchives() {

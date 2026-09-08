@@ -392,10 +392,10 @@ public class NpcEditFormGuardsTest {
 		CtrmapMainframe.mTileMapPanel = tallMatrix();
 		ZoneEntities.NPC npc = new ZoneEntities.NPC();
 		npc.z3DCoordinate = 12.5f;
-		npc.setYFromColl(10 * 18f, 100 * 18f);
+		npc.setYFromColl(10 * 18f, 100 * 18f, CtrmapMainframe.mTileMapPanel::getHeightAtWorldLoc);
 		check(npc.z3DCoordinate == 0f, "setYFromColl takes the mesh's height inside the matrix");
 		npc.z3DCoordinate = 12.5f;
-		npc.setYFromColl(10 * 18f, 170 * 18f);
+		npc.setYFromColl(10 * 18f, 170 * 18f, CtrmapMainframe.mTileMapPanel::getHeightAtWorldLoc);
 		check(npc.z3DCoordinate == 12.5f, "and keeps the altitude past its edge, where the lookup is NaN");
 	}
 

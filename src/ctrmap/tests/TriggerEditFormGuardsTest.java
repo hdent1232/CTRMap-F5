@@ -148,7 +148,7 @@ public class TriggerEditFormGuardsTest {
 		form.saveEntry();
 		check(e.triggers1.get(0) == first && form.trigger == first, "Save with nothing typed keeps the very same record");
 		check(!e.modified, "and does not mark the zone modified");
-		check(zone.store(false), "so a store afterwards succeeds");
+		check(zone.store() != null, "so a store afterwards succeeds");
 		check(Arrays.equals(zone.file.getFile(1), before), "and the entity section on disk is untouched");
 	}
 
@@ -195,7 +195,7 @@ public class TriggerEditFormGuardsTest {
 			want[at + i * 2] = (byte) (record[i] & 0xFF);
 			want[at + i * 2 + 1] = (byte) ((record[i] >> 8) & 0xFF);
 		}
-		check(zone.store(false), "the zone stores");
+		check(zone.store() != null, "the zone stores");
 		byte[] after = zone.file.getFile(1);
 		check(Arrays.equals(after, want), "and the entity section differs from the one read in exactly this trigger's 24 bytes"
 				+ (Arrays.equals(after, want) ? "" : " - first difference at " + firstDiff(after, want) + " (record starts at " + at + ")"));
@@ -325,7 +325,7 @@ public class TriggerEditFormGuardsTest {
 		int at = 12 + e.furniture.size() * 0x14 + e.npcs.size() * 0x30 + e.warps.size() * 0x18 + e.triggers1.size() * 0x18;
 		want[at] = (byte) (555 & 0xFF);
 		want[at + 1] = (byte) ((555 >> 8) & 0xFF);
-		check(zone.store(false), "the zone stores");
+		check(zone.store() != null, "the zone stores");
 		check(Arrays.equals(zone.file.getFile(1), want), "and the step-on trigger's script is the only byte pair that moved");
 	}
 

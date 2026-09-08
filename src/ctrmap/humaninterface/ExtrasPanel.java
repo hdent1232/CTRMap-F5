@@ -182,7 +182,9 @@ public class ExtrasPanel extends javax.swing.JPanel {
 				//had tried it there. cyclingFlagSafe() answers the same "no"
 				//for the same games and says why it is saying it.
 				zones[i].header.enableCycling = Workspace.profile().cyclingFlagSafe();
-				zones[i].store(false);
+				if (!storeZone(zones[i], i, "Set camera flags + Zone failsafes")) {
+					return;
+				}
 			}
 		}
 		patchAreaTable(table, CAMERA_FLAG_OFFSET, (byte) 1, "Set camera flags + Zone failsafes");
@@ -205,11 +207,35 @@ public class ExtrasPanel extends javax.swing.JPanel {
 		if (zones != null) {
 			for (int i = 0; i < zones.length; i++) {
 				zones[i].header.enable3D = true;
-				zones[i].store(false);
+				if (!storeZone(zones[i], i, "Enable stereoscopic 3D")) {
+					return;
+				}
 			}
 		}
 		patchAreaTable(table, STEREO_FLAG_OFFSET, (byte) 0x2c, "Enable stereoscopic 3D");
     }//GEN-LAST:event_btn3dActionPerformed
+
+	/**
+	 * Writes everything that changed in one zone of a mass edit, asking
+	 * nothing, and reports the one thing that can go wrong. The zone used to
+	 * report it itself, from inside the format layer, and this panel walked
+	 * on to the next zone and then patched the area table over a zone that
+	 * was never written; now the zone throws with the reason and the edit
+	 * stops here, before the table is touched.
+	 *
+	 * @return true when the zone was written, false when it refused and the
+	 * user has been told
+	 */
+	private boolean storeZone(Zone zone, int index, String title) {
+		try {
+			zone.store();
+			return true;
+		} catch (IllegalStateException ex) {
+			ctrmap.Ui.error(this, "Zone " + index + " was not saved, and the mass edit stopped there.\n"
+					+ ctrmap.Ui.reason(ex), title);
+			return false;
+		}
+	}
 
 	/**
 	 * How many AreaData entries the mass edits on this panel cover: every entry

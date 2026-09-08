@@ -52,7 +52,7 @@ public class BuildingPaletteDialog {
 		if (prefabCache.size() > 64 && !prefabCache.containsKey(e)) {
 			prefabCache.clear();
 		}
-		return prefabCache.computeIfAbsent(e, BuildingCatalog::extract);
+		return prefabCache.computeIfAbsent(e, k -> BuildingCatalog.extract(Workspace.session(), k));
 	}
 
 	/**
@@ -287,7 +287,7 @@ public class BuildingPaletteDialog {
 						for (TilePalette[] row : grass) {
 							java.util.Arrays.fill(row, TilePalette.GRASS);
 						}
-						byte[] base = PaintedRegionBuilder.build(baseDonor, grass, null, null,
+						byte[] base = PaintedRegionBuilder.build(Workspace.session(), baseDonor, grass, null, null,
 								TerrainLighting.daytime(), false).model;
 						int ax = 20 - e.tilesW() / 2, ay = 20 - e.tilesH() / 2;
 						MapPrefab.StampResult r = p.stampGeometry(base, ax, ay, -e.baseY);

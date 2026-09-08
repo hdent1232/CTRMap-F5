@@ -1,7 +1,6 @@
 package ctrmap.formats.zone;
 
 import ctrmap.formats.scripts.GFLPawnScript;
-import ctrmap.CtrmapMainframe;
 import ctrmap.LittleEndianDataInputStream;
 import ctrmap.LittleEndianDataOutputStream;
 import ctrmap.humaninterface.MapObject;
@@ -17,6 +16,30 @@ import java.util.logging.Logger;
  * (from PK3DS)
  */
 public class ZoneEntities {
+
+	/**
+	 * What an NPC wants when it is moved: the height of the ground under a
+	 * world position, so it can stand on it.
+	 *
+	 * <p>Declared here, by the format layer, and supplied by whoever owns the
+	 * collision meshes - the map panel in the editor, a lambda in a suite.
+	 * {@link NPC} used to read the height straight off the application's map
+	 * panel, so an NPC could only ever stand on the application's map, and a
+	 * suite that placed one had to install a window first.
+	 */
+	public interface GroundHeight {
+
+		/** No ground anywhere: every position answers NaN, and an NPC moved over it keeps the altitude it has. */
+		GroundHeight NONE = new GroundHeight() {
+			@Override
+			public float at(float x, float z) {
+				return Float.NaN;
+			}
+		};
+
+		/** The ground's height at a world position, or NaN where there is none. */
+		float at(float x, float z);
+	}
 
 	public int totalLength;
 	public int furnitureCount;
@@ -255,6 +278,13 @@ public class ZoneEntities {
 		public int floatMotionOrigin = -1; //useless creating it for every axis, imprecisions are minimal
 		public float floatMotionRemainder = 0;
 
+		/**
+		 * Where this NPC takes its altitude from when the map view moves it
+		 * through {@link MapObject}; {@link GroundHeight#NONE} until the window
+		 * that owns the meshes hands one over with {@link #standOn}.
+		 */
+		private GroundHeight ground = GroundHeight.NONE;
+
 		public NPC(LittleEndianDataInputStream dis) throws IOException {
 			uid = dis.readUnsignedShort();
 			model = dis.readUnsignedShort();
@@ -401,9 +431,35 @@ public class ZoneEntities {
 			z3DCoordinate = val;
 		}
 
-		/** Takes the altitude from the collision mesh, keeping the current one where the mesh has no answer. */
+		/**
+		 * Hands this NPC the ground it stands on when the map view drags it
+		 * ({@link #setX} and {@link #setZ} take their altitude from it). The
+		 * window that owns the collision meshes calls this when it binds the
+		 * NPC to its gizmo; null means no ground, and the altitude is kept.
+		 */
+		public void standOn(GroundHeight ground) {
+			this.ground = ground == null ? GroundHeight.NONE : ground;
+		}
+
+		/** Takes the altitude from the ground this NPC was handed with {@link #standOn}, keeping the current one where it has no answer. */
 		public void setYFromColl(float x, float y) {
-			float newz3DCoordinate = CtrmapMainframe.mTileMapPanel.getHeightAtWorldLoc(x, y);
+			setYFromColl(x, y, ground);
+		}
+
+		/**
+		 * Takes the altitude from the given ground, keeping the current one
+		 * where the ground has no answer.
+		 *
+		 * @param ground where the height comes from; null is refused in words,
+		 * because a lookup made against nothing used to be a NullPointerException
+		 * from a window that was not there
+		 */
+		public void setYFromColl(float x, float y, GroundHeight ground) {
+			if (ground == null) {
+				throw new IllegalArgumentException("an NPC must be handed the ground its altitude comes from;"
+						+ " handed null there is nothing to stand on");
+			}
+			float newz3DCoordinate = ground.at(x, y);
 			//x != Float.NaN is true for every x, NaN included - the old test held nothing back
 			if (!Float.isNaN(newz3DCoordinate)) {
 				z3DCoordinate = newz3DCoordinate;

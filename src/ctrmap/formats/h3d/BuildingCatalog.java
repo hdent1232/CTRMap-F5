@@ -1,6 +1,6 @@
 package ctrmap.formats.h3d;
 
-import ctrmap.Workspace;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.ArchiveType;
@@ -18,6 +18,15 @@ import java.util.Scanner;
  * catalog itself carries ONLY metadata (donor region + coordinates + wiring
  * info) - the actual geometry is cut from the USER'S OWN dump at placement
  * time via {@link MapPrefab#extract}, so no game assets ship with the editor.
+ *
+ * <p>The cut is made from the game this class is HANDED. It used to resolve
+ * the pristine snapshot, the archive's location and its scratch directory
+ * from the application's global session, so a donor could only ever be cut
+ * from the application's game, and no suite could hand it a snapshot of its
+ * own and read back which region it opened. Three things are needed - the
+ * snapshot directory, the profile's archive path and a scratch directory -
+ * which is why the whole {@link GameFiles} contract is asked for rather than
+ * one file. {@code ctrmap.tests.HandedGameTest} hands it two games.
  *
  * <p>Resource format ({@code oras_buildings.tsv}, tab-separated, '#' comments):
  * {@code kind name donorRegion donorArea tx0 ty0 tx1 ty1 baseY doorDX doorDY
@@ -139,14 +148,17 @@ public class BuildingCatalog {
 	}
 
 	/**
-	 * Cuts this entry's prefab from the PRISTINE dump (the original-archives
-	 * snapshot when present, else the live game dir) so donors stay retail
-	 * even after the user edits their own maps. Returns null when the region
-	 * cannot be read or the box holds no geometry.
+	 * Cuts this entry's prefab from the PRISTINE snapshot of the handed game,
+	 * so donors stay retail even after the user edits their own maps. Returns
+	 * null when there is no game or no snapshot to cut from, the region cannot
+	 * be read or the box holds no geometry.
 	 */
-	public static MapPrefab extract(Entry e) {
+	public static MapPrefab extract(GameFiles files, Entry e) {
+		if (files == null) {
+			return null; //nothing to cut from, and nothing to log about it
+		}
 		try {
-			GR gr = pristineRegion(e.donorRegion);
+			GR gr = pristineRegion(files, e.donorRegion);
 			if (gr == null) {
 				return null;
 			}
@@ -163,8 +175,42 @@ public class BuildingCatalog {
 	}
 
 	/**
-	 * Opens a region from the PRISTINE snapshot - the copy of the game as it was
-	 * before anything was edited.
+	 * Whether {@link #pristineRegion} can be asked of this game at all right now.
+	 *
+	 * <p>The snapshot's path is resolved through the handed game's profile, so
+	 * a call made with NO game handed - which is what a build made before any
+	 * workspace exists hands - has nothing to resolve against. Callers on the
+	 * map-build path used to ask anyway and swallow the throw into a stderr
+	 * line, so every single painted-region build printed "cliff import failed:
+	 * no profile for null" - noise nobody read, and, being constant, noise that
+	 * hid the one build where the import really did fail. Null therefore
+	 * answers false, SILENTLY, and is the one null this class does not refuse
+	 * in words: {@code ctrmap.tests.TerrainImportNoiseTest} pins that the
+	 * cliff import tells nobody anything before there is a game.
+	 *
+	 * <p>A game whose snapshot is missing answers false too, rather than
+	 * nagging once per Apply: the workspace's validation already tells the
+	 * user their pristine backup is gone, which is where that belongs.
+	 */
+	public static boolean canCutDonor(GameFiles files) {
+		return files != null && snapshotArchive(files) != null;
+	}
+
+	/** The pristine FieldData archive of the handed game, or null when there is no snapshot or it does not hold one. */
+	private static File snapshotArchive(GameFiles files) {
+		File snap = files.pristine();
+		String rel = files.profile().archivePath(ArchiveType.FIELD_DATA);
+		if (snap == null || rel == null) {
+			return null;
+		}
+		File garcFile = new File(snap.getAbsolutePath() + rel);
+		return garcFile.exists() ? garcFile : null;
+	}
+
+	/**
+	 * Opens a region from the PRISTINE snapshot of the handed game - the copy
+	 * of the game as it was before anything was edited - staged as a container
+	 * in the handed game's scratch directory.
 	 *
 	 * <p>Returns null when there is no snapshot, and deliberately does NOT fall
 	 * back to the live game folder. It used to, and that quietly turned editing
@@ -177,36 +223,20 @@ public class BuildingCatalog {
 	 * <p>Refusing is the safe answer. A missing snapshot means the workspace was
 	 * never validated, which the caller can fix; silently substituting edited
 	 * data cannot be detected at all.
-	 */
-	/**
-	 * Whether {@link #pristineRegion} can be asked at all right now.
 	 *
-	 * <p>The snapshot's path is resolved through the OPEN WORKSPACE's game
-	 * profile, so a call made before any workspace exists has nothing to
-	 * resolve against and can only throw. Callers on the map-build path asked
-	 * anyway and swallowed the throw into a stderr line, so every single
-	 * painted-region build printed "cliff import failed: no profile for null" -
-	 * noise nobody read, and, being constant, noise that hid the one build
-	 * where the import really did fail.
-	 *
-	 * <p>A workspace whose snapshot is missing answers false too, rather than
-	 * nagging once per Apply: {@link ctrmap.Workspace}'s validation already
-	 * tells the user their pristine backup is gone, which is where that belongs.
+	 * @param files the game whose snapshot is read; null is refused in words,
+	 * since a caller that has not asked {@link #canCutDonor} first has nothing
+	 * to cut from and must not be answered with a region from nowhere
 	 */
-	public static boolean canCutDonor() {
-		if (Workspace.game() == null) {
-			return false;
+	public static GR pristineRegion(GameFiles files, int region) throws Exception {
+		if (files == null) {
+			throw new IllegalArgumentException("a pristine region must be cut from a handed game;"
+					+ " handed null there is no snapshot to cut it from (ask canCutDonor first)");
 		}
-		String rel = Workspace.getArchivePath(ArchiveType.FIELD_DATA, Workspace.game());
-		return new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel).exists();
-	}
-
-	public static GR pristineRegion(int region) throws Exception {
-		String rel = Workspace.getArchivePath(ArchiveType.FIELD_DATA, Workspace.game());
-		File garcFile = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
-		if (!garcFile.exists()) {
-			System.err.println("BuildingCatalog: no pristine snapshot in this workspace ("
-					+ Workspace.originalSnapshotDir() + ") - refusing to cut a donor from"
+		File garcFile = snapshotArchive(files);
+		if (garcFile == null) {
+			System.err.println("BuildingCatalog: no pristine snapshot for " + files + " ("
+					+ files.pristine() + ") - refusing to cut a donor from"
 					+ " edited data. Load the workspace in CTRMap once to create it.");
 			return null;
 		}
@@ -214,10 +244,10 @@ public class BuildingCatalog {
 		if (bytes == null) {
 			return null;
 		}
-		File tmp = new File(Workspace.temp(), "bcat_region_" + region);
+		File tmp = new File(files.scratch(), "bcat_region_" + region);
 		try (FileOutputStream fo = new FileOutputStream(tmp)) {
 			fo.write(bytes);
 		}
-		return new GR(tmp);
+		return new GR(tmp, files);
 	}
 }

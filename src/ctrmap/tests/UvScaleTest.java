@@ -55,7 +55,7 @@ public class UvScaleTest {
 		//--- every donor must report a measurable scale --------------------------
 		int measured = 0, atDefault = 0;
 		for (TerrainCatalog.Donor d : TerrainCatalog.donors().values()) {
-			float[] s = TerrainCatalog.donorUvScale(d.injectName);
+			float[] s = TerrainCatalog.donorUvScale(ctrmap.Workspace.session(), d.injectName);
 			if (s == null) {
 				System.out.println("  FAIL donor " + d.brush + " (" + d.injectName
 						+ ") has no measurable scale");
@@ -84,7 +84,7 @@ public class UvScaleTest {
 		} else {
 			int compared = 0, matched = 0;
 			for (TilePalette brush : TilePalette.brushes()) {
-				TerrainCatalog.ImportResult r = TerrainCatalog.ensureMaterial(model, brush);
+				TerrainCatalog.ImportResult r = TerrainCatalog.ensureMaterial(ctrmap.Workspace.session(), model, brush);
 				if (!r.injected) {
 					continue; //resolved natively; not what this test is about
 				}
@@ -93,12 +93,12 @@ public class UvScaleTest {
 				for (int i = 0; i < m.meshCount; i++) {
 					String n = m.getMaterialName(m.getMeshMaterialIndex(i));
 					if (n != null && n.startsWith("ctr_")) {
-						float[] want = TerrainCatalog.donorUvScale(n);
+						float[] want = TerrainCatalog.donorUvScale(ctrmap.Workspace.session(), n);
 						if (want == null) {
 							continue;
 						}
 						mesh = i;
-						float[] got = PaintedRegionBuilder.uvScaleOf(m, i);
+						float[] got = PaintedRegionBuilder.uvScaleOf(ctrmap.Workspace.session(), m, i);
 						compared++;
 						if (Math.abs(got[0] - want[0]) < 1e-6f && Math.abs(got[1] - want[1]) < 1e-6f) {
 							matched++;

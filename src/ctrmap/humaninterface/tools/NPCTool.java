@@ -78,7 +78,8 @@ public class NPCTool extends AbstractTool {
 		}
 		mNPCEditForm.npc.xTile = Selector.hilightTileX;
 		mNPCEditForm.npc.yTile = Selector.hilightTileY;
-		mNPCEditForm.npc.setYFromColl(mNPCEditForm.npc.xTile * 18f, mNPCEditForm.npc.yTile * 18f); //keeps the altitude where the mesh has no answer, instead of NaN
+		//the panel's meshes are the ground; the NPC keeps its altitude where they have no answer, instead of NaN
+		mNPCEditForm.npc.setYFromColl(mNPCEditForm.npc.xTile * 18f, mNPCEditForm.npc.yTile * 18f, mTileMapPanel::getHeightAtWorldLoc);
 		mNPCEditForm.e.modified = true;
 		mNPCEditForm.refresh();
 	}

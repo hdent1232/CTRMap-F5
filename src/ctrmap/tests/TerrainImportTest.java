@@ -82,7 +82,7 @@ public class TerrainImportTest {
 			for (TilePalette brush : TilePalette.brushes()) {
 				try {
 					boolean had = PaintedRegionBuilder.hasMaterialFor(new BchMapModel(model), brush);
-					TerrainCatalog.ImportResult r = TerrainCatalog.ensureMaterial(model, brush);
+					TerrainCatalog.ImportResult r = TerrainCatalog.ensureMaterial(ctrmap.Workspace.session(), model, brush);
 					if (had) {
 						already++;
 						if (r.injected) {
@@ -108,7 +108,7 @@ public class TerrainImportTest {
 						checkImportIsInert(model, m2, brush);
 					}
 					//idempotent: a second import must change nothing
-					TerrainCatalog.ImportResult again = TerrainCatalog.ensureMaterial(m2, brush);
+					TerrainCatalog.ImportResult again = TerrainCatalog.ensureMaterial(ctrmap.Workspace.session(), m2, brush);
 					if (again.injected || !Arrays.equals(again.model, m2)) {
 						throw new IllegalStateException("import is not idempotent");
 					}

@@ -165,7 +165,7 @@ final class EditorBench {
 		CtrmapMainframe.mTileMapPanel = map;
 		//the tileset the region's picture is painted with lives on the tile
 		//form, so the form has to exist before the region does
-		region = new Tilemap(null, 40, 40);
+		region = new Tilemap(null, 40, 40, tiles.tileset);
 		map.tilemaps = new Tilemap[][]{{region}};
 
 		JPanel tileMaster = new JPanel(new BorderLayout());

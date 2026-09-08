@@ -73,7 +73,7 @@ public class PrefabColourTest {
 				if (e.auto && (seen++ % 37) != 0) {
 					continue;
 				}
-				MapPrefab p = BuildingCatalog.extract(e);
+				MapPrefab p = BuildingCatalog.extract(ctrmap.Workspace.session(), e);
 				if (p == null || p.pieces.isEmpty()) {
 					continue;
 				}

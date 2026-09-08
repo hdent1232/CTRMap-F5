@@ -271,6 +271,31 @@ public class GFLPawnScript {
 		mainEntryPointDummy.setParent(this);
 	}
 
+	/**
+	 * Renumbers a list of instructions so each one's pointer is its byte
+	 * address in list order: four bytes per instruction, plus four per
+	 * argument cell for an instruction whose argument is not packed into
+	 * the op cell. The first half of the renumbering idiom (this, then
+	 * {@link #callInstructionListeners} to re-fix every relative branch).
+	 *
+	 * <p>Lives here, in the format layer, because it reads nothing but the
+	 * instructions: it used to be a static of the script editor window, and
+	 * the three headless script transplants that insert a stub or a case
+	 * had to reach into {@code ctrmap.humaninterface} for a function that
+	 * needed no window at all. The window's own method delegates here.
+	 */
+	public static void setPtrsByIndex(List<PawnInstruction> instructions) {
+		int currentPtr = 0;
+		for (int i = 0; i < instructions.size(); i++) {
+			PawnInstruction ins = instructions.get(i);
+			ins.pointer = currentPtr;
+			currentPtr += 4;
+			if (!ins.hasCompressedArgument) {
+				currentPtr += ins.argumentCount * 4;
+			}
+		}
+	}
+
 	public void callInstructionListeners() {
 		for (int i = 0; i < instructions.size(); i++) {
 			instructions.get(i).callJumpListeners();

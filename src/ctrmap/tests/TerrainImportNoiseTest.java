@@ -71,7 +71,7 @@ public class TerrainImportNoiseTest {
 		}
 		buildIsQuiet(new File(args[0]));
 		tooEarlyTellsNobody();
-		realFailureReachesTheUser();
+		realFailureIsThrownForTheWindowToReport();
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -122,7 +122,7 @@ public class TerrainImportNoiseTest {
 		try {
 			Workspace.install(null);
 			said = Ui.record();
-			TerrainCatalog.ensureCliffMaterial(new byte[]{'B'});
+			TerrainCatalog.ensureCliffMaterial(Workspace.session(), new byte[]{'B'});
 		} finally {
 			Ui.stopRecording();
 			Workspace.install(prev);
@@ -135,10 +135,11 @@ public class TerrainImportNoiseTest {
 	 * The snapshot is present (so the catalog is allowed to try) and the model
 	 * handed in is not a model, which is what the catch was always for.
 	 */
-	static void realFailureReachesTheUser() throws Exception {
+	static void realFailureIsThrownForTheWindowToReport() throws Exception {
 		String prevPath = Workspace.WORKSPACE_PATH;
 		ctrmap.WorkspaceSession prev = Workspace.session();
 		List<String> said = new ArrayList<>();
+		String reason = null;
 		try {
 			Workspace.WORKSPACE_PATH = Scratch.dir("ctrmap_terrain_noise").getAbsolutePath();
 			Sessions.bare(new File(Workspace.WORKSPACE_PATH), new File("no-game"), GameType.ORAS);
@@ -149,13 +150,22 @@ public class TerrainImportNoiseTest {
 				fo.write(new byte[]{'G', 'A', 'R', 'C'});
 			}
 			said = Ui.record();
-			TerrainCatalog.ensureCliffMaterial(new byte[]{'B'});
+			try {
+				TerrainCatalog.ensureCliffMaterial(Workspace.session(), new byte[]{'B'});
+			} catch (IllegalStateException thrown) {
+				reason = String.valueOf(thrown.getMessage());
+			}
 		} finally {
 			Ui.stopRecording();
 			Workspace.WORKSPACE_PATH = prevPath;
 			Workspace.install(prev);
 		}
-		check(!said.isEmpty(), "a real cliff-import failure is reported through Ui; it said " + said);
+		//The format class no longer opens the error box itself: it throws with the
+		//reason and the window that called it reports (the painter's Apply path).
+		//The user-facing half of the old pin is therefore the caller's; this pins
+		//the half that is still TerrainCatalog's: loud, with the reason, and silent.
+		check(reason != null && reason.contains("ctr_gake"), "a real cliff-import failure is thrown with its reason for the window to report (" + reason + ")");
+		check(said.isEmpty(), "and the format class shows nothing itself; it said " + said);
 	}
 
 	/** Two builds: flat, then a plateau, which is what raises cliff faces. */

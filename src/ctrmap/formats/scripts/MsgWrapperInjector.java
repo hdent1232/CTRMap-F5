@@ -1,6 +1,5 @@
 package ctrmap.formats.scripts;
 
-import ctrmap.humaninterface.ScriptEditor;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -441,7 +440,7 @@ public class MsgWrapperInjector {
 				ci += 1 + (ins.hasCompressedArgument ? 0 : ins.argumentCount);
 			}
 			target.instructions.addAll(1, stubIns);
-			ScriptEditor.setPtrsByIndex(target.instructions);
+			GFLPawnScript.setPtrsByIndex(target.instructions);
 			target.callInstructionListeners();
 			for (PawnInstruction ins : stubIns) {
 				ins.setParent(target);
