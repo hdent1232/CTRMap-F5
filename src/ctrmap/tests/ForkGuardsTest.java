@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.AreaForker;
+import ctrmap.LoadedZone;
 import ctrmap.GeometryForker;
 import ctrmap.Ui;
 import ctrmap.Workspace;
@@ -43,6 +44,9 @@ import java.util.List;
  * Usage: java ctrmap.tests.ForkGuardsTest &lt;romfs-root&gt;
  */
 public class ForkGuardsTest {
+
+	/** The zone owner every panel and form built here shares, as the window's would. */
+	static final LoadedZone LOADED = new LoadedZone();
 
 	/** Zones with three different retail areas; any three would do. */
 	private static final int[] ZONES = {15, 20, 30};
@@ -175,19 +179,19 @@ public class ForkGuardsTest {
 
 		//nobody there to answer: that is a cancel, not consent
 		List<String> said = Ui.record();
-		AreaForker.ForkResult r = AreaForkPrompt.ensurePrivate(null, zone, area, edit);
+		AreaForker.ForkResult r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, area, edit);
 		Ui.stopRecording();
 		check(said.size() == 1 && said.get(0).contains("SHARES its area"),
 				"a zone that shares its area is asked: " + said);
 		check(r == null, "and an unanswered question hands back nothing to edit with: " + r);
 
 		Ui.record("Cancel");
-		r = AreaForkPrompt.ensurePrivate(null, zone, area, edit);
+		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, area, edit);
 		Ui.stopRecording();
 		check(r == null, "Cancel hands back nothing to edit with: " + r);
 
 		Ui.record("Edit the shared area anyway");
-		r = AreaForkPrompt.ensurePrivate(null, zone, area, edit);
+		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, area, edit);
 		Ui.stopRecording();
 		check(r != null && !r.forked && r.newArea == area && r.oldArea == area && r.zoneIndex == zone,
 				"declining the fork hands back the shared area " + area + " as it is, forked=false");
@@ -196,7 +200,7 @@ public class ForkGuardsTest {
 				+ AreaForker.currentArea(zone) + ", AreaData " + areaData().length + ")");
 
 		Ui.record("Give this zone its own area");
-		r = AreaForkPrompt.ensurePrivate(null, zone, area, edit);
+		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, area, edit);
 		Ui.stopRecording();
 		check(r != null && r.forked && r.oldArea == area && r.newArea != area && r.newArea == areas,
 				"accepting forks, and the result says so: area " + area + " -> "
@@ -227,7 +231,7 @@ public class ForkGuardsTest {
 
 		//and the prompt itself does not ask about a private area
 		said = Ui.record();
-		r = AreaForkPrompt.ensurePrivate(null, zone, r.newArea, edit);
+		r = AreaForkPrompt.ensurePrivate(LOADED, null, zone, r.newArea, edit);
 		Ui.stopRecording();
 		check(said.isEmpty() && r != null && !r.forked && r.newArea == r.oldArea
 				&& r.newArea == AreaForker.currentArea(zone),

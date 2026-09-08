@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.Workspace;
+import ctrmap.LoadedZone;
 import ctrmap.formats.containers.ZO;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.zone.WarpTransitions;
@@ -119,7 +120,7 @@ public class WarpTransitionsTest {
 	static void theFormAsksTheTable() throws Exception {
 		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
 			game(g);
-			WarpEditForm form = new WarpEditForm();
+			WarpEditForm form = new WarpEditForm(new LoadedZone());
 			form.fillTransitionDropdown();
 			int bad = 0;
 			for (int code = 0; code <= PROBE_CEILING; code++) {
@@ -147,7 +148,7 @@ public class WarpTransitionsTest {
 	 */
 	static void theFormKeepsACodeItCannotName() throws Exception {
 		game(GameType.XY);
-		WarpEditForm form = new WarpEditForm();
+		WarpEditForm form = new WarpEditForm(new LoadedZone());
 		form.fillTransitionDropdown();
 		check(form.transitionToWrite(-1, 99) == 99, "XY: no selection keeps the record's code 99, not -1: " + form.transitionToWrite(-1, 99));
 		check(form.transitionToWrite(-1, 0) == 0, "XY: no selection keeps code 0 too");

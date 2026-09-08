@@ -1,6 +1,7 @@
 package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
+import ctrmap.LoadedZone;
 import ctrmap.formats.scripts.TalkerScriptWizard;
 import ctrmap.formats.zone.ZoneEntities;
 import java.awt.Point;
@@ -18,7 +19,14 @@ public class TriggerEditForm extends javax.swing.JPanel {
 	public boolean loaded = false;
 	private boolean scriptDropdownLoading = false;
 
-	public TriggerEditForm() {
+	/** The zone owner this form was handed; its open zone's script fills the script dropdown. */
+	private final LoadedZone loadedZone;
+
+	public TriggerEditForm(LoadedZone loadedZone) {
+		if (loadedZone == null) {
+			throw new IllegalArgumentException("TriggerEditForm must be handed a LoadedZone");
+		}
+		this.loadedZone = loadedZone;
 		initComponents();
 		setIntegerValueClass(new JFormattedTextField[]{script, u2, constant, u6, u8, x, y, w, h, u14, u16f});
 	}
@@ -58,9 +66,10 @@ public class TriggerEditForm extends javax.swing.JPanel {
 	private void populateScriptDropdown() {
 		scriptDropdownLoading = true;
 		scriptDropdown.removeAllItems();
-		if (ctrmap.Workspace.isValid() && mZonePnl != null && mZonePnl.zone != null && mZonePnl.zone.s != null) {
-			mZonePnl.zone.s.decompressThis();
-			for (String item : TalkerScriptWizard.buildScriptIdItems(mZonePnl.zone.s)) {
+		ctrmap.formats.zone.Zone open = loadedZone.open();
+		if (ctrmap.Workspace.isValid() && open != null && open.s != null) {
+			open.s.decompressThis();
+			for (String item : TalkerScriptWizard.buildScriptIdItems(open.s)) {
 				scriptDropdown.addItem(item);
 			}
 		}

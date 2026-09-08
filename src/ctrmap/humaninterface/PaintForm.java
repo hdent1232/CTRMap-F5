@@ -1,6 +1,7 @@
 package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BchMapModel;
@@ -86,7 +87,14 @@ public class PaintForm extends JPanel {
 	private final JSlider bright = new JSlider(30, 130, 100);
 	private final JSlider shadow = new JSlider(0, 90, 35);
 
-	public PaintForm() {
+	/** The zone owner this painter was handed: the open zone, its index, its area. */
+	private final LoadedZone loadedZone;
+
+	public PaintForm(LoadedZone loadedZone) {
+		if (loadedZone == null) {
+			throw new IllegalArgumentException("PaintForm must be handed a LoadedZone");
+		}
+		this.loadedZone = loadedZone;
 		setLayout(new javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS));
 		setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
@@ -324,12 +332,12 @@ public class PaintForm extends JPanel {
 			seededZone = -1;
 			return;
 		}
-		if (mZonePnl == null || mZonePnl.zone == null || mZonePnl.zoneIndex < 0) {
+		if (!loadedZone.isOpen() || loadedZone.index() < 0) {
 			zoneLabel.setText("Load a zone first (Zone Loader tab)");
 			seededZone = -1;
 			return;
 		}
-		if (seededZone != mZonePnl.zoneIndex || regionChangedUnderneath()) {
+		if (seededZone != loadedZone.index() || regionChangedUnderneath()) {
 			seed();
 		}
 		syncWater();
@@ -343,7 +351,7 @@ public class PaintForm extends JPanel {
 			return false;
 		}
 		try {
-			int[] cell = TilePainterForm.firstRegionCell();
+			int[] cell = TilePainterForm.firstRegionCell(loadedZone);
 			if (cell == null) {
 				return true;
 			}
@@ -363,7 +371,7 @@ public class PaintForm extends JPanel {
 	}
 
 	void seed() {
-		seededZone = mZonePnl.zoneIndex;
+		seededZone = loadedZone.index();
 		zoneLabel.setText("Painting zone " + seededZone);
 		//a zone switch rebuilds the whole scene, so any old preview swap is gone
 		previewInScene = false;
@@ -383,7 +391,7 @@ public class PaintForm extends JPanel {
 		redoBtn.setEnabled(false);
 		pendingPlace = null;
 		placeStatus.setText(" ");
-		int[] cell = TilePainterForm.firstRegionCell();
+		int[] cell = TilePainterForm.firstRegionCell(loadedZone);
 		cellX = cell != null ? cell[1] : 0;
 		cellY = cell != null ? cell[2] : 0;
 		int region = cell != null ? cell[0] : -1;
@@ -421,7 +429,7 @@ public class PaintForm extends JPanel {
 		if (seededZone < 0) {
 			return;
 		}
-		boolean ripples = TilePainterForm.zoneWaterScrolls(mZonePnl.zone.header.areadataID);
+		boolean ripples = TilePainterForm.zoneWaterScrolls(loadedZone, loadedZone.open().header.areadataID);
 		waterBanner.setText(ripples
 				? "<html>💧 Water ripples in this zone -<br>paint water freely.</html>"
 				: "<html>💧 Water here would be STILL -<br>use the button to fix that.</html>");
@@ -437,8 +445,8 @@ public class PaintForm extends JPanel {
 		//animations live in the AREA - fork a shared one first so the ripple
 		//cannot reach other zones (this is what made the water splice a
 		//game-wide edit before)
-		ctrmap.AreaForker.ForkResult fork = AreaForkPrompt.ensurePrivate(this, mZonePnl.zoneIndex,
-				mZonePnl.zone.header.areadataID, "adding the water animation");
+		ctrmap.AreaForker.ForkResult fork = AreaForkPrompt.ensurePrivate(loadedZone, this, loadedZone.index(),
+				loadedZone.open().header.areadataID, "adding the water animation");
 		if (fork == null) {
 			return;
 		}
@@ -452,7 +460,7 @@ public class PaintForm extends JPanel {
 			return;
 		}
 		try {
-			int changed = TilePainterForm.enableWaterScroll(areaId);
+			int changed = TilePainterForm.enableWaterScroll(loadedZone, areaId);
 			syncWater();
 			AreaForkPrompt.packIfForked(fork, null);
 			ctrmap.Ui.message(this, changed > 0
@@ -565,7 +573,7 @@ public class PaintForm extends JPanel {
 	public void gesturePress(int gx, int gy, boolean right) {
 		//the seeded document must match the DISPLAYED zone - a stroke accepted
 		//against a stale document would silently mark tiles of the wrong map
-		if (seededZone < 0 || mZonePnl == null || seededZone != mZonePnl.zoneIndex) {
+		if (seededZone < 0 || seededZone != loadedZone.index()) {
 			return;
 		}
 		int lx = localX(gx), ly = localY(gy);
@@ -612,7 +620,7 @@ public class PaintForm extends JPanel {
 
 	/** Mouse-drag on the map (paint tool only; continues the open gesture). */
 	public void gestureDrag(int gx, int gy, boolean right) {
-		if (seededZone < 0 || mZonePnl == null || seededZone != mZonePnl.zoneIndex || ptool != 0 || right) {
+		if (seededZone < 0 || seededZone != loadedZone.index() || ptool != 0 || right) {
 			return;
 		}
 		int lx = localX(gx), ly = localY(gy);
@@ -757,7 +765,7 @@ public class PaintForm extends JPanel {
 
 	private void startRegen() {
 		if (seededZone < 0 || donorModel == null || !toolActive
-				|| mZonePnl == null || seededZone != mZonePnl.zoneIndex) {
+				|| seededZone != loadedZone.index()) {
 			return;
 		}
 		if (regenRunning) {
@@ -831,9 +839,9 @@ public class PaintForm extends JPanel {
 				regenRunning = false;
 				try {
 					RegenResult res = get();
-					if (res != null && res.model != null && toolActive && mZonePnl != null
-							&& zoneAtStart == seededZone && seededZone == mZonePnl.zoneIndex
-							&& epochAtStart == regenEpoch && mZonePnl.zone != null) {
+					if (res != null && res.model != null && toolActive
+							&& zoneAtStart == seededZone && seededZone == loadedZone.index()
+							&& epochAtStart == regenEpoch && loadedZone.isOpen()) {
 						mTileMapPanel.reloadRegionModel(cellX, cellY, res.model, res.extraTextures);
 						previewInScene = true;
 					}
@@ -850,8 +858,8 @@ public class PaintForm extends JPanel {
 
 	/** Puts the region's real bytes back into the scene (tool exit). */
 	private void restoreRealModel() {
-		if (previewInScene && originalModel != null && mZonePnl != null
-				&& mZonePnl.zone != null && seededZone == mZonePnl.zoneIndex) {
+		if (previewInScene && originalModel != null
+				&& loadedZone.isOpen() && seededZone == loadedZone.index()) {
 			mTileMapPanel.reloadRegionModel(cellX, cellY, originalModel);
 		}
 		previewInScene = false;
@@ -861,7 +869,7 @@ public class PaintForm extends JPanel {
 
 	/** Draws the painted cell over the map (called from the PaintTool). */
 	public void drawOverlay(Graphics g, int sx, int sy, double d) {
-		if (seededZone < 0 || seededZone != mZonePnl.zoneIndex) {
+		if (seededZone < 0 || seededZone != loadedZone.index()) {
 			return;
 		}
 		int ax = cellX * 40, ay = cellY * 40;
@@ -956,7 +964,7 @@ public class PaintForm extends JPanel {
 		}
 		final int zoneIndex = seededZone;
 		String waterNote = "";
-		if (TilePainterForm.usesWater(grid) && !TilePainterForm.zoneWaterScrolls(mZonePnl.zone.header.areadataID)) {
+		if (TilePainterForm.usesWater(grid) && !TilePainterForm.zoneWaterScrolls(loadedZone, loadedZone.open().header.areadataID)) {
 			waterNote = "\n\nNote: painted water will be STILL here - use \"Make water ripple here\" first.";
 		}
 		//what each building really is, at the moment of the decision
@@ -978,7 +986,7 @@ public class PaintForm extends JPanel {
 		try {
 			regenTimer.stop();
 			regenEpoch++; // an in-flight regen must not re-arm across the apply
-			TilePainterForm.applyToZone(zoneIndex, grid, height, ramp, lighting, edgeBlend, placed, touched);
+			TilePainterForm.applyToZone(loadedZone, zoneIndex, grid, height, ramp, lighting, edgeBlend, placed, touched);
 			// only a SUCCESSFUL apply reaches here: the pack + reload rebuilds
 			// the scene from the applied bytes, so the preview swap is gone
 			previewInScene = false;

@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BuildingCatalog;
@@ -79,11 +80,12 @@ public class PaintFormGuardsTest {
 
 	/** A form seeded by hand: zone ZONE open, cell (0,0), all grass at level 0, no ramps. */
 	static PaintForm document() throws Exception {
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
-		pnl.zoneIndex = ZONE;
+		LoadedZone lz = new LoadedZone();
+		lz.open(ZONE, null);                      //zone ZONE's index and no zone object: the document reads the index
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mTileMapPanel = null;
-		PaintForm form = new PaintForm();
+		PaintForm form = new PaintForm(lz);
 		set(form, "seededZone", ZONE);
 		TilePalette[][] grid = (TilePalette[][]) get(form, "grid");
 		for (TilePalette[] row : grid) {
@@ -277,7 +279,7 @@ public class PaintFormGuardsTest {
 	 */
 	static void aRefusedApplySaysSoAndPutsTheMapBack() throws Exception {
 		PaintForm form = document();
-		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel();
+		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(new LoadedZone());
 		set(form, "previewInScene", true);
 		set(form, "originalModel", new byte[]{1, 2, 3, 4});
 		List<String> said = ctrmap.Ui.record();
@@ -320,11 +322,11 @@ public class PaintFormGuardsTest {
 		PaintApplyGuardsTest.openWorkspace(dump);
 		PaintApplyGuardsTest.open(74);
 		CtrmapMainframe.mTileMapPanel = null;
-		PaintForm form = new PaintForm();
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded);
 		Method seed = PaintForm.class.getDeclaredMethod("seed");
 		seed.setAccessible(true);
 		seed.invoke(form);
-		int[] cell = TilePainterForm.firstRegionCell();
+		int[] cell = TilePainterForm.firstRegionCell(PaintApplyGuardsTest.loaded);
 		check(cell != null, "fixture: zone 74 resolves its own map cell");
 		if (cell == null) {
 			return;

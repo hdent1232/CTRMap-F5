@@ -1,6 +1,7 @@
 package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
+import ctrmap.LoadedZone;
 import ctrmap.Utils;
 import ctrmap.Workspace;
 import ctrmap.ZoneAppender;
@@ -36,14 +37,20 @@ import javax.swing.text.NumberFormatter;
 public class ZoneLoadingPanel extends javax.swing.JPanel {
 
 	/**
-	 * Creates new form ZoneDebugPanel
+	 * The zone table, the open zone and its index, owned by {@link LoadedZone}
+	 * and handed to this panel; the three used to be public fields here, read
+	 * by fourteen classes through the window's static. Every write the panel
+	 * makes goes through it, named for what happened.
 	 */
-	public Zone[] zones;
-	public Zone zone;
-	public int zoneIndex = -1;
+	private final LoadedZone loadedZone;
 	private boolean loaded = false;
 
-	public ZoneLoadingPanel() {
+	/** Creates the form over the zone owner it is handed. */
+	public ZoneLoadingPanel(LoadedZone loadedZone) {
+		if (loadedZone == null) {
+			throw new IllegalArgumentException("ZoneLoadingPanel must be handed a LoadedZone");
+		}
+		this.loadedZone = loadedZone;
 		initComponents();
 		zoneList.setToolTipText("Select a map here to open it - this is the normal way to load a zone.");
 		btnCloneZone.setToolTipText("Copy the currently loaded zone over another existing zone slot.");
@@ -55,11 +62,15 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	public void loadZone(Zone z) {
 		try {
 			loaded = false;
-			if (zone != null) {
-				zone.header.freeArchives();
+			Zone previous = loadedZone.open();
+			if (previous != null) {
+				previous.header.freeArchives();
 				System.gc();
 			}
-			zone = z;
+			//z is open at whatever index is selected: the list worker records
+			//the index it picked right after this call, and a zone opened from
+			//a file has no slot to record
+			loadedZone.open(loadedZone.index(), z);
 
 			isParentMap.setSelected(z.header.OLvalue == 1);
 			cam1.setValue(z.header.camera1);
@@ -161,11 +172,12 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			@Override
 			protected Object doInBackground() throws Exception {
 				loaded = false;
-				if (zone != null) {
-					zone.header.freeArchives();
+				Zone previous = loadedZone.open();
+				if (previous != null) {
+					previous.header.freeArchives();
 				}
 				System.gc();
-				zone = null;
+				loadedZone.release();
 				zoneList.setSelectedIndex(-1);
 				zoneList.removeAllItems();
 				tmg.setSelectedIndex(-1);
@@ -196,13 +208,14 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 							+ Workspace.getArchive(ArchiveType.ZONE_DATA).length
 							+ " entries). The game folder is probably incomplete or damaged.");
 				}
-				zones = new Zone[totalZones]; //last file is not a ZO
+				loadedZone.table(new Zone[totalZones]); //last file is not a ZO; filled slot by slot below
 				for (int i = 0; i < totalZones; i++) {
 					ZO zo = new ZO(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, i), Workspace.session());
-					zones[i] = new Zone(zo, Workspace.game());
+					Zone read = new Zone(zo, Workspace.game());
+					loadedZone.replace(i, read);
 					//unknown flags 1024 == 8192 ???, 4096, 16384 always 0, >> 20 lumi warp zone?,
-					String name = LocationNames.getLocName(zones[i].header.parentMap) + " - " + i;
-					if (zones[i].s.publics.size() > 3) {
+					String name = LocationNames.getLocName(read.header.parentMap) + " - " + i;
+					if (read.s.publics.size() > 3) {
 						System.out.println(i + "/" + name);
 					}
 					/*for (int j = 0; j < zones[i].entities.NPCCount; j++){
@@ -279,9 +292,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	}
 
 	public boolean store(boolean dialog) {
+		Zone zone = loadedZone.open();
 		if (zone == null) {
 			return true;
 		}
+		int zoneIndex = loadedZone.index();
 		zone.header.mapType = getTypeRaw(type.getSelectedIndex());
 		zone.header.mapMove = (Integer) move.getValue();
 		zone.header.areadataID = (Integer) ad.getValue();
@@ -393,6 +408,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 * serialise; nothing is written then, and the caller reports it
 	 */
 	private boolean storeZone(boolean dialog) {
+		Zone zone = loadedZone.open();
 		EnumSet<Zone.Part> changed = zone.changed();
 		EnumSet<Zone.Part> keep = EnumSet.noneOf(Zone.Part.class);
 		if (changed.contains(Zone.Part.HEADER)) {
@@ -1161,9 +1177,9 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 					protected Object doInBackground() {
 						mCamEditForm.store(true);
 						progress.setBarPercent(20);
-						Zone z = zones[zoneList.getSelectedIndex()];
+						Zone z = loadedZone.at(zoneList.getSelectedIndex());
 						loadZone(z);
-						zoneIndex = zoneList.getSelectedIndex();
+						loadedZone.open(zoneList.getSelectedIndex(), z);
 						progress.setBarPercent(50);
 						z.header.fetchArchives(Workspace.session());
 						z.s.decompressThis();
@@ -1194,8 +1210,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 * and the ones that had not would still hold the previous zone.
 	 */
 	private void unloadZone() {
-		zone = null;
-		zoneIndex = -1;
+		loadedZone.close();
 		mNPCEditForm.loadFromEntities(null, null);
 		mWarpEditForm.loadFromEntities(null);
 		mTriggerEditForm.loadFromEntities(null);
@@ -1287,14 +1302,17 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 * remembered per zone, per workspace.
 	 */
 	private void offerForkIfShared() {
-		if (zone == null || zoneIndex < 0 || !canFork() || forkDeclined().contains(zoneIndex) || zones == null) {
+		Zone zone = loadedZone.open();
+		int zoneIndex = loadedZone.index();
+		if (zone == null || zoneIndex < 0 || !canFork() || forkDeclined().contains(zoneIndex) || loadedZone.count() == 0) {
 			return;
 		}
 		int mm = zone.header.mapmatrixID;
 		int baseZones = ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES;
 		java.util.List<Integer> sharerIdx = new java.util.ArrayList<>();
-		for (int i = 0; i < zones.length; i++) {
-			if (i != zoneIndex && zones[i] != null && zones[i].header != null && zones[i].header.mapmatrixID == mm) {
+		for (int i = 0; i < loadedZone.count(); i++) {
+			Zone other = loadedZone.at(i);
+			if (i != zoneIndex && other != null && other.header != null && other.header.mapmatrixID == mm) {
 				sharerIdx.add(i);
 			}
 		}
@@ -1307,7 +1325,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		StringBuilder who = new StringBuilder();
 		for (int k = 0; k < sharerIdx.size() && k < 6; k++) {
 			int i = sharerIdx.get(k);
-			who.append("  - zone ").append(i).append(" (").append(LocationNames.getLocName(zones[i].header.parentMap))
+			who.append("  - zone ").append(i).append(" (").append(LocationNames.getLocName(loadedZone.at(i).header.parentMap))
 					.append(i >= baseZones ? ", added zone" : "").append(")\n");
 		}
 		if (sharerIdx.size() > 6) {
@@ -1363,7 +1381,9 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	 * exist (no GARC appending). See ZoneCloner for the byte-level contract.
 	 */
 	private void btnCloneZoneActionPerformed(java.awt.event.ActionEvent evt) {
-		if (zones == null || zone == null || zoneIndex == -1) {
+		Zone zone = loadedZone.open();
+		int zoneIndex = loadedZone.index();
+		if (loadedZone.count() == 0 || zone == null || zoneIndex == -1) {
 			ctrmap.Ui.error(this, "Load the source zone from the dropdown first.", "Clone zone");
 			return;
 		}
@@ -1373,9 +1393,9 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 			return;
 		}
 		int srcIndex = zoneIndex;
-		String[] names = new String[zones.length];
-		for (int i = 0; i < zones.length; i++) {
-			names[i] = LocationNames.getLocName(zones[i].header.parentMap) + " - " + i;
+		String[] names = new String[loadedZone.count()];
+		for (int i = 0; i < names.length; i++) {
+			names[i] = LocationNames.getLocName(loadedZone.at(i).header.parentMap) + " - " + i;
 		}
 		JComboBox<String> dstPicker = new JComboBox<>(names);
 		dstPicker.setMaximumRowCount(20);
@@ -1476,7 +1496,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 					+ " than writing a zone this game would never load.", "Add new zones");
 			return;
 		}
-		if (zones == null || zones.length == 0) {
+		if (loadedZone.count() == 0) {
 			ctrmap.Ui.error(this, "Load a workspace first.", "Add new zones");
 			return;
 		}
@@ -1485,13 +1505,14 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		if (!(mCamEditForm.store(true) && mTileMapPanel.saveTileMap(true) && mMtxEditForm.store(true) && mPropEditForm.store(true) && mNPCEditForm.saveRegistry(true) && store(true))) {
 			return;
 		}
-		int baseCount = zones.length;
-		String[] names = new String[zones.length];
-		for (int i = 0; i < zones.length; i++) {
-			names[i] = LocationNames.getLocName(zones[i].header.parentMap) + " - " + i;
+		int baseCount = loadedZone.count();
+		String[] names = new String[baseCount];
+		for (int i = 0; i < baseCount; i++) {
+			names[i] = LocationNames.getLocName(loadedZone.at(i).header.parentMap) + " - " + i;
 		}
 		JComboBox<String> srcPicker = new JComboBox<>(names);
 		srcPicker.setMaximumRowCount(20);
+		int zoneIndex = loadedZone.index();
 		if (zoneIndex >= 0 && zoneIndex < names.length) {
 			srcPicker.setSelectedIndex(zoneIndex);
 		}

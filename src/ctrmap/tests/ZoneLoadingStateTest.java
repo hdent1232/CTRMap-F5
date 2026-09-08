@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.Ui;
 import ctrmap.Workspace;
 import ctrmap.WorkspaceSession;
@@ -89,20 +90,21 @@ public class ZoneLoadingStateTest {
 		} else {
 			ScratchGame.open(dump);
 			LocationNames.loadFromGarc(Workspace.session());
-			ZoneLoadingPanel pnl = new ZoneLoadingPanel();
+			LoadedZone lz = new LoadedZone();
+			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
 			CtrmapMainframe.mZonePnl = pnl;
-			CtrmapMainframe.mNPCEditForm = new NPCEditForm();
-			CtrmapMainframe.mWarpEditForm = new WarpEditForm();
-			CtrmapMainframe.mTriggerEditForm = new TriggerEditForm();
+			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz);
+			CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz);
+			CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz);
 
-			theListIsTheArchivesZonesAndNothingIsOpened(pnl);
-			everyRetailHeaderSurvivesTheDropdowns(pnl);
-			aLoadedZoneIsWrittenBackUnchanged(pnl);
+			theListIsTheArchivesZonesAndNothingIsOpened(pnl, lz);
+			everyRetailHeaderSurvivesTheDropdowns(pnl, lz);
+			aLoadedZoneIsWrittenBackUnchanged(pnl, lz);
 			selectingOutsideTheListChangesNothing(pnl);
-			unloadingClearsTheZoneAndTheEditorsWithIt(pnl);
-			aSharedMapIsOfferedAForkAndADeclineIsRemembered(pnl);
+			unloadingClearsTheZoneAndTheEditorsWithIt(pnl, lz);
+			aSharedMapIsOfferedAForkAndADeclineIsRemembered(pnl, lz);
 			//LAST: it replaces the zone table with one that cannot be read
-			aZoneTableThatCannotBeReadLeavesNoZones(pnl);
+			aZoneTableThatCannotBeReadLeavesNoZones(pnl, lz);
 		}
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -123,10 +125,11 @@ public class ZoneLoadingStateTest {
 	 */
 	static void aFreshPanelHoldsNoZone() {
 		System.out.println("--- a panel that has never been given a game");
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
-		check(pnl.zones == null, "no zone array");
-		check(pnl.zone == null, "no open zone");
-		check(pnl.zoneIndex == -1, "and the index is -1, not 0 - nothing is open (got " + pnl.zoneIndex + ")");
+		LoadedZone lz = new LoadedZone();
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
+		check(lz.count() == 0, "no zone table");
+		check(lz.open() == null, "no open zone");
+		check(lz.index() == -1, "and the index is -1, not 0 - nothing is open (got " + lz.index() + ")");
 		check(pnl.getLoadedZoneCount() == 0, "and the dropdown is empty, which is the honest count");
 		check(pnl.store(false), "storing nothing succeeds trivially rather than throwing");
 	}
@@ -147,7 +150,7 @@ public class ZoneLoadingStateTest {
 	 */
 	static void theDropdownTablesAgreeWithThemselves() throws Exception {
 		System.out.println("--- the weather and map-type tables agree with themselves");
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone());
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.XY);
@@ -213,7 +216,8 @@ public class ZoneLoadingStateTest {
 	 */
 	static void theZoneButtonsRefuseWhatTheyCannotDo() throws Exception {
 		System.out.println("--- the Clone and Add buttons refuse before they flush anything");
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
+		LoadedZone lz = new LoadedZone();
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
 		WorkspaceSession was = Workspace.session();
 
 		openAs(GameType.ORAS);
@@ -240,7 +244,7 @@ public class ZoneLoadingStateTest {
 		said = press(pnl, "btnAddZoneActionPerformed");
 		check(said.size() == 1 && said.get(0).equals("Add new zones: Load a workspace first."),
 				"Add zones with no zone list loaded says so: " + said);
-		pnl.zones = new Zone[0];
+		lz.table(new Zone[0]);
 		said = press(pnl, "btnAddZoneActionPerformed");
 		check(said.size() == 1 && said.get(0).equals("Add new zones: Load a workspace first."),
 				"and an EMPTY zone list reads the same way, not as a workspace with no zones: " + said);
@@ -273,33 +277,32 @@ public class ZoneLoadingStateTest {
 	 * was in has just been replaced: after "Remove added zones" the old index
 	 * points past the end of the new list.
 	 */
-	static void theListIsTheArchivesZonesAndNothingIsOpened(ZoneLoadingPanel pnl) throws Exception {
+	static void theListIsTheArchivesZonesAndNothingIsOpened(ZoneLoadingPanel pnl, LoadedZone lz) throws Exception {
 		System.out.println("--- rebuilding the list fills it from the archive and opens nothing");
-		pnl.zoneIndex = 42;                       //as if a zone had been open before
-		pnl.zone = zoneAt(SHARED_ZONE);
+		lz.open(42, zoneAt(SHARED_ZONE));         //as if a zone had been open before
 		long t0 = System.currentTimeMillis();
 		pnl.loadEverything();
 		long ms = System.currentTimeMillis() - t0;
 
 		int entries = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
-		check(pnl.zones != null && pnl.zones.length == entries - 2,
-				"the array holds every zone bar the master table and the EN pack ("
-				+ (pnl.zones == null ? "null" : pnl.zones.length) + " for " + entries + " entries, " + ms + "ms)");
+		check(lz.count() == entries - 2,
+				"the table holds every zone bar the master table and the EN pack ("
+				+ lz.count() + " for " + entries + " entries, " + ms + "ms)");
 		check(pnl.getLoadedZoneCount() == entries - 2,
 				"and the dropdown holds exactly as many, so its positions are zone indices ("
 				+ pnl.getLoadedZoneCount() + ")");
-		check(pnl.zone == null, "the rebuild leaves no zone open");
-		check(pnl.zoneIndex == 42,
-				"and PINNED AS IS: zoneIndex is NOT reset by the rebuild (still " + pnl.zoneIndex + ")");
+		check(lz.open() == null, "the rebuild leaves no zone open");
+		check(lz.index() == 42,
+				"and PINNED AS IS: the index is NOT reset by the rebuild (still " + lz.index() + ")");
 		//PINNED AS IS: filling an empty JComboBox selects its first item, so the
 		//dropdown SHOWS zone 0 while the panel holds no zone and zoneIndex names
 		//another one. The three disagree until the user picks something.
 		check(((JComboBox<?>) field(pnl, "zoneList")).getSelectedIndex() == 0,
 				"and PINNED AS IS: the dropdown auto-selects zone 0 while no zone is open (showing "
 				+ ((JComboBox<?>) field(pnl, "zoneList")).getSelectedIndex() + ")");
-		check(pnl.zones[SHARED_ZONE] != null && pnl.zones[entries - 3] != null,
+		check(lz.at(SHARED_ZONE) != null && lz.at(entries - 3) != null,
 				"and both ends of the range really were read");
-		pnl.zoneIndex = -1;
+		lz.close();
 	}
 
 	/**
@@ -315,18 +318,18 @@ public class ZoneLoadingStateTest {
 	 * <p>Swept over the whole corpus because it costs nothing: the headers are
 	 * already parsed and the check is arithmetic.
 	 */
-	static void everyRetailHeaderSurvivesTheDropdowns(ZoneLoadingPanel pnl) {
+	static void everyRetailHeaderSurvivesTheDropdowns(ZoneLoadingPanel pnl, LoadedZone lz) {
 		System.out.println("--- every retail header value survives the dropdowns");
 		TreeSet<Integer> badType = new TreeSet<>();
 		TreeSet<Integer> badWeather = new TreeSet<>();
 		TreeSet<Integer> types = new TreeSet<>();
 		TreeSet<Integer> weathers = new TreeSet<>();
-		for (int i = 0; i < pnl.zones.length; i++) {
-			if (pnl.zones[i] == null) {
+		for (int i = 0; i < lz.count(); i++) {
+			if (lz.at(i) == null) {
 				continue;
 			}
-			int t = pnl.zones[i].header.mapType;
-			int w = pnl.zones[i].header.weather;
+			int t = lz.at(i).header.mapType;
+			int w = lz.at(i).header.weather;
 			types.add(t);
 			weathers.add(w);
 			if (pnl.getTypeRaw(pnl.getTypeIndex(t)) != t) {
@@ -360,7 +363,7 @@ public class ZoneLoadingStateTest {
 	 * unchanged, because one header field is six bits wide and its editor is a
 	 * checkbox.
 	 */
-	static void aLoadedZoneIsWrittenBackUnchanged(ZoneLoadingPanel pnl) throws Exception {
+	static void aLoadedZoneIsWrittenBackUnchanged(ZoneLoadingPanel pnl, LoadedZone lz) throws Exception {
 		System.out.println("--- a zone opened and saved with nothing typed, against the bytes");
 		//"Is parent map" is a checkbox over a SIX-BIT field: the header packs
 		//parentMap in the low 10 bits of the u16 at 0x1C and OLvalue in the
@@ -369,18 +372,18 @@ public class ZoneLoadingStateTest {
 		//it. Measured, PINNED, and reported - not fixed here.
 		TreeSet<Integer> wideOL = new TreeSet<>();
 		TreeSet<Integer> values = new TreeSet<>();
-		for (int i = 0; i < pnl.zones.length; i++) {
-			if (pnl.zones[i] == null) {
+		for (int i = 0; i < lz.count(); i++) {
+			if (lz.at(i) == null) {
 				continue;
 			}
-			values.add(pnl.zones[i].header.OLvalue);
-			if (pnl.zones[i].header.OLvalue > 1) {
+			values.add(lz.at(i).header.OLvalue);
+			if (lz.at(i).header.OLvalue > 1) {
 				wideOL.add(i);
 			}
 		}
 		check(values.size() > 1, "the retail corpus uses OLvalue values " + values);
 		check(wideOL.size() == 52, "and " + wideOL.size()
-				+ " of " + pnl.zones.length + " zones hold one the checkbox cannot represent"
+				+ " of " + lz.count() + " zones hold one the checkbox cannot represent"
 				+ " (expected 52; first is zone " + (wideOL.isEmpty() ? "none" : wideOL.first()) + ")");
 
 		//zones the form CAN represent must come back byte for byte
@@ -388,14 +391,14 @@ public class ZoneLoadingStateTest {
 		int changed = 0;
 		String firstChange = "";
 		for (int idx : new int[]{0, SHARED_ZONE, PRIVATE_ZONE, 100, 200, 300, 448, 517, 535}) {
-			if (idx >= pnl.zones.length || wideOL.contains(idx)) {
+			if (idx >= lz.count() || wideOL.contains(idx)) {
 				continue;
 			}
 			Zone z = zoneAt(idx);
 			byte[] before = z.file.getFile(0);
-			pnl.zoneIndex = idx;
+			index(lz, idx);
 			pnl.loadZone(z);
-			check(pnl.zone == z, "zone " + idx + " is the open one after a load");
+			check(lz.open() == z, "zone " + idx + " is the open one after a load");
 			Boolean stored = storeOrNull(pnl);
 			byte[] after = z.file.getFile(0);
 			checkedZones++;
@@ -416,7 +419,7 @@ public class ZoneLoadingStateTest {
 		int wasOL = z.header.OLvalue;
 		int wasParent = z.header.parentMap;
 		byte[] before = z.file.getFile(0);
-		pnl.zoneIndex = victim;
+		index(lz, victim);
 		pnl.loadZone(z);
 		check(storeOrNull(pnl) != null, "zone " + victim + " saves without throwing out of the form");
 		byte[] after = z.file.getFile(0);
@@ -438,8 +441,7 @@ public class ZoneLoadingStateTest {
 				"and the location id sharing that word is untouched (" + wasParent + ")");
 
 		//and the same save with no zone open must be a no-op rather than a throw
-		pnl.zone = null;
-		pnl.zoneIndex = -1;
+		lz.close();
 		check(pnl.store(false), "saving with no zone open succeeds and writes nothing");
 	}
 
@@ -490,11 +492,10 @@ public class ZoneLoadingStateTest {
 	 * is pinned here is the clearing itself, driven directly, so each field is
 	 * named rather than inferred from one failed load.
 	 */
-	static void unloadingClearsTheZoneAndTheEditorsWithIt(ZoneLoadingPanel pnl) throws Exception {
+	static void unloadingClearsTheZoneAndTheEditorsWithIt(ZoneLoadingPanel pnl, LoadedZone lz) throws Exception {
 		System.out.println("--- unloading clears the zone and every editor showing it");
 		Zone z = zoneAt(SHARED_ZONE);
-		pnl.zone = z;
-		pnl.zoneIndex = SHARED_ZONE;
+		lz.open(SHARED_ZONE, z);
 		pnl.loadZone(z);
 		CtrmapMainframe.mNPCEditForm.loadFromEntities(z.entities, null);
 		CtrmapMainframe.mWarpEditForm.loadFromEntities(z.entities);
@@ -503,19 +504,19 @@ public class ZoneLoadingStateTest {
 		JComboBox<?> list = (JComboBox<?>) field(pnl, "zoneList");
 		setField(pnl, "loaded", false);
 		list.setSelectedIndex(SHARED_ZONE);
-		Zone[] arrayBefore = pnl.zones;
+		Zone[] tableBefore = snapshot(lz);
 
 		Method m = ZoneLoadingPanel.class.getDeclaredMethod("unloadZone");
 		m.setAccessible(true);
 		m.invoke(pnl);
 
-		check(pnl.zone == null, "no zone is open afterwards");
-		check(pnl.zoneIndex == -1, "and the index says so too (got " + pnl.zoneIndex + ")");
+		check(lz.open() == null, "no zone is open afterwards");
+		check(lz.index() == -1, "and the index says so too (got " + lz.index() + ")");
 		check(list.getSelectedIndex() == -1, "the dropdown shows nothing selected");
 		check(!CtrmapMainframe.mNPCEditForm.loaded,
 				"the NPC editor is not left showing the zone that is no longer open");
-		check(pnl.zones == arrayBefore,
-				"but the ZONE LIST itself is kept - the zones are still there, none is open");
+		check(sameTable(lz, tableBefore),
+				"but the ZONE LIST itself is kept - the same zones in the same slots, none is open");
 		check(pnl.store(false), "and a save now writes nothing rather than writing the wrong zone");
 	}
 
@@ -535,16 +536,15 @@ public class ZoneLoadingStateTest {
 	 * never asked. Only the decline is answered - saying yes runs a real fork
 	 * and a pack, which ForkGuardsTest covers against the archive.
 	 */
-	static void aSharedMapIsOfferedAForkAndADeclineIsRemembered(ZoneLoadingPanel pnl) throws Exception {
+	static void aSharedMapIsOfferedAForkAndADeclineIsRemembered(ZoneLoadingPanel pnl, LoadedZone lz) throws Exception {
 		System.out.println("--- a shared map is offered a fork, and a decline is remembered");
 		String key = "FORK_DECLINED_" + Workspace.WORKSPACE_PATH.hashCode();
 		try {
-			pnl.zone = zoneAt(SHARED_ZONE);
-			pnl.zoneIndex = SHARED_ZONE;
-			int mtx = pnl.zone.header.mapmatrixID;
+			lz.open(SHARED_ZONE, zoneAt(SHARED_ZONE));
+			int mtx = lz.open().header.mapmatrixID;
 			int sharers = 0;
-			for (int i = 0; i < pnl.zones.length; i++) {
-				if (i != SHARED_ZONE && pnl.zones[i] != null && pnl.zones[i].header.mapmatrixID == mtx) {
+			for (int i = 0; i < lz.count(); i++) {
+				if (i != SHARED_ZONE && lz.at(i) != null && lz.at(i).header.mapmatrixID == mtx) {
 					sharers++;
 				}
 			}
@@ -572,14 +572,12 @@ public class ZoneLoadingStateTest {
 			check(said.size() == 1, "and clearing a whole range of declines does the same");
 
 			//a zone whose map is already its own is never asked
-			pnl.zone = zoneAt(PRIVATE_ZONE);
-			pnl.zoneIndex = PRIVATE_ZONE;
+			lz.open(PRIVATE_ZONE, zoneAt(PRIVATE_ZONE));
 			said = offerFork(pnl, JOptionPane.NO_OPTION);
 			check(said.isEmpty(), "a zone whose map is its own is never asked: " + said);
 
 			//nor is anything asked with no zone open
-			pnl.zone = null;
-			pnl.zoneIndex = -1;
+			lz.close();
 			said = offerFork(pnl, JOptionPane.NO_OPTION);
 			check(said.isEmpty(), "and nothing is asked when no zone is open: " + said);
 		} finally {
@@ -605,7 +603,7 @@ public class ZoneLoadingStateTest {
 	 * (never the previous game's zones, which would be openable and would write
 	 * into the wrong archive), and the count the panel reports agrees with it.
 	 */
-	static void aZoneTableThatCannotBeReadLeavesNoZones(ZoneLoadingPanel pnl) throws Exception {
+	static void aZoneTableThatCannotBeReadLeavesNoZones(ZoneLoadingPanel pnl, LoadedZone lz) throws Exception {
 		System.out.println("--- a zone table that cannot be read leaves the list empty");
 		check(pnl.getLoadedZoneCount() > 0, "the list is full before the archive is broken");
 		File missing = new File(Scratch.dir("ctrmap_no_zonedata"), "not-a-garc");
@@ -621,8 +619,8 @@ public class ZoneLoadingStateTest {
 		check(pnl.getLoadedZoneCount() == 0,
 				"and the dropdown is left empty rather than holding the last game's zones (got "
 				+ pnl.getLoadedZoneCount() + ")");
-		check(pnl.zone == null && pnl.zoneIndex == -1,
-				"with nothing reported as open (zone " + pnl.zone + ", index " + pnl.zoneIndex + ")");
+		check(lz.open() == null && lz.index() == -1,
+				"with nothing reported as open (zone " + lz.open() + ", index " + lz.index() + ")");
 	}
 
 	// ---- plumbing ----------------------------------------------------------
@@ -633,6 +631,33 @@ public class ZoneLoadingStateTest {
 	 * NullPointerException out of {@code store}, and one broken zone must not
 	 * stop the suite reporting the rest.
 	 */
+	/** What {@code pnl.zoneIndex = i} used to do: the index alone, whatever is open stays open. */
+	static void index(LoadedZone lz, int i) {
+		lz.open(i, lz.open());
+	}
+
+	/** Every slot of the table, in order - the array the panel used to expose. */
+	static Zone[] snapshot(LoadedZone lz) {
+		Zone[] out = new Zone[lz.count()];
+		for (int i = 0; i < out.length; i++) {
+			out[i] = lz.at(i);
+		}
+		return out;
+	}
+
+	/** The same zones in the same slots: what {@code pnl.zones == before} asked when the array was exposed. */
+	static boolean sameTable(LoadedZone lz, Zone[] before) {
+		if (lz.count() != before.length) {
+			return false;
+		}
+		for (int i = 0; i < before.length; i++) {
+			if (lz.at(i) != before[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	static Boolean storeOrNull(ZoneLoadingPanel pnl) {
 		try {
 			return pnl.store(false);

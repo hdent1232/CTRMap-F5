@@ -2,6 +2,7 @@ package ctrmap.humaninterface;
 
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.resources.ResourceAccess;
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.ZoneTables;
 import ctrmap.formats.containers.AD;
@@ -57,11 +58,27 @@ public class ExtrasPanel extends javax.swing.JPanel {
 	/**
 	 * Creates new form ExtrasPanel
 	 */
-	private ZoneLoadingPanel parent;
+	/**
+	 * The zone table the two mass edits walk. The panel used to be handed the
+	 * Zone tab itself and read its public array; the owner is all it needs.
+	 */
+	private final LoadedZone loadedZone;
 
-	public ExtrasPanel(ZoneLoadingPanel zoneContainer) {
+	public ExtrasPanel(LoadedZone loadedZone) {
+		if (loadedZone == null) {
+			throw new IllegalArgumentException("ExtrasPanel must be handed a LoadedZone");
+		}
+		this.loadedZone = loadedZone;
 		initComponents();
-		parent = zoneContainer;
+	}
+
+	/** The zone table as a mass edit walks it: every slot, in order, the owner's copy. */
+	private Zone[] allZones() {
+		Zone[] zones = new Zone[loadedZone.count()];
+		for (int i = 0; i < zones.length; i++) {
+			zones[i] = loadedZone.at(i);
+		}
+		return zones;
 	}
 
 	/**
@@ -168,7 +185,7 @@ public class ExtrasPanel extends javax.swing.JPanel {
 				+ "It cannot be undone from within CTRMap. Continue?")) {
 			return;
 		}
-		Zone[] zones = parent.zones;
+		Zone[] zones = allZones();
 		if (zones != null) {
 			for (int i = 0; i < zones.length; i++) {
 				zones[i].header.enableRollerSkates = true;
@@ -202,7 +219,7 @@ public class ExtrasPanel extends javax.swing.JPanel {
 				+ "It cannot be undone from within CTRMap. Continue?")) {
 			return;
 		}
-		Zone[] zones = parent.zones;
+		Zone[] zones = allZones();
 
 		if (zones != null) {
 			for (int i = 0; i < zones.length; i++) {

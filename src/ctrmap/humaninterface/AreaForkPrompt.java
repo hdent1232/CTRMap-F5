@@ -1,11 +1,11 @@
 package ctrmap.humaninterface;
 
 import ctrmap.AreaForker;
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
+import ctrmap.formats.zone.Zone;
 import java.awt.Component;
 import javax.swing.JOptionPane;
-
-import static ctrmap.CtrmapMainframe.*;
 
 /**
  * The shared "make this zone's area private first" gate. Atmosphere, water
@@ -44,8 +44,14 @@ public class AreaForkPrompt {
 	 * caller that packed on its own (the tile painter does) left it set, so the
 	 * next unrelated caller's pack-if-forked packed for a fork it never made.
 	 * Its sibling {@link GeometryForker#ensurePrivate} returns the same shape.
+	 *
+	 * <p>{@code loaded} is the zone owner the caller was handed: the sharers
+	 * are named from its table, and a fork repoints its open zone's header.
 	 */
-	public static AreaForker.ForkResult ensurePrivate(Component parent, int zoneIndex, int currentArea, String whatEdit) {
+	public static AreaForker.ForkResult ensurePrivate(LoadedZone loaded, Component parent, int zoneIndex, int currentArea, String whatEdit) {
+		if (loaded == null) {
+			throw new IllegalArgumentException("AreaForkPrompt.ensurePrivate must be handed the LoadedZone");
+		}
 		//Ask whether THIS GAME can fork an area, not whether it is ORAS. The
 		//prompt is an offer, so an unsupported game must not be offered it:
 		//accepting would run AreaForker, whose four archive offsets and global
@@ -68,7 +74,7 @@ public class AreaForkPrompt {
 		}
 		String[] opts = {"Give this zone its own area", "Edit the shared area anyway", "Cancel"};
 		Object pick = ctrmap.Ui.input(parent,
-				"This zone SHARES its area with " + sharers + " other zone(s)" + namedSharers(zoneIndex, currentArea) + ".\n"
+				"This zone SHARES its area with " + sharers + " other zone(s)" + namedSharers(loaded, zoneIndex, currentArea) + ".\n"
 				+ "An area holds the atmosphere (fog/lighting), water animations, prop\n"
 				+ "registry and NPC models - so " + whatEdit + " here would change those zones too.\n\n"
 				+ "Give this zone its OWN private area first? (Recommended. Pure data -\n"
@@ -83,9 +89,9 @@ public class AreaForkPrompt {
 		try {
 			AreaForker.ForkResult r = AreaForker.forkArea(zoneIndex);
 			//keep the loaded zone's live header coherent with what we just wrote
-			if (mZonePnl != null && mZonePnl.zone != null && mZonePnl.zone.header != null
-					&& mZonePnl.zoneIndex == zoneIndex) {
-				mZonePnl.zone.header.areadataID = r.newArea;
+			Zone open = loaded.open();
+			if (open != null && open.header != null && loaded.index() == zoneIndex) {
+				open.header.areadataID = r.newArea;
 			}
 			return r;
 		} catch (Exception ex) {
@@ -121,23 +127,24 @@ public class AreaForkPrompt {
 	}
 
 	/** " (Route 110, Route 111 and 3 more)" - concrete beats a bare count. */
-	private static String namedSharers(int zoneIndex, int area) {
+	private static String namedSharers(LoadedZone loaded, int zoneIndex, int area) {
 		try {
-			if (mZonePnl == null || mZonePnl.zones == null) {
+			if (loaded.count() == 0) {
 				return "";
 			}
 			StringBuilder sb = new StringBuilder();
 			int shown = 0, extra = 0;
-			for (int i = 0; i < mZonePnl.zones.length; i++) {
-				if (i == zoneIndex || mZonePnl.zones[i] == null || mZonePnl.zones[i].header == null
-						|| mZonePnl.zones[i].header.areadataID != area) {
+			for (int i = 0; i < loaded.count(); i++) {
+				Zone other = loaded.at(i);
+				if (i == zoneIndex || other == null || other.header == null
+						|| other.header.areadataID != area) {
 					continue;
 				}
 				if (shown < 4) {
 					if (shown > 0) {
 						sb.append(", ");
 					}
-					sb.append(ctrmap.formats.text.LocationNames.getLocName(mZonePnl.zones[i].header.parentMap));
+					sb.append(ctrmap.formats.text.LocationNames.getLocName(loaded.at(i).header.parentMap));
 					shown++;
 				} else {
 					extra++;

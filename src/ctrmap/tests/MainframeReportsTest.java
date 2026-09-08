@@ -391,7 +391,7 @@ public class MainframeReportsTest {
 			List<String> said = Ui.record();
 			ctrmap.AreaForker.ForkResult r;
 			try {
-				r = ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(null, 10, 7, "a test edit");
+				r = ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(new ctrmap.LoadedZone(), null, 10, 7, "a test edit");
 			} finally {
 				Ui.stopRecording();
 			}
@@ -428,9 +428,9 @@ public class MainframeReportsTest {
 		} else if ("shop".equals(which)) {
 			ctrmap.humaninterface.ShopEditDialog.show(null);
 		} else if ("lighting".equals(which)) {
-			ctrmap.humaninterface.AreaLightingDialog.show(null);
+			ctrmap.humaninterface.AreaLightingDialog.show(null, new ctrmap.LoadedZone());
 		} else if ("encounters".equals(which)) {
-			ctrmap.humaninterface.EncounterEditDialog.show(null);
+			ctrmap.humaninterface.EncounterEditDialog.show(null, new ctrmap.LoadedZone());
 		} else {
 			throw new IllegalArgumentException("no editor named " + which);
 		}

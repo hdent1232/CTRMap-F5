@@ -8,6 +8,7 @@ import com.jogamp.opengl.GLDrawableFactory;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.util.awt.AWTGLReadBufferUtil;
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.GridBagLayout;
@@ -95,8 +96,15 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		MULTI
 	}
 
-	public TileMapPanel() {
+	/** The zone owner this view was handed; opening a bare GR file lets its zone go. */
+	private final LoadedZone loadedZone;
+
+	public TileMapPanel(LoadedZone loadedZone) {
 		super();
+		if (loadedZone == null) {
+			throw new IllegalArgumentException("TileMapPanel must be handed a LoadedZone");
+		}
+		this.loadedZone = loadedZone;
 		setLayout(new GridBagLayout());
 		add(placeholder);
 		g = tilemapScaledImage.getGraphics();
@@ -142,7 +150,11 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		if (!saveTileMap(true)) {
 			return;
 		}
-		mZonePnl.zone = null;
+		//the map shown is no longer the open zone's: let the zone go so the
+		//Zone tab's Save writes nothing, and leave the index, the dropdown's
+		//selection and the entity editors as they were - a stale-state clear,
+		//not an unload (unloadZone is that, and clears the editors too)
+		loadedZone.release();
 		mm = null;
 		mode = ViewportMode.SINGLE;
 		width = 40;

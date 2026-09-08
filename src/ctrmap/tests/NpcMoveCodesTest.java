@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.Workspace;
+import ctrmap.LoadedZone;
 import ctrmap.formats.containers.ZO;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.zone.NpcMoveCodes;
@@ -147,7 +148,7 @@ public class NpcMoveCodesTest {
 	static void theFormAsksTheTable() {
 		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
 			Sessions.bare(new File("no-workspace"), new File("no-game"), g);
-			NPCEditForm form = new NPCEditForm();
+			NPCEditForm form = new NPCEditForm(new LoadedZone());
 			int bad = 0;
 			for (int code = 0; code <= PROBE_CEILING; code++) {
 				bad += form.getMot2Index(code) == NpcMoveCodes.movePerm2Index(code, g) ? 0 : 1;

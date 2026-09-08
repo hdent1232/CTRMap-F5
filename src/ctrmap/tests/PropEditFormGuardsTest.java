@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.containers.GR;
@@ -73,6 +74,9 @@ import javax.swing.JSpinner;
  */
 public class PropEditFormGuardsTest {
 
+	/** The zone owner every panel and form built here shares, as the window's would. */
+	static final LoadedZone LOADED = new LoadedZone();
+
 	/** Two props, a real map model and one collision layer - the smallest region that has all three. */
 	static final int REGION = 7;
 	/** The one AreaData whose prop registry knows both of region 7's models (uids 10 and 17). */
@@ -94,7 +98,7 @@ public class PropEditFormGuardsTest {
 		//a map view with no matrix: that is what sends the save to the region's
 		//own GR rather than through the matrix distributor
 		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
-		CtrmapMainframe.mTileMapPanel = new TileMapPanel();
+		CtrmapMainframe.mTileMapPanel = new TileMapPanel(LOADED);
 		//the 3D view the form pushes every edit into. Constructible with no
 		//display; the window it lives in is not, which is why loaded is armed
 		//by hand below.
@@ -460,7 +464,7 @@ public class PropEditFormGuardsTest {
 	static Fixture open(boolean arm) throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm();
+		f.form = new PropEditForm(LOADED);
 		CtrmapMainframe.mPropEditForm = f.form;
 		f.form.loadDataFile(new ctrmap.formats.propdata.GRPropData(f.gr), registry(), null);
 		f.form.gr = f.gr;
@@ -473,7 +477,7 @@ public class PropEditFormGuardsTest {
 	static Fixture openSingleRegion() throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm();
+		f.form = new PropEditForm(LOADED);
 		CtrmapMainframe.mPropEditForm = f.form;
 		f.form.loadDataFile(f.gr, null);
 		f.before = f.propdata();

@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.MM;
 import ctrmap.formats.mapmatrix.MapMatrix;
@@ -387,7 +388,7 @@ public class MatrixEditFormGuardsTest {
 	 * the FieldData range it refuses ids against.
 	 *
 	 * <p>{@code loadMatrix} fills the zone dropdown with one row per entry of
-	 * {@code mZonePnl.zones}, and the form only ever uses those rows as a count
+	 * the zone table it is handed, and the form only ever uses those rows as a count
 	 * and a selection index. So the array here is as long as the largest zone
 	 * the matrix names and every row is the same parsed zone - the alternative
 	 * is parsing five hundred zones to read one number off each.
@@ -418,10 +419,11 @@ public class MatrixEditFormGuardsTest {
 		}
 		Zone[] rows = new Zone[maxZone + 1];
 		Arrays.fill(rows, oneZone);
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
-		pnl.zones = rows;
+		LoadedZone lz = new LoadedZone();
+		lz.table(rows);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
 		CtrmapMainframe.mZonePnl = pnl;
-		f.form = new MatrixEditForm();
+		f.form = new MatrixEditForm(lz);
 		CtrmapMainframe.mMtxEditForm = f.form;
 		CtrmapMainframe.mMtxPanel.mm = f.mm;
 		f.form.loadMatrix(f.mm);

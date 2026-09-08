@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.ZO;
 import ctrmap.formats.garc.GARC;
@@ -266,17 +267,19 @@ public class DataSafetyGuardsTest {
 		GARC texts = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.GAMETEXT, Workspace.game())));
 		LocationNames.load(temp(texts.getDecompressedEntry(LocationNames.gametextIndex(Workspace.session()))));
 		//three zones make a zone table; the editor is told zone 2 is open
-		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel();
-		zonePnl.zones = new Zone[3];
-		for (int i = 0; i < zonePnl.zones.length; i++) {
-			zonePnl.zones[i] = new Zone(new ZO(temp(zo.getDecompressedEntry(i)), Workspace.session()), Workspace.game());
+		LoadedZone lz = new LoadedZone();
+		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz);
+		Zone[] table = new Zone[3];
+		for (int i = 0; i < table.length; i++) {
+			table[i] = new Zone(new ZO(temp(zo.getDecompressedEntry(i)), Workspace.session()), Workspace.game());
 		}
-		zonePnl.zoneIndex = 2;
+		lz.table(table);
+		lz.open(2, table[2]);
 		CtrmapMainframe.mZonePnl = zonePnl;
-		ZoneEntities e = zonePnl.zones[2].entities;
+		ZoneEntities e = lz.at(2).entities;
 		e.warps.clear();
 		e.warpCount = 0;
-		WarpEditForm form = new WarpEditForm();
+		WarpEditForm form = new WarpEditForm(lz);
 		form.loadFromEntities(e);
 
 		//what "New entry" adds, twice on the same tile
@@ -349,7 +352,7 @@ public class DataSafetyGuardsTest {
 		//active before one is open, and drawing then threw on the event
 		//thread), every warp once one is.
 		BufferedImage img = new BufferedImage(40 * 12, 40 * 12, BufferedImage.TYPE_INT_RGB);
-		WarpEditForm blank = new WarpEditForm();
+		WarpEditForm blank = new WarpEditForm(lz);
 		blank.loadFromEntities(null);
 		CtrmapMainframe.mWarpEditForm = blank;
 		try {
@@ -366,7 +369,7 @@ public class DataSafetyGuardsTest {
 		//thread, and nothing else in this suite presses the button: every other
 		//check calls addEntry directly and never reaches it.
 		CtrmapMainframe.mTilemapScrollPane = new JScrollPane();
-		TileMapPanel map = new TileMapPanel();
+		TileMapPanel map = new TileMapPanel(new LoadedZone());
 		map.height = 40;
 		CtrmapMainframe.mTileMapPanel = map;
 		Throwable threw = pressAdd(blank);
@@ -397,12 +400,12 @@ public class DataSafetyGuardsTest {
 		ZoneEntities.Warp mute = new ZoneEntities.Warp();
 		e.warps.add(mute);
 		e.warpCount++;
-		zonePnl.zones[2].entities.modified = true;
+		lz.at(2).entities.modified = true;
 		List<String> said = ctrmap.Ui.record();
 		try {
 			String reason = null;
 			try {
-				zonePnl.zones[2].store();
+				lz.at(2).store();
 			} catch (IllegalStateException refused) {
 				reason = String.valueOf(refused.getMessage());
 			}
@@ -417,12 +420,12 @@ public class DataSafetyGuardsTest {
 		//first - its dropdowns filled the way the zone loader fills them, one
 		//town-map group per zone slot; the entity forms it saves through are
 		//empty and save nothing.
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm();
-		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm();
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz);
+		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz);
 		fill(zonePnl, "tmg", 600);
 		fill(zonePnl, "type", 8);
 		fill(zonePnl, "weather", 32);
-		zonePnl.loadZone(zonePnl.zones[2]);
+		zonePnl.loadZone(lz.at(2));
 		said = ctrmap.Ui.record();
 		try {
 			boolean saved = zonePnl.store(false);
@@ -444,7 +447,7 @@ public class DataSafetyGuardsTest {
 		Workspace.install(Sessions.bare(ws, Workspace.session().gameDir(), GameType.ORAS)
 				.withArchive(ArchiveType.ZONE_DATA, zo));
 		Workspace.session().prepareDirectories();
-		zonePnl.zones[2].entities.modified = true;
+		lz.at(2).entities.modified = true;
 		said = ctrmap.Ui.record();
 		try {
 			boolean saved = zonePnl.store(false);
@@ -458,7 +461,7 @@ public class DataSafetyGuardsTest {
 
 		//a destination that no longer exists
 		ZoneEntities.Warp dangling = new ZoneEntities.Warp();
-		dangling.targetZone = zonePnl.zones.length;
+		dangling.targetZone = lz.count();
 		dangling.targetWarpId = 0;
 		e.warps.add(dangling);
 		e.warpCount++;
@@ -521,7 +524,7 @@ public class DataSafetyGuardsTest {
 	 * are still untested.
 	 */
 	static void mapLoadFailuresSurface() throws Exception {
-		TileMapPanel panel = new TileMapPanel();
+		TileMapPanel panel = new TileMapPanel(new LoadedZone());
 		panel.loaded = true;
 		panel.width = 40;
 		panel.height = 40;
@@ -685,15 +688,16 @@ public class DataSafetyGuardsTest {
 			return;
 		}
 		scratchGameOnce(dump);
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel();
+		LoadedZone lz = new LoadedZone();
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm();
-		CtrmapMainframe.mTileMapPanel = new TileMapPanel();
-		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm();
-		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm();
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm();
-		CtrmapMainframe.mWarpEditForm = new WarpEditForm();
-		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm();
+		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz);
+		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm(lz);
+		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz);
+		CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz);
+		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz);
 		//PropEditForm's generated initComponents builds a CustomH3DPreview,
 		//whose constructor starts an FPSAnimator on a NON-daemon thread. Left
 		//running it holds the JVM open after main returns: the suite prints
@@ -719,7 +723,7 @@ public class DataSafetyGuardsTest {
 			}
 			check(!cause.isEmpty(), "a zone header naming area " + noSuchArea
 					+ " cannot fetch its archives: " + cause);
-			pnl.zones = new Zone[]{null, broken};
+			lz.table(new Zone[]{null, broken});
 			fill(pnl, "zoneList", 2);
 			//the editors are showing the zone the user had open
 			Zone open = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15)), Workspace.session()), Workspace.game());
@@ -742,9 +746,9 @@ public class DataSafetyGuardsTest {
 					"carrying what actually went wrong (" + cause + ") rather than a fixed sentence: " + said);
 			check(said.size() == 1 && said.get(0).contains("Pick a zone from the list"),
 					"and telling the user the dropdown is still theirs to use: " + said);
-			check(pnl.zone == null && pnl.zoneIndex == -1,
-					"and the panel is not left believing a zone is open (zone " + pnl.zone
-					+ ", index " + pnl.zoneIndex + ")");
+			check(lz.open() == null && lz.index() == -1,
+					"and the panel is not left believing a zone is open (zone " + lz.open()
+					+ ", index " + lz.index() + ")");
 			check(!CtrmapMainframe.mNPCEditForm.loaded,
 					"nor are the editors left on the zone that was there before");
 		} finally {
@@ -814,7 +818,7 @@ public class DataSafetyGuardsTest {
 				new ctrmap.formats.containers.MM(temp(mmGarc.getDecompressedEntry(14)), Workspace.session()), null);
 		short before = mm.ids.get(0, 0);
 
-		ctrmap.humaninterface.MatrixEditForm form = new ctrmap.humaninterface.MatrixEditForm();
+		ctrmap.humaninterface.MatrixEditForm form = new ctrmap.humaninterface.MatrixEditForm(new LoadedZone());
 		setField(form, "mm", mm);
 		setField(form, "loaded", true);
 		setField(form, "curRegX", 0);

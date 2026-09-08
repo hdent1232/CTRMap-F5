@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.CtrmapMainframe;
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.containers.ZO;
@@ -762,7 +763,7 @@ public class PaintApplyGuardsTest {
 	static boolean needsAreaWrite(int area, List<TilePainterForm.Placed> placed,
 			java.util.Map<Integer, Set<String>> texNeeds) {
 		try {
-			return TilePainterForm.needsAreaWrite(area, placed, texNeeds);
+			return TilePainterForm.needsAreaWrite(loaded, area, placed, texNeeds);
 		} catch (Exception ex) {
 			check(false, "needsAreaWrite(" + area + ", " + placed.size() + " placed) threw " + ex);
 			return false;
@@ -868,17 +869,20 @@ public class PaintApplyGuardsTest {
 		if (PropDatabase.get(Workspace.session()) == null) {
 			throw new IllegalStateException("prop database did not build");
 		}
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel();
+		loaded = new LoadedZone();
+		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(loaded);
 		for (int[] row : ramp) {
 			Arrays.fill(row, PaintedRegionBuilder.NO_RAMP);
 		}
 	}
 
-	/** Loads a zone into the panel the painter reads, as the editor would. */
+	/** The zone owner the painter and the apply are handed: what the editor's Zone tab would hold. */
+	static LoadedZone loaded;
+
+	/** Opens a zone in the owner the painter reads, as the editor would. */
 	static void open(int zoneIndex) throws Exception {
-		CtrmapMainframe.mZonePnl.zone = new Zone(new ZO(Workspace.getWorkspaceFile(
-				ArchiveType.ZONE_DATA, zoneIndex), Workspace.session()), Workspace.game());
-		CtrmapMainframe.mZonePnl.zoneIndex = zoneIndex;
+		loaded.open(zoneIndex, new Zone(new ZO(Workspace.getWorkspaceFile(
+				ArchiveType.ZONE_DATA, zoneIndex), Workspace.session()), Workspace.game()));
 	}
 
 	/** A 12x12 sand patch in the middle of an otherwise grass, untouched map. */
@@ -895,7 +899,7 @@ public class PaintApplyGuardsTest {
 	/** One click of Apply: the exception that stopped it, or null. */
 	static Exception apply(int zoneIndex, List<TilePainterForm.Placed> placed) {
 		try {
-			report = TilePainterForm.applyToZone(zoneIndex, grid, height, ramp, TerrainLighting.daytime(), false, placed, touched);
+			report = TilePainterForm.applyToZone(loaded, zoneIndex, grid, height, ramp, TerrainLighting.daytime(), false, placed, touched);
 			return null;
 		} catch (Exception ex) {
 			report = null;

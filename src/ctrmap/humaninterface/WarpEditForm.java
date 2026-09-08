@@ -1,6 +1,7 @@
 package ctrmap.humaninterface;
 
 import static ctrmap.CtrmapMainframe.*;
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.text.LocationNames;
 import ctrmap.formats.zone.WarpTransitions;
@@ -31,8 +32,8 @@ public class WarpEditForm extends javax.swing.JPanel {
 		if (e == null) {
 			return;
 		}
-		for (int i = 0; i < mZonePnl.zones.length; i++) {
-			tgtZone.addItem(i + " - " + LocationNames.getLocName(mZonePnl.zones[i].header.parentMap));
+		for (int i = 0; i < loadedZone.count(); i++) {
+			tgtZone.addItem(i + " - " + LocationNames.getLocName(loadedZone.at(i).header.parentMap));
 		}
 		fillTransitionDropdown();
 		reloadEntries(e.warpCount > 0 ? 0 : -1);
@@ -65,13 +66,20 @@ public class WarpEditForm extends javax.swing.JPanel {
 		if (warp.isUnset()) {
 			return "<no destination>";
 		}
-		if (warp.targetZone >= mZonePnl.zones.length) {
+		if (warp.targetZone >= loadedZone.count()) {
 			return "zone " + warp.targetZone + " (missing)";
 		}
-		return LocationNames.getLocName(mZonePnl.zones[warp.targetZone].header.parentMap);
+		return LocationNames.getLocName(loadedZone.at(warp.targetZone).header.parentMap);
 	}
 
-	public WarpEditForm() {
+	/** The zone owner this form was handed; its table names the warp destinations. */
+	private final LoadedZone loadedZone;
+
+	public WarpEditForm(LoadedZone loadedZone) {
+		if (loadedZone == null) {
+			throw new IllegalArgumentException("WarpEditForm must be handed a LoadedZone");
+		}
+		this.loadedZone = loadedZone;
 		initComponents();
 		transition.setModel(transitionModel);
 		setIntegerValueClass(new JFormattedTextField[]{x, y, z, w, h, tgtWarp});

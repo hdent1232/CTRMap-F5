@@ -1,6 +1,7 @@
 package ctrmap.humaninterface;
 
 import ctrmap.GeometryForker;
+import ctrmap.LoadedZone;
 import ctrmap.Workspace;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BchMapModel;
@@ -81,10 +82,10 @@ public class TilePainterForm {
 	}
 
 	/** Distinct internal model names of the zone's map regions (the anim binding key). */
-	static java.util.List<String> zoneRegionModels() {
+	static java.util.List<String> zoneRegionModels(LoadedZone loaded) {
 		java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
 		try {
-			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loaded.open().header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
 			int sub0 = i32(mm, 4);
 			int w = u16(mm, sub0 + 4), h = u16(mm, sub0 + 6);
@@ -116,12 +117,13 @@ public class TilePainterForm {
 	 *  zone's areadataID while its container still points at the OLD area's
 	 *  file, and writing through that would grow the very area we just forked
 	 *  away from. */
-	static ctrmap.formats.containers.AD areaContainer(int areaId) throws Exception {
+	static ctrmap.formats.containers.AD areaContainer(LoadedZone loaded, int areaId) throws Exception {
 		File f = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, areaId);
-		if (mZonePnl != null && mZonePnl.zone != null && mZonePnl.zone.header != null
-				&& mZonePnl.zone.header.areadata != null && f != null
-				&& f.equals(mZonePnl.zone.header.areadata.getOriginFile())) {
-			return mZonePnl.zone.header.areadata;
+		ctrmap.formats.zone.Zone open = loaded.open();
+		if (open != null && open.header != null
+				&& open.header.areadata != null && f != null
+				&& f.equals(open.header.areadata.getOriginFile())) {
+			return open.header.areadata;
 		}
 		return new ctrmap.formats.containers.AD(f, Workspace.session());
 	}
@@ -130,10 +132,10 @@ public class TilePainterForm {
 	 *  cells has the chip_sea_b scroll pair bound in the area's animations.
 	 *  Unknown (unreadable data, no readable cells) counts as NO - the banner
 	 *  then shows the fix button, whose click surfaces the real error. */
-	static boolean zoneWaterScrolls(int areaId) {
+	static boolean zoneWaterScrolls(LoadedZone loaded, int areaId) {
 		try {
-			ctrmap.formats.area.WorldAnim wa = new ctrmap.formats.area.WorldAnim(areaContainer(areaId).getFile(2));
-			java.util.List<String> models = zoneRegionModels();
+			ctrmap.formats.area.WorldAnim wa = new ctrmap.formats.area.WorldAnim(areaContainer(loaded, areaId).getFile(2));
+			java.util.List<String> models = zoneRegionModels(loaded);
 			if (models.isEmpty()) {
 				return false;
 			}
@@ -150,10 +152,10 @@ public class TilePainterForm {
 
 	/** Splices the retail sea-scroll pair into the area's animations for each of
 	 *  the zone's map cells; validates before storing. Returns cells changed. */
-	static int enableWaterScroll(int areaId) throws Exception {
-		ctrmap.formats.containers.AD ad = areaContainer(areaId);
+	static int enableWaterScroll(LoadedZone loaded, int areaId) throws Exception {
+		ctrmap.formats.containers.AD ad = areaContainer(loaded, areaId);
 		byte[] sub2 = ad.getFile(2);
-		java.util.List<String> models = zoneRegionModels();
+		java.util.List<String> models = zoneRegionModels(loaded);
 		if (models.isEmpty()) {
 			throw new IllegalStateException("could not read this zone's map cells (map matrix / region models)");
 		}
@@ -300,10 +302,10 @@ public class TilePainterForm {
 		final java.util.Map<Integer, byte[]> pending = new java.util.LinkedHashMap<>();
 		private ctrmap.formats.propdata.ADPropRegistry registry;
 
-		public StagedArea(int areaId, int editingZone) throws Exception {
+		public StagedArea(LoadedZone loaded, int areaId, int editingZone) throws Exception {
 			this.areaId = areaId;
 			this.editingZone = editingZone;
-			this.ad = areaContainer(areaId);
+			this.ad = areaContainer(loaded, areaId);
 		}
 
 		/** The subfile as this Apply will leave it: staged bytes, else disk. */
@@ -374,13 +376,16 @@ public class TilePainterForm {
 	 *         every sentence in it was unassertable. Handing the text back makes
 	 *         what the user is told a fact a guard can read.
 	 */
-	public static String applyToZone(int zoneIndex, TilePalette[][] grid, int[][] height, int[][] ramp,
+	public static String applyToZone(LoadedZone loaded, int zoneIndex, TilePalette[][] grid, int[][] height, int[][] ramp,
 			ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed,
 			boolean[][] touched) throws Exception {
+		if (loaded == null) {
+			throw new IllegalArgumentException("applyToZone must be handed the LoadedZone");
+		}
 		final boolean composite = touched != null;
 		//Build from the zone's CURRENT geometry; the private copy is made at
 		//commit time. Forking up front repointed the zone's matrix while the
-		//loaded header still named the old one, so firstRegionCell() no longer
+		//loaded header still named the old one, so firstRegionCell(loaded) no longer
 		//found the zone's own cell and a composite Apply on a shared map skipped
 		//every region and reported "Painted map applied" with nothing painted.
 		GeometryForker.ForkResult src = GeometryForker.currentGeometry(zoneIndex);
@@ -412,7 +417,7 @@ public class TilePainterForm {
 		//zones (94 retail zones are), any other cell belongs to a neighbour -
 		//painting it would edit their ground and strand this zone's warps in
 		//their territory.
-		int[] ownCell = firstRegionCell();
+		int[] ownCell = firstRegionCell(loaded);
 		int ownRegion = ownCell != null ? ownCell[0] : -1;
 		boolean firstCell = true;
 		String stampNote = "";
@@ -468,10 +473,10 @@ public class TilePainterForm {
 		//describe the same zone, and callers reach here with a seeded zone that
 		//need not be the panel's current one.
 		int zoneArea = ctrmap.AreaForker.currentArea(zoneIndex);
-		if (needsAreaWrite(zoneArea, placed, texNeeds)) {
+		if (needsAreaWrite(loaded, zoneArea, placed, texNeeds)) {
 			//the pack at the end of this Apply carries a fork's new area too, so
 			//the result is only read for the id - no packIfForked here
-			ctrmap.AreaForker.ForkResult owned = AreaForkPrompt.ensurePrivate(frame, zoneIndex, zoneArea,
+			ctrmap.AreaForker.ForkResult owned = AreaForkPrompt.ensurePrivate(loaded, frame, zoneIndex, zoneArea,
 					"adding this map's brush textures and door props");
 			if (owned == null) {
 				throw new IllegalStateException("Apply cancelled - nothing was changed.");
@@ -485,10 +490,10 @@ public class TilePainterForm {
 						+ "\n(Map > Fork area) and Apply again.");
 			}
 		}
-		StagedArea area = new StagedArea(zoneArea, zoneIndex);
+		StagedArea area = new StagedArea(loaded, zoneArea, zoneIndex);
 		// the swinging-door props for placed buildings (registry + textures staged)
 		StringBuilder propNote = new StringBuilder();
-		byte[] doorProps = placed.isEmpty() ? null : buildDoorProps(placed, floorY, area, propNote);
+		byte[] doorProps = placed.isEmpty() ? null : buildDoorProps(loaded, placed, floorY, area, propNote);
 		// stamped pieces reference their donor areas' textures - carry any the
 		// zone's area lacks, or the game hardlocks on load
 		StringBuilder texNote = new StringBuilder();
@@ -558,7 +563,7 @@ public class TilePainterForm {
 						"Door warps", JOptionPane.QUESTION_MESSAGE, opts, opts[0]);
 				int mode = java.util.Arrays.asList(opts).indexOf(pick);
 				if (mode == 0 || mode == 1) {
-					wired = wireDoorWarps(zoneIndex, placed, floorY, mode == 0, wireNote);
+					wired = wireDoorWarps(loaded, zoneIndex, placed, floorY, mode == 0, wireNote);
 				}
 			} catch (Exception ex) {
 				wireNote.append("\nDoor wiring failed: ").append(ex);
@@ -566,7 +571,7 @@ public class TilePainterForm {
 		}
 		int signsWired = 0;
 		try {
-			signsWired = wireSigns(zoneIndex, placed);
+			signsWired = wireSigns(loaded, zoneIndex, placed);
 		} catch (Exception ex) {
 			wireNote.append("\nSign wiring failed: ").append(ex);
 		}
@@ -619,9 +624,9 @@ public class TilePainterForm {
 	 * Asked before anything is written, so a shared area can be forked (or the
 	 * Apply refused) once, up front, for the whole edit.
 	 */
-	public static boolean needsAreaWrite(int areaId, java.util.List<Placed> placed,
+	public static boolean needsAreaWrite(LoadedZone loaded, int areaId, java.util.List<Placed> placed,
 			java.util.Map<Integer, java.util.Set<String>> texNeeds) throws Exception {
-		ctrmap.formats.containers.AD ad = areaContainer(areaId);
+		ctrmap.formats.containers.AD ad = areaContainer(loaded, areaId);
 		byte[] world = ad.getFile(11), prop = ad.getFile(1);
 		for (java.util.Map.Entry<Integer, java.util.Set<String>> en : texNeeds.entrySet()) {
 			if (en.getKey() != areaId && !ctrmap.formats.h3d.BchTexturePack.missingIn(
@@ -795,8 +800,8 @@ public class TilePainterForm {
 		return (b0 & 1) == 1 ? TilePalette.VOID : TilePalette.GRASS;
 	}
 
-	static int firstRegion() {
-		int[] c = firstRegionCell();
+	static int firstRegion(LoadedZone loaded) {
+		int[] c = firstRegionCell(loaded);
 		return c == null ? -1 : c[0];
 	}
 
@@ -813,15 +818,15 @@ public class TilePainterForm {
 	 * the zone's own. The first occupied cell remains the fallback for a
 	 * header whose position lands outside the map.
 	 */
-	public static int[] firstRegionCell() {
+	public static int[] firstRegionCell(LoadedZone loaded) {
 		try {
-			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, mZonePnl.zone.header.mapmatrixID);
+			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loaded.open().header.mapmatrixID);
 			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
 			int sub0 = i32(mm, 4);
 			int w = u16(mm, sub0 + 4), h = u16(mm, sub0 + 6);
 			//the zone's own position (X = world x, Y = world z), 720 units per cell
-			int ownX = mZonePnl.zone.header.X / 720;
-			int ownY = mZonePnl.zone.header.Y / 720;
+			int ownX = loaded.open().header.X / 720;
+			int ownY = loaded.open().header.Y / 720;
 			if (ownX >= 0 && ownY >= 0 && ownX < w && ownY < h) {
 				int id = u16(mm, sub0 + 8 + (ownY * w + ownX) * 2);
 				if (id != 0xFFFF) {
@@ -846,8 +851,8 @@ public class TilePainterForm {
 	 * registry and texture imports; a door whose registration fails is skipped
 	 * with a note (the map itself is unaffected). Returns null when no props.
 	 */
-	static byte[] buildDoorProps(java.util.List<Placed> placed, float[][] floorY, StagedArea area, StringBuilder note) {
-		int[] cell = firstRegionCell();
+	static byte[] buildDoorProps(LoadedZone loaded, java.util.List<Placed> placed, float[][] floorY, StagedArea area, StringBuilder note) {
+		int[] cell = firstRegionCell(loaded);
 		if (cell == null) {
 			return null;
 		}
@@ -962,9 +967,9 @@ public class TilePainterForm {
 	 * doorTile*18+9 world units, height = the door tile's terrain level,
 	 * target = the interior zone's entry warp (always warp 0 in retail).
 	 */
-	static int wireDoorWarps(int zoneIndex, java.util.List<Placed> placed, float[][] floorY,
+	static int wireDoorWarps(LoadedZone loaded, int zoneIndex, java.util.List<Placed> placed, float[][] floorY,
 			boolean cloneInteriors, StringBuilder note) throws Exception {
-		int[] cell = firstRegionCell();
+		int[] cell = firstRegionCell(loaded);
 		if (cell == null) {
 			throw new IllegalStateException("could not resolve the zone's map cell for warp placement");
 		}
@@ -980,7 +985,7 @@ public class TilePainterForm {
 				}
 			}
 		}
-		ctrmap.formats.containers.ZO zo = zoneContainer(zoneIndex);
+		ctrmap.formats.containers.ZO zo = zoneContainer(loaded, zoneIndex);
 		ctrmap.formats.zone.ZoneEntities ent = new ctrmap.formats.zone.ZoneEntities(zo.getFile(1));
 
 		// PHASE A: add every door warp with its RETAIL interior target (always
@@ -1074,9 +1079,9 @@ public class TilePainterForm {
 
 	/** The loaded zone's LIVE ZO container when it is this zone (keeps its
 	 *  cached subfile offsets coherent for the open editors), else a fresh one. */
-	static ctrmap.formats.containers.ZO zoneContainer(int zoneIndex) throws Exception {
-		if (mZonePnl != null && mZonePnl.zone != null && mZonePnl.zoneIndex == zoneIndex && mZonePnl.zone.file != null) {
-			return mZonePnl.zone.file;
+	static ctrmap.formats.containers.ZO zoneContainer(LoadedZone loaded, int zoneIndex) throws Exception {
+		if (loaded.open() != null && loaded.index() == zoneIndex && loaded.open().file != null) {
+			return loaded.open().file;
 		}
 		return new ctrmap.formats.containers.ZO(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex), Workspace.session());
 	}
@@ -1115,7 +1120,7 @@ public class TilePainterForm {
 	 * sign's tile. Signs stay pure scenery when the user cancels their dialog
 	 * or the zone's script lacks the sign-display routine.
 	 */
-	static int wireSigns(int zoneIndex, java.util.List<Placed> placed) throws Exception {
+	static int wireSigns(LoadedZone loaded, int zoneIndex, java.util.List<Placed> placed) throws Exception {
 		java.util.List<Placed> signs = new java.util.ArrayList<>();
 		for (Placed pl : placed) {
 			if ("SIGN".equals(pl.e.kind)) {
@@ -1125,11 +1130,11 @@ public class TilePainterForm {
 		if (signs.isEmpty()) {
 			return 0;
 		}
-		int[] cell = firstRegionCell();
+		int[] cell = firstRegionCell(loaded);
 		if (cell == null) {
 			return 0;
 		}
-		ctrmap.formats.containers.ZO zo = zoneContainer(zoneIndex);
+		ctrmap.formats.containers.ZO zo = zoneContainer(loaded, zoneIndex);
 		ctrmap.formats.scripts.GFLPawnScript s = new ctrmap.formats.scripts.GFLPawnScript(zo.getFile(2));
 		s.decompressThis();
 		if (ctrmap.formats.scripts.ZoneScriptAnalyzer.findSignWrapper(s) == null) {
@@ -1155,7 +1160,7 @@ public class TilePainterForm {
 				return 0;
 			}
 		}
-		int textID = mZonePnl.zone.header.textID;
+		int textID = loaded.open().header.textID;
 		File sf = Workspace.getStoryTextGARC() != null
 				? Workspace.getWorkspaceFile(ArchiveType.STORYTEXT, textID) : null;
 		if (sf == null || !sf.exists()) {
