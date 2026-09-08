@@ -52,15 +52,27 @@ public class MaisonEditDialog {
 	};
 
 	public static void show(Frame parent) {
-		if (!Workspace.isValid() || !Workspace.isOA()) {
-			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Battle facility opponents");
+		//MAISON, not "is it ORAS". The three pools, their 999x16-byte record
+		//layout and the class-to-set-list tables were all measured on ORAS; a
+		//game where none of that is known is entitled to be told so by name.
+		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
+		if (prof == null) {
+			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).", "Battle facility opponents");
+			return;
+		}
+		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.MAISON)) {
+			ctrmap.Ui.error(parent, "Editing battle facility opponents is not available for "
+					+ prof.displayName() + "."
+					+ "\n\nThe opponent pools, their 16-byte set records and the"
+					+ " class-to-set-list tables were measured on Omega Ruby / Alpha Sapphire."
+					+ "\n\nCTRMap refuses here rather than writing sets into a guess.",
+					"Battle facility opponents");
 			return;
 		}
 		if (Workspace.getArchive(POOLS[0]) == null) {
 			ctrmap.Ui.error(parent, "This dump has no battle facility opponent data.", "Battle facility opponents");
 			return;
 		}
-		ctrmap.gamedef.GameProfile prof = Workspace.profile();
 		String[] species = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES)),
 				items = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES)),
 				moves = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.MOVE_NAMES));

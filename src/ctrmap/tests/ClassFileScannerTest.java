@@ -27,9 +27,11 @@ import java.util.regex.Pattern;
  * <li>A folded constant. javac inlines a {@code static final String} into
  *     every user and folds constant concatenation, so a literal path can sit
  *     in the constant pool of a class whose source never spells one.
- *     {@code Workspace} and {@code WorkspaceSession} carry "/a/3/0/0" for
- *     exactly that reason, through {@code OrasProfile.DEMO_PROBE}, and
- *     SourceSeamTest's GARC pattern finds nothing in either source.</li>
+ *     {@code Workspace} and {@code WorkspaceSession} carried "/a/3/0/0" for
+ *     exactly that reason, through {@code OrasProfile.DEMO_PROBE}, while
+ *     SourceSeamTest's GARC pattern found nothing in either source. They no
+ *     longer do - the probe moved behind {@code GameProfile.detectVariant} -
+ *     and the check below is now what keeps it that way.</li>
  * </ul>
  *
  * <p>HOW IT PROVES IT WITHOUT A COMPILER. A suite must run from the battery
@@ -79,7 +81,7 @@ public class ClassFileScannerTest {
 		if (!app.isEmpty()) {
 			bytecodeSeesMoreReadersThanAGrep(src, app);
 			innerClassesFoldToTheirOuterClass(app);
-			aFoldedConstantIsVisibleWhereTheSourceIsSilent(src, app);
+			theSeamHoldsInTheBytecodeToo(src, app);
 			callSitesAreFoundByOwnerAndMethod(app);
 		}
 
@@ -230,42 +232,57 @@ public class ClassFileScannerTest {
 	}
 
 	/**
-	 * The second dodge: a literal that only exists in the bytecode. javac
-	 * inlines {@code OrasProfile.DEMO_PROBE} and folds constant concatenation,
-	 * so Workspace and WorkspaceSession both carry a romfs path that neither
-	 * source contains. A guard that greps the sources for GARC paths cannot see
-	 * these; the scanner reads them out of the constant pool.
+	 * The second dodge, and the guard built on it: a literal that exists only
+	 * in the bytecode. javac inlines a {@code static final String} into every
+	 * user and folds constant concatenation, so a romfs path can sit in the
+	 * constant pool of a class whose source spells none - where
+	 * {@link SourceSeamTest}, which reads source text, cannot see it.
+	 *
+	 * <p>That was not hypothetical here. MEASURED on this repository before the
+	 * gamedef seam was closed: FOUR application classes held a romfs path -
+	 * {@code ctrmap/gamedef/OrasProfile} and {@code ctrmap/gamedef/XyProfile},
+	 * which spell their archive paths out and are supposed to, and
+	 * {@code ctrmap/Workspace} and {@code ctrmap/WorkspaceSession}, which each
+	 * carried "/a/3/0/0" because they built a File out of
+	 * {@code OrasProfile.DEMO_PROBE} to ask whether a dump was the ORAS Special
+	 * Demo. Neither source contains a GARC path; the source guard passed on
+	 * both, every time. Asking the profile instead
+	 * ({@code GameProfile.detectVariant}) makes it a method call, which javac
+	 * cannot fold, and the count is 2.
+	 *
+	 * <p>So the check is no longer "the scanner can see the leak" but "there is
+	 * no leak to see, in the bytecode as well as the source". A game path in a
+	 * class outside the seam fails here whether it was written there or folded
+	 * there.
 	 */
-	static void aFoldedConstantIsVisibleWhereTheSourceIsSilent(File src, List<ClassFileScanner.ClassFile> app) throws Exception {
+	static void theSeamHoldsInTheBytecodeToo(File src, List<ClassFileScanner.ClassFile> app) throws Exception {
 		Set<String> holders = ClassFileScanner.holdersOfString(app, GARC_PATH);
 		check(holders.contains("ctrmap/gamedef/OrasProfile"),
 				"a class that spells its archive paths out is found by its strings ("
 				+ holders.size() + " classes hold a romfs path)");
 
-		String[] inliners = {"ctrmap/Workspace", "ctrmap/WorkspaceSession"};
-		List<String> unseen = new ArrayList<>();
-		List<String> alsoInSource = new ArrayList<>();
-		for (String name : inliners) {
-			boolean hasIt = false;
-			for (ClassFileScanner.ClassFile cf : app) {
-				if (cf.name.equals(name) && cf.strings.contains("/a/3/0/0")) {
-					hasIt = true;
-					break;
-				}
-			}
-			if (!hasIt) {
-				unseen.add(name);
-			}
-			File source = new File(src, name + ".java");
-			if (source.isFile() && GARC_PATH.matcher(SourceSeamTest.stripComments(read(source))).find()) {
-				alsoInSource.add(name);
+		List<String> outside = new ArrayList<>();
+		for (String h : new TreeSet<>(holders)) {
+			if (!h.startsWith("ctrmap/gamedef/")) {
+				outside.add(h);
 			}
 		}
-		check(unseen.isEmpty(), "the scanner finds the constant javac inlined into "
-				+ java.util.Arrays.toString(inliners) + " (DEMO_PROBE, \"/a/3/0/0\")"
-				+ (unseen.isEmpty() ? "" : " - not in " + unseen));
-		check(alsoInSource.isEmpty(), "...which is a path neither source spells, so no grep over src could"
-				+ " have found it" + (alsoInSource.isEmpty() ? "" : " - but " + alsoInSource + " does spell one"));
+		System.out.println("  classes holding a romfs path: " + new TreeSet<>(holders));
+		check(outside.isEmpty(), "every one of them is in the gamedef seam - no application class"
+				+ " carries a game path, written or folded"
+				+ (outside.isEmpty() ? "" : " - but these do: " + outside));
+
+		//and the reason a source-level guard could not have said that
+		List<String> spellsIt = new ArrayList<>();
+		for (String h : holders) {
+			File source = new File(src, h + ".java");
+			if (!source.isFile() || !GARC_PATH.matcher(SourceSeamTest.stripComments(read(source))).find()) {
+				spellsIt.add(h);
+			}
+		}
+		check(spellsIt.isEmpty(), "and each one's SOURCE spells the path too, so what is left is"
+				+ " visible to both guards" + (spellsIt.isEmpty() ? "" : " - these hold a path"
+				+ " their source does not contain, i.e. javac folded it in: " + spellsIt));
 	}
 
 	/**

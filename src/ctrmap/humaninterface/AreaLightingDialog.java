@@ -34,8 +34,23 @@ import static ctrmap.CtrmapMainframe.*;
 public class AreaLightingDialog {
 
 	public static void show(Frame parent) {
-		if (!Workspace.isValid() || !Workspace.isOA()) {
-			ctrmap.Ui.error(parent, "Load an ORAS workspace first.", "Area fog & lighting");
+		//AREA_ENV, not "is it ORAS": what this needs is a game whose AreaData
+		//subfile 4 has been decoded. Asking which game it is answered false for
+		//Sun/Moon and X/Y alike and told both of them to load ORAS.
+		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
+		if (prof == null) {
+			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).", "Area fog & lighting");
+			return;
+		}
+		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.AREA_ENV)) {
+			ctrmap.Ui.error(parent, "Editing area fog and lighting is not available for "
+					+ prof.displayName() + "."
+					+ "\n\nThe fog colour, near/far draw distances and ambient colour are read"
+					+ " from fixed offsets inside AreaData subfile 4, a layout measured on"
+					+ " Omega Ruby / Alpha Sapphire."
+					+ "\n\nCTRMap refuses here rather than writing colours over whatever this"
+					+ " game keeps at those offsets.",
+					"Area fog & lighting");
 			return;
 		}
 		if (mZonePnl == null || mZonePnl.zone == null) {

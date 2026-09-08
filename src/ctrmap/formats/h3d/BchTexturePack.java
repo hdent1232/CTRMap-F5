@@ -345,17 +345,27 @@ public class BchTexturePack {
 	 */
 	public static String zonesUsingArea(int area, int editingZone) {
 		try {
-			//XY keeps its master table at a different index; the fork machinery
-			//is ORAS-only for the same reason (AreaForker.forkArea,
-			//AreaForkPrompt.ensurePrivate). Reading length-2 on XY parses an
-			//ordinary zone as the master table and invents sharers.
-			if (!ctrmap.Workspace.isOA()) {
+			//This scan only means anything where an area CAN be forked: it
+			//exists to say "carrying a texture in here would change somebody
+			//else's map, fork it first", and on a game with no fork there is no
+			//"first". Asking the capability rather than "is this ORAS" is also
+			//what stops the master-table index below being computed from
+			//another game's number - which on XY would parse an ordinary zone
+			//as the master table and invent sharers out of it.
+			if (!ctrmap.Workspace.isValid()) {
+				return null; //no game open: there is no profile to ask, and the
+				//catch below must stay a last resort rather than the normal path
+			}
+			ctrmap.gamedef.GameProfile prof = ctrmap.Workspace.profile();
+			if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.AREA_FORK)
+					|| prof.zoneDataTrailingEntries() < 0) {
 				return null;
 			}
 			ctrmap.formats.garc.GARC zo = ctrmap.Workspace.getArchive(ArchiveType.ZONE_DATA);
 			if (zo == null) {
 				return null;
 			}
+			int masterIndex = zo.length - prof.zoneDataTrailingEntries();
 			//Prefer the WORKSPACE copy of the master table. Edits land there
 			//first and are only packed into the archive later, so reading the
 			//archive would judge this against zone-to-area assignments that have
@@ -363,7 +373,7 @@ public class BchTexturePack {
 			//longer shares with anybody.
 			byte[] master = null;
 			java.io.File mf = ctrmap.Workspace.getWorkspaceFile(
-					ArchiveType.ZONE_DATA, zo.length - 2);
+					ArchiveType.ZONE_DATA, masterIndex);
 			if (mf != null && mf.isFile()) {
 				try {
 					master = java.nio.file.Files.readAllBytes(mf.toPath());
@@ -372,7 +382,7 @@ public class BchTexturePack {
 				}
 			}
 			if (master == null || master.length % 0x38 != 0) {
-				master = zo.getDecompressedEntry(zo.length - 2);
+				master = zo.getDecompressedEntry(masterIndex);
 			}
 			List<Integer> hits = ctrmap.AreaForker.zonesUsingArea(master, area, editingZone);
 			if (hits.isEmpty()) {

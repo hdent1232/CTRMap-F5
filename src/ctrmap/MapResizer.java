@@ -5,6 +5,7 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.BchMapModel;
 import ctrmap.formats.h3d.RegionFactory;
 import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameProfile;
 import java.io.File;
 import java.io.IOException;
 import static ctrmap.formats.LittleEndian.u16;
@@ -157,8 +158,19 @@ public class MapResizer {
 	 * append per pack cycle, same rule as the fork).
 	 */
 	public static ResizeResult resize(WorkspaceSession ws, int zoneIndex, int newW, int newH) throws IOException {
-		if (!ws.isOA()) {
-			throw new IOException("Map resize is ORAS-only in v1.");
+		//WAS "if (!ws.isOA())", which refused X/Y and let Sun/Moon and Ultra
+		//Sun/Ultra Moon straight through - "not ORAS" is three games, and two
+		//of them would have been handed ORAS's container offsets. A resize
+		//appends a map matrix and FieldData regions and repoints the zone at
+		//them, which is the same set of measured offsets the area fork needs,
+		//so it asks for that capability rather than for a game name.
+		GameProfile p = ws.profile();
+		if (!p.supports(GameProfile.Feature.AREA_FORK)) {
+			throw new IOException("Growing a zone's map is not available for " + p.displayName() + "."
+					+ "\n\nA resize appends a new map matrix and new blank regions and repoints the"
+					+ " zone at them. Every one of those offsets was measured on Omega Ruby /"
+					+ " Alpha Sapphire, and nobody has measured them for " + p.displayName() + ","
+					+ " so CTRMap refuses here rather than writing a matrix this game would not read.");
 		}
 		GARC zo = ws.getArchive(ArchiveType.ZONE_DATA);
 		GARC gr = ws.getArchive(ArchiveType.FIELD_DATA);
@@ -166,7 +178,9 @@ public class MapResizer {
 		if (zo == null || gr == null || mm == null) {
 			throw new IOException("No workspace is loaded.");
 		}
-		int zoneCount = zo.length - 2;
+		//and the range check counted zones as "length - 2", ORAS's tail spelled
+		//as a literal in a class that is not allowed to know it
+		int zoneCount = ZoneTables.zoneCount(zo, p);
 		if (zoneIndex < 0 || zoneIndex >= zoneCount) {
 			throw new IOException("Zone " + zoneIndex + " out of range.");
 		}

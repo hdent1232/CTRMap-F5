@@ -1,6 +1,5 @@
 package ctrmap.gamedef;
 
-import ctrmap.Workspace;
 import java.io.File;
 
 /**
@@ -19,13 +18,27 @@ import java.io.File;
  *     XY and ORAS; Gen 7 (SM/USUM) replaced models with GFModel/GFMotion and
  *     needs its own layer.</li>
  * <li><b>Per-game profiles</b> (this package) - archive paths, text indices,
- *     verified-feature flags, detection.</li>
+ *     verified-feature flags, measured counts, detection.</li>
  * </ul>
  *
  * <p>Numbers in a profile must be MEASURED against that game's dump (or taken
  * from an established reference like pk3DS's GARCReference tables and marked
  * so). A profile method returning null/-1/false means "not present or not yet
  * verified for this game" - callers must treat that as absence, never guess.
+ *
+ * <p>That last sentence is the whole point of asking a profile instead of
+ * asking which game is loaded. An {@code isXY()} gate answers false for
+ * Sun/Moon, and a caller that reads false as "then it is ORAS" hands Sun/Moon
+ * ORAS's warp labels, ORAS's move codes and ORAS's archive-tail arithmetic,
+ * silently and with nobody having chosen it. Every method here has a third
+ * answer - "nobody measured that" - and a caller must refuse in words when it
+ * gets one.
+ *
+ * <p>Nothing in this package may reference the application's global session
+ * holder in the {@code ctrmap} package. The seam exists to replace that
+ * global, and a profile reaching back into it to find out which game it is
+ * would close the loop it was built to open. The dependency runs one way: the
+ * application asks for its profile, never the reverse.
  */
 public abstract class GameProfile {
 
@@ -40,6 +53,21 @@ public abstract class GameProfile {
 		ITEM_DESCRIPTIONS,
 		TRAINER_CLASS_NAMES,
 		TRAINER_NAMES
+	}
+
+	/**
+	 * Which edition of a game a dump is. A game can ship in more than one, and
+	 * the editions do not agree on everything: the ORAS Special Demo keeps its
+	 * location names in a different GameText entry from retail ORAS, so an
+	 * editor that knows only "it is ORAS" reads the wrong table.
+	 *
+	 * <p>RETAIL is the answer for every game that has no second edition, which
+	 * is why {@link #detectVariant} defaults to it: a game nobody has probed
+	 * for a demo is a retail dump, not an unknown one.
+	 */
+	public enum Variant {
+		RETAIL,
+		DEMO
 	}
 
 	/** Editor capabilities, gated per game on what has been RE'd AND verified. */
@@ -73,7 +101,40 @@ public abstract class GameProfile {
 		 * editor asks before it opens, so an unverified game gets a sentence
 		 * saying why rather than a writer poking 36 bytes into a guess.
 		 */
-		ITEM_EDITING
+		ITEM_EDITING,
+		/**
+		 * Giving one zone its OWN copy of an area or of its map geometry, so
+		 * editing it stops changing every other zone that shares it -
+		 * {@code AreaForker}, {@code GeometryForker} and the prompt in front of
+		 * them, plus the shared-area scan {@code BchTexturePack.zonesUsingArea}
+		 * that refuses a texture carry into an area somebody else is using.
+		 *
+		 * <p>A fork appends to AreaData, the NPC registry, FieldData and the
+		 * MapMatrix, repoints the zone in two places, and grows the engine's
+		 * global per-area table. Every one of those offsets was measured on
+		 * ORAS. Turning this on for another game means measuring them again
+		 * there, not assuming the layout carried over.
+		 */
+		AREA_FORK,
+		/**
+		 * Adding zones past the ones the game shipped - {@code ZoneAppender}
+		 * and the paired {@code ZoneLimitPatch}, plus the repurpose scanner
+		 * that finds retail zones safe to overwrite instead.
+		 *
+		 * <p>Needs the zone count the executable was built with AND the code
+		 * patch that raises it, so it is inseparable from having RE'd that
+		 * game's code.bin. Kept apart from {@link #CODE_PATCHES} because that
+		 * flag is about being able to patch at all; this one is about the zone
+		 * table specifically.
+		 */
+		ZONE_APPEND,
+		/**
+		 * Wild encounter tables (the "EN" pack the zone archive carries).
+		 *
+		 * <p>Their record layout and the archive slot they live in were
+		 * measured on ORAS; nobody has checked either against another game.
+		 */
+		ENCOUNTERS
 	}
 
 	public abstract GameType type();
@@ -89,6 +150,21 @@ public abstract class GameProfile {
 	/** GameText entry index for a table, or -1 when unknown for this game. */
 	public abstract int textIndex(TextIndex t);
 
+	/**
+	 * The same, for a dump of a particular edition. Defaults to ignoring the
+	 * variant, because most games have only one; a game that ships a demo with
+	 * a different table order overrides this (see {@link OrasProfile}).
+	 *
+	 * <p>Callers with a session open should use this rather than
+	 * {@link #textIndex(TextIndex)}, passing the session's own variant. It
+	 * replaces the {@code isOA() && isOADemo()} special case that used to sit
+	 * in {@code LocationNames}, where a second game shipping a demo would have
+	 * had to add a second special case beside it.
+	 */
+	public int textIndex(TextIndex t, Variant v) {
+		return textIndex(t);
+	}
+
 	public abstract boolean supports(Feature f);
 
 	/**
@@ -96,6 +172,103 @@ public abstract class GameProfile {
 	 * (the detection probe), or null when detection data is not yet known.
 	 */
 	public abstract String detectFile();
+
+	/**
+	 * Which edition of THIS game the dump in {@code gameDir} is. RETAIL unless
+	 * a profile knows how to recognise another edition of itself.
+	 *
+	 * <p>Lives here rather than in the caller because "is this dump a demo" is
+	 * a per-game question with a per-game answer, and both places that used to
+	 * answer it - the open session and the static delegator in front of it -
+	 * did it by building a File out of {@code OrasProfile.DEMO_PROBE} from
+	 * outside the seam. Two costs, both measured: the probe path was reachable
+	 * (and copyable) from anywhere, and
+	 * javac inlines a {@code static final String} into every reader, so the
+	 * romfs path "/a/3/0/0" sat in the constant pool of both of those classes
+	 * even though neither source file spells a GARC path - invisible to the
+	 * source-level seam guard, and found by ClassFileScannerTest reading the
+	 * bytecode. A method call cannot be inlined that way.
+	 */
+	public Variant detectVariant(File gameDir) {
+		return Variant.RETAIL;
+	}
+
+	// ---- measured per-game counts -----------------------------------------
+	//
+	// Each returns -1 for "nobody has measured this for this game". A caller
+	// that gets -1 must refuse in words. It must NOT fall back to another
+	// game's number: that is exactly the defect these replace, where
+	// "archive.length - (isXY() ? 1 : 2)" handed Sun/Moon ORAS's answer.
+
+	/**
+	 * How many entries at the END of the ZONE_DATA archive are not zones, so
+	 * {@code archive.length - this} is the zone count and the first of them is
+	 * the master zone-header table. -1 when not measured for this game.
+	 */
+	public int zoneDataTrailingEntries() {
+		return -1;
+	}
+
+	/**
+	 * How many entries at the END of the AREA_DATA archive are not areas, so
+	 * {@code archive.length - this} is the area count and the first of them is
+	 * the engine's global per-area table. -1 when not measured for this game.
+	 */
+	public int areaDataTrailingEntries() {
+		return -1;
+	}
+
+	/**
+	 * How many subfiles a plain FIELD_DATA region container (a "GR") holds, so
+	 * a newly created region can be built with the right number of slots. -1
+	 * when not measured for this game.
+	 */
+	public int fieldDataSubfileCount() {
+		return -1;
+	}
+
+	/**
+	 * True when a zone header stores the zone's own index inside the top bits
+	 * of its unknownFlags word, so cloning a zone into another slot has to
+	 * rewrite it. False when the game does not do that - and false is also the
+	 * answer for a game nobody has measured, deliberately: copying the word
+	 * verbatim preserves whatever it holds, while rewriting bits of a field
+	 * whose layout is a guess corrupts it.
+	 */
+	public boolean zoneNumberInUnknownFlags() {
+		return false;
+	}
+
+	/**
+	 * True when setting a zone header's CYCLING flag is safe on this game.
+	 *
+	 * <p>False is both "this game hangs when you do" and "nobody has tried it
+	 * here", and the two want the same behaviour: do not set the bit. ORAS
+	 * softlocks on a bike in an interior even under an emulator, X/Y does not,
+	 * and that difference was written into the Extras panel as
+	 * {@code header.enableCycling = Workspace.isXY()} - a game-identity test
+	 * that answered "no" for Sun/Moon by accident rather than by measurement.
+	 * The answer is the same; where it is decided is the point.
+	 */
+	public boolean cyclingFlagSafe() {
+		return false;
+	}
+
+	/**
+	 * The 3DS title id of this game's first version - Omega Ruby of ORAS, X of
+	 * X/Y - or null when no id has been recorded for this game.
+	 *
+	 * <p>A profile covers a VERSION PAIR, so this is only ever a default: the
+	 * mod deployer prefers the RomFS folder's own name when that looks like a
+	 * title id, because that is the one the user actually dumped. Null here
+	 * means the deployer offers no folder rather than the wrong one - it used
+	 * to answer {@code isXY() ? X : Omega Ruby}, which pointed a Sun/Moon mod
+	 * at Omega Ruby's emulator directory, where the game it was built for would
+	 * never look and the game it names might.
+	 */
+	public String titleId() {
+		return null;
+	}
 
 	// ---- registry ----------------------------------------------------------
 
@@ -137,9 +310,5 @@ public abstract class GameProfile {
 			}
 		}
 		return null;
-	}
-
-	public static GameProfile current() {
-		return of(Workspace.game());
 	}
 }

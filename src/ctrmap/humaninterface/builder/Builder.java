@@ -14,6 +14,7 @@ import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.mapmatrix.MapMatrix;
 import ctrmap.formats.tilemap.Tilemap;
 import ctrmap.gamedef.ArchiveType;
+import ctrmap.gamedef.GameProfile;
 import ctrmap.humaninterface.ESPICAControl;
 import ctrmap.humaninterface.LoadingDialog;
 import ctrmap.resources.ResourceAccess;
@@ -36,6 +37,14 @@ import javax.swing.SwingWorker;
 import javax.swing.event.ListSelectionEvent;
 
 public class Builder extends javax.swing.JPanel {
+
+	/**
+	 * Subfile slot of a region container's shadow ("KAGE") entry - the seventh,
+	 * present only in containers that have a seventh. Its index is shared by
+	 * every ORAS region, including the 34 nine-slot and 4 eleven-slot ones,
+	 * which append pairs BEHIND it.
+	 */
+	public static final int KAGE_SLOT = 6;
 
 	/**
 	 * Creates new form Builder
@@ -394,7 +403,16 @@ public class Builder extends javax.swing.JPanel {
 		int index = contFileList.getSelectedIndex();
 		final AbstractGamefreakContainer persistentContainerReference = currentAGFC;
 		if (index != -1) {
-			if (currentFiles.get(index).type == ContentType.H3D_MODEL && Workspace.isOA()) {
+			//the OBJ route runs the selected BCH through ESPICA against a donor
+			//BCH, which is a Gen 6 H3D question, not an "is this ORAS" one:
+			//Feature.H3D_MAPS is the flag that says BCH models were verified for
+			//this game, and it names OBJ import in so many words. X/Y carries it
+			//(upstream CTRMap loaded XY maps), so the offer now appears there
+			//too; a game without it drops to the generic byte-for-byte import
+			//exactly as before.
+			if (currentFiles.get(index).type == ContentType.H3D_MODEL
+					&& Workspace.isValid()
+					&& Workspace.profile().supports(GameProfile.Feature.H3D_MAPS)) {
 				int rsl = ctrmap.Ui.confirm(this, "The file selected is a model file. Do you want to import it as OBJ?", "Builder alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 				if (rsl == JOptionPane.YES_OPTION) {
 					File f = openFileDialog("Open a model file");
@@ -478,14 +496,35 @@ public class Builder extends javax.swing.JPanel {
 			tmp.write();
 			success = true;
 		} else if (currentGARC == ArchiveType.FIELD_DATA) {
-			GR gr = new GR(Workspace.getWorkspaceFile(currentGARC, arc.length), Workspace.isOA() ? 7 : 6);
+			//How many subfiles a fresh region container gets is a MEASURED
+			//per-game number (ORAS 7, XY 6), so it comes from the profile, which
+			//answers -1 for a game nobody has counted. It used to be
+			//"isOA() ? 7 : 6", which built a 6-slot ORAS-shaped region for
+			//Sun/Moon and then wrote nothing to say so.
+			int subfiles = Workspace.isValid() ? Workspace.profile().fieldDataSubfileCount() : -1;
+			if (subfiles < 1) {
+				ctrmap.Ui.error(this, "CTRMap has not measured how many subfiles a FieldData region"
+						+ " container of " + (Workspace.isValid()
+								? Workspace.profile().displayName() : "this game")
+						+ " holds, so it cannot build a new one."
+						+ "\n\nThat number is deliberately absent rather than guessed: a container"
+						+ " built with another game's slot count is a region the game cannot load."
+						+ "\n\nMeasure it against a dump and fill in fieldDataSubfileCount() in that"
+						+ " game's profile.", "Builder alert");
+				return;
+			}
+			GR gr = new GR(Workspace.getWorkspaceFile(currentGARC, arc.length), subfiles);
 			currentAGFC = gr;
 			Tilemap tm = new Tilemap(gr, 40, 40);
 			GRCollisionFile coll = new GRCollisionFile(gr, true);
 			tm.modified = true;
 			gr.storeFile(0, tm.assembleTilemap());
-			if (Workspace.isOA()){
-				gr.storeFile(6, ResourceAccess.getByteArray("DummyKAGE.bin"));
+			//The shadow ("KAGE") entry is the SEVENTH slot - the one ORAS added
+			//on top of the six every Gen 6 region has. A game whose containers
+			//hold six has no such slot, and storing into it used to be decided
+			//by isOA() rather than by whether the slot exists.
+			if (subfiles > KAGE_SLOT) {
+				gr.storeFile(KAGE_SLOT, ResourceAccess.getByteArray("DummyKAGE.bin"));
 			}
 			coll.write();
 			success = true;

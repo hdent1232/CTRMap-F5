@@ -42,4 +42,10 @@ public class SmProfile extends GameProfile {
 	public String detectFile() {
 		return null; // TODO: pick a probe file once a dump is available
 	}
+
+	//zoneDataTrailingEntries / areaDataTrailingEntries / fieldDataSubfileCount
+	//are deliberately NOT overridden: the base class answers -1 for each, which
+	//means "nobody has measured this", and every caller is required to refuse
+	//in words rather than compute a count from another game's number. Fill them
+	//in from a Sun/Moon dump, not from ORAS.
 }

@@ -348,16 +348,23 @@ public final class WorkspaceSession {
 		return profile;
 	}
 
-	public boolean isOA() {
-		return game == GameType.ORAS;
-	}
+	//isOA(), isXY() and isOADemo() USED TO BE HERE, beside the statics of the
+	//same name in Workspace, and are gone for the same reason: they answered a
+	//four-game question with a boolean, and "false" was read as the other game.
+	//The two callers left at the end - MapResizer and WorkspaceIntegrity - now
+	//ask profile().supports(Feature.AREA_FORK), which is the measurement they
+	//actually depended on; isOADemo() had none, and variant() below is the
+	//question it was asking.
 
-	public boolean isXY() {
-		return game == GameType.XY;
-	}
-
-	public boolean isOADemo() {
-		return new File(gameDir.getPath() + ctrmap.gamedef.OrasProfile.DEMO_PROBE).exists();
+	/**
+	 * Which EDITION of this game the dump is. The probe belongs to the profile
+	 * (see {@link GameProfile#detectVariant}) - this class used to build the
+	 * File out of {@code OrasProfile.DEMO_PROBE} itself, which put the romfs
+	 * path "/a/3/0/0" into this class file's constant pool through javac's
+	 * constant inlining even though this source spells no GARC path.
+	 */
+	public GameProfile.Variant variant() {
+		return profile.detectVariant(gameDir);
 	}
 
 	/** Scratch directory inside the workspace. */

@@ -111,7 +111,11 @@ public class WorkspaceSessionTest {
 		WorkspaceSession s = WorkspaceSession.open(ws, dump);
 
 		check(s.game() == GameType.ORAS, "the game is detected from the folder (" + s.game() + ")");
-		check(s.isOA() && !s.isXY(), "and the game gates answer for it");
+		//the isOA()/isXY() gates that used to be checked here are gone: what a
+		//caller needs is what the game can DO, and asking which game it is
+		//answered "not XY" for three different games
+		check(s.profile().supports(GameProfile.Feature.AREA_FORK),
+				"and its profile answers what that game can do, which is what callers ask instead");
 		check(s.profile() == GameProfile.of(GameType.ORAS), "and the profile is that game's");
 		check(dump.equals(s.gameDir()) && ws.equals(s.workspaceDir()), "it remembers the two folders it was opened from");
 		GARC ad = s.getArchive(ArchiveType.AREA_DATA);
@@ -137,7 +141,14 @@ public class WorkspaceSessionTest {
 		check(Workspace.session() == null, "Workspace has no current session");
 		check(Workspace.game() == null, "Workspace knows no game");
 		check(Workspace.getArchive(ArchiveType.AREA_DATA) == null, "Workspace holds no archive");
-		check(!Workspace.isOA(), "Workspace's game gate says no");
+		boolean refusedProfile = false;
+		try {
+			Workspace.profile();
+		} catch (RuntimeException ex) {
+			refusedProfile = true;
+		}
+		check(refusedProfile, "and asking Workspace for a profile with no game open REFUSES,"
+				+ " rather than handing out ORAS's");
 		check(Workspace.persistPaths().isEmpty(), "Workspace has nothing marked edited");
 
 		String[] left = ws.list();
@@ -217,7 +228,8 @@ public class WorkspaceSessionTest {
 		Workspace.WORKSPACE_PATH = ws.getAbsolutePath();
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
 		Workspace.install(WorkspaceSession.open(ws, dump));
-		check(Workspace.isValid() && Workspace.isOA() && Workspace.getArchive(ArchiveType.AREA_DATA) != null,
+		check(Workspace.isValid() && Workspace.game() == GameType.ORAS
+				&& Workspace.getArchive(ArchiveType.AREA_DATA) != null,
 				"the user has a game open");
 
 		File notAGame = Scratch.dir("ctrmap_session_not_a_game");
@@ -231,7 +243,6 @@ public class WorkspaceSessionTest {
 		check(!Workspace.isValid(), "the switch failed and the workspace says so");
 		check(Workspace.session() == null, "there is no current session");
 		check(Workspace.game() == null, "nothing of the old game's identity survives the failed switch (game is " + Workspace.game() + ")");
-		check(!Workspace.isOA(), "so its gates say no");
 		check(Workspace.getArchive(ArchiveType.AREA_DATA) == null && Workspace.getArchive(ArchiveType.ZONE_DATA) == null,
 				"and none of its archive handles are reachable");
 		check(said.size() == 1 && said.get(0).contains("Could not detect game version"),

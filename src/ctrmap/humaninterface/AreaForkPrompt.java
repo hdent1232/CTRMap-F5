@@ -46,7 +46,15 @@ public class AreaForkPrompt {
 	 * Its sibling {@link GeometryForker#ensurePrivate} returns the same shape.
 	 */
 	public static AreaForker.ForkResult ensurePrivate(Component parent, int zoneIndex, int currentArea, String whatEdit) {
-		if (!Workspace.isOA() || zoneIndex < 0) {
+		//Ask whether THIS GAME can fork an area, not whether it is ORAS. The
+		//prompt is an offer, so an unsupported game must not be offered it:
+		//accepting would run AreaForker, whose four archive offsets and global
+		//per-area table rewrite were all measured on ORAS, and which refuses
+		//outright for anything else. Offering a button that can only produce a
+		//refusal is worse than not offering it.
+		if (!Workspace.isValid()
+				|| !Workspace.profile().supports(ctrmap.gamedef.GameProfile.Feature.AREA_FORK)
+				|| zoneIndex < 0) {
 			return unforked(zoneIndex, currentArea);
 		}
 		int sharers;

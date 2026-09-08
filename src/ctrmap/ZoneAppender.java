@@ -98,8 +98,20 @@ public class ZoneAppender {
 	 * code.ips (Azahar: load/mods/&lt;titleid&gt;/exefs/; Luma: luma/titles/&lt;titleid&gt;/).
 	 */
 	public static AppendResult appendZones(int newRealZones, int srcIndex) throws IOException {
-		if (!Workspace.isOA()) {
-			throw new IOException("Adding new zones is ORAS-only in v1.");
+		if (!Workspace.isValid()) {
+			throw new IOException("No workspace is loaded, so there is no game to ask.");
+		}
+		ctrmap.gamedef.GameProfile prof = Workspace.profile();
+		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.ZONE_APPEND)) {
+			//names the game and the capability. "ORAS-only in v1" told a user
+			//who had opened X/Y what the editor could do, not what THEY could
+			//do, and said exactly the same thing to Sun/Moon
+			throw new IOException("Adding zones is not available for " + prof.displayName() + "."
+					+ "\n\nZones past the ones a game ships need that game's zone-table limit"
+					+ " found in its executable and raised by a code patch. Both were measured"
+					+ " for Omega Ruby / Alpha Sapphire only; neither has been established for "
+					+ prof.displayName() + ", so CTRMap cannot write a zone this game would"
+					+ " never load.");
 		}
 		if (newRealZones < 1) {
 			throw new IOException("Must add at least one zone.");
@@ -108,7 +120,7 @@ public class ZoneAppender {
 		if (garc == null) {
 			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
 		}
-		int oldCount = garc.length - 2;                       // current zone count (master's GARC index)
+		int oldCount = ZoneTables.zoneCount(garc);            // current zone count (master's GARC index)
 		int m = ctrmap.formats.codepatch.ZoneLimitPatch.masterIndex(newRealZones);
 		int addCount = m - oldCount;
 		if (oldCount != ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES) {

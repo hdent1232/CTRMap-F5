@@ -39,4 +39,7 @@ public class UsumProfile extends GameProfile {
 	public String detectFile() {
 		return null; // TODO: pick a probe file once a dump is available
 	}
+
+	//The measured counts are deliberately NOT overridden here either; see the
+	//note at the foot of SmProfile.
 }
