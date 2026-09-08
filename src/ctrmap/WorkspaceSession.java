@@ -3,6 +3,7 @@ package ctrmap;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameType;
 import ctrmap.Workspace.PackProgress;
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.GameProfile;
 import java.io.BufferedWriter;
@@ -45,8 +46,14 @@ import java.util.logging.Logger;
  * whole point: a decision that takes its session as a parameter can be
  * exercised against the pristine dump in a plain JVM, with no scratch
  * workspace built by hand and nothing left behind for the next suite.
+ *
+ * <p>It is also what the format layer is handed. {@link GameFiles} is that
+ * layer's own statement of what it needs from an opened game, and this class
+ * satisfies it by delegation - each method below is one of the members above
+ * under the name the format layer chose. {@link Workspace}, the static facade,
+ * deliberately does not implement it.
  */
-public final class WorkspaceSession {
+public final class WorkspaceSession implements GameFiles {
 
 	/** Every problem {@link #open} found, in the words the user is shown. */
 	public static final class OpenFailed extends Exception {
@@ -344,6 +351,7 @@ public final class WorkspaceSession {
 	}
 
 	/** The game's profile (paths, text indices, feature gates). */
+	@Override
 	public GameProfile profile() {
 		return profile;
 	}
@@ -363,6 +371,7 @@ public final class WorkspaceSession {
 	 * path "/a/3/0/0" into this class file's constant pool through javac's
 	 * constant inlining even though this source spells no GARC path.
 	 */
+	@Override
 	public GameProfile.Variant variant() {
 		return profile.detectVariant(gameDir);
 	}
@@ -375,6 +384,7 @@ public final class WorkspaceSession {
 	// ------------------------------------------------------------ archives
 
 	/** Where this game keeps an archive, or null when the game lacks it (or its location is not yet verified). */
+	@Override
 	public File archiveFile(ArchiveType type) {
 		return archiveFiles.get(type);
 	}
@@ -480,6 +490,48 @@ public final class WorkspaceSession {
 		if (!persistPaths.contains(f.getAbsolutePath())) {
 			persistPaths.add(f.getAbsolutePath());
 		}
+	}
+
+	// ------------------------------------------------------------ what the format layer is handed
+	//
+	// GameFiles, satisfied by delegation: the format layer chose these names
+	// for what it needs, and each is one of the members above. Nothing here
+	// decides anything the member it delegates to does not.
+
+	/**
+	 * {@link #getWorkspaceFile}, refusing first where that would dereference
+	 * nothing: it opens the extraction directory and the archive handle
+	 * unchecked, so an archive this game lacks or nothing extracts was a
+	 * NullPointerException rather than the null the contract promises.
+	 */
+	@Override
+	public File staged(ArchiveType type, int entry) {
+		if (getExtractionDirectory(type) == null || getArchive(type) == null) {
+			return null;
+		}
+		return getWorkspaceFile(type, entry);
+	}
+
+	@Override
+	public void edited(File f) {
+		addPersist(f);
+	}
+
+	@Override
+	public File scratch() {
+		return temp();
+	}
+
+	@Override
+	public GARC archive(ArchiveType type) {
+		return getArchive(type);
+	}
+
+	/** {@link #originalSnapshotDir()} when a snapshot has been taken there; null when the folder does not exist. */
+	@Override
+	public File pristine() {
+		File snap = originalSnapshotDir();
+		return snap.isDirectory() ? snap : null;
 	}
 
 	/** True when an extracted file is marked as edited - what a pack writes back. */

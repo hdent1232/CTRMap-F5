@@ -1,5 +1,6 @@
 package ctrmap.formats.containers;
 
+import ctrmap.formats.GameFiles;
 import java.io.File;
 
 /**
@@ -9,6 +10,12 @@ import java.io.File;
  */
 public class BM extends AbstractGamefreakContainer {
 
+	/** Opens a building-model container that reports its writes to {@code files}. */
+	public BM(File f, GameFiles files) {
+		super(f, files);
+	}
+
+	/** Transitional: see {@link AbstractGamefreakContainer}. */
 	public BM(File f) {
 		super(f);
 	}

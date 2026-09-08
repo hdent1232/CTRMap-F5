@@ -2,7 +2,6 @@ package ctrmap.tests;
 
 import ctrmap.CtrmapMainframe;
 import ctrmap.Workspace;
-import ctrmap.WorkspaceSession;
 import ctrmap.formats.containers.MM;
 import ctrmap.formats.mapmatrix.MapMatrix;
 import ctrmap.formats.mapmatrix.MatrixCameraBoundaries;
@@ -399,15 +398,10 @@ public class MatrixEditFormGuardsTest {
 		java.nio.file.Files.write(onDisk.toPath(),
 				Workspace.getArchive(ArchiveType.MAP_MATRIX).getDecompressedEntry(MATRIX));
 		f.file = new MM(onDisk);
-		//"no workspace is open" is now "there is no current session", so the parse
-		//is done with the session uninstalled and put straight back afterwards
-		WorkspaceSession live = Workspace.session();
-		Workspace.install(null);
-		try {
-			f.mm = new MapMatrix(f.file);
-		} finally {
-			Workspace.install(live);
-		}
+		//the grid only, no region opened per cell: what "no workspace is open"
+		//used to mean to this parse, now said to it directly instead of by
+		//uninstalling the session around the call
+		f.mm = new MapMatrix(f.file, null);
 		f.section0 = f.file.getFile(0);
 		f.section1 = f.file.getFile(1);
 		int maxZone = 0;

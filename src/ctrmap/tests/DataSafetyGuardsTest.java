@@ -802,12 +802,10 @@ public class DataSafetyGuardsTest {
 			return;
 		}
 		int regions = fd.length;
-		//a real retail matrix, regions left unresolved (no extracted workspace here)
-		ctrmap.WorkspaceSession was = Workspace.session();
-		Workspace.install(null);
+		//a real retail matrix, regions left unresolved (no extracted workspace here):
+		//handed no game to open them from, rather than the session uninstalled around the parse
 		ctrmap.formats.mapmatrix.MapMatrix mm = new ctrmap.formats.mapmatrix.MapMatrix(
-				new ctrmap.formats.containers.MM(temp(mmGarc.getDecompressedEntry(14))));
-		Workspace.install(was);
+				new ctrmap.formats.containers.MM(temp(mmGarc.getDecompressedEntry(14))), null);
 		short before = mm.ids.get(0, 0);
 
 		ctrmap.humaninterface.MatrixEditForm form = new ctrmap.humaninterface.MatrixEditForm();

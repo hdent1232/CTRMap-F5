@@ -1,6 +1,7 @@
 package ctrmap.formats.containers;
 
 import ctrmap.Utils;
+import ctrmap.formats.GameFiles;
 import java.io.File;
 
 /**
@@ -20,19 +21,36 @@ public class MM extends AbstractGamefreakContainer{
 	
 	public int type;
 	
+	/** Opens a matrix or move-model container that reports its writes to {@code files}. */
+	public MM(File f, GameFiles files) {
+		super(f, files);
+		type = sniffType();
+	}
+
+	/** Creates an empty container of {@code len} slots and the given type that reports its writes to {@code files}. */
+	public MM(File f, int len, int type, GameFiles files) {
+		super(f, len, files);
+		this.type = type;
+	}
+
+	/** Transitional: see {@link AbstractGamefreakContainer}. */
 	public MM(File f) {
 		super(f);
-		if (Utils.checkBCHMagic(super.getFile(0))){
-			type = MM_MOVE_MODEL;
-		}
-		else {
-			type = MM_MAP_MATRIX;
-		}
+		type = sniffType();
 	}
-	
+
+	/** Transitional: see {@link AbstractGamefreakContainer}. */
 	public MM(File f, int len, int type){
 		super(f, len);
 		this.type = type;
+	}
+
+	/** A move model's first subfile is a BCH model; a map matrix's is not. */
+	private int sniffType() {
+		if (Utils.checkBCHMagic(getFile(0))){
+			return MM_MOVE_MODEL;
+		}
+		return MM_MAP_MATRIX;
 	}
 	
 	@Override

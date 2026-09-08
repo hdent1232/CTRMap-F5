@@ -1,5 +1,6 @@
 package ctrmap.formats.containers;
 
+import ctrmap.formats.GameFiles;
 import java.io.File;
 
 /**
@@ -36,6 +37,12 @@ public class AD extends AbstractGamefreakContainer{
 		ContentType.H3D_TEXTURE_PACK
 	};
 	
+	/** Opens an area container that reports its writes to {@code files}. */
+	public AD(File f, GameFiles files) {
+		super(f, files);
+	}
+
+	/** Transitional: see {@link AbstractGamefreakContainer}. */
 	public AD(File f) {
 		super(f);
 	}

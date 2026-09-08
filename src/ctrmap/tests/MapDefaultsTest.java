@@ -124,7 +124,7 @@ public class MapDefaultsTest {
 			}
 			MapMatrix parsed;
 			try {
-				parsed = new MapMatrix(new MM(tmp));
+				parsed = new MapMatrix(new MM(tmp), null); //the grid only: nothing to open regions from, and none wanted
 			} catch (Exception ex) {
 				continue;
 			}
