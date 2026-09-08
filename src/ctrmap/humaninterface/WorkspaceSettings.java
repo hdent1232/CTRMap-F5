@@ -65,7 +65,7 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 
 	/** The rest of the save, once the game folder has been settled. */
 	private void applySettings() {
-		Workspace.validate(this);
+		ctrmap.CtrmapMainframe.onWorkspaceOpened(Workspace.validate(this));
 		originWSPath = wsPathField.getText();
 		originGamePath = gameField.getText();
 		originSpicaPath = spicaField.getText();
@@ -110,6 +110,7 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 					Workspace.packWorkspace();
 				case JOptionPane.NO_OPTION:
 					Workspace.GAMEDIR_PATH = gameField.getText();
+					ctrmap.CtrmapMainframe.unloadEditors();
 					Workspace.cleanAndReload();
 					break;
 				//closing the dialog means cancel. Without this case the switch

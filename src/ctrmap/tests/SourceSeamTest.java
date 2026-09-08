@@ -90,8 +90,9 @@ public class SourceSeamTest {
 
 		int asking = noApplicationClassAsksWhichGameIsLoaded(classes);
 		int above = noFormatClassReachesAboveItself(classes);
+		int facade = theFacadeDoesNotKnowTheWindow(classes);
 
-		boolean ok = violations.isEmpty() && asking == 0 && above == 0;
+		boolean ok = violations.isEmpty() && asking == 0 && above == 0 && facade == 0;
 		System.out.println(ok ? "ALL PASS" : "FAILURES PRESENT");
 		if (!ok) {
 			System.exit(1);
@@ -391,6 +392,54 @@ public class SourceSeamTest {
 	 *
 	 * @return the number of violations, so the caller can fail the suite
 	 */
+	/**
+	 * The workspace facade names the main window NOWHERE.
+	 *
+	 * <p>{@link ctrmap.Workspace} is where this program keeps the open game.
+	 * It knew the window in four places: five dialog parents (the seam holds
+	 * the window now), an {@code unloadEditors()} in the middle of a clean, and
+	 * the call that handed the window each session as it was installed. Every
+	 * one is the wrong direction - the state a program keeps should not know
+	 * the screen it is drawn on - and the cost was measurable, not theoretical:
+	 * WorkspaceRepointTest records that the path where the user answers both of
+	 * its questions "cannot run without a window at all", because the clean it
+	 * reaches unloaded editor panels. The facade now answers with what it
+	 * opened and the caller tells the window, so that path runs headless.
+	 *
+	 * <p>Zero, with no allowed exceptions: a facade that needs to say something
+	 * to the screen has a caller who can say it.
+	 */
+	static int theFacadeDoesNotKnowTheWindow(File classesRoot) throws Exception {
+		if (!new File(classesRoot, WORKSPACE + ".class").isFile()) {
+			System.out.println("  FAIL: no compiled " + WORKSPACE + ".class under "
+					+ classesRoot.getAbsolutePath() + " - run build.ps1 first");
+			return 1;
+		}
+		List<String> found = new ArrayList<>();
+		for (ClassFileScanner.ClassFile cf : ClassFileScanner.application(classesRoot)) {
+			if (!cf.topLevel().equals(WORKSPACE)) {
+				continue;
+			}
+			for (ClassFileScanner.Ref r : cf.refs) {
+				if (r.owner.equals(MAINFRAME)) {
+					found.add(cf.name + (r.method ? " calls " : " reads ") + r.owner + "." + r.name);
+				}
+			}
+			for (String c : cf.classes) {
+				if (c.equals(MAINFRAME)) {
+					found.add(cf.name + " names " + c);
+				}
+			}
+		}
+		for (String f : found) {
+			System.out.println("  FACADE: " + f
+					+ " - the workspace facade must not know the window; hand its result to a caller that does");
+		}
+		System.out.println("facade rule: " + found.size() + " reference(s) from " + WORKSPACE
+				+ " to " + MAINFRAME);
+		return found.size();
+	}
+
 	static int noFormatClassReachesAboveItself(File classesRoot) throws Exception {
 		if (!new File(classesRoot, WORKSPACE + ".class").isFile()) {
 			System.out.println("  FAIL: no compiled " + WORKSPACE + ".class under "

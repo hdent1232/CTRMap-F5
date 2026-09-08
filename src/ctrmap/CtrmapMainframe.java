@@ -195,6 +195,9 @@ public class CtrmapMainframe {
 	private static void createAndShowGUI() {
 		Workspace.loadWorkspace();
 		frame = new JFrame("CTRMap Editor");
+		//every dialog this program opens belongs to this window; the seam holds
+		//it from here, so nothing below has to reach up for it
+		Ui.parent(frame);
 		tabs = new JTabbedPane();
 		tileEditMasterPnl = new JPanel(new BorderLayout());
 		collEditMasterPnl = new JPanel(new BorderLayout());
@@ -374,7 +377,7 @@ public class CtrmapMainframe {
 		if (ctrmap.setup.SetupWizard.shouldRunOnStartup()) {
 			ctrmap.setup.SetupWizard.show(frame);
 		} else {
-			Workspace.validate(frame);
+			onWorkspaceOpened(Workspace.validate(frame));
 		}
 		ctrmap.update.UpdateUI.checkOnStartup(frame);
 	}
@@ -765,6 +768,7 @@ public class CtrmapMainframe {
 	}
 
 	private static void cleanWorkspaceAction() {
+		unloadEditors();
 		Workspace.cleanAndReload();
 		mZonePnl.loadEverything();
 	}

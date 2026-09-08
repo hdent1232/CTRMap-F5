@@ -104,7 +104,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			updateDialogueSection();
 			return;
 		}
-		if (e.firstMisnumberedNPC() != -1 && ctrmap.Ui.confirm(frame,
+		if (e.firstMisnumberedNPC() != -1 && ctrmap.Ui.confirm(
 				"This zone's NPC uids are not their positions (an earlier delete left a gap).\n"
 				+ "The game and this editor both number NPCs by position, and the zone\n"
 				+ "will not save until they match.\n\n"
@@ -223,7 +223,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (reg != null) {
 			regentry = reg.entries.get(npc.model);
 			if (regentry == null) {
-				int createEntry = ctrmap.Ui.confirm(frame,
+				int createEntry = ctrmap.Ui.confirm(
 						"This NPC's MoveModel properties could not be found\n"
 						+ "in this area's MoveModel registry under the model UID.\n\n"
 						+ "CTRMap can create dummy registry data for you using the\n"
@@ -419,7 +419,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (npc == null || idx == -1 || idx >= e.npcs.size() || e.npcs.get(idx) != npc) {
 			return;
 		}
-		if (idx < e.npcs.size() - 1 && ctrmap.Ui.confirm(frame,
+		if (idx < e.npcs.size() - 1 && ctrmap.Ui.confirm(
 				"The NPCs after this one will be renumbered (uids " + (idx + 1) + ".." + (e.npcs.size() - 1)
 				+ " become " + idx + ".." + (e.npcs.size() - 2) + "), because the game keeps NPC uids\n"
 				+ "equal to their position. Scripts that address them by uid will need updating.\n\n"
@@ -889,7 +889,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		//pick which template to add; "Talking NPC" continues the proven flow below,
 		//the others dispatch to their own self-contained handlers
 		String[] templates = {"Talking NPC", "Sign", "Item giver", "Trainer", "Battle challenge (own trainers)", "Give BP"};
-		Object choice = ctrmap.Ui.input(frame, "What would you like to add?", "Add NPC / object",
+		Object choice = ctrmap.Ui.input("What would you like to add?", "Add NPC / object",
 				JOptionPane.PLAIN_MESSAGE, templates, templates[0]);
 		if (choice == null) {
 			return;
@@ -927,7 +927,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				return;
 			}
 			int insCount = MsgWrapperInjector.countInjectedInstructions(zone.s, wrapperDonor);
-			int rslInject = ctrmap.Ui.confirm(frame,
+			int rslInject = ctrmap.Ui.confirm(
 					"This zone's script has no message-display routine.\n"
 					+ "Inject one (copied from the game's own code)?\n"
 					+ "This adds " + insCount + " instructions (about 2.4 KB) to the zone script.",
@@ -1373,7 +1373,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				return null;
 			}
 			int insCount = MsgWrapperInjector.countInjectedInstructions(zone.s, wrapperDonor);
-			if (ctrmap.Ui.confirm(frame,
+			if (ctrmap.Ui.confirm(
 					"This zone's script has no message-display routine.\n"
 					+ "Inject one (copied from the game's own code)?\n"
 					+ "This adds " + insCount + " instructions (about 2.4 KB) to the zone script.",
@@ -1775,7 +1775,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * DialogSeamTest counts this call, and only this one, for this file.
 	 */
 	private boolean showForm(javax.swing.JComponent body, String title) {
-		int rsl = JOptionPane.showConfirmDialog(frame, body, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+		int rsl = JOptionPane.showConfirmDialog(ctrmap.Ui.parent(), body, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
 		disposePreviews();
 		return rsl == JOptionPane.OK_OPTION;
 	}
