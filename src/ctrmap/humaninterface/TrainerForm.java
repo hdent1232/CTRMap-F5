@@ -1,7 +1,6 @@
 package ctrmap.humaninterface;
 
 import ctrmap.formats.npcreg.NPCRegistry;
-import ctrmap.Workspace;
 import ctrmap.formats.scripts.NpcTemplates;
 import java.util.List;
 import javax.swing.JPanel;
@@ -14,8 +13,9 @@ import javax.swing.JSpinner;
  * 2840 lines. Each was an inner class reading the editor it sat in through
  * synthetic bridges, so none could be built without one; each is handed what
  * it needs now and is an ordinary class in a file of its own.
+ *
+ * <p>The trainer form: which trainer, model, sight range, facing, and whether a double-battle partner comes too.
  */
-/** The trainer form: which trainer, model, sight range, facing, and whether a double-battle partner comes too. */
 public final class TrainerForm {
 
 	public final JPanel panel = Forms.stackedForm();

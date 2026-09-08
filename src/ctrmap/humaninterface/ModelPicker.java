@@ -1,7 +1,6 @@
 package ctrmap.humaninterface;
 
 import ctrmap.formats.npcreg.NPCRegistry;
-import ctrmap.Workspace;
 import ctrmap.formats.h3d.model.H3DModel;
 import java.util.ArrayList;
 import java.util.Collections;

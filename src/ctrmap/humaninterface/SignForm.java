@@ -12,8 +12,9 @@ import javax.swing.JTextArea;
  * 2840 lines. Each was an inner class reading the editor it sat in through
  * synthetic bridges, so none could be built without one; each is handed what
  * it needs now and is an ordinary class in a file of its own.
+ *
+ * <p>The sign form: the text and the sign style.
  */
-/** The sign form: the text and the sign style. */
 public final class SignForm {
 
 	public final JPanel panel = Forms.stackedForm();

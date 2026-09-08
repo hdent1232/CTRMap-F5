@@ -1,7 +1,6 @@
 package ctrmap.humaninterface;
 
 import ctrmap.formats.npcreg.NPCRegistry;
-import ctrmap.Workspace;
 import ctrmap.formats.scripts.NpcTemplates;
 import java.util.List;
 import javax.swing.JPanel;
@@ -16,8 +15,9 @@ import javax.swing.JTextArea;
  * 2840 lines. Each was an inner class reading the editor it sat in through
  * synthetic bridges, so none could be built without one; each is handed what
  * it needs now and is an ordinary class in a file of its own.
+ *
+ * <p>The battle-challenge form: the lineup, the BP rules, the three texts, the streak variable, the model.
  */
-/** The battle-challenge form: the lineup, the BP rules, the three texts, the streak variable, the model. */
 public final class ChallengeForm {
 
 	public final JPanel panel = Forms.stackedForm();
