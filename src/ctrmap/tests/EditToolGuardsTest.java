@@ -84,6 +84,7 @@ public class EditToolGuardsTest {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		EditorBench.install();
 		try {
+			theSelectionHoldsOneToolAndSaysSo();
 			everyToolAnswersForItself();
 			paintToolHandsGesturesToTheForm();
 			setToolWritesTheTileBytes();
@@ -117,6 +118,125 @@ public class EditToolGuardsTest {
 	 * <p>Also the guard in AbstractTool's own constructor: with no 3D panel a
 	 * tool must still build. Every other check in this suite rests on it.
 	 */
+	/**
+	 * Which tool is held is an object, and two of them can exist at once.
+	 *
+	 * <p>It was {@code CtrmapMainframe.tool}, a public mutable static of the
+	 * main window - nine classes read it and the mouse router assigned it from
+	 * ten places, the only outside writer any of the window's statics had. A
+	 * suite could set it, because anything could; what it could not do was hold
+	 * two, so every check about "while the NPC tool is up" was really a check
+	 * about the one global the whole battery shares.
+	 *
+	 * <p>The order is the part worth pinning. The router shut the outgoing tool
+	 * down BEFORE building the incoming one, because a tool's constructor puts
+	 * its own form in the editor's pane and a shutdown arriving afterwards
+	 * would take it straight back out. That is why the selection takes a
+	 * supplier: handing it a built tool would reverse the order silently.
+	 */
+	static void theSelectionHoldsOneToolAndSaysSo() {
+		ctrmap.humaninterface.tools.ToolSelection sel = new ctrmap.humaninterface.tools.ToolSelection();
+		check(sel.current() == null, "a fresh selection holds nothing");
+		check(!sel.holding(SetTool.class), "and is holding no particular tool");
+
+		java.util.List<String> order = new java.util.ArrayList<String>();
+		AbstractTool first = new SpySwitchTool(order, "first");
+		sel.switchTo(() -> first);
+		check(sel.current() == first && sel.holding(SpySwitchTool.class),
+				"picking one up holds it, and says which kind");
+		check(order.equals(Arrays.asList("init:first")),
+				"the first pick-up shuts nothing down, because nothing was held: " + order);
+
+		AbstractTool second = new SpySwitchTool(order, "second");
+		order.clear();
+		sel.switchTo(() -> {
+			order.add("building:second");
+			return second;
+		});
+		check(sel.current() == second, "switching holds the new one");
+		check(order.equals(Arrays.asList("shutdown:first", "building:second")),
+				"and the outgoing tool is told BEFORE the incoming one is built, which is the"
+				+ " order a tool's constructor depends on: " + order);
+
+		order.clear();
+		sel.drop();
+		check(sel.current() == null, "dropping holds nothing");
+		check(order.isEmpty(), "and tells nobody - it is 'there is no editor', not a switch: " + order);
+
+		//two of them, which the window's static made impossible
+		ctrmap.humaninterface.tools.ToolSelection a = new ctrmap.humaninterface.tools.ToolSelection();
+		ctrmap.humaninterface.tools.ToolSelection b = new ctrmap.humaninterface.tools.ToolSelection();
+		AbstractTool mine = new SpySwitchTool(new java.util.ArrayList<String>(), "a");
+		AbstractTool theirs = new SpySwitchTool(new java.util.ArrayList<String>(), "b");
+		a.switchTo(() -> mine);
+		b.switchTo(() -> theirs);
+		check(a.current() == mine && b.current() == theirs,
+				"two selections hold two different tools at the same moment");
+		a.drop();
+		check(a.current() == null && b.current() == theirs,
+				"and one letting go does not touch the other");
+	}
+
+	/** A tool that records what it was told and when, and touches no editor. */
+	static final class SpySwitchTool extends AbstractTool {
+
+		private final java.util.List<String> log;
+		private final String name;
+
+		SpySwitchTool(java.util.List<String> log, String name) {
+			this.log = log;
+			this.name = name;
+			log.add("init:" + name);
+		}
+
+		@Override
+		public void onToolInit() {
+		}
+
+		@Override
+		public void onToolShutdown() {
+			log.add("shutdown:" + name);
+		}
+
+		@Override
+		public void fireCancel() {
+		}
+
+		@Override
+		public void drawOverlay(java.awt.Graphics g, int x, int y, double dim) {
+		}
+
+		@Override
+		public boolean getSelectorEnabled() {
+			return false;
+		}
+
+		@Override
+		public boolean getNaviEnabled() {
+			return false;
+		}
+
+		@Override
+		public void onTileClick(java.awt.event.MouseEvent e) {
+		}
+
+		@Override
+		public void onTileMouseDown(java.awt.event.MouseEvent e) {
+		}
+
+		@Override
+		public void onTileMouseUp(java.awt.event.MouseEvent e) {
+		}
+
+		@Override
+		public void onTileMouseDragged(java.awt.event.MouseEvent e) {
+		}
+
+		@Override
+		public void updateComponents() {
+		}
+	}
+
 	static void everyToolAnswersForItself() {
 		check(CtrmapMainframe.m3DDebugPanel == null,
 				"fixture: there is no 3D panel, which is the case the guard in AbstractTool's constructor is for");

@@ -109,6 +109,20 @@ public class NpcEditFormGuardsTest {
 
 	/** The zone owner every panel and form built here shares, as the window's would. */
 	static final LoadedZone LOADED = new LoadedZone();
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
+	/**
+	 * Puts a tool in this suite's hand WITHOUT telling the one it replaces that it
+	 * is leaving: a plant, not a switch. The suite is asserting what the form shows
+	 * under a given tool, and a shutdown it never asked for would be a call the
+	 * form under test did not make.
+	 */
+	static void hold(AbstractTool tool) {
+		TOOLS.drop();
+		TOOLS.switchTo(() -> tool);
+	}
+
 
 	static int fails = 0;
 	/** Nine NPCs, dispatch cases 1..10, NPC 0 on script 7; the last NPC shares model 218 with NPCs 4 and 7. */
@@ -170,7 +184,7 @@ public class NpcEditFormGuardsTest {
 		}
 		check(twins >= 1, "zone " + ZONE + ": the last NPC shares model " + gone.model + " with " + twins + " earlier NPCs - the case a delete by object got wrong");
 		NPCRegistry reg = registryFor(e, gr);
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, reg);
 		form.setNPC(last);
 		check(form.npc == gone && form.npcIndex == last, "the form is on NPC " + last);
@@ -211,7 +225,7 @@ public class NpcEditFormGuardsTest {
 	static void saveRefusesUndefinedScript(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, null);
 		JSpinner scr = (JSpinner) field(form, "scr");
 		JComboBox<?> entryBox = (JComboBox<?>) field(form, "entryBox");
@@ -264,7 +278,7 @@ public class NpcEditFormGuardsTest {
 		ZoneEntities e = zone.entities;
 		e.npcs.clear();
 		e.NPCCount = 0;
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, null);
 		check(form.npc == null, "no NPC is selected in an empty zone");
 		check(form.saveEntry() && !e.modified, "Save with no NPC selected succeeds and touches nothing");
@@ -278,7 +292,7 @@ public class NpcEditFormGuardsTest {
 	static void dialogueNoteNamesUndefinedScript(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, null);
 		JLabel note = (JLabel) field(form, "dlgStatus");
 		check(!note.getText().contains("not defined"), "NPC 0 on script 7: " + note.getText());
@@ -294,7 +308,7 @@ public class NpcEditFormGuardsTest {
 	static void newEntryStopsAtTheCeiling(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, null);
 		int before = e.npcs.size();
 		List<String> said = ctrmap.Ui.record();
@@ -343,7 +357,7 @@ public class NpcEditFormGuardsTest {
 			e.npcs.add(npc);
 		}
 		e.NPCCount = 3;
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.e = e;
 		form.loaded = true;
 		form.npcIndex = 1;
@@ -370,7 +384,7 @@ public class NpcEditFormGuardsTest {
 		first.yTile = 100; //inside the 80 x 160 tiles the matrix covers
 		first.z3DCoordinate = 12.5f;
 		CtrmapMainframe.mTileMapPanel = tallMatrix();
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, null);
 		CtrmapMainframe.mNPCEditForm = form;
 		NPCTool tool = headlessTool();
@@ -416,7 +430,7 @@ public class NpcEditFormGuardsTest {
 
 		List<String> said = ctrmap.Ui.record(JOptionPane.NO_OPTION);
 		try {
-			new NPCEditForm(LOADED).loadFromEntities(e, null);
+			new NPCEditForm(LOADED, TOOLS).loadFromEntities(e, null);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -425,7 +439,7 @@ public class NpcEditFormGuardsTest {
 
 		said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
 		try {
-			new NPCEditForm(LOADED).loadFromEntities(e, null);
+			new NPCEditForm(LOADED, TOOLS).loadFromEntities(e, null);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -443,7 +457,7 @@ public class NpcEditFormGuardsTest {
 		NPCRegistry reg = new NPCRegistry(temp(new byte[0]), Workspace.session());
 		check(reg.entries.isEmpty(), "an empty registry has no entry for NPC 0's MoveModel");
 
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		List<String> said = ctrmap.Ui.record(JOptionPane.NO_OPTION);
 		try {
 			form.loadFromEntities(zone.entities, reg);
@@ -456,7 +470,7 @@ public class NpcEditFormGuardsTest {
 
 		said = ctrmap.Ui.record(); //no answer: the same as closing the question
 		try {
-			new NPCEditForm(LOADED).loadFromEntities(zone.entities, reg);
+			new NPCEditForm(LOADED, TOOLS).loadFromEntities(zone.entities, reg);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -472,7 +486,7 @@ public class NpcEditFormGuardsTest {
 		}
 		said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
 		try {
-			new NPCEditForm(LOADED).loadFromEntities(zone.entities, reg);
+			new NPCEditForm(LOADED, TOOLS).loadFromEntities(zone.entities, reg);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -488,7 +502,7 @@ public class NpcEditFormGuardsTest {
 	static void softLockWarningReachesTheUser(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, null);
 		//zone 24's script 8 is a talker on message line 8; a story file of one
 		//empty line has no line 8, which is the soft-lock exactly
@@ -516,7 +530,7 @@ public class NpcEditFormGuardsTest {
 	static void addTemplateStopsAtTheCeiling(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, null);
 
 		List<String> said = ctrmap.Ui.record(); //no answer: the same as cancelling the chooser
@@ -689,7 +703,7 @@ public class NpcEditFormGuardsTest {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
 		zone.s.decompressThis();
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, null);
 		Point pos = new Point(12, 34);
 		int npcs = e.npcs.size();
@@ -783,7 +797,7 @@ public class NpcEditFormGuardsTest {
 	static void viewportDrawsOnlyModelledNPCs(GARC zo, GARC gr) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, null);
 		check(form.modelledNPCs().length == 0, "with no registry the viewport draws nothing");
 		check(form.ownedModels().isEmpty(), "and the form owns no GL buffers to upload or delete");
@@ -828,14 +842,14 @@ public class NpcEditFormGuardsTest {
 	static void onlyTheEditedNPCIsBoxed(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, null);
 		form.setNPC(2);
 		check(form.npcIndex == 2 && e.npcs.size() > 5, "the form is editing NPC 2 of " + e.npcs.size());
 
-		AbstractTool was = CtrmapMainframe.tool;
+		AbstractTool was = TOOLS.current();
 		try {
-			CtrmapMainframe.tool = headlessTool();
+			hold(headlessTool());
 			int boxed = 0;
 			boolean onlyMine = true;
 			for (int i = 0; i < e.npcs.size(); i++) {
@@ -849,11 +863,11 @@ public class NpcEditFormGuardsTest {
 			form.setNPC(5);
 			check(form.boxedNPC(5) && !form.boxedNPC(2), "the outline follows the selection to NPC 5");
 
-			CtrmapMainframe.tool = new WarpTool() {
+			hold(new WarpTool() {
 				@Override
 				public void onToolInit() {
 				}
-			};
+			});
 			boxed = 0;
 			for (int i = 0; i < e.npcs.size(); i++) {
 				if (form.boxedNPC(i)) {
@@ -862,10 +876,10 @@ public class NpcEditFormGuardsTest {
 			}
 			check(boxed == 0, "under another tool nothing is outlined - a click there does not move an NPC (outlined: " + boxed + ")");
 
-			CtrmapMainframe.tool = null;
+			TOOLS.drop();
 			check(!form.boxedNPC(form.npcIndex), "and with no tool at all, nothing is outlined");
 		} finally {
-			CtrmapMainframe.tool = was;
+			hold(was);
 		}
 	}
 
@@ -892,12 +906,12 @@ public class NpcEditFormGuardsTest {
 		for (Integer uid : new ArrayList<>(reg.models.keySet())) {
 			reg.models.put(uid, recordingModel(bch, drawn, outlined));
 		}
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, reg);
 		form.setNPC(5);
-		AbstractTool was = CtrmapMainframe.tool;
+		AbstractTool was = TOOLS.current();
 		try {
-			CtrmapMainframe.tool = headlessTool();
+			hold(headlessTool());
 			check(form.modelledNPCs().length > 2 && form.npcIndex == 5,
 					"fixture: the frame draws " + form.modelledNPCs().length + " NPCs and the form is editing NPC 5");
 			form.renderCM3D(null);
@@ -911,7 +925,7 @@ public class NpcEditFormGuardsTest {
 					"the outline stands on the NPC being edited, at (" + wx + ", " + wz + ") - drawn at "
 					+ (at == null ? "nowhere" : "(" + at[0] + ", " + at[1] + ")"));
 		} finally {
-			CtrmapMainframe.tool = was;
+			hold(was);
 		}
 	}
 
@@ -982,7 +996,7 @@ public class NpcEditFormGuardsTest {
 	static void dialogueNoteTellsABrokenScriptFromAPlainOne(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		form.loadFromEntities(e, null);
 		JLabel note = (JLabel) field(form, "dlgStatus");
 
@@ -1081,7 +1095,7 @@ public class NpcEditFormGuardsTest {
 			filler.model = uid;
 			full.entries.put(uid, filler);
 		}
-		NPCEditForm form = new NPCEditForm(LOADED);
+		NPCEditForm form = new NPCEditForm(LOADED, TOOLS);
 		ctrmap.Ui.record(JOptionPane.NO_OPTION); //the form asks about the NPCs with no entry; not this test's business
 		try {
 			form.loadFromEntities(zone.entities, full);
@@ -1175,7 +1189,7 @@ public class NpcEditFormGuardsTest {
 
 	/** A map panel over a 2 wide, 4 tall matrix; null cells read height 0, past the edge reads NaN. */
 	static TileMapPanel tallMatrix() {
-		TileMapPanel map = new TileMapPanel(LOADED);
+		TileMapPanel map = new TileMapPanel(LOADED, TOOLS);
 		map.colls = new GRCollisionFile[2][4];
 		return map;
 	}
@@ -1191,7 +1205,7 @@ public class NpcEditFormGuardsTest {
 
 	/** Zone index as the editor holds it: a ZoneLoadingPanel with that zone open, in CtrmapMainframe.mZonePnl. */
 	static Zone openZone(GARC zo, int index) throws Exception {
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS);
 		Zone[] table = new Zone[index + 1];
 		table[index] = new Zone(new ZO(temp(zo.getDecompressedEntry(index)), Workspace.session()), Workspace.game());
 		LOADED.table(table);

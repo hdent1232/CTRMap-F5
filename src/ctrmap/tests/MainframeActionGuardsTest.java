@@ -52,6 +52,9 @@ import javax.swing.JOptionPane;
  * Usage: java ctrmap.tests.MainframeActionGuardsTest &lt;pristine dump root&gt;
  */
 public class MainframeActionGuardsTest {
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
 
 	/** ORAS: 536 base zones, then the master table and the EN pack. */
 	private static final int STOCK_ZONEDATA_ENTRIES = 538;
@@ -476,7 +479,7 @@ public class MainframeActionGuardsTest {
 		//a panel with no zone selected is the same situation, and must read the
 		//same way: zoneIndex is -1 until the dropdown has been used
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.bindLoadedZone(lz);
 		check(lz.index() == -1 && lz.open() == null, "a fresh zone panel holds no zone");
@@ -498,7 +501,7 @@ public class MainframeActionGuardsTest {
 	static void facilitySetupRefusesAnAppendedZone() throws Exception {
 		System.out.println("--- a facility refuses an appended zone, and says where to put it instead");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
 		int baseZones = Workspace.getArchive(ArchiveType.ZONE_DATA).length - 2;
 		lz.open(baseZones + 4, null);
 		CtrmapMainframe.mZonePnl = pnl;
@@ -543,7 +546,7 @@ public class MainframeActionGuardsTest {
 	static void facilitySetupOffersBothWaysAndActsOnNeitherUnasked() throws Exception {
 		System.out.println("--- the facility action offers two paths and acts on neither unasked");
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
 		lz.open(100, null); //a base zone, well under the stock bound
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.bindLoadedZone(lz);
@@ -616,7 +619,7 @@ public class MainframeActionGuardsTest {
 		check(defaultRegion() == -1, "with no zone owner at all the default is -1, not a guess");
 
 		LoadedZone lz = new LoadedZone();
-		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz);
+		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.bindLoadedZone(lz);
 		check(defaultRegion() == -1, "with an owner holding no zone it is still -1");

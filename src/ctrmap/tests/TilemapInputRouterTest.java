@@ -86,7 +86,7 @@ public class TilemapInputRouterTest {
 		int wheelBefore = EditorBench.map.getMouseWheelListeners().length;
 		int motionBefore = EditorBench.map.getMouseMotionListeners().length;
 		int mouseBefore = EditorBench.map.getMouseListeners().length;
-		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map);
+		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map, EditorBench.TOOLS);
 		check(Arrays.asList(EditorBench.map.getMouseWheelListeners()).contains(router)
 				&& EditorBench.map.getMouseWheelListeners().length == wheelBefore + 1,
 				"the router subscribes to the map view's wheel");
@@ -159,9 +159,9 @@ public class TilemapInputRouterTest {
 	static void everyGestureReachesTheToolWithTheTileUnderIt() {
 		TilemapPanelInputManager router = router();
 		SpyTool spy = new SpyTool();
-		AbstractTool was = CtrmapMainframe.tool;
+		AbstractTool was = EditorBench.TOOLS.current();
 		try {
-			CtrmapMainframe.tool = spy;
+			hold(spy);
 			router.mouseMoved(EditorBench.mouse(MouseEvent.MOUSE_MOVED, 5, 5, false));
 			spy.calls.clear();
 
@@ -194,7 +194,7 @@ public class TilemapInputRouterTest {
 			check(spy.calls.isEmpty(), "and a plain move reaches no tool either, only the cursor: " + spy.calls);
 			check(Selector.hilightTileX == 20 && Selector.hilightTileY == 20, "which did move");
 		} finally {
-			CtrmapMainframe.tool = was;
+			hold(was);
 		}
 	}
 
@@ -207,9 +207,9 @@ public class TilemapInputRouterTest {
 	static void aClickOffTheMapCancelsFirst() {
 		TilemapPanelInputManager router = router();
 		SpyTool spy = new SpyTool();
-		AbstractTool was = CtrmapMainframe.tool;
+		AbstractTool was = EditorBench.TOOLS.current();
 		try {
-			CtrmapMainframe.tool = spy;
+			hold(spy);
 			router.mouseMoved(EditorBench.mouse(MouseEvent.MOUSE_MOVED, 500, 500, false));
 			check(Selector.hilightTileX == -1, "fixture: the cursor is off the map");
 			spy.calls.clear();
@@ -222,7 +222,7 @@ public class TilemapInputRouterTest {
 			router.mouseClicked(EditorBench.click(100, 100, false));
 			check(spy.calls.equals(Arrays.asList("click 10,10")), "a click on the map cancels nothing: " + spy.calls);
 		} finally {
-			CtrmapMainframe.tool = was;
+			hold(was);
 		}
 	}
 
@@ -305,7 +305,7 @@ public class TilemapInputRouterTest {
 			"Current tool: Map Builder", "Current tool: Geometry"
 		};
 		TilemapPanelInputManager router = router();
-		AbstractTool was = CtrmapMainframe.tool;
+		AbstractTool was = EditorBench.TOOLS.current();
 		java.awt.event.ActionListener wasSwitch = EditorBench.toolSwitch;
 		List<javax.swing.JRadioButton> buttons = EditorBench.toolButtons();
 		try {
@@ -317,34 +317,53 @@ public class TilemapInputRouterTest {
 						"button " + i + " sends \"" + commands[i] + "\" (it sends \""
 						+ buttons.get(i).getActionCommand() + "\")");
 				SpyTool outgoing = new SpyTool();
-				CtrmapMainframe.tool = outgoing;
+				hold(outgoing);
 				EditorBench.setCurrentToolText("");
 				buttons.get(i).doClick();
 				check(outgoing.calls.equals(Arrays.asList("shutdown")),
 						"\"" + commands[i] + "\" shuts the outgoing tool down first: " + outgoing.calls);
-				check(CtrmapMainframe.tool != null && CtrmapMainframe.tool.getClass() == classes[i],
+				AbstractTool held = EditorBench.TOOLS.current();
+				check(held != null && held.getClass() == classes[i],
 						"\"" + commands[i] + "\" installs a " + classes[i].getSimpleName()
-						+ " (it installed " + (CtrmapMainframe.tool == null ? "nothing" : CtrmapMainframe.tool.getClass().getSimpleName()) + ")");
+						+ " (it installed " + (held == null ? "nothing" : held.getClass().getSimpleName()) + ")");
 				check(labels[i].equals(EditorBench.currentToolText()),
 						"and says so: \"" + EditorBench.currentToolText() + "\"");
 			}
 
 			//an unrecognised command
 			SpyTool stranded = new SpyTool();
-			CtrmapMainframe.tool = stranded;
+			hold(stranded);
 			EditorBench.setCurrentToolText("Current tool: Geometry");
 			router.actionPerformed(new ActionEvent(EditorBench.map, ActionEvent.ACTION_PERFORMED, "no such tool"));
-			check(CtrmapMainframe.tool == stranded,
-					"PINNED: an unknown command leaves the same tool in the field");
-			check(stranded.calls.equals(Arrays.asList("shutdown")),
-					"PINNED: but only after shutting it down, so the tool the mouse still routes to has already been"
-					+ " told it was leaving: " + stranded.calls);
+			check(EditorBench.TOOLS.current() == stranded,
+					"an unknown command leaves the same tool in hand");
+			//RETARGETED, and the behaviour with it. The shutdown used to be the
+			//router's first statement, before the switch that decides what to
+			//pick up, so an unrecognised command shut the held tool down and
+			//then matched nothing: the tool the mouse still routed to had been
+			//told it was leaving and never told otherwise. The shutdown belongs
+			//to the switch now (ToolSelection.switchTo does it, in the order the
+			//router had), so nothing happens at all - which is what "leaves the
+			//same tool in the field" was always trying to say.
+			check(stranded.calls.isEmpty(),
+					"and does NOT tell it it was leaving, so the tool the mouse still routes to is still"
+					+ " initialised: " + stranded.calls);
 			check("Current tool: Geometry".equals(EditorBench.currentToolText()),
 					"and the label still names the tool that is no longer initialised");
 		} finally {
-			CtrmapMainframe.tool = was;
+			hold(was);
 			EditorBench.toolSwitch = wasSwitch;
 		}
+	}
+
+	/**
+	 * Puts a tool in the bench's hand WITHOUT telling the one it replaces that it
+	 * is leaving. The suite is asserting who the router shuts down and when, so a
+	 * shutdown from the setup would be a call the router did not make.
+	 */
+	static void hold(AbstractTool tool) {
+		EditorBench.TOOLS.drop();
+		EditorBench.TOOLS.switchTo(() -> tool);
 	}
 
 	// ---- fixtures -----------------------------------------------------------
@@ -354,7 +373,7 @@ public class TilemapInputRouterTest {
 	 * handlers directly and one synthetic event cannot be delivered twice.
 	 */
 	static TilemapPanelInputManager router() {
-		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map);
+		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map, EditorBench.TOOLS);
 		EditorBench.map.removeMouseWheelListener(router);
 		EditorBench.map.removeMouseMotionListener(router);
 		EditorBench.map.removeMouseListener(router);

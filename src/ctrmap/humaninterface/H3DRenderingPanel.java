@@ -68,8 +68,12 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 		repaint();
 	}
 
-	public H3DRenderingPanel(List<CM3DRenderable> slaves) {
+	/** Which tool the editor is holding, handed in: this class only asks. */
+	private final ctrmap.humaninterface.tools.ToolSelection tools;
+
+	public H3DRenderingPanel(List<CM3DRenderable> slaves, ctrmap.humaninterface.tools.ToolSelection tools) {
 		super(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
+		this.tools = tools;
 		CM3DComponents = slaves;
 		super.addGLEventListener(this);
 		new FPSAnimator(this, 60).start();
@@ -152,7 +156,7 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 				r.renderOverlayCM3D(gl);
 			});
 
-			if (CtrmapMainframe.tool.getNaviEnabled()) {
+			if (tools.current().getNaviEnabled()) {
 				navi.renderNavigator(gl);
 			}
 
@@ -212,7 +216,7 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 				break;
 		}
 		navi.synchronizeNavi();
-		CtrmapMainframe.tool.updateComponents();
+		tools.current().updateComponents();
 	}
 
 	@Override

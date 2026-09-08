@@ -76,7 +76,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** The zone owner this form was handed: the open zone's header and area, and the table, for the area's name. */
 	private final LoadedZone loadedZone;
 
-	public PropEditForm(LoadedZone loadedZone) {
+	/** Which tool the editor is holding, handed in: this class only asks. */
+	private final ctrmap.humaninterface.tools.ToolSelection tools;
+
+	public PropEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools) {
+		this.tools = tools;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("PropEditForm must be handed a LoadedZone");
 		}
@@ -763,7 +767,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (reg != null) {
 			for (int i = 0; i < models.size(); i++) {
 				if (models.size() > i && models.get(i) != null) {
-					if (i == propIndex && CtrmapMainframe.tool instanceof PropTool) {
+					if (i == propIndex && tools.holding(PropTool.class)) {
 						updateH3D(i);
 						models.get(i).renderBox(gl);
 					}
@@ -1412,7 +1416,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 	@Override
 	public void doSelectionLoop(MouseEvent e, Component parent, float[] mvMatrix, float[] projMatrix, int[] view, Vec3f cameraVec) {
-		if (!(CtrmapMainframe.tool instanceof PropTool)) {
+		if (!tools.holding(PropTool.class)) {
 			return;
 		}
 		GLUgl2 glu = new GLUgl2();

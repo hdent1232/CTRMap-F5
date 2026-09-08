@@ -32,7 +32,11 @@ public class TileEditForm extends javax.swing.JPanel {
 	/**
 	 * Creates new form TileEditForm
 	 */
-	public TileEditForm() {
+	/** Which tool the editor is holding, handed in: this class only asks. */
+	private final ctrmap.humaninterface.tools.ToolSelection tools;
+
+	public TileEditForm(ctrmap.humaninterface.tools.ToolSelection tools) {
+		this.tools = tools;
 		initComponents();
 		byte0.setName("0");
 		byte1.setName("1");
@@ -52,7 +56,7 @@ public class TileEditForm extends javax.swing.JPanel {
 			//switch to the Set (paint) tool so the choice sticks and click/drag
 			//paints it (with the Edit tool the panel is a hover-live inspector,
 			//which used to silently discard the pick as the mouse crossed the map)
-			if (tool instanceof EditTool && Selector.selTileX == -1) {
+			if (tools.current() instanceof EditTool && Selector.selTileX == -1) {
 				String name = tileList.getSelectedValue();
 				int c1 = t.cat1, c2 = t.cat2;
 				suppressListEvents = true;
@@ -114,6 +118,7 @@ public class TileEditForm extends javax.swing.JPanel {
 		ChangeListener rawDataChangeListener = new ChangeListener() {
 			@Override
 			public void stateChanged(ChangeEvent e) {
+				ctrmap.humaninterface.tools.AbstractTool tool = tools.current();
 				if (tool instanceof EditTool) {
 					if (Selector.selTileX != -1) {
 						Tilemap region = mTileMapPanel.getRegionForTile(Selector.selTileX, Selector.selTileY);

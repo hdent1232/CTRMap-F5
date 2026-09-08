@@ -48,6 +48,9 @@ import java.util.TreeMap;
  * Usage: java ctrmap.tests.NpcMoveCodesTest &lt;romfs-root&gt;
  */
 public class NpcMoveCodesTest {
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
 
 	/** Highest code worth probing; the table's largest is 23. */
 	private static final int PROBE_CEILING = 64;
@@ -148,7 +151,7 @@ public class NpcMoveCodesTest {
 	static void theFormAsksTheTable() {
 		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
 			Sessions.bare(new File("no-workspace"), new File("no-game"), g);
-			NPCEditForm form = new NPCEditForm(new LoadedZone());
+			NPCEditForm form = new NPCEditForm(new LoadedZone(), TOOLS);
 			int bad = 0;
 			for (int code = 0; code <= PROBE_CEILING; code++) {
 				bad += form.getMot2Index(code) == NpcMoveCodes.movePerm2Index(code, g) ? 0 : 1;

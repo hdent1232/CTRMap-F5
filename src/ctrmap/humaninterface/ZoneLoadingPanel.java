@@ -46,7 +46,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 	private boolean loaded = false;
 
 	/** Creates the form over the zone owner it is handed. */
-	public ZoneLoadingPanel(LoadedZone loadedZone) {
+	/** Which tool the editor is holding, handed in: this class only asks. */
+	private final ctrmap.humaninterface.tools.ToolSelection tools;
+
+	public ZoneLoadingPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools) {
+		this.tools = tools;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("ZoneLoadingPanel must be handed a LoadedZone");
 		}
@@ -1166,7 +1170,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 						//an active Map Builder must re-seed onto the NEW zone -
 						//otherwise its panel keeps showing (and guarding against)
 						//the previously painted zone
-						if (ctrmap.CtrmapMainframe.tool instanceof ctrmap.humaninterface.tools.PaintTool) {
+						if (tools.holding(ctrmap.humaninterface.tools.PaintTool.class)) {
 							mPaintForm.activate();
 						}
 						//show this zone's own atmosphere in the 3D view

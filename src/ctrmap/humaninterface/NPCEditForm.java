@@ -77,7 +77,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** The zone owner this form was handed; its open zone's script fills the script dropdown. */
 	private final LoadedZone loadedZone;
 
-	public NPCEditForm(LoadedZone loadedZone) {
+	/** Which tool the editor is holding, handed in: this class only asks. */
+	private final ctrmap.humaninterface.tools.ToolSelection tools;
+
+	public NPCEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools) {
+		this.tools = tools;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("NPCEditForm must be handed a LoadedZone");
 		}
@@ -2086,7 +2090,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * renderBox call stays untested; which NPC it applies to no longer is.
 	 */
 	public boolean boxedNPC(int i) {
-		return i == npcIndex && CtrmapMainframe.tool instanceof NPCTool;
+		return i == npcIndex && tools.holding(NPCTool.class);
 	}
 
 	@Override
@@ -2790,7 +2794,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 	@Override
 	public void doSelectionLoop(MouseEvent evt, Component parent, float[] mvMatrix, float[] projMatrix, int[] view, Vec3f cameraVec) {
-		if (!(CtrmapMainframe.tool instanceof NPCTool)){
+		if (!tools.holding(NPCTool.class)){
 			return;
 		}
 		double closestDist = Float.MAX_VALUE;

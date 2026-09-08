@@ -59,6 +59,9 @@ public class GeoEditFormGuardsTest {
 
 	/** The zone owner every panel and form built here shares, as the window's would. */
 	static final LoadedZone LOADED = new LoadedZone();
+	/** The tool this suite holds: its own, so another suite may hold another. */
+	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
+
 
 	/** A map model, one collision layer, a tilemap and two props: everything the tool touches. */
 	static final int REGION = 7;
@@ -79,7 +82,7 @@ public class GeoEditFormGuardsTest {
 		ScratchGame.open(dump);
 		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
 		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
-		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(LOADED);
+		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(LOADED, TOOLS);
 
 		theRegionIsTheOneTheseChecksDescribe();
 		aSelectionNamesItsRegionAndCountsWhatIsInIt();
@@ -387,7 +390,7 @@ public class GeoEditFormGuardsTest {
 		f.tiles0 = f.gr.getFile(0);
 		f.model0 = f.gr.getFile(1);
 		f.coll0 = f.gr.getFile(2);
-		TileMapPanel view = new TileMapPanel(LOADED);
+		TileMapPanel view = new TileMapPanel(LOADED, TOOLS);
 		view.mainGR = f.gr;
 		view.tilemaps = new Tilemap[][]{{new Tilemap(f.gr)}};
 		CtrmapMainframe.mTileMapPanel = view;
