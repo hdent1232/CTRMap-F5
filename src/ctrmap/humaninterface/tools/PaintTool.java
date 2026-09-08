@@ -1,6 +1,6 @@
 package ctrmap.humaninterface.tools;
 
-import static ctrmap.CtrmapMainframe.*;
+import ctrmap.humaninterface.PaintForm;
 import ctrmap.humaninterface.Selector;
 import java.awt.Graphics;
 import java.awt.event.MouseEvent;
@@ -13,10 +13,18 @@ import javax.swing.SwingUtilities;
  */
 public class PaintTool extends AbstractTool {
 
+	/** The map painter it hands gestures to. */
+	private final PaintForm form;
+
+	public PaintTool(ToolHost host, PaintForm form) {
+		super(host);
+		this.form = form;
+	}
+
 	@Override
 	public void onToolInit() {
-		switchToolUI(mPaintForm);
-		mPaintForm.activate();
+		host.showToolUi(form);
+		form.activate();
 	}
 
 	@Override
@@ -27,7 +35,7 @@ public class PaintTool extends AbstractTool {
 	@Override
 	public void onTileMouseDown(MouseEvent e) {
 		if (Selector.hilightTileX != -1) {
-			mPaintForm.gesturePress(Selector.hilightTileX, Selector.hilightTileY,
+			form.gesturePress(Selector.hilightTileX, Selector.hilightTileY,
 					SwingUtilities.isRightMouseButton(e));
 		}
 	}
@@ -41,25 +49,25 @@ public class PaintTool extends AbstractTool {
 	public void onTileMouseDragged(MouseEvent e) {
 		if (Selector.hilightTileX != -1) {
 			CM2DNoUpdate = true;
-			mPaintForm.gestureDrag(Selector.hilightTileX, Selector.hilightTileY,
+			form.gestureDrag(Selector.hilightTileX, Selector.hilightTileY,
 					SwingUtilities.isRightMouseButton(e));
 		}
 	}
 
 	@Override
 	public void onToolShutdown() {
-		mPaintForm.deactivate();
+		form.deactivate();
 		Selector.unfocus();
 	}
 
 	@Override
 	public void fireCancel() {
-		mPaintForm.cancelPending();
+		form.cancelPending();
 	}
 
 	@Override
 	public void drawOverlay(Graphics g, int imgstartx, int imgstarty, double globimgdim) {
-		mPaintForm.drawOverlay(g, imgstartx, imgstarty, globimgdim);
+		form.drawOverlay(g, imgstartx, imgstarty, globimgdim);
 	}
 
 	@Override

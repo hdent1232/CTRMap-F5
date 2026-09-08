@@ -361,8 +361,11 @@ public class DataSafetyGuardsTest {
 		WarpEditForm blank = new WarpEditForm(lz, REDRAW);
 		blank.loadFromEntities(null);
 		CtrmapMainframe.mWarpEditForm = blank;
+		//the overlay is the TOOL's, drawn over the form it was handed
+		RecordingHost host = new RecordingHost();
+		ctrmap.humaninterface.tools.WarpTool blankTool = new ctrmap.humaninterface.tools.WarpTool(host, blank, new ctrmap.humaninterface.CameraEditForm(REDRAW));
 		try {
-			WarpTool.paintWarps(img.getGraphics(), 0, 0, 12);
+			blankTool.paintWarps(img.getGraphics(), 0, 0, 12);
 			check(true, "the warp overlay draws nothing while no zone is loaded");
 		} catch (RuntimeException ex) {
 			check(false, "the warp overlay with no zone loaded threw " + ex);
@@ -401,7 +404,8 @@ public class DataSafetyGuardsTest {
 		a.w = 1;
 		a.h = 1;
 		CtrmapMainframe.mWarpEditForm = form;
-		WarpTool.paintWarps(img.getGraphics(), 0, 0, 12);
+		ctrmap.humaninterface.tools.WarpTool loadedTool = new ctrmap.humaninterface.tools.WarpTool(host, form, new ctrmap.humaninterface.CameraEditForm(REDRAW));
+		loadedTool.paintWarps(img.getGraphics(), 0, 0, 12);
 		int bx = (int) Math.round(12 * ((a.x - 9f) / 18f)), by = (int) Math.round(12 * ((a.y - 9f) / 18f));
 		check(new Color(img.getRGB(bx + 10, by + 2)).equals(Color.WHITE), "and draws the loaded zone's warp as a box on its tile");
 		//THE REFUSAL MUST REACH THE USER, not just happen. Mutation testing showed

@@ -367,7 +367,7 @@ public class NpcEditFormGuardsTest {
 		CtrmapMainframe.mNPCEditForm = form;
 		BufferedImage img = new BufferedImage(160, 60, BufferedImage.TYPE_INT_RGB);
 		Graphics g = img.getGraphics();
-		headlessTool().drawOverlay(g, 0, 0, 20.0);
+		headlessTool(form).drawOverlay(g, 0, 0, 20.0);
 		g.dispose();
 		check(img.getRGB(3 * 20, 20) == Color.RED.getRGB(), "the NPC at position 1 (uid 5) wears the red box");
 		check(img.getRGB(1 * 20, 20) == Color.BLACK.getRGB() && img.getRGB(5 * 20, 20) == Color.BLACK.getRGB(), "the others are boxed in black");
@@ -390,7 +390,7 @@ public class NpcEditFormGuardsTest {
 		NPCEditForm form = new NPCEditForm(LOADED, TOOLS, REDRAW);
 		form.loadFromEntities(e, null);
 		CtrmapMainframe.mNPCEditForm = form;
-		NPCTool tool = headlessTool();
+		NPCTool tool = headlessTool(form);
 		Selector.hilightTileX = 10;
 		Selector.hilightTileY = 100;
 		tool.onTileMouseDown(null);
@@ -852,7 +852,7 @@ public class NpcEditFormGuardsTest {
 
 		AbstractTool was = TOOLS.current();
 		try {
-			hold(headlessTool());
+			hold(headlessTool(form));
 			int boxed = 0;
 			boolean onlyMine = true;
 			for (int i = 0; i < e.npcs.size(); i++) {
@@ -866,11 +866,8 @@ public class NpcEditFormGuardsTest {
 			form.setNPC(5);
 			check(form.boxedNPC(5) && !form.boxedNPC(2), "the outline follows the selection to NPC 5");
 
-			hold(new WarpTool() {
-				@Override
-				public void onToolInit() {
-				}
-			});
+			hold(new WarpTool(HOST, new ctrmap.humaninterface.WarpEditForm(LOADED, REDRAW),
+					new ctrmap.humaninterface.CameraEditForm(REDRAW)));
 			boxed = 0;
 			for (int i = 0; i < e.npcs.size(); i++) {
 				if (form.boxedNPC(i)) {
@@ -914,7 +911,7 @@ public class NpcEditFormGuardsTest {
 		form.setNPC(5);
 		AbstractTool was = TOOLS.current();
 		try {
-			hold(headlessTool());
+			hold(headlessTool(form));
 			check(form.modelledNPCs().length > 2 && form.npcIndex == 5,
 					"fixture: the frame draws " + form.modelledNPCs().length + " NPCs and the form is editing NPC 5");
 			form.renderCM3D(null);
@@ -1197,13 +1194,19 @@ public class NpcEditFormGuardsTest {
 		return map;
 	}
 
-	/** An NPC tool with no window: the base constructor's tool-UI switch is the only part that needs one. */
-	static NPCTool headlessTool() {
-		return new NPCTool() {
-			@Override
-			public void onToolInit() {
-			}
-		};
+	/** The editor this suite's tools work inside: it records, and answers with no map view. */
+	static final RecordingHost HOST = new RecordingHost();
+
+	/**
+	 * An NPC tool over the form the check built, taken in hand but not started.
+	 *
+	 * <p>The host is pointed at whatever map view the check installed: the tool
+	 * asks the editor it was handed for the map, where it used to read the
+	 * window's static, and the checks that drive a drag set that static up.
+	 */
+	static NPCTool headlessTool(NPCEditForm form) {
+		HOST.map = CtrmapMainframe.mTileMapPanel;
+		return new NPCTool(HOST, form);
 	}
 
 	/** Zone index as the editor holds it: a ZoneLoadingPanel with that zone open, in CtrmapMainframe.mZonePnl. */

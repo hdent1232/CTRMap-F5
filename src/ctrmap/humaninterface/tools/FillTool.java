@@ -1,7 +1,6 @@
 package ctrmap.humaninterface.tools;
 
-import ctrmap.CtrmapMainframe;
-import static ctrmap.CtrmapMainframe.*;
+import ctrmap.humaninterface.TileEditForm;
 import ctrmap.humaninterface.Selector;
 import java.awt.Color;
 import java.awt.Graphics;
@@ -9,6 +8,14 @@ import java.awt.event.MouseEvent;
 import javax.swing.SwingUtilities;
 
 public class FillTool extends AbstractTool {
+
+	/** The tile inspector holding the bytes it fills with. */
+	private final TileEditForm form;
+
+	public FillTool(ToolHost host, TileEditForm form) {
+		super(host);
+		this.form = form;
+	}
 
 	public byte[] actTileData = new byte[4];
 	public int originX = -1;
@@ -20,9 +27,9 @@ public class FillTool extends AbstractTool {
 
 	@Override
 	public void onToolInit() {
-		switchToolUI(mTileEditForm);
-		mTileEditForm.makeTile();
-		mTileEditForm.lockTile(true);
+		host.showToolUi(form);
+		form.makeTile();
+		form.lockTile(true);
 	}
 
 	@Override
@@ -32,13 +39,13 @@ public class FillTool extends AbstractTool {
 		lastX = -1;
 		lastY = -1;
 		Selector.unfocus();
-		mTileEditForm.lockTile(false);
+		form.lockTile(false);
 		locked = false;
 	}
 
 	@Override
 	public void fireCancel() {
-		mTileEditForm.makeTile();
+		form.makeTile();
 		locked = false;
 	}
 
@@ -62,11 +69,11 @@ public class FillTool extends AbstractTool {
 			int y = Math.min(oY, dY);
 			int w = Math.abs(dX - oX);
 			int h = Math.abs(dY - oY);
-			mTileEditForm.setTileLabel("New tile " + x + "x" + y + " - " + (x + w) + "x" + (y + h));
+			form.setTileLabel("New tile " + x + "x" + y + " - " + (x + w) + "x" + (y + h));
 			g.setColor(Color.RED);
 			g.drawRect(imgstartx + (int) Math.round(x * globimgdim), imgstarty + (int) Math.round(y * globimgdim), (int) Math.round((w + 1) * globimgdim), (int) Math.round((h + 1) * globimgdim));
 		} else {
-			mTileEditForm.setTileLabel("New tile");
+			form.setTileLabel("New tile");
 		}
 	}
 	

@@ -92,13 +92,11 @@ public class TriggerEditFormGuardsTest {
 		Sessions.bare(Scratch.dir("ctrmap_trigform_ws"), dump, GameType.ORAS);
 		GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.ZONE_DATA, Workspace.game())));
 
-		try {
-			CtrmapMainframe.frame = new javax.swing.JFrame();
-			windowed = true;
-		} catch (Throwable headless) {
-			System.out.println("  skip: no display (" + headless.getClass().getSimpleName()
-					+ ") - Type 2, New entry and Remove entry repaint the main window and cannot be driven");
-		}
+		//WAS: a JFrame was built here and three sections were skipped without one,
+		//because "Type 2, New entry and Remove entry repaint the main window and
+		//cannot be driven". The form asks for a redraw through what it was handed
+		//now, so there is nothing here that needs a display.
+		windowed = true;
 
 		theZoneIsTheOneTheseChecksDescribe(zo);
 		openingAZoneShowsTheFirstTrigger(zo);
