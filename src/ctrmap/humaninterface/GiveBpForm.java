@@ -12,8 +12,9 @@ import javax.swing.JSpinner;
  * 2840 lines. Each was an inner class reading the editor it sat in through
  * synthetic bridges, so none could be built without one; each is handed what
  * it needs now and is an ordinary class in a file of its own.
+ *
+ * <p>The Give-BP form: how many points, and which model.
  */
-/** The Give-BP form: how many points, and which model. */
 public final class GiveBpForm {
 
 	public final JPanel panel = Forms.stackedForm();
