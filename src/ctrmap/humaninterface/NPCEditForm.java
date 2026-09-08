@@ -936,7 +936,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "Story text file " + zone.header.textID + " could not be read.", "Add talking NPC");
 			return;
 		}
-		TalkerForm form = new TalkerForm(reg, activePreviews, (npc != null) ? npc.model : -1);
+		TalkerForm form = new TalkerForm(Workspace.session(), reg, activePreviews, (npc != null) ? npc.model : -1);
 		if (!showForm(form.panel, "Add talking NPC")) {
 			return;
 		}
@@ -1076,7 +1076,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "This zone's script has no give-item routine (120 of 536 vanilla zones have one).\nPick a zone that already gives an item, or use pk3DS to place items differently.", "Add item giver");
 			return;
 		}
-		GiverForm form = new GiverForm(reg, activePreviews);
+		GiverForm form = new GiverForm(Workspace.session(), reg, activePreviews, loadGameTextNames(NpcTemplates.gametextItemNames(Workspace.profile())));
 		if (!showForm(form.panel, "Add item giver")) {
 			return;
 		}
@@ -1122,7 +1122,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * win, streak reset on a loss. See {@link GauntletScriptWizard}.
 	 */
 	private void addChallengeTemplate(Zone zone) {
-		ChallengeForm form = new ChallengeForm(reg, activePreviews);
+		ChallengeForm form = new ChallengeForm(Workspace.session(), reg, activePreviews, loadGameTextNames(NpcTemplates.gametextTrainerNames(Workspace.profile())));
 		if (!showForm(form.panel, "Add battle challenge")) {
 			return;
 		}
@@ -1256,7 +1256,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * and for testing BP-driven shops/facilities.
 	 */
 	private void addGiveBpTemplate(Zone zone) {
-		GiveBpForm form = new GiveBpForm(reg, activePreviews);
+		GiveBpForm form = new GiveBpForm(Workspace.session(), reg, activePreviews);
 		if (!showForm(form.panel, "Add Give BP")) {
 			return;
 		}
@@ -1295,7 +1295,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * optional double-battle partner. No script surgery.
 	 */
 	private void addTrainerTemplate(Zone zone) {
-		TrainerForm form = new TrainerForm(reg, activePreviews);
+		TrainerForm form = new TrainerForm(Workspace.session(), reg, activePreviews, loadGameTextNames(NpcTemplates.gametextTrainerNames(Workspace.profile())));
 		if (!showForm(form.panel, "Add trainer")) {
 			return;
 		}

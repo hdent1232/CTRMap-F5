@@ -37,13 +37,16 @@ public final class ChallengeForm {
 
 	private final ModelPicker model;
 
-	public ChallengeForm(NPCRegistry reg, List<CustomH3DPreview> livePreviews) {
+	/** The open game the model picker browses; handed in, never fetched. */
+	private final ctrmap.formats.GameFiles game;
+
+	public ChallengeForm(ctrmap.formats.GameFiles game, NPCRegistry reg, List<CustomH3DPreview> livePreviews, List<String> trainerNames) {
+		this.game = game;
 		this.reg = reg;
 		this.livePreviews = livePreviews;
-		this.model = new ModelPicker(reg, livePreviews, -1);
-		final IdChooser idChooser = new IdChooser(NPCEditForm.loadGameTextNames(NpcTemplates.gametextTrainerNames(Workspace.profile())), NpcTemplates.TRAINER_ID_MAX, 1);
+		this.model = new ModelPicker(reg, livePreviews, game, -1);
+		final IdChooser idChooser = new IdChooser(trainerNames, NpcTemplates.TRAINER_ID_MAX, 1);
 		final javax.swing.DefaultListModel<String> listModel = new javax.swing.DefaultListModel<>();
-		final java.util.List<String> trainerNames = NPCEditForm.loadGameTextNames(NpcTemplates.gametextTrainerNames(Workspace.profile()));
 		final javax.swing.JList<String> trainerList = new javax.swing.JList<>(listModel);
 		trainerList.setVisibleRowCount(5);
 		javax.swing.JButton addBtn = new javax.swing.JButton("Add to lineup");

@@ -724,20 +724,20 @@ public class NpcEditFormGuardsTest {
 		//so the list they register with is one this suite owns and stops below -
 		//the same contract NPCEditForm.disposePreviews keeps for the editor.
 		List<ctrmap.humaninterface.CustomH3DPreview> previews = new ArrayList<>();
-		GiveBpForm giveBp = new GiveBpForm(null, previews);
+		GiveBpForm giveBp = new GiveBpForm(null, null, previews);
 		check(giveBp.amount() == 20 && giveBp.model() < 0, "the Give BP form starts at 20 BP with no model chosen");
-		TrainerForm trainer = new TrainerForm(null, previews);
+		TrainerForm trainer = new TrainerForm(null, null, previews, new ArrayList<String>());
 		check(trainer.trainer() == 1 && trainer.sight() == 0 && trainer.facing() == 0 && !trainer.pair(),
 				"the trainer form starts at trainer 1, no sight range, facing down, no partner");
-		GiverForm giver = new GiverForm(null, previews);
+		GiverForm giver = new GiverForm(null, null, previews, new ArrayList<String>());
 		check(giver.item() == 1 && giver.count() == 1, "the item-giver form starts at item 1, quantity 1");
 		SignForm sign = new SignForm();
 		check(sign.signType() == NpcTemplates.SIGN_TYPES[0] && sign.text().isEmpty(), "the sign form starts on the first style, empty");
-		ChallengeInput in = new ChallengeForm(null, previews).input();
+		ChallengeInput in = new ChallengeForm(null, null, previews, new ArrayList<String>()).input();
 		check(in.trainerIds.isEmpty() && in.bpPerWin == 3 && in.milestone == 0 && in.milestoneBonus == 20 && !in.loseWhiteout
 				&& in.model < 0 && Integer.parseInt(in.streakWorkHex, 16) == GauntletScriptWizard.DEFAULT_STREAK_WORK,
 				"the challenge form starts with an empty lineup, 3 BP a win, no bonus, the default streak variable");
-		TalkerForm talker = new TalkerForm(null, previews, -1);
+		TalkerForm talker = new TalkerForm(null, null, previews, -1);
 		check(talker.text().isEmpty() && talker.model() < 0, "the talker form starts empty with no model");
 		DialogueForm dialogue = new DialogueForm("as it is");
 		check("as it is".equals(dialogue.text()), "the dialogue form starts with the line as it is");
@@ -1125,7 +1125,7 @@ public class NpcEditFormGuardsTest {
 		//the picker is an ordinary class now: this had to reach it by its nested
 		//name and hand it an editor instance, because it was an inner class
 		List<ctrmap.humaninterface.CustomH3DPreview> pickerPreviews = new ArrayList<>();
-		Object picker = new ctrmap.humaninterface.ModelPicker(full, pickerPreviews, -1);
+		Object picker = new ctrmap.humaninterface.ModelPicker(full, pickerPreviews, Workspace.session(), -1);
 		try {
 			((List<int[]>) field(picker, "poolExtra")).add(new int[]{1, GLOBAL_MODEL});
 			((List<String>) field(picker, "poolExtraLabels")).add("[+] model " + GLOBAL_MODEL);

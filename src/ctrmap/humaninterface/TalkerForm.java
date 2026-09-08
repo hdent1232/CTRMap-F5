@@ -25,10 +25,14 @@ public final class TalkerForm {
 	private final NPCRegistry reg;
 	private final List<CustomH3DPreview> livePreviews;
 
-	public TalkerForm(NPCRegistry reg, List<CustomH3DPreview> livePreviews, int defaultModel) {
+	/** The open game the model picker browses; handed in, never fetched. */
+	private final ctrmap.formats.GameFiles game;
+
+	public TalkerForm(ctrmap.formats.GameFiles game, NPCRegistry reg, List<CustomH3DPreview> livePreviews, int defaultModel) {
+		this.game = game;
 		this.reg = reg;
 		this.livePreviews = livePreviews;
-		model = new ModelPicker(reg, livePreviews, defaultModel);
+		model = new ModelPicker(reg, livePreviews, game, defaultModel);
 		Forms.addLabeled(panel, "Dialogue text:", new JScrollPane(text));
 		Forms.addLabeled(panel, "Model (type to search) - preview below:", model);
 		panel.add(Forms.hint("<html>The NPC is placed at the centre of the current view.<br>Only registered overworld models are listed.</html>"));
