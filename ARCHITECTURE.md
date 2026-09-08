@@ -72,9 +72,18 @@ established reference like pk3DS's GARCReference tables, and commented so).
   format — splitting its offsets into a profile would just scatter it.
   When a second game needs a different layout, give it its own class (or a
   parameterized reader) behind the same interface, selected by profile.
-- **`Workspace.isOA()`-style gates in editors.** They are the current form of
-  feature gating; migrate them to `profile().supports(Feature.X)` lazily, as
-  each feature is actually verified on a second game.
+- ~~**`Workspace.isOA()`-style gates in editors.**~~ **Gone, and now refused.**
+  `Workspace.isOA/isXY/isOADemo` and `WorkspaceSession.isOA/isXY/isOADemo` have
+  been deleted: they answered a four-game question with a boolean, so "false"
+  quietly meant "then it is the other one" and handed Sun/Moon ORAS's warp
+  labels, move codes, archive-tail arithmetic and emulator title id. Ask
+  `profile().supports(Feature.X)`, a measured number
+  (`zoneDataTrailingEntries()` and friends, via `ZoneTables` for the archive
+  tails), or `variant()` for the edition.
+  `SourceSeamTest.noApplicationClassAsksWhichGameIsLoaded` reads the COMPILED
+  CLASSES and fails on a class outside `ctrmap.gamedef` that names one of those
+  gates, or that holds both `Workspace.game()` and a `GameType` constant. It
+  keeps one argued exception, listed in that suite with its reason.
 - Corpus sizes quoted in comments/UI text (536 zones, 857 regions…) — they
   document ORAS measurements and move to profiles only when a second game's
   numbers exist to compare against.
