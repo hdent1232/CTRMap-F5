@@ -80,7 +80,11 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** Which tool the editor is holding, handed in: this class only asks. */
 	private final ctrmap.humaninterface.tools.ToolSelection tools;
 
-	public NPCEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools) {
+	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
+	private final Redraw redraw;
+
+	public NPCEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw) {
+		this.redraw = redraw;
 		this.tools = tools;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("NPCEditForm must be handed a LoadedZone");
@@ -285,9 +289,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	private void repaintFrame() {
-		if (frame != null) {
-			frame.repaint();
-		}
+		redraw.all();
 	}
 
 	/**

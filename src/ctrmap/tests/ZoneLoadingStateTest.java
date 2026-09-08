@@ -68,6 +68,9 @@ import javax.swing.JOptionPane;
  * Usage: java ctrmap.tests.ZoneLoadingStateTest &lt;pristine dump root&gt;
  */
 public class ZoneLoadingStateTest {
+	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
+	static final Redraws REDRAW = new Redraws();
+
 	/** The tool this suite holds: its own, so another suite may hold another. */
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
 
@@ -96,9 +99,9 @@ public class ZoneLoadingStateTest {
 			LoadedZone lz = new LoadedZone();
 			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
 			CtrmapMainframe.mZonePnl = pnl;
-			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS);
-			CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz);
-			CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz);
+			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW);
+			CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW);
+			CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW);
 
 			theListIsTheArchivesZonesAndNothingIsOpened(pnl, lz);
 			everyRetailHeaderSurvivesTheDropdowns(pnl, lz);

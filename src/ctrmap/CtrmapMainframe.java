@@ -38,6 +38,7 @@ import ctrmap.humaninterface.CM3DInputManager;
 import ctrmap.humaninterface.CM3DRenderable;
 import ctrmap.humaninterface.CameraEditForm;
 import ctrmap.humaninterface.CollEditPanel;
+import ctrmap.humaninterface.Redraw;
 import ctrmap.humaninterface.CollInputManager;
 import ctrmap.humaninterface.ExtrasPanel;
 import ctrmap.humaninterface.GLPanel;
@@ -121,6 +122,14 @@ public class CtrmapMainframe {
 	 * be asserted by writing to this window's field.
 	 */
 	private static ToolSelection tools;
+	/**
+	 * How the editor is asked to draw itself again, made ONCE here and handed
+	 * to the forms that used to call {@code frame.repaint()} through this
+	 * class's statics. See {@link ctrmap.humaninterface.Redraw} for why that
+	 * mattered: a JFrame cannot be built without a display, so every one of
+	 * those lines was unreachable from a headless suite.
+	 */
+	private static Redraw redraw;
 	private static JTabbedPane tabs;
 
 	/** The World Editor's tool row: the one handle for "pick this tool" and "which view is up". */
@@ -212,6 +221,14 @@ public class CtrmapMainframe {
 		mtxEditMasterPnl = new JPanel(new BorderLayout());
 		bindLoadedZone(new LoadedZone());
 		tools = new ToolSelection();
+		//the editor's own answer to "draw it again": the window it owns. Handed
+		//to the forms, so none of them has to reach up here for a JFrame - and
+		//so a headless suite can hand its own and read back that it was asked.
+		redraw = () -> {
+			if (frame != null) {
+				frame.repaint();
+			}
+		};
 		mZonePnl = new ZoneLoadingPanel(loadedZone, tools);
 		mScriptPnl = new ScriptEditor();
 		mTextEditor = new TextEditor();
@@ -227,11 +244,11 @@ public class CtrmapMainframe {
 		mCamScrollPane = new JScrollPane();
 		mTileEditForm = new TileEditForm(tools);
 		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone);
-		mCamEditForm = new CameraEditForm();
-		mPropEditForm = new PropEditForm(loadedZone, tools);
-		mNPCEditForm = new NPCEditForm(loadedZone, tools);
-		mWarpEditForm = new WarpEditForm(loadedZone);
-		mTriggerEditForm = new TriggerEditForm(loadedZone);
+		mCamEditForm = new CameraEditForm(redraw);
+		mPropEditForm = new PropEditForm(loadedZone, tools, redraw);
+		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw);
+		mWarpEditForm = new WarpEditForm(loadedZone, redraw);
+		mTriggerEditForm = new TriggerEditForm(loadedZone, redraw);
 		mGeoEditForm = new GeoEditForm(loadedZone);
 		mCollEditPanel = new CollEditPanel(tools);
 		GLPanel glPanel = new GLPanel(mCollEditPanel);

@@ -62,6 +62,9 @@ import javax.swing.JFormattedTextField;
  * Usage: java ctrmap.tests.TriggerEditFormGuardsTest &lt;pristine dump root&gt;
  */
 public class TriggerEditFormGuardsTest {
+	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
+	static final Redraws REDRAW = new Redraws();
+
 
 	/** The zone owner every panel and form built here shares, as the window's would. */
 	static final LoadedZone LOADED = new LoadedZone();
@@ -130,7 +133,7 @@ public class TriggerEditFormGuardsTest {
 	static void openingAZoneShowsTheFirstTrigger(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		TriggerEditForm form = new TriggerEditForm(LOADED);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
 		form.loadFromEntities(e);
 		ZoneEntities.Trigger first = e.triggers1.get(0);
 		check(form.loaded && form.e == e, "the form is loaded on the zone");
@@ -149,7 +152,7 @@ public class TriggerEditFormGuardsTest {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
 		byte[] before = zone.file.getFile(1);
-		TriggerEditForm form = new TriggerEditForm(LOADED);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
 		form.loadFromEntities(e);
 		ZoneEntities.Trigger first = e.triggers1.get(0);
 		form.saveEntry();
@@ -169,7 +172,7 @@ public class TriggerEditFormGuardsTest {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
 		byte[] before = zone.file.getFile(1);
-		TriggerEditForm form = new TriggerEditForm(LOADED);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
 		form.loadFromEntities(e);
 		ZoneEntities.Trigger old = e.triggers1.get(0);
 		//zone 48's triggers all carry uA 0, so a save that dropped it would look
@@ -233,7 +236,7 @@ public class TriggerEditFormGuardsTest {
 		e.triggers1.set(1, twin);
 		check(e.triggers1.get(0).equals(e.triggers1.get(1)), "triggers 0 and 1 now hold identical fields");
 
-		TriggerEditForm form = new TriggerEditForm(LOADED);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
 		form.loadFromEntities(e);
 		form.setTrigger(1);
 		check(form.trigger == twin, "the form is on trigger 1");
@@ -250,7 +253,7 @@ public class TriggerEditFormGuardsTest {
 	static void saveOnAStaleSelectionWritesNothing(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		TriggerEditForm form = new TriggerEditForm(LOADED);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
 		form.loadFromEntities(e);
 		ZoneEntities.Trigger stranger = new ZoneEntities.Trigger();
 		stranger.script = 4242;
@@ -270,7 +273,7 @@ public class TriggerEditFormGuardsTest {
 	static void theScriptDropdownAndTheScriptFieldAgree(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		TriggerEditForm form = new TriggerEditForm(LOADED);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
 		form.loadFromEntities(e);
 		JComboBox<?> drop = (JComboBox<?>) field(form, "scriptDropdown");
 		JFormattedTextField script = (JFormattedTextField) field(form, "script");
@@ -316,7 +319,7 @@ public class TriggerEditFormGuardsTest {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
 		byte[] before = zone.file.getFile(1);
-		TriggerEditForm form = new TriggerEditForm(LOADED);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
 		form.loadFromEntities(e);
 		form.selectTrigger(1, 0);
 		check(entries(form) == 4, "switching to Type 2 lists the four step-on triggers: " + entries(form));
@@ -349,7 +352,7 @@ public class TriggerEditFormGuardsTest {
 		ZoneEntities e = zone.entities;
 		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
 		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(LOADED, TOOLS);
-		TriggerEditForm form = new TriggerEditForm(LOADED);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
 		form.loadFromEntities(e);
 		int before = e.triggers1.size();
 		invoke(form, "btnAddActionPerformed");
@@ -371,7 +374,7 @@ public class TriggerEditFormGuardsTest {
 		}
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		TriggerEditForm form = new TriggerEditForm(LOADED);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
 		form.loadFromEntities(e);
 		List<ZoneEntities.Trigger> survivors = new ArrayList<>(e.triggers1);
 		survivors.remove(1);

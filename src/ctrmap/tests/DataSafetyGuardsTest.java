@@ -87,6 +87,9 @@ import javax.swing.SwingWorker;
  * The worker check reads src/ from the working directory.
  */
 public class DataSafetyGuardsTest {
+	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
+	static final Redraws REDRAW = new Redraws();
+
 	/** The tool this suite holds: its own, so another suite may hold another. */
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
 
@@ -282,7 +285,7 @@ public class DataSafetyGuardsTest {
 		ZoneEntities e = lz.at(2).entities;
 		e.warps.clear();
 		e.warpCount = 0;
-		WarpEditForm form = new WarpEditForm(lz);
+		WarpEditForm form = new WarpEditForm(lz, REDRAW);
 		form.loadFromEntities(e);
 
 		//what "New entry" adds, twice on the same tile
@@ -355,7 +358,7 @@ public class DataSafetyGuardsTest {
 		//active before one is open, and drawing then threw on the event
 		//thread), every warp once one is.
 		BufferedImage img = new BufferedImage(40 * 12, 40 * 12, BufferedImage.TYPE_INT_RGB);
-		WarpEditForm blank = new WarpEditForm(lz);
+		WarpEditForm blank = new WarpEditForm(lz, REDRAW);
 		blank.loadFromEntities(null);
 		CtrmapMainframe.mWarpEditForm = blank;
 		try {
@@ -375,12 +378,20 @@ public class DataSafetyGuardsTest {
 		TileMapPanel map = new TileMapPanel(new LoadedZone(), TOOLS);
 		map.height = 40;
 		CtrmapMainframe.mTileMapPanel = map;
+		int quietAt = REDRAW.mark();
 		Throwable threw = pressAdd(blank);
 		check(threw == null, "New entry with no zone open does nothing at all, rather than throwing: " + threw);
+		check(!REDRAW.askedSince(quietAt), "and does not ask for a redraw either, having drawn nothing");
 
 		int warpsBefore = e.warps.size();
+		//and the editor is ASKED to draw the new warp. This was frame.repaint() through the
+		//window's statics: a line no headless suite could reach, because a JFrame needs a
+		//display, and one that left no trace to assert even where it could. The form is
+		//handed the request now, so "it asked" is a number.
+		int drawnAt = REDRAW.mark();
 		threw = pressAdd(form);
 		check(threw == null, "New entry with a zone open does not throw: " + threw);
+		check(REDRAW.askedSince(drawnAt), "and asks the editor to draw the warp it just added");
 		check(e.warps.size() == warpsBefore + 1 && e.warpCount == warpsBefore + 1,
 				"and adds a warp (" + warpsBefore + " -> " + e.warps.size() + ", count " + e.warpCount + ")");
 		form.setWarp(e.warps.size() - 1);
@@ -423,8 +434,8 @@ public class DataSafetyGuardsTest {
 		//first - its dropdowns filled the way the zone loader fills them, one
 		//town-map group per zone slot; the entity forms it saves through are
 		//empty and save nothing.
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS);
-		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW);
+		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW);
 		fill(zonePnl, "tmg", 600);
 		fill(zonePnl, "type", 8);
 		fill(zonePnl, "weather", 32);
@@ -694,13 +705,13 @@ public class DataSafetyGuardsTest {
 		LoadedZone lz = new LoadedZone();
 		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS);
 		CtrmapMainframe.mZonePnl = pnl;
-		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm();
+		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm(REDRAW);
 		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS);
 		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm(lz);
-		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS);
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS);
-		CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz);
-		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz);
+		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS, REDRAW);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW);
+		CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW);
+		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW);
 		//PropEditForm's generated initComponents builds a CustomH3DPreview,
 		//whose constructor starts an FPSAnimator on a NON-daemon thread. Left
 		//running it holds the JVM open after main returns: the suite prints

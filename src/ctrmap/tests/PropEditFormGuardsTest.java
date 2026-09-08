@@ -73,6 +73,9 @@ import javax.swing.JSpinner;
  * Usage: java ctrmap.tests.PropEditFormGuardsTest &lt;pristine dump root&gt;
  */
 public class PropEditFormGuardsTest {
+	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
+	static final Redraws REDRAW = new Redraws();
+
 
 	/** The zone owner every panel and form built here shares, as the window's would. */
 	static final LoadedZone LOADED = new LoadedZone();
@@ -467,7 +470,7 @@ public class PropEditFormGuardsTest {
 	static Fixture open(boolean arm) throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm(LOADED, TOOLS);
+		f.form = new PropEditForm(LOADED, TOOLS, REDRAW);
 		CtrmapMainframe.mPropEditForm = f.form;
 		f.form.loadDataFile(new ctrmap.formats.propdata.GRPropData(f.gr), registry(), null);
 		f.form.gr = f.gr;
@@ -480,7 +483,7 @@ public class PropEditFormGuardsTest {
 	static Fixture openSingleRegion() throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm(LOADED, TOOLS);
+		f.form = new PropEditForm(LOADED, TOOLS, REDRAW);
 		CtrmapMainframe.mPropEditForm = f.form;
 		f.form.loadDataFile(f.gr, null);
 		f.before = f.propdata();

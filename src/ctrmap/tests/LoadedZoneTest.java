@@ -623,6 +623,8 @@ public class LoadedZoneTest {
 				args[i] = owner;
 			} else if (types[i] == ctrmap.humaninterface.tools.ToolSelection.class) {
 				args[i] = new ctrmap.humaninterface.tools.ToolSelection();
+			} else if (types[i] == ctrmap.humaninterface.Redraw.class) {
+				args[i] = new Redraws();
 			} else {
 				throw new IllegalStateException(ctor.getDeclaringClass().getName()
 						+ " is handed a " + types[i].getName()
