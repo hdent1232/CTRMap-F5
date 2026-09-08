@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
+import ctrmap.formats.tilemap.PaintedHeights;
 
 /**
  * Where the tile painter puts a floor and which way it slopes. Five live
@@ -93,8 +94,8 @@ public class PaintedFloorTest {
 			Arrays.fill(h[y], 1);
 		}
 		h[19][20] = 1;
-		int[][] ramp = PaintedRegionBuilder.noRamps();
-		ramp[19][20] = PaintedRegionBuilder.steepestDescent(grid, h, 20, 19);
+		int[][] ramp = PaintedHeights.noRamps();
+		ramp[19][20] = PaintedHeights.steepestDescent(grid, h, 20, 19);
 		check(ramp[19][20] == 2, "the gradient across the notch reads its way down as south (" + ramp[19][20] + ")");
 		GfColl coll = new GfColl(PaintedRegionBuilder.build(donor, grid, h, ramp, L, false).collision);
 		float n = surface(coll, 20.5f, 19.02f), s = surface(coll, 20.5f, 19.98f);
@@ -112,7 +113,7 @@ public class PaintedFloorTest {
 			for (int y = 10; y <= 20; y++) {
 				Arrays.fill(h[y], 15, 26, lvl);
 			}
-			int[][] ramp = PaintedRegionBuilder.noRamps();
+			int[][] ramp = PaintedHeights.noRamps();
 			ramp[20][20] = 2;
 			GfColl coll = new GfColl(PaintedRegionBuilder.build(donor, grid, h, ramp, L, false).collision);
 			float n = surface(coll, 20.5f, 20.02f), s = surface(coll, 20.5f, 20.98f);
@@ -150,7 +151,7 @@ public class PaintedFloorTest {
 		byte[] tm = new byte[6528];
 		tm[0] = (byte) DIM;
 		tm[2] = (byte) DIM;
-		float[][] by = PaintedRegionBuilder.sampleBaseY(coll);
+		float[][] by = PaintedHeights.sampleBaseY(coll);
 		check(Float.isNaN(by[21][20]) && by[20][20] == 0f && by[22][20] == 0f && by[2][2] == -7f,
 				"fixture: tile (20,21) has no ground under its centre, its neighbours stand at 0, the region's floor is -7");
 		TilePalette[][] grid = grid(TilePalette.GRASS);
@@ -162,7 +163,7 @@ public class PaintedFloorTest {
 				touched[y][x] = true;
 			}
 		}
-		int[][] ramp = PaintedRegionBuilder.noRamps();
+		int[][] ramp = PaintedHeights.noRamps();
 		ramp[20][20] = 2;
 		RegionFactory.BlankContent c = PaintedRegionBuilder.buildComposite(donor, coll, tm, grid, h, ramp, touched, L, false);
 		GfColl out = new GfColl(c.collision);
@@ -256,7 +257,7 @@ public class PaintedFloorTest {
 			if (model == null || !BchMapModel.isMapModel(model) || !GfColl.isColl(coll) || tm == null || tm.length < 6404) {
 				continue;
 			}
-			float[][] by = PaintedRegionBuilder.sampleBaseY(coll);
+			float[][] by = PaintedHeights.sampleBaseY(coll);
 			float base0 = Float.NaN;
 			for (float[] row : by) {
 				for (float y : row) {
@@ -309,7 +310,7 @@ public class PaintedFloorTest {
 				continue;
 			}
 			int[][] h = new int[DIM][DIM];
-			int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(coll, tm, h);
+			int borrowed = PaintedHeights.seedHeightsFromCollision(coll, tm, h);
 			check(borrowed == unsampled, "region " + reg + ": seeding reports exactly the tiles that took a neighbour's ground ("
 					+ borrowed + " reported, " + unsampled + " have no ground of their own)");
 			TilePalette[][] grid = grid(TilePalette.GRASS);

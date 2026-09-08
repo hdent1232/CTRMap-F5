@@ -9,6 +9,8 @@ import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
 import java.util.Arrays;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
+import ctrmap.formats.tilemap.PaintedHeights;
+import ctrmap.formats.tilemap.PaintedMaterials;
 
 /**
  * Paints a block onto real retail maps and asserts that nothing is left
@@ -68,11 +70,11 @@ public class CompositeLeftoverTest {
 			TilePalette[][] grid = new TilePalette[DIM][DIM];
 			boolean[][] touched = new boolean[DIM][DIM];
 			int[][] height = new int[DIM][DIM];
-			int[][] ramp = PaintedRegionBuilder.noRamps();
+			int[][] ramp = PaintedHeights.noRamps();
 			for (TilePalette[] row : grid) {
 				Arrays.fill(row, TilePalette.GRASS);
 			}
-			PaintedRegionBuilder.seedHeightsFromCollision(coll, tm, height);
+			PaintedHeights.seedHeightsFromCollision(coll, tm, height);
 			//Only paint where "replace this ground" has one obvious meaning.
 			//Flattening a slab across a staircase or a two-storey cave leaves the
 			//upper level standing above the new floor, and it SHOULD - that is
@@ -138,8 +140,8 @@ public class CompositeLeftoverTest {
 			//resolved exactly as the builder does, fallback included - without
 			//the same fallback this picks a different mesh and excludes nothing
 			BchMapModel probe = new BchMapModel(model);
-			int cliffMesh = PaintedRegionBuilder.resolveCliffMesh(
-					probe, PaintedRegionBuilder.defaultGroundMesh(probe));
+			int cliffMesh = PaintedMaterials.resolveCliffMesh(
+					probe, PaintedMaterials.defaultGroundMesh(probe));
 
 			int standing = 0;
 			String what = null;

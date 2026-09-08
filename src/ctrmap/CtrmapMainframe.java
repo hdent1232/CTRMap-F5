@@ -1926,7 +1926,7 @@ public class CtrmapMainframe {
 		//ground really is it. Ordering by size alone had been answering both
 		//questions at once, and on 312 of the first 400 retail regions the
 		//biggest mesh is a wall, a fence or the sea.
-		int[] order = ctrmap.formats.tilemap.PaintedRegionBuilder.groundFirstMeshOrder(probe);
+		int[] order = ctrmap.formats.tilemap.PaintedMaterials.groundFirstMeshOrder(probe);
 		java.util.List<String> items = new java.util.ArrayList<>();
 		java.util.List<Integer> meshIds = new java.util.ArrayList<>();
 		for (int mesh : order) {
@@ -1996,7 +1996,7 @@ public class CtrmapMainframe {
 				//the picked mesh number came from ONE region's model; the zone's
 				//other regions number their meshes differently, so where it does
 				//not fit, fall back to that region's own ground
-				int gm = ctrmap.formats.tilemap.PaintedRegionBuilder.groundMeshOr(tm, groundMesh);
+				int gm = ctrmap.formats.tilemap.PaintedMaterials.groundMeshOr(tm, groundMesh);
 				ctrmap.formats.h3d.RegionFactory.BlankContent bc = ctrmap.formats.h3d.RegionFactory.blank(template, gm);
 				gr.storeFile(1, bc.model);
 				gr.storeFile(2, bc.collision);

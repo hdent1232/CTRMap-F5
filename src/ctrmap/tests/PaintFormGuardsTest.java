@@ -20,6 +20,7 @@ import java.util.Arrays;
 import java.util.List;
 import javax.swing.JButton;
 import javax.swing.JLabel;
+import ctrmap.formats.tilemap.PaintedHeights;
 
 /**
  * The Map Painter's document, driven without a window: what a click with the
@@ -335,7 +336,7 @@ public class PaintFormGuardsTest {
 			return;
 		}
 		GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, cell[0]), Workspace.session());
-		int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(gr.getFile(2), gr.getFile(0), new int[DIM][DIM]);
+		int borrowed = PaintedHeights.seedHeightsFromCollision(gr.getFile(2), gr.getFile(0), new int[DIM][DIM]);
 		check(borrowed > 0, "fixture: region " + cell[0] + " has tiles with no ground of their own (" + borrowed + ")");
 		String label = ((JLabel) get(form, "zoneLabel")).getText();
 		check(label.contains("Painting zone 74"), "the label names the zone: " + label);

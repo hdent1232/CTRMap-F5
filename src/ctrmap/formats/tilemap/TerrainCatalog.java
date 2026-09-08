@@ -161,7 +161,7 @@ public class TerrainCatalog {
 						if (d.donorMesh >= 0 && d.donorMesh < m.meshCount) {
 							//the donor mesh has real geometry, so this measures
 							//rather than recursing back into this method
-							out = PaintedRegionBuilder.measureUvScale(files, m, m.geometry().get(d.donorMesh));
+							out = PaintedMaterials.measureUvScale(files, m, m.geometry().get(d.donorMesh));
 						}
 					}
 				}
@@ -500,7 +500,7 @@ public class TerrainCatalog {
 					}
 				}
 			}
-			if (PaintedRegionBuilder.hasMaterialFor(probe, brush)) {
+			if (PaintedMaterials.hasMaterialFor(probe, brush)) {
 				return r; //the map paints this brush with its OWN material - nothing to carry
 			}
 			if (d == null) {

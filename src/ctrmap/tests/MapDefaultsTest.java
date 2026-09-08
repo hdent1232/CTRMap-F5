@@ -12,6 +12,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import static ctrmap.formats.LittleEndian.putI32;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
+import ctrmap.formats.tilemap.PaintedMaterials;
 
 /**
  * The two answers the map tools reach for when the user has not said which
@@ -173,14 +174,14 @@ public class MapDefaultsTest {
 				continue;
 			}
 			int naive = biggestMesh(m);
-			int ground = PaintedRegionBuilder.defaultGroundMesh(m);
+			int ground = PaintedMaterials.defaultGroundMesh(m);
 			if (naive < 0 || ground < 0) {
 				continue;
 			}
 			scored++;
 			//"the number the user picked does not fit this region" - the case
 			//the fallback exists for
-			int chosen = PaintedRegionBuilder.groundMeshOr(m, m.meshCount + 5);
+			int chosen = PaintedMaterials.groundMeshOr(m, m.meshCount + 5);
 			if (chosen != ground) {
 				wrong++;
 				if (first.length() < 400) {
@@ -204,13 +205,13 @@ public class MapDefaultsTest {
 			return;
 		}
 		int naive = biggestMesh(donor);
-		int ground = PaintedRegionBuilder.defaultGroundMesh(donor);
+		int ground = PaintedMaterials.defaultGroundMesh(donor);
 		check(naive != ground, "region " + DONOR + "'s biggest mesh (" + name(donor, naive)
 				+ ") is not its ground (" + name(donor, ground) + ")");
-		check(PaintedRegionBuilder.groundMeshOr(donor, -1) == ground,
+		check(PaintedMaterials.groundMeshOr(donor, -1) == ground,
 				"so blanking it with no usable pick floors it in " + name(donor, ground)
 				+ ", not " + name(donor, naive));
-		check(PaintedRegionBuilder.groundMeshOr(donor, donor.meshCount) == ground,
+		check(PaintedMaterials.groundMeshOr(donor, donor.meshCount) == ground,
 				"and a mesh number past the end of this region does the same");
 	}
 
@@ -238,7 +239,7 @@ public class MapDefaultsTest {
 			if (m == null) {
 				continue;
 			}
-			int[] order = PaintedRegionBuilder.groundFirstMeshOrder(m);
+			int[] order = PaintedMaterials.groundFirstMeshOrder(m);
 			//a faithful permutation of the readable meshes
 			java.util.List<Integer> readable = new java.util.ArrayList<>();
 			for (BchMapModel.MeshGeom g : m.geometry()) {
@@ -259,7 +260,7 @@ public class MapDefaultsTest {
 				}
 				continue;
 			}
-			int ground = PaintedRegionBuilder.defaultGroundMesh(m);
+			int ground = PaintedMaterials.defaultGroundMesh(m);
 			if (ground < 0 || order.length == 0) {
 				continue;
 			}
@@ -282,8 +283,8 @@ public class MapDefaultsTest {
 
 		BchMapModel donor = modelOf(fd, DONOR);
 		if (donor != null) {
-			int[] order = PaintedRegionBuilder.groundFirstMeshOrder(donor);
-			check(order.length > 0 && order[0] == PaintedRegionBuilder.defaultGroundMesh(donor),
+			int[] order = PaintedMaterials.groundFirstMeshOrder(donor);
+			check(order.length > 0 && order[0] == PaintedMaterials.defaultGroundMesh(donor),
 					"region " + DONOR + " offers " + name(donor, order[0])
 					+ " first, so accepting the default floors it in grass and not in "
 					+ name(donor, biggestMesh(donor)));
@@ -314,7 +315,7 @@ public class MapDefaultsTest {
 			if (!g.posOk) {
 				continue;
 			}
-			if (PaintedRegionBuilder.groundMeshOr(donor, g.meshIndex) == g.meshIndex) {
+			if (PaintedMaterials.groundMeshOr(donor, g.meshIndex) == g.meshIndex) {
 				honoured++;
 			} else {
 				ignored++;
@@ -322,7 +323,7 @@ public class MapDefaultsTest {
 		}
 		check(honoured > 1 && ignored == 0, "every readable mesh of region " + DONOR
 				+ " is honoured when the user picks it (" + honoured + " honoured, " + ignored + " overridden)");
-		check(PaintedRegionBuilder.groundMeshOr(donor, biggestMesh(donor)) == biggestMesh(donor),
+		check(PaintedMaterials.groundMeshOr(donor, biggestMesh(donor)) == biggestMesh(donor),
 				"including the biggest one - the fallback must not second-guess a pick that fits");
 	}
 

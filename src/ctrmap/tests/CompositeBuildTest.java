@@ -12,6 +12,7 @@ import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
 import java.util.Arrays;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
+import ctrmap.formats.tilemap.PaintedHeights;
 
 /**
  * Validates the Map Builder's COMPOSITE mode (edit-in-place with exact
@@ -465,7 +466,7 @@ public class CompositeBuildTest {
 
 	static int[][] seededHeights(byte[] coll, byte[] tm) {
 		int[][] h = new int[DIM][DIM];
-		PaintedRegionBuilder.seedHeightsFromCollision(coll, tm, h);
+		PaintedHeights.seedHeightsFromCollision(coll, tm, h);
 		return h;
 	}
 

@@ -11,6 +11,9 @@ import ctrmap.formats.tilemap.TilePalette;
 import java.io.File;
 import java.util.List;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
+import ctrmap.formats.tilemap.PaintedCliffMesh;
+import ctrmap.formats.tilemap.PaintedHeights;
+import ctrmap.formats.tilemap.PaintedMaterials;
 
 /**
  * Validates the tile painter's region generator on the default tileset donor
@@ -278,7 +281,7 @@ public class PaintedRegionTest {
 
 		//a straight run: every vertex is already the mean of its neighbours
 		float[] sx = {0, T, 2 * T, 3 * T, 4 * T, 5 * T}, sz = {T, T, T, T, T, T};
-		float[][] r = PaintedRegionBuilder.roundOutline(sx, sz, false);
+		float[][] r = PaintedCliffMesh.roundOutline(sx, sz, false);
 		if (!java.util.Arrays.equals(r[0], sx) || !java.util.Arrays.equals(r[1], sz)) {
 			System.out.println("FAIL outline: a straight open run moved under rounding: "
 					+ java.util.Arrays.toString(r[0]) + " / " + java.util.Arrays.toString(r[1]));
@@ -290,7 +293,7 @@ public class PaintedRegionTest {
 		//an open staircase: ends pinned, corners cut, nobody travels past the cap
 		float[] px = {0, T, T, 2 * T, 2 * T, 3 * T, 3 * T, 4 * T};
 		float[] pz = {0, 0, T, T, 2 * T, 2 * T, 3 * T, 3 * T};
-		r = PaintedRegionBuilder.roundOutline(px, pz, false);
+		r = PaintedCliffMesh.roundOutline(px, pz, false);
 		int last = px.length - 1;
 		boolean pinned = r[0][0] == px[0] && r[1][0] == pz[0] && r[0][last] == px[last] && r[1][last] == pz[last];
 		float maxTravel = 0f;
@@ -324,7 +327,7 @@ public class PaintedRegionTest {
 
 		//a closed square: no ends to pin, and it must still close after rounding
 		float[] lx = {0, 2 * T, 2 * T, 0, 0}, lz = {0, 0, 2 * T, 2 * T, 0};
-		r = PaintedRegionBuilder.roundOutline(lx, lz, true);
+		r = PaintedCliffMesh.roundOutline(lx, lz, true);
 		boolean closed = r[0][0] == r[0][4] && r[1][0] == r[1][4];
 		float d0 = (float) Math.hypot(r[0][0] - lx[0], r[1][0] - lz[0]);
 		boolean cornersCut = d0 > 1e-3f && d0 <= CAP + 1e-3f;
@@ -389,7 +392,7 @@ public class PaintedRegionTest {
 		int[][] raised = new int[DIM][DIM];
 		raised[20][20] = 1;
 		try {
-			int dir = PaintedRegionBuilder.rampDir(g, raised, ramp, 20, 20);
+			int dir = PaintedHeights.rampDir(g, raised, ramp, 20, 20);
 			RegionFactory.BlankContent ok = PaintedRegionBuilder.build(donor, g, raised, ramp, L, false);
 			if (dir != 0) {
 				System.out.println("FAIL contradictory ramp control: the ramp descends " + dir + ", not east");
@@ -456,7 +459,7 @@ public class PaintedRegionTest {
 	 */
 	static int checkEdges(byte[] donor) {
 		try {
-			boolean supported = PaintedRegionBuilder.donorSupportsEdges(donor);
+			boolean supported = PaintedMaterials.donorSupportsEdges(donor);
 			TilePalette[][] g = new TilePalette[DIM][DIM];
 			for (int y = 0; y < DIM; y++) {
 				for (int x = 0; x < DIM; x++) {
@@ -464,7 +467,7 @@ public class PaintedRegionTest {
 				}
 			}
 			int[][] h = new int[DIM][DIM];
-			int[][] noramp = PaintedRegionBuilder.noRamps();
+			int[][] noramp = PaintedHeights.noRamps();
 			ctrmap.formats.tilemap.TerrainLighting L = ctrmap.formats.tilemap.TerrainLighting.daytime();
 			long trisOff = totalTris(PaintedRegionBuilder.build(donor, g, h, noramp, L, false).model);
 			RegionFactory.BlankContent withC = PaintedRegionBuilder.build(donor, g, h, noramp, L, true);
@@ -482,7 +485,7 @@ public class PaintedRegionTest {
 			}
 			// winding: every edge-mesh triangle must face up (+Y)
 			BchMapModel m = new BchMapModel(withC.model);
-			int em = PaintedRegionBuilder.resolveEdgeMesh(m);
+			int em = PaintedMaterials.resolveEdgeMesh(m);
 			float[][] pos = m.getVertexPositions(em);
 			int[] tri = m.getTriangles(em);
 			int up = 0, tot = 0;

@@ -32,6 +32,7 @@ import javax.swing.JToggleButton;
 import static ctrmap.CtrmapMainframe.*;
 import static ctrmap.formats.LittleEndian.u16;
 import static ctrmap.formats.LittleEndian.i32;
+import ctrmap.formats.tilemap.PaintedHeights;
 
 /**
  * The tile painter: paint terrain (grass, tall grass, path, sand, water, rock)
@@ -399,7 +400,7 @@ public class TilePainterForm {
 				if (f != null) {
 					GR gr = new GR(f, Workspace.session());
 					if (BchMapModel.isMapModel(gr.getFile(1))) {
-						floorY = PaintedRegionBuilder.floorYGrid(gr.getFile(2), gr.getFile(0), height);
+						floorY = PaintedHeights.floorYGrid(gr.getFile(2), gr.getFile(0), height);
 						break;
 					}
 				}

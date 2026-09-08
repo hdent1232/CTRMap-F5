@@ -26,6 +26,8 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JSlider;
 import javax.swing.JToggleButton;
+import ctrmap.formats.tilemap.PaintedHeights;
+import ctrmap.formats.tilemap.PaintedMaterials;
 
 /**
  * The MAP PAINTER as a World Editor tool: brushes, elevation, ramps,
@@ -43,7 +45,7 @@ public class PaintForm extends JPanel {
 	TilePalette[][] grid = new TilePalette[DIM][DIM];
 	int[][] height = new int[DIM][DIM];
 	/** Per-tile way DOWN a ramp (0 E, 1 W, 2 S, 3 N), or NO_RAMP. */
-	int[][] ramp = PaintedRegionBuilder.noRamps();
+	int[][] ramp = PaintedHeights.noRamps();
 	/** Which tiles the user actually edited: ONLY these are rebuilt on Apply -
 	 *  everything else keeps the zone's existing geometry (walls, fountains). */
 	boolean[][] touched = new boolean[DIM][DIM];
@@ -409,7 +411,7 @@ public class PaintForm extends JPanel {
 					donorTilemap = gr.getFile(0);
 					//elevations start at the map's REAL ground levels, so painted
 					//tiles sit level with their retail surroundings by default
-					int borrowed = PaintedRegionBuilder.seedHeightsFromCollision(donorColl, donorTilemap, height);
+					int borrowed = PaintedHeights.seedHeightsFromCollision(donorColl, donorTilemap, height);
 					if (borrowed > 0) {
 						zoneLabel.setText("<html>Painting zone " + seededZone + "<br><small>" + borrowed
 								+ " tile(s) have no ground of their own and start<br>level with their nearest neighbour</small></html>");
@@ -419,7 +421,7 @@ public class PaintForm extends JPanel {
 			}
 		}
 		originalModel = donorModel;
-		boolean canEdge = donorModel != null && PaintedRegionBuilder.donorSupportsEdges(donorModel);
+		boolean canEdge = donorModel != null && PaintedMaterials.donorSupportsEdges(donorModel);
 		edgeChk.setEnabled(canEdge);
 		edgeChk.setSelected(canEdge);
 		edgeBlend = canEdge;
@@ -663,13 +665,13 @@ public class PaintForm extends JPanel {
 	private int turnRamp(int lx, int ly) {
 		int cur = ramp[ly][lx];
 		if (cur == PaintedRegionBuilder.NO_RAMP) {
-			int d = PaintedRegionBuilder.steepestDescent(grid, height, lx, ly);
+			int d = PaintedHeights.steepestDescent(grid, height, lx, ly);
 			placeStatus.setText(d < 0 ? "<html>No lower ground beside that tile -<br>raise it or lower a neighbour first.</html>" : " ");
 			return d;
 		}
 		for (int k = 1; k < 4; k++) {
 			int d = (cur + k) % 4;
-			if (PaintedRegionBuilder.descends(grid, height, lx, ly, d)) {
+			if (PaintedHeights.descends(grid, height, lx, ly, d)) {
 				return d;
 			}
 		}
@@ -689,8 +691,8 @@ public class PaintForm extends JPanel {
 		for (int y = 0; y < DIM; y++) {
 			for (int x = 0; x < DIM; x++) {
 				if (ramp[y][x] != PaintedRegionBuilder.NO_RAMP
-						&& !PaintedRegionBuilder.descends(grid, height, x, y, ramp[y][x])) {
-					ramp[y][x] = PaintedRegionBuilder.steepestDescent(grid, height, x, y);
+						&& !PaintedHeights.descends(grid, height, x, y, ramp[y][x])) {
+					ramp[y][x] = PaintedHeights.steepestDescent(grid, height, x, y);
 				}
 			}
 		}
@@ -812,7 +814,7 @@ public class PaintForm extends JPanel {
 						bc.tilemap[0] = (byte) DIM;
 						bc.tilemap[2] = (byte) DIM;
 						bc.props = new byte[]{0, 0, 0, 0};
-						TilePainterForm.stampPlaced(bc, p2, h2, PaintedRegionBuilder.floorYGrid(coll, tmap, h2), null);
+						TilePainterForm.stampPlaced(bc, p2, h2, PaintedHeights.floorYGrid(coll, tmap, h2), null);
 						model = bc.model;
 						//donor-area textures load here, off the EDT (the loaders
 						//are synchronized; a GARC decompress can take a moment)
@@ -904,7 +906,7 @@ public class PaintForm extends JPanel {
 				}
 				//ramps AND stair brushes, pointing DOWN the slope at the lower
 				//neighbour, so what the map will build is what the arrow says
-				int rd = d >= 6 ? PaintedRegionBuilder.rampDir(grid, height, ramp, lx, ly) : -1;
+				int rd = d >= 6 ? PaintedHeights.rampDir(grid, height, ramp, lx, ly) : -1;
 				if (rd >= 0) {
 					g.setColor(new Color(255, 210, 40));
 					int cx = px + cw / 2, cy = py + cw / 2, r = cw / 2 - 1;
