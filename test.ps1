@@ -195,7 +195,27 @@ $suites = @(
     @{ n = "WorkspaceSession (the open game is an instance, not statics)"; c = "ctrmap.tests.WorkspaceSessionTest"; a = @($gamedir, "src") },
     @{ n = "MainframeReports (what the main window says it did)"; c = "ctrmap.tests.MainframeReportsTest"; a = @($pristine) },
     @{ n = "MapDefaults (which region, and which mesh is the ground)"; c = "ctrmap.tests.MapDefaultsTest"; a = @($pristine) },
-    @{ n = "MisplacedRegistry (damage an old fork left)"; c = "ctrmap.tests.MisplacedRegistryTest"; a = @($pristine) }
+    @{ n = "MisplacedRegistry (damage an old fork left)"; c = "ctrmap.tests.MisplacedRegistryTest"; a = @($pristine) },
+# Characterization suites, added 2026-09-07 before the decoupling steps that move this code.
+# They are not here to say the behaviour below is RIGHT. They are here to say it does not CHANGE
+# while a later step moves it, which is why several of them deliberately pin things their authors
+# believe are defects (each says so in its javadoc). Measured before they existed: the classes
+# they cover ran between 0% and 16% of their branches during a full battery, so a refactor could
+# have altered any of it without one suite noticing. Every one was proven by breaking the class it
+# covers and watching it fail.
+    @{ n = "ZoneManager (clear, rename, repoint - by bytes)"; c = "ctrmap.tests.ZoneManagerTest"; a = @($pristine) },
+    @{ n = "ZoneRepurposeScanner (which zones are reusable)"; c = "ctrmap.tests.ZoneRepurposeScannerTest"; a = @($pristine) },
+    @{ n = "ModDeployer (only edited archives ship)"; c = "ctrmap.tests.ModDeployerTest"; a = @($pristine) },
+    @{ n = "Utils (the five unrelated helper groups)"; c = "ctrmap.tests.UtilsTest"; a = @() },
+    @{ n = "PropEditForm (what the prop form writes)"; c = "ctrmap.tests.PropEditFormGuardsTest"; a = @($pristine) },
+    @{ n = "MatrixEditForm (what the matrix form writes)"; c = "ctrmap.tests.MatrixEditFormGuardsTest"; a = @($pristine) },
+    @{ n = "TriggerEditForm (what the trigger form writes)"; c = "ctrmap.tests.TriggerEditFormGuardsTest"; a = @($pristine) },
+    @{ n = "GeoEditForm (what the geometry form writes)"; c = "ctrmap.tests.GeoEditFormGuardsTest"; a = @($pristine) },
+    @{ n = "EditTools (the ten tools, headless)"; c = "ctrmap.tests.EditToolGuardsTest"; a = @($pristine) },
+    @{ n = "TilemapInputRouter (mouse to tool)"; c = "ctrmap.tests.TilemapInputRouterTest"; a = @() },
+    @{ n = "MainframeActions (what each action does and refuses)"; c = "ctrmap.tests.MainframeActionGuardsTest"; a = @($pristine) },
+    @{ n = "TileMapPanelState (lookups, save, refresh)"; c = "ctrmap.tests.TileMapPanelStateTest"; a = @($pristine) },
+    @{ n = "ZoneLoadingState (loaded-zone transitions)"; c = "ctrmap.tests.ZoneLoadingStateTest"; a = @($pristine) }
 )
 
 # -Order re-runs the same suites in a different sequence. Every suite is its
