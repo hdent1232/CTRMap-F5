@@ -247,30 +247,21 @@ public class CtrmapMainframe {
 		loadedZone = owner;
 	}
 
-	private static void createAndShowGUI() {
-		Workspace.loadWorkspace();
-		frame = new JFrame("CTRMap Editor");
-		//every dialog this program opens belongs to this window; the seam holds
-		//it from here, so nothing below has to reach up for it
-		Ui.parent(frame);
-		tabs = new JTabbedPane();
-		tileEditMasterPnl = new JPanel(new BorderLayout());
-		collEditMasterPnl = new JPanel(new BorderLayout());
-		mtxEditMasterPnl = new JPanel(new BorderLayout());
-		bindLoadedZone(new LoadedZone());
-		tools = new ToolSelection();
-		//the editor's own answer to "draw it again": the window it owns. Handed
-		//to the forms, so none of them has to reach up here for a JFrame - and
-		//so a headless suite can hand its own and read back that it was asked.
-		redraw = () -> {
-			if (frame != null) {
-				frame.repaint();
-			}
-		};
+	/**
+	 * Every editor that holds unsaved work, in the order they are written.
+	 *
+	 * <p>Built here rather than inline in createAndShowGUI, which is the
+	 * window's WIRING and was carrying a hundred and ten lines of what the
+	 * lists mean. The caller assigns the result to a local and hands that
+	 * local on, so the compiler still proves nothing is handed this before
+	 * it exists - see MainframeEdgesTest section four for the commit where
+	 * that was not true.
+	 */
+	private static OpenEditors buildOpenEditors() {
 		//the editors that hold unsaved work, in the order they are written. One
 		//list, because five copies of the chain disagreed about which editors
 		//counted and in which order - see OpenEditors.
-		final OpenEditors editors = new OpenEditors(java.util.Arrays.<OpenEditors.Editable>asList(
+		return new OpenEditors(java.util.Arrays.<OpenEditors.Editable>asList(
 				ask -> mCamEditForm.store(ask),
 				ask -> mTileMapPanel.saveTileMap(ask),
 				ask -> mMtxEditForm.store(ask),
@@ -282,11 +273,21 @@ public class CtrmapMainframe {
 				ask -> mNPCEditForm.saveRegistry(ask),
 				ask -> mZonePnl.store(ask),
 				ask -> mTextEditor.store(ask)));
+	}
+
+	/**
+	 * Every editor that shows the open zone, what showing one means, and what
+	 * committing what they hold means.
+	 *
+	 * <p>ORDER IS A DEPENDENCY here and not a preference: the matrix panel is
+	 * handed the map view's matrix, so the map view is first.
+	 */
+	private static ZoneEditors buildZoneEditors() {
 		//what "show this zone" means, editor by editor, in the order they must run:
 		//the matrix panel is handed the map view's matrix, so the map view is first.
 		//Four of them clear to nothing today; each says so rather than being absent
 		//from a shorter list, which is what the Zone tab's unload used to be.
-		final ZoneEditors zoneViews = new ZoneEditors(java.util.Arrays.<ZoneEditors.ZoneView>asList(
+		return new ZoneEditors(java.util.Arrays.<ZoneEditors.ZoneView>asList(
 				new ZoneEditors.ZoneView() {
 					@Override
 					public void show(ctrmap.formats.zone.Zone z) {
@@ -413,6 +414,30 @@ public class CtrmapMainframe {
 						return true;   //its edits go through the script editor's own save
 					}
 				}));
+	}
+
+	private static void createAndShowGUI() {
+		Workspace.loadWorkspace();
+		frame = new JFrame("CTRMap Editor");
+		//every dialog this program opens belongs to this window; the seam holds
+		//it from here, so nothing below has to reach up for it
+		Ui.parent(frame);
+		tabs = new JTabbedPane();
+		tileEditMasterPnl = new JPanel(new BorderLayout());
+		collEditMasterPnl = new JPanel(new BorderLayout());
+		mtxEditMasterPnl = new JPanel(new BorderLayout());
+		bindLoadedZone(new LoadedZone());
+		tools = new ToolSelection();
+		//the editor's own answer to "draw it again": the window it owns. Handed
+		//to the forms, so none of them has to reach up here for a JFrame - and
+		//so a headless suite can hand its own and read back that it was asked.
+		redraw = () -> {
+			if (frame != null) {
+				frame.repaint();
+			}
+		};
+		final OpenEditors editors = buildOpenEditors();
+		final ZoneEditors zoneViews = buildZoneEditors();
 		//and the window keeps the flush for its own File > Save and close handler,
 		//which run long after this method has returned.
 		openEditors = editors;
