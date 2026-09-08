@@ -34,8 +34,12 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 	/** Where a tool comes from: this class picks one, it does not know how to build one. */
 	private final ToolBox box;
 
+	/** The map view this router listens to: the one it was handed, not the window's copy of it. */
+	private final TileMapPanel map;
+
 	public TilemapPanelInputManager(TileMapPanel parent, ToolSelection tools, ToolBox box){
 		super();
+		this.map = parent;
 		this.tools = tools;
 		this.box = box;
 		parent.addMouseWheelListener(this);
@@ -45,7 +49,7 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 	
 	@Override
 	public void mouseWheelMoved(MouseWheelEvent e) {
-		mTileMapPanel.scaleImage(mTileMapPanel.tilemapScale - e.getWheelRotation() / 10f);
+		map.scaleImage(map.tilemapScale - e.getWheelRotation() / 10f);
 	}
 	
 	@Override
@@ -60,10 +64,10 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 	}
 	
 	private void moveSelector(MouseEvent e) {
-		int xbound = (int) (mTileMapPanel.getLocationOnScreen().getX() + (mTileMapPanel.getWidth() - mTileMapPanel.tilemapScaledImage.getWidth()) / 2);
-		int ybound = (int) (mTileMapPanel.getLocationOnScreen().getY() + (mTileMapPanel.getHeight() - mTileMapPanel.tilemapScaledImage.getHeight()) / 2);
-		if (e.getXOnScreen() >= xbound && e.getXOnScreen() < xbound + mTileMapPanel.tilemapScaledImage.getWidth()
-				&& e.getYOnScreen() >= ybound && e.getYOnScreen() < ybound + mTileMapPanel.tilemapScaledImage.getHeight()) {
+		int xbound = (int) (map.getLocationOnScreen().getX() + (map.getWidth() - map.tilemapScaledImage.getWidth()) / 2);
+		int ybound = (int) (map.getLocationOnScreen().getY() + (map.getHeight() - map.tilemapScaledImage.getHeight()) / 2);
+		if (e.getXOnScreen() >= xbound && e.getXOnScreen() < xbound + map.tilemapScaledImage.getWidth()
+				&& e.getYOnScreen() >= ybound && e.getYOnScreen() < ybound + map.tilemapScaledImage.getHeight()) {
 			Selector.select(e.getXOnScreen() - xbound, e.getYOnScreen() - ybound);
 		} else {
 			if (Selector.hilightTileX != -1) {
