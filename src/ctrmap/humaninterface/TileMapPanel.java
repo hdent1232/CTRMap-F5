@@ -159,6 +159,21 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		//not an unload (unloadZone is that, and clears the editors too)
 		loadedZone.release();
 		mm = null;
+		//AND THE TEXTURES THE PREVIOUS ZONE WAS DRAWN WITH GO WITH IT. These two lists
+		//are captured in loadMatrix and were reset nowhere, so after "open a zone, then
+		//File > Open GR Mapfile" this panel reported no zone open while
+		//getWorldTextures() still handed out the OLD zone's decoded world textures -
+		//two sources of the same truth disagreeing, and the three readers (the
+		//environment picker, the tile painter's textured preview and the window's
+		//building placer) cannot tell a stale list from a live one; they only know how
+		//to treat null as "no textures", which is what this now gives them. Worse than
+		//the disagreement: the loose GR's own model is loaded below with NO textures
+		//bound at all, and reloadRegionModel - the geometry editor's live refresh -
+		//would then bind the previous zone's onto it, so editing the map changed how it
+		//looked. This method's own comment calls what it does a stale-state clear;
+		//these two fields were the part of the state it did not clear.
+		savedWorldTextures = null;
+		savedPropTextures = null;
 		mode = ViewportMode.SINGLE;
 		width = 40;
 		height = 40;
@@ -297,6 +312,21 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 									protected Object doInBackground() {
 										for (int i = 0; i < mm.height; i++) {
 											for (int j = 0; j < mm.width; j++) {
+												//THE MATRIX CAN OUTGROW THESE ARRAYS, and the scan that
+												//got us here already knows it - it skips any cell outside
+												//tilemaps. This loop did not, and walked the whole of
+												//mm.width/mm.height instead. Matrix Editor > Add column and
+												//Add row raise mm.width/mm.height on the SAME MapMatrix this
+												//panel holds, without touching mm.regions or tilemaps, so the
+												//first cell past the old edge threw IndexOutOfBounds out of
+												//mm.regions.get() - here into the worker, which abandoned the
+												//save with some regions written and some not, and in the
+												//DISCARD arm below straight out of saveMatrix on the event
+												//thread with nothing to catch it. A cell the panel never
+												//loaded a tilemap for has nothing to write back.
+												if (j >= tilemaps.length || i >= tilemaps[j].length || tilemaps[j][i] == null) {
+													continue;
+												}
 												if (mm.regions.get(j, i) == null) {
 													continue;
 												}
@@ -321,6 +351,14 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 							case DISCARD:
 								for (int k = 0; k < mm.height; k++) {
 									for (int l = 0; l < mm.width; l++) {
+										//the same bound as the save loop above, for the same reason: a
+										//column the matrix editor added has no tilemap to unmark. This
+										//arm is the worse of the two - it runs on the event thread, so
+										//what it threw left saveMatrix altogether and the save simply
+										//stopped, with a stack trace on stderr and the user told nothing.
+										if (l >= tilemaps.length || k >= tilemaps[l].length || tilemaps[l][k] == null) {
+											continue;
+										}
 										if (mm.regions.get(l, k) == null) {
 											continue;
 										}
@@ -340,6 +378,18 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 
 	public void loadMatrix(MapMatrix matrix, ADPropRegistry reg, List<H3DTexture> worldTextures, List<H3DTexture> propTextures) {
 		TileUndo.clear(); //a different zone's tilemaps - old history is invalid
+		//AND THE PICKED TILE IS INVALID FOR EXACTLY THE SAME REASON, so it goes
+		//with the history. Nothing reset it before, so Selector.selTileX/selTileY
+		//kept naming a tile of the map being replaced. TileEditForm has two readers
+		//of that pair and only one is guarded: showTile asks getRegionForTile and
+		//labels the tile " - Void" when the answer is null, while showListModel
+		//dereferences the same call inline. So picking a tile on a large zone,
+		//loading a smaller one and clicking any tile-category radio button threw on
+		//the EDT - ArrayIndexOutOfBounds out of getRegionForTile when the stale
+		//coordinate named a region row the new map does not have, or a
+		//NullPointerException when it named an empty cell. It also left the red
+		//picked-tile rectangle painted at the old map's coordinate.
+		Selector.unfocus();
 		LoadingDialog progress = LoadingDialog.makeDialog("Loading matrix");
 		SwingWorker worker = new SwingWorker() {
 			@Override
@@ -400,7 +450,20 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 								models[j][i] = bch;
 							}
 							colls[j][i] = new GRCollisionFile(mm.regions.get(j, i));
-							mCollEditPanel.loadCollision(colls[j][i], bch.models.get(0).name);
+							//THE NAME IS A TREE CAPTION AND IT MUST NOT COST THE WHOLE ZONE.
+							//Thirteen lines up the model setup is wrapped in
+							//"if (!bch.models.isEmpty())" because a region's FieldData subfile 1
+							//is not guaranteed to parse to a model - BCHFile returns with an empty
+							//model list for anything that is not a BCH - and then this line, which
+							//is OUTSIDE that guard, called bch.models.get(0) anyway. On such a
+							//region it threw IndexOutOfBoundsException out of doInBackground, which
+							//awaitLoad turns into "The map did not load", so the entire zone refused
+							//to open and the reason the user was shown was a collision-panel
+							//caption. The collision file itself is read on the line above and never
+							//needed the model, and this name only ever becomes a JTree node label,
+							//so name the cell instead and let the rest of the zone open.
+							mCollEditPanel.loadCollision(colls[j][i], bch.models.isEmpty()
+									? "Region " + j + "x" + i : bch.models.get(0).name);
 						}
 						progress.setBarPercent((int) (((i * mm.width + j) / (float) (mm.width * mm.height)) * 100));
 					}
@@ -524,6 +587,24 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 
 	@Override
 	public void renderCM3D(GL2 gl) {
+		//THE ANIMATOR DOES NOT WAIT FOR A MAP. H3DRenderingPanel starts a 60fps
+		//FPSAnimator in its constructor and its display() draws every registered
+		//renderable as soon as the WORKSPACE is valid - a workspace, not a zone -
+		//and this panel is registered at startup rather than on load. So with the
+		//3D view toggled on before any zone is picked it arrived here with mode
+		//still SINGLE and models still null, and models[0][0] threw
+		//NullPointerException sixty times a second on the animator thread, where
+		//nothing but stderr could see it. unload() leaves precisely that state
+		//behind as well - it nulls models and puts mode back to SINGLE - so a
+		//matrix that failed to load turned the 3D view into the same per-frame
+		//throw until another zone opened. mm is tested too because doInBackground
+		//sets mode to MULTI three statements before it assigns mm, and the animator
+		//runs in that gap. The two sibling overrides below, uploadBuffers and
+		//deleteGLInstanceBuffers, have always opened with a test of this shape;
+		//the one that actually draws was the only one without.
+		if (models == null || tallgrass == null || (mode == ViewportMode.MULTI && mm == null)) {
+			return;
+		}
 		if (mode == ViewportMode.MULTI) {
 			for (int i = 0; i < mm.height; i++) {
 				for (int j = 0; j < mm.width; j++) {
@@ -564,7 +645,27 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	 * headless test holds the data. The region used to read the form itself.
 	 */
 	static Tilemap.TileColors tileColors() {
-		return mTileEditForm == null ? null : mTileEditForm.tileset;
+		if (mTileEditForm == null) {
+			return null;
+		}
+		//A LIVE VIEW OF THE FORM'S TILESET, NOT THE TILESET OBJECT ITSELF. Tilemap
+		//captures what it is handed into a final field and paints from it forever,
+		//and Workspace.getTileset() returns a NEW EditorTileset on every call - so
+		//handing the object over meant that changing the tileset in Workspace
+		//settings (which assigns a new one to the form and then calls updateAll)
+		//repainted every region with the palette it had captured at load. The user
+		//saw the progress dialog run and nothing change, and the new colours only
+		//arrived with the next zone load. Tilemap's own javadoc records that the
+		//picture used to read the form's tileset live, per colour; this hands the
+		//region something that still does, while keeping what the handing was for -
+		//a headless holder gets null and paints nothing, and a suite still hands
+		//its own colours.
+		return new Tilemap.TileColors() {
+			@Override
+			public Color colorOf(int tile) {
+				return mTileEditForm.tileset.colorOf(tile);
+			}
+		};
 	}
 
 	/**
@@ -789,7 +890,17 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 						progress.setBarPercent((int) (((i * tilemaps[i].length + j) / (float) (tilemaps.length * tilemaps[i].length)) * 100));
 					}
 				}
-				mTileMapPanel.scaleImage(mTileMapPanel.tilemapScale);
+				//THE PANEL THAT JUST REBUILT ITS IMAGES IS THE ONE THAT MUST RESCALE
+				//THEM. This said mTileMapPanel - the main window's static - from inside
+				//a worker whose enclosing instance is this panel, so the loop above
+				//rebuilt THIS panel's region images and this line then rescaled
+				//whichever panel the window happened to be holding. Today that is
+				//always the same object and the editor behaves identically; the cost was
+				//latent, and paid by anyone who ever builds a second panel or runs this
+				//with the static unset, where it is a NullPointerException inside the
+				//worker that done() reports as "the tilemap view was not refreshed" -
+				//a true sentence about the wrong panel.
+				TileMapPanel.this.scaleImage(TileMapPanel.this.tilemapScale);
 				return null;
 			}
 		};

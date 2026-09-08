@@ -72,12 +72,22 @@ public class TrainerEditDialog {
 		}
 		try {
 			int tid = Integer.parseInt(in.trim());
-			if (tid < 1 || tid > 948) {
+			//THE SHARED BOUND, not a fifth copy of the number. This refused 948 and
+			//above while the prompt one line up offered 1..949, so a user who typed
+			//the number they had just been given was told they had typed it wrong -
+			//and trainer 949 is real: the trainer archives hold 950 entries with 0
+			//as the dummy, and TrainerDataTest round-trips every one of 1..949
+			//byte-identically. Four other places already agree on 949
+			//(NpcTemplates.TRAINER_ID_MAX and its own range check, the gauntlet
+			//wizard, the challenge form's lineup); this was the only outlier, so it
+			//now names the same constant instead of repeating the digits.
+			if (tid < 1 || tid > ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX) {
 				throw new NumberFormatException();
 			}
 			show(parent, tid);
 		} catch (NumberFormatException ex) {
-			ctrmap.Ui.error(parent, "Enter a trainer id between 1 and 948.", "Trainer editor");
+			ctrmap.Ui.error(parent, "Enter a trainer id between 1 and "
+					+ ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX + ".", "Trainer editor");
 		}
 	}
 

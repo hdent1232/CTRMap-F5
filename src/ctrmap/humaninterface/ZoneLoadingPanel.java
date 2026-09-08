@@ -318,6 +318,35 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		if (zone == null) {
 			return true;
 		}
+		if (!loaded) {
+			//THE FORM NEVER FINISHED SHOWING THIS ZONE, SO IT HAS NOTHING TO WRITE.
+			//loadZone() sets "loaded" false, writes forty-odd widgets out of the header,
+			//and sets it true as its LAST line - all inside one try whose catch prints a
+			//stack trace and stops there. Four of those writes are
+			//JComboBox.setSelectedIndex fed straight from the header, and an index the
+			//model does not have is an IllegalArgumentException: the ORAS map-type box
+			//holds two entries while getTypeIndex can answer 2 or 4..7, the ORAS weather
+			//box holds ten against a five-bit header field, and the transition box holds
+			//eight against another five-bit field. When one throws, every field AFTER it
+			//still holds the PREVIOUS zone's value - and this method had no "loaded" test
+			//at all, so it copied that zone's boundaries, and for an early throw its
+			//matrix, script, text and parent-map ids too, into THIS zone's header on the
+			//next File > Save, zone switch or window close. Cross-zone header corruption
+			//whose only trace was a stack trace on stderr: a town's walkable bounds end
+			//up on a different map and the player meets it three towns later.
+			//
+			//Nothing is written and the user is told. It answers TRUE rather than false
+			//on purpose. A refusal here would also stop OpenEditors.saveAll, and the
+			//window's close handler only exits when that answers true - and this state
+			//cannot be cleared from the zone dropdown, because the same false "loaded"
+			//makes the dropdown's listener a no-op. Refusing would leave the editor with
+			//no way out at all, which is a worse failure than the one being fixed.
+			ctrmap.Ui.error(this, "The zone was NOT saved: its properties never finished"
+					+ " loading, so this form is still showing part of another zone and writing"
+					+ " it back would overwrite this one's header.\n\nReload the workspace"
+					+ " (Options > Workspace settings) to try again.", "Save zone");
+			return true;
+		}
 		int zoneIndex = loadedZone.index();
 		zone.header.mapType = getTypeRaw(type.getSelectedIndex());
 		zone.header.mapMove = (Integer) move.getValue();
@@ -1201,7 +1230,16 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 
 					@Override
 					protected Object doInBackground() {
-						mCamEditForm.store(true);
+						//The camera form is NOT stored here. It was, and it was the
+						//second store of the same form: openEditors.saveAll(true), the
+						//guard this worker runs inside, has mCamEditForm.store as its
+						//FIRST entry, so the camera was already written - on the event
+						//thread, with its refusal honoured by that if. This copy threw
+						//the boolean away, so a user who answered Cancel to "keep camera
+						//data?" would have had the next zone loaded over the top anyway,
+						//and it asked from doInBackground - a modal dialog off the event
+						//thread. It never fired only because the first store leaves the
+						//record unmodified, which is luck, not a design.
 						progress.setBarPercent(20);
 						Zone z = loadedZone.at(zoneList.getSelectedIndex());
 						loadZone(z);

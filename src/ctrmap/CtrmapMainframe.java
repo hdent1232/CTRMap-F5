@@ -194,8 +194,15 @@ public class CtrmapMainframe {
 
 	public static ZoneLoadingPanel mZonePnl;
 	public static ScriptEditor mScriptPnl;
-	public static TextEditor mTextEditor;
-	public static Builder mBuilder;
+	/**
+	 * The text editor and the map builder. PRIVATE, because nothing outside this
+	 * window has ever read either of them - not one application class and not one
+	 * suite. They were public because everything here was, and a public static
+	 * with no readers is not coupling anybody has yet, it is coupling nobody has
+	 * had to argue against yet.
+	 */
+	private static TextEditor mTextEditor;
+	private static Builder mBuilder;
 
 	//the World Editor tab and its split: showWorldEditor() and switchToolUI() are the way in
 	private static JPanel tileEditMasterPnl;
@@ -924,6 +931,21 @@ public class CtrmapMainframe {
 		}
 		File f = picked(openDialog("LAST_DIR_GR", "Open GR/153/bin mapfile"), "LAST_DIR_GR");
 		if (f != null) {
+			//EVERY editor that holds unsaved work is asked first, which is what
+			//"open something else" means everywhere else in this program - the Zone
+			//tab's own switch has opened with this flush since OpenEditors existed.
+			//This path asked about the TILEMAP only, inside loadTileMap, and then
+			//went on to replace the prop editor's data outright (loadProps(null,
+			//null) -> loadDataFile(mainGR, null)), drop the prop registry it was
+			//holding, clear the NPC editor's entities and registry, and unload the
+			//collision editor two lines below. So edited props, an edited prop
+			//registry, an edited NPC registry and an edited collision mesh were all
+			//thrown away with no dialog having mentioned any of them - and because
+			//the tilemap prompt DID appear, the user had every reason to think they
+			//had been asked about everything that was open.
+			if (!openEditors.saveAll(true)) {
+				return;
+			}
 			GR mainGR = new GR(f, game);
 			frame.setTitle("GfMap Editor - " + mainGR.getOriginFile().getName());
 			mTileMapPanel.loadTileMap(mainGR);
@@ -989,7 +1011,22 @@ public class CtrmapMainframe {
 						+ "different things in each of them, so CTRMap will not guess one for it.", "No workspace");
 				return;
 			}
-			mZonePnl.loadZone(new Zone(new ZO(f, game), Workspace.game()));
+			//A LOOSE .zo HAS NO SLOT IN THE ZONE TABLE, AND HAS TO SAY SO.
+			//loadZone() deliberately keeps whatever index was last recorded,
+			//because the dropdown's list worker records its own on the very next
+			//line (ZoneLoadingPanel.zoneListActionPerformed). Nothing recorded one
+			//here, so a zone opened from a file inherited the index of whatever
+			//zone the user had last picked - and ZoneLoadingPanel.store() then
+			//wrote THIS file's 0x38-byte header into the workspace's master
+			//zone-header table at that slot, silently replacing an unrelated map's
+			//entry. It did it without a word, while the harmless case (nothing ever
+			//picked, index -1) was the one that reported. -1 is what
+			//LoadedZone.open(int, Zone) documents for a zone that came from a file,
+			//and it is also what the three operations that work on a table slot -
+			//append, clone and repurpose - already test for before they run.
+			Zone opened = new Zone(new ZO(f, game), Workspace.game());
+			mZonePnl.loadZone(opened);
+			loadedZone.open(-1, opened);
 		}
 	}
 

@@ -51,6 +51,18 @@ public class MatrixEditForm extends javax.swing.JPanel {
 		try {
 			loaded = false;
 			this.mm = mm;
+			//THE PICKED CELL BELONGS TO THE MATRIX BEING REPLACED, so it is dropped
+			//here. MatrixSelector.unfocus() has existed since the class was written
+			//and never had a caller - every unfocus() in the program is the tile
+			//cursor's twin, Selector.unfocus() - so selRegionX/selRegionY survived
+			//every zone load. What that cost: the form went back to showing region
+			//0x0 (showRegion(0, 0) below) while the red "picked cell" rectangle drawn
+			//by drawToolGraphics stayed on the cell the PREVIOUS matrix was clicked
+			//at, and on a smaller matrix it was drawn off the grid onto empty white.
+			//The user was told they had picked a cell they had not, in a matrix that
+			//no longer has one. Done before the mm != null test so that unloading
+			//clears it too.
+			MatrixSelector.unfocus();
 			cam = null;
 			currentCam = -1;
 			zoneRefDropdown.removeAllItems();
@@ -70,8 +82,26 @@ public class MatrixEditForm extends javax.swing.JPanel {
 				showRegion(0, 0);
 				loaded = true;
 			}
-		} catch (Exception e) {
-			e.printStackTrace();
+		} catch (Exception failed) {
+			//WHAT THIS USED TO COST. this.mm is assigned as the SECOND statement of
+			//the try, before anything that can throw, and the ready flag is the LAST
+			//statement inside it. So a throw anywhere in between - the zone dropdown
+			//fill above dereferences loadedZone.at(i).header, and LoadedZone.at() is
+			//documented to return null for a slot the rebuild could not fill, which
+			//is exactly what a ZoneData archive that failed part way through leaves
+			//behind - left this form holding a matrix with loaded still false.
+			//saveAll() is gated on "mm != null && loaded", so from that moment every
+			//chunk id, LOD, multizone and camera boundary the user typed was dropped,
+			//including through store(), which is the flush File > Save and the
+			//window's close handler both run. The form looked loaded, wrote nothing,
+			//and the only trace was a stack trace on stderr that nobody outside a
+			//console ever sees. It now holds NOTHING - the state loadMatrix(null)
+			//already means, so the two flags cannot disagree - and it says so.
+			this.mm = null;
+			loaded = false;
+			ctrmap.Ui.error(this, "The map matrix could not be shown:" + '\n' + failed
+					+ '\n' + "The matrix editor is holding nothing until a zone is opened.",
+					"Matrix editor");
 		}
 	}
 
@@ -241,6 +271,37 @@ public class MatrixEditForm extends javax.swing.JPanel {
 	}
 
 	public void switchTools() {
+		//NO MATRIX OPEN MEANS THERE IS NO TOOL TO SWITCH TO. The Matrix Editor tab
+		//is added unconditionally when the window is built and no tool radio is
+		//selected until loadMatrix picks one, so from a cold start the FIRST click
+		//on any of the three buttons arrived here with mm still null. Two of the
+		//three enablers read mm.hasLOD whatever their argument is - enableChunkUI on
+		//its second line, enableMZUI on its first - and every branch calls at least
+		//one of them, so all three buttons threw NullPointerException out of the
+		//listener on the event thread: a stack trace on stderr, the radio left
+		//selected, and nothing repainted. enableCamUI touches no matrix, which is
+		//the only reason this ever looked like it half worked.
+		if (mm == null) {
+			return;
+		}
+		//THE CURSOR IS MEASURED IN THE SCALE THE TOOL SELECTS, so changing the
+		//scale invalidates it. MatrixSelector multiplies the click by 4 when
+		//selectSubChunks is set, and showRegion stores whatever it is handed, so
+		//curRegX/curRegY hold region coordinates under the chunk tool and
+		//sub-chunk coordinates under the multizone tool. This method used to move
+		//the scale and leave the coordinates standing: going multizone, clicking a
+		//sub-chunk and switching back to the chunk tool left the next saveAll
+		//running mm.ids.set(curRegX, curRegY, id) with a sub-chunk coordinate -
+		//IndexOutOfBoundsException past the width, and inside it a SILENT write of
+		//the stale spinner value into the WRONG region of the map matrix. The
+		//other direction never throws and is therefore always silent: a region
+		//coordinate is always inside the sub-chunk range, so setZoneByNumber wrote
+		//the zone reference into the wrong sub-chunk. saveAll is reached from the
+		//Save button, both spinners, the next click on the panel and store() -
+		//which is the editor flush, so every zone switch and the window close.
+		//Dropping the cursor makes saveAll's own "curRegX != -1" test refuse the
+		//write, and the next click measures a coordinate in the new scale.
+		boolean wasSubChunks = MatrixSelector.selectSubChunks;
 		if (btnChunkTool.isSelected()) {
 			MatrixSelector.selectSubChunks = false;
 			enableChunkUI(true);
@@ -259,9 +320,21 @@ public class MatrixEditForm extends javax.swing.JPanel {
 		mMtxPanel.repaint();
 	}
 
+	//WHY THESE TWO READ THE MATRIX THROUGH A TEST AND NOT DIRECTLY. Both are
+	//reached only through switchTools(), and switchTools() is called from all
+	//three tool radio buttons, from the "Allow LOD and Multizone" checkbox and
+	//from loadMatrix. Every one of those but loadMatrix can run with no matrix
+	//open: the radios are enabled and unselected from the moment the window is
+	//built, and the Matrix Editor tab is there before any zone is, so clicking
+	//"Chunk tool" before opening a zone threw NullPointerException on the event
+	//thread - half way through applying the enabled states, with chunkId already
+	//switched and nothing after it. Swing swallows that into stderr, so what the
+	//user got was a form left in an inconsistent state with nothing said. With no
+	//matrix there is no extended matrix, which is what the else arm of each of
+	//these tests already means, so nothing changes for a matrix that is open.
 	private void enableChunkUI(boolean yesno) {
 		chunkId.setEnabled(yesno);
-		if (mm.hasLOD == 1) {
+		if (mm != null && mm.hasLOD == 1) {
 			chunkLod.setEnabled(yesno);
 		} else {
 			chunkLod.setEnabled(false);
@@ -269,7 +342,7 @@ public class MatrixEditForm extends javax.swing.JPanel {
 	}
 
 	private void enableMZUI(boolean yesno) {
-		if (mm.hasLOD == 1) {
+		if (mm != null && mm.hasLOD == 1) {
 			btnMzTool.setEnabled(true);
 			zoneRefDropdown.setEnabled(yesno);
 			btnFillChunk.setEnabled(yesno);
@@ -761,11 +834,26 @@ public class MatrixEditForm extends javax.swing.JPanel {
 
     private void btnAddColActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddColActionPerformed
 		if (mm != null) {
+			//THE LAYERS GROW AND SHRINK WITH THE GRID WHETHER THE FLAG IS SET OR NOT.
+			//All four of these handlers used to move the LOD and zone-switch layers
+			//only while hasLOD was 1, but the width and height those layers are
+			//INDEXED BY moved unconditionally, one line below. MapMatrix.assembleData
+			//reads the layers by width*4 and width as the flag stands AT SAVE TIME,
+			//not as it stood at resize time, and the flag is a checkbox the user can
+			//tick back on at any moment (saveAll writes it from allowExtended). So
+			//untick "Allow LOD and Multizone", add a column, tick it back on, save -
+			//and the write walked off the end of a layer that never grew:
+			//ResizeableMatrix.get is a bare list.get(x).get(y), and assembleData
+			//catches IOException only, so the IndexOutOfBoundsException escaped
+			//store() before the user was even asked, and the matrix was not written
+			//at all. Both MapMatrix constructors already allocate these layers at
+			//full size no matter what the flag says; growing them here unconditionally
+			//is what makes the resize agree with the allocation. Nothing reads the
+			//extra cells while the flag is off - the multizone tool that would is
+			//disabled by enableMZUI - so no byte that is written changes.
 			mm.ids.addColumn();
-			if (mm.hasLOD == 1) {
-				mm.LOD.addColumn();
-				mm.zones.addColumns(4);
-			}
+			mm.LOD.addColumn();
+			mm.zones.addColumns(4);
 			mm.width++;
 			mMtxPanel.repaint();
 		}
@@ -773,11 +861,11 @@ public class MatrixEditForm extends javax.swing.JPanel {
 
     private void btnAddRowActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddRowActionPerformed
 		if (mm != null) {
+			//unconditional for the reason spelled out in btnAddColActionPerformed:
+			//the height these layers are indexed by moves unconditionally too
 			mm.ids.addRow();
-			if (mm.hasLOD == 1) {
-				mm.LOD.addRow();
-				mm.zones.addRows(4);
-			}
+			mm.LOD.addRow();
+			mm.zones.addRows(4);
 			mm.height++;
 			mMtxPanel.repaint();
 		}
@@ -785,11 +873,10 @@ public class MatrixEditForm extends javax.swing.JPanel {
 
     private void btnRemoveRowActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveRowActionPerformed
 		if (mm != null) {
+			//unconditional for the reason spelled out in btnAddColActionPerformed
 			mm.ids.removeRow();
-			if (mm.hasLOD == 1) {
-				mm.LOD.removeRow();
-				mm.zones.removeRows(4);
-			}
+			mm.LOD.removeRow();
+			mm.zones.removeRows(4);
 			mm.height--;
 			mMtxPanel.repaint();
 		}
@@ -797,11 +884,10 @@ public class MatrixEditForm extends javax.swing.JPanel {
 
     private void btnRemoveColActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveColActionPerformed
 		if (mm != null) {
+			//unconditional for the reason spelled out in btnAddColActionPerformed
 			mm.ids.removeColumn();
-			if (mm.hasLOD == 1) {
-				mm.LOD.removeColumn();
-				mm.zones.removeColumns(4);
-			}
+			mm.LOD.removeColumn();
+			mm.zones.removeColumns(4);
 			mm.width--;
 			mMtxPanel.repaint();
 		}
