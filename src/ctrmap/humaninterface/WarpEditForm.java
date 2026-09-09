@@ -78,11 +78,25 @@ public class WarpEditForm extends javax.swing.JPanel {
 	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
 	private final Redraw redraw;
 
-	public WarpEditForm(LoadedZone loadedZone, Redraw redraw) {
+	/**
+	 * Where the user is looking, handed in: this form says "put it where they
+	 * can see it", not how to work that out.
+	 */
+	private final ViewportCentre viewportCentre;
+	public WarpEditForm(LoadedZone loadedZone, Redraw redraw, ViewportCentre viewportCentre) {
 		this.redraw = redraw;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("WarpEditForm must be handed a LoadedZone");
 		}
+		//AFTER the LoadedZone check, deliberately: LoadedZoneTest builds every
+		//reader with a null owner and asserts the refusal names "LoadedZone", so
+		//a new refusal placed above it would flip that assertion onto this
+		//message and the suite would go red for the wrong reason.
+		if (viewportCentre == null) {
+			throw new IllegalArgumentException("WarpEditForm must be handed a ViewportCentre"
+				+ " - it places new records where the user is looking");
+		}
+		this.viewportCentre = viewportCentre;
 		this.loadedZone = loadedZone;
 		initComponents();
 		transition.setModel(transitionModel);
@@ -457,7 +471,7 @@ public class WarpEditForm extends javax.swing.JPanel {
 
     private void btnAddActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddActionPerformed
 		if (e != null) {
-			addEntry(mTileMapPanel.getTileAtViewportCentre());
+			addEntry(viewportCentre.tile());
 			repaintFrame();
 		}
     }//GEN-LAST:event_btnAddActionPerformed

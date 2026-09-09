@@ -16,7 +16,7 @@
   "checks every plant still matches its file exactly once, which is cheap; replant.py actually runs",
   "them, which is not."
  ],
- "owed_ceiling": 118,
+ "owed_ceiling": 117,
  "owed_generalisation_ceiling": 3,
  "plants": [
   {
@@ -205,6 +205,18 @@
     "${PRISTINE}"
    ],
    "must_say": "the very prop the form is holding"
+  },
+  {
+   "id": "new-record-lands-at-the-origin",
+   "why": "Three forms place a new record where the user is looking. Placing it at 0,0 instead drops it in a corner of a map the user may not even have on screen - and the guard that was supposed to catch this asserted the size and the script while saying nothing about x and y, because before the seam existed it could not.",
+   "file": "src/ctrmap/humaninterface/TriggerEditForm.java",
+   "find": "\t\t\tPoint defaultPos = viewportCentre.tile();",
+   "replace": "\t\t\tPoint defaultPos = new Point(0, 0);",
+   "suite": "ctrmap.tests.TriggerEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "IT LANDED WHERE THE USER IS LOOKING"
   }
  ]
 }

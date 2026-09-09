@@ -82,11 +82,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
 	private final Redraw redraw;
 
+	/** Where the user is looking, handed in: seven placements asked the map view. */
+	private final ViewportCentre viewportCentre;
+
 	/** The 3D gizmo, handed in: this form says which record it follows, not how. */
 	private final Navigator navi;
 
 	public NPCEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
-			Navigator navi) {
+			Navigator navi, ViewportCentre viewportCentre) {
 		if (navi == null) {
 			throw new IllegalArgumentException("NPCEditForm must be handed a Navigator - the gizmo it moves");
 		}
@@ -97,6 +100,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			throw new IllegalArgumentException("NPCEditForm must be handed a LoadedZone");
 		}
 		this.loadedZone = loadedZone;
+		//AFTER the LoadedZone check: LoadedZoneTest builds every reader with a null
+		//owner and asserts the refusal names "LoadedZone", so a refusal placed above
+		//it would flip that assertion onto this message.
+		if (viewportCentre == null) {
+			throw new IllegalArgumentException("NPCEditForm must be handed a ViewportCentre"
+				+ " - it places new records where the user is looking");
+		}
+		this.viewportCentre = viewportCentre;
 		initComponents();
 		setIntegerValueClass(new JFormattedTextField[]{x, y, areaW, areaH, mot, mp2, u10, u12, areaSX, areaSY, zl2, zl3, hostZone, originZone, linkedZone, linkID});
 		((NumberFormatter) altitude.getFormatter()).setValueClass(Float.class);
@@ -939,7 +950,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return;
 		}
 		if (addTalker(zone, msg, form.text(), form.model(), injectWrapper ? wrapperDonor : null,
-				mTileMapPanel.getTileAtViewportCentre()) != null) {
+				viewportCentre.tile()) != null) {
 			finishNpcAdd(zone, true);
 			repaintFrame();
 		}
@@ -1024,7 +1035,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return;
 		}
 		if (addSign(zone, msg, form.text(), form.signType(), needsWrapper ? signDonor : null,
-				mTileMapPanel.getTileAtViewportCentre())) {
+				viewportCentre.tile())) {
 			saveZoneScript(zone);
 			repaintFrame();
 		}
@@ -1078,7 +1089,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (!showForm(form.panel, "Add item giver")) {
 			return;
 		}
-		if (addGiver(zone, form.item(), form.count(), form.model(), mTileMapPanel.getTileAtViewportCentre()) != null) {
+		if (addGiver(zone, form.item(), form.count(), form.model(), viewportCentre.tile()) != null) {
 			finishNpcAdd(zone, true);
 		}
 	}
@@ -1124,7 +1135,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (!showForm(form.panel, "Add battle challenge")) {
 			return;
 		}
-		if (addChallenge(zone, form.input(), mTileMapPanel.getTileAtViewportCentre()) != null) {
+		if (addChallenge(zone, form.input(), viewportCentre.tile()) != null) {
 			finishNpcAdd(zone, true);
 		}
 	}
@@ -1258,7 +1269,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (!showForm(form.panel, "Add Give BP")) {
 			return;
 		}
-		if (addGiveBp(zone, form.amount(), form.model(), mTileMapPanel.getTileAtViewportCentre()) != null) {
+		if (addGiveBp(zone, form.amount(), form.model(), viewportCentre.tile()) != null) {
 			finishNpcAdd(zone, true);
 		}
 	}
@@ -1298,7 +1309,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return;
 		}
 		if (addTrainer(zone, form.trainer(), form.model(), form.sight(), form.facing(), form.pair(),
-				mTileMapPanel.getTileAtViewportCentre()) > 0) {
+				viewportCentre.tile()) > 0) {
 			finishNpcAdd(zone, false);
 			repaintFrame();
 		}
@@ -2163,7 +2174,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
     }//GEN-LAST:event_btnRegEditActionPerformed
 
     private void btnNewEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNewEntryActionPerformed
-		addEntry(mTileMapPanel.getTileAtViewportCentre());
+		addEntry(viewportCentre.tile());
     }//GEN-LAST:event_btnNewEntryActionPerformed
 
     private void btnSaveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSaveActionPerformed

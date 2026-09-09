@@ -42,6 +42,7 @@ import ctrmap.humaninterface.OpenEditors;
 import ctrmap.humaninterface.MapObject;
 import ctrmap.humaninterface.Navigator;
 import ctrmap.humaninterface.Redraw;
+import ctrmap.humaninterface.ViewportCentre;
 import ctrmap.humaninterface.ZoneEditors;
 import ctrmap.humaninterface.CollInputManager;
 import ctrmap.humaninterface.ExtrasPanel;
@@ -504,6 +505,15 @@ public class CtrmapMainframe {
 		frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		frame.setLocationByPlatform(true);
 		mTileMapPanel = new TileMapPanel(loadedZone, tools);
+		//A BOUND METHOD REFERENCE, not a lambda over the static and not a captured
+		//Point. Not a lambda, because the map view exists by this line and the
+		//construction-order rule can therefore see and check this handoff - a
+		//lambda body is deferred and the rule skips it, which is the right answer
+		//for a deferred body and the wrong one for a value that is ready. Not a
+		//Point, because the answer changes as the user scrolls and the forms ask at
+		//the moment they place something; a captured one would put every new record
+		//where the viewport was when the window was built.
+		final ViewportCentre viewportCentre = mTileMapPanel::getTileAtViewportCentre;
 		mTilemapScrollPane = new JScrollPane();
 		mMtxPanel = new MapMatrixPanel();
 		mMtxEditForm = new MatrixEditForm(loadedZone);
@@ -513,9 +523,9 @@ public class CtrmapMainframe {
 		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors);
 		mCamEditForm = new CameraEditForm(redraw);
 		mPropEditForm = new PropEditForm(loadedZone, tools, redraw, navigator);
-		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw, navigator);
-		mWarpEditForm = new WarpEditForm(loadedZone, redraw);
-		mTriggerEditForm = new TriggerEditForm(loadedZone, redraw);
+		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw, navigator, viewportCentre);
+		mWarpEditForm = new WarpEditForm(loadedZone, redraw, viewportCentre);
+		mTriggerEditForm = new TriggerEditForm(loadedZone, redraw, viewportCentre);
 		mGeoEditForm = new GeoEditForm(loadedZone);
 		mCollEditPanel = new CollEditPanel(tools);
 		GLPanel glPanel = new GLPanel(mCollEditPanel);
