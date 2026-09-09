@@ -16,6 +16,9 @@ import javax.swing.text.NumberFormatter;
 
 public class MatrixEditForm extends javax.swing.JPanel {
 
+	/** The grid this form draws on, handed in: fourteen bare repaints and one hit test. */
+	private final MatrixCanvas canvas;
+
 	public MapMatrix mm;
 
 	private int curRegX = -1;
@@ -32,11 +35,18 @@ public class MatrixEditForm extends javax.swing.JPanel {
 	/** The zone owner this form was handed; its table fills the zone-reference dropdown. */
 	private final LoadedZone loadedZone;
 
-	public MatrixEditForm(LoadedZone loadedZone) {
+	public MatrixEditForm(LoadedZone loadedZone, MatrixCanvas canvas) {
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("MatrixEditForm must be handed a LoadedZone");
 		}
 		this.loadedZone = loadedZone;
+		//AFTER the LoadedZone check: LoadedZoneTest asserts the refusal for a null
+		//owner names "LoadedZone", and a refusal above it would flip that message.
+		if (canvas == null) {
+			throw new IllegalArgumentException("MatrixEditForm must be handed a MatrixCanvas"
+				+ " - the grid it redraws and hit-tests against");
+		}
+		this.canvas = canvas;
 		initComponents();
 		setFloatValueClass(new JFormattedTextField[]{northBound, southBound, westBound, eastBound});
 	}
@@ -202,7 +212,7 @@ public class MatrixEditForm extends javax.swing.JPanel {
 		} else {
 			currentCam = -1;
 		}
-		mMtxPanel.repaint();
+		canvas.redraw();
 	}
 
 	public void drawToolGraphics(Graphics g, int imgstartx, int imgstarty) {
@@ -317,7 +327,7 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			enableCamUI(true);
 			enableMZUI(false);
 		}
-		mMtxPanel.repaint();
+		canvas.redraw();
 	}
 
 	//WHY THESE TWO READ THE MATRIX THROUGH A TEST AND NOT DIRECTLY. Both are
@@ -369,8 +379,9 @@ public class MatrixEditForm extends javax.swing.JPanel {
 		if (mm != null && btnCamTool.isSelected()) {
 			for (int i = 0; i < mm.cambounds.size(); i++) {
 				MatrixCameraBoundaries b = mm.cambounds.get(i);
-				int imgstartx = (mMtxPanel.getWidth() - mMtxPanel.getFullImageWidth()) / 2;
-				int imgstarty = (mMtxPanel.getHeight() - mMtxPanel.getFullImageHeight()) / 2;
+				java.awt.Point origin = canvas.imageOrigin();
+				int imgstartx = origin.x;
+				int imgstarty = origin.y;
 				double xBase = b.west * 100d / 720d + imgstartx;
 				double yBase = b.north * 100d / 720d + imgstarty;
 				double x2Base = b.east * 100d / 720d + imgstartx;
@@ -815,7 +826,7 @@ public class MatrixEditForm extends javax.swing.JPanel {
 				}
 			}
 		}
-		mMtxPanel.repaint();
+		canvas.redraw();
     }//GEN-LAST:event_btnFillChunkActionPerformed
 
     private void zoneRefNumberActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_zoneRefNumberActionPerformed
@@ -855,7 +866,7 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			mm.LOD.addColumn();
 			mm.zones.addColumns(4);
 			mm.width++;
-			mMtxPanel.repaint();
+			canvas.redraw();
 		}
     }//GEN-LAST:event_btnAddColActionPerformed
 
@@ -867,7 +878,7 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			mm.LOD.addRow();
 			mm.zones.addRows(4);
 			mm.height++;
-			mMtxPanel.repaint();
+			canvas.redraw();
 		}
     }//GEN-LAST:event_btnAddRowActionPerformed
 
@@ -878,7 +889,7 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			mm.LOD.removeRow();
 			mm.zones.removeRows(4);
 			mm.height--;
-			mMtxPanel.repaint();
+			canvas.redraw();
 		}
     }//GEN-LAST:event_btnRemoveRowActionPerformed
 
@@ -889,7 +900,7 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			mm.LOD.removeColumn();
 			mm.zones.removeColumns(4);
 			mm.width--;
-			mMtxPanel.repaint();
+			canvas.redraw();
 		}
     }//GEN-LAST:event_btnRemoveColActionPerformed
 
@@ -917,17 +928,17 @@ public class MatrixEditForm extends javax.swing.JPanel {
 
     private void chunkIdActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_chunkIdActionPerformed
 		saveAll();
-		mMtxPanel.repaint();
+		canvas.redraw();
     }//GEN-LAST:event_chunkIdActionPerformed
 
     private void chunkLodActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_chunkLodActionPerformed
 		saveAll();
-		mMtxPanel.repaint();
+		canvas.redraw();
     }//GEN-LAST:event_chunkLodActionPerformed
 
     private void btnSaveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSaveActionPerformed
 		saveAll();
-		mMtxPanel.repaint();
+		canvas.redraw();
     }//GEN-LAST:event_btnSaveActionPerformed
 
     private void btnNewCamActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNewCamActionPerformed
@@ -936,7 +947,7 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			mm.cambounds.add(mcb);
 			boundEntryBox.addItem(String.valueOf(mm.cambounds.size() - 1));
 			setCam(mm.cambounds.size() - 1);
-			mMtxPanel.repaint();
+			canvas.redraw();
 		}
     }//GEN-LAST:event_btnNewCamActionPerformed
 
@@ -949,19 +960,19 @@ public class MatrixEditForm extends javax.swing.JPanel {
 			} else {
 				boundEntryBox.setSelectedIndex(boundEntryBox.getSelectedIndex());
 			}
-			mMtxPanel.repaint();
+			canvas.redraw();
 		}
     }//GEN-LAST:event_btnRemoveCamActionPerformed
 
 	private void saveCamAndUpdate() {
 		saveCam();
-		mMtxPanel.repaint();
+		canvas.redraw();
 	}
 
 	private void setZoneByNumber() {
 		if (mm != null && btnMzTool.isSelected() && mm.hasLOD == 1 && curRegX != -1) {
 			mm.zones.set(curRegX, curRegY, (Short) zoneRefNumber.getValue());
-			mMtxPanel.repaint();
+			canvas.redraw();
 		}
 	}
 

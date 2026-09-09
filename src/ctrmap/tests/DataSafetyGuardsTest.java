@@ -88,6 +88,9 @@ import javax.swing.SwingWorker;
  */
 public class DataSafetyGuardsTest {
 
+	/** The grid the matrix form draws on. A real panel: it needs no display to exist. */
+	static final ctrmap.humaninterface.MapMatrixPanel CANVAS = new ctrmap.humaninterface.MapMatrixPanel();
+
 	/** Where the user is looking, so a placement can be asserted at all. */
 	static final RecordingCentre CENTRE = new RecordingCentre();
 
@@ -723,7 +726,7 @@ public class DataSafetyGuardsTest {
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm(REDRAW);
 		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS);
-		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm(lz);
+		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm(lz, CANVAS);
 		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS, REDRAW, NAVI);
 		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE);
 		CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW, CENTRE);
@@ -848,7 +851,7 @@ public class DataSafetyGuardsTest {
 				new ctrmap.formats.containers.MM(temp(mmGarc.getDecompressedEntry(14)), Workspace.session()), null);
 		short before = mm.ids.get(0, 0);
 
-		ctrmap.humaninterface.MatrixEditForm form = new ctrmap.humaninterface.MatrixEditForm(new LoadedZone());
+		ctrmap.humaninterface.MatrixEditForm form = new ctrmap.humaninterface.MatrixEditForm(new LoadedZone(), CANVAS);
 		setField(form, "mm", mm);
 		setField(form, "loaded", true);
 		setField(form, "curRegX", 0);

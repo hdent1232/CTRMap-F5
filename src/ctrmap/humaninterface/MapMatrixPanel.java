@@ -6,7 +6,7 @@ import java.awt.Color;
 import java.awt.Graphics;
 import javax.swing.JPanel;
 
-public class MapMatrixPanel extends JPanel {
+public class MapMatrixPanel extends JPanel implements MatrixCanvas {
 
 	public MapMatrix mm;
 
@@ -52,6 +52,25 @@ public class MapMatrixPanel extends JPanel {
 		return new java.awt.Dimension(getFullImageWidth(), getFullImageHeight());
 	}
 
+	@Override
+	public void redraw() {
+		repaint();
+	}
+
+	/**
+	 * Where the centred grid image starts inside this panel.
+	 *
+	 * <p>The same int division that was written out here, in the matrix form's
+	 * camera hit test and in the input router - three copies of one statement.
+	 * It stays a plain division: negative when the image is wider than the
+	 * panel, which is how the grid scrolls.
+	 */
+	@Override
+	public java.awt.Point imageOrigin() {
+		return new java.awt.Point((getWidth() - getFullImageWidth()) / 2,
+				(getHeight() - getFullImageHeight()) / 2);
+	}
+
 	public int getFullImageWidth(){
 		if (mm == null){
 			return 0;
@@ -75,8 +94,9 @@ public class MapMatrixPanel extends JPanel {
 		g.setColor(Color.WHITE);
 		g.fillRect(0, 0, getWidth(), getHeight());
 		if (mm != null) {
-			int imgstartx = (this.getWidth() - getFullImageWidth()) / 2;
-			int imgstarty = (this.getHeight() - getFullImageHeight()) / 2;
+			java.awt.Point origin = imageOrigin();
+			int imgstartx = origin.x;
+			int imgstarty = origin.y;
 			for (int x = 0; x < mm.width; x++) {
 				for (int y = 0; y < mm.height; y++) {
 					g.setColor(Color.BLACK);

@@ -80,6 +80,9 @@ import javax.swing.JSplitPane;
  */
 final class EditorBench {
 
+	/** The grid the matrix form draws on. A real panel: it needs no display to exist. */
+	static final ctrmap.humaninterface.MapMatrixPanel CANVAS = new ctrmap.humaninterface.MapMatrixPanel();
+
 	/** Where the user is looking, so a placement can be asserted at all. */
 	static final RecordingCentre CENTRE = new RecordingCentre();
 
@@ -162,7 +165,7 @@ final class EditorBench {
 		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		CtrmapMainframe.mGeoEditForm = geo = new GeoEditForm(LOADED);
 		CtrmapMainframe.mCollEditPanel = new CollEditPanel(TOOLS);
-		CtrmapMainframe.mMtxEditForm = new MatrixEditForm(LOADED);
+		CtrmapMainframe.mMtxEditForm = new MatrixEditForm(LOADED, CANVAS);
 		//the "Current tool" label is this row's, not the window's, and the row
 		//is what TileEditForm asks for the Set tool
 		CtrmapMainframe.worldToolbar = toolbar = new WorldEditorToolbar(

@@ -642,6 +642,8 @@ public class LoadedZoneTest {
 				args[i] = new RecordingNavi();
 			} else if (types[i] == ctrmap.humaninterface.ViewportCentre.class) {
 				args[i] = new RecordingCentre();
+			} else if (types[i] == ctrmap.humaninterface.MatrixCanvas.class) {
+				args[i] = new ctrmap.humaninterface.MapMatrixPanel();
 			} else {
 				throw new IllegalStateException(ctor.getDeclaringClass().getName()
 						+ " is handed a " + types[i].getName()
