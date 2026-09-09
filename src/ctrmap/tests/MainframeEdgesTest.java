@@ -61,15 +61,13 @@ public class MainframeEdgesTest {
 			"the NPC editor, loaded with the zone and drawn over the map"},
 		{"mPropEditForm", "TileMapPanel",
 			"the prop editor, drawn over the map"},
-		{"mScriptPnl", "NPCEditForm",
-			"the script editor, which an NPC's script edits go through"},
 		{"mTileEditForm", "Selector,TileMapPanel,TileUndo,WorkspaceSettings",
 			"the tile inspector, which the selector and the undo stack update"},
 		{"mTileMapPanel", "GeoEditForm,GfEnvPicker,NPCEditForm,PaintForm,PropEditForm,Selector,TileEditForm,"
 			+ "TileUndo,WorkspaceSettings",
 			"THE map view: every editor that draws on it or reads a tile from it. The tangle - it reads"
 			+ " four of these back"},
-				{"mZonePnl", "NPCEditForm,ScriptEditor,SetupWizard,TilePainterForm",
+				{"mZonePnl", "SetupWizard,TilePainterForm",
 			"the Zone tab as an OPERATION - its save, its rebuild, its zone count. None of them is zone"
 			+ " state: that has an owner (LoadedZoneTest)"},
 		{"worldToolbar", "TileEditForm", "the tool row, asked to select the Set tool"},
@@ -100,7 +98,7 @@ public class MainframeEdgesTest {
 	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
 	 * matrix-panel, NPC and trigger editors.
 	 */
-	private static final int REFERENCES = 27;
+	private static final int REFERENCES = 24;
 
 	/**
 	 * Public static fields on the window: 91 before the structure sweep, 22 after

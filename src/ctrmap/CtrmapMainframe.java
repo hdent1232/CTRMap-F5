@@ -43,6 +43,8 @@ import ctrmap.humaninterface.MapObject;
 import ctrmap.humaninterface.Navigator;
 import ctrmap.humaninterface.Redraw;
 import ctrmap.humaninterface.Scene3D;
+import ctrmap.humaninterface.ScriptView;
+import ctrmap.humaninterface.ZoneSaver;
 import ctrmap.humaninterface.ViewportCentre;
 import ctrmap.humaninterface.ZoneEditors;
 import ctrmap.humaninterface.CollInputManager;
@@ -544,7 +546,10 @@ public class CtrmapMainframe {
 			}
 		};
 		mZonePnl = new ZoneLoadingPanel(loadedZone, tools, editors, zoneViews, navigator);
-		mScriptPnl = new ScriptEditor();
+		//the Zone tab IS the zone saver, and the script editor is handed it. Both
+		//exist by here: the tab on the line above, and nothing uses the editor until
+		//the NPC form below is built over both.
+		mScriptPnl = new ScriptEditor(mZonePnl);
 		mTextEditor = new TextEditor();
 		mBuilder = new Builder();
 
@@ -587,7 +592,8 @@ public class CtrmapMainframe {
 		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors);
 		mCamEditForm = new CameraEditForm(redraw);
 		mPropEditForm = new PropEditForm(loadedZone, tools, redraw, navigator);
-		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw, navigator, viewportCentre);
+		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw, navigator, viewportCentre,
+			mZonePnl, mScriptPnl);
 		mWarpEditForm = new WarpEditForm(loadedZone, redraw, viewportCentre);
 		mTriggerEditForm = new TriggerEditForm(loadedZone, redraw, viewportCentre);
 		mGeoEditForm = new GeoEditForm(loadedZone);

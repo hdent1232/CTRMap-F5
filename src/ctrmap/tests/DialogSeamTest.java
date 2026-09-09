@@ -62,6 +62,9 @@ import javax.swing.JOptionPane;
  */
 public class DialogSeamTest {
 
+	/** Writing the zone and re-showing its script, so both can be read back. */
+	static final RecordingZoneSaver SAVER = new RecordingZoneSaver();
+
 	/** Where the user is looking, so a placement can be asserted at all. */
 	static final RecordingCentre CENTRE = new RecordingCentre();
 
@@ -447,7 +450,7 @@ public class DialogSeamTest {
 		//them and never reaches the game it is handed
 		NPCRegistry reg = new NPCRegistry(f, new FakeGameFiles());
 		reg.modified = true;
-		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE);
+		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER);
 		form.reg = reg;
 		boolean stored;
 		List<String> said = Ui.record();

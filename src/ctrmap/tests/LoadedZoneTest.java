@@ -143,8 +143,6 @@ public class LoadedZoneTest {
 	 * rather than being handed what it needs.
 	 */
 	private static final String[] STATIC_READERS = {
-		"ctrmap/humaninterface/NPCEditForm",
-		"ctrmap/humaninterface/ScriptEditor",
 		"ctrmap/humaninterface/TilePainterForm",
 		"ctrmap/setup/SetupWizard"
 	};
@@ -644,6 +642,9 @@ public class LoadedZoneTest {
 				args[i] = new RecordingCentre();
 			} else if (types[i] == ctrmap.humaninterface.MatrixCanvas.class) {
 				args[i] = new ctrmap.humaninterface.MapMatrixPanel();
+			} else if (types[i] == ctrmap.humaninterface.ZoneSaver.class
+				|| types[i] == ctrmap.humaninterface.ScriptView.class) {
+				args[i] = new RecordingZoneSaver();
 			} else if (types[i] == ctrmap.humaninterface.Scene3D.class) {
 				args[i] = new RecordingScene();
 			} else if (types[i] == javax.swing.JScrollPane.class) {

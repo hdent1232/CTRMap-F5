@@ -28,7 +28,7 @@ import javax.swing.text.DefaultCaret;
 import javax.swing.text.DocumentFilter;
 import javax.swing.text.SimpleAttributeSet;
 
-public class ScriptEditor extends javax.swing.JPanel {
+public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 
 	/**
 	 * Creates new form ScriptEditor
@@ -47,7 +47,14 @@ public class ScriptEditor extends javax.swing.JPanel {
 
 	public boolean loaded = false;
 
-	public ScriptEditor() {
+	/** Writing the open zone back, handed in: the Save button does exactly that. */
+	private final ZoneSaver zoneSaver;
+
+	public ScriptEditor(ZoneSaver zoneSaver) {
+		if (zoneSaver == null) {
+			throw new IllegalArgumentException("ScriptEditor must be handed the zone saver its Save button uses");
+		}
+		this.zoneSaver = zoneSaver;
 		initComponents();
 		ptrs.setColumns(6);
 		ptrs.setFont(new java.awt.Font("Monospaced", 0, 14)); // NOI18N
@@ -72,6 +79,11 @@ public class ScriptEditor extends javax.swing.JPanel {
 		disassemblyScrollPane.setRowHeaderView(ptrs);
 		((AbstractDocument) disassemblyArea.getDocument()).setDocumentFilter(sdf);
 		((DefaultCaret) disassemblyArea.getCaret()).setUpdatePolicy(DefaultCaret.UPDATE_WHEN_ON_EDT);
+	}
+
+	@Override
+	public void showScript(GFLPawnScript script) {
+		loadScript(script);
 	}
 
 	public void loadScript(GFLPawnScript scr) {
@@ -949,7 +961,7 @@ public class ScriptEditor extends javax.swing.JPanel {
 				return;
 			}
 		}
-		CtrmapMainframe.mZonePnl.store(false);
+		zoneSaver.save(false);
     }//GEN-LAST:event_btnSaveActionPerformed
 
     private void btnTestAssemblyActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnTestAssemblyActionPerformed
