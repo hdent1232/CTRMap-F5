@@ -33,7 +33,7 @@ import javax.swing.text.NumberFormatter;
  * Top-level loader for all in the Pokemon world, should really stop being
  * debug.
  */
-public class ZoneLoadingPanel extends javax.swing.JPanel {
+public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver {
 
 	/**
 	 * The zone table, the open zone and its index, owned by {@link LoadedZone}
@@ -311,6 +311,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel {
 		};
 		worker.execute();
 		progress.showDialog();
+	}
+
+	@Override
+	public boolean save(boolean askFirst) {
+		return store(askFirst);
 	}
 
 	public boolean store(boolean dialog) {

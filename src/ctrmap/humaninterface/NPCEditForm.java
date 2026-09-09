@@ -82,6 +82,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
 	private final Redraw redraw;
 
+	/** Writing the open zone back, handed in: this form does it after four edits. */
+	private final ZoneSaver zoneSaver;
+
+	/** The script editor, handed in: the script on screen belongs to the zone just written. */
+	private final ScriptView scriptView;
+
 	/** Where the user is looking, handed in: seven placements asked the map view. */
 	private final ViewportCentre viewportCentre;
 
@@ -89,7 +95,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private final Navigator navi;
 
 	public NPCEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
-			Navigator navi, ViewportCentre viewportCentre) {
+			Navigator navi, ViewportCentre viewportCentre, ZoneSaver zoneSaver, ScriptView scriptView) {
 		if (navi == null) {
 			throw new IllegalArgumentException("NPCEditForm must be handed a Navigator - the gizmo it moves");
 		}
@@ -108,6 +114,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				+ " - it places new records where the user is looking");
 		}
 		this.viewportCentre = viewportCentre;
+		if (zoneSaver == null || scriptView == null) {
+			throw new IllegalArgumentException("NPCEditForm must be handed the zone saver and the"
+				+ " script view - it writes the zone and re-shows its script after a dialogue edit");
+		}
+		this.zoneSaver = zoneSaver;
+		this.scriptView = scriptView;
 		initComponents();
 		setIntegerValueClass(new JFormattedTextField[]{x, y, areaW, areaH, mot, mp2, u10, u12, areaSX, areaSY, zl2, zl3, hostZone, originZone, linkedZone, linkID});
 		((NumberFormatter) altitude.getFormatter()).setValueClass(Float.class);
@@ -806,8 +818,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return;
 		}
 		if (done == DialogueEdit.REPOINTED) {
-			mZonePnl.store(false); //same path ScriptEditor uses to save the zone script
-			mScriptPnl.loadScript(zone.s);
+			//THE ANSWER IS NOT DISCARDED ANY MORE. A zone that refused to save - a warp
+			//with no destination is the usual reason - was followed by re-reading the
+			//script from a zone that had not been written.
+			if (zoneSaver.save(false)) {
+				scriptView.showScript(zone.s);
+			}
 			populateScriptDropdown();
 			syncScrDropdown(npc.script);
 		}
@@ -1369,13 +1385,14 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (saveScript) {
 			saveZoneScript(zone);
 		} else {
-			mZonePnl.store(false);
+			zoneSaver.save(false);
 		}
 	}
 
 	private void saveZoneScript(Zone zone) {
-		mZonePnl.store(false); //same path ScriptEditor uses to save the zone script
-		mScriptPnl.loadScript(zone.s);
+		if (zoneSaver.save(false)) {
+			scriptView.showScript(zone.s);
+		}
 	}
 
 	/**

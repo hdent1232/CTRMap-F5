@@ -49,6 +49,9 @@ import java.util.TreeMap;
  */
 public class NpcMoveCodesTest {
 
+	/** Writing the zone and re-showing its script, so both can be read back. */
+	static final RecordingZoneSaver SAVER = new RecordingZoneSaver();
+
 	/** Where the user is looking, so a placement can be asserted at all. */
 	static final RecordingCentre CENTRE = new RecordingCentre();
 
@@ -160,7 +163,7 @@ public class NpcMoveCodesTest {
 	static void theFormAsksTheTable() {
 		for (GameType g : new GameType[]{GameType.ORAS, GameType.XY}) {
 			Sessions.bare(new File("no-workspace"), new File("no-game"), g);
-			NPCEditForm form = new NPCEditForm(new LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE);
+			NPCEditForm form = new NPCEditForm(new LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER);
 			int bad = 0;
 			for (int code = 0; code <= PROBE_CEILING; code++) {
 				bad += form.getMot2Index(code) == NpcMoveCodes.movePerm2Index(code, g) ? 0 : 1;

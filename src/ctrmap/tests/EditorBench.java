@@ -80,6 +80,9 @@ import javax.swing.JSplitPane;
  */
 final class EditorBench {
 
+	/** Writing the zone and re-showing its script, so both can be read back. */
+	static final RecordingZoneSaver SAVER = new RecordingZoneSaver();
+
 	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
 	static final RecordingScene SCENE = new RecordingScene();
 
@@ -163,7 +166,7 @@ final class EditorBench {
 		CtrmapMainframe.mCamEditForm = cam = new BenchCamForm();
 		CtrmapMainframe.mCamScrollPane = new JScrollPane(CtrmapMainframe.mCamEditForm);
 		CtrmapMainframe.mPropEditForm = prop = new BenchPropForm();
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER);
 		CtrmapMainframe.mWarpEditForm = warps = new WarpEditForm(LOADED, REDRAW, CENTRE);
 		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		CtrmapMainframe.mGeoEditForm = geo = new GeoEditForm(LOADED);

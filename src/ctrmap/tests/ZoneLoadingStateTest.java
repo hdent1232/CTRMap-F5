@@ -69,6 +69,9 @@ import javax.swing.JOptionPane;
  */
 public class ZoneLoadingStateTest {
 
+	/** Writing the zone and re-showing its script, so both can be read back. */
+	static final RecordingZoneSaver SAVER = new RecordingZoneSaver();
+
 	/** Where the user is looking, so a placement can be asserted at all. */
 	static final RecordingCentre CENTRE = new RecordingCentre();
 
@@ -112,7 +115,7 @@ public class ZoneLoadingStateTest {
 			LoadedZone lz = new LoadedZone();
 			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 			CtrmapMainframe.mZonePnl = pnl;
-			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE);
+			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER);
 			CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW, CENTRE);
 			CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW, CENTRE);
 

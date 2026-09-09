@@ -16,7 +16,7 @@
   "checks every plant still matches its file exactly once, which is cheap; replant.py actually runs",
   "them, which is not."
  ],
- "owed_ceiling": 116,
+ "owed_ceiling": 115,
  "owed_generalisation_ceiling": 3,
  "plants": [
   {
@@ -241,6 +241,18 @@
     "${PRISTINE}"
    ],
    "must_say": "THE SUB-CHUNK GRID IS FOUR TIMES FINER"
+  },
+  {
+   "id": "zone-save-answer-discarded-again",
+   "why": "The NPC form wrote the zone and then re-read its script from that zone - and threw away the boolean saying whether the write had happened. A zone that refuses to save (a warp with no destination is the usual reason) was followed by reloading the script from a zone that had not been written, so the editor showed the old script as though it were the saved one.",
+   "file": "src/ctrmap/humaninterface/NPCEditForm.java",
+   "find": "\t\tif (zoneSaver.save(false)) {\n\t\t\tscriptView.showScript(zone.s);\n\t\t}",
+   "replace": "\t\tzoneSaver.save(false);\n\t\tscriptView.showScript(zone.s);",
+   "suite": "ctrmap.tests.NpcEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "AND THE SCRIPT IS NOT RE-SHOWN"
   }
  ]
 }
