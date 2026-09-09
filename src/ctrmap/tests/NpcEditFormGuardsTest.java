@@ -1265,7 +1265,7 @@ public class NpcEditFormGuardsTest {
 
 	/** A map panel over a 2 wide, 4 tall matrix; null cells read height 0, past the edge reads NaN. */
 	static TileMapPanel tallMatrix() {
-		TileMapPanel map = new TileMapPanel(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		TileMapPanel map = new TileMapPanel(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		map.colls = new GRCollisionFile[2][4];
 		return map;
 	}

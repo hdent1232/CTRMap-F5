@@ -80,6 +80,9 @@ import javax.swing.JSplitPane;
  */
 final class EditorBench {
 
+	/** The tile inspector, so what the cursor told it can be read back. */
+	static final RecordingInspector INSPECTOR = new RecordingInspector();
+
 	/** The zone list an apply rebuilds, so the sequence can be read back. */
 	static final RecordingZoneList ZONES = new RecordingZoneList();
 
@@ -184,7 +187,7 @@ final class EditorBench {
 					}
 				},
 				() -> {
-				});
+				}, INSPECTOR);
 
 		//before the map panel exists, and before anything can resize it: the
 		//panel's own resize listener reads this scroll pane's viewport, on the
@@ -487,7 +490,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchMap() {
-			super(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+			super(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		}
 		int renders = 0;
 		int repaints = 0;

@@ -402,7 +402,7 @@ public class GeoEditFormGuardsTest {
 		f.tiles0 = f.gr.getFile(0);
 		f.model0 = f.gr.getFile(1);
 		f.coll0 = f.gr.getFile(2);
-		TileMapPanel view = new TileMapPanel(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		TileMapPanel view = new TileMapPanel(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		view.mainGR = f.gr;
 		view.tilemaps = new Tilemap[][]{{new Tilemap(f.gr)}};
 		CtrmapMainframe.mTileMapPanel = view;

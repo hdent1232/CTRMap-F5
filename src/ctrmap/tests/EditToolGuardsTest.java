@@ -411,11 +411,11 @@ public class EditToolGuardsTest {
 		check(TileUndo.canUndo(), "and leaves an undo step");
 
 		t.onTileClick(EditorBench.click(30, 40, false));
-		check(TileUndo.undo(), "undo takes the tile back");
+		check(TileUndo.undo(RecordingHost.INSPECTOR), "undo takes the tile back");
 		check(Arrays.equals(EditorBench.region.getTileData(3, 4), before), "to exactly the bytes that were there");
 		check(!TileUndo.canUndo(),
 				"and there is nothing behind it: clicking the same tile twice with the same bytes is one step, not two");
-		check(TileUndo.redo() && Arrays.equals(EditorBench.region.getTileData(3, 4), new byte[]{1, 2, 3, 4}),
+		check(TileUndo.redo(RecordingHost.INSPECTOR) && Arrays.equals(EditorBench.region.getTileData(3, 4), new byte[]{1, 2, 3, 4}),
 				"redo puts the edit back");
 
 		//right button: pick the tile up into the inspector, and pick it up again
@@ -473,7 +473,7 @@ public class EditToolGuardsTest {
 				&& Arrays.equals(EditorBench.region.getTileData(11, 20), new byte[]{9, 8, 7, 6})
 				&& Arrays.equals(EditorBench.region.getTileData(12, 20), new byte[]{9, 8, 7, 6});
 		check(painted, "all three tiles of the stroke carry the tool's bytes");
-		check(TileUndo.undo(), "one undo");
+		check(TileUndo.undo(RecordingHost.INSPECTOR), "one undo");
 		boolean allBack = Arrays.equals(EditorBench.region.getTileData(10, 20), before)
 				&& Arrays.equals(EditorBench.region.getTileData(11, 20), before)
 				&& Arrays.equals(EditorBench.region.getTileData(12, 20), before);

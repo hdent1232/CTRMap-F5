@@ -20,7 +20,7 @@ import javax.swing.text.DefaultFormatterFactory;
 /**
  * CM2D tile editor database accessor.
  */
-public class TileEditForm extends javax.swing.JPanel {
+public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 
 	private boolean isLocked = false;
 	private boolean suppressListEvents = false;
@@ -315,6 +315,7 @@ public class TileEditForm extends javax.swing.JPanel {
 		return result != 12;
 	}
 
+	@Override
 	public void showTile(int x, int y, boolean overrideLock) {
 		if (!isLocked || overrideLock) {
 			tileId.setText("Tile " + x + "x" + y);
@@ -359,6 +360,7 @@ public class TileEditForm extends javax.swing.JPanel {
 		showListModel();
 	}
 
+	@Override
 	public void lockTile(boolean state) {
 		isLocked = state;
 	}

@@ -411,7 +411,7 @@ public class TileMapPanelStateTest {
 	 */
 	static void aRegionIsPickedByTileNumber() {
 		System.out.println("--- a tile number picks its region");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		check(panel.getRegionForTile(0, 0) == null,
 				"with no map open the lookup answers null rather than throwing");
 
@@ -436,7 +436,7 @@ public class TileMapPanelStateTest {
 	 */
 	static void theHeightLookupReadsThePanelsOwnCollisions() {
 		System.out.println("--- the panel's height lookup reads the panel's own collisions");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		panel.colls = new GRCollisionFile[2][4]; //2 wide, 4 tall, all cells empty
 		check(panel.getHeightAtWorldLoc(100f, 3 * 720f + 10f) == 0f,
 				"a position inside this panel's 2x4 matrix reads its empty cell as height 0");
@@ -501,7 +501,7 @@ public class TileMapPanelStateTest {
 		sp.getViewport().setSize(300, 200);
 		sp.getViewport().setViewPosition(new Point(640, 480));
 		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, sp,
-			new ctrmap.humaninterface.CollEditPanel(TOOLS));
+			new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 
 		panel.height = 2;                       //2 regions tall
 		panel.tilemapScale = 0.5d;
@@ -558,7 +558,7 @@ public class TileMapPanelStateTest {
 	 */
 	static void scalingRefusesWhatItCannotDraw() {
 		System.out.println("--- scaling refuses a zoom it cannot draw, and does not remember it");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		panel.tilemapScale = 0.25d;
 
 		panel.loaded = false;
@@ -596,7 +596,7 @@ public class TileMapPanelStateTest {
 	 */
 	static void aStaleReloadIsIgnoredRatherThanWritten() {
 		System.out.println("--- a stale region refresh is dropped rather than written into another map");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		byte[] notEvenAModel = new byte[]{'B', 'C', 'H'};
 
 		panel.models = null;
@@ -623,7 +623,7 @@ public class TileMapPanelStateTest {
 
 	/** A panel holding one region, the way loadTileMap leaves it. */
 	static TileMapPanel single(int regionId) throws Exception {
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, regionId), Workspace.session());
 		panel.mode = TileMapPanel.ViewportMode.SINGLE;
 		panel.mainGR = gr;
@@ -646,7 +646,7 @@ public class TileMapPanelStateTest {
 
 	/** A panel over a parsed map matrix, the way loadMatrix leaves one. */
 	static TileMapPanel over(MapMatrix mm) throws Exception {
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		panel.mm = mm;
 		panel.mode = TileMapPanel.ViewportMode.MULTI;
 		panel.tilemaps = new Tilemap[mm.width][mm.height];

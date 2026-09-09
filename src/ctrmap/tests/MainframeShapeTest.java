@@ -64,6 +64,9 @@ import javax.swing.JToolBar;
  */
 public class MainframeShapeTest {
 
+	/** The tile inspector, so what the cursor told it can be read back. */
+	static final RecordingInspector INSPECTOR = new RecordingInspector();
+
 	/**
 	 * The menus as the user sees them: one line per menu, items in order,
 	 * "|" between items, "---" where a separator sits. Edit this WITH the
@@ -224,7 +227,7 @@ public class MainframeShapeTest {
 	static void toolRow() {
 		final List<String> commands = new ArrayList<>();
 		final int[] toggles = {0};
-		WorldEditorToolbar row = new WorldEditorToolbar(e -> commands.add(e.getActionCommand()), () -> toggles[0]++);
+		WorldEditorToolbar row = new WorldEditorToolbar(e -> commands.add(e.getActionCommand()), () -> toggles[0]++, INSPECTOR);
 
 		String got = renderRow(row);
 		check(got.equals(EXPECTED_TOOL_ROW), "the tool row reads: " + EXPECTED_TOOL_ROW

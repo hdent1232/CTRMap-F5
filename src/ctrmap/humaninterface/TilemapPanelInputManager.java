@@ -37,8 +37,17 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 	/** The map view this router listens to: the one it was handed, not the window's copy of it. */
 	private final TileMapPanel map;
 
-	public TilemapPanelInputManager(TileMapPanel parent, ToolSelection tools, ToolBox box){
+	/** The tile inspector this router tells about a hover, handed in. */
+	private final ctrmap.humaninterface.TileInspector inspector;
+
+	public TilemapPanelInputManager(TileMapPanel parent, ToolSelection tools, ToolBox box,
+			ctrmap.humaninterface.TileInspector inspector){
 		super();
+		if (inspector == null) {
+			throw new IllegalArgumentException("the tilemap router must be handed the tile inspector"
+				+ " it tells about a hover");
+		}
+		this.inspector = inspector;
 		this.map = parent;
 		this.tools = tools;
 		this.box = box;
@@ -68,7 +77,7 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 		int ybound = (int) (map.getLocationOnScreen().getY() + (map.getHeight() - map.tilemapScaledImage.getHeight()) / 2);
 		if (e.getXOnScreen() >= xbound && e.getXOnScreen() < xbound + map.tilemapScaledImage.getWidth()
 				&& e.getYOnScreen() >= ybound && e.getYOnScreen() < ybound + map.tilemapScaledImage.getHeight()) {
-			Selector.select(e.getXOnScreen() - xbound, e.getYOnScreen() - ybound);
+			Selector.select(e.getXOnScreen() - xbound, e.getYOnScreen() - ybound, inspector);
 		} else {
 			if (Selector.hilightTileX != -1) {
 				Selector.deselect();

@@ -46,5 +46,14 @@ public interface ToolHost {
 	 * between them, and naming a capability per member would be a longer way
 	 * of writing the same class.
 	 */
+	/**
+	 * The tile inspector, for the tools that pick a tile.
+	 *
+	 * <p>Three of the ten do, and they used to reach through the main window for
+	 * the form. The host is what a tool is already handed for exactly this: the
+	 * editor it works inside.
+	 */
+	ctrmap.humaninterface.TileInspector inspector();
+
 	TileMapPanel map();
 }

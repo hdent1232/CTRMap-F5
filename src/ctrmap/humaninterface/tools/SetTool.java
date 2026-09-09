@@ -29,7 +29,7 @@ public class SetTool extends AbstractTool {
 	@Override
 	public void onTileClick(MouseEvent e) {
 		if (SwingUtilities.isRightMouseButton(e)) {
-			Selector.acqCurTile();
+			Selector.acqCurTile(host.inspector());
 		}
 		else{
 			ctrmap.humaninterface.TileUndo.begin();

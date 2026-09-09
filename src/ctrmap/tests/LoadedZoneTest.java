@@ -644,6 +644,10 @@ public class LoadedZoneTest {
 			} else if (types[i] == ctrmap.humaninterface.ZoneSaver.class
 				|| types[i] == ctrmap.humaninterface.ScriptView.class) {
 				args[i] = new RecordingZoneSaver();
+			} else if (types[i] == ctrmap.formats.tilemap.Tilemap.TileColors.class) {
+				args[i] = null;   //no palette: a headless holder paints no picture, as before
+			} else if (types[i] == ctrmap.humaninterface.TileInspector.class) {
+				args[i] = new RecordingInspector();
 			} else if (types[i] == ctrmap.humaninterface.Scene3D.class) {
 				args[i] = new RecordingScene();
 			} else if (types[i] == javax.swing.JScrollPane.class) {

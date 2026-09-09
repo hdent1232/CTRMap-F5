@@ -399,7 +399,7 @@ public class DataSafetyGuardsTest {
 		//thread, and nothing else in this suite presses the button: every other
 		//check calls addEntry directly and never reaches it.
 		CtrmapMainframe.mTilemapScrollPane = new JScrollPane();
-		TileMapPanel map = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		TileMapPanel map = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		map.height = 40;
 		CtrmapMainframe.mTileMapPanel = map;
 		int quietAt = REDRAW.mark();
@@ -563,7 +563,7 @@ public class DataSafetyGuardsTest {
 	 * are still untested.
 	 */
 	static void mapLoadFailuresSurface() throws Exception {
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		panel.loaded = true;
 		panel.width = 40;
 		panel.height = 40;
@@ -731,7 +731,7 @@ public class DataSafetyGuardsTest {
 		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm(REDRAW);
-		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm(lz, CANVAS);
 		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS, REDRAW, NAVI);
 		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER);

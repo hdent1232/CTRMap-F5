@@ -61,8 +61,9 @@ public class MainframeEdgesTest {
 			"the NPC editor, loaded with the zone and drawn over the map"},
 		{"mPropEditForm", "TileMapPanel",
 			"the prop editor, drawn over the map"},
-		{"mTileEditForm", "Selector,TileMapPanel,TileUndo,WorkspaceSettings",
-			"the tile inspector, which the selector and the undo stack update"},
+		{"mTileEditForm", "WorkspaceSettings",
+			"the tile inspector. The cursor, the undo stack and the map view are handed it now"
+			+ " (TileInspector, Tilemap.TileColors); the settings dialog still REPLACES its tileset"},
 		{"mTileMapPanel", "GeoEditForm,GfEnvPicker,NPCEditForm,PaintForm,PropEditForm,Selector,TileEditForm,"
 			+ "TileUndo,WorkspaceSettings",
 			"THE map view: every editor that draws on it or reads a tile from it. The tangle - it reads"
@@ -95,7 +96,7 @@ public class MainframeEdgesTest {
 	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
 	 * matrix-panel, NPC and trigger editors.
 	 */
-	private static final int REFERENCES = 20;
+	private static final int REFERENCES = 16;
 
 	/**
 	 * Public static fields on the window: 91 before the structure sweep, 22 after

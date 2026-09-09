@@ -25,7 +25,7 @@ public class EditTool extends AbstractTool {
 	@Override
 	public void onTileClick(MouseEvent e) {
 		if (!SwingUtilities.isRightMouseButton(e)) {
-			Selector.acqCurTile();
+			Selector.acqCurTile(host.inspector());
 		}
 	}
 

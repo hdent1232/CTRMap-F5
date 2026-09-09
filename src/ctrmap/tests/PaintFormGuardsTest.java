@@ -318,7 +318,7 @@ public class PaintFormGuardsTest {
 	 */
 	static void aRefusedApplySaysSoAndPutsTheMapBack() throws Exception {
 		PaintForm form = document();
-		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		set(form, "previewInScene", true);
 		set(form, "originalModel", new byte[]{1, 2, 3, 4});
 		List<String> said = ctrmap.Ui.record();
