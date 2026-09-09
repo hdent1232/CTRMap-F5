@@ -62,6 +62,14 @@ class RecordingHost implements ToolHost {
 	}
 
 	@Override
+	public ctrmap.humaninterface.TileInspector inspector() {
+		return INSPECTOR;
+	}
+
+	/** The one this host hands out, so a section can read what a tool told it. */
+	static final RecordingInspector INSPECTOR = new RecordingInspector();
+
+	@Override
 	public TileMapPanel map() {
 		return map;
 	}

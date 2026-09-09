@@ -56,6 +56,9 @@ import java.util.List;
  */
 public class TilemapInputRouterTest {
 
+	/** The tile inspector, so what the cursor told it can be read back. */
+	static final RecordingInspector INSPECTOR = new RecordingInspector();
+
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
@@ -86,7 +89,7 @@ public class TilemapInputRouterTest {
 		int wheelBefore = EditorBench.map.getMouseWheelListeners().length;
 		int motionBefore = EditorBench.map.getMouseMotionListeners().length;
 		int mouseBefore = EditorBench.map.getMouseListeners().length;
-		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map, EditorBench.TOOLS, EditorBench.BOX);
+		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map, EditorBench.TOOLS, EditorBench.BOX, INSPECTOR);
 		check(Arrays.asList(EditorBench.map.getMouseWheelListeners()).contains(router)
 				&& EditorBench.map.getMouseWheelListeners().length == wheelBefore + 1,
 				"the router subscribes to the map view's wheel");
@@ -373,7 +376,7 @@ public class TilemapInputRouterTest {
 	 * handlers directly and one synthetic event cannot be delivered twice.
 	 */
 	static TilemapPanelInputManager router() {
-		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map, EditorBench.TOOLS, EditorBench.BOX);
+		TilemapPanelInputManager router = new TilemapPanelInputManager(EditorBench.map, EditorBench.TOOLS, EditorBench.BOX, INSPECTOR);
 		EditorBench.map.removeMouseWheelListener(router);
 		EditorBench.map.removeMouseMotionListener(router);
 		EditorBench.map.removeMouseListener(router);

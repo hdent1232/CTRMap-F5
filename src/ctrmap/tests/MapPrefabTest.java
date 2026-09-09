@@ -286,7 +286,7 @@ public class MapPrefabTest {
 	 * and panel each time, so one stamp never lands on another's model.
 	 */
 	private static String stampInto(GR region, MapPrefab p) throws Exception {
-		ctrmap.humaninterface.TileMapPanel panel = new ctrmap.humaninterface.TileMapPanel(new ctrmap.LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
+		ctrmap.humaninterface.TileMapPanel panel = new ctrmap.humaninterface.TileMapPanel(new ctrmap.LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		panel.mainGR = region;
 		ctrmap.CtrmapMainframe.mTileMapPanel = panel;
 		ctrmap.CtrmapMainframe.mZonePnl = null;

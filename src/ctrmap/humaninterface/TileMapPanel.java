@@ -99,6 +99,16 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	 */
 	private final javax.swing.JScrollPane viewport;
 
+	/**
+	 * What colour a tile is drawn in, handed in. Null means "no picture", which
+	 * is how a headless holder works, exactly as the null form did.
+	 *
+	 * <p>{@link Tilemap.TileColors} rather than a new interface: the region
+	 * picture already declares this shape, and the map view was the only thing
+	 * standing between it and the palette.
+	 */
+	private final Tilemap.TileColors colours;
+
 	/** The collision editor drawn alongside this view, handed in. */
 	private final CollEditPanel collision;
 
@@ -119,7 +129,8 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	private final ctrmap.humaninterface.tools.ToolSelection tools;
 
 	public TileMapPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools,
-			Scene3D scene, javax.swing.JScrollPane viewport, CollEditPanel collision) {
+			Scene3D scene, javax.swing.JScrollPane viewport, CollEditPanel collision,
+			Tilemap.TileColors colours) {
 		super();
 		this.tools = tools;
 		if (loadedZone == null) {
@@ -136,6 +147,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		this.scene = scene;
 		this.viewport = viewport;
 		this.collision = collision;
+		this.colours = colours;   //may be null: a headless suite holds the data with no palette
 		setLayout(new GridBagLayout());
 		add(placeholder);
 		g = tilemapScaledImage.getGraphics();
@@ -663,8 +675,8 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	 * or nothing (no picture) when the form is not there, which is how a
 	 * headless test holds the data. The region used to read the form itself.
 	 */
-	static Tilemap.TileColors tileColors() {
-		if (mTileEditForm == null) {
+	Tilemap.TileColors tileColors() {
+		if (colours == null) {
 			return null;
 		}
 		//A LIVE VIEW OF THE FORM'S TILESET, NOT THE TILESET OBJECT ITSELF. Tilemap
@@ -679,12 +691,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		//region something that still does, while keeping what the handing was for -
 		//a headless holder gets null and paints nothing, and a suite still hands
 		//its own colours.
-		return new Tilemap.TileColors() {
-			@Override
-			public Color colorOf(int tile) {
-				return mTileEditForm.tileset.colorOf(tile);
-			}
-		};
+		return colours;
 	}
 
 	/**

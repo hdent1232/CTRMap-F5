@@ -569,7 +569,11 @@ public class CtrmapMainframe {
 		mCollEditPanel = new CollEditPanel(tools);
 		GLPanel glPanel = new GLPanel(mCollEditPanel);
 		m3DDebugPanel = new H3DRenderingPanel(CM3DComponents, tools);
-		mTileMapPanel = new TileMapPanel(loadedZone, tools, scene, mTilemapScrollPane, mCollEditPanel);
+		//A SUPPLIER, not the palette: Workspace Settings replaces the tileset object
+		//wholesale, and anything that captured it would go on drawing every region
+		//in the old one. Reading the field on each call is what the direct read did.
+		final ctrmap.formats.tilemap.Tilemap.TileColors colours = tile -> mTileEditForm.tileset.colorOf(tile);
+		mTileMapPanel = new TileMapPanel(loadedZone, tools, scene, mTilemapScrollPane, mCollEditPanel, colours);
 		//A BOUND METHOD REFERENCE, not a lambda over the static and not a captured
 		//Point. Not a lambda, because the map view exists by this line and the
 		//construction-order rule can therefore see and check this handoff - a
@@ -630,13 +634,18 @@ public class CtrmapMainframe {
 			}
 
 			@Override
+			public ctrmap.humaninterface.TileInspector inspector() {
+				return mTileEditForm;
+			}
+
+			@Override
 			public TileMapPanel map() {
 				return mTileMapPanel;
 			}
 		};
 		ToolBox toolBox = new ToolBox(toolHost, mTileEditForm, mGeoEditForm, mNPCEditForm, mPropEditForm,
 				mWarpEditForm, mTriggerEditForm, mPaintForm, mCamEditForm, mCamScrollPane);
-		TilemapPanelInputManager tilemapInput = new TilemapPanelInputManager(mTileMapPanel, tools, toolBox);
+		TilemapPanelInputManager tilemapInput = new TilemapPanelInputManager(mTileMapPanel, tools, toolBox, mTileEditForm);
 		new CM3DInputManager(m3DDebugPanel, tools);
 		new CollInputManager(glPanel);
 		new MatrixPanelInputManager(mMtxPanel, mMtxEditForm);
@@ -649,7 +658,7 @@ public class CtrmapMainframe {
 		jsp3.setLeftComponent(mtxScroll);
 		jsp3.setRightComponent(mMtxEditForm);
 
-		worldToolbar = new WorldEditorToolbar(tilemapInput, CtrmapMainframe::toggleView);
+		worldToolbar = new WorldEditorToolbar(tilemapInput, CtrmapMainframe::toggleView, mTileEditForm);
 		JPanel toolbarRows = new JPanel(new java.awt.GridLayout(2, 1));
 		toolbarRows.add(worldToolbar);
 		toolbarRows.add(buildMapActionsBar());
@@ -687,13 +696,13 @@ public class CtrmapMainframe {
 		tileEditMasterPnl.getActionMap().put("tileUndo", new javax.swing.AbstractAction() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				ctrmap.humaninterface.TileUndo.undo();
+				ctrmap.humaninterface.TileUndo.undo(mTileEditForm);
 			}
 		});
 		tileEditMasterPnl.getActionMap().put("tileRedo", new javax.swing.AbstractAction() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				ctrmap.humaninterface.TileUndo.redo();
+				ctrmap.humaninterface.TileUndo.redo(mTileEditForm);
 			}
 		});
 

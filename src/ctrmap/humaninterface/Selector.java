@@ -14,12 +14,21 @@ public class Selector {
 	
 	public static boolean selecting = false;
 	
-	public static void select(int xOnImage, int yOnImage) {
+	/**
+	 * The tile under a point on the map image, and the inspector told about it.
+	 *
+	 * <p>The inspector is HANDED IN rather than read off the window. It stays
+	 * inside this method rather than moving to the caller, unlike the matrix
+	 * cursor's: acqCurTile below runs lock(false), show, lock(true) in an order
+	 * that matters, and splitting that across the five tools that pick a tile
+	 * would be five copies of a sequence nobody would keep in step.
+	 */
+	public static void select(int xOnImage, int yOnImage, TileInspector inspector) {
 		if (mTileMapPanel.loaded) {
 			selecting = true;
 			hilightTileX = (int)(Math.floor(((float)xOnImage/mTileMapPanel.tilemapScaledImage.getWidth())*(double)(mTileMapPanel.width)));
             hilightTileY = (int)(Math.floor(((float)yOnImage/mTileMapPanel.tilemapScaledImage.getHeight())*(double)(mTileMapPanel.height)));
-			mTileEditForm.showTile(hilightTileX, hilightTileY, false);
+			inspector.showTile(hilightTileX, hilightTileY, false);
 			mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 		}
 	}
@@ -30,28 +39,28 @@ public class Selector {
 		return out;
 	}
 	
-	public static void acqCurTile() {
+	public static void acqCurTile(TileInspector inspector) {
 		Tilemap reg = mTileMapPanel.getRegionForTile(hilightTileX, hilightTileY);
 		if (reg == null){
 			return;
 		}
 		if (hilightTileX != -1) {
 			if (hilightTileX == selTileX && hilightTileY == selTileY) {
-				mTileEditForm.lockTile(false);
+				inspector.lockTile(false);
 				selTileX = -1;
 				selTileY = -1;
 				return;
 			}
 			selTileX = hilightTileX;
 			selTileY = hilightTileY;
-			mTileEditForm.lockTile(false);
-			mTileEditForm.showTile(selTileX, selTileY, false);
-			mTileEditForm.lockTile(true);
+			inspector.lockTile(false);
+			inspector.showTile(selTileX, selTileY, false);
+			inspector.lockTile(true);
 		}
 		else {
 			selTileX = -1;
 			selTileY = -1;
-			mTileEditForm.lockTile(false);
+			inspector.lockTile(false);
 		}
 		mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 	}

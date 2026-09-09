@@ -54,7 +54,15 @@ public class WorldEditorToolbar extends JToolBar {
 	 * what it is actually showing and calls {@link #setView3D} back, so the
 	 * toggle can never disagree with the view
 	 */
-	public WorldEditorToolbar(ActionListener toolSwitch, Runnable viewToggle) {
+	/** The tile inspector the undo buttons re-show a tile in, handed in. */
+	private final TileInspector inspector;
+
+	public WorldEditorToolbar(ActionListener toolSwitch, Runnable viewToggle, TileInspector inspector) {
+		if (inspector == null) {
+			throw new IllegalArgumentException("the tool row must be handed the tile inspector its"
+				+ " undo buttons re-show a tile in");
+		}
+		this.inspector = inspector;
 		ButtonGroup group = new ButtonGroup();
 		for (int i = 0; i < TOOLS.length; i++) {
 			String[] t = TOOLS[i];
@@ -78,8 +86,8 @@ public class WorldEditorToolbar extends JToolBar {
 		redo.setToolTipText("Redo the undone tile edit (Ctrl+Y)");
 		undo.setFocusable(false);
 		redo.setFocusable(false);
-		undo.addActionListener(e -> TileUndo.undo());
-		redo.addActionListener(e -> TileUndo.redo());
+		undo.addActionListener(e -> TileUndo.undo(inspector));
+		redo.addActionListener(e -> TileUndo.redo(inspector));
 		add(undo);
 		add(redo);
 		TileUndo.addListener(this::refreshUndoRedo);
