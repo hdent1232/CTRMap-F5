@@ -1067,6 +1067,18 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (addSign(zone, msg, form.text(), form.signType(), needsWrapper ? signDonor : null,
 				viewportCentre.tile())) {
 			saveZoneScript(zone);
+			//THE SCRIPT LIST HAS TO BE REBUILT HERE, and only here, which is the
+			//decision this line records. addSign creates a script case that was not
+			//in the dropdown a moment ago, and without this the case the user just
+			//made is missing from the list they pick scripts out of until something
+			//else happens to rebuild it. The four Add-NPC wizards do NOT need one:
+			//every one of them goes through placeNpc, which already calls
+			//populateScriptDropdown and then setNPC, and setNPC re-selects through
+			//syncScrDropdown. Putting the rebuild inside saveZoneScript instead would
+			//run AFTER that selection and clear it, because populateScriptDropdown
+			//ends with setSelectedIndex(-1) - so the owner of this refresh is the
+			//caller, not the save.
+			populateScriptDropdown();
 			repaintFrame();
 		}
 	}

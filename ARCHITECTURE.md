@@ -126,7 +126,7 @@ however the expression is spelled.
 | the window a dialog belongs to | `ctrmap.Ui` | every unparented call | `DialogSeamTest` (rule six) |
 | which game is loaded | `ctrmap.gamedef.GameProfile` | asked, never guessed | `SourceSeamTest` (game-identity rule) |
 
-Three properties follow, each with a rule that keeps it true:
+Four properties follow, each with a rule that keeps it true:
 
 * **The format layer reaches the global nowhere** - 0 classes, 0 edges, by
   equality rather than as a ceiling, and no class under `ctrmap.formats` may
@@ -136,20 +136,37 @@ Three properties follow, each with a rule that keeps it true:
   clean now runs headless where the suite recorded it could not.
 * **The tools do not know the window** - 0 references, which is what lets the
   checks about what a tool does as it starts run with no display at all.
+* **Nothing outside the window reads a window static** - 108 field references
+  at the start of the campaign, then 64, then 45, and now 0.
+  `MainframeEdgesTest` keeps the table of who-reads-what as a TABLE rather than
+  a count, so that a name appearing in it again says which class and which
+  field. Zero does not mean the window holds nothing: it still owns nineteen
+  public statics for its own use. It means nothing else asks it for them.
 
-What still reaches into `CtrmapMainframe` is 49 field references over 16
-fields, and `MainframeEdgesTest` names every one with the classes that read it
-and what for. Part of that is a real tangle rather than an oversight: the map
-view reads the NPC form and the NPC form reads the map view, so no order of
-constructors hands them to each other. Breaking it needs a decision about
-which of them owns what.
-
-Two of the clusters inside it were not tangles at all, only one idea written
-out many times, and each became an owner the window builds and hands over:
+Most of what reached in was not a tangle at all, only one idea written out many
+times, and each of those became an owner the window builds and hands over:
 `OpenEditors` ("save what the editors hold, and stop if one refuses", five
-copies that disagreed about which editors counted) and `ZoneEditors` ("show
-this zone" and "show nothing", seven editors named by hand and three of them
-named again to clear). Together they took 15 of the references.
+copies that disagreed about which editors counted), `ZoneEditors` ("show this
+zone" and "show nothing", seven editors named by hand and three named again to
+clear), and then `Navigator`, `ViewportCentre`, `MatrixCanvas`, `MatrixTools`,
+`Scene3D`, `ZoneSaver`, `ScriptView`, `ZoneList`, `TileInspector` and
+`MapEditors`.
+
+Three of the remaining handings are TWO-PHASE on purpose, and say so where they
+are written: the matrix grid, the map view's editors, and the tool row's
+Set-tool callback. Each is a genuine construction cycle - the panel is built
+before the form, so the form can be handed the panel but the panel cannot be
+handed the form. The object is built, its partner is built over it, and then it
+is TOLD about the partner, once, before anything can use either. That has a
+cost - there is a window in which the panel has no editor - and the panel says
+what it does in that window rather than throwing.
+
+The map view is the widest of these: nine classes are handed the panel itself
+rather than a narrower interface, because the geometry form alone uses seven of
+its members and naming a capability per member would be a longer way of writing
+`TileMapPanel`. What matters for the standard is not the width of the type: it
+is that these classes are HANDED one and could be handed a different one, which
+a suite does.
 
 Handing a collaborator in moves a risk rather than removing it: from "does
 this class reach for a global" to "does the thing it is handed EXIST yet". The

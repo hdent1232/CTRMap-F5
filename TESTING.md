@@ -120,17 +120,26 @@ Five families, and they assert different kinds of thing:
      game and reaches `Workspace` nowhere: 0 classes, 0 edges, by equality.
    - `LoadedZoneTest` — the loaded zone has one owner; two panels over two
      owners answer about their own zone, and the bytecode says exactly one
-     class makes an owner and exactly five still name the Zone tab's static.
+     class makes an owner and NO class still names the Zone tab's static. The
+     four that did wanted an operation, not zone state, and were handed the
+     operation: `ZoneSaver`, `ZoneList`, and for the wizard, a number.
    - `EditToolGuardsTest` — which tool is held is an object, two selections
      hold two tools, and a switch shuts the outgoing one down BEFORE building
      the incoming one, which is the order a tool's setup depends on.
    - `MainframeEdgesTest` — what still reaches into the main window, field by
-     field, with the classes that read each and what for, by equality. This one
-     is a ratchet over a tangle that is not finished: see ARCHITECTURE.md. Its
-     fourth rule reads the window's own source and refuses to let anything the
-     window builds be handed a static that method has not assigned yet — the
-     defect that shipped once, when a list was built where it read best and
-     the two classes handed it were built sixty lines earlier.
+     field, with the classes that read each and what for, by equality. That
+     table is now EMPTY and the count is zero: nothing outside the window reads
+     a window static. It stays a table rather than becoming a number because an
+     empty table still says WHICH class and WHICH field when a name appears in
+     it again. Zero does not mean the window holds nothing — it still owns
+     nineteen public statics for its own use; it means nothing else asks it for
+     them. Its fourth rule reads the window's own source and refuses to let
+     anything the window builds be handed a static that method has not assigned
+     yet — the defect that shipped once, when a list was built where it read
+     best and the two classes handed it were built sixty lines earlier. Three
+     handings are deliberately two-phase (the matrix grid, the map view's
+     editors, the tool row's Set-tool callback) because those are genuine
+     construction cycles, and each says so where it is written.
    - `OpenEditorsTest` — "save what the editors hold" and "show this zone" are
      each one list in one order: every editor is asked, a refusal stops the
      ones after it and the caller's reload, an empty set is refused rather

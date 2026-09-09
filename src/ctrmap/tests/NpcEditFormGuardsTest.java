@@ -182,6 +182,7 @@ public class NpcEditFormGuardsTest {
 			addTemplateStopsAtTheCeiling(zo);
 			aScriptedAdditionLandsWholeOrNotAtAll(zo);
 			theAddWizardsActOnTheirFormsHeadless(zo);
+			everyAddPathReShowsTheScriptList();
 			dialogueNoteTellsABrokenScriptFromAPlainOne(zo);
 			aFullRegistryRefusesTheModelAndSaysSo(zo);
 			viewportDrawsOnlyModelledNPCs(zo, gr);
@@ -1343,6 +1344,78 @@ public class NpcEditFormGuardsTest {
 		Field f = o.getClass().getDeclaredField(name);
 		f.setAccessible(true);
 		return f.get(o);
+	}
+
+	/**
+	 * Every Add wizard that writes a new script case re-shows the script list
+	 * before it returns.
+	 *
+	 * <p>WHY THIS READS THE SOURCE instead of driving the form, which is the
+	 * honest answer and not a shortcut. The glue between a wizard form and its
+	 * add* method is {@code showForm}, and {@code showForm} is one of the seven
+	 * raw {@code JOptionPane} calls {@link DialogSeamTest} allows by name - a
+	 * dialog carrying a live form cannot go through the message seam. So no
+	 * headless suite can reach {@code addSignTemplate}: the battery drives the
+	 * FORMS and the {@code add*} METHODS on either side of it, which is the
+	 * design, and this one line of glue is the seam between them.
+	 *
+	 * <p>WHAT WENT WRONG THERE. Add sign creates a script case and then saved
+	 * the zone script without rebuilding the dropdown, so the case the user had
+	 * just made was not in the list they pick scripts from. The four Add-NPC
+	 * wizards did not have the bug, and not by accident - they all go through
+	 * {@code placeNpc}, which rebuilds and then re-selects. That asymmetry is
+	 * what this asserts: the sign path refreshes at its own call site, the NPC
+	 * paths refresh through placeNpc, and nobody moves the rebuild into
+	 * {@code saveZoneScript} - which would run after placeNpc's selection and
+	 * clear it, since populateScriptDropdown ends on setSelectedIndex(-1).
+	 */
+	static void everyAddPathReShowsTheScriptList() throws Exception {
+		System.out.println("--- every Add path that writes a script case re-shows the list");
+		String src = new String(java.nio.file.Files.readAllBytes(
+			new java.io.File("src/ctrmap/humaninterface/NPCEditForm.java").toPath()), "UTF-8");
+		String sign = body(src, "private void addSignTemplate(Zone zone)");
+		check(sign.contains("populateScriptDropdown();"),
+			"the Add-sign path re-shows the script list at its own call site");
+		String place = body(src, "private void placeNpc(ZoneEntities.NPC newNPC)");
+		check(place.contains("populateScriptDropdown();"),
+			"and the Add-NPC paths get theirs from placeNpc, which every one of them calls");
+		String save = body(src, "private void saveZoneScript(Zone zone)");
+		check(!save.contains("populateScriptDropdown();"),
+			"and the rebuild is NOT in saveZoneScript, where it would run after placeNpc"
+			+ " has chosen the new NPC's script and clear that choice");
+		int placed = count(src, "placeNpc(");
+		check(placed >= 6, "placeNpc really is the shared path - " + placed + " mentions");
+	}
+
+	/** The text of one method, from its signature to the matching brace. */
+	static String body(String src, String signature) {
+		int at = src.indexOf(signature);
+		if (at < 0) {
+			throw new IllegalStateException("no method " + signature + " in NPCEditForm - this"
+				+ " check has rotted and must be rewritten, not deleted");
+		}
+		int depth = 0;
+		for (int i = src.indexOf('{', at); i < src.length(); i++) {
+			char c = src.charAt(i);
+			if (c == '{') {
+				depth++;
+			} else if (c == '}') {
+				depth--;
+				if (depth == 0) {
+					return src.substring(at, i + 1);
+				}
+			}
+		}
+		throw new IllegalStateException("unbalanced braces after " + signature);
+	}
+
+	/** How many times {@code what} appears in {@code src}. */
+	static int count(String src, String what) {
+		int n = 0;
+		for (int at = src.indexOf(what); at >= 0; at = src.indexOf(what, at + 1)) {
+			n++;
+		}
+		return n;
 	}
 
 	static void setField(Object o, String name, Object value) throws Exception {
