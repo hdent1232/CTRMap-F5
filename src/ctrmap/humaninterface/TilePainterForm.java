@@ -379,7 +379,7 @@ public class TilePainterForm {
 	 */
 	public static String applyToZone(LoadedZone loaded, int zoneIndex, TilePalette[][] grid, int[][] height, int[][] ramp,
 			ctrmap.formats.tilemap.TerrainLighting lighting, boolean edges, java.util.List<Placed> placed,
-			boolean[][] touched) throws Exception {
+			boolean[][] touched, ZoneList zoneList) throws Exception {
 		if (loaded == null) {
 			throw new IllegalArgumentException("applyToZone must be handed the LoadedZone");
 		}
@@ -564,7 +564,7 @@ public class TilePainterForm {
 						"Door warps", JOptionPane.QUESTION_MESSAGE, opts, opts[0]);
 				int mode = java.util.Arrays.asList(opts).indexOf(pick);
 				if (mode == 0 || mode == 1) {
-					wired = wireDoorWarps(loaded, zoneIndex, placed, floorY, mode == 0, wireNote);
+					wired = wireDoorWarps(zoneList, loaded, zoneIndex, placed, floorY, mode == 0, wireNote);
 				}
 			} catch (Exception ex) {
 				wireNote.append("\nDoor wiring failed: ").append(ex);
@@ -596,10 +596,10 @@ public class TilePainterForm {
 		Workspace.packWorkspace(new Runnable() {
 			@Override
 			public void run() {
-				mZonePnl.loadEverything(new Runnable() {
+				zoneList.rebuild(new Runnable() {
 					@Override
 					public void run() {
-						mZonePnl.selectZone(zoneIndex);
+						zoneList.open(zoneIndex);
 						ctrmap.Ui.message(report, "Tile painter", JOptionPane.INFORMATION_MESSAGE);
 					}
 				});
@@ -968,7 +968,7 @@ public class TilePainterForm {
 	 * doorTile*18+9 world units, height = the door tile's terrain level,
 	 * target = the interior zone's entry warp (always warp 0 in retail).
 	 */
-	static int wireDoorWarps(LoadedZone loaded, int zoneIndex, java.util.List<Placed> placed, float[][] floorY,
+	static int wireDoorWarps(ZoneList zoneList, LoadedZone loaded, int zoneIndex, java.util.List<Placed> placed, float[][] floorY,
 			boolean cloneInteriors, StringBuilder note) throws Exception {
 		int[] cell = firstRegionCell(loaded);
 		if (cell == null) {
@@ -1048,7 +1048,7 @@ public class TilePainterForm {
 				int slot = slots.get(slotUse++); // consume on attempt - never reuse a possibly half-written slot
 				try {
 					int retailLinks = ctrmap.InteriorWirer.cloneAndWire(zoneIndex, nw[0], pl.e.interiorZone, slot);
-					mZonePnl.clearForkDecline(slot); //the slot holds a new zone now
+					zoneList.clearForkDecline(slot);   //the slot holds a new zone now
 					ent.warps.get(nw[0]).targetZone = slot;
 					ent.warps.get(nw[0]).targetWarpId = 0;
 					retargeted = true;

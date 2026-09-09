@@ -93,12 +93,19 @@ public class PaintForm extends JPanel {
 	private final LoadedZone loadedZone;
 
 	/** The editors that hold unsaved work, handed in: this class flushes them, it does not own them. */
+	/** The zone list, handed in: applying a painted map rebuilds it and lands on the zone. */
+	private final ZoneList zoneList;
+
 	private final OpenEditors openEditors;
 
-	public PaintForm(LoadedZone loadedZone, OpenEditors openEditors) {
+	public PaintForm(LoadedZone loadedZone, OpenEditors openEditors, ZoneList zoneList) {
 		if (openEditors == null) {
 			throw new IllegalArgumentException("PaintForm must be handed the editors it flushes before it applies");
 		}
+		if (zoneList == null) {
+			throw new IllegalArgumentException("PaintForm must be handed the zone list an apply rebuilds");
+		}
+		this.zoneList = zoneList;
 		this.openEditors = openEditors;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("PaintForm must be handed a LoadedZone");
@@ -994,7 +1001,7 @@ public class PaintForm extends JPanel {
 		try {
 			regenTimer.stop();
 			regenEpoch++; // an in-flight regen must not re-arm across the apply
-			TilePainterForm.applyToZone(loadedZone, zoneIndex, grid, height, ramp, lighting, edgeBlend, placed, touched);
+			TilePainterForm.applyToZone(loadedZone, zoneIndex, grid, height, ramp, lighting, edgeBlend, placed, touched, zoneList);
 			// only a SUCCESSFUL apply reaches here: the pack + reload rebuilds
 			// the scene from the applied bytes, so the preview swap is gone
 			previewInScene = false;

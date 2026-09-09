@@ -589,7 +589,7 @@ public class CtrmapMainframe {
 		JScrollPane mtxScroll = new JScrollPane();
 		mCamScrollPane = new JScrollPane();
 		mTileEditForm = new TileEditForm(tools);
-		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors);
+		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors, mZonePnl);
 		mCamEditForm = new CameraEditForm(redraw);
 		mPropEditForm = new PropEditForm(loadedZone, tools, redraw, navigator);
 		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw, navigator, viewportCentre,
@@ -1294,15 +1294,27 @@ public class CtrmapMainframe {
 	 * tables derived from the game are loaded, which is why the zone dropdown
 	 * has its names when it fills.
 	 */
-	public static void onWorkspaceOpened(WorkspaceSession opened) {
+	/**
+	 * A workspace was opened; the window takes it and reloads what it shows.
+	 *
+	 * @return how many zones the opened game turned out to have. The setup
+	 *         wizard needs this and used to get it by reaching for the Zone TAB
+	 *         and counting the items in its dropdown - asking the widget that
+	 *         happens to display the answer. Workspace.isValid() is true BEFORE
+	 *         the archives are read, so it says nothing; the zone table's own
+	 *         count is the honest test, and this is the method the wizard
+	 *         already calls.
+	 */
+	public static int onWorkspaceOpened(WorkspaceSession opened) {
 		game = opened;
 		if (opened == null || frame == null) {
-			return;
+			return 0;
 		}
 		mBuilder.loadGARCs();
 		mZonePnl.loadEverything();
 		mTextEditor.loadGarc();
 		showZoneLoadingHint();
+		return loadedZone.count();
 	}
 
 	/**

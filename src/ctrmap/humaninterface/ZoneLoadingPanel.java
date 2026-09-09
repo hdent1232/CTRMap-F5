@@ -33,7 +33,7 @@ import javax.swing.text.NumberFormatter;
  * Top-level loader for all in the Pokemon world, should really stop being
  * debug.
  */
-public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver {
+public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, ZoneList {
 
 	/**
 	 * The zone table, the open zone and its index, owned by {@link LoadedZone}
@@ -157,6 +157,16 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver {
 	 */
 	public int getLoadedZoneCount() {
 		return zoneList == null ? 0 : zoneList.getItemCount();
+	}
+
+	@Override
+	public void rebuild(Runnable then) {
+		loadEverything(then);
+	}
+
+	@Override
+	public void open(int index) {
+		selectZone(index);
 	}
 
 	public void loadEverything() {
@@ -1320,6 +1330,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver {
 
 	/** Forgets a remembered decline - call whenever a slot's OCCUPANT changes
 	 *  (clone-into-slot, facility setup): the new zone deserves a fresh offer. */
+	@Override
 	public void clearForkDecline(int zoneIndex) {
 		if (forkDeclined().remove(zoneIndex)) {
 			saveForkDeclined();

@@ -67,9 +67,6 @@ public class MainframeEdgesTest {
 			+ "TileUndo,WorkspaceSettings",
 			"THE map view: every editor that draws on it or reads a tile from it. The tangle - it reads"
 			+ " four of these back"},
-				{"mZonePnl", "SetupWizard,TilePainterForm",
-			"the Zone tab as an OPERATION - its save, its rebuild, its zone count. None of them is zone"
-			+ " state: that has an owner (LoadedZoneTest)"},
 		{"worldToolbar", "TileEditForm", "the tool row, asked to select the Set tool"},
 	};
 
@@ -98,7 +95,7 @@ public class MainframeEdgesTest {
 	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
 	 * matrix-panel, NPC and trigger editors.
 	 */
-	private static final int REFERENCES = 24;
+	private static final int REFERENCES = 20;
 
 	/**
 	 * Public static fields on the window: 91 before the structure sweep, 22 after

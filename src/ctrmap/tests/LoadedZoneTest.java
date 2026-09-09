@@ -142,10 +142,7 @@ public class LoadedZoneTest {
 	 * and a new name in it is a class reaching the Zone tab through a global
 	 * rather than being handed what it needs.
 	 */
-	private static final String[] STATIC_READERS = {
-		"ctrmap/humaninterface/TilePainterForm",
-		"ctrmap/setup/SetupWizard"
-	};
+	private static final String[] STATIC_READERS = {};
 
 	/**
 	 * Every field in the program that HOLDS a zone, measured over
@@ -642,6 +639,8 @@ public class LoadedZoneTest {
 				args[i] = new RecordingCentre();
 			} else if (types[i] == ctrmap.humaninterface.MatrixCanvas.class) {
 				args[i] = new ctrmap.humaninterface.MapMatrixPanel();
+			} else if (types[i] == ctrmap.humaninterface.ZoneList.class) {
+				args[i] = new RecordingZoneList();
 			} else if (types[i] == ctrmap.humaninterface.ZoneSaver.class
 				|| types[i] == ctrmap.humaninterface.ScriptView.class) {
 				args[i] = new RecordingZoneSaver();

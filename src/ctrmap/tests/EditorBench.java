@@ -80,6 +80,9 @@ import javax.swing.JSplitPane;
  */
 final class EditorBench {
 
+	/** The zone list an apply rebuilds, so the sequence can be read back. */
+	static final RecordingZoneList ZONES = new RecordingZoneList();
+
 	/** Writing the zone and re-showing its script, so both can be read back. */
 	static final RecordingZoneSaver SAVER = new RecordingZoneSaver();
 
@@ -535,7 +538,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchPaintForm() {
-			super(LOADED, EDITORS);
+			super(LOADED, EDITORS, ZONES);
 		}
 		final List<String> calls = new ArrayList<String>();
 

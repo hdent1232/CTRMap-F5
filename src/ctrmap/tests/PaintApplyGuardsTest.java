@@ -66,6 +66,9 @@ import ctrmap.formats.tilemap.PaintedHeights;
  */
 public class PaintApplyGuardsTest {
 
+	/** The zone list an apply rebuilds, so the sequence can be read back. */
+	static final RecordingZoneList ZONES = new RecordingZoneList();
+
 	/** The 3D gizmo these forms move, so what they told it can be read back. */
 	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
@@ -912,7 +915,7 @@ public class PaintApplyGuardsTest {
 	/** One click of Apply: the exception that stopped it, or null. */
 	static Exception apply(int zoneIndex, List<TilePainterForm.Placed> placed) {
 		try {
-			report = TilePainterForm.applyToZone(loaded, zoneIndex, grid, height, ramp, TerrainLighting.daytime(), false, placed, touched);
+			report = TilePainterForm.applyToZone(loaded, zoneIndex, grid, height, ramp, TerrainLighting.daytime(), false, placed, touched, ZONES);
 			return null;
 		} catch (Exception ex) {
 			report = null;
