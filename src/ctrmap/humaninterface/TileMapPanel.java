@@ -209,9 +209,14 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			return;
 		}
 		//the map shown is no longer the open zone's: let the zone go so the
-		//Zone tab's Save writes nothing, and leave the index, the dropdown's
-		//selection and the entity editors as they were - a stale-state clear,
-		//not an unload (unloadZone is that, and clears the editors too)
+		//Zone tab's Save writes nothing, and leave the zone index and the
+		//dropdown's selection as they were - a stale-state clear, not an unload
+		//(unloadZone is that).
+		//THE ENTITY EDITORS ARE CLEARED, below, through the editors seam. This
+		//comment used to say they were left as they were, and they were not: the
+		//NPC form alone was cleared, so the warp and trigger forms went on
+		//editing the entities of the zone this line has just released, into a
+		//ZoneEntities the zone save no longer reaches.
 		loadedZone.release();
 		mm = null;
 		//AND THE TEXTURES THE PREVIOUS ZONE WAS DRAWN WITH GO WITH IT. These two lists
@@ -229,6 +234,23 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		//these two fields were the part of the state it did not clear.
 		savedWorldTextures = null;
 		savedPropTextures = null;
+		//AND THE TWO THINGS MEASURED AGAINST THE MAP THAT IS BEING REPLACED, for the
+		//reason the comment above gives about the textures: this is a stale-state
+		//clear, and these were the rest of the state it did not clear. loadMatrix has
+		//dropped both since it was written - the undo history because it is over
+		//tilemaps that are about to go, the picked tile because it is a coordinate on
+		//a map that is about to go - and this path replaces tilemaps[0][0] over a
+		//different container without going through either loadMatrix or unload, so it
+		//got neither. What that cost: after "open a zone, paint a tile, File > Open GR
+		//Mapfile" the World Editor's Undo button was still lit - it follows
+		//TileUndo.canUndo() through a listener - and pressing it called setTileData on
+		//a Tilemap this panel no longer holds, so the edit went where nothing shows it
+		//and nothing saves it while the button reported that it had worked. The picked
+		//tile is the same shape: a loose region is one 40x40 cell, so a coordinate
+		//from any matrix wider than one region is off it, and the tile inspector
+		//indexes with it.
+		TileUndo.clear();
+		Selector.unfocus(this);
 		mode = ViewportMode.SINGLE;
 		width = 40;
 		height = 40;
@@ -327,6 +349,23 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	}
 
 	public void unload() {
+		//THE UNDO HISTORY IS OVER THE TILEMAPS DROPPED BELOW and goes with them, for
+		//exactly the reason loadMatrix gives where it clears the same stacks: they belong
+		//to a map that is no longer open. loadMatrix was the ONLY site in this file that
+		//cleared them, so the ways a map stops being open THROUGH HERE - the workspace
+		//repoint and Options > Clean workspace, both via CtrmapMainframe.unloadEditors,
+		//and a matrix that failed to load, via awaitLoad - left the World Editor's Undo
+		//button enabled over a panel whose tilemaps are null. The button follows
+		//TileUndo.canUndo() through a listener, so it stayed lit; pressing it called
+		//setTileData on Tilemap objects this panel no longer holds and then asked for the
+		//redraw that scaleImage refuses because "loaded" is false. The edit went somewhere
+		//nothing shows and nothing saves, and the button reported that it had worked.
+		//
+		//THE SIBLING SITE IS COVERED TOO, and not by this line: loadTileMap (File >
+		//Open GR Mapfile) replaces tilemaps[0][0] over a different container without
+		//coming through here, so it clears the history and the picked tile itself,
+		//beside the textures it already dropped for the same reason.
+		TileUndo.clear();
 		mode = ViewportMode.SINGLE;
 		loaded = false;
 		add(placeholder);
@@ -373,8 +412,10 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 												//tilemaps. This loop did not, and walked the whole of
 												//mm.width/mm.height instead. Matrix Editor > Add column and
 												//Add row raise mm.width/mm.height on the SAME MapMatrix this
-												//panel holds, without touching mm.regions or tilemaps, so the
-												//first cell past the old edge threw IndexOutOfBounds out of
+												//panel holds, and the arrays here do not follow. (mm.regions
+												//follows now - the four resize handlers grow it - but tilemaps
+												//still does not.) The first cell past the old edge threw
+												//IndexOutOfBounds out of
 												//mm.regions.get() - here into the worker, which abandoned the
 												//save with some regions written and some not, and in the
 												//DISCARD arm below straight out of saveMatrix on the event

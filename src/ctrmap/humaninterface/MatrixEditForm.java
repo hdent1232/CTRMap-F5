@@ -868,6 +868,28 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 			//extra cells while the flag is off - the multizone tool that would is
 			//disabled by enableMZUI - so no byte that is written changes.
 			mm.ids.addColumn();
+			//AND THE REGION GRID, WHICH IS INDEXED BY THE SAME WIDTH. mm.regions was the
+			//one layer these handlers did not move. Unlike LOD and zones it is not
+			//written by assembleData - it is this session's cache of the GR opened per
+			//cell, READ by loops bounded by mm.width/mm.height (TileMapPanel.loadProps,
+			//GRPropData.write(MapMatrix) via the prop editor's save, GeoEditForm's
+			//selection, TileMapPanel.saveMatrix), and ResizeableMatrix.get is a bare
+			//list.get(x).get(y), so the first cell past the old edge threw
+			//IndexOutOfBounds instead of saving - on the event thread, with nothing to
+			//catch it. Both MapMatrix constructors allocate regions beside ids at the
+			//same size; growing it here is what keeps that true. A grown cell comes back
+			//null, which every one of those readers already means "no region here", so
+			//no byte that is written changes.
+			//GROWTH ONLY, DELIBERATELY: the remove handlers leave it standing. Every
+			//reader is bounded by the matrix, so a region grid LARGER than the matrix is
+			//unreachable and harmless - only a smaller one throws. Shrinking it would
+			//orphan a tilemap the panel still holds for that cell, and TileMapPanel
+			//skips a null-region cell in BOTH its save and its discard arm, so that
+			//tilemap's modified flag could never be cleared again: the keep-or-discard
+			//dialog would come back on every save and every zone switch with the edit
+			//written nowhere. What remove-then-add should do to the orphaned GR handles
+			//is a separate question and wants TileMapPanel changed with it.
+			mm.regions.addColumn();
 			mm.LOD.addColumn();
 			mm.zones.addColumns(4);
 			mm.width++;
@@ -880,6 +902,9 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 			//unconditional for the reason spelled out in btnAddColActionPerformed:
 			//the height these layers are indexed by moves unconditionally too
 			mm.ids.addRow();
+			//the region grid grows for the reason spelled out in btnAddColActionPerformed,
+			//and for the same reason it is not shrunk again in btnRemoveRowActionPerformed
+			mm.regions.addRow();
 			mm.LOD.addRow();
 			mm.zones.addRows(4);
 			mm.height++;

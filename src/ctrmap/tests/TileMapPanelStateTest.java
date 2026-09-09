@@ -87,6 +87,7 @@ public class TileMapPanelStateTest {
 		aStaleReloadIsIgnoredRatherThanWritten();
 		theAnimatorFindsNothingToDrawBeforeAZoneOpens();
 		theColoursARegionIsPaintedInFollowTheTileset();
+		unloadingDropsTheUndoHistoryWithTheMap();
 
 		if (!dump.isDirectory()) {
 			System.out.println("  skip: no dump at " + dump
@@ -403,6 +404,50 @@ public class TileMapPanelStateTest {
 		check(panel.saveTileMap(true), "and saving an unloaded panel is trivially fine");
 	}
 
+	/**
+	 * Unloading drops the undo history with the map it belongs to.
+	 *
+	 * <p>{@code loadMatrix} clears it, and says why in its own first line - "a
+	 * different zone's tilemaps - old history is invalid". It was the only site in
+	 * that file that did, so the ways a map stops being open THROUGH
+	 * {@link TileMapPanel#unload()} did not: the workspace repoint and Options &gt;
+	 * Clean workspace both reach it through {@code CtrmapMainframe.unloadEditors},
+	 * and so does a matrix that failed to load, through {@code awaitLoad}. The
+	 * stacks outlived the tilemaps they are over. The World Editor's Undo button
+	 * follows {@code TileUndo.canUndo()} through a listener, so it stayed enabled
+	 * with no map open, and pressing it called {@code setTileData} on detached
+	 * regions and then asked for a redraw that {@code scaleImage} refuses because
+	 * {@code loaded} is false - an edit that went somewhere nothing shows and
+	 * nothing saves, under a button that reported success.
+	 *
+	 * <p>NOT asserted here, because it is not fixed: {@code loadTileMap} (File &gt;
+	 * Open GR Mapfile) replaces the open map without coming through
+	 * {@code unload()} and clears neither this history nor {@code Selector}. That
+	 * sibling is reported, not taken.
+	 *
+	 * <p>Needs no game: what is asserted is that the history GOES, and a region of
+	 * unwalkable tiles built here is a region the history can be over.
+	 */
+	static void unloadingDropsTheUndoHistoryWithTheMap() {
+		System.out.println("--- unloading drops the undo history with the map it belongs to");
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		Tilemap region = new Tilemap(null, 40, 40, null);
+		panel.tilemaps = new Tilemap[][]{{region}};
+		panel.loaded = true;
+		ctrmap.humaninterface.TileUndo.clear();
+		byte[] before = region.getTileData(1, 1).clone();
+		byte[] after = new byte[]{1, 2, 3, 4};
+		region.setTileData(1, 1, after);
+		ctrmap.humaninterface.TileUndo.record(region, 1, 1, before, after);
+		check(ctrmap.humaninterface.TileUndo.canUndo(),
+				"fixture: an edit to the open map leaves an undo step behind it");
+
+		panel.unload();
+		check(panel.tilemaps == null, "the unload drops the tilemaps that step is over");
+		check(!ctrmap.humaninterface.TileUndo.canUndo(),
+				"and the undo history goes with them, so nothing offers to take back an edit to a map that is no longer open");
+	}
+
 	// ---- lookups and geometry ----------------------------------------------
 
 	/**
@@ -473,15 +518,18 @@ public class TileMapPanelStateTest {
 	 * are NOT the same call.
 	 *
 	 * <p>WHY THIS IS WORTH A SECTION. Loading a single region and loading a
-	 * matrix both aim the camera at the new map with four almost-identical
-	 * assignments - except the matrix path also zeroes the yaw and the
-	 * single-region path does not. Orbit the 3D view, then open a loose GR map
-	 * file, and the new map comes up at the angle you left the last one at.
+	 * matrix both aim the camera at the new map with almost-identical
+	 * assignments, and this asserts the caller still says WHICH: behind a boolean
+	 * the two would be one call with a flag, and the size the matrix framing
+	 * carries would have nowhere to go.
 	 *
-	 * <p>That asymmetry was five field writes on a JOGL panel reached through the
-	 * main window, so nothing could see it and nothing did. It is two named
-	 * methods now, and this asserts they stay two: behind a boolean the
-	 * difference reads as an oversight and the next person removes it.
+	 * <p>RETARGETED, NOT DELETED. This section was written to hold an asymmetry
+	 * open - the matrix path zeroed the yaw and the single-region path did not,
+	 * so a loose GR map opened at the angle the last one was left at. That was
+	 * decided and fixed; both zero it now, and MainframeShapeTest holds the five
+	 * assignments themselves, which need the window's source to read because
+	 * there is no headless JOGL panel to write them to. What is left here is the
+	 * thing this double can actually see: two calls, and which one was made.
 	 */
 	static void thetwoWaysOfPointingTheCameraStayTwo() {
 		System.out.println("--- the two ways of pointing the 3D camera are not the same call");
@@ -747,7 +795,9 @@ public class TileMapPanelStateTest {
 	 *
 	 * <p>Matrix Editor > Add column and Add row raise {@code mm.width} and
 	 * {@code mm.height} on the SAME MapMatrix this panel holds, without touching
-	 * {@code mm.regions} or {@code tilemaps}. The scan that decides whether to
+	 * {@code tilemaps}. (Since the resize handlers were corrected {@code mm.regions}
+	 * DOES follow - it is grown with the grid it is indexed by - but the panel's own
+	 * arrays still do not, which is what this section is about.) The scan that decides whether to
 	 * ask already skips any cell outside tilemaps; the two loops that act on the
 	 * answer walked the whole of the new width and height, so the first cell past
 	 * the old edge threw - in the SAVE arm into the worker, which abandoned the
@@ -812,6 +862,12 @@ public class TileMapPanelStateTest {
 		setField(panel, "savedPropTextures", new java.util.ArrayList<ctrmap.formats.h3d.texturing.H3DTexture>());
 		check(panel.getWorldTextures() == world, "the panel is handing out a zone's textures");
 		GR loose = firstPopulated(panel);
+		ctrmap.humaninterface.Selector.selTileX = 500;
+		ctrmap.humaninterface.Selector.selTileY = 500;
+		editOneTile(panel);
+		check(ctrmap.humaninterface.TileUndo.canUndo() 
+			&& ctrmap.humaninterface.Selector.selTileX != -1,
+			"fixture: there is an undo step and a picked tile to lose");
 		check(loose != null, "and there is a region container to open as a loose map");
 		List<String> said = ctrmap.Ui.record(javax.swing.JOptionPane.NO_OPTION);
 		try {
@@ -825,12 +881,29 @@ public class TileMapPanelStateTest {
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
-		check(said.isEmpty(), "an unedited map is opened without asking anything: " + said);
+		//the fixture paints a tile so there is an undo step to lose, which makes the
+		//map edited - so this path asks first, exactly as it should, and this run
+		//answers discard. That is the real gesture the defect lived in: open a zone,
+		//paint, File > Open GR Mapfile.
+		check(said.size() == 1 && said.get(0).startsWith("Save changes:"),
+			"the edit to the map being replaced is offered before it is replaced: " + said);
 		check(panel.getWorldTextures() == null,
 			"after opening a loose map it hands out nothing rather than the last zone's: "
 			+ panel.getWorldTextures());
 		check(panel.mm == null && panel.mode == TileMapPanel.ViewportMode.SINGLE,
 			"which is the same answer the rest of its state gives");
+		//AND THE TWO OTHER THINGS MEASURED AGAINST THE MAP IT REPLACED. A matrix load
+		//has dropped both since it was written; this path went through neither
+		//loadMatrix nor unload, so it dropped neither, and "open a zone, paint a tile,
+		//File > Open GR Mapfile" left the Undo button lit over a Tilemap the panel no
+		//longer held.
+		check(!ctrmap.humaninterface.TileUndo.canUndo(),
+			"and the undo history of the map it replaced, so nothing offers to take back an"
+			+ " edit to a map that is not open");
+		check(ctrmap.humaninterface.Selector.selTileX == -1
+			&& ctrmap.humaninterface.Selector.selTileY == -1,
+			"and the picked tile, which named a cell of a matrix wider than the one region"
+			+ " a loose map has");
 	}
 
 	/**
@@ -888,6 +961,23 @@ public class TileMapPanelStateTest {
 		//a screen.
 		check(500 / 40 >= cells, "tile 500 is past this matrix, which is " + cells
 			+ " region(s) across - so the cursor could not have survived the load");
+	}
+
+	/** Records one tile edit through TileUndo, so there is a history to drop. */
+	static void editOneTile(TileMapPanel panel) {
+		for (Tilemap[] col : panel.tilemaps) {
+			for (Tilemap tm : col) {
+				if (tm == null) {
+					continue;
+				}
+				byte[] was = tm.getTileData(1, 1).clone();
+				byte[] now = was.clone();
+				now[0] = (byte) (now[0] ^ 0x20);
+				tm.setTileData(1, 1, now);
+				ctrmap.humaninterface.TileUndo.record(tm, 1, 1, was, now);
+				return;
+			}
+		}
 	}
 
 	/** Marks the first tilemap the panel actually has as edited. */

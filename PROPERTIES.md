@@ -1,6 +1,6 @@
 # PROPERTIES.md — what is supposed to be true
 
-The battery answers *"would anything notice if this broke?"* for 126 suites. It
+The battery answers *"would anything notice if this broke?"* for 127 suites. It
 has never answered *"what is supposed to be true?"*, and those are different
 questions. A suite can be green because the property it guards holds, or because
 the property was never written down and the suite guards something adjacent.
@@ -63,6 +63,9 @@ not boot.
 | Damage an old fork left behind is found rather than inherited. | `MisplacedRegistryTest`, `ForkGuardsTest` |
 | Saving a zone commits every open editor first, including the warp form, and stops when one refuses. | `DataSafetyGuardsTest`, `OpenEditorsTest` |
 | A zone whose header the form could not finish showing is never written over another zone's, and the refusal says why. | `ZoneLoadingStateTest` |
+| A workspace that failed to open leaves no zone open, so nothing is written back against the wrong game. | `ZoneLoadingStateTest` |
+| Closing a zone takes every editor that shows it down, the prop editor included. | `ZoneLoadingStateTest` |
+| A fork decline the preferences store refuses is reported once, rather than nagging forever with nothing said. | `ZoneLoadingStateTest` |
 | A zone opened from a loose file goes to its own index, and writes no other zone's row of the master header table. | `MainframeEdgesTest` (the slot rule), `ZoneLoadingStateTest` |
 
 ## 4. A placed building, and the map under it
@@ -82,6 +85,7 @@ not boot.
 | Growing a matrix grows every layer `assembleData` will later read, whether the LOD box is ticked at the time or not. | `MatrixEditFormGuardsTest` |
 | Loading or unloading a matrix drops the cell picked in the last one. | `MatrixEditFormGuardsTest` |
 | The matrix grid asks its scroll pane for the room its matrix needs, so a matrix bigger than the pane can be scrolled to. | `MatrixEditFormGuardsTest` |
+| The region grid grows with the grid it is indexed by, and is never smaller than it. | `MatrixEditFormGuardsTest` |
 | A matrix the editor could not show leaves the form holding nothing and saying so, and a later save writes nothing rather than dropping what was typed. | `MatrixEditFormGuardsTest` |
 | **OPEN** — a placed building is reachable and collidable in the running game. Only the emulator can answer this; see TESTZONE.md. | OPEN, by nature |
 
@@ -98,8 +102,12 @@ not boot.
 | A matrix that outgrew the map view's arrays writes only the cells it has, on both the save and the discard answer. | `TileMapPanelStateTest` |
 | Opening a loose map drops the textures and the picked tile of the zone before it. | `TileMapPanelStateTest` |
 | The 3D view draws nothing before a zone is open and after one is closed, rather than throwing once a frame. | `TileMapPanelStateTest` |
+| A map that stops being open takes its undo history with it, so nothing offers to take back an edit to a map that is gone. | `TileMapPanelStateTest` |
+| Both ways of pointing the camera at a newly opened map zero the yaw. | `MainframeShapeTest` |
+| Refreshing the tilemaps rescales the panel whose images were rebuilt, not whichever one the window happens to hold. | `DataSafetyGuardsTest` |
+| Opening a loose GR map asks before it drops what the editors hold, and an editor that refuses stops the open. | `MainframeActionGuardsTest` |
 | Saving a loose GR map writes the tile edits the user made. | `TileMapPanelStateTest` |
-| **OPEN** — opening another loose map asks before dropping what the prop and NPC editors hold. Fixed, but `openGrAction` picks the file through a raw `JFileChooser` that does not go through the dialog seam, so no headless suite can reach it. | OPEN |
+| Opening another loose map asks before dropping what the prop and NPC editors hold. | `MainframeActionGuardsTest` |
 
 ## 6. An imported model or texture
 
@@ -128,6 +136,9 @@ not boot.
 | An edit form that has refused once is usable again; nothing leaves it permanently inert. | `PropEditFormGuardsTest` |
 | Removing a record leaves the survivor shown and reachable, from the dropdown and from the tools. | `PropEditFormGuardsTest` |
 | Answering "save" with nowhere to write refuses in words, and keeps the edits. | `PropEditFormGuardsTest` |
+| Moving a prop asks for the redraw the map view needs, and asks for none when nothing moved. | `PropEditFormGuardsTest` |
+| A painter with no map view puts nothing back and still says the refusal. | `PaintFormGuardsTest` |
+| The tile inspector's palette survives a cursor left over from a map that is no longer loaded. | `TileEditFormGuardsTest` |
 | A field that states its range accepts both ends of it, and the range it states is the one the data has. | `TrainerDataTest` |
 
 ## 8. A script
@@ -187,11 +198,12 @@ because they are the ones that decay quietly.
    one-time: it lived in commit messages and could not be re-executed, so a
    guard proven in one month and hollowed out in the next looked identical to
    one that still works. `tools/guard/plants.json` and `tools/guard/replant.py`
-   are the mechanism and they run. What is OPEN is the COVERAGE: most suites
-   still have no plant, so for those the ledger proves nothing. Two ceilings in
-   `plants.json` are the measure and both may only fall - `owed_ceiling`, the
-   suites with no plant at all, and `owed_generalisation_ceiling`, the plants
-   that break one line rather than the property.
+   are the mechanism and they run. What is OPEN is the COVERAGE: 57 of the 127
+   registered suites still have no plant, so for those the ledger proves
+   nothing, and 52 more stand on a machine-found plant rather than a defect that
+   reached a user. Three ceilings in `plants.json` are the measure and every one
+   may only fall: `owed_ceiling`, `owed_generalisation_ceiling` and
+   `owed_real_defect_ceiling`.
 4. **What the fixes look like on screen.** Every defect fixed this campaign has
    a guard that fails without it, but a guard asserts what the code returns, not
    what a person sees. Whether the repaired matrix scroll pane, the re-enabled

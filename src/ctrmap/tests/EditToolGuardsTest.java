@@ -96,6 +96,7 @@ public class EditToolGuardsTest {
 			triggerToolDrawsBothLists();
 			warpToolDrawsAndDragsWarps();
 			theToolsThatRefreshTheCameraForm();
+			theTileInspectorAsksForNoRepaintOfItsOwn();
 			withTheWindow(dump);
 		} finally {
 			EditorBench.shutdown();
@@ -1214,6 +1215,59 @@ public class EditToolGuardsTest {
 	 * selection calls, so building one is free and the stubs are gone with the
 	 * reason for them.
 	 */
+	/**
+	 * The tile inspector fires no repaint on ITSELF, and does not need to.
+	 *
+	 * <p>WHY THIS IS A CHECK AND NOT A GAP. The spinner listener in that form
+	 * used to end in {@code firePropertyChange(TileMapPanel.PROP_REPAINT, false,
+	 * true)} on the form. The only listener that property has anywhere is on the
+	 * MAP VIEW - which is why PaintForm, Selector and TileUndo spell the same
+	 * constant with the panel in front - so on the form, with changeSupport null,
+	 * the call returned at once and had never once done anything. It was DELETED
+	 * rather than given a live receiver, because unlike the prop editor's copies
+	 * of the same line there is nothing behind it to recover: the Edit branch
+	 * already calls map.scaleImage and the Fill branch map.updateAll, both ending
+	 * in viewport.repaint(), and the Set branch driven here only loads the stamp
+	 * the tool paints with, which is drawn nowhere. A live receiver would have
+	 * been a NEW full-window repaint on every spinner tick.
+	 *
+	 * <p>Attaching a listener is what makes the absence assertable: with one
+	 * attached the form's changeSupport is no longer null, so the deleted line
+	 * would fire if it came back, and this section is what would say so.
+	 */
+	static void theTileInspectorAsksForNoRepaintOfItsOwn() throws Exception {
+		final int[] heard = {0};
+		java.beans.PropertyChangeListener ear = new java.beans.PropertyChangeListener() {
+			@Override
+			public void propertyChange(java.beans.PropertyChangeEvent e) {
+				if (ctrmap.humaninterface.TileMapPanel.PROP_REPAINT.equals(e.getPropertyName())) {
+					heard[0]++;
+				}
+			}
+		};
+		EditorBench.tiles.addPropertyChangeListener(ear);
+		try {
+			//the listener reads the HELD tool, so the inspector has to be driven with
+			//one in hand. makeTile's four setValue(0) calls fire nothing on their own -
+			//a SpinnerNumberModel only fires when the new value DIFFERS, and these
+			//spinners are already 0 - so the explicit write below, which always differs,
+			//is what a returning line would fire on.
+			EditorBench.TOOLS.switchTo(EditorBench.BOX::set);
+			SetTool held = (SetTool) EditorBench.TOOLS.current();
+			javax.swing.JSpinner byte0 = (javax.swing.JSpinner) EditorBench.field(EditorBench.tiles, "byte0");
+			int was = ((Integer) byte0.getValue()).intValue();
+			byte0.setValue((was + 1) & 0xFF);
+			check(held.actTileData[0] == (byte) ((was + 1) & 0xFF),
+					"the inspector's byte spinner reaches the held Set tool: " + held.actTileData[0]);
+			check(heard[0] == 0,
+					"and the inspector asks for no repaint of its own, which nothing would hear: " + heard[0]);
+		} finally {
+			EditorBench.tiles.removePropertyChangeListener(ear);
+			EditorBench.TOOLS.drop();
+			EditorBench.tiles.lockTile(false);
+		}
+	}
+
 	static PaintTool paintTool() {
 		return (PaintTool) EditorBench.BOX.paint();
 	}

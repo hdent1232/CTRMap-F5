@@ -84,6 +84,7 @@ public class MainframeActionGuardsTest {
 		theModSwitchDecidesFromTheFolderItWasGiven();
 		theModSwitchSaysSoWhenItCannotMove();
 		restoreRoutesToTheChoiceThatWasMade();
+		openingAGrMapfileAsksBeforeItDiscards();
 
 		if (!dump.isDirectory()) {
 			System.out.println("  skip: no dump at " + dump
@@ -785,6 +786,66 @@ public class MainframeActionGuardsTest {
 		} else {
 			System.out.println("  FAIL: " + what);
 			fails++;
+		}
+	}
+
+/**
+	 * Open GR Mapfile asks before it discards, and opens nothing when told no.
+	 *
+	 * <p>Opening a loose GR replaces the tilemap, the props, the prop registry,
+	 * the NPC entities and registry, and the collision mesh. It used to ask
+	 * about the TILEMAP only - inside loadTileMap - and throw the other four
+	 * away with no dialog having named them, which read to the user as "I was
+	 * asked about everything, and I refused nothing". The fix is one flush of
+	 * every open editor first, and nothing watched it: the decision sat behind a
+	 * modal JFileChooser, which is a wall this battery cannot answer.
+	 *
+	 * <p>So the decision is {@link CtrmapMainframe#openChosenGr}, out where it
+	 * can be driven - the editors handed in and the load handed in, exactly as
+	 * {@link CtrmapMainframe#openChosenMapMatrix} hands in the refit. Drop the
+	 * ask, or move it after the load, and "an editor that refuses stops the
+	 * open" is the line that goes red. The last check is the other half: a
+	 * decision nothing calls is as silent as no decision at all.
+	 */
+	static void openingAGrMapfileAsksBeforeItDiscards() throws Exception {
+		System.out.println("--- Open GR Mapfile: the ask before it discards, and what a refusal stops");
+		RecordingEditors editors = new RecordingEditors();
+		final int[] loads = {0};
+		Runnable load = new Runnable() {
+			@Override
+			public void run() {
+				loads[0]++;
+			}
+		};
+
+		editors.allow = false;
+		CtrmapMainframe.openChosenGr(editors, load);
+		check(editors.count() == 1,
+				"Open GR Mapfile asks the open editors before it replaces anything ("
+				+ editors.count() + " ask(s))");
+		check(!editors.flushes.isEmpty() && editors.flushes.get(0),
+				"and ASKS - saveAll(true) - rather than writing the user's files for them: " + editors.flushes);
+		check(loads[0] == 0,
+				"an editor that refuses stops the open: nothing was loaded over what was on screen");
+
+		editors.allow = true;
+		CtrmapMainframe.openChosenGr(editors, load);
+		check(editors.count() == 2, "the next open asks again rather than remembering the answer");
+		check(loads[0] == 1, "and when every editor has written, the file the user picked IS opened");
+
+		//...and the menu action still runs that decision. Re-inline the ask and
+		//every check above stays green while the user goes back to being unasked.
+		File src = new File("src/ctrmap/CtrmapMainframe.java");
+		if (!src.isFile()) {
+			System.out.println("  skip: no source at " + src.getAbsolutePath()
+					+ " - the routing check reads the window's source");
+		} else {
+			String text = new String(java.nio.file.Files.readAllBytes(src.toPath()), "UTF-8");
+			int at = text.indexOf("private static void openGrAction()");
+			int end = text.indexOf("private static void openMapMatrixAction()");
+			String body = (at >= 0 && end > at) ? text.substring(at, end) : "";
+			check(body.contains("openChosenGr(openEditors,"),
+					"and File > Open GR Mapfile is what runs that decision, not a second copy of it");
 		}
 	}
 }

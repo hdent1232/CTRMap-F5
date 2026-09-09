@@ -1300,8 +1300,17 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	 * Back to "no zone open", for a load that failed partway. The editors that
 	 * had already switched would otherwise sit on a zone store() never writes,
 	 * and the ones that had not would still hold the previous zone.
+	 *
+	 * <p>PUBLIC for the OTHER way a zone stops being open, which had no way to
+	 * say so: {@link ctrmap.CtrmapMainframe#onWorkspaceOpened} is handed null
+	 * when a workspace fails to open, and the zone that was open belonged to the
+	 * game that has just gone. The state wanted there is this one exactly -
+	 * nothing open, no index, no editor showing it - so the window asks for it
+	 * rather than a second, shorter version of it being written beside it, which
+	 * is the failure {@link ZoneEditors} exists to end. It was private only
+	 * because a load that failed partway was the one way in.
 	 */
-	private void unloadZone() {
+	public void unloadZone() {
 		loadedZone.close();
 		zoneEditors.clear();
 		zoneList.setSelectedIndex(-1);
@@ -1368,6 +1377,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		}
 	}
 
+	/** Set once this panel has told the user that its declines are not being
+	 *  remembered, so a store that keeps refusing reports once instead of
+	 *  turning one nag into another. */
+	private boolean forkDeclineSaveReported = false;
+
 	private void saveForkDeclined() {
 		try {
 			StringBuilder sb = new StringBuilder();
@@ -1379,7 +1393,33 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			}
 			java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel")
 					.put("FORK_DECLINED_" + Workspace.WORKSPACE_PATH.hashCode(), sb.toString());
-		} catch (Exception ignore) {
+		} catch (Exception ex) {
+			//REMEMBERING THE DECLINE IS THE WHOLE FEATURE, so a write that failed
+			//costs exactly what the memory exists to prevent: the offer comes
+			//back on every zone load, forever, with nothing anywhere to say why.
+			//This used to end "catch (Exception ignore) {}".
+			//
+			//What can refuse it is the PREFERENCES SUBSYSTEM - no backing store,
+			//a factory that will not start, a node removed underneath us. NOT the
+			//8192-character cap on a value: the whole decline list is one CSV
+			//value, but ZoneLimitPatch tops this game out at 0xFF * 4 zones, so
+			//every zone declined at once is under 4000 characters. The cap is
+			//unreachable here; it is only how ZoneLoadingStateTest makes the real
+			//store refuse a real write, which is the only way to drive this path.
+			//
+			//Said ONCE per panel, and only here. A report on every decline would
+			//be the nagging again, and the READ side above is left swallowing on
+			//purpose: it runs on every zone load, it rebuilds from prefs on the
+			//next call, and the worst it costs is one offer the user can answer.
+			if (!forkDeclineSaveReported) {
+				forkDeclineSaveReported = true;
+				ctrmap.Ui.error(this,
+						"The zones you declined a private map for could not be saved:\n"
+						+ ctrmap.Ui.reason(ex)
+						+ "\n\nThose offers will come back next time this workspace is opened.\n"
+						+ "Nothing in the game or in the workspace is affected.",
+						"Shared map");
+			}
 		}
 	}
 

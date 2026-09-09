@@ -196,7 +196,19 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 					//could have affected multiple regions, update them all
 					map.updateAll();
 				}
-				firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+				//THE REPAINT REQUEST THAT USED TO SIT HERE IS GONE, NOT REWIRED. It was the
+				//same bare inherited JComponent.firePropertyChange the prop editor had, and
+				//it reached nobody for the same reason - nothing listens to this form. The
+				//difference is that here there is nothing behind it to recover: every branch
+				//above that changes what is on screen already repaints through the map view
+				//this form was handed (Edit calls map.scaleImage, Fill calls map.updateAll,
+				//and both end in viewport.repaint()), and the Set branch only loads the
+				//stamp the tool will paint with, which is drawn nowhere. Giving it a live
+				//receiver would have ADDED a full-window repaint to every spinner tick,
+				//including the branch that changes nothing; deleting it keeps today's
+				//behaviour exactly and stops the line claiming to ask for something it never
+				//asked for. theTileInspectorAsksForNoRepaintOfItsOwn, in EditToolGuardsTest,
+				//is what would notice it coming back.
 			}
 		};
 

@@ -149,6 +149,7 @@ public class PropEditFormGuardsTest {
 		saveWritesTheTypedNumbersAndZeroesTheUnknownTail();
 		equalsDataIgnoresTheUnknownTail();
 		typingACoordinateMovesThePropBeforeSave();
+		movingAPropAsksForARedraw();
 		saveWithDialogHasThreeAnswers();
 		newEntryAndRemoveEntry();
 		removingTheFirstOfTwoLeavesTheSurvivorShowing();
@@ -747,5 +748,59 @@ public class PropEditFormGuardsTest {
 			System.out.println("  FAIL: " + what);
 			fails++;
 		}
+	}
+
+	/**
+	 * A prop that moved asks for the editor to be drawn again - and a field
+	 * write that moved nothing does not.
+	 *
+	 * <p>WHY THIS IS THE PROOF. The seven places in this form that said "what I
+	 * changed is on screen somewhere" said it to nobody: they called the bare
+	 * inherited {@code JComponent.firePropertyChange}, and nothing has ever
+	 * listened to this form, so with changeSupport null the call returned at
+	 * once. The only listener that property has anywhere is on the MAP VIEW,
+	 * which is why the identical line works from PaintForm, Selector and
+	 * TileUndo - they spell it with the panel in front. It cost the user a
+	 * picture they could see was wrong: TileMapPanel.paintComponent composites
+	 * the 3D scene, props included, over the tilemap at 50% alpha and only
+	 * while the panel is being painted, so typing a new X moved the prop in the
+	 * 3D view (which has its own animator) and left the 2D map drawing it where
+	 * it was, until hovering the map made Selector ask for a repaint.
+	 *
+	 * <p>BOTH HALVES MATTER. Handed a counting {@link Redraws}, the first check
+	 * fails if the request goes back to reaching nobody. The second fails if the
+	 * request is moved back OUTSIDE the {@code loaded && prop != null && it
+	 * actually changed} guard it now sits in - which is what would put a
+	 * full-window repaint behind every keystroke that changes nothing at all,
+	 * including the twelve fields this form fills while opening a region.
+	 */
+	static void movingAPropAsksForARedraw() throws Exception {
+		Fixture f = open(true);
+		GRProp p0 = f.form.props.props.get(0);
+		int moved = REDRAW.mark();
+		type(f.form, "x", 640.5f);
+		check(p0.x == 640.5f, "typing a new X moved the prop to " + p0.x);
+		check(REDRAW.askedSince(moved), "and asked for a redraw, so the map view's prop overlay is not left stale");
+
+		//a form that is not live is one being filled in, not one being edited
+		Fixture g = open(false);
+		GRProp q0 = g.form.props.props.get(0);
+		float held = q0.x;
+		int quiet = REDRAW.mark();
+		type(g.form, "x", held + 100f);
+		check(q0.x == held, "writing X on a form that is not live moves nothing: " + q0.x);
+		check(!REDRAW.askedSince(quiet), "and asks for no redraw - the request is inside the guard, not beside it");
+
+		//and the same for Save, which has always had a "something changed" guard
+		//of its own and only ever needed the receiver
+		Fixture h = open(true);
+		int nothingTyped = REDRAW.mark();
+		h.form.saveProp();
+		check(!REDRAW.askedSince(nothingTyped), "Save that writes nothing asks for no redraw either");
+		type(h.form, "sx", 9.5f);
+		int beforeSave = REDRAW.mark();
+		h.form.saveProp();
+		check(h.form.props.props.get(0).scaleX == 9.5f, "Save took the new scale: " + h.form.props.props.get(0).scaleX);
+		check(REDRAW.askedSince(beforeSave), "and asked for a redraw, because the record it replaced is what the views draw");
 	}
 }

@@ -25,9 +25,9 @@
   "PlantLedgerTest holds all three to their ceilings and checks every plant still matches its file",
   "exactly once, which is cheap; replant.py actually runs them, which is not."
  ],
- "owed_ceiling": 60,
+ "owed_ceiling": 57,
  "owed_generalisation_ceiling": 3,
- "owed_real_defect_ceiling": 53,
+ "owed_real_defect_ceiling": 52,
  "plants": [
   {
    "id": "zone-broadcast-clear-skips-editors",
@@ -284,7 +284,8 @@
    "replace": "\t\tSet<String> readers = new TreeSet<>();",
    "suite": "ctrmap.tests.ClassFileScannerTest",
    "args": [
-    "src"
+    "src",
+    "build\\classes"
    ],
    "must_say": "the scanner never sees fewer readers than a source grep does"
   },
@@ -1112,8 +1113,7 @@
    "replace": "\t\t\tmZonePnl.loadZone(opened);",
    "suite": "ctrmap.tests.MainframeEdgesTest",
    "args": [
-    "build/classes",
-    "src"
+    "build\\classes"
    ],
    "must_say": "every one records the slot it belongs to, or -1 for none"
   },
@@ -1152,6 +1152,173 @@
     "${PRISTINE}"
    ],
    "must_say": "the panel hands a region the view it was given, not a copy"
+  },
+  {
+   "id": "prop-edit-form-redraw-reaches-nobody",
+   "why": "Fix the seven PropEditForm sites by sending the request to the Redraw the form is already handed and moving it inside the existing \"it actually changed\" guard; DELETE TileEditForm's single site rather than rewiring it, because every branch above it already repaints through the map view it was handed.",
+   "file": "src/ctrmap/humaninterface/PropEditForm.java",
+   "find": "\t\t\tpublic void insertUpdate(DocumentEvent e) {\n\t\t\t\tif (loaded && prop != null && prop.x != ctrmap.humaninterface.Forms.getFloatFromDocument(x)) {\n\t\t\t\t\tprop.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);\n\t\t\t\t\tprops.modified = true;\n\t\t\t\t\tupdateH3D(props.props.indexOf(prop));\n\t\t\t\t\t//THE REDRAW REQUEST NOW REACHES SOMETHING, AND ONLY WHEN THE PROP MOVED.\n\t\t\t\t\t//This was the bare inherited JComponent.firePropertyChange, and it sat\n\t\t\t\t\t//OUTSIDE the guard. Nothing has ever listened to THIS form, so with\n\t\t\t\t\t//changeSupport null the call returned at once; the only listener that\n\t\t\t\t\t//property has anywhere is on the MAP VIEW, which is why the same constant\n\t\t\t\t\t//works from PaintForm, Selector and TileUndo - they spell it with the panel\n\t\t\t\t\t//in front. What it cost the user: TileMapPanel.paintComponent composites the\n\t\t\t\t\t//3D scene, props included, over the tilemap at 50% alpha and only while the\n\t\t\t\t\t//panel is being painted, so a new X moved the prop in the 3D view (which has\n\t\t\t\t\t//its own animator) and left the 2D map drawing it where it was, until\n\t\t\t\t\t//hovering the map made Selector ask for a repaint.\n\t\t\t\t\t//THE RECEIVER is the Redraw this form is already handed and already uses for\n\t\t\t\t\t//exactly this in showProp, rather than the panel: it is what the rest of this\n\t\t\t\t\t//class asks through, and a suite can read a Redraw back.\n\t\t\t\t\t//INSIDE THE GUARD, because outside it every keystroke that changed nothing -\n\t\t\t\t\t//including the twelve fields this form fills while opening a region - would\n\t\t\t\t\t//now be a full-window repaint instead of the no-op it has always been.\n\t\t\t\t\tredraw.all();\n\t\t\t\t}\n\t\t\t}\n\n\t\t\t@Override\n\t\t\tpublic void removeUpdate(DocumentEvent e) {\n\t\t\t\tif (loaded && prop != null && prop.x != ctrmap.humaninterface.Forms.getFloatFromDocument(x)) {\n\t\t\t\t\tprop.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);\n\t\t\t\t\tprops.modified = true;\n\t\t\t\t\tupdateH3D(props.props.indexOf(prop));\n\t\t\t\t\t//as x's insertUpdate above: the request goes to the Redraw this form was\n\t\t\t\t\t//handed, and only when the value actually changed\n\t\t\t\t\tredraw.all();\n\t\t\t\t}\n\t\t\t}\n",
+   "replace": "\t\t\tpublic void insertUpdate(DocumentEvent e) {\n\t\t\t\tif (loaded && prop != null && prop.x != ctrmap.humaninterface.Forms.getFloatFromDocument(x)) {\n\t\t\t\t\tprop.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);\n\t\t\t\t\tprops.modified = true;\n\t\t\t\t\tupdateH3D(props.props.indexOf(prop));\n\t\t\t\t}\n\t\t\t\tfirePropertyChange(TileMapPanel.PROP_REPAINT, false, true);\n\t\t\t}\n\n\t\t\t@Override\n\t\t\tpublic void removeUpdate(DocumentEvent e) {\n\t\t\t\tif (loaded && prop != null && prop.x != ctrmap.humaninterface.Forms.getFloatFromDocument(x)) {\n\t\t\t\t\tprop.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);\n\t\t\t\t\tprops.modified = true;\n\t\t\t\t\tupdateH3D(props.props.indexOf(prop));\n\t\t\t\t}\n\t\t\t\tfirePropertyChange(TileMapPanel.PROP_REPAINT, false, true);\n\t\t\t}\n",
+   "suite": "ctrmap.tests.PropEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the map view's prop overlay is not left stale"
+  },
+  {
+   "id": "tile-inspector-fires-at-nobody-again",
+   "why": "The tile form carried a bare inherited JComponent.firePropertyChange for the map view's repaint property. Nothing listens to this form - the only listener that property has anywhere is on the map view - so it reached nobody, while every branch above it that changes the screen already repaints through the panel this form was handed. The line was deleted rather than rewired; this is what notices it coming back, because a line that claims to ask for a repaint and asks nobody is how the prop editor's stale overlay hid.",
+   "file": "src/ctrmap/humaninterface/TileEditForm.java",
+   "find": "\t\t\t\t//is what would notice it coming back.\n\t\t\t}",
+   "replace": "\t\t\t\t//is what would notice it coming back.\n\t\t\t\tfirePropertyChange(TileMapPanel.PROP_REPAINT, false, true);\n\t\t\t}",
+   "suite": "ctrmap.tests.EditToolGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the inspector asks for no repaint of its own"
+  },
+  {
+   "id": "loose-map-clear-leaves-warp-and-trigger-forms",
+   "why": "Take answer (a): the loose-map clear clears all three entity forms — the window's MapEditors.clearEntities() now names mNPCEditForm, mWarpEditForm and mTriggerEditForm, exactly the set (and the order) ZoneEditors.clear() uses, and the stale comment in loadTileMap that claims the entity editors are left \"as they were\" is corrected to say what the code does.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\t\t\tmNPCEditForm.loadFromEntities(null, null);\n\t\t\t\tmWarpEditForm.loadFromEntities(null);\n\t\t\t\tmTriggerEditForm.loadFromEntities(null);",
+   "replace": "\t\t\t\tmNPCEditForm.loadFromEntities(null, null);",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "left showing the released zone's entities"
+  },
+  {
+   "id": "paintform-restore-reaches-for-a-map-view-that-is-not-there",
+   "why": "Decided OPTIONAL: the TileMapPanel handed to PaintForm may be null, so the three remaining sites are made to agree with the one that already checks (each in the shape its own callee already accepts), the contract is stated once on the field, and neither the existing guard nor the pin that relies on it is removed.",
+   "file": "src/ctrmap/humaninterface/PaintForm.java",
+   "find": "\t\tif (map != null && previewInScene && originalModel != null\n\t\t\t\t&& loadedZone.isOpen() && seededZone == loadedZone.index()) {",
+   "replace": "\t\tif (previewInScene && originalModel != null\n\t\t\t\t&& loadedZone.isOpen() && seededZone == loadedZone.index()) {",
+   "suite": "ctrmap.tests.PaintFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "a refused Apply on a document with no map view reaches the user instead of throwing"
+  },
+  {
+   "id": "open-gr-discards-without-asking",
+   "why": "Open GR replaced the tilemap, the props, the prop registry, the NPC entities and registry and the collision mesh after asking about the TILEMAP only, so four editors' unsaved work went with no dialog having named it.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\tpublic static void openChosenGr(OpenEditors editors, Runnable loadChosen) {\n\t\tif (!editors.saveAll(true)) {\n\t\t\treturn;\n\t\t}\n\t\tloadChosen.run();\n\t}",
+   "replace": "\tpublic static void openChosenGr(OpenEditors editors, Runnable loadChosen) {\n\t\tloadChosen.run();\n\t}",
+   "suite": "ctrmap.tests.MainframeActionGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "an editor that refuses stops the open"
+  },
+  {
+   "id": "matrix-resize-drops-region-grid",
+   "why": "saveMatrix itself needs no further change - both of its loops are already bounded against `tilemaps` - so the fix goes to the source of the mismatch instead: the four Matrix Editor resize handlers move `mm.regions` alongside `mm.ids`/`mm.LOD`/`mm.zones`, which makes the out-of-bounds class impossible for every reader of `mm.regions`, not just for the one that was patched.",
+   "file": "src/ctrmap/humaninterface/MatrixEditForm.java",
+   "find": "\t\t\tmm.regions.addColumn();\n\t\t\tmm.LOD.addColumn();",
+   "replace": "\t\t\tmm.LOD.addColumn();",
+   "suite": "ctrmap.tests.MatrixEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "Add column grew the region grid with it"
+  },
+  {
+   "id": "failed-workspace-leaves-the-old-games-zone-open",
+   "why": "Do not touch unloadEditors or repointGameDir: close the zone at the seam that already means \"the workspace closed or failed to open\" - CtrmapMainframe.onWorkspaceOpened(null), which asks the Zone tab for the \"no zone is open\" state it already has a verb for - and, separately, make TileMapPanel.unload() clear TileUndo the way loadMatrix already does.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\t\tif (mZonePnl != null) {\n\t\t\t\tmZonePnl.unloadZone();\n\t\t\t}\n\t\t\treturn 0;\n\t\t}\n\t\tif (frame == null) {\n\t\t\treturn 0;\n\t\t}\n",
+   "replace": "\t\t\treturn 0;\n\t\t}\n\t\tif (frame == null) {\n\t\t\treturn 0;\n\t\t}\n",
+   "suite": "ctrmap.tests.ZoneLoadingStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "a workspace that failed to open leaves no zone open"
+  },
+  {
+   "id": "unload-keeps-the-undo-history-of-a-map-it-dropped",
+   "why": "unload() nulls tilemaps, models, colls and the matrix and left the tile undo history standing. The Undo button follows TileUndo.canUndo() through a listener, so it stayed lit over Tilemap objects the panel no longer holds; pressing it wrote into a detached region and then asked for a redraw scaleImage refuses. loadMatrix has cleared the history since it was written; unload invalidates the same tilemaps more thoroughly and did not.",
+   "file": "src/ctrmap/humaninterface/TileMapPanel.java",
+   "find": "\t\tTileUndo.clear();\n\t\tmode = ViewportMode.SINGLE;",
+   "replace": "\t\tmode = ViewportMode.SINGLE;",
+   "suite": "ctrmap.tests.TileMapPanelStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the undo history goes with them"
+  },
+  {
+   "id": "loose-map-keeps-the-last-maps-undo-and-cursor",
+   "why": "loadTileMap replaces tilemaps[0][0] over a different container without going through loadMatrix or unload, so it dropped the previous zone's textures and neither the undo history nor the picked tile. After \"open a zone, paint a tile, File > Open GR Mapfile\" the Undo button was still lit over a Tilemap the panel no longer held, and the picked tile named a cell of a matrix wider than the one region a loose map has.",
+   "file": "src/ctrmap/humaninterface/TileMapPanel.java",
+   "find": "\t\tTileUndo.clear();\n\t\tSelector.unfocus(this);",
+   "replace": "\t\tSelector.unfocus(this);",
+   "suite": "ctrmap.tests.TileMapPanelStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the undo history of the map it replaced"
+  },
+  {
+   "id": "zone-close-leaves-the-prop-editor-loaded",
+   "why": "Add the missing ninth ZoneView for the prop editor to buildZoneEditors, with a documented no-op show() (the props arrive with the map view, as the ORDER comment already establishes) and a real clear() that calls mPropEditForm.unload() - i.e. the analyst's \"answer two\" - and guard it by building the window's REAL list in ZoneLoadingStateTest and asking it for \"no zone is open\".",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\t\t\t\t\tmPropEditForm.unload();\n",
+   "replace": "",
+   "suite": "ctrmap.tests.ZoneLoadingStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "takes the prop editor down with it"
+  },
+  {
+   "id": "single-region-framing-leaves-stale-yaw",
+   "why": "Zero the yaw in the single-region framing too, matching its sibling one method below, and pin the one remaining difference (translateX) rather than fixing it.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\t\t\tm3DDebugPanel.rotateY = 0f;\n\t\t\t}\n\n\t\t\t@Override\n\t\t\tpublic void frameMatrix(int cellsAcross, int cellsDown) {",
+   "replace": "\t\t\t}\n\n\t\t\t@Override\n\t\t\tpublic void frameMatrix(int cellsAcross, int cellsDown) {",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "framing a single region zeroes the yaw"
+  },
+  {
+   "id": "fork-decline-save-failure-swallowed",
+   "why": "Change the WRITE swallow only: `saveForkDeclined()` reports a refused preferences write once per panel through `ctrmap.Ui.error`, naming what was lost; the READ swallow in `forkDeclined()` is left exactly as it is, on purpose, and the reason is written into the fix's own comment.",
+   "file": "src/ctrmap/humaninterface/ZoneLoadingPanel.java",
+   "find": "\t\t\tif (!forkDeclineSaveReported) {",
+   "replace": "\t\t\tif (!forkDeclineSaveReported && false) {",
+   "suite": "ctrmap.tests.ZoneLoadingStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "reported rather than lost in silence"
+  },
+  {
+   "id": "rescale-lands-on-the-windows-panel",
+   "why": "The production fix in TileMapPanel.updateAll is correct and complete as it stands and needs no source change; the worker IS reachable — not from TileMapPanelStateTest, but from DataSafetyGuardsTest, which sets java.awt.headless as its first statement precisely so a real LoadingDialog can be driven — so I guard updateAll end to end there with two TileMapPanel subclasses that report renderTileMap instead of drawing, and assert the rescale lands on the panel that rebuilt the images rather than on CtrmapMainframe.mTileMapPanel.",
+   "file": "src/ctrmap/humaninterface/TileMapPanel.java",
+   "find": "\t\t\t\tTileMapPanel.this.scaleImage(TileMapPanel.this.tilemapScale);",
+   "replace": "\t\t\t\tmTileMapPanel.scaleImage(mTileMapPanel.tilemapScale);",
+   "suite": "ctrmap.tests.DataSafetyGuardsTest",
+   "args": [
+    "${A040}",
+    "${PRISTINE}"
+   ],
+   "must_say": "updateAll rescales the panel whose images it just rebuilt"
+  },
+  {
+   "id": "tile-palette-follows-a-stale-cursor",
+   "why": "Write one small new suite, ctrmap.tests.TileEditFormGuardsTest, that guards fix (1) (showListModel's checked region lookup) through the gesture that reached it — a category radio click with a stale cursor — and PIN fix (2) rather than applying it, because fix (2) is not in the tree at all: commit 7530f4f's message claims \"Clicking the already-selected tile unlocked the inspector without re-showing anything\" but that commit never touches Selector.java, and Selector.acqCurTile's same-tile branch still unlocks, drops the cursor and returns with no showTile.",
+   "file": "src/ctrmap/humaninterface/TileEditForm.java",
+   "find": "\t\t\tTilemap region = Selector.selTileX < map.width && Selector.selTileY < map.height\n\t\t\t\t\t? map.getRegionForTile(Selector.selTileX, Selector.selTileY) : null;\n\t\t\tif (region != null) {\n\t\t\t\t//programmatic selection (inspector display) - must not trip the\n\t\t\t\t//pick-a-brush listener (which would switch tools on hover)\n\t\t\t\tsuppressListEvents = true;\n\t\t\t\ttileList.setSelectedValue(tileset.getTemplate(ctrmap.util.Bytes.ba2int(region.getTileData(Selector.selTileX % 40, Selector.selTileY % 40))).name, true);\n\t\t\t\tsuppressListEvents = false;\n\t\t\t}\n",
+   "replace": "\t\t\t//programmatic selection (inspector display) - must not trip the\n\t\t\t//pick-a-brush listener (which would switch tools on hover)\n\t\t\tsuppressListEvents = true;\n\t\t\ttileList.setSelectedValue(tileset.getTemplate(ctrmap.util.Bytes.ba2int(map.getRegionForTile(Selector.selTileX, Selector.selTileY).getTileData(Selector.selTileX % 40, Selector.selTileY % 40))).name, true);\n\t\t\tsuppressListEvents = false;\n",
+   "suite": "ctrmap.tests.TileEditFormGuardsTest",
+   "args": [],
+   "must_say": "the cursor left off the new map does not throw"
   }
  ]
 }
