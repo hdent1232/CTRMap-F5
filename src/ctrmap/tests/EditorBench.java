@@ -80,6 +80,9 @@ import javax.swing.JSplitPane;
  */
 final class EditorBench {
 
+	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
+	static final RecordingScene SCENE = new RecordingScene();
+
 	/** The grid the matrix form draws on. A real panel: it needs no display to exist. */
 	static final ctrmap.humaninterface.MapMatrixPanel CANVAS = new ctrmap.humaninterface.MapMatrixPanel();
 
@@ -478,7 +481,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchMap() {
-			super(LOADED, TOOLS);
+			super(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		}
 		int renders = 0;
 		int repaints = 0;

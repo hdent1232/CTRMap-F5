@@ -42,6 +42,7 @@ import ctrmap.humaninterface.OpenEditors;
 import ctrmap.humaninterface.MapObject;
 import ctrmap.humaninterface.Navigator;
 import ctrmap.humaninterface.Redraw;
+import ctrmap.humaninterface.Scene3D;
 import ctrmap.humaninterface.ViewportCentre;
 import ctrmap.humaninterface.ZoneEditors;
 import ctrmap.humaninterface.CollInputManager;
@@ -290,7 +291,7 @@ public class CtrmapMainframe {
 	 * <p>ORDER IS A DEPENDENCY here and not a preference: the matrix panel is
 	 * handed the map view's matrix, so the map view is first.
 	 */
-	private static ZoneEditors buildZoneEditors() {
+	private static ZoneEditors buildZoneEditors(Scene3D scene) {
 		//what "show this zone" means, editor by editor, in the order they must run:
 		//the matrix panel is handed the map view's matrix, so the map view is first.
 		//Four of them clear to nothing today; each says so rather than being absent
@@ -435,7 +436,7 @@ public class CtrmapMainframe {
 						//from outside through this window's static: the "nothing outside
 						//writes our statics" rule could never see it, because the static it
 						//goes through is only being READ.
-						m3DDebugPanel.reload = true;
+						scene.rebuild();
 						mTileMapPanel.update = true;
 					}
 
@@ -471,8 +472,53 @@ public class CtrmapMainframe {
 				frame.repaint();
 			}
 		};
+		//what the two views draw, and where the camera looks. Built here because
+		//this is where both halves of it now exist.
+		final Scene3D scene = new Scene3D() {
+			@Override
+			public java.util.List<CM3DRenderable> renderables() {
+				return CM3DComponents;
+			}
+
+			@Override
+			public void frameSingleRegion() {
+				m3DDebugPanel.translateX = 0f;   //720/2 to center the camera
+				m3DDebugPanel.translateY = -360f;
+				m3DDebugPanel.translateZ = -720f;   //at the end of the map vertically
+				m3DDebugPanel.rotateX = 45f;
+				//AND NOT rotateY. The matrix path below zeroes the yaw and this one does
+				//not, which is why these are two methods rather than one with a flag:
+				//orbit the 3D view, then open a loose GR map file, and the new map comes
+				//up at the angle the last one was left at. Preserved exactly; whether it
+				//is right is a question this does not answer, only one it makes visible.
+			}
+
+			@Override
+			public void frameMatrix(int cellsAcross, int cellsDown) {
+				m3DDebugPanel.translateX = -cellsAcross * 360f;   //720/2 to center the camera
+				m3DDebugPanel.translateY = -cellsDown * 360f;
+				m3DDebugPanel.translateZ = -cellsDown * 720f;   //at the end of the map vertically
+				m3DDebugPanel.rotateX = 45f;
+				m3DDebugPanel.rotateY = 0f;
+			}
+
+			@Override
+			public void redraw() {
+				if (m3DDebugPanel != null) {
+					m3DDebugPanel.repaint();
+				}
+			}
+
+			@Override
+			public void rebuild() {
+				if (m3DDebugPanel != null) {
+					m3DDebugPanel.reload = true;
+				}
+			}
+		};
+
 		final OpenEditors editors = buildOpenEditors();
-		final ZoneEditors zoneViews = buildZoneEditors();
+		final ZoneEditors zoneViews = buildZoneEditors(scene);
 		//and the window keeps the flush for its own File > Save and close handler,
 		//which run long after this method has returned.
 		openEditors = editors;
@@ -504,7 +550,21 @@ public class CtrmapMainframe {
 
 		frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		frame.setLocationByPlatform(true);
-		mTileMapPanel = new TileMapPanel(loadedZone, tools);
+		//THESE FOUR MOVED UP HERE from below the map view, and the move is the whole
+		//change: every one of them was read by TileMapPanel and by nothing else in
+		//the program, so building them first is what lets the map view be HANDED
+		//them instead of reaching back up for them. Verified rather than assumed:
+		//the scroll pane is a bare JScrollPane, CollEditPanel takes only the tool
+		//selection (line above), and H3DRenderingPanel takes the renderable list
+		//(a static final, ready at class load) and the same tool selection. The 3D
+		//panel starts an animator in its constructor, but its display() does
+		//nothing until Workspace.isValid(), which stays false until validate() far
+		//below - so starting it earlier draws nothing earlier.
+		mTilemapScrollPane = new JScrollPane();
+		mCollEditPanel = new CollEditPanel(tools);
+		GLPanel glPanel = new GLPanel(mCollEditPanel);
+		m3DDebugPanel = new H3DRenderingPanel(CM3DComponents, tools);
+		mTileMapPanel = new TileMapPanel(loadedZone, tools, scene, mTilemapScrollPane, mCollEditPanel);
 		//A BOUND METHOD REFERENCE, not a lambda over the static and not a captured
 		//Point. Not a lambda, because the map view exists by this line and the
 		//construction-order rule can therefore see and check this handoff - a
@@ -514,7 +574,6 @@ public class CtrmapMainframe {
 		//the moment they place something; a captured one would put every new record
 		//where the viewport was when the window was built.
 		final ViewportCentre viewportCentre = mTileMapPanel::getTileAtViewportCentre;
-		mTilemapScrollPane = new JScrollPane();
 		mMtxPanel = new MapMatrixPanel();
 		mMtxEditForm = new MatrixEditForm(loadedZone, mMtxPanel);
 		//THE SECOND PHASE, and the only order that works: the grid was built above,
@@ -532,9 +591,6 @@ public class CtrmapMainframe {
 		mWarpEditForm = new WarpEditForm(loadedZone, redraw, viewportCentre);
 		mTriggerEditForm = new TriggerEditForm(loadedZone, redraw, viewportCentre);
 		mGeoEditForm = new GeoEditForm(loadedZone);
-		mCollEditPanel = new CollEditPanel(tools);
-		GLPanel glPanel = new GLPanel(mCollEditPanel);
-		m3DDebugPanel = new H3DRenderingPanel(CM3DComponents, tools);
 		jsp = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
 		mTilemapScrollPane.setViewportView(mTileMapPanel);
 		mtxScroll.setViewportView(mMtxPanel);

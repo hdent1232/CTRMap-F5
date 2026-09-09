@@ -57,13 +57,6 @@ public class MainframeEdgesTest {
 	 * program, the window itself excluded, folded to top-level classes.
 	 */
 	private static final String[][] REACHES = {
-		{"CM3DComponents", "TileMapPanel",
-			"the list of things the 3D view draws; the map view adds itself to it"},
-		{"m3DDebugPanel", "TileMapPanel",
-			"the 3D view: the map view points its camera at a new map and repaints it. The gizmo"
-			+ " half has an owner (Navigator) and the stale-buffer half is a ZoneEditors entry"},
-		{"mCollEditPanel", "TileMapPanel",
-			"the collision editor, which the map view draws alongside"},
 		{"mNPCEditForm", "TileMapPanel,TrainerEditDialog",
 			"the NPC editor, loaded with the zone and drawn over the map"},
 		{"mPropEditForm", "TileMapPanel",
@@ -76,7 +69,6 @@ public class MainframeEdgesTest {
 			+ "TileUndo,WorkspaceSettings",
 			"THE map view: every editor that draws on it or reads a tile from it. The tangle - it reads"
 			+ " four of these back"},
-		{"mTilemapScrollPane", "TileMapPanel", "its own scroll pane, for the viewport size"},
 				{"mZonePnl", "NPCEditForm,ScriptEditor,SetupWizard,TilePainterForm",
 			"the Zone tab as an OPERATION - its save, its rebuild, its zone count. None of them is zone"
 			+ " state: that has an owner (LoadedZoneTest)"},
@@ -108,7 +100,7 @@ public class MainframeEdgesTest {
 	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
 	 * matrix-panel, NPC and trigger editors.
 	 */
-	private static final int REFERENCES = 34;
+	private static final int REFERENCES = 27;
 
 	/**
 	 * Public static fields on the window: 91 before the structure sweep, 22 after

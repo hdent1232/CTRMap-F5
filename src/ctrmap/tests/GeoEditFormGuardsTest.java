@@ -57,6 +57,9 @@ import javax.swing.JSpinner;
  */
 public class GeoEditFormGuardsTest {
 
+	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
+	static final RecordingScene SCENE = new RecordingScene();
+
 	/** The 3D gizmo these forms move, so what they told it can be read back. */
 	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
@@ -399,7 +402,7 @@ public class GeoEditFormGuardsTest {
 		f.tiles0 = f.gr.getFile(0);
 		f.model0 = f.gr.getFile(1);
 		f.coll0 = f.gr.getFile(2);
-		TileMapPanel view = new TileMapPanel(LOADED, TOOLS);
+		TileMapPanel view = new TileMapPanel(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		view.mainGR = f.gr;
 		view.tilemaps = new Tilemap[][]{{new Tilemap(f.gr)}};
 		CtrmapMainframe.mTileMapPanel = view;

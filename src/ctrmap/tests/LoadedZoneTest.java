@@ -644,6 +644,12 @@ public class LoadedZoneTest {
 				args[i] = new RecordingCentre();
 			} else if (types[i] == ctrmap.humaninterface.MatrixCanvas.class) {
 				args[i] = new ctrmap.humaninterface.MapMatrixPanel();
+			} else if (types[i] == ctrmap.humaninterface.Scene3D.class) {
+				args[i] = new RecordingScene();
+			} else if (types[i] == javax.swing.JScrollPane.class) {
+				args[i] = new javax.swing.JScrollPane();
+			} else if (types[i] == ctrmap.humaninterface.CollEditPanel.class) {
+				args[i] = new ctrmap.humaninterface.CollEditPanel(new ctrmap.humaninterface.tools.ToolSelection());
 			} else {
 				throw new IllegalStateException(ctor.getDeclaringClass().getName()
 						+ " is handed a " + types[i].getName()
