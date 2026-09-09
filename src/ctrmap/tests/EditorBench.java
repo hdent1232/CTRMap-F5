@@ -167,7 +167,7 @@ final class EditorBench {
 		//classpath does not carry
 		CtrmapMainframe.m3DDebugPanel = null;
 
-		CtrmapMainframe.mTileEditForm = tiles = new TileEditForm(TOOLS);
+		CtrmapMainframe.mTileEditForm = tiles = new TileEditForm(TOOLS, () -> { });
 		CtrmapMainframe.mPaintForm = paint = new BenchPaintForm();
 		CtrmapMainframe.mCamEditForm = cam = new BenchCamForm();
 		CtrmapMainframe.mCamScrollPane = new JScrollPane(CtrmapMainframe.mCamEditForm);

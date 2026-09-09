@@ -422,7 +422,7 @@ public class MainframeReportsTest {
 	/** Opens one of {@link #EDITORS} with no parent window, as the menu does. */
 	static void openEditor(String which) {
 		if ("trainer".equals(which)) {
-			ctrmap.humaninterface.TrainerEditDialog.showForSelection(null);
+			ctrmap.humaninterface.TrainerEditDialog.showForSelection(null, null);
 		} else if ("maison".equals(which)) {
 			ctrmap.humaninterface.MaisonEditDialog.show(null);
 		} else if ("shop".equals(which)) {

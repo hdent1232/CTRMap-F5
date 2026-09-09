@@ -34,7 +34,26 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 	/** Which tool the editor is holding, handed in: this class only asks. */
 	private final ctrmap.humaninterface.tools.ToolSelection tools;
 
-	public TileEditForm(ctrmap.humaninterface.tools.ToolSelection tools) {
+	/**
+	 * Asks the tool row to pick the Set tool.
+	 *
+	 * <p>A RUNNABLE AND NOT THE TOOLBAR, and this is a real construction cycle
+	 * rather than a shortcut: the tool row is built from the mouse router, which
+	 * is built from the tool box, which is built over THIS form. No order hands
+	 * one to the other.
+	 *
+	 * <p>And it cannot be replaced by the tool selection this form already has.
+	 * selectSetTool() is tool("set").doClick(), which also moves the radio
+	 * group's visual state; switching the tool alone would leave the row showing
+	 * a different tool than the one that is up.
+	 */
+	private final Runnable pickSetTool;
+
+	public TileEditForm(ctrmap.humaninterface.tools.ToolSelection tools, Runnable pickSetTool) {
+		if (pickSetTool == null) {
+			throw new IllegalArgumentException("the tile inspector must be handed a way to pick the Set tool");
+		}
+		this.pickSetTool = pickSetTool;
 		this.tools = tools;
 		initComponents();
 		byte0.setName("0");
@@ -59,7 +78,7 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 				String name = tileList.getSelectedValue();
 				int c1 = t.cat1, c2 = t.cat2;
 				suppressListEvents = true;
-				ctrmap.CtrmapMainframe.worldToolbar.selectSetTool();
+				pickSetTool.run();
 				restoreCats(c1, c2);
 				showListModel();
 				tileList.setSelectedValue(name, true);

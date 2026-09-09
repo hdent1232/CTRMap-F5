@@ -592,7 +592,14 @@ public class CtrmapMainframe {
 		mMtxPanel.setTools(mMtxEditForm);
 		JScrollPane mtxScroll = new JScrollPane();
 		mCamScrollPane = new JScrollPane();
-		mTileEditForm = new TileEditForm(tools);
+		//A LAMBDA OVER THE STATIC, chosen deliberately and not by accident: the tool
+		//row does not exist yet - it is built from the mouse router, which is built
+		//from the tool box, which is built over this form - so there is no order in
+		//which one can be handed the other. The body runs when the user picks a tile
+		//from the list, by which time the row exists. Section four of
+		//MainframeEdgesTest skips lambda bodies for exactly this reason, so this one
+		//is chosen in a comment rather than slipped past a rule.
+		mTileEditForm = new TileEditForm(tools, () -> worldToolbar.selectSetTool());
 		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors, mZonePnl);
 		mCamEditForm = new CameraEditForm(redraw);
 		mPropEditForm = new PropEditForm(loadedZone, tools, redraw, navigator);
@@ -834,7 +841,8 @@ public class CtrmapMainframe {
 		zone.add(item("Custom battle facility here (clone a retail facility)", CtrmapMainframe::setupFacilityAction));
 
 		JMenu data = new JMenu("Game Data");
-		data.add(item("Edit trainer (party/battle)...", () -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame)));
+		data.add(item("Edit trainer (party/battle)...",
+				() -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame, selectedNpcScript())));
 		data.add(item("Edit battle facility opponents...", () -> ctrmap.humaninterface.MaisonEditDialog.show(frame)));
 		data.add(item("Edit shop inventories (Marts)...", () -> ctrmap.humaninterface.ShopEditDialog.show(frame)));
 		data.add(item("Edit items (price, effects, name)...", () -> ctrmap.humaninterface.ItemEditDialog.show(frame)));
@@ -1258,7 +1266,7 @@ public class CtrmapMainframe {
 		p.setLayout(new javax.swing.BoxLayout(p, javax.swing.BoxLayout.Y_AXIS));
 		p.setBorder(javax.swing.BorderFactory.createEmptyBorder(24, 32, 24, 32));
 		addGameDataEntry(p, "Trainers", "Edit any trainer's party, moves, items and battle type.",
-				"Trainer editor", e -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame));
+				"Trainer editor", e -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame, selectedNpcScript()));
 		addGameDataEntry(p, "Battle facilities", "<html>Edit the opponent pools and trainer-class assignments of the battle facility engine.<br>This data is ENGINE-WIDE: the retail facility and every custom facility cloned from it draw<br>from the same pools - author your teams in FREE slots (retail rows are marked and guarded).</html>",
 				"Facility opponents", e -> ctrmap.humaninterface.MaisonEditDialog.show(frame));
 		addGameDataEntry(p, "Shops", "Change what the Poke Marts and specialty shops sell (ships as a code.ips patch).",
@@ -1314,6 +1322,11 @@ public class CtrmapMainframe {
 	 *         count is the honest test, and this is the method the wizard
 	 *         already calls.
 	 */
+	/** The script of the NPC the NPC editor has selected, or null when none is. */
+	private static Integer selectedNpcScript() {
+		return mNPCEditForm == null || mNPCEditForm.npc == null ? null : mNPCEditForm.npc.script;
+	}
+
 	public static int onWorkspaceOpened(WorkspaceSession opened) {
 		game = opened;
 		if (opened == null || frame == null) {

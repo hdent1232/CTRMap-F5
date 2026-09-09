@@ -57,8 +57,9 @@ public class MainframeEdgesTest {
 	 * program, the window itself excluded, folded to top-level classes.
 	 */
 	private static final String[][] REACHES = {
-		{"mNPCEditForm", "TileMapPanel,TrainerEditDialog",
-			"the NPC editor, loaded with the zone and drawn over the map"},
+		{"mNPCEditForm", "TileMapPanel",
+			"the NPC editor. ONE line: the map view clears its entities when a loose map replaces a"
+			+ " zone - the same clear ZoneEditors already does, and the last strand of that cycle"},
 		{"mPropEditForm", "TileMapPanel",
 			"the prop editor, drawn over the map"},
 		{"mTileEditForm", "WorkspaceSettings",
@@ -68,7 +69,6 @@ public class MainframeEdgesTest {
 			+ "TileUndo,WorkspaceSettings",
 			"THE map view: every editor that draws on it or reads a tile from it. The tangle - it reads"
 			+ " four of these back"},
-		{"worldToolbar", "TileEditForm", "the tool row, asked to select the Set tool"},
 	};
 
 	/**
@@ -96,7 +96,7 @@ public class MainframeEdgesTest {
 	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
 	 * matrix-panel, NPC and trigger editors.
 	 */
-	private static final int REFERENCES = 16;
+	private static final int REFERENCES = 14;
 
 	/**
 	 * Public static fields on the window: 91 before the structure sweep, 22 after
