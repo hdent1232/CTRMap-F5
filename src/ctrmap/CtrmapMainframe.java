@@ -516,7 +516,7 @@ public class CtrmapMainframe {
 		final ViewportCentre viewportCentre = mTileMapPanel::getTileAtViewportCentre;
 		mTilemapScrollPane = new JScrollPane();
 		mMtxPanel = new MapMatrixPanel();
-		mMtxEditForm = new MatrixEditForm(loadedZone);
+		mMtxEditForm = new MatrixEditForm(loadedZone, mMtxPanel);
 		JScrollPane mtxScroll = new JScrollPane();
 		mCamScrollPane = new JScrollPane();
 		mTileEditForm = new TileEditForm(tools);

@@ -66,8 +66,9 @@ public class MainframeEdgesTest {
 			"the collision editor, which the map view draws alongside"},
 		{"mMtxEditForm", "MapMatrixPanel,MatrixPanelInputManager,MatrixSelector",
 			"the matrix form: the matrix panel, its router and its selector are three halves of one editor"},
-		{"mMtxPanel", "MatrixEditForm,MatrixSelector",
-			"the matrix panel, the other half of the same editor"},
+		{"mMtxPanel", "MatrixSelector",
+			"the matrix panel. The FORM is handed it now (MatrixCanvas); the cursor still reaches,"
+			+ " and that is the half of the cycle that needs a decision"},
 		{"mNPCEditForm", "TileMapPanel,TrainerEditDialog",
 			"the NPC editor, loaded with the zone and drawn over the map"},
 		{"mPropEditForm", "TileMapPanel",
@@ -112,7 +113,7 @@ public class MainframeEdgesTest {
 	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
 	 * matrix-panel, NPC and trigger editors.
 	 */
-	private static final int REFERENCES = 39;
+	private static final int REFERENCES = 38;
 
 	/**
 	 * Public static fields on the window: 91 before the structure sweep, 22 after

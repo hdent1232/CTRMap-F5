@@ -42,8 +42,12 @@ public class MatrixPanelInputManager implements MouseWheelListener, MouseMotionL
 	}
 	
 	private void moveSelector(MouseEvent e) {
-		int xbound = (int) (parent.getLocationOnScreen().getX() + (parent.getWidth() - parent.getFullImageWidth()) / 2);
-		int ybound = (int) (parent.getLocationOnScreen().getY() + (parent.getHeight() - parent.getFullImageHeight()) / 2);
+		//the same origin the panel paints at, asked for rather than re-derived:
+		//this copy had to be written in SCREEN coordinates because there was
+		//nowhere to ask, and a change to the panel's layout had to find it here
+		java.awt.Point origin = parent.imageOrigin();
+		int xbound = (int) (parent.getLocationOnScreen().getX() + origin.x);
+		int ybound = (int) (parent.getLocationOnScreen().getY() + origin.y);
 		if (e.getXOnScreen() >= xbound && e.getXOnScreen() < xbound + parent.getFullImageWidth()
 				&& e.getYOnScreen() >= ybound && e.getYOnScreen() < ybound + parent.getFullImageHeight()) {
 			MatrixSelector.select(e.getXOnScreen() - xbound, e.getYOnScreen() - ybound);

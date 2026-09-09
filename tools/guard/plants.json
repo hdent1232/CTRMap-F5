@@ -16,7 +16,7 @@
   "checks every plant still matches its file exactly once, which is cheap; replant.py actually runs",
   "them, which is not."
  ],
- "owed_ceiling": 117,
+ "owed_ceiling": 116,
  "owed_generalisation_ceiling": 3,
  "plants": [
   {
@@ -217,6 +217,18 @@
     "${PRISTINE}"
    ],
    "must_say": "IT LANDED WHERE THE USER IS LOOKING"
+  },
+  {
+   "id": "matrix-origin-written-a-fourth-time",
+   "why": "Where the centred grid image starts inside the panel was written out three times in three files, identically, and the input router had to re-derive it in screen coordinates because there was nowhere to ask. The int division is load-bearing: it goes NEGATIVE when the image is wider than the panel, which is how the grid scrolls, so a max(0,..) 'tidy' moves the picture away from the hit test.",
+   "file": "src/ctrmap/humaninterface/MapMatrixPanel.java",
+   "find": "\t\treturn new java.awt.Point((getWidth() - getFullImageWidth()) / 2,",
+   "replace": "\t\treturn new java.awt.Point(Math.max(0, (getWidth() - getFullImageWidth()) / 2),",
+   "suite": "ctrmap.tests.MatrixEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "AND THE ORIGIN IS NEGATIVE"
   }
  ]
 }

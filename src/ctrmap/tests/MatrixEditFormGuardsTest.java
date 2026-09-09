@@ -62,6 +62,9 @@ import javax.swing.JRadioButton;
  */
 public class MatrixEditFormGuardsTest {
 
+	/** The grid the matrix form draws on. A real panel: it needs no display to exist. */
+	static final ctrmap.humaninterface.MapMatrixPanel CANVAS = new ctrmap.humaninterface.MapMatrixPanel();
+
 	/** The 3D gizmo these forms move, so what they told it can be read back. */
 	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
@@ -79,6 +82,46 @@ public class MatrixEditFormGuardsTest {
 
 	static int fails = 0;
 
+	/**
+	 * Where the grid image starts inside the panel is ONE statement, and it is
+	 * allowed to be negative.
+	 *
+	 * <p>WHY BOTH HALVES MATTER. That expression was written out three times in
+	 * three files - the panel's own painting, the form's camera-tool hit test,
+	 * and the input router, which had to re-derive it in SCREEN coordinates
+	 * because there was nowhere to ask. Three copies of "where does the picture
+	 * start", each of which a change to the panel's layout would have to find.
+	 *
+	 * <p>And the sign is load-bearing. When the grid is larger than the panel the
+	 * origin goes NEGATIVE, which is how a scrolled grid lines up with the mouse.
+	 * Clamping it to zero looks like tidying and moves the picture away from the
+	 * hit test: the user would click one region and select another.
+	 */
+	static void theGridOriginIsOneStatementAndMayBeNegative() throws Exception {
+		System.out.println("--- where the grid image starts is one statement, and may be negative");
+		MapMatrixPanel panel = new MapMatrixPanel();
+
+		//an empty panel: no matrix, so the image is nothing and the origin is the
+		//middle of whatever size it has been given
+		panel.setSize(400, 300);
+		java.awt.Point empty = panel.imageOrigin();
+		check(empty.x == (400 - panel.getFullImageWidth()) / 2
+			&& empty.y == (300 - panel.getFullImageHeight()) / 2,
+			"the origin is the panel's own centring arithmetic: " + empty);
+
+		//a panel SMALLER than its grid, which is the scrolled case
+		panel.loadMatrix(open().mm);
+		panel.setSize(50, 50);
+		java.awt.Point scrolled = panel.imageOrigin();
+		check(panel.getFullImageWidth() > 50 && panel.getFullImageHeight() > 50,
+			"the loaded grid really is bigger than the panel (" + panel.getFullImageWidth()
+			+ "x" + panel.getFullImageHeight() + "), or this proves nothing");
+		check(scrolled.x < 0 && scrolled.y < 0,
+			"AND THE ORIGIN IS NEGATIVE, because a clamped one would move the picture away"
+			+ " from the hit test and the user would click one region and select another: "
+			+ scrolled);
+	}
+
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "no-dump-given");
 		if (!dump.isDirectory()) {
@@ -93,6 +136,7 @@ public class MatrixEditFormGuardsTest {
 		CtrmapMainframe.mMtxPanel = new MapMatrixPanel();
 
 		theMatrixIsTheOneTheseChecksDescribe();
+		theGridOriginIsOneStatementAndMayBeNegative();
 		openingAndSavingUntouchedWritesNothing();
 		typingARegionIdWritesItIntoTheCell();
 		aRegionThatDoesNotExistIsRefusedAndSaid();
@@ -435,7 +479,7 @@ public class MatrixEditFormGuardsTest {
 		lz.table(rows);
 		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		CtrmapMainframe.mZonePnl = pnl;
-		f.form = new MatrixEditForm(lz);
+		f.form = new MatrixEditForm(lz, CANVAS);
 		CtrmapMainframe.mMtxEditForm = f.form;
 		CtrmapMainframe.mMtxPanel.mm = f.mm;
 		f.form.loadMatrix(f.mm);
