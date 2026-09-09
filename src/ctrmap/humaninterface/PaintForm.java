@@ -105,8 +105,17 @@ public class PaintForm extends JPanel {
 	 * {@code ToolHost.map()} already gives: this class uses enough of the panel
 	 * that naming a capability per member would be a longer way of writing
 	 * TileMapPanel. What matters for the standard is that it is HANDED one and
-	 * could be handed a different one - which a suite now does - rather than
-	 * reaching into the main window for the only one that exists.
+	 * could be handed a different one - or, as PaintFormGuardsTest does, none
+	 * at all - rather than reaching into the main window for the only one that
+	 * exists.
+	 *
+	 * <p>SO IT MAY BE NULL, and that is answered here ONCE rather than four
+	 * times below: every member that touches it checks first, the way
+	 * repaintMap() always did and the other three did not. The window always
+	 * hands a real one, so no user reaches a null branch; what the branches buy
+	 * is that this document is drivable with no window, and that a missing view
+	 * is a skipped repaint rather than an exception thrown out of a path -
+	 * applyFailed() - that owes the user a sentence.
 	 */
 	private final TileMapPanel map;
 
@@ -196,7 +205,13 @@ public class PaintForm extends JPanel {
 		buildings.setAlignmentX(0f);
 		buildings.setToolTipText("Pokemon Centers, Marts, houses, signs, trees - pick one, then click the map to place it. Right-click a placed one to remove it.");
 		buildings.addActionListener(e -> {
-			BuildingPaletteDialog.Pick pick = BuildingPaletteDialog.pick(null, donorModel, map.getWorldTextures());
+			//no map view, no world textures: null is what the palette already reads
+			//as "no base textures" (see its baseTextures check), and what
+			//TileMapPanel.getWorldTextures() itself hands out for a zone whose
+			//textures were cleared. The ternary, rather than a bare call, for the
+			//reason given on the map field.
+			BuildingPaletteDialog.Pick pick = BuildingPaletteDialog.pick(null, donorModel,
+					map == null ? null : map.getWorldTextures());
 			if (pick != null) {
 				beginPlacing(pick.entry, pick.passengers);
 			}
@@ -869,7 +884,12 @@ public class PaintForm extends JPanel {
 				regenRunning = false;
 				try {
 					RegenResult res = get();
-					if (res != null && res.model != null && toolActive
+					//map != null: no view, no scene to swap the preview into, so nothing
+					//is swapped and previewInScene stays false - which is exactly the
+					//state restoreRealModel() then has nothing to put back. Without the
+					//clause the reach threw a NullPointerException that the catch below
+					//swallowed whole, leaving the same state by accident and in silence.
+					if (res != null && res.model != null && toolActive && map != null
 							&& zoneAtStart == seededZone && seededZone == loadedZone.index()
 							&& epochAtStart == regenEpoch && loadedZone.isOpen()) {
 						map.reloadRegionModel(cellX, cellY, res.model, res.extraTextures);
@@ -888,7 +908,11 @@ public class PaintForm extends JPanel {
 
 	/** Puts the region's real bytes back into the scene (tool exit). */
 	private void restoreRealModel() {
-		if (previewInScene && originalModel != null
+		//map != null first: with no view there is no scene holding a preview, so
+		//there is nothing to put back. This runs from applyFailed(), ahead of the
+		//report, so throwing here ate the "Nothing was written" the refusal owes
+		//the user - the one place where a missing view was worse than a no-op.
+		if (map != null && previewInScene && originalModel != null
 				&& loadedZone.isOpen() && seededZone == loadedZone.index()) {
 			map.reloadRegionModel(cellX, cellY, originalModel);
 		}

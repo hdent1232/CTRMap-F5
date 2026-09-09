@@ -216,6 +216,11 @@ $suites = @(
     @{ n = "TriggerEditForm (what the trigger form writes)"; c = "ctrmap.tests.TriggerEditFormGuardsTest"; a = @($pristine) },
     @{ n = "GeoEditForm (what the geometry form writes)"; c = "ctrmap.tests.GeoEditFormGuardsTest"; a = @($pristine) },
     @{ n = "EditTools (the ten tools, headless)"; c = "ctrmap.tests.EditToolGuardsTest"; a = @($pristine) },
+    # No dump, no game, no display: EditorBench hands the tile inspector Workspace's default
+    # tileset and a bench map of one region, which is everything its constructor asks for. The
+    # reason this suite did not exist - "its constructor needs a tileset and a map view" - expired
+    # when that bench was written.
+    @{ n = "TileEditForm (the palette, and a cursor left over from another map)"; c = "ctrmap.tests.TileEditFormGuardsTest"; a = @() },
     @{ n = "TilemapInputRouter (mouse to tool)"; c = "ctrmap.tests.TilemapInputRouterTest"; a = @() },
     @{ n = "MainframeActions (what each action does and refuses)"; c = "ctrmap.tests.MainframeActionGuardsTest"; a = @($pristine) },
     @{ n = "TileMapPanelState (lookups, save, refresh)"; c = "ctrmap.tests.TileMapPanelStateTest"; a = @($pristine) },

@@ -93,6 +93,7 @@ public class PaintFormGuardsTest {
 		pickingABuildingArmsTheNextClick();
 		aRefusedApplySaysSoAndPutsTheMapBack();
 		seedLabelCountsBorrowedTiles(dump);
+		noMapViewMeansNoSceneToPutBack(dump);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
@@ -399,5 +400,59 @@ public class PaintFormGuardsTest {
 			System.out.println("  FAIL: " + what);
 			fails++;
 		}
+	}
+
+/**
+	 * A painter with no map view puts nothing back into the 3D scene, and still
+	 * tells the user what stopped the Apply.
+	 *
+	 * <p>The document is drivable with no view - section one pins that, and
+	 * every section here is built that way. Only repaintMap() checked for it:
+	 * restoreRealModel() reached for the view unconditionally, and it runs from
+	 * applyFailed() AHEAD of the report, so a refusal over an open zone threw a
+	 * NullPointerException out of applyFailed() before the user was told
+	 * "Nothing was written - the map is exactly as it was".
+	 *
+	 * <p>Why {@link #aRefusedApplySaysSoAndPutsTheMapBack()} cannot see it: its
+	 * zone is open at an index with NO Zone object, so loadedZone.isOpen() is
+	 * false and the reach is never taken - its "the preview is out of the scene
+	 * again" passes on the flag, which restoreRealModel() clears whether or not
+	 * it reached the view. This one opens a real zone, which is the only way to
+	 * reach the line at all.
+	 */
+	static void noMapViewMeansNoSceneToPutBack(File dump) throws Exception {
+		System.out.println("--- a painter with no map view puts nothing back, and still says the refusal");
+		if (!new File(dump, "a/0/3/9").isFile()) {
+			System.out.println("  skip: no pristine dump at " + dump);
+			return;
+		}
+		PaintApplyGuardsTest.openWorkspace(dump);
+		PaintApplyGuardsTest.open(74);
+		CtrmapMainframe.mTileMapPanel = null;
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES, CtrmapMainframe.mTileMapPanel);
+		//the state a tool exit or a refused Apply finds after a live preview:
+		//a swapped-in model over the zone that is open
+		set(form, "seededZone", PaintApplyGuardsTest.loaded.index());
+		set(form, "previewInScene", true);
+		set(form, "originalModel", new byte[]{1, 2, 3, 4});
+		check(PaintApplyGuardsTest.loaded.isOpen()
+				&& PaintApplyGuardsTest.loaded.index() == 74,
+				"fixture: zone 74 is open, so restoreRealModel's other three conditions hold");
+		String threw = null;
+		List<String> said = ctrmap.Ui.record();
+		try {
+			form.applyFailed(new java.io.IOException("region 153 is read-only"));
+		} catch (RuntimeException ex) {
+			threw = String.valueOf(ex);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(threw == null,
+				"a refused Apply on a document with no map view reaches the user instead of throwing: " + threw);
+		check(said.size() == 1 && said.get(0).contains("region 153 is read-only")
+				&& said.get(0).contains("Nothing was written - the map is exactly as it was"),
+				"and still names what stopped it and promises the map is untouched: " + said);
+		check(Boolean.FALSE.equals(get(form, "previewInScene")),
+				"and the preview flag is clear, there being no scene that ever held one");
 	}
 }

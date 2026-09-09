@@ -137,6 +137,8 @@ public class MainframeShapeTest {
 		actionRow("Zone Loader", CtrmapMainframe.buildZoneActionsBar(), EXPECTED_ZONE_ROW);
 		actionRow("Extras", CtrmapMainframe.buildExtrasBar(), EXPECTED_EXTRAS_ROW);
 		shape(new File(src, "ctrmap/CtrmapMainframe.java"));
+		cameraFraming(new File(src, "ctrmap/CtrmapMainframe.java"));
+		theLooseMapClearNamesEveryEntityForm(new File(src, "ctrmap/CtrmapMainframe.java"));
 		windowFree(new File(src, "ctrmap/util/Bytes.java"));
 		windowFree(new File(src, "ctrmap/humaninterface/Forms.java"));
 		windowFree(new File(src, "ctrmap/humaninterface/Picking.java"));
@@ -352,6 +354,136 @@ public class MainframeShapeTest {
 				"the window declares no anonymous ActionListener - an item or button names the method that does its work");
 		check(!text.contains("node(getClass()"),
 				"no preference node is named after getClass() - an anonymous listener's name moves with every edit above it");
+	}
+
+	// -------------------------------------------------------- camera framing
+	/**
+	 * Both ways of pointing the 3D camera at a newly opened map zero the yaw.
+	 *
+	 * <p>THE DEFECT THIS HOLDS SHUT. The single-region framing wrote four
+	 * fields; the matrix framing wrote its own four AND the yaw. So orbiting the
+	 * 3D view - a LEFT-button drag in {@code CM3DInputManager.mouseDragged},
+	 * where the right button pans instead - and then opening a loose GR map file
+	 * brought the new map up at the angle the last one was left at, while the
+	 * same gesture ending in a matrix load brought it up square. Three of the
+	 * single-region lines are the matrix body's with the cell counts written out
+	 * as constants; the fifth was simply never copied. The fourth, translateX,
+	 * is a difference of its own and is pinned below rather than fixed.
+	 *
+	 * <p>WHY THIS IS READ FROM THE SOURCE AND NOT RUN. The framing is five
+	 * assignments on {@code m3DDebugPanel}, an {@code H3DRenderingPanel} whose
+	 * constructor calls {@code GLProfile.get(GL2)} and starts an FPSAnimator:
+	 * there is no headless instance to write to, and the two methods return
+	 * nothing to read back. {@link #shape} already reads this same file the same
+	 * way. Comments are stripped first, so a comment SAYING the yaw is zeroed
+	 * cannot satisfy this.
+	 */
+	static void cameraFraming(File mainframe) throws Exception {
+		if (!mainframe.isFile()) {
+			check(false, "the window's source is at " + mainframe + " (pass the src root as args[0])");
+			return;
+		}
+		String text = SourceSeamTest.stripComments(new String(Files.readAllBytes(mainframe.toPath()), StandardCharsets.UTF_8));
+		int single = text.indexOf("public void frameSingleRegion() {");
+		int matrix = text.indexOf("public void frameMatrix(int cellsAcross, int cellsDown) {");
+		int end = matrix < 0 ? -1 : text.indexOf("public void redraw() {", matrix);
+		if (single < 0 || matrix < single || end < matrix) {
+			check(false, "the window still holds both camera framings, single-region then matrix"
+					+ " (found at " + single + ", " + matrix + ", " + end + ")");
+			return;
+		}
+		String singleBody = text.substring(single, matrix);
+		String matrixBody = text.substring(matrix, end);
+		check(singleBody.contains("rotateY = 0f;"),
+				"framing a single region zeroes the yaw, so a loose GR map does not open at the angle the last one was left at");
+		check(matrixBody.contains("rotateY = 0f;"),
+				"framing a matrix zeroes the yaw");
+		check(singleBody.contains("rotateX = 45f;") && matrixBody.contains("rotateX = 45f;"),
+				"and both still pitch the camera down 45 degrees");
+		check(singleBody.contains("translateX = 0f;") && matrixBody.contains("translateX = -cellsAcross * 360f;"),
+				"the difference LEFT between them is pinned, not fixed: a single region frames at translateX 0,"
+				+ " where the matrix formula gives -360 for one cell across, so a loose GR sits half a region off centre");
+	}
+
+	/**
+	 * The loose-map clear names every entity form the zone close clears.
+	 *
+	 * <p>{@code TileMapPanel.loadTileMap} - File &gt; Open GR Mapfile - RELEASES
+	 * the open zone and then tells this window's
+	 * {@link ctrmap.humaninterface.MapEditors} to clear the entity editors. It
+	 * named the NPC form and stopped, so the warp and trigger forms went on
+	 * showing, selecting and saving the entities of a zone the editor no longer
+	 * has open: their {@code saveEntry()} writes into a {@code ZoneEntities} the
+	 * Zone tab's Save never reaches, because {@code ZoneLoadingPanel.store}
+	 * answers true the moment {@code loadedZone.open()} is null. A warp typed
+	 * there is lost with no warning at all.
+	 *
+	 * <p>CHECKED OVER SOURCE because the only implementation of that seam is an
+	 * anonymous class inside the window's constructor path, and no suite can
+	 * build it - nothing anywhere calls {@code setEditors} except the window, so
+	 * every panel a suite makes has a null editor set and skips the call.
+	 *
+	 * <p>The expected list is DERIVED from the window's own source rather than
+	 * written out here: every form the window hands a {@code ZoneEntities} to is
+	 * an entity form, so a fourth one added to the zone-close list and forgotten
+	 * in the loose-map clear fails this section by name.
+	 *
+	 * <p>THE ARGUMENT IS CHECKED TOO, not just the name: a form named here and
+	 * handed a live {@code ZoneEntities} is not cleared, and naming it would
+	 * otherwise have satisfied this section while the defect stood.
+	 */
+	static void theLooseMapClearNamesEveryEntityForm(File mainframe) throws Exception {
+		if (!mainframe.isFile()) {
+			check(false, "the window's source is at " + mainframe + " (pass the src root as args[0])");
+			return;
+		}
+		String text = SourceSeamTest.stripComments(new String(Files.readAllBytes(mainframe.toPath()), StandardCharsets.UTF_8));
+		java.util.Set<String> forms = new java.util.TreeSet<>();
+		java.util.regex.Matcher m = java.util.regex.Pattern
+				.compile("(m\\w+)\\.loadFromEntities\\(").matcher(text);
+		while (m.find()) {
+			forms.add(m.group(1));
+		}
+		check(forms.size() >= 3, "the window hands entities to " + forms.size() + " form(s): " + forms);
+		String body = bodyOf(text, "public void clearEntities()");
+		check(body != null, "and the loose-map clear it wires into MapEditors can be read");
+		if (body == null) {
+			return;
+		}
+		List<String> missing = new ArrayList<>();
+		for (String form : forms) {
+			if (!body.contains(form + ".loadFromEntities(null")) {
+				missing.add(form);
+			}
+		}
+		check(missing.isEmpty(), "opening a loose GR file clears every entity form the zone close clears"
+				+ " - these are left showing the released zone's entities: " + missing);
+	}
+
+	/**
+	 * The text between the braces of the named method, or null if it is not
+	 * there. Comments are stripped before this runs; string literals are not, so
+	 * a brace inside one would miscount - the body read here has no string in it.
+	 */
+	static String bodyOf(String text, String signature) {
+		int at = text.indexOf(signature);
+		if (at == -1) {
+			return null;
+		}
+		int open = text.indexOf('{', at);
+		if (open == -1) {
+			return null;
+		}
+		int depth = 0;
+		for (int i = open; i < text.length(); i++) {
+			char c = text.charAt(i);
+			if (c == '{') {
+				depth++;
+			} else if (c == '}' && --depth == 0) {
+				return text.substring(open + 1, i);
+			}
+		}
+		return null;
 	}
 
 	/**

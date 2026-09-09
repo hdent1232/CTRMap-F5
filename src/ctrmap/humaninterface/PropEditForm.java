@@ -135,8 +135,25 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					prop.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
+					//THE REDRAW REQUEST NOW REACHES SOMETHING, AND ONLY WHEN THE PROP MOVED.
+					//This was the bare inherited JComponent.firePropertyChange, and it sat
+					//OUTSIDE the guard. Nothing has ever listened to THIS form, so with
+					//changeSupport null the call returned at once; the only listener that
+					//property has anywhere is on the MAP VIEW, which is why the same constant
+					//works from PaintForm, Selector and TileUndo - they spell it with the panel
+					//in front. What it cost the user: TileMapPanel.paintComponent composites the
+					//3D scene, props included, over the tilemap at 50% alpha and only while the
+					//panel is being painted, so a new X moved the prop in the 3D view (which has
+					//its own animator) and left the 2D map drawing it where it was, until
+					//hovering the map made Selector ask for a repaint.
+					//THE RECEIVER is the Redraw this form is already handed and already uses for
+					//exactly this in showProp, rather than the panel: it is what the rest of this
+					//class asks through, and a suite can read a Redraw back.
+					//INSIDE THE GUARD, because outside it every keystroke that changed nothing -
+					//including the twelve fields this form fills while opening a region - would
+					//now be a full-window repaint instead of the no-op it has always been.
+					redraw.all();
 				}
-				firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 			}
 
 			@Override
@@ -145,8 +162,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					prop.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
+					//as x's insertUpdate above: the request goes to the Redraw this form was
+					//handed, and only when the value actually changed
+					redraw.all();
 				}
-				firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 			}
 
 			@Override
@@ -160,8 +179,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					prop.y = ctrmap.humaninterface.Forms.getFloatFromDocument(y);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
+					//as x's insertUpdate above: the request goes to the Redraw this form was
+					//handed, and only when the value actually changed
+					redraw.all();
 				}
-				firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 			}
 
 			@Override
@@ -170,8 +191,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					prop.y = ctrmap.humaninterface.Forms.getFloatFromDocument(y);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
+					//as x's insertUpdate above: the request goes to the Redraw this form was
+					//handed, and only when the value actually changed
+					redraw.all();
 				}
-				firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 			}
 
 			@Override
@@ -185,8 +208,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					prop.z = ctrmap.humaninterface.Forms.getFloatFromDocument(z);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
+					//as x's insertUpdate above: the request goes to the Redraw this form was
+					//handed, and only when the value actually changed
+					redraw.all();
 				}
-				firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 			}
 
 			@Override
@@ -195,8 +220,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					prop.z = ctrmap.humaninterface.Forms.getFloatFromDocument(z);
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
+					//as x's insertUpdate above: the request goes to the Redraw this form was
+					//handed, and only when the value actually changed
+					redraw.all();
 				}
-				firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 			}
 
 			@Override
@@ -747,7 +774,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			props.props.set(idx, prop);
 			props.modified = true;
 			updateH3D(idx);
-			firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+			//as the three coordinate listeners in the constructor: the request goes to the
+			//Redraw this form was handed, because the bare firePropertyChange reached
+			//nobody. This one was already inside a "something actually changed" guard, so
+			//only the receiver moves.
+			redraw.all();
 		}
 	}
 

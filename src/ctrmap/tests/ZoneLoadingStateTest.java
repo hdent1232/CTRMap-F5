@@ -107,6 +107,7 @@ public class ZoneLoadingStateTest {
 		theDropdownTablesAgreeWithThemselves();
 		theZoneButtonsRefuseWhatTheyCannotDo();
 		theZoneTabRefusesToBeBuiltWithoutTheEditors();
+		aDeclineThatCannotBeSavedIsSaidOutLoudOnce();
 
 		if (!dump.isDirectory()) {
 			System.out.println("  skip: no dump at " + dump + " - the state transitions need a zone table");
@@ -127,6 +128,8 @@ public class ZoneLoadingStateTest {
 			aHeaderTheFormCannotShowIsNotWrittenOverAnother(pnl, lz);
 			selectingOutsideTheListChangesNothing(pnl);
 			unloadingClearsTheZoneAndTheEditorsWithIt(pnl, lz);
+			theWindowsOwnZoneViewsTakeThePropEditorDownToo(lz);
+			aWorkspaceThatFailedToOpenClosesTheZone(pnl, lz);
 			aSharedMapIsOfferedAForkAndADeclineIsRemembered(pnl, lz);
 			//LAST: it replaces the zone table with one that cannot be read
 			aZoneTableThatCannotBeReadLeavesNoZones(pnl, lz);
@@ -724,6 +727,56 @@ public class ZoneLoadingStateTest {
 	}
 
 	/**
+	 * A workspace that failed to open takes the zone that was open with it.
+	 *
+	 * <p>The OTHER way a zone stops being open, and the way that did not say so.
+	 * {@code Workspace.validate} answers null for a game folder it cannot read -
+	 * Options &gt; Workspace settings repoints the workspace and revalidates, so a
+	 * folder that is mistyped, moved or on an unplugged drive lands here - and the
+	 * window's {@code onWorkspaceOpened} took the null, dropped the game and
+	 * returned. The previous game's zone stayed open at its old index, the entity
+	 * editors stayed on its records, and {@code store()} - reached from File &gt;
+	 * Save and from the window's close handler through OpenEditors - asks first of
+	 * all whether a zone is open, so it wrote that zone's own file back into the
+	 * workspace that the repoint had just cleaned for a different game.
+	 *
+	 * <p>Driven through the window with no window: the Zone tab is the only thing
+	 * {@code onWorkspaceOpened} needs for this, and this suite has one. The game
+	 * this suite opened is handed straight back afterwards, because the window
+	 * keeps it in a field of its own and the sections after this one run under it.
+	 */
+	static void aWorkspaceThatFailedToOpenClosesTheZone(ZoneLoadingPanel pnl, LoadedZone lz) throws Exception {
+		System.out.println("--- a workspace that failed to open closes the zone that was open");
+		Zone z = zoneAt(SHARED_ZONE);
+		lz.open(SHARED_ZONE, z);
+		pnl.loadZone(z);
+		CtrmapMainframe.mNPCEditForm.loadFromEntities(z.entities, null);
+		JComboBox<?> list = (JComboBox<?>) field(pnl, "zoneList");
+		setField(pnl, "loaded", false); //selecting a row must not start the load worker
+		list.setSelectedIndex(SHARED_ZONE);
+		check(lz.isOpen() && CtrmapMainframe.mNPCEditForm.loaded,
+				"fixture: a zone is open and an editor is showing it");
+		Zone[] tableBefore = snapshot(lz);
+
+		CtrmapMainframe.mZonePnl = pnl;
+		try {
+			CtrmapMainframe.onWorkspaceOpened(null); //what a validate that failed hands the window
+		} finally {
+			CtrmapMainframe.onWorkspaceOpened(Workspace.session()); //this suite's game, back
+		}
+
+		check(lz.open() == null,
+				"a workspace that failed to open leaves no zone open, so the Zone tab's save writes nothing");
+		check(lz.index() == -1, "and no index either, so nothing names a slot in a table that is gone (got "
+				+ lz.index() + ")");
+		check(list.getSelectedIndex() == -1, "the dropdown shows nothing selected");
+		check(!CtrmapMainframe.mNPCEditForm.loaded,
+				"and no editor is left showing a zone that belongs to a game that is no longer open");
+		check(sameTable(lz, tableBefore),
+				"but the zone list itself is kept, exactly as it is for a load that failed partway");
+	}
+
+	/**
 	 * A zone that shares its map is offered a private copy, once.
 	 *
 	 * <p>Forking is the safe default: editing a shared map changes every zone
@@ -791,6 +844,104 @@ public class ZoneLoadingStateTest {
 			} catch (Exception ignore) {
 			}
 		}
+	}
+
+	/**
+	 * A decline the preferences store REFUSED is said out loud - once.
+	 *
+	 * <p>WHY THIS EXISTS. Remembering a decline is the whole of that feature:
+	 * without it the fork offer comes back on every zone load, which is the
+	 * nagging the memory was added to prevent. The write that does the
+	 * remembering used to end {@code catch (Exception ignore) &#123;&#125;}, so a store
+	 * that refused it left no trace anywhere - the user was simply asked again,
+	 * forever, with nothing to explain it.
+	 *
+	 * <p>HOW A REFUSAL IS DRIVEN HERE, and what that does NOT claim. What refuses
+	 * the write in the field is the preferences subsystem - no backing store, a
+	 * factory that will not start, a node removed underneath the panel - and none
+	 * of those can be produced on demand. The 8192-character cap on a preferences
+	 * value can be: the decline list is one CSV value, so an oversized set makes
+	 * the REAL store refuse a REAL write, deterministically, which is the only
+	 * honest way to reach the reporting path at all. It is NOT a failure this
+	 * game can reach on its own - {@code ZoneLimitPatch} tops it out at
+	 * {@code 0xFF * 4} zones, and every one of them declined is under 4000
+	 * characters.
+	 *
+	 * <p>Three things, and the middle one is the fix: a write the store ACCEPTS
+	 * says nothing (a report on every decline would be the nagging again), a
+	 * write it REFUSES is reported, and it is reported ONCE - a broken store
+	 * must not trade one nag for another.
+	 */
+	static void aDeclineThatCannotBeSavedIsSaidOutLoudOnce() throws Exception {
+		System.out.println("--- a decline the preferences store refuses is reported, once");
+		String wasPath = Workspace.WORKSPACE_PATH;
+		Workspace.WORKSPACE_PATH = "ctrmap-test-fork-decline-prefs";
+		String key = "FORK_DECLINED_" + Workspace.WORKSPACE_PATH.hashCode();
+		try {
+			try {
+				java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel").put(key, "probe");
+				java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel").remove(key);
+			} catch (Exception ex) {
+				System.out.println("  skip: no writable preferences store on this machine (" + Ui.reason(ex)
+						+ ") - the decline memory cannot be driven here");
+				return;
+			}
+			ZoneLoadingPanel pnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI);
+			//the panel's cached set, pinned to this workspace so nothing rebuilds
+			setField(pnl, "forkDeclinedWs", Workspace.WORKSPACE_PATH);
+
+			//a decline list the store accepts
+			setField(pnl, "forkDeclined", new TreeSet<>(Arrays.asList(3, 4)));
+			List<String> said = Ui.record();
+			try {
+				pnl.clearForkDecline(4);
+			} finally {
+				Ui.stopRecording();
+			}
+			check(said.isEmpty(), "a decline list the store accepts is saved with nothing said: " + said);
+
+			//and one past the 8192-character cap a preferences value may hold
+			TreeSet<Integer> tooMany = new TreeSet<>();
+			for (int z = 100000; z < 102000; z++) {
+				tooMany.add(z);
+			}
+			setField(pnl, "forkDeclined", tooMany);
+			check(csvLength(tooMany) > 8192, "the decline list used here is " + csvLength(tooMany)
+					+ " characters of CSV, past the 8192 a preferences value may hold - synthetic, since"
+					+ " this game's zone ceiling tops a real list out near 4000; it is the lever, not the defect");
+			said = Ui.record();
+			try {
+				pnl.clearForkDeclinesFrom(101999);
+			} finally {
+				Ui.stopRecording();
+			}
+			check(said.size() == 1 && said.get(0).contains("could not be saved"),
+					"a decline the preferences store refused is reported rather than lost in silence: " + line(said));
+
+			said = Ui.record();
+			try {
+				pnl.clearForkDeclinesFrom(101998);
+			} finally {
+				Ui.stopRecording();
+			}
+			check(said.isEmpty(),
+					"and reported once, not on every decline a store that stays broken refuses: " + said);
+		} finally {
+			Workspace.WORKSPACE_PATH = wasPath;
+			try {
+				java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel").remove(key);
+			} catch (Exception ignore) {
+			}
+		}
+	}
+
+	/** The length of the CSV the panel writes for a decline set. */
+	static int csvLength(java.util.Set<Integer> zones) {
+		int n = 0;
+		for (int z : zones) {
+			n += String.valueOf(z).length() + (n > 0 ? 1 : 0);
+		}
+		return n;
 	}
 
 	/**
@@ -937,6 +1088,73 @@ public class ZoneLoadingStateTest {
 		} else {
 			System.out.println("  FAIL: " + what);
 			fails++;
+		}
+	}
+
+/**
+	 * The window's OWN list of zone views - not this suite's spy - takes the
+	 * prop editor down with the zone.
+	 *
+	 * <p>WHY THE REAL LIST HERE, WHEN EVERY OTHER SECTION DRIVES THE SPY.
+	 * {@link ZoneEditorsSpy} forwards a clear to the three entity forms, because
+	 * that is what the Zone tab's unload used to do by name. A stand-in built
+	 * from that list cannot notice an editor the window never PUT on the list,
+	 * and the prop editor was exactly that one: the map view hands it the
+	 * matrix's props on the way in (loadMatrix -&gt; loadProps -&gt;
+	 * MapEditors.showProps), and nothing told it the zone had gone. A zone load
+	 * that failed then left it holding the PREVIOUS zone's props with
+	 * {@code loaded} still true - drawn over a viewport {@code awaitLoad} had
+	 * already emptied when the failure was inside loadMatrix, and over a map
+	 * the view still holds when it was earlier, which is worse in a different
+	 * way: {@code store()} would write the old zone's props back.
+	 *
+	 * <p>So this builds the list the window builds, gives the window a prop form
+	 * that is holding propdata, and asks that list for "no zone is open". The
+	 * entity entries clear the three forms this suite already built; the map
+	 * view, matrix, camera, script and scene entries clear to nothing, as their
+	 * own lines say.
+	 *
+	 * <p>The map view the form is handed is the window's, which is null in this
+	 * suite: the form reads it only when it WRITES props, and nothing here
+	 * writes any.
+	 */
+	static void theWindowsOwnZoneViewsTakeThePropEditorDownToo(LoadedZone lz) throws Exception {
+		System.out.println("--- the window's own zone views take the prop editor down with the zone");
+		ctrmap.humaninterface.PropEditForm form = new ctrmap.humaninterface.PropEditForm(
+				lz, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel);
+		CtrmapMainframe.mPropEditForm = form;
+		try {
+			ctrmap.formats.propdata.GRPropData held = new ctrmap.formats.propdata.GRPropData();
+			form.loadDataFile(held, null, null);
+			check(form.loaded && form.props == held, "the prop editor is showing a zone's props first");
+
+			Method build = CtrmapMainframe.class.getDeclaredMethod(
+					"buildZoneEditors", ctrmap.humaninterface.Scene3D.class);
+			build.setAccessible(true);
+			ctrmap.humaninterface.ZoneEditors views =
+					(ctrmap.humaninterface.ZoneEditors) build.invoke(null, new RecordingScene());
+			views.clear();
+
+			check(!form.loaded, "the window's list, told no zone is open, takes the prop editor down with it");
+			check(form.props == null && form.prop == null && form.reg == null,
+					"leaving it no propdata, no record and no registry for the next zone to be written over");
+		} finally {
+			//PropEditForm's generated initComponents builds a CustomH3DPreview,
+			//whose constructor starts an FPSAnimator on a NON-daemon thread. This
+			//suite exits only when it FAILS, so an animator left running holds the
+			//JVM open after a green run: "ALL PASS" and then a battery that never
+			//finishes, which a runner cannot report as anything at all.
+			//DataSafetyGuardsTest and LoadedZoneTest stop it the same way, and for
+			//the same reason. The static goes back to the null the sections after
+			//this one have always seen.
+			try {
+				Field preview = ctrmap.humaninterface.PropEditForm.class.getDeclaredField("PropPreview");
+				preview.setAccessible(true);
+				((ctrmap.humaninterface.CustomH3DPreview) preview.get(form)).stop();
+			} catch (Exception ex) {
+				System.out.println("  note: the prop preview could not be stopped (" + ex + ")");
+			}
+			CtrmapMainframe.mPropEditForm = null;
 		}
 	}
 }

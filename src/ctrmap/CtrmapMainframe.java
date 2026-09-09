@@ -340,6 +340,45 @@ public class CtrmapMainframe {
 				new ZoneEditors.ZoneView() {
 					@Override
 					public void show(ctrmap.formats.zone.Zone z) {
+						//NOTHING, and not because the prop editor is not shown a zone: the map
+						//view at the head of this list is what shows it one, through
+						//loadMatrix -> loadProps -> MapEditors.showProps. Reading the props a
+						//second time here would replace the very objects the models drawn in
+						//the 3D view were built from.
+					}
+
+					@Override
+					public void clear() {
+						//THE ENTRY THAT WAS MISSING. The prop editor shows the open zone - the
+						//map view hands it the matrix's props on the way in (loadMatrix ->
+						//loadProps -> MapEditors.showProps) - but it was not on this list at
+						//all, and being absent is not the same as clearing to nothing: it meant
+						//never asked. So a load that failed left the form holding the PREVIOUS
+						//zone's props with loaded still true. WHICH failure decides how bad
+						//that is. A throw from inside loadMatrix has already been through
+						//awaitLoad, which calls TileMapPanel.unload(): mm is null, so those
+						//props belong to a map that no longer exists, renderCM3D goes on
+						//drawing them over an emptied viewport, and the form's own store() can
+						//only refuse. A throw from earlier in the worker - fetchArchives on a
+						//header naming an areadata that is not there, which is how a broken
+						//zone usually fails - leaves the map view holding its map, so this
+						//unload also takes the props off a map that is still on screen. That is
+						//the price of asking one question instead of two, and it is the smaller
+						//one: no zone is open by then, and unloadEditors() drops the map view
+						//and this form together for exactly the same reason. It drops nothing
+						//unsaved either: the zone switch runs openEditors.saveAll(true), whose
+						//fifth entry is this form's own store(), before it loads anything.
+						mPropEditForm.unload();
+					}
+
+					@Override
+					public boolean commit() {
+						return true;   //its record is read by its own store(), through OpenEditors
+					}
+				},
+				new ZoneEditors.ZoneView() {
+					@Override
+					public void show(ctrmap.formats.zone.Zone z) {
 						mCamEditForm.loadDataFile(new ctrmap.formats.cameradata.CameraDataFile(z.header.areadata));
 					}
 
@@ -488,11 +527,18 @@ public class CtrmapMainframe {
 				m3DDebugPanel.translateY = -360f;
 				m3DDebugPanel.translateZ = -720f;   //at the end of the map vertically
 				m3DDebugPanel.rotateX = 45f;
-				//AND NOT rotateY. The matrix path below zeroes the yaw and this one does
-				//not, which is why these are two methods rather than one with a flag:
-				//orbit the 3D view, then open a loose GR map file, and the new map comes
-				//up at the angle the last one was left at. Preserved exactly; whether it
-				//is right is a question this does not answer, only one it makes visible.
+				//AND THE YAW, which this used to leave alone - decided, not tidied. THREE of
+				//the four lines above are the matrix body's with the cell counts written out
+				//as constants, and its fifth line was never copied here: orbit the 3D view
+				//(a left-button drag), then open a loose GR map file, and the map came up at
+				//the angle the last one was left at, while the same gesture ending in a
+				//matrix load came up square. Framing a map means a known view of it, and the
+				//pitch one line up was already being reset either way, so the camera was
+				//never the user's to keep. Zeroed here because that is what the sibling
+				//below - the everyday path - already does. The FOURTH line is the one real
+				//difference left: translateX 0 against the formula's -360f for one cell
+				//across. REPORTED and left alone; changing it moves every loose GR's view.
+				m3DDebugPanel.rotateY = 0f;
 			}
 
 			@Override
@@ -626,7 +672,24 @@ public class CtrmapMainframe {
 
 			@Override
 			public void clearEntities() {
+				//ALL THREE ENTITY FORMS, which is what this seam's javadoc already
+				//promised - "the same clear ZoneEditors does when a zone closes" - and
+				//what ZoneEditors.clear() actually does. Only the NPC form was named
+				//here, so after File > Open GR Mapfile the warp and trigger forms went
+				//on showing, selecting and saving the entities of a zone that
+				//loadTileMap had just RELEASED: their saveEntry() writes into a
+				//ZoneEntities the Zone tab's Save never reaches, because
+				//ZoneLoadingPanel.store answers true the moment loadedZone.open() is
+				//null. A warp typed there was lost with no warning - or silently kept,
+				//if the user happened to re-pick that zone, since the Zone object is
+				//still in the table. Nothing said which.
+				//NAMED FORM BY FORM rather than delegating to the zone-close list, which
+				//is equivalent today: this path has just LOADED a map, so a future
+				//ZoneEditors entry that blanks the map view must not blank it here.
+				//Order is ZoneEditors' order, so the two clears read as the same list.
 				mNPCEditForm.loadFromEntities(null, null);
+				mWarpEditForm.loadFromEntities(null);
+				mTriggerEditForm.loadFromEntities(null);
 			}
 		});
 		jsp = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
@@ -1073,27 +1136,19 @@ public class CtrmapMainframe {
 		}
 		File f = picked(openDialog("LAST_DIR_GR", "Open GR/153/bin mapfile"), "LAST_DIR_GR");
 		if (f != null) {
-			//EVERY editor that holds unsaved work is asked first, which is what
-			//"open something else" means everywhere else in this program - the Zone
-			//tab's own switch has opened with this flush since OpenEditors existed.
-			//This path asked about the TILEMAP only, inside loadTileMap, and then
-			//went on to replace the prop editor's data outright (loadProps(null,
-			//null) -> loadDataFile(mainGR, null)), drop the prop registry it was
-			//holding, clear the NPC editor's entities and registry, and unload the
-			//collision editor two lines below. So edited props, an edited prop
-			//registry, an edited NPC registry and an edited collision mesh were all
-			//thrown away with no dialog having mentioned any of them - and because
-			//the tilemap prompt DID appear, the user had every reason to think they
-			//had been asked about everything that was open.
-			if (!openEditors.saveAll(true)) {
-				return;
-			}
-			GR mainGR = new GR(f, game);
-			frame.setTitle("GfMap Editor - " + mainGR.getOriginFile().getName());
-			mTileMapPanel.loadTileMap(mainGR);
-			mCollEditPanel.unload();
-			mCollEditPanel.loadCollision(mainGR);
-			mTileMapPanel.scaleImage(1);
+			//ask every editor that holds unsaved work first, then replace what is
+			//loaded - the decision is openChosenGr, and it is out there rather than
+			//here for the same reason openChosenMapMatrix is: behind this chooser
+			//nothing can drive it, so the only thing saying the ask happened was a
+			//comment. What is left here is the part that needs the panels.
+			openChosenGr(openEditors, () -> {
+				GR mainGR = new GR(f, game);
+				frame.setTitle("GfMap Editor - " + mainGR.getOriginFile().getName());
+				mTileMapPanel.loadTileMap(mainGR);
+				mCollEditPanel.unload();
+				mCollEditPanel.loadCollision(mainGR);
+				mTileMapPanel.scaleImage(1);
+			});
 		}
 	}
 
@@ -1356,7 +1411,35 @@ public class CtrmapMainframe {
 
 	public static int onWorkspaceOpened(WorkspaceSession opened) {
 		game = opened;
-		if (opened == null || frame == null) {
+		if (opened == null) {
+			//A WORKSPACE THAT FAILED TO OPEN TAKES THE ZONE THAT WAS OPEN WITH IT. Only the
+			//successful arm below ever closed one - loadEverything's worker calls
+			//loadedZone.release() before it rebuilds the list - so a validate that answered
+			//null dropped the game here and returned, leaving the PREVIOUS game's zone open
+			//at its old index with the entity editors still showing its records. Options >
+			//Workspace settings reaches exactly that: it writes the new game folder, cleans
+			//the workspace "to prevent cross-injecting", and then hands this null when the
+			//new folder does not validate.
+			//
+			//WHAT THAT COST, read off the save path rather than assumed. The Zone tab's
+			//store() - reached from File > Save and from the window's close handler through
+			//OpenEditors - asks only whether a zone is open, so storeZone() ran zone.store()
+			//and wrote the old game's zone file back into the workspace folder that had just
+			//been cleaned for another game. THAT write is the silent half. The master-table
+			//write after it does report: with no session ZoneTables answers "No workspace is
+			//loaded" as an IOException and the catch there puts up "the master zone-header
+			//table was NOT updated" - a dialog that tells the user the zone was saved, over a
+			//workspace it no longer belongs to.
+			//
+			//The Zone tab already owns what "no zone is open" means and uses it for a load
+			//that failed partway; a game that failed to open is the same state, reached one
+			//step further out, so it is asked for rather than written again here.
+			if (mZonePnl != null) {
+				mZonePnl.unloadZone();
+			}
+			return 0;
+		}
+		if (frame == null) {
 			return 0;
 		}
 		mBuilder.loadGARCs();
@@ -1754,6 +1837,42 @@ public class CtrmapMainframe {
 			return;
 		}
 		fitViewToMap.run();
+	}
+
+	/**
+	 * What Open GR Mapfile does once a file has been picked: ask every editor
+	 * that holds unsaved work FIRST, and replace what is loaded only if they
+	 * all agreed.
+	 *
+	 * <p>The ask is the whole of it. This path asked about the TILEMAP only,
+	 * inside loadTileMap, and then went on to replace the prop editor's data
+	 * outright (loadProps(null, null) -&gt; loadDataFile(mainGR, null)), drop the
+	 * prop registry it was holding, clear the NPC editor's entities and
+	 * registry, and unload the collision editor. So edited props, an edited prop
+	 * registry, an edited NPC registry and an edited collision mesh were all
+	 * thrown away with no dialog having mentioned any of them - and because the
+	 * tilemap prompt DID appear, the user had every reason to think they had
+	 * been asked about everything that was open. "Open something else" flushes
+	 * the whole set everywhere else in this program; the Zone tab's own switch
+	 * has since OpenEditors existed.
+	 *
+	 * <p>It is out here, and shaped like {@link #openChosenMapMatrix}, for the
+	 * same reason that one is: the decision sat behind a modal JFileChooser that
+	 * no suite can answer, so a comment was the only thing claiming the ask
+	 * happened. The read cannot come out with it - it needs the tilemap panel,
+	 * and building one asks JOGL for a GL profile the battery has no natives for
+	 * - so the read is handed in instead. The editors are handed in too, rather
+	 * than read from the window's static, so a suite can pass a set that records
+	 * the flush and refuses on demand.
+	 *
+	 * @param editors the editors that hold unsaved work - the window's own
+	 * @param loadChosen what replaces what is on screen, run only if they agreed
+	 */
+	public static void openChosenGr(OpenEditors editors, Runnable loadChosen) {
+		if (!editors.saveAll(true)) {
+			return;
+		}
+		loadChosen.run();
 	}
 
 	/**

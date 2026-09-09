@@ -186,6 +186,7 @@ public class MatrixEditFormGuardsTest {
 		cameraBoundsRoundTripAndTheSaveTruncatesSubfileOne();
 		newAndRemoveCameraChangeTheEntryCount();
 		rowsAndColumnsGrowAndShrinkTheWrittenMatrix();
+		theRegionGridGrowsWithTheGridItIsIndexedBy();
 		theMultizoneToolThrowsOnACellThatNamesAZone();
 		aToolButtonBeforeAMatrixIsLoadedDoesNothing();
 		switchingToolsDropsACursorMeasuredInTheOtherScale();
@@ -806,5 +807,79 @@ public class MatrixEditFormGuardsTest {
 			System.out.println("  FAIL: " + what);
 			fails++;
 		}
+	}
+
+/**
+	 * The region grid grows with the grid it is indexed by, and is never
+	 * smaller than it.
+	 *
+	 * <p>WHY THIS IS NOT JUST A FOURTH ASSERTION ON THE RESIZE. mm.regions is
+	 * never written to the file, so a shape check on it looks cosmetic. It is
+	 * not: every reader of it walks mm.width/mm.height and then dereferences
+	 * the cell - TileMapPanel's prop collection, that panel's tile save,
+	 * GeoEditForm's selection, and GRPropData.write(MapMatrix), which the prop
+	 * editor calls on the event thread with nothing to catch it - and
+	 * ResizeableMatrix.get is a bare list.get(x).get(y). A region grid that did
+	 * not grow with the width is an IndexOutOfBounds in the first cell past the
+	 * old edge, not a mismatch. The middle of this check drives that
+	 * consequence rather than the shape.
+	 *
+	 * <p>AND THE REMOVE HANDLERS LEAVE IT STANDING, ON PURPOSE. Pinned here so
+	 * it is not tidied into symmetry with ids later. regions is this session's
+	 * cache of the GR opened per cell, not a layer of the file; every reader is
+	 * bounded by mm.width/mm.height, so a grid LARGER than the matrix is
+	 * unreachable and harmless, while shrinking it would orphan a tilemap the
+	 * panel still holds for that cell - and TileMapPanel.saveMatrix skips a
+	 * null-region cell in BOTH the save and the discard arm, so that tilemap's
+	 * modified flag could never be cleared again and the user would be asked to
+	 * keep it on every save and every zone switch, forever, with nothing
+	 * written either way. The invariant is one-sided and that is the point.
+	 */
+	static void theRegionGridGrowsWithTheGridItIsIndexedBy() throws Exception {
+		System.out.println("--- the region grid grows with the grid it is indexed by");
+		Fixture f = open();
+		check(f.mm.regions.getWidth() == 8 && f.mm.regions.getHeight() == 8,
+				"the region grid opens the same 8x8 as the matrix (" + f.mm.regions.getWidth()
+				+ "x" + f.mm.regions.getHeight() + ")");
+
+		invoke(f.form, "btnAddColActionPerformed");
+		check(f.mm.regions.getWidth() == f.mm.width,
+				"Add column grew the region grid with it: regions " + f.mm.regions.getWidth()
+				+ " wide for a matrix " + f.mm.width + " wide");
+		invoke(f.form, "btnAddRowActionPerformed");
+		check(f.mm.regions.getHeight() == f.mm.height,
+				"Add row grew it too: regions " + f.mm.regions.getHeight()
+				+ " tall for a matrix " + f.mm.height + " tall");
+
+		//the consequence, not the shape. This is the prop editor's save path with no
+		//props in it: it walks the whole matrix and dereferences mm.regions, so a
+		//short grid throws here instead of writing. An empty prop list on purpose -
+		//a populated one would run that method's fallback scan, which has a defect of
+		//its own and would fail this for the wrong reason. No dialog, no display,
+		//no file: the fixture's cells are all null, so nothing is opened or stored.
+		try {
+			new ctrmap.formats.propdata.GRPropData().write(f.mm);
+			check(true, "and a prop write over the resized matrix reaches every cell");
+		} catch (IndexOutOfBoundsException ex) {
+			check(false, "and a prop write over the resized matrix reaches every cell"
+					+ " - instead it threw " + ex);
+		}
+
+		//PIN, NOT AN ASSERTION ON A FIX: removal shrinks the written layers and
+		//leaves the region cache where it is. Larger than the matrix is unreachable
+		//to every reader; smaller is the throw above.
+		invoke(f.form, "btnRemoveRowActionPerformed");
+		invoke(f.form, "btnRemoveColActionPerformed");
+		check(f.mm.width == 8 && f.mm.height == 8,
+				"Remove row and Remove column put the matrix back to 8x8 (" + f.mm.width
+				+ "x" + f.mm.height + ")");
+		check(f.mm.regions.getWidth() == 9 && f.mm.regions.getHeight() == 9,
+				"and the region grid stays 9x9 - it is a cache of open regions, not a layer"
+				+ " of the file, and shrinking it would orphan a tilemap the panel cannot"
+				+ " then save OR discard (" + f.mm.regions.getWidth() + "x"
+				+ f.mm.regions.getHeight() + ")");
+		check(f.mm.regions.getWidth() >= f.mm.width && f.mm.regions.getHeight() >= f.mm.height,
+				"which leaves the one-sided invariant every reader of it depends on: the"
+				+ " region grid may be larger than the matrix, never smaller");
 	}
 }

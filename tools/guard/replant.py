@@ -182,6 +182,43 @@ def check_shape(book):
                        % (pid, "", hits, p["file"]))
         if p.get("replace") == p.get("find"):
             bad.append("%s: substitutes a thing for itself, so it plants nothing" % pid)
+    bad.extend(check_args(book))
+    return bad
+
+
+def check_args(book):
+    """A plant must run its suite with the arguments test.ps1 registers for it.
+
+    Learned the hard way, twice in one session. A plant whose args do not match
+    puts the suite in a state the battery never puts it in: MainframeShapeTest
+    handed a dump root instead of "src" cannot find the window's source and
+    fails six checks that have nothing to do with the planted defect, so the
+    runner either credits the plant for the wrong red or refuses it for the
+    wrong reason. Either way the ledger stops meaning what it says.
+    """
+    text = io.open(os.path.join(ROOT, "test.ps1"), encoding="utf-8", errors="replace").read()
+    registered = {}
+    for m in re.finditer(r'c\s*=\s*"(ctrmap\.tests\.\w+)"\s*;\s+a\s*=\s*@\(([^)]*)\)', text):
+        raw = []
+        for lit, var in re.findall(r'"([^"]*)"|(\$\w+)', m.group(2)):
+            raw.append(lit or var)
+        registered[m.group(1)] = raw
+    #the tokens a plant writes, and the test.ps1 variable each one stands for
+    same = {"${PRISTINE}": "$pristine", "${GAMEDIR}": "$gamedir",
+            "${A039}": "$a039", "${A013}": "$a013", "${A040}": "$a040"}
+    bad = []
+    for p in book["plants"]:
+        want = registered.get(p.get("suite"))
+        if want is None:
+            continue        #a suite test.ps1 does not register is its own problem
+        got = [same.get(a, a) for a in p.get("args", [])]
+        #"build/classes" and "build\classes" are the same directory; the rule is
+        #about which arguments, not which slash
+        norm = lambda xs: [x.replace(chr(92), "/") for x in xs]
+        if norm(got) != norm(want):
+            bad.append("%s: runs %s with %s, but test.ps1 registers it with %s - a plant has to "
+                       "put the suite in the state the battery does"
+                       % (p.get("id", "<no id>"), p.get("suite"), got or "no arguments", want))
     return bad
 
 

@@ -11,16 +11,21 @@ import java.util.List;
  * and it was the only class that read either.
  *
  * <p>THE CAMERA IS TWO NAMED METHODS AND NOT A FLAG, deliberately. Opening a
- * single region and opening a matrix both point the camera at the new map, and
- * the two are ALMOST the same four assignments - except that the matrix path
- * also zeroes the yaw and the single-region path does not. That asymmetry is
- * real and visible: orbit the 3D view, then open a loose GR map file, and the
- * new map comes up at the angle you left the last one. Behind a boolean it
- * would read as an oversight and someone would "fix" it; as two methods with
- * two bodies it is a difference anyone can see and decide about.
+ * single region and opening a matrix both point the camera at the new map with
+ * almost the same five assignments - the single region's are constants, the
+ * matrix's are computed from its size. Behind a boolean the difference would
+ * read as an oversight; as two methods with two bodies anyone can see it.
  *
- * <p>Whether that difference is CORRECT is a separate question this seam does
- * not answer. It is preserved exactly as it was.
+ * <p>ONE OF THOSE DIFFERENCES WAS A DEFECT AND IS NOW GONE. The matrix path
+ * zeroed the yaw and the single-region path did not, so orbiting the 3D view
+ * and then opening a loose GR map file brought the new map up at the angle the
+ * last one was left at. Both zero it now: framing a map means a known view of
+ * it, and the pitch was already reset either way. MainframeShapeTest holds it.
+ *
+ * <p>THE DIFFERENCE STILL HERE IS PINNED, NOT FIXED: the single region frames
+ * at translateX 0 where the matrix formula gives -360 for one cell across, so a
+ * loose GR sits half a region off centre under a comment that says it is being
+ * centred. Reported and left alone - changing it moves every loose GR's view.
  */
 public interface Scene3D {
 
@@ -37,8 +42,9 @@ public interface Scene3D {
 	/**
 	 * Point the camera at a single 720-unit region.
 	 *
-	 * <p>Does NOT touch the yaw, which is why this is not the same call as
-	 * {@link #frameMatrix} with one cell.
+	 * <p>Zeroes the yaw, as {@link #frameMatrix} does. Still not the same call:
+	 * this frames at translateX 0, where the matrix formula gives -360 for one
+	 * cell across.
 	 */
 	void frameSingleRegion();
 

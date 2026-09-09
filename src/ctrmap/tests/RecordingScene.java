@@ -13,8 +13,10 @@ import java.util.List;
  * could not be asserted at all - it was five field writes on a JOGL panel
  * reached through the main window, so a headless suite either planted one or
  * got a NullPointerException. The two framings are recorded separately on
- * purpose: the single-region path and the matrix path differ by one line, and
- * that difference is the thing most likely to be lost.
+ * purpose: the two paths are almost the same five assignments, and which of
+ * them a load asked for is the thing most likely to be lost. What they WRITE is
+ * not recorded here - there is no headless panel to write to. MainframeShapeTest
+ * reads those five lines out of the window's source instead.
  */
 public class RecordingScene implements Scene3D {
 

@@ -121,8 +121,10 @@ public class DataSafetyGuardsTest {
 	private static final Pattern DONE = Pattern.compile("void done\\(\\)\\s*\\{");
 
 	public static void main(String[] args) throws Exception {
-		//FIRST statement, before any AWT class is loaded. Two checks below
-		//drive a real LoadingDialog, and the application always opens one from
+		//FIRST statement, before any AWT class is loaded. Three checks below
+		//drive a real LoadingDialog - the Builder's add file, the zone that did
+		//not load, and the tilemap refresh - and the application always opens
+		//one from
 		//the EDT - inside the modal pump the worker's done() then runs in. A
 		//test cannot do that (done() would need the EDT this thread is holding),
 		//so it calls in from here instead, and with a screen attached a worker
@@ -140,6 +142,7 @@ public class DataSafetyGuardsTest {
 		matrixEditor(dump);
 		workerErrorsSurface(new File("src"));
 		mapLoadFailuresSurface();
+		theRescaleLandsOnThePanelThatRebuiltTheImages();
 		builderAddFileFailureSurfaces(dump);
 		zoneThatDidNotLoadSaysSo(dump);
 		locationNamesLoadThemselves(dump);
@@ -1033,6 +1036,86 @@ public class DataSafetyGuardsTest {
 		} else {
 			System.out.println("  FAIL: " + what);
 			fails++;
+		}
+	}
+
+	/**
+	 * The panel that just rebuilt its region images is the one that must
+	 * rescale them.
+	 *
+	 * <p>{@code updateAll}'s worker rebuilds THIS panel's region images and then
+	 * rescales. The rescale used to name {@code mTileMapPanel} - the main
+	 * window's static - from inside a worker whose enclosing instance is the
+	 * panel that did the rebuilding. Today the window holds one panel and the
+	 * editor behaves identically, which is why nothing on screen could ever show
+	 * the difference and why it stayed: off the window's own panel it is a
+	 * rescale of the wrong map, or, with the static unset, a
+	 * NullPointerException inside the worker that {@code done()} reports as "the
+	 * tilemap view was not refreshed" - a true sentence about the wrong panel.
+	 *
+	 * <p>Reachable only from here. {@code updateAll} runs behind a modal progress
+	 * dialog, so the suite that owns this panel's state
+	 * ({@code TileMapPanelStateTest}) cannot drive it: with a screen attached a
+	 * worker that finishes first disposes the dialog before
+	 * {@code setVisible(true)} shows it, and the run hangs on a modal window
+	 * nothing can close - the reason this suite sets headless as its first
+	 * statement. Headless, the dialog is the same object without the window and
+	 * {@code showDialog} still waits for {@code close}.
+	 *
+	 * <p>Only {@code renderTileMap} needs a screen, so both panels report it
+	 * instead of drawing - the same seam {@code EditorBench.BenchMap} uses.
+	 * Everything else in {@code scaleImage} runs for real. What is still
+	 * uncovered, and cannot be reached without a display, is the drawing itself
+	 * and the {@code updateImage} rebuild of a populated region.
+	 */
+	static void theRescaleLandsOnThePanelThatRebuiltTheImages() {
+		CountingMap subject = new CountingMap();
+		CountingMap windows = new CountingMap();
+		TileMapPanel was = CtrmapMainframe.mTileMapPanel;
+		CtrmapMainframe.mTileMapPanel = windows;
+		try {
+			for (TileMapPanel p : new TileMapPanel[]{subject, windows}) {
+				p.loaded = true;
+				p.tilemapScale = 0.5d;
+			}
+
+			//nothing open: the worker returns before it rescales anything, and the
+			//counters below only mean something because this is where they start
+			subject.tilemaps = null;
+			subject.updateAll();
+			check(subject.renders == 0 && windows.renders == 0,
+					"updateAll with no map open rescales nothing: this panel "
+					+ subject.renders + ", the window's " + windows.renders);
+
+			//one region, on a panel the window is NOT the holder of
+			subject.tilemaps = new ctrmap.formats.tilemap.Tilemap[1][1];
+			subject.updateAll();
+			check(subject.renders == 1 && windows.renders == 0,
+					"updateAll rescales the panel whose images it just rebuilt, not the"
+					+ " window's: this panel " + subject.renders + ", the window's "
+					+ windows.renders);
+			check(subject.tilemapScale == 0.5d,
+					"and rescales it at the zoom it was already showing: " + subject.tilemapScale);
+		} finally {
+			CtrmapMainframe.mTileMapPanel = was;
+		}
+	}
+
+	/** A map view that can be rescaled with no screen: renderTileMap is counted, not drawn. */
+	static final class CountingMap extends TileMapPanel {
+
+		private static final long serialVersionUID = 1L;
+
+		int renders = 0;
+
+		CountingMap() {
+			super(new LoadedZone(), TOOLS, SCENE, new JScrollPane(),
+					new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		}
+
+		@Override
+		public void renderTileMap() {
+			renders++;
 		}
 	}
 }
