@@ -55,6 +55,9 @@ import ctrmap.formats.tilemap.PaintedHeights;
  */
 public class PaintFormGuardsTest {
 
+	/** The zone list an apply rebuilds, so the sequence can be read back. */
+	static final RecordingZoneList ZONES = new RecordingZoneList();
+
 	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
 	static final RecordingScene SCENE = new RecordingScene();
 
@@ -106,7 +109,7 @@ public class PaintFormGuardsTest {
 		System.out.println("--- the painter refuses to be built without the editors it flushes");
 		String said = "(nothing was thrown)";
 		try {
-			new PaintForm(new LoadedZone(), null);
+			new PaintForm(new LoadedZone(), null, ZONES);
 		} catch (IllegalArgumentException refused) {
 			said = String.valueOf(refused.getMessage());
 		}
@@ -121,7 +124,7 @@ public class PaintFormGuardsTest {
 		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mTileMapPanel = null;
-		PaintForm form = new PaintForm(lz, EDITORS);
+		PaintForm form = new PaintForm(lz, EDITORS, ZONES);
 		set(form, "seededZone", ZONE);
 		TilePalette[][] grid = (TilePalette[][]) get(form, "grid");
 		for (TilePalette[] row : grid) {
@@ -358,7 +361,7 @@ public class PaintFormGuardsTest {
 		PaintApplyGuardsTest.openWorkspace(dump);
 		PaintApplyGuardsTest.open(74);
 		CtrmapMainframe.mTileMapPanel = null;
-		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS);
+		PaintForm form = new PaintForm(PaintApplyGuardsTest.loaded, EDITORS, ZONES);
 		Method seed = PaintForm.class.getDeclaredMethod("seed");
 		seed.setAccessible(true);
 		seed.invoke(form);
