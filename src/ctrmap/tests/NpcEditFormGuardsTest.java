@@ -115,6 +115,9 @@ import javax.swing.JSpinner;
  */
 public class NpcEditFormGuardsTest {
 
+	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
+	static final RecordingScene SCENE = new RecordingScene();
+
 	/** Where the user is looking, so a placement can be asserted at all. */
 	static final RecordingCentre CENTRE = new RecordingCentre();
 
@@ -1220,7 +1223,7 @@ public class NpcEditFormGuardsTest {
 
 	/** A map panel over a 2 wide, 4 tall matrix; null cells read height 0, past the edge reads NaN. */
 	static TileMapPanel tallMatrix() {
-		TileMapPanel map = new TileMapPanel(LOADED, TOOLS);
+		TileMapPanel map = new TileMapPanel(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		map.colls = new GRCollisionFile[2][4];
 		return map;
 	}

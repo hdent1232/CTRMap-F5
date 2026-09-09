@@ -63,6 +63,9 @@ import javax.swing.JScrollPane;
  * Usage: java ctrmap.tests.TileMapPanelStateTest &lt;pristine dump root&gt;
  */
 public class TileMapPanelStateTest {
+
+	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
+	static final RecordingScene SCENE = new RecordingScene();
 	/** The tool this suite holds: its own, so another suite may hold another. */
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
 
@@ -76,6 +79,7 @@ public class TileMapPanelStateTest {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 
 		//needs no game: pure geometry over arrays the suite builds itself
+		thetwoWaysOfPointingTheCameraStayTwo();
 		theViewportCentreIsWhereTheScrollBarsSay();
 		aRegionIsPickedByTileNumber();
 		theHeightLookupReadsThePanelsOwnCollisions();
@@ -407,7 +411,7 @@ public class TileMapPanelStateTest {
 	 */
 	static void aRegionIsPickedByTileNumber() {
 		System.out.println("--- a tile number picks its region");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		check(panel.getRegionForTile(0, 0) == null,
 				"with no map open the lookup answers null rather than throwing");
 
@@ -432,7 +436,7 @@ public class TileMapPanelStateTest {
 	 */
 	static void theHeightLookupReadsThePanelsOwnCollisions() {
 		System.out.println("--- the panel's height lookup reads the panel's own collisions");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		panel.colls = new GRCollisionFile[2][4]; //2 wide, 4 tall, all cells empty
 		check(panel.getHeightAtWorldLoc(100f, 3 * 720f + 10f) == 0f,
 				"a position inside this panel's 2x4 matrix reads its empty cell as height 0");
@@ -459,15 +463,45 @@ public class TileMapPanelStateTest {
 	 * spelled out rather than against constants, so the check says which
 	 * conversion moved if one of them does.
 	 */
+	/**
+	 * Opening a map points the 3D camera at it - and the two ways of doing that
+	 * are NOT the same call.
+	 *
+	 * <p>WHY THIS IS WORTH A SECTION. Loading a single region and loading a
+	 * matrix both aim the camera at the new map with four almost-identical
+	 * assignments - except the matrix path also zeroes the yaw and the
+	 * single-region path does not. Orbit the 3D view, then open a loose GR map
+	 * file, and the new map comes up at the angle you left the last one at.
+	 *
+	 * <p>That asymmetry was five field writes on a JOGL panel reached through the
+	 * main window, so nothing could see it and nothing did. It is two named
+	 * methods now, and this asserts they stay two: behind a boolean the
+	 * difference reads as an oversight and the next person removes it.
+	 */
+	static void thetwoWaysOfPointingTheCameraStayTwo() {
+		System.out.println("--- the two ways of pointing the 3D camera are not the same call");
+		SCENE.reset();
+		SCENE.frameSingleRegion();
+		SCENE.frameMatrix(4, 3);
+		check(SCENE.framings.size() == 2 && !SCENE.framings.get(0).equals(SCENE.framings.get(1)),
+			"they are two distinct calls, not one with an argument: " + SCENE.framings);
+		check(SCENE.framings.get(1).equals("matrix 4x3"),
+			"and the matrix one carries the size it is framing: " + SCENE.framings.get(1));
+		SCENE.reset();
+	}
+
 	static void theViewportCentreIsWhereTheScrollBarsSay() {
 		System.out.println("--- the viewport centre, in pixels, world units and tiles");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS);
+		//the scroll pane is HANDED to the panel now rather than planted on the
+		//window, so it has to be built before the panel and given to it - which is
+		//also the only way the two can be the same object
 		JPanel view = new JPanel();
 		view.setPreferredSize(new Dimension(2000, 2000));
 		JScrollPane sp = new JScrollPane(view);
 		sp.getViewport().setSize(300, 200);
 		sp.getViewport().setViewPosition(new Point(640, 480));
-		CtrmapMainframe.mTilemapScrollPane = sp;
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, sp,
+			new ctrmap.humaninterface.CollEditPanel(TOOLS));
 
 		panel.height = 2;                       //2 regions tall
 		panel.tilemapScale = 0.5d;
@@ -524,7 +558,7 @@ public class TileMapPanelStateTest {
 	 */
 	static void scalingRefusesWhatItCannotDraw() {
 		System.out.println("--- scaling refuses a zoom it cannot draw, and does not remember it");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		panel.tilemapScale = 0.25d;
 
 		panel.loaded = false;
@@ -562,7 +596,7 @@ public class TileMapPanelStateTest {
 	 */
 	static void aStaleReloadIsIgnoredRatherThanWritten() {
 		System.out.println("--- a stale region refresh is dropped rather than written into another map");
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		byte[] notEvenAModel = new byte[]{'B', 'C', 'H'};
 
 		panel.models = null;
@@ -589,7 +623,7 @@ public class TileMapPanelStateTest {
 
 	/** A panel holding one region, the way loadTileMap leaves it. */
 	static TileMapPanel single(int regionId) throws Exception {
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, regionId), Workspace.session());
 		panel.mode = TileMapPanel.ViewportMode.SINGLE;
 		panel.mainGR = gr;
@@ -612,7 +646,7 @@ public class TileMapPanelStateTest {
 
 	/** A panel over a parsed map matrix, the way loadMatrix leaves one. */
 	static TileMapPanel over(MapMatrix mm) throws Exception {
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		panel.mm = mm;
 		panel.mode = TileMapPanel.ViewportMode.MULTI;
 		panel.tilemaps = new Tilemap[mm.width][mm.height];

@@ -88,6 +88,9 @@ import javax.swing.SwingWorker;
  */
 public class DataSafetyGuardsTest {
 
+	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
+	static final RecordingScene SCENE = new RecordingScene();
+
 	/** The grid the matrix form draws on. A real panel: it needs no display to exist. */
 	static final ctrmap.humaninterface.MapMatrixPanel CANVAS = new ctrmap.humaninterface.MapMatrixPanel();
 
@@ -393,7 +396,7 @@ public class DataSafetyGuardsTest {
 		//thread, and nothing else in this suite presses the button: every other
 		//check calls addEntry directly and never reaches it.
 		CtrmapMainframe.mTilemapScrollPane = new JScrollPane();
-		TileMapPanel map = new TileMapPanel(new LoadedZone(), TOOLS);
+		TileMapPanel map = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		map.height = 40;
 		CtrmapMainframe.mTileMapPanel = map;
 		int quietAt = REDRAW.mark();
@@ -557,7 +560,7 @@ public class DataSafetyGuardsTest {
 	 * are still untested.
 	 */
 	static void mapLoadFailuresSurface() throws Exception {
-		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS);
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		panel.loaded = true;
 		panel.width = 40;
 		panel.height = 40;
@@ -725,7 +728,7 @@ public class DataSafetyGuardsTest {
 		ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		CtrmapMainframe.mZonePnl = pnl;
 		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm(REDRAW);
-		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS);
+		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm(lz, CANVAS);
 		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS, REDRAW, NAVI);
 		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE);

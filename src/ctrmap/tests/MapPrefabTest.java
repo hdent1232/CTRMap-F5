@@ -36,6 +36,9 @@ import static ctrmap.formats.LittleEndian.f32;
  * Usage: java ctrmap.tests.MapPrefabTest <path-to-a039-garc> [sampleStep]
  */
 public class MapPrefabTest {
+
+	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
+	static final RecordingScene SCENE = new RecordingScene();
 	/** The tool this suite holds: its own, so another suite may hold another. */
 	static final ctrmap.humaninterface.tools.ToolSelection TOOLS = new ctrmap.humaninterface.tools.ToolSelection();
 
@@ -283,7 +286,7 @@ public class MapPrefabTest {
 	 * and panel each time, so one stamp never lands on another's model.
 	 */
 	private static String stampInto(GR region, MapPrefab p) throws Exception {
-		ctrmap.humaninterface.TileMapPanel panel = new ctrmap.humaninterface.TileMapPanel(new ctrmap.LoadedZone(), TOOLS);
+		ctrmap.humaninterface.TileMapPanel panel = new ctrmap.humaninterface.TileMapPanel(new ctrmap.LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		panel.mainGR = region;
 		ctrmap.CtrmapMainframe.mTileMapPanel = panel;
 		ctrmap.CtrmapMainframe.mZonePnl = null;

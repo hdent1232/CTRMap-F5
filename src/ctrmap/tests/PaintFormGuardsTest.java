@@ -55,6 +55,9 @@ import ctrmap.formats.tilemap.PaintedHeights;
  */
 public class PaintFormGuardsTest {
 
+	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
+	static final RecordingScene SCENE = new RecordingScene();
+
 	/** The 3D gizmo these forms move, so what they told it can be read back. */
 	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
@@ -312,7 +315,7 @@ public class PaintFormGuardsTest {
 	 */
 	static void aRefusedApplySaysSoAndPutsTheMapBack() throws Exception {
 		PaintForm form = document();
-		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(new LoadedZone(), TOOLS);
+		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(new LoadedZone(), TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		set(form, "previewInScene", true);
 		set(form, "originalModel", new byte[]{1, 2, 3, 4});
 		List<String> said = ctrmap.Ui.record();

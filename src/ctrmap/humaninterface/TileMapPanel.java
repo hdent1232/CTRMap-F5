@@ -85,6 +85,23 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	private final GLCapabilities caps;
 	private GLAutoDrawable CM2DDrawable;
 	private BufferedImage CM2DTempImage;
+	/** The 3D scene this view shares, handed in: what it draws and where its camera looks. */
+	private final Scene3D scene;
+
+	/**
+	 * The scroll pane this view lives in, handed in AS ITSELF.
+	 *
+	 * <p>A narrower interface was considered and rejected for the same reason
+	 * ToolHost.map() hands the map view whole: this uses six of its members - the
+	 * viewport's position, width, height and size, plus revalidate and repaint -
+	 * and naming a capability per member would be a longer way of writing
+	 * JScrollPane.
+	 */
+	private final javax.swing.JScrollPane viewport;
+
+	/** The collision editor drawn alongside this view, handed in. */
+	private final CollEditPanel collision;
+
 	public boolean update = true;
 
 	@Override
@@ -101,13 +118,24 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	/** Which tool the editor is holding, handed in: this class only asks. */
 	private final ctrmap.humaninterface.tools.ToolSelection tools;
 
-	public TileMapPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools) {
+	public TileMapPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools,
+			Scene3D scene, javax.swing.JScrollPane viewport, CollEditPanel collision) {
 		super();
 		this.tools = tools;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("TileMapPanel must be handed a LoadedZone");
 		}
 		this.loadedZone = loadedZone;
+		//AFTER the LoadedZone check: LoadedZoneTest asserts a null owner is refused
+		//by a message naming "LoadedZone", and a refusal above would flip it.
+		if (scene == null || viewport == null || collision == null) {
+			throw new IllegalArgumentException("TileMapPanel must be handed the 3D scene, its"
+				+ " viewport and the collision editor it draws alongside - scene=" + scene
+				+ ", viewport=" + viewport + ", collision=" + collision);
+		}
+		this.scene = scene;
+		this.viewport = viewport;
+		this.collision = collision;
 		setLayout(new GridBagLayout());
 		add(placeholder);
 		g = tilemapScaledImage.getGraphics();
@@ -124,13 +152,13 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			@Override
 			public void componentResized(ComponentEvent e) {
 				if (CM2DDrawable != null) {
-					CM3DComponents.forEach((r) -> {
+					scene.renderables().forEach((r) -> {
 						r.deleteGLInstanceBuffers(CM2DDrawable.getGL().getGL2());
 					});
 					update = true;
 				}
 				GLDrawableFactory factory = GLDrawableFactory.getFactory(glp);
-				CM2DDrawable = factory.createOffscreenAutoDrawable(factory.getDefaultDevice(), caps, new DefaultGLCapabilitiesChooser(), mTilemapScrollPane.getViewport().getWidth(), mTilemapScrollPane.getViewport().getHeight());
+				CM2DDrawable = factory.createOffscreenAutoDrawable(factory.getDefaultDevice(), caps, new DefaultGLCapabilitiesChooser(), viewport.getViewport().getWidth(), viewport.getViewport().getHeight());
 				CM2DDrawable.display();
 				CM2DDrawable.getContext().makeCurrent();
 
@@ -201,10 +229,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		loaded = true;
 		loadProps(null, null);
 		mNPCEditForm.loadFromEntities(null, null);
-		m3DDebugPanel.translateX = 0f; //720/2 to center the camera
-		m3DDebugPanel.translateY = -360f;
-		m3DDebugPanel.translateZ = -720f; //at the end of the map vertically
-		m3DDebugPanel.rotateX = 45f;
+		scene.frameSingleRegion();
 	}
 
 	public void loadProps(List<H3DTexture> propTextures, ADPropRegistry reg) {
@@ -264,9 +289,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		}
 		model.makeAllBOs();
 		models[cellX][cellY] = bch;
-		if (m3DDebugPanel != null) {
-			m3DDebugPanel.repaint();
-		}
+		scene.redraw();
 		repaint();
 	}
 
@@ -415,7 +438,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 				models = new BCHFile[mm.width][mm.height];
 				tallgrass = new BCHFile[mm.width][mm.height];
 				colls = new GRCollisionFile[mm.width][mm.height];
-				mCollEditPanel.unload();
+				collision.unload();
 				for (int i = 0; i < mm.height; i++) {
 					for (int j = 0; j < mm.width; j++) {
 						if (mm.ids.get(j, i) != -1) {
@@ -462,17 +485,13 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 							//caption. The collision file itself is read on the line above and never
 							//needed the model, and this name only ever becomes a JTree node label,
 							//so name the cell instead and let the rest of the zone open.
-							mCollEditPanel.loadCollision(colls[j][i], bch.models.isEmpty()
+							collision.loadCollision(colls[j][i], bch.models.isEmpty()
 									? "Region " + j + "x" + i : bch.models.get(0).name);
 						}
 						progress.setBarPercent((int) (((i * mm.width + j) / (float) (mm.width * mm.height)) * 100));
 					}
 				}
-				m3DDebugPanel.translateX = -mm.width * 360f; //720/2 to center the camera
-				m3DDebugPanel.translateY = -mm.height * 360f;
-				m3DDebugPanel.translateZ = -mm.height * 720f; //at the end of the map vertically
-				m3DDebugPanel.rotateX = 45f;
-				m3DDebugPanel.rotateY = 0f;
+				scene.frameMatrix(mm.width, mm.height);
 				remove(placeholder);
 				invalidate();
 				revalidate();
@@ -571,13 +590,13 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 
 	public BufferedImage renderGL(GL2 gl) {
 		if (update) {
-			CM3DComponents.forEach((r) -> {
+			scene.renderables().forEach((r) -> {
 				r.uploadBuffers(gl);
 			});
 			update = false;
 		}
 
-		CM3DComponents.forEach((r) -> {
+		scene.renderables().forEach((r) -> {
 			r.renderCM3D(gl);
 		});
 
@@ -735,10 +754,10 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	public Point getRawAtViewportCentre() {
 		int imgstartx = (this.getWidth() - tilemapScaledImage.getWidth()) / 2;
 		int imgstarty = (this.getHeight() - tilemapScaledImage.getHeight()) / 2;
-		int WPStartX = Math.round(mTilemapScrollPane.getViewport().getViewPosition().x - imgstartx);
-		int WPStartY = Math.round(mTilemapScrollPane.getViewport().getViewPosition().y - imgstarty);
-		int xFromWPStart = Math.round(mTilemapScrollPane.getViewport().getWidth() / 2);
-		int yFromWPStart = Math.round(mTilemapScrollPane.getViewport().getHeight() / 2);
+		int WPStartX = Math.round(viewport.getViewport().getViewPosition().x - imgstartx);
+		int WPStartY = Math.round(viewport.getViewport().getViewPosition().y - imgstarty);
+		int xFromWPStart = Math.round(viewport.getViewport().getWidth() / 2);
+		int yFromWPStart = Math.round(viewport.getViewport().getHeight() / 2);
 		return new Point(WPStartX + xFromWPStart, WPStartY + yFromWPStart);
 	}
 
@@ -759,10 +778,10 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		if (loaded) {
 			int imgstartx = (this.getWidth() - tilemapScaledImage.getWidth()) / 2;
 			int imgstarty = (this.getHeight() - tilemapScaledImage.getHeight()) / 2;
-			int scrollpanex = mTilemapScrollPane.getViewport().getViewPosition().x;
-			int scrollpaney = mTilemapScrollPane.getViewport().getViewPosition().y;
-			int scrollpanew = mTilemapScrollPane.getViewport().getSize().width;
-			int scrollpaneh = mTilemapScrollPane.getViewport().getSize().height;
+			int scrollpanex = viewport.getViewport().getViewPosition().x;
+			int scrollpaney = viewport.getViewport().getViewPosition().y;
+			int scrollpanew = viewport.getViewport().getSize().width;
+			int scrollpaneh = viewport.getViewport().getSize().height;
 			if (scrollpanex + scrollpanew > tilemapScaledImage.getWidth()) {
 				scrollpanew = tilemapScaledImage.getWidth() - scrollpanex;
 			}
@@ -914,8 +933,8 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			renderTileMap();
 			this.setPreferredSize(new Dimension(tilemapScaledImage.getWidth(), tilemapScaledImage.getHeight()));
 			this.invalidate();
-			mTilemapScrollPane.revalidate();
-			mTilemapScrollPane.repaint();
+			viewport.revalidate();
+			viewport.repaint();
 		}
 	}
 
@@ -926,7 +945,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			g = tilemapScaledImage.getGraphics();
 			int regionSize = (int) (Math.round(400 * tilemapScale));
 			g.drawImage(tilemaps[changedRegionX][changedRegionY].getImage(), (int) (Math.round(400d * tilemapScale * changedRegionX)), (int) (Math.round(400d * tilemapScale * changedRegionY)), regionSize + 1, regionSize, null);
-			mTilemapScrollPane.repaint();
+			viewport.repaint();
 		}
 	}
 }

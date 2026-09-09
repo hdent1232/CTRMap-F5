@@ -75,6 +75,9 @@ import javax.swing.JSpinner;
  */
 public class PropEditFormGuardsTest {
 
+	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
+	static final RecordingScene SCENE = new RecordingScene();
+
 	/** The 3D gizmo these forms move, so what they told it can be read back. */
 	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
@@ -130,7 +133,7 @@ public class PropEditFormGuardsTest {
 		//a map view with no matrix: that is what sends the save to the region's
 		//own GR rather than through the matrix distributor
 		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
-		CtrmapMainframe.mTileMapPanel = new TileMapPanel(LOADED, TOOLS);
+		CtrmapMainframe.mTileMapPanel = new TileMapPanel(LOADED, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS));
 		//the 3D view the form pushes every edit into. Constructible with no
 		//display; the window it lives in is not. The form no longer needs
 		//loaded armed by hand - see openingARegionLeavesTheFormLive.
