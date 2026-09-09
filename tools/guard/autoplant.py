@@ -90,9 +90,16 @@ def compile_one(path, javac):
 
 
 def run_suite(cls, args, java):
+    """Exactly as test.ps1 runs it, flags included.
+
+    This used to add -Djava.awt.headless=true, which the battery does not, and
+    a suite can behave differently under it: a map load that a headless JVM
+    refuses at the progress dialog SUCCEEDS with a display, and the code after
+    it then runs against a loaded map instead of an empty one. A guard proven
+    under one set of flags and shipped under another is not proven."""
     try:
         done = subprocess.run(
-            [java, "-Xmx4g", "-Djava.awt.headless=true", "-cp", LIBS, cls] + args,
+            [java, "-Xmx4g", "-cp", LIBS, cls] + args,
             cwd=ROOT, capture_output=True, text=True, errors="replace",
             timeout=SUITE_TIMEOUT)
     except subprocess.TimeoutExpired:

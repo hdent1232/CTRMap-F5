@@ -113,6 +113,7 @@ public class MainframeEdgesTest {
 		nothingOutsideTheWindowWritesItsStatics(classes);
 		theWindowKeepsNoMoreStaticsThanRecorded();
 		nothingIsHandedAStaticTheWindowHasNotBuiltYet(new File(args.length > 1 ? args[1] : "src"));
+		everyZoneHandedToTheTabIsGivenASlot(new File(args.length > 1 ? args[1] : "src"));
 		theRuleSeesTheShapesItUsedToMiss();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -412,6 +413,60 @@ public class MainframeEdgesTest {
 	 * called. That is how both editor lists can be built before the editors they
 	 * name, and a rule that forbade it would forbid the fix it exists to protect.
 	 */
+	/**
+	 * Every zone the window hands the Zone tab is also given a table slot, in
+	 * the same block.
+	 *
+	 * <p>{@code ZoneLoadingPanel.loadZone} deliberately keeps whatever index was
+	 * last recorded, because the dropdown's list worker records its own on the
+	 * very next line. That makes the call SAFE where an index follows it and
+	 * silently wrong where none does: File &gt; Open Zone recorded none, so a
+	 * zone opened from a loose file inherited the index of whatever zone the
+	 * user had last picked, and the next save wrote that file's 0x38-byte header
+	 * into the master zone-header table at THAT slot, replacing an unrelated
+	 * map's entry without a word.
+	 *
+	 * <p>The instance is fixed at its call site. This is what makes a SECOND one
+	 * noticeable: a new {@code mZonePnl.loadZone(} anywhere in the window has to
+	 * say which slot the zone belongs to, or say -1 for none, within a few lines
+	 * of asking for it. Source rather than bytecode because the two calls are
+	 * ordinary and it is their ADJACENCY that is the rule.
+	 */
+	static void everyZoneHandedToTheTabIsGivenASlot(File srcRoot) throws Exception {
+		System.out.println("--- every zone handed to the Zone tab is given a table slot");
+		File f = new File(srcRoot, WINDOW + ".java");
+		if (!f.isFile()) {
+			check(false, "no " + f.getPath() + " to read - this rule is checked over source");
+			return;
+		}
+		List<String> lines = new ArrayList<>();
+		java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(
+			new java.io.FileInputStream(f), "UTF-8"));
+		for (String line = r.readLine(); line != null; line = r.readLine()) {
+			lines.add(line);
+		}
+		r.close();
+		List<String> unslotted = new ArrayList<>();
+		int calls = 0;
+		for (int i = 0; i < lines.size(); i++) {
+			if (lines.get(i).contains("//") || !lines.get(i).contains("mZonePnl.loadZone(")) {
+				continue;
+			}
+			calls++;
+			boolean slotted = false;
+			for (int j = i + 1; j < Math.min(lines.size(), i + 6) && !slotted; j++) {
+				slotted = lines.get(j).contains("loadedZone.open(") && !lines.get(j).contains("//");
+			}
+			if (!slotted) {
+				unslotted.add((i + 1) + ": " + lines.get(i).trim());
+			}
+		}
+		check(calls > 0, "the window hands the Zone tab a zone somewhere (" + calls
+			+ " call site(s)) - a rule with nothing to check is not a rule");
+		check(unslotted.isEmpty(), "and every one records the slot it belongs to, or -1 for none "
+			+ unslotted);
+	}
+
 	static void theRuleSeesTheShapesItUsedToMiss() {
 		System.out.println("--- and the rule can see the shapes it used to miss");
 

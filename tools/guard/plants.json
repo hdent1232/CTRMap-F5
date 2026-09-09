@@ -971,6 +971,187 @@
    ],
    "must_say": "zone 24 case 7 is a simple talker",
    "auto": true
+  },
+  {
+   "id": "matrix-tool-switch-keeps-a-stale-cursor",
+   "why": "The cursor is measured in the scale the tool selects - region coordinates under the chunk tool, sub-chunk coordinates under the multizone tool. Leaving it standing across a switch made the next saveAll write through it: past the width an IndexOutOfBounds, inside it a silent write into the wrong region. saveAll is reached from the Save button, both spinners, the next click on the panel and store().",
+   "file": "src/ctrmap/humaninterface/MatrixEditForm.java",
+   "find": "\t\tif (MatrixSelector.selectSubChunks != wasSubChunks) {\n\t\t\tcurRegX = -1;\n\t\t\tcurRegY = -1;\n\t\t\tMatrixSelector.unfocus();\n\t\t}\n",
+   "replace": "\t\tif (MatrixSelector.selectSubChunks != wasSubChunks && false) {\n\t\t\tcurRegX = -1;\n\t\t\tcurRegY = -1;\n\t\t\tMatrixSelector.unfocus();\n\t\t}\n",
+   "suite": "ctrmap.tests.MatrixEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "switching to the chunk tool drops it"
+  },
+  {
+   "id": "matrix-load-keeps-the-last-picked-cell",
+   "why": "MatrixSelector.unfocus() had no caller anywhere, so the picked cell survived every zone load: the form went back to region 0,0 while the red rectangle stayed on the cell the PREVIOUS matrix was clicked at - off the grid entirely on a smaller one.",
+   "file": "src/ctrmap/humaninterface/MatrixEditForm.java",
+   "find": "\t\t\tMatrixSelector.unfocus();\n\t\t\tcam = null;",
+   "replace": "\t\t\tcam = null;",
+   "suite": "ctrmap.tests.MatrixEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "a load clears the picked cell"
+  },
+  {
+   "id": "matrix-grow-skips-the-layers-the-save-reads",
+   "why": "The resize handlers moved the LOD and zone-switch layers only while hasLOD was 1, while the width they are INDEXED BY moved unconditionally. assembleData reads them by the flag as it stands at SAVE time, and the flag is a checkbox: untick, add a column, tick back on, save - and the write walked off a layer that never grew, out of store(), before the user was asked anything.",
+   "file": "src/ctrmap/humaninterface/MatrixEditForm.java",
+   "find": "\t\t\tmm.LOD.addColumn();\n\t\t\tmm.zones.addColumns(4);",
+   "replace": "\t\t\tif (mm.hasLOD == 1) {\n\t\t\t\tmm.LOD.addColumn();\n\t\t\t\tmm.zones.addColumns(4);\n\t\t\t}",
+   "suite": "ctrmap.tests.MatrixEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "ticking the box back on and saving does not throw"
+  },
+  {
+   "id": "matrix-grid-asks-for-no-room",
+   "why": "The grid never sized itself, so its viewport took the preferred size as exactly the extent: no scrollbar could ever appear, and a matrix bigger than the pane was drawn from a negative origin and clipped on all four sides. The regions outside could not be seen, selected or edited at all, and Add column reaches that in a few clicks.",
+   "file": "src/ctrmap/humaninterface/MapMatrixPanel.java",
+   "find": "\t\treturn new java.awt.Dimension(getFullImageWidth(), getFullImageHeight());",
+   "replace": "\t\treturn super.getPreferredSize();",
+   "suite": "ctrmap.tests.MatrixEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the size of the picture it draws"
+  },
+  {
+   "id": "matrix-failed-load-keeps-the-matrix",
+   "why": "this.mm was assigned as the second statement of the try and the ready flag was the last statement inside it, so a throw between them left the form holding a matrix with loaded false. saveAll is gated on \"mm != null && loaded\", so from that moment every chunk id, LOD, multizone and camera bound the user typed was dropped, including through store().",
+   "file": "src/ctrmap/humaninterface/MatrixEditForm.java",
+   "find": "\t\t\tthis.mm = null;\n\t\t\tloaded = false;",
+   "replace": "\t\t\tloaded = false;",
+   "suite": "ctrmap.tests.MatrixEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the two flags agree: no matrix, not loaded"
+  },
+  {
+   "id": "panel-draws-before-a-zone-is-open",
+   "why": "The 3D renderer starts a 60fps animator in its constructor and draws every registered renderable as soon as the WORKSPACE is valid - a workspace, not a zone - while this panel is registered at startup. With the 3D view on before any zone is picked, and after every unload, this threw sixty times a second on the animator thread where only stderr could see it. Its two sibling overrides always had a test of this shape; the one that draws was the only one without.",
+   "file": "src/ctrmap/humaninterface/TileMapPanel.java",
+   "find": "\t\tif (models == null || tallgrass == null || (mode == ViewportMode.MULTI && mm == null)) {\n\t\t\treturn;\n\t\t}",
+   "replace": "\t\tif (models == null && false) {\n\t\t\treturn;\n\t\t}",
+   "suite": "ctrmap.tests.TileMapPanelStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "a frame drawn fresh does not throw"
+  },
+  {
+   "id": "panel-save-walks-past-its-own-tilemaps",
+   "why": "Matrix Editor > Add column raises mm.width on the SAME MapMatrix this panel holds, without touching mm.regions or tilemaps. The scan that decides whether to ask already skips cells outside tilemaps; the loop that acts on the answer walked the whole new width, so the first cell past the old edge threw - into the worker, which abandoned the save with some regions written and some not.",
+   "file": "src/ctrmap/humaninterface/TileMapPanel.java",
+   "find": "\t\t\t\t\t\t\t\t\t\t\t\tif (j >= tilemaps.length || i >= tilemaps[j].length || tilemaps[j][i] == null) {\n\t\t\t\t\t\t\t\t\t\t\t\t\tcontinue;\n\t\t\t\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t\t\t\t\tif (mm.regions.get(j, i) == null) {",
+   "replace": "\t\t\t\t\t\t\t\t\t\t\t\tif (mm.regions.get(j, i) == null) {",
+   "suite": "ctrmap.tests.TileMapPanelStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "saving an outgrown matrix does not throw"
+  },
+  {
+   "id": "panel-keeps-the-last-zones-textures",
+   "why": "The two saved texture lists were captured on load and reset nowhere, so after \"open a zone, then File > Open GR Mapfile\" the panel reported no zone open while getWorldTextures() still handed out the OLD zone's textures. The readers cannot tell a stale list from a live one - and the geometry editor's live refresh would bind the previous zone's textures onto the loose map, so editing it changed how it looked.",
+   "file": "src/ctrmap/humaninterface/TileMapPanel.java",
+   "find": "\t\tsavedWorldTextures = null;\n\t\tsavedPropTextures = null;",
+   "replace": "\t\tsavedPropTextures = null;",
+   "suite": "ctrmap.tests.TileMapPanelStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "it hands out nothing rather than the last zone's"
+  },
+  {
+   "id": "prop-remove-shows-the-prop-it-deleted",
+   "why": "DefaultComboBoxModel.removeElementAt picks the replacement selection BEFORE it removes the item, so the box fired its ActionEvent while it still held both entries. Removing prop 0 of 2 re-entered showProp with index 1 against a list already down to one: the form went on displaying the prop that had just been deleted, the gizmo went on following it, and the survivor could be reached from neither the box nor either prop tool.",
+   "file": "src/ctrmap/humaninterface/PropEditForm.java",
+   "find": "\t\tloaded = false;\n\t\tmodels.remove(removed);\n\t\tprops.props.remove(removed);\n\t\tentryBox.removeItemAt(removed);\n\t\tloaded = true;\n\t\tshowProp(entryBox.getSelectedIndex());",
+   "replace": "\t\tmodels.remove(removed);\n\t\tprops.props.remove(removed);\n\t\tentryBox.removeItemAt(removed);",
+   "suite": "ctrmap.tests.PropEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the form is showing THAT prop, not the deleted one"
+  },
+  {
+   "id": "prop-save-with-nowhere-to-write-goes-quiet",
+   "why": "With neither an open matrix nor a single GR - what a matrix load that failed part-way leaves behind - answering \"save\" fell through to \"modified = false\", so every prop the user had moved, added or removed was discarded AND marked clean, with nothing said anywhere: not a dialog, not a log line.",
+   "file": "src/ctrmap/humaninterface/PropEditForm.java",
+   "find": "\t\t\t\t\t\tctrmap.Ui.error(this, \"The prop edits were NOT saved: there is no map\"",
+   "replace": "\t\t\t\t\t\tif (false) ctrmap.Ui.error(this, \"The prop edits were NOT saved: there is no map\"",
+   "suite": "ctrmap.tests.PropEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the refusal says the edits were not saved"
+  },
+  {
+   "id": "tile-cursor-outlives-the-map-it-was-set-on",
+   "why": "Selector.selTileX/selTileY are statics and nothing reset them on a load, so a tile picked on a wide matrix was still selected after a switch to a smaller one. The tile editor's showListModel dereferenced getRegionForTile with it inline, so any tile-category radio click threw on the event thread - and the red picked-tile rectangle stayed painted at the old map's coordinate.",
+   "file": "src/ctrmap/humaninterface/TileMapPanel.java",
+   "find": "\t\tSelector.unfocus(this);\n\t\tLoadingDialog progress = LoadingDialog.makeDialog(\"Loading matrix\");",
+   "replace": "\t\tLoadingDialog progress = LoadingDialog.makeDialog(\"Loading matrix\");",
+   "suite": "ctrmap.tests.TileMapPanelStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the picked tile is dropped with the undo history it belongs to"
+  },
+  {
+   "id": "loose-zone-takes-another-zones-slot",
+   "why": "loadZone keeps whatever index was last recorded, because the dropdown's list worker records its own on the next line. File > Open Zone recorded none, so a zone opened from a loose file inherited the index of whatever zone the user had last picked, and the next save wrote that file's 0x38-byte header into the master zone-header table at THAT slot, replacing an unrelated map's entry without a word.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\t\tmZonePnl.loadZone(opened);\n\t\t\tloadedZone.open(-1, opened);",
+   "replace": "\t\t\tmZonePnl.loadZone(opened);",
+   "suite": "ctrmap.tests.MainframeEdgesTest",
+   "args": [
+    "build/classes",
+    "src"
+   ],
+   "must_say": "every one records the slot it belongs to, or -1 for none"
+  },
+  {
+   "id": "zone-with-no-slot-writes-slot-zero",
+   "why": "A zone open at no slot at all - what a loose .zo is - must write no master table entry. Clamping the index instead makes the file's header land in slot 0, which is the same silent replacement of an unrelated map's entry that the loose-zone defect caused, just always at zone 0.",
+   "file": "src/ctrmap/humaninterface/ZoneLoadingPanel.java",
+   "find": "\t\t\t\t\tdos.seek(zoneIndex * 0x38);",
+   "replace": "\t\t\t\t\tdos.seek(Math.max(0, zoneIndex) * 0x38);",
+   "suite": "ctrmap.tests.ZoneLoadingStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the master zone-header table is byte-for-byte what it was"
+  },
+  {
+   "id": "half-loaded-form-writes-the-last-zones-header",
+   "why": "loadZone sets loaded false, writes forty-odd widgets, and sets it true as its LAST line, inside one try whose catch only printed a stack trace. When a setSelectedIndex throws, every field after it still holds the PREVIOUS zone's value - and store() had no loaded test, so it copied that zone's boundaries, matrix, script and text ids into THIS zone's header on the next save, zone switch or window close.",
+   "file": "src/ctrmap/humaninterface/ZoneLoadingPanel.java",
+   "find": "\t\tif (!loaded) {",
+   "replace": "\t\tif (!loaded && false) {",
+   "suite": "ctrmap.tests.ZoneLoadingStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "a form that never finished loading writes not one header byte"
+  },
+  {
+   "id": "region-keeps-the-palette-it-loaded-under",
+   "why": "Tilemap captures what it is handed into a final field and paints from it forever, and Workspace.getTileset() returns a NEW tileset object on every call. Handing the object over meant that changing the tileset in Workspace settings repainted every region in the palette captured at load: the user watched the progress dialog run and saw nothing change, and the new colours arrived only with the next zone load.",
+   "file": "src/ctrmap/humaninterface/TileMapPanel.java",
+   "find": "\t\treturn colours;\n\t}",
+   "replace": "\t\tfinal java.awt.Color[] captured = new java.awt.Color[1024];\n\t\treturn tile -> {\n\t\t\tif (captured[tile] == null) {\n\t\t\t\tcaptured[tile] = colours.colorOf(tile);\n\t\t\t}\n\t\t\treturn captured[tile];\n\t\t};\n\t}",
+   "suite": "ctrmap.tests.TileMapPanelStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the panel hands a region the view it was given, not a copy"
   }
  ]
 }

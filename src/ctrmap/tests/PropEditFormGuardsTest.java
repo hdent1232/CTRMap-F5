@@ -151,6 +151,8 @@ public class PropEditFormGuardsTest {
 		typingACoordinateMovesThePropBeforeSave();
 		saveWithDialogHasThreeAnswers();
 		newEntryAndRemoveEntry();
+		removingTheFirstOfTwoLeavesTheSurvivorShowing();
+		savingWithNowhereToWriteRefusesAndSaysSo();
 		withoutARegistryNewAndRemoveThrow();
 		unloadLeavesNothingBehind();
 
@@ -459,6 +461,88 @@ public class PropEditFormGuardsTest {
 		check(f.form.reg == null && f.form.regentry == null && f.form.models.isEmpty(), "the registry and the models with it");
 		check(f.form.propIndex == -1 && entries(f.form) == 0, "and the dropdown is empty");
 		check(f.form.store(false), "storing an unloaded form succeeds and writes nothing");
+	}
+
+	/**
+	 * Removing the first of two props leaves the survivor selected and showing.
+	 *
+	 * <p>{@code DefaultComboBoxModel.removeElementAt} picks the replacement
+	 * selection BEFORE it removes the item, so the box fired its ActionEvent
+	 * while it still held both entries. Removing prop 0 of 2 therefore re-entered
+	 * {@code showProp} with index 1 against a list already down to one: showProp
+	 * took its "no such prop" early return, left {@code prop} null and
+	 * {@code propIndex} past the end, and the corrective setSelectedIndex that
+	 * used to stand there fired nothing because the index was already in range.
+	 *
+	 * <p>What that cost: the form went on displaying the prop that had just been
+	 * deleted, the gizmo went on following it, and the SURVIVING prop could not
+	 * be reached - not from the box, where it was already the selection, and not
+	 * from either prop tool, whose setProp is setSelectedIndex. It also ran
+	 * saveProp against a prop already out of the list, which is
+	 * {@code props.props.set(-1, prop)} whenever a coordinate had been typed and
+	 * not saved. Three or more props hid it, because the event landed in range.
+	 */
+	static void removingTheFirstOfTwoLeavesTheSurvivorShowing() throws Exception {
+		System.out.println("--- removing the first of two props leaves the other one showing");
+		Fixture f = open(true);
+		check(f.form.props.props.size() == 2, "the region holds two props");
+		GRProp survivor = f.form.props.props.get(1);
+		f.form.setProp(0);
+		f.form.loaded = true;
+		invoke(f.form, "btnRemEntryActionPerformed");
+		check(f.form.props.props.size() == 1, "one prop left: " + f.form.props.props.size());
+		check(f.form.props.props.get(0) == survivor, "and it is the one that was second");
+		check(f.form.prop == survivor, "the form is showing THAT prop, not the deleted one");
+		check(f.form.propIndex == 0, "at index 0, which is where it now lives: " + f.form.propIndex);
+		check(entries(f.form) == 1, "with one entry in the dropdown: " + entries(f.form));
+		check(f.form.props.modified, "and the propdata is marked modified");
+		//the survivor must be REACHABLE, which is the half the old code lost:
+		//setProp is setSelectedIndex, a no-op for an index already selected
+		f.form.setProp(0);
+		check(f.form.prop == survivor, "and picking it from a tool still finds it");
+		f.form.loaded = true;
+		check(f.form.store(false), "the region stores");
+		check(u32(f.propdata(), 0) == 1 && records(f.propdata()).length == 1,
+			"and the propdata counts one record");
+	}
+
+	/**
+	 * Answering "save" with nowhere to write refuses, and says so.
+	 *
+	 * <p>The two write branches are the only ways these props reach a file:
+	 * through the open matrix's regions, or through the single GR the form was
+	 * handed. With neither - which is what a matrix load that failed part-way
+	 * leaves behind, because the failure path calls unload() and that nulls the
+	 * matrix while this form keeps the previous zone's props - the switch fell
+	 * through to "modified = false", so every prop the user had moved, added or
+	 * removed was discarded AND marked clean, with nothing said anywhere.
+	 */
+	static void savingWithNowhereToWriteRefusesAndSaysSo() throws Exception {
+		System.out.println("--- answering save with nowhere to write refuses, in words");
+		Fixture f = open(true);
+		type(f.form, "x", 123.5f);
+		f.form.saveProp();
+		check(f.form.props.modified, "there is an edit to lose");
+		f.form.gr = null;
+		ctrmap.humaninterface.TileMapPanel map = CtrmapMainframe.mTileMapPanel;
+		ctrmap.formats.mapmatrix.MapMatrix was = map.mm;
+		map.mm = null;
+		List<String> said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
+		boolean answered;
+		try {
+			answered = f.form.store(true);
+		} finally {
+			ctrmap.Ui.stopRecording();
+			map.mm = was;
+		}
+		check(!answered, "the save refuses rather than reporting success");
+		check(said.size() == 2, "and two things were said - the question, then the refusal: " + said.size());
+		check(said.size() == 2 && said.get(1).contains("were NOT saved"),
+			"the refusal says the edits were not saved: " + (said.size() == 2 ? said.get(1) : said));
+		check(said.size() == 2 && said.get(1).contains("no map"),
+			"and why - there is no map open to write them into");
+		check(f.form.props.modified,
+			"and the edits are still there to be saved, not marked clean and dropped");
 	}
 
 	// ---- fixture -------------------------------------------------------
