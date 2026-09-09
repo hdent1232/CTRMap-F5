@@ -10,8 +10,29 @@ public class MapMatrixPanel extends JPanel implements MatrixCanvas {
 
 	public MapMatrix mm;
 
+	/**
+	 * The editor beside this grid, set ONCE after both exist.
+	 *
+	 * <p>Two-phase because it has to be: this panel is built first and the form
+	 * is built over it, so there is no order in which each can be handed the
+	 * other. See {@link MatrixTools}. Null only during that window, and the two
+	 * places that use it say what they do meanwhile rather than throwing.
+	 */
+	private MatrixTools tools;
+
 	public MapMatrixPanel() {
 		super();
+	}
+
+	/**
+	 * Tells this grid which editor is beside it. Once, by the window, before
+	 * anything can reach either of them.
+	 */
+	public void setTools(MatrixTools tools) {
+		if (tools == null) {
+			throw new IllegalArgumentException("the matrix grid must be told which editor is beside it");
+		}
+		this.tools = tools;
 	}
 
 	public void loadMatrix(MapMatrix mm) {
@@ -20,7 +41,12 @@ public class MapMatrixPanel extends JPanel implements MatrixCanvas {
 		//repaint() alone never asks for a layout pass, and the viewport would go
 		//on using the size it already had.
 		revalidate();
-		mMtxEditForm.loadMatrix(mm);
+		if (tools != null) {
+			//null only between this panel being built and the form being built over
+			//it. Nothing loads a matrix in that window, and if anything ever does,
+			//the grid still shows it - only the form beside it would not.
+			tools.loadMatrix(mm);
+		}
 	}
 
 	/**
@@ -105,7 +131,9 @@ public class MapMatrixPanel extends JPanel implements MatrixCanvas {
 					g.drawRect(regionX, regionY, 100, 100);
 				}
 			}
-			mMtxEditForm.drawToolGraphics(g, imgstartx, imgstarty);
+			if (tools != null) {
+				tools.drawToolGraphics(g, imgstartx, imgstarty);
+			}
 		}
 	}
 }

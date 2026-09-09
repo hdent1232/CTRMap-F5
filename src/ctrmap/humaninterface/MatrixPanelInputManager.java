@@ -19,8 +19,15 @@ public class MatrixPanelInputManager implements MouseWheelListener, MouseMotionL
 	
 	private MapMatrixPanel parent;
 	
-	public MatrixPanelInputManager(MapMatrixPanel parent){
+	/** The editor this router drives, handed in: it is built after both. */
+	private final MatrixTools tools;
+
+	public MatrixPanelInputManager(MapMatrixPanel parent, MatrixTools tools){
 		super();
+		if (tools == null) {
+			throw new IllegalArgumentException("the matrix router must be handed the editor it drives");
+		}
+		this.tools = tools;
 		this.parent = parent;
 		parent.addMouseWheelListener(this);
 		parent.addMouseMotionListener(this);
@@ -67,9 +74,9 @@ public class MatrixPanelInputManager implements MouseWheelListener, MouseMotionL
 		//these two used to live INSIDE acqCurTile, which meant the cursor reached
 		//through the window for the form and the panel. They belong here: this is
 		//the class that already knows both, and the order is the one they had.
-		mMtxEditForm.showRegion(MatrixSelector.selRegionX, MatrixSelector.selRegionY);
+		tools.showRegion(MatrixSelector.selRegionX, MatrixSelector.selRegionY);
 		parent.redraw();
-		mMtxEditForm.checkCamTool(e);
+		tools.checkCamTool(e);
 	}
 	
 	@Override

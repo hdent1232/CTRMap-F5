@@ -14,7 +14,7 @@ import java.util.Arrays;
 import javax.swing.JFormattedTextField;
 import javax.swing.text.NumberFormatter;
 
-public class MatrixEditForm extends javax.swing.JPanel {
+public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 
 	/** The grid this form draws on, handed in: fourteen bare repaints and one hit test. */
 	private final MatrixCanvas canvas;
