@@ -20,16 +20,22 @@ import java.nio.charset.StandardCharsets;
  * minutes, not seconds. What runs in every battery is its self-test: that the
  * ledger is well formed, that every plant still matches its file EXACTLY ONCE
  * (a plant that matches nothing has rotted with the code it was written
- * against; one that matches twice is ambiguous), and that neither ratchet has
+ * against; one that matches twice is ambiguous), and that no ratchet has
  * risen.
  *
- * <p>THE TWO RATCHETS. {@code owed} is the number of registered suites with no
- * plant at all — the honest size of what the ledger does not yet cover, which
- * is most of it. {@code owed_generalisation} counts plants marked
- * {@code site_only}: the defect was put back at exactly the place it was found,
- * and nothing shows the guard would catch the same defect somewhere else. Both
- * may only fall. A number that is allowed to rise is not a ratchet, and a
- * ledger with no honest count of what it misses reads as complete.
+ * <p>THE THREE RATCHETS, all of which may only fall. {@code owed} is the number
+ * of registered suites with no plant at all — the honest size of what the
+ * ledger does not yet cover, which is most of it. {@code owed_generalisation}
+ * counts plants marked {@code site_only}: the defect was put back at exactly the
+ * place it was found, and nothing shows the guard would catch the same defect
+ * somewhere else. {@code owed_real_defect} counts suites whose ONLY plant is
+ * marked {@code auto} — found by {@code tools/guard/autoplant.py} mutating a
+ * line and watching the suite go red. That proves the suite is not vacuous,
+ * which is worth knowing and is a WEAKER claim than a hand-written plant, where
+ * the text put back is a defect that actually reached a user. The two are
+ * counted apart so that filling the ledger by machine cannot look like filling
+ * it. A number that is allowed to rise is not a ratchet, and a ledger with no
+ * honest count of what it misses reads as complete.
  *
  * <p>ORDER: needs no game, no dump and no display. Needs python, and says so
  * and skips rather than passing if it is missing.
@@ -92,8 +98,10 @@ public class PlantLedgerTest {
 		String said = python(repo, "--owed");
 		String owed = firstLineContaining(said, "owed:");
 		String general = firstLineContaining(said, "owed_generalisation:");
+		String real = firstLineContaining(said, "owed_real_defect:");
 		check(!owed.isEmpty(), "the number of suites with no plant is reported: " + owed);
 		check(!general.isEmpty(), "and the number proven only at their own site: " + general);
+		check(!real.isEmpty(), "and the number standing on a machine-found plant alone: " + real);
 	}
 
 	// ---- plumbing ----------------------------------------------------------

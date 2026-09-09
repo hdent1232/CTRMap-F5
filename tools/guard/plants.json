@@ -9,15 +9,25 @@
   "defect back, and the suite that must go RED when it is there. tools/guard/replant.py applies one,",
   "requires the named suite to fail, restores the file byte-for-byte and verifies the restore.",
   "",
-  "TWO RATCHETS, and both may only fall. `owed` is the number of registered suites with no plant at",
-  "all - the honest size of what this ledger does not yet cover. `owed_generalisation` counts plants",
-  "marked site_only: the defect was put back at exactly the place it was found, and nothing shows the",
-  "guard would catch the same defect somewhere else. PlantLedgerTest holds both to their ceilings and",
-  "checks every plant still matches its file exactly once, which is cheap; replant.py actually runs",
-  "them, which is not."
+  "THREE RATCHETS, and every one of them may only fall.",
+  "",
+  "  owed                 registered suites with no plant at all - the honest size of what this",
+  "                       ledger does not cover.",
+  "  owed_generalisation  plants marked site_only: the defect was put back at exactly the place it",
+  "                       was found, and nothing shows the guard would catch it somewhere else.",
+  "  owed_real_defect     suites whose ONLY plant is marked auto. tools/guard/autoplant.py finds",
+  "                       those by mutating a line and watching the suite go red, which proves the",
+  "                       suite is not vacuous - a real thing to know, and NOT the same claim as a",
+  "                       hand-written plant, where the text put back is a defect that actually",
+  "                       happened to a user. Kept apart so a machine-generated line can never be",
+  "                       mistaken for the proof it is standing in for.",
+  "",
+  "PlantLedgerTest holds all three to their ceilings and checks every plant still matches its file",
+  "exactly once, which is cheap; replant.py actually runs them, which is not."
  ],
- "owed_ceiling": 115,
+ "owed_ceiling": 113,
  "owed_generalisation_ceiling": 3,
+ "owed_real_defect_ceiling": 0,
  "plants": [
   {
    "id": "zone-broadcast-clear-skips-editors",
@@ -253,6 +263,30 @@
     "${PRISTINE}"
    ],
    "must_say": "AND THE SCRIPT IS NOT RE-SHOWN"
+  },
+  {
+   "id": "trainer-bound-drifts-from-the-data",
+   "why": "The trainer dialog prompted with \"Trainer ID (1..949)\" and then refused 949, because the check under the prompt carried its own copy of the number and the copy was 948. Naming the bound once fixes the instance; this catches the class, which is the named bound drifting away from what the archive actually holds - and from what every other source still tells the user.",
+   "file": "src/ctrmap/formats/scripts/NpcTemplates.java",
+   "find": "public static final int TRAINER_ID_MAX = 949;",
+   "replace": "public static final int TRAINER_ID_MAX = 948;",
+   "suite": "ctrmap.tests.TrainerDataTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "the editor accepts trainer ids up to 948"
+  },
+  {
+   "id": "scanner-sees-less-than-a-grep",
+   "why": "The whole reason this scanner exists is that it reads the constant pool and a pattern over the sources cannot: a static import leaves no \"CtrmapMainframe.\" to match. That claim is only worth anything if the scanner never sees FEWER readers than a grep does. The pin used to prove it with a strict inequality; nothing reads the window any more, so the inequality is now an equality and this is what still bites.",
+   "file": "src/ctrmap/tests/ClassFileScannerTest.java",
+   "find": "\t\tSet<String> readers = new TreeSet<>(ClassFileScanner.readersOf(app, MAINFRAME));\n\t\treaders.remove(MAINFRAME); //itself, and every listener that folded into it",
+   "replace": "\t\tSet<String> readers = new TreeSet<>();",
+   "suite": "ctrmap.tests.ClassFileScannerTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "the scanner never sees fewer readers than a source grep does"
   }
  ]
 }

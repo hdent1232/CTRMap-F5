@@ -105,19 +105,38 @@ def run_suite(cls, args, java):
     return done.returncode, (done.stdout or "") + (done.stderr or "")
 
 
-def expand(args, pristine):
-    return [a.replace("${PRISTINE}", pristine) for a in args]
+def expand(args, pristine, gamedir):
+    """${PRISTINE} is the untouched GARC copy; ${GAMEDIR} is the live dump.
+
+    They are not interchangeable and a plant has to say which it wants.
+    RomFS_original_garcs holds only the archives the workspace flow needs to
+    restore, so a suite that reads a/0/3/6 finds nothing there and fails for
+    the wrong reason - which reads as a guard that noticed when it did not."""
+    out = []
+    for a in args:
+        out.append(a.replace("${PRISTINE}", pristine).replace("${GAMEDIR}", gamedir))
+    return out
 
 
 def owed(book):
-    """(suites with no plant, plants proven only at their own site, the suite names)."""
+    """The three things the ledger does not yet cover, and the suites it covers least.
+
+    A plant marked `auto` was found by tools/guard/autoplant.py: a single-line
+    mutation the suite was OBSERVED to catch. That proves the suite is not
+    vacuous, which is worth knowing and is not the same claim as a hand-written
+    plant, where the text put back is a defect that actually happened. Counting
+    the two as one number would let a machine-generated line hide the absence of
+    the real proof, so they are separate and both may only fall."""
     registered = set()
     text = io.open(os.path.join(ROOT, "test.ps1"), encoding="utf-8", errors="replace").read()
     for found in re.findall(r'c\s*=\s*"(ctrmap\.tests\.\w+)"', text):
         registered.add(found)
     planted = set(p["suite"] for p in book["plants"])
+    by_hand = set(p["suite"] for p in book["plants"] if not p.get("auto"))
     site_only = sum(1 for p in book["plants"] if p.get("site_only"))
-    return len(registered - planted), site_only, sorted(registered - planted)
+    auto_only = sorted(planted - by_hand)
+    return (len(registered - planted), site_only, len(auto_only),
+            sorted(registered - planted), auto_only)
 
 
 def check_shape(book):
@@ -149,7 +168,7 @@ def check_shape(book):
     return bad
 
 
-def replant(p, java, pristine):
+def replant(p, java, pristine, gamedir):
     """True when the guard noticed. Restores the file whatever happens."""
     path = os.path.join(ROOT, p["file"].replace("/", os.sep))
     raw, text, crlf = read(path)
@@ -168,7 +187,7 @@ def replant(p, java, pristine):
                 print("     A plant must leave a tree that BUILDS - otherwise the suite never runs")
                 print("     and 'it failed' means only that javac did.")
                 return False
-        code, said = run_suite(p["suite"], expand(p.get("args", []), pristine), java)
+        code, said = run_suite(p["suite"], expand(p.get("args", []), pristine, gamedir), java)
         if code is None:
             print("     HUNG: %s never finished in %ds with the defect back." % (p["suite"], SUITE_TIMEOUT))
             print("     Never scored as a kill. A suite that hangs under a plant is telling you")
@@ -208,17 +227,22 @@ def selftest():
           "the ledger holds plants (%d)" % len(book.get("plants") or []))
     check(check_shape(book) == [], "every plant matches its file exactly once: %s"
           % (check_shape(book) or "yes"))
-    n_owed, n_site, missing = owed(book)
+    n_owed, n_site, n_auto, missing, auto_only = owed(book)
     check(n_owed <= book["owed_ceiling"],
           "owed %d is at or under its ceiling %d - it may only fall" % (n_owed, book["owed_ceiling"]))
     check(n_site <= book["owed_generalisation_ceiling"],
           "owed_generalisation %d is at or under its ceiling %d"
           % (n_site, book["owed_generalisation_ceiling"]))
+    check(n_auto <= book["owed_real_defect_ceiling"],
+          "owed_real_defect %d is at or under its ceiling %d - a machine-found plant does"
+          " not discharge the debt of a real one"
+          % (n_auto, book["owed_real_defect_ceiling"]))
 
     # the runner's own refusals, on a scratch ledger rather than the real one
     fake = {"plants": [{"id": "a", "why": "w", "file": "test.ps1", "find": "zzz-not-here",
                         "replace": "x", "suite": "s", "must_say": "m"}],
-            "owed_ceiling": 999, "owed_generalisation_ceiling": 999}
+            "owed_ceiling": 999, "owed_generalisation_ceiling": 999,
+            "owed_real_defect_ceiling": 999}
     check(any("has rotted" in b for b in check_shape(fake)),
           "a plant whose text is gone is refused, not skipped")
     fake["plants"][0].update(find="param(", replace="param(")
@@ -236,12 +260,16 @@ def main(argv):
     if "--selftest" in argv:
         return selftest()
 
-    n_owed, n_site, missing = owed(book)
+    n_owed, n_site, n_auto, missing, auto_only = owed(book)
     if "--owed" in argv:
         print("owed: %d registered suite(s) have no plant (ceiling %d)"
               % (n_owed, book["owed_ceiling"]))
         print("owed_generalisation: %d plant(s) proven only at their own site (ceiling %d)"
               % (n_site, book["owed_generalisation_ceiling"]))
+        print("owed_real_defect: %d suite(s) whose only plant is machine-found (ceiling %d)"
+              % (n_auto, book["owed_real_defect_ceiling"]))
+        for name in auto_only:
+            print("    auto only: %s" % name)
         for name in missing:
             print("    %s" % name)
         return 0
@@ -260,6 +288,9 @@ def main(argv):
     java = os.path.join(java, "bin", "java.exe")
     pristine = os.environ.get("CTRMAP_PRISTINE",
                               os.path.join(os.path.dirname(ROOT), "RomFS_original_garcs"))
+    gamedir = os.environ.get("CTRMAP_GAMEDIR",
+                             os.path.join(os.path.dirname(ROOT), "RomFS",
+                                          "000400000011C400"))
 
     wanted = [a for a in argv[1:] if not a.startswith("-")]
     plants = [p for p in book["plants"] if not wanted or p["id"] in wanted]
@@ -271,7 +302,7 @@ def main(argv):
     held, lost = [], []
     try:
         for p in plants:
-            (held if replant(p, java, pristine) else lost).append(p["id"])
+            (held if replant(p, java, pristine, gamedir) else lost).append(p["id"])
     finally:
         print("rebuilding, so nobody is left with a planted tree")
         built, _ = build()
@@ -281,7 +312,8 @@ def main(argv):
     print("%d guard(s) still notice; %d do not" % (len(held), len(lost)))
     for pid in lost:
         print("    NOT PROVEN: %s" % pid)
-    print("owed: %d suite(s) with no plant; owed_generalisation: %d" % (n_owed, n_site))
+    print("owed: %d suite(s) with no plant; owed_generalisation: %d; owed_real_defect: %d"
+          % (n_owed, n_site, n_auto))
     return 0 if not lost else 1
 
 
