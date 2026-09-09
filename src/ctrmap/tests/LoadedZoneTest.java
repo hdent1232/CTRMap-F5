@@ -640,6 +640,8 @@ public class LoadedZoneTest {
 				args[i] = new ZoneEditorsSpy();
 			} else if (types[i] == ctrmap.humaninterface.Navigator.class) {
 				args[i] = new RecordingNavi();
+			} else if (types[i] == ctrmap.humaninterface.ViewportCentre.class) {
+				args[i] = new RecordingCentre();
 			} else {
 				throw new IllegalStateException(ctor.getDeclaringClass().getName()
 						+ " is handed a " + types[i].getName()

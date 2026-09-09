@@ -80,6 +80,9 @@ import javax.swing.JSplitPane;
  */
 final class EditorBench {
 
+	/** Where the user is looking, so a placement can be asserted at all. */
+	static final RecordingCentre CENTRE = new RecordingCentre();
+
 	/** The 3D gizmo these forms move, so what they told it can be read back. */
 	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editor set the panels here flush: it records instead of saving. */
@@ -154,9 +157,9 @@ final class EditorBench {
 		CtrmapMainframe.mCamEditForm = cam = new BenchCamForm();
 		CtrmapMainframe.mCamScrollPane = new JScrollPane(CtrmapMainframe.mCamEditForm);
 		CtrmapMainframe.mPropEditForm = prop = new BenchPropForm();
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI);
-		CtrmapMainframe.mWarpEditForm = warps = new WarpEditForm(LOADED, REDRAW);
-		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm(LOADED, REDRAW);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE);
+		CtrmapMainframe.mWarpEditForm = warps = new WarpEditForm(LOADED, REDRAW, CENTRE);
+		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		CtrmapMainframe.mGeoEditForm = geo = new GeoEditForm(LOADED);
 		CtrmapMainframe.mCollEditPanel = new CollEditPanel(TOOLS);
 		CtrmapMainframe.mMtxEditForm = new MatrixEditForm(LOADED);

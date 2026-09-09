@@ -69,6 +69,9 @@ import javax.swing.JOptionPane;
  */
 public class ZoneLoadingStateTest {
 
+	/** Where the user is looking, so a placement can be asserted at all. */
+	static final RecordingCentre CENTRE = new RecordingCentre();
+
 	/** The 3D gizmo these forms move, so what they told it can be read back. */
 	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
@@ -109,9 +112,9 @@ public class ZoneLoadingStateTest {
 			LoadedZone lz = new LoadedZone();
 			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 			CtrmapMainframe.mZonePnl = pnl;
-			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI);
-			CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW);
-			CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW);
+			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE);
+			CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW, CENTRE);
+			CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW, CENTRE);
 
 			theListIsTheArchivesZonesAndNothingIsOpened(pnl, lz);
 			everyRetailHeaderSurvivesTheDropdowns(pnl, lz);

@@ -25,11 +25,25 @@ public class TriggerEditForm extends javax.swing.JPanel {
 	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
 	private final Redraw redraw;
 
-	public TriggerEditForm(LoadedZone loadedZone, Redraw redraw) {
+	/**
+	 * Where the user is looking, handed in: this form says "put it where they
+	 * can see it", not how to work that out.
+	 */
+	private final ViewportCentre viewportCentre;
+	public TriggerEditForm(LoadedZone loadedZone, Redraw redraw, ViewportCentre viewportCentre) {
 		this.redraw = redraw;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("TriggerEditForm must be handed a LoadedZone");
 		}
+		//AFTER the LoadedZone check, deliberately: LoadedZoneTest builds every
+		//reader with a null owner and asserts the refusal names "LoadedZone", so
+		//a new refusal placed above it would flip that assertion onto this
+		//message and the suite would go red for the wrong reason.
+		if (viewportCentre == null) {
+			throw new IllegalArgumentException("TriggerEditForm must be handed a ViewportCentre"
+				+ " - it places new records where the user is looking");
+		}
+		this.viewportCentre = viewportCentre;
 		this.loadedZone = loadedZone;
 		initComponents();
 		setIntegerValueClass(new JFormattedTextField[]{script, u2, constant, u6, u8, x, y, w, h, u14, u16f});
@@ -425,7 +439,7 @@ public class TriggerEditForm extends javax.swing.JPanel {
 	private void btnAddActionPerformed(java.awt.event.ActionEvent evt) {
 		if (e != null) {
 			ZoneEntities.Trigger t = new ZoneEntities.Trigger();
-			Point defaultPos = mTileMapPanel.getTileAtViewportCentre();
+			Point defaultPos = viewportCentre.tile();
 			t.x = defaultPos.x;
 			t.y = defaultPos.y;
 			currentList().add(t);

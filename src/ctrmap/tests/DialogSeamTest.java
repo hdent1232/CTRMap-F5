@@ -62,6 +62,9 @@ import javax.swing.JOptionPane;
  */
 public class DialogSeamTest {
 
+	/** Where the user is looking, so a placement can be asserted at all. */
+	static final RecordingCentre CENTRE = new RecordingCentre();
+
 	/** The 3D gizmo these forms move, so what they told it can be read back. */
 	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The redraw the forms here are handed: what frame.repaint() was, but readable. */
@@ -444,7 +447,7 @@ public class DialogSeamTest {
 		//them and never reaches the game it is handed
 		NPCRegistry reg = new NPCRegistry(f, new FakeGameFiles());
 		reg.modified = true;
-		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW, NAVI);
+		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE);
 		form.reg = reg;
 		boolean stored;
 		List<String> said = Ui.record();

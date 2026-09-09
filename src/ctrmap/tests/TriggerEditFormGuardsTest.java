@@ -63,6 +63,9 @@ import javax.swing.JFormattedTextField;
  */
 public class TriggerEditFormGuardsTest {
 
+	/** Where the user is looking, so a placement can be asserted at all. */
+	static final RecordingCentre CENTRE = new RecordingCentre();
+
 	/** The 3D gizmo these forms move, so what they told it can be read back. */
 	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
@@ -140,7 +143,7 @@ public class TriggerEditFormGuardsTest {
 	static void openingAZoneShowsTheFirstTrigger(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		form.loadFromEntities(e);
 		ZoneEntities.Trigger first = e.triggers1.get(0);
 		check(form.loaded && form.e == e, "the form is loaded on the zone");
@@ -159,7 +162,7 @@ public class TriggerEditFormGuardsTest {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
 		byte[] before = zone.file.getFile(1);
-		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		form.loadFromEntities(e);
 		ZoneEntities.Trigger first = e.triggers1.get(0);
 		form.saveEntry();
@@ -179,7 +182,7 @@ public class TriggerEditFormGuardsTest {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
 		byte[] before = zone.file.getFile(1);
-		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		form.loadFromEntities(e);
 		ZoneEntities.Trigger old = e.triggers1.get(0);
 		//zone 48's triggers all carry uA 0, so a save that dropped it would look
@@ -243,7 +246,7 @@ public class TriggerEditFormGuardsTest {
 		e.triggers1.set(1, twin);
 		check(e.triggers1.get(0).equals(e.triggers1.get(1)), "triggers 0 and 1 now hold identical fields");
 
-		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		form.loadFromEntities(e);
 		form.setTrigger(1);
 		check(form.trigger == twin, "the form is on trigger 1");
@@ -260,7 +263,7 @@ public class TriggerEditFormGuardsTest {
 	static void saveOnAStaleSelectionWritesNothing(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		form.loadFromEntities(e);
 		ZoneEntities.Trigger stranger = new ZoneEntities.Trigger();
 		stranger.script = 4242;
@@ -280,7 +283,7 @@ public class TriggerEditFormGuardsTest {
 	static void theScriptDropdownAndTheScriptFieldAgree(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		form.loadFromEntities(e);
 		JComboBox<?> drop = (JComboBox<?>) field(form, "scriptDropdown");
 		JFormattedTextField script = (JFormattedTextField) field(form, "script");
@@ -326,7 +329,7 @@ public class TriggerEditFormGuardsTest {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
 		byte[] before = zone.file.getFile(1);
-		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		form.loadFromEntities(e);
 		form.selectTrigger(1, 0);
 		check(entries(form) == 4, "switching to Type 2 lists the four step-on triggers: " + entries(form));
@@ -347,19 +350,26 @@ public class TriggerEditFormGuardsTest {
 	}
 
 	/**
-	 * New entry adds a 1x1 trigger on the tile at the viewport centre, bumps
-	 * the count for the list being edited, and selects it.
+	 * New entry adds a 1x1 trigger ON THE TILE AT THE VIEWPORT CENTRE, bumps the
+	 * count for the list being edited, and selects it.
+	 *
+	 * <p>THIS SECTION DID NOT CHECK THE POSITION its own name promised. It could
+	 * not: the form reached into the main window for the map view and asked it,
+	 * so the suite planted a real TileMapPanel and a real JScrollPane purely to
+	 * stop the call throwing, and then asserted the size, the script and the
+	 * count while saying nothing at all about x and y. A guard whose name claims
+	 * more than its body checks is worse than one that claims less, because the
+	 * name is what anyone reads.
+	 *
+	 * <p>The form is handed where the user is looking now, so the position is an
+	 * ordinary assertion and the two planted statics are gone.
 	 */
 	static void newEntryLandsAtTheViewportCentre(GARC zo) throws Exception {
-		if (!windowed) {
-			System.out.println("  skip: New entry repaints the main window - no display");
-			return;
-		}
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		CtrmapMainframe.mTilemapScrollPane = new javax.swing.JScrollPane();
-		CtrmapMainframe.mTileMapPanel = new ctrmap.humaninterface.TileMapPanel(LOADED, TOOLS);
-		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
+		CENTRE.at = new java.awt.Point(23, 17);
+		CENTRE.asks = 0;
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		form.loadFromEntities(e);
 		int before = e.triggers1.size();
 		invoke(form, "btnAddActionPerformed");
@@ -367,6 +377,10 @@ public class TriggerEditFormGuardsTest {
 		check(e.trigger1Count == before + 1, "and the count byte follows");
 		check(e.triggers2.size() == 4 && e.trigger2Count == 4, "leaving the step-on list alone");
 		ZoneEntities.Trigger added = e.triggers1.get(before);
+		check(added.x == 23 && added.y == 17,
+			"IT LANDED WHERE THE USER IS LOOKING, which is what this check is named for: "
+			+ added.x + "," + added.y);
+		check(CENTRE.asks == 1, "having asked exactly once (" + CENTRE.asks + ")");
 		check(added.w == 1 && added.h == 1, "the new trigger is one tile wide and one tall");
 		check(added.script == 0 && added.u2 == 0 && added.constant == 0, "with every other number zero: " + numbers(added));
 		check(form.trigger == added && entries(form) == before + 1, "and it is selected in the dropdown");
@@ -381,7 +395,7 @@ public class TriggerEditFormGuardsTest {
 		}
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
-		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW);
+		TriggerEditForm form = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		form.loadFromEntities(e);
 		List<ZoneEntities.Trigger> survivors = new ArrayList<>(e.triggers1);
 		survivors.remove(1);

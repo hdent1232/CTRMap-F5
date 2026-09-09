@@ -88,6 +88,9 @@ import javax.swing.SwingWorker;
  */
 public class DataSafetyGuardsTest {
 
+	/** Where the user is looking, so a placement can be asserted at all. */
+	static final RecordingCentre CENTRE = new RecordingCentre();
+
 	/** The 3D gizmo these forms move, so what they told it can be read back. */
 	static final RecordingNavi NAVI = new RecordingNavi();
 	/** The editors that show the zone, for the panels here: a spy that records and clears. */
@@ -294,7 +297,7 @@ public class DataSafetyGuardsTest {
 		ZoneEntities e = lz.at(2).entities;
 		e.warps.clear();
 		e.warpCount = 0;
-		WarpEditForm form = new WarpEditForm(lz, REDRAW);
+		WarpEditForm form = new WarpEditForm(lz, REDRAW, CENTRE);
 		form.loadFromEntities(e);
 
 		//what "New entry" adds, twice on the same tile
@@ -367,7 +370,7 @@ public class DataSafetyGuardsTest {
 		//active before one is open, and drawing then threw on the event
 		//thread), every warp once one is.
 		BufferedImage img = new BufferedImage(40 * 12, 40 * 12, BufferedImage.TYPE_INT_RGB);
-		WarpEditForm blank = new WarpEditForm(lz, REDRAW);
+		WarpEditForm blank = new WarpEditForm(lz, REDRAW, CENTRE);
 		blank.loadFromEntities(null);
 		CtrmapMainframe.mWarpEditForm = blank;
 		//the overlay is the TOOL's, drawn over the form it was handed
@@ -447,8 +450,8 @@ public class DataSafetyGuardsTest {
 		//first - its dropdowns filled the way the zone loader fills them, one
 		//town-map group per zone slot; the entity forms it saves through are
 		//empty and save nothing.
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI);
-		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE);
+		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW, CENTRE);
 		fill(zonePnl, "tmg", 600);
 		fill(zonePnl, "type", 8);
 		fill(zonePnl, "weather", 32);
@@ -722,9 +725,9 @@ public class DataSafetyGuardsTest {
 		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS);
 		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm(lz);
 		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS, REDRAW, NAVI);
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI);
-		CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW);
-		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE);
+		CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW, CENTRE);
+		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW, CENTRE);
 		//PropEditForm's generated initComponents builds a CustomH3DPreview,
 		//whose constructor starts an FPSAnimator on a NON-daemon thread. Left
 		//running it holds the JVM open after main returns: the suite prints

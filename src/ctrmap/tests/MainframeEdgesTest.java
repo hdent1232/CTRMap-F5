@@ -77,7 +77,7 @@ public class MainframeEdgesTest {
 		{"mTileEditForm", "Selector,TileMapPanel,TileUndo,WorkspaceSettings",
 			"the tile inspector, which the selector and the undo stack update"},
 		{"mTileMapPanel", "GeoEditForm,GfEnvPicker,NPCEditForm,PaintForm,PropEditForm,Selector,TileEditForm,"
-			+ "TileUndo,TriggerEditForm,WarpEditForm,WorkspaceSettings",
+			+ "TileUndo,WorkspaceSettings",
 			"THE map view: every editor that draws on it or reads a tile from it. The tangle - it reads"
 			+ " four of these back"},
 		{"mTilemapScrollPane", "TileMapPanel", "its own scroll pane, for the viewport size"},
@@ -112,7 +112,7 @@ public class MainframeEdgesTest {
 	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
 	 * matrix-panel, NPC and trigger editors.
 	 */
-	private static final int REFERENCES = 41;
+	private static final int REFERENCES = 39;
 
 	/**
 	 * Public static fields on the window: 91 before the structure sweep, 22 after
