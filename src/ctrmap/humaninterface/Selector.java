@@ -23,13 +23,13 @@ public class Selector {
 	 * that matters, and splitting that across the five tools that pick a tile
 	 * would be five copies of a sequence nobody would keep in step.
 	 */
-	public static void select(int xOnImage, int yOnImage, TileInspector inspector) {
-		if (mTileMapPanel.loaded) {
+	public static void select(int xOnImage, int yOnImage, TileInspector inspector, TileMapPanel map) {
+		if (map.loaded) {
 			selecting = true;
-			hilightTileX = (int)(Math.floor(((float)xOnImage/mTileMapPanel.tilemapScaledImage.getWidth())*(double)(mTileMapPanel.width)));
-            hilightTileY = (int)(Math.floor(((float)yOnImage/mTileMapPanel.tilemapScaledImage.getHeight())*(double)(mTileMapPanel.height)));
+			hilightTileX = (int)(Math.floor(((float)xOnImage/map.tilemapScaledImage.getWidth())*(double)(map.width)));
+            hilightTileY = (int)(Math.floor(((float)yOnImage/map.tilemapScaledImage.getHeight())*(double)(map.height)));
 			inspector.showTile(hilightTileX, hilightTileY, false);
-			mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+			map.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 		}
 	}
 	
@@ -39,8 +39,8 @@ public class Selector {
 		return out;
 	}
 	
-	public static void acqCurTile(TileInspector inspector) {
-		Tilemap reg = mTileMapPanel.getRegionForTile(hilightTileX, hilightTileY);
+	public static void acqCurTile(TileInspector inspector, TileMapPanel map) {
+		Tilemap reg = map.getRegionForTile(hilightTileX, hilightTileY);
 		if (reg == null){
 			return;
 		}
@@ -62,17 +62,26 @@ public class Selector {
 			selTileY = -1;
 			inspector.lockTile(false);
 		}
-		mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+		map.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 	}
 	
-	public static void deselect() {
+	public static void deselect(TileMapPanel map) {
 		hilightTileX = -1;
 		hilightTileY = -1;
-		mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+		map.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 	}
-	public static void unfocus() {
+	/**
+	 * Forgets the picked tile.
+	 *
+	 * <p>The map view is handed in and may be null: three tools call this from
+	 * their shutdown, and a suite shuts a tool down with no panel. A repaint
+	 * with nothing to repaint is the one thing this can safely skip.
+	 */
+	public static void unfocus(TileMapPanel map) {
 		selTileX = -1;
 		selTileY = -1;
-		mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+		if (map != null) {
+			map.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+		}
 	}
 }

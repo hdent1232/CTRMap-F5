@@ -57,6 +57,7 @@ import javax.swing.JSpinner;
  */
 public class GeoEditFormGuardsTest {
 
+
 	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
 	static final RecordingScene SCENE = new RecordingScene();
 
@@ -406,7 +407,7 @@ public class GeoEditFormGuardsTest {
 		view.mainGR = f.gr;
 		view.tilemaps = new Tilemap[][]{{new Tilemap(f.gr)}};
 		CtrmapMainframe.mTileMapPanel = view;
-		f.form = new GeoEditForm(LOADED);
+		f.form = new GeoEditForm(LOADED, CtrmapMainframe.mTileMapPanel);
 		CtrmapMainframe.mGeoEditForm = f.form;
 		return f;
 	}

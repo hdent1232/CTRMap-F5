@@ -89,11 +89,24 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
 	private final Redraw redraw;
 
+	/**
+	 * The map view, handed in AS ITSELF.
+	 *
+	 * <p>A narrower interface was weighed and rejected for the reason
+	 * {@code ToolHost.map()} already gives: this class uses enough of the panel
+	 * that naming a capability per member would be a longer way of writing
+	 * TileMapPanel. What matters for the standard is that it is HANDED one and
+	 * could be handed a different one - which a suite now does - rather than
+	 * reaching into the main window for the only one that exists.
+	 */
+	private final TileMapPanel map;
+
 	/** The 3D gizmo, handed in. Its two reaches here had no null guard at all. */
 	private final Navigator navi;
 
 	public PropEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
-			Navigator navi) {
+			Navigator navi, TileMapPanel map) {
+		this.map = map;
 		if (navi == null) {
 			throw new IllegalArgumentException("PropEditForm must be handed a Navigator - the gizmo it moves");
 		}
@@ -454,7 +467,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		loaded = false;
 		GRProp newProp = new GRProp();
 		newProp.uid = uid;
-		Point defaultPos = CtrmapMainframe.mTileMapPanel.getWorldLocAtViewportCentre();
+		Point defaultPos = map.getWorldLocAtViewportCentre();
 		newProp.x = defaultPos.x;
 		newProp.z = defaultPos.y;
 		newProp.updateName(reg, Workspace.session());
@@ -744,8 +757,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			if (props.modified) {
 				switch (ctrmap.Ui.askToKeep(dialog, "Prop data")) {
 					case SAVE:
-						if (CtrmapMainframe.mTileMapPanel.mm != null) {
-							props.write(CtrmapMainframe.mTileMapPanel.mm);
+						if (map.mm != null) {
+							props.write(map.mm);
 						} else if (gr != null) {
 							props.write();
 						} else {
@@ -1442,7 +1455,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		loaded = false;
 		GRProp newProp = new GRProp();
 		newProp.uid = (prop != null) ? prop.uid : 0;
-		Point defaultPos = CtrmapMainframe.mTileMapPanel.getWorldLocAtViewportCentre();
+		Point defaultPos = map.getWorldLocAtViewportCentre();
 		newProp.x = defaultPos.x;
 		newProp.z = defaultPos.y;
 		newProp.updateName(reg, Workspace.session());

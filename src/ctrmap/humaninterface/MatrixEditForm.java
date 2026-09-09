@@ -62,9 +62,9 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 			loaded = false;
 			this.mm = mm;
 			//THE PICKED CELL BELONGS TO THE MATRIX BEING REPLACED, so it is dropped
-			//here. MatrixSelector.unfocus() has existed since the class was written
+			//here. MatrixSelector.unfocus(host.map()) has existed since the class was written
 			//and never had a caller - every unfocus() in the program is the tile
-			//cursor's twin, Selector.unfocus() - so selRegionX/selRegionY survived
+			//cursor's twin, Selector.unfocus(host.map()) - so selRegionX/selRegionY survived
 			//every zone load. What that cost: the form went back to showing region
 			//0x0 (showRegion(0, 0) below) while the red "picked cell" rectangle drawn
 			//by drawToolGraphics stayed on the cell the PREVIOUS matrix was clicked

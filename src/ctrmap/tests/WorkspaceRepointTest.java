@@ -361,7 +361,7 @@ public class WorkspaceRepointTest {
 		}
 		freshBackupOf(own);
 		Workspace.GAMEDIR_PATH = own;
-		WorkspaceSettings form = new WorkspaceSettings();
+		WorkspaceSettings form = new WorkspaceSettings(null, () -> { });
 		try {
 			JTextField gameField = field(form, "gameField");
 			gameField.setText(other);

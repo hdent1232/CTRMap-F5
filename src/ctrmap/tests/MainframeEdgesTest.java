@@ -56,47 +56,39 @@ public class MainframeEdgesTest {
 	 * {field, readers, what they use it for}. Measured over the compiled
 	 * program, the window itself excluded, folded to top-level classes.
 	 */
-	private static final String[][] REACHES = {
-		{"mNPCEditForm", "TileMapPanel",
-			"the NPC editor. ONE line: the map view clears its entities when a loose map replaces a"
-			+ " zone - the same clear ZoneEditors already does, and the last strand of that cycle"},
-		{"mPropEditForm", "TileMapPanel",
-			"the prop editor, drawn over the map"},
-		{"mTileEditForm", "WorkspaceSettings",
-			"the tile inspector. The cursor, the undo stack and the map view are handed it now"
-			+ " (TileInspector, Tilemap.TileColors); the settings dialog still REPLACES its tileset"},
-		{"mTileMapPanel", "GeoEditForm,GfEnvPicker,NPCEditForm,PaintForm,PropEditForm,Selector,TileEditForm,"
-			+ "TileUndo,WorkspaceSettings",
-			"THE map view: every editor that draws on it or reads a tile from it. The tangle - it reads"
-			+ " four of these back"},
-	};
+	/**
+	 * {field, readers, what they use it for}. EMPTY, and that is the point of
+	 * keeping it as a table rather than a number: a name appearing here is a
+	 * class that has started reaching into the window for something instead of
+	 * being handed it, and the message says which class and which field.
+	 */
+	private static final String[][] REACHES = {};
 
 	/**
-	 * How many DISTINCT (class file, field) pairs reach in from outside.
+	 * How many DISTINCT (class file, field) pairs reach in from outside. ZERO.
 	 *
-	 * <p>THIS IS NOT A COUNT OF CALL SITES, and this javadoc said it was for
-	 * three commits. {@link ClassFileScanner.ClassFile#refs} is the constant
-	 * pool, and javac emits one Fieldref per (class file, field) however many
-	 * times the field is read. Two consequences worth having in front of you
-	 * before planning any of this work: an anonymous inner class is its own
-	 * class file and therefore its own reference, while a Java 8 lambda is not -
-	 * it compiles to a synthetic method in the enclosing class. And a change
-	 * removes a reference only when it removes the LAST read of that field from
-	 * that one class file, which is why fifteen reads in one class fall to zero
-	 * together or not at all.
+	 * <p>THIS IS NOT A COUNT OF CALL SITES, whatever this javadoc said for three
+	 * commits. {@link ClassFileScanner.ClassFile#refs} is the constant pool, and
+	 * javac emits one Fieldref per (class file, field) however many times the
+	 * field is read - so an anonymous inner class is its own reference and a
+	 * Java 8 lambda is not, and a change removed a reference only when it
+	 * removed the LAST read of that field from that one class file.
 	 *
-	 * <p>Measured 2026-09-08 at 108 before the
-	 * decoupling steps, 64 after them, 55 once the five copies of the editor
-	 * flush became one owner ({@link ctrmap.humaninterface.OpenEditors}), and 49
-	 * once "show this zone" and "show nothing" became another
-	 * ({@link ctrmap.humaninterface.ZoneEditors}), 47 once that owner also said
-	 * what "commit what you are holding" means, and 45 once the 3D gizmo became
-	 * {@link ctrmap.humaninterface.Navigator} - five copies of the same reach,
-	 * two of which guarded against a null panel and three of which did not. The map painter left this
-	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
-	 * matrix-panel, NPC and trigger editors.
+	 * <p>Measured 2026-09-08 at 108 before the decoupling steps, then 64, 55,
+	 * 49, 47, 45, 44, 41, 39, 38, 36, 34, 27, 24, 21, 20, 16, 15, 14, 2 and now
+	 * none. What each step took is in its commit; what matters here is that the
+	 * number is a floor and not a target, and that the table above is the thing
+	 * to read when it stops being zero.
+	 *
+	 * <p>WHAT THIS DOES NOT MEAN. The window still HOLDS these panels, and it
+	 * still has {@value #PUBLIC_STATICS} public statics for its own use. What
+	 * changed is that nothing else asks it for them: every editor is handed what
+	 * it needs, so two of anything can exist at once and a suite can hand a
+	 * different one. Three of the handings are two-phase - the matrix grid, the
+	 * map view's editors, and the tool row's Set-tool callback - because those
+	 * are real construction cycles, and each says so where it is written.
 	 */
-	private static final int REFERENCES = 14;
+	private static final int REFERENCES = 0;
 
 	/**
 	 * Public static fields on the window: 91 before the structure sweep, 22 after
@@ -182,7 +174,8 @@ public class MainframeEdgesTest {
 		}
 		System.out.println("  field references from outside: " + references + " (recorded " + REFERENCES + ")");
 		check(references == REFERENCES,
-				"and the number of call sites is the recorded one - it only falls (" + references + ")");
+				"and the number of (class file, field) pairs is the recorded one - it only falls ("
+						+ references + ")");
 	}
 
 	// ------------------------------------------------------- 2. nobody writes them

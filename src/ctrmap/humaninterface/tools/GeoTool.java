@@ -35,7 +35,7 @@ public class GeoTool extends AbstractTool {
 	public void onToolShutdown() {
 		form.store(true);
 		form.clearSelection();
-		Selector.unfocus();
+		Selector.unfocus(host.map());
 	}
 
 	@Override

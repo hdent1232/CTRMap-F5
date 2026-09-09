@@ -88,6 +88,7 @@ import javax.swing.SwingWorker;
  */
 public class DataSafetyGuardsTest {
 
+
 	/** Writing the zone and re-showing its script, so both can be read back. */
 	static final RecordingZoneSaver SAVER = new RecordingZoneSaver();
 
@@ -459,7 +460,7 @@ public class DataSafetyGuardsTest {
 		//first - its dropdowns filled the way the zone loader fills them, one
 		//town-map group per zone slot; the entity forms it saves through are
 		//empty and save nothing.
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel);
 		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW, CENTRE);
 		fill(zonePnl, "tmg", 600);
 		fill(zonePnl, "type", 8);
@@ -733,8 +734,8 @@ public class DataSafetyGuardsTest {
 		CtrmapMainframe.mCamEditForm = new ctrmap.humaninterface.CameraEditForm(REDRAW);
 		CtrmapMainframe.mTileMapPanel = new TileMapPanel(lz, TOOLS, SCENE, new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
 		CtrmapMainframe.mMtxEditForm = new ctrmap.humaninterface.MatrixEditForm(lz, CANVAS);
-		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS, REDRAW, NAVI);
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER);
+		CtrmapMainframe.mPropEditForm = new ctrmap.humaninterface.PropEditForm(lz, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel);
 		CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW, CENTRE);
 		CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW, CENTRE);
 		//PropEditForm's generated initComponents builds a CustomH3DPreview,

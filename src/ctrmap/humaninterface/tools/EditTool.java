@@ -25,7 +25,7 @@ public class EditTool extends AbstractTool {
 	@Override
 	public void onTileClick(MouseEvent e) {
 		if (!SwingUtilities.isRightMouseButton(e)) {
-			Selector.acqCurTile(host.inspector());
+			Selector.acqCurTile(host.inspector(), host.map());
 		}
 	}
 
@@ -47,13 +47,13 @@ public class EditTool extends AbstractTool {
 	@Override
 	public void onToolShutdown() {
 		form.lockTile(false);
-		Selector.unfocus();
+		Selector.unfocus(host.map());
 	}
 
 	@Override
 	public void fireCancel() {
 		form.lockTile(false);
-		Selector.unfocus();
+		Selector.unfocus(host.map());
 	}
 
 	@Override

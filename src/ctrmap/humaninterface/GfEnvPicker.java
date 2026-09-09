@@ -53,8 +53,9 @@ public class GfEnvPicker {
 	public static final byte[] CUSTOM = new byte[0];
 
 	/** Opens the picker; returns the chosen zone's full 2944-byte env block, or null. */
-	public static byte[] pick(Dialog parent, LoadedZone loaded) {
-		return pick((java.awt.Window) parent, false, loaded);
+	public static byte[] pick(Dialog parent, LoadedZone loaded,
+			List<ctrmap.formats.h3d.texturing.H3DTexture> worldTextures) {
+		return pick((java.awt.Window) parent, false, loaded, worldTextures);
 	}
 
 	/**
@@ -62,7 +63,13 @@ public class GfEnvPicker {
 	 * user pressed "Custom settings..." (offered only when {@code offerCustom}),
 	 * or null on cancel.
 	 */
-	public static byte[] pick(java.awt.Window parent, boolean offerCustom, LoadedZone loaded) {
+	/**
+	 * @param worldTextures the open map's decoded world textures, or null when
+	 *        no map is open. Handed in rather than read off the map view through
+	 *        the main window: this picker uses exactly this one thing from it.
+	 */
+	public static byte[] pick(java.awt.Window parent, boolean offerCustom, LoadedZone loaded,
+			List<ctrmap.formats.h3d.texturing.H3DTexture> worldTextures) {
 		if (loaded == null) {
 			throw new IllegalArgumentException("GfEnvPicker must be handed the LoadedZone");
 		}
@@ -95,7 +102,7 @@ public class GfEnvPicker {
 		// live preview: the USER'S CURRENT zone geometry, re-fogged per selection,
 		// so they see each atmosphere on their own map. Falls back to a card.
 		final byte[] curModel = currentZoneModel(loaded);
-		final List<ctrmap.formats.h3d.texturing.H3DTexture> curTex = mTileMapPanel == null ? null : mTileMapPanel.getWorldTextures();
+		final List<ctrmap.formats.h3d.texturing.H3DTexture> curTex = worldTextures;
 		final MapPreview3D view3d = (curModel != null) ? new MapPreview3D() : null;
 		if (view3d != null) {
 			view3d.setRegion(curModel, curTex);

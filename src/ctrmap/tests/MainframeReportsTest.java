@@ -428,7 +428,7 @@ public class MainframeReportsTest {
 		} else if ("shop".equals(which)) {
 			ctrmap.humaninterface.ShopEditDialog.show(null);
 		} else if ("lighting".equals(which)) {
-			ctrmap.humaninterface.AreaLightingDialog.show(null, new ctrmap.LoadedZone());
+			ctrmap.humaninterface.AreaLightingDialog.show(null, new ctrmap.LoadedZone(), null);
 		} else if ("encounters".equals(which)) {
 			ctrmap.humaninterface.EncounterEditDialog.show(null, new ctrmap.LoadedZone());
 		} else {

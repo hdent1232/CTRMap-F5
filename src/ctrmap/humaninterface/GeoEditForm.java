@@ -87,7 +87,20 @@ public class GeoEditForm extends JPanel {
 	/** The zone owner this form was handed: the open zone's area, for texture carry, and its index. */
 	private final LoadedZone loadedZone;
 
-	public GeoEditForm(LoadedZone loadedZone) {
+	/**
+	 * The map view, handed in AS ITSELF.
+	 *
+	 * <p>A narrower interface was weighed and rejected for the reason
+	 * {@code ToolHost.map()} already gives: this class uses enough of the panel
+	 * that naming a capability per member would be a longer way of writing
+	 * TileMapPanel. What matters for the standard is that it is HANDED one and
+	 * could be handed a different one - which a suite now does - rather than
+	 * reaching into the main window for the only one that exists.
+	 */
+	private final TileMapPanel map;
+
+	public GeoEditForm(LoadedZone loadedZone, TileMapPanel map) {
+		this.map = map;
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("GeoEditForm must be handed a LoadedZone");
 		}
@@ -309,7 +322,7 @@ public class GeoEditForm extends JPanel {
 			}
 			String tileNote = "";
 			if (chkTiles.isSelected() && p.tiles != null) {
-				Tilemap tm = mTileMapPanel.getRegionForTile(selTx0, selTy0);
+				Tilemap tm = map.getRegionForTile(selTx0, selTy0);
 				if (tm != null) {
 					for (int y = 0; y < p.tilesH; y++) {
 						for (int x = 0; x < p.tilesW; x++) {
@@ -340,7 +353,7 @@ public class GeoEditForm extends JPanel {
 			undo.push(snap);
 			currentModel = r.newModel;
 			unsaved = true;
-			mTileMapPanel.reloadRegionModel(cellX, cellY, currentModel);
+			map.reloadRegionModel(cellX, cellY, currentModel);
 			status.setText("Stamped " + r.stamped.size() + "/" + p.pieces.size() + " pieces"
 					+ (r.collTrisAdded > 0 ? " +" + r.collTrisAdded + " collision tris" : "") + tileNote + texNote
 					+ (r.missingMaterials.isEmpty() ? "" : "  (skipped: " + r.missingMaterials.size() + " piece(s), see log)")
@@ -372,15 +385,15 @@ public class GeoEditForm extends JPanel {
 
 		GR target = null;
 		int rid = -1;
-		if (mTileMapPanel.mm != null) {
-			if (mTileMapPanel.mm.ids.get(cx, cy) == -1) {
+		if (map.mm != null) {
+			if (map.mm.ids.get(cx, cy) == -1) {
 				selLabel.setText("That cell has no map region.");
 				return;
 			}
-			target = mTileMapPanel.mm.regions.get(cx, cy);
-			rid = mTileMapPanel.mm.ids.get(cx, cy);
-		} else if (mTileMapPanel.mainGR != null) {
-			target = mTileMapPanel.mainGR;
+			target = map.mm.regions.get(cx, cy);
+			rid = map.mm.ids.get(cx, cy);
+		} else if (map.mainGR != null) {
+			target = map.mainGR;
 			cx = 0;
 			cy = 0;
 		}
@@ -424,7 +437,7 @@ public class GeoEditForm extends JPanel {
 			statsLabel.setText("(this region has no editable map model)");
 		}
 		updateEnabled();
-		mTileMapPanel.repaint();
+		map.repaint();
 	}
 
 	/** The GR's collision subfile indices (multi-layer regions carry extras). */
@@ -510,7 +523,7 @@ public class GeoEditForm extends JPanel {
 			undo.push(snap);
 			currentModel = result;
 			unsaved = true;
-			mTileMapPanel.reloadRegionModel(cellX, cellY, currentModel);
+			map.reloadRegionModel(cellX, cellY, currentModel);
 			status.setText(("move".equals(kind) ? "Moved" : "dup".equals(kind) ? "Duplicated" : "Deleted")
 					+ collNote + tileNote + ".  (unsaved)");
 		} catch (RuntimeException ex) {
@@ -527,7 +540,7 @@ public class GeoEditForm extends JPanel {
 	 * selection. Every change is recorded for undo.
 	 */
 	private String applyTiles(String kind, float fx, float fz, List<int[]> changed) {
-		Tilemap tm = mTileMapPanel.getRegionForTile(selTx0, selTy0);
+		Tilemap tm = map.getRegionForTile(selTx0, selTy0);
 		if (tm == null) {
 			return "";
 		}
@@ -580,7 +593,7 @@ public class GeoEditForm extends JPanel {
 
 	private void refreshTiles(Tilemap tm) {
 		tm.updateImage();
-		mTileMapPanel.perfScale(mTileMapPanel.tilemapScale, cellX, cellY);
+		map.perfScale(map.tilemapScale, cellX, cellY);
 	}
 
 	/**
@@ -609,7 +622,7 @@ public class GeoEditForm extends JPanel {
 		currentModel = snap.model;
 		currentColl.clear();
 		currentColl.putAll(snap.coll);
-		Tilemap tm = mTileMapPanel.getRegionForTile(cellX * 40, cellY * 40);
+		Tilemap tm = map.getRegionForTile(cellX * 40, cellY * 40);
 		if (tm != null && !snap.tiles.isEmpty()) {
 			//restore in reverse so overlapping records unwind correctly
 			for (int i = snap.tiles.size() - 1; i >= 0; i--) {
@@ -619,7 +632,7 @@ public class GeoEditForm extends JPanel {
 			refreshTiles(tm);
 		}
 		unsaved = !undo.isEmpty();
-		mTileMapPanel.reloadRegionModel(cellX, cellY, currentModel);
+		map.reloadRegionModel(cellX, cellY, currentModel);
 		status.setText("Undone.");
 		updateEnabled();
 	}
@@ -635,7 +648,7 @@ public class GeoEditForm extends JPanel {
 		for (Map.Entry<Integer, byte[]> e : currentColl.entrySet()) {
 			gr.storeFile(e.getKey(), e.getValue());
 		}
-		Tilemap tm = mTileMapPanel.getRegionForTile(cellX * 40, cellY * 40);
+		Tilemap tm = map.getRegionForTile(cellX * 40, cellY * 40);
 		if (tm != null && tm.modified) {
 			gr.storeFile(0, tm.assembleTilemap());
 			tm.modified = false;

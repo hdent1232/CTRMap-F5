@@ -33,7 +33,13 @@ import javax.swing.SpinnerNumberModel;
  */
 public class AreaLightingDialog {
 
-	public static void show(Frame parent, LoadedZone loaded) {
+	/**
+	 * @param worldTextures the open map's decoded world textures, or null - the
+	 *        environment picker previews with them, and this dialog is the only
+	 *        thing that opens it.
+	 */
+	public static void show(Frame parent, LoadedZone loaded,
+			java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> worldTextures) {
 		if (loaded == null) {
 			throw new IllegalArgumentException("AreaLightingDialog must be handed the LoadedZone");
 		}
@@ -83,7 +89,7 @@ public class AreaLightingDialog {
 
 		//VISUAL FIRST: the GameFreak atmosphere picker (live preview of this
 		//zone under each preset); hand-tuning sits behind "Custom settings..."
-		byte[] picked = GfEnvPicker.pick(parent, true, loaded);
+		byte[] picked = GfEnvPicker.pick(parent, true, loaded, worldTextures);
 		if (picked == null) {
 			return;
 		}
@@ -173,7 +179,7 @@ public class AreaLightingDialog {
 		dlg.add(buttons, BorderLayout.SOUTH);
 
 		copyGf.addActionListener(e -> {
-			byte[] src = GfEnvPicker.pick(dlg, loaded);
+			byte[] src = GfEnvPicker.pick(dlg, loaded, worldTextures);
 			if (src != null && src.length == sub4.length) {
 				// take GameFreak's COMPLETE environment (all 736 floats: colors,
 				// light directions, hemisphere, ranges) - fine-tune on top if wanted

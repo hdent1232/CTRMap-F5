@@ -227,7 +227,7 @@ public class MainframeShapeTest {
 	static void toolRow() {
 		final List<String> commands = new ArrayList<>();
 		final int[] toggles = {0};
-		WorldEditorToolbar row = new WorldEditorToolbar(e -> commands.add(e.getActionCommand()), () -> toggles[0]++, INSPECTOR);
+		WorldEditorToolbar row = new WorldEditorToolbar(e -> commands.add(e.getActionCommand()), () -> toggles[0]++, INSPECTOR, null);
 
 		String got = renderRow(row);
 		check(got.equals(EXPECTED_TOOL_ROW), "the tool row reads: " + EXPECTED_TOOL_ROW

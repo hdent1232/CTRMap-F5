@@ -646,6 +646,8 @@ public class LoadedZoneTest {
 				args[i] = new RecordingZoneSaver();
 			} else if (types[i] == ctrmap.formats.tilemap.Tilemap.TileColors.class) {
 				args[i] = null;   //no palette: a headless holder paints no picture, as before
+			} else if (types[i] == ctrmap.humaninterface.TileMapPanel.class) {
+				args[i] = null;   //the map view a reader draws on; none of these needs one to be BUILT
 			} else if (types[i] == ctrmap.humaninterface.TileInspector.class) {
 				args[i] = new RecordingInspector();
 			} else if (types[i] == ctrmap.humaninterface.Scene3D.class) {
