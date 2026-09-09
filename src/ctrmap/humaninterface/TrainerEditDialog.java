@@ -33,7 +33,7 @@ import static ctrmap.CtrmapMainframe.*;
 public class TrainerEditDialog {
 
 	/** Opens the editor, defaulting to the selected NPC's trainer when it is one. */
-	public static void showForSelection(Frame parent) {
+	public static void showForSelection(Frame parent, Integer selectedNpcScript) {
 		//TRAINER_EDITING, not "is it ORAS". "Load an ORAS workspace first" was
 		//an instruction a user with X/Y open could not act on and was not even
 		//true - a workspace WAS loaded - and Sun/Moon got the same sentence.
@@ -55,9 +55,13 @@ public class TrainerEditDialog {
 			ctrmap.Ui.error(parent, "This dump has no trainer archives.", "Trainer editor");
 			return;
 		}
+		//THE SELECTED NPC'S SCRIPT IS HANDED IN. This dialog reached into the main
+		//window for the NPC form to read one number off the record it happens to
+		//have open - so it knew there was an NPC editor, and a caller that wanted
+		//the dialog for some other reason got whatever that form was showing.
 		int def = 1;
-		if (mNPCEditForm != null && mNPCEditForm.npc != null) {
-			int s = mNPCEditForm.npc.script;
+		if (selectedNpcScript != null) {
+			int s = selectedNpcScript;
 			if (s >= 3000 && s < 5000) {
 				def = s - 3000;
 			} else if (s >= 5000 && s < 7000) {
@@ -91,6 +95,13 @@ public class TrainerEditDialog {
 		}
 	}
 
+	/**
+	 * The script of the NPC the user has selected, or null when none is.
+	 *
+	 * <p>Handed to {@link #showForSelection} rather than read off the NPC form:
+	 * a trainer id is pre-filled from it when the script is a battle script, and
+	 * that is a fact about the selection, not about which editor is on screen.
+	 */
 	public static void show(Frame parent, int tid) {
 		try {
 			byte[] d = Files.readAllBytes(Workspace.getWorkspaceFile(ArchiveType.TRAINER_DATA, tid).toPath());
