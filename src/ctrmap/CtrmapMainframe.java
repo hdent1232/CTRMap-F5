@@ -517,6 +517,11 @@ public class CtrmapMainframe {
 		mTilemapScrollPane = new JScrollPane();
 		mMtxPanel = new MapMatrixPanel();
 		mMtxEditForm = new MatrixEditForm(loadedZone, mMtxPanel);
+		//THE SECOND PHASE, and the only order that works: the grid was built above,
+		//the form was built over it on the line above this, and now the grid is told
+		//which editor is beside it. Neither can be handed the other in a constructor
+		//because neither exists when the other is made - see MatrixTools.
+		mMtxPanel.setTools(mMtxEditForm);
 		JScrollPane mtxScroll = new JScrollPane();
 		mCamScrollPane = new JScrollPane();
 		mTileEditForm = new TileEditForm(tools);
@@ -572,7 +577,7 @@ public class CtrmapMainframe {
 		TilemapPanelInputManager tilemapInput = new TilemapPanelInputManager(mTileMapPanel, tools, toolBox);
 		new CM3DInputManager(m3DDebugPanel, tools);
 		new CollInputManager(glPanel);
-		new MatrixPanelInputManager(mMtxPanel);
+		new MatrixPanelInputManager(mMtxPanel, mMtxEditForm);
 
 		jsp2 = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
 		jsp2.setLeftComponent(glPanel);
