@@ -187,6 +187,12 @@ public class MatrixEditFormGuardsTest {
 		newAndRemoveCameraChangeTheEntryCount();
 		rowsAndColumnsGrowAndShrinkTheWrittenMatrix();
 		theMultizoneToolThrowsOnACellThatNamesAZone();
+		aToolButtonBeforeAMatrixIsLoadedDoesNothing();
+		switchingToolsDropsACursorMeasuredInTheOtherScale();
+		loadingAMatrixDropsTheCellPickedInTheLastOne();
+		growingWithTheLayerOffStillGrowsWhatTheSaveReads();
+		theGridAsksForTheRoomItsMatrixNeeds();
+		aHoleInTheZoneTableLeavesTheFormHoldingNothing();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -445,6 +451,216 @@ public class MatrixEditFormGuardsTest {
 			fill = t;
 		}
 		check(fill instanceof ClassCastException, "Fill chunk throws " + fill);
+	}
+
+	/**
+	 * The three tool buttons work before any matrix is open.
+	 *
+	 * <p>The Matrix Editor tab is added when the window is built and no tool
+	 * radio is selected until {@code loadMatrix} picks one, so from a COLD
+	 * START - workspace open, no zone loaded - the first click on any of the
+	 * three arrived at {@code switchTools} with mm null. Two of the three
+	 * enablers read {@code mm.hasLOD} whatever their argument is, and every
+	 * branch calls at least one of them, so all three threw out of the listener:
+	 * a stack trace on stderr, the radio left selected, nothing repainted.
+	 */
+	static void aToolButtonBeforeAMatrixIsLoadedDoesNothing() throws Exception {
+		System.out.println("--- a tool button before any matrix is open");
+		MatrixEditForm cold = new MatrixEditForm(new LoadedZone(), CANVAS);
+		check(cold.mm == null && !cold.loaded, "a form that was never handed a matrix holds none");
+		for (String button : new String[]{"btnChunkTool", "btnMzTool", "btnCamTool"}) {
+			Throwable thrown = null;
+			try {
+				selectTool(cold, button);
+			} catch (Throwable t) {
+				thrown = t;
+			}
+			check(thrown == null, button + " does not throw with no matrix open: " + thrown);
+		}
+		check(cold.mm == null, "and the form still holds no matrix afterwards");
+	}
+
+	/**
+	 * Switching tools drops a cursor measured in the scale it is leaving.
+	 *
+	 * <p>{@code MatrixSelector} multiplies a click by four when the multizone
+	 * tool is up, and {@code showRegion} stores whatever it is handed, so the
+	 * form's curRegX/curRegY are REGION coordinates under the chunk tool and
+	 * SUB-CHUNK coordinates under the multizone tool. The switch moved the scale
+	 * and left the coordinates standing, and the next {@code saveAll} wrote
+	 * through them: past the width it is an IndexOutOfBounds, and inside the
+	 * width it is a silent write into the WRONG region. saveAll is reached from
+	 * the Save button, both spinners, the next click on the panel, and store() -
+	 * which is the editor flush, so every zone switch and the window close.
+	 *
+	 * <p>Asserted as bytes, not as a field: the whole grid must come out of a
+	 * save unchanged after a switch, because the form has nothing it is allowed
+	 * to write.
+	 */
+	static void switchingToolsDropsACursorMeasuredInTheOtherScale() throws Exception {
+		System.out.println("--- a tool switch drops a cursor it can no longer read");
+		Fixture f = open();
+		byte[] before = f.section0();
+		selectTool(f.form, "btnMzTool");
+		//a legal SUB-CHUNK coordinate, and past the region width (8) on purpose:
+		//it is the pair that used to reach mm.ids.set under the chunk tool
+		int sub = 4 * f.mm.width - 1;
+		check(sub >= f.mm.width, "sub-chunk column " + sub + " is off the region grid ("
+			+ f.mm.width + " wide), which is the point");
+		f.form.showRegion(sub, 0);
+		check(((Integer) field(f.form, "curRegX")) == sub, "the multizone tool picked it");
+		selectTool(f.form, "btnChunkTool");
+		check(((Integer) field(f.form, "curRegX")) == -1
+			&& ((Integer) field(f.form, "curRegY")) == -1,
+			"switching to the chunk tool drops it, because the number means nothing there");
+		check(MatrixSelector.selRegionX == -1 && MatrixSelector.selRegionY == -1,
+			"and the picked rectangle goes with it, so nothing is drawn on a cell nobody chose");
+		Throwable thrown = null;
+		try {
+			f.form.saveAll();
+		} catch (Throwable t) {
+			thrown = t;
+		}
+		check(thrown == null, "a save straight after the switch does not throw: " + thrown);
+		check(f.form.store(false), "and the matrix stores");
+		check(firstDiff(before, f.section0()) == -1,
+			"with the grid byte-identical - the switch left nothing to write (first difference at "
+			+ firstDiff(before, f.section0()) + ")");
+	}
+
+	/**
+	 * Loading a matrix drops the cell picked in the last one.
+	 *
+	 * <p>{@code MatrixSelector.unfocus} existed since the class was written and
+	 * had no caller anywhere - every {@code unfocus} in the program is the TILE
+	 * cursor's twin - so selRegionX/selRegionY survived every zone load. The
+	 * form went back to showing region 0,0 while the red picked-cell rectangle
+	 * stayed on the cell the PREVIOUS matrix was clicked at, and on a smaller
+	 * matrix it was drawn off the grid onto empty white. The user was told they
+	 * had picked a cell they had not, in a matrix that no longer has one.
+	 */
+	static void loadingAMatrixDropsTheCellPickedInTheLastOne() throws Exception {
+		System.out.println("--- loading a matrix drops the cell picked in the last one");
+		Fixture f = open();
+		MatrixSelector.selRegionX = 5;
+		MatrixSelector.selRegionY = 5;
+		f.form.loadMatrix(f.mm);
+		check(MatrixSelector.selRegionX == -1 && MatrixSelector.selRegionY == -1,
+			"a load clears the picked cell (" + MatrixSelector.selRegionX + ","
+			+ MatrixSelector.selRegionY + ")");
+		MatrixSelector.selRegionX = 5;
+		MatrixSelector.selRegionY = 5;
+		f.form.loadMatrix(null);
+		check(MatrixSelector.selRegionX == -1 && MatrixSelector.selRegionY == -1,
+			"and so does an unload, which is why the clear is above the mm != null test");
+	}
+
+	/**
+	 * Growing the grid with the LOD checkbox OFF still grows the layers the
+	 * save reads when it is ticked back on.
+	 *
+	 * <p>All four resize handlers used to move the LOD and zone-switch layers
+	 * only while {@code hasLOD} was 1, while the width and height those layers
+	 * are INDEXED BY moved unconditionally. {@code assembleData} reads them by
+	 * the flag as it stands AT SAVE TIME, and the flag is a checkbox. So: untick
+	 * it, add a column, tick it back on, save - and the write walked off the end
+	 * of a layer that never grew. assembleData catches IOException only, so the
+	 * IndexOutOfBounds escaped store() before the user was asked anything, and
+	 * the matrix was not written.
+	 */
+	static void growingWithTheLayerOffStillGrowsWhatTheSaveReads() throws Exception {
+		System.out.println("--- growing with the LOD box off still grows what the save reads");
+		Fixture f = open();
+		JCheckBox lod = (JCheckBox) field(f.form, "allowExtended");
+		check(lod.isSelected() && f.mm.hasLOD == 1, "matrix " + MATRIX + " opens with the layer on");
+		lod.setSelected(false);
+		invoke(f.form, "allowExtendedActionPerformed");
+		invoke(f.form, "btnAddColActionPerformed");
+		check(f.mm.width == 9, "the grid is " + f.mm.width + " wide with the box unticked");
+		check(f.mm.LOD.getWidth() == 9 && f.mm.zones.getWidth() == 36,
+			"and both layers grew anyway (LOD " + f.mm.LOD.getWidth() + ", zones "
+			+ f.mm.zones.getWidth() + ") - they are indexed by a width that moved");
+		lod.setSelected(true);
+		invoke(f.form, "allowExtendedActionPerformed");
+		Throwable thrown = null;
+		boolean stored = false;
+		try {
+			stored = f.form.store(false);
+		} catch (Throwable t) {
+			thrown = t;
+		}
+		check(thrown == null, "ticking the box back on and saving does not throw: " + thrown);
+		check(stored, "and the matrix stores");
+		check(f.section0().length == 8 + (9 * 8 + 36 * 32 + 9 * 8) * 2,
+			"with every layer written at the new width (" + f.section0().length + " bytes)");
+	}
+
+	/**
+	 * The grid asks its scroll pane for the room its matrix needs.
+	 *
+	 * <p>{@code MapMatrixPanel} never sized itself, so the viewport took its
+	 * preferred size as exactly the extent: the scrollbars' condition could
+	 * never be true and no scrollbar could appear. A matrix wider or taller than
+	 * the pane was then drawn from a NEGATIVE origin and clipped on all four
+	 * sides, and the regions outside could not be seen, selected or edited at
+	 * all. Add column reaches that in a few clicks, 100 pixels at a time.
+	 */
+	static void theGridAsksForTheRoomItsMatrixNeeds() throws Exception {
+		System.out.println("--- the grid asks for the room its matrix needs");
+		Fixture f = open();
+		MapMatrixPanel bare = new MapMatrixPanel();
+		java.awt.Dimension empty = bare.getPreferredSize();
+		bare.mm = f.mm;
+		java.awt.Dimension asked = bare.getPreferredSize();
+		check(asked.width == bare.getFullImageWidth() && asked.height == bare.getFullImageHeight(),
+			"a panel holding an " + f.mm.width + "x" + f.mm.height + " matrix asks for "
+			+ asked.width + "x" + asked.height + ", the size of the picture it draws");
+		check(asked.width > empty.width || asked.height > empty.height,
+			"which is more than the default it asked for while holding nothing ("
+			+ empty.width + "x" + empty.height + ")");
+		int wasWidth = asked.width;
+		invoke(f.form, "btnAddColActionPerformed");
+		check(bare.getPreferredSize().width > wasWidth,
+			"and adding a column asks for more room again (" + wasWidth + " -> "
+			+ bare.getPreferredSize().width + "), which is what puts a scrollbar there");
+	}
+
+	/**
+	 * A hole in the zone table leaves the form holding NOTHING, and saying so.
+	 *
+	 * <p>{@code this.mm} was assigned as the second statement of loadMatrix's
+	 * try and the ready flag was the LAST statement inside it, so a throw in
+	 * between - the zone dropdown fill dereferences {@code loadedZone.at(i)},
+	 * documented to return null for a slot the rebuild could not fill - left the
+	 * form holding a matrix with {@code loaded} still false. saveAll is gated on
+	 * "mm != null && loaded", so from that moment every chunk id, LOD, multizone
+	 * and camera boundary the user typed was dropped, including through store(),
+	 * which File > Save and the window's close handler both run. The form looked
+	 * loaded, wrote nothing, and the only trace was a stack trace on stderr.
+	 */
+	static void aHoleInTheZoneTableLeavesTheFormHoldingNothing() throws Exception {
+		System.out.println("--- a hole in the zone table leaves the form holding nothing");
+		Fixture f = open();
+		LoadedZone lz = (LoadedZone) field(f.form, "loadedZone");
+		check(lz.count() > 3, "the fixture table has " + lz.count() + " rows to hole");
+		lz.replace(3, null);
+		List<String> said = ctrmap.Ui.record();
+		try {
+			f.form.loadMatrix(f.mm);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).contains("could not be shown"),
+			"the failure reaches the user: " + said);
+		check(said.size() == 1 && said.get(0).contains("holding nothing"),
+			"and says what the editor is holding now");
+		check(f.form.mm == null && !f.form.loaded,
+			"the two flags agree: no matrix, not loaded");
+		byte[] before = f.section0();
+		f.form.saveAll();
+		check(f.form.store(false), "a store after the failed load still answers");
+		check(firstDiff(before, f.section0()) == -1,
+			"and writes nothing, because there is nothing to write");
 	}
 
 	// ---- fixture -------------------------------------------------------

@@ -123,6 +123,8 @@ public class ZoneLoadingStateTest {
 			theListIsTheArchivesZonesAndNothingIsOpened(pnl, lz);
 			everyRetailHeaderSurvivesTheDropdowns(pnl, lz);
 			aLoadedZoneIsWrittenBackUnchanged(pnl, lz);
+			aZoneFromAFileTouchesNobodysTableSlot(pnl, lz);
+			aHeaderTheFormCannotShowIsNotWrittenOverAnother(pnl, lz);
 			selectingOutsideTheListChangesNothing(pnl);
 			unloadingClearsTheZoneAndTheEditorsWithIt(pnl, lz);
 			aSharedMapIsOfferedAForkAndADeclineIsRemembered(pnl, lz);
@@ -507,6 +509,147 @@ public class ZoneLoadingStateTest {
 	 * bound it is an IllegalArgumentException at the end of an operation that
 	 * otherwise worked, which reads as the whole thing having failed.
 	 */
+	/**
+	 * A zone opened from a loose .zo file writes no other zone's table slot.
+	 *
+	 * <p>{@code loadZone} deliberately keeps whatever index was last recorded,
+	 * because the dropdown's list worker records its own on the very next line.
+	 * File &gt; Open Zone recorded none, so a zone opened from a FILE inherited
+	 * the index of whatever zone the user had last picked - and store() then
+	 * wrote this file's 0x38-byte header into the workspace's master
+	 * zone-header table at that slot, silently replacing an unrelated map's
+	 * entry. It did it without a word, while the harmless case - nothing ever
+	 * picked, index -1 - was the one that reported.
+	 *
+	 * <p>-1 is what {@code LoadedZone.open(int, Zone)} documents for a zone that
+	 * came from a file, and what the three operations that work on a table slot
+	 * - append, clone and repurpose - already test for. This pins both halves:
+	 * the slot the user had been on is untouched, and the save says out loud
+	 * that the master table was not updated instead of doing it quietly.
+	 */
+	static void aZoneFromAFileTouchesNobodysTableSlot(ZoneLoadingPanel pnl, LoadedZone lz)
+			throws Exception {
+		System.out.println("--- a zone opened from a file writes nobody else's table slot");
+		File master = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA,
+			ctrmap.ZoneTables.masterIndex(Workspace.getArchive(ArchiveType.ZONE_DATA)));
+		byte[] before = java.nio.file.Files.readAllBytes(master.toPath());
+		
+		//the user picks zone 3 from the dropdown...
+		Zone picked = zoneAt(3);
+		lz.open(3, picked);
+		pnl.loadZone(picked);
+		check(lz.index() == 3, "zone 3 is the one the dropdown recorded");
+		
+		//...and then opens an unrelated .zo from disk, which is File > Open Zone:
+		//loadZone, then the index the window records for a zone with no slot
+		Zone loose = zoneAt(PRIVATE_ZONE);
+		pnl.loadZone(loose);
+		lz.open(-1, loose);
+		check(lz.index() == -1 && lz.open() == loose,
+			"a zone that came from a file is open at no slot at all");
+		
+		List<String> said = Ui.record();
+		Boolean stored;
+		try {
+			stored = storeOrNull(pnl);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(stored != null && stored, "saving it answers, rather than throwing");
+		check(java.util.Arrays.equals(before, java.nio.file.Files.readAllBytes(master.toPath())),
+			"and the master zone-header table is byte-for-byte what it was - slot 3 still"
+			+ " belongs to zone 3");
+		boolean toldThem = false;
+		for (String one : said) {
+			toldThem |= one.contains("master zone-header") && one.contains("NOT updated");
+		}
+		check(toldThem, "and the user is told the master table was not updated, rather than"
+			+ " the write happening silently somewhere else: " + said);
+		lz.open(-1, null);
+	}
+
+	/**
+	 * A header the form could not finish showing is never written over another
+	 * zone's, and the user is told why.
+	 *
+	 * <p>{@code loadZone} sets {@code loaded} false, writes forty-odd widgets out
+	 * of the header, and sets it true as its LAST line - all inside one try whose
+	 * catch printed a stack trace and stopped there. Four of those writes are
+	 * {@code setSelectedIndex} fed straight from the header, and an index the
+	 * model does not have is an IllegalArgumentException: the ORAS map-type box
+	 * holds two entries while getTypeIndex can answer 2 or 4..7, the weather box
+	 * holds ten against a five-bit field, the transition box eight against
+	 * another five-bit field.
+	 *
+	 * <p>When one throws, every field AFTER it still holds the PREVIOUS zone's
+	 * value - and store() had no {@code loaded} test at all, so it copied that
+	 * zone's boundaries, and for an early throw its matrix, script, text and
+	 * parent-map ids too, into THIS zone's header on the next File &gt; Save,
+	 * zone switch or window close. Cross-zone header corruption whose only trace
+	 * was a stack trace on stderr.
+	 *
+	 * <p>Two halves are pinned. First that the RETAIL corpus never trips it -
+	 * every zone's four dropdown indices are inside their models - so this is a
+	 * guard against damaged or hand-made data rather than a live bug on shipped
+	 * zones. Second that when it does happen the save writes NOTHING and says so,
+	 * which is the half that used to be missing.
+	 */
+	static void aHeaderTheFormCannotShowIsNotWrittenOverAnother(ZoneLoadingPanel pnl, LoadedZone lz)
+			throws Exception {
+		System.out.println("--- a header the form could not show is not written over another");
+		javax.swing.JComboBox<?> type = (javax.swing.JComboBox<?>) field(pnl, "type");
+		javax.swing.JComboBox<?> weather = (javax.swing.JComboBox<?>) field(pnl, "weather");
+		javax.swing.JComboBox<?> transition = (javax.swing.JComboBox<?>) field(pnl, "mapTransition");
+		javax.swing.JComboBox<?> tmg = (javax.swing.JComboBox<?>) field(pnl, "tmg");
+		TreeSet<String> outside = new TreeSet<>();
+		int walked = 0;
+		for (int i = 0; i < lz.count(); i++) {
+			if (lz.at(i) == null) {
+				continue;
+			}
+			walked++;
+			ctrmap.formats.zone.ZoneHeader h = lz.at(i).header;
+			if (pnl.getTypeIndex(h.mapType) >= type.getItemCount()) {
+				outside.add("zone " + i + " map type " + h.mapType);
+			}
+			if (pnl.getWeatherIndex(h.weather) >= weather.getItemCount()) {
+				outside.add("zone " + i + " weather " + h.weather);
+			}
+			if (h.mapChange >= transition.getItemCount()) {
+				outside.add("zone " + i + " transition " + h.mapChange);
+			}
+			if (h.townMapGroup >= tmg.getItemCount()) {
+				outside.add("zone " + i + " town map group " + h.townMapGroup);
+			}
+		}
+		check(walked > 500, "walked " + walked + " retail headers, so this is the corpus");
+		check(outside.isEmpty(), "and every one of their four dropdown values is inside its box "
+			+ outside);
+		
+		//and the half that matters when one is not: a form that never finished
+		//showing a zone writes nothing into it, and says why
+		Zone victim = zoneAt(PRIVATE_ZONE);
+		byte[] before = victim.file.getFile(0);
+		lz.open(PRIVATE_ZONE, victim);
+		pnl.loadZone(victim);
+		setField(pnl, "loaded", false);
+		List<String> said = Ui.record();
+		boolean answered;
+		try {
+			answered = pnl.store(false);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(java.util.Arrays.equals(before, victim.file.getFile(0)),
+			"a form that never finished loading writes not one header byte");
+		check(said.size() == 1 && said.get(0).contains("never finished"),
+			"and says so, rather than leaving a stack trace on stderr: " + said);
+		check(answered, "it answers TRUE on purpose - a refusal here would also stop the"
+			+ " editor flush, and the window only closes when that answers true, so refusing"
+			+ " would leave the editor with no way out at all");
+		pnl.loadZone(victim);
+	}
+
 	static void selectingOutsideTheListChangesNothing(ZoneLoadingPanel pnl) throws Exception {
 		System.out.println("--- selecting a zone the list does not have does nothing");
 		//the dropdown's listener is what opens a zone, and opening one drives

@@ -327,6 +327,11 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 			enableCamUI(true);
 			enableMZUI(false);
 		}
+		if (MatrixSelector.selectSubChunks != wasSubChunks) {
+			curRegX = -1;
+			curRegY = -1;
+			MatrixSelector.unfocus();
+		}
 		canvas.redraw();
 	}
 

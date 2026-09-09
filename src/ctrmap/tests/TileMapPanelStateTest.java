@@ -85,6 +85,8 @@ public class TileMapPanelStateTest {
 		theHeightLookupReadsThePanelsOwnCollisions();
 		scalingRefusesWhatItCannotDraw();
 		aStaleReloadIsIgnoredRatherThanWritten();
+		theAnimatorFindsNothingToDrawBeforeAZoneOpens();
+		theColoursARegionIsPaintedInFollowTheTileset();
 
 		if (!dump.isDirectory()) {
 			System.out.println("  skip: no dump at " + dump
@@ -96,6 +98,9 @@ public class TileMapPanelStateTest {
 			aMatrixSaveAsksOnceAndWritesEveryRegion();
 			aMatrixSaveThatIsRefusedWritesNothing();
 			unloadingLeavesNothingOfTheOldMap();
+			aMatrixThatOutgrewItsArraysWritesOnlyTheCellsItHas();
+			openingALooseMapDropsThePreviousZonesTextures();
+			loadingAMapDropsTheTilePickedOnTheLastOne();
 		}
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
@@ -636,6 +641,286 @@ public class TileMapPanelStateTest {
 	}
 
 	/** A panel holding the whole of zone 15's map, the way loadMatrix leaves it. */
+	/**
+	 * The 3D animator finds nothing to draw before a zone is open, and after
+	 * one is closed.
+	 *
+	 * <p>The renderer starts a 60fps animator in its constructor and draws every
+	 * registered renderable as soon as the WORKSPACE is valid - a workspace, not
+	 * a zone - and this panel is registered at startup rather than on load. With
+	 * the 3D view toggled on before any zone is picked, {@code renderCM3D}
+	 * arrived with models null and threw sixty times a second on the animator
+	 * thread, where nothing but stderr could see it. {@code unload()} leaves
+	 * exactly that state behind, so a matrix that failed to load turned the 3D
+	 * view into the same per-frame throw until another zone opened.
+	 *
+	 * <p>Its two sibling overrides have always opened with a test of this shape.
+	 * The one that actually draws was the only one without.
+	 */
+	static void theAnimatorFindsNothingToDrawBeforeAZoneOpens() {
+		System.out.println("--- the 3D renderer draws nothing before a zone is open");
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE,
+			new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		check(panel.models == null && !panel.loaded, "a fresh panel holds no models");
+		for (String when : new String[]{"fresh", "after unload"}) {
+			Throwable thrown = null;
+			try {
+				panel.renderCM3D(null);
+				panel.uploadBuffers(null);
+				panel.deleteGLInstanceBuffers(null);
+			} catch (Throwable t) {
+				thrown = t;
+			}
+			check(thrown == null, "a frame drawn " + when + " does not throw: " + thrown);
+			panel.unload();
+		}
+		//and the half-loaded state the worker passes through: MULTI with no matrix
+		panel.mode = TileMapPanel.ViewportMode.MULTI;
+		panel.models = new ctrmap.formats.h3d.BCHFile[1][1];
+		panel.tallgrass = new ctrmap.formats.h3d.BCHFile[1][1];
+		panel.mm = null;
+		Throwable gap = null;
+		try {
+			panel.renderCM3D(null);
+		} catch (Throwable t) {
+			gap = t;
+		}
+		check(gap == null, "nor one drawn in the gap where the mode is MULTI and the matrix"
+			+ " is not assigned yet: " + gap);
+	}
+
+	/**
+	 * The colours a region is painted in follow the tileset, rather than the one
+	 * it happened to be loaded under.
+	 *
+	 * <p>{@code Tilemap} captures what it is handed into a final field and paints
+	 * from it forever, and {@code Workspace.getTileset()} returns a NEW tileset
+	 * object on every call. So handing the OBJECT over meant that changing the
+	 * tileset in Workspace settings - which assigns a new one to the tile form and
+	 * then asks the map view to redraw - repainted every region in the palette it
+	 * had captured at load. The user watched the progress dialog run and saw
+	 * nothing change, and the new colours only arrived with the next zone load.
+	 *
+	 * <p>What the panel hands a region is therefore a live VIEW, and the identity
+	 * below is the whole point: the same object keeps answering, and it answers
+	 * out of whatever the tileset is now.
+	 */
+	/**
+	 * What {@code tileColors()} answers. Reflection because the method is
+	 * package-private in {@code ctrmap.humaninterface} and every suite lives in
+	 * {@code ctrmap.tests} - widening it so a test can see it would make the
+	 * palette part of the panel's public surface, which is the opposite of what
+	 * this campaign is for.
+	 */
+	static ctrmap.formats.tilemap.Tilemap.TileColors colours(TileMapPanel panel) {
+		try {
+			java.lang.reflect.Method m = TileMapPanel.class.getDeclaredMethod("tileColors");
+			m.setAccessible(true);
+			return (ctrmap.formats.tilemap.Tilemap.TileColors) m.invoke(panel);
+		} catch (Exception ex) {
+			throw new IllegalStateException("no tileColors() on TileMapPanel any more - this"
+				+ " check has rotted and must be rewritten, not deleted", ex);
+		}
+	}
+
+	static void theColoursARegionIsPaintedInFollowTheTileset() {
+		System.out.println("--- the colours a region is painted in follow the tileset");
+		final java.awt.Color[] palette = {java.awt.Color.RED};
+		ctrmap.formats.tilemap.Tilemap.TileColors live = tile -> palette[0];
+		TileMapPanel panel = new TileMapPanel(new LoadedZone(), TOOLS, SCENE,
+			new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), live);
+		ctrmap.formats.tilemap.Tilemap.TileColors handedOut = colours(panel);
+		check(handedOut == live, "the panel hands a region the view it was given, not a copy");
+		check(handedOut.colorOf(7).equals(java.awt.Color.RED), "which answers out of the tileset");
+		palette[0] = java.awt.Color.BLUE;
+		check(handedOut.colorOf(7).equals(java.awt.Color.BLUE),
+			"and keeps answering out of it after Workspace settings replaces it, which is"
+			+ " what makes the repaint show the new palette rather than the old one");
+		TileMapPanel headless = new TileMapPanel(new LoadedZone(), TOOLS, SCENE,
+			new javax.swing.JScrollPane(), new ctrmap.humaninterface.CollEditPanel(TOOLS), null);
+		check(colours(headless) == null,
+			"and a panel with no palette hands out none, so a headless holder paints nothing");
+	}
+
+	/**
+	 * A matrix that outgrew the panel's arrays writes only the cells it has.
+	 *
+	 * <p>Matrix Editor > Add column and Add row raise {@code mm.width} and
+	 * {@code mm.height} on the SAME MapMatrix this panel holds, without touching
+	 * {@code mm.regions} or {@code tilemaps}. The scan that decides whether to
+	 * ask already skips any cell outside tilemaps; the two loops that act on the
+	 * answer walked the whole of the new width and height, so the first cell past
+	 * the old edge threw - in the SAVE arm into the worker, which abandoned the
+	 * save with some regions written and some not, and in the DISCARD arm out of
+	 * saveTileMap on the event thread with nothing to catch it.
+	 */
+	static void aMatrixThatOutgrewItsArraysWritesOnlyTheCellsItHas() throws Exception {
+		System.out.println("--- a matrix that outgrew the panel writes only the cells it has");
+		for (boolean keep : new boolean[]{true, false}) {
+			TileMapPanel panel = multiCell();
+			if (panel == null) {
+				System.out.println("  skip: no retail matrix with 2-8 populated cells");
+				return;
+			}
+			markOneModified(panel);
+			int was = panel.tilemaps.length;
+			panel.mm.width++;
+			panel.mm.height++;
+			check(panel.mm.width > was, "the matrix is now " + panel.mm.width + " wide over "
+			+ was + " column(s) of tilemaps, which is what Add column leaves behind");
+			List<String> said = ctrmap.Ui.record(keep ? javax.swing.JOptionPane.YES_OPTION
+				: javax.swing.JOptionPane.NO_OPTION);
+			Throwable thrown = null;
+			boolean answered = false;
+			try {
+				answered = panel.saveTileMap(true);
+			} catch (Throwable t) {
+				thrown = t;
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			check(thrown == null, (keep ? "saving" : "discarding")
+				+ " an outgrown matrix does not throw: " + thrown);
+			check(answered, "and answers yes, so the zone switch that asked may go on");
+			check(said.size() == 1, "having asked exactly once: " + said);
+		}
+	}
+
+	/**
+	 * Opening a loose map drops the textures the previous zone was drawn with.
+	 *
+	 * <p>The two saved texture lists are captured in {@code loadMatrix} and were
+	 * reset nowhere, so after "open a zone, then File > Open GR Mapfile" the
+	 * panel reported no zone open while {@code getWorldTextures()} still handed
+	 * out the OLD zone's decoded world textures. The three readers - the
+	 * environment picker, the painter's textured preview and the building placer
+	 * - cannot tell a stale list from a live one; they only know how to treat
+	 * null as "no textures". Worse than the disagreement: the loose map's own
+	 * model loads with no textures bound, and the geometry editor's live refresh
+	 * would then bind the previous zone's onto it, so editing changed how it
+	 * looked.
+	 */
+	static void openingALooseMapDropsThePreviousZonesTextures() throws Exception {
+		System.out.println("--- opening a loose map drops the last zone's textures");
+		TileMapPanel panel = multiCell();
+		if (panel == null) {
+			System.out.println("  skip: no retail matrix with 2-8 populated cells");
+			return;
+		}
+		List<ctrmap.formats.h3d.texturing.H3DTexture> world = new java.util.ArrayList<>();
+		setField(panel, "savedWorldTextures", world);
+		setField(panel, "savedPropTextures", new java.util.ArrayList<ctrmap.formats.h3d.texturing.H3DTexture>());
+		check(panel.getWorldTextures() == world, "the panel is handing out a zone's textures");
+		GR loose = firstPopulated(panel);
+		check(loose != null, "and there is a region container to open as a loose map");
+		List<String> said = ctrmap.Ui.record(javax.swing.JOptionPane.NO_OPTION);
+		try {
+			panel.loadTileMap(loose);
+		} catch (java.awt.HeadlessException needsAScreen) {
+			//the LOADING half of loadTileMap puts a progress dialog up and cannot run
+			//headless. Everything this section asserts happens BEFORE that line - the
+			//release, the mode, and the two texture lists - so the state it leaves is
+			//still the state under test, and swallowing only HeadlessException means
+			//any other failure still comes out.
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.isEmpty(), "an unedited map is opened without asking anything: " + said);
+		check(panel.getWorldTextures() == null,
+			"after opening a loose map it hands out nothing rather than the last zone's: "
+			+ panel.getWorldTextures());
+		check(panel.mm == null && panel.mode == TileMapPanel.ViewportMode.SINGLE,
+			"which is the same answer the rest of its state gives");
+	}
+
+	/**
+	 * Loading a map drops the tile picked on the one before it.
+	 *
+	 * <p>{@code Selector.selTileX/selTileY} are statics and nothing reset them
+	 * on a load - {@code loadMatrix} cleared the tile UNDO history and left the
+	 * cursor exactly where it was - so a tile picked on a wide matrix was still
+	 * "selected" after a switch to a smaller one. The tile editor has two
+	 * readers of that pair and only one was guarded: showTile asks
+	 * {@code getRegionForTile} and labels the tile " - Void" when the answer is
+	 * null, while showListModel dereferenced the same call inline. So picking a
+	 * tile on a large zone, loading a smaller one and clicking any tile-category
+	 * radio button threw on the event thread - ArrayIndexOutOfBounds when the
+	 * stale coordinate named a region row the new map does not have, a
+	 * NullPointerException when it named an empty cell. It also left the red
+	 * picked-tile rectangle painted at the old map's coordinate.
+	 */
+	static void loadingAMapDropsTheTilePickedOnTheLastOne() throws Exception {
+		System.out.println("--- loading a map drops the tile picked on the last one");
+		TileMapPanel panel = multiCell();
+		if (panel == null) {
+			System.out.println("  skip: no retail matrix with 2-8 populated cells");
+			return;
+		}
+		int cells = Math.min(panel.mm.width, panel.mm.height);
+		ctrmap.humaninterface.Selector.selTileX = 500;
+		ctrmap.humaninterface.Selector.selTileY = 500;
+		try {
+			panel.loadMatrix(panel.mm, null, null, null);
+		} catch (RuntimeException needsAScreen) {
+			//the loading half puts a progress dialog up and cannot run headless, and
+			//awaitLoad rewraps that as IllegalStateException, so this catches the
+			//RuntimeException rather than the HeadlessException underneath it. The
+			//cursor is dropped in the two statements BEFORE any of that, which is the
+			//whole point: it goes with the undo history, at the top, not somewhere
+			//inside a worker that may never run.
+			check(needsAScreen instanceof java.awt.HeadlessException
+				|| String.valueOf(needsAScreen.getCause()).contains("Headless"),
+				"the load stopped for want of a screen, not for anything else: " + needsAScreen);
+		}
+		check(ctrmap.humaninterface.Selector.selTileX == -1
+			&& ctrmap.humaninterface.Selector.selTileY == -1,
+			"the picked tile is dropped with the undo history it belongs to ("
+			+ ctrmap.humaninterface.Selector.selTileX + ","
+			+ ctrmap.humaninterface.Selector.selTileY + ")");
+		//WHY 500 AND NOT ANY NUMBER. It is past the edge of this matrix in tiles -
+		//40 tiles to a region - which is the situation the defect needed: a tile
+		//picked on a wide map, still "selected" over a narrower one. Asserted
+		//against the matrix rather than by asking the panel, because
+		//getRegionForTile is NOT bounds-safe for a coordinate off the map: it
+		//throws ArrayIndexOutOfBounds, which is exactly how the stale cursor used
+		//to reach the user. Pinned here as a comment rather than as a check
+		//because reproducing it needs a map that finished loading, and that needs
+		//a screen.
+		check(500 / 40 >= cells, "tile 500 is past this matrix, which is " + cells
+			+ " region(s) across - so the cursor could not have survived the load");
+	}
+
+	/** Marks the first tilemap the panel actually has as edited. */
+	static void markOneModified(TileMapPanel panel) {
+		for (Tilemap[] col : panel.tilemaps) {
+			for (Tilemap tm : col) {
+				if (tm != null) {
+					tm.modified = true;
+					return;
+				}
+			}
+		}
+	}
+
+	/** The first region container the panel's matrix names, or null. */
+	static GR firstPopulated(TileMapPanel panel) {
+		for (int i = 0; i < panel.mm.height; i++) {
+			for (int j = 0; j < panel.mm.width; j++) {
+				if (panel.mm.regions.get(j, i) != null) {
+					return panel.mm.regions.get(j, i);
+				}
+			}
+		}
+		return null;
+	}
+
+	/** Writes a private field, so a suite can put the panel in a state loadMatrix leaves. */
+	static void setField(Object o, String name, Object value) throws Exception {
+		java.lang.reflect.Field fl = o.getClass().getDeclaredField(name);
+		fl.setAccessible(true);
+		fl.set(o, value);
+	}
+
 	static TileMapPanel multi() throws Exception {
 		ctrmap.formats.zone.Zone z = new ctrmap.formats.zone.Zone(
 				new ctrmap.formats.containers.ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(ZONE)), Workspace.session()),
