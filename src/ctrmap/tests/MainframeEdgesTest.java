@@ -64,11 +64,9 @@ public class MainframeEdgesTest {
 			+ " half has an owner (Navigator) and the stale-buffer half is a ZoneEditors entry"},
 		{"mCollEditPanel", "TileMapPanel",
 			"the collision editor, which the map view draws alongside"},
-		{"mMtxEditForm", "MapMatrixPanel,MatrixPanelInputManager,MatrixSelector",
-			"the matrix form: the matrix panel, its router and its selector are three halves of one editor"},
-		{"mMtxPanel", "MatrixSelector",
-			"the matrix panel. The FORM is handed it now (MatrixCanvas); the cursor still reaches,"
-			+ " and that is the half of the cycle that needs a decision"},
+		{"mMtxEditForm", "MapMatrixPanel,MatrixPanelInputManager",
+			"the matrix form. The cursor no longer reaches; these two are the panel-to-form half of"
+			+ " a MUTUAL cycle, which needs two-phase wiring and not a migration"},
 		{"mNPCEditForm", "TileMapPanel,TrainerEditDialog",
 			"the NPC editor, loaded with the zone and drawn over the map"},
 		{"mPropEditForm", "TileMapPanel",
@@ -113,7 +111,7 @@ public class MainframeEdgesTest {
 	 * list entirely; the Zone tab stopped naming the matrix, prop, warp, script,
 	 * matrix-panel, NPC and trigger editors.
 	 */
-	private static final int REFERENCES = 38;
+	private static final int REFERENCES = 36;
 
 	/**
 	 * Public static fields on the window: 91 before the structure sweep, 22 after

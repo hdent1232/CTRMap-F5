@@ -10,6 +10,7 @@ import ctrmap.formats.zone.Zone;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.MapMatrixPanel;
 import ctrmap.humaninterface.MatrixEditForm;
+import ctrmap.humaninterface.MatrixSelector;
 import ctrmap.humaninterface.ZoneLoadingPanel;
 import java.io.File;
 import java.lang.reflect.Field;
@@ -122,6 +123,46 @@ public class MatrixEditFormGuardsTest {
 			+ scrolled);
 	}
 
+	/**
+	 * The cursor turns a point on the grid into a cell, with no editor around it.
+	 *
+	 * <p>THIS COULD NOT BE ASKED BEFORE. MatrixSelector.select read the matrix
+	 * panel off the main window for the image size and the matrix size, and
+	 * acqCurTile went further: picking a cell also called the FORM's showRegion
+	 * and repainted the panel, both through the window. So "which cell is this
+	 * point" and "tell the editor about it" were one indivisible thing, and a
+	 * cursor needed an editor to exist at all.
+	 *
+	 * <p>The arithmetic is unchanged, including the floor and the sub-chunk
+	 * multiplier - what changed is that the caller says which grid it means.
+	 */
+	static void theCursorTurnsAPointIntoACell() {
+		System.out.println("--- the cursor turns a point on the grid into a cell, with no editor");
+		MatrixSelector.selectSubChunks = false;
+		MatrixSelector.select(0, 0, 800, 800, 8, 8);
+		check(MatrixSelector.hilightRegionX == 0 && MatrixSelector.hilightRegionY == 0,
+			"the top-left corner is cell 0,0");
+		MatrixSelector.select(750, 350, 800, 800, 8, 8);
+		check(MatrixSelector.hilightRegionX == 7 && MatrixSelector.hilightRegionY == 3,
+			"and a point inside the last column lands in it, floored, not rounded up: "
+			+ MatrixSelector.hilightRegionX + "," + MatrixSelector.hilightRegionY);
+
+		//the sub-chunk multiplier is the same arithmetic times four
+		MatrixSelector.selectSubChunks = true;
+		MatrixSelector.select(750, 350, 800, 800, 8, 8);
+		check(MatrixSelector.hilightRegionX == 30 && MatrixSelector.hilightRegionY == 14,
+			"THE SUB-CHUNK GRID IS FOUR TIMES FINER, so the same point is a different cell: "
+			+ MatrixSelector.hilightRegionX + "," + MatrixSelector.hilightRegionY);
+		MatrixSelector.selectSubChunks = false;
+
+		//and picking only picks: it no longer tells a form or repaints a panel,
+		//which is why this whole section can run without either
+		MatrixSelector.acqCurTile();
+		check(MatrixSelector.selRegionX == MatrixSelector.hilightRegionX
+			&& MatrixSelector.selRegionY == MatrixSelector.hilightRegionY,
+			"picking copies the highlighted cell to the picked one, and does nothing else");
+	}
+
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "no-dump-given");
 		if (!dump.isDirectory()) {
@@ -136,6 +177,7 @@ public class MatrixEditFormGuardsTest {
 		CtrmapMainframe.mMtxPanel = new MapMatrixPanel();
 
 		theMatrixIsTheOneTheseChecksDescribe();
+		theCursorTurnsAPointIntoACell();
 		theGridOriginIsOneStatementAndMayBeNegative();
 		openingAndSavingUntouchedWritesNothing();
 		typingARegionIdWritesItIntoTheCell();

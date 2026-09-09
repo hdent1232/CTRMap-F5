@@ -229,6 +229,18 @@
     "${PRISTINE}"
    ],
    "must_say": "AND THE ORIGIN IS NEGATIVE"
+  },
+  {
+   "id": "sub-chunk-grid-stops-being-four-times-finer",
+   "why": "The matrix cursor translates a point on the grid into a cell, and the multitude/sub-chunk tool makes that grid four times finer in each axis. Dropping the multiplier makes every sub-chunk click land in the region cell instead - the same class of wrong-cell write the tool-switch defect caused, and just as silent.",
+   "file": "src/ctrmap/humaninterface/MatrixSelector.java",
+   "find": "\t\thilightRegionX = (int) (Math.floor(((float) xOnImage / imageWidth) * (double) (cellsAcross * (selectSubChunks ? 4 : 1))));",
+   "replace": "\t\thilightRegionX = (int) (Math.floor(((float) xOnImage / imageWidth) * (double) cellsAcross));",
+   "suite": "ctrmap.tests.MatrixEditFormGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "THE SUB-CHUNK GRID IS FOUR TIMES FINER"
   }
  ]
 }
