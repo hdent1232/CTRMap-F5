@@ -428,6 +428,28 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			return false;
 		}
 		if (stored) {
+			//A ZONE WITH NO ROW IN THE TABLE MUST NOT BE WRITTEN INTO SOMEBODY ELSE'S.
+			//A zone opened from a loose .zo file is open at index -1, which is what
+			//LoadedZone.open(int, Zone) documents for a zone that came from a file. The
+			//write below is "seek to index * 0x38 and put this header there", and at -1
+			//that is a NEGATIVE seek, which RandomAccessFile refuses with an IOException
+			//- so the catch fired and the user was told. That worked, and it worked by
+			//accident: skipBytes(-56) silently does nothing, so the read above it
+			//compared this file against slot 0, and the only thing standing between a
+			//loose zone and zone 0's row was that one call throwing. Anyone "fixing"
+			//the negative seek - clamping it, or seeking before skipping - would have
+			//landed the header in slot 0 with no warning at all.
+			//
+			//So the case is now decided here, where it can be read, and the report says
+			//what actually happened rather than naming "zone -1".
+			if (zoneIndex < 0) {
+				ctrmap.Ui.error(this, "This zone was opened from a file rather than from the"
+					+ " zone list, so it has no row of its own and the master zone-header table"
+					+ " was NOT updated. The file itself was saved.\n\nTo change a header the"
+					+ " game loads, open the zone from the Zone tab's list instead.", "Save zone");
+				loadZone(zone);
+				return true;
+			}
 			try {
 				//save to master table - the entry just past the last zone.
 				//WAS "length - (isXY() ? 1 : 2)", the same two-answers-for-four-
