@@ -339,6 +339,15 @@ def _drain(stream, sink):
 
 
 def run(cmd, timeout=900, keep=TAIL_BYTES):
+    # NO -Djava.awt.headless=true ANYWHERE IN THIS FILE. The sweep answers "would
+    # the BATTERY notice this?", and test.ps1 does not pass that flag - so a run
+    # that does is answering about a different program. It is not academic: a map
+    # load a headless JVM refuses at its progress dialog SUCCEEDS with a display,
+    # and everything after it then runs against a loaded map instead of an empty
+    # one. The same mistake was found and fixed in tools/guard/replant.py on the
+    # same day, where it had left a guard green under the flag and red under the
+    # battery. The baseline check is what stands behind this: a suite that cannot
+    # pass unmutated without the flag stops the sweep before anything is scored.
     # keep=None means the CALLER PARSES THE WHOLE OUTPUT and must not be handed
     # a sample of it. Every git call does. The first cut of this fix bounded
     # every run at a 256 KB tail, and c1's merge diff is 376 KB: its head was
@@ -1454,7 +1463,7 @@ for _cid, (_b, _suites) in RESOLVED.items():
         if cls in _seen:
             continue                     # one suite guards several branches; check it once
         _seen.add(cls)
-        r = run([JAVA, "-Xmx4g", "-Djava.awt.headless=true", "-cp", CP, cls] + a)
+        r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
         if r.flooded:
             # a suite that floods unmutated makes every mutant's flood meaningless
             raise SystemExit("baseline FLOODS: %s printed %d MB unmutated. A flood is scored as "
@@ -1566,7 +1575,7 @@ def _judges():
                              "script's defect, not the tree's")
         out = []
         for cls, a in ALL_SUITES:
-            r = run([JAVA, "-Xmx4g", "-Djava.awt.headless=true", "-cp", CP, cls] + a)
+            r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
             if r.returncode == 0:
                 out.append((cls, a))
             else:
@@ -1641,7 +1650,7 @@ for cid, (base, suites) in RESOLVED.items():
                 ordered = suites + [x for x in FILE_SUITES.get(path, []) if x not in suites]
                 ordered = suites_for(path, ordered)
                 for cls, a in ordered:
-                    r = run([JAVA, "-Xmx4g", "-Djava.awt.headless=true", "-cp", CP, cls] + a)
+                    r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
                     if r.returncode == HUNG_RC:
                         # A hang is still never a kill - but it must not stop the
                         # OTHER suites from trying. Measured: GARC.java:207 and :225
