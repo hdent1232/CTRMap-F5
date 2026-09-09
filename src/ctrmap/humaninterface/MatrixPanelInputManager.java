@@ -50,7 +50,9 @@ public class MatrixPanelInputManager implements MouseWheelListener, MouseMotionL
 		int ybound = (int) (parent.getLocationOnScreen().getY() + origin.y);
 		if (e.getXOnScreen() >= xbound && e.getXOnScreen() < xbound + parent.getFullImageWidth()
 				&& e.getYOnScreen() >= ybound && e.getYOnScreen() < ybound + parent.getFullImageHeight()) {
-			MatrixSelector.select(e.getXOnScreen() - xbound, e.getYOnScreen() - ybound);
+			MatrixSelector.select(e.getXOnScreen() - xbound, e.getYOnScreen() - ybound,
+					parent.getFullImageWidth(), parent.getFullImageHeight(),
+					parent.mm.width, parent.mm.height);
 		} else {
 			if (MatrixSelector.hilightRegionX != -1) {
 				MatrixSelector.deselect();
@@ -62,6 +64,11 @@ public class MatrixPanelInputManager implements MouseWheelListener, MouseMotionL
 	@Override
 	public void mouseClicked(MouseEvent e) {
 		MatrixSelector.acqCurTile();
+		//these two used to live INSIDE acqCurTile, which meant the cursor reached
+		//through the window for the form and the panel. They belong here: this is
+		//the class that already knows both, and the order is the one they had.
+		mMtxEditForm.showRegion(MatrixSelector.selRegionX, MatrixSelector.selRegionY);
+		parent.redraw();
 		mMtxEditForm.checkCamTool(e);
 	}
 	
