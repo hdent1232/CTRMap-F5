@@ -25,9 +25,9 @@
   "PlantLedgerTest holds all three to their ceilings and checks every plant still matches its file",
   "exactly once, which is cheap; replant.py actually runs them, which is not."
  ],
- "owed_ceiling": 113,
+ "owed_ceiling": 60,
  "owed_generalisation_ceiling": 3,
- "owed_real_defect_ceiling": 0,
+ "owed_real_defect_ceiling": 53,
  "plants": [
   {
    "id": "zone-broadcast-clear-skips-editors",
@@ -287,6 +287,690 @@
     "src"
    ],
    "must_say": "the scanner never sees fewer readers than a source grep does"
+  },
+  {
+   "id": "adpropregistryorder-ad-flip-return",
+   "why": "Machine-found by tools/guard/autoplant.py: a flip-return in src/ctrmap/formats/containers/AD.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/containers/AD.java",
+   "find": "\t\treturn true;",
+   "replace": "\t\treturn false;",
+   "suite": "ctrmap.tests.ADPropRegistryOrderTest",
+   "args": [
+    "${PRISTINE}",
+    "a\\0\\1\\4"
+   ],
+   "must_say": "could not decompress AreaData entry 0",
+   "auto": true
+  },
+  {
+   "id": "bchmapmodel-bchmapmodel-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/BchMapModel.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/h3d/BchMapModel.java",
+   "find": "\t\t\tif (sourceBase < 0) {",
+   "replace": "\t\t\tif (!(sourceBase < 0)) {",
+   "suite": "ctrmap.tests.BchMapModelTest",
+   "args": [
+    "${A039}"
+   ],
+   "must_say": "(857 regions with problems)",
+   "auto": true
+  },
+  {
+   "id": "compositebuild-gfcoll-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/gfcollision/GfColl.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/gfcollision/GfColl.java",
+   "find": "\t\tif (!isColl(data)) {",
+   "replace": "\t\tif (!(!isColl(data))) {",
+   "suite": "ctrmap.tests.CompositeBuildTest",
+   "args": [
+    "${A039}"
+   ],
+   "must_say": "corpus region 0: not a coll subfile",
+   "auto": true
+  },
+  {
+   "id": "compositeleftover-bchmapmodel-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/BchMapModel.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/h3d/BchMapModel.java",
+   "find": "\t\t\tif (sourceBase < 0) {",
+   "replace": "\t\t\tif (!(sourceBase < 0)) {",
+   "suite": "ctrmap.tests.CompositeLeftoverTest",
+   "args": [
+    "${A039}"
+   ],
+   "must_say": "region 7 did not build: java.lang.ArrayIndexOutOfBoundsException: Index 347404 out of boun",
+   "auto": true
+  },
+  {
+   "id": "containerbytes-containerbytes-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/containers/ContainerBytes.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/containers/ContainerBytes.java",
+   "find": "\t\tif (tableEnd > container.length) {",
+   "replace": "\t\tif (!(tableEnd > container.length)) {",
+   "suite": "ctrmap.tests.ContainerBytesTest",
+   "args": [],
+   "must_say": "subfile 0 is its bytes up to the next offset: null",
+   "auto": true
+  },
+  {
+   "id": "datasafetyguards-zone-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/zone/Zone.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/zone/Zone.java",
+   "find": "\t\tif (entities.modified) {",
+   "replace": "\t\tif (!(entities.modified)) {",
+   "suite": "ctrmap.tests.DataSafetyGuardsTest",
+   "args": [
+    "${A040}",
+    "${PRISTINE}"
+   ],
+   "must_say": "a zone holding a record it cannot serialise refuses to save",
+   "auto": true
+  },
+  {
+   "id": "dialogseam-ui-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/Ui.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/Ui.java",
+   "find": "\t\tif (!dialog) {",
+   "replace": "\t\tif (!(!dialog)) {",
+   "suite": "ctrmap.tests.DialogSeamTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "askToKeep: no is DISCARD",
+   "auto": true
+  },
+  {
+   "id": "dispatchtrampoline-pawninstruction-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/scripts/PawnInstruction.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/scripts/PawnInstruction.java",
+   "find": "\t\tif (hasCompressedArgument) {",
+   "replace": "\t\tif (!(hasCompressedArgument)) {",
+   "suite": "ctrmap.tests.DispatchTrampolineTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "talker corpus is the full eligible set",
+   "auto": true
+  },
+  {
+   "id": "dressupindex-dressupindex-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/dressup/DressUpIndex.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/dressup/DressUpIndex.java",
+   "find": "\t\tif (!isContainer(c)) {",
+   "replace": "\t\tif (!(!isContainer(c))) {",
+   "suite": "ctrmap.tests.DressUpIndexTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "two index sets found",
+   "auto": true
+  },
+  {
+   "id": "dumpcheck-dumpcheck-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/setup/DumpCheck.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/setup/DumpCheck.java",
+   "find": "\t\tif (!folder.exists()) {",
+   "replace": "\t\tif (!(!folder.exists())) {",
+   "suite": "ctrmap.tests.DumpCheckTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "a real dump is VALID",
+   "auto": true
+  },
+  {
+   "id": "encountertable-encountertable-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/encounters/EncounterTable.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/encounters/EncounterTable.java",
+   "find": "\t\t\t\tif (slot.isEmpty()) {",
+   "replace": "\t\t\t\tif (!(slot.isEmpty())) {",
+   "suite": "ctrmap.tests.EncounterTableTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "zone 8: no-op write not byte-identical",
+   "auto": true
+  },
+  {
+   "id": "facilitysource-gflpawnscript-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/scripts/GFLPawnScript.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/scripts/GFLPawnScript.java",
+   "find": "\t\tif (!decompressed) {",
+   "replace": "\t\tif (!(!decompressed)) {",
+   "suite": "ctrmap.tests.FacilitySourceTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "Battle Maison lobby: no dispatch",
+   "auto": true
+  },
+  {
+   "id": "gfmessagefilehostile-gfmessagefile-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/text/GFMessageFile.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/text/GFMessageFile.java",
+   "find": "\t\t\tif (offset < sdo || offset + length * 2 > data.length) {",
+   "replace": "\t\t\tif (!(offset < sdo || offset + length * 2 > data.length)) {",
+   "suite": "ctrmap.tests.GFMessageFileHostileTest",
+   "args": [],
+   "must_say": "S1 emoji: exception java.lang.IllegalArgumentException: Line data out of bounds",
+   "auto": true
+  },
+  {
+   "id": "gfmessagefileroundtrip-gfmessagefile-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/text/GFMessageFile.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/text/GFMessageFile.java",
+   "find": "\t\t\tif (offset < sdo || offset + length * 2 > data.length) {",
+   "replace": "\t\t\tif (!(offset < sdo || offset + length * 2 > data.length)) {",
+   "suite": "ctrmap.tests.GFMessageFileRoundTripTest",
+   "args": [],
+   "must_say": "A1 ascii hello: exception java.lang.IllegalArgumentException: Line data out of bounds",
+   "auto": true
+  },
+  {
+   "id": "garcsniff-lz11-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/garc/LZ11.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/garc/LZ11.java",
+   "find": "\t\t\tif ((flags & mask) > 0) {",
+   "replace": "\t\t\tif (!((flags & mask) > 0)) {",
+   "suite": "ctrmap.tests.GarcSniffTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "and it is a BCH, which is what a texture consumer needs",
+   "auto": true
+  },
+  {
+   "id": "gauntletscript-pawninstruction-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/scripts/PawnInstruction.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/scripts/PawnInstruction.java",
+   "find": "\t\tif (hasCompressedArgument) {",
+   "replace": "\t\tif (!(hasCompressedArgument)) {",
+   "suite": "ctrmap.tests.GauntletScriptTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "zone 0: Index 0 out of bounds for length 0",
+   "auto": true
+  },
+  {
+   "id": "gfcoll-gfcoll-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/gfcollision/GfColl.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/gfcollision/GfColl.java",
+   "find": "\t\tif (!isColl(data)) {",
+   "replace": "\t\tif (!(!isColl(data))) {",
+   "suite": "ctrmap.tests.GfCollTest",
+   "args": [
+    "${A039}"
+   ],
+   "must_say": "region 0 sub 2: not a coll subfile",
+   "auto": true
+  },
+  {
+   "id": "givebpscript-pawninstruction-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/scripts/PawnInstruction.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/scripts/PawnInstruction.java",
+   "find": "\t\tif (hasCompressedArgument) {",
+   "replace": "\t\tif (!(hasCompressedArgument)) {",
+   "suite": "ctrmap.tests.GiveBpScriptTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "zone 0: Index 0 out of bounds for length 0",
+   "auto": true
+  },
+  {
+   "id": "harvesterguards-buildingharvester-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/tools/BuildingHarvester.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/tools/BuildingHarvester.java",
+   "find": "\t\tif (args.length < 1) {",
+   "replace": "\t\tif (!(args.length < 1)) {",
+   "suite": "ctrmap.tests.HarvesterGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the harvester catalogued 0 cuts out of 29 regions",
+   "auto": true
+  },
+  {
+   "id": "interiorwirer-zoneentities-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/zone/ZoneEntities.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/zone/ZoneEntities.java",
+   "find": "\t\tif (count > MAX_PER_KIND) {",
+   "replace": "\t\tif (!(count > MAX_PER_KIND)) {",
+   "suite": "ctrmap.tests.InteriorWirerTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "interior 228: Zone entities could not be saved: This zone has 1 props; the game stores at ",
+   "auto": true
+  },
+  {
+   "id": "itemdata-itemdata-flip-return",
+   "why": "Machine-found by tools/guard/autoplant.py: a flip-return in src/ctrmap/formats/pokedata/ItemData.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/pokedata/ItemData.java",
+   "find": "\t\t\t\treturn false;",
+   "replace": "\t\t\t\treturn true;",
+   "suite": "ctrmap.tests.ItemDataTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "so exactly 4 slots are genuinely free for a new item",
+   "auto": true
+  },
+  {
+   "id": "lz11-lz11-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/garc/LZ11.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/garc/LZ11.java",
+   "find": "\t\t\tif ((flags & mask) > 0) {",
+   "replace": "\t\t\tif (!((flags & mask) > 0)) {",
+   "suite": "ctrmap.tests.LZ11Test",
+   "args": [
+    "${A039}"
+   ],
+   "must_say": "corpus entry 0 round-trip",
+   "auto": true
+  },
+  {
+   "id": "maisonclasslist-garc-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/garc/GARC.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/garc/GARC.java",
+   "find": "\t\t\t\t\tif ((flags & (1 << bit)) > 0) {",
+   "replace": "\t\t\t\t\tif (!((flags & (1 << bit)) > 0)) {",
+   "suite": "ctrmap.tests.MaisonClassListTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "list 3 entry 1 round-trip not byte-identical",
+   "auto": true
+  },
+  {
+   "id": "maisonset-garc-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/garc/GARC.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/garc/GARC.java",
+   "find": "\t\t\t\t\tif ((flags & (1 << bit)) > 0) {",
+   "replace": "\t\t\t\t\tif (!((flags & (1 << bit)) > 0)) {",
+   "suite": "ctrmap.tests.MaisonSetTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "pool 2 entry 1 len=32",
+   "auto": true
+  },
+  {
+   "id": "mapdefaults-bchmapmodel-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/BchMapModel.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/h3d/BchMapModel.java",
+   "find": "\t\t\tif (sourceBase < 0) {",
+   "replace": "\t\t\tif (!(sourceBase < 0)) {",
+   "suite": "ctrmap.tests.MapDefaultsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "scored the ground choice over 0 retail regions",
+   "auto": true
+  },
+  {
+   "id": "mapmodelobjimport-mapmodelobj-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/MapModelObj.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/h3d/MapModelObj.java",
+   "find": "\t\t\tif (!g.posOk) {",
+   "replace": "\t\t\tif (!(!g.posOk)) {",
+   "suite": "ctrmap.tests.MapModelObjImportTest",
+   "args": [
+    "${A039}"
+   ],
+   "must_say": "region 0: No OBJ group could be applied to the model.",
+   "auto": true
+  },
+  {
+   "id": "mapmodelobj-mapmodelobj-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/MapModelObj.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/h3d/MapModelObj.java",
+   "find": "\t\t\t\t\tif (hasUv && hasNrm) {",
+   "replace": "\t\t\t\t\tif (!(hasUv && hasNrm)) {",
+   "suite": "ctrmap.tests.MapModelObjTest",
+   "args": [
+    "${A039}"
+   ],
+   "must_say": "region 0: Index 0 out of bounds for length 0",
+   "auto": true
+  },
+  {
+   "id": "mapresizer-mapresizer-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/MapResizer.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/MapResizer.java",
+   "find": "\t\tif (count < 2) {",
+   "replace": "\t\tif (!(count < 2)) {",
+   "suite": "ctrmap.tests.MapResizerTest",
+   "args": [
+    "${A040}"
+   ],
+   "must_say": "matrix 0: matrix container has no camera subfile",
+   "auto": true
+  },
+  {
+   "id": "matrixfork-garc-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/garc/GARC.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/garc/GARC.java",
+   "find": "\t\t\t\t\tif ((flags & (1 << bit)) > 0) {",
+   "replace": "\t\t\t\t\tif (!((flags & (1 << bit)) > 0)) {",
+   "suite": "ctrmap.tests.MatrixForkTest",
+   "args": [
+    "${A013}",
+    "${A040}"
+   ],
+   "must_say": "zone 15 matrix 258: its own map's zone layer names {25=48, 7=16, 23=16, 6=16}, not 15 - in",
+   "auto": true
+  },
+  {
+   "id": "moddeployer-moddeployer-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/ModDeployer.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/ModDeployer.java",
+   "find": "\t\t\tif (!live.exists()) {",
+   "replace": "\t\t\tif (!(!live.exists())) {",
+   "suite": "ctrmap.tests.ModDeployerTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "0 archives were found unchanged",
+   "auto": true
+  },
+  {
+   "id": "msgwrapperinject-pawninstruction-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/scripts/PawnInstruction.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/scripts/PawnInstruction.java",
+   "find": "\t\tif (hasCompressedArgument) {",
+   "replace": "\t\tif (!(hasCompressedArgument)) {",
+   "suite": "ctrmap.tests.MsgWrapperInjectTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "zone 24 does not validate as donor: arraycopy: last destination index 47 out of bounds for",
+   "auto": true
+  },
+  {
+   "id": "npcentityguards-zoneentities-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/zone/ZoneEntities.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/zone/ZoneEntities.java",
+   "find": "\t\t\tif (Float.isNaN(z3DCoordinate) || Float.isInfinite(z3DCoordinate)) {",
+   "replace": "\t\t\tif (!(Float.isNaN(z3DCoordinate) || Float.isInfinite(z3DCoordinate))) {",
+   "suite": "ctrmap.tests.NpcEntityGuardsTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "an NPC with a NaN altitude serialised without complaint",
+   "auto": true
+  },
+  {
+   "id": "paintedfloor-gfcoll-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/gfcollision/GfColl.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/gfcollision/GfColl.java",
+   "find": "\t\t\t\tif (!firstSeen.containsKey(key)) {",
+   "replace": "\t\t\t\tif (!(!firstSeen.containsKey(key))) {",
+   "suite": "ctrmap.tests.PaintedFloorTest",
+   "args": [
+    "${A039}"
+   ],
+   "must_say": "the notch ramp is level across the corridor",
+   "auto": true
+  },
+  {
+   "id": "paintedregion-bchmapmodel-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/BchMapModel.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/h3d/BchMapModel.java",
+   "find": "\t\t\tif (sourceBase < 0) {",
+   "replace": "\t\t\tif (!(sourceBase < 0)) {",
+   "suite": "ctrmap.tests.PaintedRegionTest",
+   "args": [
+    "${A039}"
+   ],
+   "must_say": "all grass: Index 534916 out of bounds for length 534912",
+   "auto": true
+  },
+  {
+   "id": "partyparam-partyparam-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/pokedata/PartyParam.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/pokedata/PartyParam.java",
+   "find": "\t\t\tif (p.name.equals(name)) {",
+   "replace": "\t\t\tif (!(p.name.equals(name))) {",
+   "suite": "ctrmap.tests.PartyParamTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "the Set table claims to write NATURE, which no case of PokePartySetParam reaches",
+   "auto": true
+  },
+  {
+   "id": "prefabcolour-bchmapmodel-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/BchMapModel.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/h3d/BchMapModel.java",
+   "find": "\t\t\tif (sourceBase < 0) {",
+   "replace": "\t\t\tif (!(sourceBase < 0)) {",
+   "suite": "ctrmap.tests.PrefabColourTest",
+   "args": [
+    "${A039}"
+   ],
+   "must_say": "nothing was checked - the sweep proves nothing",
+   "auto": true
+  },
+  {
+   "id": "propdatabase-propdatabase-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/propdata/PropDatabase.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/propdata/PropDatabase.java",
+   "find": "\t\t\tif (DUMMY_MODEL_NAME.equals(m.name) && m.donorAreas.isEmpty()) {",
+   "replace": "\t\t\tif (!(DUMMY_MODEL_NAME.equals(m.name) && m.donorAreas.isEmpty())) {",
+   "suite": "ctrmap.tests.PropDatabaseTest",
+   "args": [
+    "${PRISTINE}",
+    "a\\0\\2\\3"
+   ],
+   "must_say": "pristine AreaData GARC not found:",
+   "auto": true
+  },
+  {
+   "id": "recordschema-recordfield-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/recordschema/RecordField.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/recordschema/RecordField.java",
+   "find": "\t\tif (signed) {",
+   "replace": "\t\tif (!(signed)) {",
+   "suite": "ctrmap.tests.RecordSchemaTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "2752 set/get round trips over the full range of every field - 184 wrong, first: HP @0x17 s",
+   "auto": true
+  },
+  {
+   "id": "scriptassemblerguard-pawndisassembler-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/scripts/PawnDisassembler.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/scripts/PawnDisassembler.java",
+   "find": "\t\t\tif (line.startsWith(\"sub_\")) {",
+   "replace": "\t\t\tif (!(line.startsWith(\"sub_\"))) {",
+   "suite": "ctrmap.tests.ScriptAssemblerGuardTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "a clean script has no errors [line 1: \"sub_0\" is outside any subroutine, line 3: \"PUSH_C(1",
+   "auto": true
+  },
+  {
+   "id": "signwrapperinject-pawninstruction-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/scripts/PawnInstruction.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/scripts/PawnInstruction.java",
+   "find": "\t\tif (hasCompressedArgument) {",
+   "replace": "\t\tif (!(hasCompressedArgument)) {",
+   "suite": "ctrmap.tests.SignWrapperInjectTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "zone 24 does not validate as sign donor: arraycopy: last destination index 22 out of bound",
+   "auto": true
+  },
+  {
+   "id": "snapshotintegrity-workspace-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/Workspace.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/Workspace.java",
+   "find": "\t\tif (snapshotProblemShown) {",
+   "replace": "\t\tif (!(snapshotProblemShown)) {",
+   "suite": "ctrmap.tests.SnapshotIntegrityTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "an incomplete backup is reported to the user, not only to stderr",
+   "auto": true
+  },
+  {
+   "id": "sysreqname-pawninstruction-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/scripts/PawnInstruction.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/scripts/PawnInstruction.java",
+   "find": "\t\tif (s.isEmpty()) {",
+   "replace": "\t\tif (!(s.isEmpty())) {",
+   "suite": "ctrmap.tests.SysreqNameTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "zone 5: SYSREQ round-trip idx 0 -> 0",
+   "auto": true
+  },
+  {
+   "id": "terrainimport-bchmapmodel-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/BchMapModel.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/h3d/BchMapModel.java",
+   "find": "\t\t\tif (sourceBase < 0) {",
+   "replace": "\t\t\tif (!(sourceBase < 0)) {",
+   "suite": "ctrmap.tests.TerrainImportTest",
+   "args": [
+    "${A039}"
+   ],
+   "must_say": "target 153 brush GRASS: Index 808748 out of bounds for length 808704",
+   "auto": true
+  },
+  {
+   "id": "texturecodec-texturecodec-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/texturing/TextureCodec.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/h3d/texturing/TextureCodec.java",
+   "find": "\t\t\tif (alphaOnly) {",
+   "replace": "\t\t\tif (!(alphaOnly)) {",
+   "suite": "ctrmap.tests.TextureCodecTest",
+   "args": [
+    "${PRISTINE}",
+    "a\\0\\1\\4"
+   ],
+   "must_say": "l4 55555555 -> BGRA 555555ff: a 4-bit luminance doubled to 8, opaque",
+   "auto": true
+  },
+  {
+   "id": "texturepackimport-bchtexturepack-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/BchTexturePack.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/h3d/BchTexturePack.java",
+   "find": "\t\tif (contentsAdr < 0 || contentsAdr + 44 > bch.length) {",
+   "replace": "\t\tif (!(contentsAdr < 0 || contentsAdr + 44 > bch.length)) {",
+   "suite": "ctrmap.tests.TexturePackImportTest",
+   "args": [
+    "${PRISTINE}",
+    "a\\0\\1\\4"
+   ],
+   "must_say": "pristine GARC backups not found:",
+   "auto": true
+  },
+  {
+   "id": "tilemapinputrouter-selector-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/humaninterface/Selector.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/humaninterface/Selector.java",
+   "find": "\t\tif (map.loaded) {",
+   "replace": "\t\tif (!(map.loaded)) {",
+   "suite": "ctrmap.tests.TilemapInputRouterTest",
+   "args": [],
+   "must_say": "the top left pixel is tile",
+   "auto": true
+  },
+  {
+   "id": "utils-bytes-flip-return",
+   "why": "Machine-found by tools/guard/autoplant.py: a flip-return in src/ctrmap/util/Bytes.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/util/Bytes.java",
+   "find": "\t\t\t\treturn false;",
+   "replace": "\t\t\t\treturn true;",
+   "suite": "ctrmap.tests.UtilsTest",
+   "args": [],
+   "must_say": "a one-byte file cannot match and does not throw",
+   "auto": true
+  },
+  {
+   "id": "vaultguards-vault-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/vault/Vault.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/vault/Vault.java",
+   "find": "\t\t\tif ((c < '0' || c > '9') && (c < 'a' || c > 'f')) {",
+   "replace": "\t\t\tif (!((c < '0' || c > '9') && (c < 'a' || c > 'f'))) {",
+   "suite": "ctrmap.tests.VaultGuardsTest",
+   "args": [],
+   "must_say": "a stopped seal does not report success",
+   "auto": true
+  },
+  {
+   "id": "workspacesession-workspace-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/Workspace.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/Workspace.java",
+   "find": "\t\t\tif (!showErrors) {",
+   "replace": "\t\t\tif (!(!showErrors)) {",
+   "suite": "ctrmap.tests.WorkspaceSessionTest",
+   "args": [
+    "${GAMEDIR}",
+    "src"
+   ],
+   "must_say": "the user is told what is wrong with the folder they chose: []",
+   "auto": true
+  },
+  {
+   "id": "zoneappend-garc-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/garc/GARC.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/garc/GARC.java",
+   "find": "\t\t\t\t\tif ((flags & (1 << bit)) > 0) {",
+   "replace": "\t\t\t\t\tif (!((flags & (1 << bit)) > 0)) {",
+   "suite": "ctrmap.tests.ZoneAppendTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "master table is 536 rows x 0x38, got 84176 bytes",
+   "auto": true
+  },
+  {
+   "id": "zonecloner-garc-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/garc/GARC.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/garc/GARC.java",
+   "find": "\t\t\t\t\tif ((flags & (1 << bit)) > 0) {",
+   "replace": "\t\t\t\t\tif (!((flags & (1 << bit)) > 0)) {",
+   "suite": "ctrmap.tests.ZoneClonerTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "master table is 536 rows x 0x38, got 84176 bytes",
+   "auto": true
+  },
+  {
+   "id": "zonerepurposescanner-zonerepurposescanner-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/ZoneRepurposeScanner.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/ZoneRepurposeScanner.java",
+   "find": "\t\t\tif (!valid[i] || incoming[i] > 0) {",
+   "replace": "\t\t\tif (!(!valid[i] || incoming[i] > 0)) {",
+   "suite": "ctrmap.tests.ZoneRepurposeScannerTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "the scanner listed 370 zones; an independent parse finds 165 base zones no warp points at",
+   "auto": true
+  },
+  {
+   "id": "zonescriptanalyzer-zonescriptanalyzer-negate-if",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/scripts/ZoneScriptAnalyzer.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "file": "src/ctrmap/formats/scripts/ZoneScriptAnalyzer.java",
+   "find": "\t\tif (idx < 0 || idx + pushCount + 4 > script.instructions.size()) {",
+   "replace": "\t\tif (!(idx < 0 || idx + pushCount + 4 > script.instructions.size())) {",
+   "suite": "ctrmap.tests.ZoneScriptAnalyzerTest",
+   "args": [
+    "${A013}"
+   ],
+   "must_say": "zone 24 case 7 is a simple talker",
+   "auto": true
   }
  ]
 }

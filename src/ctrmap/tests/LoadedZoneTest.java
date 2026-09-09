@@ -125,19 +125,20 @@ public class LoadedZoneTest {
 
 	/**
 	 * Application classes that still name the Zone tab through the window's
-	 * static, with what each one asks it for. NONE of them is zone state -
-	 * every one is an operation the panel performs, which is step F's work
-	 * (the panel itself gets an owner and these are handed it):
-	 * <ul>
-	 * <li>{@code NPCEditForm}, {@code ScriptEditor} - {@code store(...)}, the
-	 * Zone tab's save, run as part of a bigger save. The map painter was here
-	 * too until the flush got an owner; it asks that instead.
-	 * <li>{@code TilePainterForm} - {@code loadEverything}/{@code selectZone}
-	 * after it has written new zones, and {@code clearForkDecline}.
-	 * <li>{@code SetupWizard} - {@code getLoadedZoneCount}, to say how many
-	 * zones the game it just set up has.
-	 * </ul>
-	 * Measured from {@code build/classes}, folded to top-level classes, the
+	 * static. EMPTY, and the list is kept as a list rather than collapsed to a
+	 * count so that a name appearing here again says which class it is.
+	 *
+	 * <p>There were four, and none of them ever wanted zone STATE - every one
+	 * wanted an operation the panel performs, which is why each left by being
+	 * handed the operation rather than the panel. {@code NPCEditForm} and
+	 * {@code ScriptEditor} called {@code store(false)} and now hold a
+	 * {@link ctrmap.humaninterface.ZoneSaver}. {@code TilePainterForm} called
+	 * {@code loadEverything}/{@code selectZone}/{@code clearForkDecline} and now
+	 * holds a {@link ctrmap.humaninterface.ZoneList}. {@code SetupWizard} wanted
+	 * one number - how many zones the game it just set up has - and is handed
+	 * the number.
+	 *
+	 * <p>Measured from {@code build/classes}, folded to top-level classes, the
 	 * window itself excluded. Asserted with EQUALITY: this set only shrinks,
 	 * and a new name in it is a class reaching the Zone tab through a global
 	 * rather than being handed what it needs.

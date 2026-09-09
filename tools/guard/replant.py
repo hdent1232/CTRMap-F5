@@ -106,7 +106,8 @@ def run_suite(cls, args, java):
 
 
 def expand(args, pristine, gamedir):
-    """${PRISTINE} is the untouched GARC copy; ${GAMEDIR} is the live dump.
+    """${PRISTINE}/${A039}/${A013}/${A040} come out of the untouched GARC copy;
+    ${GAMEDIR} is the live dump.
 
     They are not interchangeable and a plant has to say which it wants.
     RomFS_original_garcs holds only the archives the workspace flow needs to
@@ -114,7 +115,16 @@ def expand(args, pristine, gamedir):
     the wrong reason - which reads as a guard that noticed when it did not."""
     out = []
     for a in args:
-        out.append(a.replace("${PRISTINE}", pristine).replace("${GAMEDIR}", gamedir))
+        a = a.replace("${PRISTINE}", pristine).replace("${GAMEDIR}", gamedir)
+        #the three archives test.ps1 hands out by name. Tokens rather than paths
+        #because plants.json is a SHIPPED file and SourceSeamTest refuses a home
+        #directory in one - it caught exactly that when autoplant first wrote
+        #these, which is the rule doing its job.
+        for name, parts in (("A039", ("a", "0", "3", "9")),
+                            ("A013", ("a", "0", "1", "3")),
+                            ("A040", ("a", "0", "4", "0"))):
+            a = a.replace("${%s}" % name, os.path.join(pristine, *parts))
+        out.append(a)
     return out
 
 
