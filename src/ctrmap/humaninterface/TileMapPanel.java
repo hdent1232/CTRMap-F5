@@ -109,6 +109,21 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	 */
 	private final Tilemap.TileColors colours;
 
+	/**
+	 * The editors this view tells about the map it has loaded, SET ONCE after
+	 * both exist - see {@link MapEditors} for why it cannot be a constructor
+	 * argument in either direction.
+	 */
+	private MapEditors editors;
+
+	/** Tells this view which editors to inform. Once, by the window. */
+	public void setEditors(MapEditors editors) {
+		if (editors == null) {
+			throw new IllegalArgumentException("the map view must be told which editors show what it loads");
+		}
+		this.editors = editors;
+	}
+
 	/** The collision editor drawn alongside this view, handed in. */
 	private final CollEditPanel collision;
 
@@ -240,7 +255,9 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		revalidate();
 		loaded = true;
 		loadProps(null, null);
-		mNPCEditForm.loadFromEntities(null, null);
+		if (editors != null) {
+			editors.clearEntities();
+		}
 		scene.frameSingleRegion();
 	}
 
@@ -254,9 +271,13 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 					}
 				}
 			}
-			mPropEditForm.loadDataFile(comb, reg, propTextures);
+			if (editors != null) {
+				editors.showProps(comb, reg, propTextures);
+			}
 		} else if (mode == ViewportMode.SINGLE) {
-			mPropEditForm.loadDataFile(mainGR, null);
+			if (editors != null) {
+				editors.showLooseProps(mainGR);
+			}
 		}
 	}
 
@@ -424,7 +445,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		//coordinate named a region row the new map does not have, or a
 		//NullPointerException when it named an empty cell. It also left the red
 		//picked-tile rectangle painted at the old map's coordinate.
-		Selector.unfocus();
+		Selector.unfocus(this);
 		LoadingDialog progress = LoadingDialog.makeDialog("Loading matrix");
 		SwingWorker worker = new SwingWorker() {
 			@Override

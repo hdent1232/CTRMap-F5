@@ -49,7 +49,21 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 	 */
 	private final Runnable pickSetTool;
 
-	public TileEditForm(ctrmap.humaninterface.tools.ToolSelection tools, Runnable pickSetTool) {
+	/**
+	 * The map view, handed in AS ITSELF.
+	 *
+	 * <p>A narrower interface was weighed and rejected for the reason
+	 * {@code ToolHost.map()} already gives: this class uses enough of the panel
+	 * that naming a capability per member would be a longer way of writing
+	 * TileMapPanel. What matters for the standard is that it is HANDED one and
+	 * could be handed a different one - which a suite now does - rather than
+	 * reaching into the main window for the only one that exists.
+	 */
+	private final TileMapPanel map;
+
+	public TileEditForm(ctrmap.humaninterface.tools.ToolSelection tools, Runnable pickSetTool,
+			TileMapPanel map) {
+		this.map = map;
 		if (pickSetTool == null) {
 			throw new IllegalArgumentException("the tile inspector must be handed a way to pick the Set tool");
 		}
@@ -139,7 +153,7 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 				ctrmap.humaninterface.tools.AbstractTool tool = tools.current();
 				if (tool instanceof EditTool) {
 					if (Selector.selTileX != -1) {
-						Tilemap region = mTileMapPanel.getRegionForTile(Selector.selTileX, Selector.selTileY);
+						Tilemap region = map.getRegionForTile(Selector.selTileX, Selector.selTileY);
 						if (region == null) {
 							return;
 						}
@@ -150,7 +164,7 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 						TileUndo.record(region, Selector.selTileX % 40, Selector.selTileY % 40, before,
 								region.getTileData(Selector.selTileX % 40, Selector.selTileY % 40));
 						region.updateImage();
-						mTileMapPanel.scaleImage(mTileMapPanel.tilemapScale);
+						map.scaleImage(map.tilemapScale);
 						showTile(Selector.selTileX, Selector.selTileY, true);
 					}
 				} else if (tool instanceof SetTool) {
@@ -170,7 +184,7 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 					TileUndo.begin(); // the whole fill = one undo step
 					for (int x = 0; x < width + 1; x++) {
 						for (int y = 0; y < height + 1; y++) {
-							Tilemap reg = mTileMapPanel.getRegionForTile(startX + x, startY + y);
+							Tilemap reg = map.getRegionForTile(startX + x, startY + y);
 							if (reg != null){
 								byte[] before = reg.getTileData((startX + x) % 40, (startY + y) % 40).clone();
 								reg.setTileData((startX + x) % 40, (startY + y) % 40, t.actTileData);
@@ -180,7 +194,7 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 					}
 					TileUndo.end();
 					//could have affected multiple regions, update them all
-					mTileMapPanel.updateAll();
+					map.updateAll();
 				}
 				firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 			}
@@ -321,8 +335,8 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 			//same lookup in this file already fetch it into a local and check it;
 			//this was the one that never did. No region under the cursor means
 			//there is simply no template to highlight, which is not a failure.
-			Tilemap region = Selector.selTileX < mTileMapPanel.width && Selector.selTileY < mTileMapPanel.height
-					? mTileMapPanel.getRegionForTile(Selector.selTileX, Selector.selTileY) : null;
+			Tilemap region = Selector.selTileX < map.width && Selector.selTileY < map.height
+					? map.getRegionForTile(Selector.selTileX, Selector.selTileY) : null;
 			if (region != null) {
 				//programmatic selection (inspector display) - must not trip the
 				//pick-a-brush listener (which would switch tools on hover)
@@ -338,7 +352,7 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 	public void showTile(int x, int y, boolean overrideLock) {
 		if (!isLocked || overrideLock) {
 			tileId.setText("Tile " + x + "x" + y);
-			Tilemap region = mTileMapPanel.getRegionForTile(x, y);
+			Tilemap region = map.getRegionForTile(x, y);
 			if (region != null) {
 				byte[] data = region.getTileData(x % 40, y % 40);
 				byte0.setValue((int) data[0] & 0xFF);
@@ -368,7 +382,7 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 	}
 
 	public void makeTile() {
-		Selector.unfocus();
+		Selector.unfocus(map);
 		tileId.setText("New Tile");
 		byte0.setValue(0);
 		byte1.setValue(0);

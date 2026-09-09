@@ -1,5 +1,6 @@
 package ctrmap.tests;
 
+import ctrmap.CtrmapMainframe;
 import ctrmap.Ui;
 import ctrmap.formats.npcreg.NPCRegistry;
 import java.io.File;
@@ -61,6 +62,7 @@ import javax.swing.JOptionPane;
  * Usage: java ctrmap.tests.DialogSeamTest [src-root]   (default "src")
  */
 public class DialogSeamTest {
+
 
 	/** Writing the zone and re-showing its script, so both can be read back. */
 	static final RecordingZoneSaver SAVER = new RecordingZoneSaver();
@@ -450,7 +452,7 @@ public class DialogSeamTest {
 		//them and never reaches the game it is handed
 		NPCRegistry reg = new NPCRegistry(f, new FakeGameFiles());
 		reg.modified = true;
-		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER);
+		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel);
 		form.reg = reg;
 		boolean stored;
 		List<String> said = Ui.record();

@@ -77,10 +77,10 @@ public class TilemapPanelInputManager implements MouseWheelListener, MouseMotion
 		int ybound = (int) (map.getLocationOnScreen().getY() + (map.getHeight() - map.tilemapScaledImage.getHeight()) / 2);
 		if (e.getXOnScreen() >= xbound && e.getXOnScreen() < xbound + map.tilemapScaledImage.getWidth()
 				&& e.getYOnScreen() >= ybound && e.getYOnScreen() < ybound + map.tilemapScaledImage.getHeight()) {
-			Selector.select(e.getXOnScreen() - xbound, e.getYOnScreen() - ybound, inspector);
+			Selector.select(e.getXOnScreen() - xbound, e.getYOnScreen() - ybound, inspector, map);
 		} else {
 			if (Selector.hilightTileX != -1) {
-				Selector.deselect();
+				Selector.deselect(map);
 			}
 		}
 	}

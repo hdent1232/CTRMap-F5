@@ -57,7 +57,12 @@ public class WorldEditorToolbar extends JToolBar {
 	/** The tile inspector the undo buttons re-show a tile in, handed in. */
 	private final TileInspector inspector;
 
-	public WorldEditorToolbar(ActionListener toolSwitch, Runnable viewToggle, TileInspector inspector) {
+	/** The map view the undo buttons repaint, handed in. */
+	private final TileMapPanel map;
+
+	public WorldEditorToolbar(ActionListener toolSwitch, Runnable viewToggle, TileInspector inspector,
+			TileMapPanel map) {
+		this.map = map;
 		if (inspector == null) {
 			throw new IllegalArgumentException("the tool row must be handed the tile inspector its"
 				+ " undo buttons re-show a tile in");
@@ -86,8 +91,8 @@ public class WorldEditorToolbar extends JToolBar {
 		redo.setToolTipText("Redo the undone tile edit (Ctrl+Y)");
 		undo.setFocusable(false);
 		redo.setFocusable(false);
-		undo.addActionListener(e -> TileUndo.undo(inspector));
-		redo.addActionListener(e -> TileUndo.redo(inspector));
+		undo.addActionListener(e -> TileUndo.undo(inspector, map));
+		redo.addActionListener(e -> TileUndo.redo(inspector, map));
 		add(undo);
 		add(redo);
 		TileUndo.addListener(this::refreshUndoRedo);

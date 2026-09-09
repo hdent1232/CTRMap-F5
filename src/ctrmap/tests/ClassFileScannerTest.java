@@ -135,9 +135,12 @@ public class ClassFileScannerTest {
 	}
 
 	/**
-	 * The gap this scanner exists to close: the bytecode names more readers of
-	 * the main window than any pattern over the sources can, because a static
-	 * import leaves nothing to match on.
+	 * The gap this scanner exists to close: a pattern over the sources can never
+	 * name more readers of the main window than the bytecode does, because a
+	 * static import leaves nothing to match on.
+	 *
+	 * <p>The gap is empty today - nothing reads the window at all - so the two
+	 * checks hold without having anything to prove. See the note in the body.
 	 */
 	static void bytecodeSeesMoreReadersThanAGrep(File src, List<ClassFileScanner.ClassFile> app) throws Exception {
 		Set<String> readers = new TreeSet<>(ClassFileScanner.readersOf(app, MAINFRAME));
@@ -176,14 +179,28 @@ public class ClassFileScannerTest {
 				+ " sources static-import it");
 		System.out.println("  the grep misses " + gap.size() + ", of which " + byStaticImport.size()
 				+ " static-import the window: " + first(byStaticImport, 5));
-		check(readers.size() > grepped.size(),
-				"the scanner reports more readers of the main window than a source grep finds files ("
-				+ readers.size() + " > " + grepped.size() + ")");
-		check(!byStaticImport.isEmpty(), "and the difference is the static importers, which a grep for"
-				+ " \"CtrmapMainframe.\" cannot see at all (" + byStaticImport.size() + " of them)");
-		check(gap.equals(byStaticImport), "every reader the grep misses is one of them"
+		//RETARGETED, and the javadoc above with it. This used to assert a STRICT
+		//inequality: MORE readers in the bytecode than a grep could find. That was
+		//true and worth pinning when 45 classes read the window and 26 of them did
+		//it through `import static CtrmapMainframe.*`, which leaves no
+		//"CtrmapMainframe." for any pattern to match. Nothing reads the window now,
+		//so both counts are whatever the remaining self-references come to and there
+		//is no gap left to demonstrate the point with. Demanding one would fail this
+		//suite for the decoupling having succeeded.
+		//
+		//What still has to hold is what made the scanner worth building, and it is
+		//kept: the bytecode may never see FEWER readers than a grep does, and any
+		//reader a grep misses must be a static importer. Both are checked below.
+		//Today the first is an equality and the second is vacuous, and saying so
+		//here is the point - if a static-import reader ever comes back, these two
+		//still catch a scanner that cannot see it.
+		check(readers.size() >= grepped.size(),
+				"the scanner never sees fewer readers than a source grep does ("
+				+ readers.size() + " in the bytecode vs " + grepped.size() + " grepped)");
+		check(gap.equals(byStaticImport), "and every reader the grep misses is a static importer"
+				+ " (" + gap.size() + " missed, " + byStaticImport.size() + " of them static)"
 				+ (gap.equals(byStaticImport) ? "" : " - these are missed for some other reason: "
-						+ minus(gap, byStaticImport)));
+					+ minus(gap, byStaticImport)));
 	}
 
 	/**

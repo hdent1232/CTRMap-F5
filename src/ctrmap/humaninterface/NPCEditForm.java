@@ -82,6 +82,18 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
 	private final Redraw redraw;
 
+	/**
+	 * The map view, handed in AS ITSELF.
+	 *
+	 * <p>A narrower interface was weighed and rejected for the reason
+	 * {@code ToolHost.map()} already gives: this class uses enough of the panel
+	 * that naming a capability per member would be a longer way of writing
+	 * TileMapPanel. What matters for the standard is that it is HANDED one and
+	 * could be handed a different one - which a suite now does - rather than
+	 * reaching into the main window for the only one that exists.
+	 */
+	private final TileMapPanel map;
+
 	/** Writing the open zone back, handed in: this form does it after four edits. */
 	private final ZoneSaver zoneSaver;
 
@@ -95,7 +107,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	private final Navigator navi;
 
 	public NPCEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
-			Navigator navi, ViewportCentre viewportCentre, ZoneSaver zoneSaver, ScriptView scriptView) {
+			Navigator navi, ViewportCentre viewportCentre, ZoneSaver zoneSaver, ScriptView scriptView,
+			TileMapPanel map) {
+		this.map = map;
 		if (navi == null) {
 			throw new IllegalArgumentException("NPCEditForm must be handed a Navigator - the gizmo it moves");
 		}
@@ -290,7 +304,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		//the gizmo drags the NPC through MapObject, and the NPC takes its
 		//altitude from the ground it is handed here: the panel's meshes when
 		//there is a panel, nothing (altitude kept) in a guard test without one
-		e.npcs.get(index).standOn(mTileMapPanel == null ? null : mTileMapPanel::getHeightAtWorldLoc);
+		e.npcs.get(index).standOn(map == null ? null : map::getHeightAtWorldLoc);
 		navi.follow(e.npcs.get(index));
 		syncScrDropdown(npc.script);
 		updateDialogueSection();

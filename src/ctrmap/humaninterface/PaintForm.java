@@ -98,7 +98,21 @@ public class PaintForm extends JPanel {
 
 	private final OpenEditors openEditors;
 
-	public PaintForm(LoadedZone loadedZone, OpenEditors openEditors, ZoneList zoneList) {
+	/**
+	 * The map view, handed in AS ITSELF.
+	 *
+	 * <p>A narrower interface was weighed and rejected for the reason
+	 * {@code ToolHost.map()} already gives: this class uses enough of the panel
+	 * that naming a capability per member would be a longer way of writing
+	 * TileMapPanel. What matters for the standard is that it is HANDED one and
+	 * could be handed a different one - which a suite now does - rather than
+	 * reaching into the main window for the only one that exists.
+	 */
+	private final TileMapPanel map;
+
+	public PaintForm(LoadedZone loadedZone, OpenEditors openEditors, ZoneList zoneList,
+			TileMapPanel map) {
+		this.map = map;
 		if (openEditors == null) {
 			throw new IllegalArgumentException("PaintForm must be handed the editors it flushes before it applies");
 		}
@@ -182,7 +196,7 @@ public class PaintForm extends JPanel {
 		buildings.setAlignmentX(0f);
 		buildings.setToolTipText("Pokemon Centers, Marts, houses, signs, trees - pick one, then click the map to place it. Right-click a placed one to remove it.");
 		buildings.addActionListener(e -> {
-			BuildingPaletteDialog.Pick pick = BuildingPaletteDialog.pick(null, donorModel, mTileMapPanel.getWorldTextures());
+			BuildingPaletteDialog.Pick pick = BuildingPaletteDialog.pick(null, donorModel, map.getWorldTextures());
 			if (pick != null) {
 				beginPlacing(pick.entry, pick.passengers);
 			}
@@ -750,8 +764,8 @@ public class PaintForm extends JPanel {
 
 	private void repaintMap() {
 		//no map view - a headless test drives the document without one
-		if (mTileMapPanel != null) {
-			mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+		if (map != null) {
+			map.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 		}
 		schedule3DRegen();
 	}
@@ -858,7 +872,7 @@ public class PaintForm extends JPanel {
 					if (res != null && res.model != null && toolActive
 							&& zoneAtStart == seededZone && seededZone == loadedZone.index()
 							&& epochAtStart == regenEpoch && loadedZone.isOpen()) {
-						mTileMapPanel.reloadRegionModel(cellX, cellY, res.model, res.extraTextures);
+						map.reloadRegionModel(cellX, cellY, res.model, res.extraTextures);
 						previewInScene = true;
 					}
 				} catch (Exception ignore) {
@@ -876,7 +890,7 @@ public class PaintForm extends JPanel {
 	private void restoreRealModel() {
 		if (previewInScene && originalModel != null
 				&& loadedZone.isOpen() && seededZone == loadedZone.index()) {
-			mTileMapPanel.reloadRegionModel(cellX, cellY, originalModel);
+			map.reloadRegionModel(cellX, cellY, originalModel);
 		}
 		previewInScene = false;
 	}

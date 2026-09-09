@@ -599,15 +599,36 @@ public class CtrmapMainframe {
 		//from the list, by which time the row exists. Section four of
 		//MainframeEdgesTest skips lambda bodies for exactly this reason, so this one
 		//is chosen in a comment rather than slipped past a rule.
-		mTileEditForm = new TileEditForm(tools, () -> worldToolbar.selectSetTool());
-		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors, mZonePnl);
+		mTileEditForm = new TileEditForm(tools, () -> worldToolbar.selectSetTool(), mTileMapPanel);
+		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors, mZonePnl, mTileMapPanel);
 		mCamEditForm = new CameraEditForm(redraw);
-		mPropEditForm = new PropEditForm(loadedZone, tools, redraw, navigator);
+		mPropEditForm = new PropEditForm(loadedZone, tools, redraw, navigator, mTileMapPanel);
 		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw, navigator, viewportCentre,
-			mZonePnl, mScriptPnl);
+			mZonePnl, mScriptPnl, mTileMapPanel);
 		mWarpEditForm = new WarpEditForm(loadedZone, redraw, viewportCentre);
 		mTriggerEditForm = new TriggerEditForm(loadedZone, redraw, viewportCentre);
-		mGeoEditForm = new GeoEditForm(loadedZone);
+		mGeoEditForm = new GeoEditForm(loadedZone, mTileMapPanel);
+		//THE SECOND PHASE: the map view was built above and the two editors over it,
+		//so now it is told which editors show what it loads. Neither can be a
+		//constructor argument of the other - see MapEditors.
+		mTileMapPanel.setEditors(new ctrmap.humaninterface.MapEditors() {
+			@Override
+			public void showProps(ctrmap.formats.propdata.GRPropData props,
+				ctrmap.formats.propdata.ADPropRegistry reg,
+				java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> textures) {
+				mPropEditForm.loadDataFile(props, reg, textures);
+			}
+
+			@Override
+			public void showLooseProps(ctrmap.formats.containers.GR region) {
+				mPropEditForm.loadDataFile(region, null);
+			}
+
+			@Override
+			public void clearEntities() {
+				mNPCEditForm.loadFromEntities(null, null);
+			}
+		});
 		jsp = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
 		mTilemapScrollPane.setViewportView(mTileMapPanel);
 		mtxScroll.setViewportView(mMtxPanel);
@@ -665,7 +686,7 @@ public class CtrmapMainframe {
 		jsp3.setLeftComponent(mtxScroll);
 		jsp3.setRightComponent(mMtxEditForm);
 
-		worldToolbar = new WorldEditorToolbar(tilemapInput, CtrmapMainframe::toggleView, mTileEditForm);
+		worldToolbar = new WorldEditorToolbar(tilemapInput, CtrmapMainframe::toggleView, mTileEditForm, mTileMapPanel);
 		JPanel toolbarRows = new JPanel(new java.awt.GridLayout(2, 1));
 		toolbarRows.add(worldToolbar);
 		toolbarRows.add(buildMapActionsBar());
@@ -703,13 +724,13 @@ public class CtrmapMainframe {
 		tileEditMasterPnl.getActionMap().put("tileUndo", new javax.swing.AbstractAction() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				ctrmap.humaninterface.TileUndo.undo(mTileEditForm);
+				ctrmap.humaninterface.TileUndo.undo(mTileEditForm, mTileMapPanel);
 			}
 		});
 		tileEditMasterPnl.getActionMap().put("tileRedo", new javax.swing.AbstractAction() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				ctrmap.humaninterface.TileUndo.redo(mTileEditForm);
+				ctrmap.humaninterface.TileUndo.redo(mTileEditForm, mTileMapPanel);
 			}
 		});
 
@@ -824,7 +845,7 @@ public class CtrmapMainframe {
 		map.add(item("Map Builder (this zone)", CtrmapMainframe::openMapBuilderAction));
 		map.add(item("Blank map canvas (this zone)...", CtrmapMainframe::blankCanvasAction));
 		map.add(item("Resize map (this zone)...", CtrmapMainframe::resizeMapAction));
-		map.add(item("Edit area fog & lighting...", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame, loadedZone)));
+		map.add(item("Edit area fog & lighting...", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame, loadedZone, worldTextures())));
 		map.add(item("Fork map geometry (make zone independent)...", CtrmapMainframe::forkGeometryAction));
 		map.addSeparator();
 		map.add(item("Import map model (.bch)...", CtrmapMainframe::importMapModelAction));
@@ -898,7 +919,7 @@ public class CtrmapMainframe {
 		bar.add(new JLabel(" Map:  "));
 		bar.add(barButton("Blank canvas", "Replace this zone's map with a blank canvas cloned from a template route.", CtrmapMainframe::blankCanvasAction));
 		bar.add(barButton("Resize map", "Resize this zone's map (grow/shrink its region grid).", CtrmapMainframe::resizeMapAction));
-		bar.add(barButton("Fog & lighting", "Pick a GameFreak atmosphere with live preview, or hand-tune fog and ambient light.", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame, loadedZone)));
+		bar.add(barButton("Fog & lighting", "Pick a GameFreak atmosphere with live preview, or hand-tune fog and ambient light.", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame, loadedZone, worldTextures())));
 		bar.add(barButton("Encounters", "Edit this zone's wild Pokemon encounter slots.", () -> ctrmap.humaninterface.EncounterEditDialog.show(frame, loadedZone)));
 		bar.add(barButton("Fork geometry", "Give this zone its own private map so edits stop affecting the source town.", CtrmapMainframe::forkGeometryAction));
 		return bar;
@@ -1199,7 +1220,8 @@ public class CtrmapMainframe {
 	// --------------------------------------------------------- Options menu
 
 	private static void workspaceSettingsAction() {
-		WorkspaceSettings form = new WorkspaceSettings();
+		WorkspaceSettings form = new WorkspaceSettings(mTileMapPanel,
+				() -> mTileEditForm.tileset = Workspace.getTileset());
 		form.setLocationByPlatform(true);
 		form.setVisible(true);
 	}
@@ -1323,6 +1345,11 @@ public class CtrmapMainframe {
 	 *         already calls.
 	 */
 	/** The script of the NPC the NPC editor has selected, or null when none is. */
+	/** The open map's decoded world textures, or null when no map is open. */
+	private static java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> worldTextures() {
+		return mTileMapPanel == null ? null : mTileMapPanel.getWorldTextures();
+	}
+
 	private static Integer selectedNpcScript() {
 		return mNPCEditForm == null || mNPCEditForm.npc == null ? null : mNPCEditForm.npc.script;
 	}

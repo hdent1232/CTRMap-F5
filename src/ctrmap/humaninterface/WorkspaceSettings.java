@@ -22,7 +22,24 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 	/**
 	 * Creates new form WorkspaceSettings
 	 */
-	public WorkspaceSettings() {
+	/**
+	 * The map view, handed in AS ITSELF.
+	 *
+	 * <p>A narrower interface was weighed and rejected for the reason
+	 * {@code ToolHost.map()} already gives: this class uses enough of the panel
+	 * that naming a capability per member would be a longer way of writing
+	 * TileMapPanel. What matters for the standard is that it is HANDED one and
+	 * could be handed a different one - which a suite now does - rather than
+	 * reaching into the main window for the only one that exists.
+	 */
+	private final TileMapPanel map;
+
+	/** Re-reads the tileset into the inspector. Handed in: this dialog changed it. */
+	private final Runnable reloadTileset;
+
+	public WorkspaceSettings(TileMapPanel map, Runnable reloadTileset) {
+		this.map = map;
+		this.reloadTileset = reloadTileset;
 		initComponents();
 		this.addWindowListener(new WindowAdapter() {
 			@Override
@@ -70,8 +87,9 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 		originGamePath = gameField.getText();
 		originSpicaPath = spicaField.getText();
 		originTilesetPath = (btnTilesetDefault.isSelected() ? "Default" : tilesetPath.getText());
-		mTileEditForm.tileset = Workspace.getTileset();
-		mTileMapPanel.updateAll();
+		//the inspector re-reads the tileset itself; this dialog says WHEN, not how
+		reloadTileset.run();
+		map.updateAll();
 	}
 
 	/**
@@ -433,7 +451,7 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 
 		/* Create and display the form */
 		java.awt.EventQueue.invokeLater(() -> {
-			new WorkspaceSettings().setVisible(true);
+			new WorkspaceSettings(null, () -> { }).setVisible(true);   //the generated main(), which nothing calls
 		});
 	}
 

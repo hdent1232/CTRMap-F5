@@ -65,7 +65,7 @@ public class PaintTool extends AbstractTool {
 	@Override
 	public void onToolShutdown() {
 		form.deactivate();
-		Selector.unfocus();
+		Selector.unfocus(host.map());
 	}
 
 	@Override

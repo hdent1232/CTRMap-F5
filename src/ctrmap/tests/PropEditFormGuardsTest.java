@@ -75,6 +75,7 @@ import javax.swing.JSpinner;
  */
 public class PropEditFormGuardsTest {
 
+
 	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
 	static final RecordingScene SCENE = new RecordingScene();
 
@@ -501,7 +502,7 @@ public class PropEditFormGuardsTest {
 	static Fixture open(boolean arm) throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI);
+		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel);
 		CtrmapMainframe.mPropEditForm = f.form;
 		f.form.loadDataFile(new ctrmap.formats.propdata.GRPropData(f.gr), registry(), null);
 		f.form.gr = f.gr;
@@ -567,7 +568,7 @@ public class PropEditFormGuardsTest {
 	static Fixture openSingleRegion() throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI);
+		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel);
 		CtrmapMainframe.mPropEditForm = f.form;
 		f.form.loadDataFile(f.gr, null);
 		f.before = f.propdata();

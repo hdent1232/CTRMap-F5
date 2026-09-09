@@ -1,5 +1,6 @@
 package ctrmap.tests;
 
+import ctrmap.CtrmapMainframe;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.gfcollision.GfColl;
@@ -36,6 +37,7 @@ import static ctrmap.formats.LittleEndian.f32;
  * Usage: java ctrmap.tests.MapPrefabTest <path-to-a039-garc> [sampleStep]
  */
 public class MapPrefabTest {
+
 
 	/** The 3D scene the map view shares: a recorder, so what it was told can be read. */
 	static final RecordingScene SCENE = new RecordingScene();
@@ -290,7 +292,7 @@ public class MapPrefabTest {
 		panel.mainGR = region;
 		ctrmap.CtrmapMainframe.mTileMapPanel = panel;
 		ctrmap.CtrmapMainframe.mZonePnl = null;
-		ctrmap.humaninterface.GeoEditForm form = new ctrmap.humaninterface.GeoEditForm(new ctrmap.LoadedZone());
+		ctrmap.humaninterface.GeoEditForm form = new ctrmap.humaninterface.GeoEditForm(new ctrmap.LoadedZone(), CtrmapMainframe.mTileMapPanel);
 		form.setSelection(2, 2, 5, 5);
 		form.stampHere(p);
 		java.lang.reflect.Field f = ctrmap.humaninterface.GeoEditForm.class.getDeclaredField("status");

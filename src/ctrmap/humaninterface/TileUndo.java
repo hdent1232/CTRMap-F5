@@ -99,15 +99,16 @@ public class TileUndo {
 		updateButtons();
 	}
 
-	public static boolean undo(ctrmap.humaninterface.TileInspector inspector) {
-		return apply(undoStack, redoStack, true, inspector);
+	public static boolean undo(ctrmap.humaninterface.TileInspector inspector, TileMapPanel map) {
+		return apply(undoStack, redoStack, true, inspector, map);
 	}
 
-	public static boolean redo(ctrmap.humaninterface.TileInspector inspector) {
-		return apply(redoStack, undoStack, false, inspector);
+	public static boolean redo(ctrmap.humaninterface.TileInspector inspector, TileMapPanel map) {
+		return apply(redoStack, undoStack, false, inspector, map);
 	}
 
-	private static boolean apply(Deque<List<Rec>> from, Deque<List<Rec>> to, boolean back, ctrmap.humaninterface.TileInspector inspector) {
+	private static boolean apply(Deque<List<Rec>> from, Deque<List<Rec>> to, boolean back,
+			ctrmap.humaninterface.TileInspector inspector, TileMapPanel map) {
 		if (open != null) {
 			end();
 		}
@@ -125,8 +126,8 @@ public class TileUndo {
 		for (Tilemap tm : touched) {
 			tm.updateImage();
 		}
-		mTileMapPanel.scaleImage(mTileMapPanel.tilemapScale);
-		mTileMapPanel.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
+		map.scaleImage(map.tilemapScale);
+		map.firePropertyChange(TileMapPanel.PROP_REPAINT, false, true);
 		if (Selector.selTileX != -1) {
 			inspector.showTile(Selector.selTileX, Selector.selTileY, true);
 		}

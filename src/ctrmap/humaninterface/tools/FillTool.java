@@ -38,7 +38,7 @@ public class FillTool extends AbstractTool {
 		originY = -1;
 		lastX = -1;
 		lastY = -1;
-		Selector.unfocus();
+		Selector.unfocus(host.map());
 		form.lockTile(false);
 		locked = false;
 	}
@@ -80,7 +80,7 @@ public class FillTool extends AbstractTool {
 	@Override
 	public void onTileClick(MouseEvent e) {
 		if (SwingUtilities.isRightMouseButton(e)) {
-			Selector.acqCurTile(host.inspector());
+			Selector.acqCurTile(host.inspector(), host.map());
 		}
 	}
 

@@ -80,6 +80,7 @@ import javax.swing.JSplitPane;
  */
 final class EditorBench {
 
+
 	/** The tile inspector, so what the cursor told it can be read back. */
 	static final RecordingInspector INSPECTOR = new RecordingInspector();
 
@@ -167,28 +168,6 @@ final class EditorBench {
 		//classpath does not carry
 		CtrmapMainframe.m3DDebugPanel = null;
 
-		CtrmapMainframe.mTileEditForm = tiles = new TileEditForm(TOOLS, () -> { });
-		CtrmapMainframe.mPaintForm = paint = new BenchPaintForm();
-		CtrmapMainframe.mCamEditForm = cam = new BenchCamForm();
-		CtrmapMainframe.mCamScrollPane = new JScrollPane(CtrmapMainframe.mCamEditForm);
-		CtrmapMainframe.mPropEditForm = prop = new BenchPropForm();
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER);
-		CtrmapMainframe.mWarpEditForm = warps = new WarpEditForm(LOADED, REDRAW, CENTRE);
-		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm(LOADED, REDRAW, CENTRE);
-		CtrmapMainframe.mGeoEditForm = geo = new GeoEditForm(LOADED);
-		CtrmapMainframe.mCollEditPanel = new CollEditPanel(TOOLS);
-		CtrmapMainframe.mMtxEditForm = new MatrixEditForm(LOADED, CANVAS);
-		//the "Current tool" label is this row's, not the window's, and the row
-		//is what TileEditForm asks for the Set tool
-		CtrmapMainframe.worldToolbar = toolbar = new WorldEditorToolbar(
-				e -> {
-					if (toolSwitch != null) {
-						toolSwitch.actionPerformed(e);
-					}
-				},
-				() -> {
-				}, INSPECTOR);
-
 		//before the map panel exists, and before anything can resize it: the
 		//panel's own resize listener reads this scroll pane's viewport, on the
 		//event thread, where a NullPointerException has nothing to catch it
@@ -204,6 +183,37 @@ final class EditorBench {
 		map.tilemapScaledImage = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
 		map.loaded = true;
 		CtrmapMainframe.mTileMapPanel = map;
+
+		//THE MAP VIEW IS BUILT FIRST NOW, because the forms below are HANDED it.
+		//It used to be built after them, which was fine while they reached for the
+		//window static at the moment they used it and is not fine now: a form
+		//handed the field before it is assigned holds null for ever. That is the
+		//same construction-order mistake the window itself made, reproduced in the
+		//fixture, and the suites caught it the same way.
+
+		CtrmapMainframe.mTileEditForm = tiles = new TileEditForm(TOOLS, () -> { }, CtrmapMainframe.mTileMapPanel);
+		CtrmapMainframe.mPaintForm = paint = new BenchPaintForm();
+		CtrmapMainframe.mCamEditForm = cam = new BenchCamForm();
+		CtrmapMainframe.mCamScrollPane = new JScrollPane(CtrmapMainframe.mCamEditForm);
+		CtrmapMainframe.mPropEditForm = prop = new BenchPropForm();
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel);
+		CtrmapMainframe.mWarpEditForm = warps = new WarpEditForm(LOADED, REDRAW, CENTRE);
+		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm(LOADED, REDRAW, CENTRE);
+		CtrmapMainframe.mGeoEditForm = geo = new GeoEditForm(LOADED, CtrmapMainframe.mTileMapPanel);
+		CtrmapMainframe.mCollEditPanel = new CollEditPanel(TOOLS);
+		CtrmapMainframe.mMtxEditForm = new MatrixEditForm(LOADED, CANVAS);
+		//the "Current tool" label is this row's, not the window's, and the row
+		//is what TileEditForm asks for the Set tool
+		CtrmapMainframe.worldToolbar = toolbar = new WorldEditorToolbar(
+				e -> {
+					if (toolSwitch != null) {
+						toolSwitch.actionPerformed(e);
+					}
+				},
+				() -> {
+				}, INSPECTOR, null);
+
+
 		//the tileset the region's picture is painted with lives on the tile
 		//form, so the form has to exist before the region does
 		region = new Tilemap(null, 40, 40, tiles.tileset);
@@ -541,7 +551,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchPaintForm() {
-			super(LOADED, EDITORS, ZONES);
+			super(LOADED, EDITORS, ZONES, CtrmapMainframe.mTileMapPanel);
 		}
 		final List<String> calls = new ArrayList<String>();
 
@@ -592,7 +602,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchPropForm() {
-			super(LOADED, TOOLS, REDRAW, NAVI);
+			super(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel);
 		}
 		final List<String> calls = new ArrayList<String>();
 
