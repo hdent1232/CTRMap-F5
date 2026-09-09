@@ -1119,15 +1119,15 @@
   },
   {
    "id": "zone-with-no-slot-writes-slot-zero",
-   "why": "A zone open at no slot at all - what a loose .zo is - must write no master table entry. Clamping the index instead makes the file's header land in slot 0, which is the same silent replacement of an unrelated map's entry that the loose-zone defect caused, just always at zone 0.",
+   "why": "A zone open at no slot at all - what a loose .zo is - must write no master table entry. Removing the branch that decides it puts the case back on a NEGATIVE seek throwing, which is what used to stand between a loose zone and zone 0's row: skipBytes(-56) silently does nothing, so the compare read slot 0, and clamping the seek instead of throwing would land the header there.",
    "file": "src/ctrmap/humaninterface/ZoneLoadingPanel.java",
-   "find": "\t\t\t\t\tdos.seek(zoneIndex * 0x38);",
-   "replace": "\t\t\t\t\tdos.seek(Math.max(0, zoneIndex) * 0x38);",
+   "find": "\t\t\tif (zoneIndex < 0) {",
+   "replace": "\t\t\tif (zoneIndex < -1) {",
    "suite": "ctrmap.tests.ZoneLoadingStateTest",
    "args": [
     "${PRISTINE}"
    ],
-   "must_say": "the master zone-header table is byte-for-byte what it was"
+   "must_say": "the user is told this zone has no row of its own"
   },
   {
    "id": "half-loaded-form-writes-the-last-zones-header",

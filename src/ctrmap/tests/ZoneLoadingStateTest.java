@@ -561,10 +561,18 @@ public class ZoneLoadingStateTest {
 			+ " belongs to zone 3");
 		boolean toldThem = false;
 		for (String one : said) {
-			toldThem |= one.contains("master zone-header") && one.contains("NOT updated");
+			//"opened from a file" is the branch that DECIDES this case, and it is what
+			//this asserts rather than "NOT updated" alone. Without the branch the write
+			//is attempted and fails on a NEGATIVE seek, and the catch says "NOT updated"
+			//too - so the weaker assertion passed either way and proved nothing. The
+			//difference matters: skipBytes(-56) silently does nothing, so the compare
+			//above the seek read slot 0, and anyone clamping the seek would have landed
+			//this header in zone 0's row with no warning at all.
+			toldThem |= one.contains("opened from a file")
+				&& one.contains("master zone-header") && one.contains("NOT updated");
 		}
-		check(toldThem, "and the user is told the master table was not updated, rather than"
-			+ " the write happening silently somewhere else: " + said);
+		check(toldThem, "and the user is told this zone has no row of its own, by a branch that"
+			+ " decides it rather than a negative seek that happens to throw: " + said);
 		lz.open(-1, null);
 	}
 

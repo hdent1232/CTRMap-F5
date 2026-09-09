@@ -62,7 +62,8 @@ not boot.
 | A shared map offered as a fork remembers a decline. | `ZoneLoadingStateTest` |
 | Damage an old fork left behind is found rather than inherited. | `MisplacedRegistryTest`, `ForkGuardsTest` |
 | Saving a zone commits every open editor first, including the warp form, and stops when one refuses. | `DataSafetyGuardsTest`, `OpenEditorsTest` |
-| A zone opened from a loose file goes to its own index, not to the one the dropdown last showed. | `MainframeActionGuardsTest` |
+| A zone whose header the form could not finish showing is never written over another zone's, and the refusal says why. | `ZoneLoadingStateTest` |
+| A zone opened from a loose file goes to its own index, and writes no other zone's row of the master header table. | `MainframeEdgesTest` (the slot rule), `ZoneLoadingStateTest` |
 
 ## 4. A placed building, and the map under it
 
@@ -78,7 +79,10 @@ not boot.
 | The prop registry's order survives an edit. | `ADPropRegistryOrderTest` |
 | Switching matrix tools carries the cursor whole: a coordinate from one grid is never written into another. | `MatrixEditFormGuardsTest` |
 | The matrix tool buttons work before a matrix is loaded, or refuse in words. | `MatrixEditFormGuardsTest` |
-| Growing a matrix grows every layer `assembleData` will later read. | `MatrixEditFormGuardsTest` |
+| Growing a matrix grows every layer `assembleData` will later read, whether the LOD box is ticked at the time or not. | `MatrixEditFormGuardsTest` |
+| Loading or unloading a matrix drops the cell picked in the last one. | `MatrixEditFormGuardsTest` |
+| The matrix grid asks its scroll pane for the room its matrix needs, so a matrix bigger than the pane can be scrolled to. | `MatrixEditFormGuardsTest` |
+| A matrix the editor could not show leaves the form holding nothing and saying so, and a later save writes nothing rather than dropping what was typed. | `MatrixEditFormGuardsTest` |
 | **OPEN** — a placed building is reachable and collidable in the running game. Only the emulator can answer this; see TESTZONE.md. | OPEN, by nature |
 
 ## 5. An applied paint
@@ -90,7 +94,12 @@ not boot.
 | The painter's document reports what it holds, including after a failed load. | `PaintFormGuardsTest` |
 | Slopes, water and seeded ground come out as the tool showed them. | `PaintedFloorTest`, `PaintedRegionTest` |
 | Ramps settle the same way whether drawn, dragged or filled. | `PaintFormGuardsTest` |
-| Saving a loose GR map writes the tile edits the user made, and opening another one asks before dropping what the entity editors hold. | `MainframeActionGuardsTest`, `DataSafetyGuardsTest` |
+| The colours a region is painted in follow the tileset, not the one it happened to load under. | `TileMapPanelStateTest` |
+| A matrix that outgrew the map view's arrays writes only the cells it has, on both the save and the discard answer. | `TileMapPanelStateTest` |
+| Opening a loose map drops the textures and the picked tile of the zone before it. | `TileMapPanelStateTest` |
+| The 3D view draws nothing before a zone is open and after one is closed, rather than throwing once a frame. | `TileMapPanelStateTest` |
+| Saving a loose GR map writes the tile edits the user made. | `TileMapPanelStateTest` |
+| **OPEN** — opening another loose map asks before dropping what the prop and NPC editors hold. Fixed, but `openGrAction` picks the file through a raw `JFileChooser` that does not go through the dialog seam, so no headless suite can reach it. | OPEN |
 
 ## 6. An imported model or texture
 
@@ -117,7 +126,9 @@ not boot.
 | A template fits the corpus it claims to fit. | `NpcTemplatesTest` |
 | Stale state, a stale script, a stale warp or a worker still running cannot reach a save. | `DataSafetyGuardsTest` |
 | An edit form that has refused once is usable again; nothing leaves it permanently inert. | `PropEditFormGuardsTest` |
-| A field that states its range accepts both ends of it. | `NpcEditFormGuardsTest` |
+| Removing a record leaves the survivor shown and reachable, from the dropdown and from the tools. | `PropEditFormGuardsTest` |
+| Answering "save" with nowhere to write refuses in words, and keeps the edits. | `PropEditFormGuardsTest` |
+| A field that states its range accepts both ends of it, and the range it states is the one the data has. | `TrainerDataTest` |
 
 ## 8. A script
 
@@ -161,6 +172,7 @@ because they are the ones that decay quietly.
 | A build works in a directory that is not a git repository. | `BatteryHygieneTest` |
 | A commit that fixes something carries something that would notice a second one. | `CommitGuardTest`, and the `commit-msg` hook |
 | Every guard the battery relies on is still measured — a line nothing asserts is named. | `MutationBaselineTest`, `tools/mutate2.py` |
+| Every proof-by-breaking in the ledger still makes its guard go red, and is re-run with the flags the battery uses. | `PlantLedgerTest` (shape), `tools/guard/replant.py` (the real run) |
 
 ---
 
