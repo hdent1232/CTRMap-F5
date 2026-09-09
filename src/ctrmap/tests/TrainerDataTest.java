@@ -99,11 +99,79 @@ public class TrainerDataTest {
 			System.out.println("FAIL golden Roxanne");
 		}
 
+		//THE BOUND THE EDITOR OFFERS IS THE BOUND THE DATA HAS. The trainer
+		//dialog prompted with "Trainer ID (1..949)" and then refused 949, because
+		//the check one line under the prompt carried its own copy of the number
+		//and the copy was 948. A user who typed the number they had just been
+		//read was told they had typed it wrong. The number is named once now, so
+		//this asserts the two things a name cannot assert by itself: that it
+		//still means what the archive holds, and that no source tells the user a
+		//different one. Trainer 0 is the dummy, so the highest real id is one
+		//less than the entry count and NOT the count.
+		int highest = trdata.length - 1;
+		if (ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX != highest) {
+			failures++;
+			System.out.println("FAIL the editor accepts trainer ids up to "
+				+ ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX
+				+ ", the archive's highest real trainer is " + highest);
+		}
+		int stated = 0;
+		for (File srcFile : javaSources(new File("src/ctrmap"))) {
+			if (srcFile.getPath().replace('\\', '/').contains("/ctrmap/tests/")) {
+				continue; //the program, not its battery
+			}
+			String text = new String(java.nio.file.Files.readAllBytes(srcFile.toPath()), "UTF-8");
+			java.util.regex.Matcher m = TRAINER_RANGE.matcher(text);
+			while (m.find()) {
+				stated++;
+				int upper = Integer.parseInt(m.group(1));
+				if (upper != ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX) {
+					failures++;
+					System.out.println("FAIL " + srcFile.getName() + " tells the user trainer ids run to "
+						+ upper + ", the bound is "
+						+ ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX);
+				}
+			}
+		}
+		if (stated == 0) {
+			failures++;
+			System.out.println("FAIL no source states a trainer id range any more,"
+				+ " so the check above passes by having nothing to check");
+		}
+		System.out.println("  the editor's trainer bound is " + highest
+			+ ", the archive agrees, and " + stated + " stated range(s) say the same");
+
 		System.out.println("\nTrainerData: 949 trainers, round-trip byte-identical=" + roundtripOk + ", failures=" + failures);
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (failures > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * A trainer id range as a user is told it: "Trainer ID (1..949)" and the
+	 * like. Anchored on the word so that "1..6" party members and "1..99"
+	 * script variables elsewhere in the tree are not read as trainer bounds.
+	 */
+	static final java.util.regex.Pattern TRAINER_RANGE = java.util.regex.Pattern.compile(
+		"(?is)trainer.{0,60}?1\\s*\\.\\.\\s*(\\d+)");
+
+	/** Every .java file under {@code dir}, at any depth. */
+	static java.util.List<File> javaSources(File dir) {
+		java.util.List<File> out = new java.util.ArrayList<>();
+		File[] kids = dir.listFiles();
+		if (kids == null) {
+			throw new IllegalStateException("no sources under " + dir.getAbsolutePath()
+				+ " - run this from the repository root");
+		}
+		for (File k : kids) {
+			if (k.isDirectory()) {
+				out.addAll(javaSources(k));
+			} else if (k.getName().endsWith(".java")) {
+				out.add(k);
+			}
+		}
+		return out;
 	}
 
 	static boolean allZero(byte[] b) {

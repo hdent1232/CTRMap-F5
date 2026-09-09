@@ -1,6 +1,6 @@
 # PROPERTIES.md — what is supposed to be true
 
-The battery answers *"would anything notice if this broke?"* for 125 suites. It
+The battery answers *"would anything notice if this broke?"* for 126 suites. It
 has never answered *"what is supposed to be true?"*, and those are different
 questions. A suite can be green because the property it guards holds, or because
 the property was never written down and the suite guards something adjacent.
@@ -61,6 +61,8 @@ not boot.
 | The loaded zone has exactly one owner; two panels over two owners answer about their own. | `LoadedZoneTest` |
 | A shared map offered as a fork remembers a decline. | `ZoneLoadingStateTest` |
 | Damage an old fork left behind is found rather than inherited. | `MisplacedRegistryTest`, `ForkGuardsTest` |
+| Saving a zone commits every open editor first, including the warp form, and stops when one refuses. | `DataSafetyGuardsTest`, `OpenEditorsTest` |
+| A zone opened from a loose file goes to its own index, not to the one the dropdown last showed. | `MainframeActionGuardsTest` |
 
 ## 4. A placed building, and the map under it
 
@@ -74,6 +76,9 @@ not boot.
 | Which region and which mesh is the ground is decided the same way every time. | `MapDefaultsTest` |
 | A door names the model it will actually draw. | `DoorPropGuardsTest` |
 | The prop registry's order survives an edit. | `ADPropRegistryOrderTest` |
+| Switching matrix tools carries the cursor whole: a coordinate from one grid is never written into another. | `MatrixEditFormGuardsTest` |
+| The matrix tool buttons work before a matrix is loaded, or refuse in words. | `MatrixEditFormGuardsTest` |
+| Growing a matrix grows every layer `assembleData` will later read. | `MatrixEditFormGuardsTest` |
 | **OPEN** — a placed building is reachable and collidable in the running game. Only the emulator can answer this; see TESTZONE.md. | OPEN, by nature |
 
 ## 5. An applied paint
@@ -85,6 +90,7 @@ not boot.
 | The painter's document reports what it holds, including after a failed load. | `PaintFormGuardsTest` |
 | Slopes, water and seeded ground come out as the tool showed them. | `PaintedFloorTest`, `PaintedRegionTest` |
 | Ramps settle the same way whether drawn, dragged or filled. | `PaintFormGuardsTest` |
+| Saving a loose GR map writes the tile edits the user made, and opening another one asks before dropping what the entity editors hold. | `MainframeActionGuardsTest`, `DataSafetyGuardsTest` |
 
 ## 6. An imported model or texture
 
@@ -110,6 +116,8 @@ not boot.
 | Each edit form writes what it displayed and nothing else. | `PropEditFormGuardsTest`, `MatrixEditFormGuardsTest`, `TriggerEditFormGuardsTest`, `GeoEditFormGuardsTest` |
 | A template fits the corpus it claims to fit. | `NpcTemplatesTest` |
 | Stale state, a stale script, a stale warp or a worker still running cannot reach a save. | `DataSafetyGuardsTest` |
+| An edit form that has refused once is usable again; nothing leaves it permanently inert. | `PropEditFormGuardsTest` |
+| A field that states its range accepts both ends of it. | `NpcEditFormGuardsTest` |
 
 ## 8. A script
 
@@ -144,7 +152,9 @@ because they are the ones that decay quietly.
 | The format layer never reaches the global, the UI, the window or the dialog seam. | `SourceSeamTest`, `GameFilesSeamTest` |
 | The editing tools never reach the window. | `SourceSeamTest` |
 | Nothing the window builds is handed a static that method has not assigned yet. | `MainframeEdgesTest` |
-| What still reaches into the window only ever shrinks. | `MainframeEdgesTest` |
+| Nothing outside the window reads a window static: the count is zero and may not rise. | `MainframeEdgesTest` |
+| Every editor, tool and panel is HANDED what it works on, so a suite can hand it a different one. | `EditorBench`, and the guard suites built on it |
+| The bytecode scanner never sees fewer readers of a class than a source grep does. | `ClassFileScannerTest` |
 | The public-static count only ever falls. | `GlobalStateTest` |
 | A digest ignores line endings for text and never for anything else. | `BatteryHygieneTest` |
 | `build/classes` is exactly what `build.ps1` made from `src/`. | `BatteryHygieneTest`, and `test.ps1` refuses otherwise |
@@ -161,12 +171,20 @@ because they are the ones that decay quietly.
 2. **Anything only the running game can answer** — a placed building being
    reachable and collidable, a script actually firing, a warp actually landing.
    That is [TESTZONE.md](TESTZONE.md)'s job and it is a person's, not a suite's.
-3. **The plant ledger.** "Proven by breaking" is real here but one-time: it
-   lives in commit messages and cannot be re-executed, so a guard proven in one
-   month and hollowed out in the next looks identical to one that still works.
-   `tools/guard/plants.json` and `tools/guard/replant.py` are the mechanism;
-   the ledger is not yet full, and `replant.py --owed` is the number that must
-   only fall.
+3. **The plant ledger is not full.** "Proven by breaking" is real here but was
+   one-time: it lived in commit messages and could not be re-executed, so a
+   guard proven in one month and hollowed out in the next looked identical to
+   one that still works. `tools/guard/plants.json` and `tools/guard/replant.py`
+   are the mechanism and they run. What is OPEN is the COVERAGE: most suites
+   still have no plant, so for those the ledger proves nothing. Two ceilings in
+   `plants.json` are the measure and both may only fall - `owed_ceiling`, the
+   suites with no plant at all, and `owed_generalisation_ceiling`, the plants
+   that break one line rather than the property.
+4. **What the fixes look like on screen.** Every defect fixed this campaign has
+   a guard that fails without it, but a guard asserts what the code returns, not
+   what a person sees. Whether the repaired matrix scroll pane, the re-enabled
+   edit forms and the corrected tileset repaint LOOK right is a person's check
+   and has not been done.
 
 ## How to use this file
 
