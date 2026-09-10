@@ -317,7 +317,26 @@ public final class WorkspaceSession implements GameFiles {
 			Scanner scanner = new Scanner(persistConfig);
 			scanner.useDelimiter("\n"); //for better crossplatformness, force the Linux endline everywhere
 			while (scanner.hasNextLine()) {
-				persistPaths.add(workspaceDir.getPath() + scanner.nextLine());
+				String path = workspaceDir.getPath() + scanner.nextLine();
+				//A LINE WHOSE FILE IS GONE IS NOT AN EDIT, AND KEEPING IT BLOCKS THINGS
+				//FOREVER. This list is "the extracted files the user edited", and it is
+				//the only durable record of them - so five operations use "is this path
+				//listed?" as their test for "is one of me already pending?"
+				//(ZoneAppender, AreaForker, GeometryForker, MapResizer and the encounter
+				//editor). Nothing pruned it: cleanAll() empties it wholesale, and Remove
+				//added zones drops entries by walking the DIRECTORY, so it cannot reach
+				//an entry whose file has already gone. Once one is orphaned - a pack that
+				//threw part way, a revert, a hand-deleted file - the operation it names is
+				//refused for the rest of that workspace's life, and the refusal tells the
+				//user to pack, which cannot clear it because packing never touches this
+				//list. A real workspace was found with NINE orphaned entries of fourteen,
+				//five of them zonedata slots, and zone appending had been dead in it since.
+				//Dropping them on load is where it belongs: this is the one moment the
+				//list is rebuilt from disk, so the check costs one stat per entry and the
+				//file heals itself the next time it is written.
+				if (new File(path).exists()) {
+					persistPaths.add(path);
+				}
 			}
 			scanner.close();
 		} catch (IOException ex) {
@@ -584,6 +603,28 @@ public final class WorkspaceSession implements GameFiles {
 	/** The live list of edited files' absolute paths. */
 	public List<String> persistPaths() {
 		return persistPaths;
+	}
+
+	/**
+	 * Whether an operation that writes {@code f} has already run and not yet
+	 * been packed - the question five callers were asking with
+	 * {@code persistPaths().contains(...)}.
+	 *
+	 * <p>WHY THAT WAS NOT THE SAME QUESTION. Being listed says the file was
+	 * MARKED as edited once. It does not say the file is still there, and an
+	 * entry outlives its file easily - a pack that threw part way, a revert, a
+	 * hand-deleted workspace file. The list is never pruned except by
+	 * {@code cleanAll()}, which empties it wholesale, so an orphan is permanent:
+	 * the operation refuses for the rest of that workspace's life and tells the
+	 * user to pack, which cannot help, because packing does not touch this list
+	 * and never has.
+	 *
+	 * <p>{@link #readPersist} now drops orphans as it reads, so a workspace
+	 * heals on open. This is the same rule applied at the point of asking, for
+	 * a file that disappears while the session is live.
+	 */
+	public boolean isPendingArtifact(File f) {
+		return f != null && persistPaths.contains(f.getAbsolutePath()) && f.exists();
 	}
 
 	private boolean hasPersistedFiles(File dir) {

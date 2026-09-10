@@ -93,6 +93,7 @@ public class WorkspaceSessionTest {
 				theSessionOwnsItsState(dump);
 				twoSessionsShareNothing(dump);
 				aFailedSwitchLeavesNothingOfTheOldGame(dump);
+				anEntryWhoseFileIsGoneDoesNotBlockTheOperationThatWroteIt(dump);
 			} finally {
 				Workspace.reset();
 			}
@@ -363,6 +364,76 @@ public class WorkspaceSessionTest {
 	// ------------------------------------------------------- helpers
 	static String stripComments(String s) {
 		return s.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\\n]*", "");
+	}
+
+	/**
+	 * A persisted entry whose file is gone blocks nothing, and does not survive
+	 * the next open.
+	 *
+	 * <p>WHAT THIS COST A USER, which is why it is pinned on real bytes rather
+	 * than argued. The persisted list is the durable record of "extracted files
+	 * the user edited", and five operations use membership of it as their test
+	 * for "is one of me already pending?" - appending zones, forking an area,
+	 * forking geometry, resizing a map, and editing encounters. Nothing ever
+	 * pruned it. {@code cleanAll()} empties it wholesale and Remove-added-zones
+	 * drops entries by walking the DIRECTORY, so it cannot reach an entry whose
+	 * file has already gone.
+	 *
+	 * <p>So one orphan - left by a pack that threw part way, a revert, a
+	 * hand-deleted file - refused that operation for the rest of the workspace's
+	 * life. Worse, the refusal it printed said "Pack the workspace before adding
+	 * more", and packing has never touched this list, in any version: the advice
+	 * named the one action that could not possibly help. A real workspace was
+	 * found holding NINE orphaned entries of fourteen, five of them zonedata
+	 * slots, with zone appending dead in it and a message telling the owner to do
+	 * the thing they had just done.
+	 *
+	 * <p>TWO THINGS ARE ASSERTED, because one without the other leaves the hole
+	 * open: the list drops orphans as it is read, so a workspace heals itself on
+	 * open; and {@code isPendingArtifact} answers on the file rather than on the
+	 * listing, for a file that disappears while the session is live.
+	 */
+	static void anEntryWhoseFileIsGoneDoesNotBlockTheOperationThatWroteIt(File dump) throws Exception {
+		System.out.println("--- a persisted entry whose file is gone blocks nothing");
+		File ws = Scratch.dir("ctrmap_session_orphan");
+		WorkspaceSession s = WorkspaceSession.open(ws, dump);
+		
+		//one real edited file, and one entry whose file was never written - which is
+		//exactly the shape a half-finished zone append leaves behind
+		File zoneDir = s.getExtractionDirectory(ArchiveType.ZONE_DATA);
+		zoneDir.mkdirs();
+		File real = new File(zoneDir, "536");
+		java.nio.file.Files.write(real.toPath(), new byte[]{1, 2, 3, 4});
+		File orphan = new File(zoneDir, "537");
+		check(!orphan.exists(), "the orphan names a file that is not there");
+		
+		java.nio.file.Files.write(new File(ws, "ctrmap_persist.txt").toPath(),
+			(java.io.File.separator + "zonedata" + java.io.File.separator + "536" + "\n"
+			+ java.io.File.separator + "zonedata" + java.io.File.separator + "537" + "\n")
+			.getBytes("UTF-8"));
+		
+		WorkspaceSession reopened = WorkspaceSession.open(ws, dump);
+		check(reopened.persistPaths().contains(real.getAbsolutePath()),
+			"reopening keeps the entry whose file is really there");
+		check(!reopened.persistPaths().contains(orphan.getAbsolutePath()),
+			"and drops the one whose file is gone, so the workspace heals on open: "
+			+ reopened.persistPaths());
+		
+		//and the question the five operations actually ask
+		check(reopened.isPendingArtifact(real),
+			"a file that is listed AND on disk is a pending artifact");
+		check(!reopened.isPendingArtifact(orphan),
+			"one that is listed and NOT on disk is not - which is what stopped a zone"
+			+ " append from ever running again");
+		
+		//the live case: marked this session, then deleted underneath us
+		File vanishes = new File(zoneDir, "538");
+		java.nio.file.Files.write(vanishes.toPath(), new byte[]{9});
+		reopened.addPersist(vanishes);
+		check(reopened.isPendingArtifact(vanishes), "a file marked and present is pending");
+		check(vanishes.delete(), "the file is removed underneath the session");
+		check(!reopened.isPendingArtifact(vanishes),
+			"and it stops being pending the moment it is gone, without waiting for a reopen");
 	}
 
 	static void javaFiles(File dir, List<File> out) {

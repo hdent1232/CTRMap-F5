@@ -148,6 +148,11 @@ public class Workspace {
 		return current == null ? NO_PERSISTED : current.persistPaths();
 	}
 
+	/** See {@link WorkspaceSession#isPendingArtifact}: listed AND still on disk. */
+	public static boolean isPendingArtifact(File f) {
+		return current != null && current.isPendingArtifact(f);
+	}
+
 	/** Unmodifiable: a caller with no session has nothing to mark edited, and trying to is a fault worth hearing about. */
 	private static final java.util.List<String> NO_PERSISTED = java.util.Collections.unmodifiableList(new ArrayList<String>());
 

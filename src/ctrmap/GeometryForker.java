@@ -348,7 +348,7 @@ public class GeometryForker {
 		File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
 		int newMatrix = mm.length;
 		File matrixOut = new File(mmDir, String.valueOf(newMatrix));
-		if (Workspace.persistPaths().contains(matrixOut.getAbsolutePath())) {
+		if (Workspace.isPendingArtifact(matrixOut)) {
 			throw new IOException("A geometry fork/append is already pending. Pack the workspace before forking again.");
 		}
 		File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
