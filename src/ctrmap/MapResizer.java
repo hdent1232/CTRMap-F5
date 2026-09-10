@@ -188,7 +188,7 @@ public class MapResizer {
 		File fdDir = ws.getExtractionDirectory(ArchiveType.FIELD_DATA);
 		int newMatrix = mm.length;
 		File matrixOut = new File(mmDir, String.valueOf(newMatrix));
-		if (ws.isPersisted(matrixOut)) {
+		if (ws.isPendingArtifact(matrixOut)) {
 			throw new IOException("A map append is already pending. Pack the workspace first.");
 		}
 

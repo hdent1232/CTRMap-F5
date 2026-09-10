@@ -185,7 +185,7 @@ public class EncounterEditDialog {
 	private static byte[] loadPack(GARC zo, int enIndex, int zoneCount) {
 		try {
 			File enFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, enIndex);
-			if (enFile != null && Workspace.persistPaths().contains(enFile.getAbsolutePath())) {
+			if (Workspace.isPendingArtifact(enFile)) {
 				byte[] cand = Files.readAllBytes(enFile.toPath());
 				try {
 					ZoneAppender.validateEN(cand, zoneCount);

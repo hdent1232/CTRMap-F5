@@ -1319,6 +1319,32 @@
    "suite": "ctrmap.tests.TileEditFormGuardsTest",
    "args": [],
    "must_say": "the cursor left off the new map does not throw"
+  },
+  {
+   "id": "orphaned-persist-entry-blocks-forever",
+   "why": "The persisted-file list is the durable record of \"extracted files the user edited\", and five operations use membership of it as their test for \"is one of me already pending?\" - appending zones, forking an area, forking geometry, resizing a map, editing encounters. Nothing pruned it: cleanAll() empties it wholesale and Remove-added-zones drops entries by walking the directory, so it cannot reach one whose file has already gone. A single orphan refused that operation for the rest of the workspace's life, and the refusal said \"Pack the workspace before adding more\" - which has never cleared this list in any version. A real workspace was found with nine orphaned entries of fourteen and zone appending dead in it.",
+   "file": "src/ctrmap/WorkspaceSession.java",
+   "find": "\t\t\t\tif (new File(path).exists()) {\n\t\t\t\t\tpersistPaths.add(path);\n\t\t\t\t}",
+   "replace": "\t\t\t\tpersistPaths.add(path);",
+   "suite": "ctrmap.tests.WorkspaceSessionTest",
+   "args": [
+    "${GAMEDIR}",
+    "src"
+   ],
+   "must_say": "drops the one whose file is gone"
+  },
+  {
+   "id": "pending-check-asks-the-listing-not-the-disk",
+   "why": "isPendingArtifact answers on the FILE; the five callers used to ask the LISTING. Being listed says the file was marked edited once, not that it is still there - and an entry outlives its file easily, through a pack that threw part way, a revert, or a hand-deleted workspace file. Asking the listing is what turned one orphan into a permanent refusal.",
+   "file": "src/ctrmap/WorkspaceSession.java",
+   "find": "\t\treturn f != null && persistPaths.contains(f.getAbsolutePath()) && f.exists();",
+   "replace": "\t\treturn f != null && persistPaths.contains(f.getAbsolutePath());",
+   "suite": "ctrmap.tests.WorkspaceSessionTest",
+   "args": [
+    "${GAMEDIR}",
+    "src"
+   ],
+   "must_say": "it stops being pending the moment it is gone"
   }
  ]
 }

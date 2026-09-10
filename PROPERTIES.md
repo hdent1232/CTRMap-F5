@@ -204,7 +204,18 @@ because they are the ones that decay quietly.
    reached a user. Three ceilings in `plants.json` are the measure and every one
    may only fall: `owed_ceiling`, `owed_generalisation_ceiling` and
    `owed_real_defect_ceiling`.
-4. **What the fixes look like on screen.** Every defect fixed this campaign has
+4. **No multi-step workflow is guarded end to end, and that is how a
+   foundational feature stayed broken through a green battery.** Every suite
+   here drives ONE operation: a format round-trip, a form's save, a panel's
+   state. Nothing drives *append a zone, pack, append another* - or fork then
+   fork, resize then resize, deploy then revert. That is the shape zone
+   appending failed in: an orphaned entry in the persisted-file list refused
+   the operation forever while the refusal told the user to pack, and packing
+   has never cleared that list. 127 green suites and a 209/209 mutation sweep
+   said nothing about it, correctly - the sweep breaks lines that HAVE guards,
+   and this line had none. Until one guard per workflow exists, a green battery
+   means the parts work, not that the app does.
+5. **What the fixes look like on screen.** Every defect fixed this campaign has
    a guard that fails without it, but a guard asserts what the code returns, not
    what a person sees. Whether the repaired matrix scroll pane, the re-enabled
    edit forms and the corrected tileset repaint LOOK right is a person's check

@@ -253,7 +253,7 @@ public class AreaForker {
 		File adDir = Workspace.getExtractionDirectory(ArchiveType.AREA_DATA);
 		File npDir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
 		File adOut = new File(adDir, String.valueOf(newArea));
-		if (Workspace.persistPaths().contains(adOut.getAbsolutePath())) {
+		if (Workspace.isPendingArtifact(adOut)) {
 			throw new IOException("An area fork is already pending. Pack the workspace before forking again.");
 		}
 		File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
