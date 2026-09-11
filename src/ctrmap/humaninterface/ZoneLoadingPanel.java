@@ -1462,9 +1462,20 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		if (sharerIdx.size() > 6) {
 			who.append("  - and ").append(sharerIdx.size() - 6).append(" more\n");
 		}
+		//WHAT THIS USED TO ASSERT, AND COULD NOT KNOW. It said the zone "was added
+		//before the editor forked new zones automatically" - about ANY zone past the
+		//stock count, with no way to tell when it was added. A user who added one zone
+		//to Sootopolis and opened the first padding slot seconds later was told exactly
+		//that, by the editor that had just created it, because the padding slots were
+		//the one case that really did keep the donor's map. That is fixed - every
+		//appended zone is forked now - so this note stops explaining and starts
+		//describing: an added zone sharing a map is either older than that fix or was
+		//pointed at a shared map deliberately, and the dialog says which it cannot tell
+		//rather than picking one and stating it as fact.
 		String legacyNote = zoneIndex >= baseZones
-				? "\nThis zone was added before the editor forked new zones automatically\n"
-				+ "- newly added zones now get their own map from the start.\n"
+				? "\nThis is an added zone that shares a map. Zones this version adds get\n"
+				+ "their own map from the start, padding slots included - so this one was\n"
+				+ "either added by an earlier version or pointed at a shared map on purpose.\n"
 				: "";
 		int rsl = ctrmap.Ui.confirm(this,
 				"This zone SHARES its map with " + sharers + " other zone(s):\n"
