@@ -1369,6 +1369,18 @@
     "${GAMEDIR}"
    ],
    "must_say": "append, pack, append again threw instead of answering"
+  },
+  {
+   "id": "padding-zones-get-a-copy-not-a-blank",
+   "why": "The zones the user asked for are clones of the donor - that is what picking a donor means. The spares that round the count up to a multiple of four were never asked for, and a user opening one expects an empty slot, not a second copy of the city they cloned. Measured on Sootopolis: one spare is 1,550,976 bytes copied against 349,440 blanked, so three spares cost 4.4 MB instead of 1.0 MB - and the user has to delete the contents by hand before the slot is usable as a new map.",
+   "file": "src/ctrmap/GeometryForker.java",
+   "find": "\t\t\tif (i >= newRealZones) {",
+   "replace": "\t\t\tif (i >= newRealZones && false) {",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "every padding zone is blank, not a second copy of the donor"
   }
  ]
 }

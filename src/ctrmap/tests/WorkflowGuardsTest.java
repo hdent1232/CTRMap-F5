@@ -169,6 +169,42 @@ public class WorkflowGuardsTest {
 				+ sharesDonor);
 		check(sharesSibling.isEmpty(), "and no two appended zones share one with each other "
 				+ sharesSibling);
+		
+		//AND THE PADDING ZONES ARE BLANK, WHICH IS A DIFFERENT CLAIM FROM
+		//INDEPENDENT. The zones the user asked for are clones of the donor - that is
+		//what picking a donor means. The spares were never asked for, so they get an
+		//empty slot rather than a second copy of the city. Asserted on the tilemap
+		//bytes, against the factory that writes them, so "blank" means the same thing
+		//here as it does in Blank map canvas rather than being re-described.
+		byte[] blankTiles = ctrmap.formats.h3d.RegionFactory.blankTilemap();
+		java.util.List<String> notBlank = new java.util.ArrayList<>();
+		long realBytes = 0, spareBytes = 0;
+		for (int i = 0; i < added; i++) {
+			int zone = stock - 2 + i;
+			boolean spare = i >= r.realZones;
+			for (int region : regionsOf(zone)) {
+				File rf = Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, region);
+				if (rf == null || !rf.isFile()) {
+					continue;
+				}
+				if (spare) {
+					spareBytes += rf.length();
+					byte[] tiles = new ctrmap.formats.containers.GR(rf, Workspace.session()).getFile(0);
+					if (!java.util.Arrays.equals(tiles, blankTiles)) {
+						notBlank.add("zone " + zone + " region " + region);
+					}
+				} else {
+					realBytes += rf.length();
+				}
+			}
+		}
+		check(notBlank.isEmpty(), "every padding zone is blank, not a second copy of the donor "
+			+ notBlank);
+		check(realBytes > 0, "the zone that WAS asked for keeps the donor's map ("
+			+ realBytes + " bytes of regions)");
+		check(r.spareZones == 0 || spareBytes < realBytes * r.spareZones,
+			"and the spares cost less than copying it " + r.spareZones + " more times ("
+			+ spareBytes + " against " + (realBytes * r.spareZones) + " bytes)");
 	}
 
 	/**
@@ -282,6 +318,34 @@ public class WorkflowGuardsTest {
 	}
 
 	// ---- plumbing ----------------------------------------------------------
+
+	/** The FieldData regions a zone's matrix names, from the packed archives. */
+	static java.util.List<Integer> regionsOf(int zoneIndex) {
+		java.util.List<Integer> out = new java.util.ArrayList<>();
+		try {
+			int matrix = matrixOf(zoneIndex);
+			if (matrix < 0) {
+				return out;
+			}
+			File mf = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, matrix);
+			if (mf == null || !mf.isFile()) {
+				return out;
+			}
+			byte[] b = java.nio.file.Files.readAllBytes(mf.toPath());
+			int s0 = (b[4] & 0xFF) | ((b[5] & 0xFF) << 8) | ((b[6] & 0xFF) << 16) | ((b[7] & 0xFF) << 24);
+			int w = (b[s0 + 4] & 0xFF) | ((b[s0 + 5] & 0xFF) << 8);
+			int h = (b[s0 + 6] & 0xFF) | ((b[s0 + 7] & 0xFF) << 8);
+			for (int k = 0; k < w * h; k++) {
+				int id = (b[s0 + 8 + k * 2] & 0xFF) | ((b[s0 + 9 + k * 2] & 0xFF) << 8);
+				if (id != 0xFFFF && !out.contains(id)) {
+					out.add(id);
+				}
+			}
+		} catch (Exception ex) {
+			return out;
+		}
+		return out;
+	}
 
 	/** The matrix id in a zone's header, or -1 when the zone cannot be read. */
 	static int matrixOf(int zoneIndex) {
