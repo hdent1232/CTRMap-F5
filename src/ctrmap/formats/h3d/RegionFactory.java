@@ -43,6 +43,60 @@ public class RegionFactory {
 	 * @param templateModel the template's map model (subfile 1)
 	 * @param groundMesh    the mesh whose material becomes the ground plane
 	 */
+	/**
+	 * Blanks a region container in place: flat ground, no collision, void tiles,
+	 * no props, and every extra layer emptied. Answers false and writes NOTHING
+	 * when the region has no editable map model.
+	 *
+	 * <p>WHY THIS IS ONE METHOD. These four subfile numbers plus the extra-layer
+	 * rules were written out inside Blank map canvas, and the zone append now
+	 * needs exactly the same thing for the padding zones it creates. Two copies of
+	 * "subfile 1 is the model, 2 is the collision, 0 is the tilemap, 3 is the
+	 * props, and 7..10 are the extra layers when the container is long enough"
+	 * is two places to get the numbering wrong.
+	 *
+	 * <p>IT REFUSES BY ANSWERING, NOT BY THROWING, and the caller decides. The
+	 * append calls this AFTER the region copies are already staged and persisted,
+	 * so a throw here would leave exactly the half-finished append that
+	 * ZoneAppender promises never to leave. A region that cannot be blanked stays
+	 * as the copy it already is - still the appended zone's OWN region, which is
+	 * the property that matters - and the caller can say so.
+	 *
+	 * @param preferredGroundMesh the mesh number to prefer, or -1 to let each
+	 *        region choose its own. A mesh number picked from ONE region's model
+	 *        does not necessarily name the ground in its neighbours.
+	 */
+	public static boolean blankRegionFiles(ctrmap.formats.containers.GR gr, int preferredGroundMesh) {
+		byte[] template = gr.getFile(1);
+		if (!BchMapModel.isMapModel(template)) {
+			return false;
+		}
+		int gm;
+		BlankContent bc;
+		try {
+			BchMapModel tm = new BchMapModel(template);
+			gm = ctrmap.formats.tilemap.PaintedMaterials.groundMeshOr(tm, preferredGroundMesh);
+			bc = blank(template, gm);
+		} catch (RuntimeException notBlankable) {
+			//a model this factory cannot rebuild - left as it is, and said so
+			return false;
+		}
+		gr.storeFile(1, bc.model);
+		gr.storeFile(2, bc.collision);
+		gr.storeFile(0, bc.tilemap);
+		gr.storeFile(3, bc.props);
+		//extra layers (multi-layer templates): blank them out entirely
+		if (gr.len >= 9) {
+			gr.storeFile(7, voidTilemap());
+			gr.storeFile(gr.len >= 11 ? 9 : 8, emptyCollision());
+			if (gr.len >= 11) {
+				gr.storeFile(8, voidTilemap());
+				gr.storeFile(10, emptyCollision());
+			}
+		}
+		return true;
+	}
+
 	public static BlankContent blank(byte[] templateModel, int groundMesh) {
 		BlankContent out = new BlankContent();
 		out.model = blankModel(templateModel, groundMesh);

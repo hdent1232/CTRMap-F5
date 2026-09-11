@@ -2525,29 +2525,12 @@ public class CtrmapMainframe {
 			for (int newRegion : r.newRegions) {
 				File f = new File(fdDir, String.valueOf(newRegion));
 				GR gr = new GR(f, game);
-				byte[] template = gr.getFile(1);
-				if (!ctrmap.formats.h3d.BchMapModel.isMapModel(template)) {
-					continue;
-				}
-				ctrmap.formats.h3d.BchMapModel tm = new ctrmap.formats.h3d.BchMapModel(template);
-				//the picked mesh number came from ONE region's model; the zone's
-				//other regions number their meshes differently, so where it does
-				//not fit, fall back to that region's own ground
-				int gm = ctrmap.formats.tilemap.PaintedMaterials.groundMeshOr(tm, groundMesh);
-				ctrmap.formats.h3d.RegionFactory.BlankContent bc = ctrmap.formats.h3d.RegionFactory.blank(template, gm);
-				gr.storeFile(1, bc.model);
-				gr.storeFile(2, bc.collision);
-				gr.storeFile(0, bc.tilemap);
-				gr.storeFile(3, bc.props);
-				//extra layers (multi-layer templates): blank them out entirely
-				if (gr.len >= 9) {
-					gr.storeFile(7, ctrmap.formats.h3d.RegionFactory.voidTilemap());
-					gr.storeFile(gr.len >= 11 ? 9 : 8, ctrmap.formats.h3d.RegionFactory.emptyCollision());
-					if (gr.len >= 11) {
-						gr.storeFile(8, ctrmap.formats.h3d.RegionFactory.voidTilemap());
-						gr.storeFile(10, ctrmap.formats.h3d.RegionFactory.emptyCollision());
-					}
-				}
+				//the picked mesh number came from ONE region's model; the zone's other
+				//regions number their meshes differently, so where it does not fit, the
+				//factory falls back to that region's own ground. It answers false for a
+				//region with no editable model and writes nothing, which is the same
+				//"continue" this loop used to do by hand.
+				ctrmap.formats.h3d.RegionFactory.blankRegionFiles(gr, groundMesh);
 			}
 			final int zi = zoneIndex;
 			Workspace.packWorkspace(new Runnable() {
