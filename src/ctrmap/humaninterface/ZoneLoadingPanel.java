@@ -1462,20 +1462,23 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		if (sharerIdx.size() > 6) {
 			who.append("  - and ").append(sharerIdx.size() - 6).append(" more\n");
 		}
-		//WHAT THIS USED TO ASSERT, AND COULD NOT KNOW. It said the zone "was added
-		//before the editor forked new zones automatically" - about ANY zone past the
-		//stock count, with no way to tell when it was added. A user who added one zone
-		//to Sootopolis and opened the first padding slot seconds later was told exactly
-		//that, by the editor that had just created it, because the padding slots were
-		//the one case that really did keep the donor's map. That is fixed - every
-		//appended zone is forked now - so this note stops explaining and starts
-		//describing: an added zone sharing a map is either older than that fix or was
-		//pointed at a shared map deliberately, and the dialog says which it cannot tell
-		//rather than picking one and stating it as fact.
+		//THE NOTE NAMES THE ONLY CAUSE THERE HAS EVER BEEN. It used to say the zone
+		//"was added before the editor forked new zones automatically", which described
+		//nobody: no released version has ever skipped the fork for the zones the user
+		//ASKED for. What no version forked until now is the PADDING - adding zones
+		//rounds the count up to a multiple of four and the spares kept the donor zone
+		//map. So the user who added one zone to Sootopolis and opened the first spare
+		//seconds later was told a history that had not happened, by the editor that had
+		//just created it, about the one case that was real.
+		//
+		//Every appended zone is forked now, padding included - so this note is for
+		//someone upgrading from 1.0.0 or 1.0.1 who still has those spares sitting in
+		//their workspace, and it tells them what they are looking at.
 		String legacyNote = zoneIndex >= baseZones
-				? "\nThis is an added zone that shares a map. Zones this version adds get\n"
-				+ "their own map from the start, padding slots included - so this one was\n"
-				+ "either added by an earlier version or pointed at a shared map on purpose.\n"
+				? "\nThis is a PADDING SLOT from an earlier version's Add zones. Adding\n"
+				+ "zones rounds the count up to a multiple of four, and that version gave\n"
+				+ "only the zones you asked for their own map - the spares kept the donor\n"
+				+ "zone's. This version gives every appended zone its own.\n"
 				: "";
 		int rsl = ctrmap.Ui.confirm(this,
 				"This zone SHARES its map with " + sharers + " other zone(s):\n"
