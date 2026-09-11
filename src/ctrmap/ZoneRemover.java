@@ -59,11 +59,20 @@ public class ZoneRemover {
 			stored.add(b);
 		}
 		stored.add(masterStored);
-		byte[] en = zo.getStoredEntry(enIdx);
-		if (en == null) {
+		//THE EN PACK IS TRUNCATED WITH THE TABLE, not preserved beside it. It
+		//carries its own entry count and the append grew it, so keeping it verbatim
+		//left a 536-row master table beside a 540-entry pack - and the NEXT append
+		//refused with "EN pack count 540 != zone count 536". A revert that leaves
+		//the user unable to append again has not reverted; it has half-reverted and
+		//said nothing. Found by WorkflowGuardsTest driving remove -> append.
+		byte[] enBytes = zo.getDecompressedEntry(enIdx);
+		if (enBytes == null) {
 			throw new IOException("Could not read the EN encounter pack");
 		}
-		stored.add(en);
+		int enCount = ctrmap.formats.containers.ContainerBytes.count(enBytes);
+		byte[] enOut = enCount == BASE_ZONES ? enBytes
+			: ctrmap.ZoneAppender.truncateEN(enBytes, enCount, BASE_ZONES);
+		stored.add(zo.isEntryCompressed(enIdx) ? LZ11.compress(enOut) : enOut);
 		GarcRebuilder.write(garcFile, garcFile, stored);
 		return removed;
 	}

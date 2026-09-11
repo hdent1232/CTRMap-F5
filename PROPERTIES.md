@@ -1,6 +1,6 @@
 # PROPERTIES.md — what is supposed to be true
 
-The battery answers *"would anything notice if this broke?"* for 127 suites. It
+The battery answers *"would anything notice if this broke?"* for 128 suites. It
 has never answered *"what is supposed to be true?"*, and those are different
 questions. A suite can be green because the property it guards holds, or because
 the property was never written down and the suite guards something adjacent.
@@ -198,7 +198,7 @@ because they are the ones that decay quietly.
    one-time: it lived in commit messages and could not be re-executed, so a
    guard proven in one month and hollowed out in the next looked identical to
    one that still works. `tools/guard/plants.json` and `tools/guard/replant.py`
-   are the mechanism and they run. What is OPEN is the COVERAGE: 57 of the 127
+   are the mechanism and they run. What is OPEN is the COVERAGE: 57 of the 128
    registered suites still have no plant, so for those the ledger proves
    nothing, and 52 more stand on a machine-found plant rather than a defect that
    reached a user. Three ceilings in `plants.json` are the measure and every one
@@ -211,7 +211,7 @@ because they are the ones that decay quietly.
    fork, resize then resize, deploy then revert. That is the shape zone
    appending failed in: an orphaned entry in the persisted-file list refused
    the operation forever while the refusal told the user to pack, and packing
-   has never cleared that list. 127 green suites and a 209/209 mutation sweep
+   has never cleared that list. 128 green suites and a 209/209 mutation sweep
    said nothing about it, correctly - the sweep breaks lines that HAVE guards,
    and this line had none. Until one guard per workflow exists, a green battery
    means the parts work, not that the app does.
