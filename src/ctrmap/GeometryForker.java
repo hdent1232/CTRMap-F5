@@ -287,7 +287,20 @@ public class GeometryForker {
 		File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
 		int nextRegion = gr.length;
 		int nextMatrix = mm.length;
-		for (int i = 0; i < newRealZones; i++) {
+		//EVERY ZONE THE APPEND CREATES, PADDING INCLUDED. This ran to newRealZones,
+		//so the spares that round an append up to a multiple of four kept the DONOR's
+		//map - and editing a spare rewrote the city it was padded out of, and its
+		//siblings. The user who found it added one zone to Sootopolis, opened 537, and
+		//was told the zone "was added before the editor forked new zones automatically"
+		//- a sentence this editor had written about zones it had created seconds
+		//earlier, because that dialog cannot tell a spare from a genuinely old zone.
+		//A spare is a zone the user can open, paint and save like any other, so it
+		//gets its own map like any other. Measured before choosing: a 2x2 city forks
+		//for about 1.5 MB uncompressed, so three spares cost about 4.4 MB before the
+		//pack compresses them - cheap next to a silent shared-map edit. A spare that
+		//should be empty can be blanked afterwards with Blank map canvas, which is a
+		//choice the user gets to make rather than one the padding makes for them.
+		for (int i = 0; i < newZos.length; i++) {
 			int newMatrix = nextMatrix++;
 			//a brand-new zone's map is a copy of the donor's and belongs to it alone
 			ForkPlan plan = forkArchives(newZos[i], nextRegion, newMatrix, oldCount + i, true, gr, mm, fdDir, mmDir);

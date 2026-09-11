@@ -296,6 +296,52 @@ public class ZoneAppender {
 	 * appended offset equals the (unchanged) data end, so the new blobs are
 	 * zero-length. appendCount 0 reproduces the input byte-for-byte.
 	 */
+	/**
+	 * The EN pack with only its first {@code keepCount} blobs - the mirror of
+	 * {@link #rebuildENMulti}, and the half that was missing.
+	 *
+	 * <p>WHY IT HAD TO EXIST. Removing the added zones truncates the master
+	 * zone-header table back to its stock rows and preserved the EN pack
+	 * BYTE FOR BYTE - which its own comment said out loud, as if that were the
+	 * safe choice. It is not: the EN pack carries its own count, and the append
+	 * grew it. So a revert left a 536-row table beside a 540-entry EN pack, and
+	 * the next append refused with "EN pack count 540 != zone count 536" -
+	 * leaving the user unable to add zones again, and unable to see why, since
+	 * nothing in the revert had said it was leaving the tail behind.
+	 *
+	 * <p>The dropped blobs are the removed zones' wild-encounter data, which is
+	 * what removing those zones means. The blobs that stay are copied verbatim,
+	 * so a zone the user kept comes back byte-identical.
+	 */
+	public static byte[] truncateEN(byte[] en, int expectedCount, int keepCount) {
+		if (keepCount < 0 || keepCount > expectedCount) {
+			throw new IllegalArgumentException("keepCount " + keepCount + " out of range (0.."
+				+ expectedCount + ")");
+		}
+		validateEN(en, expectedCount);
+		int count = ContainerBytes.count(en);
+		int[] offs = new int[count + 1];
+		for (int i = 0; i <= count; i++) {
+			offs[i] = i32(en, 4 + i * 4);
+		}
+		int tableEnd = 4 + (keepCount + 1) * 4;
+		int dataLen = offs[keepCount] - offs[0];
+		byte[] out = new byte[tableEnd + dataLen];
+		out[0] = 'E';
+		out[1] = 'N';
+		out[2] = (byte) keepCount;
+		out[3] = (byte) (keepCount >> 8);
+		int shift = tableEnd - offs[0];
+		for (int i = 0; i <= keepCount; i++) {
+			putI32(out, 4 + i * 4, offs[i] + shift);
+		}
+		System.arraycopy(en, offs[0], out, tableEnd, dataLen);
+		//the same self-check the append makes before it touches an archive: what
+		//came out must be a structurally valid pack of exactly the count claimed
+		validateEN(out, keepCount);
+		return out;
+	}
+
 	public static byte[] rebuildENMulti(byte[] en, int expectedCount, int appendCount) {
 		if (appendCount < 0) {
 			throw new IllegalArgumentException("appendCount must be >= 0");

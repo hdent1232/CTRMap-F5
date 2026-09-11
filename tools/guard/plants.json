@@ -1345,6 +1345,30 @@
     "src"
    ],
    "must_say": "it stops being pending the moment it is gone"
+  },
+  {
+   "id": "spare-zones-keep-the-donors-map",
+   "why": "Appending rounds up to a multiple of four and the extras are spares. The fork loop ran to newRealZones, so a spare kept the DONOR's map - opening 537 after adding one zone to Sootopolis offered to fork it and warned that editing it would change three other zones, explaining this with \"added before the editor forked new zones automatically\" about a zone the running editor had created seconds earlier. Editing a spare rewrote the city.",
+   "file": "src/ctrmap/GeometryForker.java",
+   "find": "\t\tfor (int i = 0; i < newZos.length; i++) {",
+   "replace": "\t\tfor (int i = 0; i < newRealZones; i++) {",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "no appended zone still points at the donor's map"
+  },
+  {
+   "id": "revert-leaves-the-en-pack-grown",
+   "why": "Remove added zones truncated the master zone-header table to its stock rows and preserved the EN encounter pack byte-for-byte. The EN pack carries its own entry count and the append grew it, so a revert left a 536-row table beside a 540-entry pack and the next append refused with \"EN pack count 540 != zone count 536\" - a revert that leaves the user unable to add zones again, with nothing saying it had half-finished.",
+   "file": "src/ctrmap/ZoneRemover.java",
+   "find": "\t\tbyte[] enOut = enCount == BASE_ZONES ? enBytes\n\t\t\t: ctrmap.ZoneAppender.truncateEN(enBytes, enCount, BASE_ZONES);",
+   "replace": "\t\tbyte[] enOut = enBytes;",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "append, pack, append again threw instead of answering"
   }
  ]
 }
