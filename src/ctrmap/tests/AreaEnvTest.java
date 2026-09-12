@@ -58,6 +58,7 @@ public class AreaEnvTest {
 		List<String> laneVaries = new ArrayList<>();
 		List<String> ambientNotOne = new ArrayList<>();
 		int longDraw = 0, shortDraw = 0;
+		boolean[] groupsDifferAnywhere = new boolean[AreaEnv.CHANNELS];
 
 		for (int area = 0; area < ad.length; area++) {
 			byte[] entry = ad.getDecompressedEntry(area);
@@ -89,6 +90,20 @@ public class AreaEnvTest {
 							groupsDiffer.add("area " + area + " channel " + ch + " time " + t
 									+ ": group 0 has " + first + ", group " + g + " has "
 									+ AreaEnv.channel(s4, ch, g * AreaEnv.TIMES + t));
+						}
+					}
+				}
+			}
+			//EVERY channel, not just the fog ones - the range the write refuses outside
+			//of has to be measured rather than assumed, and an earlier draft of AreaEnv
+			//generalised "three identical groups" from the fog channels to the block.
+			for (int ch = 0; ch < AreaEnv.CHANNELS; ch++) {
+				for (int t = 0; t < AreaEnv.TIMES && !groupsDifferAnywhere[ch]; t++) {
+					float first = AreaEnv.channel(s4, ch, t);
+					for (int g = 1; g < AreaEnv.GROUPS; g++) {
+						if (AreaEnv.channel(s4, ch, g * AreaEnv.TIMES + t) != first) {
+							groupsDifferAnywhere[ch] = true;
+							break;
 						}
 					}
 				}
@@ -128,6 +143,38 @@ public class AreaEnvTest {
 		check(longDraw > 0 && shortDraw > 0, "and the anchor that survived the retarget: areas draw"
 				+ " far and areas draw near (" + longDraw + " at 2000+, " + shortDraw + " under 800)");
 
+		//WHICH CHANNELS MAY BE WRITTEN IN ALL THREE GROUPS, measured rather than
+		//assumed. AreaEnv.putTime refuses outside this range, so if retail turns out
+		//to vary a channel inside it, that refusal is letting through a write that
+		//would flatten something.
+		java.util.List<Integer> identical = new ArrayList<>();
+		java.util.List<Integer> differ = new ArrayList<>();
+		for (int ch = 0; ch < AreaEnv.CHANNELS; ch++) {
+			(groupsDifferAnywhere[ch] ? differ : identical).add(ch);
+		}
+		java.util.List<Integer> writable = new ArrayList<>();
+		for (int ch = AreaEnv.CH_FOG_STRENGTH; ch <= AreaEnv.CH_GROUP_IDENTICAL_LAST; ch++) {
+			if (groupsDifferAnywhere[ch]) {
+				writable.add(ch);
+			}
+		}
+		check(writable.isEmpty(), "every channel putTime will write in all "
+			+ AreaEnv.GROUPS + " groups (" + AreaEnv.CH_FOG_STRENGTH + ".."
+			+ AreaEnv.CH_GROUP_IDENTICAL_LAST + ") really is identical across them in all "
+			+ checked + " areas " + writable);
+		check(!differ.isEmpty(), "and the block at large is NOT - " + differ.size()
+			+ " channel(s) differ between groups somewhere, which is why the write refuses"
+			+ " rather than trusting the caller: " + differ);
+		
+		String refusedFor = "";
+		try {
+			AreaEnv.putTime(new byte[AreaEnv.SUB4_LEN], differ.get(0), 0, 1f);
+		} catch (RuntimeException ex) {
+			refusedFor = String.valueOf(ex.getMessage());
+		}
+		check(refusedFor.contains("flatten"), "and writing all three groups of channel "
+			+ differ.get(0) + " is refused, not merely discouraged: " + refusedFor);
+		
 		//AND THE ONE THING THAT MUST NEVER COME BACK: fog read out of channel 0.
 		byte[] probe = new byte[AreaEnv.SUB4_LEN];
 		for (int l = 0; l < AreaEnv.LANES; l++) {
