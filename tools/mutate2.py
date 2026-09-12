@@ -57,7 +57,10 @@ from pathlib import Path
 BASE = Path(r"C:\Users\flami\Desktop\Claude\sessions\3DS Editor")
 WT = BASE / "wt" / "_guardcheck"
 DUMP = BASE / "RomFS_original_garcs"
-_ARGS = [a for a in sys.argv[1:] if not a.startswith("-")]
+#the value after --anyway is a sentence, not the mutant cap
+_RAW = sys.argv[1:]
+_SKIP = _RAW.index("--anyway") + 1 if "--anyway" in _RAW else -1
+_ARGS = [a for i, a in enumerate(_RAW) if not a.startswith("-") and i != _SKIP]
 CAP = int(_ARGS[0]) if _ARGS else 6
 
 JDK = os.environ.get("CTRMAP_JDK")
@@ -1439,6 +1442,15 @@ results, t0 = [], time.time()
 # the branch move underneath it - a merge landed mid-sweep - so its later
 # clusters were scored against a tree its baseline had never seen. A sweep must
 # measure one tree or it measures none.
+# THE WORK ORDER, ASKED BEFORE ANYTHING IS TOUCHED. A sweep measures a FROZEN
+# tree and records a digest of every file in it, so one started while work is
+# still queued is not a slow measurement but a discarded one. That rule was
+# written down twice and broken anyway, which is why this refuses instead of
+# reminding. See tools/guard/work_order.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "guard"))
+import work_order
+WORK_ORDER_OVERRIDE = work_order.require_frozen("the mutation sweep", sys.argv)
+
 git("reset", "--hard", MAINLINE)
 FROZEN = git("rev-parse", "HEAD").stdout.strip()
 print("measuring %s (frozen; the branch may move without affecting this run)" % FROZEN[:7], flush=True)
@@ -1826,6 +1838,7 @@ else:
     print("\nratchet: no baseline yet, recording this run as the starting line")
 
 live["_meta"] = {"measured_at": FROZEN[:7],
+                 "work_order_override": WORK_ORDER_OVERRIDE,
                  "measurements": len(results), "distinct": len(lines_),
                  "attempted": attempted, "survived": len(survived),
                  "killed": tally.get("killed", 0),

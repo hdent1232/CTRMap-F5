@@ -1687,7 +1687,8 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 				+ "You MUST install the generated code.ips or the game will black-screen:\n"
 				+ "  Azahar: right-click the game -> Open Mods Location -> exefs\\code.ips\n"
 				+ "  3DS Luma: sdmc:/luma/titles/000400000011C400/code.ips (enable Game Patching)\n\n"
-				+ "Continue?",
+				+ ctrmap.ZoneAppender.sharedWarning(srcIndex)
+				+ "\n\nContinue?",
 				"Add new zones (lift zone limit)",
 				JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE,
 				options, options[1]);
@@ -1696,7 +1697,10 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		}
 		ctrmap.ZoneAppender.AppendResult res;
 		try {
-			res = ctrmap.ZoneAppender.appendZones(realZones, srcIndex);
+			//THE USER HAS JUST BEEN SHOWN WHAT THESE ZONES WILL SHARE, in the dialog
+			//above, and pressed OK. The appender refuses the form that does not say so,
+			//which is what stops a zone being created shared by accident from anywhere.
+			res = ctrmap.ZoneAppender.appendZones(realZones, srcIndex, true);
 		} catch (Exception ex) {
 			Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
 			ctrmap.Ui.error(this, "Could not add the zones:\n" + ex.getMessage(), "Add new zones");

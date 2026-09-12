@@ -82,6 +82,53 @@ public class ZoneAppender {
 		public int realZones;      // how many the user asked for
 		public int spareZones;     // padding to keep M a multiple of 4
 		public int newZoneCount;   // M = firstNewZone + realZones + spareZones
+		/** What the created zones still SHARE with the zone they were cloned from. */
+		public java.util.List<ZoneResource> shared = java.util.Collections.emptyList();
+		/** The same, as the sentence the user was shown before any of it was written. */
+		public String sharedWarning = "";
+	}
+
+	/**
+	 * The resources {@link #appendZones} gives every zone it creates a PRIVATE copy
+	 * of. Everything else in {@link ZoneResource} is still shared with the donor.
+	 *
+	 * <p>THIS SET IS THE POINT. A zone header points at four things and this used to
+	 * fork one of them, with nothing anywhere recording that the other three were
+	 * left behind - so the map was fixed, twice, while story text and script stayed
+	 * shared and silent. Measured on the owner's game: zones 536-539, one append,
+	 * all four still on the donor's story text and script. Naming the set here makes
+	 * the gap a value the append can REFUSE on, and makes closing it later one edit
+	 * rather than four.
+	 */
+	private static final java.util.EnumSet<ZoneResource> MADE_PRIVATE
+			= java.util.EnumSet.of(ZoneResource.MAP);
+
+	/**
+	 * What a zone created by an append would still share with its donor: every
+	 * {@link ZoneResource} this appender does not make private.
+	 */
+	public static java.util.List<ZoneResource> sharedAfterAppend() {
+		java.util.List<ZoneResource> out = new java.util.ArrayList<>();
+		for (ZoneResource res : ZoneResource.values()) {
+			if (!MADE_PRIVATE.contains(res)) {
+				out.add(res);
+			}
+		}
+		return out;
+	}
+
+	/** The sentence a user must be shown before an append writes anything. */
+	public static String sharedWarning(int srcIndex) {
+		StringBuilder sb = new StringBuilder();
+		for (ZoneResource res : sharedAfterAppend()) {
+			sb.append(sb.length() == 0 ? "" : ", ").append(res.label);
+		}
+		if (sb.length() == 0) {
+			return "";
+		}
+		return "Each new zone gets its own map, but will SHARE its " + sb + " with zone "
+			+ srcIndex + ".\nEditing any of those in a new zone changes zone " + srcIndex
+			+ " as well, and every other\nzone already sharing them.";
 	}
 
 	/**
@@ -97,7 +144,46 @@ public class ZoneAppender {
 	 * {@code ZoneLimitPatch.buildIPS(newRealZones)} and deploy the resulting
 	 * code.ips (Azahar: load/mods/&lt;titleid&gt;/exefs/; Luma: luma/titles/&lt;titleid&gt;/).
 	 */
+	/**
+	 * REFUSES, and says what a created zone would share. This is the two-argument
+	 * form and it exists to be refused: an append that cannot make its zones
+	 * independent must not happen because a caller did not think to ask.
+	 *
+	 * <p>WHY A REFUSAL AND NOT A WARNING. A warning is a detector - it reports
+	 * what already went wrong and relies on somebody reading it. The zones this
+	 * editor created shared their donor's story text and script for two releases
+	 * with nothing said, and the owner found it by opening a settings field by
+	 * chance. The only thing that closes that class is refusing at the point the
+	 * zone is MADE, so the answer has to be a decision somebody took rather than
+	 * a message somebody missed.
+	 *
+	 * <p>When {@link #sharedAfterAppend()} is empty - when every resource is made
+	 * private - this stops refusing on its own and becomes an ordinary call. The
+	 * refusal shrinks as the capability grows, which is the right way round.
+	 */
 	public static AppendResult appendZones(int newRealZones, int srcIndex) throws IOException {
+		java.util.List<ZoneResource> shared = sharedAfterAppend();
+		if (!shared.isEmpty()) {
+			throw new IOException(sharedWarning(srcIndex)
+				+ "\n\nCTRMap cannot give a new zone its own " + shared + " yet, so it will not"
+				+ " create one\nquietly. Use the form that takes an explicit acknowledgement, after"
+				+ " showing the\nuser this sentence.");
+		}
+		return appendZones(newRealZones, srcIndex, true);
+	}
+
+	/**
+	 * Appends the zones, having been told the caller has shown the user what they
+	 * will share.
+	 *
+	 * @param acceptShared true when the user has SEEN {@link #sharedWarning} and
+	 *        chosen to go on. False refuses, with that sentence.
+	 */
+	public static AppendResult appendZones(int newRealZones, int srcIndex, boolean acceptShared) throws IOException {
+		java.util.List<ZoneResource> stillShared = sharedAfterAppend();
+		if (!acceptShared && !stillShared.isEmpty()) {
+			throw new IOException(sharedWarning(srcIndex));
+		}
 		if (!Workspace.isValid()) {
 			throw new IOException("No workspace is loaded, so there is no game to ask.");
 		}
@@ -196,6 +282,8 @@ public class ZoneAppender {
 		pendingZoneDataOverrides.put(m + 1, Boolean.FALSE);
 
 		AppendResult r = new AppendResult();
+		r.shared = stillShared;
+		r.sharedWarning = sharedWarning(srcIndex);
 		r.firstNewZone = oldCount;
 		r.realZones = newRealZones;
 		r.spareZones = addCount - newRealZones;

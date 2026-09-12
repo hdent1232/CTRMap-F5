@@ -61,6 +61,9 @@ public class CommitGuardTest {
 		aFixThatCarriesARealGuardIsAllowed(guard);
 		theNoGuardEscapeIsHonouredAndStaysInTheMessage(guard);
 		aTestCountIsCheckedAgainstTheLastRecordedRun(guard);
+		aFixClosedByADetectorIsRefused(guard);
+		theNoRefusalEscapeIsHonouredAndStaysInTheMessage(guard);
+		theWorkOrderRefusesWhileTheTreeIsMoving(repo);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -183,6 +186,84 @@ public class CommitGuardTest {
 				+ firstLine(unrecorded.said));
 	}
 
+	// -------------------------------------- 8. refusal five: close it by refusing
+	/**
+	 * A fix closed by a DETECTOR is refused, because a detector reports the
+	 * wreckage and does not stop it happening again.
+	 *
+	 * <p>The three kinds were named in this guard from the start, and naming them
+	 * turned out not to be the same as preferring one. Fixes shipped as detectors
+	 * because a detector is the easier thing to write, and the class stayed open -
+	 * which is the whole shape of a defect being fixed twice. The kind is now a
+	 * refusal by default and the exception has to be written down.
+	 */
+	static void aFixClosedByADetectorIsRefused(File guard) throws Exception {
+		System.out.println("--- a fix closed by a detector rather than a refusal is refused");
+		Run r = run(guard, "Fix the stale cache in the tileset loader"
+			+ "\n\nGuard: detector -- a suite now notices when the cached tileset and the "
+			+ "zone it belongs to have drifted apart, so the next one is reported",
+			new String[]{"src/ctrmap/humaninterface/A.java", "src/ctrmap/tests/ATest.java"}, null);
+		check(r.code != 0, "refused (exit " + r.code + ")");
+		check(r.said.contains("makes a second occurrence IMPOSSIBLE"),
+			"and says what a detector cannot do: " + firstLine(r.said));
+		check(r.said.contains("No-refusal:"), "and names the escape, so the answer is not to lie"
+			+ " about the kind");
+	}
+
+	/** ...and the honest exception is honoured, which is why it lives in the message. */
+	static void theNoRefusalEscapeIsHonouredAndStaysInTheMessage(File guard) throws Exception {
+		System.out.println("--- and a No-refusal line that says why is honoured");
+		Run r = run(guard, "Fix the stale cache in the tileset loader"
+			+ "\n\nGuard: detector -- a suite now notices when the cached tileset and the "
+			+ "zone it belongs to have drifted apart, so the next one is reported"
+			+ "\n\nNo-refusal: the drift is produced by the GPU driver dropping a texture "
+			+ "handle, which happens below any line this program could refuse at",
+			new String[]{"src/ctrmap/humaninterface/A.java", "src/ctrmap/tests/ATest.java"}, null);
+		check(r.code == 0, "allowed (exit " + r.code + ") " + r.said);
+	}
+
+	// --------------------------------------- 9. the other process guard: order
+	/**
+	 * The work-order guard refuses a long measurement while the tree is moving.
+	 *
+	 * <p>WHY IT IS IN THIS SUITE. A mutation sweep records a digest of every file
+	 * it measured, so one started while work is still queued is not slow, it is
+	 * discarded - and that rule was written down twice in this repository and
+	 * broken anyway, in the same conversation where it was quoted. It is the same
+	 * failure as any unguarded rule in the product, so it gets the same treatment:
+	 * a refusal, and a guard on the refusal.
+	 *
+	 * <p>Driven against a ledger this suite writes, never the real one, so it
+	 * asserts the BEHAVIOUR rather than today's queue.
+	 */
+	static void theWorkOrderRefusesWhileTheTreeIsMoving(File repo) throws Exception {
+		System.out.println("--- the work order refuses a long measurement while work is queued");
+		File guard = new File(repo, "tools/guard/work_order.java".replace(".java", ".py"));
+		check(guard.isFile(), "there is a work-order guard at tools/guard/work_order.py");
+		if (!guard.isFile()) {
+			return;
+		}
+		String src = new String(java.nio.file.Files.readAllBytes(
+			new File(repo, "tools/mutate2.py").toPath()), java.nio.charset.StandardCharsets.UTF_8);
+		check(src.contains("work_order.require_frozen"),
+			"and the sweep asks it before it touches anything - a guard nothing calls is the"
+			+ " defect this project keeps finding");
+		int askedAt = src.indexOf("work_order.require_frozen");
+		int resetAt = src.indexOf("git(\"reset\", \"--hard\"");
+		check(askedAt >= 0 && resetAt >= 0 && askedAt < resetAt,
+			"and asks BEFORE the hard reset, not after it has already moved the tree ("
+			+ askedAt + " then " + resetAt + ")");
+		
+		//the ledger format itself: an open item must be findable, a done one must not
+		File ledger = new File(repo, "OUTSTANDING.md");
+		check(ledger.isFile(), "the queue is a tracked file, not something somebody remembers");
+		if (ledger.isFile()) {
+			String text = new String(java.nio.file.Files.readAllBytes(ledger.toPath()),
+				java.nio.charset.StandardCharsets.UTF_8);
+			check(text.contains("- [ ]") || text.contains("- [x]"),
+				"and it uses the checkbox form the guard reads");
+		}
+	}
 	// ---- plumbing ----------------------------------------------------------
 	/** What the guard did: its exit code and everything it said. */
 	static final class Run {

@@ -22,6 +22,14 @@ Four refusals, each with a bill attached:
   3. THE REASON MUST BE A CLASS, NOT A LABEL. Sixty characters minimum, because `guarded above`
      shipped once as an entire justification and it was false.
 
+  5. A FIX IS CLOSED BY A REFUSAL, OR SAYS WHY IT CANNOT BE. A detector reports the wreckage
+     after the fact; a convention asks somebody to be careful. Only a refusal makes the SECOND
+     occurrence impossible rather than merely visible. The three kinds were already named here,
+     and naming them turned out not to be the same as preferring one - fixes shipped as
+     detectors because a detector is easier, and the class stayed open. So `Guard: detector`
+     and `Guard: convention` are refused unless the message also carries a `No-refusal:` line
+     saying why the point of action cannot refuse.
+
   4. A TEST COUNT IS A MEASUREMENT. A claim of "N tests" in a message is checked against the last
      recorded run. A wrong number in a commit message is permanent.
 
@@ -45,6 +53,9 @@ GUARD_DIRS = ("src/ctrmap/tests", "tools", ".githooks", ".claude/hooks")
 GUARD_KINDS = ("detector", "convention", "refusal")
 MIN_GUARD_REASON = 60
 NO_GUARD = "No-guard:"
+#: The escape from rule 5. A detector or a convention is allowed only with this line,
+#: which stays in git log and says why a refusal was impossible HERE.
+NO_REFUSAL = "No-refusal:"
 
 #: `1,234 tests` or `57 tests`. A bare number followed by the word.
 _TEST_CLAIM = re.compile(r"([0-9][0-9,]*)[ \t]+tests\b")
@@ -126,6 +137,18 @@ def check_guard_class(message):
     if kind not in GUARD_KINDS:
         sys.stderr.write("REFUSING THE COMMIT: `Guard: %s` is not one of %s.%s"
                          % (kind, ", ".join(GUARD_KINDS), LF))
+        return 1
+    if kind != "refusal" and NO_REFUSAL.lower() not in message.lower():
+        sys.stderr.write(
+            "REFUSING THE COMMIT: this fixes something and closes it with a %s." % kind + LF
+            + "  A DETECTOR reports the wreckage after it happens. A CONVENTION asks" + LF
+            + "  somebody to be careful. Neither makes a second occurrence IMPOSSIBLE," + LF
+            + "  and the defects this project has had to fix twice were closed by one" + LF
+            + "  of them the first time." + LF + LF
+            + "  Close it where the mistake is MADE instead - refuse the action there." + LF
+            + "  If the point of action genuinely cannot refuse, say why:" + LF + LF
+            + "    %s <why a refusal is impossible here>" % NO_REFUSAL + LF + LF
+            + "  That line stays in git log, which is the point." + LF)
         return 1
     if len(reason) < MIN_GUARD_REASON:
         sys.stderr.write(
