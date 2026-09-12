@@ -26,21 +26,6 @@ anything known to be broken. Not ideas, not maybes. If it is here it is owed.
 
 ## Open
 
-- [ ] **Zone Loader live 3D preview.** Asked for on 2026-09-11 ("i want a 3d
-      preview, why can't that be done?"). Groundwork done and never written:
-      model it on `BuildingPaletteDialog`, lazy per-selection decode (median
-      47.4 ms, p90 107.2 ms measured). Also fixes two dormant `MapPreview3D`
-      bugs - a failed BCH decode silently keeps the previous model, and nothing
-      destroys buffers between swaps.
-- [ ] **Give a created zone its own AREA.** `AreaForker` can already fork one,
-      but only when the user opens a settings field. It takes its new id from
-      the archive length and refuses when that slot is staged, so appending N
-      zones needs a batch that threads the counter, the way
-      `GeometryForker.forkAppendedZones` does. BUDGET: the engine masks area ids
-      to 8 bits and 229 are used, so there are 27 left - the append must refuse
-      up front when a request would exhaust them, not fail half way.
-      Doing this removes `AREA` from `ZoneAppender.MADE_PRIVATE`'s complement
-      and the refusal stops mentioning it, on its own.
 - [ ] **Give a created zone its own STORY TEXT.** Archives grow through the
       generic `packDirectory` path, so this should be reachable, but nothing in
       the tree appends a STORYTEXT entry today and no empty message file is
@@ -73,6 +58,19 @@ anything known to be broken. Not ideas, not maybes. If it is here it is owed.
 - [x] 2026-09-11 Padding spares an earlier version left sharing the donor's MAP
       are repaired on open, in one pass, and blanked when untouched.
 - [x] 2026-09-11 The zone list waits for the pack that repair starts.
+- [x] 2026-09-12 Browse zones: a searchable list with a live 3D preview, on the
+      Zone actions bar and in the Zone menu. Nothing is loaded by looking. Fixed
+      two dormant MapPreview3D bugs on the way - a failed decode kept the
+      PREVIOUS zone on screen under the new zone's name, and every swap leaked a
+      map of GPU buffers - and one that was not dormant at all: a region too
+      short to hold a BCH header killed the editor with an OutOfMemoryError
+      before the magic check could refuse it.
+- [x] 2026-09-12 A created zone gets its own AREA at birth - atmosphere, water
+      animations, prop registry and NPC models - in one pack cycle, spares
+      included. The 8-bit area budget is checked for the whole batch before
+      anything is written, so an append cannot leave two zones private and two
+      sharing. AREA left the refusal on its own the moment it joined
+      MADE_PRIVATE.
 - [x] 2026-09-11 A zone header's four shareable resources are a table
       (`ZoneResource`), the appender records which of them it makes private,
       and it REFUSES to create a zone that would share the rest until the user
