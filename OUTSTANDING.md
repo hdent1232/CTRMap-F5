@@ -30,7 +30,6 @@ anything known to be broken. Not ideas, not maybes. If it is here it is owed.
       archive: CTRMap neither extracts nor packs it. Until that changes a
       created zone runs its donor's events, and the only close available is the
       refusal that is now in place. Revisit if the script archive is ever added.
-- [ ] **Relink / connect zones.** Asked for on 2026-09-11.
 - [ ] **Re-run the mutation sweep** (`python tools/mutate2.py 999`) once the
       above are done and committed. The baseline is stale by design until then -
       `MutationBaselineTest` is red on purpose and says so.
@@ -46,6 +45,11 @@ anything known to be broken. Not ideas, not maybes. If it is here it is owed.
 - [x] 2026-09-11 Padding spares an earlier version left sharing the donor's MAP
       are repaired on open, in one pass, and blanked when untouched.
 - [x] 2026-09-11 The zone list waits for the pack that repair starts.
+- [x] 2026-09-12 Connect zones: wire a warp in one zone to a warp in another,
+      BOTH ways, in one action - on the Zone actions bar and in the Zone menu.
+      It says what it will abandon before it writes, refuses a warp that does
+      not exist or a door leading to itself, and handles two doors of the SAME
+      zone, which is where the obvious implementation loses half the link.
 - [x] 2026-09-12 The encounter workflow is guarded. EncounterEditDialog grew a
       seam (readEncounters/saveEncounters) so edit -> pack -> edit again can be
       driven headlessly; the section that used to be a comment explaining why it
