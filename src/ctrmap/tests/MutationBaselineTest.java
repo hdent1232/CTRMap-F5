@@ -102,6 +102,26 @@ public class MutationBaselineTest {
 		//sources, so only these files can make its counts stale.
 		check(json.contains("\"measured_at\""), "the baseline records the commit it was measured at");
 
+		//AND WHETHER IT WAS MEASURED OVER A MOVING TREE. tools/guard/work_order.py
+		//refuses a sweep while work is queued or the tree is dirty, and the escape
+		//- --anyway "<reason>" - writes that reason into the baseline. It was
+		//written there and read by nobody, so an overridden baseline would gate this
+		//whole battery with nothing said: a decision recorded invisibly is the same
+		//silence the refusal was built to remove, in a more respectable coat.
+		int at = json.indexOf("\"work_order_override\"");
+		String override = "";
+		if (at >= 0) {
+			int open = json.indexOf(":", at) + 1;
+			int end = json.indexOf(",", open);
+			override = end < 0 ? "" : json.substring(open, end).trim();
+		}
+		check(override.isEmpty() || override.equals("null"),
+			"and it was measured over a tree that had stopped moving"
+			+ (override.isEmpty() || override.equals("null") ? ""
+				: " - this one says it was not: " + override
+				+ ". A baseline taken with --anyway gates the whole battery on a state no"
+				+ " commit matches; re-run the sweep once the queue is clear."));
+
 		//split the document into one block per file, in order
 		List<int[]> spans = new ArrayList<>();
 		List<String> paths = new ArrayList<>();

@@ -1497,6 +1497,19 @@
     "${PRISTINE}/a\\0\\1\\4"
    ],
    "must_say": "is refused, not merely discouraged"
+  },
+  {
+   "id": "a-long-measurement-that-asks-nobody",
+   "why": "The work-order refusal went into mutate2.py because that is the sweep that was started in front of known work - the INSTANCE. tools/mutate.py, the superseded first mutator, does the same hard reset and writes the same kind of baseline and was not gated at all; a dormant tool is one somebody runs without thinking about it, and a long measurement added next year would have been ungated too. Gating one tool is a convention the next tool follows if somebody remembers, which is the shape this project refuses. The rule is now asked of every tool that resets the tree or writes a baseline.",
+   "file": "tools/mutate.py",
+   "find": "work_order.require_frozen(\"the mutation sweep (superseded mutator)\", sys.argv)\n",
+   "replace": "",
+   "no_rebuild": true,
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "must_say": "and every one of them asks the work order before it starts"
   }
  ]
 }

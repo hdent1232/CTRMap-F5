@@ -64,6 +64,7 @@ public class CommitGuardTest {
 		aFixClosedByADetectorIsRefused(guard);
 		theNoRefusalEscapeIsHonouredAndStaysInTheMessage(guard);
 		theWorkOrderRefusesWhileTheTreeIsMoving(repo);
+		everyFrozenTreeMeasurementAsksTheWorkOrder(repo);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -262,6 +263,66 @@ public class CommitGuardTest {
 				java.nio.charset.StandardCharsets.UTF_8);
 			check(text.contains("- [ ]") || text.contains("- [x]"),
 				"and it uses the checkbox form the guard reads");
+		}
+	}
+	/**
+	 * EVERY tool that measures a frozen tree asks the work order - not just the
+	 * one that broke the rule.
+	 *
+	 * <p>WHY THIS EXISTS. The work-order refusal was added to tools/mutate2.py
+	 * because that is the sweep that was started in front of known work. That
+	 * closed the INSTANCE. tools/mutate.py - the superseded first mutator, which
+	 * nothing runs today - does the same hard reset and writes the same kind of
+	 * baseline and was not gated at all, and a long measurement added next year
+	 * would not be either. Gating one tool is a convention that the next tool
+	 * follows if somebody remembers.
+	 *
+	 * <p>The class is decidable from the source: a tool that hard-resets the tree
+	 * or writes a mutation baseline is measuring something frozen. Either marker
+	 * requires the call.
+	 */
+	static void everyFrozenTreeMeasurementAsksTheWorkOrder(File repo) throws Exception {
+		System.out.println("--- every tool that measures a frozen tree asks the work order first");
+		File tools = new File(repo, "tools");
+		java.util.List<String> ungated = new java.util.ArrayList<>();
+		int measured = 0;
+		java.util.List<File> all = new java.util.ArrayList<>();
+		collectPython(tools, all);
+		for (File py : all) {
+			String src = new String(java.nio.file.Files.readAllBytes(py.toPath()),
+				java.nio.charset.StandardCharsets.UTF_8);
+			if (py.getName().equals("work_order.py")) {
+				continue; //the guard itself
+			}
+			boolean freezes = src.contains("\"reset\", \"--hard\"")
+				|| src.contains("mutation_baseline.json");
+			if (!freezes) {
+				continue;
+			}
+			measured++;
+			if (!src.contains("work_order.require_frozen")) {
+				ungated.add(py.getName());
+			}
+		}
+		check(measured > 0, "found " + measured + " tool(s) that reset the tree or write a"
+			+ " baseline - if this is 0 the markers have moved and this rule stopped asking"
+			+ " anything");
+		check(ungated.isEmpty(), "and every one of them asks the work order before it starts "
+			+ ungated);
+	}
+
+	/** Every .py under a directory, recursively. */
+	static void collectPython(File dir, java.util.List<File> into) {
+		File[] kids = dir.listFiles();
+		if (kids == null) {
+			return;
+		}
+		for (File k : kids) {
+			if (k.isDirectory()) {
+				collectPython(k, into);
+			} else if (k.getName().endsWith(".py")) {
+				into.add(k);
+			}
 		}
 	}
 	// ---- plumbing ----------------------------------------------------------

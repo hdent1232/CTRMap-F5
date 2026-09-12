@@ -86,6 +86,15 @@ def build():
 
 
 results, t0 = [], time.time()
+# THE WORK ORDER, ASKED BEFORE THE TREE IS TOUCHED. Same rule and same
+# refusal as tools/mutate2.py: a measurement of a frozen tree started while
+# source is still moving is not slow, it is discarded. This mutator is
+# superseded and nothing runs it today, which is exactly why it needed the
+# gate - a dormant tool is one someone runs without thinking about it.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "guard"))
+import work_order
+work_order.require_frozen("the mutation sweep (superseded mutator)", sys.argv)
+
 run(["git", "reset", "--hard", "silent-failures"])
 
 for cid, (base, suites) in CLUSTERS.items():
