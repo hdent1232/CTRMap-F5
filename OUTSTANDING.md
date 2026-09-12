@@ -24,15 +24,23 @@ output - visible, not silent.
 **WHAT COUNTS AS AN ITEM.** Anything the owner asked for that is not shipped, and
 anything known to be broken. Not ideas, not maybes. If it is here it is owed.
 
+**WHAT DOES NOT.** Two things were in this list and should not have been, and
+both would have blocked every measurement forever:
+
+- A LIMITATION is not an item. "The script archive cannot be forked" can never
+  be ticked, because it is not work anybody is going to do - it is a fact about
+  what the editor can reach. Those live under _Known limitations_, which the
+  guard does not read, and they are closed by a refusal in the product rather
+  than by an entry here.
+- THE MEASUREMENT IS NOT AN ITEM IN ITS OWN QUEUE. "Re-run the sweep" sat in
+  this list and therefore blocked the sweep, forever, which is the sort of
+  circular rule that gets a guard disabled instead of obeyed. The queue GATES
+  the sweep; it does not contain it.
+
 ## Open
 
-- [ ] **The SCRIPT row may never be forkable.** `ArchiveType` has no script
-      archive: CTRMap neither extracts nor packs it. Until that changes a
-      created zone runs its donor's events, and the only close available is the
-      refusal that is now in place. Revisit if the script archive is ever added.
-- [ ] **Re-run the mutation sweep** (`python tools/mutate2.py 999`) once the
-      above are done and committed. The baseline is stale by design until then -
-      `MutationBaselineTest` is red on purpose and says so.
+_(nothing)_
+
 
 ## Done
 
@@ -95,3 +103,16 @@ anything known to be broken. Not ideas, not maybes. If it is here it is owed.
       tree that is still moving (`tools/guard/work_order.py`).
 - [x] 2026-09-11 A fix must be closed by a refusal or carry a `No-refusal:`
       line saying why the point of action cannot refuse (`commit_guard.py`).
+
+## Known limitations
+
+These are not work. They are things the editor cannot reach, closed by a
+refusal at the point of action rather than by anything here, and the guard does
+not count them.
+
+- **A created zone shares its donor's SCRIPT.** `ArchiveType` has no script
+  archive: CTRMap neither extracts nor packs it, so a new zone cannot be given
+  one of its own and runs the donor's events. `ZoneAppender` refuses to create a
+  zone without saying so first. Revisit only if the script archive is ever
+  managed - at which point SCRIPT joins `MADE_PRIVATE` and both the refusal and
+  the repair follow on their own.
