@@ -791,11 +791,15 @@ public class WorkflowGuardsTest {
 				continue;
 			}
 			drawn.add(zone + "->r" + shot.region);
-			//the region it says it read really is the one this zone's own map names
-			java.util.List<Integer> mine = regionsOf(zone);
+			//RETARGETED. This asked whether the previewed region was ANYWHERE in the
+			//zone's matrix, which a matrix shared by several zones satisfies with any
+			//of their regions - so it passed while Mossdeep City was showing Route 125.
+			//The question is ownership, and it is asked below over the whole table
+			//against the game's own zone grid rather than against three samples.
+			java.util.List<Integer> mine = ownedRegionsOf(zone);
 			if (!mine.isEmpty() && !mine.contains(shot.region)) {
 				wrong.add("zone " + zone + " previewed region " + shot.region
-					+ " but its map names " + mine);
+					+ " but it owns " + mine);
 			}
 			byte[] fromDisk = new ctrmap.formats.containers.GR(
 				Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, shot.region),
@@ -807,6 +811,8 @@ public class WorkflowGuardsTest {
 		check(wrong.isEmpty(), "every preview is the map of the zone it names " + wrong);
 		check(drawn.size() >= 2, "and more than one zone actually previewed, so the check above"
 			+ " had something to be right about " + drawn);
+
+		everyZonePreviewsWhatItOwns();
 		
 		//two different zones on different maps must not hand over the same bytes -
 		//which is what "it kept the last one" would look like from here
@@ -1183,6 +1189,174 @@ public class WorkflowGuardsTest {
 		}
 	}
 	/** The FieldData regions a zone's matrix names, from the packed archives. */
+	/**
+	 * Every zone previews regions the GAME says are its own, and a zone made of
+	 * several regions previews all of them.
+	 *
+	 * <p>WHAT WAS WRONG, measured rather than argued. A zone names a map matrix, and a
+	 * matrix is not one zone's map: 25 retail matrices are named by more than one zone.
+	 * The preview took the matrix's first filled cell, which is whichever zone owns the
+	 * top-left corner - so of the 61 zones whose matrix carries an ownership grid, 39
+	 * were drawn a region belonging to a different zone. The owner previewed Mossdeep
+	 * City and was shown region 96, which belongs to Route 125.
+	 *
+	 * <p>WHY THE OLD CHECK PASSED ANYWAY. It asked whether the previewed region was
+	 * somewhere in the matrix - true for every one of those 39 - over a sample of three
+	 * zones, two of which sit on 1x1 matrices where the question cannot fail. Its
+	 * English said "the map of the zone it names"; its code said set membership.
+	 *
+	 * <p>THE ORACLE. Two of them, deliberately, because every existing check in this
+	 * area re-derives its expectation from the code under test. The first is the
+	 * matrix's own zone grid, read here by different arithmetic from the production
+	 * path and asking a different question ("who owns this cell", not "which cell is
+	 * first"). The second is a GOLDEN TABLE of hand-measured retail constants, which no
+	 * refactor of that arithmetic can move.
+	 */
+	static void everyZonePreviewsWhatItOwns() throws Exception {
+		System.out.println("--- every zone previews the regions the game assigns to IT");
+		int zoneCount = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		java.util.List<String> wrong = new java.util.ArrayList<>();
+		int withGrid = 0, checked = 0;
+		for (int zone = 0; zone < zoneCount; zone++) {
+			int matrix = matrixOf(zone);
+			if (matrix < 0) {
+				continue;
+			}
+			File mf = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, matrix);
+			if (mf == null || !mf.isFile()) {
+				continue;
+			}
+			byte[] mm = java.nio.file.Files.readAllBytes(mf.toPath());
+			checked++;
+			java.util.List<Integer> byGrid = gridOwned(mm, zone);
+			if (byGrid == null) {
+				continue;                       //no ownership grid: nothing to disagree with
+			}
+			withGrid++;
+			java.util.List<Integer> said = new java.util.ArrayList<>();
+			for (int[] cell : ctrmap.formats.mapmatrix.MapMatrix.regionsOwnedBy(mm, zone)) {
+				said.add(cell[0]);
+			}
+			if (!said.equals(byGrid)) {
+				wrong.add("zone " + zone + " is offered " + said + " but the grid gives it " + byGrid);
+			}
+		}
+		check(wrong.isEmpty(), "every zone is offered exactly the regions the matrix grid"
+			+ " assigns to it, over " + checked + " zone(s)"
+			+ (wrong.isEmpty() ? "" : " - " + wrong.subList(0, Math.min(6, wrong.size()))));
+		check(withGrid >= 55, withGrid + " of them sit on a matrix that records ownership, so"
+			+ " the check above had the case it exists for (floor 55) - before this was fixed,"
+			+ " 39 of those zones previewed another zone\u0027s map");
+
+		//THE GOLDEN TABLE. Hand-measured off the retail dump: these are what the game
+		//assigns, and unlike everything else in this area they cannot be re-derived from
+		//the code being checked.
+		int[][] golden = {
+			{19, 100, 101, 102, 105, 106, 107},   //Mossdeep City, on a matrix it shares
+			{54, 96, 97},                         //Route 125 - which the preview used to show
+			{6, 6},                               //Littleroot Town, one cell of an 8x8
+			{25, 1, 2, 3},                        //Route 103, three cells of the same matrix
+			{16, 32, 33, 37, 38},                 //Rustboro City
+			{42, 24, 25, 26, 27, 28, 29, 30, 31}, //Route 115, which owns Rustboro's old answer
+		};
+		for (int[] row : golden) {
+			int zone = row[0];
+			java.util.List<Integer> want = new java.util.ArrayList<>();
+			for (int i = 1; i < row.length; i++) {
+				want.add(row[i]);
+			}
+			check(ownedRegionsOf(zone).equals(want), "zone " + zone + " owns " + want
+				+ " (got " + ownedRegionsOf(zone) + ")");
+		}
+
+		//and the preview actually draws them all - a town is not one tile
+		ctrmap.humaninterface.ZonePreview.Shot mossdeep =
+			ctrmap.humaninterface.ZonePreview.of(Workspace.session(), 19);
+		check(mossdeep.drawnCount() >= 2, "Mossdeep City previews more than one region ("
+			+ mossdeep.drawnCount() + ") - it owns six, and drawing one of them is how a city"
+			+ " came to look like open water");
+		java.util.List<Integer> drawnIds = new java.util.ArrayList<>();
+		for (int[] cell : mossdeep.cells) {
+			drawnIds.add(cell[0]);
+		}
+		check(ownedRegionsOf(19).containsAll(drawnIds) && !drawnIds.isEmpty(),
+			"...and every region it draws is one of its own " + drawnIds);
+		check(mossdeep.columns().length == mossdeep.drawnCount()
+			&& mossdeep.rows().length == mossdeep.drawnCount(),
+			"...each with the matrix cell it belongs in, so the view can lay them out");
+	}
+
+	/**
+	 * The regions this matrix's zone grid assigns to {@code zone}, or null when it has
+	 * no grid.
+	 *
+	 * <p>Read here by its own arithmetic and asking its own question, so this is not a
+	 * transcription of the production rule: that one walks cells and asks whether any
+	 * quarter-cell is another zone's, this one collects the cells whose quarter-cells
+	 * name this zone. They agree only if both are right about the format.
+	 */
+	static java.util.List<Integer> gridOwned(byte[] mm, int zone) {
+		int s0 = (mm[4] & 0xFF) | ((mm[5] & 0xFF) << 8) | ((mm[6] & 0xFF) << 16) | ((mm[7] & 0xFF) << 24);
+		int lod = (mm[s0] & 0xFF) | ((mm[s0 + 1] & 0xFF) << 8);
+		int w = (mm[s0 + 4] & 0xFF) | ((mm[s0 + 5] & 0xFF) << 8);
+		int h = (mm[s0 + 6] & 0xFF) | ((mm[s0 + 7] & 0xFF) << 8);
+		if (lod != 1) {
+			return null;
+		}
+		int ids = s0 + 8;
+		int grid = ids + w * h * 2;
+		java.util.List<Integer> out = new java.util.ArrayList<>();
+		for (int row = 0; row < h; row++) {
+			for (int col = 0; col < w; col++) {
+				int id = (mm[ids + (row * w + col) * 2] & 0xFF)
+					| ((mm[ids + (row * w + col) * 2 + 1] & 0xFF) << 8);
+				if (id == 0xFFFF) {
+					continue;
+				}
+				boolean mine = false, somebody = false;
+				for (int qy = row * 4; qy < row * 4 + 4; qy++) {
+					for (int qx = col * 4; qx < col * 4 + 4; qx++) {
+						int at = grid + (qy * w * 4 + qx) * 2;
+						if (at + 1 >= mm.length) {
+							continue;
+						}
+						int owner = (mm[at] & 0xFF) | ((mm[at + 1] & 0xFF) << 8);
+						if (owner == 0xFFFF) {
+							continue;
+						}
+						somebody = true;
+						mine |= owner == zone;
+					}
+				}
+				if (mine || !somebody) {
+					out.add(id);
+				}
+			}
+		}
+		return out;
+	}
+
+	/** The regions a zone owns, through the production path, for the checks above. */
+	static java.util.List<Integer> ownedRegionsOf(int zoneIndex) {
+		java.util.List<Integer> out = new java.util.ArrayList<>();
+		try {
+			int matrix = matrixOf(zoneIndex);
+			if (matrix < 0) {
+				return out;
+			}
+			File mf = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, matrix);
+			if (mf == null || !mf.isFile()) {
+				return out;
+			}
+			for (int[] cell : ctrmap.formats.mapmatrix.MapMatrix.regionsOwnedBy(
+				java.nio.file.Files.readAllBytes(mf.toPath()), zoneIndex)) {
+				out.add(cell[0]);
+			}
+		} catch (Exception ex) {
+			return out;
+		}
+		return out;
+	}
 	static java.util.List<Integer> regionsOf(int zoneIndex) {
 		java.util.List<Integer> out = new java.util.ArrayList<>();
 		try {

@@ -39,11 +39,46 @@ both would have blocked every measurement forever:
 
 ## Open
 
-_(nothing)_
+- [ ] **Every feature window must become part of the UI it belongs to.** The owner
+      rule is that a feature lives in its own area of the UI and never gets a window
+      of its own, and the sweeps never enforced it because nothing counted windows:
+      they ratcheted public statics and coupling instead. DialogSeamTest now counts
+      them (WINDOW_CEILING = 22) and refuses a new one. The ceiling is not the fix -
+      driving it down to what is genuinely transient is. Registry editors, the tile
+      database writer and workspace settings are windows that hold features.
+- [ ] **The sweep ordering change is written but not applied.** It is staged in the
+      session scratchpad (order.py, selfcheck.py, javapatch.py) and lands as its own
+      commit after the preview work, so one commit is not two subjects.
+- [ ] **The sweep is slower than it needs to be.** CLUSTERS names 38 of 128
+      suites by hand and the file itself records being "wrong about 48 of 86";
+      MENTIONS already covers the rest by text, so the table is not the real
+      lever. The unused one is that mutate2 KNOWS which suite killed each line
+      and throws it away - the baseline records line and kind only. Record the
+      killer and try it first next run.
 
 
 ## Done
 
+- [x] 2026-09-12 The preview draws the regions the zone OWNS, all of them. A zone
+      names a matrix and a matrix is not one zone map: 25 retail matrices are named
+      by more than one zone, and taking the first filled cell handed 39 of the 61
+      zones with an ownership grid a region belonging to somebody else - Mossdeep
+      City was shown Route 125 - while every zone with several regions got one
+      corner tile of itself. MapMatrix.regionsOwnedBy reads the game own zone grid;
+      MapPreview3D lays the regions out on the matrix. The same wrong answer fed the
+      OBJ export default and the blank-canvas material probe, where it was not a
+      wrong picture but another zone map edited, and both now ask for the zone own
+      region. Guarded over all 540 zones against the grid, against a golden table of
+      hand-measured constants, and proven by breaking.
+- [x] 2026-09-12 The zone preview is IN the Zone Loader tab, beside the dropdown,
+      where the owner looked for it twice. It was built twice against the standing
+      rule that a feature lives in its own part of the UI - as a dialog behind a
+      button, then as a window floating beside the popup - and both times every suite
+      was green, because they all asked whether the DECODE worked and none asked
+      whether the thing was on screen. Both windows are deleted. MainframeShapeTest
+      now builds the tab and looks for the preview in it, DialogSeamTest refuses a
+      new top-level window anywhere in the application, and three plants prove all
+      of it by breaking.
 - [x] 2026-09-11 Deploy refuses to write over a parked mod, and the refusal
       reaches the user instead of being swallowed by the pack worker.
 - [x] 2026-09-11 Fog & lighting edits the fog. The block is `float[61][12]`,

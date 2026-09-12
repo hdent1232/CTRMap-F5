@@ -919,7 +919,6 @@ public class CtrmapMainframe {
 		map.add(item("Tileset Editor", CtrmapMainframe::tilesetEditorAction));
 
 		JMenu zone = new JMenu("Zone");
-		zone.add(item("Browse zones (3D preview)...", CtrmapMainframe::browseZonesAction));
 		zone.add(item("Connect zones through a warp...", CtrmapMainframe::connectZonesAction));
 		zone.add(item("Rename zone (in-game name)...", CtrmapMainframe::renameZoneAction));
 		zone.add(item("Empty zone (clear contents)...", CtrmapMainframe::emptyZoneAction));
@@ -1002,11 +1001,35 @@ public class CtrmapMainframe {
 
 	// ---------------------------------------------- the Zone Loader tab
 
-	/** The Zone Loader tab: the zone panel, with its lifecycle actions on a bar above it. */
+	/** The Zone Loader tab: the zone panel, its actions above it, its preview beside it. */
 	private static JPanel buildZoneTab() {
+		return buildZoneTab(mZonePnl);
+	}
+
+	/**
+	 * The Zone Loader tab, built around whatever zone panel it is given.
+	 *
+	 * <p>THE PREVIEW LIVES HERE, in the tab, in its empty right-hand half - not in a
+	 * dialog behind a button and not in a window floating beside the dropdown. Both
+	 * of those were built and both were invisible to the owner, who opened the Zone
+	 * Loader and reported "still zero zone preview" each time. A feature belongs to
+	 * the part of the UI it is about; that is a standing rule of this project and it
+	 * is now enforced by DialogSeamTest rather than remembered.
+	 *
+	 * <p>It takes the panel as an argument so a suite can build this tab and look at
+	 * what is in it without a game, a display or the window's statics. The failure
+	 * being guarded against is the preview being ABSENT, and absence is exactly what
+	 * a structural check can see.
+	 */
+	public static JPanel buildZoneTab(JComponent zonePanel) {
 		JPanel tab = new JPanel(new BorderLayout());
 		tab.add(buildZoneActionsBar(), BorderLayout.NORTH);
-		tab.add(mZonePnl, BorderLayout.CENTER);
+		tab.add(zonePanel, BorderLayout.CENTER);
+		ctrmap.humaninterface.ZonePreviewPane preview = new ctrmap.humaninterface.ZonePreviewPane();
+		tab.add(preview, BorderLayout.EAST);
+		if (zonePanel instanceof ZoneLoadingPanel) {
+			((ZoneLoadingPanel) zonePanel).usePreview(preview);
+		}
 		return tab;
 	}
 
@@ -1015,7 +1038,6 @@ public class CtrmapMainframe {
 		JToolBar bar = new JToolBar();
 		bar.setFloatable(false);
 		bar.add(new JLabel(" Zone actions:  "));
-		bar.add(barButton("Browse zones", "Look through every zone's map in 3D without loading them one by one. Nothing is opened until you press Load.", CtrmapMainframe::browseZonesAction));
 		bar.add(barButton("Connect zones", "Wire a warp in one zone to a warp in another, both ways, so the trip works there AND back.", CtrmapMainframe::connectZonesAction));
 		bar.add(barButton("Rename", "Rename the loaded zone's in-game location banner.", CtrmapMainframe::renameZoneAction));
 		bar.add(barButton("Empty", "Clear the loaded zone's NPCs, warps, triggers and furniture (keeps map + script).", CtrmapMainframe::emptyZoneAction));
@@ -1073,21 +1095,6 @@ public class CtrmapMainframe {
 	 */
 	private static void connectZonesAction() {
 		ctrmap.humaninterface.ZoneLinkDialog.show(frame, game, loadedZone);
-	}
-
-	/**
-	 * Look through every zone's map without loading one.
-	 *
-	 * <p>The dialog is handed the zone table and the thing to do with a choice,
-	 * rather than reaching for either: what "load a zone" means belongs to the Zone
-	 * tab, and the browser only has to know that something happens when you press
-	 * Load. That is also what lets a suite drive it with a load that records.
-	 */
-	private static void browseZonesAction() {
-		ctrmap.humaninterface.ZoneBrowserDialog.show(frame, game, loadedZone, index -> {
-			showZoneLoadingHint();
-			mZonePnl.selectZone(index);
-		});
 	}
 
 	/**
@@ -1501,6 +1508,8 @@ public class CtrmapMainframe {
 			return 0;
 		}
 		mBuilder.loadGARCs();
+		//the dropdown previews the row you are ON, before selecting it loads the zone
+		mZonePnl.attachZonePreview(game);
 		//THE REPAIR PACKS, AND A PACK IS A WORKER. What follows reads the very
 		//archives that pack is rewriting, so it is handed to the repair to run when
 		//the pack has finished rather than started beside it. A workspace with
@@ -2326,9 +2335,15 @@ public class CtrmapMainframe {
 	}
 
 	/**
-	 * The FieldData region the loaded zone's map matrix points at (its first
-	 * grid cell), or -1 - the right default for the OBJ tools so users don't
-	 * have to know region numbers.
+	 * The first FieldData region THE LOADED ZONE OWNS, or -1 - the right default for
+	 * the OBJ tools so users do not have to know region numbers.
+	 *
+	 * <p>OWNS, not "the matrix points at". A matrix can be shared by several zones and
+	 * 139 retail zones sit on a shared one; its first filled cell belongs to whichever
+	 * zone owns the top-left corner. Measured: on 39 of the 61 zones whose matrix
+	 * carries an ownership grid that is a DIFFERENT zone - so this offered Mossdeep
+	 * City an export of Route 125, and an import back would have written over it.
+	 * A wrong default here is not a wrong default; it is somebody else's map edited.
 	 */
 	private static int defaultRegionForLoadedZone() {
 		try {
@@ -2339,8 +2354,10 @@ public class CtrmapMainframe {
 			if (mmFile == null) {
 				return -1;
 			}
-			return ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(
-					java.nio.file.Files.readAllBytes(mmFile.toPath()));
+			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
+			int[][] mine = ctrmap.formats.mapmatrix.MapMatrix.regionsOwnedBy(mm, loadedZone.index());
+			return mine.length > 0 ? mine[0][0]
+				: ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(mm);
 		} catch (Exception ex) {
 			//fall through - the spinner just starts at 0
 			return -1;
@@ -2537,12 +2554,17 @@ public class CtrmapMainframe {
 			return;
 		}
 		final int zoneIndex = loadedZone.index();
-		//ground-material picker from the zone's first region model
+		//ground-material picker from the first region THIS ZONE OWNS - see
+		//defaultRegionForLoadedZone for what taking the matrix's first cell instead
+		//offered: on a shared matrix it is another zone's tileset
 		ctrmap.formats.h3d.BchMapModel probe;
 		try {
-			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loadedZone.open().header.mapmatrixID);
-			int rid = ctrmap.formats.mapmatrix.MapMatrix.firstRegionId(
-					java.nio.file.Files.readAllBytes(mmFile.toPath()));
+			int rid = defaultRegionForLoadedZone();
+			if (rid < 0) {
+				Ui.error(frame, "This zone owns no map region, so there is no ground material to"
+					+ " copy.", "Blank map canvas");
+				return;
+			}
 			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, rid), game);
 			probe = new ctrmap.formats.h3d.BchMapModel(gr.getFile(1));
 		} catch (Exception ex) {

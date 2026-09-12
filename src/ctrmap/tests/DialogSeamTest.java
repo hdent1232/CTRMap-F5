@@ -148,6 +148,7 @@ public class DialogSeamTest {
 		}
 		onlyTheSeamOpensADialog(root);
 		theAllowedListCannotGrowQuietly();
+		aFeatureLivesInItsTabAndNotInAWindow(root);
 		closingADialogIsNeverConsent(root);
 		aReportNeverSaysOnlyNull(root);
 		theSeamCannotSayNothing();
@@ -203,6 +204,136 @@ public class DialogSeamTest {
 	}
 
 	/** Rule two: the list of exceptions is a ceiling, and each one is argued. */
+	/**
+	 * Every top-level window this application can put on screen, and why each one is
+	 * not part of a tab.
+	 *
+	 * <p>WHY THIS LIST EXISTS. The owner's standing rule for this project is that a
+	 * feature lives in the part of the UI it belongs to: it is not dumped in a menu and
+	 * it does not get a window of its own. The rule was written down, and then a zone
+	 * preview was built twice against it - once as a dialog behind a button on another
+	 * bar, once as a bubble floating beside a dropdown - and both times the owner opened
+	 * the Zone Loader, saw nothing, and had to say so. A rule that is remembered is not a
+	 * rule; it is a thing that happens to hold until it does not.
+	 *
+	 * <p>So a new window now has to be argued for HERE before it will compile clean,
+	 * which is the only kind of rule this project trusts. The list may shrink for free.
+	 * Entries marked INHERITED DEBT are windows that came with CTRMap or predate the
+	 * rule; they are why the ceiling is not lower, and each one is a tab somebody has
+	 * not moved yet.
+	 */
+	private static final String[][] WINDOWS = {
+		{"CtrmapMainframe.java", "2",
+			"the application window itself, and the raw archive browser - a developer tool kept "
+			+ "deliberately non-modal so the editor can be used beside it"},
+		{"AreaLightingDialog.java", "1",
+			"a modal editor for one area, opened from the Map menu"},
+		{"BuildingPaletteDialog.java", "1",
+			"a modal picker: it returns the chosen building to the caller"},
+		{"EncounterEditDialog.java", "1",
+			"a modal editor for one zone's wild encounter table"},
+		{"GfEnvPicker.java", "1",
+			"a modal picker: it returns the chosen atmosphere"},
+		{"ItemEditDialog.java", "1",
+			"a modal editor for the item table"},
+		{"LoadingDialog.java", "1",
+			"the progress window every long job shows; it owns no feature"},
+		{"MaisonClassListDialog.java", "1",
+			"a modal editor for the facility class assignments"},
+		{"MaisonEditDialog.java", "1",
+			"a modal editor for the facility opponent table"},
+		{"PokePickers.java", "1",
+			"a modal picker: it returns the chosen species"},
+		{"ShopEditDialog.java", "1",
+			"a modal editor for the shop tables in code.bin"},
+		{"TrainerEditDialog.java", "1",
+			"a modal editor for one trainer"},
+		{"UpdateUI.java", "1",
+			"the update progress window, shown before the editor is usable"},
+		{"ZoneLinkDialog.java", "1",
+			"a modal form: it asks for two warps and returns"},
+		{"AboutDialog.java", "1",
+			"inherited from upstream CTRMap: an About box"},
+		{"ADPropRegistryEditor.java", "1",
+			"INHERITED DEBT - a registry editor in a window of its own. It predates this rule and "
+			+ "belongs in a tab; the ceiling is here so it cannot be joined by another"},
+		{"ESPICAControl.java", "1",
+			"inherited from upstream CTRMap: the model viewer control window"},
+		{"NPCRegistryEditor.java", "1",
+			"INHERITED DEBT - the same as ADPropRegistryEditor, and it belongs in a tab too"},
+		{"SetupWizard.java", "1",
+			"a modal wizard that runs before there is a workspace to put a tab in"},
+		{"TileDBWriter.java", "1",
+			"inherited from upstream CTRMap: the tile database writer"},
+		{"WorkspaceSettings.java", "1",
+			"INHERITED DEBT - workspace settings in a window; it is reached from the Options menu "
+			+ "and would be a tab if it were written today"},
+	};
+
+	/** Windows allowed in all. It may fall and it may not rise quietly. */
+	private static final int WINDOW_CEILING = 22;
+
+	/** new JFrame / new JDialog / new JWindow, and classes that ARE one. */
+	private static final Pattern WINDOW_MADE = Pattern.compile(
+			"(?:new\\s+|extends\\s+)(?:javax\\.swing\\.)?(?:JFrame|JDialog|JWindow)\\s*[(<{]?");
+
+	/**
+	 * Rule five: a feature lives in its tab, and a new window is a decision.
+	 *
+	 * <p>It reads production sources only. A suite may build a window - several do, to
+	 * look at what is in it - and that is not a feature going somewhere the owner cannot
+	 * find it.
+	 */
+	static void aFeatureLivesInItsTabAndNotInAWindow(File root) throws Exception {
+		System.out.println("--- every top-level window is argued for, and there are no new ones");
+		Map<String, Integer> made = new HashMap<>();
+		for (File f : javaSources(new File(root, "ctrmap"))) {
+			//BY FOLDER, not by spelling the separator: the first version of this line
+			//compared against a forward slash on a machine that uses backslashes, so it
+			//scanned the suites too and reported a bench harness as a stray window
+			if (f.getParentFile() != null && f.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			String src = SourceSeamTest.stripComments(read(f));
+			Matcher m = WINDOW_MADE.matcher(src);
+			int n = 0;
+			while (m.find()) {
+				n++;
+			}
+			if (n > 0) {
+				made.put(f.getName(), n);
+			}
+		}
+		List<String> wrong = new ArrayList<>();
+		int recorded = 0;
+		for (String[] e : WINDOWS) {
+			recorded += Integer.parseInt(e[1]);
+			if (e[2].trim().length() < 20) {
+				wrong.add(e[0] + " is allowed a window with no reason written against it");
+			}
+			int got = made.containsKey(e[0]) ? made.get(e[0]) : 0;
+			if (got > Integer.parseInt(e[1])) {
+				wrong.add(e[0] + " now makes " + got + " window(s), more than the " + e[1]
+					+ " recorded - say why the new one cannot be part of a tab");
+			}
+		}
+		for (Map.Entry<String, Integer> e : made.entrySet()) {
+			boolean known = false;
+			for (String[] w : WINDOWS) {
+				known |= w[0].equals(e.getKey());
+			}
+			if (!known) {
+				wrong.add(e.getKey() + " opens a top-level window and is not in the list. A feature"
+					+ " belongs in the tab it is about - that is a standing rule here, and it was"
+					+ " broken twice by a zone preview nobody could find. If this really cannot be"
+					+ " part of a tab, say so in WINDOWS and raise WINDOW_CEILING deliberately");
+			}
+		}
+		check(wrong.isEmpty(), "every top-level window in the application is argued for ("
+			+ made.size() + " file(s) make one)" + (wrong.isEmpty() ? "" : " - " + wrong));
+		check(recorded <= WINDOW_CEILING, recorded + " window(s) recorded, ceiling "
+			+ WINDOW_CEILING + " - this may fall and may not rise quietly");
+	}
 	static void theAllowedListCannotGrowQuietly() {
 		check(ALLOWED.length <= ALLOWED_CEILING, ALLOWED.length + " allowed entry/entries, ceiling "
 				+ ALLOWED_CEILING + " - growing the list is a decision a human has to make");
