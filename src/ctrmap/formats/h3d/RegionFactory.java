@@ -81,20 +81,25 @@ public class RegionFactory {
 			//a model this factory cannot rebuild - left as it is, and said so
 			return false;
 		}
-		gr.storeFile(1, bc.model);
-		gr.storeFile(2, bc.collision);
-		gr.storeFile(0, bc.tilemap);
-		gr.storeFile(3, bc.props);
+		//EVERY WRITE IS ANSWERED FOR. storeFile returns false when the container
+		//could not be rewritten - a locked file, a full disk - and these eight
+		//answers used to be dropped on the floor, so a region that half-blanked and
+		//then failed reported itself blanked. The caller would have gone on to tell
+		//the user the slot was empty while it held whatever survived.
+		boolean ok = gr.storeFile(1, bc.model);
+		ok &= gr.storeFile(2, bc.collision);
+		ok &= gr.storeFile(0, bc.tilemap);
+		ok &= gr.storeFile(3, bc.props);
 		//extra layers (multi-layer templates): blank them out entirely
 		if (gr.len >= 9) {
-			gr.storeFile(7, voidTilemap());
-			gr.storeFile(gr.len >= 11 ? 9 : 8, emptyCollision());
+			ok &= gr.storeFile(7, voidTilemap());
+			ok &= gr.storeFile(gr.len >= 11 ? 9 : 8, emptyCollision());
 			if (gr.len >= 11) {
-				gr.storeFile(8, voidTilemap());
-				gr.storeFile(10, emptyCollision());
+				ok &= gr.storeFile(8, voidTilemap());
+				ok &= gr.storeFile(10, emptyCollision());
 			}
 		}
-		return true;
+		return ok;
 	}
 
 	public static BlankContent blank(byte[] templateModel, int groundMesh) {

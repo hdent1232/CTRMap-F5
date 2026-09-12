@@ -135,7 +135,7 @@ $suites = @(
     @{ n = "PaintApplyGuards (Apply writes nothing it cannot finish)"; c = "ctrmap.tests.PaintApplyGuardsTest"; a = @($pristine, "src") },
     @{ n = "PaintFormGuards (the painter's document)"; c = "ctrmap.tests.PaintFormGuardsTest"; a = @($pristine) },
     @{ n = "InteriorWirer (round trip)";  c = "ctrmap.tests.InteriorWirerTest";       a = @($a013) },
-    @{ n = "AreaEnv (fog/ambient)";       c = "ctrmap.tests.AreaEnvTest";             a = @((Join-Path $pristine "a\0\1\4")) },
+    @{ n = "AreaEnv (the fog channels, over every area)";       c = "ctrmap.tests.AreaEnvTest";             a = @((Join-Path $pristine "a\0\1\4")) },
     @{ n = "AnimSplice (water scroll)";   c = "ctrmap.tests.AnimSpliceTest";          a = @((Join-Path $pristine "a\0\1\4")) },
     @{ n = "TexturePackImport (carry/clash)"; c = "ctrmap.tests.TexturePackImportTest"; a = @((Join-Path $pristine "a\0\1\4"), (Join-Path $pristine "a\0\2\3")) },
     @{ n = "TextureCarryGuards (a carry that says it wrote, wrote)"; c = "ctrmap.tests.TextureCarryGuardsTest"; a = @($pristine) },

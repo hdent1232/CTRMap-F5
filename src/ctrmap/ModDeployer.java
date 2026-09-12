@@ -134,6 +134,25 @@ public class ModDeployer {
 	 * to {@code modRoot/exefs/code.ips}.
 	 */
 	public static Result deploy(File modRoot, File codeIps) {
+		//DEPLOYING ON TOP OF A PARKED COPY MAKES THE SWITCH UNUSABLE. Turning the
+		//mod off MOVES the folder aside rather than deleting it - that is the promise
+		//("nothing is deleted, save data is never touched") and it is why the switch is
+		//safe. But deploying again while a parked copy is still there leaves BOTH on
+		//disk, and the window's toggle asks isParked first, so it then offers "turn the
+		//mod back ON" and tries to move the parked copy over a folder that now exists.
+		//The user gets "already exists, refusing to overwrite" and a path, from a menu
+		//item that had been working a moment earlier.
+		//
+		//Refused here rather than resolved for them: the parked copy is a deploy they
+		//chose to keep, and picking which one survives is theirs to make. Found by
+		//WorkflowGuardsTest driving deploy -> off -> deploy -> off.
+		File alreadyParked = parkedRoot(modRoot);
+		if (alreadyParked.isDirectory() && modRoot != null && !modRoot.isDirectory()) {
+			throw new IllegalStateException("This mod is currently switched OFF - its files are"
+				+ " parked at:\n  " + alreadyParked.getAbsolutePath()
+				+ "\n\nTurn the mod back ON first, then deploy over it. Deploying now would"
+				+ " leave two copies and the on/off switch would not know which one to use.");
+		}
 		Result r = new Result();
 		r.modRoot = modRoot;
 		File snapshot = Workspace.originalSnapshotDir();

@@ -92,6 +92,14 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 		fogOn = far > near && far > 0;
 	}
 
+	/**
+	 * Back to the plain sky backdrop, for an area that draws NO fog at the time
+	 * of day being previewed - which most routes do not, at night.
+	 */
+	public void clearFog() {
+		fogOn = false;
+	}
+
 	public void stop() {
 		if (animator.isStarted()) {
 			animator.stop();

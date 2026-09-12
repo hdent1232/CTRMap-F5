@@ -88,10 +88,20 @@ public class MainframeShapeTest {
 		{"Restore from pristine backup...", "Put the whole game, or one damaged archive, back as it was when CTRMap first copied it."},
 	};
 
-	/** The tool row, left to right: tool buttons by action command, then the label, Undo/Redo, the view toggle. */
+	/**
+	 * The tool row, left to right: tool buttons by action command, then the
+	 * label, Undo/Redo, and the two view switches.
+	 *
+	 * <p>RETARGETED, not relaxed, when "Fog off" was added beside "3D view".
+	 * The row is pinned as a whole string so a button cannot be added, moved or
+	 * lost without someone writing down that they meant to - which is exactly
+	 * what this line is. Fog off belongs here because it is a VIEW switch: the
+	 * area's real fog can make a cave impossible to work in, and hiding it for
+	 * looking at is not an edit.
+	 */
 	private static final String EXPECTED_TOOL_ROW =
 			"tool:edit tool:set tool:fill tool:cam tool:prop tool:npc tool:warp tool:trigger tool:paint tool:geo"
-			+ " label:Current tool: Edit | button:↶ Undo button:↷ Redo | toggle:3D view";
+			+ " label:Current tool: Edit | button:↶ Undo button:↷ Redo | toggle:3D view toggle:Fog off";
 
 	/** What a screen reader calls each tool, in row order. */
 	private static final String[] TOOL_NAMES = {"Edit", "Set", "Fill", "Camera", "Prop", "NPC", "Warp", "Trigger", "Map Builder", "Geometry"};
@@ -228,8 +238,9 @@ public class MainframeShapeTest {
 	// -------------------------------------------------------------- tool row
 	static void toolRow() {
 		final List<String> commands = new ArrayList<>();
-		final int[] toggles = {0};
-		WorldEditorToolbar row = new WorldEditorToolbar(e -> commands.add(e.getActionCommand()), () -> toggles[0]++, INSPECTOR, null);
+		final int[] toggles = {0, 0};
+		WorldEditorToolbar row = new WorldEditorToolbar(e -> commands.add(e.getActionCommand()),
+				() -> toggles[0]++, () -> toggles[1]++, INSPECTOR, null);
 
 		String got = renderRow(row);
 		check(got.equals(EXPECTED_TOOL_ROW), "the tool row reads: " + EXPECTED_TOOL_ROW
@@ -237,12 +248,17 @@ public class MainframeShapeTest {
 
 		List<JRadioButton> tools = new ArrayList<>();
 		JButton undo = null, redo = null;
-		JToggleButton view3D = null;
+		JToggleButton view3D = null, fogOff = null;
 		for (Component c : row.getComponents()) {
 			if (c instanceof JRadioButton) {
 				tools.add((JRadioButton) c);
 			} else if (c instanceof JToggleButton) {
-				view3D = (JToggleButton) c;
+				//in row order: the view switch, then the fog switch beside it
+				if (view3D == null) {
+					view3D = (JToggleButton) c;
+				} else {
+					fogOff = (JToggleButton) c;
+				}
 			} else if (c instanceof JButton) {
 				if (undo == null) {
 					undo = (JButton) c;
@@ -289,6 +305,21 @@ public class MainframeShapeTest {
 		check(view3D.isSelected(), "and the window's answer is what the toggle shows");
 		row.setView3D(false);
 		check(!view3D.isSelected(), "either way");
+
+		//the fog switch is the same shape, and is VIEWING ONLY - a row that
+		//decided for itself could come to disagree with what is on screen
+		check(fogOff != null && !fogOff.isSelected(),
+			"the fog switch starts off - an area is drawn with the fog it really has");
+		fogOff.doClick();
+		check(toggles[1] == 1 && toggles[0] == 1,
+			"pressing it asks the window once (" + toggles[1] + ") and does not touch the view switch");
+		row.setFogSuppressed(true);
+		check(fogOff.isSelected(), "and the window's answer is what it shows");
+		row.setFogSuppressed(false);
+		check(!fogOff.isSelected(), "either way");
+		check(fogOff.getToolTipText() != null && fogOff.getToolTipText().contains("Viewing only"),
+			"and it says so where the user can see it, beside a menu that DOES write fog: "
+			+ fogOff.getToolTipText());
 
 		//the undo buttons follow TileUndo through its listener, not a static
 		final int[] fired = {0};

@@ -1462,28 +1462,18 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		if (sharerIdx.size() > 6) {
 			who.append("  - and ").append(sharerIdx.size() - 6).append(" more\n");
 		}
-		//THE NOTE NAMES THE ONLY CAUSE THERE HAS EVER BEEN. It used to say the zone
-		//"was added before the editor forked new zones automatically", which described
-		//nobody: no released version has ever skipped the fork for the zones the user
-		//ASKED for. What no version forked until now is the PADDING - adding zones
-		//rounds the count up to a multiple of four and the spares kept the donor zone
-		//map. So the user who added one zone to Sootopolis and opened the first spare
-		//seconds later was told a history that had not happened, by the editor that had
-		//just created it, about the one case that was real.
-		//
-		//Every appended zone is forked now, padding included - so this note is for
-		//someone upgrading from 1.0.0 or 1.0.1 who still has those spares sitting in
-		//their workspace, and it tells them what they are looking at.
-		String legacyNote = zoneIndex >= baseZones
-				? "\nThis is a PADDING SLOT from an earlier version's Add zones. Adding\n"
-				+ "zones rounds the count up to a multiple of four, and that version gave\n"
-				+ "only the zones you asked for their own map - the spares kept the donor\n"
-				+ "zone's. This version gives every appended zone its own.\n"
-				: "";
+		//NO NOTE ABOUT PADDING SLOTS, because a padding slot cannot get this far any
+		//more. There was one for a while: the spares an append rounds the count up
+		//with kept the donor's map until 1.0.1, so opening one asked this question
+		//about a zone the editor had created itself, and the note explained why.
+		//CtrmapMainframe.repairSharedPaddingZones now gives those spares their own map
+		//before the zone list is even built, so by the time anyone can open one there
+		//is nothing to explain. What reaches this question is what always should
+		//have: a retail zone that genuinely shares its map with its story copies or
+		//its neighbouring routes, which is not a defect and needs no history.
 		int rsl = ctrmap.Ui.confirm(this,
 				"This zone SHARES its map with " + sharers + " other zone(s):\n"
 				+ who
-				+ legacyNote
 				+ "\nEditing the map here would change those zones too.\n"
 				+ "Give this zone its OWN private map now? (Recommended.\n"
 				+ "Pure data - packs the workspace when done.)",

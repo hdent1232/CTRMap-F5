@@ -55,12 +55,18 @@ not boot.
 |---|---|
 | A cloned zone is a complete, independently editable copy — no field still points at the source. | `ZoneClonerTest` |
 | Appending several zones at once produces the same result as appending them one at a time. | `ZoneAppendMultiTest` |
+| Every zone an append creates owns its own map — the padding spares that round the count up to a multiple of four included. | `WorkflowGuardsTest` |
+| A padding spare opens EMPTY, not as a second copy of the donor. | `WorkflowGuardsTest` (on the tilemap bytes, against the factory that writes them) |
+| A workspace whose spares an older version left sharing the donor's map repairs itself when it opens, in one pack, without being asked — and not twice. | `WorkflowGuardsTest` |
+| The repair keeps what a spare the user has already built on holds, and says which. | `WorkflowGuardsTest` (the donor byte-comparison) |
 | Clearing, renaming or repointing a zone changes exactly the bytes it claims to. | `ZoneManagerTest` |
 | Which zones are safe to reuse is answered from the data, not from a list someone typed. | `ZoneRepurposeScannerTest` |
 | A zone that fails to load leaves no editor showing the previous one. | `ZoneLoadingStateTest`, `OpenEditorsTest` |
 | The loaded zone has exactly one owner; two panels over two owners answer about their own. | `LoadedZoneTest` |
 | A shared map offered as a fork remembers a decline. | `ZoneLoadingStateTest` |
 | Damage an old fork left behind is found rather than inherited. | `MisplacedRegistryTest`, `ForkGuardsTest` |
+| Doing the same thing twice works the second time: append/pack/append, resize/pack/resize, deploy/park/deploy. | `WorkflowGuardsTest` |
+| Reverting added zones puts the encounter pack back to its stock size too, not just the zone count. | `WorkflowGuardsTest`, `ZoneRemoveTest` |
 | Saving a zone commits every open editor first, including the warp form, and stops when one refuses. | `DataSafetyGuardsTest`, `OpenEditorsTest` |
 | A zone whose header the form could not finish showing is never written over another zone's, and the refusal says why. | `ZoneLoadingStateTest` |
 | A workspace that failed to open leaves no zone open, so nothing is written back against the wrong game. | `ZoneLoadingStateTest` |
@@ -162,6 +168,8 @@ not boot.
 | The main window says what it actually did. | `MainframeReportsTest` |
 | Every menu action does what it says and refuses what it cannot do, in words. | `MainframeActionGuardsTest` |
 | No suite opens a dialog under test. | `BatteryHygieneTest` |
+| A refusal raised inside a background worker's callback still reaches the user, rather than vanishing with the worker. | `WorkflowGuardsTest` (drives the window's own method, not a copy of it) |
+| A report never comes out as a bare "null" because a thrower named no reason. | `DialogSeamTest` |
 
 ## 10. The program's own shape
 
@@ -204,18 +212,47 @@ because they are the ones that decay quietly.
    reached a user. Three ceilings in `plants.json` are the measure and every one
    may only fall: `owed_ceiling`, `owed_generalisation_ceiling` and
    `owed_real_defect_ceiling`.
-4. **No multi-step workflow is guarded end to end, and that is how a
-   foundational feature stayed broken through a green battery.** Every suite
-   here drives ONE operation: a format round-trip, a form's save, a panel's
-   state. Nothing drives *append a zone, pack, append another* - or fork then
-   fork, resize then resize, deploy then revert. That is the shape zone
-   appending failed in: an orphaned entry in the persisted-file list refused
-   the operation forever while the refusal told the user to pack, and packing
-   has never cleared that list. 128 green suites and a 209/209 mutation sweep
-   said nothing about it, correctly - the sweep breaks lines that HAVE guards,
-   and this line had none. Until one guard per workflow exists, a green battery
-   means the parts work, not that the app does.
-5. **What the fixes look like on screen.** Every defect fixed this campaign has
+4. **Multi-step workflows are guarded now, but not all of them.** Every other
+   suite here drives ONE operation: a format round-trip, a form's save, a
+   panel's state. Nothing drove *append a zone, pack, append another*, and
+   that is the shape zone appending failed in - an orphaned entry in the
+   persisted-file list refused the operation forever while the refusal told
+   the user to pack, and packing has never cleared that list. 128 green suites
+   and a 209/209 mutation sweep said nothing about it, correctly: the sweep
+   breaks lines that HAVE guards, and this line had none.
+
+   `WorkflowGuardsTest` now drives append/pack/append, fork-and-blank,
+   resize/pack/resize, deploy/park/deploy and the padding-zone repair. Writing
+   it found three defects in minutes that the whole battery had not: the EN
+   pack stayed grown through a revert, deploying over a parked mod threw a raw
+   path error, and the refusal for that was swallowed by the pack worker.
+   Nothing had ever driven `MapResizer.resize` on a game that supports it.
+
+   WHAT IS STILL OPEN. Wild encounters have no section -
+   `EncounterEditDialog.show` builds a modal dialog with no seam below it, and
+   the battery runs without `-Djava.awt.headless=true`, so a suite driving it
+   would put a window up and HANG rather than fail. The hole is named in that
+   suite rather than left to be rediscovered. And the repair's own call site
+   is asserted only through the bytecode: it runs behind `frame != null` so
+   that opening a scratch copy in this battery cannot fork and pack underneath
+   a suite, which means no suite can drive the CALL, only the method.
+5. **Which channels of the area environment block are the fog is MEASURED, not
+   PROVEN.** `AreaEnvTest` asserts the block's structure over all 228 retail
+   areas - 61 channels of 12 lanes, the lanes being three identical groups of
+   four times of day - and that is solid. Which of those channels the engine
+   treats as fog is not, and cannot be settled by disassembly: reversing
+   `DllField.cro` from the `field::FieldAreaEnv` RTTI record through its
+   vtable, constructor and loader proved how the block is FETCHED and proved
+   that nothing in the title's executable reads it through a constant offset -
+   all 2944 bytes are memcpy'd into an object owned by `code.bin`. Channels
+   54-59 are named fog because the retail data says so: they sit together,
+   move together, read black at 0.95 with a -340..360 range in every interior
+   and orange at dusk on routes. That is strong and it is not proof. What IS
+   certain is the negative - channel 0, where the editor used to write, is a
+   different colour sampled across the day, and `AreaEnvTest` pins that the
+   fog fields no longer come from there.
+
+6. **What the fixes look like on screen.** Every defect fixed this campaign has
    a guard that fails without it, but a guard asserts what the code returns, not
    what a person sees. Whether the repaired matrix scroll pane, the re-enabled
    edit forms and the corrected tileset repaint LOOK right is a person's check

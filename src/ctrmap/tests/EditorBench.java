@@ -211,6 +211,7 @@ final class EditorBench {
 					}
 				},
 				() -> {
+				}, () -> {
 				}, INSPECTOR, null);
 
 

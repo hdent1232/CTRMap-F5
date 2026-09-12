@@ -45,6 +45,7 @@ public class WorldEditorToolbar extends JToolBar {
 	private final JButton undo = new JButton("↶ Undo");
 	private final JButton redo = new JButton("↷ Redo");
 	private final JToggleButton view3D = new JToggleButton("3D view");
+	private final JToggleButton fogOff = new JToggleButton("Fog off");
 
 	/**
 	 * @param toolSwitch gets each tool button's action command ("edit", "set",
@@ -60,8 +61,8 @@ public class WorldEditorToolbar extends JToolBar {
 	/** The map view the undo buttons repaint, handed in. */
 	private final TileMapPanel map;
 
-	public WorldEditorToolbar(ActionListener toolSwitch, Runnable viewToggle, TileInspector inspector,
-			TileMapPanel map) {
+	public WorldEditorToolbar(ActionListener toolSwitch, Runnable viewToggle, Runnable fogToggle,
+			TileInspector inspector, TileMapPanel map) {
 		this.map = map;
 		if (inspector == null) {
 			throw new IllegalArgumentException("the tool row must be handed the tile inspector its"
@@ -104,11 +105,28 @@ public class WorldEditorToolbar extends JToolBar {
 		view3D.setFocusable(false);
 		view3D.addActionListener(e -> viewToggle.run());
 		add(view3D);
+
+		//NEXT TO THE VIEW SWITCH BECAUSE IT IS ONE. An area's fog is part of the
+		//area - a cave really is black by 360 units, a route really does haze out
+		//at 4000 - and drawing it honestly is what makes the editor show what the
+		//player will see. It also makes some areas impossible to work in. This hides
+		//it for looking at, and writes nothing: the same reason Fog & lighting is a
+		//separate thing from this button.
+		fogOff.setToolTipText("Hide this area\u0027s fog in the 3D view so you can see what you are editing."
+			+ " Viewing only - it changes nothing in the zone and nothing that gets deployed.");
+		fogOff.setFocusable(false);
+		fogOff.addActionListener(e -> fogToggle.run());
+		add(fogOff);
 	}
 
 	/** The window says which view is up (F2/F3, or its answer to the toggle). */
 	public void setView3D(boolean on) {
 		view3D.setSelected(on);
+	}
+
+	/** The window says whether the view is hiding fog, the same way it does for 2D/3D. */
+	public void setFogSuppressed(boolean suppressed) {
+		fogOff.setSelected(suppressed);
 	}
 
 	/** Map > Map Builder: the painter is a tool here, so pick it. */
