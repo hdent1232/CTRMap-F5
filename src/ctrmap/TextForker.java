@@ -64,13 +64,17 @@ public final class TextForker {
 	 * forks do: {@code newZos[i]} is repointed and {@code master}'s text column
 	 * is repointed for the matching row.
 	 *
-	 * @param newZos the appended zones' ZO containers (mutated in place)
-	 * @param master the grown master zone-header table (rows repointed in place)
-	 * @param oldCount the first new zone's index, which is its master-table row
-	 * @param count how many of them to give their own text
+	 * <p>TAKES WHICH ZONES, NOT HOW MANY FROM WHERE, for the same reason the area
+	 * fork does: an append hands a contiguous run, a repair hands whatever is still
+	 * sharing.
+	 *
+	 * @param zos the zones' ZO containers, parallel to {@code zoneIndices} (mutated)
+	 * @param master the master zone-header table (rows repointed in place)
+	 * @param zoneIndices which zone each entry of {@code zos} is
 	 */
-	public static void forkAppendedTexts(WorkspaceSession ws, byte[][] newZos, byte[] master,
-			int oldCount, int count) throws IOException {
+	public static void forkAppendedTexts(WorkspaceSession ws, byte[][] zos, byte[] master,
+			int[] zoneIndices) throws IOException {
+		int count = zoneIndices == null ? 0 : zoneIndices.length;
 		if (count <= 0) {
 			return;
 		}
@@ -90,19 +94,19 @@ public final class TextForker {
 		}
 		for (int i = 0; i < count; i++) {
 			int newText = firstText + i;
-			int oldText = u16(newZos[i], i32(newZos[i], 4) + ZoneResource.TEXT.headerOffset);
+			int oldText = u16(zos[i], i32(zos[i], 4) + ZoneResource.TEXT.headerOffset);
 			File src = ws.getWorkspaceFile(ArchiveType.STORYTEXT, oldText);
 			if (src == null || !src.isFile()) {
 				throw new IOException("Story text file " + oldText + " could not be read out of the"
-						+ " workspace, so zone " + (oldCount + i) + " cannot be given a copy of it.");
+						+ " workspace, so zone " + zoneIndices[i] + " cannot be given a copy of it.");
 			}
 			File out = new File(dir, String.valueOf(newText));
 			Files.write(out.toPath(), Files.readAllBytes(src.toPath()));
 			ws.addPersist(out);
-			ZoneResource.TEXT.setIn(newZos[i], newText);
-			int rowOff = (oldCount + i) * GeometryForker.MASTER_ROW + ZoneResource.TEXT.headerOffset;
+			ZoneResource.TEXT.setIn(zos[i], newText);
+			int rowOff = zoneIndices[i] * GeometryForker.MASTER_ROW + ZoneResource.TEXT.headerOffset;
 			if (rowOff + 2 > master.length) {
-				throw new IOException("Master-table row for zone " + (oldCount + i) + " out of range.");
+				throw new IOException("Master-table row for zone " + zoneIndices[i] + " out of range.");
 			}
 			putU16(master, rowOff, newText);
 		}

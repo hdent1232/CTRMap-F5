@@ -253,13 +253,18 @@ public class AreaForker {
 	 * their own area and the last two somebody else's - the exact half-state the
 	 * appender promises never to leave.
 	 *
-	 * @param newZos the appended zones' ZO containers (mutated in place)
-	 * @param master the grown master zone-header table (rows repointed in place)
-	 * @param oldCount the first new zone's index, which is its master-table row
-	 * @param count how many of them to give an area to
+	 * <p>TAKES WHICH ZONES, NOT HOW MANY FROM WHERE. An append hands a contiguous
+	 * run; a REPAIR of a workspace an older version made hands whatever is still
+	 * sharing, which is rarely contiguous - the owner's own game has 537, 538 and
+	 * 539 to fix and 536 already done. One shape serves both.
+	 *
+	 * @param zos the zones' ZO containers, parallel to {@code zoneIndices} (mutated)
+	 * @param master the master zone-header table (rows repointed in place)
+	 * @param zoneIndices which zone each entry of {@code zos} is
 	 */
-	public static void forkAppendedAreas(byte[][] newZos, byte[] master, int oldCount, int count)
+	public static void forkAppendedAreas(byte[][] zos, byte[] master, int[] zoneIndices)
 			throws IOException {
+		int count = zoneIndices == null ? 0 : zoneIndices.length;
 		if (count <= 0) {
 			return;
 		}
@@ -293,7 +298,7 @@ public class AreaForker {
 		int npReaches = np.length;
 		for (int i = 0; i < count; i++) {
 			int newArea = firstArea + i;
-			int oldArea = u16(newZos[i], i32(newZos[i], 4) + HDR_AREA_OFF);
+			int oldArea = u16(zos[i], i32(zos[i], 4) + HDR_AREA_OFF);
 			File srcAdFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, oldArea);
 			if (srcAdFile == null) {
 				throw new IOException("Could not extract area " + oldArea + " from the workspace.");
@@ -301,7 +306,7 @@ public class AreaForker {
 			File srcNpFile = Workspace.getWorkspaceFile(ArchiveType.NPC_REGISTRIES, oldArea);
 			byte[] srcNp = (srcNpFile != null && srcNpFile.exists())
 				? Files.readAllBytes(srcNpFile.toPath()) : new byte[0];
-			ForkPlan plan = planFork(newZos[i], Files.readAllBytes(srcAdFile.toPath()), srcNp,
+			ForkPlan plan = planFork(zos[i], Files.readAllBytes(srcAdFile.toPath()), srcNp,
 				table, newArea);
 			
 			File adOut = new File(adDir, String.valueOf(newArea));
@@ -322,10 +327,10 @@ public class AreaForker {
 			npReaches = newArea + 1;
 			
 			table = plan.newTableBytes;   // each fork grows it; the next grows the grown one
-			newZos[i] = plan.newZoBytes;  // the repointed container the caller will write
-			int rowOff = (oldCount + i) * MASTER_ROW + HDR_AREA_OFF;
+			zos[i] = plan.newZoBytes;  // the repointed container the caller will write
+			int rowOff = zoneIndices[i] * MASTER_ROW + HDR_AREA_OFF;
 			if (rowOff + 2 > master.length) {
-				throw new IOException("Master-table row for zone " + (oldCount + i) + " out of range.");
+				throw new IOException("Master-table row for zone " + zoneIndices[i] + " out of range.");
 			}
 			putU16(master, rowOff, newArea);
 		}
