@@ -291,16 +291,15 @@
   },
   {
    "id": "adpropregistryorder-ad-flip-return",
-   "why": "Machine-found by tools/guard/autoplant.py: a flip-return in src/ctrmap/formats/containers/AD.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "why": "Machine-found by tools/guard/autoplant.py: a flip-return in src/ctrmap/formats/containers/AD.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect. CORRECTED 2026-09-11: the recorded must_say was this suite's STARTUP error, because the plant was passing it the pristine directory instead of the GARC - the arg-form rule read test.ps1's `Join-Path $pristine \"...\"` as two arguments. So the suite went red for being unable to open a file and the runner scored that as the guard noticing. With the argument fixed the suite runs and does catch the mutation, and the must_say now names what it actually says.",
    "file": "src/ctrmap/formats/containers/AD.java",
    "find": "\t\treturn true;",
    "replace": "\t\treturn false;",
    "suite": "ctrmap.tests.ADPropRegistryOrderTest",
    "args": [
-    "${PRISTINE}",
-    "a\\0\\1\\4"
+    "${PRISTINE}/a\\0\\1\\4"
    ],
-   "must_say": "could not decompress AreaData entry 0",
+   "must_say": "is not byte-identical after write()",
    "auto": true
   },
   {
@@ -756,16 +755,15 @@
   },
   {
    "id": "propdatabase-propdatabase-negate-if",
-   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/propdata/PropDatabase.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/propdata/PropDatabase.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect. CORRECTED 2026-09-11: the recorded must_say was this suite's STARTUP error, because the plant was passing it the pristine directory instead of the GARC - the arg-form rule read test.ps1's `Join-Path $pristine \"...\"` as two arguments. So the suite went red for being unable to open a file and the runner scored that as the guard noticing. With the argument fixed the suite runs and does catch the mutation, and the must_say now names what it actually says.",
    "file": "src/ctrmap/formats/propdata/PropDatabase.java",
    "find": "\t\t\tif (DUMMY_MODEL_NAME.equals(m.name) && m.donorAreas.isEmpty()) {",
    "replace": "\t\t\tif (!(DUMMY_MODEL_NAME.equals(m.name) && m.donorAreas.isEmpty())) {",
    "suite": "ctrmap.tests.PropDatabaseTest",
    "args": [
-    "${PRISTINE}",
-    "a\\0\\2\\3"
+    "${PRISTINE}/a\\0\\2\\3"
    ],
-   "must_say": "pristine AreaData GARC not found:",
+   "must_say": "free slots (indices 163-379), got 0",
    "auto": true
   },
   {
@@ -854,24 +852,22 @@
    "replace": "\t\t\tif (!(alphaOnly)) {",
    "suite": "ctrmap.tests.TextureCodecTest",
    "args": [
-    "${PRISTINE}",
-    "a\\0\\1\\4"
+    "${PRISTINE}/a\\0\\1\\4"
    ],
    "must_say": "l4 55555555 -> BGRA 555555ff: a 4-bit luminance doubled to 8, opaque",
    "auto": true
   },
   {
    "id": "texturepackimport-bchtexturepack-negate-if",
-   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/BchTexturePack.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect.",
+   "why": "Machine-found by tools/guard/autoplant.py: a negate-if in src/ctrmap/formats/h3d/BchTexturePack.java that this suite was OBSERVED to catch. It proves the suite is not vacuous. It is NOT a defect that reached a user, which is what the hand-written plants put back - see owed_real_defect. CORRECTED 2026-09-11: the recorded must_say was this suite's STARTUP error, because the plant was passing it the pristine directory instead of the GARC - the arg-form rule read test.ps1's `Join-Path $pristine \"...\"` as two arguments. So the suite went red for being unable to open a file and the runner scored that as the guard noticing. With the argument fixed the suite runs and does catch the mutation, and the must_say now names what it actually says.",
    "file": "src/ctrmap/formats/h3d/BchTexturePack.java",
    "find": "\t\tif (contentsAdr < 0 || contentsAdr + 44 > bch.length) {",
    "replace": "\t\tif (!(contentsAdr < 0 || contentsAdr + 44 > bch.length)) {",
    "suite": "ctrmap.tests.TexturePackImportTest",
    "args": [
-    "${PRISTINE}",
-    "a\\0\\1\\4"
+    "${PRISTINE}/a\\0\\1\\4"
    ],
-   "must_say": "pristine GARC backups not found:",
+   "must_say": "expected 228 area texture packs, got 0",
    "auto": true
   },
   {
@@ -1489,6 +1485,18 @@
     "${GAMEDIR}"
    ],
    "must_say": "no created zone shares its script with any other"
+  },
+  {
+   "id": "a-three-group-write-flattens-what-every-area-varies",
+   "why": "putTime writes one time of day into all three groups, which is right for the fog channels because retail holds those three identical in all 228 areas. It is wrong for the block at large: 25 of the 61 channels differ between groups somewhere, and 46-52 differ in EVERY area. An earlier draft of AreaEnv stated the three-groups rule flatly, as a fact about the block rather than about fog, which is exactly how a caller would come to write one of those and flatten a distinction GameFreak makes everywhere - silently, in a file nobody can inspect. The range is measured by AreaEnvTest over every area, and enforced here.",
+   "file": "src/ctrmap/formats/area/AreaEnv.java",
+   "find": "\t\tif (channel < CH_FOG_STRENGTH || channel > CH_GROUP_IDENTICAL_LAST) {\n",
+   "replace": "\t\tif (false) {\n",
+   "suite": "ctrmap.tests.AreaEnvTest",
+   "args": [
+    "${PRISTINE}/a\\0\\1\\4"
+   ],
+   "must_say": "is refused, not merely discouraged"
   }
  ]
 }

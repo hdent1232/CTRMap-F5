@@ -199,8 +199,17 @@ def check_args(book):
     text = io.open(os.path.join(ROOT, "test.ps1"), encoding="utf-8", errors="replace").read()
     registered = {}
     for m in re.finditer(r'c\s*=\s*"(ctrmap\.tests\.\w+)"\s*;\s+a\s*=\s*@\(([^)]*)\)', text):
+        #JOIN-PATH IS ONE ARGUMENT, not two. `a = @((Join-Path $pristine "a\0\1\4"))`
+        #hands the suite a single path; reading it as two tokens made this rule
+        #demand that a plant pass two, and a plant that obeyed handed the suite the
+        #pristine DIRECTORY as argv[0] - so the suite failed on a GARC it could not
+        #open, went red for the wrong reason, and the runner refused the plant as
+        #NOT PROVEN. Two plants in this ledger were already shaped that way.
+        spec = re.sub(r'Join-Path\s+(\$\w+|"[^"]*")\s+(\$\w+|"[^"]*")',
+                      lambda j: '"%s/%s"' % (j.group(1).strip(chr(34)),
+                                              j.group(2).strip(chr(34))), m.group(2))
         raw = []
-        for lit, var in re.findall(r'"([^"]*)"|(\$\w+)', m.group(2)):
+        for lit, var in re.findall(r'"([^"]*)"|(\$\w+)', spec):
             raw.append(lit or var)
         registered[m.group(1)] = raw
     #the tokens a plant writes, and the test.ps1 variable each one stands for
@@ -211,7 +220,13 @@ def check_args(book):
         want = registered.get(p.get("suite"))
         if want is None:
             continue        #a suite test.ps1 does not register is its own problem
-        got = [same.get(a, a) for a in p.get("args", [])]
+        #substituted INSIDE the token, because a joined path carries the variable
+        #and the rest of the path in one string
+        def name(a):
+            for token, var in same.items():
+                a = a.replace(token, var)
+            return a
+        got = [name(a) for a in p.get("args", [])]
         #"build/classes" and "build\classes" are the same directory; the rule is
         #about which arguments, not which slash
         norm = lambda xs: [x.replace(chr(92), "/") for x in xs]

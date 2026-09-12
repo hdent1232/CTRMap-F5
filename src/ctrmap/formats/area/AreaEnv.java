@@ -8,12 +8,19 @@ import static ctrmap.formats.LittleEndian.putF32;
  * of little-endian float32, one block per area.
  *
  * <p>THE BLOCK IS {@code float[61][12]}, not a struct of named fields. 736
- * floats, 61 channels of 12 lanes, {@value #CHANNEL_STRIDE} bytes apart. The 12
- * lanes are THREE IDENTICAL GROUPS OF FOUR, and the four are times of day -
- * night, dawn, day, dusk. Measured on retail: area 24 (a route) carries fog
- * colours pale-grey, blue and orange across lanes 1-3 with lane 3 the sunset,
- * and repeats all four at lanes 4-7 and 8-11; area 48 (an interior) carries the
- * same value four times over, because a cave has no day cycle.
+ * floats, 61 channels of 12 lanes, {@value #CHANNEL_STRIDE} bytes apart. Within a
+ * channel the four lanes of a group are TIMES OF DAY - night, dawn, day, dusk.
+ * Measured on retail: area 24 (a route) carries fog colours pale-grey, blue and
+ * orange across lanes 1-3 with lane 3 the sunset; area 48 (an interior) carries
+ * the same value four times over, because a cave has no day cycle.
+ *
+ * <p>THE THREE GROUPS ARE IDENTICAL FOR THE FOG CHANNELS AND NOT FOR THE BLOCK.
+ * That distinction is worth the sentence: an earlier draft of this class said
+ * "the 12 lanes are three identical groups of four" flatly, which is true of
+ * channels 54-60 in every retail area and false of 25 of the other 61 - channels
+ * 46-52 differ between groups in ALL 228. A blind three-group write to one of
+ * those would flatten something every area varies, so {@link #putTime} refuses
+ * outside the channels where the claim was measured.
  *
  * <p>WHAT THIS CLASS USED TO SAY WAS WRONG, and it is worth writing down which
  * part. It declared {@code OFF_FOG_COLOR = 0x000} and read the four floats
@@ -28,18 +35,26 @@ import static ctrmap.formats.LittleEndian.putF32;
  * 0x010} was not a field either: it is lanes 4-7 of that same channel, the
  * second of the three groups, and it is 1.0 in every retail area.
  *
- * <p>WHAT THE EVIDENCE FOR THE NEW OFFSETS IS, and what it is not. Reversing
- * {@code DllField.cro} from the {@code field::FieldAreaEnv} RTTI record through
- * its vtable, constructor and loader proved how the block is FETCHED - AreaData
- * subfile 4, pointer and size stored on the object, all 2944 bytes memcpy'd
- * into an object owned by {@code code.bin} - and proved that nothing in the
- * title's executable code reads the block through a constant offset. So no
- * disassembly can name a field, and none is claimed here. What names these is
- * the retail data itself: channels 54-59 sit together, move together, and read
- * exactly as fog should. Interiors hold colour (0,0,0) with strength 0.95 and a
- * range of -340..360; routes hold strength 0 at night with a range of
- * 800..4000. Near and far were already measured behaviourally and are
- * unchanged by this - they were the two controls that were right.
+ * <p>THESE CHANNEL NUMBERS ARE PROVEN, not inferred. The chain: {@code
+ * DllField.cro} 0xA03C8 fetches AreaData subfile 4 (the literal index 4, bounded
+ * against the container's 12 subfiles) and 0x9BD4C hands all 2944 bytes to
+ * {@code code.bin} 0x48E390, which stores the buffer at the receiving object's
+ * +0x44. The CONSUMER is {@code code.bin} 0x12DDFC: it takes that same buffer
+ * (0x12E6B4 {@code ldr r0,[r8,#0x44]}) and at 0x12E7B8-0x12EA10 reads six
+ * constants - 0x288, 0x294, 0x2A0, 0x2AC, 0x2B8, 0x2C4 - which it uses as FLOAT
+ * INDICES. Divided by the twelve floats in a channel those are channels 54, 55,
+ * 56, 57, 58, 59, and they are handed to Fog::SetDensity (0x139078, clamped to
+ * [0,1]), SetColor(r,g,b) (0x1390AC), SetNear (0x138FF8) and SetFar (0x138F78).
+ * Independently, those engine fields were traced forward to GPUREG_FOG_COLOR
+ * (0x00E1) and the 128-entry fog LUT, which is what the PICA200 actually draws
+ * with.
+ *
+ * <p>WHY IT TOOK SO LONG TO FIND, recorded because the next person will search
+ * the same way: the binary stores these as float indices, not byte offsets. Four
+ * separate scans for an instruction forming {@code base + 0xA20} and friends all
+ * came back empty and were read as "nothing reads the block through a constant
+ * offset". Nothing reads it through a constant BYTE offset. 0x288 is 648 floats,
+ * and 648 floats is 0xA20 bytes.
  *
  * <p>A WRITE IS ONLY MADE WHERE A VALUE CHANGED. Retail replicates the four
  * times across all three groups, and this writes all three, so an edit follows
@@ -59,9 +74,9 @@ public class AreaEnv {
 	public static final int CHANNEL_STRIDE = 0x30;
 	/** Floats in a channel. */
 	public static final int LANES = 12;
-	/** Times of day in a channel: the lanes are three identical groups of these. */
+	/** Times of day in a channel. */
 	public static final int TIMES = 4;
-	/** How many times the four times of day repeat across the 12 lanes. */
+	/** How many times the four times of day repeat across the 12 lanes, for the fog channels. */
 	public static final int GROUPS = 3;
 	/** Channels in the block; the last 4 floats are a tail, not a channel. */
 	public static final int CHANNELS = 61;
@@ -77,6 +92,12 @@ public class AreaEnv {
 	public static final int CH_FOG_B = 57;        // 0xAB0
 	public static final int CH_FOG_NEAR = 58;     // 0xAE0
 	public static final int CH_FOG_FAR = 59;      // 0xB10
+	/**
+	 * The last channel whose three groups retail holds identical in every area.
+	 * Measured, not assumed - see {@code AreaEnvTest}, which reads all 228 and
+	 * fails if the range moves.
+	 */
+	public static final int CH_GROUP_IDENTICAL_LAST = 60;
 
 	private static final int[] COLOR_CHANNELS = {CH_FOG_R, CH_FOG_G, CH_FOG_B};
 
@@ -109,12 +130,29 @@ public class AreaEnv {
 	}
 
 	/**
-	 * Sets one time of day of one channel, in all {@value #GROUPS} groups -
-	 * which is how retail holds every channel measured.
+	 * Sets one time of day of one channel, in all {@value #GROUPS} groups - and
+	 * REFUSES for a channel where writing all three is not known to be safe.
+	 *
+	 * <p>Retail holds the three groups identical for the fog channels, in every
+	 * one of the 228 areas, which is what makes a three-group write the right way
+	 * to edit them. It does NOT hold for the block at large: 25 of the 61 channels
+	 * differ between groups somewhere, and channels 46-52 differ in every single
+	 * area. Writing all three groups of one of those would flatten a distinction
+	 * GameFreak makes everywhere, silently, in a file the user cannot inspect.
+	 *
+	 * <p>So the range is a refusal rather than a comment. The alternative - a note
+	 * saying "only call this for fog" - is the shape of every defect this project
+	 * has had to fix twice.
 	 */
 	public static void putTime(byte[] sub4, int channel, int time, float value) {
 		if (time < 0 || time >= TIMES) {
 			throw new IllegalArgumentException("time " + time + " is not one of the " + TIMES);
+		}
+		if (channel < CH_FOG_STRENGTH || channel > CH_GROUP_IDENTICAL_LAST) {
+			throw new IllegalArgumentException("channel " + channel + " is outside the range whose"
+				+ " three groups retail holds identical (" + CH_FOG_STRENGTH + ".."
+				+ CH_GROUP_IDENTICAL_LAST + "), so writing all " + GROUPS + " of them would flatten"
+				+ " a difference every area makes. Write the lane you mean instead.");
 		}
 		for (int g = 0; g < GROUPS; g++) {
 			putF32(sub4, offsetOf(channel, g * TIMES + time), value);
