@@ -136,6 +136,93 @@ public class MapMatrix {
 	 * @param mmContainer the raw bytes of the map matrix file (header + subfiles)
 	 * @return the region id, or -1 if the file is unreadable or wholly empty
 	 */
+	/**
+	 * WHICH REGIONS A GIVEN ZONE OWNS, read out of the matrix's own zone grid.
+	 *
+	 * <p>WHY THIS EXISTS. A matrix is not one zone's map. 25 retail matrices are named
+	 * by more than one zone and 139 zones sit on a shared one, so "the map of zone N" is
+	 * not the matrix - it is the cells of the matrix the game assigns to N. Asking the
+	 * matrix for its first filled cell instead gives whatever zone owns the top-left
+	 * corner: measured over the retail dump, 39 of the 61 zones whose matrix carries an
+	 * ownership grid were answered with a region belonging to a DIFFERENT zone. Mossdeep
+	 * City was shown Route 125.
+	 *
+	 * <p>THE GRID. A matrix with {@code hasLOD == 1} stores, after its region ids, a grid
+	 * at four times the resolution naming the zone index that owns each quarter-cell.
+	 * This project already trusts it: MatrixEditForm shows it to the user as the cell's
+	 * zone. Measured over all 22 retail matrices that carry one, the distinct values in
+	 * the grid are exactly the set of zones whose headers name that matrix.
+	 *
+	 * <p>WHAT A MATRIX WITHOUT A GRID MEANS. No grid means no sharing to resolve, and
+	 * every populated cell is answered - which is the right answer for the 477 zones that
+	 * own their matrix outright.
+	 *
+	 * @param mmContainer the raw MM container bytes
+	 * @param zoneIndex the zone asking
+	 * @return {region id, column, row} per owned cell, in reading order; empty if none
+	 */
+	public static int[][] regionsOwnedBy(byte[] mmContainer, int zoneIndex) {
+		java.util.List<int[]> out = new java.util.ArrayList<>();
+		if (mmContainer == null || mmContainer.length < 8) {
+			return new int[0][];
+		}
+		int sub0 = i32(mmContainer, 4);
+		if (sub0 < 0 || sub0 + 8 > mmContainer.length) {
+			return new int[0][];
+		}
+		int lod = u16(mmContainer, sub0);
+		int w = u16(mmContainer, sub0 + 4);
+		int h = u16(mmContainer, sub0 + 6);
+		int ids = sub0 + 8;
+		int grid = ids + w * h * 2;                 //the zone grid, when there is one
+		for (int row = 0; row < h; row++) {
+			for (int col = 0; col < w; col++) {
+				int at = ids + (row * w + col) * 2;
+				if (at + 1 >= mmContainer.length) {
+					return out.toArray(new int[out.size()][]);
+				}
+				int id = u16(mmContainer, at);
+				if (id == 0xFFFF) {
+					continue;
+				}
+				if (lod != 1 || !ownedByAnother(mmContainer, grid, w, h, col, row, zoneIndex)) {
+					out.add(new int[]{id, col, row});
+				}
+			}
+		}
+		return out.toArray(new int[out.size()][]);
+	}
+
+	/**
+	 * Whether this cell belongs to some zone other than the one asking.
+	 *
+	 * <p>A cell holds 4x4 quarter-cells and they need not agree - a border cell is
+	 * shared deliberately, which is how the game hands over between two maps. So the
+	 * question is not "do all sixteen say N" but "does any of them", and a cell whose
+	 * grid says nothing at all (all empty) is kept rather than thrown away: an unmarked
+	 * cell of a matrix only this zone names is still this zone's.
+	 */
+	private static boolean ownedByAnother(byte[] mm, int grid, int w, int h,
+		int col, int row, int zoneIndex) {
+		boolean sawSomebody = false;
+		for (int sy = row * 4; sy < row * 4 + 4; sy++) {
+			for (int sx = col * 4; sx < col * 4 + 4; sx++) {
+				int at = grid + (sy * w * 4 + sx) * 2;
+				if (at + 1 >= mm.length) {
+					return false;                       //truncated: do not claim to know
+				}
+				int owner = u16(mm, at);
+				if (owner == 0xFFFF) {
+					continue;
+				}
+				if (owner == zoneIndex) {
+					return false;
+				}
+				sawSomebody = true;
+			}
+		}
+		return sawSomebody;
+	}
 	public static int firstRegionId(byte[] mmContainer) {
 		if (mmContainer == null || mmContainer.length < 8) {
 			return -1;

@@ -1561,10 +1561,10 @@
   },
   {
    "id": "the-preview-shows-the-zone-before-the-one-you-clicked",
-   "why": "A preview that reads the wrong region is not a cosmetic fault, it is a lie with a name under it: you click zone 214 and look at 213. Reading the region from anything other than THIS zone's own map is the way that happens, so the guard checks the bytes handed to the view against the region the zone's matrix actually names, rather than checking that a picture appeared.",
+   "why": "A preview that reads the wrong region is not a cosmetic fault, it is a lie with a name under it: you click zone 214 and look at 213. Reading the region from anything other than THIS zone's own map is the way that happens, so the guard checks the bytes handed to the view against the region the zone's matrix actually names, rather than checking that a picture appeared. RETARGETED: ZonePreview no longer asks for one region by number - it asks the matrix which cells the zone OWNS and draws all of them - so the line this used to substitute is gone. The defect is unchanged and so is the claim: read the map out of somebody else matrix and the preview is a lie with a name under it. It now substitutes the matrix read itself, which is the same wrong turn one step earlier.",
    "file": "src/ctrmap/humaninterface/ZonePreview.java",
-   "find": "\t\t\tregion = MapMatrix.firstRegionId(Files.readAllBytes(mf.toPath()));\n",
-   "replace": "\t\t\tregion = MapMatrix.firstRegionId(Files.readAllBytes(\n\t\t\t\tws.getWorkspaceFile(ArchiveType.MAP_MATRIX, 0).toPath()));\n",
+   "find": "\t\t\tbyte[] mm = Files.readAllBytes(mf.toPath());\n",
+   "replace": "\t\t\tbyte[] mm = Files.readAllBytes(\n\t\t\t\tws.getWorkspaceFile(ArchiveType.MAP_MATRIX, 0).toPath());\n",
    "suite": "ctrmap.tests.WorkflowGuardsTest",
    "args": [
     "${GAMEDIR}"
@@ -1630,6 +1630,54 @@
     "${GAMEDIR}"
    ],
    "must_say": "linking a zone to ITSELF writes both ends"
+  },
+  {
+   "id": "the-zone-preview-hangs-on-a-hook-that-can-stop-holding",
+   "why": "The dropdown preview reaches the row the user is ON through the combo box's popup list, and the only way to that list is the UI delegate's accessible child being a BasicComboPopup. Guessing that the accessible child IS the list - the obvious simplification, and wrong - makes popupList answer null. Nothing throws: attach returns false, no listener is added, and the dropdown opens with no preview beside it and no complaint anywhere. That is word for word what the owner reported about the version before this one (\"still zero zone preview\"), so the feature's one fragile dependency is also the one whose failure is invisible. The check looks for the hook rather than trusting it. RETARGETED: the bubble window this was written against is gone - it broke the owner's standing rule that a feature lives in its own part of the UI, and it was invisible to them twice. What survived is the hook itself, in ComboHighlight, feeding the preview panel that now sits in the Zone Loader tab. The claim is unchanged: lose the popup list and the preview silently stops following the row being arrowed through.",
+   "file": "src/ctrmap/humaninterface/ComboHighlight.java",
+   "find": "\t\t\tif (a instanceof BasicComboPopup) {\n\t\t\t\treturn ((BasicComboPopup) a).getList();\n\t\t\t}\n",
+   "replace": "\t\t\tif (a instanceof javax.swing.JList) {\n\t\t\t\treturn (JList<?>) a;\n\t\t\t}\n",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "exposes its popup list"
+  },
+  {
+   "id": "the-zone-preview-is-built-but-not-put-anywhere",
+   "why": "The preview was built twice and shipped twice without ever being visible in the Zone Loader: once as a dialog behind a button on another bar, once as a window floating beside the dropdown popup. Every suite was green both times, because every suite asked whether the DECODE worked - nothing asked whether the thing was on screen. The owner opened the tab, saw nothing, and had to say so twice. This puts back the exact shape of that defect: the preview is constructed, wired to the dropdown, and never added to the tab. The guard builds the tab and looks for it, which is the only question that was being got wrong.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\ttab.add(preview, BorderLayout.EAST);\n",
+   "replace": "",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "the zone preview is IN the Zone Loader tab"
+  },
+  {
+   "id": "a-feature-crawls-back-into-a-window-of-its-own",
+   "why": "The owner's standing rule is that a feature lives in the part of the UI it belongs to and never gets a window of its own. It was written down and then broken twice in one afternoon, by the same feature, because nothing in this battery counted windows: the sweeps ratcheted public statics and coupling, so a rule stated in words applied to nothing. This puts the floating bubble back - the preview panel hands its canvas to a JWindow instead of showing it in the tab - and the guard refuses it because ZonePreviewPane is not in the argued list of windows this application may open.",
+   "file": "src/ctrmap/humaninterface/ZonePreviewPane.java",
+   "find": "\t\t\tview = new MapPreview3D();\n\t\t\tmiddle.add(view, BorderLayout.CENTER);\n",
+   "replace": "\t\t\tview = new MapPreview3D();\n\t\t\tjavax.swing.JWindow bubble = new javax.swing.JWindow();\n\t\t\tbubble.add(view);\n",
+   "suite": "ctrmap.tests.DialogSeamTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "opens a top-level window and is not in the list"
+  },
+  {
+   "id": "a-zone-is-shown-another-zones-map",
+   "why": "A zone names a map matrix, and a matrix is not one zone map: 25 retail matrices are named by more than one zone and 139 zones sit on a shared one. Taking every populated cell - or the first one, which is what this did for two releases - hands the asking zone whatever its neighbours own. Measured over the retail dump, 39 of the 61 zones whose matrix carries an ownership grid were answered with a region belonging to a different zone: the owner previewed Mossdeep City and was shown region 96, which belongs to Route 125, and said the browser was loading zones incorrectly. The same answer feeds the OBJ export default and the blank-canvas material probe, where being wrong is not a wrong picture but another zone map edited. This puts the defect back by dropping the ownership test.",
+   "file": "src/ctrmap/formats/mapmatrix/MapMatrix.java",
+   "find": "\t\t\t\tif (lod != 1 || !ownedByAnother(mmContainer, grid, w, h, col, row, zoneIndex)) {\n",
+   "replace": "\t\t\t\tif (true) {\n",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "assigns to it"
   }
  ]
 }

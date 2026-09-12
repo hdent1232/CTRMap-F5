@@ -74,7 +74,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		}
 		this.loadedZone = loadedZone;
 		initComponents();
-		zoneList.setToolTipText("Select a map here to open it - this is the normal way to load a zone.");
+		zoneList.setToolTipText(LOAD_HINT);
 		btnCloneZone.setToolTipText("Copy the currently loaded zone over another existing zone slot.");
 		btnAddZone.setToolTipText("Add new zones and lift ORAS's 536-zone limit; also generates the required code.ips patch. ORAS only - test in Azahar first.");
 		setIntValueClass(new JFormattedTextField[]{cam1, cam2, camFlags, unknownFlags, battleBG, ad, bgmSpring,
@@ -1228,6 +1228,11 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
     }//GEN-LAST:event_btnSaveActionPerformed
 
     private void zoneListActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_zoneListActionPerformed
+		if (preview != null) {
+			//the preview follows the dropdown whether or not the popup list could be
+			//hooked: selecting a zone is the one event every look and feel gives us
+			preview.preview(zoneList.getSelectedIndex());
+		}
 		if (zoneList.getSelectedIndex() != -1 && loaded) {
 			if (openEditors.saveAll(true)) {
 				LoadingDialog progress = LoadingDialog.makeDialog("Loading zone");
@@ -1333,6 +1338,65 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	 */
 	private static boolean canFork() {
 		return Workspace.isValid() && Workspace.profile().supports(GameProfile.Feature.AREA_FORK);
+	}
+
+	/** The Zone Loader tab's preview panel, handed in when the tab is built. */
+	private ZonePreviewPane preview;
+
+	/** Whether the dropdown's highlighted row reaches the preview under this look and feel. */
+	private boolean highlightWired = false;
+
+	/** What the dropdown does. It promises nothing about a preview: the preview is
+	 *  visible in the tab, so it does not need to be advertised in a tooltip. */
+	private static final String LOAD_HINT
+		= "Select a map here to open it - this is the normal way to load a zone.";
+
+	/**
+	 * Gives this panel the preview that sits beside it in the Zone Loader tab.
+	 *
+	 * <p>Called once, when the tab is built. The preview then follows the dropdown:
+	 * the row being arrowed through while the list is open, and the selected zone
+	 * otherwise. The highlight half needs the look and feel to expose a popup list
+	 * and says whether it got one; the selected half always works, so a look and
+	 * feel without a popup list costs the live highlight and not the preview.
+	 *
+	 * @return whether the highlighted row could be followed as well as the selected one
+	 */
+	public boolean usePreview(ZonePreviewPane pane) {
+		this.preview = pane;
+		if (pane == null) {
+			return false;
+		}
+		if (!highlightWired) {
+			highlightWired = ComboHighlight.onHighlight(zoneList, new ComboHighlight.Listener() {
+				@Override
+				public void highlighted(int index) {
+					pane.preview(index);
+				}
+			});
+		}
+		zoneList.setToolTipText(LOAD_HINT);
+		return highlightWired;
+	}
+
+	/**
+	 * Hands the preview the game to read maps out of, when a workspace opens.
+	 *
+	 * <p>WHY IT IS HANDED IN. WorkspaceSessionTest holds a falling ceiling on how
+	 * many production classes reach the open-workspace statics; a preview that
+	 * fetched the session itself would raise it.
+	 */
+	public void attachZonePreview(ctrmap.WorkspaceSession ws) {
+		if (preview == null) {
+			return;
+		}
+		preview.use(ws);
+		preview.preview(zoneList.getSelectedIndex());
+	}
+
+	/** The preview beside this panel, for the window that built the tab and for tests. */
+	public ZonePreviewPane preview() {
+		return preview;
 	}
 
 	private java.util.Set<Integer> forkDeclined = null;

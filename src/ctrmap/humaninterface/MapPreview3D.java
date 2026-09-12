@@ -27,7 +27,23 @@ import java.util.List;
  */
 public class MapPreview3D extends GLJPanel implements GLEventListener {
 
-	private H3DModel model;
+	/** One region of the map, and where it sits relative to the others. */
+	private static final class Piece {
+
+		final H3DModel model;
+		final float dx, dz;
+
+		Piece(H3DModel model, float dx, float dz) {
+			this.model = model;
+			this.dx = dx;
+			this.dz = dz;
+		}
+	}
+
+	/** How wide one region is in world units - the camera and the layout both need it. */
+	public static final float REGION_SPAN = 720f;
+
+	private java.util.List<Piece> pieces = new java.util.ArrayList<>();
 	private final FPSAnimator animator;
 	private float yaw = 0.6f;      // radians, orbit around Y
 	private float pitch = 1.0f;    // radians, look-down angle (0 = horizon, PI/2 = straight down)
@@ -148,14 +164,80 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 	 */
 	public boolean setRegion(byte[] modelBytes, List<H3DTexture> worldTextures) {
 		H3DModel next = decode(modelBytes, worldTextures);
-		synchronized (this) {
-			if (model != null && model != next) {
-				retired.add(model);
+		java.util.List<H3DModel> one = new java.util.ArrayList<>();
+		if (next != null) {
+			one.add(next);
+		}
+		setModels(one, new int[]{0}, new int[]{0});
+		return next != null;
+	}
+
+	/**
+	 * Shows a whole map: every region the caller decoded, laid out on the matrix grid.
+	 *
+	 * <p>WHY MORE THAN ONE. A zone is not one region. 139 of the 536 retail zones own
+	 * several - a town averages seven, the biggest has 23 - so drawing one of them
+	 * showed a corner tile and called it the place. The owner previewed three cities
+	 * and recognised none of them.
+	 *
+	 * <p>The models arrive DECODED because decoding is the slow part and belongs off
+	 * the event thread; this only places them and asks for a repaint.
+	 *
+	 * @param models one per region, nulls skipped
+	 * @param cols matrix column of each model
+	 * @param rows matrix row of each model
+	 * @return true when there is now geometry on screen
+	 */
+	public boolean setModels(java.util.List<H3DModel> models, int[] cols, int[] rows) {
+		java.util.List<Piece> next = new java.util.ArrayList<>();
+		int minC = Integer.MAX_VALUE, maxC = Integer.MIN_VALUE;
+		int minR = Integer.MAX_VALUE, maxR = Integer.MIN_VALUE;
+		for (int i = 0; models != null && i < models.size(); i++) {
+			if (models.get(i) == null) {
+				continue;
 			}
-			model = next;
+			int c = cols != null && i < cols.length ? cols[i] : 0;
+			int r = rows != null && i < rows.length ? rows[i] : 0;
+			minC = Math.min(minC, c);
+			maxC = Math.max(maxC, c);
+			minR = Math.min(minR, r);
+			maxR = Math.max(maxR, r);
+		}
+		if (minC <= maxC) {
+			float midC = (minC + maxC) / 2f;
+			float midR = (minR + maxR) / 2f;
+			for (int i = 0; i < models.size(); i++) {
+				H3DModel m = models.get(i);
+				if (m == null) {
+					continue;
+				}
+				int c = cols != null && i < cols.length ? cols[i] : 0;
+				int r = rows != null && i < rows.length ? rows[i] : 0;
+				//the matrix reads left to right and top to bottom, which is +X east and
+				//+Z south - the same layout the matrix editor draws and the world editor
+				//assembles a zone from
+				next.add(new Piece(m, (c - midC) * REGION_SPAN, (r - midR) * REGION_SPAN));
+			}
+		}
+		synchronized (this) {
+			for (Piece old : pieces) {
+				boolean kept = false;
+				for (Piece n : next) {
+					kept |= n.model == old.model;
+				}
+				if (!kept) {
+					retired.add(old.model);
+				}
+			}
+			pieces = next;
+		}
+		//far enough out that the whole thing fits: one region filled the view at 1300
+		float span = Math.max(maxC - minC, maxR - minR) + 1;
+		if (minC <= maxC) {
+			dist = Math.max(1300f, 1300f * span * 0.8f);
 		}
 		repaint();
-		return next != null;
+		return !next.isEmpty();
 	}
 
 	/** Enables the area's fog in the preview (color + near/far draw distance). */
@@ -237,15 +319,26 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 			}
 			retired.clear();
 		}
-		if (model != null) {
-			if (model.meshes.size() > 0 && model.meshes.get(0).vbo == null) {
-				model.makeAllBOs();
+		java.util.List<Piece> drawing;
+		synchronized (this) {
+			drawing = pieces;
+		}
+		for (Piece p : drawing) {
+			H3DModel m = p.model;
+			if (m == null) {
+				continue;
 			}
-			for (int i = 0; i < model.meshes.size(); i++) {
-				model.meshes.get(i).uploadVBO(gl);
-				model.meshes.get(i).render(gl, model.materials.size() > model.meshes.get(i).materialId
-						? model.materials.get(model.meshes.get(i).materialId) : null);
+			if (m.meshes.size() > 0 && m.meshes.get(0).vbo == null) {
+				m.makeAllBOs();
 			}
+			gl.glPushMatrix();
+			gl.glTranslatef(p.dx, 0f, p.dz);
+			for (int i = 0; i < m.meshes.size(); i++) {
+				m.meshes.get(i).uploadVBO(gl);
+				m.meshes.get(i).render(gl, m.materials.size() > m.meshes.get(i).materialId
+						? m.materials.get(m.meshes.get(i).materialId) : null);
+			}
+			gl.glPopMatrix();
 		}
 		gl.glFlush();
 	}
@@ -269,7 +362,9 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 		//the dialog is closing and this is the last moment the context exists
 		GL2 gl = d.getGL().getGL2();
 		synchronized (this) {
-			retired.add(model);
+			for (Piece p : pieces) {
+				retired.add(p.model);
+			}
 			for (H3DModel old : retired) {
 				if (old == null) {
 					continue;
@@ -281,7 +376,7 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 				}
 			}
 			retired.clear();
-			model = null;
+			pieces = new java.util.ArrayList<>();
 		}
 	}
 

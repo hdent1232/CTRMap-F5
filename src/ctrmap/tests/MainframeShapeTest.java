@@ -75,7 +75,7 @@ public class MainframeShapeTest {
 	private static final String[] EXPECTED_MENUS = {
 		"File: Open GR Mapfile | Open MapMatrix | Open Zone | Save | Pack Workspace | Deploy to emulator (mod)...",
 		"Map: Map Builder (this zone) | Blank map canvas (this zone)... | Resize map (this zone)... | Edit area fog & lighting... | Fork map geometry (make zone independent)... | --- | Import map model (.bch)... | Export map region to OBJ (Blender)... | Import OBJ into map region (Blender)... | OBJ to collisions | Tileset Editor",
-		"Zone: Browse zones (3D preview)... | Connect zones through a warp... | Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here (clone a retail facility)",
+		"Zone: Connect zones through a warp... | Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here (clone a retail facility)",
 		"Game Data: Edit trainer (party/battle)... | Edit battle facility opponents... | Edit shop inventories (Marts)... | Edit items (price, effects, name)... | Edit wild encounters (this zone)...",
 		"Options: Setup wizard... | --- | Workspace settings | Restore from pristine backup... | Clean workspace",
 		"Help: Check for updates... | --- | Support/Issue tracker | About",
@@ -107,7 +107,7 @@ public class MainframeShapeTest {
 	private static final String[] TOOL_NAMES = {"Edit", "Set", "Fill", "Camera", "Prop", "NPC", "Warp", "Trigger", "Map Builder", "Geometry"};
 
 	private static final String EXPECTED_MAP_ROW = "label: Map:   button:Blank canvas button:Resize map button:Fog & lighting button:Encounters button:Fork geometry";
-	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Browse zones button:Connect zones button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
+	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Connect zones button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
 	private static final String EXPECTED_EXTRAS_ROW = "button:Raw archive browser (Builder)";
 
 	/**
@@ -201,10 +201,15 @@ public class MainframeShapeTest {
 				unwired.add(it.getText() + " (" + n + " listeners)");
 			}
 		}
-		//34 since Browse zones joined the Zone menu. The count is pinned so an item
-		//cannot be added, moved or lost without somebody writing down that they meant
-		//to - which is what this line is.
-		check(items == 35, "35 menu items in all (" + items + ")");
+		//RETARGETED from 35 to 34, with the reason: "Browse zones (3D preview)..." was
+		//removed along with the dialog behind it. The preview it opened now lives in
+		//the Zone Loader tab beside the dropdown, which is where the owner looked for
+		//it twice and did not find it. The count is pinned so an item cannot be added,
+		//moved or lost without somebody writing down that they meant to.
+		check(items == 34, "34 menu items in all (" + items + ")");
+
+		theZoneDropdownCanBePreviewed();
+		theZoneLoaderTabHoldsItsPreview();
 		check(unwired.isEmpty(), "every item is wired to exactly one action" + (unwired.isEmpty() ? "" : " - not these: " + unwired));
 	}
 
@@ -238,6 +243,63 @@ public class MainframeShapeTest {
 				+ (wrong.isEmpty() ? "" : " - wrong: " + wrong));
 	}
 
+	/**
+	 * The Load Zone dropdown exposes a popup list, which is what the 3D preview
+	 * hangs its listener on.
+	 *
+	 * <p>WHY THIS IS WORTH A CHECK. The preview follows the highlighted row through
+	 * {@code combo.getUI().getAccessibleChild(combo, 0)} being a BasicComboPopup -
+	 * a known Swing idiom, and the fragile part of the feature. If that stops
+	 * holding, the preview does not crash and does not complain: it simply never
+	 * appears, which is precisely the failure the owner reported about the version
+	 * before it ("still zero zone preview"). A feature that fails by being absent
+	 * needs a test that looks for it.
+	 */
+	static void theZoneDropdownCanBePreviewed() {
+		System.out.println("--- the zone dropdown exposes the popup list the preview needs");
+		javax.swing.JComboBox<String> combo = new javax.swing.JComboBox<>();
+		combo.addItem("Littleroot Town - 0");
+		combo.addItem("Oldale Town - 7");
+		javax.swing.JList<?> list = ctrmap.humaninterface.ComboHighlight.popupList(combo);
+		check(list != null, "a combo box under this look and feel exposes its popup list, so"
+			+ " the preview can follow the row being arrowed through and not only the one"
+			+ " selected");
+		check(list == null || list.getModel().getSize() == combo.getItemCount(),
+			"and that list holds the rows the dropdown does (" + (list == null ? -1
+			: list.getModel().getSize()) + " against " + combo.getItemCount() + ")");
+	}
+	/**
+	 * The Zone Loader tab contains the zone preview, beside the panel it is about.
+	 *
+	 * <p>WHY THIS IS THE CHECK THAT MATTERED. The preview was built twice and shipped
+	 * twice without ever being visible in the Zone Loader: once as a dialog behind a
+	 * button on another bar, once as a window floating beside the dropdown popup. Both
+	 * times every suite was green, because every suite asked whether the DECODE worked.
+	 * The owner opened the tab, saw nothing, and said so - twice.
+	 *
+	 * <p>So this asks the only question that was actually being got wrong: is the thing
+	 * in the tab. It needs no game, no display and no zone - absence is structural, and
+	 * structure is exactly what can be read back without any of that.
+	 */
+	static void theZoneLoaderTabHoldsItsPreview() {
+		System.out.println("--- the Zone Loader tab holds the zone preview, in the tab");
+		javax.swing.JPanel stand = new javax.swing.JPanel();
+		java.awt.Container tab = ctrmap.CtrmapMainframe.buildZoneTab(stand);
+		java.awt.LayoutManager lay = tab.getLayout();
+		Component east = lay instanceof java.awt.BorderLayout
+			? ((java.awt.BorderLayout) lay).getLayoutComponent(java.awt.BorderLayout.EAST) : null;
+		check(east instanceof ctrmap.humaninterface.ZonePreviewPane,
+			"the zone preview is IN the Zone Loader tab, beside the zone panel - not in a"
+			+ " dialog and not in a window of its own (east = " + (east == null ? "nothing"
+			: east.getClass().getSimpleName()) + ")");
+		check(((java.awt.BorderLayout) lay).getLayoutComponent(java.awt.BorderLayout.CENTER) == stand,
+			"...with the zone panel still the middle of the tab");
+		boolean deep = false;
+		for (Component c : tab.getComponents()) {
+			deep |= c instanceof ctrmap.humaninterface.ZonePreviewPane;
+		}
+		check(deep, "and it is a child of the tab, so it is on screen when the tab is");
+	}
 	// -------------------------------------------------------------- tool row
 	static void toolRow() {
 		final List<String> commands = new ArrayList<>();
