@@ -1618,6 +1618,18 @@
     "${GAMEDIR}"
    ],
    "must_say": "and the zone next door is untouched"
+  },
+  {
+   "id": "linking-a-zone-to-itself-loses-half-the-link",
+   "why": "A two-way link writes both ends. When both ends are the SAME zone - two doors of one building, which is the ordinary case for an interior - the obvious implementation loads the zone once per side, writes the first half, then writes the second side from the copy it loaded BEFORE that write and throws the first half away. The result is a door that leads somewhere and a partner that does not lead back, which is the exact defect a two-way link exists to prevent, produced by the thing preventing it.",
+   "file": "src/ctrmap/ZoneLinker.java",
+   "find": "\t\t\tLoaded back = zoneA == zoneB ? load(ws, zoneB) : b;\n",
+   "replace": "\t\t\tLoaded back = b;\n",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "linking a zone to ITSELF writes both ends"
   }
  ]
 }

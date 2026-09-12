@@ -920,6 +920,7 @@ public class CtrmapMainframe {
 
 		JMenu zone = new JMenu("Zone");
 		zone.add(item("Browse zones (3D preview)...", CtrmapMainframe::browseZonesAction));
+		zone.add(item("Connect zones through a warp...", CtrmapMainframe::connectZonesAction));
 		zone.add(item("Rename zone (in-game name)...", CtrmapMainframe::renameZoneAction));
 		zone.add(item("Empty zone (clear contents)...", CtrmapMainframe::emptyZoneAction));
 		zone.add(item("Find reusable base zones...", CtrmapMainframe::findReusableZonesAction));
@@ -1009,12 +1010,13 @@ public class CtrmapMainframe {
 		return tab;
 	}
 
-	/** The Zone Loader's actions row; the Zone menu repeats these six. */
+	/** The Zone Loader's actions row; the Zone menu repeats these seven. */
 	public static JToolBar buildZoneActionsBar() {
 		JToolBar bar = new JToolBar();
 		bar.setFloatable(false);
 		bar.add(new JLabel(" Zone actions:  "));
 		bar.add(barButton("Browse zones", "Look through every zone's map in 3D without loading them one by one. Nothing is opened until you press Load.", CtrmapMainframe::browseZonesAction));
+		bar.add(barButton("Connect zones", "Wire a warp in one zone to a warp in another, both ways, so the trip works there AND back.", CtrmapMainframe::connectZonesAction));
 		bar.add(barButton("Rename", "Rename the loaded zone's in-game location banner.", CtrmapMainframe::renameZoneAction));
 		bar.add(barButton("Empty", "Clear the loaded zone's NPCs, warps, triggers and furniture (keeps map + script).", CtrmapMainframe::emptyZoneAction));
 		bar.add(barButton("Find reusable zones", "Scan for unused base zones you can safely repurpose for new areas.", CtrmapMainframe::findReusableZonesAction));
@@ -1059,6 +1061,18 @@ public class CtrmapMainframe {
 	/** The toolbar's "3D view" toggle: what is DISPLAYED is the truth, not the toggle's own state. */
 	private static void toggleView() {
 		showView3D(jsp.getLeftComponent() != m3DDebugPanel);
+	}
+
+	/**
+	 * Wire a warp in one zone to a warp in another, both ways.
+	 *
+	 * <p>On the zone actions bar rather than the warp form: the warp form edits ONE
+	 * warp of the loaded zone, and this is about two zones, only one of which is
+	 * open. Putting it where a zone-level action lives is also what lets it be used
+	 * without loading either end.
+	 */
+	private static void connectZonesAction() {
+		ctrmap.humaninterface.ZoneLinkDialog.show(frame, game, loadedZone);
 	}
 
 	/**

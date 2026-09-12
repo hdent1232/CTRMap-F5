@@ -58,6 +58,7 @@ public class WorkflowGuardsTest {
 			section("resize, pack, resize again", () -> resizePackResizeAgain(dump));
 			section("deploy, disable, deploy again", () -> deployDisableDeployAgain(dump));
 			section("edit encounters, pack, edit again", () -> encountersPackEncounters(dump));
+			section("link two zones, pack, link again", () -> linkPackLinkAgain(dump));
 		}
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -1047,6 +1048,129 @@ public class WorkflowGuardsTest {
 			return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
 		} catch (Exception ex) {
 			return new byte[0];
+		}
+	}
+	/**
+	 * Connect two zones through a warp, pack, and connect them again.
+	 *
+	 * <p>A warp carries the zone it leads to AND which warp of that zone it arrives
+	 * at, so both halves have to agree or the trip works one way - you walk through a
+	 * door and cannot walk back. Nothing wired two arbitrary zones together before:
+	 * {@code InteriorWirer} does it for a cloned interior and its door, and the warp
+	 * form lets one side be retyped by hand with nothing checking the other.
+	 *
+	 * <p>THE CASE THAT ACTUALLY BITES is two warps in the SAME zone - two doors of
+	 * one building - because the obvious implementation loads the zone twice, writes
+	 * the first half, then writes a stale copy over it and throws that half away. It
+	 * is asserted by linking a zone to itself and reading BOTH ends back.
+	 */
+	static void linkPackLinkAgain(File dump) throws Exception {
+		System.out.println("--- connect two zones through a warp, both ways");
+		ScratchGame.open(dump);
+		int zoneCount = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		int a = zoneWithWarps(2), b = -1, c = -1;
+		for (int z = 0; z < zoneCount; z++) {
+			if (z == a || warpCount(z) < 1) {
+				continue;
+			}
+			if (b < 0) {
+				b = z;
+			} else if (c < 0) {
+				c = z;
+			}
+		}
+		check(a >= 0 && b >= 0 && c >= 0,
+			"found zones with warps to connect (" + a + ", " + b + ", " + c + ")");
+		if (a < 0 || b < 0 || c < 0) {
+			return;
+		}
+		
+		String said = ctrmap.ZoneLinker.link(Workspace.session(), a, 0, b, 0, true);
+		check(said.contains(String.valueOf(a)) && said.contains(String.valueOf(b)),
+			"linking says which zones it joined: " + said);
+		pack();
+		check(warpTarget(a, 0)[0] == b && warpTarget(a, 0)[1] == 0,
+			"after a pack zone " + a + " leads to zone " + b + " (" + warpTarget(a, 0)[0]
+			+ " warp " + warpTarget(a, 0)[1] + ")");
+		check(warpTarget(b, 0)[0] == a && warpTarget(b, 0)[1] == 0,
+			"and zone " + b + " leads BACK - a door you cannot walk back through is the whole"
+			+ " defect this exists to stop (" + warpTarget(b, 0)[0] + " warp "
+			+ warpTarget(b, 0)[1] + ")");
+		
+		//IT SAYS WHAT IT WILL ABANDON, before the user decides rather than in game
+		java.util.List<String> second = ctrmap.ZoneLinker.wouldBreak(Workspace.session(), a, 0, c, 0);
+		check(!second.isEmpty(), "repointing a warp that already leads somewhere says what it"
+			+ " abandons " + second);
+		check(second.toString().contains("zone " + b), "and names where it used to go");
+		
+		//THE SECOND LINK, which starts from what the first one wrote
+		ctrmap.ZoneLinker.link(Workspace.session(), a, 0, c, 0, true);
+		pack();
+		check(warpTarget(a, 0)[0] == c, "a second link after a pack takes ("
+			+ warpTarget(a, 0)[0] + ")");
+		
+		//TWO DOORS IN ONE BUILDING: the same zone on both ends
+		if (warpCount(a) >= 2) {
+			ctrmap.ZoneLinker.link(Workspace.session(), a, 0, a, 1, true);
+			pack();
+			check(warpTarget(a, 0)[0] == a && warpTarget(a, 0)[1] == 1
+				&& warpTarget(a, 1)[0] == a && warpTarget(a, 1)[1] == 0,
+				"linking a zone to ITSELF writes both ends - loading it twice and writing the"
+				+ " stale copy would throw the first half away (" + warpTarget(a, 0)[1] + ", "
+				+ warpTarget(a, 1)[1] + ")");
+		}
+		
+		//AND THE REFUSALS, each before anything is written
+		check(refusedLink(a, 0, a, 0).contains("itself"),
+			"a warp cannot lead to itself: " + refusedLink(a, 0, a, 0));
+		check(refusedLink(a, 9999, b, 0).contains("no warp 9999"),
+			"a warp that does not exist is refused by number: " + refusedLink(a, 9999, b, 0));
+		check(refusedLink(a, 0, b, 9999).contains("no warp 9999"),
+			"on either end: " + refusedLink(a, 0, b, 9999));
+	}
+
+	/** The first zone with at least {@code n} warps, or -1. */
+	static int zoneWithWarps(int n) throws Exception {
+		int zoneCount = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		for (int z = 0; z < zoneCount; z++) {
+			if (warpCount(z) >= n) {
+				return z;
+			}
+		}
+		return -1;
+	}
+
+	/** How many warps a zone has, or 0 when it cannot be read. */
+	static int warpCount(int zone) {
+		try {
+			return new ctrmap.formats.zone.ZoneEntities(new ctrmap.formats.containers.ZO(
+				Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zone),
+				Workspace.session()).getFile(1)).warps.size();
+		} catch (Exception ex) {
+			return 0;
+		}
+	}
+
+	/** {target zone, target warp} of one warp, or {-2,-2} when it cannot be read. */
+	static int[] warpTarget(int zone, int warp) {
+		try {
+			ctrmap.formats.zone.ZoneEntities e = new ctrmap.formats.zone.ZoneEntities(
+				new ctrmap.formats.containers.ZO(
+					Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zone),
+					Workspace.session()).getFile(1));
+			return new int[]{e.warps.get(warp).targetZone, e.warps.get(warp).targetWarpId};
+		} catch (Exception ex) {
+			return new int[]{-2, -2};
+		}
+	}
+
+	/** The reason a link was refused, or the empty string when it was not. */
+	static String refusedLink(int za, int wa, int zb, int wb) {
+		try {
+			ctrmap.ZoneLinker.link(Workspace.session(), za, wa, zb, wb, true);
+			return "";
+		} catch (Exception ex) {
+			return String.valueOf(ex.getMessage());
 		}
 	}
 	/** A zone's whole ZO container as bytes, or null when it cannot be read. */
