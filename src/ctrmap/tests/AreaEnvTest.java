@@ -191,6 +191,14 @@ public class AreaEnvTest {
 		check(!anyHalf, "a block whose ONLY non-zero channel is channel 0 reads back as no fog at"
 				+ " all - the fog fields do not come from there any more");
 
+		//AND THE CARD THAT SHOWS ONE FITS THE BOX IT ASKS FOR. Painted into an image
+		//THREE TIMES its preferred height, so anything drawn past that height is
+		//visible here and invisible to a user. The card was laid out for 340px and
+		//handed 92 whenever the 3D view existed, which is why the owner reported the
+		//atmospheres as a blank page: the part that was drawn was the part that was
+		//cropped. Reading the code cannot catch that - it has to be drawn.
+		cardFitsItsBox(AreaEnv.read(subfile(ad.getDecompressedEntry(24), 4)));
+
 		System.out.println("AreaEnv: " + checked + " areas, " + AreaEnv.CHANNELS + "x" + AreaEnv.LANES
 				+ " floats each, fog on channels " + AreaEnv.CH_FOG_STRENGTH + ".." + AreaEnv.CH_FOG_FAR
 				+ ", failures=" + fails);
@@ -200,6 +208,39 @@ public class AreaEnvTest {
 		}
 	}
 
+	/** Paints both card variants oversized and checks neither draws past its own height. */
+	static void cardFitsItsBox(AreaEnv env) {
+		for (boolean compact : new boolean[]{true, false}) {
+			ctrmap.humaninterface.GfEnvPicker.EnvPreview card
+				= new ctrmap.humaninterface.GfEnvPicker.EnvPreview(compact);
+			card.set(env);
+			//TRANSPARENT so what is measured is INK, not the background a Swing panel
+			//fills over its whole bounds - which would be non-blank everywhere and make
+			//this check pass for every possible card, including a broken one.
+			card.setOpaque(false);
+			int w = card.getPreferredSize().width;
+			int h = card.getPreferredSize().height;
+			card.setSize(w, h * 3);
+			java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(
+				w, h * 3, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+			java.awt.Graphics2D g = img.createGraphics();
+			card.paint(g);
+			g.dispose();
+			int lowest = -1;
+			for (int y = h * 3 - 1; y >= 0 && lowest < 0; y--) {
+				for (int x = 0; x < w; x++) {
+					if ((img.getRGB(x, y) >>> 24) != 0) {
+						lowest = y;
+						break;
+					}
+				}
+			}
+			check(lowest >= 0, (compact ? "the compact" : "the full") + " card draws something at all");
+			check(lowest < h, (compact ? "the compact" : "the full") + " card draws inside the "
+				+ h + "px it asks for - lowest ink at y=" + lowest
+				+ (lowest < h ? "" : ", so " + (lowest - h + 1) + "px of it is cropped from every user"));
+		}
+	}
 	static void check(boolean ok, String what) {
 		if (ok) {
 			System.out.println("  ok: " + what);

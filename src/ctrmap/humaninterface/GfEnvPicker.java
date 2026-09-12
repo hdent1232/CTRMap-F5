@@ -108,10 +108,12 @@ public class GfEnvPicker {
 			view3d.setRegion(curModel, curTex);
 			view3d.setPreferredSize(new Dimension(420, 340));
 		}
-		final EnvPreview preview = new EnvPreview();
-		if (view3d != null) {
-			preview.setPreferredSize(new Dimension(300, 92));
-		}
+		//COMPACT WHEN THE 3D VIEW IS THERE, not squeezed. This used to override the
+		//card to 92px high while the card went on drawing content laid out for 340 -
+		//so everything below the gradient band was clipped away, which is most of it.
+		//A panel that draws more than it is given is a panel nobody can read; telling
+		//it to draw LESS is the difference between a summary and a crop.
+		final EnvPreview preview = new EnvPreview(view3d != null);
 
 		final DefaultListModel<String> lm = new DefaultListModel<>();
 		final List<Integer> visible = new ArrayList<>(); // index into zones
@@ -307,15 +309,60 @@ public class GfEnvPicker {
 	}
 
 	/** Paints the selected zone's atmosphere: sky gradient, swatches, fog range. */
-	private static class EnvPreview extends JPanel {
+	/**
+	 * The atmosphere card. PUBLIC so a suite can paint one and measure it: this
+	 * panel was laid out for 340px and handed 92 whenever the 3D view existed, so
+	 * everything below the gradient band was clipped and the owner reported the
+	 * atmospheres as "a white blank page". A panel that draws past its own
+	 * preferred size cannot be caught by reading it; it has to be drawn.
+	 */
+	public static class EnvPreview extends JPanel {
 
 		AreaEnv env;
+		/** True when the 3D view is showing the feel and this only has to show the values. */
+		final boolean compact;
 
-		EnvPreview() {
-			setPreferredSize(new Dimension(300, 340));
+		public EnvPreview(boolean compact) {
+			this.compact = compact;
+			//360, not 340: the four time-of-day rows made the full card taller than the
+			//number it had always asked for, and the last line went 9px past the bottom.
+			//Nine pixels is invisible as a bug report and obvious to a measurement.
+			setPreferredSize(new Dimension(300, compact ? COMPACT_HEIGHT : FULL_HEIGHT));
 		}
 
-		void set(AreaEnv env) {
+		/** What the compact card needs: a label line, a swatch row, and a range line. */
+		static final int COMPACT_HEIGHT = 92;
+		/** What the full card needs, measured by AreaEnvTest painting one. */
+		static final int FULL_HEIGHT = 360;
+
+		/**
+		 * The four times of day as swatches on one row, with the range under them.
+		 *
+		 * <p>Everything the full card says about FEEL - the haze gradient, the
+		 * indoor/outdoor reading - is on screen already in 3D, on the user's own map.
+		 * What is left is the numbers, and they fit.
+		 */
+		private void paintCompact(Graphics2D g, int pad) {
+			g.setColor(getForeground());
+			g.setFont(getFont().deriveFont(Font.BOLD, 12f));
+			g.drawString("Fog through the day", pad, 14);
+			g.setFont(getFont().deriveFont(Font.PLAIN, 11f));
+			int box = 26, gap = 6, x = pad;
+			for (int t = 0; t < AreaEnv.TIMES; t++) {
+				g.setColor(new Color(cl(env.fogColor[t][0]), cl(env.fogColor[t][1]), cl(env.fogColor[t][2])));
+				g.fillRoundRect(x, 22, box, box, 5, 5);
+				g.setColor(new Color(0, 0, 0, 90));
+				g.drawRoundRect(x, 22, box, box, 5, 5);
+				g.setColor(getForeground());
+				g.drawString(AreaEnv.TIME_NAMES[t].substring(0, 3), x, 60);
+				g.drawString(String.format("%.0f%%", env.fogStrength[t] * 100), x, 72);
+				x += box + gap + 14;
+			}
+			g.drawString(String.format("Fog: starts %.0f, full at %.0f", env.fogNear, env.fogFar),
+				pad, 88);
+		}
+
+		public void set(AreaEnv env) {
 			this.env = env;
 			repaint();
 		}
@@ -329,6 +376,10 @@ public class GfEnvPicker {
 			if (env == null) {
 				g.setColor(getForeground());
 				g.drawString("(no environment data)", pad, 30);
+				return;
+			}
+			if (compact) {
+				paintCompact(g, pad);
 				return;
 			}
 			//THE FOUR TIMES OF DAY, which is what an area actually carries. This card
