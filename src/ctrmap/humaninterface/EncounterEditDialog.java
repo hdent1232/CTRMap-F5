@@ -36,6 +36,63 @@ import javax.swing.table.AbstractTableModel;
 public class EncounterEditDialog {
 
 	/** Opens the editor for the currently loaded zone. */
+	/**
+	 * Reads one zone's wild encounters out of the EN pack.
+	 *
+	 * <p>Half of the seam under this dialog. Editing encounters, packing and
+	 * editing again is a real workflow with real state between the steps - the EN
+	 * pack is ONE archive entry holding every zone's table, so a second edit reads
+	 * what the first one wrote - and nothing drove it, because the only way in was
+	 * a modal dialog. WorkflowGuardsTest recorded that as a named hole rather than
+	 * leaving it to be rediscovered; this is the hole being filled.
+	 *
+	 * @return the zone's table, or an empty one when it has no wild data
+	 */
+	public static EncounterTable readEncounters(ctrmap.WorkspaceSession ws, int zoneIndex)
+			throws java.io.IOException {
+		GARC zo = ws == null ? null : ws.getArchive(ArchiveType.ZONE_DATA);
+		if (zo == null) {
+			throw new java.io.IOException("No workspace is loaded.");
+		}
+		byte[] pack = loadPack(zo, zo.length - 1, ctrmap.ZoneTables.zoneCount(zo));
+		if (pack == null) {
+			throw new java.io.IOException("Could not read the encounter pack.");
+		}
+		EncounterTable t = EncounterTable.read(pack, zoneIndex);
+		return t != null ? t : new EncounterTable();
+	}
+
+	/**
+	 * Writes one zone's wild encounters back into the EN pack and marks it edited.
+	 *
+	 * <p>The other half. It returns the sentence the user is shown rather than
+	 * showing it, for the same reason every other report in this program does: a
+	 * sentence built inside a dialog call is a sentence no test has ever seen.
+	 *
+	 * @return what to tell the user
+	 */
+	public static String saveEncounters(ctrmap.WorkspaceSession ws, int zoneIndex,
+			EncounterTable table) throws java.io.IOException {
+		GARC zo = ws == null ? null : ws.getArchive(ArchiveType.ZONE_DATA);
+		if (zo == null) {
+			throw new java.io.IOException("No workspace is loaded.");
+		}
+		int enIndex = zo.length - 1;
+		byte[] pack = loadPack(zo, enIndex, ctrmap.ZoneTables.zoneCount(zo));
+		if (pack == null) {
+			throw new java.io.IOException("Could not read the encounter pack.");
+		}
+		byte[] newPack = EncounterTable.write(pack, zoneIndex, table);
+		File enFile = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, enIndex);
+		if (enFile == null) {
+			throw new java.io.IOException("The encounter pack could not be extracted.");
+		}
+		java.nio.file.Files.write(enFile.toPath(), newPack);
+		ws.addPersist(enFile);
+		return (table.isEmpty() ? "Wild data removed for zone " : "Wild encounters saved for zone ")
+			+ zoneIndex + ".\nDeploy to emulator to apply (packs automatically).";
+	}
+
 	public static void show(Frame parent, LoadedZone loaded) {
 		if (loaded == null) {
 			throw new IllegalArgumentException("EncounterEditDialog must be handed the LoadedZone");
@@ -147,17 +204,11 @@ public class EncounterEditDialog {
 				if (jt.isEditing()) {
 					jt.getCellEditor().stopCellEditing();
 				}
-				byte[] newPack = EncounterTable.write(packRef, zoneIndex, table);
-				File enFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, enIndex);
-				try (FileOutputStream fos = new FileOutputStream(enFile)) {
-					fos.write(newPack);
-				}
-				Workspace.addPersist(enFile);
+				//through the seam, so what the dialog does and what a suite can drive are
+				//the same code rather than two copies that agree today
+				String said = saveEncounters(Workspace.session(), zoneIndex, table);
 				dlg.dispose();
-				ctrmap.Ui.message(parent,
-						(table.isEmpty() ? "Wild data removed for zone " : "Wild encounters saved for zone ") + zoneIndex
-						+ ".\nDeploy to emulator to apply (packs automatically).",
-						"Wild encounters", JOptionPane.INFORMATION_MESSAGE);
+				ctrmap.Ui.message(parent, said, "Wild encounters", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
 				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Wild encounters");
 			}

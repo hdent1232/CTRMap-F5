@@ -57,6 +57,7 @@ public class WorkflowGuardsTest {
 			section("shared resources are repaired too", () -> sharedResourcesAreRepaired(dump));
 			section("resize, pack, resize again", () -> resizePackResizeAgain(dump));
 			section("deploy, disable, deploy again", () -> deployDisableDeployAgain(dump));
+			section("edit encounters, pack, edit again", () -> encountersPackEncounters(dump));
 		}
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -441,26 +442,6 @@ public class WorkflowGuardsTest {
 			"and the on/off switch still works after a redeploy");
 	}
 
-	/**
-	 * WHY THERE IS NO ENCOUNTER SECTION HERE, recorded rather than left as a gap
-	 * someone has to rediscover.
-	 *
-	 * <p>Editing wild encounters, packing and editing again is a real workflow with
-	 * no coverage, and it belongs in this suite. It cannot be written yet:
-	 * {@code EncounterEditDialog.show} builds a modal JDialog and calls setVisible,
-	 * and there is no seam below it that a suite can call. test.ps1 runs suites
-	 * WITHOUT {@code -Djava.awt.headless=true}, so that would not throw
-	 * HeadlessException and fail - it would put a window up and HANG the whole
-	 * battery waiting for a click, which is the one outcome a runner cannot report.
-	 *
-	 * <p>The fix is to extract the decision below the dialog the way
-	 * {@code CtrmapMainframe.openChosenGr} was extracted from its file chooser, and
-	 * then this section is a dozen lines. Until then this is a named hole, not a
-	 * silent one.
-	 */
-	static void encountersAreNotCoveredHere() {
-		//intentionally empty: see the javadoc.
-	}
 
 	/** A section that throws is a FAILURE, not a crash that ends the run.
 	 *
@@ -977,6 +958,96 @@ public class WorkflowGuardsTest {
 			}
 		}
 		return out;
+	}
+	/**
+	 * Edit a zone's wild encounters, pack, and edit them again.
+	 *
+	 * <p>THIS SECTION USED TO BE A COMMENT SAYING WHY IT COULD NOT EXIST. The only
+	 * way into encounter editing was a modal dialog, and this battery runs WITHOUT
+	 * {@code -Djava.awt.headless=true}, so driving it would not have thrown - it
+	 * would have put a window up and HUNG, which is the one outcome a runner cannot
+	 * report. The hole was named rather than left to be rediscovered, and
+	 * {@code EncounterEditDialog.readEncounters/saveEncounters} is it being filled.
+	 *
+	 * <p>WHY THE SECOND EDIT IS THE POINT. The EN pack is ONE archive entry holding
+	 * every zone's table, so a second edit does not start from the game - it starts
+	 * from what the first edit wrote, through a pack. That is the same shape as
+	 * append/pack/append and resize/pack/resize, and the same shape that was broken
+	 * in all of them.
+	 *
+	 * <p>It also checks the zone NEXT DOOR is untouched, because one entry holding
+	 * every zone is exactly the arrangement where writing one overwrites another.
+	 */
+	static void encountersPackEncounters(File dump) throws Exception {
+		System.out.println("--- edit wild encounters, pack, edit again");
+		ScratchGame.open(dump);
+		final int mine = DONOR, neighbour = DONOR + 1;
+		ctrmap.formats.encounters.EncounterTable before =
+			ctrmap.humaninterface.EncounterEditDialog.readEncounters(Workspace.session(), mine);
+		check(before != null, "a zone's encounters can be read without opening a dialog");
+		byte[] neighbourBefore = encountersBytes(neighbour);
+		
+		//FIRST EDIT: put a species nobody could mistake for retail into slot 0
+		before.banks[0][0].species = 151;
+		before.banks[0][0].minLevel = 7;
+		before.banks[0][0].maxLevel = 9;
+		String said = ctrmap.humaninterface.EncounterEditDialog.saveEncounters(
+			Workspace.session(), mine, before);
+		check(said.contains(String.valueOf(mine)), "saving says which zone it saved: " + said);
+		pack();
+		
+		ctrmap.formats.encounters.EncounterTable back =
+			ctrmap.humaninterface.EncounterEditDialog.readEncounters(Workspace.session(), mine);
+		check(back.banks[0][0].species == 151 && back.banks[0][0].minLevel == 7,
+			"and after a pack the edit is still there (species "
+			+ back.banks[0][0].species + ", level " + back.banks[0][0].minLevel + ")");
+		check(java.util.Arrays.equals(neighbourBefore, encountersBytes(neighbour)),
+			"and the zone next door is untouched - one archive entry holds every zone's"
+			+ " table, which is the arrangement where writing one overwrites another");
+		
+		//THE SECOND EDIT, which starts from what the first one wrote
+		back.banks[0][0].species = 251;
+		ctrmap.humaninterface.EncounterEditDialog.saveEncounters(Workspace.session(), mine, back);
+		pack();
+		ctrmap.formats.encounters.EncounterTable twice =
+			ctrmap.humaninterface.EncounterEditDialog.readEncounters(Workspace.session(), mine);
+		check(twice.banks[0][0].species == 251,
+			"a second edit after a pack takes, and reads back what it wrote (species "
+			+ twice.banks[0][0].species + ")");
+		check(twice.banks[0][0].minLevel == 7,
+			"and did not lose what the first edit set alongside it");
+		
+		//and clearing it back out is the other half of the round trip
+		for (ctrmap.formats.encounters.EncounterTable.Slot[] bank : twice.banks) {
+			for (ctrmap.formats.encounters.EncounterTable.Slot sl : bank) {
+				sl.species = 0;
+				sl.form = 0;
+				sl.minLevel = 1;
+				sl.maxLevel = 1;
+			}
+		}
+		String cleared = ctrmap.humaninterface.EncounterEditDialog.saveEncounters(
+			Workspace.session(), mine, twice);
+		check(cleared.contains("removed"), "clearing every slot says the wild data was REMOVED,"
+			+ " not saved: " + cleared);
+	}
+
+	/** One zone's encounter bytes, for comparing a neighbour before and after. */
+	static byte[] encountersBytes(int zoneIndex) {
+		try {
+			ctrmap.formats.encounters.EncounterTable t =
+				ctrmap.humaninterface.EncounterEditDialog.readEncounters(Workspace.session(), zoneIndex);
+			StringBuilder sb = new StringBuilder();
+			for (ctrmap.formats.encounters.EncounterTable.Slot[] bank : t.banks) {
+				for (ctrmap.formats.encounters.EncounterTable.Slot sl : bank) {
+					sb.append(sl.species).append(',').append(sl.form).append(',')
+						.append(sl.minLevel).append(',').append(sl.maxLevel).append(';');
+				}
+			}
+			return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+		} catch (Exception ex) {
+			return new byte[0];
+		}
 	}
 	/** A zone's whole ZO container as bytes, or null when it cannot be read. */
 	static byte[] zoneBytes(int zoneIndex) {

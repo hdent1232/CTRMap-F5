@@ -1606,6 +1606,18 @@
     "${PRISTINE}/a\\0\\1\\4"
    ],
    "must_say": "is cropped from every user"
+  },
+  {
+   "id": "an-encounter-edit-overwrites-the-zone-next-door",
+   "why": "The EN pack is ONE archive entry holding every zone table, so writing one zone means rewriting the whole pack around it. Passing the wrong zone, or rebuilding the pack from something other than what is on disk, silently replaces a neighbour first and this zone second - and nothing about the save looks wrong from the outside. The workflow had no guard at all until now because the only way in was a modal dialog, which would have HUNG this battery rather than failed it; the seam exists so the workflow can be driven.",
+   "file": "src/ctrmap/humaninterface/EncounterEditDialog.java",
+   "find": "\t\tbyte[] newPack = EncounterTable.write(pack, zoneIndex, table);\n",
+   "replace": "\t\tbyte[] newPack = EncounterTable.write(pack, zoneIndex + 1, table);\n",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "and the zone next door is untouched"
   }
  ]
 }
