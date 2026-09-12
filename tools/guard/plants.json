@@ -1515,7 +1515,7 @@
    "id": "a-created-zone-keeps-the-donors-atmosphere",
    "why": "The area fork writes a new AreaData entry and a new NPC registry and grows the per-area table - and then has to point the zone at what it made. Drop that one line and every archive is written correctly while the zone still names the donor: the fork LOOKS done, the new area sits there unused, and a fog edit in the new zone still rewrites the zone it was cloned from. That is the defect the whole area fork exists to remove, in the one place it can hide.",
    "file": "src/ctrmap/AreaForker.java",
-   "find": "\t\t\tnewZos[i] = plan.newZoBytes;  // the repointed container the caller will write\n",
+   "find": "\t\t\tzos[i] = plan.newZoBytes;  // the repointed container the caller will write\n",
    "replace": "",
    "suite": "ctrmap.tests.WorkflowGuardsTest",
    "args": [
@@ -1575,13 +1575,25 @@
    "id": "a-created-zone-keeps-the-donors-dialogue",
    "why": "The text fork writes a copy of the donor dialogue file at a new id and then has to point the zone at it. Drop that line and the copy is written, packed and never used, while the new zone still names the donor - so writing a line for the new zone puts it in the donor instead. Measured before this existed: zones 536-539 all shared story text 491 with zone 534. The fork LOOKS done from every angle except the one that matters.",
    "file": "src/ctrmap/TextForker.java",
-   "find": "\t\t\tZoneResource.TEXT.setIn(newZos[i], newText);\n",
+   "find": "\t\t\tZoneResource.TEXT.setIn(zos[i], newText);\n",
    "replace": "",
    "suite": "ctrmap.tests.WorkflowGuardsTest",
    "args": [
     "${GAMEDIR}"
    ],
    "must_say": "no created zone shares its story text with any other"
+  },
+  {
+   "id": "a-shared-area-or-text-is-left-shared-forever",
+   "why": "Fixing the appender cannot reach a workspace that already exists. Measured on the owner's game after the map repair shipped: zones 536-539 still shared story text 491 with zone 534, and 537-539 still shared area 24 with 534 and with zone 20 - so editing the dialogue of a new zone still rewrote Sootopolis's, and a fog edit still leaked. Stop finding the sharers and the repair reports success having done nothing, which is the failure mode that put the map repair here in the first place.",
+   "file": "src/ctrmap/GeometryForker.java",
+   "find": "\t\t\t\t\tif (users.get(res.idInMasterRow(master, z)) > 1) {\n",
+   "replace": "\t\t\t\t\tif (false) {\n",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "and afterwards no created zone shares any resource the append makes private"
   }
  ]
 }

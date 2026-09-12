@@ -339,6 +339,112 @@ public class GeometryForker {
 	}
 
 
+	/**
+	 * Gives appended zones their own copy of any resource they still SHARE, for
+	 * every resource the appender makes private - the repair half of
+	 * {@link ZoneAppender#madePrivate()}.
+	 *
+	 * <p>WHY IT IS NOT THE MAP REPAIR. The map has its own pass because forking one
+	 * means copying regions and then emptying them, and because a spare that was
+	 * never built on should come out blank. Area and story text are plain copies:
+	 * the zone gets its own and it looks the same afterwards. Running them through
+	 * the table rather than naming them means the day SCRIPT becomes forkable - if
+	 * it ever does - this repairs it too, without being edited.
+	 *
+	 * <p>IT REPAIRS WHAT IS SHARED, NOT WHAT IS APPENDED. A zone whose area is
+	 * already its own is left alone: forking one that is already private appends a
+	 * copy nothing uses and orphans the old one, which is the waste
+	 * {@link #ensurePrivate} exists to avoid. Measured on the owner's game, this is
+	 * the normal case rather than an edge one - zone 536 had its own area and
+	 * 537-539 did not, because the first was forked by hand through a dialog.
+	 */
+	public static RepairReport repairSharedResources(int baseZones) {
+		RepairReport r = new RepairReport();
+		try {
+			GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
+			if (zo == null || Workspace.session() == null || Workspace.session().isReadOnly()) {
+				r.refusedBecause = zo == null ? "no workspace is loaded" : "this workspace is open read-only";
+				return r;
+			}
+			int zoneCount = ZoneTables.zoneCount(zo);
+			if (zoneCount <= baseZones) {
+				return r;
+			}
+			File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
+			if (masterFile == null) {
+				r.refusedBecause = "the master zone-header table could not be read";
+				return r;
+			}
+			byte[] master = Files.readAllBytes(masterFile.toPath());
+			if (master.length != zoneCount * MASTER_ROW) {
+				r.refusedBecause = "the master zone-header table is " + master.length + " bytes, not the "
+					+ (zoneCount * MASTER_ROW) + " this game's " + zoneCount + " zones need";
+				return r;
+			}
+			boolean wrote = false;
+			for (ZoneResource res : ZoneAppender.madePrivate()) {
+				if (res == ZoneResource.MAP) {
+					continue; //repaired by repairSharedAppendedZones, which also blanks
+				}
+				//who shares what, read from the master table - the copy the game reads
+				java.util.Map<Integer, Integer> users = new HashMap<>();
+				for (int z = 0; z < zoneCount; z++) {
+					int id = res.idInMasterRow(master, z);
+					Integer n = users.get(id);
+					users.put(id, n == null ? 1 : n + 1);
+				}
+				java.util.List<Integer> needy = new java.util.ArrayList<>();
+				for (int z = baseZones; z < zoneCount; z++) {
+					if (users.get(res.idInMasterRow(master, z)) > 1) {
+						needy.add(z);
+					}
+				}
+				if (needy.isEmpty()) {
+					continue;
+				}
+				int[] zones = new int[needy.size()];
+				byte[][] zos = new byte[needy.size()][];
+				for (int i = 0; i < zones.length; i++) {
+					zones[i] = needy.get(i);
+					File zf = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zones[i]);
+					if (zf == null) {
+						throw new IOException("Zone " + zones[i] + " could not be read out of the workspace.");
+					}
+					zos[i] = Files.readAllBytes(zf.toPath());
+				}
+				if (res == ZoneResource.AREA) {
+					AreaForker.forkAppendedAreas(zos, master, zones);
+				} else if (res == ZoneResource.TEXT) {
+					TextForker.forkAppendedTexts(Workspace.session(), zos, master, zones);
+				} else {
+					//a row joined MADE_PRIVATE and nothing here knows how to repair it. Said,
+					//not skipped: a repair that quietly does nothing for a resource is the
+					//silence this whole class of work exists to remove.
+					r.kept.add("zone(s) " + needy + " still share their " + res.label
+						+ " - the append makes it private, but nothing here can repair one that is not");
+					continue;
+				}
+				for (int i = 0; i < zones.length; i++) {
+					File zf = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zones[i]);
+					Files.write(zf.toPath(), zos[i]);
+					Workspace.addPersist(zf);
+					if (!r.forked.contains(zones[i])) {
+						r.forked.add(zones[i]);
+					}
+				}
+				r.shared.addAll(needy);
+				wrote = true;
+			}
+			if (wrote) {
+				Files.write(masterFile.toPath(), master);
+				Workspace.addPersist(masterFile);
+			}
+		} catch (Exception ex) {
+		//said, never swallowed - this runs while the editor is opening
+			r.refusedBecause = String.valueOf(ex.getMessage());
+		}
+		return r;
+	}
 	/** What a repair pass found, and what it did about it. */
 	public static class RepairReport {
 		/** Appended zones that still shared a donor's map, in index order. */
@@ -738,17 +844,31 @@ public class GeometryForker {
 
 	/** Repoints a zone's mapmatrixID in the master zone-header table file. */
 	public static void repointMasterRow(GARC zo, int zoneIndex, int newMatrix) throws IOException {
+		repointMasterRow(zo, zoneIndex, ZoneResource.MAP, newMatrix);
+	}
+
+	/**
+	 * The same, for ANY resource a zone header points at.
+	 *
+	 * <p>The matrix version hard-coded its own offset, which was right while the map
+	 * was the only thing being repointed. It is not any more - an area, and a story
+	 * text, are repointed in the same row by the same arithmetic - so the offset
+	 * comes from {@link ZoneResource} and there is one copy of the arithmetic rather
+	 * than one per resource.
+	 */
+	public static void repointMasterRow(GARC zo, int zoneIndex, ZoneResource res, int newId)
+			throws IOException {
 		int masterIndex = ZoneTables.masterIndex(zo);
 		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
 		if (masterFile == null) {
 			throw new IOException("Could not extract the master zone-header table.");
 		}
 		byte[] master = Files.readAllBytes(masterFile.toPath());
-		int rowOff = zoneIndex * MASTER_ROW + 4;
+		int rowOff = zoneIndex * MASTER_ROW + res.headerOffset;
 		if (rowOff + 2 > master.length) {
 			throw new IOException("Master-table row for zone " + zoneIndex + " out of range.");
 		}
-		putU16(master, rowOff, newMatrix);
+		putU16(master, rowOff, newId);
 		Files.write(masterFile.toPath(), master);
 		Workspace.addPersist(masterFile);
 	}

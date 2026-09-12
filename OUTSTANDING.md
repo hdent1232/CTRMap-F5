@@ -30,8 +30,6 @@ anything known to be broken. Not ideas, not maybes. If it is here it is owed.
       archive: CTRMap neither extracts nor packs it. Until that changes a
       created zone runs its donor's events, and the only close available is the
       refusal that is now in place. Revisit if the script archive is ever added.
-- [ ] **Repair the resources already shared** in workspaces made by earlier
-      versions, the way `PaddingZoneRepair` repairs the map.
 - [ ] **Relink / connect zones.** Asked for on 2026-09-11.
 - [ ] **`GfEnvPicker` card clipping** - the atmosphere card is laid out for
       340px and clipped to 92px, so most of it is never drawn.
@@ -54,6 +52,11 @@ anything known to be broken. Not ideas, not maybes. If it is here it is owed.
 - [x] 2026-09-11 Padding spares an earlier version left sharing the donor's MAP
       are repaired on open, in one pass, and blanked when untouched.
 - [x] 2026-09-11 The zone list waits for the pack that repair starts.
+- [x] 2026-09-12 Workspaces made by earlier versions are repaired on open for
+      EVERY resource the append makes private, not just the map - driven off
+      ZoneAppender.madePrivate() so a row that joins it is repaired the same
+      day. A zone whose resource is already private is left alone: forking one
+      twice appends a copy nothing uses and orphans the one in use.
 - [x] 2026-09-12 A created zone gets its own STORY TEXT. Copied rather than
       emptied: the script cannot be forked, so every created zone runs the
       donor's events and those ask for line numbers - an empty text file under

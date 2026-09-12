@@ -54,6 +54,7 @@ public class WorkflowGuardsTest {
 			section("a created zone shares nothing, or says so", () -> aCreatedZoneSharesNothing(dump));
 			section("the preview shows the zone it names", () -> thePreviewShowsWhatItNames(dump));
 			section("a spare left sharing is repaired", () -> spareLeftSharingIsRepaired(dump));
+			section("shared resources are repaired too", () -> sharedResourcesAreRepaired(dump));
 			section("resize, pack, resize again", () -> resizePackResizeAgain(dump));
 			section("deploy, disable, deploy again", () -> deployDisableDeployAgain(dump));
 		}
@@ -749,7 +750,8 @@ public class WorkflowGuardsTest {
 			for (int i = 0; i < doomed.length; i++) {
 				doomed[i] = zoneBytes(DONOR);
 			}
-			ctrmap.AreaForker.forkAppendedAreas(doomed, new byte[0], 0, doomed.length);
+			int[] tooManyZones = new int[doomed.length];
+			ctrmap.AreaForker.forkAppendedAreas(doomed, new byte[0], tooManyZones);
 		} catch (Exception ex) {
 			tooMany = String.valueOf(ex.getMessage());
 		}
@@ -882,6 +884,99 @@ public class WorkflowGuardsTest {
 		check(ctrmap.humaninterface.MapPreview3D.decode(plausible, null) == null,
 			"and a header whose offsets are nonsense still decodes to nothing, rather than"
 			+ " taking the editor down with it");
+	}
+	/**
+	 * A workspace an older version left sharing an AREA or a STORY TEXT is repaired
+	 * on open, the same way its map is.
+	 *
+	 * <p>Fixing the appender cannot reach a workspace that already exists, and the
+	 * owner's does: after the map repair, zones 536-539 still shared story text 491
+	 * with zone 534, and 537-539 still shared area 24 with 534 and with zone 20.
+	 * Editing the dialogue of one rewrote Sootopolis's.
+	 *
+	 * <p>The old state is put back by hand because this build cannot produce it any
+	 * more - which is the point of the repair existing - and it is put back in the
+	 * ZO header AND the master row, because a repair that read one and wrote the
+	 * other would pass a test that only broke the one it reads.
+	 */
+	static void sharedResourcesAreRepaired(File dump) throws Exception {
+		System.out.println("--- an area or story text an older version left sharing is repaired");
+		ScratchGame.open(dump);
+		if (!stockBase()) {
+			return;
+		}
+		int stock = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
+		ZoneAppender.AppendResult r = ZoneAppender.appendZones(1, DONOR, true);
+		pack();
+		int added = r.realZones + r.spareZones;
+		
+		//PUT THE OLD STATE BACK: every created zone pointing at the donor's area and
+		//text again, in both places the game can read them from.
+		byte[] donor = zoneBytes(DONOR);
+		java.util.List<Integer> broken = new java.util.ArrayList<>();
+		for (int i = 0; i < added; i++) {
+			int zone = stock - 2 + i;
+			byte[] zb = zoneBytes(zone);
+			for (ctrmap.ZoneResource res : ZoneAppender.madePrivate()) {
+				if (res == ctrmap.ZoneResource.MAP) {
+					continue; //its own repair, with its own section
+				}
+				res.setIn(zb, res.idIn(donor));
+				ctrmap.GeometryForker.repointMasterRow(Workspace.getArchive(ArchiveType.ZONE_DATA),
+					zone, res, res.idIn(donor));
+			}
+			java.nio.file.Files.write(
+				Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zone).toPath(), zb);
+			Workspace.addPersist(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zone));
+			broken.add(zone);
+		}
+		java.util.List<String> before = sharersOf(broken);
+		check(!before.isEmpty(), "put back the old state: " + before);
+		
+		ctrmap.GeometryForker.RepairReport rep = ctrmap.GeometryForker.repairSharedResources(
+			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
+		check(rep.refusedBecause.isEmpty(), "the repair runs rather than refusing: "
+			+ (rep.refusedBecause.isEmpty() ? "no refusal" : rep.refusedBecause));
+		pack();
+		java.util.List<String> after = sharersOf(broken);
+		check(after.isEmpty(), "and afterwards no created zone shares any resource the append"
+			+ " makes private " + after);
+		check(!rep.forked.isEmpty(), "and it says which zones it repaired " + rep.forked);
+		
+		//...and it does not run again on a workspace that is already right, which would
+		//append a copy nothing uses and orphan the one in use
+		int areasBefore = Workspace.getArchive(ArchiveType.AREA_DATA).length;
+		ctrmap.GeometryForker.RepairReport again = ctrmap.GeometryForker.repairSharedResources(
+			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
+		check(again.forked.isEmpty(), "opening it again repairs nothing " + again.forked);
+		check(Workspace.getArchive(ArchiveType.AREA_DATA).length == areasBefore,
+			"and appends no area nobody would use (" + areasBefore + ")");
+	}
+
+	/** Which of these zones share a made-private resource with anyone, as sentences. */
+	static java.util.List<String> sharersOf(java.util.List<Integer> zones) throws Exception {
+		java.util.List<String> out = new java.util.ArrayList<>();
+		int zoneCount = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		for (int z : zones) {
+			byte[] mine = zoneBytes(z);
+			if (mine == null) {
+				continue;
+			}
+			for (ctrmap.ZoneResource res : ZoneAppender.madePrivate()) {
+				if (res == ctrmap.ZoneResource.MAP) {
+					continue;
+				}
+				int id = res.idIn(mine);
+				for (int other = 0; other < zoneCount; other++) {
+					byte[] theirs = other == z ? null : zoneBytes(other);
+					if (theirs != null && res.idIn(theirs) == id) {
+						out.add("zone " + z + " shares " + res.label + " " + id + " with " + other);
+						break;
+					}
+				}
+			}
+		}
+		return out;
 	}
 	/** A zone's whole ZO container as bytes, or null when it cannot be read. */
 	static byte[] zoneBytes(int zoneIndex) {

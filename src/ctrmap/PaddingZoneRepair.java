@@ -65,8 +65,23 @@ public final class PaddingZoneRepair {
 	 */
 	public static void repairOnOpen(Component parent, java.util.function.Consumer<Runnable> packer,
 			Runnable then) {
-		final GeometryForker.RepairReport r = GeometryForker.repairSharedAppendedZones(
-				ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
+		final int base = ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES;
+		final GeometryForker.RepairReport r = GeometryForker.repairSharedAppendedZones(base);
+		//AND EVERY OTHER RESOURCE THE APPEND MAKES PRIVATE. The map came first because
+		//it is what the owner saw; area and story text were shared in the same
+		//workspaces for the same reason, and fixing the appender cannot reach any of
+		//them. Driven off the table, so this covers whatever MADE_PRIVATE holds rather
+		//than the two it holds today.
+		GeometryForker.RepairReport rest = GeometryForker.repairSharedResources(base);
+		for (Integer z : rest.forked) {
+			if (!r.forked.contains(z)) {
+				r.forked.add(z);
+			}
+		}
+		r.kept.addAll(rest.kept);
+		if (r.refusedBecause.isEmpty()) {
+			r.refusedBecause = rest.refusedBecause;
+		}
 		if (!r.refusedBecause.isEmpty()) {
 			//only worth a word when there was something to repair - a workspace with
 			//no appended zones refuses nothing and must not greet the user with a

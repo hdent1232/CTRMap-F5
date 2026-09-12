@@ -287,7 +287,11 @@ public class ZoneAppender {
 		// of the 256 - so forkAppendedAreas checks it for the WHOLE batch before it
 		// writes anything, rather than running out half way and leaving two of four new
 		// zones private.
-		AreaForker.forkAppendedAreas(p.newZos, p.master, oldCount, addCount);
+		int[] created = new int[addCount];
+		for (int i = 0; i < addCount; i++) {
+			created[i] = oldCount + i;
+		}
+		AreaForker.forkAppendedAreas(p.newZos, p.master, created);
 
 		// ...and its own STORY TEXT, so writing dialogue for a new zone stops rewriting
 		// the donor's. Copied rather than emptied: the zone's SCRIPT cannot be forked
@@ -295,7 +299,7 @@ public class ZoneAppender {
 		// events, and those ask for line numbers. An empty text file under a script that
 		// wants line 12 misbehaves in game; a copy keeps the pair consistent, and
 		// independence is what this is for, not emptiness.
-		TextForker.forkAppendedTexts(Workspace.session(), p.newZos, p.master, oldCount, addCount);
+		TextForker.forkAppendedTexts(Workspace.session(), p.newZos, p.master, created);
 
 		if (pendingZoneDataOverrides == null) {
 			pendingZoneDataOverrides = new HashMap<>();
