@@ -48,6 +48,12 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 	private boolean fogOn = false;
 	private final float[] fogColor = new float[]{0f, 0f, 0f, 1f};
 	private float fogNear = 0f, fogFar = 0f;
+	//VIEW ONLY, and nothing this flag does is ever written to the game. An
+	//area's real fog is often the whole point of the area - a cave is black at
+	//360 units - and that is unarguably correct and unarguably useless to edit
+	//in. Suppressing it changes what is drawn and nothing else, so the zone the
+	//user deploys is the zone they authored, fog and all.
+	private boolean fogSuppressed = false;
 
 	/** Shows the area's fog (color + near/far) in the scene. */
 	public void setFog(float r, float g, float b, float near, float far) {
@@ -58,6 +64,17 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 		fogFar = far;
 		fogOn = far > near && far > 0;
 		repaint();
+	}
+
+	/** Hides the area's fog in the view without touching it. Drawing only. */
+	public void setFogSuppressed(boolean suppressed) {
+		fogSuppressed = suppressed;
+		repaint();
+	}
+
+	/** Whether the view is currently hiding the area's fog. */
+	public boolean isFogSuppressed() {
+		return fogSuppressed;
 	}
 
 	/** Back to the plain black backdrop (no zone / unreadable atmosphere). */
@@ -117,7 +134,7 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 	public void display(GLAutoDrawable drawable) {
 		if (Workspace.isValid()) {
 			GL2 gl = drawable.getGL().getGL2();
-			if (fogOn) {
+			if (fogOn && !fogSuppressed) {
 				//sky takes the fog color, exactly like the engine does
 				gl.glClearColor(fogColor[0], fogColor[1], fogColor[2], 1f);
 				gl.glEnable(GL2.GL_FOG);

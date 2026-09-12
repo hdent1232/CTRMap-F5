@@ -268,14 +268,16 @@ public class GeometryForker {
 	 * cycle. Mutates the caller's in-memory payloads in place - {@code newZos[i]}
 	 * is replaced with the repointed ZO container and {@code master}'s row for
 	 * each real zone is repointed - and writes the region/matrix copies into the
-	 * workspace. Spare zones (padding to a multiple of 4) are left sharing the
-	 * source map.
+	 * workspace. EVERY appended zone is forked, spares included; the spares that
+	 * round the count up to a multiple of four are then BLANKED, because a slot
+	 * nobody asked for should open empty rather than as a second copy of the donor.
 	 *
-	 * @param newZos       the appended zones' ZO containers, indices
-	 *                     0..newRealZones-1 forked (mutated in place)
+	 * @param newZos       the appended zones' ZO containers, all forked
+	 *                     (mutated in place)
 	 * @param master       the grown master zone-header table (rows repointed in place)
 	 * @param oldCount     the first new zone's GARC index (== its master-table row)
-	 * @param newRealZones how many of the appended zones to fork
+	 * @param newRealZones how many were ASKED for; the rest are the padding
+	 *                     spares, which are forked too and then blanked
 	 */
 	public static void forkAppendedZones(byte[][] newZos, byte[] master, int oldCount, int newRealZones) throws IOException {
 		GARC gr = Workspace.getArchive(ArchiveType.FIELD_DATA);
@@ -333,6 +335,220 @@ public class GeometryForker {
 				throw new IOException("Master-table row for zone " + (oldCount + i) + " out of range.");
 			}
 			putU16(master, rowOff, newMatrix);                        // repoint the master-table row
+		}
+	}
+
+
+	/** What a repair pass found, and what it did about it. */
+	public static class RepairReport {
+		/** Appended zones that still shared a donor's map, in index order. */
+		public final java.util.List<Integer> shared = new java.util.ArrayList<>();
+		/** Those that were given their own map. */
+		public final java.util.List<Integer> forked = new java.util.ArrayList<>();
+		/** Those whose new map was also emptied, because nothing had been built on the slot. */
+		public final java.util.List<Integer> blanked = new java.util.ArrayList<>();
+		/** Slots that kept their contents, with the reason - an edited slot is not blanked. */
+		public final java.util.List<String> kept = new java.util.ArrayList<>();
+		/** Why the pass did nothing, when it did nothing. Empty means it ran. */
+		public String refusedBecause = "";
+		
+		/** True when files were staged and the workspace therefore needs a pack. */
+		public boolean changedAnything() {
+			return !forked.isEmpty();
+		}
+	}
+
+	/**
+	 * Gives every APPENDED zone that still shares a donor's map its own, in one
+	 * pack cycle, and empties the ones nobody has built on.
+	 *
+	 * <p>WHO THIS IS FOR. Adding zones rounds the count up to a multiple of four,
+	 * and versions up to 1.0.1 forked only the zones the user ASKED for - the
+	 * padding spares kept pointing at the donor's map. So opening a spare showed
+	 * the donor's city, and painting it rewrote the donor and every sibling spare.
+	 * {@link #forkAppendedZones} fixes that for zones created from now on; this
+	 * fixes the workspaces that already have them, which no amount of fixing the
+	 * appender can reach.
+	 *
+	 * <p>ONE PASS, NOT ONE CALL PER ZONE. {@link #ensurePrivate} takes its new
+	 * matrix number from {@code mm.length} and refuses when that slot is already
+	 * staged, so it can only run ONCE between packs - a second call in the same
+	 * cycle would ask for the same matrix number and be told an append is pending.
+	 * A workspace with three spares therefore cannot be repaired by three of those.
+	 * This threads the region and matrix counters the way the appender does, so
+	 * every spare is staged together and one pack carries all of them.
+	 *
+	 * <p>IT BLANKS ONLY WHAT NOBODY HAS TOUCHED, and that is decidable rather than
+	 * guessed at. An untouched spare is byte-identical to its donor's ZO except for
+	 * the zone number the appender patched in, so a slot that differs anywhere else
+	 * has been edited and KEEPS its contents - it still gets its own map, which is
+	 * the part that matters, and the report says which. Nothing is destroyed even
+	 * then: what a shared slot displays IS the donor's regions, and those are
+	 * copied, never written.
+	 *
+	 * <p>It refuses rather than half-running, and says why, because the alternative
+	 * is a workspace with regions staged against a matrix that was never written.
+	 *
+	 * @param baseZones the first appended zone's index - below it are the game's own
+	 * @return what it found and did; never null
+	 */
+	public static RepairReport repairSharedAppendedZones(int baseZones) {
+		RepairReport r = new RepairReport();
+		try {
+			GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
+			GARC gr = Workspace.getArchive(ArchiveType.FIELD_DATA);
+			GARC mm = Workspace.getArchive(ArchiveType.MAP_MATRIX);
+			if (zo == null || gr == null || mm == null) {
+				r.refusedBecause = "no workspace is loaded";
+				return r;
+			}
+			if (Workspace.session() == null || Workspace.session().isReadOnly()) {
+				//A READ-ONLY SESSION TAKES THE WRITES AND DROPS THEM. It accepts staged
+				//files and persist entries, and only the PACK refuses - which the window
+				//skips without a word. Staging first and finding out at pack time would
+				//leave megabytes of region copies that never become anything.
+				r.refusedBecause = "this workspace is open read-only";
+				return r;
+			}
+			if (!Workspace.profile().supports(ctrmap.gamedef.GameProfile.Feature.AREA_FORK)) {
+				r.refusedBecause = "CTRMap has not measured how to fork a map for "
+					+ Workspace.profile().displayName();
+				return r;
+			}
+			int zoneCount = ZoneTables.zoneCount(zo);
+			if (zoneCount <= baseZones) {
+				return r; //no appended zones at all, which is the normal case
+			}
+			File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
+			if (masterFile == null) {
+				r.refusedBecause = "the master zone-header table could not be read";
+				return r;
+			}
+			byte[] master = Files.readAllBytes(masterFile.toPath());
+			if (master.length != zoneCount * MASTER_ROW) {
+				r.refusedBecause = "the master zone-header table is " + master.length
+					+ " bytes, not the " + (zoneCount * MASTER_ROW) + " this game's "
+					+ zoneCount + " zones need";
+				return r;
+			}
+			
+			//WHO SHARES WITH WHOM, from the master table, which is the copy the game
+			//actually reads. Counting sharers across EVERY zone matters: a spare can
+			//share with the retail donor it was padded out of and with its sibling
+			//spares at the same time, which is exactly what the reporter's workspace
+			//holds - 538 and 539 both on zone 534's matrix.
+			int[] matrixOf = new int[zoneCount];
+			java.util.Map<Integer, Integer> users = new HashMap<>();
+			for (int z = 0; z < zoneCount; z++) {
+				matrixOf[z] = u16(master, z * MASTER_ROW + 4);
+				Integer n = users.get(matrixOf[z]);
+				users.put(matrixOf[z], n == null ? 1 : n + 1);
+			}
+			for (int z = baseZones; z < zoneCount; z++) {
+				if (users.get(matrixOf[z]) > 1) {
+					r.shared.add(z);
+				}
+			}
+			if (r.shared.isEmpty()) {
+				return r;
+			}
+			
+			File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
+			File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
+			int nextRegion = gr.length;
+			int nextMatrix = mm.length;
+			if (Workspace.isPendingArtifact(new File(mmDir, String.valueOf(nextMatrix)))) {
+				r.refusedBecause = "a map append is already staged and not yet packed";
+				return r;
+			}
+			for (int z : r.shared) {
+				File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, z);
+				if (zoneFile == null) {
+					r.kept.add("zone " + z + " could not be read out of the workspace");
+					continue;
+				}
+				byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
+				boolean untouched = looksUntouched(zoBytes, matrixOf[z], z);
+				ForkPlan plan = forkArchives(zoBytes, nextRegion, nextMatrix, z, true, gr, mm, fdDir, mmDir);
+				nextRegion += plan.srcRegions.length;
+				Files.write(zoneFile.toPath(), plan.newZoBytes);
+				Workspace.addPersist(zoneFile);
+				putU16(master, z * MASTER_ROW + 4, nextMatrix);
+				nextMatrix++;
+				r.forked.add(z);
+				if (!untouched) {
+					r.kept.add("zone " + z + " has been edited, so its copy keeps what is on it");
+					continue;
+				}
+				boolean allBlank = true;
+				for (int newRegion : plan.newRegions) {
+					allBlank &= ctrmap.formats.h3d.RegionFactory.blankRegionFiles(
+						new ctrmap.formats.containers.GR(new File(fdDir, String.valueOf(newRegion)),
+							Workspace.session()), -1);
+				}
+				if (allBlank) {
+					r.blanked.add(z);
+				} else {
+					r.kept.add("zone " + z + " has its own map, but part of it could not be emptied");
+				}
+			}
+			if (!r.forked.isEmpty()) {
+				Files.write(masterFile.toPath(), master);
+				Workspace.addPersist(masterFile);
+			}
+		} catch (Exception ex) {
+		//SAID, NEVER SWALLOWED. This runs while the editor is opening, where a
+		//thrown exception would take the whole window with it for a repair nobody
+		//asked for - so it is caught, and the caller reports it like any other
+		//outcome rather than the user meeting a workspace that half-repaired.
+			r.refusedBecause = String.valueOf(ex.getMessage());
+		}
+		return r;
+	}
+
+	/**
+	 * Whether a padding slot is still exactly what the append made it.
+	 *
+	 * <p>ASKED OF THE CLONE FUNCTION, NOT OF A BYTE RANGE. The appender builds each
+	 * spare with {@link ctrmap.ZoneCloner#cloneZoneBytes}, so the question "is this
+	 * still what the append made" has an exact answer: run that function on the
+	 * donor for this zone number and see whether the bytes match. Writing out which
+	 * offsets it patches instead - the header's zone-number bits - would be a second
+	 * copy of a fact that already lives in one place, and the first draft of this
+	 * got that copy WRONG, comparing a window the patched bytes were not inside.
+	 *
+	 * <p>Compared against the donor rather than against a remembered flag, because
+	 * nothing was remembering: these workspaces were written by a version that did
+	 * not know it was leaving anything behind.
+	 */
+	static boolean looksUntouched(byte[] spareZo, int matrix, int zoneIndex) throws IOException {
+		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
+		int zoneCount = ZoneTables.zoneCount(zo);
+		int donor = -1;
+		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
+		byte[] master = Files.readAllBytes(masterFile.toPath());
+		for (int z = 0; z < zoneCount && donor < 0; z++) {
+			if (z != zoneIndex && u16(master, z * MASTER_ROW + 4) == matrix) {
+				donor = z;
+			}
+		}
+		if (donor < 0) {
+			return false; //nothing to compare against: keep what is there
+		}
+		File donorFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, donor);
+		if (donorFile == null) {
+			return false;
+		}
+		byte[] donorZo = Files.readAllBytes(donorFile.toPath());
+		if (donorZo.length != spareZo.length) {
+			return false;
+		}
+		try {
+			return java.util.Arrays.equals(spareZo,
+				ctrmap.ZoneCloner.cloneZoneBytes(donorZo, zoneIndex, true));
+		} catch (RuntimeException notAZone) {
+			//a ZO the cloner will not read is not one this can make a claim about
+			return false;
 		}
 	}
 

@@ -154,8 +154,13 @@ public class GfEnvPicker {
 			AreaEnv env = s4 == null ? null : AreaEnv.read(s4);
 			preview.set(env);
 			if (view3d != null && env != null) {
-				// fog the user's OWN zone with this atmosphere
-				view3d.setFog(env.fogColor[0], env.fogColor[1], env.fogColor[2], env.fogNear, env.fogFar);
+				// fog the user's OWN zone with this atmosphere, as it looks by day
+				float[] fog = env.viewFog(AreaEnv.TIME_DAY);
+				if (fog == null) {
+					view3d.clearFog();
+				} else {
+					view3d.setFog(fog[0], fog[1], fog[2], env.fogNear, env.fogFar);
+				}
 			}
 		});
 
@@ -326,11 +331,22 @@ public class GfEnvPicker {
 				g.drawString("(no environment data)", pad, 30);
 				return;
 			}
-			Color fogC = new Color(cl(env.fogColor[0]), cl(env.fogColor[1]), cl(env.fogColor[2]));
-			Color ambC = new Color(cl(env.ambient[0]), cl(env.ambient[1]), cl(env.ambient[2]));
-			// sky/haze impression: fog color fading over a ground tone
+			//THE FOUR TIMES OF DAY, which is what an area actually carries. This card
+			//used to paint one "fog colour" over one "ambient" - and both came from the
+			//misread channel 0, where the fog row was three different times of day of a
+			//single colour and the ambient row was the constant 1.0 group. So the card
+			//drew near-white over white for most areas and looked like it had failed to
+			//load, which is exactly what it was reported as.
+			Color[] times = new Color[AreaEnv.TIMES];
+			for (int t = 0; t < AreaEnv.TIMES; t++) {
+				times[t] = new Color(cl(env.fogColor[t][0]), cl(env.fogColor[t][1]), cl(env.fogColor[t][2]));
+			}
+			Color fogC = times[AreaEnv.TIME_DAY];
+			// sky/haze impression: the day fog fading over a ground tone, by its strength
 			Color ground = new Color(90, 140, 80);
-			g.setPaint(new GradientPaint(0, 20, fogC, 0, 150, mix(ground, fogC, env.fogColor[3])));
+			float dayStrength = env.fogStrength[AreaEnv.TIME_DAY];
+			g.setPaint(new GradientPaint(0, 20, mix(ground, fogC, dayStrength), 0, 150,
+				mix(ground, fogC, dayStrength * 0.35f)));
 			g.fillRoundRect(pad, 20, w - pad * 2, 130, 10, 10);
 			g.setColor(new Color(0, 0, 0, 90));
 			g.drawRoundRect(pad, 20, w - pad * 2, 130, 10, 10);
@@ -339,12 +355,12 @@ public class GfEnvPicker {
 			g.drawString("How this area feels", pad, 14);
 			g.setFont(getFont().deriveFont(Font.PLAIN, 12f));
 			int y = 175;
-			y = row(g, pad, y, "Fog / sky color", fogC);
-			y = row(g, pad, y, "Ambient / light", ambC);
+			for (int t = 0; t < AreaEnv.TIMES; t++) {
+				y = row(g, pad, y, AreaEnv.TIME_NAMES[t] + String.format("  %.0f%%", env.fogStrength[t] * 100),
+					times[t]);
+			}
 			g.setColor(getForeground());
 			g.drawString(String.format("Fog: starts %.0f, full at %.0f", env.fogNear, env.fogFar), pad, y + 4);
-			y += 22;
-			g.drawString(String.format("Fog strength: %.0f%%", env.fogColor[3] * 100), pad, y + 4);
 			y += 22;
 			String kind = env.fogFar >= 2000 ? "Outdoor-style (long draw, open sky)"
 					: env.fogFar >= 800 ? "Large interior / bright room" : "Small interior / cave (short draw)";

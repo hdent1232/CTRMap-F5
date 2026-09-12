@@ -166,12 +166,14 @@ public class ZoneAppender {
 		}
 		MultiAppendPayloads p = buildMultiAppendPayloads(Files.readAllBytes(srcFile.toPath()), masterBytes, enBytes, srcIndex, oldCount, addCount);
 
-		// Auto-fork geometry: give each REAL new zone its OWN private map so editing
-		// it does not change the zone it was cloned from (what users expect - a new
-		// zone is independent by default). Mutates p.newZos[i] (repointed header) and
+		// Auto-fork geometry: give EVERY new zone its OWN private map so editing one
+		// does not change the zone it was cloned from (what users expect - a new zone
+		// is independent by default). Mutates p.newZos[i] (repointed header) and
 		// p.master (repointed row) in place and adds the region/matrix copies to the
-		// workspace. Spare zones (padding to a multiple of 4) keep sharing the source
-		// map until the user explicitly forks or edits them.
+		// workspace. The spares that pad the count out to a multiple of 4 are forked
+		// too and then BLANKED: a slot nobody asked for opens empty rather than as a
+		// second copy of the donor. Up to 1.0.1 they kept the donor map instead, which
+		// is what CtrmapMainframe.repairSharedPaddingZones exists to undo.
 		GeometryForker.forkAppendedZones(p.newZos, p.master, oldCount, newRealZones);
 
 		if (pendingZoneDataOverrides == null) {

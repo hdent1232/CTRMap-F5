@@ -54,8 +54,8 @@ public class AreaLightingDialog {
 		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.AREA_ENV)) {
 			ctrmap.Ui.error(parent, "Editing area fog and lighting is not available for "
 					+ prof.displayName() + "."
-					+ "\n\nThe fog colour, near/far draw distances and ambient colour are read"
-					+ " from fixed offsets inside AreaData subfile 4, a layout measured on"
+					+ "\n\nThe fog colours, their strengths and the near/far draw distances are"
+					+ " read from fixed channels inside AreaData subfile 4, a layout measured on"
 					+ " Omega Ruby / Alpha Sapphire."
 					+ "\n\nCTRMap refuses here rather than writing colours over whatever this"
 					+ " game keeps at those offsets.",
@@ -114,49 +114,57 @@ public class AreaLightingDialog {
 		}
 		//fall through: the custom-settings form
 
-		final Color[] fog = {rgb(env.fogColor)};
-		final Color[] amb = {rgb(env.ambient)};
-		final JButton fogBtn = swatch("Fog / sky color", fog[0]);
-		final JButton ambBtn = swatch("Ambient / light color", amb[0]);
-		final JSpinner strength = new JSpinner(new SpinnerNumberModel(Math.round(env.fogColor[3] * 100), 0, 100, 5));
+		//FOUR TIMES OF DAY, because that is what an area carries. The block is
+		//float[61][12] and the twelve lanes are three identical groups of four:
+		//night, dawn, day, dusk. A route hazes pale at dawn, blue by day and ORANGE
+		//at dusk, and none of that was reachable here - this offered ONE colour and
+		//ONE strength, and wrote them into four floats that were not fog at all but
+		//one unrelated colour sampled across the day. The "Ambient / light colour"
+		//control is gone rather than relabelled: the bytes it wrote are the constant
+		//1.0 group of that same channel, so it was never a colour the user could
+		//choose - see AreaEnv for what the evidence for all of this is, and is not.
+		final Color[] fog = new Color[AreaEnv.TIMES];
+		final JButton[] fogBtn = new JButton[AreaEnv.TIMES];
+		final JSpinner[] strength = new JSpinner[AreaEnv.TIMES];
 		final JSpinner near = new JSpinner(new SpinnerNumberModel((int) env.fogNear, -2000, 30000, 50));
 		final JSpinner far = new JSpinner(new SpinnerNumberModel((int) env.fogFar, -2000, 30000, 100));
-		fogBtn.addActionListener(e -> {
-			Color c = JColorChooser.showDialog(fogBtn, "Fog / sky color", fog[0]);
-			if (c != null) {
-				fog[0] = c;
-				fogBtn.setBackground(c);
-			}
-		});
-		ambBtn.addActionListener(e -> {
-			Color c = JColorChooser.showDialog(ambBtn, "Ambient / light color", amb[0]);
-			if (c != null) {
-				amb[0] = c;
-				ambBtn.setBackground(c);
-			}
-		});
 
-		JPanel form = new JPanel(new GridLayout(0, 2, 6, 6));
+		JPanel form = new JPanel(new GridLayout(0, 3, 6, 6));
 		form.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-		form.add(new JLabel("Fog / sky color:"));
-		form.add(fogBtn);
-		form.add(new JLabel("Fog strength (%):"));
-		form.add(strength);
+		form.add(new JLabel("<html><b>Time of day</b></html>"));
+		form.add(new JLabel("<html><b>Fog colour</b></html>"));
+		form.add(new JLabel("<html><b>Strength (%)</b></html>"));
+		for (int t = 0; t < AreaEnv.TIMES; t++) {
+			final int ti = t;
+			fog[t] = rgb(env.fogColor[t]);
+			fogBtn[t] = swatch("Fog colour at " + AreaEnv.TIME_NAMES[t], fog[t]);
+			fogBtn[t].addActionListener(e -> {
+				Color c = JColorChooser.showDialog(fogBtn[ti], "Fog colour - " + AreaEnv.TIME_NAMES[ti], fog[ti]);
+				if (c != null) {
+					fog[ti] = c;
+					fogBtn[ti].setBackground(c);
+				}
+			});
+			strength[t] = new JSpinner(new SpinnerNumberModel(percent(env.fogStrength[t]), 0, 100, 5));
+			form.add(new JLabel(AreaEnv.TIME_NAMES[t] + ":"));
+			form.add(fogBtn[t]);
+			form.add(strength[t]);
+		}
 		form.add(new JLabel("Fog near (starts):"));
 		form.add(near);
+		form.add(new JLabel());
 		form.add(new JLabel("Fog far (fully hidden):"));
 		form.add(far);
-		form.add(new JLabel("Ambient / light color:"));
-		form.add(ambBtn);
+		form.add(new JLabel());
 
 		// refreshes the controls from the (possibly replaced) sub4 block
 		final Runnable refresh = () -> {
 			AreaEnv cur = AreaEnv.read(sub4);
-			fog[0] = rgb(cur.fogColor);
-			amb[0] = rgb(cur.ambient);
-			fogBtn.setBackground(fog[0]);
-			ambBtn.setBackground(amb[0]);
-			strength.setValue(Math.max(0, Math.min(100, Math.round(cur.fogColor[3] * 100))));
+			for (int t = 0; t < AreaEnv.TIMES; t++) {
+				fog[t] = rgb(cur.fogColor[t]);
+				fogBtn[t].setBackground(fog[t]);
+				strength[t].setValue(percent(cur.fogStrength[t]));
+			}
 			near.setValue((int) cur.fogNear);
 			far.setValue((int) cur.fogFar);
 		};
@@ -171,12 +179,24 @@ public class AreaLightingDialog {
 		dlg.add(main, BorderLayout.CENTER);
 		JPanel buttons = new JPanel();
 		JButton copyGf = new JButton("Copy a GameFreak zone's atmosphere");
+		JButton sameAllDay = new JButton("Day -> all four");
+		sameAllDay.setToolTipText("Give night, dawn and dusk the same fog as day -"
+			+ " what interiors do, since a cave has no day cycle.");
 		JButton save = new JButton("Save");
 		JButton cancel = new JButton("Cancel");
 		buttons.add(copyGf);
+		buttons.add(sameAllDay);
 		buttons.add(save);
 		buttons.add(cancel);
 		dlg.add(buttons, BorderLayout.SOUTH);
+
+		sameAllDay.addActionListener(e -> {
+			for (int t = 0; t < AreaEnv.TIMES; t++) {
+				fog[t] = fog[AreaEnv.TIME_DAY];
+				fogBtn[t].setBackground(fog[t]);
+				strength[t].setValue(strength[AreaEnv.TIME_DAY].getValue());
+			}
+		});
 
 		copyGf.addActionListener(e -> {
 			byte[] src = GfEnvPicker.pick(dlg, loaded, worldTextures);
@@ -189,13 +209,12 @@ public class AreaLightingDialog {
 		});
 
 		save.addActionListener(e -> {
-			env.fogColor[0] = fog[0].getRed() / 255f;
-			env.fogColor[1] = fog[0].getGreen() / 255f;
-			env.fogColor[2] = fog[0].getBlue() / 255f;
-			env.fogColor[3] = ((Integer) strength.getValue()) / 100f;
-			env.ambient[0] = amb[0].getRed() / 255f;
-			env.ambient[1] = amb[0].getGreen() / 255f;
-			env.ambient[2] = amb[0].getBlue() / 255f;
+			for (int t = 0; t < AreaEnv.TIMES; t++) {
+				env.fogColor[t][0] = fog[t].getRed() / 255f;
+				env.fogColor[t][1] = fog[t].getGreen() / 255f;
+				env.fogColor[t][2] = fog[t].getBlue() / 255f;
+				env.fogStrength[t] = ((Number) strength[t].getValue()).floatValue() / 100f;
+			}
 			env.fogNear = ((Number) near.getValue()).floatValue();
 			env.fogFar = ((Number) far.getValue()).floatValue();
 			try {
@@ -226,6 +245,11 @@ public class AreaLightingDialog {
 		b.setBackground(c);
 		b.setPreferredSize(new Dimension(80, 22));
 		return b;
+	}
+
+	/** A 0..1 strength as the whole percent the spinner shows. */
+	private static int percent(float v) {
+		return Math.max(0, Math.min(100, Math.round(v * 100)));
 	}
 
 	private static Color rgb(float[] c) {

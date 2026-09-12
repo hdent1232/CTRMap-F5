@@ -749,7 +749,8 @@ public class CtrmapMainframe {
 		jsp3.setLeftComponent(mtxScroll);
 		jsp3.setRightComponent(mMtxEditForm);
 
-		worldToolbar = new WorldEditorToolbar(tilemapInput, CtrmapMainframe::toggleView, mTileEditForm, mTileMapPanel);
+		worldToolbar = new WorldEditorToolbar(tilemapInput, CtrmapMainframe::toggleView,
+				CtrmapMainframe::toggleSceneFog, mTileEditForm, mTileMapPanel);
 		JPanel toolbarRows = new JPanel(new java.awt.GridLayout(2, 1));
 		toolbarRows.add(worldToolbar);
 		toolbarRows.add(buildMapActionsBar());
@@ -1058,6 +1059,22 @@ public class CtrmapMainframe {
 		showView3D(jsp.getLeftComponent() != m3DDebugPanel);
 	}
 
+	/**
+	 * Hides or shows the area's fog in the 3D view. VIEWING ONLY - it writes
+	 * nothing, which is the difference between this and Fog & lighting.
+	 *
+	 * <p>The PANEL holds the truth and the toggle follows it, exactly as the
+	 * 2D/3D switch does, so the button cannot come to disagree with what is on
+	 * screen.
+	 */
+	private static void toggleSceneFog() {
+		if (m3DDebugPanel == null) {
+			return;
+		}
+		m3DDebugPanel.setFogSuppressed(!m3DDebugPanel.isFogSuppressed());
+		worldToolbar.setFogSuppressed(m3DDebugPanel.isFogSuppressed());
+	}
+
 	/** Shows the World Editor tab: the map that was just loaded, not the form it was picked from. */
 	public static void showWorldEditor() {
 		tabs.setSelectedComponent(tileEditMasterPnl);
@@ -1327,7 +1344,17 @@ public class CtrmapMainframe {
 					: new ctrmap.formats.containers.AD(Workspace.getWorkspaceFile(
 							ArchiveType.AREA_DATA, open.header.areadataID), game);
 			ctrmap.formats.area.AreaEnv env = ctrmap.formats.area.AreaEnv.read(ad.getFile(4));
-			m3DDebugPanel.setFog(env.fogColor[0], env.fogColor[1], env.fogColor[2], env.fogNear, env.fogFar);
+			//THE DAY SLOT, and only when the area actually draws fog then. This used to
+			//hand over three floats from offset 0 as an r,g,b - which are one channel's
+			//red at three different times of day, and are 1.0, 1.0, 1.0 in most areas.
+			//The view painted that into glClearColor and GL_FOG_COLOR, so those maps
+			//opened as a blank white screen and looked like they had failed to load.
+			float[] fog = env.viewFog(ctrmap.formats.area.AreaEnv.TIME_DAY);
+			if (fog == null) {
+				m3DDebugPanel.clearFog();
+			} else {
+				m3DDebugPanel.setFog(fog[0], fog[1], fog[2], env.fogNear, env.fogFar);
+			}
 		} catch (Exception ex) {
 			m3DDebugPanel.clearFog();
 		}
@@ -1443,6 +1470,7 @@ public class CtrmapMainframe {
 			return 0;
 		}
 		mBuilder.loadGARCs();
+		PaddingZoneRepair.repairOnOpen(frame, Workspace::packWorkspace);
 		mZonePnl.loadEverything();
 		mTextEditor.loadGarc();
 		showZoneLoadingHint();
@@ -1579,36 +1607,64 @@ public class CtrmapMainframe {
 		Workspace.packWorkspace(new Runnable() {
 			@Override
 			public void run() {
-				ModDeployer.Result res = ModDeployer.deploy(modRoot, ips);
-				StringBuilder sb = new StringBuilder();
-				if (res.deployed.isEmpty() && !res.codeIpsDeployed) {
-					sb.append("Nothing changed to deploy (no edits since the last deploy).\n");
-				} else {
-					sb.append("Packed and deployed to:\n  ").append(modRoot.getAbsolutePath()).append("\n\n");
-					if (!res.deployed.isEmpty()) {
-						sb.append("Archives:\n");
-						for (String d : res.deployed) {
-							sb.append("  ").append(d).append("\n");
-						}
-					}
-					if (res.codeIpsDeployed) {
-						sb.append("  exefs\\code.ips  (executable patch)\n");
-					}
-					sb.append("\n").append(res.unchanged).append(" archive(s) unchanged, skipped.\n");
-				}
-				if (!res.skipped.isEmpty()) {
-					sb.append("\nProblems:\n");
-					for (String s : res.skipped) {
-						sb.append("  ").append(s).append("\n");
-					}
-				}
-				sb.append("\nIMPORTANT: fully CLOSE and reopen the emulator before testing - it caches\n"
-						+ "the game's files, so a soft reset can still show the old data.\n");
-				sb.append("To play the untouched retail game, come back here and pick\n"
-						+ "\"Turn mod OFF (play vanilla)\" - it switches off without deleting anything.");
-				Ui.message(frame, sb.toString(), "Deploy to emulator", JOptionPane.INFORMATION_MESSAGE);
+				deployAfterPack(modRoot, ips);
 			}
 		});
+	}
+
+	/**
+	 * What the window does once the pack has finished: deploy, and say what
+	 * happened - including when the deployer refuses to.
+	 *
+	 * <p>THIS IS A METHOD SO THE REFUSAL IS A FACT A SUITE CAN CHECK. It used
+	 * to be the body of the Runnable handed to the pack worker, and a worker
+	 * swallows what its callback throws: {@link ModDeployer#deploy} refusing to
+	 * write over a parked copy would have gone to the worker and nowhere the
+	 * user can see, so the menu item would have looked like it did nothing at
+	 * all - worse than the raw "already exists" path error the refusal replaced.
+	 * That catch is the whole reason this method exists, and extracting it is
+	 * the only way to assert it: the dialog above is a live Swing form, so a
+	 * suite cannot reach this through {@code deployModAction}.
+	 *
+	 * <p>Everything it tells the user goes through {@link Ui}, so a suite runs it
+	 * with no screen and reads back what was said.
+	 */
+	public static void deployAfterPack(File modRoot, File ips) {
+		//the catch is the point of this method - see above
+		ModDeployer.Result res;
+		try {
+			res = ModDeployer.deploy(modRoot, ips);
+		} catch (RuntimeException refused) {
+			Ui.error(frame, "Cannot deploy:\n\n" + refused.getMessage(), "Deploy to emulator");
+			return;
+		}
+		StringBuilder sb = new StringBuilder();
+		if (res.deployed.isEmpty() && !res.codeIpsDeployed) {
+			sb.append("Nothing changed to deploy (no edits since the last deploy).\n");
+		} else {
+			sb.append("Packed and deployed to:\n  ").append(modRoot.getAbsolutePath()).append("\n\n");
+			if (!res.deployed.isEmpty()) {
+				sb.append("Archives:\n");
+				for (String d : res.deployed) {
+					sb.append("  ").append(d).append("\n");
+				}
+			}
+			if (res.codeIpsDeployed) {
+				sb.append("  exefs\\code.ips  (executable patch)\n");
+			}
+			sb.append("\n").append(res.unchanged).append(" archive(s) unchanged, skipped.\n");
+		}
+		if (!res.skipped.isEmpty()) {
+			sb.append("\nProblems:\n");
+			for (String s : res.skipped) {
+				sb.append("  ").append(s).append("\n");
+			}
+		}
+		sb.append("\nIMPORTANT: fully CLOSE and reopen the emulator before testing - it caches\n"
+				+ "the game's files, so a soft reset can still show the old data.\n");
+		sb.append("To play the untouched retail game, come back here and pick\n"
+				+ "\"Turn mod OFF (play vanilla)\" - it switches off without deleting anything.");
+		Ui.message(frame, sb.toString(), "Deploy to emulator", JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	/**

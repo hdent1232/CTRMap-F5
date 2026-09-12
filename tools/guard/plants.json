@@ -1381,6 +1381,78 @@
     "${GAMEDIR}"
    ],
    "must_say": "every padding zone is blank, not a second copy of the donor"
+  },
+  {
+   "id": "deploy-writes-over-a-parked-copy",
+   "why": "Turning the mod off MOVES its folder aside rather than deleting it - that is the promise the switch makes and why it is safe to use. Deploying again while the parked copy is still there left BOTH on disk, and the window's toggle asks isParked first, so it then offered to turn the mod back ON and tried to move the parked copy over a folder that now existed: 'already exists, refusing to overwrite' and a path, from a menu item that had worked a moment earlier. Found by driving deploy -> off -> deploy -> off, which nothing had ever done.",
+   "file": "src/ctrmap/ModDeployer.java",
+   "find": "\t\tif (alreadyParked.isDirectory() && modRoot != null && !modRoot.isDirectory()) {",
+   "replace": "\t\tif (alreadyParked.isDirectory() && modRoot != null && !modRoot.isDirectory() && false) {",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "deploying while the mod is parked is refused, and says so"
+  },
+  {
+   "id": "the-pack-worker-swallows-the-deploy-refusal",
+   "why": "The window deploys from inside the pack worker's completion callback, and a SwingWorker swallows whatever its callback throws. So the refusal above, with no catch, would go to the worker and nowhere the user can see: picking Deploy would do nothing at all, say nothing at all, and leave them to guess - strictly worse than the raw path error the refusal was written to replace. Introduced and caught in the same hour the refusal was written, which is the only reason it is a plant and not a second release bug.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\t\tUi.error(frame, \"Cannot deploy:\\n\\n\" + refused.getMessage(), \"Deploy to emulator\");\n",
+   "replace": "",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "a refused deploy tells the user rather than doing nothing"
+  },
+  {
+   "id": "a-resize-appends-a-matrix-and-does-not-repoint-the-zone",
+   "why": "Nothing drove MapResizer.resize on a game that supports it: MapResizerTest checks the pure matrix transform over every retail matrix and never touches a workspace, and GameProfileTest calls it only to watch it REFUSE. So the whole append-and-repoint path - write a new matrix, write blank regions, point the zone at them - was unwatched. Dropping the repoint leaves a resize that writes everything, reports the new size, and changes nothing the player would ever walk on, which is this project's whole failure class.",
+   "file": "src/ctrmap/MapResizer.java",
+   "find": "\t\tputU16(newZo, hdrOff + 4, newMatrix);",
+   "replace": "\t\tputU16(newZo, hdrOff + 4, oldMatrix);",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "and the zone points at the new matrix, not the old one"
+  },
+  {
+   "id": "padding-repair-gives-every-spare-the-same-new-matrix",
+   "why": "The repair has to stage every spare in ONE pack cycle, because ensurePrivate takes its matrix number from mm.length and refuses when that slot is already staged - so it can only ever run once between packs, and a workspace with three spares cannot be fixed by three of them. Threading the counter by hand is the price of that, and forgetting to advance it hands every spare the SAME new matrix: they stop sharing the donor's map and start sharing one brand-new one, which looks like a repair, reports like a repair, and leaves the user exactly where they started.",
+   "file": "src/ctrmap/GeometryForker.java",
+   "find": "\t\t\t\tnextMatrix++;\n",
+   "replace": "",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "and no repaired spare shares a map with anything"
+  },
+  {
+   "id": "padding-repair-leaves-the-donors-city-in-the-slot",
+   "why": "A repaired spare gets its own map AND is emptied, because a slot nobody asked for should open empty rather than as a second copy of the city it was padded out of - which is what the user who found this asked for in so many words. Forking without blanking fixes the dangerous half (editing it no longer rewrites the donor) and leaves the confusing half: an 'empty' slot that opens on somebody else's town, and megabytes of copied regions to show for it.",
+   "file": "src/ctrmap/GeometryForker.java",
+   "find": "\t\t\t\tboolean untouched = looksUntouched(zoBytes, matrixOf[z], z);\n",
+   "replace": "\t\t\t\tboolean untouched = false;\n",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "and empties them, because nobody had built on them"
+  },
+  {
+   "id": "nothing-calls-the-padding-repair",
+   "why": "The repair runs behind frame != null on purpose - ScratchGame.open reaches onWorkspaceOpened, and Workspace.validate is driven by a suite pointed at the owner's real game folder, so a repair that packs must live where neither can arrive by accident. The cost of that placement is that no suite can drive the CALL, only the method, and a fix that is present, correct and never reached is this project's most-repeated defect. So the call is asked of the bytecode instead. The check is asked of the bytecode, and it had to be a SEPARATE CLASS to be worth asking: as a private method of the window it kept naming the repair after the call was deleted, so the plant survived and the guard was proving nothing.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\tPaddingZoneRepair.repairOnOpen(frame, Workspace::packWorkspace);\n",
+   "replace": "",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "and the window still calls it"
   }
  ]
 }

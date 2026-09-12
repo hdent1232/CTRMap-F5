@@ -261,8 +261,16 @@ public class WorkspaceSessionTest {
 		} finally {
 			Ui.stopRecording();
 		}
+		//SAYS WHAT IT WAS TOLD WHEN IT FAILS. This asserted a boolean and printed
+		//nothing else, so a regression here said only that the workspace did not
+		//open - with the reason sitting unread in the recording two lines above.
 		check(Workspace.isValid() && Workspace.session() != null && Workspace.session().gameDir().equals(dump),
-				"pointing it back at the game opens it again");
+				"pointing it back at the game opens it again"
+				+ (!Workspace.isValid() ? " - it did not open, and said: " + said
+					: Workspace.session() == null ? " - it opened but left no session"
+					: " - it opened " + Workspace.session().gameDir() + ", not " + dump
+					+ " (a RELATIVE path argument does not equal the absolute one the session"
+					+ " keeps - run this the way test.ps1 does)"));
 		check(Workspace.getArchive(ArchiveType.AREA_DATA) == Workspace.session().getArchive(ArchiveType.AREA_DATA),
 				"through the session that was opened");
 		check(new File(ws, "areadata").isDirectory() && new File(ws, "temp").isDirectory(),
