@@ -31,8 +31,6 @@ anything known to be broken. Not ideas, not maybes. If it is here it is owed.
       created zone runs its donor's events, and the only close available is the
       refusal that is now in place. Revisit if the script archive is ever added.
 - [ ] **Relink / connect zones.** Asked for on 2026-09-11.
-- [ ] **`GfEnvPicker` card clipping** - the atmosphere card is laid out for
-      340px and clipped to 92px, so most of it is never drawn.
 - [ ] **An encounter workflow guard.** `EncounterEditDialog.show` builds a modal
       dialog with no seam below it; the battery runs without
       `-Djava.awt.headless=true`, so a suite driving it would HANG rather than
@@ -52,6 +50,13 @@ anything known to be broken. Not ideas, not maybes. If it is here it is owed.
 - [x] 2026-09-11 Padding spares an earlier version left sharing the donor's MAP
       are repaired on open, in one pass, and blanked when untouched.
 - [x] 2026-09-11 The zone list waits for the pack that repair starts.
+- [x] 2026-09-12 The atmosphere card fits its box. It was laid out for 340px
+      and handed 92 whenever the 3D view existed, so most of it was cropped -
+      which is what "the atmospheres show a white blank page" was. There is now
+      a compact variant for beside the 3D view, and AreaEnvTest PAINTS both into
+      an image three times their height and measures the lowest ink. That also
+      caught the full card overflowing its own 340 by 9px once the four
+      time-of-day rows were added.
 - [x] 2026-09-12 Workspaces made by earlier versions are repaired on open for
       EVERY resource the append makes private, not just the map - driven off
       ZoneAppender.madePrivate() so a row that joins it is repaired the same

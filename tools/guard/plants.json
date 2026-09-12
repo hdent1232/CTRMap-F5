@@ -1594,6 +1594,18 @@
     "${GAMEDIR}"
    ],
    "must_say": "and afterwards no created zone shares any resource the append makes private"
+  },
+  {
+   "id": "the-atmosphere-card-draws-past-its-own-box",
+   "why": "The card is laid out for a full-height panel and is given 92px whenever the 3D view exists, so everything below the gradient band was clipped - which is most of it, including every colour the card exists to show. The owner reported the atmospheres as \"a white blank page\". Reading the code cannot catch this and neither can a screenshot nobody takes; the card has to be PAINTED into an image taller than it asks for, and the ink measured. Remove the compact branch and the full layout is drawn into the small box again.",
+   "file": "src/ctrmap/humaninterface/GfEnvPicker.java",
+   "find": "\t\t\tif (compact) {\n\t\t\t\tpaintCompact(g, pad);\n\t\t\t\treturn;\n\t\t\t}\n",
+   "replace": "",
+   "suite": "ctrmap.tests.AreaEnvTest",
+   "args": [
+    "${PRISTINE}/a\\0\\1\\4"
+   ],
+   "must_say": "is cropped from every user"
   }
  ]
 }
