@@ -1478,8 +1478,8 @@
    "id": "the-appender-claims-to-fork-what-it-does-not",
    "why": "MADE_PRIVATE is the whole mechanism: it says which of a zone header resources the append gives every new zone its own copy of, and everything not in it is refused on. A set that CLAIMS a resource it does not actually fork is worse than the original bug - the refusal stops firing and the guard would report independence that does not exist. So the guard checks the claim against the archives rather than believing the set.",
    "file": "src/ctrmap/ZoneAppender.java",
-   "find": "\t\t\t= java.util.EnumSet.of(ZoneResource.MAP, ZoneResource.AREA);\n",
-   "replace": "\t\t\t= java.util.EnumSet.of(ZoneResource.MAP, ZoneResource.AREA, ZoneResource.SCRIPT);\n",
+   "find": "\t\t\t= java.util.EnumSet.of(ZoneResource.MAP, ZoneResource.AREA, ZoneResource.TEXT);\n",
+   "replace": "\t\t\t= java.util.EnumSet.of(ZoneResource.MAP, ZoneResource.AREA, ZoneResource.TEXT, ZoneResource.SCRIPT);\n",
    "suite": "ctrmap.tests.WorkflowGuardsTest",
    "args": [
     "${GAMEDIR}"
@@ -1570,6 +1570,18 @@
     "${GAMEDIR}"
    ],
    "must_say": "every preview is the map of the zone it names"
+  },
+  {
+   "id": "a-created-zone-keeps-the-donors-dialogue",
+   "why": "The text fork writes a copy of the donor dialogue file at a new id and then has to point the zone at it. Drop that line and the copy is written, packed and never used, while the new zone still names the donor - so writing a line for the new zone puts it in the donor instead. Measured before this existed: zones 536-539 all shared story text 491 with zone 534. The fork LOOKS done from every angle except the one that matters.",
+   "file": "src/ctrmap/TextForker.java",
+   "find": "\t\t\tZoneResource.TEXT.setIn(newZos[i], newText);\n",
+   "replace": "",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "no created zone shares its story text with any other"
   }
  ]
 }
