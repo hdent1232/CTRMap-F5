@@ -599,6 +599,32 @@ public class WorkflowGuardsTest {
 		check(callers.contains("ctrmap/CtrmapMainframe"),
 			"and the window still calls it, so a workspace with those spares is repaired"
 			+ " without anyone having to know to ask " + callers);
+
+		//AND WHAT COMES AFTER THE REPAIR WAITS FOR IT. The repair packs, and a pack
+		//is a worker; the window rebuilds its zone list next, off the same archives
+		//the pack is rewriting. Started beside each other those race, and the user
+		//meets it as a zone list built from half-written data - which is not a crash
+		//and not a message, just a wrong list. Driven with a pack that is held, so
+		//"waits" is asserted rather than assumed from the order of two statements.
+		repointZoneAt(broken.get(0), donorMatrix);
+		final java.util.List<Runnable> held = new java.util.ArrayList<>();
+		final int[] wentOn = {0};
+		ctrmap.PaddingZoneRepair.repairOnOpen(null, held::add, () -> wentOn[0]++);
+		check(held.size() == 1, "a repair that found something starts exactly one pack ("
+			+ held.size() + ")");
+		check(wentOn[0] == 0, "and nothing after it has run yet, with that pack still going");
+		held.get(0).run();
+		check(wentOn[0] == 1, "it runs when the pack finishes, once (" + wentOn[0] + ")");
+		
+		//...and a workspace with nothing to repair does not defer anything, which is
+		//every workspace but the handful this was written for
+		pack();
+		held.clear();
+		wentOn[0] = 0;
+		ctrmap.PaddingZoneRepair.repairOnOpen(null, held::add, () -> wentOn[0]++);
+		check(held.isEmpty() && wentOn[0] == 1,
+			"a workspace with nothing to repair packs nothing and carries straight on ("
+			+ held.size() + " pack(s), " + wentOn[0] + " continuation(s))");
 	}
 
 	/** Points a zone's ZO header AND its master-table row at a matrix - what 1.0.0 left. */
