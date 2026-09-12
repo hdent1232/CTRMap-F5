@@ -39,13 +39,24 @@ _OPEN = re.compile(r"^\s*-\s*\[ \]\s*(.+?)\s*$", re.M)
 
 
 def open_items(text=None):
-    """The open items in the ledger, first line of each, in file order."""
+    """The open items under `## Open`, first line of each, in file order.
+
+    ONLY THAT SECTION, deliberately. A LIMITATION is not an item: "the script archive cannot
+    be forked" can never be ticked, because it is not work anybody will do, and leaving it
+    here would block every measurement this project ever runs again. Those live under
+    `## Known limitations` and are closed by a refusal in the product instead.
+    """
     if text is None:
         try:
             text = io.open(LEDGER, encoding="utf-8", errors="replace").read()
         except OSError:
             return []
-    return [m.group(1) for m in _OPEN.finditer(text)]
+    start = text.find("## Open")
+    if start < 0:
+        return []
+    rest = text[start + len("## Open"):]
+    nxt = rest.find(LF + "## ")
+    return [m.group(1) for m in _OPEN.finditer(rest if nxt < 0 else rest[:nxt])]
 
 
 def dirty_files():
