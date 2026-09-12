@@ -57,10 +57,21 @@ public class MaisonClassListDialog {
 		return p == null ? "?" : p;
 	}
 
-	public static void show(Dialog parent) {
+	/**
+	 * The editor, as a panel for the Game Data tab.
+	 *
+	 * <p>It was a modal window. A feature lives in the part of the UI it belongs to,
+	 * and the Game Data tab existed already, holding nothing but the button that
+	 * opened this. The editing is untouched: the same table, the same saves, the same
+	 * refusals - only the frame around it.
+	 *
+	 * @param onClose what to do when the user is finished with it; the host clears
+	 * @return the editor, or null when there is nothing to edit (it says why first)
+	 */
+	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose) {
 		if (Workspace.getArchive(TABLES[0]) == null) {
 			ctrmap.Ui.error(parent, "This dump has no facility class tables.", "Class assignments");
-			return;
+			return null;
 		}
 		String[] classNames = text(Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_CLASS_NAMES));
 		final JComboBox<String> tableBox = new JComboBox<>(TABLE_NAMES);
@@ -70,7 +81,8 @@ public class MaisonClassListDialog {
 		jt.getColumnModel().getColumn(1).setPreferredWidth(150);
 		jt.getColumnModel().getColumn(2).setPreferredWidth(430);
 
-		final JDialog dlg = new JDialog(parent, "Facility class assignments", true);
+		//A PANEL, not a window: everything under this is unchanged.
+		final JPanel dlg = new JPanel();
 		model.promptOwner = dlg;
 		dlg.setLayout(new BorderLayout());
 		JPanel north = new JPanel(new java.awt.GridLayout(2, 1));
@@ -129,12 +141,10 @@ public class MaisonClassListDialog {
 			if (model.dirty && !confirmDiscard(dlg)) {
 				return;
 			}
-			dlg.dispose();
+			onClose.run();
 		});
 
-		dlg.setSize(820, 520);
-		dlg.setLocationRelativeTo(parent);
-		dlg.setVisible(true);
+		return dlg;
 	}
 
 	private static boolean confirmDiscard(java.awt.Component c) {

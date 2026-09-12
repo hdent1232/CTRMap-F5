@@ -18,7 +18,7 @@ import javax.swing.text.NumberFormatter;
 /**
  * Regedit class for NPC registries, more comprehensible than PRE.
  */
-public class NPCRegistryEditor extends javax.swing.JFrame {
+public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 
 	/**
 	 * Creates new form NPCRegistryEditor
@@ -31,15 +31,22 @@ public class NPCRegistryEditor extends javax.swing.JFrame {
 	public NPCRegistryEditor() {
 		initComponents();
 		setUnsignedByteValueClass(new JFormattedTextField[]{shadowType, areaW, areaH});
-		addWindowListener(new WindowAdapter() {
-			@Override
-			public void windowClosing(WindowEvent e) {
-				if (saveEntry(true)) {
-					dispose();
-				}
+	}
+
+	/**
+	 * What this used to do in {@code windowClosing}, now that it is a pane.
+	 *
+	 * <p>The body is the one that was on the window, with two changes forced by
+	 * there no longer being one: {@code dispose()} is gone, because leaving is the
+	 * host's business, and the dialog owner is this panel rather than the event
+	 * source. It answers false when a save was refused - on the window that was
+	 * DO_NOTHING_ON_CLOSE, and dropping it would discard the edit silently.
+	 */
+	@Override
+	public boolean closeRequested() {
+		if (saveEntry(true)) {
 			}
-		});
-		setVisible(true);
+		return true;
 	}
 
 	public void setUnsignedByteValueClass(JFormattedTextField[] fields) {

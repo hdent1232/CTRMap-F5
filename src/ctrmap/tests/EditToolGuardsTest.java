@@ -139,6 +139,16 @@ public class EditToolGuardsTest {
 	static void theSelectionHoldsOneToolAndSaysSo() {
 		ctrmap.humaninterface.tools.ToolSelection sel = new ctrmap.humaninterface.tools.ToolSelection();
 		check(sel.current() == null, "a fresh selection holds nothing");
+		//AND A VIEW WITH NOBODY HOLDING ANYTHING STILL DRAWS. The 3D renderer asked the
+		//held tool whether to draw the gizmo without checking there was one, so the Zone
+		//Loader preview - a view with no tools at all - threw on every frame, on the
+		//event thread, and the window came up with its tabs painted over each other.
+		//ASKED SO THAT DYING IS AN ANSWER. The defect here is a throw, not a wrong
+		//boolean, and a check that lets it escape reports nothing but a stack trace -
+		//which is how a plant proving this can look like a guard that said nothing.
+		check(!wantsNavi(sel), "...and a renderer handed a selection holding nothing draws"
+			+ " no gizmo rather than dying every frame" + how[0]);
+		check(!wantsNavi(null), "...nor when there is no selection at all" + how[0]);
 		check(!sel.holding(SetTool.class), "and is holding no particular tool");
 
 		java.util.List<String> order = new java.util.ArrayList<String>();
@@ -1299,6 +1309,20 @@ public class EditToolGuardsTest {
 	/** One pixel, without the alpha byte a TYPE_INT_RGB image reports as opaque. */
 	static int rgb(BufferedImage img, int x, int y) {
 		return img.getRGB(x, y) & 0xFFFFFF;
+	}
+
+	/** How the last {@link #wantsNavi} answered, when it answered by throwing. */
+	static final String[] how = {""};
+
+	/** naviWanted, with a throw turned into an answer the check above can report. */
+	static boolean wantsNavi(ctrmap.humaninterface.tools.ToolSelection sel) {
+		how[0] = "";
+		try {
+			return ctrmap.humaninterface.H3DRenderingPanel.naviWanted(sel);
+		} catch (RuntimeException died) {
+			how[0] = " - it threw " + died;
+			return true;
+		}
 	}
 
 	static void check(boolean ok, String what) {

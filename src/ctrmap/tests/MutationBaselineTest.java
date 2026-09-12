@@ -91,6 +91,7 @@ public class MutationBaselineTest {
 			return;
 		}
 		thereIsOneBaselineAndTheSweepWritesIt(repo);
+		theHarnessStillPassesItsOwnSelftest(repo);
 
 		String json = new String(Files.readAllBytes(baseline.toPath()), StandardCharsets.UTF_8);
 
@@ -290,8 +291,18 @@ public class MutationBaselineTest {
 			return;
 		}
 		String text = new String(Files.readAllBytes(tool.toPath()), StandardCharsets.UTF_8);
-		check(text.contains("BASELINE = Path(__file__).resolve().parent.parent / \"mutation_baseline.json\""),
-				"the sweep writes the baseline beside the repo it lives in, found from its own path");
+		//RETARGETED, not dropped. This named the assignment itself -
+		//`BASELINE = Path(__file__)...` - and the sweep now finds that path through
+		//baseline_path(), because the suite ordering reads the last run BEFORE the
+		//sweep starts while the ratchet writes it after, and a constant defined at the
+		//bottom of the file cannot be read at the top of it. The PROPERTY is unchanged
+		//and is what is checked here: one spelling of the path, built from the
+		//location of the script itself, with the ratchet naming that one and no other.
+		check(text.contains("def baseline_path():")
+			&& text.contains("return Path(__file__).resolve().parent.parent / \"mutation_baseline.json\""),
+			"the sweep finds the baseline beside the repo it lives in, from its own path");
+		check(text.contains("BASELINE = baseline_path()"),
+			"and the ratchet writes THAT one, rather than spelling the path a second time");
 		//CODE lines only: the comment above that line records what the path used
 		//to be and why it moved, which is worth keeping and is not a second copy
 		String second = "";
@@ -307,6 +318,70 @@ public class MutationBaselineTest {
 		check(!stale.isFile(), "and the copy that used to be kept in step is gone (" + stale.getPath() + ")");
 	}
 
+	/**
+	 * The sweep that writes this baseline still passes its own selftest.
+	 *
+	 * <p>WHY FROM HERE, when test.ps1 already runs it as a step of its own. Because
+	 * a proof-by-breaking needs a suite it can START: tools/guard/replant.py puts a
+	 * defect back and requires the named suite to go red, and it runs Java suites.
+	 * Every guard living in the harness itself - and the suite ordering that decides
+	 * how long a sweep takes is one - was therefore unprovable, which is the exact
+	 * gap the ledger exists to close for the product.
+	 *
+	 * <p>It belongs to this suite rather than another because this record is worth
+	 * precisely what the sweep that wrote it is worth. A harness whose own checks
+	 * have rotted still writes a baseline, and it looks just like a good one.
+	 */
+	static void theHarnessStillPassesItsOwnSelftest(File repo) {
+		System.out.println("--- the sweep that writes this baseline passes its own selftest");
+		File tool = new File(repo, "tools/mutate2.py");
+		if (!tool.isFile()) {
+			check(false, "no " + tool.getPath() + " - the sweep that writes this record is missing");
+			return;
+		}
+		java.util.List<String> said = new java.util.ArrayList<>();
+		int exit;
+		try {
+			ProcessBuilder pb = new ProcessBuilder("python", "tools/mutate2.py", "--selftest");
+			pb.directory(repo);
+			pb.redirectErrorStream(true);
+			Process p = pb.start();
+			java.io.BufferedReader r = new java.io.BufferedReader(
+				new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
+			try {
+				for (String line; (line = r.readLine()) != null;) {
+					said.add(line);
+				}
+			} finally {
+				r.close();
+			}
+			exit = p.waitFor();
+		} catch (java.io.IOException noPython) {
+			//the same skip CommitGuardTest takes: a python guard cannot be judged
+			//without python, and saying so is not the same as passing
+			System.out.println("  skip: python is not on PATH, so the harness selftest cannot run ("
+				+ noPython.getMessage() + ")");
+			return;
+		} catch (InterruptedException stopped) {
+			Thread.currentThread().interrupt();
+			check(false, "the harness selftest did not finish - it was interrupted");
+			return;
+		}
+		boolean passed = false;
+		for (String line : said) {
+			//WHAT IT SAID, not just that it failed: a plant is proven by the words its
+			//guard used, and a wrapper that swallows them proves nothing
+			if (line.contains("FAIL")) {
+				System.out.println("     " + line.trim());
+			}
+			if (line.contains("ALL PASS")) {
+				passed = true;
+			}
+		}
+		check(exit == 0 && passed, "the mutation harness passes its own selftest, so the record"
+			+ " below was written by a sweep whose own checks still hold (exit " + exit + ", "
+			+ said.size() + " line(s))");
+	}
 	static void check(boolean ok, String what) {
 		if (ok) {
 			System.out.println("  ok: " + what);

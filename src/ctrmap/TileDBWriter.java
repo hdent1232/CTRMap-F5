@@ -24,7 +24,7 @@ import javax.swing.text.DefaultFormatterFactory;
 /**
  * GUI tool to write METS tilesets for use with the CTRMap 2D tile editor.
  */
-public class TileDBWriter extends javax.swing.JFrame {
+public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 
 	/**
 	 * Creates new form TileDBWriter

@@ -104,8 +104,26 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** The 3D gizmo, handed in. Its two reaches here had no null guard at all. */
 	private final Navigator navi;
 
+
+	/**
+	 * Where this form puts a pane of its own - the tool column beside the map.
+	 *
+	 * <p>HANDED IN, not reached for. The registry editor it opens used to be a window,
+	 * which is what this project does not do with features; putting it in the tool
+	 * column means naming the column, and naming it through the main window would add
+	 * a reference MainframeEdgesTest counts and holds down. So the window hands this
+	 * form the one thing it needs - somewhere to show a pane - and a suite can hand it
+	 * a recorder instead.
+	 */
+	private final java.util.function.Consumer<javax.swing.JComponent> toolPane;
+
 	public PropEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
-			Navigator navi, TileMapPanel map) {
+			Navigator navi, TileMapPanel map,
+			java.util.function.Consumer<javax.swing.JComponent> toolPane) {
+		if (toolPane == null) {
+			throw new IllegalArgumentException("PropEditForm must be handed the tool column its registry editor opens in");
+		}
+		this.toolPane = toolPane;
 		this.map = map;
 		if (navi == null) {
 			throw new IllegalArgumentException("PropEditForm must be handed a Navigator - the gizmo it moves");
@@ -1449,6 +1467,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		ADPropRegistryEditor pre = new ADPropRegistryEditor(this);
 		pre.loadRegistry(reg, propTextures);
 		pre.setEntry(regentry.reference);
+		//IN THE TOOL COLUMN, where the prop form itself is. It was a window of its own,
+		//which is the habit this application is being cleared of - and a window meant it
+		//could sit behind the editor with unsaved registry edits in it.
+		toolPane.accept(pre);
     }//GEN-LAST:event_btnRegEditActionPerformed
 
     private void btnSaveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSaveActionPerformed

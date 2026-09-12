@@ -93,7 +93,19 @@ public class EncounterEditDialog {
 			+ zoneIndex + ".\nDeploy to emulator to apply (packs automatically).";
 	}
 
-	public static void show(Frame parent, LoadedZone loaded) {
+	/**
+	 * The wild-encounter editor, as a panel for the Game Data tab.
+	 *
+	 * <p>It was a modal window. A feature lives in the part of the UI it belongs to,
+	 * and the Game Data tab existed already, holding nothing but the button that
+	 * opened this. Nothing about the editing changed: the same table, the same
+	 * seam ({@link #saveEncounters}), the same refusals - only the frame around it.
+	 *
+	 * @param onClose what to do when the user is finished with it; the host clears
+	 * @return the editor, or null when there is nothing to edit (it says why first)
+	 */
+	public static javax.swing.JComponent panel(java.awt.Component parent, LoadedZone loaded,
+			Runnable onClose) {
 		if (loaded == null) {
 			throw new IllegalArgumentException("EncounterEditDialog must be handed the LoadedZone");
 		}
@@ -104,7 +116,7 @@ public class EncounterEditDialog {
 		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
 		if (prof == null) {
 			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).", "Wild encounters");
-			return;
+			return null;
 		}
 		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.ENCOUNTERS)) {
 			ctrmap.Ui.error(parent, "Editing wild encounters is not available for "
@@ -115,11 +127,11 @@ public class EncounterEditDialog {
 					+ "\n\nCTRMap refuses here rather than rewriting whatever this game keeps"
 					+ " in that slot.",
 					"Wild encounters");
-			return;
+			return null;
 		}
 		if (loaded.index() < 0) {
 			ctrmap.Ui.error(parent, "Load a zone first (Zone tab).", "Wild encounters");
-			return;
+			return null;
 		}
 		final int zoneIndex = loaded.index();
 		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
@@ -131,14 +143,14 @@ public class EncounterEditDialog {
 			zoneCount = ctrmap.ZoneTables.zoneCount(zo);
 		} catch (java.io.IOException ex) {
 			ctrmap.Ui.error(parent, ctrmap.Ui.reason(ex), "Wild encounters");
-			return;
+			return null;
 		}
 		final int enIndex = zo.length - 1;
 
 		byte[] pack = loadPack(zo, enIndex, zoneCount);
 		if (pack == null) {
 			ctrmap.Ui.error(parent, "Could not read the encounter pack.", "Wild encounters");
-			return;
+			return null;
 		}
 		String[] species = loadSpeciesNames();
 		EncounterTable start = EncounterTable.read(pack, zoneIndex);
@@ -153,8 +165,9 @@ public class EncounterEditDialog {
 		ctrmap.humaninterface.pokepick.PokePickers.installDoubleClickPickers(jt, col
 				-> col == 2 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.SPECIES : null);
 
-		final JDialog dlg = new JDialog(parent, "Wild encounters - zone " + zoneIndex, true);
-		dlg.setLayout(new BorderLayout());
+		//A PANEL, not a window. Everything below is unchanged: the same adds, the same
+		//listeners, the same Ui calls - a JPanel answers all of them.
+		final JPanel dlg = new JPanel(new BorderLayout());
 		dlg.add(new JLabel("  Double-click a Species to pick it visually (types + stats). Species 0 = empty slot. Rates are managed automatically."), BorderLayout.NORTH);
 		dlg.add(new JScrollPane(jt), BorderLayout.CENTER);
 
@@ -162,7 +175,7 @@ public class EncounterEditDialog {
 		JButton copyFrom = new JButton("Copy from zone...");
 		JButton clear = new JButton("Clear all");
 		JButton save = new JButton("Save");
-		JButton cancel = new JButton("Cancel");
+		JButton cancel = new JButton("Close");
 		buttons.add(copyFrom);
 		buttons.add(clear);
 		buttons.add(save);
@@ -207,17 +220,15 @@ public class EncounterEditDialog {
 				//through the seam, so what the dialog does and what a suite can drive are
 				//the same code rather than two copies that agree today
 				String said = saveEncounters(Workspace.session(), zoneIndex, table);
-				dlg.dispose();
+				onClose.run();
 				ctrmap.Ui.message(parent, said, "Wild encounters", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
 				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Wild encounters");
 			}
 		});
-		cancel.addActionListener(e -> dlg.dispose());
+		cancel.addActionListener(e -> onClose.run());
 
-		dlg.setSize(640, 620);
-		dlg.setLocationRelativeTo(parent);
-		dlg.setVisible(true);
+		return dlg;
 	}
 
 	private static void copyInto(EncounterTable from, EncounterTable to) {

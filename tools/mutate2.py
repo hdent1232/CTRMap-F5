@@ -485,6 +485,14 @@ SKIPPED_AMBIGUOUS = []
 SKIPPED_GONE = []
 
 
+def baseline_path():
+    """THE ONE COPY - see the ratchet at the bottom of this file for why it is found
+    from this script's own location. It is a function because the suite ordering
+    reads the last run BEFORE the sweep starts and the ratchet writes it after, and those
+    two must not be able to drift into naming different files."""
+    return Path(__file__).resolve().parent.parent / "mutation_baseline.json"
+
+
 def read_src(path):
     """The file exactly as it sits on disk, line endings included.
 
@@ -947,7 +955,16 @@ def build_live(lines_):
             # line that REGRESSED (killed before, survives now) from one measured
             # for the first time. Without this the two are indistinguishable and
             # the gate has to guess - which is how it came to cry wolf.
-            f["killed_lines"].append({"line": d["line"], "kind": d["kind"]})
+            # WHICH SUITE KILLED IT is recorded too. It was known at the moment of the
+            # kill and thrown away, and the next run then guessed the order to try
+            # suites in from a hand table measured wrong about 48 of 86 files - so a
+            # line killed by the fortieth suite last run paid for thirty-nine JVM
+            # starts again this run. Evidence the sweep already had beats a table
+            # somebody has to remember to update.
+            k = {"line": d["line"], "kind": d["kind"]}
+            if d.get("by"):
+                k["by"] = d["by"]
+            f["killed_lines"].append(k)
         elif d["verdict"] == "unmutable":
             f["unmutable"] += 1
         elif d["verdict"] == "excluded":
@@ -1176,6 +1193,104 @@ public class T {
 \t}
 }
 """
+
+
+def _by_kills(tally):
+    """Suite names out of a {name: kills} tally, commonest first."""
+    return [n for n, _c in sorted(tally.items(), key=lambda kv: -kv[1])]
+
+
+def _prior_killers():
+    """What killed each line last run: ({path: {(line, kind): suite}}, {path: [suite...]}).
+
+    Ordering only, never truth: a line whose file has been edited since may well have
+    moved, and a wrong guess costs one wasted JVM start - the same bargain MENTIONS
+    makes. The whole union still runs before anything may be called a survivor.
+    """
+    exact, tally = {}, {}
+    try:
+        old_ = json.load(io.open(baseline_path(), encoding="utf-8"))
+    except Exception:
+        return exact, {}
+    for path_, rec_ in old_.items():
+        if not isinstance(rec_, dict):
+            continue
+        for e in rec_.get("killed_lines", []):
+            by = e.get("by")
+            if not by:
+                continue
+            exact.setdefault(path_, {})[(e.get("line"), e.get("kind"))] = by
+            t = tally.setdefault(path_, {})
+            t[by] = t.get(by, 0) + 1
+    return exact, {p: _by_kills(t) for p, t in tally.items()}
+
+
+#: filled in below, once, from the last run. Empty is a working state: it means
+#: every order is decided by rank 3 and 4, which is what this file did before.
+PRIOR_EXACT, PRIOR_FILE = {}, {}
+
+#: what has killed something in each file DURING THIS RUN. A sweep that only learned
+#: between runs would spend the whole first run after this change paying the old price.
+LEARNED = {}
+
+#: [times the first suite tried was the killer, kills]. The point of all of this,
+#: measured, so a later ordering change can be judged instead of argued about.
+FIRST_TRY = [0, 0]
+
+
+def learn(path, suite_simple_name):
+    """Remember that this suite kills things in this file, for the rest of the run."""
+    t = LEARNED.setdefault(path, {})
+    t[suite_simple_name] = t.get(suite_simple_name, 0) + 1
+
+
+def suites_for(path, first, line=None, kind=None):
+    """Every suite that may judge a mutant, likeliest killer first.
+
+    THE ORDER IS EVIDENCE NOW, NOT A TABLE. It was: the cluster's own suites (a
+    hand table, measured wrong about 48 of 86 files), then every suite whose source
+    names the class, then the rest alphabetically. A kill found late costs one JVM
+    start per suite ahead of it and there are 128 of them, so a table that is wrong
+    half the time is a large part of this sweep's wall clock.
+
+    Four ranks, each weaker evidence than the one before it:
+
+      1. the suite that killed THIS line last run - as near certain as this gets;
+      2. a suite that killed something else in this file - what this run has already
+         learnt first, then last run, commonest first: guards come in files;
+      3. the cluster table, then the suites whose source names the class - the old
+         order, kept, because with no evidence at all it still beats alphabetical;
+      4. everything else, so the union is still the whole battery.
+
+    Rank 4 is what makes being wrong cheap: this returns a PERMUTATION of the judges,
+    never a subset. Dropping a suite would not slow the sweep down, it would
+    manufacture survivors - and the selftest holds it to exactly that.
+
+    `first` is the branch's own list and is filtered too - a suite that cannot
+    decide a mutant cannot decide it by being named early either.
+    """
+    ok = {c for c, _ in JUDGES}
+    first = [x for x in first if x[0] in ok]
+    simple = path.split("/")[-1][:-len(".java")]
+    by_name = {}
+    for c_, a_ in JUDGES:
+        by_name.setdefault(c_.split(".")[-1], (c_, a_))
+
+    order, seen = [], set()
+
+    def take(entries):
+        for e in entries:
+            if e is not None and e[0] not in seen:
+                seen.add(e[0])
+                order.append(e)
+
+    take([by_name.get(PRIOR_EXACT.get(path, {}).get((line, kind)))])
+    take([by_name.get(n) for n in _by_kills(LEARNED.get(path, {}))])
+    take([by_name.get(n) for n in PRIOR_FILE.get(path, ())])
+    take(first)
+    take([x for x in JUDGES if x[0] in MENTIONS.get(simple, ())])
+    take(JUDGES)
+    return order
 
 
 def selftest():
@@ -1415,6 +1530,95 @@ def selftest():
     check(seen.get("keep", TAIL_BYTES) is None,
           "every git call asks for the whole output - git output is parsed, never sampled")
 
+    # DEFECT 8: the sweep KNEW which suite killed each mutant and threw it away.
+    # The next run then guessed the order to try suites in out of a hand table that
+    # was measured wrong about 48 of 86 files, so a kill the fortieth suite finds
+    # cost thirty-nine JVM starts, every run, forever. The order is evidence now.
+    # These hold it to being an ORDER and never a filter: a suite left out of the
+    # list does not cost time, it manufactures a survivor - and a survivor costs
+    # somebody a day writing a guard that already exists.
+    import tempfile
+
+    def J(n):
+        return ("ctrmap.tests." + n, [])
+
+    #JUDGES and MENTIONS are built from the worktree and the battery, far below the
+    #--selftest exit: this runs with no JDK and no dump, so they do not exist yet.
+    #Whatever is missing is created for the check and removed again afterwards.
+    names = ("JUDGES", "MENTIONS", "PRIOR_EXACT", "PRIOR_FILE", "LEARNED", "baseline_path")
+    kept = {k: globals()[k] for k in names if k in globals()}
+    added = [k for k in names if k not in globals()]
+    fake = None
+    try:
+        globals()["JUDGES"] = [J("AaaTest"), J("BbbTest"), J("CccTest"), J("DddTest")]
+        globals()["MENTIONS"] = {"F": ["ctrmap.tests.CccTest"]}
+        globals()["PRIOR_EXACT"] = {"src/F.java": {(10, "negate-if"): "DddTest"}}
+        globals()["PRIOR_FILE"] = {"src/F.java": ["BbbTest"]}
+        globals()["LEARNED"] = {}
+        table = [J("AaaTest")]                      # what the hand table says
+
+        o = suites_for("src/F.java", table, 10, "negate-if")
+        check(o[0] == J("DddTest"),
+              "the suite that killed THIS line last run is tried first (%s)" % o[0][0])
+        check(len(o) == 4 and len({c for c, _ in o}) == 4,
+              "and every judge is still in the list exactly once - the ORDER may be wrong, "
+              "the UNION may not, because a suite left out does not cost time, it "
+              "manufactures a survivor")
+
+        o = suites_for("src/F.java", table, 99, "negate-if")
+        check(o[0] == J("BbbTest"),
+              "a line with no record of its own falls back to what killed the rest of "
+              "its file (%s)" % o[0][0])
+
+        learn("src/F.java", "CccTest")
+        learn("src/F.java", "CccTest")
+        o = suites_for("src/F.java", table, 99, "negate-if")
+        check(o[0] == J("CccTest"),
+              "and what THIS run has already watched kill something in the file outranks "
+              "last run, so the first sweep after a change does not pay the old price the "
+              "whole way through (%s)" % o[0][0])
+
+        globals()["PRIOR_EXACT"], globals()["PRIOR_FILE"], globals()["LEARNED"] = {}, {}, {}
+        o = [c.split(".")[-1] for c, _ in suites_for("src/F.java", table, 99, "negate-if")]
+        check(o == ["AaaTest", "CccTest", "BbbTest", "DddTest"],
+              "with no evidence at all the old order is kept - the cluster table, then the "
+              "suites whose source names the class, then the rest - so this is never worse "
+              "than what it replaced (%s)" % o)
+        o = suites_for("src/F.java", [J("ZzzTest")], 99, "negate-if")
+        check(all(c != "ctrmap.tests.ZzzTest" for c, _ in o),
+              "a suite that cannot decide a mutant cannot decide it by being named early "
+              "either")
+
+        # ...and the record it all reads is written by the run before it.
+        live3 = build_live([dict(rec("c1", 10, "killed"), by="AaaTest")])
+        check(live3["src/F.java"]["killed_lines"][0].get("by") == "AaaTest",
+              "the baseline records WHICH suite killed each line, so the next run starts "
+              "from the answer instead of guessing it again")
+        fake = Path(tempfile.mkdtemp(prefix="mutate2-prior")) / "b.json"
+        io.open(str(fake), "w", encoding="utf-8").write(json.dumps(
+            {"src/F.java": {"killed_lines": [
+                {"line": 10, "kind": "negate-if", "by": "AaaTest"},
+                {"line": 20, "kind": "negate-if", "by": "AaaTest"},
+                {"line": 30, "kind": "void-call", "by": "BbbTest"},
+                {"line": 40, "kind": "negate-if"}],
+                "sha256": "abc"},
+             "_meta": "not a file record at all"}))
+        globals()["baseline_path"] = lambda: fake
+        ex, per = _prior_killers()
+        check(ex.get("src/F.java", {}).get((10, "negate-if")) == "AaaTest",
+              "and reads it back line by line")
+        check(per.get("src/F.java") == ["AaaTest", "BbbTest"],
+              "commonest killer of the file first (%s)" % per.get("src/F.java"))
+        check((40, "negate-if") not in ex.get("src/F.java", {}),
+              "a baseline written before this existed names no killer and is simply "
+              "evidence nobody has - not a crash, and not a wrong guess either")
+    finally:
+        globals().update(kept)
+        for k in added:
+            globals().pop(k, None)
+        if fake is not None:
+            shutil.rmtree(str(fake.parent), ignore_errors=True)
+
     print("ALL PASS" if not fails[0] else "FAILURES PRESENT (%d)" % fails[0])
     return 1 if fails[0] else 0
 
@@ -1548,20 +1752,12 @@ def _mentions():
 
 MENTIONS = _mentions()
 
+PRIOR_EXACT, PRIOR_FILE = _prior_killers()
+if PRIOR_EXACT:
+    print("last run named the killer for %d line(s) in %d file(s); those go first"
+          % (sum(len(v) for v in PRIOR_EXACT.values()), len(PRIOR_EXACT)), flush=True)
 
-def suites_for(path, first):
-    """Every suite that may judge a mutant, likeliest killer first.
 
-    `first` is the branch's own list and is filtered too - a suite that cannot
-    decide a mutant cannot decide it by being named early either.
-    """
-    ok = {c for c, _ in JUDGES}
-    first = [x for x in first if x[0] in ok]
-    simple = path.split("/")[-1][:-len(".java")]
-    seen = {c for c, _ in first}
-    named = [x for x in JUDGES if x[0] in MENTIONS.get(simple, ()) and x[0] not in seen]
-    seen |= {c for c, _ in named}
-    return first + named + [x for x in JUDGES if x[0] not in seen]
 
 def _judges():
     """ALL_SUITES minus every suite that fails merely because a source file changed.
@@ -1654,13 +1850,15 @@ for cid, (base, suites) in RESOLVED.items():
                 # different thing - a line with no legal mutation of this kind -
                 # and is filed as unmutable, which is what it is.
                 verdict, detail = why_it_failed(buildout)
+                by = ""
             else:
                 verdict, detail = "SURVIVED", ""
+                by = ""
                 # the branch's own suites first - they are the most specific and
                 # usually the killer, so a kill still costs one or two runs;
                 # only a true survivor pays for the whole union
                 ordered = suites + [x for x in FILE_SUITES.get(path, []) if x not in suites]
-                ordered = suites_for(path, ordered)
+                ordered = suites_for(path, ordered, i + 1, kind)
                 for cls, a in ordered:
                     r = run([JAVA, "-Xmx4g", "-cp", CP, cls] + a)
                     if r.returncode == HUNG_RC:
@@ -1683,11 +1881,18 @@ for cid, (base, suites) in RESOLVED.items():
                         verdict = "killed"
                         detail = (cls.split(".")[-1] + ": OUTPUT FLOOD, %d MB and still going"
                                   % (r.out_bytes // (1024 * 1024)))
+                        by = cls.split(".")[-1]
+                        learn(path, by)
                         break
                     if r.returncode != 0:
                         tail = [l for l in (r.stdout or "").strip().splitlines() if l.strip()]
                         verdict = "killed"
-                        detail = cls.split(".")[-1] + ": " + (tail[-1][:100] if tail else "")
+                        by = cls.split(".")[-1]
+                        detail = by + ": " + (tail[-1][:100] if tail else "")
+                        FIRST_TRY[1] += 1
+                        if (cls, a) == ordered[0]:
+                            FIRST_TRY[0] += 1
+                        learn(path, by)
                         break
 
             mark = "   <-- NOTHING ASSERTS THIS LINE" if verdict == "SURVIVED" else ""
@@ -1696,7 +1901,7 @@ for cid, (base, suites) in RESOLVED.items():
             # the denominator silently: the last run reported "87 compiling
             # mutants" and never mentioned the 9 that were never measured at all.
             results.append(dict(cluster=cid, file=path.split("/")[-1], path=path, line=i + 1,
-                                kind=kind, verdict=verdict, detail=detail,
+                                kind=kind, verdict=verdict, detail=detail, by=by,
                                 code=original.splitlines()[i].strip()[:160]))
             write_src(path, original)
             del _PENDING_RESTORE[:]            # paid; nothing is owed now
@@ -1749,6 +1954,11 @@ if scored:
     print("   score: %d/%d = %.0f%% of MEASURABLE mutants killed (hung, nocompile, unmutable "
           "and excluded are neither killed nor survived)"
           % (tally.get("killed", 0), scored, 100.0 * tally.get("killed", 0) / scored))
+if FIRST_TRY[1]:
+    print("   ordering: the first suite tried was the killer %d of %d time(s) (%.0f%%). "
+          "Every miss is a JVM start this sweep paid for a wrong guess; the next run "
+          "starts from the killers this one recorded."
+          % (FIRST_TRY[0], FIRST_TRY[1], 100.0 * FIRST_TRY[0] / FIRST_TRY[1]))
 if tally.get("nocompile", 0):
     print("   !! %d nocompile - THE HARNESS'S OWN DEFECT, not the tree's. Each one is a line "
           "this sweep failed to measure because it emitted something malformed; fix the "
@@ -1787,7 +1997,7 @@ for d in survived:
 # says so. The sweep now writes the file the battery reads, found from this
 # script's own location rather than from a spelled-out path, so moving the repo
 # cannot separate them again. MutationBaselineTest asserts the two agree.
-BASELINE = Path(__file__).resolve().parent.parent / "mutation_baseline.json"
+BASELINE = baseline_path()
 live = build_live(lines_)
 
 # The baseline names the sources it measured. MutationBaselineTest refuses a

@@ -1271,10 +1271,10 @@
   },
   {
    "id": "single-region-framing-leaves-stale-yaw",
-   "why": "Zero the yaw in the single-region framing too, matching its sibling one method below, and pin the one remaining difference (translateX) rather than fixing it.",
-   "file": "src/ctrmap/CtrmapMainframe.java",
-   "find": "\t\t\t\tm3DDebugPanel.rotateY = 0f;\n\t\t\t}\n\n\t\t\t@Override\n\t\t\tpublic void frameMatrix(int cellsAcross, int cellsDown) {",
-   "replace": "\t\t\t}\n\n\t\t\t@Override\n\t\t\tpublic void frameMatrix(int cellsAcross, int cellsDown) {",
+   "why": "Zero the yaw in the single-region framing too, matching its sibling one method below, and pin the one remaining difference (translateX) rather than fixing it. RETARGETED: the camera arithmetic moved out of an anonymous body in the window into PanelScene3D, so that two views could share ONE copy of it rather than the preview growing a second. Same five assignments, same claim.",
+   "file": "src/ctrmap/humaninterface/PanelScene3D.java",
+   "find": "\t\tpanel.rotateY = 0f;\n\t}\n\n\t@Override\n\tpublic void frameMatrix(int cellsAcross, int cellsDown) {\n",
+   "replace": "\t}\n\n\t@Override\n\tpublic void frameMatrix(int cellsAcross, int cellsDown) {\n",
    "suite": "ctrmap.tests.MainframeShapeTest",
    "args": [
     "src"
@@ -1561,15 +1561,15 @@
   },
   {
    "id": "the-preview-shows-the-zone-before-the-one-you-clicked",
-   "why": "A preview that reads the wrong region is not a cosmetic fault, it is a lie with a name under it: you click zone 214 and look at 213. Reading the region from anything other than THIS zone's own map is the way that happens, so the guard checks the bytes handed to the view against the region the zone's matrix actually names, rather than checking that a picture appeared. RETARGETED: ZonePreview no longer asks for one region by number - it asks the matrix which cells the zone OWNS and draws all of them - so the line this used to substitute is gone. The defect is unchanged and so is the claim: read the map out of somebody else matrix and the preview is a lie with a name under it. It now substitutes the matrix read itself, which is the same wrong turn one step earlier.",
-   "file": "src/ctrmap/humaninterface/ZonePreview.java",
-   "find": "\t\t\tbyte[] mm = Files.readAllBytes(mf.toPath());\n",
-   "replace": "\t\t\tbyte[] mm = Files.readAllBytes(\n\t\t\t\tws.getWorkspaceFile(ArchiveType.MAP_MATRIX, 0).toPath());\n",
+   "why": "A preview that reads the wrong region is not a cosmetic fault, it is a lie with a name under it: you click zone 214 and look at 213. Reading the region from anything other than THIS zone's own map is the way that happens, so the guard checks the bytes handed to the view against the region the zone's matrix actually names, rather than checking that a picture appeared. RETARGETED: ZonePreview no longer asks for one region by number - it asks the matrix which cells the zone OWNS and draws all of them - so the line this used to substitute is gone. The defect is unchanged and so is the claim: read the map out of somebody else matrix and the preview is a lie with a name under it. It now substitutes the matrix read itself, which is the same wrong turn one step earlier. RETARGETED TWICE, and the second time because the class it named was deleted: the preview no longer reads geometry at all, it opens the zone and hands it to the editor loader. The claim is the one that survived both rewrites - read the wrong zone and the preview is a lie with a name under it - and it now sits on the two lines that decide which zone is read.",
+   "file": "src/ctrmap/humaninterface/ZonePreviewPane.java",
+   "find": "\t\tFile f = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);\n",
+   "replace": "\t\tFile f = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, 0);\n",
    "suite": "ctrmap.tests.WorkflowGuardsTest",
    "args": [
     "${GAMEDIR}"
    ],
-   "must_say": "every preview is the map of the zone it names"
+   "must_say": "it is THAT zone"
   },
   {
    "id": "a-created-zone-keeps-the-donors-dialogue",
@@ -1645,22 +1645,22 @@
   },
   {
    "id": "the-zone-preview-is-built-but-not-put-anywhere",
-   "why": "The preview was built twice and shipped twice without ever being visible in the Zone Loader: once as a dialog behind a button on another bar, once as a window floating beside the dropdown popup. Every suite was green both times, because every suite asked whether the DECODE worked - nothing asked whether the thing was on screen. The owner opened the tab, saw nothing, and had to say so twice. This puts back the exact shape of that defect: the preview is constructed, wired to the dropdown, and never added to the tab. The guard builds the tab and looks for it, which is the only question that was being got wrong.",
+   "why": "The preview was built twice and shipped twice without ever being visible in the Zone Loader: once as a dialog behind a button on another bar, once as a window floating beside the dropdown popup. Every suite was green both times, because every suite asked whether the DECODE worked - nothing asked whether the thing was on screen. The owner opened the tab, saw nothing, and had to say so twice. This puts back the exact shape of that defect: the preview is constructed, wired to the dropdown, and never added to the tab. The guard builds the tab and looks for it, which is the only question that was being got wrong. RETARGETED: the preview is no longer added to the tab on its own - it is inside the zone browser, which is what the owner asked for in the first place (a list you scroll, a live preview, a button that opens). The claim is unchanged: built, wired, and never put anywhere. The must_say also moved: the check now says BROWSER where it said PREVIEW, and a plant scored on words that no longer appear is a plant that proves nothing while looking green. RETARGETED AGAIN: the browser is no longer added to the tab directly - it lives in the zone column, which can also show a zone tool over it - so the line that could leave it built and nowhere is the one that puts it in that column.",
    "file": "src/ctrmap/CtrmapMainframe.java",
-   "find": "\t\ttab.add(preview, BorderLayout.EAST);\n",
+   "find": "\t\tzoneColumn.add(browser, BorderLayout.CENTER);\n",
    "replace": "",
    "suite": "ctrmap.tests.MainframeShapeTest",
    "args": [
     "src"
    ],
-   "must_say": "the zone preview is IN the Zone Loader tab"
+   "must_say": "IN the Zone Loader tab"
   },
   {
    "id": "a-feature-crawls-back-into-a-window-of-its-own",
-   "why": "The owner's standing rule is that a feature lives in the part of the UI it belongs to and never gets a window of its own. It was written down and then broken twice in one afternoon, by the same feature, because nothing in this battery counted windows: the sweeps ratcheted public statics and coupling, so a rule stated in words applied to nothing. This puts the floating bubble back - the preview panel hands its canvas to a JWindow instead of showing it in the tab - and the guard refuses it because ZonePreviewPane is not in the argued list of windows this application may open.",
+   "why": "The owner's standing rule is that a feature lives in the part of the UI it belongs to and never gets a window of its own. It was written down and then broken twice in one afternoon, by the same feature, because nothing in this battery counted windows: the sweeps ratcheted public statics and coupling, so a rule stated in words applied to nothing. This puts the floating bubble back - the preview panel hands its canvas to a JWindow instead of showing it in the tab - and the guard refuses it because ZonePreviewPane is not in the argued list of windows this application may open. RETARGETED: the preview no longer builds a MapPreview3D of its own - it hosts the editor map view - so the line that could put it in a window is the one that adds that view to the tab.",
    "file": "src/ctrmap/humaninterface/ZonePreviewPane.java",
-   "find": "\t\t\tview = new MapPreview3D();\n\t\t\tmiddle.add(view, BorderLayout.CENTER);\n",
-   "replace": "\t\t\tview = new MapPreview3D();\n\t\t\tjavax.swing.JWindow bubble = new javax.swing.JWindow();\n\t\t\tbubble.add(view);\n",
+   "find": "\t\t\t\t\tmiddle.add(panel, BorderLayout.CENTER);\n",
+   "replace": "\t\t\t\t\tnew javax.swing.JWindow().add(panel);\n",
    "suite": "ctrmap.tests.DialogSeamTest",
    "args": [
     "src"
@@ -1678,6 +1678,66 @@
     "${GAMEDIR}"
    ],
    "must_say": "assigns to it"
+  },
+  {
+   "id": "a-game-data-editor-opens-into-nothing",
+   "why": "Five editors - trainers, facility opponents, shops, items, wild encounters - were modal windows opened from a column of buttons inside the Game Data tab, so that tab existed and held nothing but the buttons that opened windows. They are panels now, and the tab hosts them. If the host stops taking what it is handed, every one of those buttons does nothing visible: no crash, no message, just a tab that does not change - which is exactly how the zone preview came to be shipped twice without ever being on screen, reported by the owner both times. A feature that fails by being absent needs a check that looks for it.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\tgameDataHost.add(box, BorderLayout.CENTER);\n",
+   "replace": "",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "actually lands there"
+  },
+  {
+   "id": "looking-at-a-zone-opens-it",
+   "why": "The owner asked for a zone browser and got a preview hung off the Load Zone dropdown twice, where choosing a row IS the load. Their report: there is no way to scroll the zone list and see the zones before loading them, because the arrow keys select and load before you can even see it. Looking and opening being two different actions is the entire feature: a preview that arrives after the zone has loaded has prevented nothing. This puts the defect back by making the selection listener open what it draws.",
+   "file": "src/ctrmap/humaninterface/ZoneBrowserPane.java",
+   "find": "\t\t\t\tif (zone >= 0) {\n\t\t\t\t\tpreview.preview(zone);\n\t\t\t\t}\n",
+   "replace": "\t\t\t\tif (zone >= 0) {\n\t\t\t\t\tpreview.preview(zone);\n\t\t\t\t\tcommit();\n\t\t\t\t}\n",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "opens NOTHING"
+  },
+  {
+   "id": "a-second-implementation-of-something-the-app-already-does",
+   "why": "The owner has asked for duplication to be removed more than once, and a sweep was run against it that counted public statics, coupling, god objects, dialogs and mutation coverage - never implementations, which is where duplication actually lives. So a zone preview got built as a second, smaller copy of the editor's map loader, and every defect reported about it was a hole in the copy: one region instead of the map, a region belonging to the zone next door, four cells of a thirteen-cell map. This puts the shape of that back - a second answer to where a region sits, in a file that is not the one that owns the question - and the rule refuses it in the BUILD, not forty minutes later in the battery.",
+   "file": "src/ctrmap/humaninterface/ZonePreviewPane.java",
+   "find": "\t\tmapView().loadRegions(new MapMatrix(zone.header.mapmatrix, reading),\n",
+   "replace": "\t\tfloat where = zone.header.mapmatrixID * 720f + 360f;   //a second answer\n\t\tmapView().loadRegions(new MapMatrix(zone.header.mapmatrix, reading),\n",
+   "suite": "ctrmap.tests.DuplicateWorkTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "placing a map region in the world"
+  },
+  {
+   "id": "a-view-with-no-tool-held-dies-every-frame",
+   "why": "The 3D renderer asked the held tool whether to draw the gizmo, assuming one is always held - true of the world editor, false of any view that only shows a map. The Zone Loader preview is exactly that, so the renderer threw a NullPointerException on every frame, on the event thread. What the owner saw was not a crash: the window came up with its tabs painted over each other, the Zone Loader would not open, and nothing pointed at the cause. Holding no tool is a state, not a fault, and the decision is a method now so a suite can ask it without a graphics context.",
+   "file": "src/ctrmap/humaninterface/H3DRenderingPanel.java",
+   "find": "\t\treturn tools != null && tools.current() != null && tools.current().getNaviEnabled();\n",
+   "replace": "\t\treturn tools.current().getNaviEnabled();\n",
+   "suite": "ctrmap.tests.EditToolGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "draws no gizmo"
+  },
+  {
+   "id": "the-preview-dies-in-the-loader-it-shares",
+   "why": "The preview draws through the editor's own loader - one body, two callers - and the editor's call has a progress dialog to report into while the preview's has none. Every use of it was supposed to be guarded; three were not, because the guarding edit was written against the indentation the code had BEFORE it was extracted and silently matched nothing. The owner saw 'Zone 1 could not be drawn: Cannot invoke LoadingDialog.setBarPercent()' on the first zone they looked at. Every guard on this feature before this one checked a decode or a component tree and was green while the preview was broken, so the check this restores is the end-to-end one: build the pane, hand it the game, ask for a zone, wait for it to say it drew that zone. The first version of this plant pointed at text one tab shallower - left behind by a botched guarding edit that had wrapped the same line twice - so it removed a redundant if and nothing else, and the guard was recorded as having missed a defect that was never put back. Reproduced by hand before re-registering: with this substitution the preview reports drawing nothing.",
+   "file": "src/ctrmap/humaninterface/TileMapPanel.java",
+   "find": "\t\t\t\t\tif (progress != null) {\n\t\t\t\t\t\tprogress.setBarPercent((int) (((i * mm.width + j) / (float) (mm.width * mm.height)) * 100));\n\t\t\t\t\t}\n",
+   "replace": "\t\t\t\t\tprogress.setBarPercent((int) (((i * mm.width + j) / (float) (mm.width * mm.height)) * 100));\n",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "is drawn in the preview"
   }
  ]
 }

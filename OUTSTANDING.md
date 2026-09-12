@@ -39,26 +39,47 @@ both would have blocked every measurement forever:
 
 ## Open
 
-- [ ] **Every feature window must become part of the UI it belongs to.** The owner
-      rule is that a feature lives in its own area of the UI and never gets a window
-      of its own, and the sweeps never enforced it because nothing counted windows:
-      they ratcheted public statics and coupling instead. DialogSeamTest now counts
-      them (WINDOW_CEILING = 22) and refuses a new one. The ceiling is not the fix -
-      driving it down to what is genuinely transient is. Registry editors, the tile
-      database writer and workspace settings are windows that hold features.
-- [ ] **The sweep ordering change is written but not applied.** It is staged in the
-      session scratchpad (order.py, selfcheck.py, javapatch.py) and lands as its own
-      commit after the preview work, so one commit is not two subjects.
-- [ ] **The sweep is slower than it needs to be.** CLUSTERS names 38 of 128
-      suites by hand and the file itself records being "wrong about 48 of 86";
-      MENTIONS already covers the rest by text, so the table is not the real
-      lever. The unused one is that mutate2 KNOWS which suite killed each line
-      and throws it away - the baseline records line and kind only. Record the
-      killer and try it first next run.
-
+_(nothing)_
 
 ## Done
 
+- [x] 2026-09-12 The sweep tries the suite that killed a line LAST time first. It
+      knew which suite killed each mutant and threw the answer away, so every run
+      re-guessed the order from a hand table the file itself records as wrong about
+      48 of 86 files - and a kill found by the fortieth suite cost thirty-nine JVM
+      starts again. The killer is recorded in the baseline, the order is evidence in
+      four ranks, and the ordering is a PERMUTATION of the judges: dropping a suite
+      would not slow the sweep, it would manufacture survivors. The run reports how
+      often the first suite tried was the killer, so the next change to this can be
+      judged instead of argued about.
+- [x] 2026-09-12 Every feature window is part of the UI it belongs to, and the
+      ceiling fell 22 -> 9. The nine left are the application window, the progress
+      window, the first-run wizard, the update window, the About box, three modal
+      pickers that return a value to their caller, and the upstream model viewer -
+      each argued in DialogSeamTest. What moved: the raw archive browser, tileset
+      editor and workspace settings into Extras; five Game Data editors into the
+      Game Data tab; the prop and NPC registry editors into the World Editor tool
+      column; fog & lighting into the same column; Connect zones into the Zone
+      Loader column. FormPanel is what made the four form-designer frames movable
+      without touching a line of generated initComponents.
+- [x] 2026-09-12 The zone preview draws through the EDITOR'S loader. It was a second,
+      smaller copy of TileMapPanel - and every defect reported about it was a hole in
+      the copy: one region instead of the map, a region belonging to the zone next
+      door, four cells of a thirteen-cell map. The copy is deleted, TileMapPanel
+      grew loadRegions (one body, two callers) and the camera arithmetic became
+      PanelScene3D instead of being copied. The Zone Loader now browses like the
+      atmosphere picker: a list you arrow through, a live preview, and a button that
+      opens - because selecting in the dropdown IS the load.
+- [x] 2026-09-12 Three rules stopped being intentions. build.ps1 refuses a tree that
+      breaks a structural rule and deletes the classes, so it cannot be run; it also
+      refuses to build under a running battery; and test.ps1 asks the work order
+      before spending forty minutes measuring a tree with work still queued.
+- [x] 2026-09-12 Six windows became part of the UI they belong to: the raw archive
+      browser is the lower half of the Extras tab, and the trainer, facility
+      opponent, shop, item and wild-encounter editors open in the Game Data tab -
+      which until now existed and held nothing but the five buttons that opened those
+      windows. Every door into them (tab entry, menu item, map-row button) goes to
+      the same place and brings that tab forward. Ceiling 22 -> 15.
 - [x] 2026-09-12 The preview draws the regions the zone OWNS, all of them. A zone
       names a matrix and a matrix is not one zone map: 25 retail matrices are named
       by more than one zone, and taking the first filled cell handed 39 of the 61

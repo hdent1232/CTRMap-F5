@@ -587,7 +587,7 @@ public class PropEditFormGuardsTest {
 	static Fixture open(boolean arm) throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel);
+		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel, pane -> { });
 		CtrmapMainframe.mPropEditForm = f.form;
 		f.form.loadDataFile(new ctrmap.formats.propdata.GRPropData(f.gr), registry(), null);
 		f.form.gr = f.gr;
@@ -653,7 +653,7 @@ public class PropEditFormGuardsTest {
 	static Fixture openSingleRegion() throws Exception {
 		Fixture f = new Fixture();
 		f.gr = scratchRegion();
-		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel);
+		f.form = new PropEditForm(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel, pane -> { });
 		CtrmapMainframe.mPropEditForm = f.form;
 		f.form.loadDataFile(f.gr, null);
 		f.before = f.propdata();

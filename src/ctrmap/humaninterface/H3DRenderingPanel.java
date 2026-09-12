@@ -86,12 +86,22 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 	/** Which tool the editor is holding, handed in: this class only asks. */
 	private final ctrmap.humaninterface.tools.ToolSelection tools;
 
+	/**
+	 * The frame clock. KEPT, because it is a non-daemon thread: a renderer built and
+	 * then abandoned goes on drawing at 60fps for the life of the process, and holds the
+	 * process open after the last window closes. The main window has exactly one of
+	 * these for its lifetime, so nothing noticed; the Zone Loader preview has one too,
+	 * and a suite that builds one could not exit.
+	 */
+	private final FPSAnimator animator;
+
 	public H3DRenderingPanel(List<CM3DRenderable> slaves, ctrmap.humaninterface.tools.ToolSelection tools) {
 		super(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
 		this.tools = tools;
 		CM3DComponents = slaves;
 		super.addGLEventListener(this);
-		new FPSAnimator(this, 60).start();
+		animator = new FPSAnimator(this, 60);
+		animator.start();
 	}
 
 	public void loadH3D(BCHFile file) {
@@ -171,7 +181,12 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 				r.renderOverlayCM3D(gl);
 			});
 
-			if (tools.current().getNaviEnabled()) {
+			//NO TOOL SELECTED IS A STATE, not a fault. A view that is only showing a map -
+			//the Zone Loader's preview is one - has nobody holding a tool, and this threw a
+			//NullPointerException on EVERY FRAME, on the event thread. The window it was in
+			//came up with its tabs painted over each other and would not switch tabs, which
+			//is a long way from the line that caused it.
+			if (naviWanted(tools)) {
 				navi.renderNavigator(gl);
 			}
 
@@ -231,7 +246,33 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 				break;
 		}
 		navi.synchronizeNavi();
-		tools.current().updateComponents();
+		//THE SAME STATE AGAIN: nobody is holding a tool in a view that only shows a map.
+		if (tools.current() != null) {
+			tools.current().updateComponents();
+		}
+	}
+
+	/**
+	 * Whether the 3D gizmo should be drawn: somebody is holding a tool, and that tool
+	 * wants it.
+	 *
+	 * <p>A METHOD SO IT CAN BE CHECKED WITHOUT A GRAPHICS CONTEXT. This was written
+	 * inline as {@code tools.current().getNaviEnabled()}, which assumes a tool is
+	 * always held - true of the world editor, false of any view that is only showing a
+	 * map. The Zone Loader's preview is one, and it threw a NullPointerException on
+	 * every frame, on the event thread: the window came up with its tabs painted over
+	 * each other and refused to switch between them, which is a very long way from the
+	 * line responsible.
+	 */
+	public static boolean naviWanted(ctrmap.humaninterface.tools.ToolSelection tools) {
+		return tools != null && tools.current() != null && tools.current().getNaviEnabled();
+	}
+
+	/** Stops the frame clock. A view nobody is looking at should not be drawing. */
+	public void stop() {
+		if (animator != null && animator.isStarted()) {
+			animator.stop();
+		}
 	}
 
 	@Override

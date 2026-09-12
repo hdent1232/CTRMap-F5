@@ -1228,10 +1228,9 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
     }//GEN-LAST:event_btnSaveActionPerformed
 
     private void zoneListActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_zoneListActionPerformed
-		if (preview != null) {
-			//the preview follows the dropdown whether or not the popup list could be
-			//hooked: selecting a zone is the one event every look and feel gives us
-			preview.preview(zoneList.getSelectedIndex());
+		if (browser != null) {
+			//the browser follows what is open, so the row highlighted is the zone loaded
+			browser.select(zoneList.getSelectedIndex());
 		}
 		if (zoneList.getSelectedIndex() != -1 && loaded) {
 			if (openEditors.saveAll(true)) {
@@ -1340,63 +1339,97 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		return Workspace.isValid() && Workspace.profile().supports(GameProfile.Feature.AREA_FORK);
 	}
 
-	/** The Zone Loader tab's preview panel, handed in when the tab is built. */
-	private ZonePreviewPane preview;
+	/** The zone browser beside this panel, handed in when the tab is built. */
+	private ZoneBrowserPane browser;
 
-	/** Whether the dropdown's highlighted row reaches the preview under this look and feel. */
-	private boolean highlightWired = false;
-
-	/** What the dropdown does. It promises nothing about a preview: the preview is
-	 *  visible in the tab, so it does not need to be advertised in a tooltip. */
+	/** What the dropdown does. It loads, immediately - which is why the browser exists. */
 	private static final String LOAD_HINT
-		= "Select a map here to open it - this is the normal way to load a zone.";
+		= "Picking a map here OPENS it straight away. To look through the zones first,"
+		+ " use Browse zones on the right: arrow through the list and each one is drawn"
+		+ " before you commit to it.";
 
 	/**
-	 * Gives this panel the preview that sits beside it in the Zone Loader tab.
+	 * Gives this panel the zone browser that sits beside it in the Zone Loader tab.
 	 *
-	 * <p>Called once, when the tab is built. The preview then follows the dropdown:
-	 * the row being arrowed through while the list is open, and the selected zone
-	 * otherwise. The highlight half needs the look and feel to expose a popup list
-	 * and says whether it got one; the selected half always works, so a look and
-	 * feel without a popup list costs the live highlight and not the preview.
-	 *
-	 * @return whether the highlighted row could be followed as well as the selected one
+	 * <p>The browser mirrors this dropdown's rows and hands a chosen zone straight
+	 * back to it, so there is one list of zones and one way to open one. Looking is
+	 * the browser's job and it opens nothing; this dropdown opens things and does not
+	 * pretend to be a way of looking.
 	 */
-	public boolean usePreview(ZonePreviewPane pane) {
-		this.preview = pane;
+	public void useBrowser(ZoneBrowserPane pane) {
+		this.browser = pane;
 		if (pane == null) {
-			return false;
+			return;
 		}
-		if (!highlightWired) {
-			highlightWired = ComboHighlight.onHighlight(zoneList, new ComboHighlight.Listener() {
-				@Override
-				public void highlighted(int index) {
-					pane.preview(index);
+		pane.onLoad(new ZoneBrowserPane.Loader() {
+			@Override
+			public void load(int zoneIndex) {
+				//out through the dropdown: the one path that knows how to open a zone
+				if (zoneIndex >= 0 && zoneIndex < zoneList.getItemCount()) {
+					zoneList.setSelectedIndex(zoneIndex);
 				}
-			});
-		}
+			}
+		});
+		mirrorZonesToBrowser();
+		zoneList.getModel().addListDataListener(new javax.swing.event.ListDataListener() {
+			@Override
+			public void intervalAdded(javax.swing.event.ListDataEvent e) {
+				mirrorZonesToBrowser();
+			}
+
+			@Override
+			public void intervalRemoved(javax.swing.event.ListDataEvent e) {
+				mirrorZonesToBrowser();
+			}
+
+			@Override
+			public void contentsChanged(javax.swing.event.ListDataEvent e) {
+				mirrorZonesToBrowser();
+			}
+		});
+		//THE DROPDOWN GOES OUT OF SIGHT. There is one way to pick a zone now - the list
+		//beside this panel, where looking is free and opening is a button. A dropdown that
+		//ALSO picks zones is a second, worse way to do the same job: it opens whatever you
+		//arrow onto, which is the complaint the browser exists to answer, and leaving both
+		//is the duplication this project keeps being cleared of. It is still the MECHANISM
+		//- the browser hands a chosen zone back through it, the one path that knows how to
+		//open one, and the rest of this panel reads it to know what is loaded.
+		zoneList.setVisible(false);
+		loadZoneLabel.setVisible(false);
 		zoneList.setToolTipText(LOAD_HINT);
-		return highlightWired;
+	}
+
+	/** Keeps the browser showing the same zones the dropdown does. */
+	private void mirrorZonesToBrowser() {
+		if (browser == null) {
+			return;
+		}
+		java.util.List<String> rows = new java.util.ArrayList<>();
+		for (int i = 0; i < zoneList.getItemCount(); i++) {
+			rows.add(String.valueOf(zoneList.getItemAt(i)));
+		}
+		browser.setZones(rows);
 	}
 
 	/**
-	 * Hands the preview the game to read maps out of, when a workspace opens.
+	 * Hands the browser the game to read maps out of, when a workspace opens.
 	 *
 	 * <p>WHY IT IS HANDED IN. WorkspaceSessionTest holds a falling ceiling on how
 	 * many production classes reach the open-workspace statics; a preview that
 	 * fetched the session itself would raise it.
 	 */
 	public void attachZonePreview(ctrmap.WorkspaceSession ws) {
-		if (preview == null) {
+		if (browser == null) {
 			return;
 		}
-		preview.use(ws);
-		preview.preview(zoneList.getSelectedIndex());
+		browser.use(ws);
+		mirrorZonesToBrowser();
+		browser.select(zoneList.getSelectedIndex());
 	}
 
-	/** The preview beside this panel, for the window that built the tab and for tests. */
-	public ZonePreviewPane preview() {
-		return preview;
+	/** The browser beside this panel, for the window that built the tab and for tests. */
+	public ZoneBrowserPane browser() {
+		return browser;
 	}
 
 	private java.util.Set<Integer> forkDeclined = null;

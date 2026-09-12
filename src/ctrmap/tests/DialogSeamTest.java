@@ -223,55 +223,31 @@ public class DialogSeamTest {
 	 * not moved yet.
 	 */
 	private static final String[][] WINDOWS = {
-		{"CtrmapMainframe.java", "2",
-			"the application window itself, and the raw archive browser - a developer tool kept "
-			+ "deliberately non-modal so the editor can be used beside it"},
-		{"AreaLightingDialog.java", "1",
-			"a modal editor for one area, opened from the Map menu"},
-		{"BuildingPaletteDialog.java", "1",
-			"a modal picker: it returns the chosen building to the caller"},
-		{"EncounterEditDialog.java", "1",
-			"a modal editor for one zone's wild encounter table"},
-		{"GfEnvPicker.java", "1",
-			"a modal picker: it returns the chosen atmosphere"},
-		{"ItemEditDialog.java", "1",
-			"a modal editor for the item table"},
+		{"CtrmapMainframe.java", "1",
+			"the application window itself, and the only one this program opens on its own "
+			+ "account"},
 		{"LoadingDialog.java", "1",
-			"the progress window every long job shows; it owns no feature"},
-		{"MaisonClassListDialog.java", "1",
-			"a modal editor for the facility class assignments"},
-		{"MaisonEditDialog.java", "1",
-			"a modal editor for the facility opponent table"},
-		{"PokePickers.java", "1",
-			"a modal picker: it returns the chosen species"},
-		{"ShopEditDialog.java", "1",
-			"a modal editor for the shop tables in code.bin"},
-		{"TrainerEditDialog.java", "1",
-			"a modal editor for one trainer"},
+			"the progress window every long job shows; it owns no feature and closes itself"},
+		{"SetupWizard.java", "1",
+			"a modal wizard that runs before there is a workspace, and so before there is a tab "
+			+ "to put it in"},
 		{"UpdateUI.java", "1",
 			"the update progress window, shown before the editor is usable"},
-		{"ZoneLinkDialog.java", "1",
-			"a modal form: it asks for two warps and returns"},
 		{"AboutDialog.java", "1",
-			"inherited from upstream CTRMap: an About box"},
-		{"ADPropRegistryEditor.java", "1",
-			"INHERITED DEBT - a registry editor in a window of its own. It predates this rule and "
-			+ "belongs in a tab; the ceiling is here so it cannot be joined by another"},
+			"an About box - the case the rule names as legitimately transient"},
+		{"PokePickers.java", "1",
+			"a modal picker: it returns the chosen species to its caller and closes"},
+		{"GfEnvPicker.java", "1",
+			"a modal picker: it returns the chosen atmosphere block to its caller. The fog "
+			+ "editor it is opened from is a pane in the World Editor now"},
+		{"BuildingPaletteDialog.java", "1",
+			"a modal picker: it returns the chosen building to the paint tool that asked"},
 		{"ESPICAControl.java", "1",
 			"inherited from upstream CTRMap: the model viewer control window"},
-		{"NPCRegistryEditor.java", "1",
-			"INHERITED DEBT - the same as ADPropRegistryEditor, and it belongs in a tab too"},
-		{"SetupWizard.java", "1",
-			"a modal wizard that runs before there is a workspace to put a tab in"},
-		{"TileDBWriter.java", "1",
-			"inherited from upstream CTRMap: the tile database writer"},
-		{"WorkspaceSettings.java", "1",
-			"INHERITED DEBT - workspace settings in a window; it is reached from the Options menu "
-			+ "and would be a tab if it were written today"},
 	};
 
 	/** Windows allowed in all. It may fall and it may not rise quietly. */
-	private static final int WINDOW_CEILING = 22;
+	private static final int WINDOW_CEILING = 9;
 
 	/** new JFrame / new JDialog / new JWindow, and classes that ARE one. */
 	private static final Pattern WINDOW_MADE = Pattern.compile(
@@ -583,7 +559,7 @@ public class DialogSeamTest {
 		//them and never reaches the game it is handed
 		NPCRegistry reg = new NPCRegistry(f, new FakeGameFiles());
 		reg.modified = true;
-		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel);
+		ctrmap.humaninterface.NPCEditForm form = new ctrmap.humaninterface.NPCEditForm(new ctrmap.LoadedZone(), TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel, pane -> { });
 		form.reg = reg;
 		boolean stored;
 		List<String> said = Ui.record();

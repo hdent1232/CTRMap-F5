@@ -74,9 +74,15 @@ def write(path, text, crlf):
 
 def build():
     """(ok, output). Uses the same script the battery insists on."""
+    #A PLANT PUTS A DEFECT BACK ON PURPOSE, and some of those defects are the very
+    #things build.ps1 now refuses to build - a feature crawling back into a window, a
+    #second implementation of something the tree already does. The gate would stop the
+    #planted tree from building and the plant could never be proven, so it is skipped
+    #HERE and only here: the suite is what has to notice, which is the whole exercise.
+    env = dict(os.environ, CTRMAP_SKIP_STRUCTURE_GATE="1")
     done = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                            "-File", os.path.join(ROOT, "build.ps1")],
-                          cwd=ROOT, capture_output=True, text=True, errors="replace")
+                          cwd=ROOT, capture_output=True, text=True, errors="replace", env=env)
     out = (done.stdout or "") + (done.stderr or "")
     return ("Build OK" in out), out
 
@@ -85,7 +91,11 @@ def build():
 #: leaves its JOGL animator threads running and the JVM alive for ever, so "still
 #: going" and "caught it" look identical from here - and the first plant that did
 #: this sat for twenty minutes looking like a slow pass.
-SUITE_TIMEOUT = 600
+#: RAISED from 600 on 2026-09-12. WorkflowGuardsTest opens a scratch game, packs it several
+#: times and now draws a zone in a real preview pane, which is minutes of honest work - and
+#: a timeout shorter than the suite makes every plant on it unprovable while LOOKING like
+#: the guard failed to notice. That is the worst of both: no proof, and a false one.
+SUITE_TIMEOUT = 1500
 
 
 def run_suite(cls, args, java):

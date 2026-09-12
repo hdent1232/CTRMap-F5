@@ -422,15 +422,37 @@ public class MainframeReportsTest {
 	/** Opens one of {@link #EDITORS} with no parent window, as the menu does. */
 	static void openEditor(String which) {
 		if ("trainer".equals(which)) {
-			ctrmap.humaninterface.TrainerEditDialog.showForSelection(null, null);
+			ctrmap.humaninterface.TrainerEditDialog.panelForSelection(null, null, new Runnable() {
+				@Override
+				public void run() {
+				}
+			});
 		} else if ("maison".equals(which)) {
-			ctrmap.humaninterface.MaisonEditDialog.show(null);
+			ctrmap.humaninterface.MaisonEditDialog.panel(null, new Runnable() {
+				@Override
+				public void run() {
+				}
+			});
 		} else if ("shop".equals(which)) {
-			ctrmap.humaninterface.ShopEditDialog.show(null);
+			ctrmap.humaninterface.ShopEditDialog.panel(null, new Runnable() {
+				@Override
+				public void run() {
+				}
+			});
 		} else if ("lighting".equals(which)) {
-			ctrmap.humaninterface.AreaLightingDialog.show(null, new ctrmap.LoadedZone(), null);
+			ctrmap.humaninterface.AreaLightingDialog.panel(null, new ctrmap.LoadedZone(), null,
+				new Runnable() {
+					@Override
+					public void run() {
+					}
+				});
 		} else if ("encounters".equals(which)) {
-			ctrmap.humaninterface.EncounterEditDialog.show(null, new ctrmap.LoadedZone());
+			ctrmap.humaninterface.EncounterEditDialog.panel(null, new ctrmap.LoadedZone(),
+				new Runnable() {
+					@Override
+					public void run() {
+					}
+				});
 		} else {
 			throw new IllegalArgumentException("no editor named " + which);
 		}

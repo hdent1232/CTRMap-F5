@@ -21,7 +21,7 @@ import javax.swing.text.NumberFormatter;
 /**
  * Regedit form for altering AD-1 Prop registry data.
  */
-public class ADPropRegistryEditor extends javax.swing.JFrame {
+public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 
 	/**
 	 * Creates new form ADPropRegistryEditor
@@ -39,18 +39,25 @@ public class ADPropRegistryEditor extends javax.swing.JFrame {
 		initComponents();
 		parent = parentPropForm;
 		setShortValueClass(new JFormattedTextField[]{oa1, oa2, oa3, ea11, ea12, ea13});
-		addWindowListener(new WindowAdapter() {
-			@Override
-			public void windowClosing(WindowEvent e) {
-				if (saveEntry(true)) {
-					dispose();
-					if (parent != null){
-						parent.setProp(parent.propIndex);
-					}
-				}
+	}
+
+	/**
+	 * What this used to do in {@code windowClosing}, now that it is a pane.
+	 *
+	 * <p>The body is the one that was on the window, with two changes forced by
+	 * there no longer being one: {@code dispose()} is gone, because leaving is the
+	 * host's business, and the dialog owner is this panel rather than the event
+	 * source. It answers false when a save was refused - on the window that was
+	 * DO_NOTHING_ON_CLOSE, and dropping it would discard the edit silently.
+	 */
+	@Override
+	public boolean closeRequested() {
+		if (saveEntry(true)) {
+				if (parent != null){
+				parent.setProp(parent.propIndex);
 			}
-		});
-		setVisible(true);
+		}
+		return true;
 	}
 
 	public void setShortValueClass(JFormattedTextField[] fields) {

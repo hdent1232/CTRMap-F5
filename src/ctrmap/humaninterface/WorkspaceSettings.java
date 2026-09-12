@@ -12,7 +12,7 @@ import javax.swing.JOptionPane;
 /**
  * Workspace configuration GUI.
  */
-public class WorkspaceSettings extends javax.swing.JFrame {
+public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 
 	private String originWSPath;
 	private String originGamePath;
@@ -41,19 +41,6 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 		this.map = map;
 		this.reloadTileset = reloadTileset;
 		initComponents();
-		this.addWindowListener(new WindowAdapter() {
-			@Override
-			public void windowClosing(WindowEvent e) {
-				if (wsPathField.getText().equals(originWSPath) && gameField.getText().equals(originGamePath) && spicaField.getText().equals(originSpicaPath)) {
-					if (originTilesetPath.equals(btnTilesetDefault.isSelected() ? "Default" : tilesetPath.getText())) {
-						return;
-					}
-				}
-				if (Ui.confirm(e.getComponent(), "Do you want to save the new settings?", "Save settings?", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION) {
-					save();
-				}
-			}
-		});
 		wsPathField.setText(Workspace.WORKSPACE_PATH);
 		gameField.setText(Workspace.GAMEDIR_PATH);
 		spicaField.setText(Workspace.ESPICA_PATH);
@@ -65,6 +52,28 @@ public class WorkspaceSettings extends javax.swing.JFrame {
 		originGamePath = gameField.getText();
 		originSpicaPath = spicaField.getText();
 		originTilesetPath = (btnTilesetDefault.isSelected() ? "Default" : tilesetPath.getText());
+	}
+
+	/**
+	 * What this used to do in {@code windowClosing}, now that it is a pane.
+	 *
+	 * <p>The body is the one that was on the window, with two changes forced by
+	 * there no longer being one: {@code dispose()} is gone, because leaving is the
+	 * host's business, and the dialog owner is this panel rather than the event
+	 * source. It answers false when a save was refused - on the window that was
+	 * DO_NOTHING_ON_CLOSE, and dropping it would discard the edit silently.
+	 */
+	@Override
+	public boolean closeRequested() {
+		if (wsPathField.getText().equals(originWSPath) && gameField.getText().equals(originGamePath) && spicaField.getText().equals(originSpicaPath)) {
+			if (originTilesetPath.equals(btnTilesetDefault.isSelected() ? "Default" : tilesetPath.getText())) {
+				return true;
+			}
+		}
+		if (Ui.confirm(this, "Do you want to save the new settings?", "Save settings?", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION) {
+			save();
+		}
+		return true;
 	}
 
 	public void save() {

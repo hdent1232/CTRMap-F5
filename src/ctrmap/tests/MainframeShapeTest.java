@@ -210,6 +210,9 @@ public class MainframeShapeTest {
 
 		theZoneDropdownCanBePreviewed();
 		theZoneLoaderTabHoldsItsPreview();
+		browsingAZoneDoesNotLoadIt();
+		theExtrasTabHoldsTheArchiveBrowser();
+		theGameDataTabHoldsItsEditors();
 		check(unwired.isEmpty(), "every item is wired to exactly one action" + (unwired.isEmpty() ? "" : " - not these: " + unwired));
 	}
 
@@ -284,21 +287,161 @@ public class MainframeShapeTest {
 	static void theZoneLoaderTabHoldsItsPreview() {
 		System.out.println("--- the Zone Loader tab holds the zone preview, in the tab");
 		javax.swing.JPanel stand = new javax.swing.JPanel();
-		java.awt.Container tab = ctrmap.CtrmapMainframe.buildZoneTab(stand);
+		java.awt.Container tab = ctrmap.CtrmapMainframe.buildZoneTab(stand, new ctrmap.LoadedZone(), new ctrmap.humaninterface.tools.ToolSelection());
 		java.awt.LayoutManager lay = tab.getLayout();
 		Component east = lay instanceof java.awt.BorderLayout
 			? ((java.awt.BorderLayout) lay).getLayoutComponent(java.awt.BorderLayout.EAST) : null;
-		check(east instanceof ctrmap.humaninterface.ZonePreviewPane,
-			"the zone preview is IN the Zone Loader tab, beside the zone panel - not in a"
+		//the column can show a zone tool over the browser, so look INSIDE it
+		ctrmap.humaninterface.ZoneBrowserPane found = null;
+		for (Component c : east instanceof java.awt.Container
+			? ((java.awt.Container) east).getComponents() : new Component[0]) {
+			if (c instanceof ctrmap.humaninterface.ZoneBrowserPane) {
+				found = (ctrmap.humaninterface.ZoneBrowserPane) c;
+			}
+		}
+		check(found != null,
+			"the zone BROWSER is IN the Zone Loader tab, beside the zone panel - not in a"
 			+ " dialog and not in a window of its own (east = " + (east == null ? "nothing"
 			: east.getClass().getSimpleName()) + ")");
+		check(found != null && holds(found, found.preview()),
+			"...with the live preview inside it, under the list of zones");
 		check(((java.awt.BorderLayout) lay).getLayoutComponent(java.awt.BorderLayout.CENTER) == stand,
 			"...with the zone panel still the middle of the tab");
 		boolean deep = false;
 		for (Component c : tab.getComponents()) {
-			deep |= c instanceof ctrmap.humaninterface.ZonePreviewPane;
+			deep |= holds(c, found);
 		}
 		check(deep, "and it is a child of the tab, so it is on screen when the tab is");
+	}
+	/**
+	 * The Extras tab contains the raw archive browser, rather than a button that opens
+	 * it in a window.
+	 *
+	 * <p>Same rule as the zone preview, same kind of check, and the second one written
+	 * because the first was not enough on its own: this project has a standing rule that
+	 * a feature lives in the part of the UI it belongs to, and nothing counted the
+	 * windows, so the rule applied to nothing. DialogSeamTest counts them now and this
+	 * says where this one went.
+	 */
+	static void theExtrasTabHoldsTheArchiveBrowser() {
+		System.out.println("--- the Extras tab holds its tools, in the tab");
+		javax.swing.JPanel tools = new javax.swing.JPanel();
+		javax.swing.JPanel browser = new javax.swing.JPanel();
+		java.awt.Container tab = ctrmap.CtrmapMainframe.buildExtrasTab(tools, browser);
+		java.awt.LayoutManager lay = tab.getLayout();
+		Component centre = lay instanceof java.awt.BorderLayout
+			? ((java.awt.BorderLayout) lay).getLayoutComponent(java.awt.BorderLayout.CENTER) : null;
+		check(holds(centre, tools), "the Extras tools are in the tab");
+		ctrmap.CtrmapMainframe.showInExtras("Raw archive browser (Builder)", browser);
+		check(holds(centre, browser), "...and a tool opened there lands in the same place -"
+			+ " the raw archive browser, the tileset editor and the workspace settings were all"
+			+ " windows, which is what this tab exists to stop");
+		check(!holds(centre, tools), "...taking the place of the tools list while it is open");
+	}
+
+	/**
+	 * The Game Data tab has somewhere for its editors to open, beside the subjects.
+	 *
+	 * <p>Five editors - trainers, facility opponents, shops, items, wild encounters -
+	 * were modal windows opened from a column of buttons in this tab, which is to say
+	 * the tab existed and held nothing but the buttons that opened windows. They are
+	 * panels now and this is where they go. Without the host they would have nowhere
+	 * to be shown and the buttons would do nothing visible, which is the failure this
+	 * whole change exists to stop being possible.
+	 */
+	static void theGameDataTabHoldsItsEditors() {
+		System.out.println("--- the Game Data tab holds its editors, beside the subjects");
+		javax.swing.JPanel subjects = new javax.swing.JPanel();
+		java.awt.Container tab = ctrmap.CtrmapMainframe.buildGameDataTab(subjects);
+		java.awt.LayoutManager lay = tab.getLayout();
+		Component centre = lay instanceof java.awt.BorderLayout
+			? ((java.awt.BorderLayout) lay).getLayoutComponent(java.awt.BorderLayout.CENTER) : null;
+		check(centre instanceof javax.swing.JSplitPane,
+			"the Game Data tab is a split (" + (centre == null ? "nothing"
+			: centre.getClass().getSimpleName()) + ")");
+		if (!(centre instanceof javax.swing.JSplitPane)) {
+			return;
+		}
+		javax.swing.JSplitPane split = (javax.swing.JSplitPane) centre;
+		check(holds(split.getLeftComponent(), subjects), "...the subjects on the left");
+		check(split.getRightComponent() != null,
+			"...and a host on the right for the editor being used - five editors that used to"
+			+ " be modal windows open into it");
+		javax.swing.JLabel stand = new javax.swing.JLabel("an editor");
+		ctrmap.CtrmapMainframe.showGameData("Trainer editor", stand);
+		check(holds(split.getRightComponent(), stand),
+			"...and an editor handed to it actually lands there, under its name");
+		ctrmap.CtrmapMainframe.clearGameData();
+	}
+	/**
+	 * Moving through the zone list DRAWS the zone. It does not open it.
+	 *
+	 * <p>WHAT THIS IS FOR, in the owner's words: "there is no way to scroll up and down
+	 * the zone loader list and see the zones before you load or select them... you try and
+	 * use the arrow keys and it automatically selects and loads the zone before you can
+	 * even see it". Two builds of this feature hung a preview off the Load Zone dropdown,
+	 * where choosing a row IS the load - so arrowing past three candidates opened three
+	 * zones, and the preview showed up after the expensive thing it was meant to prevent
+	 * had already happened. The asked-for shape was the atmosphere picker: a list, a live
+	 * preview of the row you are on, and a button that commits.
+	 *
+	 * <p>So the separation between looking and opening is the feature, and this is the
+	 * check on it. It needs no game and no display: the browser is handed a recorder in
+	 * place of the thing that opens zones, and the recorder must stay empty while the
+	 * selection moves.
+	 */
+	static void browsingAZoneDoesNotLoadIt() {
+		System.out.println("--- looking through zones opens nothing until you ask");
+		ctrmap.humaninterface.ZoneBrowserPane browser = new ctrmap.humaninterface.ZoneBrowserPane(new ctrmap.LoadedZone(), new ctrmap.humaninterface.tools.ToolSelection());
+		final int[] opened = {-1};
+		final int[] times = {0};
+		browser.onLoad(new ctrmap.humaninterface.ZoneBrowserPane.Loader() {
+			@Override
+			public void load(int zoneIndex) {
+				opened[0] = zoneIndex;
+				times[0]++;
+			}
+		});
+		browser.setZones(java.util.Arrays.asList(
+			"Littleroot Town - 0", "Oldale Town - 7", "Route 101 - 23", "Mossdeep City - 19"));
+
+		//arrowing down the list, which is what the owner was doing
+		browser.zoneRows().setSelectedIndex(1);
+		browser.zoneRows().setSelectedIndex(2);
+		browser.zoneRows().setSelectedIndex(3);
+		check(times[0] == 0, "moving through the list opens NOTHING (" + times[0]
+			+ " zone(s) opened) - looking is free, which is the whole point of it");
+		check(browser.highlighted() == 3, "...but the browser knows which zone you are on ("
+			+ browser.highlighted() + ")");
+
+		//and the button is the only thing that opens one
+		browser.loadButton().doClick();
+		check(times[0] == 1 && opened[0] == 3,
+			"'" + ctrmap.humaninterface.ZoneBrowserPane.LOAD + "'" + " opens the highlighted zone,"
+			+ " and only when pressed (opened " + opened[0] + ", " + times[0] + " time(s))");
+
+		//the search filters rows, and a row still knows which zone it is
+		browser.searchBox().setText("Mossdeep");
+		browser.zoneRows().setSelectedIndex(0);
+		check(browser.highlighted() == 3, "after searching, the first row is still zone 3 ("
+			+ browser.highlighted() + ") - a filtered list that lost track of that would open"
+			+ " the wrong zone");
+		check(times[0] == 1, "...and filtering opened nothing either");
+	}
+	/** Whether {@code what} is somewhere inside {@code where}. */
+	static boolean holds(Component where, Component what) {
+		if (where == what) {
+			return true;
+		}
+		if (!(where instanceof java.awt.Container)) {
+			return false;
+		}
+		for (Component c : ((java.awt.Container) where).getComponents()) {
+			if (holds(c, what)) {
+				return true;
+			}
+		}
+		return false;
 	}
 	// -------------------------------------------------------------- tool row
 	static void toolRow() {
@@ -474,7 +617,14 @@ public class MainframeShapeTest {
 	 * way. Comments are stripped first, so a comment SAYING the yaw is zeroed
 	 * cannot satisfy this.
 	 */
+	//RETARGETED to PanelScene3D: the camera arithmetic moved out of an anonymous body
+	//in the window so the Zone Loader preview could USE it instead of growing a second
+	//copy. The claim is unchanged and so is the reading - source, comments stripped.
 	static void cameraFraming(File mainframe) throws Exception {
+		File scene = new File(mainframe.getParentFile(), "humaninterface/PanelScene3D.java");
+		if (scene.isFile()) {
+			mainframe = scene;
+		}
 		if (!mainframe.isFile()) {
 			check(false, "the window's source is at " + mainframe + " (pass the src root as args[0])");
 			return;
@@ -484,7 +634,7 @@ public class MainframeShapeTest {
 		int matrix = text.indexOf("public void frameMatrix(int cellsAcross, int cellsDown) {");
 		int end = matrix < 0 ? -1 : text.indexOf("public void redraw() {", matrix);
 		if (single < 0 || matrix < single || end < matrix) {
-			check(false, "the window still holds both camera framings, single-region then matrix"
+			check(false, "the camera framings live together, single-region then matrix"
 					+ " (found at " + single + ", " + matrix + ", " + end + ")");
 			return;
 		}

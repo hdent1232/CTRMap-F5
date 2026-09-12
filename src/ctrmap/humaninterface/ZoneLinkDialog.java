@@ -38,11 +38,23 @@ public final class ZoneLinkDialog {
 	 * @param ws the open game, handed in
 	 * @param zones the zone table, for the default and the range
 	 */
-	public static void show(Component parent, WorkspaceSession ws, LoadedZone zones) {
+	/**
+	 * The connect-zones form, as a pane for the Zone Loader tab.
+	 *
+	 * <p>It was a modal window that waited, then did the work after it closed. A pane
+	 * cannot wait, so the work moved into the Connect button where it always belonged:
+	 * the sequence - ask what would be abandoned, then link - is unchanged and still
+	 * refuses in the same places.
+	 *
+	 * @param onClose what to do when the user is finished; the host puts the browser back
+	 * @return the form, or null when there is nothing to connect (it says why first)
+	 */
+	public static javax.swing.JComponent panel(Component parent, WorkspaceSession ws,
+			LoadedZone zones, Runnable onClose) {
 		if (ws == null || zones == null || zones.count() == 0) {
 			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).",
 					"Connect zones");
-			return;
+			return null;
 		}
 		int here = Math.max(0, zones.index());
 		int last = zones.count() - 1;
@@ -71,11 +83,8 @@ public final class ZoneLinkDialog {
 		//it costs a review. A JDialog built here is not an exception to anything: the
 		//rule is about JOptionPane, and everything this says in words still goes
 		//through Ui below.
-		final boolean[] go = {false};
-		final javax.swing.JDialog dlg = new javax.swing.JDialog(
-			javax.swing.SwingUtilities.getWindowAncestor(parent), "Connect zones",
-			java.awt.Dialog.ModalityType.APPLICATION_MODAL);
-		dlg.setLayout(new java.awt.BorderLayout(6, 6));
+		//A PANE, not a window: the adds below are unchanged.
+		final JPanel dlg = new JPanel(new java.awt.BorderLayout(6, 6));
 		dlg.add(new JLabel("<html><div style=\"padding:8px\">Connect two zones through a warp."
 			+ "<br>The warp numbers are the ones the Warp tool shows on the map -"
 			+ "<br>place the warps first, then wire them here.</div></html>"),
@@ -84,22 +93,22 @@ public final class ZoneLinkDialog {
 		JPanel buttons = new JPanel();
 		javax.swing.JButton ok = new javax.swing.JButton("Connect");
 		javax.swing.JButton cancel = new javax.swing.JButton("Cancel");
-		ok.addActionListener(e -> {
-			go[0] = true;
-			dlg.dispose();
-		});
-		cancel.addActionListener(e -> dlg.dispose());
+		ok.addActionListener(e -> connect(parent, ws, (Integer) zoneA.getValue(),
+			(Integer) warpA.getValue(), (Integer) zoneB.getValue(), (Integer) warpB.getValue(),
+			both.isSelected(), onClose));
+		cancel.addActionListener(e -> onClose.run());
 		buttons.add(ok);
 		buttons.add(cancel);
 		dlg.add(buttons, java.awt.BorderLayout.SOUTH);
-		dlg.pack();
-		dlg.setLocationRelativeTo(parent);
-		dlg.setVisible(true);
-		if (!go[0]) {
-			return;
-		}
-		int za = (Integer) zoneA.getValue(), wa = (Integer) warpA.getValue();
-		int zb = (Integer) zoneB.getValue(), wb = (Integer) warpB.getValue();
+		return dlg;
+	}
+
+	/**
+	 * What the old modal window did after it closed: say what would be abandoned, then
+	 * link. Unchanged apart from being handed its numbers instead of reading spinners.
+	 */
+	private static void connect(Component parent, WorkspaceSession ws, int za, int wa,
+			int zb, int wb, boolean both, Runnable onClose) {
 
 		//WHAT IT WOULD ABANDON, between the choice and the write
 		try {
@@ -125,10 +134,11 @@ public final class ZoneLinkDialog {
 		}
 
 		try {
-			String said = ZoneLinker.link(ws, za, wa, zb, wb, both.isSelected());
+			String said = ZoneLinker.link(ws, za, wa, zb, wb, both);
 			ctrmap.Ui.message(parent, said, "Connect zones", JOptionPane.INFORMATION_MESSAGE);
 		} catch (Exception ex) {
 			ctrmap.Ui.error(parent, ctrmap.Ui.reason(ex), "Connect zones");
 		}
+		onClose.run();
 	}
 }
