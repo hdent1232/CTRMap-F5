@@ -51,6 +51,7 @@ public class WorkflowGuardsTest {
 			section("an orphaned entry never refuses an append", () -> anOrphanedEntryNeverRefusesAnAppend(dump));
 			section("append, pack, append again", () -> appendPackAppendAgain(dump));
 			section("every appended zone owns its map", () -> everyAppendedZoneOwnsItsMap(dump));
+			section("a created zone shares nothing, or says so", () -> aCreatedZoneSharesNothing(dump));
 			section("a spare left sharing is repaired", () -> spareLeftSharingIsRepaired(dump));
 			section("resize, pack, resize again", () -> resizePackResizeAgain(dump));
 			section("deploy, disable, deploy again", () -> deployDisableDeployAgain(dump));
@@ -85,7 +86,7 @@ public class WorkflowGuardsTest {
 		int stock = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
 		check(stock > 500, "the scratch game starts at the stock zone count (" + stock + " entries)");
 
-		ZoneAppender.AppendResult first = ZoneAppender.appendZones(1, DONOR);
+		ZoneAppender.AppendResult first = ZoneAppender.appendZones(1, DONOR, true);
 		check(first != null && first.realZones == 1,
 				"the first append reports one real zone added");
 		check(first.spareZones >= 0, "and says how many spares padded it to a multiple of four ("
@@ -100,7 +101,7 @@ public class WorkflowGuardsTest {
 		Exception refused = null;
 		ZoneAppender.AppendResult second = null;
 		try {
-			second = ZoneAppender.appendZones(1, DONOR);
+			second = ZoneAppender.appendZones(1, DONOR, true);
 		} catch (Exception ex) {
 			refused = ex;
 		}
@@ -145,7 +146,7 @@ public class WorkflowGuardsTest {
 		int donorMatrix = matrixOf(DONOR);
 		check(donorMatrix >= 0, "the donor names a matrix (" + donorMatrix + ")");
 
-		ZoneAppender.AppendResult r = ZoneAppender.appendZones(1, DONOR);
+		ZoneAppender.AppendResult r = ZoneAppender.appendZones(1, DONOR, true);
 		int added = r.realZones + r.spareZones;
 		check(added >= 1, "the append created " + added + " zone(s): " + r.realZones
 				+ " real and " + r.spareZones + " spare");
@@ -244,7 +245,7 @@ public class WorkflowGuardsTest {
 		
 		String why = "";
 		try {
-			ZoneAppender.appendZones(1, DONOR);
+			ZoneAppender.appendZones(1, DONOR, true);
 		} catch (Exception ex) {
 			why = String.valueOf(ex.getMessage());
 		}
@@ -509,7 +510,7 @@ public class WorkflowGuardsTest {
 			return;
 		}
 		int stock = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
-		ZoneAppender.AppendResult r = ZoneAppender.appendZones(1, DONOR);
+		ZoneAppender.AppendResult r = ZoneAppender.appendZones(1, DONOR, true);
 		pack();
 		int added = r.realZones + r.spareZones;
 		check(r.spareZones > 0, "the append made " + r.spareZones + " padding spare(s) to round up to four");
@@ -637,6 +638,118 @@ public class WorkflowGuardsTest {
 		java.nio.file.Files.write(zf.toPath(), b);
 		Workspace.addPersist(zf);
 		ctrmap.GeometryForker.repointMasterRow(Workspace.getArchive(ArchiveType.ZONE_DATA), zoneIndex, matrix);
+	}
+	/**
+	 * A zone this editor creates is independent from birth - and where it cannot
+	 * be, the creation REFUSES until the user has been told which part.
+	 *
+	 * <p>THE WHOLE TABLE, NOT ONE FIELD. A zone header points at four things
+	 * ({@link ctrmap.ZoneResource}) and an append used to fork exactly one. Nothing
+	 * was wrong with that fix; what was wrong is that it fixed a FIELD and the
+	 * class stayed open, so story text and script went on being shared with
+	 * nothing said. Measured on the owner's game: zones 536-539, one append from
+	 * donor 534, all four still on story text 491 and script 134. Editing 537's
+	 * text rewrote Sootopolis's; blank spare 539 was wired to run its script.
+	 *
+	 * <p>This loops the table and asks each row the right question: a resource the
+	 * appender makes private must not be shared by anything it creates, and a
+	 * resource it cannot make private must be REFUSED rather than shipped quietly.
+	 * Adding a fifth row, or moving one from shared to private, is covered the day
+	 * it happens - which is the difference between closing a class and fixing an
+	 * instance of one.
+	 */
+	static void aCreatedZoneSharesNothing(File dump) throws Exception {
+		System.out.println("--- a zone this editor creates shares nothing, or the append refuses");
+		ScratchGame.open(dump);
+		if (!stockBase()) {
+			return;
+		}
+		java.util.List<ctrmap.ZoneResource> shared = ZoneAppender.sharedAfterAppend();
+		
+		//THE REFUSAL FIRST, because it is the part that closes the class. While any
+		//row is still shared, the form that does not acknowledge it must not work.
+		String refused = "";
+		try {
+			ZoneAppender.appendZones(1, DONOR);
+		} catch (Exception ex) {
+			refused = String.valueOf(ex.getMessage());
+		}
+		if (shared.isEmpty()) {
+			check(refused.isEmpty(), "every resource is made private, so nothing is refused");
+		} else {
+			check(!refused.isEmpty(),
+				"an append that cannot make its zones independent is REFUSED, not warned about");
+			for (ctrmap.ZoneResource res : shared) {
+				check(refused.contains(res.label), "and the refusal names the " + res.label
+					+ ", so the user is choosing rather than finding out later: " + refused);
+			}
+			check(refused.contains(String.valueOf(DONOR)),
+				"and names the zone they would be shared with");
+		}
+		
+		//...and having been told, the append proceeds and keeps saying so
+		int stock = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
+		ZoneAppender.AppendResult r = ZoneAppender.appendZones(1, DONOR, true);
+		pack();
+		int added = r.realZones + r.spareZones;
+		check(added > 0, "the append created " + added + " zone(s) from donor " + DONOR);
+		check(r.shared.equals(shared), "and the result carries what they share, for the window"
+			+ " to repeat afterwards " + r.shared);
+		
+		int zoneCount = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		for (ctrmap.ZoneResource res : ctrmap.ZoneResource.values()) {
+			java.util.List<String> hits = new java.util.ArrayList<>();
+			for (int i = 0; i < added; i++) {
+				int zone = stock - 2 + i;
+				byte[] mine = zoneBytes(zone);
+				if (mine == null) {
+					continue;
+				}
+				int id = res.idIn(mine);
+				for (int other = 0; other < zoneCount; other++) {
+					byte[] theirs = other == zone ? null : zoneBytes(other);
+					if (theirs != null && res.idIn(theirs) == id) {
+						hits.add("zone " + zone + " shares " + res.label + " " + id + " with " + other);
+						break;
+					}
+				}
+			}
+			if (shared.contains(res)) {
+				//a row the appender does not make private: the honest claim is that the
+				//user was told, not that it did not happen
+				check(r.sharedWarning.contains(res.label),
+					"the " + res.label + " is not made private, and the append said so: " + r.sharedWarning);
+			} else {
+				check(hits.isEmpty(), "no created zone shares its " + res.label + " with any other "
+					+ hits);
+			}
+		}
+		
+		//AND THE TABLE NAMES THE FIELDS THE HEADER PARSER READS. An offset that
+		//drifted from ZoneHeader would make every check above ask about the wrong
+		//bytes and pass for the wrong reason.
+		byte[] probe = zoneBytes(DONOR);
+		ctrmap.formats.zone.ZoneHeader parsed = new ctrmap.formats.zone.ZoneHeader(
+			ctrmap.formats.containers.ContainerBytes.subfile(probe, 0), Workspace.game());
+		check(ctrmap.ZoneResource.AREA.idIn(probe) == parsed.areadataID
+			&& ctrmap.ZoneResource.MAP.idIn(probe) == parsed.mapmatrixID
+			&& ctrmap.ZoneResource.TEXT.idIn(probe) == parsed.textID
+			&& ctrmap.ZoneResource.SCRIPT.idIn(probe) == parsed.script,
+			"every row of the table names the field the header parser reads (area "
+			+ ctrmap.ZoneResource.AREA.idIn(probe) + "/" + parsed.areadataID + ", map "
+			+ ctrmap.ZoneResource.MAP.idIn(probe) + "/" + parsed.mapmatrixID + ", text "
+			+ ctrmap.ZoneResource.TEXT.idIn(probe) + "/" + parsed.textID + ", script "
+			+ ctrmap.ZoneResource.SCRIPT.idIn(probe) + "/" + parsed.script + ")");
+	}
+
+	/** A zone's whole ZO container as bytes, or null when it cannot be read. */
+	static byte[] zoneBytes(int zoneIndex) {
+		try {
+			File f = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
+			return f == null || !f.isFile() ? null : java.nio.file.Files.readAllBytes(f.toPath());
+		} catch (Exception ex) {
+			return null;
+		}
 	}
 	/** The FieldData regions a zone's matrix names, from the packed archives. */
 	static java.util.List<Integer> regionsOf(int zoneIndex) {

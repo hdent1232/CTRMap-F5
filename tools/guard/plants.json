@@ -1465,6 +1465,30 @@
     "${GAMEDIR}"
    ],
    "must_say": "and nothing after it has run yet, with that pack still going"
+  },
+  {
+   "id": "an-append-creates-shared-zones-quietly",
+   "why": "A zone header points at four resources and the append makes ONE of them private. For two releases it created zones that shared their donor story text and script with nothing said, and the owner found it by opening a settings field by chance. A warning would not have helped - warnings are read once. The two-argument form REFUSES, so a zone cannot be created shared unless somebody took that decision; remove the refusal and creation goes quiet again.",
+   "file": "src/ctrmap/ZoneAppender.java",
+   "find": "\t\tif (!shared.isEmpty()) {\n",
+   "replace": "\t\tif (false && !shared.isEmpty()) {\n",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "an append that cannot make its zones independent is REFUSED, not warned about"
+  },
+  {
+   "id": "the-appender-claims-to-fork-what-it-does-not",
+   "why": "MADE_PRIVATE is the whole mechanism: it says which of a zone header resources the append gives every new zone its own copy of, and everything not in it is refused on. A set that CLAIMS a resource it does not actually fork is worse than the original bug - the refusal stops firing and the guard would report independence that does not exist. So the guard checks the claim against the archives rather than believing the set.",
+   "file": "src/ctrmap/ZoneAppender.java",
+   "find": "\t\t\t= java.util.EnumSet.of(ZoneResource.MAP);\n",
+   "replace": "\t\t\t= java.util.EnumSet.of(ZoneResource.MAP, ZoneResource.SCRIPT);\n",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "no created zone shares its script with any other"
   }
  ]
 }
