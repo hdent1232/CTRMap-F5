@@ -31,11 +31,22 @@ final class ScratchGame {
 	 * The archives {@link WorkspaceSession#open} requires. All of them, because
 	 * a pack reloads all of them - leave one out and the reload dereferences null.
 	 */
+	/**
+	 * The archives a scratch game needs to be a game.
+	 *
+	 * <p>STORYTEXT joined the list when an append started giving every zone it
+	 * creates its own dialogue file. It is 1.6 MB, which is real but small beside
+	 * FieldData, and without it every section that appends refuses - correctly,
+	 * because a game folder with no STORYTEXT genuinely cannot make a zone
+	 * independent. A suite that worked around that refusal would be measuring a
+	 * game nobody has.
+	 */
 	private static final ArchiveType[] NEEDED = {
 		ArchiveType.AREA_DATA, ArchiveType.FIELD_DATA,
 		ArchiveType.MAP_MATRIX, ArchiveType.GAMETEXT,
 		ArchiveType.ZONE_DATA, ArchiveType.BUILDING_MODELS,
-		ArchiveType.NPC_REGISTRIES, ArchiveType.MOVE_MODELS
+		ArchiveType.NPC_REGISTRIES, ArchiveType.MOVE_MODELS,
+		ArchiveType.STORYTEXT
 	};
 
 	private ScratchGame() {
@@ -57,12 +68,30 @@ final class ScratchGame {
 				.archivePath(ArchiveType.SOUND_BCSAR));
 		sound.getParentFile().mkdirs();
 		Files.write(sound.toPath(), new byte[0]);
+		//AN ARCHIVE THE DUMP DOES NOT HAVE IS SKIPPED, AND SAID. Suites are pointed
+		//at two different things: the live game folder, which is a whole game, and
+		//RomFS_original_garcs, which is only the archives the restore flow needs and
+		//has no STORYTEXT at all. Copying unconditionally turned the second into a
+		//NoSuchFileException out of this method the moment STORYTEXT joined the list,
+		//and twenty-two suites died before their first line. Skipping is right - a
+		//scratch game built from a partial dump is genuinely partial, and the code
+		//that needs the missing archive refuses on its own - but skipping SILENTLY
+		//would leave a suite failing later with no hint of why, so it is printed.
+		java.util.List<String> absent = new java.util.ArrayList<>();
 		for (ArchiveType t : NEEDED) {
 			String rel = Workspace.getArchivePath(t, GameType.ORAS);
 			File src = new File(dump.getAbsolutePath() + rel);
+			if (!src.isFile()) {
+				absent.add(t + " (" + rel + ")");
+				continue;
+			}
 			File dst = new File(game.getAbsolutePath() + rel);
 			dst.getParentFile().mkdirs();
 			Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING);
+		}
+		if (!absent.isEmpty()) {
+			System.out.println("    (this dump has no " + absent + " - the scratch game goes"
+				+ " without, and anything needing it will refuse)");
 		}
 		WorkspaceSession session;
 		try {

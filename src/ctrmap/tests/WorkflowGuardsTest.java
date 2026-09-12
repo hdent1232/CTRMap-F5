@@ -669,14 +669,22 @@ public class WorkflowGuardsTest {
 		
 		//THE REFUSAL FIRST, because it is the part that closes the class. While any
 		//row is still shared, the form that does not acknowledge it must not work.
+		//ONLY PROBED WHEN THERE IS SOMETHING TO REFUSE. Calling the two-argument
+		//form when it does NOT refuse actually appends four zones, which poisons the
+		//rest of this section - the probe has a side effect exactly when the thing it
+		//is probing for is absent. Found by a plant that claimed a resource was forked
+		//when it was not: the section died on "an appended zone is already pending"
+		//instead of reporting the claim, and reported nothing about the claim at all.
 		String refused = "";
-		try {
-			ZoneAppender.appendZones(1, DONOR);
-		} catch (Exception ex) {
-			refused = String.valueOf(ex.getMessage());
+		if (!shared.isEmpty()) {
+			try {
+				ZoneAppender.appendZones(1, DONOR);
+			} catch (Exception ex) {
+				refused = String.valueOf(ex.getMessage());
+			}
 		}
 		if (shared.isEmpty()) {
-			check(refused.isEmpty(), "every resource is made private, so nothing is refused");
+			check(true, "every resource is made private, so there is nothing to refuse");
 		} else {
 			check(!refused.isEmpty(),
 				"an append that cannot make its zones independent is REFUSED, not warned about");

@@ -26,10 +26,6 @@ anything known to be broken. Not ideas, not maybes. If it is here it is owed.
 
 ## Open
 
-- [ ] **Give a created zone its own STORY TEXT.** Archives grow through the
-      generic `packDirectory` path, so this should be reachable, but nothing in
-      the tree appends a STORYTEXT entry today and no empty message file is
-      built anywhere - both need writing and measuring first.
 - [ ] **The SCRIPT row may never be forkable.** `ArchiveType` has no script
       archive: CTRMap neither extracts nor packs it. Until that changes a
       created zone runs its donor's events, and the only close available is the
@@ -58,6 +54,12 @@ anything known to be broken. Not ideas, not maybes. If it is here it is owed.
 - [x] 2026-09-11 Padding spares an earlier version left sharing the donor's MAP
       are repaired on open, in one pass, and blanked when untouched.
 - [x] 2026-09-11 The zone list waits for the pack that repair starts.
+- [x] 2026-09-12 A created zone gets its own STORY TEXT. Copied rather than
+      emptied: the script cannot be forked, so every created zone runs the
+      donor's events and those ask for line numbers - an empty text file under
+      a script that wants line 12 misbehaves in game. The append refuses up
+      front on a game folder with no STORYTEXT archive rather than half-running.
+      SCRIPT is now the only row left in the refusal.
 - [x] 2026-09-12 Browse zones: a searchable list with a live 3D preview, on the
       Zone actions bar and in the Zone menu. Nothing is loaded by looking. Fixed
       two dormant MapPreview3D bugs on the way - a failed decode kept the

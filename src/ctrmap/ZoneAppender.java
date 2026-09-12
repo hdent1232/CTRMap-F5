@@ -101,7 +101,7 @@ public class ZoneAppender {
 	 * rather than four.
 	 */
 	private static final java.util.EnumSet<ZoneResource> MADE_PRIVATE
-			= java.util.EnumSet.of(ZoneResource.MAP, ZoneResource.AREA);
+			= java.util.EnumSet.of(ZoneResource.MAP, ZoneResource.AREA, ZoneResource.TEXT);
 
 	/** The resources an append gives every zone it creates its own copy of. */
 	public static java.util.Set<ZoneResource> madePrivate() {
@@ -186,6 +186,15 @@ public class ZoneAppender {
 	 */
 	public static AppendResult appendZones(int newRealZones, int srcIndex, boolean acceptShared) throws IOException {
 		java.util.List<ZoneResource> stillShared = sharedAfterAppend();
+		//asked BEFORE anything is written, like the area budget: a game folder with no
+		//STORYTEXT archive is a real situation, and finding out at the fork would leave
+		//the zones already appended and half independent
+		if (MADE_PRIVATE.contains(ZoneResource.TEXT) && !TextForker.available(Workspace.session())) {
+			throw new IOException("This game folder has no STORYTEXT archive, so a new zone cannot"
+				+ " be given its own dialogue file - and it would silently share the donor's."
+				+ "\n\nPoint CTRMap at a complete game folder, or remove TEXT from the resources"
+				+ " the append makes private.");
+		}
 		if (!acceptShared && !stillShared.isEmpty()) {
 			throw new IOException(sharedWarning(srcIndex));
 		}
@@ -279,6 +288,14 @@ public class ZoneAppender {
 		// writes anything, rather than running out half way and leaving two of four new
 		// zones private.
 		AreaForker.forkAppendedAreas(p.newZos, p.master, oldCount, addCount);
+
+		// ...and its own STORY TEXT, so writing dialogue for a new zone stops rewriting
+		// the donor's. Copied rather than emptied: the zone's SCRIPT cannot be forked
+		// (CTRMap does not manage that archive), so every created zone runs the donor's
+		// events, and those ask for line numbers. An empty text file under a script that
+		// wants line 12 misbehaves in game; a copy keeps the pair consistent, and
+		// independence is what this is for, not emptiness.
+		TextForker.forkAppendedTexts(Workspace.session(), p.newZos, p.master, oldCount, addCount);
 
 		if (pendingZoneDataOverrides == null) {
 			pendingZoneDataOverrides = new HashMap<>();
