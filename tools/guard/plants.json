@@ -1446,13 +1446,25 @@
    "id": "nothing-calls-the-padding-repair",
    "why": "The repair runs behind frame != null on purpose - ScratchGame.open reaches onWorkspaceOpened, and Workspace.validate is driven by a suite pointed at the owner's real game folder, so a repair that packs must live where neither can arrive by accident. The cost of that placement is that no suite can drive the CALL, only the method, and a fix that is present, correct and never reached is this project's most-repeated defect. So the call is asked of the bytecode instead. The check is asked of the bytecode, and it had to be a SEPARATE CLASS to be worth asking: as a private method of the window it kept naming the repair after the call was deleted, so the plant survived and the guard was proving nothing.",
    "file": "src/ctrmap/CtrmapMainframe.java",
-   "find": "\t\tPaddingZoneRepair.repairOnOpen(frame, Workspace::packWorkspace);\n",
-   "replace": "",
+   "find": "\t\tPaddingZoneRepair.repairOnOpen(frame, Workspace::packWorkspace, () -> {\n\t\t\tmZonePnl.loadEverything();\n\t\t\tmTextEditor.loadGarc();\n\t\t\tshowZoneLoadingHint();\n\t\t});\n",
+   "replace": "\t\tmZonePnl.loadEverything();\n\t\tmTextEditor.loadGarc();\n\t\tshowZoneLoadingHint();\n",
    "suite": "ctrmap.tests.WorkflowGuardsTest",
    "args": [
     "${GAMEDIR}"
    ],
    "must_say": "and the window still calls it"
+  },
+  {
+   "id": "the-zone-list-races-the-repairs-pack",
+   "why": "The repair packs, and a pack is a SwingWorker. The window rebuilds its zone list next, off the same archives the pack is rewriting - so starting them beside each other is a race, and the user meets it as a zone list built from half-written data: not a crash, not a message, just a wrong list, which is the failure mode this project exists to remove. The first version of the hook did exactly this; it only came to light when the reporter opened the app and the repair worked ANYWAY, which is what a race looks like when it goes your way.",
+   "file": "src/ctrmap/PaddingZoneRepair.java",
+   "find": "\t\tpacker.accept(new Runnable() {\n",
+   "replace": "\t\tthen.run();\n\t\tpacker.accept(new Runnable() {\n",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "and nothing after it has run yet, with that pack still going"
   }
  ]
 }

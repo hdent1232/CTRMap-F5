@@ -1470,10 +1470,15 @@ public class CtrmapMainframe {
 			return 0;
 		}
 		mBuilder.loadGARCs();
-		PaddingZoneRepair.repairOnOpen(frame, Workspace::packWorkspace);
-		mZonePnl.loadEverything();
-		mTextEditor.loadGarc();
-		showZoneLoadingHint();
+		//THE REPAIR PACKS, AND A PACK IS A WORKER. What follows reads the very
+		//archives that pack is rewriting, so it is handed to the repair to run when
+		//the pack has finished rather than started beside it. A workspace with
+		//nothing to repair runs all of this straight through, exactly as before.
+		PaddingZoneRepair.repairOnOpen(frame, Workspace::packWorkspace, () -> {
+			mZonePnl.loadEverything();
+			mTextEditor.loadGarc();
+			showZoneLoadingHint();
+		});
 		return loadedZone.count();
 	}
 

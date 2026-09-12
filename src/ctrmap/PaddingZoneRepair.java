@@ -53,10 +53,18 @@ public final class PaddingZoneRepair {
 	 * means a guard can watch this decide and report without packing anything.
 	 *
 	 * @param parent what the dialogs belong to, or null for none
+	 * <p>IT SEQUENCES WHAT COMES NEXT rather than letting the caller race it. The
+	 * pack is a worker, so a caller that simply called this and then rebuilt its
+	 * zone list would be reading the archives the pack is in the middle of
+	 * rewriting. {@code then} runs when the repair is finished and not before -
+	 * straight away when there was nothing to repair, which is almost always.
+	 *
 	 * @param packer how to pack and then run the callback - the window hands in
 	 *        {@code Workspace::packWorkspace}
+	 * @param then what to do once the repair is done and packed
 	 */
-	public static void repairOnOpen(Component parent, java.util.function.Consumer<Runnable> packer) {
+	public static void repairOnOpen(Component parent, java.util.function.Consumer<Runnable> packer,
+			Runnable then) {
 		final GeometryForker.RepairReport r = GeometryForker.repairSharedAppendedZones(
 				ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
 		if (!r.refusedBecause.isEmpty()) {
@@ -71,15 +79,18 @@ public final class PaddingZoneRepair {
 						+ " and every other zone on that map.",
 						"Zones sharing a map");
 			}
+			then.run();
 			return;
 		}
 		if (!r.changedAnything()) {
+			then.run();
 			return;
 		}
 		packer.accept(new Runnable() {
 			@Override
 			public void run() {
 				Ui.message(parent, report(r), "Zones repaired", JOptionPane.INFORMATION_MESSAGE);
+				then.run();
 			}
 		});
 	}
