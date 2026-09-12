@@ -117,7 +117,7 @@ public class ZoneLoadingStateTest {
 			LoadedZone lz = new LoadedZone();
 			ZoneLoadingPanel pnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 			CtrmapMainframe.mZonePnl = pnl;
-			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel);
+			CtrmapMainframe.mNPCEditForm = new NPCEditForm(lz, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel, pane -> { });
 			CtrmapMainframe.mWarpEditForm = new WarpEditForm(lz, REDRAW, CENTRE);
 			CtrmapMainframe.mTriggerEditForm = new TriggerEditForm(lz, REDRAW, CENTRE);
 
@@ -1121,7 +1121,7 @@ public class ZoneLoadingStateTest {
 	static void theWindowsOwnZoneViewsTakeThePropEditorDownToo(LoadedZone lz) throws Exception {
 		System.out.println("--- the window's own zone views take the prop editor down with the zone");
 		ctrmap.humaninterface.PropEditForm form = new ctrmap.humaninterface.PropEditForm(
-				lz, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel);
+				lz, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel, pane -> { });
 		CtrmapMainframe.mPropEditForm = form;
 		try {
 			ctrmap.formats.propdata.GRPropData held = new ctrmap.formats.propdata.GRPropData();

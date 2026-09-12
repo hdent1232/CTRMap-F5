@@ -33,14 +33,15 @@ import static ctrmap.CtrmapMainframe.*;
 public class TrainerEditDialog {
 
 	/** Opens the editor, defaulting to the selected NPC's trainer when it is one. */
-	public static void showForSelection(Frame parent, Integer selectedNpcScript) {
+	public static javax.swing.JComponent panelForSelection(java.awt.Component parent,
+			Integer selectedNpcScript, Runnable onClose) {
 		//TRAINER_EDITING, not "is it ORAS". "Load an ORAS workspace first" was
 		//an instruction a user with X/Y open could not act on and was not even
 		//true - a workspace WAS loaded - and Sun/Moon got the same sentence.
 		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
 		if (prof == null) {
 			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).", "Trainer editor");
-			return;
+			return null;
 		}
 		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.TRAINER_EDITING)) {
 			ctrmap.Ui.error(parent, "Editing trainers is not available for " + prof.displayName() + "."
@@ -48,12 +49,12 @@ public class TrainerEditDialog {
 					+ " record layouts measured, for Omega Ruby / Alpha Sapphire only."
 					+ "\n\nCTRMap refuses here rather than writing bytes into a guess.",
 					"Trainer editor");
-			return;
+			return null;
 		}
 		if (Workspace.getArchive(ArchiveType.TRAINER_DATA) == null
 				|| Workspace.getArchive(ArchiveType.TRAINER_POKE) == null) {
 			ctrmap.Ui.error(parent, "This dump has no trainer archives.", "Trainer editor");
-			return;
+			return null;
 		}
 		//THE SELECTED NPC'S SCRIPT IS HANDED IN. This dialog reached into the main
 		//window for the NPC form to read one number off the record it happens to
@@ -72,7 +73,7 @@ public class TrainerEditDialog {
 				"Trainer ID (1..949). A map NPC with script 3000+ID battles that trainer;\n"
 				+ "the selected NPC's trainer is pre-filled when it is one.", "Input", JOptionPane.QUESTION_MESSAGE, null, def);
 		if (in == null) {
-			return;
+			return null;
 		}
 		try {
 			int tid = Integer.parseInt(in.trim());
@@ -88,11 +89,12 @@ public class TrainerEditDialog {
 			if (tid < 1 || tid > ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX) {
 				throw new NumberFormatException();
 			}
-			show(parent, tid);
+			return panel(parent, tid, onClose);
 		} catch (NumberFormatException ex) {
 			ctrmap.Ui.error(parent, "Enter a trainer id between 1 and "
 					+ ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX + ".", "Trainer editor");
 		}
+		return null;
 	}
 
 	/**
@@ -102,7 +104,19 @@ public class TrainerEditDialog {
 	 * a trainer id is pre-filled from it when the script is a battle script, and
 	 * that is a fact about the selection, not about which editor is on screen.
 	 */
-	public static void show(Frame parent, int tid) {
+	/**
+	 * The editor, as a panel for the Game Data tab.
+	 *
+	 * <p>It was a modal window. A feature lives in the part of the UI it belongs to,
+	 * and the Game Data tab existed already, holding nothing but the button that
+	 * opened this. The editing is untouched: the same table, the same saves, the same
+	 * refusals - only the frame around it.
+	 *
+	 * @param onClose what to do when the user is finished with it; the host clears
+	 * @return the editor, or null when there is nothing to edit (it says why first)
+	 */
+	public static javax.swing.JComponent panel(java.awt.Component parent, int tid,
+			Runnable onClose) {
 		try {
 			byte[] d = Files.readAllBytes(Workspace.getWorkspaceFile(ArchiveType.TRAINER_DATA, tid).toPath());
 			byte[] p = Files.readAllBytes(Workspace.getWorkspaceFile(ArchiveType.TRAINER_POKE, tid).toPath());
@@ -126,7 +140,8 @@ public class TrainerEditDialog {
 					: col == 6 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.ITEM
 					: (col >= 8 && col <= 11) ? ctrmap.humaninterface.pokepick.PokePickers.Kind.MOVE : null);
 
-			final JDialog dlg = new JDialog(parent, "Trainer " + tid + " - " + clName + " " + trName, true);
+			//A PANEL, not a window: everything under this is unchanged.
+			final JPanel dlg = new JPanel();
 			dlg.setLayout(new BorderLayout());
 			JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
 			final JSpinner classSpin = new JSpinner(new SpinnerNumberModel(t.classId, 0, 279, 1));
@@ -216,21 +231,20 @@ public class TrainerEditDialog {
 						Files.write(nf.toPath(), nmsg.write());
 						Workspace.addPersist(nf);
 					}
-					dlg.dispose();
+					onClose.run();
 					ctrmap.Ui.message(parent, "Trainer " + tid + " saved. Deploy to emulator to apply.",
 							"Trainer editor", JOptionPane.INFORMATION_MESSAGE);
 				} catch (Exception ex) {
 					ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Trainer editor");
 				}
 			});
-			cancel.addActionListener(e -> dlg.dispose());
+			cancel.addActionListener(e -> onClose.run());
 
-			dlg.setSize(860, 360);
-			dlg.setLocationRelativeTo(parent);
-			dlg.setVisible(true);
+			return dlg;
 		} catch (Exception ex) {
 			ctrmap.Ui.error(parent, "Could not open trainer " + tid + ":\n" + ex.getMessage(), "Trainer editor");
 		}
+		return null;
 	}
 
 	private static String[] text(int entry) {

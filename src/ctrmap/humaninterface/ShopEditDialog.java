@@ -33,7 +33,18 @@ public class ShopEditDialog {
 
 	private static final String PREF_CODEBIN = "SHOP_CODEBIN_PATH";
 
-	public static void show(Frame parent) {
+	/**
+	 * The editor, as a panel for the Game Data tab.
+	 *
+	 * <p>It was a modal window. A feature lives in the part of the UI it belongs to,
+	 * and the Game Data tab existed already, holding nothing but the button that
+	 * opened this. The editing is untouched: the same table, the same saves, the same
+	 * refusals - only the frame around it.
+	 *
+	 * @param onClose what to do when the user is finished with it; the host clears
+	 * @return the editor, or null when there is nothing to edit (it says why first)
+	 */
+	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose) {
 		//CODE_PATCHES, not "is it ORAS": the shop lists are found by absolute
 		//addresses in a particular game's executable, so what this needs is a
 		//game whose code.bin has been reverse engineered - which is a different
@@ -42,7 +53,7 @@ public class ShopEditDialog {
 		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
 		if (prof == null) {
 			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).", "Shop editor");
-			return;
+			return null;
 		}
 		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.CODE_PATCHES)) {
 			ctrmap.Ui.error(parent, "Editing shops is not available for " + prof.displayName() + "."
@@ -52,7 +63,7 @@ public class ShopEditDialog {
 					+ "\n\nCTRMap refuses here rather than patching bytes at an address that"
 					+ " means something else in this game's code.",
 					"Shop editor");
-			return;
+			return null;
 		}
 		Preferences prefs = Preferences.userRoot().node(ShopEditDialog.class.getName());
 
@@ -70,7 +81,7 @@ public class ShopEditDialog {
 			JFileChooser fc = new JFileChooser(Workspace.GAMEDIR_PATH);
 			fc.setDialogTitle("Pick the decompressed code.bin");
 			if (fc.showOpenDialog(parent) != JFileChooser.APPROVE_OPTION) {
-				return;
+				return null;
 			}
 			codeFile = fc.getSelectedFile();
 		}
@@ -84,14 +95,15 @@ public class ShopEditDialog {
 			ctrmap.Ui.error(parent, "Could not read the shop table:\n" + ex.getMessage()
 					+ "\n\n(The file must be the DECOMPRESSED ORAS code.bin - pick it again next time.)",
 					"Shop editor");
-			return;
+			return null;
 		}
 		prefs.put(PREF_CODEBIN, codeFile.getAbsolutePath());
 		final File fCodeFile = codeFile;
 
-		final JDialog dlg = new JDialog(parent, "Shop inventories (code.bin)", true);
+		//A PANEL, not a window: everything under this is unchanged.
+		final JPanel dlg = new JPanel();
 		dlg.setLayout(new BorderLayout(8, 8));
-		((JPanel) dlg.getContentPane()).setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+		dlg.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
 		final JComboBox<String> shopBox = new JComboBox<>(ShopData.NAMES);
 		final ShopModel model = new ShopModel(shops);
@@ -159,11 +171,10 @@ public class ShopEditDialog {
 				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Shop editor");
 			}
 		});
-		close.addActionListener(e -> dlg.dispose());
+		close.addActionListener(e -> onClose.run());
 
-		dlg.pack();
-		dlg.setLocationRelativeTo(parent);
-		dlg.setVisible(true);
+		//no pack: a pane is sized by the tab it is in
+		return dlg;
 	}
 
 	/** Table model over one shop's item list (ids shown with names). */

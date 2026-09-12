@@ -422,14 +422,22 @@ public class ItemEditTest {
 		try {
 			Workspace.install(null);
 			List<String> said = ctrmap.Ui.record();
-			ctrmap.humaninterface.ItemEditDialog.show(null);
+			ctrmap.humaninterface.ItemEditDialog.panel(null, new Runnable() {
+				@Override
+				public void run() {
+				}
+			});
 			ctrmap.Ui.stopRecording();
 			check(said.size() == 1 && said.get(0).contains("workspace"),
 					"with no workspace loaded it says so and returns (" + said + ")");
 
 			Sessions.bare(new File("no-workspace"), new File("no-game"), GameType.XY);
 			said = ctrmap.Ui.record();
-			ctrmap.humaninterface.ItemEditDialog.show(null);
+			ctrmap.humaninterface.ItemEditDialog.panel(null, new Runnable() {
+				@Override
+				public void run() {
+				}
+			});
 			ctrmap.Ui.stopRecording();
 			check(said.size() == 1 && said.get(0).contains("VERIFIED"),
 					"and for a game whose item table was never measured it says THAT, rather than"

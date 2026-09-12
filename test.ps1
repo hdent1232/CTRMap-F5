@@ -8,11 +8,31 @@
 # could not run from a worktree or a fresh clone: six suites resolved the dump
 # relative to the repo's parent and failed for a reason that had nothing to do
 # with the code under test.
-param([switch]$Quick, [string]$Pristine, [string]$GameDir, [string]$Code, [ValidateSet("asc","desc","shuffle")][string]$Order = "asc", [int]$Seed = 0)
+param([switch]$Quick, [string]$Pristine, [string]$GameDir, [string]$Code, [ValidateSet("asc","desc","shuffle")][string]$Order = "asc", [int]$Seed = 0, [string]$Anyway)
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
+
+# MEASURE LAST, ENFORCED. Forty minutes of suites measure the tree as it is when they
+# start. Run them with work still queued and the result is void the moment the next
+# edit lands - which is not a slow battery, it is a discarded one. The mutation sweep
+# has refused this since the rule was written down; this one never asked, and was
+# started in front of queued work twice in one afternoon by someone who knew better.
+#
+# The queue is OUTSTANDING.md. The escape is -Anyway "<reason>", which is printed into
+# the run rather than swallowed: a decision that is visible is a different thing from
+# a rule nobody applied.
+$py = Get-Command python -ErrorAction SilentlyContinue
+if ($py) {
+  $gateArgs = @((Join-Path $root "tools\guard\work_order.py"), "--gate", "the battery")
+  if ($Anyway) { $gateArgs += @("--anyway", $Anyway) }
+  $gateOut = & $py.Source @gateArgs 2>&1
+  $gateOut | ForEach-Object { Write-Host $_ }
+  if ($LASTEXITCODE -ne 0) { exit 1 }
+} else {
+  Write-Host "  (no python on PATH - the work order cannot be asked)"
+}
 
 $jdk = $env:CTRMAP_JDK
 if (-not $jdk) {
@@ -43,6 +63,13 @@ $a040 = Join-Path $pristine "a\0\4\0"
 # folder layouts (sound archive, the "a" folder, wrong-pick detection), so they
 # need the whole thing. Both suites skip themselves when it is not there.
 $gamedir = if ($GameDir) { $GameDir } else { Join-Path (Split-Path -Parent $root) "RomFS\000400000011C400" }
+
+# THE LOCK build.ps1 REFUSES ON, so nobody deletes build\classes out from under this run.
+# Written here because this is the thing that is running; removed at the bottom, and left
+# behind on a kill, where build.ps1 ages it out after ninety minutes.
+$batteryLock = Join-Path $root "build\.battery-running"
+New-Item -ItemType Directory -Force -Path (Join-Path $root "build") | Out-Null
+Set-Content -Path $batteryLock -Encoding utf8 -Value ("started " + (Get-Date -Format o))
 
 # The decompressed code.bin, for the suites that check the executable patches.
 # Two candidates because the repo is checked out in two shapes: beside the dump
@@ -108,6 +135,7 @@ $suites = @(
     @{ n = "MainframeShape (menus and toolbars, built headless)"; c = "ctrmap.tests.MainframeShapeTest"; a = @("src") },
     @{ n = "Ui output paths (printed, and shown)"; c = "ctrmap.tests.UiOutputTest";           a = @() },
     @{ n = "Dialog seam (only Ui opens one)"; c = "ctrmap.tests.DialogSeamTest";     a = @("src") },
+    @{ n = "Duplicate work (one implementation per capability)"; c = "ctrmap.tests.DuplicateWorkTest"; a = @("src") },
     @{ n = "LittleEndian (the one byte[] codec)"; c = "ctrmap.tests.LittleEndianTest"; a = @() },
     @{ n = "ContainerBytes (the one in-memory mini-pack reader)"; c = "ctrmap.tests.ContainerBytesTest"; a = @() },
     @{ n = "Mutation baseline (guards still measured)"; c = "ctrmap.tests.MutationBaselineTest"; a = @("src") },
@@ -283,6 +311,10 @@ if (-not $py) {
 $ErrorActionPreference = $prevEAP
 $sw.Stop()
 Write-Host ""
+# THE LOCK GOES BEFORE THE VERDICT, not after it. It was removed on the last line, which
+# a failing run never reaches - so a red battery left build.ps1 refusing to build for
+# ninety minutes, which is to say the guard blocked the fix for the thing it reported.
+Remove-Item -Force -ErrorAction SilentlyContinue $batteryLock
 if ($failed.Count -eq 0) {
     Write-Host ("ALL SUITES PASS  (" + [int]$sw.Elapsed.TotalSeconds + "s)") -ForegroundColor Green
 } else {

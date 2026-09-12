@@ -51,14 +51,25 @@ public class MaisonEditDialog {
 		"Pool A (standard)", "Pool B (+legendaries)", "Pool C (Hoenn)"
 	};
 
-	public static void show(Frame parent) {
+	/**
+	 * The editor, as a panel for the Game Data tab.
+	 *
+	 * <p>It was a modal window. A feature lives in the part of the UI it belongs to,
+	 * and the Game Data tab existed already, holding nothing but the button that
+	 * opened this. The editing is untouched: the same table, the same saves, the same
+	 * refusals - only the frame around it.
+	 *
+	 * @param onClose what to do when the user is finished with it; the host clears
+	 * @return the editor, or null when there is nothing to edit (it says why first)
+	 */
+	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose) {
 		//MAISON, not "is it ORAS". The three pools, their 999x16-byte record
 		//layout and the class-to-set-list tables were all measured on ORAS; a
 		//game where none of that is known is entitled to be told so by name.
 		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
 		if (prof == null) {
 			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).", "Battle facility opponents");
-			return;
+			return null;
 		}
 		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.MAISON)) {
 			ctrmap.Ui.error(parent, "Editing battle facility opponents is not available for "
@@ -67,11 +78,11 @@ public class MaisonEditDialog {
 					+ " class-to-set-list tables were measured on Omega Ruby / Alpha Sapphire."
 					+ "\n\nCTRMap refuses here rather than writing sets into a guess.",
 					"Battle facility opponents");
-			return;
+			return null;
 		}
 		if (Workspace.getArchive(POOLS[0]) == null) {
 			ctrmap.Ui.error(parent, "This dump has no battle facility opponent data.", "Battle facility opponents");
-			return;
+			return null;
 		}
 		String[] species = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.SPECIES_NAMES)),
 				items = text(prof.textIndex(ctrmap.gamedef.GameProfile.TextIndex.ITEM_NAMES)),
@@ -107,7 +118,8 @@ public class MaisonEditDialog {
 				: (col >= 2 && col <= 5) ? ctrmap.humaninterface.pokepick.PokePickers.Kind.MOVE
 				: col == 7 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.ITEM : null);
 
-		final JDialog dlg = new JDialog(parent, "Battle facility opponents", true);
+		//A PANEL, not a window: everything under this is unchanged.
+		final JPanel dlg = new JPanel();
 		dlg.setLayout(new BorderLayout());
 		JPanel north = new JPanel(new java.awt.GridLayout(3, 1));
 		JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -155,7 +167,8 @@ public class MaisonEditDialog {
 		buttons.add(close);
 		dlg.add(buttons, BorderLayout.SOUTH);
 
-		classes.addActionListener(e -> MaisonClassListDialog.show(dlg));
+		classes.addActionListener(e -> ctrmap.CtrmapMainframe.showGameData(
+				"Facility class assignments", MaisonClassListDialog.panel(dlg, onClose)));
 
 		save.addActionListener(e -> {
 			try {
@@ -174,12 +187,10 @@ public class MaisonEditDialog {
 			if (model.dirty && !confirmDiscard(dlg)) {
 				return;
 			}
-			dlg.dispose();
+			onClose.run();
 		});
 
-		dlg.setSize(960, 580);
-		dlg.setLocationRelativeTo(parent);
-		dlg.setVisible(true);
+		return dlg;
 	}
 
 	private static boolean confirmDiscard(java.awt.Component c) {

@@ -515,55 +515,13 @@ public class CtrmapMainframe {
 		};
 		//what the two views draw, and where the camera looks. Built here because
 		//this is where both halves of it now exist.
-		final Scene3D scene = new Scene3D() {
-			@Override
-			public java.util.List<CM3DRenderable> renderables() {
-				return CM3DComponents;
-			}
-
-			@Override
-			public void frameSingleRegion() {
-				m3DDebugPanel.translateX = 0f;   //720/2 to center the camera
-				m3DDebugPanel.translateY = -360f;
-				m3DDebugPanel.translateZ = -720f;   //at the end of the map vertically
-				m3DDebugPanel.rotateX = 45f;
-				//AND THE YAW, which this used to leave alone - decided, not tidied. THREE of
-				//the four lines above are the matrix body's with the cell counts written out
-				//as constants, and its fifth line was never copied here: orbit the 3D view
-				//(a left-button drag), then open a loose GR map file, and the map came up at
-				//the angle the last one was left at, while the same gesture ending in a
-				//matrix load came up square. Framing a map means a known view of it, and the
-				//pitch one line up was already being reset either way, so the camera was
-				//never the user's to keep. Zeroed here because that is what the sibling
-				//below - the everyday path - already does. The FOURTH line is the one real
-				//difference left: translateX 0 against the formula's -360f for one cell
-				//across. REPORTED and left alone; changing it moves every loose GR's view.
-				m3DDebugPanel.rotateY = 0f;
-			}
-
-			@Override
-			public void frameMatrix(int cellsAcross, int cellsDown) {
-				m3DDebugPanel.translateX = -cellsAcross * 360f;   //720/2 to center the camera
-				m3DDebugPanel.translateY = -cellsDown * 360f;
-				m3DDebugPanel.translateZ = -cellsDown * 720f;   //at the end of the map vertically
-				m3DDebugPanel.rotateX = 45f;
-				m3DDebugPanel.rotateY = 0f;
-			}
-
-			@Override
-			public void redraw() {
-				if (m3DDebugPanel != null) {
-					m3DDebugPanel.repaint();
-				}
-			}
-
-			@Override
-			public void rebuild() {
-				if (m3DDebugPanel != null) {
-					m3DDebugPanel.reload = true;
-				}
-			}
-		};
+		//THE CAMERA ARITHMETIC LIVES IN PanelScene3D, not in an anonymous body here.
+		//It was five assignments inside this window, which was fine while this window
+		//was the only thing that drew a map; the Zone Loader preview draws one too, and
+		//the alternative was a second copy of them. The panel is SUPPLIED rather than
+		//handed in because it is not built until sixty lines below.
+		final Scene3D scene = new ctrmap.humaninterface.PanelScene3D(
+			() -> m3DDebugPanel, CM3DComponents);
 
 		final OpenEditors editors = buildOpenEditors();
 		final ZoneEditors zoneViews = buildZoneEditors(scene);
@@ -648,9 +606,10 @@ public class CtrmapMainframe {
 		mTileEditForm = new TileEditForm(tools, () -> worldToolbar.selectSetTool(), mTileMapPanel);
 		mPaintForm = new ctrmap.humaninterface.PaintForm(loadedZone, editors, mZonePnl, mTileMapPanel);
 		mCamEditForm = new CameraEditForm(redraw);
-		mPropEditForm = new PropEditForm(loadedZone, tools, redraw, navigator, mTileMapPanel);
+		mPropEditForm = new PropEditForm(loadedZone, tools, redraw, navigator, mTileMapPanel,
+			CtrmapMainframe::switchToolUI);
 		mNPCEditForm = new NPCEditForm(loadedZone, tools, redraw, navigator, viewportCentre,
-			mZonePnl, mScriptPnl, mTileMapPanel);
+			mZonePnl, mScriptPnl, mTileMapPanel, CtrmapMainframe::switchToolUI);
 		mWarpEditForm = new WarpEditForm(loadedZone, redraw, viewportCentre);
 		mTriggerEditForm = new TriggerEditForm(loadedZone, redraw, viewportCentre);
 		mGeoEditForm = new GeoEditForm(loadedZone, mTileMapPanel);
@@ -769,7 +728,7 @@ public class CtrmapMainframe {
 		tabs.add("Collision Editor", collEditMasterPnl);
 		tabs.add("Matrix Editor", mtxEditMasterPnl);
 		tabs.add("Zone Loader", zoneTabPnl);
-		tabs.add("Game Data", buildGameDataPanel());
+		tabs.add("Game Data", buildGameDataTab(buildGameDataPanel()));
 		tabs.add("Script Editor (experimental)", mScriptPnl);
 		tabs.add("Extras", extrasTabPnl);
 		tabs.add("Text Editor", mTextEditor);
@@ -909,7 +868,7 @@ public class CtrmapMainframe {
 		map.add(item("Map Builder (this zone)", CtrmapMainframe::openMapBuilderAction));
 		map.add(item("Blank map canvas (this zone)...", CtrmapMainframe::blankCanvasAction));
 		map.add(item("Resize map (this zone)...", CtrmapMainframe::resizeMapAction));
-		map.add(item("Edit area fog & lighting...", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame, loadedZone, worldTextures())));
+		map.add(item("Edit area fog & lighting...", CtrmapMainframe::fogAndLightingAction));
 		map.add(item("Fork map geometry (make zone independent)...", CtrmapMainframe::forkGeometryAction));
 		map.addSeparator();
 		map.add(item("Import map model (.bch)...", CtrmapMainframe::importMapModelAction));
@@ -928,11 +887,11 @@ public class CtrmapMainframe {
 
 		JMenu data = new JMenu("Game Data");
 		data.add(item("Edit trainer (party/battle)...",
-				() -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame, selectedNpcScript())));
-		data.add(item("Edit battle facility opponents...", () -> ctrmap.humaninterface.MaisonEditDialog.show(frame)));
-		data.add(item("Edit shop inventories (Marts)...", () -> ctrmap.humaninterface.ShopEditDialog.show(frame)));
-		data.add(item("Edit items (price, effects, name)...", () -> ctrmap.humaninterface.ItemEditDialog.show(frame)));
-		data.add(item("Edit wild encounters (this zone)...", () -> ctrmap.humaninterface.EncounterEditDialog.show(frame, loadedZone)));
+				CtrmapMainframe::openTrainers));
+		data.add(item("Edit battle facility opponents...", CtrmapMainframe::openFacilityOpponents));
+		data.add(item("Edit shop inventories (Marts)...", CtrmapMainframe::openShops));
+		data.add(item("Edit items (price, effects, name)...", CtrmapMainframe::openItems));
+		data.add(item("Edit wild encounters (this zone)...", CtrmapMainframe::openEncounters));
 
 		JMenu options = new JMenu("Options");
 		//the wizard sits above the raw path dialog it replaces for beginners:
@@ -984,8 +943,8 @@ public class CtrmapMainframe {
 		bar.add(new JLabel(" Map:  "));
 		bar.add(barButton("Blank canvas", "Replace this zone's map with a blank canvas cloned from a template route.", CtrmapMainframe::blankCanvasAction));
 		bar.add(barButton("Resize map", "Resize this zone's map (grow/shrink its region grid).", CtrmapMainframe::resizeMapAction));
-		bar.add(barButton("Fog & lighting", "Pick a GameFreak atmosphere with live preview, or hand-tune fog and ambient light.", () -> ctrmap.humaninterface.AreaLightingDialog.show(frame, loadedZone, worldTextures())));
-		bar.add(barButton("Encounters", "Edit this zone's wild Pokemon encounter slots.", () -> ctrmap.humaninterface.EncounterEditDialog.show(frame, loadedZone)));
+		bar.add(barButton("Fog & lighting", "Pick a GameFreak atmosphere with live preview, or hand-tune fog and ambient light.", CtrmapMainframe::fogAndLightingAction));
+		bar.add(barButton("Encounters", "Edit this zone's wild Pokemon encounter slots.", CtrmapMainframe::openEncounters));
 		bar.add(barButton("Fork geometry", "Give this zone its own private map so edits stop affecting the source town.", CtrmapMainframe::forkGeometryAction));
 		return bar;
 	}
@@ -1001,34 +960,80 @@ public class CtrmapMainframe {
 
 	// ---------------------------------------------- the Zone Loader tab
 
+	/** The right-hand column of the Zone Loader tab, and what is normally in it. */
+	private static JPanel zoneColumn;
+	private static JComponent zoneBrowser;
+
+	/**
+	 * Shows a zone tool in that column, under its name, with a way back.
+	 *
+	 * <p>The column is where zone work belongs - the browser lives there and so does
+	 * anything that acts on a zone. A null tool means it refused and has said why.
+	 */
+	private static void inZoneColumn(String title, JComponent tool) {
+		if (zoneColumn == null || tool == null) {
+			return;
+		}
+		JPanel box = new JPanel(new BorderLayout());
+		box.setBorder(javax.swing.BorderFactory.createTitledBorder(title));
+		JToolBar back = new JToolBar();
+		back.setFloatable(false);
+		back.add(barButton("Back to the zone list", "Leave " + title + ".",
+			CtrmapMainframe::closeZoneColumnTool));
+		box.add(back, BorderLayout.NORTH);
+		box.add(new javax.swing.JScrollPane(tool), BorderLayout.CENTER);
+		zoneColumn.removeAll();
+		zoneColumn.add(box, BorderLayout.CENTER);
+		zoneColumn.revalidate();
+		zoneColumn.repaint();
+		selectTab("Zone Loader");
+	}
+
+	/** Back to the zone list. */
+	private static void closeZoneColumnTool() {
+		if (zoneColumn == null || zoneBrowser == null) {
+			return;
+		}
+		zoneColumn.removeAll();
+		zoneColumn.add(zoneBrowser, BorderLayout.CENTER);
+		zoneColumn.revalidate();
+		zoneColumn.repaint();
+	}
+
 	/** The Zone Loader tab: the zone panel, its actions above it, its preview beside it. */
 	private static JPanel buildZoneTab() {
-		return buildZoneTab(mZonePnl);
+		return buildZoneTab(mZonePnl, loadedZone, tools);
 	}
 
 	/**
 	 * The Zone Loader tab, built around whatever zone panel it is given.
 	 *
-	 * <p>THE PREVIEW LIVES HERE, in the tab, in its empty right-hand half - not in a
-	 * dialog behind a button and not in a window floating beside the dropdown. Both
-	 * of those were built and both were invisible to the owner, who opened the Zone
-	 * Loader and reported "still zero zone preview" each time. A feature belongs to
-	 * the part of the UI it is about; that is a standing rule of this project and it
-	 * is now enforced by DialogSeamTest rather than remembered.
+	 * <p>THE ZONE BROWSER LIVES HERE, in the tab, in its empty right-hand half: a
+	 * list you scroll with the arrow keys, a live preview of the row you are on, and
+	 * a button that opens it. That is what was asked for at the start - "like the
+	 * preview for the fog and lighting, where you can easily scroll through several
+	 * things and see the preview live before selecting something" - and it took three
+	 * attempts to build it. A dialog behind a button was not it; a bubble floating
+	 * beside the dropdown was not it; and a preview pane fed by the DROPDOWN could
+	 * never be it, because arrowing down that dropdown loads every zone it passes.
 	 *
 	 * <p>It takes the panel as an argument so a suite can build this tab and look at
 	 * what is in it without a game, a display or the window's statics. The failure
 	 * being guarded against is the preview being ABSENT, and absence is exactly what
 	 * a structural check can see.
 	 */
-	public static JPanel buildZoneTab(JComponent zonePanel) {
+	public static JPanel buildZoneTab(JComponent zonePanel, LoadedZone owner,
+			ctrmap.humaninterface.tools.ToolSelection heldTool) {
 		JPanel tab = new JPanel(new BorderLayout());
 		tab.add(buildZoneActionsBar(), BorderLayout.NORTH);
 		tab.add(zonePanel, BorderLayout.CENTER);
-		ctrmap.humaninterface.ZonePreviewPane preview = new ctrmap.humaninterface.ZonePreviewPane();
-		tab.add(preview, BorderLayout.EAST);
+		ctrmap.humaninterface.ZoneBrowserPane browser = new ctrmap.humaninterface.ZoneBrowserPane(owner, heldTool);
+		zoneBrowser = browser;
+		zoneColumn = new JPanel(new BorderLayout());
+		zoneColumn.add(browser, BorderLayout.CENTER);
+		tab.add(zoneColumn, BorderLayout.EAST);
 		if (zonePanel instanceof ZoneLoadingPanel) {
-			((ZoneLoadingPanel) zonePanel).usePreview(preview);
+			((ZoneLoadingPanel) zonePanel).useBrowser(browser);
 		}
 		return tab;
 	}
@@ -1049,12 +1054,94 @@ public class CtrmapMainframe {
 
 	// --------------------------------------------------- the Extras tab
 
-	/** The Extras tab: the seldom-used tools, with the raw archive browser (Builder) behind a button. */
+	/** The Extras tab: the seldom-used tools, and whichever one is open. */
 	private static JPanel buildExtrasTab() {
+		return buildExtrasTab(new ExtrasPanel(loadedZone), mBuilder);
+	}
+
+	/**
+	 * The Extras tab, built around whatever panels it is given.
+	 *
+	 * <p>THE SELDOM-USED TOOLS LIVE HERE rather than in windows of their own: the raw
+	 * archive browser, the tileset editor and the workspace settings. That is the
+	 * owner's rule - a feature belongs to the part of the UI it is about, and seldom
+	 * used means Extras, not a window - and it is enforced now rather than remembered:
+	 * build.ps1 refuses a tree that opens a top-level window nobody argued for.
+	 *
+	 * <p>It takes its panels as arguments so a suite can build this tab with stand-ins
+	 * and read back what is in it, with no game, no display and no workspace.
+	 */
+	public static JPanel buildExtrasTab(JComponent extras, JComponent browser) {
 		JPanel tab = new JPanel(new BorderLayout());
 		tab.add(buildExtrasBar(), BorderLayout.NORTH);
-		tab.add(new ExtrasPanel(loadedZone), BorderLayout.CENTER);
+		extrasDefault = extras;
+		extrasBrowser = browser;
+		extrasHost = new JPanel(new BorderLayout());
+		extrasHost.add(extras, BorderLayout.CENTER);
+		tab.add(extrasHost, BorderLayout.CENTER);
 		return tab;
+	}
+
+	/** Where an Extras tool is shown, and what is there when none is. */
+	private static JPanel extrasHost;
+	private static JComponent extrasDefault;
+	private static JComponent extrasBrowser;
+	/** The tool on show, so leaving can ask it whether it is finished. */
+	private static JComponent extrasOpen;
+
+	/**
+	 * Shows a seldom-used tool in the Extras tab, under its name, with a way back.
+	 *
+	 * <p>A pane that came from the form designer carries a menu bar it used to hang off
+	 * a JFrame; it goes above the pane rather than being dropped, which would take the
+	 * tileset editor's whole File menu with it and say nothing.
+	 */
+	public static void showInExtras(String title, JComponent tool) {
+		if (extrasHost == null || tool == null) {
+			return;
+		}
+		JPanel box = new JPanel(new BorderLayout());
+		box.setBorder(javax.swing.BorderFactory.createTitledBorder(title));
+		JToolBar back = new JToolBar();
+		back.setFloatable(false);
+		back.add(barButton("Back to Extras", "Leave " + title + ".",
+			CtrmapMainframe::closeExtrasTool));
+		if (tool instanceof ctrmap.humaninterface.FormPanel
+			&& ((ctrmap.humaninterface.FormPanel) tool).getJMenuBar() != null) {
+			back.add(((ctrmap.humaninterface.FormPanel) tool).getJMenuBar());
+		}
+		box.add(back, BorderLayout.NORTH);
+		box.add(new javax.swing.JScrollPane(tool), BorderLayout.CENTER);
+		extrasOpen = tool;
+		extrasHost.removeAll();
+		extrasHost.add(box, BorderLayout.CENTER);
+		extrasHost.revalidate();
+		extrasHost.repaint();
+		selectTab("Extras");
+	}
+
+	/**
+	 * Back to the Extras tools, if the open one is finished with.
+	 *
+	 * <p>It ASKS: these panes used to be windows and did their saving in
+	 * {@code windowClosing}, so a pane that answers false has an edit it will not
+	 * discard - and leaving anyway is how the window version lost one.
+	 */
+	private static void closeExtrasTool() {
+		if (extrasHost == null) {
+			return;
+		}
+		if (extrasOpen instanceof ctrmap.humaninterface.FormPanel
+			&& !((ctrmap.humaninterface.FormPanel) extrasOpen).closeRequested()) {
+			return;
+		}
+		extrasOpen = null;
+		extrasHost.removeAll();
+		if (extrasDefault != null) {
+			extrasHost.add(extrasDefault, BorderLayout.CENTER);
+		}
+		extrasHost.revalidate();
+		extrasHost.repaint();
 	}
 
 	public static JToolBar buildExtrasBar() {
@@ -1064,12 +1151,9 @@ public class CtrmapMainframe {
 		return bar;
 	}
 
+	/** Opens the raw archive browser where it lives: in the Extras tab. */
 	private static void showBuilderAction() {
-		javax.swing.JDialog bd = new javax.swing.JDialog(frame, "Builder - raw archive browser", false);
-		bd.add(mBuilder);
-		bd.setSize(900, 600);
-		bd.setLocationRelativeTo(frame);
-		bd.setVisible(true);
+		showInExtras("Raw archive browser (Builder)", extrasBrowser);
 	}
 
 	// ------------------------------------------------------- the 2D/3D view
@@ -1093,8 +1177,26 @@ public class CtrmapMainframe {
 	 * open. Putting it where a zone-level action lives is also what lets it be used
 	 * without loading either end.
 	 */
+	/**
+	 * Connect zones, in the Zone Loader tab beside the zone it is about.
+	 *
+	 * <p>It was a modal window. The rule here is that a feature lives in the part of
+	 * the UI it belongs to, and wiring two zones together belongs with the zone list.
+	 */
 	private static void connectZonesAction() {
-		ctrmap.humaninterface.ZoneLinkDialog.show(frame, game, loadedZone);
+		inZoneColumn("Connect zones", ctrmap.humaninterface.ZoneLinkDialog.panel(
+			frame, game, loadedZone, CtrmapMainframe::closeZoneColumnTool));
+	}
+
+	/** The fog and lighting editor, in the World Editor's tool column. */
+	private static void fogAndLightingAction() {
+		JComponent editor = ctrmap.humaninterface.AreaLightingDialog.panel(frame, loadedZone,
+			worldTextures(), () -> showWorldEditor());
+		if (editor == null) {
+			return;                        //it has already said why
+		}
+		switchToolUI(editor);
+		selectTab("World Editor");
 	}
 
 	/**
@@ -1322,18 +1424,18 @@ public class CtrmapMainframe {
 		}
 	}
 
+	/** The tileset editor, in the Extras tab - it was a window for no better reason
+	 *  than having been drawn in the form designer. */
 	private static void tilesetEditorAction() {
-		JFrame tilesetEditor = new TileDBWriter();
-		tilesetEditor.setVisible(true);
+		showInExtras("Tileset editor", new TileDBWriter());
 	}
 
 	// --------------------------------------------------------- Options menu
 
+	/** Workspace settings, in the Extras tab; same reason as the tileset editor. */
 	private static void workspaceSettingsAction() {
-		WorkspaceSettings form = new WorkspaceSettings(mTileMapPanel,
-				() -> mTileEditForm.tileset = Workspace.getTileset());
-		form.setLocationByPlatform(true);
-		form.setVisible(true);
+		showInExtras("Workspace & paths", new WorkspaceSettings(mTileMapPanel,
+			() -> mTileEditForm.tileset = Workspace.getTileset()));
 	}
 
 	private static void cleanWorkspaceAction() {
@@ -1403,22 +1505,148 @@ public class CtrmapMainframe {
 	 * facilities, shops, wild Pokemon), as big labeled entry points instead of
 	 * menu items.
 	 */
+	/**
+	 * The Game Data tab: the subjects down the left, the chosen editor beside them.
+	 *
+	 * <p>THE EDITORS ARE IN THE TAB. They were modal windows opened from a column of
+	 * buttons - a feature in a window, which this project does not do - and the tab
+	 * they belong to already existed and held nothing but the buttons that opened
+	 * them. Nothing counted windows, so the rule applied to none of this until
+	 * DialogSeamTest started counting; the ceiling it holds falls as each one lands.
+	 *
+	 * <p>Takes its entry column as an argument so a suite can build the tab with a
+	 * stand-in and read back what is in it, with no game and no display.
+	 */
+	public static JPanel buildGameDataTab(JComponent entries) {
+		JPanel tab = new JPanel(new BorderLayout());
+		javax.swing.JScrollPane left = new javax.swing.JScrollPane(entries);
+		left.setPreferredSize(new java.awt.Dimension(460, 0));
+		gameDataHost = new JPanel(new BorderLayout());
+		clearGameData();
+		javax.swing.JSplitPane split = new javax.swing.JSplitPane(
+			javax.swing.JSplitPane.HORIZONTAL_SPLIT, left, gameDataHost);
+		split.setDividerLocation(460);
+		tab.add(split, BorderLayout.CENTER);
+		return tab;
+	}
+
+	/** Where an open Game Data editor lives. */
+	private static JPanel gameDataHost;
+
+	/** Puts an editor in the Game Data tab, under its name. */
+	/**
+	 * Opens the wild-encounter editor in the Game Data tab, and goes there.
+	 *
+	 * <p>Three things ask for it - the Game Data tab's own entry, the Game Data menu
+	 * and the map row's Encounters button - and two of them are somewhere else when
+	 * they do. An editor that appears in a tab the user is not looking at is the same
+	 * as no editor, which is the mistake this whole change is undoing.
+	 */
+	/** Opens the trainer editor in the Game Data tab, and goes there. */
+	private static void openTrainers() {
+		inGameData("Trainer editor", ctrmap.humaninterface.TrainerEditDialog.panelForSelection(
+			frame, selectedNpcScript(), CtrmapMainframe::clearGameData));
+	}
+
+	/** Opens the battle-facility opponent editor in the Game Data tab. */
+	private static void openFacilityOpponents() {
+		inGameData("Facility opponents", ctrmap.humaninterface.MaisonEditDialog.panel(
+			frame, CtrmapMainframe::clearGameData));
+	}
+
+	/** Opens the shop editor in the Game Data tab. */
+	private static void openShops() {
+		inGameData("Shop inventories", ctrmap.humaninterface.ShopEditDialog.panel(
+			frame, CtrmapMainframe::clearGameData));
+	}
+
+	/** Opens the item editor in the Game Data tab. */
+	private static void openItems() {
+		inGameData("Item editor", ctrmap.humaninterface.ItemEditDialog.panel(
+			frame, CtrmapMainframe::clearGameData));
+	}
+
+	/**
+	 * Shows an editor in the Game Data tab and brings that tab forward.
+	 *
+	 * <p>A null editor means it refused and has already said why - four of these are
+	 * reached from a menu, where the user is looking at something else entirely, so
+	 * an editor that quietly appeared in a tab nobody switched to would be the same
+	 * as no editor at all. That is the mistake this whole change is undoing.
+	 */
+	private static void inGameData(String title, JComponent editor) {
+		if (editor == null) {
+			return;
+		}
+		showGameData(title, editor);
+		selectTab("Game Data");
+	}
+
+	private static void openEncounters() {
+		JComponent editor = ctrmap.humaninterface.EncounterEditDialog.panel(
+			frame, loadedZone, CtrmapMainframe::clearGameData);
+		if (editor == null) {
+			return;                        //it has already said why
+		}
+		showGameData("Wild encounters", editor);
+		selectTab("Game Data");
+	}
+
+	/** Brings a tab to the front by its name; does nothing if there is no such tab. */
+	public static void selectTab(String name) {
+		if (tabs == null) {
+			return;
+		}
+		for (int i = 0; i < tabs.getTabCount(); i++) {
+			if (name.equals(tabs.getTitleAt(i))) {
+				tabs.setSelectedIndex(i);
+				return;
+			}
+		}
+	}
+
+	public static void showGameData(String title, JComponent editor) {
+		if (gameDataHost == null || editor == null) {
+			return;
+		}
+		JPanel box = new JPanel(new BorderLayout());
+		box.setBorder(javax.swing.BorderFactory.createTitledBorder(title));
+		box.add(editor, BorderLayout.CENTER);
+		gameDataHost.removeAll();
+		gameDataHost.add(box, BorderLayout.CENTER);
+		gameDataHost.revalidate();
+		gameDataHost.repaint();
+	}
+
+	/** Back to the hint, when an editor is finished with. */
+	public static void clearGameData() {
+		if (gameDataHost == null) {
+			return;
+		}
+		gameDataHost.removeAll();
+		JLabel hint = new JLabel("<html><i>Pick a subject on the left - it opens here.</i></html>");
+		hint.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
+		gameDataHost.add(hint, BorderLayout.CENTER);
+		gameDataHost.revalidate();
+		gameDataHost.repaint();
+	}
+
 	private static JPanel buildGameDataPanel() {
 		JPanel p = new JPanel();
 		p.setLayout(new javax.swing.BoxLayout(p, javax.swing.BoxLayout.Y_AXIS));
 		p.setBorder(javax.swing.BorderFactory.createEmptyBorder(24, 32, 24, 32));
 		addGameDataEntry(p, "Trainers", "Edit any trainer's party, moves, items and battle type.",
-				"Trainer editor", e -> ctrmap.humaninterface.TrainerEditDialog.showForSelection(frame, selectedNpcScript()));
+				"Trainer editor", e -> openTrainers());
 		addGameDataEntry(p, "Battle facilities", "<html>Edit the opponent pools and trainer-class assignments of the battle facility engine.<br>This data is ENGINE-WIDE: the retail facility and every custom facility cloned from it draw<br>from the same pools - author your teams in FREE slots (retail rows are marked and guarded).</html>",
-				"Facility opponents", e -> ctrmap.humaninterface.MaisonEditDialog.show(frame));
+				"Facility opponents", e -> openFacilityOpponents());
 		addGameDataEntry(p, "Shops", "Change what the Poke Marts and specialty shops sell (ships as a code.ips patch).",
-				"Shop inventories", e -> ctrmap.humaninterface.ShopEditDialog.show(frame));
+				"Shop inventories", e -> openShops());
 		addGameDataEntry(p, "Items", "<html>Edit any item's price, held effect, use routines, EV changes, name and description.<br>"
 				+ "Effects are REASSIGNED from the ones the game already implements - the editor cannot author a new one.<br>"
 				+ "Four empty ids can hold a new item; the icon is the one part that needs a code.ips patch.</html>",
-				"Item editor", e -> ctrmap.humaninterface.ItemEditDialog.show(frame));
+				"Item editor", e -> openItems());
 		addGameDataEntry(p, "Wild Pokemon", "Edit the loaded zone's wild encounter slots (grass, surf, fishing...).",
-				"Wild encounters (this zone)", e -> ctrmap.humaninterface.EncounterEditDialog.show(frame, loadedZone));
+				"Wild encounters (this zone)", e -> openEncounters());
 		p.add(javax.swing.Box.createVerticalGlue());
 		return p;
 	}

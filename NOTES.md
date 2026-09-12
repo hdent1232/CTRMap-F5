@@ -83,7 +83,7 @@ pointing it at one, and tells you what to look for.
   want the retail game back.
 - **In-app updates** that replace the copy you have instead of leaving a second one beside it.
 
-Verified against a real dump by 128 headless test suites: every format writer round-trips
+Verified against a real dump by 129 headless test suites: every format writer round-trips
 byte-identically across all 536 zones, and the guards themselves are measured - a mutation
 sweep breaks each fix on purpose and records every change no suite notices. For 1.0.1 that
 sweep broke 209 lines and every one of them was caught.

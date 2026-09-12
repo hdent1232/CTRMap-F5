@@ -1,43 +1,40 @@
 package ctrmap.humaninterface;
 
 import ctrmap.WorkspaceSession;
+import ctrmap.formats.mapmatrix.MapMatrix;
+import ctrmap.formats.propdata.ADPropRegistry;
+import ctrmap.formats.zone.Zone;
+import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.io.File;
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 
 /**
- * The Zone Loader's own 3D preview, living in the Zone Loader tab.
+ * The Zone Loader's 3D preview - the editor's own map view, pointed at a zone
+ * nobody has opened.
  *
- * <p>WHY IT IS A PANEL AND NOT A WINDOW. The owner's standing rule for this
- * project is that a feature lives in the part of the UI it belongs to - it is
- * never dumped in a menu, and it is never a separate window. This preview was
- * built twice against that rule: first as a "Browse zones" dialog behind a
- * button on another bar, then as a floating bubble beside the dropdown's popup.
- * The owner opened the Zone Loader both times and reported, correctly, "still
- * zero zone preview": a preview that is somewhere else is not a preview of the
- * thing you are looking at. The Zone Loader tab has an empty right-hand half.
- * That is where it goes.
+ * <p>IT DRAWS THROUGH THE EDITOR'S LOADER, not a second copy of it. This class
+ * used to read the zone header itself, pick a region out of the matrix, open the
+ * GR, decode the BCH and place the geometry with its own arithmetic - a smaller,
+ * younger twin of {@link TileMapPanel} - and every defect the owner reported came
+ * out of the gap between the two: one region instead of the map, a region
+ * belonging to a neighbouring zone, four cells of a thirteen-cell map so the
+ * bridges ended in mid-air. The editor has drawn zones correctly for years.
+ * There is no version of this feature worth having that does not use it.
  *
- * <p>WHAT IT SHOWS. Whichever zone the dropdown is pointing at - the row being
- * arrowed through while the list is open, and the loaded zone otherwise. It
- * never opens anything: {@link ZonePreview} reads the map out of the workspace
- * and hands back bytes, so looking costs nothing and loading stays the explicit
- * act it was.
+ * <p>So the preview owns a {@link TileMapPanel} and an {@link H3DRenderingPanel}
+ * of its own and calls {@link TileMapPanel#loadRegions} - the same body the
+ * editor's own load calls, with a null progress dialog, because looking at a
+ * zone must not clear the undo history, drop the picked tile or put a modal
+ * dialog up.
  *
- * <p>WHY THE 3D VIEW IS BUILT LATE. {@code MapPreview3D} is a GLJPanel, and
- * constructing one asks the graphics driver for a context. Doing that while the
- * window is being assembled cost the whole application its startup on this
- * machine - measured: a suite that merely built this tab did not finish in five
- * minutes. So the canvas is made the first time a zone is actually previewed.
- * Until then this is a label, which is also what it should look like.
- *
- * <p>IT ALWAYS SAYS SOMETHING. A zone whose map cannot be read leaves the view
- * cleared and a sentence underneath saying which part was missing. A blank pane
- * with no words reads as a broken editor, and a pane still showing the PREVIOUS
- * zone is worse than blank, because it is wrong rather than absent.
+ * <p>IT IS HANDED ITS SESSION rather than fetching the open one:
+ * WorkspaceSessionTest holds a falling ceiling on how many production classes
+ * reach the open-workspace statics.
  */
 public final class ZonePreviewPane extends JPanel {
 
@@ -46,34 +43,51 @@ public final class ZonePreviewPane extends JPanel {
 
 	private final JPanel middle = new JPanel(new BorderLayout());
 	private final JLabel note = new JLabel(" ");
-	/** Built on first use - see WHY THE 3D VIEW IS BUILT LATE. */
-	private MapPreview3D view;
 	/** The newest request wins: reads run off the EDT and may finish out of order. */
 	private final int[] seq = {0};
-	private WorkspaceSession ws;
-	private ZonePreview.Shot last;
 
-	public ZonePreviewPane() {
+	private WorkspaceSession ws;
+	/** The editor's map view, one of our own - built on first use, see below. */
+	private TileMapPanel map;
+	private H3DRenderingPanel view;
+	private int drawn = -1;
+	/** The window's loaded zone, handed in - see the constructor. */
+	private final ctrmap.LoadedZone owner;
+	/** The window's tool selection, handed in with the owner. */
+	private final ctrmap.humaninterface.tools.ToolSelection tools;
+
+	/**
+	 * @param owner the window's loaded zone, HANDED IN. The map view this pane hosts
+	 * takes one, and making a second would be a second answer to "which zone is open" -
+	 * two halves of the editor believing different things, which is the failure that
+	 * owner exists to make impossible. LoadedZoneTest holds the window to being the only
+	 * class that makes one, and it caught this.
+	 */
+	public ZonePreviewPane(ctrmap.LoadedZone owner,
+			ctrmap.humaninterface.tools.ToolSelection tools) {
 		super(new BorderLayout(0, 4));
+		if (owner == null) {
+			throw new IllegalArgumentException("ZonePreviewPane must be handed the LoadedZone");
+		}
+		if (tools == null) {
+			throw new IllegalArgumentException("ZonePreviewPane must be handed the ToolSelection");
+		}
+		this.owner = owner;
+		this.tools = tools;
 		setBorder(BorderFactory.createTitledBorder("Zone preview"));
-		middle.setPreferredSize(new Dimension(PREFERRED_WIDTH, 320));
+		middle.setPreferredSize(new Dimension(PREFERRED_WIDTH, 300));
 		add(middle, BorderLayout.CENTER);
-		note.setText("  Pick a zone above to see its map here. Nothing is opened until you select it.");
+		note.setText("  Pick a zone above to see its map here. Nothing is opened until you load it.");
 		add(note, BorderLayout.SOUTH);
 		setPreferredSize(new Dimension(PREFERRED_WIDTH, 0));
 	}
 
-	/**
-	 * The game to read maps out of, handed in rather than fetched.
-	 *
-	 * <p>See {@link ZonePreview#of} - WorkspaceSessionTest holds a falling ceiling
-	 * on how many production classes reach the open-workspace statics, and a new
-	 * one that reached them would raise it.
-	 */
+	/** The game to read maps out of, handed in rather than fetched. */
 	public void use(WorkspaceSession session) {
 		this.ws = session;
 		if (session == null) {
-			clear("  No game is open yet.");
+			drawn = -1;
+			note.setText("  No game is open yet.");
 		}
 	}
 
@@ -82,29 +96,42 @@ public final class ZonePreviewPane extends JPanel {
 		return ws != null;
 	}
 
-	/** The last shot drawn, for tests - a suite cannot look at a picture. */
-	public ZonePreview.Shot lastShot() {
-		return last;
+	/**
+	 * Stops drawing. The canvas keeps a 60fps clock on a non-daemon thread, so a pane
+	 * that is finished with holds the whole process open otherwise.
+	 */
+	public void stop() {
+		if (view != null) {
+			view.stop();
+		}
 	}
 
-	/** Whether the 3D canvas has been built yet; false until a zone is previewed. */
+	/** The zone currently drawn, or -1 - a suite cannot look at a picture. */
+	public int drawnZone() {
+		return drawn;
+	}
+
+	/** Whether the 3D view has been built yet; false until a zone is previewed. */
 	public boolean viewBuilt() {
 		return view != null;
 	}
 
 	/**
-	 * Draws the zone at {@code zoneIndex}, reading it off the event thread.
+	 * Draws the zone at {@code zoneIndex}: its whole map, exactly as opening it
+	 * would draw it.
 	 *
-	 * <p>Safe to call as fast as a list can be arrowed through: every request
+	 * <p>Safe to call as fast as a list can be arrowed through - every request
 	 * takes a sequence number and only the newest one is allowed to paint.
 	 */
 	public void preview(final int zoneIndex) {
 		if (ws == null) {
-			clear("  No game is open, so there is nothing to preview.");
+			drawn = -1;
+			note.setText("  No game is open, so there is nothing to preview.");
 			return;
 		}
 		if (zoneIndex < 0) {
-			clear("  No zone selected.");
+			drawn = -1;
+			note.setText("  No zone selected.");
 			return;
 		}
 		note.setText("  Reading zone " + zoneIndex + "...");
@@ -113,71 +140,112 @@ public final class ZonePreviewPane extends JPanel {
 		Thread t = new Thread(new Runnable() {
 			@Override
 			public void run() {
-				final ZonePreview.Shot shot = ZonePreview.of(reading, zoneIndex);
-				//DECODED HERE, off the event thread. A town is several regions and each one
-				//is a BCH parse; doing that on the EDT froze the window for as long as it
-				//took, which is the whole reason arrowing through the list felt broken.
-				final java.util.List<ctrmap.formats.h3d.model.H3DModel> drawn
-					= new java.util.ArrayList<>();
-				for (byte[] bytes : shot.models) {
-					if (mine != seq[0]) {
-						return; //a newer zone is already being asked for; stop decoding this one
-					}
-					drawn.add(MapPreview3D.decode(bytes, shot.textures));
+				Zone zone = null;
+				try {
+					zone = open(reading, zoneIndex);
+				} catch (Exception ex) {
+					say(mine, "Zone " + zoneIndex + " could not be read: " + ctrmap.Ui.reason(ex), -1);
+					return;
 				}
-				SwingUtilities.invokeLater(new Runnable() {
-					@Override
-					public void run() {
-						if (mine != seq[0]) {
-							return;
-						}
-						paint(shot, drawn);
-					}
-				});
+				if (zone == null) {
+					say(mine, "Zone " + zoneIndex + " is not in the workspace.", -1);
+					return;
+				}
+				if (mine != seq[0]) {
+					free(zone);
+					return;                        //a newer zone is already being asked for
+				}
+				try {
+					draw(zone, reading);
+				} catch (Exception ex) {
+					free(zone);
+					say(mine, "Zone " + zoneIndex + " could not be drawn: " + ctrmap.Ui.reason(ex), -1);
+					return;
+				}
+				say(mine, "Zone " + zoneIndex + " - area " + zone.header.areadataID
+						+ ", map " + zone.header.mapmatrixID, zoneIndex);
 			}
 		}, "zone-preview");
 		t.setDaemon(true);
 		t.start();
 	}
 
-	/** Called on the EDT once the bytes are in and decoded. */
-	private void paint(ZonePreview.Shot shot, java.util.List<ctrmap.formats.h3d.model.H3DModel> drawn) {
-		last = shot;
-		String said = shot.note;
-		boolean any = false;
-		for (ctrmap.formats.h3d.model.H3DModel m : drawn) {
-			any |= m != null;
+	/**
+	 * Opens a zone's header and its archives, the way the window does it.
+	 *
+	 * <p>Visible to the suites deliberately. Everything else here needs a graphics
+	 * context to check, and the one thing that has actually gone wrong twice - reading
+	 * a DIFFERENT zone from the one the user is looking at - is decided here, in two
+	 * lines with no geometry in them.
+	 */
+	public static Zone open(WorkspaceSession ws, int zoneIndex) throws Exception {
+		File f = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
+		if (f == null || !f.isFile()) {
+			return null;
 		}
-		if (!any) {
-			if (view != null) {
-				view.setModels(new java.util.ArrayList<ctrmap.formats.h3d.model.H3DModel>(),
-					new int[0], new int[0]); //cleared, never the zone before this one
-			}
-			if (shot.drawable()) {
-				said = "Zone " + shot.zoneIndex + "'s map could not be decoded - nothing to show.";
-			}
-		} else {
-			canvas().setModels(drawn, shot.columns(), shot.rows());
-		}
-		note.setText("  " + said);
+		Zone z = new Zone(new ctrmap.formats.containers.ZO(f, ws), ws.game());
+		z.header.fetchArchives(ws);
+		return z;
 	}
 
-	/** The 3D canvas, built the first time there is something to draw in it. */
-	private MapPreview3D canvas() {
-		if (view == null) {
-			view = new MapPreview3D();
-			middle.add(view, BorderLayout.CENTER);
-			middle.revalidate();
-		}
-		return view;
+	/** Hands the zone to the editor's own loader, on our own panel. */
+	private void draw(Zone zone, WorkspaceSession reading) {
+		mapView().loadRegions(new MapMatrix(zone.header.mapmatrix, reading),
+				new ADPropRegistry(zone.header.areadata, zone.header.propTextures, reading),
+				zone.header.worldTextures, zone.header.propTextures, null);
 	}
 
-	private void clear(String why) {
-		last = null;
-		if (view != null) {
-			view.setModels(new java.util.ArrayList<ctrmap.formats.h3d.model.H3DModel>(),
-				new int[0], new int[0]);
+	private void say(final int mine, final String what, final int zone) {
+		SwingUtilities.invokeLater(new Runnable() {
+			@Override
+			public void run() {
+				if (mine != seq[0]) {
+					return;
+				}
+				drawn = zone;
+				note.setText("  " + what);
+				if (view != null) {
+					view.repaint();
+				}
+			}
+		});
+	}
+
+	private static void free(Zone zone) {
+		if (zone != null) {
+			zone.header.freeArchives();
 		}
-		note.setText(why);
+	}
+
+	/**
+	 * The editor's map view and the 3D panel that draws it, built the first time
+	 * there is something to show.
+	 *
+	 * <p>LATE, because a GLJPanel asks the graphics driver for a context when it
+	 * is constructed: doing that while the window is being assembled cost this
+	 * tree a suite that did not finish in five minutes.
+	 */
+	private synchronized TileMapPanel mapView() {
+		if (map == null) {
+			//THE WINDOW'S tool selection, handed in: a second one is a second answer to
+			//"what is the user holding", and this pane only reads it.
+			ctrmap.humaninterface.tools.ToolSelection tools = this.tools;
+			final java.util.List<CM3DRenderable> drawnBy = new java.util.ArrayList<>();
+			final H3DRenderingPanel panel = new H3DRenderingPanel(drawnBy, tools);
+			TileMapPanel built = new TileMapPanel(owner, tools,
+					new PanelScene3D(() -> panel, drawnBy), new javax.swing.JScrollPane(),
+					new CollEditPanel(tools), null);
+			drawnBy.add(built);
+			map = built;
+			view = panel;
+			SwingUtilities.invokeLater(new Runnable() {
+				@Override
+				public void run() {
+					middle.add(panel, BorderLayout.CENTER);
+					middle.revalidate();
+				}
+			});
+		}
+		return map;
 	}
 }

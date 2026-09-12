@@ -760,118 +760,43 @@ public class WorkflowGuardsTest {
 	}
 
 	/**
-	 * Browsing zones shows the zone that was asked for, and says so when there is
-	 * nothing to show.
+	 * The preview opens the zone it was asked for, and draws it through the editor's
+	 * own loader rather than a copy.
 	 *
-	 * <p>A PREVIEW IS A PICTURE AND A SUITE CANNOT LOOK AT ONE. What it can check is
-	 * the thing that actually goes wrong: which bytes were handed to the view. The
-	 * failure this is written against is not a crash - it is clicking zone 214,
-	 * having the decode fail, and being shown zone 213 with 214's name under it.
-	 * {@code MapPreview3D.setRegion} did exactly that for as long as it existed,
-	 * because the decode was guarded by an if with no else; in the building palette
-	 * that was a cosmetic oddity, and in a browser it is a lie.
+	 * <p>WHAT THIS REPLACES. There used to be a ZonePreview class that read a zone's
+	 * header, picked a region out of the matrix, opened the GR, decoded the BCH and
+	 * placed the geometry itself - a second, smaller implementation of what
+	 * TileMapPanel has done for years. Every defect the owner reported about the
+	 * preview was a hole in that copy and not in the editor: one region instead of the
+	 * map, a region belonging to the zone next door, four cells of a thirteen-cell map
+	 * so the bridges ended in mid-air. The copy is deleted and the preview calls
+	 * TileMapPanel.loadRegions, the body the editor's own load calls.
 	 *
-	 * <p>So: the model for a zone must come from THAT zone's own first region, two
-	 * different zones must not hand over the same bytes, a zone that cannot be
-	 * previewed must answer with no model AND a sentence, and undecodable bytes must
-	 * decode to nothing rather than to whatever was there before.
+	 * <p>Two claims survive that. THAT THERE IS ONE COPY is a source claim about the
+	 * whole tree and is checked in the build, not here. THAT THE RIGHT ZONE IS READ is
+	 * checked here, on the two lines that decide it.
 	 */
 	static void thePreviewShowsWhatItNames(File dump) throws Exception {
-		System.out.println("--- browsing zones shows the zone it names, or says why not");
+		System.out.println("--- the preview opens the zone it was asked for");
 		ScratchGame.open(dump);
-		int zoneCount = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
-		int[] look = {DONOR, 0, Math.min(100, zoneCount - 1)};
-		java.util.List<String> wrong = new java.util.ArrayList<>();
-		java.util.List<String> drawn = new java.util.ArrayList<>();
+		int[] look = {DONOR, 0, 19};
 		for (int zone : look) {
-			ctrmap.humaninterface.ZonePreview.Shot shot =
-				ctrmap.humaninterface.ZonePreview.of(Workspace.session(), zone);
-			check(!shot.note.isEmpty(), "zone " + zone + " gets a sentence either way: " + shot.note);
-			if (!shot.drawable()) {
+			ctrmap.formats.zone.Zone opened =
+				ctrmap.humaninterface.ZonePreviewPane.open(Workspace.session(), zone);
+			check(opened != null, "zone " + zone + " opens for the preview");
+			if (opened == null) {
 				continue;
 			}
-			drawn.add(zone + "->r" + shot.region);
-			//RETARGETED. This asked whether the previewed region was ANYWHERE in the
-			//zone's matrix, which a matrix shared by several zones satisfies with any
-			//of their regions - so it passed while Mossdeep City was showing Route 125.
-			//The question is ownership, and it is asked below over the whole table
-			//against the game's own zone grid rather than against three samples.
-			java.util.List<Integer> mine = ownedRegionsOf(zone);
-			if (!mine.isEmpty() && !mine.contains(shot.region)) {
-				wrong.add("zone " + zone + " previewed region " + shot.region
-					+ " but it owns " + mine);
-			}
-			byte[] fromDisk = new ctrmap.formats.containers.GR(
-				Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, shot.region),
-				Workspace.session()).getFile(1);
-			if (!java.util.Arrays.equals(fromDisk, shot.model)) {
-				wrong.add("zone " + zone + " handed over bytes that are not region " + shot.region + "'s model");
-			}
+			check(opened.header.mapmatrixID == matrixOf(zone),
+				"...and it is THAT zone: the map it opened is " + opened.header.mapmatrixID
+				+ " and zone " + zone + " names " + matrixOf(zone));
+			check(!opened.header.worldTextures.isEmpty(),
+				"...with the zone's own world textures fetched, which is what the editor draws"
+				+ " it with");
+			opened.header.freeArchives();
 		}
-		check(wrong.isEmpty(), "every preview is the map of the zone it names " + wrong);
-		check(drawn.size() >= 2, "and more than one zone actually previewed, so the check above"
-			+ " had something to be right about " + drawn);
-
 		everyZonePreviewsWhatItOwns();
-		
-		//two different zones on different maps must not hand over the same bytes -
-		//which is what "it kept the last one" would look like from here
-		ctrmap.humaninterface.ZonePreview.Shot a = ctrmap.humaninterface.ZonePreview.of(
-			Workspace.session(), DONOR);
-		int other = -1;
-		for (int z = 0; z < zoneCount && other < 0; z++) {
-			if (z != DONOR && matrixOf(z) >= 0 && matrixOf(z) != matrixOf(DONOR)) {
-				other = z;
-			}
-		}
-		ctrmap.humaninterface.ZonePreview.Shot b = ctrmap.humaninterface.ZonePreview.of(
-			Workspace.session(), other);
-		check(other >= 0, "found a zone on a different map to compare against (" + other + ")");
-		check(!a.drawable() || !b.drawable() || !java.util.Arrays.equals(a.model, b.model),
-			"two zones on different maps preview different geometry");
-		
-		//a zone that is not there answers with nothing AND a reason
-		ctrmap.humaninterface.ZonePreview.Shot gone = ctrmap.humaninterface.ZonePreview.of(
-			Workspace.session(), zoneCount + 500);
-		check(!gone.drawable(), "a zone that does not exist previews nothing");
-		check(gone.note.contains(String.valueOf(zoneCount + 500)),
-			"and the sentence names it, rather than leaving a blank pane to be read as a"
-			+ " broken dialog: " + gone.note);
-		check(ctrmap.humaninterface.ZonePreview.of(null, DONOR).note.length() > 0,
-			"and with no game open it still answers rather than throwing into a listener");
-		
-		//AND THE DECODE ITSELF ANSWERS NOTHING FOR BYTES THAT ARE NOT A MODEL. This is
-		//the input to the fix: setRegion assigns whatever this returns, so a null here
-		//is what blanks the view instead of leaving the previous zone on screen.
-		check(ctrmap.humaninterface.MapPreview3D.decode(new byte[]{1, 2, 3, 4}, null) == null,
-			"bytes that are not a map model decode to nothing");
-		check(ctrmap.humaninterface.MapPreview3D.decode(new byte[0], null) == null,
-			"and so does an empty region");
-		check(a.drawable() && ctrmap.humaninterface.MapPreview3D.decode(a.model, null) != null,
-			"while a real region decodes to a model");
-
-		//...AND A BUFFER THAT LOOKS LIKE ONE AND IS NOT. The length-and-magic check
-		//above cannot catch this: the header is well formed and the nonsense is in
-		//the offsets, so the reader gets as far as asking for an absurd allocation.
-		//That is the case the OutOfMemoryError backstop exists for, and it is a
-		//different input class from a truncated region rather than the same one twice.
-		byte[] plausible = new byte[ctrmap.humaninterface.MapPreview3D.BCH_MIN_HEADER + 0x40];
-		plausible[0] = 'B';
-		plausible[1] = 'C';
-		plausible[2] = 'H';
-		plausible[3] = 0;
-		plausible[4] = 0x10; //backwardCompatibility, under the 0x20 that adds fields
-		for (int off = 8; off + 4 <= plausible.length; off += 4) {
-			plausible[off] = (byte) 0xF0;
-			plausible[off + 1] = (byte) 0xFF;
-			plausible[off + 2] = (byte) 0xFF;
-			plausible[off + 3] = 0x7F;
-		}
-		check(ctrmap.humaninterface.MapPreview3D.looksLikeBch(plausible),
-			"a buffer with a real header passes the cheap check, as it should");
-		check(ctrmap.humaninterface.MapPreview3D.decode(plausible, null) == null,
-			"and a header whose offsets are nonsense still decodes to nothing, rather than"
-			+ " taking the editor down with it");
+		thePreviewActuallyDraws();
 	}
 	/**
 	 * A workspace an older version left sharing an AREA or a STORY TEXT is repaired
@@ -1190,6 +1115,49 @@ public class WorkflowGuardsTest {
 	}
 	/** The FieldData regions a zone's matrix names, from the packed archives. */
 	/**
+	 * The preview DRAWS a zone - not "could decode it", drew it.
+	 *
+	 * <p>WHY THIS EXISTS AND WHY IT IS HEAVY. Every previous guard on this feature
+	 * checked a decode, a region id, a component tree - and every one of them was green
+	 * while the owner was looking at a broken preview. Three times running the thing
+	 * that failed was the LAST step: a null progress dialog inside the loader, a tool
+	 * selection with nothing held, a canvas never added to anything. So this builds the
+	 * real pane, hands it the real game, asks for a real zone and waits for it to say it
+	 * drew that zone. It costs a graphics context and a few seconds, which is cheap
+	 * against shipping a preview that throws on the first zone anyone looks at.
+	 */
+	static void thePreviewActuallyDraws() throws Exception {
+		System.out.println("--- the preview draws a zone, end to end");
+		if (java.awt.GraphicsEnvironment.isHeadless()) {
+			System.out.println("  skip: no display, and this one needs a real canvas");
+			return;
+		}
+		ctrmap.humaninterface.ZonePreviewPane pane = new ctrmap.humaninterface.ZonePreviewPane(
+			new ctrmap.LoadedZone(), new ctrmap.humaninterface.tools.ToolSelection());
+		pane.use(Workspace.session());
+		pane.preview(DONOR);
+		long until = System.currentTimeMillis() + 60000;
+		while (pane.drawnZone() != DONOR && System.currentTimeMillis() < until) {
+			Thread.sleep(200);
+		}
+		check(pane.drawnZone() == DONOR, "zone " + DONOR + " is drawn in the preview (it says "
+			+ pane.drawnZone() + ") - what this catches is the whole path failing at its last"
+			+ " step, which it has done three times: a null progress dialog, a tool selection"
+			+ " holding nothing, a canvas added to nothing");
+		check(pane.viewBuilt(), "...and the canvas it drew into exists");
+		pane.preview(0);
+		until = System.currentTimeMillis() + 60000;
+		while (pane.drawnZone() != 0 && System.currentTimeMillis() < until) {
+			Thread.sleep(200);
+		}
+		check(pane.drawnZone() == 0, "...and it follows to another zone (" + pane.drawnZone()
+			+ ") rather than keeping the first one on screen under a new name");
+		//STOPPED, pass or fail: the canvas runs a 60fps clock on a non-daemon thread and
+		//this suite could not exit with it running - which made every plant on this suite
+		//look like a guard that failed to notice, when it was a suite that never finished.
+		pane.stop();
+	}
+	/**
 	 * Every zone previews regions the GAME says are its own, and a zone made of
 	 * several regions previews all of them.
 	 *
@@ -1269,21 +1237,6 @@ public class WorkflowGuardsTest {
 				+ " (got " + ownedRegionsOf(zone) + ")");
 		}
 
-		//and the preview actually draws them all - a town is not one tile
-		ctrmap.humaninterface.ZonePreview.Shot mossdeep =
-			ctrmap.humaninterface.ZonePreview.of(Workspace.session(), 19);
-		check(mossdeep.drawnCount() >= 2, "Mossdeep City previews more than one region ("
-			+ mossdeep.drawnCount() + ") - it owns six, and drawing one of them is how a city"
-			+ " came to look like open water");
-		java.util.List<Integer> drawnIds = new java.util.ArrayList<>();
-		for (int[] cell : mossdeep.cells) {
-			drawnIds.add(cell[0]);
-		}
-		check(ownedRegionsOf(19).containsAll(drawnIds) && !drawnIds.isEmpty(),
-			"...and every region it draws is one of its own " + drawnIds);
-		check(mossdeep.columns().length == mossdeep.drawnCount()
-			&& mossdeep.rows().length == mossdeep.drawnCount(),
-			"...each with the matrix cell it belongs in, so the view can lay them out");
 	}
 
 	/**

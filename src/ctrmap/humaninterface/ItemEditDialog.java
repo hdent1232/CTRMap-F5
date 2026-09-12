@@ -76,18 +76,29 @@ public class ItemEditDialog {
 			+ " here - the table is 776 long, and raising that is a code patch this editor does not"
 			+ " attempt.";
 
-	public static void show(Frame parent) {
+	/**
+	 * The editor, as a panel for the Game Data tab.
+	 *
+	 * <p>It was a modal window. A feature lives in the part of the UI it belongs to,
+	 * and the Game Data tab existed already, holding nothing but the button that
+	 * opened this. The editing is untouched: the same table, the same saves, the same
+	 * refusals - only the frame around it.
+	 *
+	 * @param onClose what to do when the user is finished with it; the host clears
+	 * @return the editor, or null when there is nothing to edit (it says why first)
+	 */
+	public static javax.swing.JComponent panel(java.awt.Component parent, Runnable onClose) {
 		//Refuse before building anything: a headless suite proves the order.
 		if (!Workspace.isValid()) {
 			Ui.error(parent, "Load a workspace first.", "Item editor");
-			return;
+			return null;
 		}
 		final ItemEditSession s;
 		try {
 			s = ItemEditSession.open(Workspace.session());
 		} catch (Exception ex) {
 			Ui.error(parent, "Could not read the item table:\n" + ex.getMessage(), "Item editor");
-			return;
+			return null;
 		}
 		if (s == null) {
 			Ui.error(parent, "CTRMap has no VERIFIED item table for this game yet.\n\n"
@@ -95,14 +106,15 @@ public class ItemEditDialog {
 					+ " measured it against a dump of this game - and this editor writes 36 bytes"
 					+ " straight into the archive, so a location that is only probably right is not"
 					+ " good enough.", "Item editor");
-			return;
+			return null;
 		}
 
 		final RecordSchema schema = SchemaRegistry.items();
 		final DerivedLabels labels = new DerivedLabels(s.table.all(), s.names);
 		final State st = new State();
 
-		final JDialog dlg = new JDialog(parent, "Items", true);
+		//A PANEL, not a window: everything under this is unchanged.
+		final JPanel dlg = new JPanel();
 		dlg.setLayout(new BorderLayout(8, 8));
 
 		// ---- left: the list -------------------------------------------------
@@ -392,17 +404,14 @@ public class ItemEditDialog {
 			if (st.dirty && !confirmDiscard(dlg)) {
 				return;
 			}
-			dlg.dispose();
+			onClose.run();
 		});
 
 		st.id = 1;
 		load.run();
 		select(list, listModel, st.id);
-		dlg.pack();
-		dlg.setSize(Math.min(1140, Math.max(980, dlg.getWidth())),
-				Math.min(780, Math.max(640, dlg.getHeight())));
-		dlg.setLocationRelativeTo(parent);
-		dlg.setVisible(true);
+		dlg.setPreferredSize(new java.awt.Dimension(1040, 700));
+		return dlg;
 	}
 
 	/**
@@ -452,7 +461,7 @@ public class ItemEditDialog {
 	 * Writes the changed icon table out as an IPS - merged with any code.ips
 	 * already there, so one file still carries the zone-limit and shop patches.
 	 */
-	private static void saveIconPatch(JDialog dlg, State st) {
+	private static void saveIconPatch(java.awt.Component dlg, State st) {
 		try {
 			if (st.code == null || st.icons == null) {
 				Ui.error(dlg, "Load your decompressed code.bin first.", "Item icons");

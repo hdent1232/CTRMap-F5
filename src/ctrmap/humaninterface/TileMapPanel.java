@@ -475,17 +475,10 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 
 	public void loadMatrix(MapMatrix matrix, ADPropRegistry reg, List<H3DTexture> worldTextures, List<H3DTexture> propTextures) {
 		TileUndo.clear(); //a different zone's tilemaps - old history is invalid
-		//AND THE PICKED TILE IS INVALID FOR EXACTLY THE SAME REASON, so it goes
-		//with the history. Nothing reset it before, so Selector.selTileX/selTileY
-		//kept naming a tile of the map being replaced. TileEditForm has two readers
-		//of that pair and only one is guarded: showTile asks getRegionForTile and
-		//labels the tile " - Void" when the answer is null, while showListModel
-		//dereferences the same call inline. So picking a tile on a large zone,
-		//loading a smaller one and clicking any tile-category radio button threw on
-		//the EDT - ArrayIndexOutOfBounds out of getRegionForTile when the stale
-		//coordinate named a region row the new map does not have, or a
-		//NullPointerException when it named an empty cell. It also left the red
-		//picked-tile rectangle painted at the old map's coordinate.
+		//AND THE PICKED TILE IS INVALID FOR EXACTLY THE SAME REASON, so it goes with the
+		//history. Nothing reset it before, so Selector.selTileX/selTileY kept naming a tile
+		//of the map being replaced, and picking a tile on a large zone then loading a
+		//smaller one threw on the EDT out of getRegionForTile.
 		Selector.unfocus(this);
 		LoadingDialog progress = LoadingDialog.makeDialog("Loading matrix");
 		SwingWorker worker = new SwingWorker() {
@@ -502,84 +495,109 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 
 			@Override
 			protected Object doInBackground() {
-				mode = ViewportMode.MULTI;
-				savedWorldTextures = worldTextures;
-				savedPropTextures = propTextures;
-				mm = matrix;
-				width = mm.width * 40;
-				height = mm.height * 40;
-				tilemaps = new Tilemap[mm.width][mm.height];
-				models = new BCHFile[mm.width][mm.height];
-				tallgrass = new BCHFile[mm.width][mm.height];
-				colls = new GRCollisionFile[mm.width][mm.height];
-				collision.unload();
-				for (int i = 0; i < mm.height; i++) {
-					for (int j = 0; j < mm.width; j++) {
-						if (mm.ids.get(j, i) != -1) {
-							tilemaps[j][i] = new Tilemap(mm.regions.get(j, i), tileColors());
-							byte[] tg = mm.regions.get(j, i).getFile(5);
-							if (tg.length > 0 && tg[0] == 'B' && tg[1] == 'C' && tg[2] == 'H') {
-								BCHFile tgbch = new BCHFile(tg);
-								if (!tgbch.models.isEmpty()) {
-									H3DModel tgmdl = tgbch.models.get(0);
-									tgmdl.setMaterialTextures(worldTextures);
-									//GR overworld map BCH files have just 1 model, the tall grass is entirely separate BCH
-									tgmdl.worldLocX = j * 720f + 360f;
-									tgmdl.worldLocZ = i * 720f + 360f;
-									tgmdl.makeAllBOs();
-									tallgrass[j][i] = tgbch;
-								}
-							}
-							BCHFile bch = new BCHFile(mm.regions.get(j, i).getFile(1));
-							if (!bch.models.isEmpty()) {
-								H3DModel model = bch.models.get(0);
-								if (worldTextures != null) {
-									worldTextures.addAll(bch.textures);
-									model.setMaterialTextures(worldTextures);
-								}
-								if (propTextures != null) {
-									model.setMaterialTextures(propTextures);
-								}
-								//GR overworld map BCH files have just 1 model, the tall grass is entirely separate BCH
-								model.worldLocX = j * 720f + 360f;
-								model.worldLocZ = i * 720f + 360f;
-								model.makeAllBOs();
-								models[j][i] = bch;
-							}
-							colls[j][i] = new GRCollisionFile(mm.regions.get(j, i));
-							//THE NAME IS A TREE CAPTION AND IT MUST NOT COST THE WHOLE ZONE.
-							//Thirteen lines up the model setup is wrapped in
-							//"if (!bch.models.isEmpty())" because a region's FieldData subfile 1
-							//is not guaranteed to parse to a model - BCHFile returns with an empty
-							//model list for anything that is not a BCH - and then this line, which
-							//is OUTSIDE that guard, called bch.models.get(0) anyway. On such a
-							//region it threw IndexOutOfBoundsException out of doInBackground, which
-							//awaitLoad turns into "The map did not load", so the entire zone refused
-							//to open and the reason the user was shown was a collision-panel
-							//caption. The collision file itself is read on the line above and never
-							//needed the model, and this name only ever becomes a JTree node label,
-							//so name the cell instead and let the rest of the zone open.
-							collision.loadCollision(colls[j][i], bch.models.isEmpty()
-									? "Region " + j + "x" + i : bch.models.get(0).name);
-						}
-						progress.setBarPercent((int) (((i * mm.width + j) / (float) (mm.width * mm.height)) * 100));
-					}
-				}
-				scene.frameMatrix(mm.width, mm.height);
-				remove(placeholder);
-				invalidate();
-				revalidate();
-				progress.setDescription("Checking compatibility");
-				progress.setDescription("Preparing viewport");
-				loaded = true;
-				loadProps(propTextures, reg);
-				scaleImage(1);
+				loadRegions(matrix, reg, worldTextures, propTextures, progress);
 				return null;
 			}
 		};
 		worker.execute();
 		progress.showDialog();
 		awaitLoad(worker);
+	}
+
+	/**
+	 * Assembles a matrix into this panel: every filled cell's tilemap, map model, tall
+	 * grass and collision, placed at {@code cell * 720 + 360} and textured with the
+	 * zone's own world and prop textures.
+	 *
+	 * <p>THE ONE BODY that turns a matrix into a picture, with two callers:
+	 * {@link #loadMatrix} runs it behind a progress dialog after clearing what belonged
+	 * to the previous zone, and the Zone Loader's preview runs it with a null progress
+	 * on a panel of its own. A second implementation of this is what the preview used to
+	 * be, and every defect the owner reported about it lived in the gap between the two.
+	 *
+	 * @param progress may be null - then there is nothing to report into, which is what
+	 * a preview is: a zone nobody asked to open
+	 */
+	public void loadRegions(MapMatrix matrix, ADPropRegistry reg, List<H3DTexture> worldTextures,
+			List<H3DTexture> propTextures, LoadingDialog progress) {
+			mode = ViewportMode.MULTI;
+			savedWorldTextures = worldTextures;
+			savedPropTextures = propTextures;
+			mm = matrix;
+			width = mm.width * 40;
+			height = mm.height * 40;
+			tilemaps = new Tilemap[mm.width][mm.height];
+			models = new BCHFile[mm.width][mm.height];
+			tallgrass = new BCHFile[mm.width][mm.height];
+			colls = new GRCollisionFile[mm.width][mm.height];
+			collision.unload();
+			for (int i = 0; i < mm.height; i++) {
+				for (int j = 0; j < mm.width; j++) {
+					if (mm.ids.get(j, i) != -1) {
+						tilemaps[j][i] = new Tilemap(mm.regions.get(j, i), tileColors());
+						byte[] tg = mm.regions.get(j, i).getFile(5);
+						if (tg.length > 0 && tg[0] == 'B' && tg[1] == 'C' && tg[2] == 'H') {
+							BCHFile tgbch = new BCHFile(tg);
+							if (!tgbch.models.isEmpty()) {
+								H3DModel tgmdl = tgbch.models.get(0);
+								tgmdl.setMaterialTextures(worldTextures);
+								//GR overworld map BCH files have just 1 model, the tall grass is entirely separate BCH
+								tgmdl.worldLocX = j * 720f + 360f;
+								tgmdl.worldLocZ = i * 720f + 360f;
+								tgmdl.makeAllBOs();
+								tallgrass[j][i] = tgbch;
+							}
+						}
+						BCHFile bch = new BCHFile(mm.regions.get(j, i).getFile(1));
+						if (!bch.models.isEmpty()) {
+							H3DModel model = bch.models.get(0);
+							if (worldTextures != null) {
+								worldTextures.addAll(bch.textures);
+								model.setMaterialTextures(worldTextures);
+							}
+							if (propTextures != null) {
+								model.setMaterialTextures(propTextures);
+							}
+							//GR overworld map BCH files have just 1 model, the tall grass is entirely separate BCH
+							model.worldLocX = j * 720f + 360f;
+							model.worldLocZ = i * 720f + 360f;
+							model.makeAllBOs();
+							models[j][i] = bch;
+						}
+						colls[j][i] = new GRCollisionFile(mm.regions.get(j, i));
+						//THE NAME IS A TREE CAPTION AND IT MUST NOT COST THE WHOLE ZONE.
+						//Thirteen lines up the model setup is wrapped in
+						//"if (!bch.models.isEmpty())" because a region's FieldData subfile 1
+						//is not guaranteed to parse to a model - BCHFile returns with an empty
+						//model list for anything that is not a BCH - and then this line, which
+						//is OUTSIDE that guard, called bch.models.get(0) anyway. On such a
+						//region it threw IndexOutOfBoundsException out of doInBackground, which
+						//awaitLoad turns into "The map did not load", so the entire zone refused
+						//to open and the reason the user was shown was a collision-panel
+						//caption. The collision file itself is read on the line above and never
+						//needed the model, and this name only ever becomes a JTree node label,
+						//so name the cell instead and let the rest of the zone open.
+						collision.loadCollision(colls[j][i], bch.models.isEmpty()
+								? "Region " + j + "x" + i : bch.models.get(0).name);
+					}
+					if (progress != null) {
+						progress.setBarPercent((int) (((i * mm.width + j) / (float) (mm.width * mm.height)) * 100));
+					}
+				}
+			}
+			scene.frameMatrix(mm.width, mm.height);
+			remove(placeholder);
+			invalidate();
+			revalidate();
+			if (progress != null) {
+				progress.setDescription("Checking compatibility");
+			}
+			if (progress != null) {
+				progress.setDescription("Preparing viewport");
+			}
+			loaded = true;
+			loadProps(propTextures, reg);
+			scaleImage(1);
 	}
 
 	/**

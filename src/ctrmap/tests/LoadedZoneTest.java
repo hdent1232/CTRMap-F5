@@ -626,6 +626,12 @@ public class LoadedZoneTest {
 		for (int i = 0; i < types.length; i++) {
 			if (types[i] == LoadedZone.class) {
 				args[i] = owner;
+			} else if (types[i] == java.util.function.Consumer.class) {
+				//the tool column a form shows a pane in: the prop and NPC registry editors
+				//were windows and are panes now, so their forms are handed somewhere to put
+				//one. A recorder would be better; nothing here reads it back yet.
+				args[i] = (java.util.function.Consumer<javax.swing.JComponent>) pane -> {
+				};
 			} else if (types[i] == ctrmap.humaninterface.tools.ToolSelection.class) {
 				args[i] = new ctrmap.humaninterface.tools.ToolSelection();
 			} else if (types[i] == ctrmap.humaninterface.Redraw.class) {

@@ -196,7 +196,7 @@ final class EditorBench {
 		CtrmapMainframe.mCamEditForm = cam = new BenchCamForm();
 		CtrmapMainframe.mCamScrollPane = new JScrollPane(CtrmapMainframe.mCamEditForm);
 		CtrmapMainframe.mPropEditForm = prop = new BenchPropForm();
-		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel);
+		CtrmapMainframe.mNPCEditForm = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel, pane -> { });
 		CtrmapMainframe.mWarpEditForm = warps = new WarpEditForm(LOADED, REDRAW, CENTRE);
 		CtrmapMainframe.mTriggerEditForm = triggers = new TriggerEditForm(LOADED, REDRAW, CENTRE);
 		CtrmapMainframe.mGeoEditForm = geo = new GeoEditForm(LOADED, CtrmapMainframe.mTileMapPanel);
@@ -603,7 +603,7 @@ final class EditorBench {
 		private static final long serialVersionUID = 1L;
 
 		BenchPropForm() {
-			super(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel);
+			super(LOADED, TOOLS, REDRAW, NAVI, CtrmapMainframe.mTileMapPanel, pane -> { });
 		}
 		final List<String> calls = new ArrayList<String>();
 

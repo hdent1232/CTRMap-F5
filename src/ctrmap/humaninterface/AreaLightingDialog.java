@@ -38,8 +38,17 @@ public class AreaLightingDialog {
 	 *        environment picker previews with them, and this dialog is the only
 	 *        thing that opens it.
 	 */
-	public static void show(Frame parent, LoadedZone loaded,
-			java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> worldTextures) {
+	/**
+	 * The fog and lighting editor, as a pane for the World Editor's tool column.
+	 *
+	 * <p>It edits the area the open zone belongs to, which is what that column is for.
+	 * It was a modal window, which is what this project does not do with features.
+	 *
+	 * @param onClose what to do when the user is finished with it
+	 * @return the editor, or null when there is nothing to edit (it says why first)
+	 */
+	public static javax.swing.JComponent panel(java.awt.Component parent, LoadedZone loaded,
+			java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> worldTextures, Runnable onClose) {
 		if (loaded == null) {
 			throw new IllegalArgumentException("AreaLightingDialog must be handed the LoadedZone");
 		}
@@ -49,7 +58,7 @@ public class AreaLightingDialog {
 		ctrmap.gamedef.GameProfile prof = Workspace.isValid() ? Workspace.profile() : null;
 		if (prof == null) {
 			ctrmap.Ui.error(parent, "Load a workspace first (Options > Workspace settings).", "Area fog & lighting");
-			return;
+			return null;
 		}
 		if (!prof.supports(ctrmap.gamedef.GameProfile.Feature.AREA_ENV)) {
 			ctrmap.Ui.error(parent, "Editing area fog and lighting is not available for "
@@ -60,18 +69,18 @@ public class AreaLightingDialog {
 					+ "\n\nCTRMap refuses here rather than writing colours over whatever this"
 					+ " game keeps at those offsets.",
 					"Area fog & lighting");
-			return;
+			return null;
 		}
 		if (loaded.open() == null) {
 			ctrmap.Ui.error(parent, "Load a zone first (Zone tab).", "Area fog & lighting");
-			return;
+			return null;
 		}
 		//this zone's atmosphere must be ITS OWN: an area shared with other zones
 		//gets forked first, so the edit cannot leak into them
 		final ctrmap.AreaForker.ForkResult fork = AreaForkPrompt.ensurePrivate(loaded, parent, loaded.index(),
 				loaded.open().header.areadataID, "changing the fog and lighting");
 		if (fork == null) {
-			return;
+			return null;
 		}
 		final int areaId = fork.newArea;
 		final File areaFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, areaId);
@@ -84,19 +93,19 @@ public class AreaLightingDialog {
 			env = AreaEnv.read(sub4);
 		} catch (Exception ex) {
 			ctrmap.Ui.error(parent, "Could not read area " + areaId + " lighting:\n" + ex.getMessage(), "Area fog & lighting");
-			return;
+			return null;
 		}
 
 		//VISUAL FIRST: the GameFreak atmosphere picker (live preview of this
 		//zone under each preset); hand-tuning sits behind "Custom settings..."
-		byte[] picked = GfEnvPicker.pick(parent, true, loaded, worldTextures);
+		byte[] picked = GfEnvPicker.pick(javax.swing.SwingUtilities.getWindowAncestor(parent), true, loaded, worldTextures);
 		if (picked == null) {
-			return;
+			return null;
 		}
 		if (picked != GfEnvPicker.CUSTOM) {
 			if (picked.length != sub4.length) {
 				ctrmap.Ui.error(parent, "The picked atmosphere block does not match this area's format.", "Area fog & lighting");
-				return;
+				return null;
 			}
 			try {
 				System.arraycopy(picked, 0, sub4, 0, sub4.length);
@@ -110,7 +119,7 @@ public class AreaLightingDialog {
 			} catch (Exception ex) {
 				ctrmap.Ui.error(parent, "Save failed:\n" + ex.getMessage(), "Area fog & lighting");
 			}
-			return;
+			return null;
 		}
 		//fall through: the custom-settings form
 
@@ -174,8 +183,8 @@ public class AreaLightingDialog {
 				+ "Routes = long blue haze; caves/rooms = short dim.</html>"), BorderLayout.NORTH);
 		main.add(form, BorderLayout.CENTER);
 
-		final JDialog dlg = new JDialog(parent, "Area fog & lighting - area " + areaId, true);
-		dlg.setLayout(new BorderLayout());
+		//A PANE, not a window: the adds below are unchanged.
+		final JPanel dlg = new JPanel(new BorderLayout());
 		dlg.add(main, BorderLayout.CENTER);
 		JPanel buttons = new JPanel();
 		JButton copyGf = new JButton("Copy a GameFreak zone's atmosphere");
@@ -199,7 +208,7 @@ public class AreaLightingDialog {
 		});
 
 		copyGf.addActionListener(e -> {
-			byte[] src = GfEnvPicker.pick(dlg, loaded, worldTextures);
+			byte[] src = GfEnvPicker.pick(javax.swing.SwingUtilities.getWindowAncestor(dlg), false, loaded, worldTextures);
 			if (src != null && src.length == sub4.length) {
 				// take GameFreak's COMPLETE environment (all 736 floats: colors,
 				// light directions, hemisphere, ranges) - fine-tune on top if wanted
@@ -223,7 +232,7 @@ public class AreaLightingDialog {
 				Workspace.addPersist(areaFile);
 				ctrmap.CtrmapMainframe.refreshSceneFog();
 				AreaForkPrompt.packIfForked(fork, null);
-				dlg.dispose();
+				onClose.run();
 				ctrmap.Ui.message(parent,
 						"Fog & lighting saved. Deploy to see it in-game - the 3D view already shows it.",
 						"Area fog & lighting", JOptionPane.INFORMATION_MESSAGE);
@@ -231,12 +240,10 @@ public class AreaLightingDialog {
 				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Area fog & lighting");
 			}
 		});
-		cancel.addActionListener(e -> dlg.dispose());
+		cancel.addActionListener(e -> onClose.run());
 
-		dlg.pack();
-		dlg.setMinimumSize(new Dimension(360, dlg.getHeight()));
-		dlg.setLocationRelativeTo(parent);
-		dlg.setVisible(true);
+		dlg.setMinimumSize(new Dimension(360, dlg.getPreferredSize().height));
+		return dlg;
 	}
 
 	private static JButton swatch(String tip, Color c) {

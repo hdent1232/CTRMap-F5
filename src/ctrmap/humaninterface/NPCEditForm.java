@@ -106,9 +106,26 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	/** The 3D gizmo, handed in: this form says which record it follows, not how. */
 	private final Navigator navi;
 
+
+	/**
+	 * Where this form puts a pane of its own - the tool column beside the map.
+	 *
+	 * <p>HANDED IN, not reached for. The registry editor it opens used to be a window,
+	 * which is what this project does not do with features; putting it in the tool
+	 * column means naming the column, and naming it through the main window would add
+	 * a reference MainframeEdgesTest counts and holds down. So the window hands this
+	 * form the one thing it needs - somewhere to show a pane - and a suite can hand it
+	 * a recorder instead.
+	 */
+	private final java.util.function.Consumer<javax.swing.JComponent> toolPane;
+
 	public NPCEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
 			Navigator navi, ViewportCentre viewportCentre, ZoneSaver zoneSaver, ScriptView scriptView,
-			TileMapPanel map) {
+			TileMapPanel map, java.util.function.Consumer<javax.swing.JComponent> toolPane) {
+		if (toolPane == null) {
+			throw new IllegalArgumentException("NPCEditForm must be handed the tool column its registry editor opens in");
+		}
+		this.toolPane = toolPane;
 		this.map = map;
 		if (navi == null) {
 			throw new IllegalArgumentException("NPCEditForm must be handed a Navigator - the gizmo it moves");
@@ -2214,6 +2231,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		NPCRegistryEditor regedit = new NPCRegistryEditor();
 		regedit.loadRegistry(reg);
 		regedit.setEntry(npc.model);
+		//IN THE TOOL COLUMN - see PropEditForm for why it is not a window any more.
+		toolPane.accept(regedit);
     }//GEN-LAST:event_btnRegEditActionPerformed
 
     private void btnNewEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNewEntryActionPerformed

@@ -125,7 +125,52 @@ def require_frozen(what, argv):
     raise SystemExit(1)
 
 
+def gate(what, anyway):
+    """For callers that are not python: prints and returns 0 (may run) or 1 (refused).
+
+    IT ASKS THE QUEUE, NOT THE TREE, and the difference matters. The mutation sweep
+    measures a COMMIT - it records digests and MutationBaselineTest refuses a baseline
+    whose files have moved - so a dirty tree invalidates it and require_frozen refuses
+    both. The battery measures the WORKING TREE: verifying uncommitted work is the
+    whole job, and refusing a dirty tree would make it impossible to check anything
+    before committing it. What ruins a battery is starting one with work still queued,
+    because the result is void the moment the next edit lands - so that is what this
+    refuses on.
+    """
+    items = open_items()
+    why = []
+    if items:
+        why.append("OUTSTANDING.md has %d open item(s):" % len(items))
+        for it in items[:8]:
+            why.append("    - " + (it if len(it) < 100 else it[:97] + "..."))
+    if not why:
+        return 0
+    if anyway:
+        print("WORK ORDER OVERRIDDEN for %s: %s" % (what, anyway))
+        for line in why:
+            print("  " + line)
+        return 0
+    print("REFUSING %s: there is queued work, so this measures a tree that is about to" % what)
+    print("  move - and the result is void the moment the next edit lands.")
+    for line in why:
+        print("  " + line)
+    print("")
+    print("  Finish the queue first. That is the `measure last` rule, which was made")
+    print("  mechanical for the mutation sweep and left as an intention for this one,")
+    print("  and then broken here twice in one afternoon.")
+    print("  If it genuinely must run now:  -Anyway \"<reason>\"")
+    return 1
+
+
 if __name__ == "__main__":
+    if "--gate" in sys.argv:
+        i = sys.argv.index("--gate")
+        what = sys.argv[i + 1] if i + 1 < len(sys.argv) else "this measurement"
+        reason = ""
+        if "--anyway" in sys.argv:
+            j = sys.argv.index("--anyway")
+            reason = sys.argv[j + 1] if j + 1 < len(sys.argv) else ""
+        raise SystemExit(gate(what, reason))
     if "--list" in sys.argv:
         for it in open_items():
             print("- " + it)
