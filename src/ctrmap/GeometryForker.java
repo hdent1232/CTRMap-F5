@@ -509,6 +509,14 @@ public class GeometryForker {
 	/**
 	 * Whether a padding slot is still exactly what the append made it.
 	 *
+	 * <p>THE IDS CREATION ASSIGNS ARE NOT EDITS. An append clones the donor and then
+	 * repoints the resources it makes private - the map, and now the area - so a
+	 * spare differs from a plain clone at exactly those fields and at no others.
+	 * Comparing without allowing for them called every spare "edited" the day area
+	 * forking was added, and the repair stopped blanking anything. The set comes
+	 * from {@link ctrmap.ZoneAppender#madePrivate()} rather than being listed again
+	 * here, so the next resource to join it is allowed for on the same day.
+	 *
 	 * <p>ASKED OF THE CLONE FUNCTION, NOT OF A BYTE RANGE. The appender builds each
 	 * spare with {@link ctrmap.ZoneCloner#cloneZoneBytes}, so the question "is this
 	 * still what the append made" has an exact answer: run that function on the
@@ -544,8 +552,11 @@ public class GeometryForker {
 			return false;
 		}
 		try {
-			return java.util.Arrays.equals(spareZo,
-				ctrmap.ZoneCloner.cloneZoneBytes(donorZo, zoneIndex, true));
+			byte[] expected = ctrmap.ZoneCloner.cloneZoneBytes(donorZo, zoneIndex, true);
+			for (ZoneResource res : ZoneAppender.madePrivate()) {
+				res.setIn(expected, res.idIn(spareZo));
+			}
+			return java.util.Arrays.equals(spareZo, expected);
 		} catch (RuntimeException notAZone) {
 			//a ZO the cloner will not read is not one this can make a claim about
 			return false;

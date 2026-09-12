@@ -75,7 +75,7 @@ public class MainframeShapeTest {
 	private static final String[] EXPECTED_MENUS = {
 		"File: Open GR Mapfile | Open MapMatrix | Open Zone | Save | Pack Workspace | Deploy to emulator (mod)...",
 		"Map: Map Builder (this zone) | Blank map canvas (this zone)... | Resize map (this zone)... | Edit area fog & lighting... | Fork map geometry (make zone independent)... | --- | Import map model (.bch)... | Export map region to OBJ (Blender)... | Import OBJ into map region (Blender)... | OBJ to collisions | Tileset Editor",
-		"Zone: Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here (clone a retail facility)",
+		"Zone: Browse zones (3D preview)... | Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here (clone a retail facility)",
 		"Game Data: Edit trainer (party/battle)... | Edit battle facility opponents... | Edit shop inventories (Marts)... | Edit items (price, effects, name)... | Edit wild encounters (this zone)...",
 		"Options: Setup wizard... | --- | Workspace settings | Restore from pristine backup... | Clean workspace",
 		"Help: Check for updates... | --- | Support/Issue tracker | About",
@@ -107,7 +107,7 @@ public class MainframeShapeTest {
 	private static final String[] TOOL_NAMES = {"Edit", "Set", "Fill", "Camera", "Prop", "NPC", "Warp", "Trigger", "Map Builder", "Geometry"};
 
 	private static final String EXPECTED_MAP_ROW = "label: Map:   button:Blank canvas button:Resize map button:Fog & lighting button:Encounters button:Fork geometry";
-	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
+	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Browse zones button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
 	private static final String EXPECTED_EXTRAS_ROW = "button:Raw archive browser (Builder)";
 
 	/**
@@ -201,7 +201,10 @@ public class MainframeShapeTest {
 				unwired.add(it.getText() + " (" + n + " listeners)");
 			}
 		}
-		check(items == 33, "33 menu items in all (" + items + ")");
+		//34 since Browse zones joined the Zone menu. The count is pinned so an item
+		//cannot be added, moved or lost without somebody writing down that they meant
+		//to - which is what this line is.
+		check(items == 34, "34 menu items in all (" + items + ")");
 		check(unwired.isEmpty(), "every item is wired to exactly one action" + (unwired.isEmpty() ? "" : " - not these: " + unwired));
 	}
 

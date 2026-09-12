@@ -1478,8 +1478,8 @@
    "id": "the-appender-claims-to-fork-what-it-does-not",
    "why": "MADE_PRIVATE is the whole mechanism: it says which of a zone header resources the append gives every new zone its own copy of, and everything not in it is refused on. A set that CLAIMS a resource it does not actually fork is worse than the original bug - the refusal stops firing and the guard would report independence that does not exist. So the guard checks the claim against the archives rather than believing the set.",
    "file": "src/ctrmap/ZoneAppender.java",
-   "find": "\t\t\t= java.util.EnumSet.of(ZoneResource.MAP);\n",
-   "replace": "\t\t\t= java.util.EnumSet.of(ZoneResource.MAP, ZoneResource.SCRIPT);\n",
+   "find": "\t\t\t= java.util.EnumSet.of(ZoneResource.MAP, ZoneResource.AREA);\n",
+   "replace": "\t\t\t= java.util.EnumSet.of(ZoneResource.MAP, ZoneResource.AREA, ZoneResource.SCRIPT);\n",
    "suite": "ctrmap.tests.WorkflowGuardsTest",
    "args": [
     "${GAMEDIR}"
@@ -1510,6 +1510,66 @@
     "."
    ],
    "must_say": "and every one of them asks the work order before it starts"
+  },
+  {
+   "id": "a-created-zone-keeps-the-donors-atmosphere",
+   "why": "The area fork writes a new AreaData entry and a new NPC registry and grows the per-area table - and then has to point the zone at what it made. Drop that one line and every archive is written correctly while the zone still names the donor: the fork LOOKS done, the new area sits there unused, and a fog edit in the new zone still rewrites the zone it was cloned from. That is the defect the whole area fork exists to remove, in the one place it can hide.",
+   "file": "src/ctrmap/AreaForker.java",
+   "find": "\t\t\tnewZos[i] = plan.newZoBytes;  // the repointed container the caller will write\n",
+   "replace": "",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "no created zone shares its area with any other"
+  },
+  {
+   "id": "the-area-budget-is-spent-before-it-is-counted",
+   "why": "Area ids are an 8-bit index and retail uses 229 of the 256, so an append can exhaust them. Checking per zone inside the loop instead of for the whole batch first would leave an append that gave the first zones their own area and the last ones somebody else's, with archives already written - the half-finished state ZoneAppender promises never to leave. The check is before the loop for that reason.",
+   "file": "src/ctrmap/AreaForker.java",
+   "find": "\t\tif (firstArea + count - 1 > MAX_AREA_ID) {\n",
+   "replace": "\t\tif (false) {\n",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "and wrote nothing before refusing, so no zone is left half independent"
+  },
+  {
+   "id": "the-repair-mistakes-a-forked-area-for-a-users-edit",
+   "why": "The padding repair blanks only a spare nobody has built on, decided by comparing the zone against what ZoneCloner would have produced. An append also repoints the resources it makes private, so a spare legitimately differs at those fields. Without allowing for them every spare reads as EDITED and the repair silently stops blanking - which is exactly what happened the moment area forking was added, and was caught by this guard rather than by a user. The allowance is taken from ZoneAppender.madePrivate() so the next resource to join it is covered the same day.",
+   "file": "src/ctrmap/GeometryForker.java",
+   "find": "\t\t\tfor (ZoneResource res : ZoneAppender.madePrivate()) {\n\t\t\t\tres.setIn(expected, res.idIn(spareZo));\n\t\t\t}\n",
+   "replace": "",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "and empties them, because nobody had built on them"
+  },
+  {
+   "id": "a-truncated-region-takes-the-editor-with-it",
+   "why": "BCHFile checks its magic and returns - but only after reading a string and eleven ints out of the buffer, so bytes too short to hold a header never reach the check. Measured: decode(byte[]{1,2,3,4}) and decode(byte[0]) both die with OutOfMemoryError, which is an Error and so passes straight through a catch on Exception. One truncated region therefore took the whole editor down - from a browser whose entire job is to look at regions one after another, so it would have been found by the first person who scrolled past a bad one. Found by the guard, not by them. THE FIRST TWO DRAFTS OF THIS PLANT SURVIVED, and that was the useful part. The fix originally had two halves - this length-and-magic check and a catch on OutOfMemoryError - and each covered every input a suite could build, so neither could be proven while the other stood. No buffer could be constructed that passed the check and still ran away, so the Error catch was speculation, and speculation that cannot be tested or safely removed is worse than none. It was deleted; this check is the whole fix, and it proves. The must_say is the section wrapper's own sentence rather than a check line: an OutOfMemoryError is not a failed assertion, it is the section dying, and what this plant proves is precisely that the editor would die. The wrapper catches Throwable so it is reported rather than taking the whole battery quietly.",
+   "file": "src/ctrmap/humaninterface/MapPreview3D.java",
+   "find": "\t\tif (!looksLikeBch(modelBytes)) {\n\t\t\treturn null;\n\t\t}\n",
+   "replace": "",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "threw instead of answering: java.lang.OutOfMemoryError"
+  },
+  {
+   "id": "the-preview-shows-the-zone-before-the-one-you-clicked",
+   "why": "A preview that reads the wrong region is not a cosmetic fault, it is a lie with a name under it: you click zone 214 and look at 213. Reading the region from anything other than THIS zone's own map is the way that happens, so the guard checks the bytes handed to the view against the region the zone's matrix actually names, rather than checking that a picture appeared.",
+   "file": "src/ctrmap/humaninterface/ZonePreview.java",
+   "find": "\t\t\tregion = MapMatrix.firstRegionId(Files.readAllBytes(mf.toPath()));\n",
+   "replace": "\t\t\tregion = MapMatrix.firstRegionId(Files.readAllBytes(\n\t\t\t\tws.getWorkspaceFile(ArchiveType.MAP_MATRIX, 0).toPath()));\n",
+   "suite": "ctrmap.tests.WorkflowGuardsTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "every preview is the map of the zone it names"
   }
  ]
 }

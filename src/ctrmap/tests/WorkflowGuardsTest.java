@@ -52,6 +52,7 @@ public class WorkflowGuardsTest {
 			section("append, pack, append again", () -> appendPackAppendAgain(dump));
 			section("every appended zone owns its map", () -> everyAppendedZoneOwnsItsMap(dump));
 			section("a created zone shares nothing, or says so", () -> aCreatedZoneSharesNothing(dump));
+			section("the preview shows the zone it names", () -> thePreviewShowsWhatItNames(dump));
 			section("a spare left sharing is repaired", () -> spareLeftSharingIsRepaired(dump));
 			section("resize, pack, resize again", () -> resizePackResizeAgain(dump));
 			section("deploy, disable, deploy again", () -> deployDisableDeployAgain(dump));
@@ -725,6 +726,30 @@ public class WorkflowGuardsTest {
 			}
 		}
 		
+		//AREA IDS ARE A BUDGET, AND IT RUNS OUT. The engine indexes areas with 8
+		//bits and retail uses 229 of the 256, so an append of four zones spends four
+		//of roughly twenty-seven. Checking that per zone inside the loop would leave
+		//an append that gave the first two zones their own area and the last two
+		//somebody else's - the half-state the appender promises never to leave - so
+		//the whole batch is checked before anything is written.
+		int left = ctrmap.AreaForker.areaIdsLeft();
+		check(left >= 0, "the workspace can say how many area ids are left (" + left + ")");
+		int areasBefore = Workspace.getArchive(ArchiveType.AREA_DATA).length;
+		String tooMany = "";
+		try {
+			byte[][] doomed = new byte[left + 1][];
+			for (int i = 0; i < doomed.length; i++) {
+				doomed[i] = zoneBytes(DONOR);
+			}
+			ctrmap.AreaForker.forkAppendedAreas(doomed, new byte[0], 0, doomed.length);
+		} catch (Exception ex) {
+			tooMany = String.valueOf(ex.getMessage());
+		}
+		check(tooMany.contains("area id"), "asking for more areas than exist is refused: " + tooMany);
+		check(tooMany.contains(String.valueOf(left)), "and says how many are actually left");
+		check(Workspace.getArchive(ArchiveType.AREA_DATA).length == areasBefore,
+			"and wrote nothing before refusing, so no zone is left half independent");
+		
 		//AND THE TABLE NAMES THE FIELDS THE HEADER PARSER READS. An offset that
 		//drifted from ZoneHeader would make every check above ask about the wrong
 		//bytes and pass for the wrong reason.
@@ -742,6 +767,114 @@ public class WorkflowGuardsTest {
 			+ ctrmap.ZoneResource.SCRIPT.idIn(probe) + "/" + parsed.script + ")");
 	}
 
+	/**
+	 * Browsing zones shows the zone that was asked for, and says so when there is
+	 * nothing to show.
+	 *
+	 * <p>A PREVIEW IS A PICTURE AND A SUITE CANNOT LOOK AT ONE. What it can check is
+	 * the thing that actually goes wrong: which bytes were handed to the view. The
+	 * failure this is written against is not a crash - it is clicking zone 214,
+	 * having the decode fail, and being shown zone 213 with 214's name under it.
+	 * {@code MapPreview3D.setRegion} did exactly that for as long as it existed,
+	 * because the decode was guarded by an if with no else; in the building palette
+	 * that was a cosmetic oddity, and in a browser it is a lie.
+	 *
+	 * <p>So: the model for a zone must come from THAT zone's own first region, two
+	 * different zones must not hand over the same bytes, a zone that cannot be
+	 * previewed must answer with no model AND a sentence, and undecodable bytes must
+	 * decode to nothing rather than to whatever was there before.
+	 */
+	static void thePreviewShowsWhatItNames(File dump) throws Exception {
+		System.out.println("--- browsing zones shows the zone it names, or says why not");
+		ScratchGame.open(dump);
+		int zoneCount = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		int[] look = {DONOR, 0, Math.min(100, zoneCount - 1)};
+		java.util.List<String> wrong = new java.util.ArrayList<>();
+		java.util.List<String> drawn = new java.util.ArrayList<>();
+		for (int zone : look) {
+			ctrmap.humaninterface.ZonePreview.Shot shot =
+				ctrmap.humaninterface.ZonePreview.of(Workspace.session(), zone);
+			check(!shot.note.isEmpty(), "zone " + zone + " gets a sentence either way: " + shot.note);
+			if (!shot.drawable()) {
+				continue;
+			}
+			drawn.add(zone + "->r" + shot.region);
+			//the region it says it read really is the one this zone's own map names
+			java.util.List<Integer> mine = regionsOf(zone);
+			if (!mine.isEmpty() && !mine.contains(shot.region)) {
+				wrong.add("zone " + zone + " previewed region " + shot.region
+					+ " but its map names " + mine);
+			}
+			byte[] fromDisk = new ctrmap.formats.containers.GR(
+				Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, shot.region),
+				Workspace.session()).getFile(1);
+			if (!java.util.Arrays.equals(fromDisk, shot.model)) {
+				wrong.add("zone " + zone + " handed over bytes that are not region " + shot.region + "'s model");
+			}
+		}
+		check(wrong.isEmpty(), "every preview is the map of the zone it names " + wrong);
+		check(drawn.size() >= 2, "and more than one zone actually previewed, so the check above"
+			+ " had something to be right about " + drawn);
+		
+		//two different zones on different maps must not hand over the same bytes -
+		//which is what "it kept the last one" would look like from here
+		ctrmap.humaninterface.ZonePreview.Shot a = ctrmap.humaninterface.ZonePreview.of(
+			Workspace.session(), DONOR);
+		int other = -1;
+		for (int z = 0; z < zoneCount && other < 0; z++) {
+			if (z != DONOR && matrixOf(z) >= 0 && matrixOf(z) != matrixOf(DONOR)) {
+				other = z;
+			}
+		}
+		ctrmap.humaninterface.ZonePreview.Shot b = ctrmap.humaninterface.ZonePreview.of(
+			Workspace.session(), other);
+		check(other >= 0, "found a zone on a different map to compare against (" + other + ")");
+		check(!a.drawable() || !b.drawable() || !java.util.Arrays.equals(a.model, b.model),
+			"two zones on different maps preview different geometry");
+		
+		//a zone that is not there answers with nothing AND a reason
+		ctrmap.humaninterface.ZonePreview.Shot gone = ctrmap.humaninterface.ZonePreview.of(
+			Workspace.session(), zoneCount + 500);
+		check(!gone.drawable(), "a zone that does not exist previews nothing");
+		check(gone.note.contains(String.valueOf(zoneCount + 500)),
+			"and the sentence names it, rather than leaving a blank pane to be read as a"
+			+ " broken dialog: " + gone.note);
+		check(ctrmap.humaninterface.ZonePreview.of(null, DONOR).note.length() > 0,
+			"and with no game open it still answers rather than throwing into a listener");
+		
+		//AND THE DECODE ITSELF ANSWERS NOTHING FOR BYTES THAT ARE NOT A MODEL. This is
+		//the input to the fix: setRegion assigns whatever this returns, so a null here
+		//is what blanks the view instead of leaving the previous zone on screen.
+		check(ctrmap.humaninterface.MapPreview3D.decode(new byte[]{1, 2, 3, 4}, null) == null,
+			"bytes that are not a map model decode to nothing");
+		check(ctrmap.humaninterface.MapPreview3D.decode(new byte[0], null) == null,
+			"and so does an empty region");
+		check(a.drawable() && ctrmap.humaninterface.MapPreview3D.decode(a.model, null) != null,
+			"while a real region decodes to a model");
+
+		//...AND A BUFFER THAT LOOKS LIKE ONE AND IS NOT. The length-and-magic check
+		//above cannot catch this: the header is well formed and the nonsense is in
+		//the offsets, so the reader gets as far as asking for an absurd allocation.
+		//That is the case the OutOfMemoryError backstop exists for, and it is a
+		//different input class from a truncated region rather than the same one twice.
+		byte[] plausible = new byte[ctrmap.humaninterface.MapPreview3D.BCH_MIN_HEADER + 0x40];
+		plausible[0] = 'B';
+		plausible[1] = 'C';
+		plausible[2] = 'H';
+		plausible[3] = 0;
+		plausible[4] = 0x10; //backwardCompatibility, under the 0x20 that adds fields
+		for (int off = 8; off + 4 <= plausible.length; off += 4) {
+			plausible[off] = (byte) 0xF0;
+			plausible[off + 1] = (byte) 0xFF;
+			plausible[off + 2] = (byte) 0xFF;
+			plausible[off + 3] = 0x7F;
+		}
+		check(ctrmap.humaninterface.MapPreview3D.looksLikeBch(plausible),
+			"a buffer with a real header passes the cheap check, as it should");
+		check(ctrmap.humaninterface.MapPreview3D.decode(plausible, null) == null,
+			"and a header whose offsets are nonsense still decodes to nothing, rather than"
+			+ " taking the editor down with it");
+	}
 	/** A zone's whole ZO container as bytes, or null when it cannot be read. */
 	static byte[] zoneBytes(int zoneIndex) {
 		try {

@@ -37,6 +37,15 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 	private boolean fogOn = false;
 	private float[] fogColor = {0.53f, 0.70f, 0.92f, 1f};
 	private float fogNear = 800f, fogFar = 4000f;
+	/**
+	 * The smallest buffer a BCH header can occupy: the 4-byte magic, two
+	 * compatibility bytes, a version short, and the ten ints of offsets and lengths
+	 * that follow. Anything shorter cannot be read, let alone refused.
+	 */
+	public static final int BCH_MIN_HEADER = 0x30;
+
+	/** Models swapped out, waiting for a GL thread to free their buffers. */
+	private final java.util.List<H3DModel> retired = new java.util.ArrayList<>();
 
 	public MapPreview3D() {
 		super(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
@@ -69,19 +78,84 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 	}
 
 	/** Parses the region model bytes, binds the world textures, and shows it. */
-	public void setRegion(byte[] modelBytes, List<H3DTexture> worldTextures) {
+	/**
+	 * The model in a region's bytes, or NULL when there is not one.
+	 *
+	 * <p>Its own method, and free of any GL, so a suite can ask the question that
+	 * matters - does undecodable input answer "nothing"? - without a graphics
+	 * context. The bug this replaces was not in the decoding but in what was done
+	 * with a failure, and the only way to check that is to be able to produce one.
+	 */
+	public static H3DModel decode(byte[] modelBytes, List<H3DTexture> worldTextures) {
+		//REFUSED BEFORE IT IS PARSED. BCHFile checks the magic and returns - but only
+		//AFTER reading a string and eleven ints out of the buffer, so bytes too short
+		//to hold a header never reach the check. Measured: decode(new byte[]{1,2,3,4})
+		//and decode(new byte[0]) both die with OutOfMemoryError, which is an Error and
+		//not caught below - so one truncated region takes the editor with it, from a
+		//dialog whose whole job is to look at regions one after another.
+		if (!looksLikeBch(modelBytes)) {
+			return null;
+		}
 		try {
 			BCHFile bch = new BCHFile(modelBytes);
-			if (bch.errorlevel == 0 && !bch.models.isEmpty()) {
-				H3DModel m = bch.models.get(0);
-				if (worldTextures != null) {
-					m.setMaterialTextures(worldTextures);
-				}
-				this.model = m;
+			if (bch.errorlevel != 0 || bch.models.isEmpty()) {
+				return null;
 			}
-		} catch (Exception ex) {
-			this.model = null;
+			H3DModel m = bch.models.get(0);
+			if (worldTextures != null) {
+				m.setMaterialTextures(worldTextures);
+			}
+			return m;
+		//NO CATCH ON Error HERE, deliberately. A draft had one, reasoning that a
+		//buffer could pass the header check and then ask for an absurd allocation
+		//deeper in - but no input could be built that reached it, and the plant for it
+		//survived twice. Every buffer that actually blew up was one the check above
+		//refuses. Catching an Error on a guess is worse than not catching one: it
+		//turns an unproven fear into code nobody can test or remove.
+		} catch (Exception notAModel) {
+			return null;
 		}
+	}
+
+	/**
+	 * Whether these bytes can even be a BCH: the magic, and enough length for the
+	 * header {@link BCHFile} reads before it is able to refuse one.
+	 */
+	public static boolean looksLikeBch(byte[] b) {
+		return b != null && b.length >= BCH_MIN_HEADER
+			&& b[0] == 'B' && b[1] == 'C' && b[2] == 'H' && b[3] == 0;
+	}
+	/**
+	 * Shows a region's map model. Answers FALSE when there was nothing to show,
+	 * and shows nothing - it does not keep what was there before.
+	 *
+	 * <p>IT USED TO KEEP THE PREVIOUS MODEL. The decode was guarded by
+	 * {@code if (errorlevel == 0 && !models.isEmpty())} with no else, so a region
+	 * that would not decode left the last one on screen. In a palette that is a
+	 * cosmetic oddity; in a zone browser it is a lie - you click zone 214, the
+	 * decode fails, and you are looking at zone 213 with 214's name under it. The
+	 * caller is told so it can say which, because "blank" is honest and "the one
+	 * before" is not.
+	 *
+	 * <p>THE MODEL IT REPLACES IS RETIRED, NOT DROPPED. Each model uploads vertex
+	 * buffers on first draw and {@link H3DModel#destroyAllBOs} frees them; nothing
+	 * called it, so every swap leaked a map's worth of GPU buffers - unnoticeable
+	 * in a dialog opened once, and a browser is a dialog you scroll. They cannot be
+	 * freed here (this runs on the caller's thread, and GL belongs to the render
+	 * thread), so they are queued for the next {@code display}.
+	 *
+	 * @return true when there is now geometry on screen
+	 */
+	public boolean setRegion(byte[] modelBytes, List<H3DTexture> worldTextures) {
+		H3DModel next = decode(modelBytes, worldTextures);
+		synchronized (this) {
+			if (model != null && model != next) {
+				retired.add(model);
+			}
+			model = next;
+		}
+		repaint();
+		return next != null;
 	}
 
 	/** Enables the area's fog in the preview (color + near/far draw distance). */
@@ -152,6 +226,17 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 		float ey = (float) (dist * Math.sin(pitch));
 		float ez = (float) (dist * Math.cos(yaw) * Math.cos(pitch));
 		new GLU().gluLookAt(ex, ey, ez, 0, 0, 0, 0, 1, 0);
+		//free what a previous swap left behind, here, where there is a GL context
+		synchronized (this) {
+			for (H3DModel old : retired) {
+				try {
+					old.destroyAllBOs(gl);
+				} catch (RuntimeException alreadyGone) {
+					//a model that never drew has nothing to free
+				}
+			}
+			retired.clear();
+		}
 		if (model != null) {
 			if (model.meshes.size() > 0 && model.meshes.get(0).vbo == null) {
 				model.makeAllBOs();
@@ -181,6 +266,23 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 
 	@Override
 	public void dispose(GLAutoDrawable d) {
+		//the dialog is closing and this is the last moment the context exists
+		GL2 gl = d.getGL().getGL2();
+		synchronized (this) {
+			retired.add(model);
+			for (H3DModel old : retired) {
+				if (old == null) {
+					continue;
+				}
+				try {
+					old.destroyAllBOs(gl);
+				} catch (RuntimeException alreadyGone) {
+					//nothing to free
+				}
+			}
+			retired.clear();
+			model = null;
+		}
 	}
 
 	private static float clamp(float v, float lo, float hi) {

@@ -217,6 +217,122 @@ public class AreaForker {
 	}
 
 	/**
+	 * How many more areas this workspace can create before the engine runs out of
+	 * ids. Asked BEFORE an append writes anything, because running out half way
+	 * through leaves some new zones private and some sharing.
+	 */
+	public static int areaIdsLeft() throws IOException {
+		GARC ad = Workspace.getArchive(ArchiveType.AREA_DATA);
+		if (ad == null) {
+			throw new IOException("No workspace is loaded (AreaData unavailable).");
+		}
+		return Math.max(0, MAX_AREA_ID - ad.length + 1);
+	}
+
+	/**
+	 * Gives each of {@code count} freshly appended zones its OWN area, in ONE pack
+	 * cycle - the area half of making a created zone independent from birth.
+	 *
+	 * <p>WHY A BATCH AND NOT {@code count} CALLS TO {@link #forkArea}. That method
+	 * takes its new id from {@code ad.length} and refuses when the slot is already
+	 * staged, so it can only run ONCE between packs: a second call in the same
+	 * cycle asks for the same id and is told a fork is pending. An append creates
+	 * four zones at a time, so four calls could never have worked. This threads the
+	 * id, and the global per-area table, through the loop - the table especially,
+	 * because each fork GROWS it and the next fork has to grow the grown one.
+	 *
+	 * <p>Mutates the caller's payloads in place, exactly as
+	 * {@code GeometryForker.forkAppendedZones} does: {@code newZos[i]} becomes the
+	 * repointed container and {@code master}'s area column is repointed for each.
+	 * The appender has not written either yet, so this is the last moment they can
+	 * be changed without a second pass.
+	 *
+	 * <p>IT REFUSES BEFORE IT WRITES. Area ids are an 8-bit index and retail uses
+	 * 229 of the 256, so the budget is small enough to exhaust. Checking it per
+	 * zone inside the loop would leave an append that gave the first two zones
+	 * their own area and the last two somebody else's - the exact half-state the
+	 * appender promises never to leave.
+	 *
+	 * @param newZos the appended zones' ZO containers (mutated in place)
+	 * @param master the grown master zone-header table (rows repointed in place)
+	 * @param oldCount the first new zone's index, which is its master-table row
+	 * @param count how many of them to give an area to
+	 */
+	public static void forkAppendedAreas(byte[][] newZos, byte[] master, int oldCount, int count)
+			throws IOException {
+		if (count <= 0) {
+			return;
+		}
+		requireForkSupport();
+		GARC ad = Workspace.getArchive(ArchiveType.AREA_DATA);
+		GARC np = Workspace.getArchive(ArchiveType.NPC_REGISTRIES);
+		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
+		if (ad == null || np == null || zo == null) {
+			throw new IOException("No workspace is loaded (AreaData/NPCRegistries unavailable).");
+		}
+		int firstArea = ad.length;
+		if (firstArea + count - 1 > MAX_AREA_ID) {
+			throw new IOException("Giving " + count + " new zone(s) their own area needs " + count
+				+ " area id(s), and only " + areaIdsLeft() + " are left: the engine indexes areas"
+				+ " with 8 bits, so " + MAX_AREA_ID + " is the last usable id."
+				+ "\n\nRemove some added zones, or some forked areas, first.");
+		}
+		File adDir = Workspace.getExtractionDirectory(ArchiveType.AREA_DATA);
+		File npDir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
+		if (Workspace.isPendingArtifact(new File(adDir, String.valueOf(firstArea)))) {
+			throw new IOException("An area fork is already staged and not yet packed.");
+		}
+		File tableFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AD_GLOBAL_TABLE);
+		if (tableFile == null) {
+			throw new IOException("Could not extract the per-area table.");
+		}
+		byte[] table = Files.readAllBytes(tableFile.toPath());
+		npDir.mkdirs();
+		//how far the registry archive REACHES, not how many entries it has: the
+		//engine indexes registries by area id, and an archive only grows at its tail
+		int npReaches = np.length;
+		for (int i = 0; i < count; i++) {
+			int newArea = firstArea + i;
+			int oldArea = u16(newZos[i], i32(newZos[i], 4) + HDR_AREA_OFF);
+			File srcAdFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, oldArea);
+			if (srcAdFile == null) {
+				throw new IOException("Could not extract area " + oldArea + " from the workspace.");
+			}
+			File srcNpFile = Workspace.getWorkspaceFile(ArchiveType.NPC_REGISTRIES, oldArea);
+			byte[] srcNp = (srcNpFile != null && srcNpFile.exists())
+				? Files.readAllBytes(srcNpFile.toPath()) : new byte[0];
+			ForkPlan plan = planFork(newZos[i], Files.readAllBytes(srcAdFile.toPath()), srcNp,
+				table, newArea);
+			
+			File adOut = new File(adDir, String.valueOf(newArea));
+			Files.write(adOut.toPath(), plan.newAdBytes);
+			Workspace.addPersist(adOut);
+			registerPendingArea(newArea, ad.isEntryCompressed(oldArea));
+			for (int filler = npReaches; filler < newArea; filler++) {
+				File fillOut = new File(npDir, String.valueOf(filler));
+				Files.write(fillOut.toPath(), new byte[0]);
+				Workspace.addPersist(fillOut);
+				registerPendingNpcReg(filler, false);
+			}
+			File npOut = new File(npDir, String.valueOf(newArea));
+			Files.write(npOut.toPath(), plan.newNpcBytes);
+			Workspace.addPersist(npOut);
+			registerPendingNpcReg(newArea,
+				np.length > 0 && np.isEntryCompressed(Math.min(oldArea, np.length - 1)));
+			npReaches = newArea + 1;
+			
+			table = plan.newTableBytes;   // each fork grows it; the next grows the grown one
+			newZos[i] = plan.newZoBytes;  // the repointed container the caller will write
+			int rowOff = (oldCount + i) * MASTER_ROW + HDR_AREA_OFF;
+			if (rowOff + 2 > master.length) {
+				throw new IOException("Master-table row for zone " + (oldCount + i) + " out of range.");
+			}
+			putU16(master, rowOff, newArea);
+		}
+		Files.write(tableFile.toPath(), table);
+		Workspace.addPersist(tableFile);
+	}
+	/**
 	 * Clones this zone's area (and its NPC registry) to private tail entries and
 	 * repoints the zone at them. Pack the Workspace afterwards.
 	 */

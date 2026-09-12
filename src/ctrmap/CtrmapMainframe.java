@@ -919,6 +919,7 @@ public class CtrmapMainframe {
 		map.add(item("Tileset Editor", CtrmapMainframe::tilesetEditorAction));
 
 		JMenu zone = new JMenu("Zone");
+		zone.add(item("Browse zones (3D preview)...", CtrmapMainframe::browseZonesAction));
 		zone.add(item("Rename zone (in-game name)...", CtrmapMainframe::renameZoneAction));
 		zone.add(item("Empty zone (clear contents)...", CtrmapMainframe::emptyZoneAction));
 		zone.add(item("Find reusable base zones...", CtrmapMainframe::findReusableZonesAction));
@@ -1008,11 +1009,12 @@ public class CtrmapMainframe {
 		return tab;
 	}
 
-	/** The Zone Loader's actions row; the Zone menu repeats these five. */
+	/** The Zone Loader's actions row; the Zone menu repeats these six. */
 	public static JToolBar buildZoneActionsBar() {
 		JToolBar bar = new JToolBar();
 		bar.setFloatable(false);
 		bar.add(new JLabel(" Zone actions:  "));
+		bar.add(barButton("Browse zones", "Look through every zone's map in 3D without loading them one by one. Nothing is opened until you press Load.", CtrmapMainframe::browseZonesAction));
 		bar.add(barButton("Rename", "Rename the loaded zone's in-game location banner.", CtrmapMainframe::renameZoneAction));
 		bar.add(barButton("Empty", "Clear the loaded zone's NPCs, warps, triggers and furniture (keeps map + script).", CtrmapMainframe::emptyZoneAction));
 		bar.add(barButton("Find reusable zones", "Scan for unused base zones you can safely repurpose for new areas.", CtrmapMainframe::findReusableZonesAction));
@@ -1057,6 +1059,21 @@ public class CtrmapMainframe {
 	/** The toolbar's "3D view" toggle: what is DISPLAYED is the truth, not the toggle's own state. */
 	private static void toggleView() {
 		showView3D(jsp.getLeftComponent() != m3DDebugPanel);
+	}
+
+	/**
+	 * Look through every zone's map without loading one.
+	 *
+	 * <p>The dialog is handed the zone table and the thing to do with a choice,
+	 * rather than reaching for either: what "load a zone" means belongs to the Zone
+	 * tab, and the browser only has to know that something happens when you press
+	 * Load. That is also what lets a suite drive it with a load that records.
+	 */
+	private static void browseZonesAction() {
+		ctrmap.humaninterface.ZoneBrowserDialog.show(frame, game, loadedZone, index -> {
+			showZoneLoadingHint();
+			mZonePnl.selectZone(index);
+		});
 	}
 
 	/**

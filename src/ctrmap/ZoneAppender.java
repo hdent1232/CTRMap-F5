@@ -101,7 +101,12 @@ public class ZoneAppender {
 	 * rather than four.
 	 */
 	private static final java.util.EnumSet<ZoneResource> MADE_PRIVATE
-			= java.util.EnumSet.of(ZoneResource.MAP);
+			= java.util.EnumSet.of(ZoneResource.MAP, ZoneResource.AREA);
+
+	/** The resources an append gives every zone it creates its own copy of. */
+	public static java.util.Set<ZoneResource> madePrivate() {
+		return java.util.Collections.unmodifiableSet(MADE_PRIVATE);
+	}
 
 	/**
 	 * What a zone created by an append would still share with its donor: every
@@ -261,6 +266,19 @@ public class ZoneAppender {
 		// second copy of the donor. Up to 1.0.1 they kept the donor map instead, which
 		// is what CtrmapMainframe.repairSharedPaddingZones exists to undo.
 		GeometryForker.forkAppendedZones(p.newZos, p.master, oldCount, newRealZones);
+
+		// ...and its OWN AREA, which is the atmosphere, the water animations, the prop
+		// registry and the NPC models. Sharing one meant a fog edit in a new zone
+		// changed the zone it was cloned from and every other zone on that area - and
+		// nothing said so until the user happened to open Fog & lighting, which is how
+		// it was found. EVERY created zone, spares included: a spare is a zone somebody
+		// can clone into later, and it is the same argument as the map.
+		//
+		// The budget is real and small - area ids are an 8-bit index and retail uses 229
+		// of the 256 - so forkAppendedAreas checks it for the WHOLE batch before it
+		// writes anything, rather than running out half way and leaving two of four new
+		// zones private.
+		AreaForker.forkAppendedAreas(p.newZos, p.master, oldCount, addCount);
 
 		if (pendingZoneDataOverrides == null) {
 			pendingZoneDataOverrides = new HashMap<>();
