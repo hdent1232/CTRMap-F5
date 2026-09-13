@@ -1750,6 +1750,18 @@
     "src"
    ],
    "must_say": "are not argued for"
+  },
+  {
+   "id": "the-closure-engine-grows-a-second-copy",
+   "why": "The message and sign script transplants were two copies of one engine - measured at 293 of 326 substantive lines shared, with the closure walk, the stub-insert preconditions and the branch-boundary check byte-identical between them. They rewrite Pawn bytecode inside zone scripts bound to the player's save, so a fix to the walk landed on one injector and not the other, and the suite that would have caught the other was itself a copy: the sign side had already drifted into a version of the same check whose failure messages dropped the actual values. The engine is PawnClosure now. This puts a second definition of one of its methods back into an injector, which is how the first copy started. The first attempt at this plant inserted the second definition INSIDE a method body, which does not compile - and a tree that does not build proves nothing about a guard, only that javac works.",
+   "file": "src/ctrmap/formats/scripts/SignWrapperInjector.java",
+   "find": "\t\treturn crc.getValue();\n\t}\n",
+   "replace": "\t\treturn crc.getValue();\n\t}\n\n\tprivate static void validateStubInsertPreconditions(GFLPawnScript t) {\n\t\tPawnClosure.validateStubInsertPreconditions(t);\n\t}\n",
+   "suite": "ctrmap.tests.DuplicateWorkTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "walking a Pawn routine and its callees"
   }
  ],
  "retired": [
