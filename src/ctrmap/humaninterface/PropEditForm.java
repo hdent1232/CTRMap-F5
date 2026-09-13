@@ -556,7 +556,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					"This prop needs textures this area does not have (" + inlineTextures + "),\n"
 					+ "but " + areaName + " is also used by " + shared + ".\n"
 					+ "Importing them would change those maps too, so the prop was not placed.\n\n"
-					+ "Give this zone its own area first (Map > Fork area).",
+					+ "Give this zone its own area first (Map > Fork map geometry).",
 					"Shared area");
 			return true;
 		}

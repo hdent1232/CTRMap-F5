@@ -860,9 +860,13 @@ public class CtrmapMainframe {
 		file.add(item("Open MapMatrix", CtrmapMainframe::openMapMatrixAction));
 		file.add(item("Open Zone", CtrmapMainframe::openZoneAction,
 				"Opens a single loose ZO file. To load a map from the game, use the zone dropdown in the \"Zone Loader\" tab instead."));
-		file.add(item("Save", CtrmapMainframe::saveAllAction));
+		//CTRL+S, AND CTRL+D FOR DEPLOY. Nothing in this menu bar had a key, in an editor
+		//whose other writer is the window close handler, and whose edit-and-test cycle
+		//ends in Deploy every single time.
+		file.add(withKey(item("Save", CtrmapMainframe::saveAllAction), java.awt.event.KeyEvent.VK_S));
 		file.add(item("Pack Workspace", Workspace::packWorkspace));
-		file.add(item("Deploy to emulator (mod)...", CtrmapMainframe::deployModAction));
+		file.add(withKey(item("Deploy to emulator (mod)...", CtrmapMainframe::deployModAction),
+			java.awt.event.KeyEvent.VK_D));
 
 		JMenu map = new JMenu("Map");
 		map.add(item("Map Builder (this zone)", CtrmapMainframe::openMapBuilderAction));
@@ -905,6 +909,8 @@ public class CtrmapMainframe {
 		options.add(item("Clean workspace", CtrmapMainframe::cleanWorkspaceAction));
 
 		JMenu help = new JMenu("Help");
+		help.add(item("Quick start guide", CtrmapMainframe::quickStartAction,
+			"The guide that ships beside the program: what to do first, in order."));
 		help.add(item("Check for updates...", () -> ctrmap.update.UpdateUI.checkNow(frame)));
 		help.addSeparator();
 		help.add(item("Support/Issue tracker", CtrmapMainframe::issueTrackerAction));
@@ -920,6 +926,45 @@ public class CtrmapMainframe {
 	}
 
 	/** One menu item, wired to the one thing it does. */
+	/** The same item, with the platform's menu key and the given letter. */
+	private static JMenuItem withKey(JMenuItem it, int keyCode) {
+		//ASKED OF THE TOOLKIT ONLY WHEN THERE IS ONE. getMenuShortcutKeyMask throws
+		//HeadlessException, and this menu bar is built headless by the suite that reads
+		//it - which is how this was caught one minute after it was written rather than by
+		//the owner. Ctrl is the answer on every platform this ships to anyway.
+		int mask = java.awt.event.InputEvent.CTRL_MASK;
+		if (!java.awt.GraphicsEnvironment.isHeadless()) {
+			mask = java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMask();
+		}
+		it.setAccelerator(javax.swing.KeyStroke.getKeyStroke(keyCode, mask));
+		return it;
+	}
+
+	/**
+	 * Opens QUICKSTART.md, which ships beside the program and had no door.
+	 *
+	 * <p>package.ps1 copies it into both release layouts, and nothing in the program
+	 * ever mentioned it: a first-run user who got past the setup wizard was handed an
+	 * eight-tab window and left to find the zone list on the fourth tab by themselves.
+	 */
+	private static void quickStartAction() {
+		File guide = new File("QUICKSTART.md");
+		if (!guide.isFile()) {
+			guide = new File(System.getProperty("user.dir"), "QUICKSTART.md");
+		}
+		if (!guide.isFile()) {
+			Ui.error(frame, "QUICKSTART.md is not beside the program (looked in "
+				+ new File(".").getAbsolutePath() + ").", "Quick start guide");
+			return;
+		}
+		try {
+			java.awt.Desktop.getDesktop().open(guide);
+		} catch (Exception cannotOpen) {
+			Ui.error(frame, "Could not open " + guide.getAbsolutePath() + ":\n"
+				+ Ui.reason(cannotOpen), "Quick start guide");
+		}
+	}
+
 	private static JMenuItem item(String label, Runnable action) {
 		JMenuItem it = new JMenuItem(label);
 		it.addActionListener(e -> action.run());
@@ -1144,10 +1189,20 @@ public class CtrmapMainframe {
 		extrasHost.repaint();
 	}
 
+	/**
+	 * The Extras bar: everything that opens in this tab, offered from this tab.
+	 *
+	 * <p>It offered one of the three. The tileset editor and the workspace settings open
+	 * here too and could only be reached from the Map and Options menus, so a user who
+	 * came to Extras looking for either found a panel of mass-edit buttons and no sign of
+	 * them - the placement rule kept in half and broken in the other half.
+	 */
 	public static JToolBar buildExtrasBar() {
 		JToolBar bar = new JToolBar();
 		bar.setFloatable(false);
 		bar.add(barButton("Raw archive browser (Builder)", "Browse raw GARC entries and their subfiles - advanced, rarely needed.", CtrmapMainframe::showBuilderAction));
+		bar.add(barButton("Tileset editor", "Edit the tile database: what each tile byte means to the game.", CtrmapMainframe::tilesetEditorAction));
+		bar.add(barButton("Workspace & paths", "Where the game, the workspace and the emulator live.", CtrmapMainframe::workspaceSettingsAction));
 		return bar;
 	}
 
@@ -1414,14 +1469,33 @@ public class CtrmapMainframe {
 			}
 		});
 		File f = picked(jfc, "LAST_DIR_OBJ");
-		if (f != null) {
-			WavefrontOBJ obj = new WavefrontOBJ(f);
-			if (mCollEditPanel.coll != null) {
-				mCollEditPanel.coll.meshes = obj.getGfCollision();
-				mCollEditPanel.coll.modified = true;
-				mCollEditPanel.buildTree();
-			}
+		if (f == null) {
+			return;
 		}
+		//IT USED TO DO NOTHING, SILENTLY, when no collision was loaded: the user picked a
+		//mesh exported from Blender, waited through the parse, and got no dialog, no log
+		//line and no changed tree - indistinguishable from a successful import of an empty
+		//file. The collision comes from the Collision Editor tab, two tabs away, and this
+		//item is its only bulk action.
+		if (mCollEditPanel.coll == null) {
+			Ui.error(frame, "No collision is open, so there is nothing to replace.\n\n"
+			+ "Open a zone and switch to the Collision Editor tab first - the OBJ replaces the"
+			+ " collision meshes of whatever is loaded there.", "OBJ to collisions");
+			return;
+		}
+		WavefrontOBJ obj = new WavefrontOBJ(f);
+		ctrmap.formats.gfcollision.GRCollisionMesh[] meshes = obj.getGfCollision();
+		if (meshes == null || meshes.length == 0) {
+			Ui.error(frame, f.getName() + " holds no faces this can use, so nothing was"
+			+ " changed.", "OBJ to collisions");
+			return;
+		}
+		mCollEditPanel.coll.meshes = meshes;
+		mCollEditPanel.coll.modified = true;
+		mCollEditPanel.buildTree();
+		Ui.message(frame, meshes.length + " collision mesh(es) read from " + f.getName()
+			+ " and put in the Collision Editor. They are not saved until you save the zone.",
+			"OBJ to collisions", JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	/** The tileset editor, in the Extras tab - it was a window for no better reason

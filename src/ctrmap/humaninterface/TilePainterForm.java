@@ -488,7 +488,7 @@ public class TilePainterForm {
 				throw new IllegalStateException("Area " + zoneArea + " is also used by " + shared
 						+ ".\nThis map's textures and door props cannot go into it without changing"
 						+ "\nthose maps, so nothing was applied. Give this zone its own area"
-						+ "\n(Map > Fork area) and Apply again.");
+						+ "\n(Map > Fork map geometry) and Apply again.");
 			}
 		}
 		StagedArea area = new StagedArea(loaded, zoneArea, zoneIndex);
