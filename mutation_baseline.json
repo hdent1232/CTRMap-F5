@@ -8,20 +8,23 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 248,
-    "kind": "negate-if"
+    "line": 369,
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
-    "line": 249,
-    "kind": "drop-throw"
+    "line": 370,
+    "kind": "drop-throw",
+    "by": "ForkGuardsTest"
    },
    {
-    "line": 249,
-    "kind": "swallow-throw"
+    "line": 370,
+    "kind": "swallow-throw",
+    "by": "ForkGuardsTest"
    }
   ],
   "excluded": [],
-  "sha256": "5cee8a7907f855659136bd754af192aea6e1ae57441230f262e6b49833c485e7"
+  "sha256": "036c5660a238aafd6fe0d80e66a84629976e1ce109ff67318dab77a09c1e386c"
  },
  "src/ctrmap/CtrmapMainframe.java": {
   "survivors": 0,
@@ -32,20 +35,23 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 1761,
-    "kind": "negate-if"
+    "line": 2164,
+    "kind": "negate-if",
+    "by": "MainframeReportsTest"
    },
    {
-    "line": 1776,
-    "kind": "negate-if"
+    "line": 2179,
+    "kind": "negate-if",
+    "by": "MainframeReportsTest"
    },
    {
-    "line": 1780,
-    "kind": "negate-if"
+    "line": 2183,
+    "kind": "negate-if",
+    "by": "MainframeReportsTest"
    }
   ],
   "excluded": [],
-  "sha256": "f8b6dc09551c3fed565f86669b4e1a5eade37646d68fdc31825c187bf8600e48"
+  "sha256": "ee6662a05215a0781f6b7b052e14f093893d8e9738030b9ac26ef94e0b05d456"
  },
  "src/ctrmap/GeometryForker.java": {
   "survivors": 0,
@@ -57,23 +63,27 @@
   "killed_lines": [
    {
     "line": 183,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "MatrixForkTest"
    },
    {
     "line": 186,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "MatrixForkTest"
    },
    {
     "line": 189,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "MatrixForkTest"
    },
    {
-    "line": 321,
-    "kind": "negate-if"
+    "line": 689,
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    }
   ],
   "excluded": [],
-  "sha256": "c7cb675d94cbfee3497311e43af51fe38edc475ca9321551327412b3ffffc0f4"
+  "sha256": "939cfa95aaa2f7fcfb2a274bb26772cd4c8927cb673034a8ee6e1bc650adb151"
  },
  "src/ctrmap/Ui.java": {
   "survivors": 0,
@@ -85,15 +95,17 @@
   "killed_lines": [
    {
     "line": 187,
-    "kind": "drop-report"
+    "kind": "drop-report",
+    "by": "UiOutputTest"
    },
    {
     "line": 190,
-    "kind": "drop-report"
+    "kind": "drop-report",
+    "by": "UiOutputTest"
    }
   ],
   "excluded": [],
-  "sha256": "1c81a6f3270d563e7759af6ccccb99acc31f5491138954cabc2c94dcf9ebea94"
+  "sha256": "d731184c6b899bb620651f177d2822e46ad04854671700b1fb439638234b1c50"
  },
  "src/ctrmap/Workspace.java": {
   "survivors": 0,
@@ -104,16 +116,18 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 491,
-    "kind": "negate-if"
+    "line": 496,
+    "kind": "negate-if",
+    "by": "PackReportTest"
    },
    {
-    "line": 508,
-    "kind": "negate-if"
+    "line": 513,
+    "kind": "negate-if",
+    "by": "PackReportTest"
    }
   ],
   "excluded": [],
-  "sha256": "fd11339244bb4dbe57182e2a815af0e2283387a20c2e04d00bd378cbb8078292"
+  "sha256": "6af5c52d40a5064fbbe54017af96d22993dbf162c2d2b96288a96b02f84359ea"
  },
  "src/ctrmap/WorkspaceIntegrity.java": {
   "survivors": 0,
@@ -125,39 +139,48 @@
   "killed_lines": [
    {
     "line": 99,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
     "line": 144,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
     "line": 153,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
     "line": 157,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
     "line": 164,
-    "kind": "drop-report"
+    "kind": "drop-report",
+    "by": "MisplacedRegistryTest"
    },
    {
     "line": 236,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
     "line": 241,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
     "line": 260,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
     "line": 261,
-    "kind": "drop-report"
+    "kind": "drop-report",
+    "by": "IntegrityTest"
    }
   ],
   "excluded": [],
@@ -172,56 +195,67 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 278,
-    "kind": "negate-if"
+    "line": 285,
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
-    "line": 293,
-    "kind": "negate-if"
+    "line": 300,
+    "kind": "negate-if",
+    "by": "PackReportTest"
    },
    {
-    "line": 340,
-    "kind": "negate-if"
+    "line": 347,
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
-    "line": 389,
-    "kind": "negate-if"
-   },
-   {
-    "line": 394,
-    "kind": "negate-if"
+    "line": 396,
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
     "line": 401,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
-    "line": 402,
-    "kind": "drop-throw"
+    "line": 408,
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
    },
    {
-    "line": 402,
-    "kind": "swallow-throw"
+    "line": 409,
+    "kind": "drop-throw",
+    "by": "ForkGuardsTest"
    },
    {
-    "line": 443,
-    "kind": "negate-if"
+    "line": 409,
+    "kind": "swallow-throw",
+    "by": "ForkGuardsTest"
    },
    {
-    "line": 590,
-    "kind": "drop-throw"
+    "line": 450,
+    "kind": "negate-if",
+    "by": "ZoneAppendTest"
    },
    {
-    "line": 590,
-    "kind": "swallow-throw"
+    "line": 597,
+    "kind": "drop-throw",
+    "by": "DataSafetyGuardsTest"
+   },
+   {
+    "line": 597,
+    "kind": "swallow-throw",
+    "by": "DataSafetyGuardsTest"
    }
   ],
   "excluded": [],
-  "sha256": "36d0f7673b1b6618d4734eeba1be5ab4cfbd23bb7f8db600feb15830fae64cfd"
+  "sha256": "127fea075e4e3e6a7de048137a229093acd8db6ccdebbec62faa79fcba51efa5"
  },
  "src/ctrmap/formats/h3d/BchTexturePack.java": {
   "survivors": 0,
-  "killed": 16,
+  "killed": 13,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
@@ -229,71 +263,72 @@
   "killed_lines": [
    {
     "line": 454,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "TextureCarryGuardsTest"
    },
    {
     "line": 460,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "TextureCarryGuardsTest"
    },
    {
-    "line": 461,
-    "kind": "negate-if"
+    "line": 505,
+    "kind": "negate-if",
+    "by": "TextureCarryGuardsTest"
    },
    {
-    "line": 462,
-    "kind": "drop-throw"
+    "line": 511,
+    "kind": "negate-if",
+    "by": "TextureCarryGuardsTest"
    },
    {
-    "line": 462,
-    "kind": "swallow-throw"
+    "line": 522,
+    "kind": "negate-if",
+    "by": "TextureCarryGuardsTest"
    },
    {
-    "line": 502,
-    "kind": "negate-if"
+    "line": 566,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 508,
-    "kind": "negate-if"
+    "line": 571,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 519,
-    "kind": "negate-if"
+    "line": 575,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 563,
-    "kind": "negate-if"
+    "line": 582,
+    "kind": "negate-if",
+    "by": "TexturePackImportTest"
    },
    {
-    "line": 568,
-    "kind": "negate-if"
+    "line": 666,
+    "kind": "negate-if",
+    "by": "TextureCarryGuardsTest"
    },
    {
-    "line": 572,
-    "kind": "negate-if"
+    "line": 667,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 579,
-    "kind": "negate-if"
+    "line": 668,
+    "kind": "drop-throw",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 663,
-    "kind": "negate-if"
-   },
-   {
-    "line": 664,
-    "kind": "negate-if"
-   },
-   {
-    "line": 665,
-    "kind": "drop-throw"
-   },
-   {
-    "line": 665,
-    "kind": "swallow-throw"
+    "line": 668,
+    "kind": "swallow-throw",
+    "by": "PaintApplyGuardsTest"
    }
   ],
   "excluded": [],
-  "sha256": "52635dc0abc9d68ea1019105a2e6822e8ab1acf82d6bf80a638e5e2379c71fa7"
+  "sha256": "6eb802e95cc4410175440519d7d29c53c9540561374bceb6dedce57171943987"
  },
  "src/ctrmap/formats/h3d/MapPrefab.java": {
   "survivors": 0,
@@ -305,79 +340,98 @@
   "killed_lines": [
    {
     "line": 128,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 133,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 177,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 182,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 183,
-    "kind": "drop-throw"
+    "kind": "drop-throw",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 183,
-    "kind": "swallow-throw"
+    "kind": "swallow-throw",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 281,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 284,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 290,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 334,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 353,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 408,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 421,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 457,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 699,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 703,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 851,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 910,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "MapPrefabTest"
    },
    {
     "line": 940,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    }
   ],
   "excluded": [],
@@ -393,15 +447,18 @@
   "killed_lines": [
    {
     "line": 44,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    },
    {
     "line": 47,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    },
    {
     "line": 52,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    }
   ],
   "excluded": [],
@@ -417,15 +474,18 @@
   "killed_lines": [
    {
     "line": 99,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    },
    {
     "line": 103,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    },
    {
     "line": 121,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    }
   ],
   "excluded": [],
@@ -441,23 +501,28 @@
   "killed_lines": [
    {
     "line": 54,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    },
    {
     "line": 75,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    },
    {
     "line": 101,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    },
    {
     "line": 108,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    },
    {
     "line": 117,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    }
   ],
   "excluded": [],
@@ -473,75 +538,93 @@
   "killed_lines": [
    {
     "line": 143,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DispatchTrampolineTest"
    },
    {
     "line": 144,
-    "kind": "drop-throw"
+    "kind": "drop-throw",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 144,
-    "kind": "swallow-throw"
+    "kind": "swallow-throw",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 161,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 162,
-    "kind": "drop-throw"
+    "kind": "drop-throw",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 162,
-    "kind": "swallow-throw"
+    "kind": "swallow-throw",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 245,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 271,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 272,
-    "kind": "drop-throw"
+    "kind": "drop-throw",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 272,
-    "kind": "swallow-throw"
+    "kind": "swallow-throw",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 274,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 275,
-    "kind": "drop-throw"
+    "kind": "drop-throw",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 275,
-    "kind": "swallow-throw"
+    "kind": "swallow-throw",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 277,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 278,
-    "kind": "drop-throw"
+    "kind": "drop-throw",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 278,
-    "kind": "swallow-throw"
+    "kind": "swallow-throw",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 318,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 319,
-    "kind": "flip-return"
+    "kind": "flip-return",
+    "by": "NpcEntityGuardsTest"
    }
   ],
   "excluded": [],
@@ -557,19 +640,23 @@
   "killed_lines": [
    {
     "line": 233,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DispatchTrampolineTest"
    },
    {
     "line": 238,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DispatchTrampolineTest"
    },
    {
     "line": 260,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DispatchGuardsTest"
    },
    {
     "line": 267,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DispatchGuardsTest"
    }
   ],
   "excluded": [],
@@ -585,7 +672,8 @@
   "killed_lines": [
    {
     "line": 384,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PaintedRegionTest"
    }
   ],
   "excluded": [],
@@ -601,19 +689,23 @@
   "killed_lines": [
    {
     "line": 493,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
     "line": 496,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
     "line": 573,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
     "line": 583,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    }
   ],
   "excluded": [],
@@ -629,27 +721,33 @@
   "killed_lines": [
    {
     "line": 135,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 138,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 141,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 144,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 147,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 150,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    }
   ],
   "excluded": [],
@@ -665,7 +763,8 @@
   "killed_lines": [
    {
     "line": 121,
-    "kind": "flip-return"
+    "kind": "flip-return",
+    "by": "HandedGameTest"
    }
   ],
   "excluded": [],
@@ -681,59 +780,73 @@
   "killed_lines": [
    {
     "line": 115,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 116,
-    "kind": "drop-throw"
+    "kind": "drop-throw",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 116,
-    "kind": "swallow-throw"
+    "kind": "swallow-throw",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 160,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 161,
-    "kind": "drop-throw"
+    "kind": "drop-throw",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 161,
-    "kind": "swallow-throw"
+    "kind": "swallow-throw",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 169,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 326,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 329,
-    "kind": "drop-throw"
+    "kind": "drop-throw",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 329,
-    "kind": "swallow-throw"
+    "kind": "swallow-throw",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 428,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 429,
-    "kind": "drop-throw"
+    "kind": "drop-throw",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 429,
-    "kind": "swallow-throw"
+    "kind": "swallow-throw",
+    "by": "NpcEntityGuardsTest"
    },
    {
     "line": 464,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    }
   ],
   "excluded": [],
@@ -749,11 +862,13 @@
   "killed_lines": [
    {
     "line": 83,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
     "line": 86,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    }
   ],
   "excluded": [],
@@ -769,15 +884,17 @@
   "killed_lines": [
    {
     "line": 242,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "MapPrefabTest"
    },
    {
     "line": 357,
-    "kind": "drop-report"
+    "kind": "drop-report",
+    "by": "MapPrefabTest"
    }
   ],
   "excluded": [],
-  "sha256": "47d710660a727c9c864c937c5f9b54d5efddf903b284ec2c6ccf8ad6f3bcd134"
+  "sha256": "85afe1155b8d294bbd7733154d3f6d10bd8e70dbc284d60488e12755057f0bc6"
  },
  "src/ctrmap/humaninterface/MatrixEditForm.java": {
   "survivors": 0,
@@ -789,7 +906,8 @@
   "killed_lines": [
    {
     "line": 125,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DataSafetyGuardsTest"
    }
   ],
   "excluded": [],
@@ -804,76 +922,93 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 275,
-    "kind": "negate-if"
+    "line": 292,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 365,
-    "kind": "negate-if"
+    "line": 382,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 373,
-    "kind": "negate-if"
+    "line": 390,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 430,
-    "kind": "negate-if"
+    "line": 447,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 459,
-    "kind": "negate-if"
+    "line": 476,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 477,
-    "kind": "negate-if"
+    "line": 494,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 491,
-    "kind": "negate-if"
+    "line": 508,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 510,
-    "kind": "negate-if"
+    "line": 527,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 642,
-    "kind": "negate-if"
+    "line": 659,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 643,
-    "kind": "drop-report"
+    "line": 660,
+    "kind": "drop-report",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 652,
-    "kind": "drop-report"
+    "line": 669,
+    "kind": "drop-report",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 926,
-    "kind": "negate-if"
+    "line": 943,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 1554,
-    "kind": "negate-if"
+    "line": 1571,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 1591,
-    "kind": "negate-if"
+    "line": 1608,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 1598,
-    "kind": "negate-if"
+    "line": 1615,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 1612,
-    "kind": "negate-if"
+    "line": 1629,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    },
    {
-    "line": 1639,
-    "kind": "negate-if"
+    "line": 1656,
+    "kind": "negate-if",
+    "by": "NpcEditFormGuardsTest"
    }
   ],
   "excluded": [],
-  "sha256": "529b7a000913ff7cdac19812b11a18aa4b00c72f347ab4068625540eefd6b287"
+  "sha256": "b3991f0a75b7c530ce13372f23b211c988a4f37fe5410ea31d2d52459d9a4bfb"
  },
  "src/ctrmap/humaninterface/PaintForm.java": {
   "survivors": 0,
@@ -885,19 +1020,23 @@
   "killed_lines": [
    {
     "line": 458,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PaintFormGuardsTest"
    },
    {
     "line": 710,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PaintFormGuardsTest"
    },
    {
     "line": 712,
-    "kind": "drop-report"
+    "kind": "drop-report",
+    "by": "PaintFormGuardsTest"
    },
    {
     "line": 962,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PaintFormGuardsTest"
    }
   ],
   "excluded": [],
@@ -912,12 +1051,13 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 536,
-    "kind": "negate-if"
+    "line": 554,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    }
   ],
   "excluded": [],
-  "sha256": "f90687cbcec764594e0dcc761496d0c75d428844a8a3deb28f792a8f5697c626"
+  "sha256": "795d18b90d1e065a277a5a6e30bd56978b172c9df9d384d2b5fddea7196b451b"
  },
  "src/ctrmap/humaninterface/ScriptEditor.java": {
   "survivors": 0,
@@ -929,7 +1069,8 @@
   "killed_lines": [
    {
     "line": 950,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "ScriptAssemblerGuardTest"
    }
   ],
   "excluded": [],
@@ -944,164 +1085,180 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 602,
-    "kind": "drop-throw"
+    "line": 620,
+    "kind": "drop-throw",
+    "by": "DataSafetyGuardsTest"
    },
    {
-    "line": 602,
-    "kind": "swallow-throw"
+    "line": 620,
+    "kind": "swallow-throw",
+    "by": "DataSafetyGuardsTest"
    },
    {
-    "line": 769,
-    "kind": "negate-if"
+    "line": 787,
+    "kind": "negate-if",
+    "by": "NpcEntityGuardsTest"
    }
   ],
   "excluded": [],
-  "sha256": "1c94325da07d081e74487c24d29b42183f9653336c5bc2abe99dd4fb0135f12c"
+  "sha256": "b110e143004f69cb3a87d221b576af43280abd5c706f0b0f82b3b08dccd420b6"
  },
  "src/ctrmap/humaninterface/TilePainterForm.java": {
   "survivors": 0,
-  "killed": 33,
+  "killed": 29,
   "unmeasured": 0,
   "unmutable": 0,
   "excluded_count": 0,
   "lines": [],
   "killed_lines": [
    {
-    "line": 205,
-    "kind": "negate-if"
+    "line": 208,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 210,
-    "kind": "negate-if"
+    "line": 213,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 211,
-    "kind": "drop-throw"
+    "line": 214,
+    "kind": "drop-throw",
+    "by": "PlacementGuardsTest"
    },
    {
-    "line": 211,
-    "kind": "swallow-throw"
+    "line": 214,
+    "kind": "swallow-throw",
+    "by": "PlacementGuardsTest"
    },
    {
-    "line": 224,
-    "kind": "negate-if"
+    "line": 227,
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
-    "line": 225,
-    "kind": "drop-throw"
+    "line": 228,
+    "kind": "drop-throw",
+    "by": "PlacementGuardsTest"
    },
    {
-    "line": 225,
-    "kind": "swallow-throw"
-   },
-   {
-    "line": 242,
-    "kind": "negate-if"
+    "line": 228,
+    "kind": "swallow-throw",
+    "by": "PlacementGuardsTest"
    },
    {
     "line": 245,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
-    "line": 253,
-    "kind": "negate-if"
+    "line": 248,
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
-    "line": 326,
-    "kind": "negate-if"
+    "line": 256,
+    "kind": "negate-if",
+    "by": "PlacementGuardsTest"
    },
    {
-    "line": 347,
-    "kind": "negate-if"
+    "line": 329,
+    "kind": "negate-if",
+    "by": "DoorPropGuardsTest"
    },
    {
-    "line": 348,
-    "kind": "drop-throw"
+    "line": 356,
+    "kind": "drop-throw",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 348,
-    "kind": "swallow-throw"
+    "line": 356,
+    "kind": "swallow-throw",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 440,
-    "kind": "negate-if"
+    "line": 448,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 483,
-    "kind": "drop-throw"
+    "line": 491,
+    "kind": "drop-throw",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 483,
-    "kind": "swallow-throw"
+    "line": 491,
+    "kind": "swallow-throw",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 487,
-    "kind": "negate-if"
+    "line": 495,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 488,
-    "kind": "drop-throw"
+    "line": 496,
+    "kind": "drop-throw",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 488,
-    "kind": "swallow-throw"
+    "line": 496,
+    "kind": "swallow-throw",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 508,
-    "kind": "negate-if"
+    "line": 516,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 529,
-    "kind": "negate-if"
+    "line": 538,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 535,
-    "kind": "negate-if"
+    "line": 578,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 536,
-    "kind": "drop-throw"
+    "line": 627,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 536,
-    "kind": "swallow-throw"
+    "line": 660,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 566,
-    "kind": "negate-if"
+    "line": 667,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 615,
-    "kind": "negate-if"
+    "line": 678,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 648,
-    "kind": "negate-if"
+    "line": 682,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 655,
-    "kind": "negate-if"
+    "line": 777,
+    "kind": "negate-if",
+    "by": "PaintApplyGuardsTest"
    },
    {
-    "line": 666,
-    "kind": "negate-if"
-   },
-   {
-    "line": 670,
-    "kind": "negate-if"
-   },
-   {
-    "line": 765,
-    "kind": "negate-if"
-   },
-   {
-    "line": 922,
-    "kind": "negate-if"
+    "line": 934,
+    "kind": "negate-if",
+    "by": "DoorPropGuardsTest"
    }
   ],
   "excluded": [],
-  "sha256": "91c1d007f9fea32e2b3ebc1fa261721b6ef6f469fe32478162bd3fe89fea20b5"
+  "sha256": "9e9ec3f95d60034d3b9ee7fba782aad7d8d1d1bedb57c1d6da213dd04e82fc2b"
  },
  "src/ctrmap/humaninterface/WarpEditForm.java": {
   "survivors": 0,
@@ -1113,15 +1270,18 @@
   "killed_lines": [
    {
     "line": 66,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DataSafetyGuardsTest"
    },
    {
     "line": 187,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DataSafetyGuardsTest"
    },
    {
     "line": 473,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DataSafetyGuardsTest"
    }
   ],
   "excluded": [],
@@ -1136,20 +1296,23 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 166,
-    "kind": "negate-if"
+    "line": 175,
+    "kind": "negate-if",
+    "by": "WorkspaceRepointTest"
    },
    {
-    "line": 178,
-    "kind": "negate-if"
+    "line": 187,
+    "kind": "negate-if",
+    "by": "WorkspaceRepointTest"
    },
    {
-    "line": 179,
-    "kind": "flip-return"
+    "line": 188,
+    "kind": "flip-return",
+    "by": "WorkspaceRepointTest"
    }
   ],
   "excluded": [],
-  "sha256": "1f4d62d48062167864a6cee40b640c33756d299aed690afffe3c6085ca0af713"
+  "sha256": "5ef06852dd54b803870f4215723ca037a98c39d5a621e77835ba966084e701aa"
  },
  "src/ctrmap/humaninterface/ZoneLoadingPanel.java": {
   "survivors": 0,
@@ -1161,11 +1324,12 @@
   "killed_lines": [
    {
     "line": 430,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "DataSafetyGuardsTest"
    }
   ],
   "excluded": [],
-  "sha256": "2505af60b07b97fcee8fc92c56e858af459e0fbebac586c3d97cd2aaf3b26c08"
+  "sha256": "2715d885a924af459e102e05d40c24ca86316cb8b07ef5df218a932634531f6d"
  },
  "src/ctrmap/setup/SetupWizard.java": {
   "survivors": 0,
@@ -1177,15 +1341,18 @@
   "killed_lines": [
    {
     "line": 750,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "WorkspaceRepointTest"
    },
    {
     "line": 759,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "WorkspaceRepointTest"
    },
    {
     "line": 764,
-    "kind": "flip-return"
+    "kind": "flip-return",
+    "by": "WorkspaceRepointTest"
    }
   ],
   "excluded": [],
@@ -1201,44 +1368,52 @@
   "killed_lines": [
    {
     "line": 189,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "HarvesterGuardsTest"
    },
    {
     "line": 325,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "HarvesterGuardsTest"
    },
    {
     "line": 336,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "HarvesterGuardsTest"
    },
    {
     "line": 359,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "HarvesterGuardsTest"
    },
    {
     "line": 364,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "HarvesterGuardsTest"
    },
    {
     "line": 395,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "HarvesterGuardsTest"
    },
    {
     "line": 580,
-    "kind": "negate-if"
+    "kind": "negate-if",
+    "by": "HarvesterGuardsTest"
    }
   ],
   "excluded": [],
   "sha256": "70794c9805981aee9136eb44b549158377b572c98ba222239d8850b731115701"
  },
  "_meta": {
-  "measured_at": "4402ef2",
-  "measurements": 237,
-  "distinct": 209,
-  "attempted": 209,
+  "measured_at": "4de8135",
+  "work_order_override": null,
+  "measurements": 230,
+  "distinct": 202,
+  "attempted": 202,
   "survived": 0,
-  "killed": 209,
-  "killed_by_flood": 1,
+  "killed": 202,
+  "killed_by_flood": 0,
   "hung": 0,
   "nocompile": 0,
   "unmeasured": 0,
