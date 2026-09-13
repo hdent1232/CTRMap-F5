@@ -363,8 +363,14 @@ public class ModDeployerTest {
 		File junk2 = new File(tmp, "junk2");
 		Files.write(junk1.toPath(), new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
 		Files.write(junk2.toPath(), new byte[]{9, 9, 9, 9});
-		check(ModDeployer.garcContentsEqual(junk1, junk2),
-				"two files that are not archives at all compare EQUAL (pinned, not endorsed)");
+		//RETARGETED, and the defect it pinned is gone. It recorded that two files which are
+		//not archives at all compared EQUAL - pinned, not endorsed - because a half-parsed
+		//GARC reported zero entries and two of those matched. Equal here means "already
+		//shipped, skip it", so an archive the deployer could not read was precisely the one
+		//it decided not to deploy.
+		check(!ModDeployer.garcContentsEqual(junk1, junk2),
+				"two files that are not archives at all are NOT equal - a file that cannot be"
+				+ " read is not evidence that it matches anything");
 		check(!ModDeployer.garcContentsEqual(a, junk1),
 				"a real archive and an unreadable one compare unequal, so the unreadable one gets shipped");
 	}

@@ -641,8 +641,10 @@ public class GeoEditForm extends JPanel {
 		if (gr == null || currentModel == null || !unsaved) {
 			return;
 		}
-		if (!gr.storeFile(1, currentModel)) {
-			status.setText("Could not write the model.");
+		try {
+			gr.storeFile(1, currentModel);
+		} catch (RuntimeException notWritten) {
+			status.setText("Could not write the model: " + ctrmap.util.Bytes.reason(notWritten));
 			return;
 		}
 		for (Map.Entry<Integer, byte[]> e : currentColl.entrySet()) {

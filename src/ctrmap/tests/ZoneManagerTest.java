@@ -185,17 +185,19 @@ public class ZoneManagerTest {
 	}
 
 	/**
-	 * SUSPECTED DEFECT, PINNED NOT FIXED. clearZone opens with a null check on
-	 * the extracted file and an IOException naming the zone, which reads as the
-	 * out-of-range guard. It is not one: WorkspaceSession.getWorkspaceFile hands back the
-	 * File it would have written whether or not the archive holds that entry (it
-	 * returns null only for an entry that decompresses to nothing), so for an
-	 * out-of-range index the check never fires. Such an index reaches the
-	 * container constructor instead, which
-	 * logs a FileNotFoundException to stderr and carries on, and the failure
-	 * finally surfaces as a NullPointerException out of the entity parser. A
-	 * negative index fails earlier still, inside the GARC. Both are pinned by
-	 * TYPE, because the message text is the JVM's, not this program's.
+	 * THE DEFECT THIS PINNED IS FIXED, and the pin now says what happens instead.
+	 *
+	 * <p>It used to record this: clearZone opens with a null check that reads like an
+	 * out-of-range guard and is not one, so an index past the end reached the container
+	 * constructor, which LOGGED a FileNotFoundException to stderr and carried on - and
+	 * the failure finally surfaced as a NullPointerException out of the entity parser,
+	 * three layers from the cause and naming nothing.
+	 *
+	 * <p>A container refuses to be one it cannot read now: {@code open()} verifies the
+	 * header and the offsets and throws with the file named. So the claim here is no
+	 * longer "it fails somewhere eventually" but "it refuses, and says which file" - and
+	 * a NullPointerException from the parser would fail this check, which is the whole
+	 * point of keeping it. The negative index still fails inside the GARC, earlier.
 	 */
 	private static void clearOutOfRange() {
 		int past = Workspace.getArchive(ArchiveType.ZONE_DATA).length + 100;
@@ -203,9 +205,13 @@ public class ZoneManagerTest {
 			int n = ZoneManager.clearZone(Workspace.session(), past);
 			check(false, "clearZone(" + past + ") returned " + n + " instead of failing");
 		} catch (Throwable t) {
-			check(t instanceof NullPointerException,
-					"clearZone past the end of the archive fails with " + t.getClass().getSimpleName()
-					+ " (not the IOException the guard above it reads like)");
+			check(!(t instanceof NullPointerException) && t.getMessage() != null
+				&& !t.getMessage().trim().isEmpty(),
+					"clearZone past the end of the archive refuses and says why: "
+					+ t.getClass().getSimpleName() + " - " + t.getMessage()
+					+ " (it used to surface as a NullPointerException out of the entity parser,"
+					+ " three layers from the container that had already logged the real reason to"
+					+ " stderr and carried on)");
 		}
 		try {
 			int n = ZoneManager.clearZone(Workspace.session(), -1);

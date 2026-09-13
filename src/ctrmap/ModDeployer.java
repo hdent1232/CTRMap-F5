@@ -8,6 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.List;
 
 /**
@@ -304,8 +306,21 @@ public class ModDeployer {
 
 	/** True when two GARCs hold identical decompressed contents (ignoring container/compression bytes). */
 	public static boolean garcContentsEqual(File a, File b) {
-		GARC ga = new GARC(a);
-		GARC gb = new GARC(b);
+		GARC ga;
+		GARC gb;
+		try {
+			ga = new GARC(a);
+			gb = new GARC(b);
+		} catch (RuntimeException notAnArchive) {
+			//A FILE THAT CANNOT BE READ IS NOT EVIDENCE OF SAMENESS. This used to answer
+			//TRUE for two files that are not archives at all - it was pinned as a defect,
+			//not endorsed - because a half-parsed GARC reported zero entries and two of
+			//those matched. "Equal" here means "already shipped, skip it", so an archive
+			//the deployer could not read was the one it decided not to deploy.
+			Logger.getLogger(ModDeployer.class.getName()).log(Level.WARNING,
+				"comparing " + a + " with " + b + ": " + ctrmap.util.Bytes.reason(notAnArchive));
+			return false;
+		}
 		if (ga.length != gb.length) {
 			return false;
 		}

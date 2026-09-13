@@ -181,7 +181,7 @@ public abstract class AbstractGamefreakContainer {
 			}
 			return true;
 		} catch (IOException e) {
-			whyNot = "could not read " + f.getName() + ": " + ctrmap.Ui.reason(e);
+			whyNot = "could not read " + f.getName() + ": " + ctrmap.util.Bytes.reason(e);
 			return false;
 		}
 	}
@@ -267,7 +267,7 @@ public abstract class AbstractGamefreakContainer {
 
 	/**
 	 * Stores a subfile, rewriting the container on disk and reporting the file as edited
-	 * to the handed {@link GameFiles}. Returns true; a write that failed THROWS.
+	 * to the handed {@link GameFiles}. Returns NOTHING; a write that failed THROWS.
 	 *
 	 * <p>IT USED TO RETURN FALSE, and twelve callers dropped the answer - two of them in
 	 * the fog editor, one statement before telling the user the atmosphere was saved.
@@ -277,10 +277,18 @@ public abstract class AbstractGamefreakContainer {
 	 *
 	 * <p>A boolean nobody is obliged to read is a convention. This throws, so the only
 	 * way to carry on past a failed write is a catch somebody wrote on purpose - and the
-	 * UI paths already report a thrown exception through {@code Ui.error}. The boolean
-	 * return is kept so the callers that DO check still compile and still read well.
+	 * UI paths already report a thrown exception through {@code Ui.error}.
+	 *
+	 * <p>AND IT RETURNS VOID, because keeping the boolean "so the callers that check
+	 * still compile" is what made the next defect. Twelve of those checks could no
+	 * longer fail, and two of them held the only refusal that named what the user was
+	 * editing - "could not write region 153", "could not write area 21 subfile 11" -
+	 * so the message became a temp path and a subfile number. A boolean that can only
+	 * be true is a trap with an invitation attached; void turns every {@code if
+	 * (!storeFile(...))} into a compile error instead, and the callers that want their
+	 * own name on the failure catch this and say so with the cause attached.
 	 */
-	public boolean storeFile(int num, byte[] data) {
+	public void storeFile(int num, byte[] data) {
 		byte[] paddedData;
 		if (getIsPadded()){
 			byte[] padding = ctrmap.util.Bytes.getPadding(getOffset(num), data.length);
@@ -292,7 +300,7 @@ public abstract class AbstractGamefreakContainer {
 			paddedData = data;
 		}
 		if (!checkStoreStatus(num, paddedData)){
-			return true;
+			return;
 		}
 		try {
 			int pos = 0;
@@ -333,27 +341,34 @@ public abstract class AbstractGamefreakContainer {
 			out.flush();
 			out.close();
 			files.edited(getOriginFile());
-			return true;
 		} catch (IOException e) {
 			//THROWN, not returned: see the javadoc. The message names the file and the
 			//subfile, because "could not write" with no name is what the user used to get
 			//on a console they do not have.
 			throw new IllegalStateException("could not write subfile " + num + " of "
-				+ f.getName() + ": " + ctrmap.Ui.reason(e), e);
+				+ f.getName() + ": " + ctrmap.util.Bytes.reason(e), e);
 		}
 	}
 
-	public boolean storeFile(int num, File f){
+	/**
+	 * The same store, reading the bytes out of a file first.
+	 *
+	 * <p>IT LOGGED AND ANSWERED FALSE, which is the import path in the archive
+	 * browser: a file that could not be read got a line on a console the user does not
+	 * have and a false nobody downstream distinguished from "the container refused".
+	 * It throws like the other one now, naming both files.
+	 */
+	public void storeFile(int num, File f) {
 		try {
 			InputStream in = new FileInputStream(f);
 			byte[] b = new byte[in.available()];
 			in.read(b);
-			boolean ok = storeFile(num, b);
 			in.close();
-			return ok;
-		} catch (IOException ex) {
-			Logger.getLogger(AbstractGamefreakContainer.class.getName()).log(Level.SEVERE, null, ex);
-			return false;
+			storeFile(num, b);
+		} catch (IOException cannotRead) {
+			throw new IllegalStateException("could not read " + f.getName() + " to store it as"
+				+ " subfile " + num + " of " + getOriginFile().getName() + ": "
+				+ ctrmap.util.Bytes.reason(cannotRead), cannotRead);
 		}
 	}
 }

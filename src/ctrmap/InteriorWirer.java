@@ -85,8 +85,14 @@ public class InteriorWirer {
 		}
 		ent.modified = true;
 		byte[] assembled = ent.assembleData();
-		if (assembled == null || !zo.storeFile(1, assembled)) {
-			throw new IOException("Could not write the rewired interior (zone " + targetSlot + ").");
+		if (assembled == null) {
+			throw new IOException("Could not rebuild the rewired interior (zone " + targetSlot + ").");
+		}
+		try {
+			zo.storeFile(1, assembled);
+		} catch (RuntimeException notWritten) {
+			throw new IOException("Could not write the rewired interior (zone " + targetSlot + "): "
+				+ ctrmap.util.Bytes.reason(notWritten), notWritten);
 		}
 		return ent.warps.size() - exits.size();
 	}

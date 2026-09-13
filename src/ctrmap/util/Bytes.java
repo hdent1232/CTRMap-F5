@@ -29,6 +29,21 @@ import static ctrmap.formats.LittleEndian.u16;
  */
 public final class Bytes {
 
+	/**
+	 * What went wrong, in words: the exception's message, or its type when it gave none.
+	 *
+	 * <p>HERE BECAUSE THE FORMAT LAYER MAY NOT SPEAK TO THE UI. Ui.reason has said this
+	 * for the window side for a long time, and when the container and GARC readers
+	 * started naming their failures they reached for it - which SourceSeamTest caught,
+	 * correctly: a format class is handed what it needs and answers in its return value.
+	 * The alternative was a second copy of three lines, which is the other thing this
+	 * tree is being cleared of, so the function moved somewhere both layers may stand.
+	 */
+	public static String reason(Throwable ex) {
+		String m = ex.getMessage();
+		return m == null || m.trim().isEmpty() ? ex.toString() : m;
+	}
+
 	private Bytes() {
 	}
 

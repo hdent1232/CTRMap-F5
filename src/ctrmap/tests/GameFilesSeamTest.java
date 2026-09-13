@@ -94,11 +94,162 @@ public class GameFilesSeamTest {
 			Workspace.reset();
 		}
 		theFormatLayerReachesTheGlobalLess(classes);
+		File src = new File(args.length > 0 ? args[0] : "src");
+		aWriteAnswersNothing(src);
+		anAnswerThatCanOnlyBeYesIsNoAnswer(src);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	// ------------------------------------------------------ 0. a write answers nothing
+	/**
+	 * {@code storeFile} is declared void, and no production source reads an answer from it.
+	 *
+	 * <p>It used to return a boolean. When a failed write was made to THROW instead, the
+	 * boolean was kept - the commit said "so the callers that DO check still compile and
+	 * still read well" - and that is exactly what broke: twelve {@code if
+	 * (!storeFile(...))} refusals could no longer fail, and two of them held the only
+	 * message that named what the user was editing. The Apply that could not write a
+	 * region stopped saying "could not write region 153" and started quoting a temp path
+	 * and a subfile number. {@code PaintApplyGuardsTest} caught both.
+	 *
+	 * <p>WHY THIS CHECK EXISTS WHEN JAVAC ALREADY REFUSES IT. Void makes every
+	 * {@code if (!storeFile(...))} a compile error, which is the real guard and needs no
+	 * suite. What javac cannot refuse is somebody handing the method its boolean back -
+	 * a one-word edit that compiles, reads like a courtesy to old callers, and silently
+	 * reopens the twelve. This says no to the declaration.
+	 */
+	static void aWriteAnswersNothing(File src) throws Exception {
+		System.out.println("--- a container write answers nothing, so a dead refusal cannot compile");
+		File base = new File(src, "ctrmap/formats/containers/AbstractGamefreakContainer.java");
+		check(base.isFile(), "the container base is where it was: " + base.getPath());
+		String text = new String(java.nio.file.Files.readAllBytes(base.toPath()),
+			java.nio.charset.StandardCharsets.UTF_8);
+		java.util.regex.Matcher m = java.util.regex.Pattern
+			.compile("public\\s+(\\w+)\\s+storeFile\\s*\\(").matcher(text);
+		java.util.List<String> answering = new java.util.ArrayList<>();
+		int found = 0;
+		while (m.find()) {
+			found++;
+			if (!"void".equals(m.group(1))) {
+				answering.add(m.group(1));
+			}
+		}
+		check(found >= 2, found + " storeFile overloads declared (the bytes one and the file one)");
+		check(answering.isEmpty(), "every storeFile is declared void" + (answering.isEmpty() ? ""
+			: ", but " + answering + " answers instead - a write that failed THROWS, so an answer"
+			+ " can only ever be the success one, and twelve callers once wrote refusals against"
+			+ " it that could not fire"));
+		
+		//and nothing in production reads one. The compiler enforces this while the
+		//declaration stays void; the point of checking the text too is that the pair is
+		//what holds - a boolean put back with no caller is harmless until the next caller.
+		java.util.List<String> readers = new java.util.ArrayList<>();
+		java.util.regex.Pattern reads = java.util.regex.Pattern
+			.compile("(if\\s*\\(\\s*!|&=|\\|=|=\\s*)[\\w.()\\[\\]]*\\.storeFile\\(");
+		for (File j : DialogSeamTest.javaSources(new File(src, "ctrmap"))) {
+			if (j.getParentFile() != null && j.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			String body = new String(java.nio.file.Files.readAllBytes(j.toPath()),
+				java.nio.charset.StandardCharsets.UTF_8);
+			if (reads.matcher(body).find()) {
+				readers.add(j.getName());
+			}
+		}
+		check(readers.isEmpty(), "no production source reads an answer from a container write"
+			+ (readers.isEmpty() ? "" : ", but these do: " + readers));
+	}
+
+	// ------------------------------------------------------ 0b. an answer that can only be yes
+	/**
+	 * No production method answers boolean when the only answer it can give is true.
+	 *
+	 * <p>THE GENERALISATION OF THE ONE ABOVE, and the reason that one is not enough:
+	 * {@code storeFile} was not special. The shape is - a method keeps a boolean result
+	 * after its failure path becomes a throw, so the answer is structurally always yes,
+	 * and every caller that wrote {@code if (!it())} has a refusal that can never fire.
+	 * Those refusals read exactly like working ones, which is why twelve of them survived
+	 * review, and two held the only message naming the region or area the user was
+	 * editing. A suite that only knew about storeFile would have watched the next one
+	 * happen somewhere else.
+	 *
+	 * <p>MEASURED AT ZERO on 2026-09-13, across every production source, which is the
+	 * cheapest moment there will ever be to refuse the next one. The way out is not an
+	 * exception list: it is to return void, which is what the answer already meant.
+	 *
+	 * <p>WHAT IT LOOKS AT. A method declared to answer boolean, whose body holds at
+	 * least one {@code throw} and whose every {@code return} is the literal
+	 * {@code true}. A predicate that returns an expression is not this; nor is one with
+	 * no failure path at all, which has nothing to have hidden.
+	 */
+	static void anAnswerThatCanOnlyBeYesIsNoAnswer(File src) throws Exception {
+		System.out.println("--- no production method answers boolean when the answer can only be yes");
+		java.util.regex.Pattern sig = java.util.regex.Pattern.compile(
+			"(?:public|protected|private|static|final|synchronized|\\s)+boolean\\s+(\\w+)\\s*\\([^;{]*\\)\\s*(?:throws[^{;]+)?\\{");
+		java.util.regex.Pattern ret = java.util.regex.Pattern.compile("return\\s+([^;]+);");
+		java.util.List<String> onlyYes = new java.util.ArrayList<>();
+		int looked = 0;
+		for (File j : DialogSeamTest.javaSources(new File(src, "ctrmap"))) {
+			if (j.getParentFile() != null && j.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			String body = new String(java.nio.file.Files.readAllBytes(j.toPath()),
+				java.nio.charset.StandardCharsets.UTF_8).replace("\\r", "");
+			java.util.regex.Matcher m = sig.matcher(body);
+			while (m.find()) {
+				looked++;
+				String inner = methodBody(body, m.end() - 1);
+				if (inner == null || inner.indexOf("throw ") < 0) {
+					continue;
+				}
+				java.util.Set<String> answers = new java.util.HashSet<>();
+				java.util.regex.Matcher r = ret.matcher(inner);
+				while (r.find()) {
+					answers.add(r.group(1).trim());
+				}
+				if (answers.size() == 1 && answers.contains("true")) {
+					onlyYes.add(j.getName() + ":" + (1 + countLines(body, m.start())) + " " + m.group(1));
+				}
+			}
+		}
+		check(looked > 100, looked + " boolean method(s) read, so the scan found the program");
+		check(onlyYes.isEmpty(), "no method answers boolean when its only answer is true"
+			+ (onlyYes.isEmpty() ? " (" + looked + " read)" : ", but these do: " + onlyYes
+			+ " - a caller that writes a refusal against one of these has written a refusal"
+			+ " that can never fire, which is how twelve of them got into this program. Return"
+			+ " void: it is what the answer already meant"));
+	}
+
+	/** The text between the brace at {@code open} and its match, or null if unbalanced. */
+	static String methodBody(String text, int open) {
+		int depth = 0;
+		for (int i = open; i < text.length(); i++) {
+			char c = text.charAt(i);
+			if (c == '{') {
+				depth++;
+			} else if (c == '}') {
+				depth--;
+				if (depth == 0) {
+					return text.substring(open, i);
+				}
+			}
+		}
+		return null;
+	}
+
+	/** Newlines before {@code at}. */
+	static int countLines(String text, int at) {
+		int n = 0;
+		for (int i = 0; i < at && i < text.length(); i++) {
+			if (text.charAt(i) == '\n') {
+				n++;
+			}
+		}
+		return n;
 	}
 
 	// ------------------------------------------------------ 1. handed a game, no workspace

@@ -654,8 +654,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					throw new IllegalStateException("merged texture pack is missing " + (missing.size() - imported.size()) + " of the imported textures");
 				}
 				//the single write: the workspace AD file, persisted by storeFile itself
-				if (!header.areadata.storeFile(1, merged)) {
-					throw new IOException("could not write the merged texture pack to the workspace area data file");
+				try {
+					header.areadata.storeFile(1, merged);
+				} catch (RuntimeException notWritten) {
+					throw new IOException("could not write the merged texture pack to the workspace area"
+						+ " data file: " + ctrmap.util.Bytes.reason(notWritten), notWritten);
 				}
 				//minimal in-memory refresh instead of a zone reload
 				if (propTextures != null) {
@@ -1096,8 +1099,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 						if (packBch.errorlevel != 0) {
 							throw new IllegalStateException("the merged texture pack failed verification");
 						}
-						if (!header.areadata.storeFile(1, merged)) {
-							throw new IllegalStateException("could not write the area's texture pack");
+						try {
+							header.areadata.storeFile(1, merged);
+						} catch (RuntimeException notWritten) {
+							throw new IllegalStateException("could not write the area's texture pack: "
+								+ ctrmap.util.Bytes.reason(notWritten), notWritten);
 						}
 						Workspace.addPersist(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, header.areadataID));
 						for (H3DTexture t : packBch.textures) {

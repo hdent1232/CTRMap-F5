@@ -96,6 +96,7 @@ public class EditToolGuardsTest {
 			triggerToolDrawsBothLists();
 			warpToolDrawsAndDragsWarps();
 			theToolsThatRefreshTheCameraForm();
+			aCameraTableThatCannotBeReadEmptiesTheFormAndSaysSo(dump);
 			theTileInspectorAsksForNoRepaintOfItsOwn();
 			withTheWindow(dump);
 		} finally {
@@ -1033,6 +1034,108 @@ public class EditToolGuardsTest {
 		t.onTileMouseUp(EditorBench.release(50, 50, false));
 		t.onTileMouseDragged(EditorBench.drag(50, 50, false));
 		check(t1a.x == 30, "and after the release the drag no longer moves it");
+	}
+
+	/**
+	 * A camera table that cannot be read empties the form, says so, and writes nothing.
+	 *
+	 * <p>WHAT THIS PINS, AND WHY IT IS THREE THINGS. The parser used to catch the
+	 * failure, print the stack trace to a console this program's users do not have, and
+	 * finish half-built: the declared count in one field, however many cameras were read
+	 * in the other - or null. The form then showed that list and its Save button wrote
+	 * {@code camData.size()} entries back over the area, so a table the editor could not
+	 * read became a table holding the part it managed and no record of the rest.
+	 *
+	 * <p>So: it refuses and the refusal reaches the user (1), the form holds nothing
+	 * rather than the last zone's cameras (2), and the area on disk is byte for byte
+	 * what it was (3). The third is the one that matters to a save.
+	 *
+	 * <p>AND THE ZONE STILL OPENS. The zone-editor list hands the zone to every editor
+	 * in order and stops at the first throw, so a refusal thrown from where the window
+	 * used to build this would have taken the NPC editor and everything after it down
+	 * with it. 228 of the 229 retail areas parse - measured - which is exactly why the
+	 * 229th must not be what stops a zone loading.
+	 */
+	static void aCameraTableThatCannotBeReadEmptiesTheFormAndSaysSo(File dump) throws Exception {
+		System.out.println("--- a camera table that cannot be read: the form empties and says so");
+		File garcFile = new File(dump, Workspace.getArchivePath(ArchiveType.AREA_DATA, GameType.ORAS));
+		if (!garcFile.isFile()) {
+			System.out.println("  skip: no dump at " + dump);
+			return;
+		}
+		GARC garc = new GARC(garcFile);
+		FakeGameFiles game = new FakeGameFiles();
+		File tmp = File.createTempFile("ctrmap_camguard", ".bin");
+		tmp.deleteOnExit();
+		Files.write(tmp.toPath(), garc.getDecompressedEntry(0));
+		AD ad = new AD(tmp, game);
+		//A TABLE THAT SAYS THREE AND HOLDS ONE, which is the shape that mattered: an
+		//absurd count is easy to refuse, but a count that is merely WRONG used to
+		//produce three cameras - one real and two built out of the -1s an exhausted
+		//stream answers with - because both record readers caught their own
+		//IOException and printed it.
+		java.io.ByteArrayOutputStream table = new java.io.ByteArrayOutputStream();
+		ctrmap.LittleEndianDataOutputStream into = new ctrmap.LittleEndianDataOutputStream(table);
+		into.writeInt(3);
+		new ctrmap.formats.cameradata.CameraData().write(into);
+		into.close();
+		ad.storeFile(3, table.toByteArray());
+		byte[] was = Files.readAllBytes(tmp.toPath());
+		
+		ctrmap.humaninterface.CameraEditForm form = new ctrmap.humaninterface.CameraEditForm(
+			new ctrmap.humaninterface.Redraw() {
+				@Override
+				public void all() {
+					//nothing to draw in a suite
+				}
+			});
+		final java.util.List<String> said = new java.util.ArrayList<>();
+		ctrmap.Ui.into(new ctrmap.Ui.Sink() {
+			@Override
+			public void message(java.awt.Component parent, String text, String title, int type) {
+				said.add(title + ": " + text);
+			}
+			
+			@Override
+			public int confirm(java.awt.Component parent, String text, String title, int optionType) {
+				said.add("ASKED " + title + ": " + text);
+				return javax.swing.JOptionPane.CLOSED_OPTION;
+			}
+			
+			@Override
+			public int option(java.awt.Component parent, String text, String title, Object[] options) {
+				said.add("ASKED " + title + ": " + text);
+				return javax.swing.JOptionPane.CLOSED_OPTION;
+			}
+			
+			@Override
+			public Object input(java.awt.Component parent, String text, String title, int type,
+				Object[] options, Object initial) {
+				said.add("ASKED " + title + ": " + text);
+				return null;
+			}
+		});
+		try {
+			RuntimeException escaped = null;
+			try {
+				form.loadFrom(ad);
+			} catch (RuntimeException ex) {
+				escaped = ex;
+			}
+			check(escaped == null, "loading a camera table that cannot be read throws nothing at the"
+				+ " zone-editor list, which stops at the first throw (got " + escaped + ")");
+			check(said.size() == 1 && said.get(0).contains("camera table could not be read"),
+				"and the refusal reaches the user: " + said);
+			check(!said.isEmpty() && said.get(0).contains("rest of the zone is loaded"),
+				"saying the rest of the zone is there, which is what makes it safe to carry on");
+			check(form.store(false), "the emptied form answers yes to the zone save - it holds"
+				+ " nothing, so there is nothing to refuse");
+			check(java.util.Arrays.equals(was, Files.readAllBytes(tmp.toPath())),
+				"and the area on disk is byte for byte what it was: a table this editor could not"
+				+ " read is not a table it writes back");
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
 	}
 
 	/**

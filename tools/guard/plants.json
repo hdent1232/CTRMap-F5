@@ -1786,6 +1786,57 @@
     "src"
    ],
    "must_say": "may fall and may not rise"
+  },
+  {
+   "id": "the-region-refusal-loses-the-region",
+   "why": "storeFile was made to THROW on a failed write and its boolean was KEPT, the commit saying \"so the callers that DO check still compile and still read well\". Twelve `if (!storeFile(...))` refusals could no longer fire, and two of them held the only message that named what the user was editing. It returns void now, so javac refuses a dead refusal (proven by hand: 'void' type not allowed here), and the callers that want their own name on the failure catch it and say so with the cause attached. This plant rethrows the container's exception untouched, which is exactly what the regression looked like: an Apply that could not write region 153 reported a temp path and a subfile number, with nothing to tell the user which part of their map had not been written.",
+   "file": "src/ctrmap/humaninterface/TilePainterForm.java",
+   "find": "\t\t\t} catch (RuntimeException notWritten) {\n\t\t\t\t//THE REGION KEEPS ITS OWN NAME ON THE FAILURE, for the same reason the area\n\t\t\t\t//does: this is the write the whole Apply exists to make.\n\t\t\t\tthrow new IllegalStateException(\"could not write region \" + dest + \": \"\n\t\t\t\t\t+ ctrmap.util.Bytes.reason(notWritten), notWritten);\n\t\t\t}\n",
+   "replace": "\t\t\t} catch (RuntimeException notWritten) {\n\t\t\t\tthrow notWritten; //PLANTED: the container names a temp path, not the region\n\t\t\t}\n",
+   "suite": "ctrmap.tests.PaintApplyGuardsTest",
+   "args": [
+    "${PRISTINE}",
+    "src"
+   ],
+   "must_say": "FAIL: a region the workspace cannot write stops the Apply and names it"
+  },
+  {
+   "id": "the-area-refusal-loses-the-area",
+   "why": "storeFile was made to THROW on a failed write and its boolean was KEPT, the commit saying \"so the callers that DO check still compile and still read well\". Twelve `if (!storeFile(...))` refusals could no longer fire, and two of them held the only message that named what the user was editing. It returns void now, so javac refuses a dead refusal (proven by hand: 'void' type not allowed here), and the callers that want their own name on the failure catch it and say so with the cause attached. The area commit is the worse half of the pair: everything an Apply changes in an area is held in memory and committed at the end, AFTER the map itself has landed. A refusal that does not name the area leaves the user with a map on disk whose materials name textures the area does not hold - the condition the prop code calls a hardlock - and a message about a temp file to work it out from.",
+   "file": "src/ctrmap/humaninterface/TilePainterForm.java",
+   "find": "\t\t\t\t} catch (RuntimeException notWritten) {\n\t\t\t\t\t//THE AREA KEEPS ITS OWN NAME ON THE FAILURE. The container says which file and\n\t\t\t\t\t//which subfile, in a temp path the user never chose; this says which area of\n\t\t\t\t\t//which game, which is what the Apply was about.\n\t\t\t\t\tthrow new IllegalStateException(\"could not write area \" + areaId\n\t\t\t\t\t\t+ \" subfile \" + e.getKey() + \": \" + ctrmap.util.Bytes.reason(notWritten), notWritten);\n\t\t\t\t}\n",
+   "replace": "\t\t\t\t} catch (RuntimeException notWritten) {\n\t\t\t\t\tthrow notWritten; //PLANTED: the container names a temp path, not the area\n\t\t\t\t}\n",
+   "suite": "ctrmap.tests.PaintApplyGuardsTest",
+   "args": [
+    "${PRISTINE}",
+    "src"
+   ],
+   "must_say": "FAIL: an area the workspace cannot write stops the Apply and names it"
+  },
+  {
+   "id": "a-write-answers-yes-again",
+   "why": "The generalisation of the two refusal plants, and the reason they are not enough on their own. storeFile kept a boolean return after its failure path became a throw, so the answer was structurally always yes and twelve callers' `if (!storeFile(...))` refusals could never fire - two of them holding the only message that named the region or area the user was editing. Void made those a compile error (proven by hand: javac says 'void' type not allowed here), but javac cannot refuse somebody handing the method its boolean BACK, which is the one-word edit that started it. This gives the file overload an answer that can only be true, which compiles, and the shape check has to notice it in a program of 277 boolean methods without being told where to look.",
+   "file": "src/ctrmap/formats/containers/AbstractGamefreakContainer.java",
+   "find": "\tpublic void storeFile(int num, File f) {\n\t\ttry {\n\t\t\tInputStream in = new FileInputStream(f);\n\t\t\tbyte[] b = new byte[in.available()];\n\t\t\tin.read(b);\n\t\t\tin.close();\n\t\t\tstoreFile(num, b);\n\t\t} catch (IOException cannotRead) {\n",
+   "replace": "\tpublic boolean storeFile(int num, File f) {\n\t\ttry {\n\t\t\tInputStream in = new FileInputStream(f);\n\t\t\tbyte[] b = new byte[in.available()];\n\t\t\tin.read(b);\n\t\t\tin.close();\n\t\t\tstoreFile(num, b);\n\t\t\treturn true; //PLANTED: an answer that can only ever be yes\n\t\t} catch (IOException cannotRead) {\n",
+   "suite": "ctrmap.tests.GameFilesSeamTest",
+   "args": [
+    "src",
+    "build/classes"
+   ],
+   "must_say": "FAIL: no method answers boolean when its only answer is true"
+  },
+  {
+   "id": "a-camera-table-half-read-is-offered-anyway",
+   "why": "Three readers in the camera package caught their own IOException and printed it to a console this program's users do not have: the file, the record and the record's coordinates. dis.read() answers -1 at the end of a stream rather than throwing, so a table that declared more cameras than it held produced records built out of -1s for as long as the count said, numEntries and camData.size() disagreed, and nothing downstream could tell. The editor then offered those cameras with a Save button, and write() assembles the table from camData and stores it - so a table this editor could not read became a table holding the part it managed, over the area's real one, reported as saved. Both writers swallowed the same way, which turned a record that refused to serialise into a short buffer stored over the table. This plant puts the file reader's catch back; the guard watches the whole path, from the bytes to what the user is told.",
+   "file": "src/ctrmap/formats/cameradata/CameraDataFile.java",
+   "find": "\t\t} catch (IOException notATable) {\n\t\t\t//REFUSED, not logged: see the javadoc. The message names the area file, because\n\t\t\t//\"could not read the cameras\" with nothing after it is what the console used to\n\t\t\t//get, on a machine whose user never sees one.\n\t\t\tthrow new IllegalStateException(\"the camera table in \" + name() + \" could not be read\"\n\t\t\t\t+ \" (read \" + (camData == null ? 0 : camData.size()) + \" of the \" + numEntries\n\t\t\t\t+ \" it declares): \" + ctrmap.util.Bytes.reason(notATable), notATable);\n\t\t}\n",
+   "replace": "\t\t} catch (IOException notATable) {\n\t\t\tnotATable.printStackTrace(); //PLANTED: a console the user has not got\n\t\t}\n",
+   "suite": "ctrmap.tests.EditToolGuardsTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "FAIL: and the refusal reaches the user: []"
   }
  ],
  "retired": [

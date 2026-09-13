@@ -20,18 +20,22 @@ public class CameraCoordinates {
 	public float distanceFromTarget;
 	public float roll;
 
-	public CameraCoordinates(LittleEndianDataInputStream dis) {
-		try {
-			this.yawShift = dis.readFloat();
-			this.pitchShift = dis.readFloat();
-			this.pitch = dis.readFloat();
-			this.yaw = dis.readFloat();
-			this.FOV = dis.readFloat();
-			this.distanceFromTarget = dis.readFloat();
-			this.roll = dis.readFloat();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+	/**
+	 * Reads one camera's seven floats, or lets the failure out.
+	 *
+	 * <p>IT CAUGHT AND PRINTED, so a stream that had run out did not fail here: the
+	 * fields kept whatever had been set before the end and the caller got an object
+	 * that looked read. A truncated camera table therefore produced cameras, not an
+	 * error, and the editor offered them with a Save button.
+	 */
+	public CameraCoordinates(LittleEndianDataInputStream dis) throws IOException {
+		this.yawShift = dis.readFloat();
+		this.pitchShift = dis.readFloat();
+		this.pitch = dis.readFloat();
+		this.yaw = dis.readFloat();
+		this.FOV = dis.readFloat();
+		this.distanceFromTarget = dis.readFloat();
+		this.roll = dis.readFloat();
 	}
 
 	@Override
@@ -60,7 +64,7 @@ public class CameraCoordinates {
 		this.roll = 0;
 	}
 
-	public void write(LittleEndianDataOutputStream dos) {
+	public void write(LittleEndianDataOutputStream dos) throws IOException {
 		try {
 			dos.writeFloat(yawShift);
 			dos.writeFloat(pitchShift);
@@ -69,8 +73,12 @@ public class CameraCoordinates {
 			dos.writeFloat(FOV);
 			dos.writeFloat(distanceFromTarget);
 			dos.writeFloat(roll);
-		} catch (IOException ex) {
-			Logger.getLogger(CameraCoordinates.class.getName()).log(Level.SEVERE, null, ex);
+		} catch (IOException cannotWrite) {
+			//NOT LOGGED: the table is assembled in memory and then stored, so a record that
+			//refused to serialise used to become a SHORT buffer written over the area's real
+			//camera table - with the editor reporting a save.
+			throw new java.io.IOException("a camera's coordinates could not be written: "
+				+ ctrmap.util.Bytes.reason(cannotWrite), cannotWrite);
 		}
 	}
 }

@@ -41,40 +41,45 @@ public class CameraData {
 
 	public CameraCoordinates coords2;
 
-	public CameraData(LittleEndianDataInputStream dis) {
-		try {
-			dis.read(unknownBytes);
-			acceptCoords2 = dis.read();
-			acceptCoords1 = dis.read();
-			transitionPeriod = dis.readShort();
-			layer = dis.readByte();
-			unknown00 = dis.read();
-			isNeutral = dis.read();
-			unknown01or03 = dis.read();
+	/**
+	 * Reads one camera, or lets the failure out.
+	 *
+	 * <p>IT CAUGHT AND PRINTED. {@code dis.read()} answers -1 at the end of a stream
+	 * rather than throwing, so a table that declared more cameras than it held handed
+	 * back records made of -1s for as long as the count said, and the only sign was a
+	 * stack trace on a console this program's users do not have. The editor then
+	 * offered those records, and its Save wrote them back over the real table.
+	 */
+	public CameraData(LittleEndianDataInputStream dis) throws IOException {
+		dis.read(unknownBytes);
+		acceptCoords2 = dis.read();
+		acceptCoords1 = dis.read();
+		transitionPeriod = dis.readShort();
+		layer = dis.readByte();
+		unknown00 = dis.read();
+		isNeutral = dis.read();
+		unknown01or03 = dis.read();
 
-			coords1 = new CameraCoordinates(dis);
+		coords1 = new CameraCoordinates(dis);
 
-			boundY1 = dis.readShort();
-			boundY2 = dis.readShort();
-			boundX1 = dis.readShort();
-			boundX2 = dis.readShort();
+		boundY1 = dis.readShort();
+		boundY2 = dis.readShort();
+		boundX1 = dis.readShort();
+		boundX2 = dis.readShort();
 
-			unknownInt1 = dis.readInt();
+		unknownInt1 = dis.readInt();
 
-			movementDirection = dis.readShort(); //maybe it's short considering 00_3 is always 0, but why would it be?
-			//always 1, 2, 7 except for weird cases - e4 rooms (0) another weird one is parfum palace with
-			//an incomplete tilemap connected with weird stuff I'll probably never RE used for the grass gym etc.
-			//the stuff with "track" "connect" "line@normal" "joint" and the like.
+		movementDirection = dis.readShort(); //maybe it's short considering 00_3 is always 0, but why would it be?
+		//always 1, 2, 7 except for weird cases - e4 rooms (0) another weird one is parfum palace with
+		//an incomplete tilemap connected with weird stuff I'll probably never RE used for the grass gym etc.
+		//the stuff with "track" "connect" "line@normal" "joint" and the like.
 
-			isFirstEnabled = dis.readShort();
-			isSecondEnabled = dis.readShort();
+		isFirstEnabled = dis.readShort();
+		isSecondEnabled = dis.readShort();
 
-			unknownFFFF = dis.read2Bytes(); //also always FFFF except for e4 rooms and guess what, parfum palace
+		unknownFFFF = dis.read2Bytes(); //also always FFFF except for e4 rooms and guess what, parfum palace
 
-			coords2 = new CameraCoordinates(dis);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+		coords2 = new CameraCoordinates(dis);
 	}
 
 	public CameraData() {
@@ -122,7 +127,7 @@ public class CameraData {
 		return false;
 	}
 
-	public void write(LittleEndianDataOutputStream dos) {
+	public void write(LittleEndianDataOutputStream dos) throws IOException {
 		try {
 			dos.write(unknownBytes);
 			dos.write(acceptCoords2);
@@ -146,8 +151,11 @@ public class CameraData {
 			dos.write2Bytes(unknownFFFF);
 
 			coords2.write(dos);
-		} catch (IOException ex) {
-			Logger.getLogger(CameraData.class.getName()).log(Level.SEVERE, null, ex);
+		} catch (IOException cannotWrite) {
+			//NOT LOGGED, for the reason in CameraCoordinates.write: a half-written record
+			//becomes a short table, stored, and called saved.
+			throw new java.io.IOException("camera data could not be written: "
+				+ ctrmap.util.Bytes.reason(cannotWrite), cannotWrite);
 		}
 	}
 }

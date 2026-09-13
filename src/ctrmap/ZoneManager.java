@@ -67,8 +67,11 @@ public class ZoneManager {
 		if (assembled == null) {
 			throw new IOException("Could not rebuild the emptied entity data.");
 		}
-		if (!zo.storeFile(1, assembled)) { // rewrites the ZO on disk + persists
-			throw new IOException("Could not write the emptied zone.");
+		try {
+			zo.storeFile(1, assembled); // rewrites the ZO on disk + persists
+		} catch (RuntimeException notWritten) {
+			throw new IOException("Could not write the emptied zone: "
+				+ ctrmap.util.Bytes.reason(notWritten), notWritten);
 		}
 		return removed;
 	}
@@ -194,8 +197,11 @@ public class ZoneManager {
 		ZO zo = new ZO(zf, ws);
 		byte[] hdr = zo.getFile(0);
 		setParentMap(hdr, 0, newParent);
-		if (!zo.storeFile(0, hdr)) {
-			throw new IOException("Could not update zone " + zoneIndex + "'s header.");
+		try {
+			zo.storeFile(0, hdr);
+		} catch (RuntimeException notWritten) {
+			throw new IOException("Could not update zone " + zoneIndex + "'s header: "
+				+ ctrmap.util.Bytes.reason(notWritten), notWritten);
 		}
 		// master row
 		setParentMap(master, rowOff, newParent);

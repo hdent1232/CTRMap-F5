@@ -206,8 +206,9 @@ public final class Ui {
 	 * the same as a missing one, because a blank is the silent failure too.
 	 */
 	public static String reason(Throwable ex) {
-		String m = ex.getMessage();
-		return m == null || m.trim().isEmpty() ? ex.toString() : m;
+		//ONE BODY, in ctrmap.util.Bytes, because the format layer needs it too and may
+		//not call anything up here. This stays as the name every UI caller already uses.
+		return ctrmap.util.Bytes.reason(ex);
 	}
 
 	/**

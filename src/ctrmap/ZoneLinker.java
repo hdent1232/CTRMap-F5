@@ -133,8 +133,14 @@ public final class ZoneLinker {
 
 	private static void write(Loaded l, int zone, WorkspaceSession ws) throws IOException {
 		byte[] assembled = l.ent.assembleData();
-		if (assembled == null || !l.zo.storeFile(1, assembled)) {
-			throw new IOException("Zone " + zone + "'s warps could not be written back.");
+		if (assembled == null) {
+			throw new IOException("Zone " + zone + "'s warps could not be rebuilt.");
+		}
+		try {
+			l.zo.storeFile(1, assembled);
+		} catch (RuntimeException notWritten) {
+			throw new IOException("Zone " + zone + "'s warps could not be written back: "
+				+ ctrmap.util.Bytes.reason(notWritten), notWritten);
 		}
 		ws.addPersist(ws.getWorkspaceFile(ArchiveType.ZONE_DATA, zone));
 	}
