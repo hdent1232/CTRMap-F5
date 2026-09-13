@@ -39,10 +39,57 @@ both would have blocked every measurement forever:
 
 ## Open
 
-_(nothing)_
+- [ ] **C. The script transplant engine exists twice.** SignWrapperInjector is 90% of
+      MsgWrapperInjector by measured line count - 293 of 326 substantive lines shared,
+      including a 72-line byte-identical block covering the natives dedupe and the stub
+      insert at 0x4. It rewrites Pawn bytecode in save-bound zone scripts, so a fix to
+      one side is guarded on one side. Fold to one engine with the four real parameters;
+      both 536-zone corpus suites are the acceptance evidence, not a green build.
+- [ ] **D. Features a user cannot find, and messages that name places that do not
+      exist.** Five user-facing error strings name menu paths ("Map > Fork area") that
+      are not in the menu bar, one of them pinned by a test; the Extras bar offers one
+      of the three tools that open in Extras; 15 of 34 menu items are the only way to
+      reach their feature and no item anywhere has an accelerator (Save has no Ctrl+S);
+      QUICKSTART.md ships beside the exe with no entry point in the program; Map > OBJ
+      to collisions silently does nothing when no collision is loaded.
+- [ ] **E. Finished work nothing can reach.** DressUpIndex/DressUpArchive and
+      PartyParam are decoded, proven by suites, drawn as live in ARCHITECTURE, and have
+      no UI at all: 71 measured script-selector names that a user can only get by
+      reading Java source. Either surface them or record them as measured-not-shipped;
+      what they must not be is invisible half-features.
+- [ ] **F. Started and never stopped.** Four copies of the camera thread in
+      CM3DInputManager, each swallowing the InterruptedException that exists to stop
+      it, so a lost key-release leaves a thread writing into the 3D panel for ever.
+- [ ] **G. Every release ships the whole test battery** - package.ps1 jars all of
+      build/classes, so ~40% of the jar is suites no user can run, and they are
+      executable from the shipped artifact against the user's own game folder.
+- [ ] **H. 201 silent catch blocks, and no ceiling on any of them.** 59 empty (32 with
+      no comment and no named reason), 77 log-only, 65 swallow-and-carry-on. The
+      doctrine says a silent path is a defect; nothing counts them, so it decays at the
+      rate new code is written. Needs a ceiling that can only fall, seeded at today's
+      measured number.
 
 ## Done
 
+- [x] 2026-09-13 A. A reader that cannot read refuses instead of inventing data.
+      LittleEndianDataInputStream grew readFully/skipFully - the primitive whose
+      absence caused every hand-rolled short read in the tree - and the container and
+      both GARC entry readers use them. Measured before: a/0/4/0 cut in half handed
+      back 278 of 431 entries as pure-zero buffers reported as data. After: none, and
+      the 281 past the cut are refused. verify() can say no (wrong header, negative
+      count, offsets past the end or going backwards) and carries whyNot(); open()
+      refuses a file that fails it rather than printing to a console no user has;
+      storeFile THROWS on a failed write instead of returning a false that twelve
+      callers dropped, two of them one statement before saying "saved"; and a
+      half-parsed GARC refuses to exist rather than leaving length and getEntryCount
+      disagreeing.
+- [x] 2026-09-13 B. 1,663 lines of unreachable code deleted (ParserLoader,
+      GRColorPalette, ImageMapCreator, PLY2CMVD, BCSArStringLoader, ComboHighlight and
+      three orphan tool icons), and the hole that hid them is closed: DuplicateWorkTest
+      now walks references from the application and the updater to a fixed point and
+      refuses a class nothing reaches unless it is named with what it is instead. Four
+      of the dead ones looked alive only because they had their own main(). It found
+      one the census missed on its first run.
 - [x] 2026-09-12 The sweep tries the suite that killed a line LAST time first. It
       knew which suite killed each mutant and threw the answer away, so every run
       re-guessed the order from a hand table the file itself records as wrong about

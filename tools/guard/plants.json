@@ -1632,18 +1632,6 @@
    "must_say": "linking a zone to ITSELF writes both ends"
   },
   {
-   "id": "the-zone-preview-hangs-on-a-hook-that-can-stop-holding",
-   "why": "The dropdown preview reaches the row the user is ON through the combo box's popup list, and the only way to that list is the UI delegate's accessible child being a BasicComboPopup. Guessing that the accessible child IS the list - the obvious simplification, and wrong - makes popupList answer null. Nothing throws: attach returns false, no listener is added, and the dropdown opens with no preview beside it and no complaint anywhere. That is word for word what the owner reported about the version before this one (\"still zero zone preview\"), so the feature's one fragile dependency is also the one whose failure is invisible. The check looks for the hook rather than trusting it. RETARGETED: the bubble window this was written against is gone - it broke the owner's standing rule that a feature lives in its own part of the UI, and it was invisible to them twice. What survived is the hook itself, in ComboHighlight, feeding the preview panel that now sits in the Zone Loader tab. The claim is unchanged: lose the popup list and the preview silently stops following the row being arrowed through.",
-   "file": "src/ctrmap/humaninterface/ComboHighlight.java",
-   "find": "\t\t\tif (a instanceof BasicComboPopup) {\n\t\t\t\treturn ((BasicComboPopup) a).getList();\n\t\t\t}\n",
-   "replace": "\t\t\tif (a instanceof javax.swing.JList) {\n\t\t\t\treturn (JList<?>) a;\n\t\t\t}\n",
-   "suite": "ctrmap.tests.MainframeShapeTest",
-   "args": [
-    "src"
-   ],
-   "must_say": "exposes its popup list"
-  },
-  {
    "id": "the-zone-preview-is-built-but-not-put-anywhere",
    "why": "The preview was built twice and shipped twice without ever being visible in the Zone Loader: once as a dialog behind a button on another bar, once as a window floating beside the dropdown popup. Every suite was green both times, because every suite asked whether the DECODE worked - nothing asked whether the thing was on screen. The owner opened the tab, saw nothing, and had to say so twice. This puts back the exact shape of that defect: the preview is constructed, wired to the dropdown, and never added to the tab. The guard builds the tab and looks for it, which is the only question that was being got wrong. RETARGETED: the preview is no longer added to the tab on its own - it is inside the zone browser, which is what the owner asked for in the first place (a list you scroll, a live preview, a button that opens). The claim is unchanged: built, wired, and never put anywhere. The must_say also moved: the check now says BROWSER where it said PREVIEW, and a plant scored on words that no longer appear is a plant that proves nothing while looking green. RETARGETED AGAIN: the browser is no longer added to the tab directly - it lives in the zone column, which can also show a zone tool over it - so the line that could leave it built and nowhere is the one that puts it in that column.",
    "file": "src/ctrmap/CtrmapMainframe.java",
@@ -1738,6 +1726,45 @@
     "${GAMEDIR}"
    ],
    "must_say": "is drawn in the preview"
+  },
+  {
+   "id": "a-truncated-archive-hands-back-zeros-as-data",
+   "why": "skip() and read() answer how much they actually managed, and both answers were dropped in both GARC entry readers and in the container's getFile. An archive shorter than its own table therefore handed back buffers of exactly the right length whose tails were zeros, and reported success: measured on a/0/4/0 cut in half, 278 of its 431 entries came back pure zero, none null, no exception, no log line. Downstream that is a zone with no entities and an area with no atmosphere - and then the editor packs them back over the real ones, so the cost is the owner's game rather than the session. The stream has readFully and skipFully now, which cannot do it; this puts the dropped answers back.",
+   "file": "src/ctrmap/formats/garc/GARC.java",
+   "find": "\t\t\t\tin.skipFully(e.offset);\n\t\t\t\tin.readFully(b);\n",
+   "replace": "\t\t\t\tin.skip(e.offset);\n\t\t\t\tin.read(b);\n",
+   "suite": "ctrmap.tests.GarcSniffTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "zeros pretending to be data"
+  },
+  {
+   "id": "a-class-nothing-reaches-counts-as-alive",
+   "why": "Nothing in this battery measured reachability, which is how a previous sweep could report the debt as removed: every ceiling it held - windows, public statics, duplicate capabilities, dialogs - is satisfiable by code that never runs. The census found 1,830 lines of unreachable production code, including a third stale copy of the tile-semantics constants under the same names as the live ones, and four classes that looked alive only because they had their own main(). Deleting the code is not the fix; the fix is that the tree now says which classes nothing reaches and why, and this puts one of those arguments back to unargued.",
+   "file": "src/ctrmap/tests/DuplicateWorkTest.java",
+   "find": "\t\t{\"BchModelVerifier.java\",\n",
+   "replace": "\t\t{\"NothingAtAll.java\",\n",
+   "suite": "ctrmap.tests.DuplicateWorkTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "are not argued for"
+  }
+ ],
+ "retired": [
+  {
+   "id": "the-zone-preview-hangs-on-a-hook-that-can-stop-holding",
+   "why": "The dropdown preview reaches the row the user is ON through the combo box's popup list, and the only way to that list is the UI delegate's accessible child being a BasicComboPopup. Guessing that the accessible child IS the list - the obvious simplification, and wrong - makes popupList answer null. Nothing throws: attach returns false, no listener is added, and the dropdown opens with no preview beside it and no complaint anywhere. That is word for word what the owner reported about the version before this one (\"still zero zone preview\"), so the feature's one fragile dependency is also the one whose failure is invisible. The check looks for the hook rather than trusting it. RETARGETED: the bubble window this was written against is gone - it broke the owner's standing rule that a feature lives in its own part of the UI, and it was invisible to them twice. What survived is the hook itself, in ComboHighlight, feeding the preview panel that now sits in the Zone Loader tab. The claim is unchanged: lose the popup list and the preview silently stops following the row being arrowed through.",
+   "file": "src/ctrmap/humaninterface/ComboHighlight.java",
+   "find": "\t\t\tif (a instanceof BasicComboPopup) {\n\t\t\t\treturn ((BasicComboPopup) a).getList();\n\t\t\t}\n",
+   "replace": "\t\t\tif (a instanceof javax.swing.JList) {\n\t\t\t\treturn (JList<?>) a;\n\t\t\t}\n",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "exposes its popup list",
+   "retired": "2026-09-13: the code this claim was about is gone. It guarded the hook that read the Load Zone dropdown's popup list, which existed so a preview could follow the highlighted row. The dropdown is not how zones are picked any more - the Zone Loader has a list you arrow through with the preview beside it - so ComboHighlight was deleted as unreachable. A claim whose subject no longer exists cannot be retargeted onto anything honest; it is kept here so the history of what was once proven is not quietly shorter than it was."
   }
  ]
 }

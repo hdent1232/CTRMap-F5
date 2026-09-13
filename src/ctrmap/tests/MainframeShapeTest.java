@@ -208,7 +208,6 @@ public class MainframeShapeTest {
 		//moved or lost without somebody writing down that they meant to.
 		check(items == 34, "34 menu items in all (" + items + ")");
 
-		theZoneDropdownCanBePreviewed();
 		theZoneLoaderTabHoldsItsPreview();
 		browsingAZoneDoesNotLoadIt();
 		theExtrasTabHoldsTheArchiveBrowser();
@@ -246,31 +245,6 @@ public class MainframeShapeTest {
 				+ (wrong.isEmpty() ? "" : " - wrong: " + wrong));
 	}
 
-	/**
-	 * The Load Zone dropdown exposes a popup list, which is what the 3D preview
-	 * hangs its listener on.
-	 *
-	 * <p>WHY THIS IS WORTH A CHECK. The preview follows the highlighted row through
-	 * {@code combo.getUI().getAccessibleChild(combo, 0)} being a BasicComboPopup -
-	 * a known Swing idiom, and the fragile part of the feature. If that stops
-	 * holding, the preview does not crash and does not complain: it simply never
-	 * appears, which is precisely the failure the owner reported about the version
-	 * before it ("still zero zone preview"). A feature that fails by being absent
-	 * needs a test that looks for it.
-	 */
-	static void theZoneDropdownCanBePreviewed() {
-		System.out.println("--- the zone dropdown exposes the popup list the preview needs");
-		javax.swing.JComboBox<String> combo = new javax.swing.JComboBox<>();
-		combo.addItem("Littleroot Town - 0");
-		combo.addItem("Oldale Town - 7");
-		javax.swing.JList<?> list = ctrmap.humaninterface.ComboHighlight.popupList(combo);
-		check(list != null, "a combo box under this look and feel exposes its popup list, so"
-			+ " the preview can follow the row being arrowed through and not only the one"
-			+ " selected");
-		check(list == null || list.getModel().getSize() == combo.getItemCount(),
-			"and that list holds the rows the dropdown does (" + (list == null ? -1
-			: list.getModel().getSize()) + " against " + combo.getItemCount() + ")");
-	}
 	/**
 	 * The Zone Loader tab contains the zone preview, beside the panel it is about.
 	 *

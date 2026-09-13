@@ -127,7 +127,14 @@ public class GARC {
 			}
 			in.close();
 		} catch (IOException ex) {
-			Logger.getLogger(GARC.class.getName()).log(Level.SEVERE, null, ex);
+			//A HALF-PARSED ARCHIVE IS NOT AN ARCHIVE. This logged and returned, leaving
+			//`length` at the count the header declared while `entries` held only the ones
+			//that were read before the file ran out - so getEntryCount() and length said
+			//different things, and every reader that trusts length walked off the end of a
+			//list. The stale-table repair is one of those readers.
+			throw new IllegalStateException(file.getName() + " could not be read as a GARC"
+				+ " (read " + entries.size() + " of the " + length + " entries its header declares): "
+				+ ctrmap.Ui.reason(ex), ex);
 		}
 	}
 
@@ -602,12 +609,21 @@ public class GARC {
 		try {
 			GARCEntry e = entries.get(num);
 			byte[] b = new byte[e.length];
-			InputStream in = new FileInputStream(file);
-			in.skip(e.offset);
-			in.read(b);
-			in.close();
+			//READ IT ALL OR SAY SO. skip() and read() answer how much they managed and both
+			//answers were dropped: measured on a/0/4/0 truncated to half, 278 of its 431
+			//entries came back as pure-zero buffers of the right length, none null, no
+			//exception, no log line - and the editor writes those back over the real archive.
+			LittleEndianDataInputStream in = new LittleEndianDataInputStream(new FileInputStream(file));
+			try {
+				in.skipFully(e.offset);
+				in.readFully(b);
+			} finally {
+				in.close();
+			}
 			return b;
 		} catch (IOException ex) {
+			Logger.getLogger(GARC.class.getName()).log(Level.SEVERE,
+				"reading stored entry " + num + " of " + file, ex);
 			return null;
 		}
 	}
@@ -664,10 +680,14 @@ public class GARC {
 		}
 		try {
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(file));
-			dis.skip(entries.get(num).offset);
 			byte[] data = new byte[entries.get(num).length];
-			dis.read(data);
-			dis.close();
+			try {
+				//see getStoredEntry: a short read used to be reported as data
+				dis.skipFully(entries.get(num).offset);
+				dis.readFully(data);
+			} finally {
+				dis.close();
+			}
 			if (entries.get(num).compressed) {
 				return LZ11.decompress(data);
 			} else {
