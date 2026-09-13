@@ -39,25 +39,29 @@ both would have blocked every measurement forever:
 
 ## Open
 
-- [ ] **E. Finished work nothing can reach.** DressUpIndex/DressUpArchive and
-      PartyParam are decoded, proven by suites, drawn as live in ARCHITECTURE, and have
-      no UI at all: 71 measured script-selector names that a user can only get by
-      reading Java source. Either surface them or record them as measured-not-shipped;
-      what they must not be is invisible half-features.
-- [ ] **F. Started and never stopped.** Four copies of the camera thread in
-      CM3DInputManager, each swallowing the InterruptedException that exists to stop
-      it, so a lost key-release leaves a thread writing into the 3D panel for ever.
-- [ ] **G. Every release ships the whole test battery** - package.ps1 jars all of
-      build/classes, so ~40% of the jar is suites no user can run, and they are
-      executable from the shipped artifact against the user's own game folder.
-- [ ] **H. 201 silent catch blocks, and no ceiling on any of them.** 59 empty (32 with
-      no comment and no named reason), 77 log-only, 65 swallow-and-carry-on. The
-      doctrine says a silent path is a defect; nothing counts them, so it decays at the
-      rate new code is written. Needs a ceiling that can only fall, seeded at today's
-      measured number.
+_(nothing)_
 
 ## Done
 
+- [x] 2026-09-13 F. One camera thread instead of four, a daemon, that honours the
+      interrupt. Each of the four swallowed the InterruptedException that exists to
+      stop it, so a key press whose release was lost - focus change, modal dialog,
+      window closing - left a thread walking the camera for the life of the process
+      and kept the JVM alive after the last window closed. Folding them also showed
+      the four copies had drifted: two moved vertically with the camera angle and two
+      did not, which is now one readable rule.
+- [x] 2026-09-13 G. A release ships the program, not its proofs. package.ps1 jarred
+      all of build/classes, so every portable zip and jpackage image carried the whole
+      battery - about 40% of the jar - and the suites were runnable out of the shipped
+      artifact against the user's own game folder. It stages a copy without
+      ctrmap/tests and refuses to jar if a *Test.class survives the cut.
+- [x] 2026-09-13 H. The silent catches have a number and it may only fall.
+      SilentCatchTest counts empty and log-only catch blocks in production code -
+      measured at 125 (55 empty, 70 log-only) - and refuses the 126th. Not a ban: some
+      are genuinely nothing-to-do and deciding which, one at a time, is weeks of
+      reading, while a ban would be reverted in a day and the doctrine would go back to
+      being decoration. It also names the 30 empty ones that carry no comment and no
+      reason at all, which is where the falling starts.
 - [x] 2026-09-13 D. The app stopped naming places that do not exist, and stopped
       hiding things. Three messages sent users to "Map > Fork area", an item renamed
       long ago, and a suite pinned the wording - all four corrected, and
@@ -227,3 +231,13 @@ not count them.
   zone without saying so first. Revisit only if the script archive is ever
   managed - at which point SCRIPT joins `MADE_PRIVATE` and both the refusal and
   the repair follow on their own.
+
+- **Two formats are measured and proven, and nothing in the editor reaches them.**
+  DressUpIndex/DressUpArchive read the whole XY wardrobe (101 rigged parts, proven by
+  DressUpIndexTest) and PartyParam holds 71 script-selector names (proven by
+  PartyParamTest). Both are the expensive half of a feature, already done; neither has
+  a UI, so today the only way to use PartyParam's names is to read the Java source.
+  This is NOT debt to delete and it is not work anyone has committed to: it is
+  recorded here, and in DuplicateWorkTest's UNREACHED table as MEASURED, NOT
+  SHIPPED, so neither can sit in the tree looking alive. Surfacing either is a
+  feature decision for the owner, not a cleanup.

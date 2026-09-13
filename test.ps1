@@ -136,6 +136,7 @@ $suites = @(
     @{ n = "Ui output paths (printed, and shown)"; c = "ctrmap.tests.UiOutputTest";           a = @() },
     @{ n = "Dialog seam (only Ui opens one)"; c = "ctrmap.tests.DialogSeamTest";     a = @("src") },
     @{ n = "Duplicate work (one implementation per capability)"; c = "ctrmap.tests.DuplicateWorkTest"; a = @("src") },
+    @{ n = "Silent catches (the ceiling that may only fall)"; c = "ctrmap.tests.SilentCatchTest"; a = @("src") },
     @{ n = "LittleEndian (the one byte[] codec)"; c = "ctrmap.tests.LittleEndianTest"; a = @() },
     @{ n = "ContainerBytes (the one in-memory mini-pack reader)"; c = "ctrmap.tests.ContainerBytesTest"; a = @() },
     @{ n = "Mutation baseline (guards still measured)"; c = "ctrmap.tests.MutationBaselineTest"; a = @("src") },
