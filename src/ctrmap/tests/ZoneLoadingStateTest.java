@@ -945,28 +945,50 @@ public class ZoneLoadingStateTest {
 	}
 
 	/**
-	 * A zone table that cannot be read leaves an empty list, not the last one.
+	 * A zone table that cannot be read refuses by name; one that reads as empty leaves
+	 * an empty list, not the last game's.
 	 *
-	 * <p>The rebuild computes its zone count as the archive's length less two,
-	 * so an archive that could not be parsed gives a NEGATIVE count. Without
-	 * the guard that is a NegativeArraySizeException inside a worker, which -
-	 * before the {@code get()} in {@code done()} - vanished entirely and left
-	 * the dropdown silently empty with nothing said anywhere.
+	 * <p>The rebuild computes its zone count as the archive's length less two, so an
+	 * archive holding nothing gives a NEGATIVE count. Without the guard that is a
+	 * NegativeArraySizeException inside a worker, which - before the {@code get()} in
+	 * {@code done()} - vanished entirely and left the dropdown silently empty with
+	 * nothing said anywhere.
 	 *
-	 * <p>What has to survive a refactor is the pair: the list ends up empty
-	 * (never the previous game's zones, which would be openable and would write
-	 * into the wrong archive), and the count the panel reports agrees with it.
+	 * <p>RETARGETED, and the half it used to reach is gone. It got its negative count
+	 * by handing GARC a path that is not a file, which parsed half an archive, logged
+	 * and carried on with {@code length} still saying what the header had claimed. A
+	 * GARC refuses to be one it cannot read now, so an unreadable table never becomes
+	 * the installed archive - checked here first, because that refusal is what keeps the
+	 * rest of this program from reading a table that was never there.
+	 *
+	 * <p>The pair still has to survive a refactor, so it is now reached through a VALID
+	 * archive that holds no entries - the same zero length, arrived at honestly: the
+	 * list ends up empty (never the previous game's zones, which would be openable and
+	 * would write into the wrong archive), and the count the panel reports agrees.
 	 */
 	static void aZoneTableThatCannotBeReadLeavesNoZones(ZoneLoadingPanel pnl, LoadedZone lz) throws Exception {
 		System.out.println("--- a zone table that cannot be read leaves the list empty");
 		check(pnl.getLoadedZoneCount() > 0, "the list is full before the archive is broken");
+		//FIRST: a file that is not a GARC - what a truncated or half-copied dump
+		//leaves - cannot be opened as one at all, and says which file.
 		File missing = new File(Scratch.dir("ctrmap_no_zonedata"), "not-a-garc");
-		//the same game, still open, holding a ZoneData handle on a file that is
-		//not a GARC - which is what a truncated or half-copied dump leaves
+		Throwable refused = null;
+		try {
+				new ctrmap.formats.garc.GARC(missing);
+		} catch (Throwable t) {
+				refused = t;
+		}
+		check(refused != null && String.valueOf(refused.getMessage()).contains(missing.getName()),
+				"a zone table that is not an archive refuses to open and names the file: " + refused);
+		
+		//THEN the empty one, which IS a valid archive: the same zero length the old
+		//half-parse reported, reached without a half-parse.
+		File empty = new File(Scratch.dir("ctrmap_no_zonedata"), "empty-garc");
+		java.nio.file.Files.write(empty.toPath(), emptyGarc());
 		Workspace.install(Workspace.session().withArchive(ArchiveType.ZONE_DATA,
-				new ctrmap.formats.garc.GARC(missing)));
+				new ctrmap.formats.garc.GARC(empty)));
 		check(Workspace.getArchive(ArchiveType.ZONE_DATA).length <= 0,
-				"an unreadable archive reports "
+				"an archive holding nothing reports "
 				+ Workspace.getArchive(ArchiveType.ZONE_DATA).length + " entries");
 
 		pnl.loadEverything();
@@ -975,6 +997,33 @@ public class ZoneLoadingStateTest {
 				+ pnl.getLoadedZoneCount() + ")");
 		check(lz.open() == null && lz.index() == -1,
 				"with nothing reported as open (zone " + lz.open() + ", index " + lz.index() + ")");
+	}
+
+	/**
+	 * A valid GARC that holds no entries: a 0x1C header, then a FATO declaring zero.
+	 *
+	 * <p>Every field the reader looks at is here and consistent, so nothing is
+	 * half-parsed and nothing is refused - the archive simply has nothing in it, which
+	 * is what a zone table this program cannot use looks like once containers refuse the
+	 * files they cannot read.
+	 */
+	static byte[] emptyGarc() throws Exception {
+		java.io.ByteArrayOutputStream o = new java.io.ByteArrayOutputStream();
+		ctrmap.LittleEndianDataOutputStream d = new ctrmap.LittleEndianDataOutputStream(o);
+		d.write(new byte[]{(byte) 'C', (byte) 'R', (byte) 'A', (byte) 'G'});
+		d.writeInt(0x1C);   //where the FATO starts
+		d.writeShort((short) 0xFEFF);
+		d.writeShort((short) 0x0400);
+		d.writeInt(4);      //sections
+		d.writeInt(0x28);   //data offset: past the FATO, where nothing is
+		d.writeInt(0);      //decompressed length
+		d.writeInt(0);      //compressed length
+		d.write(new byte[]{(byte) 'O', (byte) 'T', (byte) 'A', (byte) 'F'});
+		d.writeInt(0xC);    //FATO length
+		d.writeShort((short) 0);    //entries: none
+		d.writeShort((short) 0xFFFF);
+		d.close();
+		return o.toByteArray();
 	}
 
 	// ---- plumbing ----------------------------------------------------------

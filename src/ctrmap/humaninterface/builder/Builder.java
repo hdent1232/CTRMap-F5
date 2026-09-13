@@ -422,10 +422,12 @@ public class Builder extends javax.swing.JPanel {
 						String[] extra = (textures == JOptionPane.YES_OPTION) ? new String[0] : new String[]{"-notextures"};
 						ESPICAControl.ESPICAProcess proc = new ESPICAControl.ESPICAProcess(ESPICAControl.ESPICAFunctionMode.MODEL_CONVERT, f, donor, output, extra);
 						runESPICA(proc, () -> {
-							if (persistentContainerReference.storeFile(index, output)) {
+							try {
+								persistentContainerReference.storeFile(index, output);
 								Workspace.addPersist(persistentContainerReference.getOriginFile());
-							} else {
-								ctrmap.Ui.error(Builder.this, "Storing the converted model into the container failed. The container was not modified.", "Builder alert");
+							} catch (RuntimeException notStored) {
+								ctrmap.Ui.error(Builder.this, "Storing the converted model into the container failed:\n"
+									+ ctrmap.Ui.reason(notStored) + "\n The container was not modified.", "Builder alert");
 							}
 						});
 					}
@@ -441,10 +443,12 @@ public class Builder extends javax.swing.JPanel {
 						File output = new File(Workspace.temp() + "/espica_texturepack_" + UUID.randomUUID().toString() + ".bch");
 						ESPICAControl.ESPICAProcess proc = new ESPICAControl.ESPICAProcess(ESPICAControl.ESPICAFunctionMode.TEXTURE_MERGE, f, donor, output, new String[0]);
 						runESPICA(proc, () -> {
-							if (persistentContainerReference.storeFile(index, output)) {
+							try {
+								persistentContainerReference.storeFile(index, output);
 								Workspace.addPersist(persistentContainerReference.getOriginFile());
-							} else {
-								ctrmap.Ui.error(Builder.this, "Storing the merged texture pack into the container failed. The container was not modified.", "Builder alert");
+							} catch (RuntimeException notStored) {
+								ctrmap.Ui.error(Builder.this, "Storing the merged texture pack into the container failed:\n"
+									+ ctrmap.Ui.reason(notStored) + "\n The container was not modified.", "Builder alert");
 							}
 							reloadContainer();
 						});
@@ -582,10 +586,12 @@ public class Builder extends javax.swing.JPanel {
 		if (index != -1 && currentAGFC != null) {
 			int rsl = ctrmap.Ui.confirm(this, "This will replace the selected file with a dummy. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 			if (rsl == JOptionPane.YES_OPTION) {
-				if (currentAGFC.storeFile(index, new byte[0])) {
+				try {
+					currentAGFC.storeFile(index, new byte[0]);
 					Workspace.addPersist(currentAGFC.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
-				} else {
-					ctrmap.Ui.error(this, "Replacing the file with a dummy failed. The container was not modified.", "Builder alert");
+				} catch (RuntimeException notStored) {
+					ctrmap.Ui.error(this, "Replacing the file with a dummy failed:\n"
+						+ ctrmap.Ui.reason(notStored) + "\nThe container was not modified.", "Builder alert");
 				}
 				reloadContainer();
 			}
@@ -615,13 +621,21 @@ public class Builder extends javax.swing.JPanel {
 		if (currentAGFC != null) {
 			int rsl = ctrmap.Ui.confirm(this, "This will clear all files in the container. Continue?", "Builder alert", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
 			if (rsl == JOptionPane.YES_OPTION) {
-				boolean allOk = true;
-				for (int i = 0; i < currentAGFC.len; i++) {
-					allOk &= currentAGFC.storeFile(i, new byte[0]);
+				String stopped = null;
+				for (int i = 0; i < currentAGFC.len && stopped == null; i++) {
+					try {
+						currentAGFC.storeFile(i, new byte[0]);
+					} catch (RuntimeException notStored) {
+						//STOPS AT THE FIRST ONE. Carrying on past a container that cannot be
+						//rewritten only widened the damage: the rest of the loop kept recomputing
+						//offsets against a file that was no longer what it thought.
+						stopped = "subfile " + i + ": " + ctrmap.Ui.reason(notStored);
+					}
 				}
 				Workspace.addPersist(currentAGFC.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
-				if (!allOk) {
-					ctrmap.Ui.error(this, "Clearing one or more files failed - the container may be only partially cleared.", "Builder alert");
+				if (stopped != null) {
+					ctrmap.Ui.error(this, "Clearing the container stopped at " + stopped
+						+ "\nIt may be only partially cleared.", "Builder alert");
 				}
 				reloadContainer();
 			}
@@ -635,10 +649,12 @@ public class Builder extends javax.swing.JPanel {
 	private void importGeneric(AbstractGamefreakContainer persistentContainerReference, int index) {
 		File in = openFileDialog("Select file to import");
 		if (in != null) {
-			if (persistentContainerReference.storeFile(index, in)) {
+			try {
+				persistentContainerReference.storeFile(index, in);
 				Workspace.addPersist(persistentContainerReference.getOriginFile()); //storeFile writes the workspace file but only persisted files survive cleanUnchanged() and get packed
-			} else {
-				ctrmap.Ui.error(this, "Importing the file into the container failed. The container was not modified.", "Builder alert");
+			} catch (RuntimeException notStored) {
+				ctrmap.Ui.error(this, "Importing the file into the container failed:\n"
+					+ ctrmap.Ui.reason(notStored) + "\nThe container was not modified.", "Builder alert");
 			}
 		}
 	}

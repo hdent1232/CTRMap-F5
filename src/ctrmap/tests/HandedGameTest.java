@@ -1558,9 +1558,9 @@ public class HandedGameTest {
 		FakeGameFiles kit = new FakeGameFiles();
 		File f = new File(kit.scratch(), "area_" + names.length);
 		Files.write(f.toPath(), emptyArea());
-		if (!new AD(f, kit).storeFile(11, pack(names))) {
-			throw new IllegalStateException("could not build the fixture area");
-		}
+		//storeFile RETURNS VOID and throws, so the fixture either lands or the suite
+		//stops with the container saying which file it could not write.
+		new AD(f, kit).storeFile(11, pack(names));
 		return Files.readAllBytes(f.toPath());
 	}
 

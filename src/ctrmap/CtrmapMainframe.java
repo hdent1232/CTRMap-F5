@@ -379,7 +379,7 @@ public class CtrmapMainframe {
 				new ZoneEditors.ZoneView() {
 					@Override
 					public void show(ctrmap.formats.zone.Zone z) {
-						mCamEditForm.loadDataFile(new ctrmap.formats.cameradata.CameraDataFile(z.header.areadata));
+						mCamEditForm.loadFrom(z.header.areadata);
 					}
 
 					@Override
@@ -2816,8 +2816,11 @@ public class CtrmapMainframe {
 				Ui.error(frame, "The edited model failed validation - nothing was changed:\n" + check.validate(), "Import OBJ");
 				return;
 			}
-			if (!gr.storeFile(1, edited)) {
-				Ui.error(frame, "Could not write the model into the workspace.", "Import OBJ");
+			try {
+				gr.storeFile(1, edited);
+			} catch (RuntimeException notWritten) {
+				Ui.error(frame, "Could not write the model into the workspace:\n"
+					+ Ui.reason(notWritten), "Import OBJ");
 				return;
 			}
 			Workspace.addPersist(grFile);
@@ -3224,8 +3227,11 @@ public class CtrmapMainframe {
 				Ui.error(frame, "FieldData entry " + id + " is not a map region container.", "Import map model");
 				return;
 			}
-			if (!gr.storeFile(1, bch)) {
-				Ui.error(frame, "Could not write the model into the workspace.", "Import map model");
+			try {
+				gr.storeFile(1, bch);
+			} catch (RuntimeException notWritten) {
+				Ui.error(frame, "Could not write the model into the workspace:\n"
+					+ Ui.reason(notWritten), "Import map model");
 				return;
 			}
 			Workspace.addPersist(grFile);

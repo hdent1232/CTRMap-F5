@@ -81,25 +81,36 @@ public class RegionFactory {
 			//a model this factory cannot rebuild - left as it is, and said so
 			return false;
 		}
-		//EVERY WRITE IS ANSWERED FOR. storeFile returns false when the container
-		//could not be rewritten - a locked file, a full disk - and these eight
-		//answers used to be dropped on the floor, so a region that half-blanked and
-		//then failed reported itself blanked. The caller would have gone on to tell
-		//the user the slot was empty while it held whatever survived.
-		boolean ok = gr.storeFile(1, bc.model);
-		ok &= gr.storeFile(2, bc.collision);
-		ok &= gr.storeFile(0, bc.tilemap);
-		ok &= gr.storeFile(3, bc.props);
-		//extra layers (multi-layer templates): blank them out entirely
-		if (gr.len >= 9) {
-			ok &= gr.storeFile(7, voidTilemap());
-			ok &= gr.storeFile(gr.len >= 11 ? 9 : 8, emptyCollision());
-			if (gr.len >= 11) {
-				ok &= gr.storeFile(8, voidTilemap());
-				ok &= gr.storeFile(10, emptyCollision());
+		//EVERY WRITE IS ANSWERED FOR, and the answer is no longer a boolean: a write
+		//the container could not make - a locked file, a full disk - throws with the
+		//file named. These eight answers used to be dropped on the floor, so a region
+		//that half-blanked and then failed reported itself blanked, and the caller went
+		//on to tell the user the slot was empty while it held whatever survived. The
+		//"answers by returning false" contract above is about a model this factory
+		//CANNOT REBUILD, decided before anything is written; past this line the region
+		//is already being rewritten, so the answer for a failure there is the same no:
+		//half a blanked region is not blanked, and the caller says the zone was kept.
+		try {
+			gr.storeFile(1, bc.model);
+			gr.storeFile(2, bc.collision);
+			gr.storeFile(0, bc.tilemap);
+			gr.storeFile(3, bc.props);
+			//extra layers (multi-layer templates): blank them out entirely
+			if (gr.len >= 9) {
+				gr.storeFile(7, voidTilemap());
+				gr.storeFile(gr.len >= 11 ? 9 : 8, emptyCollision());
+				if (gr.len >= 11) {
+					gr.storeFile(8, voidTilemap());
+					gr.storeFile(10, emptyCollision());
+				}
 			}
+		} catch (RuntimeException notWritten) {
+			//ANSWERED, NOT THROWN, which is this method's contract and the reason the
+			//append can call it: a spare that could not be emptied keeps the copy it
+			//already has, and the caller reports the zone as kept.
+			return false;
 		}
-		return ok;
+		return true;
 	}
 
 	public static BlankContent blank(byte[] templateModel, int groundMesh) {

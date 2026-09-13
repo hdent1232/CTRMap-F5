@@ -47,6 +47,35 @@ public class CameraEditForm extends javax.swing.JPanel {
 		loaded = false;
 	}
 
+	/**
+	 * Shows the zone's cameras, or empties itself and says why.
+	 *
+	 * <p>IT IS HANDED THE AREA, not the window's open zone, so a suite can hand it one
+	 * that cannot be read and watch what this does.
+	 *
+	 * <p>WHY THE FORM READS IT AND NOT THE WINDOW. The zone-editor list hands the zone
+	 * to every editor in order and stops at the first throw, and the window built the
+	 * CameraDataFile inline - so once an unreadable camera table started refusing instead
+	 * of printing a stack trace, that refusal would have taken the NPC editor and
+	 * everything after it down with it. 228 of the 229 retail areas parse, so this is
+	 * rare, which is exactly why it must not be the thing that stops a zone opening.
+	 *
+	 * <p>It empties the form rather than leaving the last zone's cameras on it, because
+	 * those belong to a different area and this form has a Save button. With nothing
+	 * loaded its own store() refuses, so the zone save leaves the cameras as they are.
+	 */
+	public void loadFrom(ctrmap.formats.containers.AD areadata) {
+		try {
+			loadDataFile(new CameraDataFile(areadata));
+		} catch (RuntimeException notATable) {
+			unload();
+			ctrmap.Ui.error(this, "This zone's camera table could not be read, so the camera"
+				+ " editor is empty for it:\n" + ctrmap.Ui.reason(notATable)
+				+ "\nThe rest of the zone is loaded, and saving will leave the cameras as they"
+				+ " are.", "Camera data");
+		}
+	}
+
 	public void loadDataFile(CameraDataFile cdf) {
 		loaded = false;
 		cam = null;

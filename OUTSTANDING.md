@@ -43,6 +43,32 @@ _(nothing)_
 
 ## Done
 
+- [x] 2026-09-13 J. The camera table stops being read silently. Three readers in
+      ctrmap.formats.cameradata caught their own IOException and printed it - the file,
+      the record, the coordinates - and `dis.read()` answers -1 at the end of a stream
+      rather than throwing, so a table declaring more cameras than it held produced
+      records made of -1s for as long as the count said. numEntries and camData.size()
+      disagreed and nothing downstream could tell; the editor offered those cameras with
+      a Save button, and write() assembles the table from camData, so the area got the
+      part this editor managed to read and called it saved. Both writers swallowed the
+      same way, turning a record that refused to serialise into a short buffer stored
+      over the real table. All five refuse now; the refusal names the area and the
+      counts. The camera form reads its own area (CameraEditForm.loadFrom) so the
+      refusal empties that form and tells the user, instead of stopping the zone-editor
+      list - which hands the zone to every editor in order and stops at the first throw.
+      Measured first: 228 of the 229 retail areas parse, so this is rare and must not be
+      what stops a zone opening. Guarded in EditToolGuardsTest, plant proven.
+- [x] 2026-09-13 I. A container write answers nothing, so a refusal that cannot
+      fire cannot be written. storeFile was made to THROW on a failed write and its
+      boolean was kept "so the callers that DO check still compile" - which turned
+      twelve `if (!storeFile(...))` refusals into dead code, two of them holding the
+      only message that named the region or area the user was editing. An Apply that
+      could not write region 153 stopped saying so and quoted a temp path instead;
+      PaintApplyGuardsTest caught both. It returns void now, so javac refuses the dead
+      refusal outright, and every caller that wants its own name on the failure catches
+      and says so with the cause attached. Generalised: no production method may answer
+      boolean when its only answer is true - measured at zero over 277 boolean methods,
+      refused by GameFilesSeamTest, proven by three plants.
 - [x] 2026-09-13 F. One camera thread instead of four, a daemon, that honours the
       interrupt. Each of the four swallowed the InterruptedException that exists to
       stop it, so a key press whose release was lost - focus change, modal dialog,

@@ -458,8 +458,11 @@ public class BchTexturePack {
 		AD tgt = liveTarget != null ? liveTarget : new AD(tgtFile, files);
 		Carry c = planCarry(files, donorArea, targetArea, needed, tgt.getFile(11), tgt.getFile(1), editingZone);
 		if (c.pack != null) {
-			if (!tgt.storeFile(c.subfile, c.pack)) {
-				throw new IllegalStateException("could not write area " + targetArea);
+			try {
+				tgt.storeFile(c.subfile, c.pack);
+			} catch (RuntimeException notWritten) {
+				throw new IllegalStateException("could not write area " + targetArea + ": "
+					+ ctrmap.util.Bytes.reason(notWritten), notWritten);
 			}
 			files.edited(tgtFile);
 		}

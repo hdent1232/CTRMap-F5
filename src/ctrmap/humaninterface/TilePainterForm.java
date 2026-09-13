@@ -173,8 +173,11 @@ public class TilePainterForm {
 			if (!errs.isEmpty()) {
 				throw new IllegalStateException("splice failed validation: " + errs.get(0));
 			}
-			if (!ad.storeFile(2, sub2)) {
-				throw new IllegalStateException("could not write areadata " + areaId + " (file locked or read-only?)");
+			try {
+				ad.storeFile(2, sub2);
+			} catch (RuntimeException notWritten) {
+				throw new IllegalStateException("could not write areadata " + areaId + ": "
+					+ ctrmap.util.Bytes.reason(notWritten), notWritten);
 			}
 		}
 		return changed;
@@ -344,9 +347,14 @@ public class TilePainterForm {
 
 		void commit() {
 			for (java.util.Map.Entry<Integer, byte[]> e : pending.entrySet()) {
-				if (!ad.storeFile(e.getKey(), e.getValue())) {
+				try {
+					ad.storeFile(e.getKey(), e.getValue());
+				} catch (RuntimeException notWritten) {
+					//THE AREA KEEPS ITS OWN NAME ON THE FAILURE. The container says which file and
+					//which subfile, in a temp path the user never chose; this says which area of
+					//which game, which is what the Apply was about.
 					throw new IllegalStateException("could not write area " + areaId
-							+ " subfile " + e.getKey() + " (file locked or read-only?)");
+						+ " subfile " + e.getKey() + ": " + ctrmap.util.Bytes.reason(notWritten), notWritten);
 				}
 			}
 			pending.clear();
@@ -518,22 +526,26 @@ public class TilePainterForm {
 		for (StagedRegion s : staged) {
 			int dest = destRegion(r, s.srcRegion);
 			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, dest), Workspace.session());
-			boolean ok = gr.storeFile(1, s.model);
-			ok &= gr.storeFile(2, s.collision);
-			ok &= gr.storeFile(0, s.tilemap);
+			try {
+				gr.storeFile(1, s.model);
+				gr.storeFile(2, s.collision);
+				gr.storeFile(0, s.tilemap);
 			// door props carry ABSOLUTE world coords of the FIRST map cell (where
 			// the warps also go) - storing them into every region would stack
 			// engine-visible duplicates at that one location
-			if (composite) {
-				// preserve the region's existing props; only merge new door props in
-				if (s.firstCell && doorProps != null) {
-					ok &= gr.storeFile(3, mergeProps(gr, doorProps));
+				if (composite) {
+					// preserve the region's existing props; only merge new door props in
+					if (s.firstCell && doorProps != null) {
+						gr.storeFile(3, mergeProps(gr, doorProps));
+					}
+				} else {
+					gr.storeFile(3, (s.firstCell && doorProps != null) ? doorProps : s.props);
 				}
-			} else {
-				ok &= gr.storeFile(3, (s.firstCell && doorProps != null) ? doorProps : s.props);
-			}
-			if (!ok) {
-				throw new IllegalStateException("could not write region " + dest + " (file locked or read-only?)");
+			} catch (RuntimeException notWritten) {
+				//THE REGION KEEPS ITS OWN NAME ON THE FAILURE, for the same reason the area
+				//does: this is the write the whole Apply exists to make.
+				throw new IllegalStateException("could not write region " + dest + ": "
+					+ ctrmap.util.Bytes.reason(notWritten), notWritten);
 			}
 		}
 		area.commit();
@@ -1030,8 +1042,15 @@ public class TilePainterForm {
 		}
 		ent.modified = true;
 		byte[] assembled = ent.assembleData();
-		if (assembled == null || !zo.storeFile(1, assembled)) {
-			throw new IllegalStateException("could not write the door warps to zone " + zoneIndex);
+		if (assembled == null) {
+			throw new IllegalStateException("could not rebuild zone " + zoneIndex
+				+ "'s entity data for the door warps");
+		}
+		try {
+			zo.storeFile(1, assembled);
+		} catch (RuntimeException notWritten) {
+			throw new IllegalStateException("could not write the door warps to zone " + zoneIndex
+				+ ": " + ctrmap.util.Bytes.reason(notWritten), notWritten);
 		}
 
 		// PHASE B: clone private interiors and retarget; a failed clone leaves
@@ -1062,8 +1081,17 @@ public class TilePainterForm {
 			if (retargeted) {
 				ent.modified = true;
 				assembled = ent.assembleData();
-				if (assembled == null || !zo.storeFile(1, assembled)) {
-					note.append("\nCould not save the retargeted warps - doors lead to the retail interiors.");
+				try {
+					if (assembled == null) {
+						throw new IllegalStateException("the entity data could not be rebuilt");
+					}
+					zo.storeFile(1, assembled);
+				} catch (RuntimeException notWritten) {
+					//NOT FATAL, and it never was: the doors already point at the retail interiors,
+					//which work. The note says so, and now says why.
+					note.append("\nCould not save the retargeted warps (")
+						.append(ctrmap.util.Bytes.reason(notWritten))
+						.append(") - doors lead to the retail interiors.");
 				}
 			}
 		}
@@ -1224,11 +1252,20 @@ public class TilePainterForm {
 			ent.furnitureCount = ent.furniture.size();
 			ent.modified = true;
 			byte[] assembled = ent.assembleData();
-			if (assembled == null || !zo.storeFile(1, assembled)) {
-				throw new IllegalStateException("could not write the sign furniture");
+			if (assembled == null) {
+				throw new IllegalStateException("the sign furniture could not be rebuilt");
 			}
-			if (!zo.storeFile(2, s.getScriptBytes())) {
-				throw new IllegalStateException("could not write the sign script");
+			try {
+				zo.storeFile(1, assembled);
+			} catch (RuntimeException notWritten) {
+				throw new IllegalStateException("could not write the sign furniture: "
+					+ ctrmap.util.Bytes.reason(notWritten), notWritten);
+			}
+			try {
+				zo.storeFile(2, s.getScriptBytes());
+			} catch (RuntimeException notWritten) {
+				throw new IllegalStateException("could not write the sign script: "
+					+ ctrmap.util.Bytes.reason(notWritten), notWritten);
 			}
 		}
 		return wired;

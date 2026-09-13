@@ -134,7 +134,7 @@ public class GARC {
 			//list. The stale-table repair is one of those readers.
 			throw new IllegalStateException(file.getName() + " could not be read as a GARC"
 				+ " (read " + entries.size() + " of the " + length + " entries its header declares): "
-				+ ctrmap.Ui.reason(ex), ex);
+				+ ctrmap.util.Bytes.reason(ex), ex);
 		}
 	}
 

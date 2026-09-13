@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
  * catch block with nothing in it, or with nothing but a log line, in a program
  * whose whole doctrine is that a silent path is a defect.
  *
- * <p>WHY A CEILING AND NOT A BAN. 125 of them exist today. Some are genuinely
+ * <p>WHY A CEILING AND NOT A BAN. 119 of them exist today. Some are genuinely
  * nothing-to-do - a close() in a finally, a best-effort repaint - and deciding
  * which, one at a time, is weeks of reading. A ban would be reverted within a
  * day and the doctrine would go back to being decoration. A ceiling seeded at
@@ -36,13 +36,18 @@ import java.util.regex.Pattern;
 public class SilentCatchTest {
 
 	/**
-	 * Measured on 2026-09-13: 55 empty and 70 log-only in production sources.
+	 * Measured on 2026-09-13: 55 empty and 64 log-only in production sources.
+	 *
+	 * <p>LOWERED from 125 the same day, by the camera package: three readers and two
+	 * writers that logged their IOException and carried on, which is how a camera table
+	 * declaring more cameras than it held produced records made of -1s and the editor
+	 * offered them. A number that falls is re-seeded here, or the next six cost nothing.
 	 *
 	 * <p>It may fall and may not rise. Raising it is a decision about whether
 	 * this program tells its user when something went wrong, and it should
 	 * happen in a commit message where somebody can disagree with it.
 	 */
-	private static final int CEILING = 125;
+	private static final int CEILING = 119;
 
 	/** A catch block whose body holds no nested braces - the shape we can read. */
 	private static final Pattern CATCH = Pattern.compile("catch\\s*\\([^)]*\\)\\s*\\{([^{}]*)\\}");
