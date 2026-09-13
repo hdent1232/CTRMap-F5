@@ -1762,6 +1762,18 @@
     "src"
    ],
    "must_say": "walking a Pawn routine and its callees"
+  },
+  {
+   "id": "a-message-sends-the-user-to-a-menu-item-that-is-not-there",
+   "why": "Three messages told the user to run 'Map > Fork area' and a suite pinned the wording. There is no such item - it is 'Fork map geometry (make zone independent)...' and has been since it was renamed. All three fire at the moment the user is blocked: the prop editor, the map painter and the texture pack all refuse until the zone has its own area, so the single sentence they get sent them hunting through a menu for something that does not exist. This puts one of those back.",
+   "file": "src/ctrmap/humaninterface/PropEditForm.java",
+   "find": "Give this zone its own area first (Map > Fork map geometry).",
+   "replace": "Give this zone its own area first (Map > Fork area).",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "all of which the menu bar has"
   }
  ],
  "retired": [

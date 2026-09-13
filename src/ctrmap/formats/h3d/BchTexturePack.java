@@ -543,7 +543,7 @@ public class BchTexturePack {
 		if (shared != null) {
 			throw new IllegalStateException("Area " + targetArea + " is also used by "
 					+ shared + ".\nCarrying textures into it would change those maps."
-					+ "\nGive this zone its own area first (Map > Fork area).");
+					+ "\nGive this zone its own area first (Map > Fork map geometry).");
 		}
 	}
 

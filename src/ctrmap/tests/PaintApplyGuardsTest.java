@@ -185,7 +185,7 @@ public class PaintApplyGuardsTest {
 		check(said(said, "SHARES its area"), "the shared-area question was asked: " + said);
 		String why = stop == null ? "(nothing was thrown)" : String.valueOf(stop.getMessage());
 		check(stop instanceof IllegalStateException && why.contains("Area 43 is also used by zones 72, 73")
-				&& why.contains("nothing was applied") && why.contains("(Map > Fork area) and Apply again"),
+				&& why.contains("nothing was applied") && why.contains("(Map > Fork map geometry) and Apply again"),
 				"answering \"edit the shared area anyway\" does not get this map's textures into zones 72"
 				+ " and 73's area: the Apply refuses in its own words, naming them, saying nothing was"
 				+ " applied and what to do instead (stopped by: " + stop + ")");

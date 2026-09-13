@@ -39,13 +39,6 @@ both would have blocked every measurement forever:
 
 ## Open
 
-- [ ] **D. Features a user cannot find, and messages that name places that do not
-      exist.** Five user-facing error strings name menu paths ("Map > Fork area") that
-      are not in the menu bar, one of them pinned by a test; the Extras bar offers one
-      of the three tools that open in Extras; 15 of 34 menu items are the only way to
-      reach their feature and no item anywhere has an accelerator (Save has no Ctrl+S);
-      QUICKSTART.md ships beside the exe with no entry point in the program; Map > OBJ
-      to collisions silently does nothing when no collision is loaded.
 - [ ] **E. Finished work nothing can reach.** DressUpIndex/DressUpArchive and
       PartyParam are decoded, proven by suites, drawn as live in ARCHITECTURE, and have
       no UI at all: 71 measured script-selector names that a user can only get by
@@ -65,6 +58,16 @@ both would have blocked every measurement forever:
 
 ## Done
 
+- [x] 2026-09-13 D. The app stopped naming places that do not exist, and stopped
+      hiding things. Three messages sent users to "Map > Fork area", an item renamed
+      long ago, and a suite pinned the wording - all four corrected, and
+      MainframeShapeTest now reads every "Menu > Item" named in a production string
+      and refuses one the menu bar cannot resolve (26 checked). The Extras bar offers
+      all three tools that open in Extras rather than one. Save is Ctrl+S and Deploy
+      is Ctrl+D, the first accelerators in this menu bar. Help opens the quick start
+      guide that has shipped beside the program with no door to it. And OBJ to
+      collisions says what it did - it used to do nothing at all, silently, when no
+      collision was open.
 - [x] 2026-09-13 C. One closure engine, two transplants. The message and sign
       injectors were 293 of 326 substantive lines the same, byte-identical in the
       closure walk, the stub-insert preconditions and the branch-boundary check -

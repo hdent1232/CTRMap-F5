@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import javax.swing.AbstractButton;
 import javax.swing.JButton;
 import javax.swing.JLabel;
@@ -78,7 +79,7 @@ public class MainframeShapeTest {
 		"Zone: Connect zones through a warp... | Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here (clone a retail facility)",
 		"Game Data: Edit trainer (party/battle)... | Edit battle facility opponents... | Edit shop inventories (Marts)... | Edit items (price, effects, name)... | Edit wild encounters (this zone)...",
 		"Options: Setup wizard... | --- | Workspace settings | Restore from pristine backup... | Clean workspace",
-		"Help: Check for updates... | --- | Support/Issue tracker | About",
+		"Help: Quick start guide | Check for updates... | --- | Support/Issue tracker | About",
 	};
 
 	/** The items whose label needs a sentence more; every other item has none. */
@@ -86,6 +87,7 @@ public class MainframeShapeTest {
 		{"Open Zone", "Opens a single loose ZO file. To load a map from the game, use the zone dropdown in the \"Zone Loader\" tab instead."},
 		{"Setup wizard...", "Point CTRMap at your game, step by step."},
 		{"Restore from pristine backup...", "Put the whole game, or one damaged archive, back as it was when CTRMap first copied it."},
+		{"Quick start guide", "The guide that ships beside the program: what to do first, in order."},
 	};
 
 	/**
@@ -108,7 +110,7 @@ public class MainframeShapeTest {
 
 	private static final String EXPECTED_MAP_ROW = "label: Map:   button:Blank canvas button:Resize map button:Fog & lighting button:Encounters button:Fork geometry";
 	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Connect zones button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
-	private static final String EXPECTED_EXTRAS_ROW = "button:Raw archive browser (Builder)";
+	private static final String EXPECTED_EXTRAS_ROW = "button:Raw archive browser (Builder) button:Tileset editor button:Workspace & paths";
 
 	/**
 	 * Public static fields CtrmapMainframe may declare. 91 mutable ones (plus
@@ -137,6 +139,7 @@ public class MainframeShapeTest {
 		//owner's desktop would block the run until somebody closed it
 		System.setProperty("java.awt.headless", "true");
 		File src = new File(args.length > 0 ? args[0] : "src");
+		everyMenuPathAMessageNamesExists(new File(src, "ctrmap"));
 
 		JMenuBar bar = CtrmapMainframe.buildMenuBar();
 		menuTree(bar);
@@ -206,7 +209,9 @@ public class MainframeShapeTest {
 		//the Zone Loader tab beside the dropdown, which is where the owner looked for
 		//it twice and did not find it. The count is pinned so an item cannot be added,
 		//moved or lost without somebody writing down that they meant to.
-		check(items == 34, "34 menu items in all (" + items + ")");
+		//35 since Help gained the quick start guide - the file package.ps1 has always
+		//shipped beside the program with nothing in the program naming it.
+		check(items == 35, "35 menu items in all (" + items + ")");
 
 		theZoneLoaderTabHoldsItsPreview();
 		browsingAZoneDoesNotLoadIt();
@@ -402,6 +407,78 @@ public class MainframeShapeTest {
 			+ " the wrong zone");
 		check(times[0] == 1, "...and filtering opened nothing either");
 	}
+	/**
+	 * Every "Menu > Item" a user-facing message names is a path that exists.
+	 *
+	 * <p>WHAT THIS CAUGHT. Three messages told the user to run "Map > Fork area" and one
+	 * suite pinned the wording. There is no such item: it is called "Fork map geometry
+	 * (make zone independent)...", and it has been since it was renamed. The messages fire
+	 * at the exact moment the user is blocked - the prop editor, the map painter and the
+	 * texture pack all refuse until the zone has its own area - so the one sentence they
+	 * get sends them looking through a menu for something that is not there.
+	 *
+	 * <p>It reads production sources for the literal shape, builds the real menu bar, and
+	 * matches. An item may be named by its start, so a message can leave off the long
+	 * parenthetical, and the ellipsis is ignored - what it refuses is a path that resolves
+	 * to nothing at all.
+	 */
+	static void everyMenuPathAMessageNamesExists(File srcRoot) throws Exception {
+		System.out.println("--- every menu path a message names is one the menu bar has");
+		JMenuBar bar = CtrmapMainframe.buildMenuBar();
+		Map<String, List<String>> menus = new java.util.LinkedHashMap<>();
+		for (int i = 0; i < bar.getMenuCount(); i++) {
+			JMenu m = bar.getMenu(i);
+			List<String> labels = new ArrayList<>();
+			for (Component c : m.getMenuComponents()) {
+				if (c instanceof JMenuItem) {
+					labels.add(((JMenuItem) c).getText());
+				}
+			}
+			menus.put(m.getText(), labels);
+		}
+		java.util.regex.Pattern named = java.util.regex.Pattern.compile(
+			//the item ends at a full stop, a bracket or a colon: several messages name a
+			//path and then explain it - "File > Save: every editor stores what it holds" -
+			//and the explanation is not part of the label
+			"(\\w[\\w ]{1,20}?) > ([A-Z][^\\n):]{2,60}?)[.):]");
+		List<String> wrong = new ArrayList<>();
+		int checked = 0;
+		for (File file : DialogSeamTest.javaSources(srcRoot)) {
+			if (file.getParentFile() != null && file.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			String body = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+			java.util.regex.Matcher m = named.matcher(body);
+			while (m.find()) {
+				String menu = m.group(1).trim();
+				String item = m.group(2).trim();
+				if (!menus.containsKey(menu)) {
+					continue;                      //not a menu path at all, just prose with a >
+				}
+				checked++;
+				boolean found = false;
+				for (String label : menus.get(menu)) {
+					//either way round: a message may shorten a long label ("Fork map geometry" for
+					//"Fork map geometry (make zone independent)...") or carry on past a short one
+					//("Open Zone is only for single loose ZO files")
+					String a = label == null ? "" : label.toLowerCase();
+					String b = item.toLowerCase();
+					if (!a.isEmpty() && (a.startsWith(b) || b.startsWith(a))) {
+						found = true;
+					}
+				}
+				if (!found) {
+					wrong.add(file.getName() + ": " + menu + " > " + item);
+				}
+			}
+		}
+		check(wrong.isEmpty(), checked + " menu path(s) named in messages, all of which the menu"
+			+ " bar has" + (wrong.isEmpty() ? "" : " - except " + wrong + ". These fire at the moment"
+			+ " a user is blocked, so the one sentence they get has to name something they can find"));
+		check(checked >= 5, "...and there were paths to check (" + checked + "), so a message that"
+			+ " stopped naming any would not pass this quietly");
+	}
+
 	/** Whether {@code what} is somewhere inside {@code where}. */
 	static boolean holds(Component where, Component what) {
 		if (where == what) {
