@@ -63,8 +63,17 @@ $shipDir = Join-Path $env:TEMP ("ctrmap-ship-" + [guid]::NewGuid().ToString("N")
 New-Item -ItemType Directory -Force -Path $shipDir | Out-Null
 Copy-Item -Recurse -Force (Join-Path $root "build\classes\*") $shipDir
 Remove-Item -Recurse -Force (Join-Path $shipDir "ctrmap\tests") -ErrorAction SilentlyContinue
-$leftOver = @(Get-ChildItem -Recurse -Filter "*Test.class" $shipDir -ErrorAction SilentlyContinue)
-if ($leftOver.Count -gt 0) { throw ("suite classes are still staged: " + $leftOver.Count) }
+# A SUITE IS A TOP-LEVEL CLASS. This matched "*Test.class" and nothing else, so it also
+# caught H3DMaterial$AlphaTest - a nested enum about alpha testing in the graphics sense,
+# which has been production code since before this check existed. The check was written and
+# never run against a real package, so the first release after it would have been refused
+# for a class that belongs in the jar. A nested class carries a $ in its file name and
+# cannot be a suite entry point; a suite is a top-level class with a main method.
+$leftOver = @(Get-ChildItem -Recurse -Filter "*Test.class" $shipDir -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notlike "*`$*" })
+if ($leftOver.Count -gt 0) {
+    throw ("suite classes are still staged: " + ($leftOver | ForEach-Object { $_.Name }) -join ", ")
+}
 
 $ErrorActionPreference = "Continue"
 & "$jdk\bin\jar.exe" --create --file "$stage\CTRMap-F5.jar" --manifest $mf -C $shipDir .
