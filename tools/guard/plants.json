@@ -1774,6 +1774,18 @@
     "src"
    ],
    "must_say": "all of which the menu bar has"
+  },
+  {
+   "id": "the-camera-keeps-walking-after-it-is-told-to-stop",
+   "why": "Four anonymous threads, one per movement key, each looping on whether its key was still held and each swallowing the InterruptedException that exists to stop it - and none of them daemons. A key press whose release never arrives (a focus change, a modal dialog, the window closing) left one walking the camera for the life of the process, holding the 3D panel alive and keeping the JVM up after the last window closed. There is one thread now, it is a daemon, and it honours the interrupt. This swallows it again, which also puts the silent-catch count back up over its ceiling - the two are the same defect seen from two sides.",
+   "file": "src/ctrmap/humaninterface/CM3DInputManager.java",
+   "find": "\t\t\t\t} catch (InterruptedException stopped) {\n\t\t\t\t\t//ASKED TO STOP, SO STOP. Swallowing this is what let a thread whose key\n\t\t\t\t\t//release was lost keep walking the camera for the life of the process.\n\t\t\t\t\tThread.currentThread().interrupt();\n\t\t\t\t}\n",
+   "replace": "\t\t\t\t} catch (InterruptedException stopped) {\n\t\t\t\t}\n",
+   "suite": "ctrmap.tests.SilentCatchTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "may fall and may not rise"
   }
  ],
  "retired": [

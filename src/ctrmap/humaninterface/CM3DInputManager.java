@@ -115,87 +115,100 @@ public class CM3DInputManager implements MouseWheelListener, MouseMotionListener
 	}
 
 	@Override
+	/**
+	 * Starts the camera walking while a movement key is held.
+	 *
+	 * <p>ONE THREAD, A DAEMON, AND IT STOPS. There were four - one per key, each an
+	 * anonymous Thread looping on "is my key still in the set", each swallowing the
+	 * InterruptedException that exists to stop it, and none of them daemons. A key press
+	 * whose release never arrives - a focus change, a modal dialog, the window closing -
+	 * left one running for ever, writing into the 3D panel and holding it alive, and the
+	 * process with it. Four copies of the same loop also meant the four directions had
+	 * drifted: two of them moved the camera vertically and two did not.
+	 */
 	public void keyPressed(KeyEvent e) {
-		if (!keycodes.contains(e.getKeyCode())) {
-			keycodes.add(e.getKeyCode());
-			switch (e.getKeyCode()) {
-				case KeyEvent.VK_W:
-					Thread continuousUpdateThreadW = new Thread() {
-						@Override
-						public void run() {
-							long start;
-							while (keycodes.contains(KeyEvent.VK_W)) {
-								try {
-									start = System.currentTimeMillis();
-									m3DDebugPanel.translateX -= Math.sin(Math.toRadians(m3DDebugPanel.rotateY)) * Math.min(1f, Math.tan(Math.toRadians(90 - Math.abs(m3DDebugPanel.rotateX)))) * speed;
-									m3DDebugPanel.translateZ += Math.cos(Math.toRadians(m3DDebugPanel.rotateY)) * Math.min(1f, Math.tan(Math.toRadians(90 - Math.abs(m3DDebugPanel.rotateX)))) * speed;
-									m3DDebugPanel.translateY += Math.sin(Math.toRadians(m3DDebugPanel.rotateX)) * speed;
-									Thread.sleep(10); //better than being tied to the framerate eh?
-								} catch (InterruptedException ex) {
-								}
-							}
-						}
-					};
-					continuousUpdateThreadW.start();
-					break;
-				case KeyEvent.VK_S:
-					Thread continuousUpdateThreadS = new Thread() {
-						@Override
-						public void run() {
-							long start;
-							while (keycodes.contains(KeyEvent.VK_S)) {
-								try {
-									start = System.currentTimeMillis();
-									m3DDebugPanel.translateX += Math.sin(Math.toRadians(m3DDebugPanel.rotateY)) * Math.min(1f, Math.tan(Math.toRadians(90 - Math.abs(m3DDebugPanel.rotateX)))) * speed;
-									m3DDebugPanel.translateZ -= Math.cos(Math.toRadians(m3DDebugPanel.rotateY)) * Math.min(1f, Math.tan(Math.toRadians(90 - Math.abs(m3DDebugPanel.rotateX)))) * speed;
-									m3DDebugPanel.translateY -= Math.sin(Math.toRadians(m3DDebugPanel.rotateX)) * speed;
-									Thread.sleep(10);
-								} catch (InterruptedException ex) {
-								}
-							}
-						}
-					};
-					continuousUpdateThreadS.start();
-					break;
-				case KeyEvent.VK_A:
-					Thread continuousUpdateThreadA = new Thread() {
-						@Override
-						public void run() {
-							long start;
-							while (keycodes.contains(KeyEvent.VK_A)) {
-								try {
-									start = System.currentTimeMillis();
-									m3DDebugPanel.translateX -= Math.sin(Math.toRadians(m3DDebugPanel.rotateY - 90f)) * speed;
-									m3DDebugPanel.translateZ += Math.cos(Math.toRadians(m3DDebugPanel.rotateY - 90f)) * speed;
-									Thread.sleep(10);
-								} catch (InterruptedException ex) {
-								}
-							}
-						}
-					};
-					continuousUpdateThreadA.start();
-					break;
-				case KeyEvent.VK_D:
-					Thread continuousUpdateThreadD = new Thread() {
-						@Override
-						public void run() {
-							long start;
-							while (keycodes.contains(KeyEvent.VK_D)) {
-								try {
-									start = System.currentTimeMillis();
-									m3DDebugPanel.translateX += Math.sin(Math.toRadians(m3DDebugPanel.rotateY - 90f)) * speed;
-									m3DDebugPanel.translateZ -= Math.cos(Math.toRadians(m3DDebugPanel.rotateY - 90f)) * speed;
-									Thread.sleep(10);
-								} catch (InterruptedException ex) {
-								}
-							}
-						}
-					};
-					continuousUpdateThreadD.start();
-					break;
-			}
+		if (keycodes.contains(e.getKeyCode())) {
+			return;
+		}
+		keycodes.add(e.getKeyCode());
+		switch (e.getKeyCode()) {
+			case KeyEvent.VK_W:
+			case KeyEvent.VK_S:
+			case KeyEvent.VK_A:
+			case KeyEvent.VK_D:
+				startWalking();
+				break;
+			default:
+				break;
 		}
 	}
+
+	/** The one walker, or nothing when it is already walking. */
+	private synchronized void startWalking() {
+		if (walker != null && walker.isAlive()) {
+			return;
+		}
+		walker = new Thread(new Runnable() {
+			@Override
+			public void run() {
+				try {
+					while (walking()) {
+						step();
+						Thread.sleep(10); //better than being tied to the framerate
+					}
+				} catch (InterruptedException stopped) {
+					//ASKED TO STOP, SO STOP. Swallowing this is what let a thread whose key
+					//release was lost keep walking the camera for the life of the process.
+					Thread.currentThread().interrupt();
+				}
+			}
+		}, "camera-walk");
+		//A DAEMON: the window closing ends it, whatever the keyboard last said.
+		walker.setDaemon(true);
+		walker.start();
+	}
+
+	/** Whether any movement key is still held. */
+	private boolean walking() {
+		return keycodes.contains(KeyEvent.VK_W) || keycodes.contains(KeyEvent.VK_S)
+			|| keycodes.contains(KeyEvent.VK_A) || keycodes.contains(KeyEvent.VK_D);
+	}
+
+	/**
+	 * One tick of movement for whatever is held.
+	 *
+	 * <p>The pitch factor applies to forward and back only, which is what the four
+	 * copies did between them: W and S climbed and dived with the camera angle, A and D
+	 * strafed flat. That difference is deliberate and is now in one place where it can
+	 * be read.
+	 */
+	private void step() {
+		double yaw = Math.toRadians(m3DDebugPanel.rotateY);
+		double pitch = Math.toRadians(m3DDebugPanel.rotateX);
+		double flat = Math.min(1f, Math.tan(Math.toRadians(90 - Math.abs(m3DDebugPanel.rotateX))));
+		if (keycodes.contains(KeyEvent.VK_W)) {
+			m3DDebugPanel.translateX -= Math.sin(yaw) * flat * speed;
+			m3DDebugPanel.translateZ += Math.cos(yaw) * flat * speed;
+			m3DDebugPanel.translateY += Math.sin(pitch) * speed;
+		}
+		if (keycodes.contains(KeyEvent.VK_S)) {
+			m3DDebugPanel.translateX += Math.sin(yaw) * flat * speed;
+			m3DDebugPanel.translateZ -= Math.cos(yaw) * flat * speed;
+			m3DDebugPanel.translateY -= Math.sin(pitch) * speed;
+		}
+		double side = Math.toRadians(m3DDebugPanel.rotateY - 90f);
+		if (keycodes.contains(KeyEvent.VK_A)) {
+			m3DDebugPanel.translateX -= Math.sin(side) * speed;
+			m3DDebugPanel.translateZ += Math.cos(side) * speed;
+		}
+		if (keycodes.contains(KeyEvent.VK_D)) {
+			m3DDebugPanel.translateX += Math.sin(side) * speed;
+			m3DDebugPanel.translateZ -= Math.cos(side) * speed;
+		}
+	}
+
+	/** The walking thread, or null. One at a time. */
+	private Thread walker;
 
 	@Override
 	public void keyReleased(KeyEvent e) {

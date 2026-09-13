@@ -195,6 +195,10 @@ the `DA` container** and has no loose subfile of its own. Subfiles 450–455 are
 six tables, not seven. Reading the containers is therefore the only way to get
 a complete set, and `DressUpIndex` reads the containers.
 
+NO UI REACHES THIS YET. The readers below are measured and proven and nothing
+in the editor calls them: using this today means writing Java against these classes.
+It is recorded as measured-not-shipped in OUTSTANDING.md and in DuplicateWorkTest.
+
 Read with `ctrmap.formats.dressup.DressUpArchive` / `DressUpIndex`; guarded by
 `ctrmap.tests.DressUpIndexTest`.
 

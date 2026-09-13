@@ -55,11 +55,23 @@ Implementation-Version: $Version
 
 "@ | Set-Content $mf -Encoding ascii
 
+# THE SUITES DO NOT SHIP. Jarring all of build\classes put the whole battery into every
+# release - roughly 40% of the jar - and they are not only dead weight: they are runnable
+# out of the shipped artifact, against the user's own game folder, by anyone who reads the
+# class list. A release is the program, not the program and its proofs.
+$shipDir = Join-Path $env:TEMP ("ctrmap-ship-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $shipDir | Out-Null
+Copy-Item -Recurse -Force (Join-Path $root "build\classes\*") $shipDir
+Remove-Item -Recurse -Force (Join-Path $shipDir "ctrmap\tests") -ErrorAction SilentlyContinue
+$leftOver = @(Get-ChildItem -Recurse -Filter "*Test.class" $shipDir -ErrorAction SilentlyContinue)
+if ($leftOver.Count -gt 0) { throw ("suite classes are still staged: " + $leftOver.Count) }
+
 $ErrorActionPreference = "Continue"
-& "$jdk\bin\jar.exe" --create --file "$stage\CTRMap-F5.jar" --manifest $mf -C build\classes .
+& "$jdk\bin\jar.exe" --create --file "$stage\CTRMap-F5.jar" --manifest $mf -C $shipDir .
 $jarExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
 if ($jarExit -ne 0) { throw "jar failed with exit code $jarExit" }
+Remove-Item -Recurse -Force $shipDir -ErrorAction SilentlyContinue
 
 Copy-Item -Recurse lib "$stage\lib"
 Copy-Item run.bat, run.sh, README.md, LICENSE, QUICKSTART.md "$stage\"
