@@ -6,6 +6,8 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -73,6 +75,35 @@ public class DuplicateWorkTest {
 			+ " shrink for free; it grows only when somebody argues for a seventh."},
 	};
 
+	/** Classes nothing in the application reaches, each with what it is instead. */
+	private static final String[][] UNREACHED = {
+		{"BuildingHarvester.java",
+			"a research tool the owner runs directly: it walks every region and writes the "
+			+ "building catalogue TSV. Not shipped in a menu on purpose"},
+		{"TerrainHarvester.java",
+			"the same, for terrain: run by hand, output committed, not part of the editor"},
+		{"TerrainDonorHarvester.java",
+			"the same again, for donor terrain"},
+		{"GroundMaterialAudit.java",
+			"a one-shot audit the owner runs to check ground materials across the dump"},
+		{"BchModelVerifier.java",
+			"the acceptance oracle for BchModelAppender output: three suites run it over the "
+			+ "857-model corpus and BchModelAppender names it as the rule its writes must "
+			+ "satisfy - in prose, which is why nothing reaches it in code"},
+		{"DressUpIndex.java",
+			"MEASURED, NOT SHIPPED. The whole XY wardrobe index is decoded and proven by "
+			+ "DressUpIndexTest; nothing in the editor can reach it yet. It is half a feature "
+			+ "and it is recorded here rather than left looking alive"},
+		{"DressUpArchive.java",
+			"the other half of the same unshipped feature"},
+		{"PartyParam.java",
+			"MEASURED, NOT SHIPPED: 71 script-selector names proven by PartyParamTest, which "
+			+ "a user can only read out of the Java source. Surfacing it is queued work, not "
+			+ "debt to delete"},
+	};
+
+	/** How many may be unreached. It may fall and may not rise quietly. */
+	private static final int UNREACHED_CEILING = 8;
 	/** The snapshot of classes that predate the rule. */
 	private static final String LIST = "tools/guard/classes.txt";
 
@@ -91,6 +122,7 @@ public class DuplicateWorkTest {
 		File repo = root.getParentFile() == null ? new File(".") : root.getParentFile();
 		aCapabilityHasOneImplementation(root);
 		aNewClassSaysWhatItIsNot(root, new File(repo, LIST));
+		everyClassIsReachedBySomething(root);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -162,6 +194,68 @@ public class DuplicateWorkTest {
 				+ " be used>\". The point is not the line; it is that you cannot write it"
 				+ " without having looked, and not looking is how this tree got a second map"
 				+ " loader."));
+	}
+
+	/**
+	 * Every production class is reached by the application, or is named here with a reason.
+	 *
+	 * <p>WHY THIS EXISTS. This is the hole that let a previous "remove the debt" sweep
+	 * report success: nothing measured REACHABILITY, so every ceiling in this battery was
+	 * satisfiable by code that never runs. A dead class opens no window, holds no global
+	 * and duplicates no capability - it compiles, ships in the jar, and counts toward the
+	 * class snapshot as though it were alive. The census found 1,830 lines of it, including
+	 * a third stale copy of the tile-semantics constants under the same names as the live
+	 * one, and an 83-line class whose javadoc told the next reader it was live.
+	 *
+	 * <p>REACHED means: walk the references from CtrmapMainframe and the updater, through
+	 * production sources only, to a fixed point. A class with its own main() is NOT live by
+	 * that alone - four of the dead ones had one, which is exactly how they looked alive.
+	 * Standalone tools and measured-but-unshipped formats are real, and they are listed
+	 * below with what they are, which is the difference between a decision and a leftover.
+	 */
+	static void everyClassIsReachedBySomething(File root) throws Exception {
+		System.out.println("--- every production class is reached, or is argued for by name");
+		Map<String, String> src = new HashMap<>();
+		for (File f : DialogSeamTest.javaSources(new File(root, "ctrmap"))) {
+			if (f.getParentFile() != null && f.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			src.put(f.getName().substring(0, f.getName().length() - ".java".length()),
+				new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+		}
+		List<String> live = new ArrayList<>();
+		for (String root_ : new String[]{"CtrmapMainframe", "Updater"}) {
+			if (src.containsKey(root_)) {
+				live.add(root_);
+			}
+		}
+		for (int i = 0; i < live.size(); i++) {
+			String body = SourceSeamTest.stripComments(src.get(live.get(i)));
+			for (String other : src.keySet()) {
+				if (live.contains(other) || other.equals(live.get(i))) {
+					continue;
+				}
+				if (Pattern.compile("\\b" + Pattern.quote(other) + "\\b").matcher(body).find()) {
+					live.add(other);
+				}
+			}
+		}
+		List<String> stranded = new ArrayList<>();
+		for (String cls : src.keySet()) {
+			if (live.contains(cls)) {
+				continue;
+			}
+			boolean argued = false;
+			for (String[] e : UNREACHED) {
+				argued |= e[0].equals(cls + ".java");
+			}
+			if (!argued) {
+				stranded.add(cls);
+			}
+		}
+		check(stranded.isEmpty(), live.size() + " of " + src.size() + " production class(es)"
+			+ " are reached from the application" + (stranded.isEmpty() ? "" : " - and these are not, and are not argued for: " + stranded + ". Either something should call it, or it should be deleted, or it goes in UNREACHED with what it is. A class nothing reaches still compiles, still ships, and still counts toward every other ceiling in this battery"));
+		check(UNREACHED.length <= UNREACHED_CEILING, UNREACHED.length + " class(es) argued as unreached, ceiling " + UNREACHED_CEILING + " - this may fall and may not rise quietly");
 	}
 
 	static String relative(File root, File f) {

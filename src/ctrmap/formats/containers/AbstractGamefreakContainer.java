@@ -76,12 +76,23 @@ public abstract class AbstractGamefreakContainer {
 		return files;
 	}
 
+	/**
+	 * Opens the file, or refuses to be a container at all.
+	 *
+	 * <p>It used to call {@link #verify} and ignore the answer, and the old verify could
+	 * not say no anyway - so the wrong file, or a torn one, produced an object every
+	 * caller treated as real. "Expect a crash soon" was printed to stderr where nobody
+	 * runs the program from a console, and the crash, when it came, named a line a long
+	 * way from the file that caused it.
+	 */
 	private void open(File f) {
-		if (f != null) {
-			this.f = f;
-			verify();
-		} else {
-			System.err.println("Unable to open file. Expect a crash soon.");
+		if (f == null) {
+			throw new IllegalArgumentException("a container must be opened on a file, not null");
+		}
+		this.f = f;
+		if (!verify()) {
+			throw new IllegalStateException(whyNot == null
+				? f.getName() + " is not a readable " + getClass().getSimpleName() : whyNot);
 		}
 	}
 
@@ -114,26 +125,73 @@ public abstract class AbstractGamefreakContainer {
 		}
 	}
 
+	/**
+	 * Whether this file really is one of these containers, and why not when it is not.
+	 *
+	 * <p>IT COULD NOT SAY NO. The header check printed "GfContainer header mismatch!" to
+	 * stderr and then returned true, so pointing any container constructor at the wrong
+	 * file - a GARC, a BCH, a half-written temp file - produced an object the rest of the
+	 * editor treated as a zone or an area, reading subfile bounds out of whatever those
+	 * bytes happened to be. It also accepted offsets that run past the end of the file,
+	 * which is what a truncated or torn container looks like.
+	 *
+	 * <p>{@link #whyNot} carries the reason, so a caller can report what the user needs
+	 * to hear rather than "could not open".
+	 */
 	public boolean verify() {
+		whyNot = null;
 		try {
+			long onDisk = f.length();
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(f));
-			if (dis.read2Bytes() != getHeader()) {
-				System.err.println("GfContainer header mismatch!");
-				System.out.println("Error verifying file " + f.getAbsolutePath());
-			}
-			len = dis.readShort();
-			offsets = new int[len + 1];
-			for (int i = 0; i < len + 1; i++) {
-				offsets[i] = dis.readInt();
+			try {
+				short head = dis.read2Bytes();
+				if (head != getHeader()) {
+					whyNot = f.getName() + " is not a " + getClass().getSimpleName()
+						+ ": its first two bytes are 0x" + Integer.toHexString(head & 0xFFFF)
+						+ " and this container is 0x" + Integer.toHexString(getHeader() & 0xFFFF) + ".";
+					return false;
+				}
+				len = dis.readShort();
+				if (len < 0) {
+					whyNot = f.getName() + " declares " + len + " subfiles.";
+					return false;
+				}
+				offsets = new int[len + 1];
+				for (int i = 0; i < len + 1; i++) {
+					offsets[i] = dis.readInt();
+				}
+			} finally {
 			}
 			dis.close();
+			//THE OFFSETS MUST FIT IN THE FILE. A container whose last offset is past the end
+			//is truncated, and every read from it would have come back zero-padded and been
+			//reported as data - which is how a torn pack becomes a zone full of nothing.
+			for (int i = 0; i <= len; i++) {
+				if (offsets[i] < 0 || offsets[i] > onDisk) {
+					whyNot = f.getName() + " is truncated or damaged: subfile " + i + " starts at 0x"
+						+ Integer.toHexString(offsets[i]) + " and the file is only " + onDisk
+						+ " byte(s) long.";
+					return false;
+				}
+				if (i > 0 && offsets[i] < offsets[i - 1]) {
+					whyNot = f.getName() + " is damaged: subfile " + i + " starts before subfile "
+						+ (i - 1) + " does.";
+					return false;
+				}
+			}
 			return true;
 		} catch (IOException e) {
-			e.printStackTrace();
-			System.out.println("An IOException occured while reading " + f.getName());
+			whyNot = "could not read " + f.getName() + ": " + ctrmap.Ui.reason(e);
 			return false;
 		}
 	}
+
+	/** Why {@link #verify} said no, or null when it said yes. */
+	public String whyNot() {
+		return whyNot;
+	}
+
+	private String whyNot;
 
 	public File getOriginFile() {
 		return f;
@@ -143,16 +201,41 @@ public abstract class AbstractGamefreakContainer {
 		return offsets[fileNum];
 	}
 
+	/**
+	 * One subfile, whole, or null - never part of one padded out with zeros.
+	 *
+	 * <p>IT USED TO ZERO-FILL AND CALL THAT SUCCESS. {@code skip} and {@code read} both
+	 * return how much they actually managed, and both results were dropped, so a file
+	 * shorter than its own offset table handed back a buffer of exactly the right length
+	 * whose tail was zeros. Measured on a GARC truncated to half its size: 278 of 431
+	 * entries came back pure zero, none null, no exception, no log line. Downstream that
+	 * is a zone with no entities, an area with no atmosphere, a region with no geometry -
+	 * and then the editor writes that back over the real thing.
+	 */
 	public byte[] getFile(int fileNum) {
+		if (offsets == null || fileNum < 0 || fileNum + 1 >= offsets.length) {
+			return null;
+		}
+		int want = offsets[fileNum + 1] - offsets[fileNum];
+		if (want < 0) {
+			return null;
+		}
 		try {
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(f));
-			dis.skip(offsets[fileNum]);
-			byte[] b = new byte[offsets[fileNum + 1] - offsets[fileNum]];
-			dis.read(b);
-			dis.close();
-			return b;
+			try {
+				byte[] b = new byte[want];
+				//BOTH OF THESE REFUSE SHORT DATA. skip() and read() answer how much they managed
+				//and both answers used to be dropped, which is how a truncated file became a
+				//zero-filled buffer reported as the subfile.
+				dis.skipFully(offsets[fileNum]);
+				dis.readFully(b);
+				return b;
+			} finally {
+				dis.close();
+			}
 		} catch (IOException e) {
-			Logger.getLogger(AbstractGamefreakContainer.class.getName()).log(Level.SEVERE, null, e);
+			Logger.getLogger(AbstractGamefreakContainer.class.getName()).log(Level.SEVERE,
+				"reading " + f + " subfile " + fileNum, e);
 			return null;
 		}
 	}
@@ -183,11 +266,19 @@ public abstract class AbstractGamefreakContainer {
 	public abstract boolean getIsPadded();
 
 	/**
-	 * Stores a subfile, rewriting the container on disk and reporting the file
-	 * as edited to the handed {@link GameFiles}. Returns true when the
-	 * container ends up holding the given data (including the no-op case where
-	 * it already did), false when the write failed - callers that must not
-	 * report a failed write as success have to check this.
+	 * Stores a subfile, rewriting the container on disk and reporting the file as edited
+	 * to the handed {@link GameFiles}. Returns true; a write that failed THROWS.
+	 *
+	 * <p>IT USED TO RETURN FALSE, and twelve callers dropped the answer - two of them in
+	 * the fog editor, one statement before telling the user the atmosphere was saved.
+	 * The failure this is documented against is an emulator or a virus scanner holding
+	 * the archive open, which is a thing that happens to this project's users, and the
+	 * result was a dialog reporting a save of bytes that were never written.
+	 *
+	 * <p>A boolean nobody is obliged to read is a convention. This throws, so the only
+	 * way to carry on past a failed write is a catch somebody wrote on purpose - and the
+	 * UI paths already report a thrown exception through {@code Ui.error}. The boolean
+	 * return is kept so the callers that DO check still compile and still read well.
 	 */
 	public boolean storeFile(int num, byte[] data) {
 		byte[] paddedData;
@@ -244,9 +335,11 @@ public abstract class AbstractGamefreakContainer {
 			files.edited(getOriginFile());
 			return true;
 		} catch (IOException e) {
-			e.printStackTrace();
-			System.out.println("An IOException occured while writing " + f.getName());
-			return false;
+			//THROWN, not returned: see the javadoc. The message names the file and the
+			//subfile, because "could not write" with no name is what the user used to get
+			//on a console they do not have.
+			throw new IllegalStateException("could not write subfile " + num + " of "
+				+ f.getName() + ": " + ctrmap.Ui.reason(e), e);
 		}
 	}
 

@@ -56,6 +56,74 @@ public class GarcSniffTest {
 
 	static int fails = 0;
 
+	/**
+	 * A TRUNCATED ARCHIVE IS NOT DATA. Reading one answers null, never zeros.
+	 *
+	 * <p>WHAT THIS CAUGHT, measured rather than imagined: both entry readers skipped to an
+	 * offset and read a buffer without checking either result, and {@code skip} and
+	 * {@code read} both answer how much they actually managed. So an archive shorter than
+	 * its own table handed back buffers of exactly the right length whose tails were
+	 * zeros - on a/0/4/0 cut in half, 278 of its 431 entries came back pure zero, none
+	 * null, no exception, no log line. Downstream that is a zone with no entities and an
+	 * area with no atmosphere, and then the editor packs them back over the real ones.
+	 *
+	 * <p>It reads a REAL archive, cuts a copy in half in scratch space, and asks the copy
+	 * for every entry the original has. Nothing in the answer may be a zero-filled buffer
+	 * of the right length: an entry either survives the cut whole, or is refused.
+	 */
+	static void aTruncatedArchiveIsNotData(File root) throws Exception {
+		System.out.println("--- a truncated archive answers null, never zeros");
+		File real = new File(root, "a/0/4/0");
+		if (!real.isFile()) {
+			System.out.println("  skip: no a/0/4/0 under " + root);
+			return;
+		}
+		byte[] whole = java.nio.file.Files.readAllBytes(real.toPath());
+		File cut = File.createTempFile("ctrmap_half_", ".garc");
+		cut.deleteOnExit();
+		java.nio.file.Files.write(cut.toPath(),
+			java.util.Arrays.copyOf(whole, whole.length / 2));
+		ctrmap.formats.garc.GARC good = new ctrmap.formats.garc.GARC(real);
+		ctrmap.formats.garc.GARC half = new ctrmap.formats.garc.GARC(cut);
+		int zeroed = 0, refused = 0, whole_ = 0, checked = 0;
+		for (int i = 0; i < good.length && i < half.length; i++) {
+			byte[] want = good.getStoredEntry(i);
+			byte[] got;
+			try {
+				got = half.getStoredEntry(i);
+			} catch (RuntimeException refusedLoudly) {
+				refused++;
+				continue;
+			}
+			checked++;
+			if (got == null) {
+				refused++;
+			} else if (want != null && java.util.Arrays.equals(want, got)) {
+				whole_++;
+			} else if (isAllZero(got)) {
+				zeroed++;
+			}
+		}
+		check(zeroed == 0, "no entry of a half-truncated archive comes back as zeros pretending"
+			+ " to be data (" + zeroed + " did, of " + checked + " asked; " + whole_ + " survived the"
+			+ " cut whole and " + refused + " were refused)");
+		check(refused > 0, "...and the ones past the cut ARE refused, so the check above had"
+			+ " something to be right about (" + refused + ")");
+		cut.delete();
+	}
+
+	/** Whether every byte is zero - what a dropped short read used to leave behind. */
+	static boolean isAllZero(byte[] b) {
+		if (b.length == 0) {
+			return false;
+		}
+		for (byte x : b) {
+			if (x != 0) {
+				return false;
+			}
+		}
+		return true;
+	}
 	static void check(boolean cond, String msg) {
 		if (cond) {
 			System.out.println("  ok: " + msg);
@@ -79,6 +147,7 @@ public class GarcSniffTest {
 			System.out.println("ALL PASS");
 			return;
 		}
+		aTruncatedArchiveIsNotData(root);
 
 		compressedEntriesDecodeToRealData(dressUp);
 		anEntryThatOnlyLooksCompressedIsRefused(trclass);

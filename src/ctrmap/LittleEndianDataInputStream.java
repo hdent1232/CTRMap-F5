@@ -44,6 +44,38 @@ public class LittleEndianDataInputStream {
 	public int read(byte[] b) throws IOException{
 		return dis.read(b);
 	}
+
+	/**
+	 * Fills {@code b} completely, or throws.
+	 *
+	 * <p>THE ONE THAT SHOULD BE USED for reading a record of known length.
+	 * {@link #read(byte[])} answers how many bytes it managed, and the tree is full of
+	 * callers that dropped that answer - a file shorter than its own table then handed
+	 * back a buffer of the right length whose tail was zeros, and reported success.
+	 * Measured on a GARC truncated to half its size: 278 of 431 entries came back pure
+	 * zero, none null, no exception. This cannot do that: short data is an EOFException
+	 * naming nothing, so the caller is the one that says which file it was reading.
+	 */
+	public void readFully(byte[] b) throws IOException{
+		dis.readFully(b);
+	}
+
+	/** Skips exactly {@code n} bytes, or throws: skip() may do less and says so. */
+	public void skipFully(long n) throws IOException{
+		long done = 0;
+		while (done < n) {
+			long step = dis.skip(n - done);
+			if (step <= 0) {
+				if (dis.read() < 0) {
+					throw new java.io.EOFException("wanted to skip " + n + " byte(s), reached the end"
+						+ " after " + done);
+				}
+				done++;
+			} else {
+				done += step;
+			}
+		}
+	}
 	
 	public float readFloat() throws IOException{
 		return Float.intBitsToFloat(readInt());
