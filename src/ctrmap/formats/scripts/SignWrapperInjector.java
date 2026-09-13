@@ -101,6 +101,12 @@ public class SignWrapperInjector {
 		public InjectionException(String message) {
 			super(message);
 		}
+
+		/** Carrying what the shared {@link PawnClosure} engine refused, and why. */
+		public InjectionException(String message, Throwable cause) {
+			super(message);
+			initCause(cause);
+		}
 	}
 
 	/**
@@ -108,12 +114,20 @@ public class SignWrapperInjector {
 	 * dispatch (somewhere to hang sign cases off) and no sign wrapper yet.
 	 */
 	public static boolean canInject(GFLPawnScript script) {
-		if (script == null) {
-			return false;
+		try {
+			if (script == null) {
+				return false;
+			}
+			script.decompressThis();
+			return ZoneScriptAnalyzer.findDispatch(script) != null && ZoneScriptAnalyzer.findSignWrapper(script) == null;
+	
+		} catch (PawnClosure.Refused engineSaid) {
+			//IN THIS TRANSPLANT'S OWN WORDS. The engine is shared; the type its
+			//refusal arrives as is not, because the editor and this feature's corpus
+			//suite both catch InjectionException by name.
+			throw new InjectionException(engineSaid.getMessage(), engineSaid);
 		}
-		script.decompressThis();
-		return ZoneScriptAnalyzer.findDispatch(script) != null && ZoneScriptAnalyzer.findSignWrapper(script) == null;
-	}
+}
 
 	/**
 	 * Validates the donor against the measured closure geometry.
@@ -121,8 +135,16 @@ public class SignWrapperInjector {
 	 * @throws InjectionException when the donor does not qualify
 	 */
 	public static void validateDonor(GFLPawnScript donor) {
-		buildDonor(donor);
-	}
+		try {
+			buildDonor(donor);
+	
+		} catch (PawnClosure.Refused engineSaid) {
+			//IN THIS TRANSPLANT'S OWN WORDS. The engine is shared; the type its
+			//refusal arrives as is not, because the editor and this feature's corpus
+			//suite both catch InjectionException by name.
+			throw new InjectionException(engineSaid.getMessage(), engineSaid);
+		}
+}
 
 	/**
 	 * The number of instructions injectSignWrapper would add to the target
@@ -130,23 +152,31 @@ public class SignWrapperInjector {
 	 * lacks it). Neither script is modified.
 	 */
 	public static int countInjectedInstructions(GFLPawnScript target, GFLPawnScript donor) {
-		Donor d = buildDonor(donor);
-		int count = 0;
-		for (Integer entryPtr : d.subPtrs) {
-			if (entryPtr == 4) {
-				continue;
+		try {
+			Donor d = buildDonor(donor);
+			int count = 0;
+			for (Integer entryPtr : d.subPtrs) {
+				if (entryPtr == 4) {
+					continue;
+				}
+				int[] r = d.subRanges.get(entryPtr);
+				count += r[1] - r[0];
 			}
-			int[] r = d.subRanges.get(entryPtr);
-			count += r[1] - r[0];
-		}
-		if (target != null) {
-			target.decompressThis();
-			if (!MsgWrapperInjector.hasStubAt4(target)) {
-				count += 8;
+			if (target != null) {
+				target.decompressThis();
+				if (!MsgWrapperInjector.hasStubAt4(target)) {
+					count += 8;
+				}
 			}
+			return count;
+	
+		} catch (PawnClosure.Refused engineSaid) {
+			//IN THIS TRANSPLANT'S OWN WORDS. The engine is shared; the type its
+			//refusal arrives as is not, because the editor and this feature's corpus
+			//suite both catch InjectionException by name.
+			throw new InjectionException(engineSaid.getMessage(), engineSaid);
 		}
-		return count;
-	}
+}
 
 	/**
 	 * Supplier of parsed zone scripts by ZoneData index - reuses
@@ -216,231 +246,190 @@ public class SignWrapperInjector {
 	 * copy and commit it on success.
 	 */
 	public static int injectSignWrapper(GFLPawnScript target, GFLPawnScript donor) {
-		if (target == null) {
-			throw new InjectionException("No target script.");
-		}
-		target.decompressThis();
-		if (target == donor) {
-			throw new InjectionException("The donor and the target are the same script.");
-		}
-		if (ZoneScriptAnalyzer.findDispatch(target) == null) {
-			throw new InjectionException("The target script has no script dispatch (main SWITCH/CASETBL).");
-		}
-		if (ZoneScriptAnalyzer.findSignWrapper(target) != null) {
-			throw new InjectionException("The target script already has a sign display routine.");
-		}
-		Donor d = buildDonor(donor);
-		if (target.defsize != EXPECTED_DEFSIZE) {
-			throw new InjectionException("Unexpected target prefix entry size " + target.defsize + ".");
-		}
-		for (int i = 0; i < target.natives.size(); i++) {
-			if (target.natives.get(i).data.length < 2) {
-				throw new InjectionException("Target native entry " + i + " is malformed.");
+		try {
+			if (target == null) {
+				throw new InjectionException("No target script.");
 			}
-		}
-		boolean needStub = !MsgWrapperInjector.hasStubAt4(target);
-		if (needStub) {
-			validateStubInsertPreconditions(target);
-		} else {
-			//the stub shape at 0x4 must actually call the yield native
-			int stubNatIdx = target.instructions.get(3).argumentCells[0];
-			if (stubNatIdx < 0 || stubNatIdx >= target.natives.size()
-					|| target.natives.get(stubNatIdx).data[1] != YIELD_NATIVE_HASH) {
-				throw new InjectionException("The stub-shaped sub at 0x4 does not call the yield native.");
+			target.decompressThis();
+			if (target == donor) {
+				throw new InjectionException("The donor and the target are the same script.");
 			}
-		}
+			if (ZoneScriptAnalyzer.findDispatch(target) == null) {
+				throw new InjectionException("The target script has no script dispatch (main SWITCH/CASETBL).");
+			}
+			if (ZoneScriptAnalyzer.findSignWrapper(target) != null) {
+				throw new InjectionException("The target script already has a sign display routine.");
+			}
+			Donor d = buildDonor(donor);
+			if (target.defsize != EXPECTED_DEFSIZE) {
+				throw new InjectionException("Unexpected target prefix entry size " + target.defsize + ".");
+			}
+			for (int i = 0; i < target.natives.size(); i++) {
+				if (target.natives.get(i).data.length < 2) {
+					throw new InjectionException("Target native entry " + i + " is malformed.");
+				}
+			}
+			boolean needStub = !MsgWrapperInjector.hasStubAt4(target);
+			if (needStub) {
+				PawnClosure.validateStubInsertPreconditions(target);
+			} else {
+				//the stub shape at 0x4 must actually call the yield native
+				int stubNatIdx = target.instructions.get(3).argumentCells[0];
+				if (stubNatIdx < 0 || stubNatIdx >= target.natives.size()
+						|| target.natives.get(stubNatIdx).data[1] != YIELD_NATIVE_HASH) {
+					throw new InjectionException("The stub-shaped sub at 0x4 does not call the yield native.");
+				}
+			}
 
-		//---- 1. natives (append-only, dedupe by name hash, first occurrence wins)
-		Map<Integer, Integer> hashToTarget = new HashMap<>();
-		for (int i = 0; i < target.natives.size(); i++) {
-			int hash = target.natives.get(i).data[1];
-			if (!hashToTarget.containsKey(hash)) {
-				hashToTarget.put(hash, i);
+			//---- 1. natives (append-only, dedupe by name hash, first occurrence wins)
+			Map<Integer, Integer> hashToTarget = new HashMap<>();
+			for (int i = 0; i < target.natives.size(); i++) {
+				int hash = target.natives.get(i).data[1];
+				if (!hashToTarget.containsKey(hash)) {
+					hashToTarget.put(hash, i);
+				}
 			}
-		}
-		Integer yieldIdx = hashToTarget.get(YIELD_NATIVE_HASH);
-		if (needStub && yieldIdx == null) {
-			yieldIdx = target.natives.size();
-			int[] data = new int[target.defsize / 4];
-			data[1] = YIELD_NATIVE_HASH;
-			target.natives.add(new PawnPrefixEntry(target.defsize, PawnPrefixEntry.Type.NATIVE, data));
-			hashToTarget.put(YIELD_NATIVE_HASH, yieldIdx);
-		}
-		Map<Integer, Integer> donorIdxToTargetIdx = new HashMap<>();
-		for (Integer entryPtr : d.subPtrs) {
-			if (entryPtr == 4) {
-				continue; //the stub is handled separately
+			Integer yieldIdx = hashToTarget.get(YIELD_NATIVE_HASH);
+			if (needStub && yieldIdx == null) {
+				yieldIdx = target.natives.size();
+				int[] data = new int[target.defsize / 4];
+				data[1] = YIELD_NATIVE_HASH;
+				target.natives.add(new PawnPrefixEntry(target.defsize, PawnPrefixEntry.Type.NATIVE, data));
+				hashToTarget.put(YIELD_NATIVE_HASH, yieldIdx);
 			}
-			int[] r = d.subRanges.get(entryPtr);
-			for (int i = r[0]; i < r[1]; i++) {
-				PawnInstruction ins = donor.instructions.get(i);
-				if (ins.getCommand() == OP_SYSREQ_N) {
-					int dIdx = ins.argumentCells[0];
-					if (!donorIdxToTargetIdx.containsKey(dIdx)) {
-						int hash = donor.natives.get(dIdx).data[1];
-						Integer tIdx = hashToTarget.get(hash);
-						if (tIdx == null) {
-							tIdx = target.natives.size();
-							target.natives.add(new PawnPrefixEntry(target.defsize, PawnPrefixEntry.Type.NATIVE, donor.natives.get(dIdx).data.clone()));
-							hashToTarget.put(hash, tIdx);
+			Map<Integer, Integer> donorIdxToTargetIdx = new HashMap<>();
+			for (Integer entryPtr : d.subPtrs) {
+				if (entryPtr == 4) {
+					continue; //the stub is handled separately
+				}
+				int[] r = d.subRanges.get(entryPtr);
+				for (int i = r[0]; i < r[1]; i++) {
+					PawnInstruction ins = donor.instructions.get(i);
+					if (ins.getCommand() == OP_SYSREQ_N) {
+						int dIdx = ins.argumentCells[0];
+						if (!donorIdxToTargetIdx.containsKey(dIdx)) {
+							int hash = donor.natives.get(dIdx).data[1];
+							Integer tIdx = hashToTarget.get(hash);
+							if (tIdx == null) {
+								tIdx = target.natives.size();
+								target.natives.add(new PawnPrefixEntry(target.defsize, PawnPrefixEntry.Type.NATIVE, donor.natives.get(dIdx).data.clone()));
+								hashToTarget.put(hash, tIdx);
+							}
+							donorIdxToTargetIdx.put(dIdx, tIdx);
 						}
-						donorIdxToTargetIdx.put(dIdx, tIdx);
 					}
 				}
 			}
-		}
 
-		//---- 2. yield stub at code address 0x4 (donor sub_4 cells verbatim,
-		//SYSREQ_N index cell re-pointed at the target's yield native)
-		if (needStub) {
-			target.setInstructionListeners(); //snapshot every branch target as an object
-			int[] stubCells = d.subCells.get(4).clone();
-			stubCells[3] = yieldIdx; //SYSREQ_N native-index cell
-			int stubShiftBytes = stubCells.length * 4; //0x2C
-			int[] all = new int[stubCells.length + 1];
-			System.arraycopy(stubCells, 0, all, 1, stubCells.length);
-			List<PawnInstruction> stubIns = new ArrayList<>();
-			int ci = 1;
-			while (ci < all.length) {
-				PawnInstruction ins = new PawnInstruction(ci * 4, all, target);
-				stubIns.add(ins);
+			//---- 2. yield stub at code address 0x4 (donor sub_4 cells verbatim,
+			//SYSREQ_N index cell re-pointed at the target's yield native)
+			if (needStub) {
+				target.setInstructionListeners(); //snapshot every branch target as an object
+				int[] stubCells = d.subCells.get(4).clone();
+				stubCells[3] = yieldIdx; //SYSREQ_N native-index cell
+				int stubShiftBytes = stubCells.length * 4; //0x2C
+				int[] all = new int[stubCells.length + 1];
+				System.arraycopy(stubCells, 0, all, 1, stubCells.length);
+				List<PawnInstruction> stubIns = new ArrayList<>();
+				int ci = 1;
+				while (ci < all.length) {
+					PawnInstruction ins = new PawnInstruction(ci * 4, all, target);
+					stubIns.add(ins);
+					ci += 1 + (ins.hasCompressedArgument ? 0 : ins.argumentCount);
+				}
+				target.instructions.addAll(1, stubIns);
+				GFLPawnScript.setPtrsByIndex(target.instructions);
+				target.callInstructionListeners();
+				for (PawnInstruction ins : stubIns) {
+					ins.setParent(target);
+				}
+				//publics hold absolute code addresses no listener owns - all of
+				//them sit after address 4, so they shift uniformly
+				for (PawnPrefixEntry p : target.publics) {
+					p.data[0] += stubShiftBytes;
+				}
+				target.mainEntryPoint = target.mainEntryPointDummy.argumentCells[0];
+				target.updateRaw();
+				target.dataStart += stubShiftBytes;
+				target.heapStart += stubShiftBytes;
+			}
+
+			//---- 3. closure block at the end of the code section, subs packed
+			//contiguously in donor DFS preorder (the wrapper entry comes first);
+			//there is NO buffer step - the sign closure has no data references
+			int base = target.dataStart - target.instructionStart;
+			Map<Integer, Integer> newEntry = new HashMap<>();
+			int off = 0;
+			for (Integer entryPtr : d.subPtrs) {
+				if (entryPtr == 4) {
+					continue;
+				}
+				newEntry.put(entryPtr, base + off);
+				off += d.subCells.get(entryPtr).length * 4;
+			}
+			int[] block = new int[off / 4];
+			for (Integer entryPtr : d.subPtrs) {
+				if (entryPtr == 4) {
+					continue;
+				}
+				int[] cells = d.subCells.get(entryPtr);
+				int blockOff = (newEntry.get(entryPtr) - base) / 4;
+				System.arraycopy(cells, 0, block, blockOff, cells.length);
+				int[] r = d.subRanges.get(entryPtr);
+				for (int i = r[0]; i < r[1]; i++) {
+					PawnInstruction ins = donor.instructions.get(i);
+					int cellIdxInSub = (ins.pointer - entryPtr) / 4;
+					int cmd = ins.getCommand();
+					if (cmd == OP_SYSREQ_N) {
+						block[blockOff + cellIdxInSub + 1] = donorIdxToTargetIdx.get(ins.argumentCells[0]);
+					} else if (cmd == OP_CALL) {
+						int donorTarget = ins.pointer + ins.argumentCells[0];
+						int newInsPtr = newEntry.get(entryPtr) + (ins.pointer - entryPtr);
+						int newTarget = (donorTarget == 4) ? 4 : newEntry.get(donorTarget);
+						block[blockOff + cellIdxInSub + 1] = newTarget - newInsPtr;
+					}
+				}
+			}
+			int[] all = new int[base / 4 + block.length];
+			System.arraycopy(block, 0, all, base / 4, block.length);
+			int ci = 0;
+			while (ci < block.length) {
+				int ptr = base + ci * 4;
+				PawnInstruction ins = new PawnInstruction(ptr, all, target);
+				target.instructions.add(ins);
 				ci += 1 + (ins.hasCompressedArgument ? 0 : ins.argumentCount);
 			}
-			target.instructions.addAll(1, stubIns);
-			GFLPawnScript.setPtrsByIndex(target.instructions);
-			target.callInstructionListeners();
-			for (PawnInstruction ins : stubIns) {
-				ins.setParent(target);
-			}
-			//publics hold absolute code addresses no listener owns - all of
-			//them sit after address 4, so they shift uniformly
-			for (PawnPrefixEntry p : target.publics) {
-				p.data[0] += stubShiftBytes;
-			}
-			target.mainEntryPoint = target.mainEntryPointDummy.argumentCells[0];
-			target.updateRaw();
-			target.dataStart += stubShiftBytes;
-			target.heapStart += stubShiftBytes;
-		}
 
-		//---- 3. closure block at the end of the code section, subs packed
-		//contiguously in donor DFS preorder (the wrapper entry comes first);
-		//there is NO buffer step - the sign closure has no data references
-		int base = target.dataStart - target.instructionStart;
-		Map<Integer, Integer> newEntry = new HashMap<>();
-		int off = 0;
-		for (Integer entryPtr : d.subPtrs) {
-			if (entryPtr == 4) {
-				continue;
+			//self-check: the analyzer must now see the wrapper at the block base
+			int predicted = newEntry.get(d.wrapperPtr);
+			PawnInstruction w = ZoneScriptAnalyzer.findSignWrapper(target);
+			if (w == null || w.pointer != predicted) {
+				throw new InjectionException("Post-injection verification failed: sign wrapper "
+						+ (w == null ? "not found" : "at unexpected address 0x" + Integer.toHexString(w.pointer)) + ".");
 			}
-			newEntry.put(entryPtr, base + off);
-			off += d.subCells.get(entryPtr).length * 4;
+			return predicted;
+	
+		} catch (PawnClosure.Refused engineSaid) {
+			//IN THIS TRANSPLANT'S OWN WORDS. The engine is shared; the type its
+			//refusal arrives as is not, because the editor and this feature's corpus
+			//suite both catch InjectionException by name.
+			throw new InjectionException(engineSaid.getMessage(), engineSaid);
 		}
-		int[] block = new int[off / 4];
-		for (Integer entryPtr : d.subPtrs) {
-			if (entryPtr == 4) {
-				continue;
-			}
-			int[] cells = d.subCells.get(entryPtr);
-			int blockOff = (newEntry.get(entryPtr) - base) / 4;
-			System.arraycopy(cells, 0, block, blockOff, cells.length);
-			int[] r = d.subRanges.get(entryPtr);
-			for (int i = r[0]; i < r[1]; i++) {
-				PawnInstruction ins = donor.instructions.get(i);
-				int cellIdxInSub = (ins.pointer - entryPtr) / 4;
-				int cmd = ins.getCommand();
-				if (cmd == OP_SYSREQ_N) {
-					block[blockOff + cellIdxInSub + 1] = donorIdxToTargetIdx.get(ins.argumentCells[0]);
-				} else if (cmd == OP_CALL) {
-					int donorTarget = ins.pointer + ins.argumentCells[0];
-					int newInsPtr = newEntry.get(entryPtr) + (ins.pointer - entryPtr);
-					int newTarget = (donorTarget == 4) ? 4 : newEntry.get(donorTarget);
-					block[blockOff + cellIdxInSub + 1] = newTarget - newInsPtr;
-				}
-			}
-		}
-		int[] all = new int[base / 4 + block.length];
-		System.arraycopy(block, 0, all, base / 4, block.length);
-		int ci = 0;
-		while (ci < block.length) {
-			int ptr = base + ci * 4;
-			PawnInstruction ins = new PawnInstruction(ptr, all, target);
-			target.instructions.add(ins);
-			ci += 1 + (ins.hasCompressedArgument ? 0 : ins.argumentCount);
-		}
+}
 
-		//self-check: the analyzer must now see the wrapper at the block base
-		int predicted = newEntry.get(d.wrapperPtr);
-		PawnInstruction w = ZoneScriptAnalyzer.findSignWrapper(target);
-		if (w == null || w.pointer != predicted) {
-			throw new InjectionException("Post-injection verification failed: sign wrapper "
-					+ (w == null ? "not found" : "at unexpected address 0x" + Integer.toHexString(w.pointer)) + ".");
-		}
-		return predicted;
-	}
 
-	/**
-	 * The insert-at-4 preconditions for stub-less targets (verbatim from the
-	 * template): a 1-cell HALT_P at 0 and a PROC at 4, no branch/case target
-	 * at or below 4 anywhere, and every branch/case target landing on an
-	 * instruction boundary.
-	 */
-	private static void validateStubInsertPreconditions(GFLPawnScript t) {
-		if (t.instructions.size() < 2) {
-			throw new InjectionException("The target script is too short to insert the yield stub.");
-		}
-		PawnInstruction i0 = t.instructions.get(0);
-		PawnInstruction i1 = t.instructions.get(1);
-		if (i0.pointer != 0 || i0.getCommand() != OP_HALT_P || !i0.hasCompressedArgument
-				|| i1.pointer != 4 || i1.getCommand() != OP_PROC) {
-			throw new InjectionException("Unexpected code head (need HALT_P at 0 and PROC at 4).");
-		}
-		for (PawnInstruction ins : t.instructions) {
-			int cmd = ins.getCommand();
-			if (PawnInstruction.checkJmp(ins) || cmd == OP_SWITCH) {
-				if (ins.argumentCells.length < 1 || ins.pointer + ins.argumentCells[0] <= 4) {
-					throw new InjectionException("A branch at 0x" + Integer.toHexString(ins.pointer) + " targets the code head.");
-				}
-				requireInstructionBoundary(t, ins.pointer + ins.argumentCells[0], ins.pointer);
-			} else if (cmd == OP_CASETBL) {
-				if (ins.argumentCells.length < 2 || (ins.pointer + 4) + ins.argumentCells[1] <= 4) {
-					throw new InjectionException("A CASETBL at 0x" + Integer.toHexString(ins.pointer) + " targets the code head.");
-				}
-				requireInstructionBoundary(t, (ins.pointer + 4) + ins.argumentCells[1], ins.pointer);
-				for (int k = 2; k + 1 < ins.argumentCells.length; k += 2) {
-					int tgt = (ins.pointer + k * 4) + ins.argumentCells[k + 1] + 4;
-					if (tgt <= 4) {
-						throw new InjectionException("A CASETBL at 0x" + Integer.toHexString(ins.pointer) + " targets the code head.");
-					}
-					requireInstructionBoundary(t, tgt, ins.pointer);
-				}
-			}
-		}
-	}
-
-	private static void requireInstructionBoundary(GFLPawnScript t, int target, int fromPtr) {
-		if (t.lookupInstructionByPtr(target) == null) {
-			throw new InjectionException("A branch at 0x" + Integer.toHexString(fromPtr) + " targets 0x" + Integer.toHexString(target) + ", which is not an instruction boundary.");
-		}
-	}
-
+	
 	//============ donor model ============
-	private static class Donor {
+	/**
+	 * What the closure walk collected, plus what only this transplant adds.
+	 *
+	 * <p>The walk itself, the CRC cell order, the stub-insert preconditions and the
+	 * branch-boundary check live in {@link PawnClosure} - they were byte-identical in
+	 * both injectors, and this is the code that rewrites bytecode in save-bound zone
+	 * scripts, so a fix landing on one copy and not the other is the expensive kind.
+	 */
+	private static class Donor extends PawnClosure.Donor {
 
-		int wrapperPtr;
-		/**
-		 * Closure sub entry addresses in DFS preorder (includes the ptr-4
-		 * stub at index STUB_DFS_INDEX).
-		 */
-		final List<Integer> subPtrs = new ArrayList<>();
-		/**
-		 * Sub entry address -> verbatim cells of the whole sub.
-		 */
-		final Map<Integer, int[]> subCells = new HashMap<>();
-		/**
-		 * Sub entry address -> {first instruction index, end index (excl)}.
-		 */
-		final Map<Integer, int[]> subRanges = new HashMap<>();
 	}
 
 	/**
@@ -465,7 +454,7 @@ public class SignWrapperInjector {
 		}
 		Donor d = new Donor();
 		d.wrapperPtr = wrapper.pointer;
-		dfsClosure(donor, wrapper.pointer, d);
+		PawnClosure.dfsClosure(donor, wrapper.pointer, d);
 		if (d.subPtrs.size() != CLOSURE_SUB_CELLS.length) {
 			throw new InjectionException("Donor closure has " + d.subPtrs.size() + " subs, expected " + CLOSURE_SUB_CELLS.length + ".");
 		}
@@ -563,15 +552,15 @@ public class SignWrapperInjector {
 				int cmd = ins.getCommand();
 				int[] raw = ins.getRaw();
 				if (cmd == OP_SYSREQ_N) {
-					crcCell(crc, raw[0]);
-					crcCell(crc, donor.natives.get(ins.argumentCells[0]).data[1]); //native identity, not index
-					crcCell(crc, ins.argumentCells[1]); //argBytes
+					PawnClosure.crcCell(crc, raw[0]);
+					PawnClosure.crcCell(crc, donor.natives.get(ins.argumentCells[0]).data[1]); //native identity, not index
+					PawnClosure.crcCell(crc, ins.argumentCells[1]); //argBytes
 				} else if (cmd == OP_CALL) {
-					crcCell(crc, raw[0]);
-					crcCell(crc, ord.get(ins.pointer + ins.argumentCells[0])); //DFS ordinal, not offset
+					PawnClosure.crcCell(crc, raw[0]);
+					PawnClosure.crcCell(crc, ord.get(ins.pointer + ins.argumentCells[0])); //DFS ordinal, not offset
 				} else {
 					for (int c : raw) {
-						crcCell(crc, c);
+						PawnClosure.crcCell(crc, c);
 					}
 				}
 			}
@@ -579,46 +568,5 @@ public class SignWrapperInjector {
 		return crc.getValue();
 	}
 
-	private static void crcCell(CRC32 crc, int v) {
-		crc.update(v & 0xFF);
-		crc.update((v >> 8) & 0xFF);
-		crc.update((v >> 16) & 0xFF);
-		crc.update((v >> 24) & 0xFF);
-	}
-
-	/**
-	 * DFS preorder over CALL targets, collecting each sub's instruction
-	 * range and verbatim cells; refuses call targets that do not land on a
-	 * PROC.
-	 */
-	private static void dfsClosure(GFLPawnScript s, int entryPtr, Donor d) {
-		if (d.subCells.containsKey(entryPtr)) {
-			return;
-		}
-		PawnInstruction entry = s.lookupInstructionByPtr(entryPtr);
-		if (entry == null || entry.getCommand() != OP_PROC) {
-			throw new InjectionException("Donor CALL target 0x" + Integer.toHexString(entryPtr) + " does not land on a PROC.");
-		}
-		int idx = s.instructions.indexOf(entry);
-		int end = idx + 1;
-		while (end < s.instructions.size() && s.instructions.get(end).getCommand() != OP_PROC) {
-			end++;
-		}
-		int endPtr = (end < s.instructions.size()) ? s.instructions.get(end).pointer : (s.dataStart - s.instructionStart);
-		int[] cells = new int[(endPtr - entryPtr) / 4];
-		for (int i = idx; i < end; i++) {
-			PawnInstruction ins = s.instructions.get(i);
-			int[] raw = ins.getRaw();
-			System.arraycopy(raw, 0, cells, (ins.pointer - entryPtr) / 4, raw.length);
-		}
-		d.subPtrs.add(entryPtr);
-		d.subCells.put(entryPtr, cells);
-		d.subRanges.put(entryPtr, new int[]{idx, end});
-		for (int i = idx; i < end; i++) {
-			PawnInstruction ins = s.instructions.get(i);
-			if (ins.getCommand() == OP_CALL && ins.argumentCells.length == 1) {
-				dfsClosure(s, ins.pointer + ins.argumentCells[0], d);
-			}
-		}
-	}
+	
 }

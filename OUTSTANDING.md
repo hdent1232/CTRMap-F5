@@ -39,12 +39,6 @@ both would have blocked every measurement forever:
 
 ## Open
 
-- [ ] **C. The script transplant engine exists twice.** SignWrapperInjector is 90% of
-      MsgWrapperInjector by measured line count - 293 of 326 substantive lines shared,
-      including a 72-line byte-identical block covering the natives dedupe and the stub
-      insert at 0x4. It rewrites Pawn bytecode in save-bound zone scripts, so a fix to
-      one side is guarded on one side. Fold to one engine with the four real parameters;
-      both 536-zone corpus suites are the acceptance evidence, not a green build.
 - [ ] **D. Features a user cannot find, and messages that name places that do not
       exist.** Five user-facing error strings name menu paths ("Map > Fork area") that
       are not in the menu bar, one of them pinned by a test; the Extras bar offers one
@@ -71,6 +65,17 @@ both would have blocked every measurement forever:
 
 ## Done
 
+- [x] 2026-09-13 C. One closure engine, two transplants. The message and sign
+      injectors were 293 of 326 substantive lines the same, byte-identical in the
+      closure walk, the stub-insert preconditions and the branch-boundary check -
+      code that rewrites Pawn bytecode in save-bound zone scripts, so a fix to one
+      copy left the other wrong. PawnClosure holds the walk, the CRC cell order, the
+      preconditions and the boundary check; each injector keeps what actually differs
+      (which wrapper to find, the closure geometry, the vanilla fingerprint, the
+      data-segment step) and translates what the engine refuses into its own
+      InjectionException, because the editor and both corpus suites catch that by
+      name. 190 lines lighter. Proven by the corpus, not by a build: 536 zones each,
+      289 composition zones both orders, 228 refusal zones byte-untouched.
 - [x] 2026-09-13 A. A reader that cannot read refuses instead of inventing data.
       LittleEndianDataInputStream grew readFully/skipFully - the primitive whose
       absence caused every hand-rolled short read in the tree - and the container and

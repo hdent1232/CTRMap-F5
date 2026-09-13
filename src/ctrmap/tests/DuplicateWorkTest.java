@@ -68,6 +68,14 @@ public class DuplicateWorkTest {
 			"TileMapPanel.loadRegions is the body; the preview and the window CALL it."
 			+ " Anything else naming it is fine - anything else DOING it is the defect this"
 			+ " suite exists for."},
+		{"walking a Pawn routine and its callees",
+			"static void dfsClosure\\s*\\(|static void validateStubInsertPreconditions\\s*\\(",
+			"PawnClosure.java",
+			"one closure walk, one set of stub-insert preconditions. This existed twice - the "
+			+ "message and sign transplants were measured at 293 of 326 substantive lines "
+			+ "shared, byte-identical in the walk itself - and it rewrites bytecode in zone "
+			+ "scripts bound to the save, so a fix landing on one copy and not the other is "
+			+ "a zone that hangs on entry for whoever used the other one"},
 		{"preparing map geometry for drawing", "\\.makeAllBOs\\(\\)",
 			"H3DModel.java,NPCRegistry.java,ADPropRegistry.java,CustomH3DPreview.java,"
 			+ "MapPreview3D.java,PropEditForm.java,TileMapPanel.java",
