@@ -70,6 +70,7 @@ public class CommitGuardTest {
 		ordinaryWorkIsNotPolicedByRuleSix(guard);
 		aCensusCannotBeReportedCleanWithoutCoveringItsScope(repo);
 		theGateAsksTheDiffAndNotTheSubjectLine(guard);
+		aBlanketClaimMustCiteItsMeasurement(guard, repo);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -539,6 +540,54 @@ public class CommitGuardTest {
 	}
 
 	/** The four-argument form: every staged file gets the comment body it always had. */
+	// ------------------------------- 11. refusal seven: vouching for what you did not open
+	/**
+	 * A message may not say the rest are fine without citing the measurement that says so.
+	 *
+	 * <p>THE DEFECT, and it was in this file's own commit. A review of this project's guards
+	 * read fourteen of them - eight hooks, four tools, two scripts - and then wrote
+	 * "Everything else reviewed holds its shape" into the message. There are 130 registered
+	 * suites and 150 plants. Nothing was lying on purpose: that is what a review feels like
+	 * from the inside when the part you looked at is the part you already knew, and the
+	 * difference between fourteen and a hundred and fifty was visible nowhere.
+	 *
+	 * <p>The measurement that settles it is two minutes of counting, and it exists now:
+	 * {@code tools/guard/classify_guards.py} - 130 suites, 81 driving a refusal, 12 reading
+	 * source text alone, 53 owed a plant. So a blanket claim must carry a {@code Reviewed:}
+	 * line naming a path that EXISTS, because "reviewed: all of them" is the same sentence
+	 * with a colon in it.
+	 *
+	 * <p>AND IT IS NARROW ON PURPOSE. Measured against the last 30 real commit messages when
+	 * it was written: a looser version refused two that were describing a DEFECT - "every
+	 * other zone already sharing them" is prose about shared areas, not a claim that anything
+	 * was reviewed. The tightened one refuses exactly one of the thirty: the commit that
+	 * caused the rule.
+	 */
+	static void aBlanketClaimMustCiteItsMeasurement(File guard, File repo) throws Exception {
+		System.out.println("--- a blanket claim about what was not opened must cite a measurement");
+		String claim = "The commit gate asks the diff\n\n"
+			+ "Everything else reviewed holds its shape: the hooks refuse at the point of"
+			+ " action and the ledger requires the named suite to redden.";
+		
+		Run bare = run(guard, claim, new String[]{}, null);
+		check(bare.code != 0, "vouching for what the commit did not open is refused (exit "
+			+ bare.code + ")");
+		
+		Run cited = run(guard, claim + "\n\nReviewed: 130/130 suites by"
+			+ " tools/guard/commit_guard.py", new String[]{}, null);   //a path the scratch repo has
+		check(cited.code == 0, "and allowed once it cites a measurement that exists (exit "
+			+ cited.code + ") " + oneLine(cited.said));
+		
+		Run invented = run(guard, claim + "\n\nReviewed: 130/130 suites by"
+			+ " tools/guard/no_such_tool.py", new String[]{}, null);
+		check(invented.code != 0, "a citation naming nothing that exists is refused - it is the"
+			+ " same sentence with a colon in it (exit " + invented.code + ")");
+		
+		check(new File(repo, "tools/guard/classify_guards.py").isFile(),
+			"and the measurement the refusal tells you to run is really there - a guard that"
+			+ " names a tool nobody shipped teaches people to write the line and move on");
+	}
+
 	static Run run(File guard, String message, String[] staged, String lastRun) throws Exception {
 		return run(guard, message, staged, lastRun, null);
 	}
