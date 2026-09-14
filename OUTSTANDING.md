@@ -39,7 +39,23 @@ both would have blocked every measurement forever:
 
 ## Open
 
-_(nothing)_
+- [ ] 2026-09-13 THE WHOLE-APP CENSUS FOUND 280 CONFIRMED DEFECTS, and they are not
+      fixed. Full inventory, ranked, with evidence and a proposed refusal for each:
+      `wt/_state/CENSUS-2026-09-13.md` (beside the repo). 71 high, 150 medium, 59 low;
+      by class 69 silent-failure, 59 data-integrity, 31 duplication, 22 dead-code,
+      22 guard-debt, 21 resource-leak, 17 api-trap, 14 correctness, 14 efficiency,
+      7 ui-placement. Every production file was read and every finding was handed to
+      an independent agent told to refute it; 76 did not survive that and are gone.
+      WORK THE DATA-INTEGRITY HIGHS FIRST - those are the paths that can write wrong
+      bytes into a real game.
+- [ ] 2026-09-13 THE CENSUS MISSED THINGS AND SAID SO. Eleven gaps in the same file
+      under "What the census itself did not reach": MapResizer (291 lines, the engine
+      behind Map > Resize map) was opened by no slice and shows three sibling-proven
+      defects on one read; MapPrefab (952 lines) was skimmed; and 93 of the 147 suite
+      files were never read, so the "already refused by a suite" exclusion was applied
+      from 37% of the guard layer - which is why the run reports zero findings as
+      already guarded, and why at least one finding (ModDeployer) is already half
+      stale. Re-grade against the suites before working the ledger.
 
 ## Done
 
