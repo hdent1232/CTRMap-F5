@@ -65,6 +65,10 @@ public class CommitGuardTest {
 		theNoRefusalEscapeIsHonouredAndStaysInTheMessage(guard);
 		theWorkOrderRefusesWhileTheTreeIsMoving(repo);
 		everyFrozenTreeMeasurementAsksTheWorkOrder(repo);
+		aRunThatKnowsWhatItMissedCannotFileIt(guard);
+		theDeferredGapEscapeIsHonouredAndMustSaySomething(guard);
+		ordinaryWorkIsNotPolicedByRuleSix(guard);
+		aCensusCannotBeReportedCleanWithoutCoveringItsScope(repo);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -346,6 +350,142 @@ public class CommitGuardTest {
 	 * to sit at tools/guard/ inside the scratch repository for the root it
 	 * computes to be the scratch repository.
 	 */
+	// ------------------------------------------- 9. refusal six: a hole handed over
+	/**
+	 * A run that knows what it did not cover may not file that as somebody else's work.
+	 *
+	 * <p>THE DEFECT, which happened here on 2026-09-13. A whole-app census read 264
+	 * production files, confirmed 280 defects, and ended with a completeness critic naming
+	 * ELEVEN things it had not covered - a 291-line workspace writer no agent opened, a
+	 * 952-line engine recorded as "skimmed, not read", 93 of 147 suite files never read, so
+	 * its own "already refused by a suite" exclusion had been applied from 37% of the guard
+	 * layer. All eleven went into OUTSTANDING.md as work for the owner's next window. The
+	 * run knew what it had skipped and filed it instead of reading it, and the owner paid
+	 * twice: once to read the hole, once to ask for the work that was already understood.
+	 *
+	 * <p>The message that did it is the fixture below, near enough word for word.
+	 */
+	static void aRunThatKnowsWhatItMissedCannotFileIt(File guard) throws Exception {
+		System.out.println("--- a run that knows what it missed cannot file it as somebody else's work");
+		//near enough the commit that was the defect, queue entry and all
+		Run r = run(guard, "The queue holds what the whole-app census found\n\n"
+			+ "- [ ] 2026-09-13 THE CENSUS MISSED THINGS AND SAID SO. MapResizer was opened\n"
+			+ "      by no slice, MapPrefab was skimmed, and 93 of 147 suite files were never\n"
+			+ "      read, so the exclusion was applied from 37% of the guard layer. Re-grade\n"
+			+ "      against the suites before working the ledger.",
+			new String[]{"OUTSTANDING.md"}, null);
+		check(r.code != 0, "a message recording what a run skipped, and queueing it, is refused"
+			+ " (exit " + r.code + ")");
+		check(r.said.contains("never read") || r.said.contains("was skimmed"),
+			"and the refusal quotes the words that gave it away: " + oneLine(r.said));
+		check(r.said.contains("census.py"), "and it says why looking less hard does not help"
+			+ " either, which is the half that stops this becoming an incentive to stop checking: "
+			+ oneLine(r.said));
+	}
+
+	/**
+	 * The escape exists, and it has to be a sentence rather than a word.
+	 *
+	 * <p>Some holes genuinely cannot be closed by the run that finds them - a dump nobody
+	 * has, a frozen tree mid-measurement. Those reach the owner with the reason attached,
+	 * in git log, where it can be disagreed with. A bare {@code Deferred-gap: later} is the
+	 * same silence with a label on it, so the reason has a floor like every other escape in
+	 * this file.
+	 */
+	static void theDeferredGapEscapeIsHonouredAndMustSaySomething(File guard) throws Exception {
+		System.out.println("--- the Deferred-gap escape is honoured, and a bare one is not");
+		String hole = "Record what the audit could not reach\n\nThe Gen 7 profiles were never"
+			+ " read against a real dump and stay in the queue.\n\n";
+		Run bare = run(guard, hole + "Deferred-gap: later", new String[]{"OUTSTANDING.md"}, null);
+		check(bare.code != 0, "a Deferred-gap line that says nothing is refused (exit "
+			+ bare.code + ")");
+		Run honest = run(guard, hole + "Deferred-gap: closing it needs a Sun or Moon dump, which"
+			+ " nobody working on this project has - the profiles are stubs by necessity, not by"
+			+ " omission", new String[]{"OUTSTANDING.md"}, null);
+		check(honest.code == 0, "and one that says why the run could not close it is honoured"
+			+ " (exit " + honest.code + ") " + oneLine(honest.said));
+	}
+
+	/**
+	 * Rule six does not police ordinary work, which is what makes it keepable.
+	 *
+	 * <p>Measured when it was written: every one of the previous 24 commits in this
+	 * repository passes it, and the one commit that was the defect does not. A rule that
+	 * refuses a quarter of normal messages gets switched off within a day, so the two
+	 * halves of the predicate - the words of an admission AND the words of a handover -
+	 * both have to be present.
+	 */
+	static void ordinaryWorkIsNotPolicedByRuleSix(File guard) throws Exception {
+		System.out.println("--- and rule six leaves ordinary work alone");
+		Run described = run(guard, "One camera thread, a daemon, that stops when asked\n\n"
+			+ "Four anonymous threads swallowed the InterruptedException that exists to stop"
+			+ " them. There is one now, it is a daemon, and it honours the interrupt.",
+			new String[]{"src/ctrmap/humaninterface/CM3DInputManager.java"}, null);
+		check(described.code == 0, "a normal fix message is untouched (exit " + described.code
+			+ ") " + oneLine(described.said));
+		
+		//the shape that must NOT trip it: saying a thing was unread as the reason you READ it
+		//PROSE ABOUT A HOLE IS NOT FILING ONE. The first version of this rule matched
+		//words rather than shape and refused its own commit, which described the eleven
+		//gaps it existed because of. An unticked box is the handover; a paragraph is not.
+		Run aboutIt = run(guard, "A run that knows what it skipped has to go back\n\n"
+			+ "A census finished with a critic naming eleven things it had not covered, and\n"
+			+ "all eleven went into the queue as work for the owner. Rule six refuses that,\n"
+			+ "and census.py refuses the clean report that never read them either.",
+			//NOT tools/guard/commit_guard.py: run() writes placeholder bytes over every file
+			//it stages, and that is the file it is about to execute
+			new String[]{"src/ctrmap/tests/CommitGuardTest.java"}, null);
+		check(aboutIt.code == 0, "a commit ABOUT a hole, filing nothing, is allowed (exit "
+			+ aboutIt.code + ") " + oneLine(aboutIt.said));
+		
+		Run closed = run(guard, "Read the six decode files nobody had opened\n\n"
+			+ "They produced no findings because nobody had read them, so they were read: a truncated\n"
+			+ "vertex stream refuses now instead of returning a partial model.",
+			new String[]{"src/ctrmap/formats/h3d/model/H3DModel.java"}, null);
+		check(closed.code == 0, "and closing a hole rather than filing it is allowed (exit "
+			+ closed.code + ") " + oneLine(closed.said));
+	}
+
+	/**
+	 * The other half: a census may not call itself clean without covering its own scope.
+	 *
+	 * <p>WHY THE PAIR. A rule that only refuses REPORTING a hole is satisfied fastest by
+	 * not looking for one - drop the completeness check, claim coverage, ship a clean
+	 * number, and rule six never fires because nothing was ever admitted. So
+	 * {@code census.py} computes the file list from DISK, out of the scope the census names,
+	 * and refuses a report with anything in that list unread. Reading less cannot buy a
+	 * pass, because what had to be read is not something the census supplies.
+	 *
+	 * <p>This runs that tool's own selftest, which exercises all four of its refusals
+	 * plus the clean case, so a change that quietly loosens one is red here.
+	 */
+	static void aCensusCannotBeReportedCleanWithoutCoveringItsScope(File repo) throws Exception {
+		System.out.println("--- a census cannot be reported clean without covering its scope");
+		File tool = new File(repo, "tools/guard/census.py");
+		check(tool.isFile(), "the census guard is installed at " + tool.getPath());
+		if (!tool.isFile()) {
+			return;
+		}
+		ProcessBuilder pb = new ProcessBuilder("python", "tools/guard/census.py", "--selftest");
+		pb.directory(repo);
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		String said = drain(p);
+		int code = p.waitFor();
+		check(code == 0 && said.contains("ALL PASS"),
+			"and its own five refusals still refuse (exit " + code + ") " + oneLine(said));
+		check(said.contains("NOTHING WAS READ") && said.contains("WERE NOT READ")
+			&& said.contains("NO COMPLETENESS CHECK RAN") && said.contains("STILL NAMES"),
+			"including the anti-gaming one: scope is expanded from disk, so looking at less is"
+			+ " what gets refused: " + oneLine(said));
+	}
+
+	/** One line of whatever a tool said, for a message that has to fit on a terminal. */
+	static String oneLine(String said) {
+		String flat = said == null ? "" : said.replace('\n', ' ').replace('\r', ' ').trim();
+		return flat.length() > 150 ? flat.substring(0, 150) + "..." : flat;
+	}
+
 	static Run run(File guard, String message, String[] staged, String lastRun) throws Exception {
 		File dir = Scratch.dir("commit-guard");
 		try {
