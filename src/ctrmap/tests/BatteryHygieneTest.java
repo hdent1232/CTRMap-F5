@@ -88,6 +88,7 @@ public class BatteryHygieneTest {
 		}
 		fixedTempPaths(tests);
 		overridableCorpusPath(tests);
+		everyBannedLiteralPinsItsSymbol(tests, root);
 		File repo = root.getParentFile() == null ? new File(".") : root.getParentFile();
 		//every script the battery or a harness executes, not just the runner: the
 		//same heredoc trap that put NUL bytes into test.ps1 put them into
@@ -117,6 +118,122 @@ public class BatteryHygieneTest {
 	}
 
 	/** Every suite must take its scratch space from Scratch, not name it. */
+	/**
+	 * A check that bans a literal must also pin that the SYMBOL it bans still exists.
+	 *
+	 * <p>THE SHAPE. Thirteen checks in this battery assert that some text is ABSENT from a
+	 * source file - {@code check(!text.contains("new ActionListener()"))},
+	 * {@code check(!save.contains("populateScriptDropdown();"))}. Each is a real rule, and
+	 * each has the same hole: it passes the instant the thing it forbids is spelled
+	 * differently. A rename, a reformat, an extra space, a split across a {@code +}
+	 * concatenation - and the check goes on reporting OK about a file it no longer describes.
+	 * The verification bootstrap paid for this one: deleting two spaces from
+	 * {@code live_allowed = True} opened live trading with the guard green, and an AST tool
+	 * written to avoid that mistake made it again by matching a substring.
+	 *
+	 * <p>WHAT CANNOT BE DONE HERE. "Ask the object, not the file" is the right answer and it
+	 * does not reach these: {@code new ActionListener()} is a source SHAPE, and the compiled
+	 * class carries a synthetic inner class either way. So the textual check stays, and this
+	 * closes the part that can be closed - the bootstrap’s own prescription, verbatim: "pin
+	 * that the guarded symbol still EXISTS - or a rename makes every other assertion
+	 * vacuous."
+	 *
+	 * <p>SO: for every banned literal, the longest identifier inside it must appear somewhere
+	 * in the tree. {@code new ActionListener()} pins {@code ActionListener};
+	 * {@code populateScriptDropdown();} pins {@code populateScriptDropdown}. When the method
+	 * is renamed the pin fails and names the check that has quietly stopped asserting
+	 * anything, instead of that check passing for ever.
+	 */
+	static void everyBannedLiteralPinsItsSymbol(File tests, File src) throws Exception {
+		System.out.println("--- every banned-literal check pins that its symbol still exists");
+		java.util.regex.Pattern ban = java.util.regex.Pattern.compile(
+			"!\\s*\\w+\\s*\\.contains\\(\\s*\"([^\"]{3,})\"");
+		java.util.regex.Pattern word = java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z0-9_]{3,}");
+		//PRODUCTION ONLY, and this is the whole check. Built over every source under src,
+		//it included the suites - so a banned literal found ITSELF, in the very check
+		//that names it, and every pin passed for that reason alone. It reported "27
+		//checked" and asserted nothing: the class it exists to refuse, committed by the
+		//fix for that class. A plant renaming a banned symbol SURVIVED, which is how it
+		//was found - and is the argument for proving a guard by breaking it rather than
+		//by watching it pass.
+		StringBuilder everything = new StringBuilder();
+		for (File j : DialogSeamTest.javaSources(src)) {
+			if (j.getParentFile() != null && j.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			everything.append(new String(java.nio.file.Files.readAllBytes(j.toPath()),
+				java.nio.charset.StandardCharsets.UTF_8));
+		}
+		//AND THE TOOLING, because a banned symbol does not have to be Java. The first
+		//honest run of this check reported CommitGuardTest's ban on
+		//"work_order.require_frozen" as vacuous; that function is real and lives in
+		//tools/guard/work_order.py, so the finding was this scan being narrower than the
+		//program it claims to describe.
+		File repo = src.getParentFile() == null ? new File(".") : src.getParentFile();
+		java.util.List<File> extra = new java.util.ArrayList<>();
+		collectTooling(new File(repo, "tools"), extra);
+		File[] atRoot = repo.listFiles();
+		if (atRoot != null) {
+			for (File one : atRoot) {
+				if (one.isFile() && one.getName().endsWith(".ps1")) {
+					extra.add(one);
+				}
+			}
+		}
+		for (File one : extra) {
+			everything.append(new String(java.nio.file.Files.readAllBytes(one.toPath()),
+				java.nio.charset.StandardCharsets.UTF_8));
+		}
+		String tree = everything.toString();
+		
+		String quote = String.valueOf((char) 34);
+		java.util.List<String> vacuous = new java.util.ArrayList<>();
+		int pinned = 0;
+		for (File j : DialogSeamTest.javaSources(tests)) {
+			String body = new String(java.nio.file.Files.readAllBytes(j.toPath()),
+				java.nio.charset.StandardCharsets.UTF_8);
+			java.util.regex.Matcher m = ban.matcher(body);
+			while (m.find()) {
+				String literal = m.group(1);
+				//the longest identifier in the banned text is the symbol it is about
+				String symbol = "";
+				java.util.regex.Matcher w = word.matcher(literal);
+				while (w.find()) {
+					if (w.group().length() > symbol.length()) {
+						symbol = w.group();
+					}
+				}
+				if (symbol.isEmpty()) {
+					continue;   //a punctuation ban pins nothing; there are none today
+				}
+				pinned++;
+				if (!tree.contains(symbol)) {
+					vacuous.add(j.getName() + " bans " + quote + literal + quote + " but " + symbol
+						+ " is nowhere in the tree - that check can no longer fail");
+				}
+			}
+		}
+		check(pinned > 0, pinned + " banned-literal check(s) found, so this is still looking at"
+			+ " something - a scan that quietly stops matching asserts nothing");
+		check(vacuous.isEmpty(), "every banned literal names a symbol that still exists"
+			+ (vacuous.isEmpty() ? " (" + pinned + " checked)" : ", but: " + vacuous));
+	}
+
+	/** Every .py under a tools directory, recursively. */
+	static void collectTooling(File dir, java.util.List<File> into) {
+		File[] kids = dir.listFiles();
+		if (kids == null) {
+			return;
+		}
+		for (File kid : kids) {
+			if (kid.isDirectory()) {
+				collectTooling(kid, into);
+			} else if (kid.getName().endsWith(".py")) {
+				into.add(kid);
+			}
+		}
+	}
+
 	static void fixedTempPaths(File tests) throws Exception {
 		List<String> named = new ArrayList<>();
 		List<File> sources = sources(tests);
