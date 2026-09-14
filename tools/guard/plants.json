@@ -1885,6 +1885,18 @@
     "."
    ],
    "must_say": "FAIL: a house-style fix that changes production code is asked for its guard"
+  },
+  {
+   "id": "a-banned-literal-outlives-its-symbol",
+   "why": "Twenty-seven checks in this battery assert that some text is ABSENT from a source file - `!text.contains(\"new ActionListener()\")`, `!save.contains(\"populateScriptDropdown();\")`. Each is a real rule and each passes the instant the thing it forbids is spelled differently: a rename, a reformat, an extra space, a split across a + concatenation. The verification bootstrap paid for this exact class - deleting two spaces from `live_allowed = True` opened live trading with the guard green - and prescribes the half that can be closed: pin that the guarded symbol still EXISTS, or a rename makes every other assertion vacuous. This plant renames the symbol in the ban so it names something nowhere in the tree, which is precisely what a real rename leaves behind: a check that can no longer fail and goes on reporting OK for ever.",
+   "file": "src/ctrmap/tests/MainframeShapeTest.java",
+   "find": "check(!text.contains(\"new ActionListener()\"),\n",
+   "replace": "check(!text.contains(\"new ActionListenerWasRenamed()\"),\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: every banned literal names a symbol that still exists"
   }
  ],
  "retired": [
