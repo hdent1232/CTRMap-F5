@@ -1840,10 +1840,10 @@
   },
   {
    "id": "a-known-hole-can-be-filed-again",
-   "why": "A whole-app census read 264 production files, confirmed 280 defects, and ended with a completeness critic naming ELEVEN things it had not covered - a 291-line workspace writer no agent opened, a 952-line engine recorded as skimmed, 93 of 147 suite files never read, so its own 'already refused by a suite' exclusion had been applied from 37% of the guard layer. All eleven were filed in OUTSTANDING.md as work for the owner rather than read. Rule six refuses that commit; this plant takes rule six out of the runner's check list, which is the one-line edit that would make the whole thing decorative again.",
+   "why": "A whole-app census read 264 production files, confirmed 280 defects, and ended with a completeness critic naming ELEVEN things it had not covered - a 291-line workspace writer no agent opened, a 952-line engine recorded as skimmed, 93 of 147 suite files never read, so its own 'already refused by a suite' exclusion had been applied from 37% of the guard layer. All eleven were filed in OUTSTANDING.md as work for the owner rather than read. Rule six refuses that commit; this plant takes rule six out of the runner's check list, which is the one-line edit that would make the whole thing decorative again. RETARGETED 2026-09-14: this plant edits the runner's check list, and adding rule seven rewrapped that line. The defect it plants is unchanged - the rule it names is dropped out of the runner - and the ledger refused to run until the substitution matched again, which is the check working.",
    "file": "tools/guard/commit_guard.py",
-   "find": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole):\n",
-   "replace": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim):  #PLANTED\n",
+   "find": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,\n                  check_blanket_claim):\n",
+   "replace": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim,\n                  check_blanket_claim):  #PLANTED: rule six is not run\n",
    "suite": "ctrmap.tests.CommitGuardTest",
    "args": [
     "."
@@ -1897,6 +1897,18 @@
     "src"
    ],
    "must_say": "FAIL: every banned literal names a symbol that still exists"
+  },
+  {
+   "id": "a-review-vouches-for-what-it-never-opened",
+   "why": "A review of this project's guards read fourteen of them - eight hooks, four tools, two scripts - and wrote \"Everything else reviewed holds its shape\" into the commit message, about 130 registered suites and 150 plants. It is what a review feels like from the inside when the part you looked at is the part you already knew, and nothing anywhere made the difference between fourteen and a hundred and fifty visible. Rule seven refuses a blanket claim about what a commit did not open unless the message cites a measurement naming a path that exists; the measurement it points at, classify_guards.py, counts 130 suites, 81 driving a refusal and 53 owed a plant. This plant drops rule seven out of the runner's check list. RETARGETED 2026-09-14: this plant edits the runner's check list, and adding rule seven rewrapped that line. The defect it plants is unchanged - the rule it names is dropped out of the runner - and the ledger refused to run until the substitution matched again, which is the check working.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,\n                  check_blanket_claim):\n",
+   "replace": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim,\n                  check_known_hole):  #PLANTED: rule seven is not run\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "must_say": "FAIL: vouching for what the commit did not open is refused"
   }
  ],
  "retired": [

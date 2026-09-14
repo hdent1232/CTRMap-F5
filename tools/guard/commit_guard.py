@@ -59,6 +59,24 @@ NO_REFUSAL = "No-refusal:"
 #: The escape from rule 6, and the only way a hole reaches the owner: it must say why the
 #: run that found it could not close it. "I ran out of turn" is a reason; silence is not.
 DEFERRED_GAP = "Deferred-gap:"
+#: The citation rule 7 wants: a count and the command that produced it.
+REVIEWED = "Reviewed:"
+NO_REVIEW = "No-review:"
+
+#: A claim about things OUTSIDE this diff - the population, not the change. Deliberately narrow:
+#: "every caller now catches it" describes the diff and is fine; "everything else holds" is a
+#: statement about what was not opened.
+_BLANKET = ("everything else", "all other", "every other", "the rest", "nothing else",
+            "no others", "no other guard", "the remaining", "all remaining", "everything remaining")
+#: ...asserted to have been EXAMINED and found sound, which is what makes it a coverage claim
+#: rather than a note. Measured against 30 real messages when this was written: a looser list
+#: including "already", "pass", "green" and "clean" refused two commits that were describing a
+#: DEFECT - "every other zone already sharing them" is prose about shared areas, not a claim
+#: that anything was reviewed. A rule that fires on honest work gets written around, and the
+#: previous rule in this file spent 577 commits asking 33 of them for exactly that reason.
+_SOUNDNESS = ("review", "audit", "verif", "checked out", "checked and", "holds", "hold their",
+              "is fine", "are fine", "sound", "in order", "unaffected", "untouched",
+              "no change needed", "nothing to fix", "all good")
 
 #: WHAT A KNOWN HOLE SOUNDS LIKE. A measurement that names its own incompleteness - "no slice
 #: opened it", "93 of 147 were never read", "skimmed, not read" - and then files that as work
@@ -384,13 +402,89 @@ def check_known_hole(message):
     return 1
 
 
+def blanket_claim(message):
+    """The phrases where a message vouches for what it did not open. [] when there are none."""
+    low = " ".join((message or "").lower().split())
+    hits = []
+    for phrase in _BLANKET:
+        at = low.find(phrase)
+        while at >= 0:
+            window = low[at:at + 140]
+            if any(word in window for word in _SOUNDNESS):
+                hits.append(low[max(0, at - 30):at + 70].strip())
+                break
+            at = low.find(phrase, at + 1)
+    return hits
+
+
+def check_blanket_claim(message):
+    """RULE 7. A claim about what you did not open must cite the measurement that covers it.
+
+    THE DEFECT, and it is this file's author again. A commit reviewing the project's guards
+    examined fourteen of them - eight hooks, four tools, two scripts - and then wrote
+    "Everything else reviewed holds its shape" into the message. There are 130 registered suites
+    and 150 plants. The sentence was not a lie anybody told on purpose; it is what a review feels
+    like from the inside when the part you looked at was the part you already knew, and nothing
+    anywhere made the difference between fourteen and a hundred and fifty visible.
+
+    The measurement that would have settled it took one command and two minutes when it was
+    finally run: 130 suites, 81 driving a refusal, 12 reading source text alone, 53 owed a plant.
+
+    SO A BLANKET CLAIM NEEDS A CITATION. Saying the rest are fine is a measurement, and a
+    measurement has a number and a way to reproduce it:
+
+        Reviewed: 130/130 suites by tools/guard/classify_guards.py
+
+    The citation must name a path that exists, because "reviewed: all of them" is the same
+    sentence with a colon in it. The escape is `No-review:` for a claim that genuinely rests on
+    something other than counting - and it stays in git log, where somebody can disagree.
+
+    NARROW ON PURPOSE. "Every caller now catches it" describes the diff and passes; "everything
+    else holds" is about the population and does not. A rule that fires on honest prose gets its
+    author writing around it, which is how the previous rule in this file spent 577 commits
+    asking 33 of them.
+    """
+    hits = blanket_claim(message)
+    if not hits:
+        return 0
+    low = message.lower()
+    if NO_REVIEW.lower() in low:
+        return 0
+    cited = re.search(r"^Reviewed:\s*(.+)$", message, re.M)
+    if cited:
+        named = cited.group(1)
+        paths = re.findall(r"[\w./\\-]+\.(?:py|ps1|java|md|json|sh|bat)", named)
+        if any(os.path.exists(os.path.join(ROOT, p.replace(chr(92), "/"))) for p in paths):
+            return 0
+        sys.stderr.write(
+            "REFUSING THE COMMIT: `%s` names nothing that exists in this repository." % REVIEWED
+            + LF + "  A citation is a thing somebody else can run. %r resolves to no file here."
+            % named.strip()[:90] + LF)
+        return 1
+    sys.stderr.write(
+        "REFUSING THE COMMIT: this message vouches for things it did not open." + LF
+        + "".join("    ...%s...%s" % (h, LF) for h in hits[:3])
+        + LF
+        + "  Saying the rest are fine is a MEASUREMENT, and this commit does not carry one." + LF
+        + "  A review of this project's guards once covered fourteen of them and then wrote" + LF
+        + "  \"everything else reviewed holds its shape\" about 130 suites and 150 plants." + LF
+        + "  The count that settled it took one command." + LF + LF
+        + "  Cite it, with a number and something runnable:" + LF + LF
+        + "    %s 130/130 suites by tools/guard/classify_guards.py" % REVIEWED + LF + LF
+        + "  Or, if the claim genuinely does not rest on counting, say so where it stays" + LF
+        + "  visible:" + LF + LF
+        + "    %s <what the claim rests on instead>" % NO_REVIEW + LF)
+    return 1
+
+
 def main(argv):
     if len(argv) < 2:
         return 0
     message = _message(argv[1])
     if not message.strip():
         return 0
-    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole):
+    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,
+                  check_blanket_claim):
         code = check(message)
         if code:
             return code
