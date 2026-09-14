@@ -1837,6 +1837,30 @@
     "${PRISTINE}"
    ],
    "must_say": "FAIL: and the refusal reaches the user: []"
+  },
+  {
+   "id": "a-known-hole-can-be-filed-again",
+   "why": "A whole-app census read 264 production files, confirmed 280 defects, and ended with a completeness critic naming ELEVEN things it had not covered - a 291-line workspace writer no agent opened, a 952-line engine recorded as skimmed, 93 of 147 suite files never read, so its own 'already refused by a suite' exclusion had been applied from 37% of the guard layer. All eleven were filed in OUTSTANDING.md as work for the owner rather than read. Rule six refuses that commit; this plant takes rule six out of the runner's check list, which is the one-line edit that would make the whole thing decorative again.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole):\n",
+   "replace": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim):  #PLANTED\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "must_say": "FAIL: a message recording what a run skipped, and queueing it, is refused"
+  },
+  {
+   "id": "a-census-can-call-itself-clean-while-skipping-files",
+   "why": "The other half of the pair, and the one that stops rule six becoming an incentive to stop looking: a rule that only forbids REPORTING holes is satisfied fastest by not finding any. census.py expands the scope a census names into a file list FROM DISK and refuses a report with anything in it unread, so reading less cannot buy a pass. This plant makes the unread-files check unreachable, which is what 'we covered everything' looks like when nobody counted.",
+   "file": "tools/guard/census.py",
+   "find": "        if missed:\n",
+   "replace": "        if False:  #PLANTED: a census may claim coverage it does not have\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "must_say": "FAIL: and its own five refusals still refuse"
   }
  ],
  "retired": [

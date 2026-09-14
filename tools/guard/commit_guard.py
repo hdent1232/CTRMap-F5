@@ -56,6 +56,29 @@ NO_GUARD = "No-guard:"
 #: The escape from rule 5. A detector or a convention is allowed only with this line,
 #: which stays in git log and says why a refusal was impossible HERE.
 NO_REFUSAL = "No-refusal:"
+#: The escape from rule 6, and the only way a hole reaches the owner: it must say why the
+#: run that found it could not close it. "I ran out of turn" is a reason; silence is not.
+DEFERRED_GAP = "Deferred-gap:"
+
+#: WHAT A KNOWN HOLE SOUNDS LIKE. A measurement that names its own incompleteness - "no slice
+#: opened it", "93 of 147 were never read", "skimmed, not read" - and then files that as work
+#: for somebody else. Written as phrases rather than one clever pattern because the phrasing is
+#: the evidence: these are the words a run uses when it knows it stopped early.
+_HOLE_PHRASES = (
+    "never read", "never opened", "never examined", "was not read", "were not read",
+    "nobody read", "no slice", "not covered", "did not reach", "was skimmed", "skimmed, not read",
+    "coverage-gap", "coverage gap", "unread", "did not cover", "could not cover",
+    "the census missed", "the sweep missed", "the audit missed", "was applied from",
+    "produced no findings although", "shallow coverage", "was not judged", "were not judged",
+)
+#: ...but only when it is being FILED, and filing has a shape: an open queue item. Prose about a
+#: hole is how a fix for one gets written, so matching prose would refuse the very commits this
+#: rule is trying to produce - including its own. An unticked box is the handover.
+_OPEN_ITEM = re.compile(r"^\s*[-*]\s*\[\s*\]", re.M)
+#: The escape, anchored the way `Guard:` is. Mentioning the token in a sentence about the rule is
+#: not using it - the first version checked for the token anywhere and refused this file's own
+#: commit for a zero-length reason it had read out of its own documentation.
+_DEFERRED_LINE = re.compile(r"^Deferred-gap:\s*(.+)$", re.M | re.S)
 
 #: `1,234 tests` or `57 tests`. A bare number followed by the word.
 _TEST_CLAIM = re.compile(r"([0-9][0-9,]*)[ \t]+tests\b")
@@ -200,13 +223,91 @@ def check_test_claim(message):
     return 0
 
 
+def names_a_known_hole(text):
+    """A run admitting it stopped early, in something that FILES that as open work.
+
+    Both halves are required, and the second one is a shape rather than a vocabulary: an
+    unticked queue item. A commit that says "nobody had read these, so they were read" is the
+    behaviour being asked for and must pass; a commit that adds `- [ ] ... was never read` is
+    the handover, and is what gets refused. Matching prose instead refused this rule's own
+    commit, which is a fair test of a predicate and one it failed.
+    """
+    low = (text or "").lower()
+    hit = [p for p in _HOLE_PHRASES if p in low]
+    if not hit:
+        return []
+    if not _OPEN_ITEM.search(text or ""):
+        return []
+    return hit
+
+
+def _added_to_queue():
+    """Lines this commit ADDS to OUTSTANDING.md. Empty when git cannot be asked."""
+    import subprocess
+    try:
+        done = subprocess.run(["git", "diff", "--cached", "--unified=0", "--", "OUTSTANDING.md"],
+                              cwd=ROOT, capture_output=True, text=True)
+    except OSError:                                    # pragma: no cover - git not on PATH
+        return ""
+    return LF.join(l[1:] for l in done.stdout.splitlines()
+                   if l.startswith("+") and not l.startswith("+++"))
+
+
+def check_known_hole(message):
+    """RULE 6. A run that knows what it missed may not hand that to the owner.
+
+    THE DEFECT THIS CLOSES, which happened here. A whole-app census ran for two hours, ended
+    with a completeness critic that named eleven things it had not covered - a 291-line writer
+    no agent opened, a 952-line engine recorded as "skimmed", 93 of 147 suite files never read -
+    and all eleven were written into OUTSTANDING.md as work for the owner's next window. The
+    run knew. Knowing and filing it is the whole failure: the owner had to read the report,
+    understand the hole, and tell somebody to go back and do the part that was skipped.
+
+    AND IT REFUSES THE CHEAP WAY OUT TOO, which is why the escape is a sentence and not a flag.
+    A rule that only forbids REPORTING holes is satisfied fastest by not looking for them -
+    drop the critic, claim coverage, ship. So this is one half of a pair: `census.py` refuses a
+    report whose coverage is not proven against a file list it computes from disk itself, and
+    this refuses the queue entry. Stopping the search fails the first; filing the result fails
+    the second; the only way through both is to go and read the thing.
+    """
+    used = _DEFERRED_LINE.search(message or "")
+    if used:
+        reason = " ".join(used.group(1).split())
+        if len(reason) < MIN_GUARD_REASON:
+            sys.stderr.write(
+                "REFUSING THE COMMIT: `%s` is there but says almost nothing (%d chars)." % (DEFERRED_GAP, len(reason))
+                + LF + "  A hole handed to somebody else has to arrive with the reason the run" + LF
+                + "  that found it could not close it, in a sentence they can disagree with." + LF)
+            return 1
+        return 0
+    hit = names_a_known_hole(message) or names_a_known_hole(_added_to_queue())
+    if not hit:
+        return 0
+    sys.stderr.write(
+        "REFUSING THE COMMIT: this records something a run of yours KNOWS it did not cover" + LF
+        + "  and files it as work rather than doing it. The words that say so: %s" % ", ".join(hit) + LF
+        + LF
+        + "  A census that ends by naming eleven things it skipped has not finished; it has" + LF
+        + "  stopped. The owner then pays twice - once to read the hole, once to ask for the" + LF
+        + "  work that was already understood. Go back and read the part that was skipped." + LF
+        + LF
+        + "  Do not answer this by looking less hard: `census.py` refuses a report whose" + LF
+        + "  coverage is not proven against a file list it computes from disk, so dropping the" + LF
+        + "  completeness check fails that one instead." + LF
+        + LF
+        + "  If it genuinely cannot be closed now - the tree is frozen, it needs a dump nobody" + LF
+        + "  has - say so where it stays visible:" + LF + LF
+        + "    %s <why the run that found it could not close it>" % DEFERRED_GAP + LF)
+    return 1
+
+
 def main(argv):
     if len(argv) < 2:
         return 0
     message = _message(argv[1])
     if not message.strip():
         return 0
-    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim):
+    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole):
         code = check(message)
         if code:
             return code
