@@ -59,9 +59,14 @@ import sys
 LF = chr(10)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-#: What counts as a file a census had to read. Source and the data the program ships; not
-#: build output, not the version-control directory.
-SOURCE_SUFFIXES = (".java", ".py", ".ps1", ".tsv", ".md", ".properties", ".form", ".xml")
+#: SOURCE AND THE DATA THE PROGRAM SHIPS. The shell scripts and the shipped binaries were absent
+#: from this list, so a scope naming their directory expanded to nothing for them and a census
+#: could report the directory covered having opened no part of it. Two of those binaries are
+#: written into a user's game files, which makes them the last place a coverage claim should be
+#: cheap: a census that skips `build.ps1`, `run.bat` and `DummyKAGE.bin` has skipped the build,
+#: the launcher and bytes that reach a save file.
+SOURCE_SUFFIXES = (".java", ".py", ".ps1", ".tsv", ".md", ".properties", ".form", ".xml",
+                   ".bat", ".sh", ".json", ".txt", ".bin", ".bch", ".cmvd")
 SKIP_DIRS = ("build", ".git", "dist", "__pycache__", "lib", "wt")
 
 
@@ -83,11 +88,25 @@ def expand(scope):
     return out
 
 
+def path_of(entry):
+    """The path an entry names, with its size annotation removed.
+
+    ONE PARSER, because there were two. `fabricated()` split an entry at its first "(" to find
+    the file; this did not, so an annotated entry - `src/ctrmap/Zone.java (207 lines)`, which is
+    the shape agents actually write - matched nothing in the scope and every file read that way
+    counted as unread. The first real census this tool was ever pointed at reported 454 of 454
+    files missed while holding 872 read entries, and the coverage refusal it exists for was
+    therefore unusable on real input. Two functions reading one format is the defect this
+    project's own README spends a page on.
+    """
+    return str(entry).replace(chr(92), "/").split("(")[0].strip()
+
+
 def normalise(paths):
     """Read lists arrive with backslashes, absolute paths and repo prefixes. Compare by tail."""
     out = set()
     for p in paths or []:
-        q = str(p).replace(chr(92), "/").strip()
+        q = path_of(p)
         if not q:
             continue
         low = q.lower()
@@ -138,7 +157,7 @@ def fabricated(entries):
         text = str(raw).strip()
         if not text:
             continue
-        path = text.split("(")[0].strip().replace(chr(92), "/")
+        path = path_of(text)
         full = os.path.join(ROOT, path.replace("/", os.sep))
         if not os.path.isfile(full):
             base = os.path.basename(path)
@@ -197,14 +216,23 @@ def judge(result):
             " word clean means nothing.")
     else:
         wanted = expand(scope)
-        by_tail = {}
-        for w in wanted:
-            by_tail.setdefault(os.path.basename(w), set()).add(w)
+        #: A BARE BASENAME COUNTS FOR ONE FILE, NOT FOR EVERY FILE OF THAT NAME. It used to
+        #: satisfy any path with the same tail, so one `Zone.java` in the read list marked every
+        #: `Zone.java` in the tree as read - and a project with `package-info.java` in thirty
+        #: packages could cover thirty files by opening one. Bare names are matched against the
+        #: scope ONCE each, in sorted order, so a list of them can never claim more than it has.
+        bare = {}
+        for entry in read:
+            if "/" not in entry:
+                bare[entry] = bare.get(entry, 0) + 1
+        spent = {}
         missed = set()
-        for w in wanted:
+        for w in sorted(wanted):
             if w in read:
                 continue
-            if os.path.basename(w) in read:
+            name = os.path.basename(w)
+            if bare.get(name, 0) > spent.get(name, 0):
+                spent[name] = spent.get(name, 0) + 1
                 continue
             missed.add(w)
         if missed:

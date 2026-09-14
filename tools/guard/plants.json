@@ -1873,6 +1873,18 @@
     "."
    ],
    "must_say": "FAIL: and its own five refusals still refuse"
+  },
+  {
+   "id": "the-commit-gate-reads-the-subject-line-again",
+   "why": "The gate that refuses a fix carrying no guard decided whether to ASK by testing whether the subject line began with the word 'fix'. Measured over this repository on 2026-09-14: 577 commits, 33 subjects starting with 'fix', and 213 commits that both change production code and describe a defect being closed - so it asked 17% of the population it exists for, and 170 fixes went through without the question ever being put. Every commit in this project's house style ('The camera table stops being read silently') was invisible to it. A trigger made of prose is a convention wearing a refusal's error message: reword the subject and nothing fires. It asks the staged DIFF now. This plant puts the prose trigger back, which is the one-line edit that makes the whole gate decorative again.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "    return _changes_behaviour() or subject_of(message).lower().startswith(\"fix\")\n",
+   "replace": "    return subject_of(message).lower().startswith(\"fix\")  #PLANTED\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "must_say": "FAIL: a house-style fix that changes production code is asked for its guard"
   }
  ],
  "retired": [
