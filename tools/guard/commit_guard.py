@@ -100,8 +100,91 @@ def subject_of(message):
     return ""
 
 
+#: Production source: the program, not its proofs and not its tooling.
+def _is_production(path):
+    return path.startswith("src/") and "/tests/" not in path and path.endswith(".java")
+
+
+def _changes_behaviour():
+    """True when this commit changes production CODE, as opposed to its comments.
+
+    Asked of the staged DIFF rather than of the message, and that is the whole point of this
+    function. See `is_a_fix`.
+    """
+    import subprocess
+    prod = [p for p in staged_files() if _is_production(p)]
+    if not prod:
+        return False
+    try:
+        done = subprocess.run(["git", "diff", "--cached", "-U0", "--"] + prod,
+                              cwd=ROOT, capture_output=True, text=True)
+    except OSError:                                    # pragma: no cover - git not on PATH
+        return True                                    # cannot tell: ask, do not assume innocent
+    added, removed = [], []
+    for line in done.stdout.splitlines():
+        if line.startswith(("+++", "---", "@@")):
+            continue
+        if not line.startswith(("+", "-")):
+            continue
+        code = _code_of(line[1:])
+        if not code:
+            continue                       # blank, or a line that is nothing but a comment
+        (added if line.startswith("+") else removed).append(code)
+    # COMPARE THE CODE, NOT THE LINES. A trailing `//why` appended to an existing statement
+    # changes the line and not the program, and the first version of this asked only whether a
+    # line STARTED with a comment marker - so documenting a field read as a behaviour change and
+    # the gate demanded a guard for it. A gate that fires on honest work gets switched off.
+    return sorted(added) != sorted(removed)
+
+
+def _code_of(text):
+    """`text` with a trailing `//` comment removed, whitespace flattened; "" if all comment.
+
+    Quote-aware, because `"http://x"` is not a comment and treating it as one would let two
+    different statements normalise to the same thing - the one direction this must never get
+    wrong, since equal-looking halves are what make a change read as comment-only.
+    """
+    body, quote, index = text, None, 0
+    while index < len(body):
+        char = body[index]
+        if quote:
+            if char == chr(92):
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+        elif char in ('"', chr(39)):
+            quote = char
+        elif char == "/" and body[index:index + 2] == "//":
+            body = body[:index]
+            break
+        index += 1
+    body = " ".join(body.split())
+    if body.startswith(("/*", "*", "*/")):
+        return ""
+    return body
+
+
 def is_a_fix(message):
-    return subject_of(message).lower().startswith("fix")
+    """Whether this commit must say what kind of guard it carries.
+
+    IT USED TO ASK THE SUBJECT LINE whether it started with the word "fix". Measured across this
+    repository's own history on 2026-09-14: 577 commits, 33 subjects starting with "fix", and 213
+    commits that both change production code and describe a defect being closed. So the gate asked
+    17% of the population it exists for, and 170 fixes went through without it ever putting the
+    question - including every one written in this project's house style, which describes what the
+    code USED TO DO rather than announcing itself as a fix.
+
+    A trigger made of prose is not a refusal. It is a convention with a refusal's error message:
+    reword the subject and the gate never fires, and nothing anywhere says it did not. So the
+    trigger is now the STAGED DIFF - changing production code is the act that needs a guard, and
+    no phrasing gets around it. The message half is kept as an OR, so a fix that lands entirely in
+    `tools/` is still asked.
+
+    Comment-only production changes are excluded deliberately: a ratchet that fires on honest work
+    gets its ceiling raised, and that habit is what makes every other ratchet worthless.
+    """
+    return _changes_behaviour() or subject_of(message).lower().startswith("fix")
 
 
 def guard_line(message):

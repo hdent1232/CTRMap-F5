@@ -69,6 +69,7 @@ public class CommitGuardTest {
 		theDeferredGapEscapeIsHonouredAndMustSaySomething(guard);
 		ordinaryWorkIsNotPolicedByRuleSix(guard);
 		aCensusCannotBeReportedCleanWithoutCoveringItsScope(repo);
+		theGateAsksTheDiffAndNotTheSubjectLine(guard);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -486,7 +487,71 @@ public class CommitGuardTest {
 		return flat.length() > 150 ? flat.substring(0, 150) + "..." : flat;
 	}
 
+	// ------------------------------------- 10. the trigger: what makes it ASK
+	/**
+	 * A commit that changes production code is asked for its guard, whatever its subject says.
+	 *
+	 * <p>THE DEFECT, measured over this repository on 2026-09-14. The gate decided whether to
+	 * ask by reading the SUBJECT LINE and testing whether it began with the word "fix". Across
+	 * 577 commits: 33 subjects started with "fix", and 213 commits both changed production code
+	 * and described a defect being closed. So it asked 17% of the population it exists for, and
+	 * 170 fixes went through without the question ever being put - including every commit
+	 * written in this project's house style, which says what the code USED TO DO rather than
+	 * announcing itself as a fix.
+	 *
+	 * <p>A TRIGGER MADE OF PROSE IS NOT A REFUSAL. It is a convention wearing a refusal's error
+	 * message: reword the subject and the gate never fires, and nothing says it did not. The
+	 * trigger is the staged DIFF now - changing production code is the act that needs a guard,
+	 * and no phrasing gets around it.
+	 *
+	 * <p>AND IT STILL LEAVES HONEST WORK ALONE, which is the half that keeps it installed: a
+	 * comment-only change is not a behaviour change. The first version of that check asked only
+	 * whether a line STARTED with a comment marker, so appending {@code //why} to an existing
+	 * statement read as a code change and the gate demanded a guard for documenting a field.
+	 * It compares the CODE either side of the diff instead.
+	 */
+	static void theGateAsksTheDiffAndNotTheSubjectLine(File guard) throws Exception {
+		System.out.println("--- the gate asks the diff, not the subject line");
+		String houseStyle = "The camera table stops being read silently\n\n"
+			+ "It used to log the failure and carry on.";
+		
+		//production CODE, no Guard line, and a subject that never says "fix"
+		Run asked = run(guard, houseStyle,
+			new String[]{"src/ctrmap/Zone.java"}, null, "int id = 2;");
+		check(asked.code != 0, "a house-style fix that changes production code is asked for its"
+			+ " guard (exit " + asked.code + ")");
+		
+		//the same commit, with the answer
+		Run answered = run(guard, houseStyle + "\n\nGuard: refusal -- a reader that cannot"
+			+ " read its subject throws instead of answering null, so no caller can mistake an"
+			+ " unreadable table for an empty one",
+			new String[]{"src/ctrmap/Zone.java", "src/ctrmap/tests/ZoneTest.java"}, null,
+			"int id = 2;");
+		check(answered.code == 0, "and is allowed once it says what kind of guard it carries"
+			+ " (exit " + answered.code + ") " + oneLine(answered.said));
+		
+		//a comment is not behaviour
+		Run commented = run(guard, "Explain why the loop stops at four",
+			new String[]{"src/ctrmap/Zone.java"}, null, "//the first zone");
+		check(commented.code == 0, "while a comment-only production change is left alone - a gate"
+			+ " that fires on honest work is one whose ceiling gets raised (exit "
+			+ commented.code + ")");
+	}
+
+	/** The four-argument form: every staged file gets the comment body it always had. */
 	static Run run(File guard, String message, String[] staged, String lastRun) throws Exception {
+		return run(guard, message, staged, lastRun, null);
+	}
+
+	/**
+	 * @param stagedBody what every staged file CONTAINS, or null for the comment line this
+	 *                   harness has always written. It matters now: the gate asks whether the
+	 *                   staged diff changes production CODE, and a file whose whole content is
+	 *                   {@code //staged for the guard to see} changes none - which is why every
+	 *                   fixture written before that check still behaves as it did.
+	 */
+	static Run run(File guard, String message, String[] staged, String lastRun, String stagedBody)
+			throws Exception {
 		File dir = Scratch.dir("commit-guard");
 		try {
 			File tools = new File(dir, "tools/guard");
@@ -500,7 +565,8 @@ public class CommitGuardTest {
 				if (f.getParentFile() != null) {
 					f.getParentFile().mkdirs();
 				}
-				Files.write(f.toPath(), "//staged for the guard to see\n".getBytes(StandardCharsets.UTF_8));
+				Files.write(f.toPath(), (stagedBody == null ? "//staged for the guard to see"
+					: stagedBody).concat("\n").getBytes(StandardCharsets.UTF_8));
 				git(dir, "add", "--", rel);
 			}
 			if (lastRun != null) {
