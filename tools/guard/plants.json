@@ -1861,6 +1861,18 @@
     "."
    ],
    "must_say": "FAIL: and its own five refusals still refuse"
+  },
+  {
+   "id": "a-read-list-is-taken-on-trust",
+   "why": "census.py computes SCOPE from disk so a census cannot pass by looking at less - but the read list itself was still a claim, and on 2026-09-13 a gap-closing round caught one of its own agents reporting 'CTRMap/build.ps1 (lines 1-100 of 210)' with a coverage note about what lines 100-210 said. No copy of build.ps1 in any checkout is longer than 115 lines, and a second entry in the same batch put OUTSTANDING.md at 20,489 bytes when it is 19,829; a third was exactly right, which is what made the other two identifiable as invented rather than stale. The whole method here is 'diff the disk against the read list', so an unchecked read list is the one place a clean coverage number can be bought with a sentence. Every entry carrying its own size is now checked against the file. This plant hands that check an empty answer, which is what trusting the list looks like.",
+   "file": "tools/guard/census.py",
+   "find": "    made_up = fabricated(result.get(\"filesRead\"))\n",
+   "replace": "    made_up = []  #PLANTED: a read list is taken on trust again\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "must_say": "FAIL: and its own five refusals still refuse"
   }
  ],
  "retired": [
