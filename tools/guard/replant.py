@@ -259,6 +259,7 @@ def replant(p, java, pristine, gamedir):
     ok = False
     try:
         write(path, text.replace(p["find"], p["replace"]), crlf)
+        hold(path)          #the defect is on disk from here until the finally below
         if not p.get("no_rebuild"):
             built, out = build()
             if not built:
@@ -286,6 +287,7 @@ def replant(p, java, pristine, gamedir):
             print("     SURVIVED: the defect is back and %s still passes." % p["suite"])
     finally:
         io.open(path, "wb").write(raw)
+        release()
         back = io.open(path, "rb").read()
         if back != raw:
             print("     RESTORE FAILED for %s - the tree is NOT as it was." % p["file"])
@@ -337,6 +339,31 @@ def selftest():
 #: Where replant records the tree it last proved the whole ledger against. work_order
 #: refuses a frozen-tree measurement when src/ no longer digests to this.
 PROVEN = os.path.join(ROOT, ".last-replant")
+
+
+#: The lock `.claude/hooks/guard_mutation_read.py` reads to refuse a read of a file that
+#: currently carries a planted defect. Nothing wrote it before 2026-09-20, so that hook could
+#: never refuse anything: a consumer with no producer.
+MUTATION_LOCK = os.path.join(ROOT, ".mutation-in-flight")
+
+
+def hold(path):
+    """Record that `path` is on disk carrying a planted defect right now."""
+    try:
+        io.open(MUTATION_LOCK, "w", encoding="utf-8", newline=LF).write(
+            os.path.relpath(path, ROOT).replace(chr(92), "/") + LF)
+    except OSError as cannotWrite:
+        print("     WARNING: cannot write %s (%s) - a reader cannot be told this file is "
+              "planted" % (MUTATION_LOCK, cannotWrite))
+
+
+def release():
+    """The defect is off disk again."""
+    try:
+        if os.path.exists(MUTATION_LOCK):
+            os.remove(MUTATION_LOCK)
+    except OSError as cannotRemove:
+        print("     WARNING: cannot remove %s (%s)" % (MUTATION_LOCK, cannotRemove))
 
 
 def record_proof(proven, not_proven):
