@@ -136,6 +136,7 @@ $suites = @(
     @{ n = "Hook wiring (an installed guard nothing can reach is OFF)"; c = "ctrmap.tests.HooksWiredTest"; a = @(".") },
     @{ n = "Hook refusals (game data, per-push approval, edit during a run)"; c = "ctrmap.tests.HookRefusalsTest"; a = @(".") },
     @{ n = "Liveness probes (I could not look is not it is not there)"; c = "ctrmap.tests.LivenessProbeTest"; a = @(".") },
+    @{ n = "Rule map (every rule in CLAUDE.md has a mechanism)"; c = "ctrmap.tests.RuleMapTest"; a = @(".") },
     @{ n = "Plant ledger (the proofs still match the tree)"; c = "ctrmap.tests.PlantLedgerTest"; a = @(".") },
     @{ n = "ClassFileScanner (bytecode sees what a grep cannot)"; c = "ctrmap.tests.ClassFileScannerTest"; a = @("src", "build\classes") },
     @{ n = "GameFilesSeam (the format layer is handed its game, never fetches it)"; c = "ctrmap.tests.GameFilesSeamTest"; a = @("src", "build\classes") },

@@ -63,6 +63,8 @@ public class HookRefusalsTest {
 		everyPushNeedsItsOwnApproval(hooks);
 		sourceIsNotEditedWhileARunHoldsTheLock(hooks);
 		aRunThatIsOverDoesNotRefuse(hooks);
+		theStatusOfAPipelineBelongsToItsFilter(hooks);
+		aBackslashInAnInlineScriptIsRefused(hooks);
 
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
 		if (fails != 0) {
@@ -216,6 +218,72 @@ public class HookRefusalsTest {
 				"a lock whose process is gone does not refuse");
 	}
 
+	/**
+	 * A REMEDY'S EXIT CODE ANSWERS ITS OWN QUESTION, NOT YOURS.
+	 *
+	 * <p>{@code $?} after a pipeline is the LAST stage's status, and a filter almost always
+	 * succeeds. On the day this was written,
+	 * {@code python tools/guard/liveness_check.py . | head -5; echo "exit=$?"} printed
+	 * {@code exit=0} about a checker that had just exited 1 with seven findings.
+	 *
+	 * <p>The same shape cost this project thirty-three hours: a map rebuild wrote its
+	 * 10.7 MB output and exited 1 - because the code reported the suite it had run
+	 * UNDER, not whether a map was produced - and the runner discarded 49 minutes of
+	 * work and then sat for a day and a half having decided nothing.
+	 *
+	 * <p>The pipeline itself is not refused. {@code ${PIPESTATUS[0]}} is the right
+	 * question and must stay allowed, or the guard teaches nothing.
+	 */
+	static void theStatusOfAPipelineBelongsToItsFilter(File hooks) throws Exception {
+		System.out.println("--- a status that belongs to the filter");
+		File guard = new File(hooks, "guard_exit_code.py");
+		check(guard.isFile(), "the guard is installed at " + guard.getPath());
+		check(refuses(guard, bash("python x.py | head -5; echo " + QUOTE + "exit=$?"
+			+ QUOTE)), "reading $? after a pipe into head is refused");
+		check(refuses(guard, bash("java -cp b X | grep FAIL; echo $?")),
+			"and after a pipe into grep");
+		check(!refuses(guard, bash("python x.py | head -5; echo " + QUOTE
+			+ "exit=${PIPESTATUS[0]}" + QUOTE)),
+			"while the RIGHT question is allowed - a guard that refuses the correct"
+			+ " spelling teaches nothing");
+		check(!refuses(guard, bash("python x.py > out.txt 2>&1; echo " + QUOTE
+			+ "exit=$?" + QUOTE)), "and so is a redirect, which keeps the status");
+		check(!refuses(guard, bash("python x.py | head -5")),
+			"and so is the pipeline itself, with nobody asking about the status");
+	}
+
+	/**
+	 * The command string eats a backslash in an inline script body, not only in a heredoc.
+	 *
+	 * <p>MEASURED ON 2026-09-20, an hour after this guard was widened to every tool. A word
+	 * boundary written through {@code python -c} inside a shell string arrived as <b>0x08</b>.
+	 * The regex compiled. It matched nothing but digits, and the count it was measuring came
+	 * out at 103 both before and after the change - when the true number was <b>64</b>.
+	 * Thirty-nine entries were miscounted, and a silent failure looked exactly like a correct
+	 * result.
+	 *
+	 * <p>The guard already refused a backslash in a heredoc body. It could not see the same
+	 * escaping layer one flag away.
+	 */
+	static void aBackslashInAnInlineScriptIsRefused(File hooks) throws Exception {
+		System.out.println("--- a backslash in an inline script body");
+		File guard = new File(hooks, "guard_heredoc.py");
+		check(guard.isFile(), "the guard is installed at " + guard.getPath());
+		String body = "import re; re.compile('" + BACKSLASH + "b(one|two)')";
+		check(refuses(guard, bash("python -c " + QUOTE + body + QUOTE)),
+				"a backslash in an inline script body is refused");
+		check(refuses(guard, bash("pwsh -Command 'Write-Host " + QUOTE + "a" + BACKSLASH
+				+ "nb" + QUOTE + "'")),
+				"and so is one in a PowerShell -Command body");
+		check(!refuses(guard, bash("python -c " + QUOTE + "print(chr(92) + 'b')" + QUOTE)),
+				"while the safe spelling is allowed - chr(92) has nothing to eat");
+		check(!refuses(guard, bash("python tools/guard/replant.py --selftest")),
+				"and so is an ordinary script run");
+	}
+
+	/** A backslash, built so this file does not have to escape one to talk about one. */
+	static final String BACKSLASH = String.valueOf((char) 92);
+
 	// ---------------------------------------------------------------- fixtures
 
 	static long pid() {
@@ -251,6 +319,9 @@ public class HookRefusalsTest {
 	static String bash(String command) {
 		return payload("Bash", "command", command, "");
 	}
+
+	/** A double quote, for building a command without escaping it twice. */
+	static final String QUOTE = String.valueOf((char) 34);
 
 	static String quoted(String s) {
 		StringBuilder sb = new StringBuilder("\"");

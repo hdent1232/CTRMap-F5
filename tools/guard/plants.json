@@ -1842,8 +1842,8 @@
    "id": "a-known-hole-can-be-filed-again",
    "why": "A whole-app census read 264 production files, confirmed 280 defects, and ended with a completeness critic naming ELEVEN things it had not covered - a 291-line workspace writer no agent opened, a 952-line engine recorded as skimmed, 93 of 147 suite files never read, so its own 'already refused by a suite' exclusion had been applied from 37% of the guard layer. All eleven were filed in OUTSTANDING.md as work for the owner rather than read. Rule six refuses that commit; this plant takes rule six out of the runner's check list, which is the one-line edit that would make the whole thing decorative again. RETARGETED 2026-09-14: this plant edits the runner's check list, and adding rule seven rewrapped that line. The defect it plants is unchanged - the rule it names is dropped out of the runner - and the ledger refused to run until the substitution matched again, which is the check working.",
    "file": "tools/guard/commit_guard.py",
-   "find": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,\n                  check_blanket_claim, check_extraction_is_tested, check_detangle,\n                  check_in_game_claim, check_zero_claim, check_cheapest_evasion):\n",
-   "replace": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim,\n                  check_blanket_claim, check_extraction_is_tested, check_detangle,\n                  check_in_game_claim, check_zero_claim, check_cheapest_evasion):  #PLANTED: rule six is not run\n",
+   "find": "    used = _DEFERRED_LINE.search(message or \"\")\n",
+   "replace": "    return 0  #PLANTED: rule six decides nothing\n    used = _DEFERRED_LINE.search(message or \"\")\n",
    "suite": "ctrmap.tests.CommitGuardTest",
    "args": [
     "."
@@ -1902,8 +1902,8 @@
    "id": "a-review-vouches-for-what-it-never-opened",
    "why": "A review of this project's guards read fourteen of them - eight hooks, four tools, two scripts - and wrote \"Everything else reviewed holds its shape\" into the commit message, about 130 registered suites and 150 plants. It is what a review feels like from the inside when the part you looked at is the part you already knew, and nothing anywhere made the difference between fourteen and a hundred and fifty visible. Rule seven refuses a blanket claim about what a commit did not open unless the message cites a measurement naming a path that exists; the measurement it points at, classify_guards.py, counts 130 suites, 81 driving a refusal and 53 owed a plant. This plant drops rule seven out of the runner's check list. RETARGETED 2026-09-14: this plant edits the runner's check list, and adding rule seven rewrapped that line. The defect it plants is unchanged - the rule it names is dropped out of the runner - and the ledger refused to run until the substitution matched again, which is the check working.",
    "file": "tools/guard/commit_guard.py",
-   "find": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,\n                  check_blanket_claim, check_extraction_is_tested, check_detangle,\n                  check_in_game_claim, check_zero_claim, check_cheapest_evasion):\n",
-   "replace": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,\n                  check_extraction_is_tested, check_detangle,\n                  check_in_game_claim, check_zero_claim, check_cheapest_evasion):  #PLANTED: rule seven is not run\n",
+   "find": "    hits = blanket_claim(message)\n",
+   "replace": "    return 0  #PLANTED: rule seven decides nothing\n    hits = blanket_claim(message)\n",
    "suite": "ctrmap.tests.CommitGuardTest",
    "args": [
     "."
@@ -2141,6 +2141,96 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: a new guard with no evasion named is refused"
+  },
+  {
+   "id": "a-pipelines-status-may-be-read-as-the-commands",
+   "why": "A REMEDY'S EXIT CODE ANSWERS ITS OWN QUESTION, NOT YOURS. `$?` after a pipeline is the LAST stage's status, and a filter almost always succeeds. On 2026-09-20 `python tools/guard/liveness_check.py . | head -5; echo \"exit=$?\"` printed exit=0 about a checker that had just exited 1 with seven findings. The same shape cost 33 hours here: a map rebuild wrote its 10.7 MB output and exited 1 because the code reported the suite it ran UNDER, and the runner discarded 49 minutes of work and then decided nothing for a day and a half. This plant makes the guard see no pipeline.",
+   "file": "tools/hooks/guard_exit_code.py",
+   "find": "        found = last_filter(statement)\n",
+   "replace": "        found = None  #PLANTED: no pipeline ends in a filter\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: reading $? after a pipe into head is refused"
+  },
+  {
+   "id": "a-menu-item-needs-no-reason",
+   "why": "FEATURES LIVE IN THEIR OWN UI AREA - the owner's standing rule since this project began: never menu-dumped, never a new window, seldom-used goes to the Extras tab, undo/redo everywhere. A menu bar is where a feature goes when nobody decided where it goes, and the bar already holds 35 items across 6 menus. This plant lets a 36th on without anybody saying why it is not a tab.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "        if any(\"JMenuItem\" in line for line in lines):\n",
+   "replace": "        if False:  #PLANTED: a new menu item is nobody's business\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a new item on the main menu bar is refused"
+  },
+  {
+   "id": "the-menu-bar-may-grow-unremarked",
+   "why": "The exact menu list in MainframeShapeTest goes red when an item is added, but its cheapest repair is to paste the new item into the expected list - a PIN, not a refusal. The ceiling of 35 items beside it is the half that has to be raised deliberately and said out loud. This plant removes the ceiling check, leaving only the pin that asks to be updated. The first version of this plant RAISED the ceiling by 99 and survived, because loosening a ceiling leaves nothing for the guard to catch: a ceiling is proven by putting the tree OVER it, not by widening it.",
+   "file": "src/ctrmap/tests/MainframeShapeTest.java",
+   "find": "\tprivate static final int MENU_ITEM_CEILING = 35;",
+   "replace": "\tprivate static final int MENU_ITEM_CEILING = 34;  //PLANTED: one too few",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: the main menu bar holds 35 item(s)"
+  },
+  {
+   "id": "a-trap-may-be-recorded-without-its-bill",
+   "why": "RECORD TRAPS YOU PAID FOR, WITH THE COST, and the rule carries its own bill: a trap list without the bill attached gets ignored. This ledger IS the trap list - 171 entries - and 103 of them say what the defect was without saying what it cost. The entries that close a class are the ones that say 'filed in SEVEN consecutive audits' or '791 agents and 111.9M tokens'. This plant removes the ratchet, so the 104th costless entry goes unremarked. The first version of this plant was NOT PROVEN: it made the suite go red on a different check, because removing the ratchet also removes the line the section reads. A suite that fails for another reason records the guard as holding when it does not.",
+   "file": "tools/guard/replant.py",
+   "find": "    return sorted(p.get(\"id\", \"<no id>\") for p in book.get(\"plants\", [])\n",
+   "replace": "    return []  #PLANTED: no trap is ever missing its bill\n    return sorted(p.get(\"id\", \"<no id>\") for p in book.get(\"plants\", [])\n",
+   "suite": "ctrmap.tests.PlantLedgerTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a plant whose why cites no number is counted"
+  },
+  {
+   "id": "a-rule-may-have-no-mechanism-unremarked",
+   "why": "The owner asked for every guard and every rule to be a refusal by class at the point of action. The suites were measured and converted; the RULES were never measured at all. When they were, on 2026-09-20, 16 of the 28 rules in capitals had no mechanism behind them - among them GAME DATA IS READ-ONLY, while a fixture had driven a pack against the live dump the day before, and A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT, after 134 verdicts were discarded on a probe that could not look. Nobody lied; nobody counted, and the difference between 12 and 28 was visible nowhere. This plant stops the count noticing a rule with no entry.",
+   "file": "tools/guard/rule_map.py",
+   "find": "        entry = entries.get(rule)\n",
+   "replace": "        entry = entries.get(rule) or {\"by\": \"tools/guard/rule_map.py\"}  #PLANTED\n",
+   "suite": "ctrmap.tests.RuleMapTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: the rule nobody decided about is named"
+  },
+  {
+   "id": "a-mechanism-may-name-nothing-real",
+   "why": "A CLAIM ABOUT WHAT YOU DID NOT OPEN IS A MEASUREMENT, and a map entry is a claim. The commit gate already refuses a Reviewed: line citing a path that does not exist, for the same reason: 'reviewed: all of them' is the same sentence with a colon in it, and a review of 14 guards was written up as covering 130 suites and 150 plants. This plant lets a rule claim a mechanism that is not in the tree.",
+   "file": "tools/guard/rule_map.py",
+   "find": "        if not _exists(root, mechanism):\n",
+   "replace": "        if False:  #PLANTED: a named mechanism is taken at its word\n",
+   "suite": "ctrmap.tests.RuleMapTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: the invented mechanism is named"
+  },
+  {
+   "id": "an-inline-script-may-eat-a-backslash",
+   "why": "MEASURED ON 2026-09-20, an hour after the heredoc guard was widened to every tool. A word boundary written through `python -c` inside a shell string arrived as 0x08. The regex compiled, matched nothing but digits, and the count it was measuring came out at 103 both before and after the change - when the true number was 64. The guard refused a backslash in a heredoc body and could not see the same escaping layer in a -c body, so 39 entries were miscounted and a silent failure looked exactly like a correct result. This plant makes it blind again.",
+   "file": "tools/hooks/guard_heredoc.py",
+   "find": "    for body in inline_scripts(command):\n",
+   "replace": "    for body in []:  #PLANTED: an inline script is not a shell string\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a backslash in an inline script body is refused"
   }
  ],
  "retired": [
@@ -2157,5 +2247,6 @@
    "must_say": "exposes its popup list",
    "retired": "2026-09-13: the code this claim was about is gone. It guarded the hook that read the Load Zone dropdown's popup list, which existed so a preview could follow the highlighted row. The dropdown is not how zones are picked any more - the Zone Loader has a list you arrow through with the preview beside it - so ComboHighlight was deleted as unreachable. A claim whose subject no longer exists cannot be retargeted onto anything honest; it is kept here so the history of what was once proven is not quietly shorter than it was."
   }
- ]
+ ],
+ "no_cost_ceiling": 64
 }

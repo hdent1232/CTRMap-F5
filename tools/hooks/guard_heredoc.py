@@ -138,8 +138,41 @@ def heredocs(command):
     return found
 
 
+#: `python -c "..."`, `python3 -c '...'`, `pwsh -Command "..."`. The SAME escaping layer as a
+#: heredoc, and until 2026-09-20 this guard could not see it: a `\b` written through
+#: `python -c` inside a double-quoted shell string arrived as 0x08, the regex compiled, matched
+#: nothing but digits, and a ceiling re-measured to EXACTLY the number it had before - which is
+#: what a silent failure looks like from the outside. 39 entries were miscounted.
+_INLINE = re.compile(
+    r"\b(?:python[0-9.]*|py|perl|ruby|node|bash|sh|pwsh|powershell)(?:\.exe)?\b"
+    r"[^|;&]*?\s-(?:c|Command|e)\s+(\"(?:[^\"\\]|\\.)*\"|'[^']*')", re.I)
+
+
+def inline_scripts(command):
+    """Every `-c <body>` this command line carries, with its quotes stripped."""
+    out = []
+    for found in _INLINE.finditer(command):
+        text = found.group(1)
+        out.append(text[1:-1] if len(text) >= 2 else text)
+    return out
+
+
 def verdict(command):
     """(deny?, reason). Separated from the I/O so it can be driven directly by a test."""
+    for body in inline_scripts(command):
+        if BACKSLASH in body:
+            return True, (
+                "BLOCKED BY PROJECT POLICY (.claude/hooks/guard_heredoc.py)." + NEWLINE +
+                "This inline script body (`-c ...`) contains a BACKSLASH, and the command "
+                "string eats one level of escaping on the way to the shell - the same channel "
+                "as a heredoc, and until today the same blind spot." + NEWLINE + NEWLINE +
+                "MEASURED HERE ON 2026-09-20: a word-boundary written this way arrived as "
+                "0x08. The regex compiled. It matched nothing but digits, and the number it "
+                "was measuring came out EXACTLY the same as before the change - 103 both "
+                "times, when the true count was 64. A silent failure and a correct result are "
+                "the same shape from the outside." + NEWLINE + NEWLINE +
+                "Write the script with the Write tool and run the file. It is exact and it is "
+                "not a shell." + NEWLINE)
     for delimiter, body, writes, text in heredocs(command):
         if writes:
             return True, (

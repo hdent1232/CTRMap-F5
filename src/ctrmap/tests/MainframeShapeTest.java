@@ -120,6 +120,21 @@ public class MainframeShapeTest {
 	 */
 	//23 -> 21: the held tool is an owner now (ToolSelection) and the frame is
 	//private, nothing below the window having a reason to reach it.
+	/**
+	 * FEATURES LIVE IN THEIR OWN UI AREA: how many items the main menu bar may hold.
+	 *
+	 * <p>The owner's standing rule since this project began - never menu-dumped, never a
+	 * new window, seldom-used goes to the Extras tab, undo/redo everywhere. What enforced
+	 * it was {@link #EXPECTED_MENUS}, an exact list that does go red when an item is
+	 * added - but whose cheapest repair is to paste the new item into the list. That is a
+	 * PIN, not a refusal: it asks to be updated, and updating it is one line.
+	 *
+	 * <p>So this sits beside it. Raising the number is a deliberate, single, visible edit
+	 * that has to say what it is for, and a feature that belongs in a tab no longer gets
+	 * into the menu bar by accident. It may only fall.
+	 */
+	private static final int MENU_ITEM_CEILING = 35;
+
 	private static final int STATIC_CEILING = 21;
 
 	static int fails = 0;
@@ -143,6 +158,7 @@ public class MainframeShapeTest {
 
 		JMenuBar bar = CtrmapMainframe.buildMenuBar();
 		menuTree(bar);
+		theMenuBarMayNotGrow(bar);
 		menuWired(bar);
 		menuTooltips(bar);
 		toolRow();
@@ -161,6 +177,25 @@ public class MainframeShapeTest {
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * The main menu bar may not grow. A new feature goes to its own UI area.
+	 *
+	 * <p>Counted from the real bar rather than from {@link #EXPECTED_MENUS}, so that
+	 * editing the expected list does not quietly raise the ceiling as well - one edit,
+	 * two places, and the second one is the one that has to be justified.
+	 */
+	static void theMenuBarMayNotGrow(JMenuBar bar) {
+		int items = 0;
+		for (JMenuItem it : items(bar)) {
+			if (it != null) {
+				items++;
+			}
+		}
+		check(items <= MENU_ITEM_CEILING, "the main menu bar holds " + items + " item(s), at or under the ceiling "
+			+ MENU_ITEM_CEILING + " - FEATURES LIVE IN THEIR OWN UI AREA, so a new one goes to its"
+			+ " own tab (seldom-used: Extras) rather than onto this bar");
 	}
 
 	// ------------------------------------------------------------- menu tree
