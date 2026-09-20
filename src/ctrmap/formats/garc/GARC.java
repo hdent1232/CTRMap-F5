@@ -65,7 +65,7 @@ public class GARC {
 			RandomAccessFile in = new RandomAccessFile(f, "r");
 
 			byte[] strbuf = new byte[4];
-			in.read(strbuf);
+			in.readFully(strbuf);
 
 			String garcMagic = new String(strbuf);
 			int garcLength = Integer.reverseBytes(in.readInt());
@@ -80,7 +80,7 @@ public class GARC {
 			in.seek(garcLength);
 
 			long fatoPosition = in.getFilePointer();
-			in.read(strbuf);
+			in.readFully(strbuf);
 			String fatoMagic = new String(strbuf);
 			int fatoLength = Integer.reverseBytes(in.readInt());
 			short fatoEntries = Short.reverseBytes(in.readShort());
@@ -111,7 +111,7 @@ public class GARC {
 						in.seek(startOffset + dataOffset);
 
 						byte[] buffer = new byte[length];
-						in.read(buffer);
+						in.readFully(buffer);
 
 						boolean isCompressed = allowCompression && sniffLZ11(buffer);
 
@@ -387,10 +387,12 @@ public class GARC {
 		byte[][] compressedData = new byte[files.size()][];
 		for (int i = 0; i < files.size(); i++) {
 			changedIndices[i] = Integer.valueOf(files.get(i).getName());
-			InputStream in = new FileInputStream(files.get(i));
-			byte[] or = new byte[in.available()];
-			in.read(or);
-			in.close();
+			//READ ALL OF IT OR REFUSE. available() is not the file length by contract and
+			//read() answers what it managed; both answers were dropped, so a staged file
+			//that read short was compressed and packed with a zero tail - a region, zone
+			//or area silently truncated inside a pack that reported success. The stream
+			//also leaked on a throw.
+			byte[] or = java.nio.file.Files.readAllBytes(files.get(i).toPath());
 			Boolean override = (compressionOverrides != null) ? compressionOverrides.get(changedIndices[i]) : null;
 			boolean compressed = storedCompressed(override, changedIndices[i]);
 			if (compressed) {
@@ -464,11 +466,11 @@ public class GARC {
 			LittleEndianDataInputStream old = new LittleEndianDataInputStream(oldIn);
 			//first 14 bytes of header should be unchanged - let's copy paste them
 			byte[] buf = new byte[16];
-			old.read(buf);
+			old.readFully(buf);
 			dos.write(buf);
 			dos.writeInt(0); //TEMPORARY - will be replaced with data offset
 			dos.writeInt(0); //TEMPORARY - will be replaced with file size
-			old.skip(8);
+			old.skipFully(8);
 			int lastMaxSize = old.readInt();
 			dos.writeInt(Integer.reverseBytes(Math.max(lastMaxSize, maxlength))); //write either the max unpadded length of new or original files
 			//FATO points to FATB - is unchanged
@@ -479,7 +481,7 @@ public class GARC {
 			old.readInt(); //FATO length
 			int oldEntries = old.readShort(); //old FATO entries and padding
 			old.readShort();
-			old.skip(oldEntries * 4);
+			old.skipFully(oldEntries * 4);
 			dos.writeInt(Integer.reverseBytes(fatoMagic));
 			dos.writeInt(Integer.reverseBytes(fatoLength));
 			dos.writeShort(Short.reverseBytes((short)fatoEntries));
@@ -540,7 +542,7 @@ public class GARC {
 				}
 			}
 			buf = new byte[8];
-			old.read(buf);
+			old.readFully(buf);
 			dos.write(buf);
 			//written static part of FIMB
 			//the last one is data length - we need it as the last thing ever written, so we dummy it out and mark the position
@@ -558,9 +560,16 @@ public class GARC {
 					processedCustomFiles++;
 				} else {
 					try (InputStream entryReader = new FileInputStream(file)) {
+						//THE ENTRIES THE USER NEVER TOUCHED, and the reason this matters more than the
+						//edited ones: a short skip copies an untouched entry FROM THE WRONG OFFSET and a
+						//short read copies it with a zero tail, so editing one map corrupts a different
+						//one, with no exception and nothing in the report. The read path five hundred
+						//lines below was converted to these primitives when that was measured; the pack
+						//path was not.
+						LittleEndianDataInputStream entry = new LittleEndianDataInputStream(entryReader);
 						byte[] b = new byte[working.get(i).length];
-						entryReader.skip(working.get(i).offset);
-						entryReader.read(b);
+						entry.skipFully(working.get(i).offset);
+						entry.readFully(b);
 						dos.write(b);
 						int remainder = b.length % padding;
 						int padLength = (remainder == 0) ? 0 : padding - remainder;

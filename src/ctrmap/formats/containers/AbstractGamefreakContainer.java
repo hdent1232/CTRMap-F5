@@ -304,10 +304,11 @@ public abstract class AbstractGamefreakContainer {
 		}
 		try {
 			int pos = 0;
-			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(f));
-			byte[] b = new byte[dis.available()];
-			dis.read(b);
-			dis.close();
+			//THE WHOLE CONTAINER, OR NONE OF IT. storeFile rebuilds the file from this buffer,
+			//so a short read here writes zeros over every subfile the user did NOT edit -
+			//the zone header, the region model, the collision - and reports a successful
+			//save.
+			byte[] b = java.nio.file.Files.readAllBytes(f.toPath());
 			//calculate new offsets
 			int change = paddedData.length - (offsets[num + 1] - offsets[num]);
 			for (int i = num + 1; i < len + 1; i++) {
@@ -360,11 +361,7 @@ public abstract class AbstractGamefreakContainer {
 	 */
 	public void storeFile(int num, File f) {
 		try {
-			InputStream in = new FileInputStream(f);
-			byte[] b = new byte[in.available()];
-			in.read(b);
-			in.close();
-			storeFile(num, b);
+			storeFile(num, java.nio.file.Files.readAllBytes(f.toPath()));
 		} catch (IOException cannotRead) {
 			throw new IllegalStateException("could not read " + f.getName() + " to store it as"
 				+ " subfile " + num + " of " + getOriginFile().getName() + ": "

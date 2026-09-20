@@ -49,6 +49,27 @@ public class SilentCatchTest {
 	 */
 	private static final int CEILING = 119;
 
+	/**
+	 * Unchecked {@code read(byte[])} / {@code skip(long)} answers in production: 76,
+	 * measured 2026-09-19. It may fall and may not rise.
+	 *
+	 * <p>THESE ARE SWALLOWED FAILURES TOO, which is why they are counted here rather than
+	 * somewhere new. Both primitives answer how much they MANAGED, and a caller that drops
+	 * the answer has decided not to notice a short read. On a file-backed stream that means
+	 * a zero tail or a wrong offset; the census found twelve of them in the two files every
+	 * write goes through - the GARC pack copying entries the user never edited, and the
+	 * container rebuilding itself from a buffer it did not fill. That is the class this
+	 * project repaired by hand once already, on zone 536. Those twelve are fixed.
+	 *
+	 * <p>WHY A CEILING AND NOT A BAN, sized before it was written. 76 remain, and most are
+	 * {@code skip()} on a ByteArrayInputStream, which cannot read short - banning the
+	 * primitive would refuse a large amount of honest code, and a ratchet that fires on
+	 * honest work gets its ceiling raised until every ratchet in the tree is decoration.
+	 * The static type at the call site does not reliably say whether the stream is
+	 * file-backed, so the distinction cannot be drawn mechanically; the number can.
+	 */
+	private static final int UNCHECKED_READ_CEILING = 76;
+
 	/** A catch block whose body holds no nested braces - the shape we can read. */
 	private static final Pattern CATCH = Pattern.compile("catch\\s*\\([^)]*\\)\\s*\\{([^{}]*)\\}");
 	/** A body that only writes the failure down somewhere. */
@@ -96,10 +117,49 @@ public class SilentCatchTest {
 		check(!worst.isEmpty() || empty == 0, worst.size() + " of the empty ones have no comment"
 				+ " and no named reason at all, which is where to start: " + first(worst, 5));
 
+		uncheckedReadsAndSkips(root);
+
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * Counts the {@code read(byte[])} and {@code skip(long)} answers production drops.
+	 *
+	 * <p>Text, not bytecode, and deliberately: the call site's static type is usually
+	 * {@code InputStream} or this project's own wrapper, so the constant pool cannot say
+	 * whether the stream underneath is a file or a byte array - which is the only thing
+	 * that decides whether a short answer is possible. A count is what can be measured
+	 * honestly here, so a count is what is ratcheted.
+	 */
+	static void uncheckedReadsAndSkips(File root) throws Exception {
+		System.out.println("--- read/skip answers this program still drops");
+		Pattern call = Pattern.compile(
+			"\\.(?:read|skip|skipBytes)\\s*\\(" );
+		Pattern safe = Pattern.compile("readFully|skipFully|\\.read\\(\\)");
+		List<String> where = new ArrayList<>();
+		for (File j : DialogSeamTest.javaSources(new File(root, "ctrmap"))) {
+			if (j.getParentFile() != null && j.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			String body = new String(Files.readAllBytes(j.toPath()), StandardCharsets.UTF_8);
+			int line = 0;
+			for (String text : body.split("\\n")) {
+				line++;
+				if (call.matcher(text).find() && !safe.matcher(text).find()) {
+					where.add(j.getName() + ":" + line);
+				}
+			}
+		}
+		check(where.size() <= UNCHECKED_READ_CEILING, where.size() + " unchecked read/skip"
+			+ " answer(s) in production, against a ceiling of " + UNCHECKED_READ_CEILING
+			+ ". Both primitives report how much they MANAGED; a dropped answer is a short read"
+			+ " nobody noticed, which on a file-backed stream is a zero tail or a wrong offset."
+			+ " This may fall and may not rise: " + first(where, 5));
+		check(!where.isEmpty(), "and the scan still matches something (" + where.size()
+			+ ") - a count that has quietly stopped finding anything asserts nothing");
 	}
 
 	static String first(List<String> all, int n) {

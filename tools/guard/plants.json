@@ -1815,10 +1815,10 @@
   },
   {
    "id": "a-write-answers-yes-again",
-   "why": "The generalisation of the two refusal plants, and the reason they are not enough on their own. storeFile kept a boolean return after its failure path became a throw, so the answer was structurally always yes and twelve callers' `if (!storeFile(...))` refusals could never fire - two of them holding the only message that named the region or area the user was editing. Void made those a compile error (proven by hand: javac says 'void' type not allowed here), but javac cannot refuse somebody handing the method its boolean BACK, which is the one-word edit that started it. This gives the file overload an answer that can only be true, which compiles, and the shape check has to notice it in a program of 277 boolean methods without being told where to look.",
+   "why": "The generalisation of the two refusal plants, and the reason they are not enough on their own. storeFile kept a boolean return after its failure path became a throw, so the answer was structurally always yes and twelve callers' `if (!storeFile(...))` refusals could never fire - two of them holding the only message that named the region or area the user was editing. Void made those a compile error (proven by hand: javac says 'void' type not allowed here), but javac cannot refuse somebody handing the method its boolean BACK, which is the one-word edit that started it. This gives the file overload an answer that can only be true, which compiles, and the shape check has to notice it in a program of 277 boolean methods without being told where to look. RETARGETED 2026-09-19: the File overload's body changed when its unchecked in.read(b) was replaced by Files.readAllBytes, so the old substitution matched nothing and the ledger refused to run until it was pointed at the current text. The defect it plants is unchanged - the method is given a boolean answer that can only be true.",
    "file": "src/ctrmap/formats/containers/AbstractGamefreakContainer.java",
-   "find": "\tpublic void storeFile(int num, File f) {\n\t\ttry {\n\t\t\tInputStream in = new FileInputStream(f);\n\t\t\tbyte[] b = new byte[in.available()];\n\t\t\tin.read(b);\n\t\t\tin.close();\n\t\t\tstoreFile(num, b);\n\t\t} catch (IOException cannotRead) {\n",
-   "replace": "\tpublic boolean storeFile(int num, File f) {\n\t\ttry {\n\t\t\tInputStream in = new FileInputStream(f);\n\t\t\tbyte[] b = new byte[in.available()];\n\t\t\tin.read(b);\n\t\t\tin.close();\n\t\t\tstoreFile(num, b);\n\t\t\treturn true; //PLANTED: an answer that can only ever be yes\n\t\t} catch (IOException cannotRead) {\n",
+   "find": "\tpublic void storeFile(int num, File f) {\n\t\ttry {\n\t\t\tstoreFile(num, java.nio.file.Files.readAllBytes(f.toPath()));\n",
+   "replace": "\tpublic boolean storeFile(int num, File f) {\n\t\ttry {\n\t\t\tstoreFile(num, java.nio.file.Files.readAllBytes(f.toPath()));\n\t\t\treturn true;   //PLANTED: an answer that can only ever be yes\n",
    "suite": "ctrmap.tests.GameFilesSeamTest",
    "args": [
     "src",
@@ -1909,6 +1909,18 @@
     "."
    ],
    "must_say": "FAIL: vouching for what the commit did not open is refused"
+  },
+  {
+   "id": "the-pack-copies-untouched-entries-with-answers-it-drops",
+   "why": "InputStream.read(byte[]) and skip(long) answer how much they MANAGED, and the GARC pack dropped both answers while copying every entry the user did NOT edit. A short skip copies an untouched entry FROM THE WRONG OFFSET; a short read copies it with a zero tail. Either way Pack Workspace rewrites the user's real archive with maps they never opened, reports success, and the damage is only visible in-game - the archive-corruption class this project already repaired by hand once, on zone 536. The READ path five hundred lines below was converted to readFully/skipFully when that was measured (278 of 431 entries had come back as pure-zero buffers); the PACK path never was. Twelve such dropped answers were fixed across GARC and the container base, and the remaining 76 in production are held by a falling ceiling rather than a ban, because most are skip() on in-memory streams that cannot read short and a ratchet that fires on honest work gets its ceiling raised. This plant restores the two dropped answers on the untouched-entry copy, which is the site that corrupts a map the user never touched.",
+   "file": "src/ctrmap/formats/garc/GARC.java",
+   "find": "\t\t\t\t\t\tLittleEndianDataInputStream entry = new LittleEndianDataInputStream(entryReader);\n\t\t\t\t\t\tbyte[] b = new byte[working.get(i).length];\n\t\t\t\t\t\tentry.skipFully(working.get(i).offset);\n\t\t\t\t\t\tentry.readFully(b);\n",
+   "replace": "\t\t\t\t\t\tbyte[] b = new byte[working.get(i).length];\n\t\t\t\t\t\tentryReader.skip(working.get(i).offset);   //PLANTED\n\t\t\t\t\t\tentryReader.read(b);   //PLANTED\n",
+   "suite": "ctrmap.tests.SilentCatchTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: 78 unchecked read/skip answer(s) in production"
   }
  ],
  "retired": [
