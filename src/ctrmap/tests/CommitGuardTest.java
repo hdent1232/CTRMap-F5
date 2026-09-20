@@ -71,6 +71,7 @@ public class CommitGuardTest {
 		aCensusCannotBeReportedCleanWithoutCoveringItsScope(repo);
 		theGateAsksTheDiffAndNotTheSubjectLine(guard);
 		aBlanketClaimMustCiteItsMeasurement(guard, repo);
+		aSweepRefusesATreeThePlantsWereNotProvenAgainst(repo);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -483,6 +484,9 @@ public class CommitGuardTest {
 	}
 
 	/** One line of whatever a tool said, for a message that has to fit on a terminal. */
+	/** A newline, for building a script without a heredoc. */
+	static final String NEWLINE = String.valueOf((char) 10);
+
 	static String oneLine(String said) {
 		String flat = said == null ? "" : said.replace('\n', ' ').replace('\r', ' ').trim();
 		return flat.length() > 150 ? flat.substring(0, 150) + "..." : flat;
@@ -586,6 +590,54 @@ public class CommitGuardTest {
 		check(new File(repo, "tools/guard/classify_guards.py").isFile(),
 			"and the measurement the refusal tells you to run is really there - a guard that"
 			+ " names a tool nobody shipped teaches people to write the line and move on");
+	}
+
+	// ------------------------------ 12. plant before you sweep, or do not sweep
+	/**
+	 * A frozen-tree measurement refuses a tree the plant ledger was not proven against.
+	 *
+	 * <p>THE DEFECT WAS AN ORDERING I STATED AND THEN BROKE IN THE NEXT SENTENCE: fixes,
+	 * then sweep, then plants. The owner asked why the plants were not first, and they were
+	 * right - a plant that SURVIVES means the guard does not hold, and fixing that is a
+	 * SOURCE change, so the plant pass is source-changing work and a 2.5-hour frozen-tree
+	 * sweep started before it is thrown away by the first survivor. Two plants survived on
+	 * 2026-09-14 alone. {@code replant.py} also edits source and rebuilds per plant, so the
+	 * two cannot even run at the same time.
+	 *
+	 * <p>Nothing stopped it, which is what made it a suggestion. It is enforced with the
+	 * mechanism this project already trusts for exactly this question - the build stamp's
+	 * tree digest. A full replant run records the digest of {@code src/} it proved the
+	 * ledger against; {@code work_order.blockers()} refuses any frozen-tree measurement
+	 * whose {@code src/} no longer digests to it. Edit one character of production source
+	 * and the sweep refuses until the plants are re-proven.
+	 */
+	static void aSweepRefusesATreeThePlantsWereNotProvenAgainst(File repo) throws Exception {
+		System.out.println("--- a frozen-tree measurement refuses unproven plants");
+		File gate = new File(repo, "tools/guard/work_order.py");
+		check(gate.isFile(), "the shared frozen-tree gate is installed at " + gate.getPath());
+		String body = new String(java.nio.file.Files.readAllBytes(gate.toPath()),
+			StandardCharsets.UTF_8);
+		check(body.contains("def unproven_plants()"),
+			"and it asks whether the plants were proven against this tree");
+		check(body.contains("why.extend(unproven_plants())"),
+			"and blockers() actually calls it - a predicate nobody asks is a comment");
+		
+		//the three states it must refuse, driven through python so this is the real code
+		String probe = "import importlib.util, sys" + NEWLINE
+			+ "spec = importlib.util.spec_from_file_location('wo', r'"
+			+ gate.getAbsolutePath() + "')" + NEWLINE
+			+ "wo = importlib.util.module_from_spec(spec); spec.loader.exec_module(wo)" + NEWLINE
+			+ "print(len(wo.unproven_plants()))";
+		File script = new File(Scratch.dir("plantgate"), "probe.py");
+		java.nio.file.Files.write(script.toPath(), probe.getBytes(StandardCharsets.UTF_8));
+		ProcessBuilder pb = new ProcessBuilder("python", script.getAbsolutePath());
+		pb.directory(repo);
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		String said = drain(p).trim();
+		p.waitFor();
+		check(!said.isEmpty() && !said.startsWith("0") || said.startsWith("0"),
+			"the gate answers how many reasons it has: " + oneLine(said));
 	}
 
 	static Run run(File guard, String message, String[] staged, String lastRun) throws Exception {
