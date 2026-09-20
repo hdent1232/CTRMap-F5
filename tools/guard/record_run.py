@@ -72,6 +72,7 @@ def run(quick=False):
         "suites_passed": len(passed),
         "suites_failed": failed,
         "ran": len(passed),
+        "slackRatchets": slack_ratchets(text),
         "quick": bool(quick),
         "_why": ("`ran` is what a commit message may claim as `N tests`, and for this battery "
                  "that is the number of SUITES that passed. test.ps1 echoes only the last two "
@@ -79,6 +80,31 @@ def run(quick=False):
                  "all and summing whatever digits appear there would invent a number. A claim "
                  "this cannot verify is worse than one it refuses."),
     }
+
+
+#: "118 silent catch(es) ... against a ceiling of 119" - a ratchet reporting its measurement.
+_RATCHET = re.compile(r"\b([0-9][0-9,]*)\b[^\n]{0,160}?against a ceiling of\s+([0-9][0-9,]*)",
+                      re.I)
+
+
+def slack_ratchets(text):
+    """Every ratchet whose measurement is UNDER its ceiling, with the gap.
+
+    A RATCHET ONLY BITES WHILE IT IS KEPT TIGHT. Measured on 2026-09-20: the silent-catch
+    ceiling stood at 119 while the count was 118, so there was one free slot - and a plant that
+    added a silent catch landed in it and SURVIVED. The guard was on, reported green, and could
+    not see a defect of exactly the size of its own slack.
+
+    Slack is honest for the length of one fix and no longer: you lower the number in the same
+    commit that lowers the count. This is what makes that mechanical instead of remembered.
+    """
+    out = []
+    for found in _RATCHET.finditer(text or ""):
+        now = int(found.group(1).replace(",", ""))
+        ceiling = int(found.group(2).replace(",", ""))
+        if now < ceiling:
+            out.append((now, ceiling, found.group(0).strip()[:120]))
+    return out
 
 
 def main(argv):
@@ -113,6 +139,20 @@ def main(argv):
         for name in record["suites_failed"]:
             print("    %s" % name)
     print("recorded to %s" % os.path.relpath(LAST_RUN, ROOT))
+    slack = record.get("slackRatchets") or []
+    if slack:
+        # A RATCHET WITH SLACK IS A DEFECT OF EXACTLY THAT SIZE THAT THE GUARD CANNOT
+        # SEE. Measured: the silent-catch ceiling stood at 119 against a count of 118,
+        # and a plant that added one landed in the free slot and SURVIVED while the
+        # suite reported green.
+        print("REFUSING TO RECORD: %d ratchet(s) are not tight." % len(slack))
+        for now, ceiling, said in slack:
+            print("    %d against a ceiling of %d - %d free slot(s): %s"
+                  % (now, ceiling, ceiling - now, said))
+        print("  Lower the ceiling to what was measured. Slack is honest for the length of")
+        print("  one fix and no longer: it is lowered in the same commit that lowers the")
+        print("  count, or the guard stops noticing a defect the size of the gap.")
+        return 1
     return 0 if record["ok"] else 1
 
 

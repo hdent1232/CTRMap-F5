@@ -1729,7 +1729,7 @@
   },
   {
    "id": "a-truncated-archive-hands-back-zeros-as-data",
-   "why": "skip() and read() answer how much they actually managed, and both answers were dropped in both GARC entry readers and in the container's getFile. An archive shorter than its own table therefore handed back buffers of exactly the right length whose tails were zeros, and reported success: measured on a/0/4/0 cut in half, 278 of its 431 entries came back pure zero, none null, no exception, no log line. Downstream that is a zone with no entities and an area with no atmosphere - and then the editor packs them back over the real ones, so the cost is the owner's game rather than the session. The stream has readFully and skipFully now, which cannot do it; this puts the dropped answers back.",
+   "why": "skip() and read() answer how much they actually managed, and both answers were dropped in both GARC entry readers and in the container's getFile. An archive shorter than its own table therefore handed back buffers of exactly the right length whose tails were zeros, and reported success: measured on a/0/4/0 cut in half, 278 of its 431 entries came back pure zero, none null, no exception, no log line. Downstream that is a zone with no entities and an area with no atmosphere - and then the editor packs them back over the real ones, so the cost is the owner's game rather than the session. The stream has readFully and skipFully now, which cannot do it; this puts the dropped answers back. RETARGETED 2026-09-20: this SURVIVED, because the defect became unreachable by construction - parse records an entry only after reading its data, so no entry of a half-truncated archive can have data past the cut, and there was nothing left for the old fixture to catch. The reachable case is a file that SHRINKS after it was parsed, which is the real-world shape and why isStale() exists; aFileThatShrinksUnderYouRefuses is the section that exercises it.",
    "file": "src/ctrmap/formats/garc/GARC.java",
    "find": "\t\t\t\tin.skipFully(e.offset);\n\t\t\t\tin.readFully(b);\n",
    "replace": "\t\t\t\tin.skip(e.offset);\n\t\t\t\tin.read(b);\n",
@@ -1737,7 +1737,7 @@
    "args": [
     "${GAMEDIR}"
    ],
-   "must_say": "zeros pretending to be data"
+   "must_say": "FAIL: no entry of an archive that shrank comes back as zeros"
   },
   {
    "id": "a-class-nothing-reaches-counts-as-alive",
@@ -2322,6 +2322,18 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: while a fan-out of review lenses is not"
+  },
+  {
+   "id": "a-truncated-archive-may-be-packed-back-over-the-real-one",
+   "why": "READING a short archive is recoverable and the entries before the cut are whole, so refusing at read time took the readable entries away with the unreadable ones and left this battery RED for a week - it last ran on 2026-09-13 and the change landed on 2026-09-20. WRITING one back is the irreversible half: a pack that read 155 of the 436 entries a header declares and writes 155 back has destroyed the other 281, over game data that is not in version control and needs a 3DS and several hours to replace. This project has already paid for one stale-pack corruption on zone 536. This plant removes the refusal from the pack path.",
+   "file": "src/ctrmap/formats/garc/GARC.java",
+   "find": "\t\tif (readableEntries >= 0) {\n",
+   "replace": "\t\tif (false) {  //PLANTED: a short archive may be written back\n",
+   "suite": "ctrmap.tests.GarcSniffTest",
+   "args": [
+    "${GAMEDIR}"
+   ],
+   "must_say": "FAIL: packing it back is refused"
   }
  ],
  "retired": [
