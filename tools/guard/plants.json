@@ -1959,6 +1959,32 @@
     "."
    ],
    "must_say": "FAIL: and blockers() actually calls it"
+  },
+  {
+   "id": "a-matcher-that-names-tools-is-accepted",
+   "why": "THIS IS THE DEFECT ITSELF, measured on 2026-09-20. .claude/hooks held eight guards and .claude/settings.json wired seven of them under '\"matcher\": \"Bash\"'. The session also offered a PowerShell tool that runs shell commands, so the heredoc refusal - the one bought by NUL bytes in a committed test.ps1 - the mutation-sweep pipe refusal, the idle-poll refusal, the mutation-read refusal and the blocked-runner refusal were all installed, all wired, all running and all OFF for every command issued through the other tool. Nobody bypassed anything; the command was spelled differently. A matcher that names tools is a call-site list, which this project has now paid for five times. This plant makes the checker accept one again.",
+   "file": "tools/guard/hooks_wired.py",
+   "find": "        if matcher not in UNIVERSAL:\n",
+   "replace": "        if False:  #PLANTED: a matcher that enumerates tools is fine\n",
+   "suite": "ctrmap.tests.HooksWiredTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a matcher that names tools is refused"
+  },
+  {
+   "id": "a-guard-nothing-runs-is-reported-reachable",
+   "why": "An installed guard that no wired command runs is OFF, and looks exactly like a guard with nothing to refuse: every call succeeds either way. That is how 791 agents and 111.9M subagent tokens went through a cap of six on 2026-09-14 while the hook enforcing it was installed, wired and running. This plant makes the wiring check skip the file it cannot find a runner for, which is the shape that hides it.",
+   "file": "tools/guard/hooks_wired.py",
+   "find": "        if name in named_directly or dispatchers:\n            continue\n",
+   "replace": "        if True:  #PLANTED: assume something somewhere runs it\n            continue\n",
+   "suite": "ctrmap.tests.HooksWiredTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: the forgotten guard is named"
   }
  ],
  "retired": [
