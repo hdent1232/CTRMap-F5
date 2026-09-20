@@ -1921,6 +1921,32 @@
     "src"
    ],
    "must_say": "FAIL: 78 unchecked read/skip answer(s) in production"
+  },
+  {
+   "id": "a-failed-extraction-poisons-the-workspace",
+   "why": "getWorkspaceFile opened the output file - which CREATES and TRUNCATES it - before asking the archive for any bytes, then logged an IOException at SEVERE to a console the shipped app-image does not have and fell through to `return wsFile`. The guard above it is `!wsFile.exists()`, so from then on every call saw the 0-byte or half-written file and handed it back AS the entry, for the life of that workspace. 103 call sites read the result as an entry; GeometryForker copies such a file into a new region and packs it into the user's FieldData, and the user gets a zone with no ground and is told nothing. One transient read failure poisoned a workspace permanently. The bytes come first now, into a temp name moved into place only when whole, and a failure deletes the part-file and throws.",
+   "file": "src/ctrmap/WorkspaceSession.java",
+   "find": "\t\tFile part = new File(wsFile.getAbsolutePath() + \".part\");\n\t\ttry {\n\t\t\tjava.nio.file.Files.write(part.toPath(), b);\n\t\t\tjava.nio.file.Files.move(part.toPath(), wsFile.toPath(),\n\t\t\t\tjava.nio.file.StandardCopyOption.REPLACE_EXISTING);\n\t\t} catch (IOException cannotExtract) {\n\t\t\tpart.delete();\n\t\t\tthrow new IllegalStateException(\"could not extract entry \" + fileNum + \" of \" + arc\n\t\t\t\t+ \" into the workspace: \" + ctrmap.util.Bytes.reason(cannotExtract), cannotExtract);\n\t\t}\n",
+   "replace": "\t\ttry {   //PLANTED: write straight at the destination and swallow the failure\n\t\t\tjava.nio.file.Files.write(wsFile.toPath(), b);\n\t\t} catch (IOException ex) {\n\t\t\tLogger.getLogger(WorkspaceSession.class.getName()).log(Level.SEVERE, null, ex);\n\t\t}\n",
+   "suite": "ctrmap.tests.WorkspaceSessionTest",
+   "args": [
+    "${GAMEDIR}",
+    "src"
+   ],
+   "must_say": "FAIL: an extraction that cannot be written REFUSES and names the entry"
+  },
+  {
+   "id": "a-failed-pack-eats-its-compression-overrides",
+   "why": "The compression overrides were drained as the ARGUMENT to packDirectory, so consumePending...() ran first and nulled the static. packArchives stops at the first archive it cannot rewrite - documented as an emulator or virus scanner holding the file open - and that archive's overrides were already gone. The user clears the cause, packs again, and the appended slot falls through to 'inherit the last entry's flag', the guess the overrides exist to avoid: a region stored raw in a slot the game inflates, or LZ11 in one it reads raw. A map the game cannot load, out of a pack that reported success, while the class javadoc promised 'Nothing is lost'. They are put back on a throw now. This plant drops them again.",
+   "file": "src/ctrmap/WorkspaceSession.java",
+   "find": "\t\t} catch (IOException | RuntimeException notPacked) {\n\t\t\tif (overrides != null) {\n\t\t\t\tfor (java.util.Map.Entry<Integer, Boolean> one : overrides.entrySet()) {\n\t\t\t\t\tputBack.accept(one.getKey(), one.getValue());\n\t\t\t\t}\n\t\t\t}\n\t\t\tthrow notPacked;\n\t\t}\n",
+   "replace": "\t\t} catch (IOException | RuntimeException notPacked) {\n\t\t\tthrow notPacked;   //PLANTED: the drained overrides are not put back\n\t\t}\n",
+   "suite": "ctrmap.tests.WorkspaceSessionTest",
+   "args": [
+    "${GAMEDIR}",
+    "src"
+   ],
+   "must_say": "FAIL: and the override survived it"
   }
  ],
  "retired": [
