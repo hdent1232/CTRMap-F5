@@ -1075,8 +1075,13 @@ class _Pending(list):
     def _sync(self):
         try:
             if self:
+                # the PID too: a lock with no process behind it is read as live by
+                # age alone, and a killed sweep then holds it for ninety minutes -
+                # long enough to refuse the sync that clears another guard.
                 io.open(str(MUTATION_LOCK), "w", encoding="utf-8", newline=chr(10)).write(
-                    self[-1][0] + chr(10))
+                    self[-1][0] + chr(10)
+                    + "pid=%d" % os.getpid() + chr(10)
+                    + "what=a mutation sweep" + chr(10))
             elif MUTATION_LOCK.exists():
                 MUTATION_LOCK.unlink()
         except OSError as cannotWrite:

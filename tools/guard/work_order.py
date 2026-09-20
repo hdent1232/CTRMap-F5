@@ -102,6 +102,27 @@ def unproven_plants():
     except Exception as cannotDigest:            # pragma: no cover
         return ["cannot digest src/ to check the plant proof is current (%s)"
                 % cannotDigest]
+    #: THE FILES THE PLANTS TARGET, and how many of them there were. src/ alone left 27
+    #: plants invisible - every plant against a hook or a guard lives under tools/ - and a
+    #: plant ADDED after a full run leaves notProven at 0, so the count has to be compared
+    #: too. Both were found by stopping a run ten minutes in rather than two hours in.
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "tools", "guard"))
+        import replant
+        book = replant.ledger()
+        if body.get("targets") is None or body.get("plants") is None:
+            return ["the recorded proof predates the target digest, so which files it covered"
+                    " is UNKNOWN - re-run `python tools/guard/replant.py`"]
+        if replant.target_digest(book) != body["targets"]:
+            return ["a file the plants target has changed since they were proven - re-run"
+                    " `python tools/guard/replant.py` before measuring"]
+        if len(book.get("plants") or []) != body["plants"]:
+            return ["the ledger holds %d plant(s) and the proof covered %d, so %d have never"
+                    " been proven against anything"
+                    % (len(book.get("plants") or []), body["plants"],
+                       abs(len(book.get("plants") or []) - body["plants"]))]
+    except Exception as cannotCheck:                 # pragma: no cover
+        return ["cannot check the plant proof against the ledger (%s)" % cannotCheck]
     if now != body.get("src"):
         return ["src/ has changed since the plants were last proven (recorded %s, now %s)"
                 " - re-run `python tools/guard/replant.py` before measuring"

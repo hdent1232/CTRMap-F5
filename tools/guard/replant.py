@@ -397,8 +397,15 @@ MUTATION_LOCK = os.path.join(ROOT, ".mutation-in-flight")
 def hold(path):
     """Record that `path` is on disk carrying a planted defect right now."""
     try:
+        #: THE PID, because a lock without one is read as live by age alone and a
+        #: killed run then holds it for ninety minutes - long enough to refuse the
+        #: sync that clears another guard, which had refused the delete this
+        #: guard's own message asks for. The battery lock has carried one since
+        #: this morning; this one did not.
         io.open(MUTATION_LOCK, "w", encoding="utf-8", newline=LF).write(
-            os.path.relpath(path, ROOT).replace(chr(92), "/") + LF)
+            os.path.relpath(path, ROOT).replace(chr(92), "/") + LF
+            + "pid=%d" % os.getpid() + LF
+            + "what=a replant run" + LF)
     except OSError as cannotWrite:
         print("     WARNING: cannot write %s (%s) - a reader cannot be told this file is "
               "planted" % (MUTATION_LOCK, cannotWrite))
@@ -413,6 +420,29 @@ def release():
         print("     WARNING: cannot remove %s (%s)" % (MUTATION_LOCK, cannotRemove))
 
 
+def target_digest(book):
+    """A digest over every file the ledger plants into, line endings normalised.
+
+    Narrower than digesting whole trees and it cannot be moved by an unrelated file: this is
+    the proof's actual subject. `tools/guard/magnitudes.json` is measurement output that
+    changes on every reading, and digesting all of tools/ would have invalidated the proof
+    each time a number was recorded.
+    """
+    import hashlib
+    h = hashlib.sha256()
+    for plant in sorted(book.get("plants") or [], key=lambda p: p.get("file", "")):
+        rel = plant.get("file") or ""
+        h.update(rel.encode("utf-8"))
+        try:
+            with open(os.path.join(ROOT, rel.replace("/", os.sep)), "rb") as handle:
+                h.update(handle.read().replace(b"\r\n", b"\n"))
+        except OSError:
+            #: A TARGET THIS CANNOT READ IS NOT AN UNCHANGED ONE. Feeding a marker rather
+            #: than skipping keeps a vanished file visible as a moved digest.
+            h.update(b"<unreadable>")
+    return h.hexdigest()
+
+
 def record_proof(proven, not_proven):
     """Write the digest of src/ this run proved the ledger against."""
     sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -422,6 +452,14 @@ def record_proof(proven, not_proven):
     body = {
         "at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
         "src": require_build.tree_digest(os.path.join(ROOT, "src")),
+        #: AND the files the plants actually target, which is what the proof is
+        #: ABOUT. The src/ digest alone left 27 plants invisible to the gate -
+        #: every plant against a hook or a guard lives under tools/, so changing
+        #: one after a full run moved nothing the gate was looking at.
+        "targets": target_digest(ledger()),
+        #: ...and HOW MANY there were. A plant added after a full run is unproven
+        #: and leaves notProven at 0, so nothing could tell.
+        "plants": len(ledger().get("plants") or []),
         "proven": proven,
         "notProven": not_proven,
     }
