@@ -499,24 +499,68 @@ public final class WorkspaceSession implements GameFiles {
 	 * workspace does not hold it yet. Null when the archive has no such entry.
 	 */
 	public File getWorkspaceFile(ArchiveType arc, int fileNum) {
-		File wsFile;
-		wsFile = new File(getExtractionDirectory(arc).getAbsolutePath() + "/" + fileNum);
-		if (!wsFile.exists() && getArchive(arc).length > fileNum) {
-			try {
-				OutputStream os = new FileOutputStream(wsFile);
-				byte[] b = getArchive(arc).getDecompressedEntry(fileNum);
-				if (b == null) {
-					os.close();
-					return null;
-				}
-				os.write(b);
-				os.flush();
-				os.close();
-			} catch (IOException ex) {
-				Logger.getLogger(WorkspaceSession.class.getName()).log(Level.SEVERE, null, ex);
-			}
+		//IT USED TO POISON THE WORKSPACE ON ONE FAILURE, permanently. The output file was
+		//opened - which CREATES and TRUNCATES it - before the bytes existed, so a null entry
+		//left a 0-byte file and a failed write left a half-written one. The catch logged at
+		//SEVERE, to a console the shipped app-image does not have, and fell through to
+		//`return wsFile`. The guard is `!wsFile.exists()`, so every later call saw the ruin
+		//and handed it back AS the entry for the life of that workspace - and 103 call sites
+		//read it as one. GeometryForker copies it into a new region and packs it into the
+		//user's FieldData; the user gets a zone with no ground and is told nothing.
+		//
+		//Bytes first, then a temp name moved into place once it is whole - the pattern
+		//GARC.writeRepacked already uses. A failure deletes the part-file and THROWS, because
+		//a File handed back cannot say what happened to it: "could not extract" and "this
+		//entry is empty" must stop being the same answer.
+		File wsFile = new File(getExtractionDirectory(arc).getAbsolutePath() + "/" + fileNum);
+		if (wsFile.exists() || getArchive(arc).length <= fileNum) {
+			return wsFile;
+		}
+		byte[] b = getArchive(arc).getDecompressedEntry(fileNum);
+		if (b == null) {
+			return null;
+		}
+		File part = new File(wsFile.getAbsolutePath() + ".part");
+		try {
+			java.nio.file.Files.write(part.toPath(), b);
+			java.nio.file.Files.move(part.toPath(), wsFile.toPath(),
+				java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		} catch (IOException cannotExtract) {
+			part.delete();
+			throw new IllegalStateException("could not extract entry " + fileNum + " of " + arc
+				+ " into the workspace: " + ctrmap.util.Bytes.reason(cannotExtract), cannotExtract);
 		}
 		return wsFile;
+	}
+
+	/**
+	 * Packs one archive with its overrides, and puts them BACK if the pack throws.
+	 *
+	 * <p>THE DRAIN USED TO BE THE ARGUMENT, so it ran before packDirectory - and packArchives
+	 * stops at the first archive it cannot rewrite, which this class documents as an emulator
+	 * or a virus scanner holding the file open. The overrides for that archive were already
+	 * gone. The user clears the cause and packs again, and the appended slot falls through to
+	 * "inherit the last entry's flag" - the guess the overrides exist to avoid - so a region
+	 * is stored raw in a slot the game inflates, or LZ11 in one it reads raw: a map the game
+	 * cannot load, out of a pack that reported success. The class javadoc promised the
+	 * opposite - "Nothing is lost: the edits stay staged and marked pending."
+	 */
+	//VISIBLE FOR THE GUARD. packArchives refuses a read-only session at the top, before
+	//any drain, so a suite driving the whole pack would pass without ever reaching the
+	//restore this method exists for - a guard that cannot fail is the thing being fixed.
+	public void packWithOverrides(ArchiveType arc, java.util.Map<Integer, Boolean> overrides,
+			java.util.function.BiConsumer<Integer, Boolean> putBack) throws IOException {
+		try {
+			getArchive(arc).packDirectory(getExtractionDirectory(arc), this::isPersisted,
+				workspaceDir, overrides);
+		} catch (IOException | RuntimeException notPacked) {
+			if (overrides != null) {
+				for (java.util.Map.Entry<Integer, Boolean> one : overrides.entrySet()) {
+					putBack.accept(one.getKey(), one.getValue());
+				}
+			}
+			throw notPacked;
+		}
 	}
 
 	/** Marks an extracted file as edited, so the next pack writes it back. */
@@ -930,21 +974,21 @@ public final class WorkspaceSession implements GameFiles {
 		GARC.drainPackWarnings();
 		progress.at(0, "Packing - fielddata");
 		//a pending geometry fork appends private region copies (see GeometryForker)
-		getArchive(ArchiveType.FIELD_DATA).packDirectory(getExtractionDirectory(ArchiveType.FIELD_DATA), this::isPersisted, workspaceDir, GeometryForker.consumePendingFieldOverrides());
+		packWithOverrides(ArchiveType.FIELD_DATA, GeometryForker.consumePendingFieldOverrides(), GeometryForker::registerPendingField);
 		progress.at(30, "Packing - areadata");
 		//a pending area fork appends a private area copy (see AreaForker)
-		getArchive(ArchiveType.AREA_DATA).packDirectory(getExtractionDirectory(ArchiveType.AREA_DATA), this::isPersisted, workspaceDir, AreaForker.consumePendingAreaOverrides());
+		packWithOverrides(ArchiveType.AREA_DATA, AreaForker.consumePendingAreaOverrides(), AreaForker::registerPendingArea);
 		progress.at(60, "Packing - zonedata");
 		//a pending zone append needs its compression overrides exactly once (see ZoneAppender)
-		getArchive(ArchiveType.ZONE_DATA).packDirectory(getExtractionDirectory(ArchiveType.ZONE_DATA), this::isPersisted, workspaceDir, ZoneAppender.consumePendingZoneDataOverrides());
+		packWithOverrides(ArchiveType.ZONE_DATA, ZoneAppender.consumePendingZoneDataOverrides(), ZoneAppender::registerPendingZoneData);
 		progress.at(65, "Packing - mapmatrix");
 		//a pending geometry fork appends a rewired matrix (see GeometryForker)
-		getArchive(ArchiveType.MAP_MATRIX).packDirectory(getExtractionDirectory(ArchiveType.MAP_MATRIX), this::isPersisted, workspaceDir, GeometryForker.consumePendingMatrixOverrides());
+		packWithOverrides(ArchiveType.MAP_MATRIX, GeometryForker.consumePendingMatrixOverrides(), GeometryForker::registerPendingMatrix);
 		progress.at(70, "Packing - buildingmodels");
 		getArchive(ArchiveType.BUILDING_MODELS).packDirectory(getExtractionDirectory(ArchiveType.BUILDING_MODELS), this::isPersisted, workspaceDir);
 		progress.at(90, "Packing - npcregistries");
 		//an area fork appends the matching registry entry (indexed by area id)
-		getArchive(ArchiveType.NPC_REGISTRIES).packDirectory(getExtractionDirectory(ArchiveType.NPC_REGISTRIES), this::isPersisted, workspaceDir, AreaForker.consumePendingNpcRegOverrides());
+		packWithOverrides(ArchiveType.NPC_REGISTRIES, AreaForker.consumePendingNpcRegOverrides(), AreaForker::registerPendingNpcReg);
 		progress.at(95, "Packing - trainers");
 		//trainer archives: pack only when actually edited (rewriting them
 		//without edits would still be byte-faithful, but skip the churn)

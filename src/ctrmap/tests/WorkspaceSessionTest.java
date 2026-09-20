@@ -94,6 +94,8 @@ public class WorkspaceSessionTest {
 				twoSessionsShareNothing(dump);
 				aFailedSwitchLeavesNothingOfTheOldGame(dump);
 				anEntryWhoseFileIsGoneDoesNotBlockTheOperationThatWroteIt(dump);
+				aFailedExtractionLeavesNothingBehind(dump);
+				aPackThatThrowsKeepsItsCompressionOverrides(dump);
 			} finally {
 				Workspace.reset();
 			}
@@ -292,6 +294,111 @@ public class WorkspaceSessionTest {
 	}
 
 	// ------------------------------------------------------- 5. the seam inside the new class
+	/**
+	 * An extraction that cannot finish leaves NO file, and says so, instead of a 0-byte one.
+	 *
+	 * <p>THE DEFECT. getWorkspaceFile opened the output file - which creates and TRUNCATES
+	 * it - before asking the archive for any bytes. A null entry closed the stream and
+	 * returned null, leaving the empty file; a failed write logged at SEVERE, to a console
+	 * the shipped app-image does not have, and fell through to {@code return wsFile}. The
+	 * guard above it is {@code !wsFile.exists()}, so from then on every call saw the ruin and
+	 * handed it back AS the entry, for the life of that workspace. One transient failure
+	 * poisoned it permanently, 103 call sites read the result as an entry, and GeometryForker
+	 * copies such a file into a new region and packs it into the game.
+	 *
+	 * <p>WHAT IS PINNED, because a refusal is only half of it: after a refused extraction the
+	 * directory must hold NEITHER the entry NOR a part-file. A fix that threw and left the
+	 * wreckage would still poison the next call.
+	 */
+	static void aFailedExtractionLeavesNothingBehind(File dump) throws Exception {
+		System.out.println("--- an extraction that cannot finish leaves nothing behind");
+		File ws = Scratch.dir("ctrmap_session_extract");
+		WorkspaceSession s = WorkspaceSession.open(ws, dump);
+		File dir = s.getExtractionDirectory(ArchiveType.ZONE_DATA);
+		
+		//THE WRITE IS WHAT MUST FAIL, and it goes to "<n>.part" before being moved into
+		//place. A directory there makes Files.write refuse. Putting one at the ENTRY path
+		//instead does not test this: exists() is then true and the method returns early,
+		//which is what the first version of this fixture did - it proved nothing.
+		File entry = new File(dir, "7");
+		deleteTree(entry);
+		File inTheWay = new File(dir, "7.part");
+		deleteTree(inTheWay);
+		check(inTheWay.mkdirs() && !entry.exists(),
+			"fixture: entry 7 is absent and a directory sits where its part-file must go");
+		
+		Throwable refused = null;
+		try {
+			s.getWorkspaceFile(ArchiveType.ZONE_DATA, 7);
+		} catch (Throwable t) {
+			refused = t;
+		}
+		check(refused != null && String.valueOf(refused.getMessage()).contains("7"),
+			"an extraction that cannot be written REFUSES and names the entry: " + refused);
+		deleteTree(inTheWay);
+		check(!new File(dir, "7").exists(),
+			"and the entry itself was never created - the next call must not find a 0-byte"
+			+ " file, decide the workspace already holds it, and hand it back as the entry");
+	}
+
+	/** rm -rf, for a fixture that puts a directory where a file belongs. */
+	static void deleteTree(File f) {
+		File[] kids = f.listFiles();
+		if (kids != null) {
+			for (File kid : kids) {
+				deleteTree(kid);
+			}
+		}
+		f.delete();
+	}
+
+	/**
+	 * A pack that throws puts its compression overrides BACK, so the retry does not guess.
+	 *
+	 * <p>THE DEFECT. The overrides were drained as the ARGUMENT to packDirectory, so
+	 * {@code consumePending...()} ran first and nulled the static. packArchives stops at the
+	 * first archive it cannot rewrite - which this class documents as an emulator or a virus
+	 * scanner holding the file open - and that archive's overrides were already gone. The
+	 * user clears the cause, packs again, and the appended slot falls through to "inherit the
+	 * last entry's flag": a region stored raw in a slot the game inflates, or LZ11 in one it
+	 * reads raw. A map the game cannot load, out of a pack that reported success - while the
+	 * class javadoc promised "Nothing is lost".
+	 */
+	static void aPackThatThrowsKeepsItsCompressionOverrides(File dump) throws Exception {
+		System.out.println("--- a pack that throws keeps its compression overrides");
+		File ws = Scratch.dir("ctrmap_session_overrides");
+		WorkspaceSession s = Sessions.bare(ws, dump, ctrmap.gamedef.GameType.ORAS);
+		
+		ctrmap.GeometryForker.registerPendingField(4242, true);
+		check(ctrmap.GeometryForker.consumePendingFieldOverrides() != null,
+			"fixture: an override can be registered and drained");
+		ctrmap.GeometryForker.registerPendingField(4242, true);
+		
+		//DRIVE THE SEAM, not the whole pack: packArchives refuses a read-only session at
+		//the top, before any drain, so driving it would pass without reaching the restore.
+		//The fault is an archive this session does not hold open - packDirectory is then
+		//called on nothing and throws, after the overrides have been taken. No file is
+		//written anywhere by this check: a bare session holds no FieldData archive, so
+		//the pack faults before it can reach a file. STORYTEXT is the wrong lever - it opens
+		//lazily, and packDirectory returns silently when the directory is not there, so the
+		//first version of this fixture provoked nothing and proved nothing.
+		java.util.Map<Integer, Boolean> taken =
+			ctrmap.GeometryForker.consumePendingFieldOverrides();
+		Throwable stopped = null;
+		try {
+			s.packWithOverrides(ArchiveType.FIELD_DATA, taken,
+				ctrmap.GeometryForker::registerPendingField);
+		} catch (Throwable t) {
+			stopped = t;
+		}
+		check(stopped != null, "fixture: the pack stopped (" + stopped + ")");
+		java.util.Map<Integer, Boolean> kept =
+			ctrmap.GeometryForker.consumePendingFieldOverrides();
+		check(kept != null && Boolean.TRUE.equals(kept.get(4242)),
+			"and the override survived it - a retry that has to guess the stored form writes a"
+			+ " map the game cannot load, out of a pack that reported success (kept " + kept + ")");
+	}
+
 	static void theSessionKeepsNoGlobals(File src) throws Exception {
 		System.out.println("--- the session keeps no global of its own and never reads the facade");
 		List<String> mutableStatics = new ArrayList<>();

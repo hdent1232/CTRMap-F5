@@ -335,6 +335,20 @@ public class ZoneAppender {
 	 * and clears them (they apply to exactly one packDirectory call).
 	 * Returns null when no append is pending - packDirectory accepts that.
 	 */
+	/**
+	 * Registers a pending ZoneData compression override.
+	 *
+	 * <p>Its four siblings have had one since they were written; this one did not,
+	 * because nothing outside the appender ever added to the map. A pack that throws
+	 * now has to put the drained overrides BACK, and that needs a door in.
+	 */
+	public static void registerPendingZoneData(int index, boolean compressed) {
+		if (pendingZoneDataOverrides == null) {
+			pendingZoneDataOverrides = new HashMap<>();
+		}
+		pendingZoneDataOverrides.put(index, compressed);
+	}
+
 	public static Map<Integer, Boolean> consumePendingZoneDataOverrides() {
 		Map<Integer, Boolean> m = pendingZoneDataOverrides;
 		pendingZoneDataOverrides = null;
