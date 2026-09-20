@@ -63,48 +63,19 @@ READ_ONLY = (
 
 
 def alive(pid):
-    """Whether `pid` is a live process, answering ALIVE whenever it cannot tell.
+    """Whether `pid` is a live process. One answer for the whole project; see liveness.py.
 
-    `os.kill(pid, 0)` IS NOT A PROBE ON WINDOWS. Python routes it through
-    `OpenProcess(PROCESS_TERMINATE)` for every signal, so a process this account may not open
-    for termination raises `[WinError 87]` - measured on 2026-09-08 against the process table,
-    where it called three live processes dead, one of them the sweep runner.
+    THIS USED TO BE ITS OWN COPY of a probe that three files needed. Both copies were right,
+    which is the dangerous case: the next one would not have been, and a probe that answers
+    "gone" when it means "I could not look" does not fail loudly - it produces a guard that
+    never fires. `os.kill(pid, 0)` on Windows called three live processes dead here on
+    2026-09-08, one of them the sweep runner a guard existed to notice.
 
-    UNCERTAINTY IS ALIVE HERE, and that is the whole correction. The failure this file exists
-    for is an absence concluded from something unreadable, so every answer short of "the
-    operating system says this pid does not exist" counts as running.
-
-    Standalone on purpose - the `.claude/hooks/` guards import nothing from this repository, so
-    a broken module cannot take a refusal down with it.
+    `tools/guard/liveness_check.py` refuses any other spelling anywhere in the project, so
+    this is the only place the question is answered.
     """
-    try:
-        pid = int(pid)
-    except (TypeError, ValueError):
-        return False
-    if pid <= 0:
-        return False
-    if os.name != "nt":
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except OSError:
-            return True                      # permission, or anything else: not an absence
-        return True
-    import ctypes
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.OpenProcess(0x1000, False, pid)      # QUERY_LIMITED_INFORMATION
-    if not handle:
-        # 87 is ERROR_INVALID_PARAMETER - Windows' answer for a pid that does not exist. Every
-        # other failure is a permission answer, and permission-denied is not absence.
-        return kernel32.GetLastError() != 87
-    code = ctypes.c_ulong()
-    ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-    kernel32.CloseHandle(handle)
-    if not ok:
-        return True                          # could not read the exit code: not an absence
-    return code.value == 259                 # STILL_ACTIVE
-
+    running, _ = liveness.alive(pid)
+    return running
 
 def sweep_pid():
     """The pid of the bounded run that owns the worktrees, or None when no run holds the lock."""
@@ -155,6 +126,7 @@ def refusal(pid, command):
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import shellin                                    # noqa: E402  (path set above)
+import liveness                                   # noqa: E402  (same)
 
 HOOK = "guard_machine_worktrees.py"
 

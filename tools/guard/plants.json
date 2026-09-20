@@ -2037,6 +2037,45 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: a hook edited in place is named"
+  },
+  {
+   "id": "a-windows-probe-may-call-a-live-process-dead",
+   "why": "os.kill(pid, 0) is not a liveness probe on Windows: python routes every signal through OpenProcess(PROCESS_TERMINATE), so a process this account may not terminate raises [WinError 87] and reads as DEAD. Measured against the process table on 2026-09-08 it called three live processes dead, one of them the sweep runner a guard existed to notice - and the function deciding whether to CLEAR a lock was one of its callers. The refusal is the only thing stopping the next probe being written the same way; this plant removes it.",
+   "file": "tools/guard/liveness_check.py",
+   "find": "        if _OS_KILL.search(code) and not _BRANCHES.search(shell):\n",
+   "replace": "        if False:  #PLANTED: os.kill is a fine probe anywhere\n",
+   "suite": "ctrmap.tests.LivenessProbeTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a probe with no os.name branch is refused"
+  },
+  {
+   "id": "a-commandline-filter-may-decide-a-process-is-gone",
+   "why": "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match ... } matched nothing, because CommandLine is EMPTY for any process this account cannot open. Twelve live workers were reported gone and acting on that belief discarded 134 verdicts. It is the SAME defect as the os.kill one, in a shell command no python checker could see - which is why this checker reads .ps1 as well. This plant stops it looking.",
+   "file": "tools/guard/liveness_check.py",
+   "find": "        found = _COMMANDLINE.search(shell)\n        if found and (path.endswith(\".ps1\") or _near(shell, found.start())):\n            why.append(\n",
+   "replace": "        found = _COMMANDLINE.search(shell)\n        if False:  #PLANTED: a CommandLine filter is fine\n            why.append(\n",
+   "suite": "ctrmap.tests.LivenessProbeTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: the filter is refused"
+  },
+  {
+   "id": "a-checker-may-match-its-own-prose",
+   "why": "The first run of this checker over its own repository reported seven defects and every one of them was its own docstring - the prose that describes the trap, in the files that exist to refuse it. A check that matches prose cannot tell a warning from a defect, and it is the shape that gets a red result explained away and then ignored. The opposite failure is worse: blanking the string literals too hid a tasklist command inside a subprocess argument list and made the os.name branch invisible, so a correct probe was reported as a broken one and a real second spelling went unrefused. This plant restores the first half.",
+   "file": "tools/guard/liveness_check.py",
+   "find": "        code = code_of(path, raw)\n",
+   "replace": "        code = raw  #PLANTED: prose is code\n",
+   "suite": "ctrmap.tests.LivenessProbeTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a file that only DESCRIBES the traps is clean"
   }
  ],
  "retired": [
