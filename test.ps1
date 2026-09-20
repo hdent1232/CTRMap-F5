@@ -69,7 +69,13 @@ $gamedir = if ($GameDir) { $GameDir } else { Join-Path (Split-Path -Parent $root
 # behind on a kill, where build.ps1 ages it out after ninety minutes.
 $batteryLock = Join-Path $root "build\.battery-running"
 New-Item -ItemType Directory -Force -Path (Join-Path $root "build") | Out-Null
-Set-Content -Path $batteryLock -Encoding utf8 -Value ("started " + (Get-Date -Format o))
+# The PID goes in it as well as the timestamp. build.ps1 ages the lock out after ninety
+# minutes, which is the best a timestamp can do; the hook that refuses an EDIT during a
+# run can ask whether this process is still alive and say so exactly.
+Set-Content -Path $batteryLock -Encoding utf8 -Value @(
+    ("started " + (Get-Date -Format o)),
+    ("pid=" + $PID),
+    "what=the battery")
 
 # The decompressed code.bin, for the suites that check the executable patches.
 # Two candidates because the repo is checked out in two shapes: beside the dump
@@ -128,6 +134,7 @@ $suites = @(
     @{ n = "Battery hygiene (temp paths, corpus args)"; c = "ctrmap.tests.BatteryHygieneTest"; a = @("src") },
     @{ n = "Commit gate (the hook refuses what it says it refuses)"; c = "ctrmap.tests.CommitGuardTest"; a = @(".") },
     @{ n = "Hook wiring (an installed guard nothing can reach is OFF)"; c = "ctrmap.tests.HooksWiredTest"; a = @(".") },
+    @{ n = "Hook refusals (game data, per-push approval, edit during a run)"; c = "ctrmap.tests.HookRefusalsTest"; a = @(".") },
     @{ n = "Plant ledger (the proofs still match the tree)"; c = "ctrmap.tests.PlantLedgerTest"; a = @(".") },
     @{ n = "ClassFileScanner (bytecode sees what a grep cannot)"; c = "ctrmap.tests.ClassFileScannerTest"; a = @("src", "build\classes") },
     @{ n = "GameFilesSeam (the format layer is handed its game, never fetches it)"; c = "ctrmap.tests.GameFilesSeamTest"; a = @("src", "build\classes") },

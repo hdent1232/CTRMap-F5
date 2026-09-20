@@ -56,6 +56,7 @@ public class HooksWiredTest {
 		aGuardNothingRunsIsRefused(checker);
 		aGuardTheDispatcherCannotAskIsRefused(checker);
 		anUnreadableWiringIsRefusedRatherThanPassed(checker);
+		aHookEditedInPlaceIsRefused(checker);
 		aSoundWiringIsAllowed(checker);
 		theLiveInstallationIsSound(checker, repo);
 
@@ -147,6 +148,49 @@ public class HooksWiredTest {
 	}
 
 	/**
+	 * A hook edited where it runs, rather than where it is reviewed, is refused.
+	 *
+	 * <p>{@code .claude/hooks} is outside version control. A guard hollowed out there leaves no
+	 * diff, no history and no review, and goes on looking installed and wired - and a suite
+	 * that read the installed copy would simply agree with whatever it now said. The
+	 * repository copy in {@code tools/hooks} is what {@link HookRefusalsTest} drives and what
+	 * the plant ledger can break, so the two have to be the same file; otherwise the suite
+	 * pins a copy that does not run.
+	 */
+	static void aHookEditedInPlaceIsRefused(File checker) throws Exception {
+		System.out.println("--- a hook edited where it runs rather than where it is reviewed");
+		File root = install("edited", "\"*\"", "guard_all.py",
+				new String[]{"guard_all.py", "guard_one.py"}, false);
+		write(new File(root, ".claude/hooks/guard_all.py"), DISPATCHER);
+		write(new File(root, ".claude/hooks/guard_one.py"), STUB);
+		//the repository's copy of the same two hooks
+		write(new File(root, "tools/hooks/guard_all.py"), DISPATCHER);
+		write(new File(root, "tools/hooks/guard_one.py"), STUB);
+		String said = askAsIs(checker, root);
+		check(said.contains("reachable for every tool"),
+				"two copies that agree pass: " + firstReason(said));
+
+		write(new File(root, ".claude/hooks/guard_one.py"), STUB + "#edited in place\n");
+		said = askAsIs(checker, root);
+		check(said.contains("guard_one.py") && said.contains("differs from"),
+				"a hook edited in place is named: " + firstReason(said));
+
+		write(new File(root, ".claude/hooks/guard_one.py"), STUB);
+		write(new File(root, "tools/hooks/guard_orphan.py"), STUB);
+		said = askAsIs(checker, root);
+		check(said.contains("guard_orphan.py") && said.contains("only on paper"),
+				"and a versioned hook that is not installed is named: " + firstReason(said));
+	}
+
+	/** A dispatcher that finds its own guards, as the checker expects one to. */
+	static final String DISPATCHER =
+			"import glob, os\n"
+			+ "def guards():\n    return glob.glob(os.path.join('.', 'guard_*.py'))\n"
+			+ "def decide(payload):\n    return False, None\n";
+
+	static final String STUB = "def decide(payload):\n    return False, None\n";
+
+	/**
 	 * The negative control. Without it a checker that refuses everything scores a perfect pass.
 	 */
 	static void aSoundWiringIsAllowed(File checker) throws Exception {
@@ -215,8 +259,31 @@ public class HooksWiredTest {
 		Files.write(f.toPath(), body.getBytes(StandardCharsets.UTF_8));
 	}
 
-	/** Runs the checker against a root and returns everything it said. */
+	/**
+	 * Runs the checker against a root whose two copies of each hook agree.
+	 *
+	 * <p>The checker also refuses an installed hook that differs from its version-controlled
+	 * copy, so every scratch installation needs both. Mirroring here rather than in each
+	 * section keeps the sections about the one thing each is asserting - and a section that
+	 * forgot would fail for a reason that has nothing to do with what it is testing, which is
+	 * the shape that gets a red suite explained away.
+	 */
 	static String ask(File checker, File root) throws Exception {
+		File hooks = new File(root, ".claude/hooks");
+		File versioned = new File(root, "tools/hooks");
+		File[] beside = hooks.listFiles();
+		if (beside != null) {
+			versioned.mkdirs();
+			for (File one : beside) {
+				Files.copy(one.toPath(), new File(versioned, one.getName()).toPath(),
+						java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			}
+		}
+		return askAsIs(checker, root);
+	}
+
+	/** Runs the checker against a root exactly as it stands, mirroring nothing. */
+	static String askAsIs(File checker, File root) throws Exception {
 		ProcessBuilder pb = new ProcessBuilder("python", checker.getAbsolutePath(),
 				root.getAbsolutePath());
 		pb.redirectErrorStream(true);

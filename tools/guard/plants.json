@@ -1985,6 +1985,58 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: the forgotten guard is named"
+  },
+  {
+   "id": "game-data-may-be-written-again",
+   "why": "GAME DATA IS READ-ONLY was a standing rule with no mechanism at all until 2026-09-20. RomFS/, RomFS_original_garcs/ and Workspace/ hold the owner's extracted game: not in version control, not regenerable without a 3DS and several hours. On 2026-09-19 a test fixture written for this project drove a pack against a WorkspaceSession rooted on the LIVE DUMP. It happened to do no damage - the newest file in the dump was checked afterwards and predated it - but that is luck, not a guard, and the second fixture in the same batch passed for the wrong reason. This plant makes the check for a protected root answer None for everything, so a delete of the dump is allowed again.",
+   "file": "tools/hooks/guard_game_data.py",
+   "find": "    for part in parts:\n",
+   "replace": "    for part in []:  #PLANTED: nothing is under a protected root\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: deleting part of the dump is refused"
+  },
+  {
+   "id": "one-approval-covers-every-later-push",
+   "why": "NEVER PUSH WITHOUT EXPLICIT PER-PUSH APPROVAL, and approval for one push is not approval for the next. The whole content of the rule is the SECOND half: a general yes that keeps applying is exactly how a conditional 'publish immediately' became a standing permission here, for a review that never happened. The token pins the commit, so a new commit expires it. This plant stops the commit being checked, which turns per-push approval back into a standing one while still looking like a guard.",
+   "file": "tools/hooks/guard_push.py",
+   "find": "    if fields.get(\"sha\", \"\").lower() != head.lower():\n",
+   "replace": "    if False:  #PLANTED: any approval covers any commit\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: and one more commit expires it"
+  },
+  {
+   "id": "source-may-be-edited-mid-run",
+   "why": "NEVER EDIT SOURCE WHILE THE SUITE IS RUNNING. Two full battery runs here were invalidated by edits landing mid-run: the result is neither the old tree nor the new one and it looks green, with nothing in the output to say so. build.ps1 has refused to REBUILD during a battery since the second one; nothing refused the EDIT, which is the half that makes the run meaningless rather than merely noisy. This plant makes the guard find no lock, which is what it looked like for the whole time the rule had nothing behind it.",
+   "file": "tools/hooks/guard_suite_running.py",
+   "find": "            live, why = _live(path)\n",
+   "replace": "            live, why = False, \"PLANTED: no run is ever in flight\"\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a live run refuses an edit to source"
+  },
+  {
+   "id": "an-installed-hook-may-differ-from-the-versioned-one",
+   "why": "The hooks run from .claude/hooks, which is OUTSIDE version control: a guard hollowed out there leaves no diff, no history and no review, and goes on looking installed and wired. The repository copy in tools/hooks is what the suites drive and what the plant ledger can break, so the two have to be the same file - otherwise the suite pins a copy that does not run. This plant makes the comparison accept any difference.",
+   "file": "tools/guard/hooks_wired.py",
+   "find": "        elif got != want:\n",
+   "replace": "        elif False:  #PLANTED: a hook may say anything once installed\n",
+   "suite": "ctrmap.tests.HooksWiredTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a hook edited in place is named"
   }
  ],
  "retired": [

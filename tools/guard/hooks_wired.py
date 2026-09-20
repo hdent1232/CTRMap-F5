@@ -30,6 +30,10 @@ WHAT THIS REFUSES, and each one is a way the same thing happens again:
   4. a settings file or hooks directory it cannot read - because "I could not look" is not
      "there is nothing there", and collapsing the two is what reported twelve live workers
      gone and discarded 134 verdicts here
+  5. an installed hook that differs from its version-controlled copy in `tools/hooks` - the
+     installed directory is outside version control, so a hook hollowed out there leaves no
+     diff, no history and no review, and goes on looking installed and wired
+  6. a hook in `tools/hooks` that is not installed at all - a guard that exists only on paper
 
 Usage: python tools/guard/hooks_wired.py [repo-root]
 Exit 1 with reasons, 0 when every installed guard is reachable for every tool.
@@ -180,6 +184,8 @@ def findings(root):
                 "command issued through it. Use \"*\" and let each guard decide."
                 % (event, matcher))
 
+    why.extend(_differs_from_the_versioned_copy(root, hooks_dir))
+
     #: a guard the dispatcher cannot ask
     if dispatchers:
         for name in installed:
@@ -195,6 +201,84 @@ def findings(root):
                 why.append(
                     "%s has no decide(payload), so the dispatcher cannot ask it. A guard that "
                     "is present and unaskable answers nothing, which reads as a pass." % name)
+    return why
+
+
+#: Where the version-controlled copy of each hook lives, relative to the repository root. The
+#: installed copy in `.claude/hooks` is outside version control entirely, so a hook edited
+#: there leaves no trace anywhere: no diff, no history, and a suite that read the installed
+#: copy would simply agree with whatever it now says.
+VERSIONED = os.path.join("tools", "hooks")
+
+
+def _repo_root(root):
+    """The repository holding tools/hooks, at `root` or one level down."""
+    if os.path.isdir(os.path.join(root, VERSIONED)):
+        return root
+    try:
+        for name in sorted(os.listdir(root)):
+            if os.path.isdir(os.path.join(root, name, VERSIONED)):
+                return os.path.join(root, name)
+    except OSError:
+        pass
+    return None
+
+
+def _text(path):
+    """The file with line endings normalised, or None when it cannot be read.
+
+    Normalised because this tree is checked out with autocrlf, so the working copy of a
+    versioned file legitimately differs from the installed one by line endings alone. The
+    project's own build digest ignores endings for text for exactly this reason; a check that
+    did not would cry wolf on every clone and be switched off within a day.
+    """
+    try:
+        with open(path, "rb") as handle:
+            return handle.read().replace(b"\r\n", b"\n")
+    except OSError:
+        return None
+
+
+def _differs_from_the_versioned_copy(root, hooks_dir):
+    """Every installed hook that is not what the repository says it is.
+
+    A HOOK EDITED IN PLACE LEAVES NO TRACE. `.claude/hooks` is not in version control: an edit
+    there has no diff, no history and no review, and the guard goes on looking installed and
+    wired. This is the half that makes the versioned copy mean anything.
+    """
+    repo = _repo_root(root)
+    if repo is None:
+        return ["there is no %s in or under %s, so what the installed hooks are SUPPOSED to "
+                "say is unknown - and an unknown is not a match"
+                % (VERSIONED, os.path.abspath(root))]
+    versioned_dir = os.path.join(repo, VERSIONED)
+    try:
+        versioned = sorted(name for name in os.listdir(versioned_dir)
+                           if name.endswith((".py", ".txt")))
+        beside = sorted(name for name in os.listdir(hooks_dir)
+                        if name.endswith((".py", ".txt")))
+    except OSError as cannotList:
+        return ["cannot list the hooks to compare them (%s)" % cannotList]
+
+    why = []
+    for name in beside:
+        want = _text(os.path.join(versioned_dir, name))
+        if want is None:
+            why.append("%s is installed in %s but has no version-controlled copy in %s. A hook "
+                       "edited in place leaves no diff and no history."
+                       % (name, hooks_dir, VERSIONED))
+            continue
+        got = _text(os.path.join(hooks_dir, name))
+        if got is None:
+            why.append("cannot read the installed %s" % name)
+        elif got != want:
+            why.append("%s as installed differs from %s/%s (%d bytes vs %d). Whichever is "
+                       "right, they are not the same guard, and only one of them runs."
+                       % (name, VERSIONED, name, len(got), len(want)))
+    for name in versioned:
+        if name not in beside:
+            why.append("%s/%s is in version control but is NOT installed in %s - a guard that "
+                       "exists only on paper" % (VERSIONED, name, hooks_dir))
     return why
 
 

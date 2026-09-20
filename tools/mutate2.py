@@ -1056,7 +1056,51 @@ import require_build
 # process; that is what the frozen-sha reset on the next run is for.
 import atexit
 
-_PENDING_RESTORE = []          # [(path, original_text)] while a mutant is on disk
+#: WHERE THE LOCK LIVES. `.claude/hooks/guard_mutation_read.py` refuses a read of a file that
+#: currently carries an injected fault, and finds it by reading this. Nothing had ever written
+#: it, so that hook was installed, wired, running and unable to refuse anything - a consumer
+#: with no producer, which is the defect this project has filed in seven consecutive audits
+#: with the arrow pointing the other way.
+MUTATION_LOCK = BASE / ".mutation-in-flight"
+
+
+class _Pending(list):
+    """The mutants currently on disk, and the lock that says so.
+
+    A list rather than two calls at each apply/restore site: the lock is maintained by the
+    thing that knows, so a site added later cannot forget it. A GUARD AT CALL SITES IS ONE
+    CALL SITE FROM BROKEN.
+    """
+
+    def _sync(self):
+        try:
+            if self:
+                io.open(str(MUTATION_LOCK), "w", encoding="utf-8", newline=chr(10)).write(
+                    self[-1][0] + chr(10))
+            elif MUTATION_LOCK.exists():
+                MUTATION_LOCK.unlink()
+        except OSError as cannotWrite:
+            # A LOCK THAT CANNOT BE WRITTEN IS NOT A LOCK. Say so rather than carrying on
+            # quietly: the reader hook would then see no lock and clear a file that is
+            # mid-mutation, which is exactly the read this is here to refuse.
+            print("WARNING: cannot maintain %s (%s) - a reader cannot be told this file is "
+                  "mid-mutation" % (MUTATION_LOCK, cannotWrite), flush=True)
+
+    def append(self, item):
+        list.append(self, item)
+        self._sync()
+
+    def pop(self, *args):
+        got = list.pop(self, *args)
+        self._sync()
+        return got
+
+    def __delitem__(self, key):
+        list.__delitem__(self, key)
+        self._sync()
+
+
+_PENDING_RESTORE = _Pending()  # [(path, original_text)] while a mutant is on disk
 
 
 def _restore_pending():
