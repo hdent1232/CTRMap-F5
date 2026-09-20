@@ -23,19 +23,19 @@ HOW IT DECIDES A LOCK IS STALE. By the process id when the lock carries one, and
 age, with the same ninety minutes build.ps1 has always used. A lock it CANNOT check is treated
 as LIVE: every probe has an answer for "it is not there" and an answer for "I could not look",
 and collapsing the second into the first is what reported twelve live workers gone here and
-cost 134 verdicts. On Windows `os.kill(pid, 0)` routes through OpenProcess(PROCESS_TERMINATE)
-and reads a process this account may not terminate as DEAD, so it is not used - `tasklist` is.
+cost 134 verdicts. The probe itself lives in `liveness.py`, which is the project's only
+answer to that question - three copies of it were three chances to write the wrong one.
 
 TO EDIT ANYWAY: the owner sets CTRMAP_ALLOW_EDIT_DURING_RUN=1, or deletes the lock.
 """
 import os
 import re
-import subprocess
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import shellin                                    # noqa: E402  (path set above)
+import liveness                                   # noqa: E402  (same)
 
 HOOK = "guard_suite_running.py"
 BYPASS = "CTRMAP_ALLOW_EDIT_DURING_RUN"
@@ -102,21 +102,13 @@ def _live(path):
 
 
 def alive(pid):
-    """(is it running, how this knows). UNKNOWN counts as running."""
-    try:
-        p = subprocess.Popen(["tasklist", "/FI", "PID eq %d" % pid, "/NH"],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, _ = p.communicate(timeout=20)
-    except Exception as cannotAsk:
-        return True, ("could not ask whether process %d is running (%s), so it is taken to be"
-                      % (pid, type(cannotAsk).__name__))
-    said = out.decode("utf-8", "replace")
-    if re.search(r"\b%d\b" % pid, said):
-        return True, "tasklist lists process %d" % pid
-    if "INFO:" in said or not said.strip():
-        return False, "tasklist has no process %d" % pid
-    return True, ("tasklist's answer about process %d could not be read, so it is taken to be "
-                  "running" % pid)
+    """(is it running, how this knows) - the project's one answer; see liveness.py.
+
+    THIS WAS A THIRD SPELLING, using `tasklist`. It was not wrong, which is exactly why it had
+    to go: a question answered three ways is answered differently the fourth time, and the
+    difference between "gone" and "I could not look" is what cost 134 verdicts here.
+    """
+    return liveness.alive(pid)
 
 
 def is_source(path, repo):

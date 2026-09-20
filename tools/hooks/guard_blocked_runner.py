@@ -64,47 +64,19 @@ ESCAPES = (
 
 
 def alive(pid):
-    """Whether `pid` is a live process - asking WINDOWS, not assuming POSIX.
+    """Whether `pid` is a live process. One answer for the whole project; see liveness.py.
 
-    `os.kill(pid, 0)` IS NOT A PROBE HERE. Python implements `os.kill` on Windows through
-    `OpenProcess(PROCESS_TERMINATE)` for every signal, so for a process this account may not
-    open for termination it raises `[WinError 87] The parameter is incorrect`. Measured against
-    the process table on 2026-09-08 it reported three LIVE processes as dead, one of them the
-    sweep runner this hook exists to notice - so the first version of this function would have
-    found every blocked runner "dead" and NEVER FIRED. A guard that cannot fire is decoration,
-    and this one was written in the same session as that lesson.
+    THIS USED TO BE ITS OWN COPY of a probe that three files needed. Both copies were right,
+    which is the dangerous case: the next one would not have been, and a probe that answers
+    "gone" when it means "I could not look" does not fail loudly - it produces a guard that
+    never fires. `os.kill(pid, 0)` on Windows called three live processes dead here on
+    2026-09-08, one of them the sweep runner a guard existed to notice.
 
-    A pid of None or 0 is not a process. An account that may not query a real pid answers
-    ALIVE: uncertainty must not silently disable the refusal.
-
-    Standalone on purpose - the `.claude/hooks/` guards import nothing from this repository, so
-    that a broken module cannot take a refusal down with it. `tools/audit/liveness.py` therefore
-    checks that a probe BRANCHES ON `os.name`, not that there is only one copy of it.
+    `tools/guard/liveness_check.py` refuses any other spelling anywhere in the project, so
+    this is the only place the question is answered.
     """
-    try:
-        pid = int(pid)
-    except (TypeError, ValueError):
-        return False
-    if pid <= 0:
-        return False
-    if os.name != "nt":
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            return False
-        return True
-    import ctypes
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.OpenProcess(0x1000, False, pid)   # QUERY_LIMITED_INFORMATION
-    if not handle:
-        # 87 is ERROR_INVALID_PARAMETER - Windows' answer for a pid that does not exist. Any
-        # other failure is a permission answer, and permission-denied is not absence.
-        return kernel32.GetLastError() != 87
-    code = ctypes.c_ulong()
-    ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-    kernel32.CloseHandle(handle)
-    return bool(ok) and code.value == 259               # 259 is STILL_ACTIVE
-
+    running, _ = liveness.alive(pid)
+    return running
 
 def blocked_for():
     """(seconds blocked, [paths]) if a LIVE runner is waiting on uncommitted tooling.
@@ -199,6 +171,7 @@ def refusal(seconds, paths):
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import shellin                                    # noqa: E402  (path set above)
+import liveness                                   # noqa: E402  (same)
 
 HOOK = "guard_blocked_runner.py"
 
