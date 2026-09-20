@@ -112,6 +112,125 @@ public class GarcSniffTest {
 		cut.delete();
 	}
 
+	/**
+	 * A file that shrinks AFTER it was parsed still refuses, and never answers zeros.
+	 *
+	 * <p>This is the case the truncation fixture above can no longer reach. {@code parse}
+	 * records an entry only once it has read that entry's data, so no entry in a
+	 * half-truncated archive can have data past the cut - the defect became unreachable by
+	 * construction, and the plant that guarded it survived because there was nothing left to
+	 * catch.
+	 *
+	 * <p>The real case is not a file that was always short. It is a file that CHANGES
+	 * underneath a table already in memory - which is why {@code isStale()} and
+	 * {@code rereadIfStale()} exist at all. Here the whole archive is parsed, the file on disk
+	 * is then cut in half, and the entries whose data is now gone must refuse rather than hand
+	 * back a buffer of zeros the editor would write straight back over the real archive.
+	 *
+	 * <p>Measured before {@code readFully}: 278 of a/0/4/0's 431 entries came back as pure-zero
+	 * buffers of the right length. None null, no exception, no log line.
+	 */
+	static void aFileThatShrinksUnderYouRefuses(File root) throws Exception {
+		System.out.println("--- a file that shrinks after it was parsed refuses, never zeros");
+		File real = new File(root, "a/0/4/0");
+		if (!real.isFile()) {
+			System.out.println("  skip: no a/0/4/0 under " + root);
+			return;
+		}
+		byte[] whole = java.nio.file.Files.readAllBytes(real.toPath());
+		File copy = File.createTempFile("ctrmap_shrink_", ".garc");
+		copy.deleteOnExit();
+		java.nio.file.Files.write(copy.toPath(), whole);
+
+		//parsed WHOLE - the table in memory describes every entry
+		ctrmap.formats.garc.GARC arc = new ctrmap.formats.garc.GARC(copy);
+		int declared = arc.length;
+		check(declared > 1, "the archive parsed whole first (" + declared + " entries)");
+
+		//...and now the file is cut underneath it
+		java.nio.file.Files.write(copy.toPath(),
+			java.util.Arrays.copyOf(whole, whole.length / 2));
+
+		int zeroed = 0, refused = 0, whole_ = 0;
+		for (int i = 0; i < declared; i++) {
+			byte[] got;
+			try {
+				got = arc.getStoredEntry(i);
+			} catch (RuntimeException refusedLoudly) {
+				refused++;
+				continue;
+			}
+			if (got == null) {
+				refused++;
+			} else if (isAllZero(got)) {
+				zeroed++;
+			} else {
+				whole_++;
+			}
+		}
+		check(zeroed == 0, "no entry of an archive that shrank comes back as zeros pretending"
+			+ " to be data (" + zeroed + " did, of " + declared + "; " + whole_ + " were still"
+			+ " whole and " + refused + " refused)");
+		check(refused > 0, "...and the ones past the cut ARE refused, so the check above had"
+			+ " something to be right about (" + refused + ")");
+		copy.delete();
+	}
+
+	/**
+	 * An archive that was read TRUNCATED may not be packed back over the real one.
+	 *
+	 * <p>Reading a short archive is recoverable and the entries before the cut are whole, so
+	 * {@code parse} records the truncation rather than refusing - refusing there took the
+	 * readable entries away with the unreadable ones and reddened this suite for a week.
+	 *
+	 * <p>WRITING it back is the irreversible part. A pack that read 155 of the 436 entries a
+	 * header declares and writes 155 back has destroyed the other 281, over the owner's own
+	 * game data, which is not in version control. This project has already paid for one
+	 * stale-pack corruption on zone 536.
+	 */
+	static void aTruncatedArchiveMayNotBePackedBack(File root) throws Exception {
+		System.out.println("--- a truncated archive may not be packed back");
+		File real = new File(root, "a/0/4/0");
+		if (!real.isFile()) {
+			System.out.println("  skip: no a/0/4/0 under " + root);
+			return;
+		}
+		byte[] whole = java.nio.file.Files.readAllBytes(real.toPath());
+		File cut = File.createTempFile("ctrmap_halfpack_", ".garc");
+		cut.deleteOnExit();
+		java.nio.file.Files.write(cut.toPath(),
+			java.util.Arrays.copyOf(whole, whole.length / 2));
+		ctrmap.formats.garc.GARC half = new ctrmap.formats.garc.GARC(cut);
+		check(half.readableEntries >= 0,
+			"the short read is recorded rather than thrown (" + half.readableEntries + " of "
+			+ half.length + " readable)");
+
+		File staging = Scratch.dir("halfpack");
+		File scratch = Scratch.dir("halfpack-out");
+		String said = "";
+		try {
+			half.packDirectory(staging, f -> true, scratch, new java.util.HashMap<>());
+		} catch (Exception refusedLoudly) {
+			//ANY exception, not just the expected one. Catching only IllegalStateException
+			//let every OTHER failure escape and kill the suite before it reached the check -
+			//so with the refusal removed the plant reddened the suite without it ever saying
+			//what it was watching for, and was recorded NOT PROVEN. A fixture that cannot
+			//report the wrong answer can only report the right one.
+			said = refusedLoudly.getClass().getSimpleName() + ": "
+				+ String.valueOf(refusedLoudly.getMessage());
+		}
+		check(said.contains("TRUNCATED") && said.contains("must not be packed back"),
+			"packing it back is refused, and the refusal says why: " + oneLine(said));
+		check(said.contains("Restore the archive from the pristine copy"),
+			"...and what to do instead");
+		cut.delete();
+	}
+
+	static String oneLine(String said) {
+		String flat = said.replace('\n', ' ').replace('\r', ' ').trim();
+		return flat.length() > 150 ? flat.substring(0, 150) : flat;
+	}
+
 	/** Whether every byte is zero - what a dropped short read used to leave behind. */
 	static boolean isAllZero(byte[] b) {
 		if (b.length == 0) {
@@ -148,6 +267,8 @@ public class GarcSniffTest {
 			return;
 		}
 		aTruncatedArchiveIsNotData(root);
+		aFileThatShrinksUnderYouRefuses(root);
+		aTruncatedArchiveMayNotBePackedBack(root);
 
 		compressedEntriesDecodeToRealData(dressUp);
 		anEntryThatOnlyLooksCompressedIsRefused(trclass);

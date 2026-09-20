@@ -47,7 +47,11 @@ public class SilentCatchTest {
 	 * this program tells its user when something went wrong, and it should
 	 * happen in a commit message where somebody can disagree with it.
 	 */
-	private static final int CEILING = 119;
+	//TIGHTENED 119 -> 118 on 2026-09-20. The measured count was 118, so the ceiling
+	//had ONE FREE SLOT - and a plant that added a silent catch landed in it and
+	//SURVIVED. A ratchet only bites while it is kept tight: every slot of slack is
+	//a defect of exactly that size that the guard will not notice.
+	private static final int CEILING = 118;
 
 	/**
 	 * Unchecked {@code read(byte[])} / {@code skip(long)} answers in production: 76,

@@ -30,6 +30,16 @@ public class GARC {
 
 	public int length;
 
+	/**
+	 * How many entries were actually readable, when the file ran out before the header said
+	 * it would. {@link #length} stays at the DECLARED count, because that is what the archive
+	 * claims to hold and a reader deciding whether it has everything needs the claim, not a
+	 * number quietly corrected to match what survived.
+	 *
+	 * <p>-1 when the archive parsed whole.
+	 */
+	public int readableEntries = -1;
+
 	private final boolean allowCompression;
 
 	public GARC(File f) {
@@ -57,6 +67,11 @@ public class GARC {
 		try {
 			this.file = f;
 			entries.clear();
+			//RESET IT. `entries` is cleared here because a re-parse describes the file as it
+			//is NOW; the truncation flag has to be cleared for the same reason. Left standing,
+			//an instance that once read a short file would refuse to pack for the rest of its
+			//life - including after replaceWith() re-reads a whole archive it just wrote.
+			readableEntries = -1;
 			//remember the file as it was when this table was read, so a later
 			//pack can tell whether anything else has rewritten it since
 			parsedLength = f.length();
@@ -127,14 +142,23 @@ public class GARC {
 			}
 			in.close();
 		} catch (IOException ex) {
-			//A HALF-PARSED ARCHIVE IS NOT AN ARCHIVE. This logged and returned, leaving
-			//`length` at the count the header declared while `entries` held only the ones
-			//that were read before the file ran out - so getEntryCount() and length said
-			//different things, and every reader that trusts length walked off the end of a
-			//list. The stale-table repair is one of those readers.
-			throw new IllegalStateException(file.getName() + " could not be read as a GARC"
-				+ " (read " + entries.size() + " of the " + length + " entries its header declares): "
-				+ ctrmap.util.Bytes.reason(ex), ex);
+			//A HALF-PARSED ARCHIVE IS NOT AN ARCHIVE, AND IT IS NOT NOTHING EITHER.
+			//This logged and returned, leaving `length` at the count the header declared
+			//while `entries` held only what was read before the file ran out - so the two
+			//disagreed and nothing said so. Throwing here was the over-correction: it took
+			//the readable entries away along with the unreadable ones, and the battery has
+			//been red since, because GarcSniffTest asserts that the survivors stay readable.
+			//
+			//The disagreement is recorded instead. READING is recoverable - the entries
+			//before the cut are whole and getStoredEntry refuses past it. WRITING is the
+			//damage, and packDirectory refuses it below: a pack that reads 155 of 436
+			//entries and writes 155 back has destroyed the other 281.
+			readableEntries = entries.size();
+			Logger.getLogger(GARC.class.getName()).log(Level.SEVERE,
+				file.getName() + " is TRUNCATED: read " + readableEntries + " of the "
+				+ length + " entries its header declares (" + ctrmap.util.Bytes.reason(ex)
+				+ "). The entries before the cut are readable; the rest refuse, and this archive"
+				+ " may not be packed back.", ex);
 		}
 	}
 
@@ -284,6 +308,22 @@ public class GARC {
 			Map<Integer, Boolean> compressionOverrides) throws IOException {
 		if (!dir.isDirectory()) {
 			return;
+		}
+		//A TRUNCATED ARCHIVE MAY NOT BE PACKED BACK, and this is where the damage would be
+		//done rather than where it would be noticed. `parse` records a short read instead of
+		//refusing, because the entries before the cut are perfectly readable and taking them
+		//away helps nobody - but a pack that read 155 of the 436 entries a header declares
+		//and writes 155 back has DESTROYED the other 281, irreversibly, over the owner's own
+		//game data. This project has already paid for one stale-pack corruption on zone 536.
+		//
+		//Refusing at read time was the over-correction that reddened the battery; refusing
+		//here costs nothing anybody wanted to do.
+		if (readableEntries >= 0) {
+			throw new IllegalStateException(file.getName() + " was read TRUNCATED ("
+				+ readableEntries + " of the " + length + " entries its header declares) and"
+				+ " must not be packed back: writing it would destroy the "
+				+ (length - readableEntries) + " entries that were never read. Restore the"
+				+ " archive from the pristine copy first.");
 		}
 		rereadIfStale();
 		PackPlan plan = plan(filesToPack(dir, edited), compressionOverrides);
@@ -615,6 +655,15 @@ public class GARC {
 	 * a decompress/recompress round trip.
 	 */
 	public byte[] getStoredEntry(int num) {
+		//PAST THE CUT, SAY SO. A bare IndexOutOfBoundsException from entries.get() is loud
+		//enough not to be data, but it names a list index and not the reason, so a caller
+		//reading the log learns that something was out of range rather than that the archive
+		//on disk is short. The count the header declares is the number a reader is iterating.
+		if (readableEntries >= 0 && num >= readableEntries && num < length) {
+			throw new IllegalStateException(file.getName() + " is TRUNCATED: entry " + num
+				+ " is past the cut (" + readableEntries + " of " + length
+				+ " entries were readable). It is not zeros and it is not empty - it is gone.");
+		}
 		try {
 			GARCEntry e = entries.get(num);
 			byte[] b = new byte[e.length];
