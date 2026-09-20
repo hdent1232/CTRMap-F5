@@ -102,6 +102,52 @@ _DEFERRED_LINE = re.compile(r"^Deferred-gap:\s*(.+)$", re.M | re.S)
 _TEST_CLAIM = re.compile(r"([0-9][0-9,]*)[ \t]+tests\b")
 _GUARD_LINE = re.compile(r"^Guard:\s*([A-Za-z]+)\s*--\s*(.+)$", re.M | re.S)
 
+#: -------- EXTRACTION IS NOT TESTING ------------------------------------------------
+#: Two modules split out of one function in the same refactor scored 94.7% and 37.3% under
+#: mutation. The only difference was that tests were deliberately written for one of them
+#: afterwards. Decomposition makes code REACHABLE for testing, which is not the same as tested,
+#: and a new file with nothing naming it is the shape that scored 37.3.
+NO_TEST = "No-test:"
+
+#: -------- DETANGLE, DO NOT RELOCATE ------------------------------------------------
+#: Splitting a 3,000-line god object into ten 300-line files whose pieces still read and write
+#: the same shared state is worse - the tangle is now in ten places. The metric is COUPLING,
+#: not line count, so a commit that says it split something has to say what the edges did.
+COUPLING = "Coupling:"
+NO_COUPLING = "No-coupling:"
+_SPLIT_WORDS = ("split", "extract", "decompos", "break up", "broke out", "carve", "pull out",
+                "pulled out", "separate into")
+_COUPLING_LINE = re.compile(r"^Coupling:\s*([0-9]+)\s*(?:->|to|=>)\s*([0-9]+)", re.M)
+
+#: -------- THE OWNER DOES THE IN-APP AND IN-GAME TESTING -----------------------------
+#: A suite cannot load the game. Every claim that something was checked in the editor or in the
+#: ROM is either the owner's, quoted, or it is not a claim anybody can act on.
+OWNER_TESTED = "Owner-tested:"
+_IN_GAME = (
+    "tested in game", "tested in-game", "in-game test", "verified in game",
+    "verified in-game", "loaded the rom", "loaded in azahar", "ran the editor",
+    "opened the editor", "checked in the editor", "played through", "booted the game",
+    "confirmed in game", "confirmed in-game", "works in game", "works in-game",
+)
+
+#: -------- A CONFIDENT EMPTY RESULT IS A BUG UNTIL PROVEN OTHERWISE ------------------
+#: Twice a scan here returned 0 across 536 files because it read the wrong struct field. A
+#: probe that reports a confident ZERO is the dangerous result: it looks like a clean negative.
+CONTROL = "Control:"
+_ZERO_CLAIM = re.compile(
+    r"\b(?:scan(?:ned)?|check(?:ed)?|search(?:ed)?|swept|sweep|audit(?:ed)?|grep(?:ped)?|"
+    r"count(?:ed)?|measur(?:ed|ement)|probe[ds]?)\b[^.\n]{0,120}?"
+    r"\b(?:0|zero|no|none|nothing|nowhere)\b", re.I)
+
+#: -------- ASK WHAT THE CHEAPEST WAY TO SATISFY YOUR OWN GUARD IS --------------------
+#: Every guard creates an incentive to satisfy it cheaply, and the cheap way is usually to do
+#: LESS work rather than more. A rule that forbids reporting a hole is satisfied fastest by not
+#: looking for one. A guard that has never had that question asked of it is a guard with a
+#: known way round it that nobody has written down.
+EVASION = "Cheapest-evasion:"
+_GUARD_HOMES = ("tools/guard/", "tools/hooks/", ".claude/hooks/", ".githooks/")
+
+
 
 def _message(path):
     try:
@@ -477,6 +523,201 @@ def check_blanket_claim(message):
     return 1
 
 
+def added_files():
+    """Paths ADDED by this commit, with forward slashes. Empty when git cannot be asked."""
+    import subprocess
+    try:
+        done = subprocess.run(["git", "diff", "--cached", "--name-status", "--diff-filter=A"],
+                              cwd=ROOT, capture_output=True, text=True)
+    except OSError:                                    # pragma: no cover - git not on PATH
+        return []
+    out = []
+    for line in done.stdout.splitlines():
+        parts = line.split(chr(9))
+        if len(parts) >= 2:
+            out.append(parts[-1].strip().replace(chr(92), "/"))
+    return out
+
+
+def check_extraction_is_tested(message):
+    """A new production class that no test so much as names is not tested, only reachable.
+
+    EXTRACTION IS NOT TESTING. Two modules split out of one function in the same refactor
+    scored 94.7% and 37.3% under mutation; the only difference was that tests were written for
+    one of them afterwards. This is the cheapest possible version of the question - does any
+    test file mention the class at all - because the expensive version, "is it tested well",
+    is what the mutation sweep answers, and a commit gate cannot run one.
+    """
+    if NO_TEST.lower() in message.lower():
+        return 0
+    #: A REPOSITORY WITH NO TEST TREE IS NOT ONE THIS RULE IS ABOUT. Without this, every
+    #: commit in a scratch repository - which is how the suites drive this gate - was refused
+    #: for adding production code to a tree that has nowhere to put a test, and four sections
+    #: of CommitGuardTest went red for a reason that had nothing to do with what they assert.
+    #: The cheapest way round the rule is therefore to delete src/ctrmap/tests, which would
+    #: take 133 registered suites with it and is not a quiet evasion.
+    if not os.path.isdir(os.path.join(ROOT, "src", "ctrmap", "tests")):
+        return 0
+    added = [f for f in added_files()
+             if f.endswith(".java") and _is_production(f)]
+    if not added:
+        return 0
+    unnamed = []
+    for path in added:
+        name = os.path.basename(path)[:-len(".java")]
+        if not _named_by_a_test(name):
+            unnamed.append(path)
+    if not unnamed:
+        return 0
+    sys.stderr.write(
+        "REFUSING THE COMMIT: this adds production code that NO TEST NAMES." + LF
+        + "".join("    %s%s" % (p, LF) for p in unnamed)
+        + "  EXTRACTION IS NOT TESTING. Two modules split out of one function in the same" + LF
+        + "  refactor scored 94.7% and 37.3% under mutation - the only difference was that" + LF
+        + "  tests were deliberately written for one of them afterwards. Decomposition makes" + LF
+        + "  code REACHABLE for testing, which is not the same as tested." + LF
+        + "  Write the test, or say why there is none with a" + LF
+        + "    %s <reason>" % NO_TEST + LF
+        + "  line, which stays in git log where anyone can disagree with it." + LF)
+    return 1
+
+
+def _named_by_a_test(name):
+    """Whether any file under a test directory mentions this class by name."""
+    for base in ("src/ctrmap/tests", "tools"):
+        root = os.path.join(ROOT, base)
+        for dirpath, dirs, files in os.walk(root):
+            dirs[:] = [d for d in dirs if d not in ("__pycache__",)]
+            for f in files:
+                if not f.endswith((".java", ".py", ".ps1")):
+                    continue
+                #: ZoneTest.java names Zone in the place a reader looks first. Reading only
+                #: the contents refused a commit that shipped the test beside the class,
+                #: which is the exact thing this rule is asking for.
+                if name in f:
+                    return True
+                try:
+                    with io.open(os.path.join(dirpath, f), encoding="utf-8",
+                                 errors="replace") as handle:
+                        if name in handle.read():
+                            return True
+                except OSError:
+                    continue
+    return False
+
+
+def check_detangle(message):
+    """A commit that says it SPLIT something has to say what the coupling did.
+
+    DETANGLE, DO NOT RELOCATE. Ten 300-line files whose pieces still read and write the same
+    shared state are worse than one 3,000-line file: the tangle is now in ten places and each
+    piece looks small. The metric is edges, not lines, and a split that does not reduce them
+    has moved code rather than untangled it.
+    """
+    low = message.lower()
+    if NO_COUPLING.lower() in low:
+        return 0
+    if not any(word in low for word in _SPLIT_WORDS):
+        return 0
+    if not [f for f in added_files() if f.endswith(".java") and _is_production(f)]:
+        return 0
+    found = _COUPLING_LINE.search(message)
+    if found and int(found.group(2)) < int(found.group(1)):
+        return 0
+    sys.stderr.write(
+        "REFUSING THE COMMIT: this says it split or extracted something and adds" + LF
+        + "  production files, and it does not show the coupling going DOWN." + LF
+        + "  DETANGLE, DO NOT RELOCATE: splitting a 3,000-line god object into ten" + LF
+        + "  300-line files whose pieces still read and write the same shared state is" + LF
+        + "  WORSE - the tangle is now in ten places and every piece looks small." + LF
+        + "  Count what each span depends on before and after; each extracted piece must" + LF
+        + "  depend on a strict subset, and the total must go down. Then say so:" + LF
+        + "    %s <before> -> <after>" % COUPLING + LF
+        + "  or, if this is not that kind of change, say why with a" + LF
+        + "    %s <reason>" % NO_COUPLING + LF
+        + "  line." + LF)
+    return 1
+
+
+def check_in_game_claim(message):
+    """Nothing here can load the game, so nothing here may claim it did.
+
+    THE OWNER DOES THE IN-APP AND IN-GAME TESTING. A suite cannot open the editor and cannot
+    boot a ROM. A claim that something was checked there is either the owner's, quoted, or it
+    is a claim nobody can act on - and it is the one claim that ends a review.
+    """
+    low = message.lower()
+    if OWNER_TESTED.lower() in low:
+        return 0
+    said = [phrase for phrase in _IN_GAME if phrase in low]
+    if not said:
+        return 0
+    sys.stderr.write(
+        "REFUSING THE COMMIT: this claims something was checked in the editor or in" + LF
+        + "  the game (%r)." % said[0] + LF
+        + "  THE OWNER DOES THE IN-APP AND IN-GAME TESTING. Nothing here can load the" + LF
+        + "  game: no suite opens the editor, and no suite boots a ROM. A claim like" + LF
+        + "  this cannot be checked by anybody reading the log, and it is exactly the" + LF
+        + "  claim that ends a review." + LF
+        + "  If the owner did it, quote them:" + LF
+        + "    %s <what they said>" % OWNER_TESTED + LF
+        + "  Otherwise say what WAS measured instead." + LF)
+    return 1
+
+
+def check_zero_claim(message):
+    """A measurement that found nothing needs the control that proves it could find something.
+
+    A CONFIDENT EMPTY RESULT IS A BUG UNTIL PROVEN OTHERWISE. Twice here a scan returned 0
+    across 536 files because it read the wrong struct field, and both times the zero read as
+    good news. A scan that has never been shown to find a planted case is not evidence of
+    absence; it is evidence of nothing.
+    """
+    if CONTROL.lower() in message.lower():
+        return 0
+    found = _ZERO_CLAIM.search(message)
+    if not found:
+        return 0
+    sys.stderr.write(
+        "REFUSING THE COMMIT: this reports a measurement that found nothing -" + LF
+        + "    %r" % found.group(0).strip()[:100] + LF
+        + "  A CONFIDENT EMPTY RESULT IS A BUG UNTIL PROVEN OTHERWISE. Twice here a scan" + LF
+        + "  returned 0 across 536 files because it read the wrong struct field, and both" + LF
+        + "  times the zero read as good news." + LF
+        + "  Say what the same scan finds when there IS something to find:" + LF
+        + "    %s <the known-answer case it caught>" % CONTROL + LF)
+    return 1
+
+
+def check_cheapest_evasion(message):
+    """A commit that adds a guard must say how that guard could be satisfied cheaply.
+
+    ASK WHAT THE CHEAPEST WAY TO SATISFY YOUR OWN GUARD IS, AND REFUSE THAT TOO. Every guard
+    creates an incentive to satisfy it cheaply, and the cheap way is nearly always to do LESS
+    work rather than more: a rule that forbids REPORTING a hole is satisfied fastest by not
+    looking for one. A guard nobody has asked that question of has a way round it that nobody
+    has written down.
+    """
+    if EVASION.lower() in message.lower():
+        return 0
+    added = [f for f in added_files()
+             if any(f.startswith(home) for home in _GUARD_HOMES)
+             and f.endswith((".py", ".java"))]
+    if not added:
+        return 0
+    sys.stderr.write(
+        "REFUSING THE COMMIT: this adds a guard and does not say how to get round it." + LF
+        + "".join("    %s%s" % (p, LF) for p in added)
+        + "  ASK WHAT THE CHEAPEST WAY TO SATISFY YOUR OWN GUARD IS, AND REFUSE THAT" + LF
+        + "  TOO. Every guard creates an incentive to satisfy it cheaply, and the cheap" + LF
+        + "  way is nearly always to do LESS work rather than more - a rule that forbids" + LF
+        + "  REPORTING a hole is satisfied fastest by not looking for one." + LF
+        + "  Write the cheapest way you can think of to make this guard go quiet without" + LF
+        + "  doing the work, and say what stops it:" + LF
+        + "    %s <the cheap way, and what refuses it>" % EVASION + LF)
+    return 1
+
+
 def main(argv):
     if len(argv) < 2:
         return 0
@@ -484,7 +725,8 @@ def main(argv):
     if not message.strip():
         return 0
     for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,
-                  check_blanket_claim):
+                  check_blanket_claim, check_extraction_is_tested, check_detangle,
+                  check_in_game_claim, check_zero_claim, check_cheapest_evasion):
         code = check(message)
         if code:
             return code

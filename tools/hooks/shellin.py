@@ -101,6 +101,46 @@ def text(payload):
     return chr(10).join(commands(payload))
 
 
+#: Shell words whose arguments are about to be written. `sed` only with `-i`: `sed -n '1,40p'`
+#: READS, and treating every sed as a write refused a plain read of a source file within
+#: minutes of the first guard that did it.
+WRITE_WORDS = ("rm", "rmdir", "mv", "cp", "install", "truncate", "tee", "dd", "shred",
+               "unlink", "touch", "mkdir", "del", "erase", "move", "copy", "xcopy",
+               "robocopy", "ren", "rename", "remove-item", "move-item", "copy-item",
+               "new-item", "set-content", "add-content", "out-file", "clear-content",
+               "rename-item", "export-csv")
+
+
+def writes_something(payload):
+    """Every path this tool call would create or change. Empty means it only reads.
+
+    ONE ANSWER FOR ALL THE GUARDS THAT ASK IT. Two of them worked it out separately and then
+    interlocked: one refused every call while an installed hook differed from its
+    version-controlled copy - including the read that would have shown what differed - and the
+    other refused the copy that would have fixed it, because a replant run held the lock. Each
+    was correct on its own. A guard may refuse the work; it may never refuse the way out.
+    """
+    import re as _re
+    out = list(paths_written(payload))
+    for command in commands(payload):
+        for found in _re.finditer(r">>?\s*([^\s|;&]+)", command):
+            out.append(found.group(1).strip('"' + chr(39)))
+        for piece in _re.split(r"[;|&]+", command):
+            words = piece.strip().split()
+            if not words:
+                continue
+            head = words[0].rsplit("/", 1)[-1].rsplit(chr(92), 1)[-1].lower()
+            if head.endswith(".exe"):
+                head = head[:-4]
+            if head == "sed":
+                if "-i" in words:
+                    out.extend(w for w in words[1:] if not w.startswith("-"))
+                continue
+            if head in WRITE_WORDS:
+                out.extend(w for w in words[1:] if not w.startswith("-"))
+    return out
+
+
 def blind_refusal(guard, trouble, bypass):
     """What a guard says when it could not read part of the input it was asked about.
 

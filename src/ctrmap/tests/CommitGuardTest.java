@@ -72,6 +72,11 @@ public class CommitGuardTest {
 		theGateAsksTheDiffAndNotTheSubjectLine(guard);
 		aBlanketClaimMustCiteItsMeasurement(guard, repo);
 		aSweepRefusesATreeThePlantsWereNotProvenAgainst(repo);
+		aNewClassNoTestNamesIsRefused(guard);
+		aSplitMustShowItsCouplingGoingDown(guard);
+		aClaimThatSomethingWasTestedInGameIsRefused(guard);
+		aMeasurementThatFoundNothingNeedsItsControl(guard);
+		aNewGuardMustSayHowToGetRoundIt(guard);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -487,6 +492,9 @@ public class CommitGuardTest {
 	/** A newline, for building a script without a heredoc. */
 	static final String NEWLINE = String.valueOf((char) 10);
 
+	/** A double quote, for building a message without escaping it twice. */
+	static final String QUOTE = String.valueOf((char) 34);
+
 	static String oneLine(String said) {
 		String flat = said == null ? "" : said.replace('\n', ' ').replace('\r', ' ').trim();
 		return flat.length() > 150 ? flat.substring(0, 150) + "..." : flat;
@@ -638,6 +646,181 @@ public class CommitGuardTest {
 		p.waitFor();
 		check(!said.isEmpty() && !said.startsWith("0") || said.startsWith("0"),
 			"the gate answers how many reasons it has: " + oneLine(said));
+	}
+
+	// ------------------------------ 13. EXTRACTION IS NOT TESTING
+	/**
+	 * A new production class that no test so much as names is refused.
+	 *
+	 * <p>Two modules split out of one function in the same refactor scored <b>94.7%</b>
+	 * and <b>37.3%</b> under mutation. The only difference was that tests were
+	 * deliberately written for one of them afterwards. Decomposition makes code
+	 * REACHABLE for testing, which is not the same as tested, and a new file nothing
+	 * names is the shape that scored 37.3.
+	 *
+	 * <p>THE CHEAPEST WAY ROUND IT is to delete {@code src/ctrmap/tests}, because the
+	 * rule does not apply to a repository with no test tree - that exemption is what
+	 * lets the scratch repositories here drive the gate at all. It would take 133
+	 * registered suites with it, so it is not a quiet evasion.
+	 */
+	static void aNewClassNoTestNamesIsRefused(File guard) throws Exception {
+		System.out.println("--- a new production class no test names");
+		String message = "Add the thing" + NEWLINE + NEWLINE + "Body." + NEWLINE + NEWLINE
+			+ "Guard: refusal -- the class this makes impossible is spelled out here at"
+			+ " length so the sixty-character floor is cleared honestly";
+		Run bare = run(guard, message,
+			new String[]{"src/ctrmap/NewThing.java", "src/ctrmap/tests/UnrelatedTest.java"},
+			null, "int id = 2;");
+		check(bare.code != 0, "a new production class no test names is refused (exit "
+			+ bare.code + ")");
+		check(bare.said.contains("EXTRACTION IS NOT TESTING"),
+			"and it says which rule, with the two numbers that bought it");
+		
+		Run excused = run(guard, message + NEWLINE + NEWLINE
+			+ "No-test: a generated stub with no behaviour of its own yet.",
+			new String[]{"src/ctrmap/NewThing.java", "src/ctrmap/tests/UnrelatedTest.java"},
+			null, "int id = 2;");
+		check(excused.code == 0, "and allowed when the message says why there is none"
+			+ " (exit " + excused.code + ") " + oneLine(excused.said));
+		
+		//THE NEGATIVE HALF: a class its test names must not be refused.
+		Run tested = run(guard, message,
+			new String[]{"src/ctrmap/NewThing.java", "src/ctrmap/tests/NewThingTest.java"},
+			null, "int id = 2;");
+		check(tested.code == 0, "while a class its test names is allowed (exit "
+			+ tested.code + ") " + oneLine(tested.said));
+	}
+
+	// ------------------------------ 14. DETANGLE, DO NOT RELOCATE
+	/**
+	 * A commit that says it split something must show the coupling going DOWN.
+	 *
+	 * <p>Splitting a 3,000-line god object into ten 300-line files whose pieces still
+	 * read and write the same shared state is WORSE: the tangle is now in ten places and
+	 * every piece looks small. The metric is edges, not line count.
+	 *
+	 * <p>THE CHEAPEST WAY ROUND IT is to write a smaller second number without counting
+	 * anything - which is the same evasion the Reviewed: line has, and the same answer:
+	 * the number is in the log where it can be re-measured and disagreed with.
+	 */
+	static void aSplitMustShowItsCouplingGoingDown(File guard) throws Exception {
+		System.out.println("--- a split that does not show its coupling");
+		String split = "Split the god object" + NEWLINE + NEWLINE
+			+ "Extracted PartOne from the big class." + NEWLINE + NEWLINE
+			+ "Guard: refusal -- the class this makes impossible is spelled out here at"
+			+ " length so the sixty-character floor is cleared honestly";
+		String[] staged = {"src/ctrmap/PartOne.java", "src/ctrmap/tests/PartOneTest.java"};
+		
+		Run silent = run(guard, split, staged, null, "int id = 2;");
+		check(silent.code != 0, "a split with no coupling number is refused (exit "
+			+ silent.code + ")");
+		Run worse = run(guard, split + NEWLINE + NEWLINE + "Coupling: 22 -> 31",
+			staged, null, "int id = 2;");
+		check(worse.code != 0, "and so is one whose coupling went UP (exit "
+			+ worse.code + ")");
+		Run same = run(guard, split + NEWLINE + NEWLINE + "Coupling: 22 -> 22",
+			staged, null, "int id = 2;");
+		check(same.code != 0, "and one that only moved code (exit " + same.code + ")");
+		Run better = run(guard, split + NEWLINE + NEWLINE + "Coupling: 22 -> 14",
+			staged, null, "int id = 2;");
+		check(better.code == 0, "while a split that reduced the edges is allowed (exit "
+			+ better.code + ") " + oneLine(better.said));
+	}
+
+	// ------------------------------ 15. THE OWNER DOES THE IN-APP AND IN-GAME TESTING
+	/**
+	 * Nothing here can load the game, so nothing here may claim it did.
+	 *
+	 * <p>No suite opens the editor and no suite boots a ROM. A claim that something was
+	 * checked there cannot be checked by anybody reading the log, and it is the one claim
+	 * that ends a review.
+	 *
+	 * <p>THE CHEAPEST WAY ROUND IT is to write the same claim in different words. The
+	 * phrase list is therefore the common spellings and not a complete one - what stops
+	 * the evasion being worth anything is that the honest escape, quoting the owner, is
+	 * easier than inventing a synonym.
+	 */
+	static void aClaimThatSomethingWasTestedInGameIsRefused(File guard) throws Exception {
+		System.out.println("--- a claim that something was checked in the game");
+		Run claimed = run(guard, "The door opens again" + NEWLINE + NEWLINE
+			+ "Tested in game and the door works now.", new String[]{}, null);
+		check(claimed.code != 0, "a commit claiming it was tested in game is refused (exit "
+			+ claimed.code + ")");
+		Run rom = run(guard, "The door opens again" + NEWLINE + NEWLINE
+			+ "I loaded the ROM in Azahar and walked through.", new String[]{}, null);
+		check(rom.code != 0, "and so is loading the ROM (exit " + rom.code + ")");
+		Run quoted = run(guard, "The door opens again" + NEWLINE + NEWLINE + "Tested in game."
+			+ NEWLINE + NEWLINE + "Owner-tested: " + QUOTE + "walked through the door, it"
+			+ " works now" + QUOTE, new String[]{}, null);
+		check(quoted.code == 0, "while quoting the owner is allowed (exit " + quoted.code
+			+ ") " + oneLine(quoted.said));
+	}
+
+	// ------------------------------ 16. A CONFIDENT EMPTY RESULT IS A BUG
+	/**
+	 * A measurement that found nothing must say what the same measurement does catch.
+	 *
+	 * <p>Twice here a scan returned <b>0 across 536 files</b> because it read the wrong
+	 * struct field, and both times the zero read as good news. A scan never shown to find
+	 * a planted case is not evidence of absence; it is evidence of nothing.
+	 *
+	 * <p>THE CHEAPEST WAY ROUND IT is not to mention the measurement - to report the
+	 * change and leave the zero out. That is why the phrasing test needs a measurement
+	 * VERB beside the zero: a commit that says nothing about what it measured is already
+	 * refused by the blanket-claim rule the moment it vouches for anything.
+	 */
+	static void aMeasurementThatFoundNothingNeedsItsControl(File guard) throws Exception {
+		System.out.println("--- a measurement that found nothing");
+		String zero = "Sweep the tree" + NEWLINE + NEWLINE
+			+ "Scanned all 536 files and found no remaining cases.";
+		Run bare = run(guard, zero, new String[]{}, null);
+		check(bare.code != 0, "a zero with no control is refused (exit " + bare.code + ")");
+		Run controlled = run(guard, zero + NEWLINE + NEWLINE
+			+ "Control: the same scan catches the planted case in FakeGameFiles.",
+			new String[]{}, null);
+		check(controlled.code == 0, "and allowed once it says what the scan does catch"
+			+ " (exit " + controlled.code + ") " + oneLine(controlled.said));
+		//THE NEGATIVE HALF: ordinary prose with no measurement in it is not asked.
+		Run prose = run(guard, "Remove the option" + NEWLINE + NEWLINE
+			+ "There is no reason to keep this around.", new String[]{}, null);
+		check(prose.code == 0, "while prose with no measurement verb is left alone (exit "
+			+ prose.code + ") " + oneLine(prose.said));
+	}
+
+	// ------------------------------ 17. ASK WHAT THE CHEAPEST WAY ROUND YOUR GUARD IS
+	/**
+	 * A commit that adds a guard must say how that guard could be satisfied cheaply.
+	 *
+	 * <p>Every guard creates an incentive to satisfy it cheaply, and the cheap way is
+	 * nearly always to do LESS work rather than more: a rule that forbids REPORTING a
+	 * hole is satisfied fastest by not looking for one. A guard nobody has asked that
+	 * question of has a way round it that nobody has written down.
+	 *
+	 * <p>THE CHEAPEST WAY ROUND THIS ONE is to write a trivial evasion - "delete the
+	 * file" - instead of the real one. Nothing mechanical can tell those apart. What the
+	 * line buys is that the question was asked at all, in the log, where the next person
+	 * to read the guard can see whether the answer was serious.
+	 */
+	static void aNewGuardMustSayHowToGetRoundIt(File guard) throws Exception {
+		System.out.println("--- a new guard that does not say how to get round it");
+		String message = "Add a check" + NEWLINE + NEWLINE + "Body." + NEWLINE + NEWLINE
+			+ "Guard: refusal -- the class this makes impossible is spelled out here at"
+			+ " length so the sixty-character floor is cleared honestly";
+		Run bare = run(guard, message, new String[]{"tools/guard/newcheck.py"}, null);
+		check(bare.code != 0, "a new guard with no evasion named is refused (exit "
+			+ bare.code + ")");
+		Run answered = run(guard, message + NEWLINE + NEWLINE
+			+ "Cheapest-evasion: delete the file it reads, which it refuses by treating an"
+			+ " unreadable input as a finding rather than an empty one.",
+			new String[]{"tools/guard/newcheck.py"}, null);
+		check(answered.code == 0, "and allowed once the cheap way is written down (exit "
+			+ answered.code + ") " + oneLine(answered.said));
+		//THE NEGATIVE HALF: an ordinary change is not asked for one.
+		Run ordinary = run(guard, message,
+			new String[]{"src/ctrmap/Ordinary.java", "src/ctrmap/tests/OrdinaryTest.java"},
+			null, "int id = 2;");
+		check(ordinary.code == 0, "while an ordinary commit is not (exit " + ordinary.code
+			+ ") " + oneLine(ordinary.said));
 	}
 
 	static Run run(File guard, String message, String[] staged, String lastRun) throws Exception {
