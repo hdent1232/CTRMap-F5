@@ -77,6 +77,7 @@ public class CommitGuardTest {
 		aClaimThatSomethingWasTestedInGameIsRefused(guard);
 		aMeasurementThatFoundNothingNeedsItsControl(guard);
 		aNewGuardMustSayHowToGetRoundIt(guard);
+		aMenuItemMustSayWhyItIsNotATab(guard);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -821,6 +822,48 @@ public class CommitGuardTest {
 			null, "int id = 2;");
 		check(ordinary.code == 0, "while an ordinary commit is not (exit " + ordinary.code
 			+ ") " + oneLine(ordinary.said));
+	}
+
+	// ------------------------------ 18. FEATURES LIVE IN THEIR OWN UI AREA
+	/**
+	 * A new item on the MAIN MENU BAR has to say why it is not a tab.
+	 *
+	 * <p>The owner's standing rule since this project began: never menu-dumped, never a
+	 * new window; seldom-used goes to the Extras tab; undo/redo everywhere. A menu bar
+	 * is where a feature goes when nobody decided where it goes.
+	 *
+	 * <p>Only the window that OWNS a {@code JMenuBar} is asked. A {@code JMenuItem} in
+	 * a right-click menu on the map canvas is already in its own area, and refusing
+	 * those would fire on honest work - which is how a rule gets its ceiling raised
+	 * once and then ignored.
+	 */
+	static void aMenuItemMustSayWhyItIsNotATab(File guard) throws Exception {
+		System.out.println("--- a new item on the main menu bar");
+		String message = "Add the entry" + NEWLINE + NEWLINE + "Body." + NEWLINE
+			+ NEWLINE + "Guard: refusal -- the class this makes impossible is spelled"
+			+ " out here at length so the sixty-character floor is cleared honestly";
+		String owner = "package ctrmap.humaninterface;" + NEWLINE
+			+ "public class Mainframe { JMenuBar bar; JMenuItem extra; }";
+		Run bare = run(guard, message,
+			new String[]{"src/ctrmap/humaninterface/Mainframe.java",
+				"src/ctrmap/tests/MainframeTest.java"}, null, owner);
+		check(bare.code != 0, "a new item on the main menu bar is refused (exit "
+			+ bare.code + ")");
+		Run said = run(guard, message + NEWLINE + NEWLINE
+			+ "Menu-item: it opens the file this window already owns, so a tab for it"
+			+ " would be a tab holding one button.",
+			new String[]{"src/ctrmap/humaninterface/Mainframe.java",
+				"src/ctrmap/tests/MainframeTest.java"}, null, owner);
+		check(said.code == 0, "and allowed once it says why it is not a tab (exit "
+			+ said.code + ") " + oneLine(said.said));
+		//THE NEGATIVE HALF: a right-click menu is already its own area.
+		String popup = "package ctrmap.humaninterface;" + NEWLINE
+			+ "public class MapCanvas { JPopupMenu menu; JMenuItem here; }";
+		Run canvas = run(guard, message,
+			new String[]{"src/ctrmap/humaninterface/MapCanvas.java",
+				"src/ctrmap/tests/MapCanvasTest.java"}, null, popup);
+		check(canvas.code == 0, "while a right-click menu item is left alone (exit "
+			+ canvas.code + ") " + oneLine(canvas.said));
 	}
 
 	static Run run(File guard, String message, String[] staged, String lastRun) throws Exception {

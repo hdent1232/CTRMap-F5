@@ -139,6 +139,14 @@ _ZERO_CLAIM = re.compile(
     r"count(?:ed)?|measur(?:ed|ement)|probe[ds]?)\b[^.\n]{0,120}?"
     r"\b(?:0|zero|no|none|nothing|nowhere)\b", re.I)
 
+
+#: -------- FEATURES LIVE IN THEIR OWN UI AREA ----------------------------------------
+#: The owner's standing rule since this project began: never menu-dumped, never a new window;
+#: seldom-used goes to the Extras tab; undo/redo everywhere. MainframeShapeTest pins the menu
+#: bar exactly and caps how many items it may hold, but both of those are read AFTER the item
+#: is written. This asks the question in the log, where the answer stays.
+MENU_ITEM = "Menu-item:"
+
 #: -------- ASK WHAT THE CHEAPEST WAY TO SATISFY YOUR OWN GUARD IS --------------------
 #: Every guard creates an incentive to satisfy it cheaply, and the cheap way is usually to do
 #: LESS work rather than more. A rule that forbids reporting a hole is satisfied fastest by not
@@ -718,6 +726,63 @@ def check_cheapest_evasion(message):
     return 1
 
 
+def _added_lines():
+    """The lines this commit ADDS, per staged file. Empty when git cannot be asked."""
+    import subprocess
+    try:
+        done = subprocess.run(["git", "diff", "--cached", "-U0"],
+                              cwd=ROOT, capture_output=True, text=True)
+    except OSError:                                    # pragma: no cover - git not on PATH
+        return {}
+    out = {}
+    path = None
+    for line in done.stdout.splitlines():
+        if line.startswith("+++ b/"):
+            path = line[len("+++ b/"):].strip().replace(chr(92), "/")
+            out.setdefault(path, [])
+        elif line.startswith("+") and not line.startswith("+++") and path:
+            out[path].append(line[1:])
+    return out
+
+
+def check_menu_item(message):
+    """A new item on the MAIN MENU BAR has to say why it is not a tab.
+
+    FEATURES LIVE IN THEIR OWN UI AREA - never menu-dumped, never a new window; seldom-used
+    goes to the Extras tab. Only the window that OWNS a JMenuBar is asked: a JMenuItem in a
+    right-click menu on the map canvas is already in its own area, and refusing those would
+    fire on honest work, which is how a rule gets a ceiling raised and then ignored.
+    """
+    if MENU_ITEM.lower() in message.lower():
+        return 0
+    guilty = []
+    for path, lines in _added_lines().items():
+        if not path.endswith(".java") or not _is_production(path):
+            continue
+        try:
+            with io.open(os.path.join(ROOT, path), encoding="utf-8",
+                         errors="replace") as handle:
+                whole = handle.read()
+        except OSError:
+            continue
+        if "JMenuBar" not in whole:
+            continue
+        if any("JMenuItem" in line for line in lines):
+            guilty.append(path)
+    if not guilty:
+        return 0
+    sys.stderr.write(
+        "REFUSING THE COMMIT: this adds a menu item to a window that owns the main" + LF
+        + "  menu bar." + LF
+        + "".join("    %s%s" % (p, LF) for p in guilty)
+        + "  FEATURES LIVE IN THEIR OWN UI AREA: never menu-dumped, never a new window;" + LF
+        + "  seldom-used goes to the Extras tab; undo/redo everywhere. A menu bar is where" + LF
+        + "  a feature goes when nobody decided where it goes." + LF
+        + "  If this one really belongs there, say why it is not a tab:" + LF
+        + "    %s <why the menu bar and not its own area>" % MENU_ITEM + LF)
+    return 1
+
+
 def main(argv):
     if len(argv) < 2:
         return 0
@@ -726,7 +791,8 @@ def main(argv):
         return 0
     for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,
                   check_blanket_claim, check_extraction_is_tested, check_detangle,
-                  check_in_game_claim, check_zero_claim, check_cheapest_evasion):
+                  check_in_game_claim, check_zero_claim, check_cheapest_evasion,
+                  check_menu_item):
         code = check(message)
         if code:
             return code

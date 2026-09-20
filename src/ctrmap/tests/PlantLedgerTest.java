@@ -64,6 +64,7 @@ public class PlantLedgerTest {
 
 		theLedgerStillMatchesTheTree(repo);
 		whatItDoesNotCoverIsCountedAndNamed(repo);
+		aTrapListWithoutTheBillGetsIgnored(repo);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -102,6 +103,39 @@ public class PlantLedgerTest {
 		check(!owed.isEmpty(), "the number of suites with no plant is reported: " + owed);
 		check(!general.isEmpty(), "and the number proven only at their own site: " + general);
 		check(!real.isEmpty(), "and the number standing on a machine-found plant alone: " + real);
+	}
+
+	/**
+	 * RECORD TRAPS YOU PAID FOR, WITH THE COST.
+	 *
+	 * <p>The rule carries its own bill: a trap list without the bill attached gets
+	 * ignored. This ledger IS the trap list - every entry is a defect put back to
+	 * prove a guard still notices it - and the entries that close are the ones that
+	 * say "filed in SEVEN consecutive audits" or "791 agents and 111.9M tokens", not
+	 * the ones that name a shape.
+	 *
+	 * <p>A ceiling rather than a ban, because 103 of 171 entries cite no number and a
+	 * ban would fire on all of them - which is how a guard gets its ceiling raised
+	 * once and never looked at again. It may only fall.
+	 */
+	static void aTrapListWithoutTheBillGetsIgnored(File repo) throws Exception {
+		System.out.println("--- and every trap says what it cost");
+		String said = python(repo, "--selftest");
+		String line = firstLineContaining(said, "cite no measured cost");
+		check(!line.isEmpty(), "the ledger counts the entries with no measured cost: "
+			+ line);
+		check(line.startsWith("ok:"), "and it is at or under its ceiling");
+		//AND THAT THE COUNT IS REAL. Reading the number proves only that a number was
+		//printed: weaken the ratchet and it still prints one, so a plant against it could
+		//not redden anything and was recorded NOT PROVEN. A ceiling is proven by putting
+		//something OVER it, so the runner drives its own predicate against a scratch ledger
+		//holding one costless entry and one priced one, and this reads that.
+		String counted = firstLineContaining(said, "cites no number is counted");
+		check(counted.startsWith("ok:"),
+				"a plant whose why cites no number is counted: " + counted);
+		String priced = firstLineContaining(said, "records what it cost is not");
+		check(priced.startsWith("ok:"),
+				"and one that records what it cost is not: " + priced);
 	}
 
 	// ---- plumbing ----------------------------------------------------------

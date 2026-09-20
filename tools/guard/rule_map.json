@@ -1,0 +1,118 @@
+{
+ "_why": "Every rule in CLAUDE.md and the mechanism that refuses it, checked against the tree by tools/guard/rule_map.py. An entry naming nothing real is refused; a rule with no entry at all is refused; the number with no mechanism may only fall. On 2026-09-20 sixteen of these twenty-eight had nothing behind them, which nobody could see because nobody had counted.",
+ "unenforced_ceiling": 3,
+ "rules": {
+  "MEASURE, NEVER REASON FROM PLAUSIBILITY": {
+   "by": "commit_guard.check_zero_claim",
+   "note": "a measurement reporting nothing must cite the control that proves the scan can find something; census.py refuses a report whose coverage is not computed from disk"
+  },
+  "A FIX WITHOUT A GUARD IS NOT A FIX": {
+   "by": "commit_guard.check_fix_has_a_guard",
+   "note": "a commit whose diff changes behaviour must touch a guard directory"
+  },
+  "PROVE EVERY GUARD BY BREAKING IT": {
+   "by": "tools/guard/replant.py",
+   "note": "175 recorded defects, each re-applied and required to redden its named suite"
+  },
+  "A CONFIDENT EMPTY RESULT IS A BUG UNTIL PROVEN OTHERWISE": {
+   "by": "commit_guard.check_zero_claim",
+   "note": "and census.py refusal 1: a census that read nothing is refused rather than reported clean"
+  },
+  "COUNT WHAT YOU EXPECT BEFORE RUNNING THE CHANGE": {
+   "by": "",
+   "note": "NOT ENFORCED. The arithmetic before a bulk edit is not something a hook can see; every mechanical version tried so far fires on honest work."
+  },
+  "A STARTLING MAGNITUDE IS A BUG REPORT": {
+   "by": "",
+   "note": "NOT ENFORCED. MutationBaselineTest notices a stale baseline but nothing refuses a result that moved by an implausible amount in either direction."
+  },
+  "BUILD GENERAL SYSTEMS, NOT THE USER'S EXAMPLE": {
+   "by": "",
+   "note": "NOT ENFORCED. A judgement about scope, and no mechanical test for it has survived contact with honest work."
+  },
+  "DETANGLE, DO NOT RELOCATE": {
+   "by": "commit_guard.check_detangle",
+   "note": "a commit that says it split something and adds production files must show its coupling going down"
+  },
+  "EXTRACTION IS NOT TESTING": {
+   "by": "commit_guard.check_extraction_is_tested",
+   "note": "a new production class no test names is refused"
+  },
+  "NEVER HAND-EDIT A MEASUREMENT": {
+   "by": "src/ctrmap/tests/MutationBaselineTest.java",
+   "note": "the baseline's digest is recomputed from the tree, so an edited number is refused"
+  },
+  "COMMIT BEFORE RUNNING ANYTHING THAT MUTATES SOURCES": {
+   "by": "work_order.dirty_files",
+   "note": "a frozen-tree measurement refuses to begin on a dirty tree"
+  },
+  "NEVER EDIT SOURCE WHILE THE SUITE IS RUNNING": {
+   "by": "tools/hooks/guard_suite_running.py",
+   "note": "a write to anything the build compiles is refused while a battery or mutation run holds its lock"
+  },
+  "RECORD TRAPS YOU PAID FOR, WITH THE COST": {
+   "by": "replant.without_a_cost",
+   "note": "a falling ceiling on plants whose why records no number"
+  },
+  "NOTHING IS FIXED UNTIL THE SECOND ONE IS IMPOSSIBLE, AND THE RULE IS THE AUTHORISATION": {
+   "by": "commit_guard.check_guard_class",
+   "note": "a detector or a convention is refused without a No-refusal: line saying why the point of action cannot refuse"
+  },
+  "ASK WHAT THE CHEAPEST WAY TO SATISFY YOUR OWN GUARD IS, AND REFUSE THAT TOO": {
+   "by": "commit_guard.check_cheapest_evasion",
+   "note": "a commit adding a guard must write down the cheapest way to make that guard go quiet"
+  },
+  "AN UNMEASURABLE QUANTITY IS NOT A SMALL ONE": {
+   "by": "guard_fanout.script_width",
+   "note": "a fan-out whose width cannot be read is refused rather than assumed small; shellin.unreadable does the same for a tool input"
+  },
+  "A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT": {
+   "by": "tools/guard/liveness_check.py",
+   "note": "one probe in tools/hooks/liveness.py that returns its reason, and a refusal for any other spelling in any .py or .ps1 here"
+  },
+  "A REMEDY'S EXIT CODE ANSWERS ITS OWN QUESTION, NOT YOURS": {
+   "by": "tools/hooks/guard_exit_code.py",
+   "note": "reading $? after a pipeline into a filter is refused; ${PIPESTATUS[0]} is not"
+  },
+  "A RUN THAT KNOWS WHAT IT MISSED GOES BACK": {
+   "by": "commit_guard.check_known_hole",
+   "note": "and census.py, which refuses a report whose scope was not covered - stopping the search fails one, filing the result fails the other"
+  },
+  "A CLAIM ABOUT WHAT YOU DID NOT OPEN IS A MEASUREMENT": {
+   "by": "commit_guard.check_blanket_claim",
+   "note": "vouching for what the diff did not open needs Reviewed: n/n by a path that exists"
+  },
+  "DO THE WORK MECHANICALLY; AN AGENT FAN-OUT NEEDS A YES AND A PRICE": {
+   "by": "tools/hooks/guard_fanout.py",
+   "note": "caps agents, workflows and fan-out width, and refuses a width it cannot read"
+  },
+  "DO THE WORK MECHANICALLY": {
+   "by": "tools/hooks/guard_fanout.py",
+   "note": "the owner's own wording of the same rule; the same hook answers both"
+  },
+  "MAKE IT IMPOSSIBLE AT THE POINT OF ACTION": {
+   "by": "commit_guard.check_guard_class",
+   "note": "the kind of guard a fix carries must be named, and a detector must say why a refusal was impossible"
+  },
+  "NEVER PUSH WITHOUT EXPLICIT PER-PUSH APPROVAL": {
+   "by": "tools/hooks/guard_push.py",
+   "note": "a push needs a token naming THIS commit; one more commit expires it"
+  },
+  "FINISH CHANGES BEFORE STARTING A LONG MEASUREMENT": {
+   "by": "work_order.blockers",
+   "note": "OUTSTANDING.md and the plant-proof digest both gate a frozen-tree measurement"
+  },
+  "FEATURES LIVE IN THEIR OWN UI AREA": {
+   "by": "commit_guard.check_menu_item",
+   "note": "a new item on the window that owns the menu bar must say why it is not a tab; MainframeShapeTest caps how many the bar may hold"
+  },
+  "GAME DATA IS READ-ONLY": {
+   "by": "tools/hooks/guard_game_data.py",
+   "note": "a write under a protected root is refused from any tool; reads are untouched"
+  },
+  "THE OWNER DOES THE IN-APP AND IN-GAME TESTING": {
+   "by": "commit_guard.check_in_game_claim",
+   "note": "a commit claiming an in-game result is refused unless it quotes the owner"
+  }
+ }
+}

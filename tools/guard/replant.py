@@ -295,6 +295,35 @@ def replant(p, java, pristine, gamedir):
     return ok
 
 
+#: chr(92) + "b" rather than a backslash-b literal: the first version of this line was
+#: written through `python -c` inside a shell string, the escaping layer ate the
+#: backslash, and the word boundary arrived as 0x08. It compiled. It matched nothing
+#: but digits, and the ceiling re-measured to exactly the same number - which is what
+#: a silent failure looks like from the outside.
+#: A COST IS A NUMBER, and a number is not always a digit: this projects own rules say
+#: "filed in SEVEN consecutive audits" and "four separate times". A digits-only test
+#: called those costless, so the predicate was wrong rather than strict - and a
+#: predicate that is wrong in the safe direction still teaches people to write 7.
+_NUMBER = re.compile("[0-9]|" + chr(92) + "b(one|two|three|four|five|six|seven|"
+                    "eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|"
+                    "hundred|thousand|million|twice|thrice|once)" + chr(92) + "b",
+                    re.I)
+
+
+def without_a_cost(book):
+    """Plant ids whose `why` records what the defect was but not what it cost.
+
+    RECORD TRAPS YOU PAID FOR, WITH THE COST, and the rule carries its own bill: a trap list
+    without the bill attached gets ignored. This ledger IS the trap list, and the entries that
+    close are the ones that say "filed in SEVEN consecutive audits" or "791 agents and 111.9M
+    tokens" rather than naming a shape. A number is the cheapest possible test for that, and
+    it is a ratchet rather than a ban because banning would fire on years of honest entries -
+    which is how a ceiling gets raised once and never looked at again.
+    """
+    return sorted(p.get("id", "<no id>") for p in book.get("plants", [])
+                  if not _NUMBER.search(p.get("why", "")))
+
+
 def selftest():
     fails = []
 
@@ -318,12 +347,30 @@ def selftest():
           "owed_real_defect %d is at or under its ceiling %d - a machine-found plant does"
           " not discharge the debt of a real one"
           % (n_auto, book["owed_real_defect_ceiling"]))
+    n_cost = len(without_a_cost(book))
+    ceiling = book.get("no_cost_ceiling")
+    check(ceiling is not None, "the ledger declares a no_cost_ceiling")
+    check(ceiling is None or n_cost <= ceiling,
+          "%d plant(s) cite no measured cost, at or under the ceiling %s - a trap list"
+          " without the bill attached gets ignored, so this may only fall"
+          % (n_cost, ceiling))
+
+    # THE RATCHET ITSELF, on a scratch ledger. Reading the real count and checking it says
+    # "ok" proves only that the line is printed: weaken the ratchet and it still says ok, so
+    # a plant against it could not redden anything. A ceiling is proven by putting something
+    # OVER it and requiring the guard to notice.
+    costless = {"plants": [{"id": "a", "why": "a shape, with no bill attached"}]}
+    check(len(without_a_cost(costless)) == 1,
+          "a plant whose why cites no number is counted")
+    priced = {"plants": [{"id": "b", "why": "filed in SEVEN consecutive audits"}]}
+    check(without_a_cost(priced) == [],
+          "and one that records what it cost is not - 7 is a number")
 
     # the runner's own refusals, on a scratch ledger rather than the real one
     fake = {"plants": [{"id": "a", "why": "w", "file": "test.ps1", "find": "zzz-not-here",
                         "replace": "x", "suite": "s", "must_say": "m"}],
             "owed_ceiling": 999, "owed_generalisation_ceiling": 999,
-            "owed_real_defect_ceiling": 999}
+            "owed_real_defect_ceiling": 999, "no_cost_ceiling": 999}
     check(any("has rotted" in b for b in check_shape(fake)),
           "a plant whose text is gone is refused, not skipped")
     fake["plants"][0].update(find="param(", replace="param(")
