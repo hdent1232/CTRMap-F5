@@ -334,6 +334,28 @@ def selftest():
     return 0 if not fails else 1
 
 
+#: Where replant records the tree it last proved the whole ledger against. work_order
+#: refuses a frozen-tree measurement when src/ no longer digests to this.
+PROVEN = os.path.join(ROOT, ".last-replant")
+
+
+def record_proof(proven, not_proven):
+    """Write the digest of src/ this run proved the ledger against."""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import require_build
+    import json as _json
+    import time as _time
+    body = {
+        "at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        "src": require_build.tree_digest(os.path.join(ROOT, "src")),
+        "proven": proven,
+        "notProven": not_proven,
+    }
+    io.open(PROVEN, "w", encoding="utf-8", newline=LF).write(
+        _json.dumps(body, indent=1) + LF)
+    print("recorded the proof against this tree in .last-replant")
+
+
 def main(argv):
     book = ledger()
     if "--selftest" in argv:
@@ -391,6 +413,10 @@ def main(argv):
     print("%d guard(s) still notice; %d do not" % (len(held), len(lost)))
     for pid in lost:
         print("    NOT PROVEN: %s" % pid)
+    #A FULL RUN IS PROOF ABOUT THIS TREE; a filtered one is not, so only the full run
+    #records it. work_order refuses a frozen-tree measurement when src/ has moved since.
+    if not wanted:
+        record_proof(len(held), len(lost))
     print("owed: %d suite(s) with no plant; owed_generalisation: %d; owed_real_defect: %d"
           % (n_owed, n_site, n_auto))
     return 0 if not lost else 1

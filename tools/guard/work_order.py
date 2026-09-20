@@ -75,6 +75,40 @@ def dirty_files():
     return out
 
 
+def unproven_plants():
+    """Why the plant ledger is not proof about THIS tree. Empty means it is.
+
+    PLANT BEFORE YOU SWEEP, and this is what makes that a rule rather than a preference.
+    A plant that SURVIVES means the guard does not hold, and fixing that is a SOURCE
+    change - so the plant pass is source-changing work, and a frozen-tree measurement
+    started before it is thrown away by the first survivor. It was stated here and then
+    ordered against in the next sentence, with nothing anywhere to stop it.
+    """
+    record = os.path.join(ROOT, ".last-replant")
+    try:
+        import json
+        body = json.load(io.open(record, encoding="utf-8"))
+    except (OSError, ValueError):
+        return ["the plant ledger has never been proven against this tree - run"
+                " `python tools/guard/replant.py`, which records .last-replant"]
+    if int(body.get("notProven") or 0) > 0:
+        return ["%d plant(s) did NOT prove their guard on the last full run; a guard that"
+                " does not hold is a source change, not a measurement"
+                % int(body["notProven"])]
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import require_build
+        now = require_build.tree_digest(os.path.join(ROOT, "src"))
+    except Exception as cannotDigest:            # pragma: no cover
+        return ["cannot digest src/ to check the plant proof is current (%s)"
+                % cannotDigest]
+    if now != body.get("src"):
+        return ["src/ has changed since the plants were last proven (recorded %s, now %s)"
+                " - re-run `python tools/guard/replant.py` before measuring"
+                % (str(body.get("src"))[:12], now[:12])]
+    return []
+
+
 def blockers():
     """Why a long measurement must not start now. Empty means it may."""
     why = []
@@ -85,6 +119,7 @@ def blockers():
             why.append("    - " + (it if len(it) < 100 else it[:97] + "..."))
         if len(items) > 8:
             why.append("    (+%d more)" % (len(items) - 8))
+    why.extend(unproven_plants())
     files = dirty_files()
     if files:
         why.append("%d file(s) have uncommitted changes, so the tree is still moving:" % len(files))

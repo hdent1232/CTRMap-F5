@@ -1947,6 +1947,18 @@
     "src"
    ],
    "must_say": "FAIL: and the override survived it"
+  },
+  {
+   "id": "a-sweep-may-start-before-the-plants-are-proven",
+   "why": "PLANT BEFORE YOU SWEEP was stated and then ordered against in the next sentence - fixes, then sweep, then plants - and nothing anywhere stopped it, which made it a suggestion rather than a rule. It is not a preference: a plant that SURVIVES means the guard does not hold, and fixing that is a SOURCE change, so the plant pass is source-changing work and a 2.5-hour frozen-tree sweep started before it is thrown away by the first survivor. Two plants survived on 2026-09-14 alone, and replant.py edits source and rebuilds per plant, so the two cannot even run concurrently. The gate records the src/ digest a full replant run proved the ledger against and refuses any frozen-tree measurement whose src/ has moved since. This plant stops blockers() asking.",
+   "file": "tools/guard/work_order.py",
+   "find": "    why.extend(unproven_plants())\n",
+   "replace": "    #PLANTED: nothing asks whether the plants were proven against this tree\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "must_say": "FAIL: and blockers() actually calls it"
   }
  ],
  "retired": [
