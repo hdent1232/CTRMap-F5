@@ -2231,6 +2231,58 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: a backslash in an inline script body is refused"
+  },
+  {
+   "id": "a-rewrite-may-reach-a-file-uncounted",
+   "why": "COUNT WHAT YOU EXPECT BEFORE RUNNING THE CHANGE. Nearly every self-inflicted error in this project was caught by arithmetic and never by re-reading: a regex that rewrote a function's own body so it returned itself, with the linter passing it; an edit that inserted a constant BEFORE the replacement, so the replacement rewrote the definition it had just added. The checker found a live one on its first run - autoplant.try_one wrote a substitution straight out while replant.py, the same function one directory over, had refused an ambiguous find since it was written. A find matching twice plants the defect in 2 places and records it as 1. This plant stops the checker looking.",
+   "file": "tools/guard/count_first.py",
+   "find": "            if not reaches_a_file(lines, i):\n",
+   "replace": "            if True:  #PLANTED: no rewrite ever reaches a file\n",
+   "suite": "ctrmap.tests.RuleRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: the uncounted rewrite is named"
+  },
+  {
+   "id": "a-number-may-move-startlingly-unremarked",
+   "why": "A STARTLING MAGNITUDE IS A BUG REPORT until proven otherwise, in EITHER direction. Measured here on 2026-09-20: a ratchet re-measured after a change meant to loosen its predicate came back exactly 103, the number it had been before, because the new pattern carried a 0x08 and matched only digits. The true value was 64, so 39 entries were miscounted and it went unread for 20 minutes because nothing was comparing. This plant removes the comparison.",
+   "file": "tools/guard/magnitude.py",
+   "find": "    moved = abs(now - previous)\n",
+   "replace": "    moved = 0  #PLANTED: nothing ever moves far\n",
+   "suite": "ctrmap.tests.RuleRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: 100 -> 400 is startling"
+  },
+  {
+   "id": "a-number-that-did-not-move-may-pass",
+   "why": "The half that was actually paid for. A number that is EXACTLY what it was before a change meant to move it is not reassurance - it is the shape of a measurement that did not happen. 103 twice, when the true number was 64. This plant removes the no-movement case and leaves only the ordinary allowance, which is what every version of this check before 2026-09-20 had.",
+   "file": "tools/guard/magnitude.py",
+   "find": "    if expect_change and previous == now:\n",
+   "replace": "    if False:  #PLANTED: an unchanged number is always fine\n",
+   "suite": "ctrmap.tests.RuleRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: 103 -> 103 across a change meant to move it is refused"
+  },
+  {
+   "id": "the-editor-may-be-pinned-to-one-game",
+   "why": "BUILD GENERAL SYSTEMS, NOT THE USER'S EXAMPLE. The owner describes what THEY would do as an illustration; the deliverable is the capability for the whole class, and this project has been corrected on it twice. CTRMap is XY, ORAS, SM and USUM by design, the gamedef seam exists with 4 profiles in it, and the owner's copy is 1 of them - not the subject. 2 sites outside the seam hardcode ORAS's title id today; this plant lets a 3rd in.",
+   "file": "tools/guard/game_identity.py",
+   "find": "        if path in KNOWN:\n            continue\n",
+   "replace": "        if True:  #PLANTED: every site is a known one\n            continue\n",
+   "suite": "ctrmap.tests.RuleRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a title id in a format class is refused"
   }
  ],
  "retired": [

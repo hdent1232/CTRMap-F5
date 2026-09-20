@@ -1,6 +1,6 @@
 {
  "_why": "Every rule in CLAUDE.md and the mechanism that refuses it, checked against the tree by tools/guard/rule_map.py. An entry naming nothing real is refused; a rule with no entry at all is refused; the number with no mechanism may only fall. On 2026-09-20 sixteen of these twenty-eight had nothing behind them, which nobody could see because nobody had counted.",
- "unenforced_ceiling": 3,
+ "unenforced_ceiling": 0,
  "rules": {
   "MEASURE, NEVER REASON FROM PLAUSIBILITY": {
    "by": "commit_guard.check_zero_claim",
@@ -19,16 +19,16 @@
    "note": "and census.py refusal 1: a census that read nothing is refused rather than reported clean"
   },
   "COUNT WHAT YOU EXPECT BEFORE RUNNING THE CHANGE": {
-   "by": "",
-   "note": "NOT ENFORCED. The arithmetic before a bulk edit is not something a hook can see; every mechanical version tried so far fires on honest work."
+   "by": "tools/guard/count_first.py",
+   "note": "a rewrite that reaches a file without counting its matches first is refused; it found autoplant.try_one writing a substitution straight out while replant.py, the same function one directory over, had refused an ambiguous find since it was written"
   },
   "A STARTLING MAGNITUDE IS A BUG REPORT": {
-   "by": "",
-   "note": "NOT ENFORCED. MutationBaselineTest notices a stale baseline but nothing refuses a result that moved by an implausible amount in either direction."
+   "by": "tools/guard/magnitude.py",
+   "note": "a recorded number that moved past its allowance, or did NOT move across a change meant to move it, is refused without a reason; wired into record_run.py and replant.py --owed. The second case was paid for on 2026-09-20: a ratchet re-measured to exactly 103 before and after, and the true number was 64"
   },
   "BUILD GENERAL SYSTEMS, NOT THE USER'S EXAMPLE": {
-   "by": "",
-   "note": "NOT ENFORCED. A judgement about scope, and no mechanical test for it has survived contact with honest work."
+   "by": "tools/guard/game_identity.py",
+   "note": "a game's identity hardcoded in production code outside src/ctrmap/gamedef is refused; two known sites (ZoneLimitPatch, ZoneLoadingPanel) are named and ratcheted, and a third is refused. Fixing the two is a behaviour change the owner has to check in the game, so it is not slipped into a guard commit"
   },
   "DETANGLE, DO NOT RELOCATE": {
    "by": "commit_guard.check_detangle",
