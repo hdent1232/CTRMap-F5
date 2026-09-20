@@ -164,10 +164,24 @@ def _edits_the_wiring(payload):
     every call, including the edit that would fix it. The escape is deliberately the narrowest
     one that works - a write whose target is inside `.claude`.
     """
+    #: A CALL THAT WRITES NOTHING CANNOT DO DAMAGE, and refusing one turns a bookkeeping
+    #: divergence into a wedged session. It did: an installed hook edited but not yet copied
+    #: to its version-controlled twin refused every call in the session, including the read
+    #: that would have shown what differed and the copy that would have fixed it - while a
+    #: second guard refused that copy because a replant run held the lock. Two guards,
+    #: interlocked, each correct on its own. A guard may refuse the work; it may never refuse
+    #: the way out.
+    written = shellin.writes_something(payload)
+    if not written:
+        return True
     checker = _checker_path()
-    for path in shellin.paths_written(payload):
+    for path in written:
         spelled = path.replace(chr(92), "/")
-        if ".claude" in spelled.split("/"):
+        parts = spelled.split("/")
+        if ".claude" in parts:
+            return True
+        #: the version-controlled half of the same wiring - the copy that repairs a divergence
+        if "hooks" in parts and "tools" in parts:
             return True
         #: AND THE CHECKER ITSELF. Leaving it out made the same trap one directory over: an
         #: edit that referred to a function it was about to add left the check raising, and

@@ -1842,8 +1842,8 @@
    "id": "a-known-hole-can-be-filed-again",
    "why": "A whole-app census read 264 production files, confirmed 280 defects, and ended with a completeness critic naming ELEVEN things it had not covered - a 291-line workspace writer no agent opened, a 952-line engine recorded as skimmed, 93 of 147 suite files never read, so its own 'already refused by a suite' exclusion had been applied from 37% of the guard layer. All eleven were filed in OUTSTANDING.md as work for the owner rather than read. Rule six refuses that commit; this plant takes rule six out of the runner's check list, which is the one-line edit that would make the whole thing decorative again. RETARGETED 2026-09-14: this plant edits the runner's check list, and adding rule seven rewrapped that line. The defect it plants is unchanged - the rule it names is dropped out of the runner - and the ledger refused to run until the substitution matched again, which is the check working.",
    "file": "tools/guard/commit_guard.py",
-   "find": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,\n                  check_blanket_claim):\n",
-   "replace": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim,\n                  check_blanket_claim):  #PLANTED: rule six is not run\n",
+   "find": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,\n                  check_blanket_claim, check_extraction_is_tested, check_detangle,\n                  check_in_game_claim, check_zero_claim, check_cheapest_evasion):\n",
+   "replace": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim,\n                  check_blanket_claim, check_extraction_is_tested, check_detangle,\n                  check_in_game_claim, check_zero_claim, check_cheapest_evasion):  #PLANTED: rule six is not run\n",
    "suite": "ctrmap.tests.CommitGuardTest",
    "args": [
     "."
@@ -1902,8 +1902,8 @@
    "id": "a-review-vouches-for-what-it-never-opened",
    "why": "A review of this project's guards read fourteen of them - eight hooks, four tools, two scripts - and wrote \"Everything else reviewed holds its shape\" into the commit message, about 130 registered suites and 150 plants. It is what a review feels like from the inside when the part you looked at is the part you already knew, and nothing anywhere made the difference between fourteen and a hundred and fifty visible. Rule seven refuses a blanket claim about what a commit did not open unless the message cites a measurement naming a path that exists; the measurement it points at, classify_guards.py, counts 130 suites, 81 driving a refusal and 53 owed a plant. This plant drops rule seven out of the runner's check list. RETARGETED 2026-09-14: this plant edits the runner's check list, and adding rule seven rewrapped that line. The defect it plants is unchanged - the rule it names is dropped out of the runner - and the ledger refused to run until the substitution matched again, which is the check working.",
    "file": "tools/guard/commit_guard.py",
-   "find": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,\n                  check_blanket_claim):\n",
-   "replace": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim,\n                  check_known_hole):  #PLANTED: rule seven is not run\n",
+   "find": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,\n                  check_blanket_claim, check_extraction_is_tested, check_detangle,\n                  check_in_game_claim, check_zero_claim, check_cheapest_evasion):\n",
+   "replace": "    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,\n                  check_extraction_is_tested, check_detangle,\n                  check_in_game_claim, check_zero_claim, check_cheapest_evasion):  #PLANTED: rule seven is not run\n",
    "suite": "ctrmap.tests.CommitGuardTest",
    "args": [
     "."
@@ -2076,6 +2076,71 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: a file that only DESCRIBES the traps is clean"
+  },
+  {
+   "id": "a-new-class-may-ship-with-no-test",
+   "why": "EXTRACTION IS NOT TESTING. Two modules split out of one function in the same refactor scored 94.7% and 37.3% under mutation; the only difference was that tests were deliberately written for one of them afterwards. Decomposition makes code REACHABLE for testing, which is not the same as tested, and a new file nothing names is the shape that scored 37.3. This plant lets one through.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "    if not unnamed:\n        return 0\n",
+   "replace": "    if True:  #PLANTED: a new class needs no test\n        return 0\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a new production class no test names is refused"
+  },
+  {
+   "id": "a-split-need-not-show-its-coupling",
+   "why": "DETANGLE, DO NOT RELOCATE. Splitting a 3,000-line god object into ten 300-line files whose pieces still read and write the same shared state is WORSE - the tangle is now in ten places and every piece looks small, which is what makes it feel like progress. The metric is edges, not line count. This plant lets a split through without a number.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "    found = _COUPLING_LINE.search(message)\n    if found and int(found.group(2)) < int(found.group(1)):\n        return 0\n",
+   "replace": "    #PLANTED: a split needs no measurement\n    if True:\n        return 0\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a split with no coupling number is refused"
+  },
+  {
+   "id": "a-commit-may-claim-it-was-tested-in-game",
+   "why": "THE OWNER DOES THE IN-APP AND IN-GAME TESTING. No suite here opens the editor and no suite boots a ROM - none of them can. A commit claiming something was checked in the game makes a statement nobody reading the log can check, and it is the single claim that ends a review before it starts. This plant allows it.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "    said = [phrase for phrase in _IN_GAME if phrase in low]\n",
+   "replace": "    said = []  #PLANTED: nothing claims to have been tested in game\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a commit claiming it was tested in game is refused"
+  },
+  {
+   "id": "a-zero-needs-no-control",
+   "why": "A CONFIDENT EMPTY RESULT IS A BUG UNTIL PROVEN OTHERWISE. Twice in this project a scan returned 0 across 536 files because it read the wrong struct field, and both times the zero read as good news rather than as the bug report it was. A scan never shown to find a planted case is not evidence of absence. This plant lets a zero be reported with nothing behind it.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "    found = _ZERO_CLAIM.search(message)\n",
+   "replace": "    found = None  #PLANTED: a zero is just a number\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a zero with no control is refused"
+  },
+  {
+   "id": "a-new-guard-need-not-say-how-to-get-round-it",
+   "why": "ASK WHAT THE CHEAPEST WAY TO SATISFY YOUR OWN GUARD IS, AND REFUSE THAT TOO. Every guard creates an incentive to satisfy it cheaply, and the cheap way is nearly always to do LESS work rather than more - a rule that forbids REPORTING a hole is satisfied fastest by not looking for one. A guard nobody has asked that question of has a way round it that nobody has written down. This plant stops the question being asked.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "    added = [f for f in added_files()\n             if any(f.startswith(home) for home in _GUARD_HOMES)\n",
+   "replace": "    added = [f for f in []  #PLANTED: no guard was added here\n             if any(f.startswith(home) for home in _GUARD_HOMES)\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a new guard with no evasion named is refused"
   }
  ],
  "retired": [

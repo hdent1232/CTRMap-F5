@@ -133,6 +133,11 @@ def written(payload):
             if not words:
                 continue
             head = os.path.basename(words[0]).lower()
+            #: `sed -n '1,40p' file` READS it. Treating every sed as a write refused a
+            #: plain read of a source file within minutes of this guard going in, which is
+            #: the shape that gets a guard switched off rather than fixed.
+            if head == "sed" and "-i" not in words:
+                continue
             if head in ("rm", "mv", "cp", "sed", "remove-item", "move-item", "copy-item",
                         "set-content", "add-content", "out-file"):
                 out.extend(w for w in words[1:] if not w.startswith("-"))
