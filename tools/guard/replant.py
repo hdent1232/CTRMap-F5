@@ -430,6 +430,34 @@ def record_proof(proven, not_proven):
     print("recorded the proof against this tree in .last-replant")
 
 
+def _compare_the_ceilings(book, n_owed, n_site, n_auto, argv):
+    """Record the four numbers this project acts on, and refuse a startling unexplained move.
+
+    `--magnitude "<reason>"` explains one, and the reason is stored beside the number so the
+    next comparison starts from an explained baseline rather than a surprised one.
+    """
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import magnitude
+    except ImportError as cannotCompare:                 # pragma: no cover
+        print("WARNING: cannot compare these numbers to the last run (%s)" % cannotCompare)
+        return 0
+    why = None
+    if "--magnitude" in argv:
+        why = " ".join(argv[argv.index("--magnitude") + 1:]).strip() or None
+    series = (("ledger.owed", n_owed), ("ledger.owed_generalisation", n_site),
+              ("ledger.owed_real_defect", n_auto),
+              ("ledger.no_cost", len(without_a_cost(book))),
+              ("ledger.plants", len(book.get("plants") or [])))
+    worst = 0
+    for name, value in series:
+        ok, said = magnitude.record(name, value, why)
+        if not ok:
+            print(said)
+            worst = 1
+    return worst
+
+
 def main(argv):
     book = ledger()
     if "--selftest" in argv:
@@ -447,7 +475,13 @@ def main(argv):
             print("    auto only: %s" % name)
         for name in missing:
             print("    %s" % name)
-        return 0
+        # A STARTLING MAGNITUDE IS A BUG REPORT, and these four numbers are the ones this
+        # project acts on. One of them - the costless count - was re-measured after a change
+        # meant to loosen its predicate and came back EXACTLY 103, the number it had been
+        # before, because the new pattern had a 0x08 in it and matched only digits. The true
+        # value was 64. The same number twice across a change that should have moved it went
+        # unread for twenty minutes, because nothing was comparing.
+        return _compare_the_ceilings(book, n_owed, n_site, n_auto, argv)
 
     bad = check_shape(book)
     if bad:

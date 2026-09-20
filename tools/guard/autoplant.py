@@ -205,8 +205,24 @@ def fail_line(out):
 
 
 def try_one(src, find, repl, cls, args, java, javac):
-    """Plant it, compile it, run the suite, put the file back. (verdict, said)."""
+    """Plant it, compile it, run the suite, put the file back. (verdict, said).
+
+    COUNT WHAT YOU EXPECT BEFORE RUNNING THE CHANGE. This wrote the substitution straight out
+    without asking how many times it matched, while `replant.py` - the same function, one
+    directory over - has refused an ambiguous find since it was written. A find matching TWICE
+    plants the defect in two places and records it as one, so a guard that noticed only the
+    second copy would be scored as noticing the plant; a find matching NOTHING writes the file
+    back unchanged and scores the suite's ordinary green as "survived", which reads as a hole
+    in a guard that does not have one.
+
+    Neither failure is loud. Both are arithmetic, and the arithmetic is one line.
+    """
     raw, text, crlf = read(src)
+    hits = text.count(find)
+    if hits != 1:
+        return "ambiguous" if hits else "nomatch", (
+            "the substitution matches %s %d time(s) - a plant has to be placed exactly once"
+            % (os.path.basename(src), hits))
     write_text(src, text.replace(find, repl), crlf)
     try:
         if not compile_one(src, javac):

@@ -1,0 +1,27 @@
+{
+ "ledger.no_cost": {
+  "previous": 64,
+  "value": 64,
+  "why": null
+ },
+ "ledger.owed": {
+  "previous": 53,
+  "value": 53,
+  "why": null
+ },
+ "ledger.owed_generalisation": {
+  "previous": 3,
+  "value": 3,
+  "why": null
+ },
+ "ledger.owed_real_defect": {
+  "previous": 49,
+  "value": 49,
+  "why": null
+ },
+ "ledger.plants": {
+  "previous": 178,
+  "value": 182,
+  "why": null
+ }
+}

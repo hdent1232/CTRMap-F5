@@ -89,6 +89,24 @@ def main(argv):
         json.dumps(record, indent=1, sort_keys=True) + LF)
 
     print("%d suite(s) passed in %.1fs" % (record["suites_passed"], record["seconds"]))
+
+    # A STARTLING MAGNITUDE IS A BUG REPORT, and this number is the one a commit
+    # message is allowed to claim. A battery that suddenly announces a third fewer suites
+    # has not become faster - something stopped registering, and the count looks exactly as
+    # healthy as it did before. Recorded AFTER .last-suite-run is written, so a startling
+    # move is reported without throwing away a battery that has already run.
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import magnitude
+        ok, said = magnitude.record("battery.suites_announced", record["suites_announced"],
+                                    why=" ".join(argv[argv.index("--magnitude") + 1:])
+                                    if "--magnitude" in argv else None)
+        print(said)
+        if not ok:
+            return 1
+    except Exception as cannotCompare:              # pragma: no cover
+        print("WARNING: could not compare this run's size to the last (%s: %s)"
+              % (type(cannotCompare).__name__, cannotCompare))
     if record["suites_failed"]:
         # NAMED, not counted. Finding out WHICH costs a whole battery otherwise.
         print("FAILED SUITES:")
