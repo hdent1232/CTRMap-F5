@@ -2283,6 +2283,45 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: a title id in a format class is refused"
+  },
+  {
+   "id": "agents-may-edit-at-the-same-time",
+   "why": "MEASURED IN DT ENGINE'S OWN DOCUMENTS on 2026-09-20. 11 agent audit rounds produced 476 finding headlines and 1.8 MB of prose over 41 distinct code locations; rounds 11 and 13 found 0 that earlier rounds had not, and 6 files were named by 10 or 11 separate rounds. The width cap never touched the part that broke: layer5-integration-items.md opens 'Each agent owned a disjoint file set. These are the changes they identified but could not make, because the change belongs in another agent's file.' One agent renamed a check's output keys and the consumer was another agent's file, so the corrected output never reached the operator at all. 6 agents owning disjoint files across a shared contract is the same defect as 60, so this refuses parallel EDITING at any width while leaving parallel READING alone. This plant removes it.",
+   "file": "tools/hooks/guard_fanout.py",
+   "find": "    if _EDITS.search(script):\n",
+   "replace": "    if False:  #PLANTED: a worktree per agent is fine\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a worktree per agent is parallel editing"
+  },
+  {
+   "id": "one-agent-per-file-is-not-noticed",
+   "why": "The other half of the same shape, and the one that produced the integration file: a fan-out whose items are SOURCE FILES, one agent each, with an edit verb in the prompt. That is the ownership split that left 2 agents fixing the same thing concurrently - caught by luck, and flagged in their own notes 'so the integrator does not double-apply it'. This plant makes the guard see only the worktree signal, which a script can simply not use.",
+   "file": "tools/hooks/guard_fanout.py",
+   "find": "    if _PER_FILE.search(script) and _EDIT_WORDS.search(script):\n",
+   "replace": "    if False:  #PLANTED: one agent per file is nobody's business\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: and so is one agent per source file with an edit verb"
+  },
+  {
+   "id": "a-survey-is-refused-as-an-edit",
+   "why": "THE NEGATIVE HALF, and it is not a formality. A fan-out that READS and brings findings back to one writer composes - it was merely wasteful. A guard that refused those too would refuse the one shape that works, and a guard that refuses honest work is one that gets switched off: one beside this refused mutate2.py --selftest, which the battery itself runs, within the hour. This plant makes every fan-out look like an edit.",
+   "file": "tools/hooks/guard_fanout.py",
+   "find": "    if width is not None and width <= 1:\n        return None\n",
+   "replace": "    if False:  #PLANTED: everything is a parallel edit\n        return None\n    return \"PLANTED\"\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: while a fan-out of review lenses is not"
   }
  ],
  "retired": [

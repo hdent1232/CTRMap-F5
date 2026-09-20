@@ -183,6 +183,13 @@ def _edits_the_wiring(payload):
         #: the version-controlled half of the same wiring - the copy that repairs a divergence
         if "hooks" in parts and "tools" in parts:
             return True
+        #: A REMEDY ANOTHER GUARD NAMES IS NOT SOMETHING THIS ONE MAY REFUSE. The
+        #: suite-running guard's refusal ends "stop it and delete .mutation-in-flight"; this
+        #: check then refused that delete, and the sync that would have cleared this check was
+        #: refused by the suite-running guard. Two guards, each blocking the other's
+        #: precondition, with the way out written in both messages.
+        if parts and parts[-1] in (".mutation-in-flight", ".battery-running", ".suite-running"):
+            return True
         #: AND THE CHECKER ITSELF. Leaving it out made the same trap one directory over: an
         #: edit that referred to a function it was about to add left the check raising, and
         #: the refusal then blocked the edit that would have finished it. A guard may refuse

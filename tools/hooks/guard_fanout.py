@@ -163,9 +163,65 @@ FANOUT_NAMES = ("workflow", "agent", "task", "fleet", "swarm", "subagent")
 FANOUT_KEYS = ("subagent_type", "agents", "resumeFromRunId", "scriptPath")
 
 
+#: Tools that MANAGE work already running rather than start any. `TaskStop` carries "task" and
+#: was classified as a fan-out of unreadable width, so the hook refused the command that STOPS
+#: a run - it cost ten minutes and would have cost two hours of a replant that had to be
+#: restarted anyway. A guard that refuses the brakes is one that gets switched off.
+NOT_A_SPAWN = ("stop", "kill", "cancel", "abort", "output", "list", "status", "read", "wait")
+
+
+#: WHAT ACTUALLY FAILED, measured in DT Engine's own documents on 2026-09-20 rather than
+#: argued. Eleven agent audit rounds produced 476 finding headlines and 1.8 MB of prose over
+#: 41 distinct code locations. Rounds 11 and 13 found ZERO locations the earlier rounds had
+#: not; rounds 8, 10 and 12 found one each. Six files were named by ten or eleven separate
+#: rounds - every round rebuilding the same context from scratch.
+#:
+#: The width cap does not touch the part that broke. `docs/layer5-integration-items.md` opens:
+#: "Each agent owned a disjoint file set. These are the changes they identified but COULD NOT
+#: MAKE, because the change belongs in another agent's file." One agent corrected a check's
+#: output and renamed its keys; the consumer was another agent's file, so "the browser still
+#: receives no veto block, so none of the corrected check-8 output reaches the operator" - the
+#: fix was made and never reached the user. Another entry records two agents fixing the same
+#: thing concurrently, caught by luck.
+#:
+#: SIX AGENTS OWNING DISJOINT FILES ACROSS A SHARED CONTRACT IS THE SAME DEFECT AS SIXTY. The
+#: cap passes it. Unlimited tokens make it worse, not better: more agents, more seams, more
+#: integration file. So parallel WRITING is refused on its own terms, at any width.
+#:
+#: Reading in parallel is not this. A survey that returns findings composes fine - it was
+#: merely wasteful. What does not compose is agents editing a codebase at the same time.
+_EDITS = re.compile(r"isolation\s*:\s*[\"']worktree[\"']")
+_EDIT_WORDS = re.compile(
+    r"\b(fix|edit|change|apply|refactor|implement|rewrite|patch|migrate|update|modify|"
+    r"repair|convert|port)\b", re.I)
+#: a fan-out whose ITEMS are source files is one agent per file - the disjoint-ownership shape
+_PER_FILE = re.compile(r"[\"'][\w./-]+\.(?:py|java|ts|tsx|js|jsx|go|rs|c|cpp|h|cs|rb|ps1)"
+                       r"[\"']\s*,")
+
+
+def parallel_edit(script, width):
+    """Why this fan-out has agents editing at the same time, or None.
+
+    Two signals, both from the script itself: `isolation: 'worktree'`, which the workflow API
+    documents as being for agents that mutate files in parallel, and a fan-out over a list of
+    SOURCE FILES whose prompt carries an edit verb - one agent per file, which is exactly the
+    ownership split that produced an integration file instead of a working change.
+    """
+    if width is not None and width <= 1:
+        return None
+    if _EDITS.search(script):
+        return "it asks for a worktree per agent, which is what parallel file mutation needs"
+    if _PER_FILE.search(script) and _EDIT_WORDS.search(script):
+        return ("it fans out over a list of SOURCE FILES and its prompts carry an edit verb - "
+                "one agent per file, each blind to the seams it shares with the others")
+    return None
+
+
 def spawns_workers(tool, tool_input):
     """(is a fan-out, is it workflow-shaped). A spawn nobody can classify counts as one."""
     name = (tool or "").lower()
+    if any(word in name for word in NOT_A_SPAWN):
+        return False, False
     by_name = any(word in name for word in FANOUT_NAMES)
     by_shape = isinstance(tool_input, dict) and any(k in tool_input for k in FANOUT_KEYS)
     if not (by_name or by_shape):
@@ -258,6 +314,41 @@ def decide(payload):
             # So the width now comes from the SCRIPT, and an unreadable width is a
             # REFUSAL rather than a zero. "I could not see it" was the whole defect.
             width, how = script_width(payload.get("tool_input", {}))
+
+            #: BEFORE THE WIDTH, because width is not what broke. A fan-out of six agents
+            #: each owning a file across a shared contract fails the same way sixty do.
+            script_text = str(tool_input.get("script") or "")
+            if not script_text and tool_input.get("scriptPath"):
+                try:
+                    with open(tool_input["scriptPath"], encoding="utf-8",
+                              errors="replace") as fh:
+                        script_text = fh.read()
+                except OSError:
+                    script_text = ""
+            shape = parallel_edit(script_text, width)
+            if shape and os.environ.get("CTRMAP_ALLOW_PARALLEL_EDIT") != "1":
+                deny(
+                    "BLOCKED BY PROJECT POLICY: this fans out agents that EDIT AT THE SAME "
+                    "TIME - %s.\n\n"
+                    "This is not the width cap, and making it narrower does not help. "
+                    "Measured in DT Engine's own documents: eleven agent audit rounds, 476 "
+                    "finding headlines, 1.8 MB of prose, 41 distinct code locations. Rounds "
+                    "11 and 13 found NOTHING the earlier rounds had not. Six files were named "
+                    "by ten or eleven separate rounds, each one rebuilding the same context.\n\n"
+                    "And the fix pass is worse than wasteful. `layer5-integration-items.md` "
+                    "opens: \"Each agent owned a disjoint file set. These are the changes they "
+                    "identified but COULD NOT MAKE, because the change belongs in another "
+                    "agent's file.\" One agent corrected a check and renamed its output keys; "
+                    "the consumer lived in another agent's file, so the corrected output never "
+                    "reached the operator at all. Another entry records two agents fixing the "
+                    "same thing concurrently, caught by luck.\n\n"
+                    "Unlimited tokens make this worse, not better: more agents, more seams, "
+                    "more integration file. Do the edit in the main thread, or fan out to READ "
+                    "and bring the findings back to one writer - a survey composes, a parallel "
+                    "rewrite does not.\n\n"
+                    "Owner override for a case that genuinely needs it: "
+                    "CTRMAP_ALLOW_PARALLEL_EDIT=1." % shape)
+
             if width is None:
                 deny(
                     "BLOCKED BY PROJECT POLICY: this launch does not say how wide it "

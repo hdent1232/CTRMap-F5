@@ -65,6 +65,7 @@ public class HookRefusalsTest {
 		aRunThatIsOverDoesNotRefuse(hooks);
 		theStatusOfAPipelineBelongsToItsFilter(hooks);
 		aBackslashInAnInlineScriptIsRefused(hooks);
+		agentsMayNotEditAtTheSameTime(hooks);
 
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
 		if (fails != 0) {
@@ -323,6 +324,82 @@ public class HookRefusalsTest {
 	/** A double quote, for building a command without escaping it twice. */
 	static final String QUOTE = String.valueOf((char) 34);
 
+	/** A newline, for building a script body without escaping one. */
+	static final String NL = String.valueOf((char) 10);
+
+	/**
+	 * Agents editing a codebase at the same time is refused at ANY width.
+	 *
+	 * <p>WHAT ACTUALLY FAILED, measured in DT Engine's own documents on 2026-09-20 rather than
+	 * argued. Eleven agent audit rounds produced <b>476 finding headlines and 1.8 MB of prose
+	 * over 41 distinct code locations</b>. Rounds 11 and 13 found ZERO locations the earlier
+	 * rounds had not; rounds 8, 10 and 12 found one each. Six files were named by ten or eleven
+	 * separate rounds, each one rebuilding the same context from scratch.
+	 *
+	 * <p>The width cap never touched the part that broke.
+	 * {@code docs/layer5-integration-items.md} opens: <i>"Each agent owned a disjoint file set.
+	 * These are the changes they identified but could not make, because the change belongs in
+	 * another agent's file."</i> One agent corrected a check and renamed its output keys; the
+	 * consumer lived in another agent's file, so the corrected output never reached the
+	 * operator. Another entry records two agents fixing the same thing concurrently, caught by
+	 * luck.
+	 *
+	 * <p>SIX AGENTS OWNING DISJOINT FILES ACROSS A SHARED CONTRACT IS THE SAME DEFECT AS SIXTY,
+	 * so this is not a cap and narrowing does not help. Reading in parallel is a different
+	 * thing and stays allowed: a survey composes, a parallel rewrite does not.
+	 */
+	static void agentsMayNotEditAtTheSameTime(File hooks) throws Exception {
+		System.out.println("--- agents editing at the same time");
+		File guard = new File(hooks, "guard_fanout.py");
+		check(guard.isFile(), "the guard is installed at " + guard.getPath());
+		String worktree = "await parallel(FILES.map(f => () => agent(`go`, "
+				+ "{isolation: 'worktree'})))";
+		String perFile = "const FILES = ['a/b/run.py', 'a/c/service.py']" + NL
+				+ "await parallel(FILES.map(f => () => agent(`fix ${f}`)))";
+		String survey = "const LENSES = ['correctness', 'security']" + NL
+				+ "await parallel(LENSES.map(l => () => agent(`review via ${l} and report`)))";
+
+		check(shape(guard, worktree, 3).contains("SHAPE"),
+				"a worktree per agent is parallel editing");
+		check(shape(guard, perFile, 3).contains("SHAPE"),
+				"and so is one agent per source file with an edit verb");
+		check(shape(guard, survey, 3).contains("NONE"),
+				"while a fan-out of review lenses is not - a survey composes");
+		check(shape(guard, worktree, 1).contains("NONE"),
+				"and neither is a single agent, at any isolation");
+	}
+
+	/** Asks the guard whether a script has the parallel-edit shape. SHAPE or NONE. */
+	static String shape(File guard, String script, int width) throws Exception {
+		File dir = Scratch.dir("fanoutshape");
+		File ask = new File(dir, "ask.py");
+		Files.write(ask.toPath(),
+				("import importlib.util, io, sys\n"
+				+ "spec = importlib.util.spec_from_file_location('g', sys.argv[1])\n"
+				+ "g = importlib.util.module_from_spec(spec); spec.loader.exec_module(g)\n"
+				+ "script = io.open(sys.argv[2], encoding='utf-8').read()\n"
+				+ "print('SHAPE' if g.parallel_edit(script, int(sys.argv[3])) else 'NONE')\n")
+						.getBytes(StandardCharsets.UTF_8));
+		File body = new File(dir, "script.js");
+		Files.write(body.toPath(), script.getBytes(StandardCharsets.UTF_8));
+		ProcessBuilder pb = new ProcessBuilder("python", ask.getAbsolutePath(),
+				guard.getAbsolutePath(), body.getAbsolutePath(), String.valueOf(width));
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		String said = CommitGuardTest.drain(p);
+		p.waitFor();
+		if (!said.contains("SHAPE") && !said.contains("NONE")) {
+			System.out.println("  FAIL: the guard never answered - " + oneLine(said));
+			fails++;
+		}
+		return said;
+	}
+
+	static String oneLine(String said) {
+		String flat = said.replace('\n', ' ').replace('\r', ' ').trim();
+		return flat.length() > 200 ? flat.substring(0, 200) : flat;
+	}
+
 	static String quoted(String s) {
 		StringBuilder sb = new StringBuilder("\"");
 		for (char c : s.toCharArray()) {
@@ -388,10 +465,7 @@ public class HookRefusalsTest {
 		return said;
 	}
 
-	static String oneLine(String said) {
-		String flat = said.replace('\n', ' ').replace('\r', ' ').trim();
-		return flat.length() > 200 ? flat.substring(0, 200) : flat;
-	}
+
 
 	static boolean git(File repo, String... args) throws Exception {
 		java.util.List<String> line = new java.util.ArrayList<>();

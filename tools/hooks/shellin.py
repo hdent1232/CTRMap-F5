@@ -124,7 +124,14 @@ def writes_something(payload):
     out = list(paths_written(payload))
     for command in commands(payload):
         for found in _re.finditer(r">>?\s*([^\s|;&]+)", command):
-            out.append(found.group(1).strip('"' + chr(39)))
+            target = found.group(1).strip('"' + chr(39))
+            #: DISCARDING output is not writing a file. `2>/dev/null` on a read made the
+            #: wiring check call it a write and refuse it, which meant the command that
+            #: would have shown what differed was itself refused - the same trap as a guard
+            #: that blocks its own repair, one level along.
+            if target.rsplit("/", 1)[-1].lower() in ("null", "nul", "$null"):
+                continue
+            out.append(target)
         for piece in _re.split(r"[;|&]+", command):
             words = piece.strip().split()
             if not words:
