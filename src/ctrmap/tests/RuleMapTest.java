@@ -54,6 +54,8 @@ public class RuleMapTest {
 		aRuleWithNoEntryIsRefused(checker);
 		aMechanismThatDoesNotExistIsRefused(checker);
 		aClauseInsideAnEnforcedRuleIsRefused(checker);
+		aRuleBodyIsReadWholeHoweverItIsWritten(checker);
+		aRuleWhoseBodyIsMissingIsUnknownNotClauseFree(checker);
 		anUnreadableRuleFileIsNotAnEmptyOne(checker);
 
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
@@ -175,6 +177,86 @@ public class RuleMapTest {
 		said = ask(checker, noMap);
 		check(said.contains("UNKNOWN") || said.contains("cannot read"),
 				"and a missing map is UNKNOWN, not clean: " + firstReason(said));
+	}
+
+	/**
+	 * A rule's body is read WHOLE, however it is written.
+	 *
+	 * <p>MEASURED 2026-09-21 against this project's own CLAUDE.md, before any of this was
+	 * changed: <b>11 of 31 rules were read only as far as their first bold emphasis</b>, and
+	 * <b>2,921 characters</b> of the rule file — six imperatives among them — had never been
+	 * read by the clause audit at all. The reported count was 31 of 31 throughout, because a
+	 * body that stops early has no unmapped clauses in the part that is missing.
+	 *
+	 * <p>Three separate defects, one shape: the parser was reading MARKDOWN and deciding by
+	 * one feature of it at a time. Bold meant headline, so emphasis ended a body. A headline
+	 * was cut at its first full stop, so half a rule's name reached the ledger. A headline
+	 * stated twice was a dict key, so one of two bodies was written over the other.
+	 */
+	static void aRuleBodyIsReadWholeHoweverItIsWritten(File checker) throws Exception {
+		System.out.println("--- a rule body is read whole, and a headline is read whole");
+
+		File emphasis = tree(
+				"**NEVER DO THE THING.** It costs, and it cost **twice**. Never run Tidewater.\n",
+				"{\"unenforced_ceiling\": 0, \"rules\": {"
+				+ "\"NEVER DO THE THING\": {\"by\": \"tools/guard/rule_map.py\"}}}");
+		String said = ask(checker, emphasis);
+		check(said.contains("Tidewater"),
+				"a clause AFTER a bolded phrase is still audited: " + firstReason(said));
+
+		File stop = tree("**DO THE THING. AND THE OTHER THING.** It costs.\n",
+				"{\"unenforced_ceiling\": 0, \"rules\": {"
+				+ "\"DO THE THING\": {\"by\": \"tools/guard/rule_map.py\"}}}");
+		said = ask(checker, stop);
+		check(said.contains("AND THE OTHER THING"),
+				"a headline is not cut at its first full stop: " + firstReason(said));
+		check(said.contains("no longer a rule") || said.contains("NO ENTRY"),
+				"...so an entry naming half of one is refused, not quietly matched");
+
+		// A HEADLINE STATED TWICE HAS BOTH BODIES. This project's CLAUDE.md states "A RUN THAT
+		// KNOWS WHAT IT MISSED GOES BACK" in section 1 and again in section 2, each with its
+		// own wording of the same obligation - and a dict keyed by headline kept one of them.
+		// THE LEDGER MAPS THE SECOND STATEMENT'S CLAUSE AND NOT THE FIRST'S, deliberately.
+		// A dict keyed by headline keeps the LAST body, so asserting the second one's clause
+		// is reported is an assertion that passes whether the bodies are joined or not - the
+		// first shape of this test did exactly that, and its plant survived.
+		File twice = tree("**SAY THE THING.** Never run Tidewater.\n\n"
+				+ "**SAY THE THING.** Never run Bulldozer.\n",
+				"{\"unenforced_ceiling\": 0, \"rules\": {"
+				+ "\"SAY THE THING\": {\"by\": \"tools/guard/rule_map.py\","
+				+ " \"clauses\": {\"Never run Bulldozer\": \"tools/guard/rule_map.py\"}}}}");
+		said = ask(checker, twice);
+		check(said.contains("Tidewater"),
+				"the FIRST statement's clauses survive the second: " + firstReason(said));
+	}
+
+	/**
+	 * A rule whose body cannot be found is UNKNOWN, and an unknown is not a rule without
+	 * clauses.
+	 *
+	 * <p>The clause audit looked each body up with {@code bodies.get(rule, "")} while a
+	 * second parser produced the names — so a rule the two disagreed about was audited as
+	 * having no clauses at all, silently, inside the tool that audits
+	 * <i>A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT.</i>
+	 *
+	 * <p>THIS ONE CARRIES NO PLANT, and that is a claim, not an omission. The two readers were
+	 * made one — {@code rules_in} now returns {@code list(bodies_in(text))} — so a name without
+	 * a body cannot arise from the file any more, and the refusal behind it is defence with no
+	 * reachable path to it. A plant would have to split the readers apart again, which is the
+	 * defect itself rather than a plant against it. If they are ever separated, this branch
+	 * becomes reachable and must be planted that day.
+	 */
+	static void aRuleWhoseBodyIsMissingIsUnknownNotClauseFree(File checker) throws Exception {
+		System.out.println("--- a rule whose body cannot be found");
+		File root = tree("**NEVER DO THE THING.** It costs. Never run Tidewater.\n",
+				"{\"unenforced_ceiling\": 0, \"rules\": {"
+				+ "\"NEVER DO THE THING\": {\"by\": \"tools/guard/rule_map.py\","
+				+ " \"clauses\": {\"Never run Tidewater\": \"tools/guard/rule_map.py\"}}}}");
+		String said = ask(checker, root);
+		check(said.contains("have a mechanism"),
+				"the two readers agree on this tree: " + firstReason(said));
+		check(!said.contains("UNKNOWN - not none"),
+				"...so nothing claims a body is missing when it is not");
 	}
 
 	// ---------------------------------------------------------------- fixtures

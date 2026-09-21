@@ -2363,9 +2363,9 @@
   },
   {
    "id": "a-rule-clause-may-have-no-mechanism",
-   "why": "THE HOLE IN THE MAP ITSELF. rule_map checked a rule's HEADLINE and reported 28 of 28 enforced while 4 imperatives inside those rules' bodies had nothing behind them - 3 prohibitions and 1 requirement. The audit was built to look at exactly the level where that is invisible. This plant stops it reading the bodies again.",
+   "why": "THE HOLE IN THE MAP ITSELF. rule_map checked a rule's HEADLINE and reported 28 of 28 enforced while 4 imperatives inside those rules' bodies had nothing behind them - 3 prohibitions and 1 requirement. The audit was built to look at exactly the level where that is invisible. This plant stops it reading the bodies again. RETARGETED 2026-09-21: the line moved when bodies.get(rule, chr(34)+chr(34)) became a refusal - an absent body is UNKNOWN, not a rule without clauses - and the defect this plant restores is unchanged.",
    "file": "tools/guard/rule_map.py",
-   "find": "        for clause in clauses_in(bodies.get(rule, \"\")):\n",
+   "find": "        for clause in clauses_in(bodies[rule]):\n",
    "replace": "        for clause in []:  #PLANTED: a rule has no clauses\n",
    "suite": "ctrmap.tests.RuleMapTest",
    "args": [
@@ -2425,6 +2425,45 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: a count TRUE for another tree is refused"
+  },
+  {
+   "file": "tools/guard/rule_map.py",
+   "suite": "ctrmap.tests.RuleMapTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "id": "a-rule-body-may-end-at-its-first-bold-emphasis",
+   "why": "MEASURED HERE on 2026-09-21 against this project's own CLAUDE.md: 11 of 31 rules were read only as far as their first bolded phrase, and 2,921 characters of the rule file - six imperatives among them - had never been read by the clause audit at all. The reported count was 31 of 31 throughout, and could not have been anything else: a body that stops early has no unmapped clauses in the part that is missing. The parser split on EVERY bolded span because bold means headline, and bold also means emphasis. Section 16 of the bootstrap bundle records this same check being built to recognise one shape twice; this was the third.",
+   "find": "        body = \" \".join(text[after:end].split()).strip()\n",
+   "replace": "        body = \" \".join(text[after:end].split(\"**\")[0].split()).strip()  #PLANTED: emphasis ends the body\n",
+   "must_say": "FAIL: a clause AFTER a bolded phrase is still audited"
+  },
+  {
+   "file": "tools/guard/rule_map.py",
+   "suite": "ctrmap.tests.RuleMapTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "id": "a-rule-headline-may-be-cut-at-its-first-full-stop",
+   "why": "MEASURED HERE on 2026-09-21: the owner's rule DO THE WORK MECHANICALLY. AGENT SWEEPS ARE THE LAST RESORT was audited under the first half of its name, so the ledger carried an entry for half a rule and the other half was named nowhere. Worse, the two readers of CLAUDE.md then disagreed by exactly that one name, and the clause audit looked each body up with bodies.get(rule, \"\") - so that rule's whole body was audited as having NO CLAUSES, silently, inside the tool that audits A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT.",
+   "find": "    found = [(\" \".join(m.group(1).split()).strip(\" .\"), m.start(), m.end())\n",
+   "replace": "    found = [(\" \".join(m.group(1).split()).split(\".\")[0].strip(), m.start(), m.end())  #PLANTED\n",
+   "must_say": "FAIL: a headline is not cut at its first full stop"
+  },
+  {
+   "file": "tools/guard/rule_map.py",
+   "suite": "ctrmap.tests.RuleMapTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "id": "a-rule-stated-twice-may-keep-only-one-body",
+   "why": "MEASURED HERE on 2026-09-21: A RUN THAT KNOWS WHAT IT MISSED GOES BACK is stated in section 1 and again in section 2 of this CLAUDE.md, each with its own wording of the obligation, and bodies_in keyed a dict by headline - so one of the two bodies was written over the other and its clauses were never audited. Two statements of one rule are two sets of obligations. The FIRST version of the test for this asserted the second statement's clause, which a last-wins dict keeps, so the plant SURVIVED: a fixture that cannot report the wrong answer can only report the right one.",
+   "find": "        out[head] = (out[head] + \" \" + body).strip() if head in out else body\n",
+   "replace": "        out[head] = body  #PLANTED: the last statement wins\n",
+   "must_say": "FAIL: the FIRST statement's clauses survive the second"
   }
  ],
  "retired": [

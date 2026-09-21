@@ -90,6 +90,28 @@ def source_digest(root=ROOT):
                 digest.update(handle.read().replace(b"\r\n", b"\n"))
         except OSError:
             digest.update(b"<unreadable>")
+    #: AND THE RULE FILE, WHICH IS NOT IN THE REPOSITORY. CLAUDE.md governing this tree sits
+    #: ABOVE the repository root, so git has never heard of it - yet RuleMapTest's verdict is
+    #: a reading of it, and so is every clause obligation in the map. Without this a rule could
+    #: be added, the battery's record would still call itself current, and the count it carries
+    #: would be about a rule set that no longer exists. The same walk `rule_map.claude_md` does,
+    #: written out rather than imported because the scratch repositories the suites build carry
+    #: this file and nothing else.
+    here = os.path.abspath(root)
+    for _ in range(4):
+        rules = os.path.join(here, "CLAUDE.md")
+        if os.path.isfile(rules):
+            digest.update(b"CLAUDE.md")
+            try:
+                with open(rules, "rb") as handle:
+                    digest.update(handle.read().replace(b"\r\n", b"\n"))
+            except OSError:
+                digest.update(b"<unreadable>")
+            break
+        parent = os.path.dirname(here)
+        if parent == here:
+            break
+        here = parent
     return digest.hexdigest()
 
 #: Where a guard can live in THIS repository. `src/ctrmap/tests` is the Java suite the battery
