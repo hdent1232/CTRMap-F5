@@ -1,8 +1,8 @@
 {
  "battery.suites_announced": {
-  "previous": null,
-  "value": 0,
-  "why": null
+  "previous": 0,
+  "value": 136,
+  "why": "the previous recorded value of 0 was not a measurement: it came from a run the queue gate REFUSED before it announced a single suite, and record_run wrote it as the first baseline for this key. The honest size of this battery is what test.ps1 registers plus the one suite announced outside the array, measured today at 136. record_run no longer records a magnitude for a run that announced nothing."
  },
  "ledger.no_cost": {
   "previous": 64,
@@ -25,8 +25,8 @@
   "why": null
  },
  "ledger.plants": {
-  "previous": 202,
-  "value": 203,
+  "previous": 203,
+  "value": 204,
   "why": null
  }
 }
