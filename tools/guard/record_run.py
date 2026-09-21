@@ -44,13 +44,57 @@ _FAILED = re.compile(r"^FAILED:\s*(.+?)\s*$", re.M)
 _ALL_PASS = re.compile(r"^ALL SUITES PASS\b", re.M)
 
 
-def run(quick=False):
+def failed_in(text, announced):
+    """Which ANNOUNCED suites the verdict line names as failed.
+
+    NOT `line.split(",")`. test.ps1 joins the failed names with ", " and suite names contain
+    ", " themselves - "Battery hygiene (temp paths, corpus args)" is one suite - so splitting
+    on the separator cuts a name in half. MEASURED on the run of 2026-09-21: four suites
+    failed, the split produced five names, two of which matched nothing announced, and
+    `passed = [n for n in announced if n not in failed]` therefore counted the FAILING battery
+    hygiene suite as PASSED. The record said 133 of 136 passed with four red, and that record
+    is the only number a commit message is allowed to claim.
+
+    The announced names are already known and exact, so ask which of them the line contains
+    rather than trying to cut it up. And then ACCOUNT FOR THE WHOLE LINE: if anything is left
+    over after removing the names that matched, a suite has been renamed or the verdict line
+    has changed shape, and the difference between that and "nothing failed" must not be
+    silent - which is the very defect being fixed, one level up.
+    """
+    named = _FAILED.search(text)
+    if not named:
+        return []
+    line = named.group(1)
+    hits = [n for n in announced if n and n in line]
+    rest = line
+    for name in sorted(hits, key=len, reverse=True):
+        rest = rest.replace(name, "", 1)
+    #: The SEPARATORS are what is left between the names that were removed, and they are not
+    #: leftover text. Trimming only the ends left ", ," in the middle of four removed names and
+    #: reported a phantom fifth failure - caught by the control, which drove this on the real
+    #: verdict line from the run that exposed the defect in the first place.
+    rest = rest.replace(",", " ").strip()
+    if rest:
+        hits.append("(the verdict line names something that was never announced: %r - a suite"
+                    " renamed, or this parser out of step with test.ps1)" % rest[:120])
+    return hits
+
+
+def run(quick=False, anyway=None):
     if not os.path.isfile(SCRIPT):
         sys.stderr.write("no test.ps1 at %s - is this the CTRMap root?%s" % (SCRIPT, LF))
         return None
     command = ["powershell", "-ExecutionPolicy", "Bypass", "-File", SCRIPT]
     if quick:
         command.append("-Quick")
+    #: THE QUEUE GATE'S ESCAPE HAS TO REACH THE RECORDER. test.ps1 refuses to run while
+    #: OUTSTANDING.md carries open work, and offers `-Anyway "<reason>"`. This file could not
+    #: pass one - so for as long as the queue had anything in it, the ONLY recorder could not
+    #: record anything, and the way round that is to run test.ps1 by hand and write the number
+    #: into .last-suite-run, which is hand-editing a measurement. A guard whose cheapest
+    #: satisfaction is forging its own record is worse than no guard.
+    if anyway:
+        command += ["-Anyway", anyway]
     #: THE TREE IS DIGESTED ON BOTH SIDES OF THE BATTERY, and a run whose tree moved
     #: underneath it is not recorded at all. NEVER EDIT SOURCE WHILE THE SUITE IS RUNNING had
     #: a hook behind it, and a hook only sees edits made through the tools - an edit made in
@@ -80,8 +124,7 @@ def run(quick=False):
         return None
     text = done.stdout + done.stderr
     announced = [n.strip() for n in _SUITE.findall(text)]
-    named = _FAILED.search(text)
-    failed = [n.strip() for n in named.group(1).split(",") if n.strip()] if named else []
+    failed = failed_in(text, announced)
     if not named and not _ALL_PASS.search(text) and done.returncode != 0:
         # the battery refused before running anything - a missing dump, an unstamped
         # build - and there is no verdict line to read. Say that, rather than
@@ -91,6 +134,11 @@ def run(quick=False):
     return {
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "subject": after,
+        #: ...AND THE REASON IS RECORDED, not merely typed. An escape that lives only in the
+        #: shell line that invoked it is invisible to everyone who later reads the number, and
+        #: this number is the one a commit message is allowed to claim. None means the tree was
+        #: frozen and the gate had nothing to say.
+        "anyway": anyway or None,
         "seconds": round(time.time() - began, 1),
         "exit_code": done.returncode,
         "ok": done.returncode == 0 and not failed,
@@ -134,7 +182,19 @@ def slack_ratchets(text):
 
 
 def main(argv):
-    record = run(quick="--quick" in argv)
+    anyway = None
+    if "--anyway" in argv:
+        at = argv.index("--anyway")
+        anyway = argv[at + 1] if at + 1 < len(argv) else ""
+        if len(anyway.strip()) < 20:
+            sys.stderr.write(
+                "REFUSING: --anyway needs a REASON, not a flag.%s"
+                "  It is written into .last-suite-run and read by everyone who later reads"
+                " the count.%s  Say what is queued and why this run is still worth taking."
+                "%s" % (LF, LF, LF))
+            return 2
+        anyway = anyway.strip()
+    record = run(quick="--quick" in argv, anyway=anyway)
     if record is None:
         return 2
     io.open(LAST_RUN, "w", encoding="utf-8", newline=LF).write(

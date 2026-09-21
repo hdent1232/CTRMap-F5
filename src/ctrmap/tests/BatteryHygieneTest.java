@@ -73,6 +73,14 @@ public class BatteryHygieneTest {
 	private static final Pattern TAKES_ARG = Pattern.compile("args\\s*\\[\\s*0\\s*\\]|args\\s*\\.\\s*length");
 	/** A suite's registration line in the battery runner. */
 	private static final Pattern REGISTERED = Pattern.compile("c\\s*=\\s*\"ctrmap\\.tests\\.(\\w+)\"");
+
+	/**
+	 * How the runner ANNOUNCES a suite. A suite that is not a Java main — the mutation
+	 * harness's python selftest — is announced here and nowhere else, and it can fail on its
+	 * own line like any other, so a count that reads only the registration array is short by
+	 * exactly the suites that are not Java.
+	 */
+	private static final Pattern ANNOUNCED = Pattern.compile("Write-Host\\s*\\(\\s*\"--- \"");
 	/** ...registered with nothing at all to point it at a dump. */
 	private static final Pattern NO_ARGS = Pattern.compile("a\\s*=\\s*@\\(\\s*\\)");
 
@@ -105,6 +113,7 @@ public class BatteryHygieneTest {
 				}
 			}
 		}
+		theRecorderReadsTheVerdictLineWhole(repo);
 		theDigestIgnoresLineEndingsButOnlyForText();
 		aCopyWithNoRepositoryStillStamps(repo);
 		builtByTheBattery(repo);
@@ -144,6 +153,91 @@ public class BatteryHygieneTest {
 	 * is renamed the pin fails and names the check that has quietly stopped asserting
 	 * anything, instead of that check passing for ever.
 	 */
+	/**
+	 * Every string this file WRITES, with the banned literals themselves taken out.
+	 *
+	 * <p>A test that drives a subprocess defines its own vocabulary in the script it emits,
+	 * and that vocabulary is as real as any production symbol — it is just not in production.
+	 * The {@code contains("...")} constructs come out first so a banned literal cannot rescue
+	 * itself, which is the defect that made this whole check vacuous once.
+	 */
+	static String emittedStrings(String body) {
+		String withoutBans = body.replaceAll("\\.contains\\(\\s*\"[^\"]*\"", ".contains(");
+		StringBuilder out = new StringBuilder();
+		java.util.regex.Matcher m =
+			java.util.regex.Pattern.compile("\"(?:[^\"\\\\]|\\\\.)*\"").matcher(withoutBans);
+		while (m.find()) {
+			out.append(m.group()).append(' ');
+		}
+		return out.toString();
+	}
+
+	/**
+	 * The recorder reads the runner's verdict line WHOLE — including a suite whose own name
+	 * contains the separator the line is joined with.
+	 *
+	 * <p>MEASURED on the run of 2026-09-21. {@code test.ps1} prints
+	 * {@code FAILED: } and joins the names with {@code ", "}; one registered suite is called
+	 * <i>Battery hygiene (temp paths, corpus args)</i>. The recorder split that line on commas,
+	 * produced five names for four failing suites, two of which matched nothing announced — and
+	 * since the passed list is <i>announced minus failed</i>, the failing hygiene suite was
+	 * recorded as PASSED. The record said 133 of 136 with four red, and that record is the only
+	 * number a commit message is allowed to claim.
+	 *
+	 * <p>Nothing drove {@code record_run.py} at all before this, which is why a parser at the
+	 * centre of every count in the project could be wrong for as long as it liked.
+	 */
+	static void theRecorderReadsTheVerdictLineWhole(File repo) throws Exception {
+		System.out.println("--- the recorder reads a verdict line whose suite names hold commas");
+		File recorder = new File(repo, "tools/guard/record_run.py");
+		if (!recorder.isFile() || !CommitGuardTest.onPath("python")) {
+			System.out.println("  skip: no recorder or no python on PATH");
+			return;
+		}
+		String q = String.valueOf((char) 34);
+		String script =
+			"import importlib.util, json, sys\n"
+			+ "spec = importlib.util.spec_from_file_location('rr', sys.argv[1])\n"
+			+ "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+			+ "announced = ['Battery hygiene (temp paths, corpus args)', 'ModDeployer (ships)',"
+			+ " 'Commit gate (refuses)']\n"
+			+ "text = ('--- ' + announced[0] + chr(10) + '--- ' + announced[1] + chr(10)"
+			+ " + '--- ' + announced[2] + chr(10)"
+			+ " + 'FAILED: ' + announced[0] + ', ' + announced[1] + chr(10))\n"
+			+ "failed = m.failed_in(text, announced)\n"
+			+ "passed = [n for n in announced if n not in failed]\n"
+			+ "print(json.dumps({'failed': failed, 'passed': passed}))\n";
+		File dir = Scratch.dir("recorder-verdict");
+		try {
+			File py = new File(dir, "ask.py");
+			Files.write(py.toPath(), script.getBytes(StandardCharsets.UTF_8));
+			ProcessBuilder pb = new ProcessBuilder("python", "-B", py.getAbsolutePath(),
+					recorder.getAbsolutePath());
+			pb.redirectErrorStream(true);
+			Process p = pb.start();
+			String said = CommitGuardTest.drain(p).trim();
+			p.waitFor();
+			String last = said;
+			int nl = said.lastIndexOf('\n');
+			if (nl >= 0) {
+				last = said.substring(nl + 1).trim();
+			}
+			check(last.contains(q + "failed" + q),
+				"the recorder answered: " + (last.length() > 160 ? last.substring(0, 160) : last));
+			check(last.contains("Battery hygiene (temp paths, corpus args)"),
+				"a failing suite whose NAME holds the separator is named whole");
+			// the decisive half: it must not also be in `passed`
+			int passedAt = last.indexOf(q + "passed" + q);
+			String passedPart = passedAt < 0 ? last : last.substring(passedAt);
+			check(!passedPart.contains("Battery hygiene"),
+				"...and is NOT counted among the suites that passed");
+			check(passedPart.contains("Commit gate (refuses)"),
+				"while the suite that really passed still is");
+		} finally {
+			Scratch.deleteTree(dir);
+		}
+	}
+
 	static void everyBannedLiteralPinsItsSymbol(File tests, File src) throws Exception {
 		System.out.println("--- every banned-literal check pins that its symbol still exists");
 		java.util.regex.Pattern ban = java.util.regex.Pattern.compile(
@@ -207,7 +301,19 @@ public class BatteryHygieneTest {
 					continue;   //a punctuation ban pins nothing; there are none today
 				}
 				pinned++;
-				if (!tree.contains(symbol)) {
+				//AND THE HARNESS'S OWN VOCABULARY COUNTS AS REAL. Not every banned literal
+				//names a production symbol: HookRefusalsTest drives each hook through a python
+				//script it writes itself, which prints ALLOW or DENY, and asserts that the
+				//guard answered one of them. DENY is that protocol - defined four lines above
+				//the assertion, in a string this very file emits - and it appears nowhere in
+				//production, so this check called a live assertion vacuous and the battery was
+				//red for it. The literal is looked for in the STRINGS THE BANNING FILE ITSELF
+				//WRITES, with every `contains("...")` construct removed first. That removal is
+				//the whole point: the original defect was a banned literal matching ITSELF in
+				//the ban line, which made every pin pass and let a plant survive. A comment
+				//mentioning the symbol does not rescue it either - only a string the file
+				//actually produces.
+				if (!tree.contains(symbol) && !emittedStrings(body).contains(symbol)) {
 					vacuous.add(j.getName() + " bans " + quote + literal + quote + " but " + symbol
 						+ " is nowhere in the tree - that check can no longer fail");
 				}
@@ -337,14 +443,27 @@ public class BatteryHygieneTest {
 			System.out.println("  skip: no building catalogue at " + res);
 			return;
 		}
+		//COUNT WHAT THE BATTERY ANNOUNCES, NOT WHAT ONE ARRAY LITERAL HOLDS. This counted the
+		//`@{ n = ... }` entries and stopped there, so it read 135 while the run announced 136:
+		//"Mutation harness selftest" is announced and can fail on its own line, outside the
+		//array, because it is python rather than a Java main. The check was therefore refusing
+		//a document that stated the TRUE number and would have accepted one that did not -
+		//a guard comparing against a figure it computed wrongly, which is the same defect
+		//class as a count checked against a stale record. Every `--- ` announcement counts:
+		//the loop's own is attributed to the array entries it iterates, and any other is a
+		//suite in its own right.
 		int suites = 0;
+		int standalone = 0;
 		if (runner.isFile()) {
 			for (String line : Files.readAllLines(runner.toPath(), StandardCharsets.UTF_8)) {
 				if (REGISTERED.matcher(line).find()) {
 					suites++;
+				} else if (ANNOUNCED.matcher(line).find() && !line.contains("$s.n")) {
+					standalone++;
 				}
 			}
 		}
+		suites += standalone;
 		//48 curated, 3,535 harvested, 3,583 in the palette: a doc may quote any
 		//of the three, because all three are true and each says something
 		//different. It may not quote a fourth.

@@ -321,6 +321,22 @@ public class ModDeployer {
 				"comparing " + a + " with " + b + ": " + ctrmap.util.Bytes.reason(notAnArchive));
 			return false;
 		}
+		//AND THE SAME ANSWER WHEN IT DID NOT THROW. The refusal above was written when a
+		//malformed archive raised from the constructor, so it was a guard standing on an
+		//exception somebody else was obliged to keep throwing. GARC now RECORDS truncation
+		//instead of raising - deliberately, so a partly-readable archive can still be opened
+		//and read up to the cut - and the moment it did, two files that are not archives at
+		//all compared EQUAL again: the constructor returned, both reported zero entries, and
+		//the loop below had nothing to disagree about. Exactly the defect ModDeployerTest
+		//pins, reintroduced by a change three files away that had no reason to look here.
+		//Ask the archive whether it was fully read, which is a question it answers whatever
+		//the constructor does.
+		if (ga.readableEntries >= 0 || gb.readableEntries >= 0) {
+			Logger.getLogger(ModDeployer.class.getName()).log(Level.WARNING,
+				"comparing " + a + " with " + b + ": one of them is TRUNCATED, so they cannot"
+				+ " be called identical - and identical here means 'already shipped, skip it'.");
+			return false;
+		}
 		if (ga.length != gb.length) {
 			return false;
 		}
