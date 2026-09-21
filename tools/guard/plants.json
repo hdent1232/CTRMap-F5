@@ -2551,6 +2551,19 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: run() completes and counts one suite passed of three announced"
+  },
+  {
+   "id": "the-recorder-entry-point-may-never-be-executed-either",
+   "why": "PAID FOR TWICE IN ONE AFTERNOON, 769 and 801 seconds. The first NameError was in run(); a suite was written to drive run() end to end, and the SECOND battery then died on a NameError in main() - one level up, same edit, and the fresh guard did not cover it, because a drive of the callee says nothing about the caller. main() is where the record is written, the magnitude recorded and the exit code decided, so it is where lines nobody executes accumulate. Driving it needs its two writers redirected: LAST_RUN to a temp file, and magnitude through sys.modules, because `import magnitude` inside a function binds a LOCAL name that cannot be patched on the module afterwards.",
+   "file": "tools/guard/record_run.py",
+   "find": "    if not record[\"suites_announced\"]:\n",
+   "replace": "    if not announced:  #PLANTED: a local of run(), read from main()\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: ...and main() ran to its end and reported the failures as a non-zero exit"
   }
  ],
  "retired": [

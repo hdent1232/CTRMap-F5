@@ -197,7 +197,7 @@ public class BatteryHygieneTest {
 		}
 		String q = String.valueOf((char) 34);
 		String script =
-			"import importlib.util, json, sys\n"
+			"import importlib.util, json, os, sys\n"
 			+ "spec = importlib.util.spec_from_file_location('rr', sys.argv[1])\n"
 			+ "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
 			+ "announced = ['Battery hygiene (temp paths, corpus args)', 'ModDeployer (ships)',"
@@ -221,11 +221,26 @@ public class BatteryHygieneTest {
 			+ "    def run(self, cmd, **kw):\n"
 			+ "        return Done('' if cmd and cmd[0] == 'git' else text)\n"
 			+ "m.subprocess = FakeSub()\n"
-			+ "rec = m.run(anyway='a reason long enough to be a reason')\n"
+			// main(), NOT just run(). The first version of this drove run() alone and a
+			// NameError in main() - one level up, same edit, same afternoon - still cost a
+			// full battery to find. main() is where the record is written, the magnitude
+			// recorded and the exit code decided, so it is where the lines nobody executes
+			// accumulate. Its two writers are redirected: LAST_RUN to a temp file, and the
+			// magnitude module through sys.modules, because `import magnitude` inside a
+			// function binds a LOCAL name that cannot be patched on the module afterwards.
+			+ "import tempfile, types\n"
+			+ "fake_mag = types.ModuleType('magnitude')\n"
+			+ "fake_mag.SERIES = os.path.join(os.path.dirname(sys.argv[1]),"
+			+ " 'magnitudes.json')\n"
+			+ "fake_mag.record = lambda k, v, why=None: (True, 'recorded %s = %s' % (k, v))\n"
+			+ "sys.modules['magnitude'] = fake_mag\n"
+			+ "m.LAST_RUN = os.path.join(tempfile.mkdtemp(prefix='ctrmap_rec_'), 'rec.json')\n"
+			+ "code = m.main(['record_run.py', '--anyway',"
+			+ " 'a reason long enough to count as a reason'])\n"
+			+ "written = json.load(open(m.LAST_RUN))\n"
 			+ "print(json.dumps({'failed': failed, 'passed': passed,"
-			+ " 'ran': None if rec is None else rec['ran'],"
-			+ " 'announced': None if rec is None else rec['suites_announced'],"
-			+ " 'subject': None if rec is None else bool(rec['subject'])}))\n";
+			+ " 'ran': written['ran'], 'announced': written['suites_announced'],"
+			+ " 'subject': bool(written['subject']), 'code': code}))\n";
 		File dir = Scratch.dir("recorder-verdict");
 		try {
 			File py = new File(dir, "ask.py");
@@ -252,13 +267,15 @@ public class BatteryHygieneTest {
 				"...and is NOT counted among the suites that passed");
 			check(passedPart.contains("Commit gate (refuses)"),
 				"while the suite that really passed still is");
-			// The end-to-end half: run() executed every line, with nothing launched.
+			// The end-to-end half: main() executed every line, with nothing launched.
 			check(last.contains("\"ran\": 1"),
 				"run() completes and counts one suite passed of three announced");
 			check(last.contains("\"announced\": 3"),
 				"...having read the announcements");
 			check(last.contains("\"subject\": true"),
 				"...and recorded which tree it measured");
+			check(last.contains("\"code\": 1"),
+				"...and main() ran to its end and reported the failures as a non-zero exit");
 		} finally {
 			Scratch.deleteTree(dir);
 		}
