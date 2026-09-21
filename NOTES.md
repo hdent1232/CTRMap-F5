@@ -86,7 +86,7 @@ you have.
 
 ### How this was checked
 
-Verified against a real dump by 130 headless test suites: every format writer round-trips
+Verified against a real dump by 136 headless test suites: every format writer round-trips
 byte-identically across all 536 zones, and the guards themselves are measured — a mutation sweep
 breaks each fix on purpose and records every change no suite notices. For 1.0.2 that sweep broke
 202 lines and every one of them was caught.

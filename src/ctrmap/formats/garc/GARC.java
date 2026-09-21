@@ -153,6 +153,22 @@ public class GARC {
 			//before the cut are whole and getStoredEntry refuses past it. WRITING is the
 			//damage, and packDirectory refuses it below: a pack that reads 155 of 436
 			//entries and writes 155 back has destroyed the other 281.
+			//...BUT ONLY WHEN THERE IS SOMETHING TO RECOVER. "Truncated" describes an archive
+			//whose entry table was read and then ran out. A file that is ABSENT, or that is
+			//not a GARC at all, yields NOTHING - and recording that as a truncated archive
+			//with zero readable entries turns "I could not look" into "it is empty", which is
+			//the same answer a real empty archive gives. Measured the day this was written:
+			//opening a path that does not exist returned an instance instead of raising, so
+			//ZoneLoadingStateTest's missing zone table opened cleanly and ModDeployer called
+			//two non-archives identical - identical there meaning "already shipped, skip it".
+			//The over-correction and the under-correction are both here, one line apart: read
+			//nothing, refuse; read something, record the cut.
+			if (entries.isEmpty()) {
+				throw new RuntimeException(f.getName() + " is not a readable archive: "
+					+ ctrmap.util.Bytes.reason(ex) + ". Nothing was read from it, so it is"
+					+ " UNKNOWN rather than empty - a file that cannot be opened is not an"
+					+ " archive with no entries in it.", ex);
+			}
 			readableEntries = entries.size();
 			Logger.getLogger(GARC.class.getName()).log(Level.SEVERE,
 				file.getName() + " is TRUNCATED: read " + readableEntries + " of the "

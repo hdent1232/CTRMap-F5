@@ -1,4 +1,9 @@
 {
+ "battery.suites_announced": {
+  "previous": null,
+  "value": 0,
+  "why": null
+ },
  "ledger.no_cost": {
   "previous": 64,
   "value": 64,
@@ -20,7 +25,7 @@
   "why": null
  },
  "ledger.plants": {
-  "previous": 193,
+  "previous": 196,
   "value": 196,
   "why": null
  }

@@ -2464,6 +2464,67 @@
    "find": "        out[head] = (out[head] + \" \" + body).strip() if head in out else body\n",
    "replace": "        out[head] = body  #PLANTED: the last statement wins\n",
    "must_say": "FAIL: the FIRST statement's clauses survive the second"
+  },
+  {
+   "id": "a-truncated-archive-may-be-called-already-shipped",
+   "why": "MEASURED HERE on 2026-09-21, and it is a REGRESSION I caused three files away. ModDeployer's refusal for an unreadable archive stood on GARC's constructor throwing; when parse was changed to RECORD truncation instead of raising - so the entries before a cut stay readable - the catch stopped firing and two files that are not archives compared EQUAL again. Equal here means 'already shipped, skip it', so the archive the deployer could not read was precisely the one it decided not to deploy. A guard standing on an exception somebody else is obliged to keep throwing is one edit from gone. The FIRST version of this plant SURVIVED: the non-archive case is answered by the constructor's throw, so the truncation branch had no case asserting it at all until two archives cut at the same point were added.",
+   "file": "src/ctrmap/ModDeployer.java",
+   "find": "\t\tif (ga.readableEntries >= 0 || gb.readableEntries >= 0) {\n",
+   "replace": "\t\tif (false) {  //PLANTED: a cut archive may be called identical\n",
+   "suite": "ctrmap.tests.ModDeployerTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "FAIL: two archives cut at the SAME point are not 'already shipped'"
+  },
+  {
+   "id": "a-file-that-is-no-archive-may-open-as-an-empty-one",
+   "why": "MEASURED HERE on 2026-09-21: after parse was changed to record truncation rather than raise, a path that DOES NOT EXIST opened cleanly as an archive with zero entries. That is 'I could not look' collapsed into 'it is empty', and an empty archive is a real thing a dump can contain, so the two answers are indistinguishable. ZoneLoadingStateTest's missing zone table opened without a word. The over-correction and the under-correction sat one line apart in the same catch: refusing there took the readable entries away with the unreadable ones and the battery was red for a week; recording it unconditionally turned an absent file into an empty archive. Read nothing, refuse; read something, record the cut.",
+   "file": "src/ctrmap/formats/garc/GARC.java",
+   "find": "\t\t\tif (entries.isEmpty()) {\n",
+   "replace": "\t\t\tif (false) {  //PLANTED: nothing read is an empty archive\n",
+   "suite": "ctrmap.tests.ZoneLoadingStateTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "FAIL: a zone table that is not an archive refuses to open and names the file"
+  },
+  {
+   "id": "the-verdict-line-may-be-split-on-its-own-separator",
+   "why": "MEASURED on the battery run of 2026-09-21. test.ps1 joins failed suite names with ', ' and one registered suite is called 'Battery hygiene (temp paths, corpus args)'. record_run split that line on commas: five names for four failing suites, two matching nothing announced - and since passed = announced minus failed, THE FAILING SUITE WAS RECORDED AS PASSED. The record said 133 of 136 with four red, and that record is the only number a commit message is allowed to claim. Nothing drove record_run.py at all before this, which is why a parser at the centre of every count here could be wrong indefinitely.",
+   "file": "tools/guard/record_run.py",
+   "find": "    hits = [n for n in announced if n and n in line]\n",
+   "replace": "    hits = [n.strip() for n in line.split(\",\") if n.strip()]  #PLANTED\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: ...and is NOT counted among the suites that passed"
+  },
+  {
+   "id": "a-harness-vocabulary-may-be-called-a-dead-symbol",
+   "why": "MEASURED HERE on 2026-09-21: the banned-literal check demanded that every banned literal name a symbol still present in PRODUCTION, and HookRefusalsTest asserts on DENY - the protocol of a python script the test writes and runs itself, four lines above the assertion. DENY is in no production file, so a live assertion was reported vacuous and the battery was red for it. The check's own history is the reason it was narrow: it once searched the tests too, a banned literal matched ITSELF in the ban line, every pin passed and a plant survived. Excluding the contains(...) constructs is what lets the harness's own strings count without that coming back.",
+   "file": "src/ctrmap/tests/BatteryHygieneTest.java",
+   "find": "if (!tree.contains(symbol) && !emittedStrings(body).contains(symbol)) {\n",
+   "replace": "if (!tree.contains(symbol)) {  //PLANTED: only production counts\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: every banned literal names a symbol that still exists"
+  },
+  {
+   "id": "a-suite-outside-the-array-may-stop-being-counted",
+   "why": "MEASURED HERE on 2026-09-21: the published-count check counted the '@{ n = }' entries in test.ps1 and read 135, while the run announced 136 - 'Mutation harness selftest' is announced and can fail on its own line, outside the array, because it is python rather than a Java main. So the check was REFUSING a document that stated the true number and would have accepted one stating 135: a guard comparing against a figure it computed wrongly, which is the same class as a count checked against a stale record. Counting what the runner ANNOUNCES rather than what one array literal holds is the fix.",
+   "file": "src/ctrmap/tests/BatteryHygieneTest.java",
+   "find": "\t\tsuites += standalone;\n",
+   "replace": "\t\t//PLANTED: only the registration array counts\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: every count the docs publish about the palette and the battery"
   }
  ],
  "retired": [

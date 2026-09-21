@@ -347,11 +347,13 @@ public class ModDeployerTest {
 	 * The diff is over decompressed entries, so the same archive equals itself and
 	 * two different archives do not.
 	 *
-	 * <p>SUSPECTED DEFECT, PINNED NOT FIXED: two files that are not GARCs at all
-	 * compare EQUAL. {@link ctrmap.formats.garc.GARC} logs the parse failure and
-	 * hands back an archive of length 0, and two empty archives have the same
-	 * entries, so an unreadable live archive and an unreadable snapshot are
-	 * reported "unchanged" and the deploy ships nothing for them without a word.
+	 * <p>FIXED, AND IN TWO PLACES, because an archive can be unreadable in two ways.
+	 * {@link ctrmap.formats.garc.GARC} used to log a parse failure and hand back an archive of
+	 * length 0, so two unreadable files had the same entries and were reported "unchanged" -
+	 * the deploy shipping nothing for them without a word. A file it can read NOTHING from now
+	 * refuses from the constructor; a file it can read PART of still opens, because the entries
+	 * before the cut are worth having, and {@code garcContentsEqual} asks whether either side
+	 * was cut. Both halves are asserted below; the first plant proved only the first.
 	 */
 	private static void contentDiffIsByDecompressedBytes() throws IOException {
 		File a = Workspace.session().archiveFile(ArchiveType.MAP_MATRIX);
@@ -368,6 +370,34 @@ public class ModDeployerTest {
 		//GARC reported zero entries and two of those matched. Equal here means "already
 		//shipped, skip it", so an archive the deployer could not read was precisely the one
 		//it decided not to deploy.
+		//AND THE HALF THAT IS NOT ABOUT THROWING. The case above is answered by the
+		//constructor refusing a file it could read NOTHING from. A file it could read PART of
+		//is the other shape, and it does not throw at all - deliberately, because the entries
+		//before the cut are whole and worth reading. Two archives cut at the same point have
+		//matching readable entries and null past the cut, and Arrays.equals(null, null) is
+		//true - so they compare identical, and identical HERE means "already shipped, skip
+		//it". The archive the deployer could not fully read would be precisely the one it
+		//decided not to ship. Measured by planting: with the truncation refusal removed, the
+		//non-archive case above still passed on the constructor's throw, so this assertion is
+		//the only thing standing between that guard and being decoration.
+		File whole = a;
+		if (whole != null && whole.isFile()) {
+			byte[] all = Files.readAllBytes(whole.toPath());
+			File cutA = new File(tmp, "cutA.garc");
+			File cutB = new File(tmp, "cutB.garc");
+			Files.write(cutA.toPath(), java.util.Arrays.copyOf(all, all.length / 2));
+			Files.write(cutB.toPath(), java.util.Arrays.copyOf(all, all.length / 2));
+			check(!ModDeployer.garcContentsEqual(cutA, cutB),
+					"two archives cut at the SAME point are not 'already shipped' - what was"
+					+ " never read cannot be evidence that it matches");
+			check(ModDeployer.garcContentsEqual(whole, whole),
+					"...while an archive that reads whole still compares equal to itself,"
+					+ " or this refuses everything and deploys the world");
+		} else {
+			System.out.println("  skip: no readable archive to cut - the"
+					+ " truncated-vs-truncated case needs a real one");
+		}
+
 		check(!ModDeployer.garcContentsEqual(junk1, junk2),
 				"two files that are not archives at all are NOT equal - a file that cannot be"
 				+ " read is not evidence that it matches anything");
