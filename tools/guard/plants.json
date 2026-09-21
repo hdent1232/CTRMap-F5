@@ -2538,6 +2538,19 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: ...and does NOT count as the tree moving underneath the run"
+  },
+  {
+   "id": "the-recorder-body-may-never-be-executed-by-anything",
+   "why": "PAID FOR HERE on 2026-09-21, thirteen minutes at a time. An edit to record_run replaced the line that bound `named` and left a use of it two lines below. The module still IMPORTED cleanly - a function's body does not run when nobody calls it - so the check that was supposed to catch this ('recorder imports ok') passed, the battery was launched, 136 suites ran for 769 seconds, and the NameError fired at the end and threw the whole run away. A command that did not run looks exactly like a command that passed, and so does a line that was never executed. The suite drives the WHOLE of run() with subprocess stubbed, in about a second, on canned output that contains a suite name with a comma in it. This plant restores the exact NameError.",
+   "file": "tools/guard/record_run.py",
+   "find": "    if not _FAILED.search(text) and not _ALL_PASS.search(text) and done.returncode != 0:\n",
+   "replace": "    if not named and not _ALL_PASS.search(text) and done.returncode != 0:  #PLANTED\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: run() completes and counts one suite passed of three announced"
   }
  ],
  "retired": [

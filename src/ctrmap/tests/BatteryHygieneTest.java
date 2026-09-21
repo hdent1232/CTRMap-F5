@@ -207,7 +207,25 @@ public class BatteryHygieneTest {
 			+ " + 'FAILED: ' + announced[0] + ', ' + announced[1] + chr(10))\n"
 			+ "failed = m.failed_in(text, announced)\n"
 			+ "passed = [n for n in announced if n not in failed]\n"
-			+ "print(json.dumps({'failed': failed, 'passed': passed}))\n";
+			// AND THE WHOLE OF run(), with nothing actually launched. A NameError in this
+			// function is otherwise found by running a thirteen-minute battery and watching
+			// it crash at the end - which is exactly what happened on 2026-09-21, after an
+			// edit removed a variable still used two lines below it. Importing the module
+			// proves nothing: the body of a function that is never called does not run.
+			+ "class Done(object):\n"
+			+ "    def __init__(self, out): self.stdout = out; self.stderr = ''; "
+			+ "self.returncode = 0\n"
+			+ "class FakeSub(object):\n"
+			+ "    SubprocessError = Exception\n"
+			+ "    TimeoutExpired = Exception\n"
+			+ "    def run(self, cmd, **kw):\n"
+			+ "        return Done('' if cmd and cmd[0] == 'git' else text)\n"
+			+ "m.subprocess = FakeSub()\n"
+			+ "rec = m.run(anyway='a reason long enough to be a reason')\n"
+			+ "print(json.dumps({'failed': failed, 'passed': passed,"
+			+ " 'ran': None if rec is None else rec['ran'],"
+			+ " 'announced': None if rec is None else rec['suites_announced'],"
+			+ " 'subject': None if rec is None else bool(rec['subject'])}))\n";
 		File dir = Scratch.dir("recorder-verdict");
 		try {
 			File py = new File(dir, "ask.py");
@@ -234,6 +252,13 @@ public class BatteryHygieneTest {
 				"...and is NOT counted among the suites that passed");
 			check(passedPart.contains("Commit gate (refuses)"),
 				"while the suite that really passed still is");
+			// The end-to-end half: run() executed every line, with nothing launched.
+			check(last.contains("\"ran\": 1"),
+				"run() completes and counts one suite passed of three announced");
+			check(last.contains("\"announced\": 3"),
+				"...having read the announcements");
+			check(last.contains("\"subject\": true"),
+				"...and recorded which tree it measured");
 		} finally {
 			Scratch.deleteTree(dir);
 		}
