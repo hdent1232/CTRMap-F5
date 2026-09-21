@@ -2525,6 +2525,19 @@
     "src"
    ],
    "must_say": "FAIL: every count the docs publish about the palette and the battery"
+  },
+  {
+   "id": "a-run-may-be-refused-for-its-own-output",
+   "why": "MEASURED HERE on 2026-09-21, on the FIRST real outing of the both-sides digest added the same day: a clean 136-suite battery was refused as a tree that moved underneath itself, because the ratchet suites record their readings into tools/guard/magnitudes.json as they go and that file is tracked. A guard that fires on honest work gets its ceiling raised until nothing here is believed - the packaging check in the bootstrap bundle carries the same bill. The fix is not to weaken the comparison but to notice it was answering TWO questions with one subject: which tree a number was measured against includes the baselines, because a changed baseline changes verdicts; whether the tree moved underneath a run leaves out what the run itself writes. This plant makes the exclusion do nothing, which is where it started.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "        if rel in exclude:\n            continue\n",
+   "replace": "        if False:  #PLANTED: nothing is ever excluded\n            continue\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: ...and does NOT count as the tree moving underneath the run"
   }
  ],
  "retired": [
