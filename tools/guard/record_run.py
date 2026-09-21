@@ -152,7 +152,7 @@ def run(quick=False, anyway=None):
     text = done.stdout + done.stderr
     announced = [n.strip() for n in _SUITE.findall(text)]
     failed = failed_in(text, announced)
-    if not named and not _ALL_PASS.search(text) and done.returncode != 0:
+    if not _FAILED.search(text) and not _ALL_PASS.search(text) and done.returncode != 0:
         # the battery refused before running anything - a missing dump, an unstamped
         # build - and there is no verdict line to read. Say that, rather than
         # recording a clean run of nought suites.
