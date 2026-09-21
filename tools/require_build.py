@@ -76,8 +76,23 @@ def build_with_battery_verbose(root):
     all, such as deleting a throw that is its method's only exit. javac already
     knows which; discarding what it said threw that away.
     """
-    r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "build.ps1"],
-                       cwd=str(root), capture_output=True, text=True)
+    #: A BUILD, NOT A GIT QUERY. The first version of this timeout was 60 seconds, copied from
+    #: the sites beside it - and a cold javac over this tree takes longer than that, so it
+    #: would have turned honest builds into failures. That is the guard-fires-on-honest-work
+    #: shape, introduced by the very change that was supposed to stop a wedge.
+    #:
+    #: AND THE TIMEOUT IS A RESULT. `TimeoutExpired` is a SubprocessError, not an OSError, so
+    #: adding the keyword without catching it converts "blocks forever" into "crashes with a
+    #: traceback" - which is louder and still not an answer.
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                            "-File", "build.ps1"],
+                           cwd=str(root), capture_output=True, text=True, timeout=1800)
+    except subprocess.TimeoutExpired:
+        return False, ("the build did not finish in 1800s. It has not necessarily failed - a "
+                       "capture_output run reads to EOF, and EOF does not arrive while any "
+                       "grandchild still holds the pipe, so 'still working' and 'wedged' look "
+                       "the same from here. Run build.ps1 by hand and watch it.")
     out = (r.stdout or "") + (r.stderr or "")
     if r.returncode != 0 or "Build OK" not in (r.stdout or ""):
         return False, out

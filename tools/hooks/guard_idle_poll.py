@@ -23,7 +23,8 @@ THE ONE THING A SLEEP IS FOR is giving a process a moment to come up before prob
 server binding a port, a detached runner writing its first log line. Those are seconds, not
 minutes, so a short sleep is allowed and a long one is not.
 
-TO WAIT ANYWAY: the owner sets DTENGINE_ALLOW_SLEEP=1 for that session.
+TO WAIT ANYWAY: the owner sets CTRMAP_ALLOW_SLEEP=1 for that session. The name is
+built by hook_env.name("ALLOW_SLEEP"), so the prefix has one place to change.
 """
 import json
 import os
@@ -34,7 +35,12 @@ import sys
 #: this project is a server bind at about four seconds.
 LONGEST_HONEST = 30
 
-BYPASS = "DTENGINE_ALLOW_SLEEP"
+#: AT THE TOP OF THE USE - a module-level constant cannot wait for an import placed further
+#: down beside `shellin`.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402  (path set above)
+
+BYPASS = hook_env.name("ALLOW_SLEEP")
 
 #: `sleep 115`, `sleep 115;`, `sleep 1m`. A bare number is seconds.
 SLEEP = re.compile(r"^\s*sleep\s+([0-9]+(?:\.[0-9]+)?)\s*([smh]?)\s*(?:;|&&|$)")
@@ -73,6 +79,7 @@ def verdict(command):
 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402
 import shellin                                    # noqa: E402  (path set above)
 
 HOOK = "guard_idle_poll.py"

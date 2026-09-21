@@ -59,6 +59,8 @@ public class WorkflowGuardsTest {
 			section("deploy, disable, deploy again", () -> deployDisableDeployAgain(dump));
 			section("edit encounters, pack, edit again", () -> encountersPackEncounters(dump));
 			section("link two zones, pack, link again", () -> linkPackLinkAgain(dump));
+			section("a region that will not decode answers nothing",
+					() -> aRegionThatWillNotDecodeAnswersNothing());
 		}
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -455,6 +457,51 @@ public class WorkflowGuardsTest {
 	 * it at all. Catching here turns the throw into the sentence it should have
 	 * been.
 	 */
+	/**
+	 * Undecodable region bytes answer NOTHING, and never take the editor down.
+	 *
+	 * <p>WHY THIS SECTION EXISTS, and it was found by the plant ledger rather than by reading.
+	 * {@code MapPreview3D.decode} is guarded by {@code looksLikeBch} because {@code BCHFile}
+	 * checks its magic only AFTER reading a string and eleven ints out of the buffer - so bytes
+	 * too short to hold a header never reach the check, and
+	 * {@code decode(new byte[]{1,2,3,4})} dies with {@code OutOfMemoryError}. That is an
+	 * {@code Error}, so it passes straight through a {@code catch (Exception)}: one truncated
+	 * region took the whole editor with it, from a browser whose entire job is to look at
+	 * regions one after another.
+	 *
+	 * <p>The guard was written, and the plant that proves it <b>SURVIVED two full runs</b> —
+	 * because <b>nothing here drove it</b>. It reddened the suite through some other section
+	 * incidentally when the plant was first written, and once that stopped being true the plant
+	 * proved nothing while the ledger still counted it. A guard nobody drives is a comment, and
+	 * this one had been a comment for as long as it existed.
+	 *
+	 * <p>{@code decode} is public, static and free of any GL precisely so this question can be
+	 * asked without a graphics context — its own docstring says so. Nobody asked it.
+	 */
+	static void aRegionThatWillNotDecodeAnswersNothing() {
+		//THE THREE SHAPES THAT KILLED IT, asked directly rather than through a fixture that
+		//might stop reaching them: an upstream reader now refuses a short archive entry
+		//earlier, which is what made the plant stop reddening anything.
+		check(ctrmap.humaninterface.MapPreview3D.decode(null, null) == null,
+				"null region bytes answer nothing");
+		check(ctrmap.humaninterface.MapPreview3D.decode(new byte[0], null) == null,
+				"empty region bytes answer nothing");
+		check(ctrmap.humaninterface.MapPreview3D.decode(new byte[]{1, 2, 3, 4}, null) == null,
+				"four bytes that are not a header answer nothing");
+
+		//AND THE OTHER DIRECTION, or a guard that refuses everything passes this perfectly.
+		byte[] header = new byte[0x50];
+		header[0] = 'B';
+		header[1] = 'C';
+		header[2] = 'H';
+		header[3] = 0;
+		check(ctrmap.humaninterface.MapPreview3D.looksLikeBch(header),
+				"while bytes that DO carry a BCH header are let through to the parser");
+		check(!ctrmap.humaninterface.MapPreview3D.looksLikeBch(new byte[]{'B', 'C', 'H', 0}),
+				"and a header too short to be one is not - the length is the half that was "
+				+ "missing, not the magic");
+	}
+
 	static void section(String name, Section body) {
 		try {
 			body.run();

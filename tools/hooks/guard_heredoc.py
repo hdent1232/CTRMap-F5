@@ -29,7 +29,8 @@ THE RULE: file content never travels in a command string.
                              which compiles it and refuses the mangling this hook is about.
     a genuine one-liner   -> still fine; a short heredoc feeding an interpreter is allowed.
 
-TO RUN ONE ANYWAY: the owner sets DTENGINE_ALLOW_HEREDOC=1 for that session.
+TO RUN ONE ANYWAY: the owner sets CTRMAP_ALLOW_HEREDOC=1 for that session. The name is
+built by hook_env.name("ALLOW_HEREDOC"), so the prefix has one place to change.
 """
 import json
 import os
@@ -47,7 +48,13 @@ MAX_SCRIPT_LINES = 20
 NEWLINE = chr(10)
 BACKSLASH = chr(92)
 
-BYPASS = "DTENGINE_ALLOW_HEREDOC"
+#: AT THE TOP OF THE USE, not beside the `shellin` import further down: this is a
+#: module-level constant, so a `hook_env` imported below it is imported too late and the
+#: whole hook dies with a NameError on load.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402  (path set above)
+
+BYPASS = hook_env.name("ALLOW_HEREDOC")
 
 
 def commands(line):
@@ -213,6 +220,7 @@ def verdict(command):
 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402
 import shellin                                    # noqa: E402  (path set above)
 
 HOOK = "guard_heredoc.py"

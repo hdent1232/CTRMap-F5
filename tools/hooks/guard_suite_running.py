@@ -34,11 +34,12 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402
 import shellin                                    # noqa: E402  (path set above)
 import liveness                                   # noqa: E402  (same)
 
 HOOK = "guard_suite_running.py"
-BYPASS = "CTRMAP_ALLOW_EDIT_DURING_RUN"
+BYPASS = hook_env.name("ALLOW_EDIT_DURING_RUN")
 
 #: (repo-relative lock, what holds it). Both already existed; neither stopped an edit.
 LOCKS = (

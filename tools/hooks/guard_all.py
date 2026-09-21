@@ -35,18 +35,20 @@ import importlib.util
 import io
 import json
 import os
+import re
 import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import hook_env                                   # noqa: E402
 import shellin                                    # noqa: E402  (path set above)
 
 #: Longer than this and the guard is not answering. Every existing guard decides in
 #: milliseconds; the slowest reads three small files.
 PATIENCE = 8.0
 
-BROKEN_OK = "CTRMAP_GUARD_BROKEN"
+BROKEN_OK = hook_env.name("GUARD_BROKEN")
 
 #: This file is the dispatcher, not a guard, and shellin is a library.
 NOT_A_GUARD = ("guard_all.py",)
@@ -157,50 +159,42 @@ def _checker_path():
     return None
 
 
-def _edits_the_wiring(payload):
-    """True when this call is how the wiring gets REPAIRED.
+#: A file at a repository root whose name says a run is in flight. The remedy for a stale one
+#: is written in the message of the guard that READS it - "stop it and delete X" - so this
+#: guard must never be the reason that delete cannot happen. A shape, not three filenames: the
+#: hand-kept version was at three and would have been at four the next time a runner was added.
+_A_RUN_LOCK = re.compile(r"^\.[\w-]*(in-flight|running|lock)$", re.I)
 
-    Without this the wiring check is a trap: a settings file that enumerates tools refuses
-    every call, including the edit that would fix it. The escape is deliberately the narrowest
-    one that works - a write whose target is inside `.claude`.
+
+def _repairs_what_is_broken(payload, why):
+    """True when this call writes one of the files the findings are ABOUT.
+
+    DERIVED, NOT LISTED. The bundle's section 15 records the same refusal being widened five
+    times, each because it blocked the only route back to green, and the lesson it draws is
+    that a hand-kept exemption list "fails by omission on the sixth instance, silently". This
+    one was at five entries and had been widened three times in a day.
+
+    The findings already name their files. A write to one of those is the repair by
+    construction - including to a file nobody has thought of yet - and it stops being exempt
+    the moment that finding clears, which is what scoping it to the dirt means.
     """
-    #: A CALL THAT WRITES NOTHING CANNOT DO DAMAGE, and refusing one turns a bookkeeping
-    #: divergence into a wedged session. It did: an installed hook edited but not yet copied
-    #: to its version-controlled twin refused every call in the session, including the read
-    #: that would have shown what differed and the copy that would have fixed it - while a
-    #: second guard refused that copy because a replant run held the lock. Two guards,
-    #: interlocked, each correct on its own. A guard may refuse the work; it may never refuse
-    #: the way out.
     written = shellin.writes_something(payload)
     if not written:
+        #: A CALL THAT WRITES NOTHING CANNOT DO DAMAGE, and refusing one turns a bookkeeping
+        #: divergence into a wedged session: the read that would show what differed was itself
+        #: refused, while a second guard refused the write that would fix it.
         return True
-    checker = _checker_path()
+    named = " ".join(why)
     for path in written:
         spelled = path.replace(chr(92), "/")
-        parts = spelled.split("/")
-        if ".claude" in parts:
+        base = spelled.rsplit("/", 1)[-1]
+        #: the findings name it - this write is the repair
+        if base and base in named:
             return True
-        #: the version-controlled half of the same wiring - the copy that repairs a divergence
-        if "hooks" in parts and "tools" in parts:
+        #: ...or it is a run lock, whose remedy lives in another guard's message
+        if _A_RUN_LOCK.match(base):
             return True
-        #: A REMEDY ANOTHER GUARD NAMES IS NOT SOMETHING THIS ONE MAY REFUSE. The
-        #: suite-running guard's refusal ends "stop it and delete .mutation-in-flight"; this
-        #: check then refused that delete, and the sync that would have cleared this check was
-        #: refused by the suite-running guard. Two guards, each blocking the other's
-        #: precondition, with the way out written in both messages.
-        if parts and parts[-1] in (".mutation-in-flight", ".battery-running", ".suite-running"):
-            return True
-        #: AND THE CHECKER ITSELF. Leaving it out made the same trap one directory over: an
-        #: edit that referred to a function it was about to add left the check raising, and
-        #: the refusal then blocked the edit that would have finished it. A guard may refuse
-        #: the work; it may never refuse its own repair.
-        if checker and os.path.normcase(os.path.abspath(spelled)) == os.path.normcase(checker):
-            return True
-    text = shellin.text(payload)
-    if ".claude" in text and ("settings.json" in text or "hooks" in text):
-        return True
-    return bool(checker) and os.path.basename(checker) in text
-
+    return False
 
 def wiring(payload):
     """(deny, reason) when this installation's own wiring cannot reach every guard.
@@ -210,8 +204,6 @@ def wiring(payload):
     tool, so all seven were installed, wired, running and off. A suite would have reported
     that afterwards. This refuses the call.
     """
-    if _edits_the_wiring(payload):
-        return False, None
     checker = _checker_path()
     if checker is None:
         return True, (
@@ -237,6 +229,10 @@ def wiring(payload):
             "reachable is UNKNOWN.\n\nFix it, or set %s=1 for this session.\n"
             % (type(cannotCheck).__name__, cannotCheck, BROKEN_OK))
     if not why:
+        return False, None
+    #: ...and only NOW can the exemption be asked, because it is about THESE findings. Asking
+    #: first is what made it a hand-kept list: with nothing to be about, it had to guess.
+    if _repairs_what_is_broken(payload, why):
         return False, None
     return True, (
         "BLOCKED BY PROJECT POLICY (.claude/hooks/guard_all.py).\n"

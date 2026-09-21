@@ -1549,7 +1549,7 @@
   },
   {
    "id": "a-truncated-region-takes-the-editor-with-it",
-   "why": "BCHFile checks its magic and returns - but only after reading a string and eleven ints out of the buffer, so bytes too short to hold a header never reach the check. Measured: decode(byte[]{1,2,3,4}) and decode(byte[0]) both die with OutOfMemoryError, which is an Error and so passes straight through a catch on Exception. One truncated region therefore took the whole editor down - from a browser whose entire job is to look at regions one after another, so it would have been found by the first person who scrolled past a bad one. Found by the guard, not by them. THE FIRST TWO DRAFTS OF THIS PLANT SURVIVED, and that was the useful part. The fix originally had two halves - this length-and-magic check and a catch on OutOfMemoryError - and each covered every input a suite could build, so neither could be proven while the other stood. No buffer could be constructed that passed the check and still ran away, so the Error catch was speculation, and speculation that cannot be tested or safely removed is worse than none. It was deleted; this check is the whole fix, and it proves. The must_say is the section wrapper's own sentence rather than a check line: an OutOfMemoryError is not a failed assertion, it is the section dying, and what this plant proves is precisely that the editor would die. The wrapper catches Throwable so it is reported rather than taking the whole battery quietly.",
+   "why": "BCHFile checks its magic and returns - but only after reading a string and eleven ints out of the buffer, so bytes too short to hold a header never reach the check. Measured: decode(byte[]{1,2,3,4}) and decode(byte[0]) both die with OutOfMemoryError, which is an Error and so passes straight through a catch on Exception. One truncated region therefore took the whole editor down - from a browser whose entire job is to look at regions one after another, so it would have been found by the first person who scrolled past a bad one. Found by the guard, not by them. THE FIRST TWO DRAFTS OF THIS PLANT SURVIVED, and that was the useful part. The fix originally had two halves - this length-and-magic check and a catch on OutOfMemoryError - and each covered every input a suite could build, so neither could be proven while the other stood. No buffer could be constructed that passed the check and still ran away, so the Error catch was speculation, and speculation that cannot be tested or safely removed is worse than none. It was deleted; this check is the whole fix, and it proves. The must_say is the section wrapper's own sentence rather than a check line: an OutOfMemoryError is not a failed assertion, it is the section dying, and what this plant proves is precisely that the editor would die. The wrapper catches Throwable so it is reported rather than taking the whole battery quietly. SURVIVED TWO FULL RUNS (2026-09-20 and 2026-09-21), because NOTHING DROVE IT: it reddened some other section incidentally when written, and once that stopped being true it proved nothing while the ledger still counted it. decode() is public, static and GL-free precisely so a suite can ask - and nobody asked until aRegionThatWillNotDecodeAnswersNothing.",
    "file": "src/ctrmap/humaninterface/MapPreview3D.java",
    "find": "\t\tif (!looksLikeBch(modelBytes)) {\n\t\t\treturn null;\n\t\t}\n",
    "replace": "",
@@ -1557,7 +1557,7 @@
    "args": [
     "${GAMEDIR}"
    ],
-   "must_say": "threw instead of answering: java.lang.OutOfMemoryError"
+   "must_say": "FAIL: a region that will not decode answers nothing threw instead of answering"
   },
   {
    "id": "the-preview-shows-the-zone-before-the-one-you-clicked",
@@ -2373,6 +2373,58 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: the unmapped clause is named"
+  },
+  {
+   "id": "a-hook-may-run-when-it-is-imported",
+   "why": "ADOPTED from the verification bootstrap after it found the same defect there. MEASURED HERE: guard_fanout.py ended with a bare main(), so importing it read stdin, hit a JSONDecodeError and exited - and the fan-out cap, which exists because 3 fan-outs burned a week of a metered plan, was the one guard the dispatcher could not ask. It was fixed by hand the day the dispatcher was written and nothing stopped the next one. Asked of the AST, because the check that missed it in the bundle was a grep for __name__ and the file's only occurrence of that was type(exc).__name__ in an unrelated message.",
+   "file": "tools/guard/hooks_wired.py",
+   "find": "                    and getattr(node.value.func, \"id\", None) == \"main\"):\n",
+   "replace": "                    and False):  #PLANTED: nothing runs on import\n",
+   "suite": "ctrmap.tests.HooksWiredTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a hook that calls main() at module level is caught"
+  },
+  {
+   "id": "a-hook-may-spell-its-own-environment-name",
+   "why": "MEASURED HERE on 2026-09-21: 4 bypasses were spelled DTENGINE_ - naming the project these hooks were carried from - while every other name was CTRMAP_. Setting CTRMAP_ALLOW_PIPE did nothing and looked like a bypass that does not work. The direction was the safe one, because an unset override reads as 'not permitted'; a dead CAP name is the dangerous mirror, falling silently to its default, which is how 791 agents went through a cap of 6 in the project this came from. This plant lets a second spelling back in.",
+   "file": "tools/guard/hooks_wired.py",
+   "find": "                    and first.value not in FOREIGN_ENV):\n",
+   "replace": "                    and False):  #PLANTED: any spelling is fine\n",
+   "suite": "ctrmap.tests.HooksWiredTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a hook that spells its own env name is caught"
+  },
+  {
+   "id": "a-hook-may-decide-by-what-the-tool-is-called",
+   "why": "MEASURED HERE on 2026-09-20: 8 hooks were wired under matcher Bash and 5 opened by exempting any tool not called Bash, in a session that also offered a PowerShell tool. All of them were installed, wired, running and OFF for every command issued through it - the heredoc refusal bought with NUL bytes in a committed file among them. Nobody bypassed anything. This plant stops the check looking at the comparison's left side, which is the same file reporting itself clean.",
+   "file": "tools/guard/hooks_wired.py",
+   "find": "            if \"tool_name\" not in ast.dump(node.left):\n",
+   "replace": "            if True:  #PLANTED: no comparison is about a tool name\n",
+   "suite": "ctrmap.tests.HooksWiredTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a hook that decides by tool name is caught"
+  },
+  {
+   "id": "a-suite-count-may-be-about-another-tree",
+   "why": "MEASURED HERE on 2026-09-21: the recorded run on disk was dated 2026-09-13 - eight days and twenty-two changed files earlier - and check_test_claim was still comparing commit-message counts against it. It would have APPROVED a claim of the stale number and REFUSED the true one, and said nothing either way. The number was checked; WHICH TREE it was a number about was not, and the record carried nothing that could answer that. work_order.unproven_plants, ten lines away in a sibling file, had digested src/, the plant targets and the plant count since the day it was written - so this is a rule enforced for one measurement and not for its neighbour, which is the shape that keeps costing here. This plant makes the comparison always agree, which is what the file did before today.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "    if now != run[\"subject\"]:\n",
+   "replace": "    if False:  #PLANTED: a record is about whatever tree you ask it about\n",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a count TRUE for another tree is refused"
   }
  ],
  "retired": [

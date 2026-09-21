@@ -182,7 +182,7 @@ public class CommitGuardTest {
 	 */
 	static void aTestCountIsCheckedAgainstTheLastRecordedRun(File guard) throws Exception {
 		System.out.println("--- a test count in the message is checked against the last recorded run");
-		String ran = "{\"ran\": 124, \"ok\": true}";
+		String ran = "{\"ran\": 124, \"ok\": true, \"subject\": \"__SUBJECT__\"}";
 
 		Run wrong = run(guard, "Move two files\n\nMeasured: 125 tests, all green", new String[]{}, ran);
 		check(wrong.code != 0, "a claim of 125 against a recorded 124 is refused (exit " + wrong.code + ")");
@@ -198,6 +198,29 @@ public class CommitGuardTest {
 		check(unrecorded.code != 0, "a count with NO recorded run is refused too, not assumed right");
 		check(unrecorded.said.contains("record_run.py"), "and says how to record one: "
 				+ firstLine(unrecorded.said));
+
+		// MEASURED 2026-09-21: the record on disk was eight days and twenty-two changed
+		// files old, and this rule was still comparing against it - so it would have
+		// approved a claim of the stale count and refused the true one, both without a
+		// word. The number was being checked; WHICH TREE it was a number about was not.
+		// work_order.unproven_plants, ten lines away in a sibling file, had digested src/,
+		// the plant targets and the plant count since the day it was written.
+		String moved = "{\"ran\": 124, \"ok\": true, \"subject\": \""
+				+ "0000000000000000000000000000000000000000000000000000000000000000\"}";
+		Run stale = run(guard, "Move two files\n\nMeasured: 124 tests, all green",
+				new String[]{}, moved);
+		check(stale.code != 0, "a count TRUE for another tree is refused (exit " + stale.code + ")");
+		check(stale.said.contains("the tree has CHANGED since that run"),
+				"saying the run is about a different tree: " + firstLine(stale.said));
+		check(stale.said.contains("Measured: 124 tests"),
+				"and quoting the line, the same way a wrong count is quoted");
+
+		String noSubject = "{\"ran\": 124, \"ok\": true}";
+		Run unknown = run(guard, "Move two files\n\nMeasured: 124 tests, all green",
+				new String[]{}, noSubject);
+		check(unknown.code != 0, "a record that does not say WHICH tree it measured is refused");
+		check(unknown.said.contains("UNKNOWN"), "as unknown rather than as fine: "
+				+ firstLine(unknown.said));
 	}
 
 	// -------------------------------------- 8. refusal five: close it by refusing
@@ -896,13 +919,27 @@ public class CommitGuardTest {
 					: stagedBody).concat("\n").getBytes(StandardCharsets.UTF_8));
 				git(dir, "add", "--", rel);
 			}
-			if (lastRun != null) {
-				Files.write(new File(dir, ".last-suite-run").toPath(),
-						lastRun.getBytes(StandardCharsets.UTF_8));
-			}
+			// The message file lands in the tree, and it is not a dotfile, so it is part of
+			// what the tree digests to. Written BEFORE the record, or the subject recorded
+			// would be of a tree that does not include it and every honest case would be
+			// refused for the right reason at the wrong moment.
 			File msg = new File(dir, "MSG");
 			Files.write(msg.toPath(), message.getBytes(StandardCharsets.UTF_8));
 
+			if (lastRun != null) {
+				// A record is only evidence about the tree it was taken against, so the
+				// fixture has to be able to write one that honestly is. __SUBJECT__ is
+				// replaced by asking THE GUARD what this scratch tree digests to - not by
+				// a second implementation in Java, which would agree with it until it did
+				// not. A test that wrote its own digest could not fail when the guard's
+				// changed.
+				String body = lastRun;
+				if (body.contains("__SUBJECT__")) {
+					body = body.replace("__SUBJECT__", subjectOf(dir));
+				}
+				Files.write(new File(dir, ".last-suite-run").toPath(),
+						body.getBytes(StandardCharsets.UTF_8));
+			}
 			ProcessBuilder pb = new ProcessBuilder("python", "tools/guard/commit_guard.py",
 					msg.getAbsolutePath());
 			pb.directory(dir);
@@ -913,6 +950,21 @@ public class CommitGuardTest {
 		} finally {
 			Scratch.deleteTree(dir);
 		}
+	}
+
+	/** What the guard itself says this tree digests to. */
+	static String subjectOf(File dir) throws Exception {
+		ProcessBuilder pb = new ProcessBuilder("python", "tools/guard/commit_guard.py",
+				"--subject");
+		pb.directory(dir);
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		String said = drain(p).trim();
+		if (p.waitFor() != 0 || said.length() != 64) {
+			throw new IllegalStateException("the guard would not digest the scratch tree: "
+					+ said);
+		}
+		return said;
 	}
 
 	static String git(File where, String... argv) throws Exception {

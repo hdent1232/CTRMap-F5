@@ -48,7 +48,7 @@
   },
   "NEVER EDIT SOURCE WHILE THE SUITE IS RUNNING": {
    "by": "tools/hooks/guard_suite_running.py",
-   "note": "a write to anything the build compiles is refused while a battery or mutation run holds its lock"
+   "note": "a write to anything the build compiles is refused while a battery or mutation run holds its lock - and since 2026-09-21 record_run digests the tree on BOTH sides of the battery and refuses to record a run whose subject moved underneath it, which is the half that does not care whether the edit went through a tool or through the owner's IDE"
   },
   "RECORD TRAPS YOU PAID FOR, WITH THE COST": {
    "by": "replant.without_a_cost",

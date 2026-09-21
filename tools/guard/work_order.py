@@ -49,7 +49,7 @@ def open_items(text=None):
     if text is None:
         try:
             text = io.open(LEDGER, encoding="utf-8", errors="replace").read()
-        except OSError:
+        except (OSError, subprocess.TimeoutExpired):
             return []
     start = text.find("## Open")
     if start < 0:
@@ -63,8 +63,8 @@ def dirty_files():
     """Tracked files with uncommitted changes. Empty when git cannot be asked."""
     try:
         done = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
-                              capture_output=True, text=True)
-    except OSError:                                    # pragma: no cover - git not on PATH
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):                                    # pragma: no cover - git not on PATH
         return []
     out = []
     for line in done.stdout.splitlines():
