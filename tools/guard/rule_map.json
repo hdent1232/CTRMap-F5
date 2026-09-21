@@ -76,7 +76,10 @@
   },
   "A RUN THAT KNOWS WHAT IT MISSED GOES BACK": {
    "by": "commit_guard.check_known_hole",
-   "note": "and census.py, which refuses a report whose scope was not covered - stopping the search fails one, filing the result fails the other"
+   "note": "and census.py, which refuses a report whose scope was not covered - stopping the search fails one, filing the result fails the other",
+   "clauses": {
+    "Never report a gap and stop": "commit_guard.check_known_hole"
+   }
   },
   "A CLAIM ABOUT WHAT YOU DID NOT OPEN IS A MEASUREMENT": {
    "by": "commit_guard.check_blanket_claim",
@@ -104,11 +107,21 @@
   },
   "FEATURES LIVE IN THEIR OWN UI AREA": {
    "by": "commit_guard.check_menu_item",
-   "note": "a new item on the window that owns the menu bar must say why it is not a tab; MainframeShapeTest caps how many the bar may hold"
+   "note": "a new item on the window that owns the menu bar must say why it is not a tab; MainframeShapeTest caps how many the bar may hold",
+   "clauses": {
+    "Never menu-dumped, never a new window": "src/ctrmap/tests/DialogSeamTest.java",
+    "Undo/redo everywhere": "commit_guard.check_undo"
+   }
   },
   "GAME DATA IS READ-ONLY": {
    "by": "tools/hooks/guard_game_data.py",
-   "note": "a write under a protected root is refused from any tool; reads are untouched"
+   "note": "a write under a protected root is refused from any tool; reads are untouched",
+   "clauses": {
+    "Never run Tidewater": "tools/hooks/guard_forbidden_command.py",
+    "Never `git stash": "tools/hooks/guard_forbidden_command.py",
+    "Never hand-edit a NetBeans `initComponents` block": "tools/hooks/guard_generated_code.py",
+    "No Bash heredocs for Java or Python — write the script to a file": "tools/hooks/guard_heredoc.py"
+   }
   },
   "THE OWNER DOES THE IN-APP AND IN-GAME TESTING": {
    "by": "commit_guard.check_in_game_claim",

@@ -140,6 +140,21 @@ _ZERO_CLAIM = re.compile(
     r"\b(?:0|zero|no|none|nothing|nowhere)\b", re.I)
 
 
+
+#: -------- UNDO/REDO EVERYWHERE ------------------------------------------------------
+#: The owner's standing rule, and the half of FEATURES LIVE IN THEIR OWN UI AREA that has
+#: nothing else behind it. Undo exists in ONE of 79 files under humaninterface today, so this
+#: binds new work rather than banning the existing 78: a form that lands without an undo story
+#: is one the user cannot get out of, and the answer is cheapest to write while the form is
+#: being written.
+UNDO = "Undo:"
+NO_UNDO = "No-undo:"
+_UI_HOME = "src/ctrmap/humaninterface/"
+#: ...and a SURFACE, not every class that lives there. The first version asked this
+#: of CM3DInputManager, which handles key events and has no undo story of its own,
+#: and it reddened four fixtures of this gate's own suite.
+_UI_SURFACE = ("Form", "Dialog", "Editor", "Wizard", "Tab", "Panel")
+
 #: -------- FEATURES LIVE IN THEIR OWN UI AREA ----------------------------------------
 #: The owner's standing rule since this project began: never menu-dumped, never a new window;
 #: seldom-used goes to the Extras tab; undo/redo everywhere. MainframeShapeTest pins the menu
@@ -783,6 +798,38 @@ def check_menu_item(message):
     return 1
 
 
+def check_undo(message):
+    """A new editing surface has to say how what it does is undone.
+
+    UNDO/REDO EVERYWHERE. Measured: one of the 79 files under humaninterface has an undo path
+    (PaintForm, through TileUndo). Banning the other 78 would fire on years of honest work and
+    the ceiling would be raised once and forgotten, so this binds only what is ADDED - where
+    the answer is cheapest, because the person writing the form is the one who knows what its
+    inverse is.
+    """
+    low = message.lower()
+    if UNDO.lower() in low or NO_UNDO.lower() in low:
+        return 0
+    added = [f for f in added_files()
+             if f.startswith(_UI_HOME) and f.endswith(".java")
+             and _is_production(f)
+             and any(os.path.basename(f)[:-5].endswith(k) for k in _UI_SURFACE)]
+    if not added:
+        return 0
+    sys.stderr.write(
+        "REFUSING THE COMMIT: this adds a user-facing surface and says nothing about" + LF
+        + "  how its effects are undone." + LF
+        + "".join("    %s%s" % (p, LF) for p in added)
+        + "  UNDO/REDO EVERYWHERE is the owner's standing rule. One of the 79 files under" + LF
+        + "  humaninterface has an undo path today, which is why this binds new work rather" + LF
+        + "  than the existing 78 - and why the answer is cheapest now, while the person" + LF
+        + "  writing the form still knows what its inverse is." + LF
+        + "    %s <how the user takes it back>" % UNDO + LF
+        + "  or, for a surface that changes nothing:" + LF
+        + "    %s <why there is nothing to undo>" % NO_UNDO + LF)
+    return 1
+
+
 def main(argv):
     if len(argv) < 2:
         return 0
@@ -792,7 +839,7 @@ def main(argv):
     for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,
                   check_blanket_claim, check_extraction_is_tested, check_detangle,
                   check_in_game_claim, check_zero_claim, check_cheapest_evasion,
-                  check_menu_item):
+                  check_menu_item, check_undo):
         code = check(message)
         if code:
             return code

@@ -2334,6 +2334,45 @@
     "${GAMEDIR}"
    ],
    "must_say": "FAIL: packing it back is refused"
+  },
+  {
+   "id": "a-forbidden-command-may-run",
+   "why": "rule_map reported GAME DATA IS READ-ONLY enforced - and it was, at the headline. 3 separate imperatives inside that same paragraph had nothing behind them at all: Never run Tidewater, Never git stash, Never hand-edit a NetBeans initComponents block. A rule can be enforced and its clauses unenforced at the same time, and 28 of 28 was reported over the top of it for the life of the project. git stash is the one with a measured cost: the mutation harness ends in git reset --hard and nearly erased an uncommitted fix once already, and a stash is that same work hidden where no guard looks. This plant empties the list.",
+   "file": "tools/hooks/guard_forbidden_command.py",
+   "find": "    for phrase in phrases:\n",
+   "replace": "    for phrase in []:  #PLANTED: nothing is forbidden\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: git stash is refused"
+  },
+  {
+   "id": "a-missing-forbidden-list-permits-everything",
+   "why": "AN UNREADABLE LIST IS NOT AN EMPTY ONE. A hook whose data file goes missing and quietly permits everything is a guard that switched itself off without anybody deciding to - the same shape as the fan-out cap reading an unmeasurable width as 0 and letting 791 agents through. This plant makes a missing list mean nothing is forbidden.",
+   "file": "tools/hooks/guard_forbidden_command.py",
+   "find": "    if trouble:\n",
+   "replace": "    if False:  #PLANTED: a missing list forbids nothing\n",
+   "suite": "ctrmap.tests.HookRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: a guard whose list has gone missing refuses"
+  },
+  {
+   "id": "a-rule-clause-may-have-no-mechanism",
+   "why": "THE HOLE IN THE MAP ITSELF. rule_map checked a rule's HEADLINE and reported 28 of 28 enforced while 4 imperatives inside those rules' bodies had nothing behind them - 3 prohibitions and 1 requirement. The audit was built to look at exactly the level where that is invisible. This plant stops it reading the bodies again.",
+   "file": "tools/guard/rule_map.py",
+   "find": "        for clause in clauses_in(bodies.get(rule, \"\")):\n",
+   "replace": "        for clause in []:  #PLANTED: a rule has no clauses\n",
+   "suite": "ctrmap.tests.RuleMapTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: the unmapped clause is named"
   }
  ],
  "retired": [

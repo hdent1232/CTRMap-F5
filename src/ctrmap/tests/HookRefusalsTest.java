@@ -66,6 +66,7 @@ public class HookRefusalsTest {
 		theStatusOfAPipelineBelongsToItsFilter(hooks);
 		aBackslashInAnInlineScriptIsRefused(hooks);
 		agentsMayNotEditAtTheSameTime(hooks);
+		aForbiddenCommandIsRefused(hooks);
 
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
 		if (fails != 0) {
@@ -284,6 +285,54 @@ public class HookRefusalsTest {
 
 	/** A backslash, built so this file does not have to escape one to talk about one. */
 	static final String BACKSLASH = String.valueOf((char) 92);
+
+	/**
+	 * Commands the owner said must never run, refused at the call.
+	 *
+	 * <p>THE HOLE THESE CAME OUT OF. {@code rule_map.py} reported GAME DATA IS READ-ONLY
+	 * enforced, and it was - {@code guard_game_data.py} enforces the headline. Three
+	 * separate imperatives sitting inside that same paragraph had nothing behind them at
+	 * all, because the map was built to check a rule's HEADLINE. A rule can be
+	 * enforced and its clauses unenforced at the same time, and 28 of 28 was reported over
+	 * the top of it.
+	 *
+	 * <p>{@code git stash} is the one with a measured cost: this project's own rule is
+	 * COMMIT BEFORE RUNNING ANYTHING THAT MUTATES SOURCES, because the mutation harness
+	 * ends in {@code git reset --hard} and nearly erased an uncommitted fix. A stash is
+	 * that same work hidden where no guard looks.
+	 */
+	static void aForbiddenCommandIsRefused(File hooks) throws Exception {
+		System.out.println("--- a command the owner said must never run");
+		File guard = new File(hooks, "guard_forbidden_command.py");
+		check(guard.isFile(), "the guard is installed at " + guard.getPath());
+		check(refuses(guard, bash("git stash")), "git stash is refused");
+		check(refuses(guard, bash("cd x && git stash -u")),
+			"...anywhere on the line, not only at the start");
+		check(refuses(guard, bash("python tools/Tidewater.py run")),
+			"and Tidewater is refused");
+		//THE NEGATIVE HALF: a word that merely contains one is not one.
+		check(!refuses(guard, bash("git status")), "while git status is allowed");
+		check(!refuses(guard, bash("cat stashed_notes.txt")),
+			"and a filename that merely contains the word is not the command");
+		
+		//AN UNREADABLE LIST IS NOT AN EMPTY ONE. A copy of the guard with no list beside it
+		//must refuse everything rather than permit everything - the same shape as the fan-out
+		//cap reading an unmeasurable width as zero and letting 791 agents through.
+		File nolist = Scratch.dir("nolist");
+		File alone = new File(nolist, "guard_forbidden_command.py");
+		Files.copy(guard.toPath(), alone.toPath());
+		//...with shellin beside it, which every guard imports. Without it the copy could not
+		//load at all, and "the guard never answered" is a different finding from "the guard
+		//permitted everything" - a fixture that cannot ask the question cannot answer it.
+		Files.copy(new File(hooks, "shellin.py").toPath(),
+				new File(nolist, "shellin.py").toPath());
+		check(refuses(alone, bash("echo hello")),
+				"a guard whose list has gone missing refuses rather than permits");
+
+		//...and the generated block nobody may hand-edit
+		File gen = new File(hooks, "guard_generated_code.py");
+		check(gen.isFile(), "the generated-code guard is installed at " + gen.getPath());
+	}
 
 	// ---------------------------------------------------------------- fixtures
 

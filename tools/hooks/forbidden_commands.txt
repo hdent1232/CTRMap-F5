@@ -1,0 +1,14 @@
+# Commands that must never run in this project. One per line: a word or a phrase, matched
+# case-insensitively against the shell text. Data rather than code, so the hook stays
+# byte-identical across projects and each one names its own.
+#
+# Tidewater: the owner's standing instruction, listed under GAME DATA IS READ-ONLY. It is not
+# run here, by anything, ever.
+Tidewater
+#
+# `git stash`: it moves uncommitted work somewhere no guard looks. This project's own rule
+# says COMMIT BEFORE RUNNING ANYTHING THAT MUTATES SOURCES, because the mutation harness ends
+# in `git reset --hard` and nearly erased an uncommitted fix once already. A stash is that same
+# work, hidden better - and `git stash drop`, or a stash left behind across a branch change,
+# loses it outright. Commit it instead; a commit can be amended and a stash cannot be found.
+git stash
