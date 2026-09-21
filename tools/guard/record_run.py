@@ -240,7 +240,7 @@ def main(argv):
     #: refused as a 13600% rise. A ratchet whose baseline is a run that did not occur reports
     #: its first honest reading as a bug. Announcing nothing is the shape of "did not start",
     #: and the two are told apart by the verdict line, which is already read above.
-    if not announced:
+    if not record["suites_announced"]:
         print("not recording a magnitude: the battery announced no suites, so this is a run"
               " that did not happen rather than a run of nought")
         return 1 if record["suites_failed"] else 0
