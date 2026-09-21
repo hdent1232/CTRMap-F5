@@ -53,19 +53,17 @@ def claude_md(root):
 
 
 def rules_in(text):
-    """Every rule headline: a bolded span whose first sentence is in capitals.
+    """Every rule headline, in the order they appear. ONE parser, not a second one.
 
-    The shape, not a list - a list would have to be kept in step with the file by hand, which
-    is the thing being refused one level down.
+    This used to read the file its own way - splitting on every bolded span and cutting each
+    headline at its first full stop - while `bodies_in` read it another. They disagreed about
+    one rule out of thirty-one, and the disagreement was silent in the worst possible place:
+    the clause audit looked up each rule's body with `bodies.get(rule, "")`, so a rule this
+    function named and that function did not was audited as having NO CLAUSES AT ALL. A query
+    that cannot read its subject must not report it absent, and the tool that audits that rule
+    was breaking it.
     """
-    found = []
-    for span in re.findall(r"\*\*(.+?)\*\*", text, re.S):
-        head = " ".join(span.split()).split(".")[0].strip()
-        letters = [c for c in head if c.isalpha()]
-        if letters and all(c.isupper() for c in letters) and len(head) > 12:
-            found.append(head)
-    seen = set()
-    return [r for r in found if not (r in seen or seen.add(r))]
+    return list(bodies_in(text))
 
 
 def _exists(root, mechanism):
@@ -101,7 +99,16 @@ def _exists(root, mechanism):
 #: Prohibitions AND requirements. "Undo/redo everywhere" is a rule of this project and
 #: was invisible to a pattern that only knew how to read a Never - the same mistake as
 #: auditing headlines and not clauses, one shape further in.
-_CLAUSE = re.compile(r"\b((?:Never|Always|No|Do not|Don't)\s+[^.\n;]{6,110}|[A-Z][\w/]{3,}(?:\s+\w+){0,3}\s+everywhere)")
+#: THE SHAPES AN IMPERATIVE COMES IN, and this list has been short twice. It began knowing only
+#: prohibitions, so "Undo/redo everywhere" - a requirement - was missed; the `everywhere` arm was
+#: added for it. It still did not know `must`, which is how "The record must not be part of its
+#: own subject" sat in a rule body with nothing asked of it. Whatever level an audit reads,
+#: something lives one level inside it: the test is not whether the count is high, it is whether
+#: you can name the shape the count does not cover.
+_CLAUSE = re.compile(
+    r"\b((?:Never|Always|No|Do not|Don't)\s+[^.\n;]{6,110}"
+    r"|[A-Z][\w/]{3,}(?:\s+\w+){0,3}\s+everywhere"
+    r"|[A-Z][^.\n;]{0,80}?\bmust(?: not)?\s+[^.\n;]{6,110})")
 
 #: ...but not the headline itself, which is audited separately and is in capitals.
 def _is_headline(text):
@@ -109,28 +116,48 @@ def _is_headline(text):
     return bool(letters) and all(c.isupper() for c in letters)
 
 
+#: A HEADLINE IS BOLD, ALL-CAPS, AND STARTS A LINE. Bold is also used for EMPHASIS inside a
+#: body, and the previous version split on EVERY bolded span, so a body ended at its first
+#: emphasised phrase and the rest was attributed to a key that is not a rule and then dropped.
+#: MEASURED 2026-09-21 before this was changed: 11 of 31 rules were read only that far, and
+#: 2,921 characters of CLAUDE.md - six imperatives among them - had never been read by the
+#: clause audit at all. §16 of the bundle records this same check being built to recognise one
+#: shape twice; this is the third. The count was 31 of 31 the whole time.
+_HEADLINE = re.compile(r"^\*\*([A-Z][^*]*?)\*\*", re.M)
+
+
 def bodies_in(text):
-    """{headline: body} - what each rule says after its bolded first sentence."""
+    """{headline: body} - the WHOLE of what each rule says, to the next rule's headline.
+
+    A headline stated twice has BOTH bodies, joined. `A RUN THAT KNOWS WHAT IT MISSED GOES
+    BACK` is in section 1 and again in section 2 in this project's CLAUDE.md, and a dict keyed
+    by headline kept one of them - so one entire rule body, clauses included, was never audited
+    and the count could not show it. Two statements of one rule are two sets of obligations,
+    not a collision to resolve by writing the second over the first.
+    """
+    found = [(" ".join(m.group(1).split()).strip(" ."), m.start(), m.end())
+             for m in _HEADLINE.finditer(text)]
+    #: ...and the headline is NOT cut at its first full stop. "DO THE WORK MECHANICALLY. AGENT
+    #: SWEEPS ARE THE LAST RESORT" was audited as "DO THE WORK MECHANICALLY", so the ledger
+    #: carried an entry for half a rule and the other half was never named anywhere.
+    found = [(h, at, after) for h, at, after in found if _is_headline(h) and len(h) > 12]
     out = {}
-    parts = re.split(r"\*\*(.+?)\*\*", text, flags=re.S)
-    #: split yields [before, bold1, after1, bold2, after2, ...]
-    for i in range(1, len(parts) - 1, 2):
-        head = " ".join(parts[i].split()).split(".")[0].strip()
-        letters = [c for c in head if c.isalpha()]
-        if not letters or not all(c.isupper() for c in letters) or len(head) <= 12:
-            continue
-        #: the body is the bolded remainder plus the prose up to the next rule
-        rest = " ".join(parts[i].split())
-        body = rest[len(head):] + " " + " ".join(parts[i + 1].split())
-        out[head] = body.strip()
+    for i, (head, at, after) in enumerate(found):
+        end = found[i + 1][1] if i + 1 < len(found) else len(text)
+        body = " ".join(text[after:end].split()).strip()
+        out[head] = (out[head] + " " + body).strip() if head in out else body
     return out
 
 
 def clauses_in(body):
-    """Every imperative sentence in a rule's body, deduplicated, headline text excluded."""
+    """Every imperative sentence in a rule's body, deduplicated, headline text excluded.
+
+    Emphasis markers are removed before the scan, so a clause that happens to be bolded does
+    not carry `**` into the middle of the key the ledger has to match exactly.
+    """
     found = []
     seen = set()
-    for hit in _CLAUSE.finditer(body or ""):
+    for hit in _CLAUSE.finditer((body or "").replace("**", "")):
         clause = " ".join(hit.group(1).split()).strip(" *_`,;")
         if _is_headline(clause) or len(clause) < 10:
             continue
@@ -198,7 +225,16 @@ def findings(root):
     for rule in rules:
         entry = entries.get(rule) or {}
         mapped = entry.get("clauses") or {}
-        for clause in clauses_in(bodies.get(rule, "")):
+        if rule not in bodies:
+            #: NOT `bodies.get(rule, "")`. An absent body audits as a rule with no clauses,
+            #: which is indistinguishable from a rule whose clauses are all accounted for -
+            #: and it is how one rule's whole body went unaudited while the count said 31 of
+            #: 31. There is no reading of this that is safe to guess.
+            why.append("%r is a rule whose BODY could not be found, so its clauses are UNKNOWN "
+                       "- not none. The two readers of CLAUDE.md have gone out of step."
+                       % rule[:70])
+            continue
+        for clause in clauses_in(bodies[rule]):
             named = mapped.get(clause)
             if named is None:
                 why.append(

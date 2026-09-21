@@ -4,7 +4,13 @@
  "rules": {
   "MEASURE, NEVER REASON FROM PLAUSIBILITY": {
    "by": "commit_guard.check_zero_claim",
-   "note": "a measurement reporting nothing must cite the control that proves the scan can find something; census.py refuses a report whose coverage is not computed from disk"
+   "note": "a measurement reporting nothing must cite the control that proves the scan can find something; census.py refuses a report whose coverage is not computed from disk",
+   "clauses": {
+    "Any scan you write must include a known-answer control before its result is believed": "commit_guard.check_zero_claim"
+   },
+   "clause_notes": {
+    "Any scan you write must include a known-answer control before its result is believed": "the point at which a scan's result is BELIEVED is a commit that reports it, and a message reporting nothing found is refused unless it names the control that proves the scan can find something; magnitude.py refuses the other direction, a number that moved past its allowance or did not move across a change meant to move it. Both were paid for: a scan read 0 across 536 files twice for reading the wrong struct field, and a ratchet re-measured to exactly 103 before and after when the truth was 64"
+   }
   },
   "A FIX WITHOUT A GUARD IS NOT A FIX": {
    "by": "commit_guard.check_fix_has_a_guard",
@@ -78,7 +84,11 @@
    "by": "commit_guard.check_known_hole",
    "note": "and census.py, which refuses a report whose scope was not covered - stopping the search fails one, filing the result fails the other",
    "clauses": {
-    "Never report a gap and stop": "commit_guard.check_known_hole"
+    "Never report a gap and stop": "commit_guard.check_known_hole",
+    "Never end by naming what you did not cover and handing it over": "commit_guard.check_known_hole"
+   },
+   "clause_notes": {
+    "Never end by naming what you did not cover and handing it over": "section 1's wording of the clause section 2 states as 'Never report a gap and stop' - one rule written twice in one file, and until 2026-09-21 a dict keyed by headline kept one of the two bodies, so this half was never audited. Same refusal answers it: a commit naming a hole it did not close must say why the run could not close it"
    }
   },
   "A CLAIM ABOUT WHAT YOU DID NOT OPEN IS A MEASUREMENT": {
@@ -89,9 +99,9 @@
    "by": "tools/hooks/guard_fanout.py",
    "note": "caps agents, workflows and fan-out width, and refuses a width it cannot read"
   },
-  "DO THE WORK MECHANICALLY": {
+  "DO THE WORK MECHANICALLY. AGENT SWEEPS ARE THE LAST RESORT": {
    "by": "tools/hooks/guard_fanout.py",
-   "note": "the owner's own wording of the same rule; the same hook answers both"
+   "note": "the owner's own wording of the same rule; the same hook answers both - the ledger carried this rule under HALF its name until 2026-09-21, because the parser cut a headline at its first full stop while the body parser did not, and the clause audit then looked the body up by a name that did not exist and found none"
   },
   "MAKE IT IMPOSSIBLE AT THE POINT OF ACTION": {
    "by": "commit_guard.check_guard_class",
@@ -126,6 +136,24 @@
   "THE OWNER DOES THE IN-APP AND IN-GAME TESTING": {
    "by": "commit_guard.check_in_game_claim",
    "note": "a commit claiming an in-game result is refused unless it quotes the owner"
+  },
+  "AGENTS THAT CANNOT EDIT EACH OTHER'S FILES MUST NOT EDIT AT THE SAME TIME": {
+   "by": "tools/hooks/guard_fanout.py",
+   "note": "parallel_edit reads the fan-out's own script text and refuses a launch whose workers WRITE in parallel, however many they are - a survey composes and a parallel rewrite does not, which is why 476 finding headlines over 41 locations closed nothing. The rule was running here before it was written down, which is as invisible as the opposite"
+  },
+  "A GUARD'S TRIGGER IS A CLASS, NOT A LIST OF NAMES": {
+   "by": "tools/guard/hooks_wired.py",
+   "note": "hooks_that_decide_by_tool_name refuses a hook that opens by comparing tool_name to a literal, and the wiring check refuses any matcher that is a tool name rather than \"*\" - 8 hooks here were wired under Bash in a session that also offered PowerShell, installed and running and off for every command issued through it"
+  },
+  "A RECORDED MEASUREMENT MUST CARRY THE SUBJECT IT WAS TAKEN AGAINST": {
+   "by": "tools/guard/commit_guard.py",
+   "note": "record_is_about_another_tree refuses a count whose record carries no subject digest, or one that does not match this tree, and record_run refuses to write a record at all for a run whose tree moved while it ran; source_digest treats a subject it cannot compute as UNKNOWN rather than unchanged",
+   "clauses": {
+    "The record must not be part of its own subject — exclude it by SHAPE, because excluding it by ignore-rule holds in your repository": "commit_guard.source_digest"
+   },
+   "clause_notes": {
+    "The record must not be part of its own subject — exclude it by SHAPE, because excluding it by ignore-rule holds in your repository": "the subject digest covers everything git calls source MINUS dotfiles at the repository root, which is where the records live - a shape, not a list of names, because excluding the record by ignore-rule holds in this repository and fails in the scratch repositories the suites build, which carry no .gitignore at all. Proven by the plant test_a_record_at_the_ROOT_is_not_part_of_its_OWN_subject in the bootstrap bundle and by the control that drives it here"
+   }
   }
  }
 }
