@@ -34,7 +34,9 @@ may not read a directory containing it, and may not run a tool under `tools/audi
 Not scoped to `tools/`, because the command that produced the wrong table was a bare
 `python -c`. A guard that only knows about this project's own tools would have watched it go by.
 
-TO READ IT ANYWAY: the owner sets DTENGINE_ALLOW_MUTATION_READ=1 for that session.
+TO READ IT ANYWAY: the owner sets CTRMAP_ALLOW_MUTATION_READ=1 for that session. The
+name is built by hook_env.name("ALLOW_MUTATION_READ"), so the prefix has one
+place to change.
 """
 import json
 import os
@@ -42,7 +44,12 @@ import re
 import sys
 
 LOCK = ".mutation-in-flight"
-BYPASS = "DTENGINE_ALLOW_MUTATION_READ"
+#: AT THE TOP OF THE USE - a module-level constant cannot wait for an import placed further
+#: down beside `shellin`.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402  (path set above)
+
+BYPASS = hook_env.name("ALLOW_MUTATION_READ")
 
 #: Tools whose whole job is to read the tree and answer questions about it. Running one while a
 #: module is unparsed on disk measures the unparsed module.
@@ -162,6 +169,7 @@ def verdict(command, locked):
 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402
 import shellin                                    # noqa: E402  (path set above)
 
 HOOK = "guard_mutation_read.py"

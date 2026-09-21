@@ -25,12 +25,21 @@ WHAT TO DO INSTEAD: redirect to a file and read the file.
 The harness already captures a backgrounded command's whole output to a file, so the pipe was
 never buying anything in the first place.
 
-TO RUN ONE ANYWAY: the owner sets DTENGINE_ALLOW_PIPE=1 for that session.
+TO RUN ONE ANYWAY: the owner sets CTRMAP_ALLOW_PIPE=1 for that session. The name is
+built by hook_env.name("ALLOW_PIPE"), so the prefix has one place to change.
 """
 import json
 import os
 import re
 import sys
+
+#: AT THE TOP, because this module is used at import time - `BYPASS` is a module-level
+#: constant. Adding the import beside the `shellin` one further down put the USE forty lines
+#: above the IMPORT, and the hook died with a NameError the moment anything loaded it. The
+#: dispatcher refused every call until it was fixed, which is the behaviour it should have:
+#: a guard that cannot be imported has not cleared anything.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402  (path set above)
 
 #: Consumers that either read to EOF before emitting anything, or close the pipe early.
 BUFFERING = ("tail", "head", "less", "more", "sort", "uniq", "wc", "column", "tac")
@@ -95,7 +104,7 @@ def invokes(stage, scripts=DESTRUCTIVE_IF_INTERRUPTED):
     return False
 
 
-BYPASS = "DTENGINE_ALLOW_PIPE"
+BYPASS = hook_env.name("ALLOW_PIPE")
 
 
 def piped_consumers(command):
@@ -243,6 +252,7 @@ def _verdict_for(command, background):
 
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402
 import shellin                                    # noqa: E402  (path set above)
 
 HOOK = "guard_background_pipe.py"

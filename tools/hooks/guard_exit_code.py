@@ -33,10 +33,11 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402
 import shellin                                    # noqa: E402  (path set above)
 
 HOOK = "guard_exit_code.py"
-BYPASS = "CTRMAP_ALLOW_PIPED_STATUS"
+BYPASS = hook_env.name("ALLOW_PIPED_STATUS")
 
 #: Consumers whose own status is what `$?` will report - and which almost always succeed.
 FILTERS = ("head", "tail", "grep", "egrep", "fgrep", "sort", "uniq", "wc", "cut", "sed",

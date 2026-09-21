@@ -51,8 +51,33 @@ def run(quick=False):
     command = ["powershell", "-ExecutionPolicy", "Bypass", "-File", SCRIPT]
     if quick:
         command.append("-Quick")
+    #: THE TREE IS DIGESTED ON BOTH SIDES OF THE BATTERY, and a run whose tree moved
+    #: underneath it is not recorded at all. NEVER EDIT SOURCE WHILE THE SUITE IS RUNNING had
+    #: a hook behind it, and a hook only sees edits made through the tools - an edit made in
+    #: the owner's IDE during a two-hour battery was invisible to it and produced a result
+    #: that is neither the old code nor the new one and looks green. This is the half that
+    #: does not care who made the edit. `commit_guard.source_digest` is asked for both, so
+    #: there is one implementation of "which tree" rather than two that agree until they do
+    #: not - and None from it means COULD NOT LOOK, which is refused, not waved through.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import commit_guard
+    before = commit_guard.source_digest(ROOT)
     began = time.time()
-    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=7200)
+    after = commit_guard.source_digest(ROOT)
+    if before is None or after is None:
+        sys.stderr.write(
+            "REFUSING TO RECORD: this tree cannot be digested, so which tree the battery"
+            " just measured is UNKNOWN.%s  An unreadable subject is not an unchanged one."
+            "%s" % (LF, LF))
+        return None
+    if before != after:
+        sys.stderr.write(
+            "REFUSING TO RECORD: the tree CHANGED while the battery was running (%s -> %s)."
+            "%s  The result is neither the old code nor the new one and it looks green."
+            "%s  Two full runs were thrown away this way. Re-run it on a still tree.%s"
+            % (before[:12], after[:12], LF, LF, LF))
+        return None
     text = done.stdout + done.stderr
     announced = [n.strip() for n in _SUITE.findall(text)]
     named = _FAILED.search(text)
@@ -65,6 +90,7 @@ def run(quick=False):
     passed = [n for n in announced if n not in failed]
     return {
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "subject": after,
         "seconds": round(time.time() - began, 1),
         "exit_code": done.returncode,
         "ok": done.returncode == 0 and not failed,

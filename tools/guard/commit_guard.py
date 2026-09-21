@@ -46,6 +46,52 @@ LF = chr(10)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LAST_RUN = os.path.join(ROOT, ".last-suite-run")
 
+
+def source_digest(root=ROOT):
+    """WHICH TREE a measurement was taken against, or None when that cannot be read.
+
+    Git's own answer to "what here is source" - tracked files plus untracked ones it does not
+    ignore - minus DOTFILES AT THE REPOSITORY ROOT, which is where the records themselves
+    live. That exclusion is a shape and not a list of names on purpose: `.last-suite-run`
+    would otherwise be part of its own subject, and the scratch repositories the suites build
+    carry no `.gitignore` at all, so excluding it by ignore-rule would hold here and not
+    there. Everything a suite can read moves this digest - `tools/guard/magnitudes.json` and
+    `plants.json` included, because a suite reads each of those and a changed number is a
+    changed verdict, not noise.
+
+    Line endings are normalised for the reason `replant.target_digest` normalises them: this
+    tree is already mixed and autocrlf rewrites on commit, so raw bytes would refuse a record
+    taken against identical content in a different checkout.
+
+    None means COULD NOT LOOK - no git, not a repository, a call that failed or timed out -
+    and the caller must refuse on it rather than read it as "nothing has changed". A query
+    that cannot read its subject must not report it absent.
+    """
+    import hashlib
+    import subprocess
+    try:
+        done = subprocess.run(
+            ["git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard"],
+            capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.SubprocessError):
+        #: TimeoutExpired is a SubprocessError and NOT an OSError - catching only OSError
+        #: here would let a hung git escape as a traceback, which is the third time that
+        #: exact pair has been got wrong in this repository.
+        return None
+    if done.returncode != 0:
+        return None
+    digest = hashlib.sha256()
+    for rel in sorted(line.strip() for line in done.stdout.splitlines() if line.strip()):
+        if rel.startswith(".") and "/" not in rel:
+            continue
+        digest.update(rel.encode("utf-8"))
+        try:
+            with open(os.path.join(root, rel.replace("/", os.sep)), "rb") as handle:
+                digest.update(handle.read().replace(b"\r\n", b"\n"))
+        except OSError:
+            digest.update(b"<unreadable>")
+    return digest.hexdigest()
+
 #: Where a guard can live in THIS repository. `src/ctrmap/tests` is the Java suite the battery
 #: runs; `tools/` and the hook directories are the refusals themselves.
 GUARD_DIRS = ("src/ctrmap/tests", "tools", ".githooks", ".claude/hooks")
@@ -204,8 +250,8 @@ def _changes_behaviour():
         return False
     try:
         done = subprocess.run(["git", "diff", "--cached", "-U0", "--"] + prod,
-                              cwd=ROOT, capture_output=True, text=True)
-    except OSError:                                    # pragma: no cover - git not on PATH
+                              cwd=ROOT, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):       # pragma: no cover
         return True                                    # cannot tell: ask, do not assume innocent
     added, removed = [], []
     for line in done.stdout.splitlines():
@@ -287,8 +333,8 @@ def staged_files():
     import subprocess
     try:
         done = subprocess.run(["git", "diff", "--cached", "--name-only"],
-                              cwd=ROOT, capture_output=True, text=True)
-    except OSError:                                    # pragma: no cover - git not on PATH
+                              cwd=ROOT, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):       # pragma: no cover
         return []
     return [p.strip().replace(chr(92), "/") for p in done.stdout.splitlines() if p.strip()]
 
@@ -360,6 +406,29 @@ def last_run():
         return None
 
 
+def record_is_about_another_tree(run):
+    """Why the recorded run is not evidence about THIS tree. None means it is.
+
+    MEASURED 2026-09-21: the record on disk was eight days and twenty-two changed files old
+    and this check was still comparing against it - it would have APPROVED a claim of the
+    stale count and REFUSED the true one, both silently. `work_order.unproven_plants` sits
+    ten lines from here and digests src/, the plant targets and the plant count before it
+    will call a proof current; this one read a number out of a file and believed it. A rule
+    enforced for one measurement and not for its neighbour is the shape that keeps costing.
+    """
+    if not run.get("subject"):
+        return ("the recorded run carries no subject digest, so WHICH TREE it measured is"
+                " UNKNOWN - re-run `python tools\\guard\\record_run.py`")
+    now = source_digest()
+    if now is None:
+        return ("this tree cannot be digested, so whether that run is about it cannot be"
+                " read - and an unreadable subject is not an unchanged one")
+    if now != run["subject"]:
+        return ("the tree has CHANGED since that run - it measured %s, this is %s"
+                % (run["subject"][:12], now[:12]))
+    return None
+
+
 def check_test_claim(message):
     """Every `N tests` claim must match the last recorded run.
 
@@ -380,6 +449,15 @@ def check_test_claim(message):
             "REFUSING THE COMMIT: the message claims %s tests and no suite run has" % sorted(claimed)
             + LF + "  been recorded. Run `python tools\\guard\\record_run.py` first, or drop" + LF
             + "  the claim." + LF)
+        return 1
+    why = record_is_about_another_tree(run)
+    if why:
+        sys.stderr.write(
+            "REFUSING THE COMMIT: the message claims %s tests and %s." % (sorted(claimed), why)
+            + LF + "  A count measured against a different tree is not a measurement of this" + LF
+            + "  one, in either direction: it approves a stale number and refuses the true" + LF
+            + "  one. Re-run the battery, or drop the claim. The claim is on:" + LF
+            + "".join("    %s%s" % (claimed[c], LF) for c in sorted(claimed)))
         return 1
     ran = int(run.get("ran") or 0)
     wrong = sorted(c for c in claimed if c != ran)
@@ -416,8 +494,8 @@ def _added_to_queue():
     import subprocess
     try:
         done = subprocess.run(["git", "diff", "--cached", "--unified=0", "--", "OUTSTANDING.md"],
-                              cwd=ROOT, capture_output=True, text=True)
-    except OSError:                                    # pragma: no cover - git not on PATH
+                              cwd=ROOT, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):       # pragma: no cover
         return ""
     return LF.join(l[1:] for l in done.stdout.splitlines()
                    if l.startswith("+") and not l.startswith("+++"))
@@ -551,8 +629,8 @@ def added_files():
     import subprocess
     try:
         done = subprocess.run(["git", "diff", "--cached", "--name-status", "--diff-filter=A"],
-                              cwd=ROOT, capture_output=True, text=True)
-    except OSError:                                    # pragma: no cover - git not on PATH
+                              cwd=ROOT, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):       # pragma: no cover
         return []
     out = []
     for line in done.stdout.splitlines():
@@ -746,8 +824,8 @@ def _added_lines():
     import subprocess
     try:
         done = subprocess.run(["git", "diff", "--cached", "-U0"],
-                              cwd=ROOT, capture_output=True, text=True)
-    except OSError:                                    # pragma: no cover - git not on PATH
+                              cwd=ROOT, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):       # pragma: no cover
         return {}
     out = {}
     path = None
@@ -831,6 +909,16 @@ def check_undo(message):
 
 
 def main(argv):
+    if len(argv) > 1 and argv[1] == "--subject":
+        #: So a recorder - and the suite that drives this file - asks THIS implementation
+        #: what tree it is looking at, instead of growing a second digest that agrees with
+        #: it until the day it does not.
+        digest = source_digest()
+        if digest is None:
+            sys.stderr.write("cannot digest this tree - is it a git repository?" + LF)
+            return 2
+        sys.stdout.write(digest + LF)
+        return 0
     if len(argv) < 2:
         return 0
     message = _message(argv[1])

@@ -58,6 +58,7 @@ public class HooksWiredTest {
 		anUnreadableWiringIsRefusedRatherThanPassed(checker);
 		aHookEditedInPlaceIsRefused(checker);
 		aSoundWiringIsAllowed(checker);
+		theThreeAdoptedRefusalsCatchTheirDefects(repo);
 		theLiveInstallationIsSound(checker, repo);
 
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
@@ -180,6 +181,103 @@ public class HooksWiredTest {
 		said = askAsIs(checker, root);
 		check(said.contains("guard_orphan.py") && said.contains("only on paper"),
 				"and a versioned hook that is not installed is named: " + firstReason(said));
+	}
+
+	/**
+	 * The three refusals adopted from the verification bootstrap, each shown catching its own
+	 * defect and leaving the honest shape alone.
+	 *
+	 * <p>EVERY ONE IS A DEFECT THIS PROJECT ALREADY HAD AND FIXED BY HAND, which is the
+	 * definition of a class left open:
+	 *
+	 * <ul>
+	 * <li><b>runs on import</b> — {@code guard_fanout.py} ended with a bare {@code main()}, so
+	 *     importing it read stdin and exited. The fan-out cap, which exists because three
+	 *     fan-outs burned a week of a metered plan, was the one guard the dispatcher could not
+	 *     ask.</li>
+	 * <li><b>spells its own environment name</b> — four bypasses were spelled
+	 *     {@code DTENGINE_} while every other name was {@code CTRMAP_}, so setting
+	 *     {@code CTRMAP_ALLOW_PIPE} did nothing and looked like a broken bypass.</li>
+	 * <li><b>decides by tool name</b> — eight hooks wired under {@code "matcher": "Bash"} in a
+	 *     session that also had a PowerShell tool, all of them installed, wired, running and
+	 *     off.</li>
+	 * </ul>
+	 *
+	 * <p>ALL THREE ARE ASKED OF THE AST, and the negative half is why: several hooks now carry
+	 * prose EXPLAINING these defects, so a text search would report the fixed files as broken —
+	 * and a check that cries wolf on the day it ships is one nobody reads by the next.
+	 */
+	static void theThreeAdoptedRefusalsCatchTheirDefects(File repo) throws Exception {
+		System.out.println("--- the three refusals adopted from the bootstrap");
+		File live = new File(repo, "tools/hooks");
+		String[] every = live.list((d, n) -> n.endsWith(".py"));
+		check(every != null && every.length > 0, "there are hooks to ask about");
+
+		check(ask(repo, "hooks_that_run_on_import", live, every).isEmpty(),
+				"live: no hook runs on import");
+		check(ask(repo, "hooks_that_spell_an_environment_name", live, every).isEmpty(),
+				"live: no hook spells its own env name");
+		check(ask(repo, "hooks_that_decide_by_tool_name", live, every).isEmpty(),
+				"live: no hook decides by tool name");
+
+		File one = Scratch.dir("adopted");
+		write(new File(one, "guard_x.py"), "def main():\n    pass\n\nmain()\n");
+		check(!ask(repo, "hooks_that_run_on_import", one, new String[]{"guard_x.py"}).isEmpty(),
+				"a hook that calls main() at module level is caught");
+
+		write(new File(one, "guard_x.py"), "import os\nB = os.environ.get(\"CTRMAP_ALLOW_X\")\n");
+		check(!ask(repo, "hooks_that_spell_an_environment_name", one,
+				new String[]{"guard_x.py"}).isEmpty(),
+				"a hook that spells its own env name is caught");
+
+		write(new File(one, "guard_x.py"), "import sys\ndef main(p):\n"
+				+ "    if p.get(\"tool_name\") != \"Bash\":\n        sys.exit(0)\n");
+		check(!ask(repo, "hooks_that_decide_by_tool_name", one,
+				new String[]{"guard_x.py"}).isEmpty(),
+				"a hook that decides by tool name is caught");
+
+		//THE NEGATIVE HALF: prose about the defect is not the defect.
+		write(new File(one, "guard_x.py"),
+				"\"\"\"Never write `if tool_name != \"Bash\"` - one tool name from off.\"\"\"\n"
+				+ "import os\nX = os.environ.get(\"CLAUDE_PROJECT_DIR\")\n");
+		check(ask(repo, "hooks_that_decide_by_tool_name", one,
+				new String[]{"guard_x.py"}).isEmpty(),
+				"while prose ABOUT the defect is not the defect");
+		check(ask(repo, "hooks_that_spell_an_environment_name", one,
+				new String[]{"guard_x.py"}).isEmpty(),
+				"and a foreign name this project does not own is allowed");
+	}
+
+	/** Runs one of the checker's predicates over a directory and returns what it said. */
+	static String ask(File repo, String predicate, File dir, String[] names) throws Exception {
+		File work = Scratch.dir("askpred");
+		File script = new File(work, "ask.py");
+		StringBuilder list = new StringBuilder();
+		for (String n : names) {
+			list.append(list.length() == 0 ? "" : ",").append("'").append(n).append("'");
+		}
+		Files.write(script.toPath(),
+				("import importlib.util, sys\n"
+				+ "spec = importlib.util.spec_from_file_location('hw', sys.argv[1])\n"
+				+ "hw = importlib.util.module_from_spec(spec); spec.loader.exec_module(hw)\n"
+				+ "found = getattr(hw, sys.argv[2])(sys.argv[3], [" + list + "])\n"
+				+ "print('FOUND' if found else 'CLEAN')\n"
+				+ "for f in found:\n    print('   ' + str(f)[:120])\n")
+						.getBytes(StandardCharsets.UTF_8));
+		ProcessBuilder pb = new ProcessBuilder("python", script.getAbsolutePath(),
+				new File(repo, "tools/guard/hooks_wired.py").getAbsolutePath(),
+				predicate, dir.getAbsolutePath());
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		String said = CommitGuardTest.drain(p);
+		p.waitFor();
+		if (!said.contains("FOUND") && !said.contains("CLEAN")) {
+			System.out.println("  FAIL: the predicate never answered - "
+					+ CommitGuardTest.firstLine(said));
+			fails++;
+			return "?";
+		}
+		return said.contains("FOUND") ? said : "";
 	}
 
 	/** A dispatcher that finds its own guards, as the checker expects one to. */

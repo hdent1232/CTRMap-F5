@@ -321,11 +321,17 @@ public class HookRefusalsTest {
 		File nolist = Scratch.dir("nolist");
 		File alone = new File(nolist, "guard_forbidden_command.py");
 		Files.copy(guard.toPath(), alone.toPath());
-		//...with shellin beside it, which every guard imports. Without it the copy could not
+		//...with the SIBLINGS every guard imports beside it. Without them the copy could not
 		//load at all, and "the guard never answered" is a different finding from "the guard
 		//permitted everything" - a fixture that cannot ask the question cannot answer it.
-		Files.copy(new File(hooks, "shellin.py").toPath(),
-				new File(nolist, "shellin.py").toPath());
+		//
+		//`hook_env.py` joined that list when the environment names moved into one place, and
+		//this fixture went red the same hour: a copied guard's DEPENDENCIES are part of the
+		//fixture, and nothing but running it says which they are.
+		for (String sibling : new String[]{"shellin.py", "hook_env.py"}) {
+			Files.copy(new File(hooks, sibling).toPath(),
+					new File(nolist, sibling).toPath());
+		}
 		check(refuses(alone, bash("echo hello")),
 				"a guard whose list has gone missing refuses rather than permits");
 

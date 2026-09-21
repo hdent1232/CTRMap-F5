@@ -82,7 +82,7 @@ def build():
     env = dict(os.environ, CTRMAP_SKIP_STRUCTURE_GATE="1")
     done = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                            "-File", os.path.join(ROOT, "build.ps1")],
-                          cwd=ROOT, capture_output=True, text=True, errors="replace", env=env)
+                          cwd=ROOT, capture_output=True, text=True, errors="replace", env=env, timeout=1800)
     out = (done.stdout or "") + (done.stderr or "")
     return ("Build OK" in out), out
 

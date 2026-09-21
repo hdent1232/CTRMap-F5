@@ -38,6 +38,7 @@ WHAT THIS REFUSES, and each one is a way the same thing happens again:
 Usage: python tools/guard/hooks_wired.py [repo-root]
 Exit 1 with reasons, 0 when every installed guard is reachable for every tool.
 """
+import ast
 import io
 import json
 import os
@@ -50,6 +51,104 @@ UNIVERSAL = ("*", ".*", "", "**")
 #: How a dispatcher says "I find my own guards" - a glob over the sibling files rather than a
 #: list of them. A dispatcher that listed its guards would have the same defect one level up.
 DISCOVERS = re.compile(r"glob[^\n]*guard_\*\.py")
+
+
+#: -------- THREE REFUSALS ADOPTED FROM THE VERIFICATION BOOTSTRAP ------------------
+#: Each is a defect this project has already had and fixed BY HAND, which is the definition of
+#: a class left open. All three are asked of the AST rather than the text, because every one of
+#: these files now carries prose explaining the defect - a text search would report the FIXED
+#: files as broken, and a check that cries wolf on day one is one nobody reads by day two.
+
+def _parsed(hooks_dir, names):
+    """(path, tree) for each hook that parses, and a finding for each that does not."""
+    out, trouble = [], []
+    for name in names:
+        path = os.path.join(hooks_dir, name)
+        try:
+            out.append((path, ast.parse(io.open(path, encoding="utf-8").read(), path)))
+        except (OSError, SyntaxError) as bad:
+            trouble.append("%s does not parse (%s) - an unreadable guard is not a clean one"
+                           % (name, bad))
+    return out, trouble
+
+
+def hooks_that_run_on_import(hooks_dir, names):
+    """A hook that acts when you import it is a hook no test and no dispatcher can reach.
+
+    MEASURED HERE: guard_fanout.py ended with a bare `main()`. Importing it read stdin, hit a
+    JSONDecodeError and exited - so the fan-out cap, which exists because three fan-outs burned
+    a week of a metered plan, was the one guard the dispatcher could not ask. It was fixed by
+    hand the day the dispatcher was written; nothing stopped the next one until now.
+    """
+    parsed, why = _parsed(hooks_dir, names)
+    for path, tree in parsed:
+        for node in tree.body:
+            if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                    and getattr(node.value.func, "id", None) == "main"):
+                why.append(
+                    "%s calls main() at module level (line %d), so IMPORTING it runs it - it "
+                    "reads stdin and exits, and neither a test nor the dispatcher can ask it. "
+                    "Put it behind `if __name__ == \"__main__\":`."
+                    % (os.path.basename(path), node.lineno))
+    return why
+
+
+def hooks_that_spell_an_environment_name(hooks_dir, names):
+    """Every environment name comes from hook_env, so one prefix moves all of them.
+
+    MEASURED HERE on 2026-09-21: four bypasses were spelled DTENGINE_ - naming the project
+    these hooks were carried from - while every other name was CTRMAP_. Setting
+    CTRMAP_ALLOW_PIPE did nothing and looked like a bypass that does not work.
+    """
+    parsed, why = _parsed(hooks_dir, names)
+    for path, tree in parsed:
+        if os.path.basename(path) == "hook_env.py":
+            continue
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and node.args):
+                continue
+            if getattr(node.func, "attr", None) != "get":
+                continue
+            if getattr(getattr(node.func, "value", None), "attr", None) != "environ":
+                continue
+            first = node.args[0]
+            if (isinstance(first, ast.Constant) and isinstance(first.value, str)
+                    and first.value not in FOREIGN_ENV):
+                why.append(
+                    "%s:%d reads the environment name %r directly. Spell it "
+                    "`hook_env.name(...)`, so changing the prefix once changes every one - "
+                    "this project shipped two prefixes at the same time."
+                    % (os.path.basename(path), node.lineno, first.value))
+    return why
+
+
+def hooks_that_decide_by_tool_name(hooks_dir, names):
+    """A hook that asks what the tool is CALLED is one new tool name from off.
+
+    MEASURED HERE on 2026-09-20: eight hooks were wired under "matcher": "Bash" and five opened
+    by exempting any tool not called Bash, in a session that also offered a PowerShell tool. All
+    of them were installed, wired, running and OFF for every command issued through it.
+    """
+    parsed, why = _parsed(hooks_dir, names)
+    for path, tree in parsed:
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Compare) or not node.comparators:
+                continue
+            against = node.comparators[0]
+            if not (isinstance(against, ast.Constant) and isinstance(against.value, str)):
+                continue
+            if "tool_name" not in ast.dump(node.left):
+                continue
+            why.append(
+                "%s:%d decides by the tool NAME (%r). Ask a SHAPE - shellin.commands(payload) "
+                "- because a comparison that names tools is a call-site list, and it is one "
+                "new tool away from silent."
+                % (os.path.basename(path), node.lineno, against.value))
+    return why
+
+
+#: Names this project does not own and must not prefix.
+FOREIGN_ENV = ("CLAUDE_PROJECT_DIR", "PATH", "PATHEXT", "TEMP", "TMP", "USERPROFILE")
 
 
 def claude_dir(root):
@@ -185,6 +284,11 @@ def findings(root):
                 % (event, matcher))
 
     why.extend(_differs_from_the_versioned_copy(root, hooks_dir))
+    #: the three adopted refusals, over every installed hook
+    every = sorted(n for n in os.listdir(hooks_dir) if n.endswith(".py"))
+    why.extend(hooks_that_run_on_import(hooks_dir, every))
+    why.extend(hooks_that_spell_an_environment_name(hooks_dir, every))
+    why.extend(hooks_that_decide_by_tool_name(hooks_dir, every))
 
     #: a guard the dispatcher cannot ask
     if dispatchers:

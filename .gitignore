@@ -34,3 +34,11 @@ __pycache__/
 # What the last battery run said, so a commit message claiming a count can be
 # checked against a real run. A local measurement, not a fact about the repo.
 .last-suite-run
+
+# The same thing for the plant ledger: proof that every plant reddened its guard
+# ON THIS TREE. Also a local measurement. It was left out of here when the line
+# above was written, which is the whole shape - one member of a class covered and
+# its neighbour not. Neither file can be believed about a tree it was not taken
+# against, and both now carry the digest of the tree they measured so that saying
+# so is not left to this file: commit_guard.source_digest is what refuses.
+.last-replant

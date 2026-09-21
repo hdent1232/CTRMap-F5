@@ -33,10 +33,11 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402
 import shellin                                    # noqa: E402  (path set above)
 
 HOOK = "guard_forbidden_command.py"
-BYPASS = "CTRMAP_ALLOW_FORBIDDEN"
+BYPASS = hook_env.name("ALLOW_FORBIDDEN")
 
 #: Used only when the list beside this file cannot be read. EMPTY ON PURPOSE is wrong here:
 #: a hook whose list went missing must not quietly permit everything, so an unreadable list

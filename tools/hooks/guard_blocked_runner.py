@@ -121,8 +121,8 @@ def still_uncommitted(paths):
         return []
     try:
         done = subprocess.run(["git", "status", "--porcelain", "--"] + list(paths),
-                              cwd=ROOT, capture_output=True, creationflags=NO_WINDOW)
-    except (OSError, ValueError):
+                              cwd=ROOT, capture_output=True, creationflags=NO_WINDOW, timeout=20)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
         return list(paths)
     if done.returncode != 0:
         return list(paths)

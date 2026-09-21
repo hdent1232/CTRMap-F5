@@ -37,10 +37,11 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402
 import shellin                                    # noqa: E402  (path set above)
 
 HOOK = "guard_game_data.py"
-BYPASS = "CTRMAP_ALLOW_GAME_WRITE"
+BYPASS = hook_env.name("ALLOW_GAME_WRITE")
 
 #: Used only when readonly_paths.txt is missing. A hardcoded list is a guard that is dead in
 #: every project but one, which is how the sweep-pipe guard arrived here knowing nothing about

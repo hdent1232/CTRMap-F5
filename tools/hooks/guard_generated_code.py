@@ -25,10 +25,11 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402
 import shellin                                    # noqa: E402  (path set above)
 
 HOOK = "guard_generated_code.py"
-BYPASS = "CTRMAP_ALLOW_GENERATED_EDIT"
+BYPASS = hook_env.name("ALLOW_GENERATED_EDIT")
 
 #: How NetBeans fences the regions it owns. `//GEN-BEGIN:<name>` ... `//GEN-END:<name>` are
 #: the markers the IDE itself keys on; the editor-fold comment beside them is for the reader.

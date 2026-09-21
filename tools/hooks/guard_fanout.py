@@ -52,9 +52,13 @@ import re
 import sys
 import time
 
-AGENT_CAP = int(os.environ.get("CTRMAP_AGENT_CAP", "10"))
-WORKFLOW_CAP = int(os.environ.get("CTRMAP_WORKFLOW_CAP", "5"))
-WIDTH_CAP = int(os.environ.get("CTRMAP_WIDTH_CAP", "6"))
+#: AT THE TOP: the caps below are module-level constants, so this is used at import time.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hook_env                                   # noqa: E402  (path set above)
+
+AGENT_CAP = int(os.environ.get(hook_env.name("AGENT_CAP"), "10"))
+WORKFLOW_CAP = int(os.environ.get(hook_env.name("WORKFLOW_CAP"), "5"))
+WIDTH_CAP = int(os.environ.get(hook_env.name("WIDTH_CAP"), "6"))
 WINDOW = 6 * 3600
 STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".fanout-count")
 
@@ -326,7 +330,7 @@ def decide(payload):
                 except OSError:
                     script_text = ""
             shape = parallel_edit(script_text, width)
-            if shape and os.environ.get("CTRMAP_ALLOW_PARALLEL_EDIT") != "1":
+            if shape and os.environ.get(hook_env.name("ALLOW_PARALLEL_EDIT")) != "1":
                 deny(
                     "BLOCKED BY PROJECT POLICY: this fans out agents that EDIT AT THE SAME "
                     "TIME - %s.\n\n"
