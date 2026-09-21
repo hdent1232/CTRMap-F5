@@ -21,12 +21,12 @@
  },
  "ledger.owed_real_defect": {
   "previous": 49,
-  "value": 49,
+  "value": 48,
   "why": null
  },
  "ledger.plants": {
   "previous": 196,
-  "value": 196,
+  "value": 201,
   "why": null
  }
 }

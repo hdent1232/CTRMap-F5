@@ -47,8 +47,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 LAST_RUN = os.path.join(ROOT, ".last-suite-run")
 
 
-def source_digest(root=ROOT):
+def source_digest(root=ROOT, exclude=()):
     """WHICH TREE a measurement was taken against, or None when that cannot be read.
+
+    `exclude` holds repo-relative posix paths to skip, and it answers a DIFFERENT question
+    from the one this function answers by default. "Which tree was this number measured
+    against" includes everything, because a changed ratchet baseline changes verdicts. "Did
+    the tree move underneath this run" must leave out the files the run ITSELF writes - the
+    battery records ratchet readings into tools/guard/magnitudes.json as it goes, so without
+    this every honest battery looked like somebody editing source mid-run. Callers derive the
+    list from the recorders' own declared paths; a hand-kept list here would be one rename
+    from excluding nothing.
 
     Git's own answer to "what here is source" - tracked files plus untracked ones it does not
     ignore - minus DOTFILES AT THE REPOSITORY ROOT, which is where the records themselves
@@ -83,6 +92,8 @@ def source_digest(root=ROOT):
     digest = hashlib.sha256()
     for rel in sorted(line.strip() for line in done.stdout.splitlines() if line.strip()):
         if rel.startswith(".") and "/" not in rel:
+            continue
+        if rel in exclude:
             continue
         digest.update(rel.encode("utf-8"))
         try:

@@ -105,10 +105,18 @@ def run(quick=False, anyway=None):
     #: not - and None from it means COULD NOT LOOK, which is refused, not waved through.
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import commit_guard
-    before = commit_guard.source_digest(ROOT)
+    #: WHAT THE RUN ITSELF WRITES does not count as the tree moving underneath it. The ratchet
+    #: suites record their readings into magnitudes.json as the battery goes, so the first
+    #: honest battery under this check was refused for its own output. The path is DERIVED
+    #: from the recorder that owns it, never typed here: a copy of the name would be one
+    #: rename away from excluding nothing, silently, and this comparison would then be back to
+    #: refusing every run - or worse, quietly passing one that really did move.
+    import magnitude
+    written = {os.path.relpath(magnitude.SERIES, ROOT).replace(os.sep, "/")}
+    before = commit_guard.source_digest(ROOT, exclude=written)
     began = time.time()
     done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=7200)
-    after = commit_guard.source_digest(ROOT)
+    after = commit_guard.source_digest(ROOT, exclude=written)
     if before is None or after is None:
         sys.stderr.write(
             "REFUSING TO RECORD: this tree cannot be digested, so which tree the battery"
@@ -116,11 +124,30 @@ def run(quick=False, anyway=None):
             "%s" % (LF, LF))
         return None
     if before != after:
+        #: ...AND SAY WHICH FILES. A digest that differs tells you only that it differs, which
+        #: is the advice this project already carries about diffing manifests rather than
+        #: hashes - and the first time this refusal fired, the answer was its own output.
+        moved = ""
+        try:
+            listing = subprocess.run(["git", "-C", ROOT, "status", "--porcelain"],
+                                     capture_output=True, text=True, timeout=120)
+            moved = (listing.stdout or "").strip()
+        except (OSError, subprocess.SubprocessError):
+            moved = "(git could not say which - which is not the same as none)"
         sys.stderr.write(
             "REFUSING TO RECORD: the tree CHANGED while the battery was running (%s -> %s)."
             "%s  The result is neither the old code nor the new one and it looks green."
             "%s  Two full runs were thrown away this way. Re-run it on a still tree.%s"
-            % (before[:12], after[:12], LF, LF, LF))
+            "%s  What the working tree holds now:%s%s%s"
+            % (before[:12], after[:12], LF, LF, LF, LF, LF, moved, LF))
+        return None
+    #: The SUBJECT is the whole tree, excluding nothing. It answers a different question from
+    #: the comparison above - "which tree was this number measured against" - and the reader
+    #: recomputes it with no exclusions, so recording the narrowed digest here would refuse
+    #: every claim this run backs.
+    subject = commit_guard.source_digest(ROOT)
+    if subject is None:
+        sys.stderr.write("REFUSING TO RECORD: the tree cannot be digested.%s" % LF)
         return None
     text = done.stdout + done.stderr
     announced = [n.strip() for n in _SUITE.findall(text)]
@@ -133,7 +160,7 @@ def run(quick=False, anyway=None):
     passed = [n for n in announced if n not in failed]
     return {
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "subject": after,
+        "subject": subject,
         #: ...AND THE REASON IS RECORDED, not merely typed. An escape that lives only in the
         #: shell line that invoked it is invisible to everyone who later reads the number, and
         #: this number is the one a commit message is allowed to claim. None means the tree was
@@ -207,6 +234,16 @@ def main(argv):
     # has not become faster - something stopped registering, and the count looks exactly as
     # healthy as it did before. Recorded AFTER .last-suite-run is written, so a startling
     # move is reported without throwing away a battery that has already run.
+    #: ...BUT A RUN THAT NEVER HAPPENED CONTRIBUTES NO MEASUREMENT. The battery refuses before
+    #: announcing anything when the queue gate stops it, and this recorded that ZERO as the
+    #: baseline for the key - measured on 2026-09-21, and the very next real battery was then
+    #: refused as a 13600% rise. A ratchet whose baseline is a run that did not occur reports
+    #: its first honest reading as a bug. Announcing nothing is the shape of "did not start",
+    #: and the two are told apart by the verdict line, which is already read above.
+    if not announced:
+        print("not recording a magnitude: the battery announced no suites, so this is a run"
+              " that did not happen rather than a run of nought")
+        return 1 if record["suites_failed"] else 0
     try:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import magnitude

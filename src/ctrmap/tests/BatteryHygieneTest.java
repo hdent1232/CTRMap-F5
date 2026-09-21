@@ -114,6 +114,7 @@ public class BatteryHygieneTest {
 			}
 		}
 		theRecorderReadsTheVerdictLineWhole(repo);
+		theRecorderDoesNotCallItsOwnOutputATreeThatMoved(repo);
 		theDigestIgnoresLineEndingsButOnlyForText();
 		aCopyWithNoRepositoryStillStamps(repo);
 		builtByTheBattery(repo);
@@ -233,6 +234,81 @@ public class BatteryHygieneTest {
 				"...and is NOT counted among the suites that passed");
 			check(passedPart.contains("Commit gate (refuses)"),
 				"while the suite that really passed still is");
+		} finally {
+			Scratch.deleteTree(dir);
+		}
+	}
+
+	/**
+	 * The battery's own output is not the tree moving underneath it.
+	 *
+	 * <p>{@code record_run} digests the tree before and after the run and refuses to record
+	 * one whose subject moved — the half of <i>never edit source while the suite is running</i>
+	 * that does not care whether the edit went through a tool. MEASURED on its first real
+	 * outing, 2026-09-21: it refused a clean 136-suite battery, because the ratchet suites
+	 * record their readings into {@code tools/guard/magnitudes.json} as they go, and that is a
+	 * tracked file. A guard that fires on honest work gets its ceiling raised until nothing
+	 * here is believed.
+	 *
+	 * <p>Two questions, two subjects. <i>Which tree was this number measured against</i>
+	 * includes the baselines, because a changed baseline changes verdicts. <i>Did the tree
+	 * move underneath the run</i> leaves out what the run itself writes. The excluded path is
+	 * derived from {@code magnitude.SERIES} rather than spelled again, so a rename cannot
+	 * leave it excluding nothing.
+	 */
+	static void theRecorderDoesNotCallItsOwnOutputATreeThatMoved(File repo) throws Exception {
+		System.out.println("--- the battery's own recorded readings are not a tree that moved");
+		File guard = new File(repo, "tools/guard/commit_guard.py");
+		if (!guard.isFile() || !CommitGuardTest.onPath("python")) {
+			System.out.println("  skip: no guard or no python on PATH");
+			return;
+		}
+		String script =
+			"import importlib.util, json, os, subprocess, sys, tempfile\n"
+			+ "spec = importlib.util.spec_from_file_location('cg', sys.argv[1])\n"
+			+ "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+			+ "d = tempfile.mkdtemp(prefix='ctrmap_subject_')\n"
+			+ "os.makedirs(os.path.join(d, 'src'))\n"
+			+ "os.makedirs(os.path.join(d, 'tools', 'guard'))\n"
+			+ "def put(rel, body):\n"
+			+ "    p = os.path.join(d, rel.replace('/', os.sep))\n"
+			+ "    open(p, 'w').write(body)\n"
+			+ "subprocess.run(['git', 'init', '-q'], cwd=d, capture_output=True, timeout=120)\n"
+			+ "put('src/a.java', 'class A {}')\n"
+			+ "put('tools/guard/magnitudes.json', '{\\\"a\\\": 1}')\n"
+			+ "OUT = {'tools/guard/magnitudes.json'}\n"
+			+ "full = m.source_digest(d)\n"
+			+ "narrow = m.source_digest(d, exclude=OUT)\n"
+			+ "put('tools/guard/magnitudes.json', '{\\\"a\\\": 2}')\n"
+			+ "full2 = m.source_digest(d)\n"
+			+ "narrow2 = m.source_digest(d, exclude=OUT)\n"
+			+ "put('src/a.java', 'class A { int moved; }')\n"
+			+ "narrow3 = m.source_digest(d, exclude=OUT)\n"
+			+ "print(json.dumps({'outputMovesFull': full != full2,"
+			+ " 'outputLeavesNarrow': narrow == narrow2,"
+			+ " 'sourceStillMovesNarrow': narrow3 != narrow2}))\n";
+		File dir = Scratch.dir("recorder-subject");
+		try {
+			File py = new File(dir, "ask.py");
+			Files.write(py.toPath(), script.getBytes(StandardCharsets.UTF_8));
+			ProcessBuilder pb = new ProcessBuilder("python", "-B", py.getAbsolutePath(),
+					guard.getAbsolutePath());
+			pb.redirectErrorStream(true);
+			Process p = pb.start();
+			String said = CommitGuardTest.drain(p).trim();
+			p.waitFor();
+			String last = said;
+			int nl = said.lastIndexOf('\n');
+			if (nl >= 0) {
+				last = said.substring(nl + 1).trim();
+			}
+			check(last.contains("outputMovesFull\": true"),
+				"a changed baseline DOES move the subject a record carries: "
+					+ (last.length() > 140 ? last.substring(0, 140) : last));
+			check(last.contains("outputLeavesNarrow\": true"),
+				"...and does NOT count as the tree moving underneath the run");
+			check(last.contains("sourceStillMovesNarrow\": true"),
+				"while a real source edit mid-run still does, or this excuses everything");
 		} finally {
 			Scratch.deleteTree(dir);
 		}
