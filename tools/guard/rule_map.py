@@ -95,6 +95,53 @@ def _exists(root, mechanism):
     return False
 
 
+#: An imperative inside a rule's body: its own prohibition, under a headline that may well
+#: be enforced. "Never run Tidewater" sat under GAME DATA IS READ-ONLY for the life of this
+#: project while the map reported that rule green.
+#: Prohibitions AND requirements. "Undo/redo everywhere" is a rule of this project and
+#: was invisible to a pattern that only knew how to read a Never - the same mistake as
+#: auditing headlines and not clauses, one shape further in.
+_CLAUSE = re.compile(r"\b((?:Never|Always|No|Do not|Don't)\s+[^.\n;]{6,110}|[A-Z][\w/]{3,}(?:\s+\w+){0,3}\s+everywhere)")
+
+#: ...but not the headline itself, which is audited separately and is in capitals.
+def _is_headline(text):
+    letters = [c for c in text if c.isalpha()]
+    return bool(letters) and all(c.isupper() for c in letters)
+
+
+def bodies_in(text):
+    """{headline: body} - what each rule says after its bolded first sentence."""
+    out = {}
+    parts = re.split(r"\*\*(.+?)\*\*", text, flags=re.S)
+    #: split yields [before, bold1, after1, bold2, after2, ...]
+    for i in range(1, len(parts) - 1, 2):
+        head = " ".join(parts[i].split()).split(".")[0].strip()
+        letters = [c for c in head if c.isalpha()]
+        if not letters or not all(c.isupper() for c in letters) or len(head) <= 12:
+            continue
+        #: the body is the bolded remainder plus the prose up to the next rule
+        rest = " ".join(parts[i].split())
+        body = rest[len(head):] + " " + " ".join(parts[i + 1].split())
+        out[head] = body.strip()
+    return out
+
+
+def clauses_in(body):
+    """Every imperative sentence in a rule's body, deduplicated, headline text excluded."""
+    found = []
+    seen = set()
+    for hit in _CLAUSE.finditer(body or ""):
+        clause = " ".join(hit.group(1).split()).strip(" *_`,;")
+        if _is_headline(clause) or len(clause) < 10:
+            continue
+        key = clause.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append(clause)
+    return found
+
+
 def findings(root):
     """Every rule that is not accounted for, and every claim in the map that is not true."""
     path = claude_md(root)
@@ -143,6 +190,26 @@ def findings(root):
                    "about is not enforced, and it is not exempt either - add it with a "
                    "mechanism, or with \"by\": \"\" and a reason, which counts against the "
                    "ceiling." % (rule[:70], MAP))
+
+    #: EVERY CLAUSE, not only the headline. A rule whose headline has a mechanism can still
+    #: carry three imperatives that have none - that is what this missed for the life of the
+    #: project, and it reported 28 of 28 over the top of it.
+    bodies = bodies_in(text)
+    for rule in rules:
+        entry = entries.get(rule) or {}
+        mapped = entry.get("clauses") or {}
+        for clause in clauses_in(bodies.get(rule, "")):
+            named = mapped.get(clause)
+            if named is None:
+                why.append(
+                    "%r says %r, and that clause has NO ENTRY of its own. A rule can be "
+                    "enforced and its clauses unenforced at the same time: \"Never run "
+                    "Tidewater\" sat under a green rule for the life of this project. Add it "
+                    "to that rule's \"clauses\" with a mechanism, or with \"\" and a reason."
+                    % (rule[:52], clause[:74]))
+            elif named and not _exists(root, named):
+                why.append("%r claims the clause %r is enforced by %r, which is not in the "
+                           "tree." % (rule[:40], clause[:50], named))
 
     stale = [r for r in entries if r not in rules]
     for rule in stale:

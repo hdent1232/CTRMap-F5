@@ -53,6 +53,7 @@ public class RuleMapTest {
 		everyRuleIsAccountedFor(repo, checker);
 		aRuleWithNoEntryIsRefused(checker);
 		aMechanismThatDoesNotExistIsRefused(checker);
+		aClauseInsideAnEnforcedRuleIsRefused(checker);
 		anUnreadableRuleFileIsNotAnEmptyOne(checker);
 
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
@@ -109,6 +110,52 @@ public class RuleMapTest {
 		check(said.contains("1 rules in CLAUDE.md") || said.contains("1 with a mechanism")
 				|| said.contains("have a mechanism"),
 				"while a real one passes: " + firstReason(said));
+	}
+
+	/**
+	 * A clause inside a rule whose HEADLINE is enforced still has to have its own mechanism.
+	 *
+	 * <p>THE HOLE IN THIS CHECKER ITSELF, found on 2026-09-21. It reported <b>28 of 28</b>
+	 * rules enforced. Inside the body of GAME DATA IS READ-ONLY - a rule it reported green,
+	 * correctly, because {@code guard_game_data.py} does enforce the headline - sat three
+	 * separate imperatives with nothing behind them at all:
+	 *
+	 * <p><i>"Never run Tidewater. Never {@code git stash}. Never hand-edit a NetBeans
+	 * {@code initComponents} block."</i>
+	 *
+	 * <p>A rule can be enforced and its clauses unenforced at the same time, and the audit was
+	 * built to look at exactly the level where that is invisible. A fourth, "Undo/redo
+	 * everywhere", was invisible again one step further in, because the clause pattern only
+	 * knew how to read a prohibition and that one is a requirement.
+	 */
+	static void aClauseInsideAnEnforcedRuleIsRefused(File checker) throws Exception {
+		System.out.println("--- a clause inside a rule whose headline is enforced");
+		File root = tree("**NEVER DO THE THING.** It costs. Never run Tidewater.\n",
+				"{\"unenforced_ceiling\": 0, \"rules\": {"
+				+ "\"NEVER DO THE THING\": {\"by\": \"tools/guard/rule_map.py\"}}}");
+		String said = ask(checker, root);
+		check(said.contains("Tidewater") && said.contains("NO ENTRY of its own"),
+				"the unmapped clause is named: " + firstReason(said));
+		check(said.contains("enforced and its clauses unenforced"),
+				"...and it says why a green headline is not an answer");
+
+		//AND THE NEGATIVE HALF: a clause WITH a mechanism must not be refused.
+		File mapped = tree("**NEVER DO THE THING.** It costs. Never run Tidewater.\n",
+				"{\"unenforced_ceiling\": 0, \"rules\": {"
+				+ "\"NEVER DO THE THING\": {\"by\": \"tools/guard/rule_map.py\","
+				+ " \"clauses\": {\"Never run Tidewater\": \"tools/guard/rule_map.py\"}}}}");
+		said = ask(checker, mapped);
+		check(said.contains("have a mechanism"),
+				"while a clause with a mechanism passes: " + firstReason(said));
+
+		//...and a clause citing something that is not there is refused like any other claim.
+		File invented = tree("**NEVER DO THE THING.** It costs. Never run Tidewater.\n",
+				"{\"unenforced_ceiling\": 0, \"rules\": {"
+				+ "\"NEVER DO THE THING\": {\"by\": \"tools/guard/rule_map.py\","
+				+ " \"clauses\": {\"Never run Tidewater\": \"tools/guard/nothing.py\"}}}}");
+		said = ask(checker, invented);
+		check(said.contains("not in the") || said.contains("nothing.py"),
+				"and a clause citing nothing real is refused too: " + firstReason(said));
 	}
 
 	/**
