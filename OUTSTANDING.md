@@ -39,6 +39,26 @@ both would have blocked every measurement forever:
 
 ## Open
 
+- [ ] 2026-09-22 A GUARD CAN STILL BLOCK ITS OWN REPAIR, outside `.claude/hooks`. Measured
+      the hard way today: a half-finished edit left `tools/guard/hooks_wired.py` raising
+      NameError, and since `guard_all` runs it on EVERY tool call, the dispatcher then
+      refused every call - including the Read and the Edit that would have fixed it. The
+      refusal named no file, so the derived repair exemption (`_repairs_what_is_broken`,
+      which keys on paths a finding NAMES) could not fire, and the only documented escape is
+      a session environment variable that cannot be set from inside the session. The owner
+      had to run `git checkout` in their own terminal. `repairs_a_guard` covers writes into
+      `.claude/hooks` for exactly this reason; the repo-side guards it imports are not
+      covered. FIX: a refusal that cannot run must NAME the module it could not run, and a
+      write to that module must be exempt - the same shape, one directory over.
+
+- [ ] 2026-09-22 `guard_unfinished.py` HAS NO SUITE AND NO PLANT. It is wired to Stop and
+      controlled by nine known-answer cases in the scratchpad, which is not the same as being
+      driven by the battery: a guard nobody drives is a comment with an assert in it, and this
+      one exists precisely because promises that nothing reads are worthless. It needs a
+      section in `HookRefusalsTest` (which already drives hooks through python) covering the
+      sentence it must refuse, the shapes it must NOT fire on, the `stop_hook_active` loop
+      guard, and the unreadable-queue case - plus a plant proven by breaking.
+
 - [ ] 2026-09-13 THE WHOLE-APP CENSUS FOUND 280 CONFIRMED DEFECTS, and they are not
       fixed. Full inventory, ranked, with evidence and a proposed refusal for each:
       `wt/_state/CENSUS-2026-09-13.md` (beside the repo). 71 high, 150 medium, 59 low;

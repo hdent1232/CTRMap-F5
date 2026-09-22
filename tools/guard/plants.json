@@ -2649,6 +2649,19 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: the lock is taken BEFORE the defect reaches disk"
+  },
+  {
+   "id": "a-guard-may-answer-an-event-nobody-wired",
+   "why": "MEASURED HERE on 2026-09-22, the day a second hook event arrived. Until then every guard answered PreToolUse and one dispatcher discovered them all - so the reachability check passes ANY installed guard once a dispatcher is present. A hook declaring EVENT = 'Stop' with nothing wired to Stop sails through it: installed, never asked, indistinguishable from one with nothing to refuse. That is the exact shape this checker was written for - seven guards wired for the tool name 'Bash' while the session also ran a PowerShell tool - happening one EVENT along instead of one TOOL along, which is how a class comes back after it is closed. The dispatcher was handing such a hook a tool payload on every call as well, answering nothing while being counted among the guards that answered.",
+   "file": "tools/guard/hooks_wired.py",
+   "find": "        if declared in (None, \"PreToolUse\"):\n",
+   "replace": "        if True:  #PLANTED: every event is the default one\n",
+   "suite": "ctrmap.tests.HooksWiredTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: the guard wired to no event is named"
   }
  ],
  "retired": [
