@@ -1,4 +1,4 @@
-**CTRMap-F5 1.0.2 — browse zones before you open one, and wire two of them together.**
+**CTRMap-F5 1.0.3 — a file the editor could not read stops being mistaken for an empty one.**
 
 A world editor for Pokémon Omega Ruby, Alpha Sapphire, X and Y. Build towns that were never in
 the game, then play them.
@@ -7,89 +7,63 @@ the game, then play them.
 
 | | |
 |---|---|
-| **`CTRMap-F5-1.0.2-windows-x64.zip`** | Unzip, double-click `CTRMap-F5.exe`. **No Java needed.** Start here if you're not sure. |
-| **`CTRMap-F5-1.0.2-portable.zip`** | 5 MB instead of 27, but needs Java 8+. `run.bat` on Windows, `run.sh` on macOS/Linux. |
+| **`CTRMap-F5-1.0.3-windows-x64.zip`** | Unzip, double-click `CTRMap-F5.exe`. **No Java needed.** Start here if you're not sure. |
+| **`CTRMap-F5-1.0.3-portable.zip`** | 5 MB instead of 27, but needs Java 8+. `run.bat` on Windows, `run.sh` on macOS/Linux. |
 
-Already have 1.0.0 or 1.0.1? Help > Check for updates will offer this one and replace the copy
-you have.
+Already have 1.0.0, 1.0.1 or 1.0.2? Help > Check for updates will offer this one and replace the
+copy you have.
 
-### New
-
-- **A zone browser in the Zone Loader tab.** A list you arrow through, the zone under the cursor
-  drawn live beside it, and a **Load this zone** button. Arrowing past a row only draws it, so you
-  can look at five candidates without loading any of them — the dropdown still loads on selection,
-  because choosing there *is* the load.
-- **Connect two zones through a warp, both ways, in one action.** Wiring two maps together used
-  to mean loading one, retyping a target in the warp form, loading the other and retyping it back,
-  with nothing checking that the halves agreed. Half a link is a door the player walks through and
-  cannot walk back out of; this writes both ends or refuses.
-- **A created zone owns its area and its dialogue**, not just its map. The area carries the
-  atmosphere, the water animations, the prop registry and the NPC models — sharing one meant a fog
-  edit in a new zone changed the zone it was cloned from, and a line of dialogue written for it
-  appeared in the donor's town.
-- **Workspaces made by older versions repair themselves when you open them**, for all three
-  resources. Measured on a real workspace: zones 536–539 still shared story text 491 with zone 534,
-  and 537–539 still shared area 24 — the repair gives each of them their own.
-- **Extras offers what opens in Extras.** The tileset editor and Workspace & paths were reachable
-  only from menus. **Ctrl+S** saves and **Ctrl+D** deploys. **Help > Quick start guide** opens the
-  guide that has always shipped beside the program and had no door.
+This release has no new features. It is six fixes, and every one of them is a case where the
+editor carried on quietly with the wrong bytes.
 
 ### Fixed
 
-**Adding zones.**
+**Your workspace.**
 
-- **"An appended zone is already pending. Pack the workspace before adding more."** Packing could
-  not lift it, in any version — the check asked whether a path was in the persisted-file list, and
-  packing does not touch that list. One orphaned entry (from a pack that threw part way, a revert,
-  a hand-deleted file) blocked zone appending for the rest of that workspace's life. Six operations
-  asked the question that way; all six now ask whether the file is *there*, and the list drops
-  entries whose file is gone as it reads them, so an affected workspace heals when you open it.
-- **The padding zones kept the donor's city.** Adding zones rounds the count up to a multiple of
-  four, and the spares were never forked: adding one zone to Sootopolis left 537, 538 and 539
-  pointing at Sootopolis's own map, so editing a spare rewrote the city and its siblings. Every
-  appended zone is forked now, and a spare is forked into a *blank* map — 3.6 MB smaller on a 2×2
-  city, and an unused slot opens empty instead of on somebody else's town.
-- **Reverting "add zones" left the encounter pack grown**, so the next append refused with
-  "EN pack count 540 != zone count 536". A revert that leaves you unable to append again has not
-  reverted.
-- **The shared-map dialog stopped asserting history it cannot know.** It told users a zone "was
-  added before the editor forked new zones automatically" — including zones this editor had created
-  seconds earlier.
+- **A failed extraction left an empty file behind, and every later read handed that file back as
+  the entry.** The output file was created — which truncates it — before the archive was asked for
+  a single byte, and the guard that decides whether to extract is "does this file already exist".
+  So one failure poisoned that entry for the life of the workspace, and 103 places read the result
+  as real data. Forking a region copies such a file into a new zone and packs it into your
+  FieldData: what you see is **a zone with no ground and no message anywhere.** The bytes go to a
+  `.part` file now and are moved into place only once whole; a failure deletes it and says so,
+  because "could not extract" and "this entry is empty" had to stop being the same answer.
+- **A pack that stopped part way lost the compression setting for the slot it was appending.**
+  `packArchives` stops at the first archive it cannot rewrite — an emulator or a virus scanner
+  holding the file open — and the overrides for that append had already been consumed. You clear
+  the cause, pack again, and the appended slot falls back to guessing from the previous entry: a
+  region stored raw in a slot the game inflates, or compressed in one it reads raw. **A map the
+  game cannot load, out of a pack that reported success.** The settings are put back when a pack
+  throws.
 
-**Reads that returned the wrong bytes and said nothing.**
+**Archives, and what "I could not read that" means.**
 
-- **An archive shorter than its own table handed back buffers of zeros and reported success.**
-  `skip()` and `read()` answer how much they actually managed and both answers were being dropped.
-  Measured on a half-truncated archive: 278 of 431 entries came back pure zero, none null, no
-  exception. A container that cannot read itself now refuses and names the file.
-- **A camera table that declared more cameras than it held produced the missing ones out of
-  nothing** — and the editor offered them with a Save button, which would have written them back
-  over the area's real table.
-- **Writes that failed now say which region or area.** A locked or read-only workspace file could
-  stop an Apply with a message naming a temp path instead of the map you were editing.
-
-**Atmospheres and menus.**
-
-- **The atmosphere card showed a white blank page.** It is laid out for a full-height panel and was
-  handed 92 pixels whenever the 3D view existed, so every colour it exists to show was cropped off.
-- **Fog editing edited the fog** — and three messages sent users hunting a menu for "Map > Fork
-  area", which has not existed under that name for a long time.
-
-**Housekeeping you can see.**
-
-- **The camera stopped walking by itself.** A movement key whose release was lost — a focus change,
-  a modal dialog, the window closing — left a thread driving the camera for the life of the process
-  and kept the program alive after its last window closed.
-- **The release ships the program, not its proofs.** Every earlier zip carried the whole test
-  battery, about 40% of the jar, runnable out of the shipped artifact against your own game folder.
-  The jar is 1.5 MB now.
+- **A file that is not an archive at all opened as an archive with nothing in it.** A missing or
+  half-copied game file produced an empty table and no complaint — and an empty archive is a real
+  thing a dump can contain, so "I could not read this" and "this holds nothing" were the same
+  answer. It refuses now and names the file.
+- **Deploy treated two archives it could not fully read as identical.** Identical there means
+  *already shipped, skip it* — so an archive that had been cut short was precisely the one Deploy
+  decided not to ship. It refuses to call them the same when either one was not read whole.
+- **Partly-successful reads were treated as complete ones**, at twelve places across the two files
+  every write goes through, including the entry copy in a repack and the whole-container rebuild
+  buffer. `read` and `skip` report how much they actually managed, and those answers were being
+  dropped.
+- **An archive that runs out mid-table stays readable up to the cut.** The entries before it are
+  whole and are handed over; the ones past it refuse instead of returning zeros, and the archive
+  refuses to be packed back at all — writing 155 of 436 entries back destroys the other 281.
 
 ### How this was checked
 
-Verified against a real dump by 136 headless test suites: every format writer round-trips
-byte-identically across all 536 zones, and the guards themselves are measured — a mutation sweep
-breaks each fix on purpose and records every change no suite notices. For 1.0.2 that sweep broke
-202 lines and every one of them was caught.
+Verified against a real dump by 136 headless test suites, 135 of which pass. The one that does
+not is an internal gate on the mutation baseline: it refuses a baseline that was measured while
+other work was still queued, which is the honest state of this repository today. The sweep behind
+it is clean — it broke 202 lines on purpose and every one of them was caught by a suite, with no
+survivors.
+
+Every fix above also ships with a recorded defect that puts it back: 204 of them, re-applied one
+at a time, each required to make its own suite fail. If a fix here is ever undone, something goes
+red.
 
 What the suites cannot check is the game: load a map you have edited in an emulator before you
 build on top of it.
