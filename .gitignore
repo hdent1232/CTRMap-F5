@@ -42,3 +42,11 @@ __pycache__/
 # against, and both now carry the digest of the tree they measured so that saying
 # so is not left to this file: commit_guard.source_digest is what refuses.
 .last-replant
+
+# The owner's approval for ONE push of ONE commit, written by
+# tools/guard/approve_push.py and read by .claude/hooks/guard_push.py. Local, and
+# the third member of the class the two entries above describe - it was the one
+# left out, which is the shape those entries exist to warn about. A committed
+# token authorises nothing (the hook requires it to name the CURRENT head) but it
+# publishes a record of who approved what, which is nobody else's business.
+.push-approved
