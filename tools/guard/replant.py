@@ -258,8 +258,16 @@ def replant(p, java, pristine, gamedir):
     print("  %s -> %s" % (p["id"], p["suite"]))
     ok = False
     try:
+        #THE LOCK IS WRITTEN FIRST, and that order is the whole point of it. It used to be
+        #written AFTER the plant, leaving a window in which a file was planted and the lock
+        #still named the PREVIOUS one. PAID FOR 2026-09-22: a replant was killed in that
+        #window, the lock said liveness_check.py - already clean - and the live plant was in
+        #commit_guard.py, with the coupling refusal replaced by `if True`. Trusting the lock
+        #would have restored the wrong file and left the guard disarmed in the tree. A lock
+        #naming a file that turns out to be clean costs nothing; a lock naming the wrong file
+        #is worse than none, because it is believed.
+        hold(path)
         write(path, text.replace(p["find"], p["replace"]), crlf)
-        hold(path)          #the defect is on disk from here until the finally below
         if not p.get("no_rebuild"):
             built, out = build()
             if not built:
@@ -287,11 +295,16 @@ def replant(p, java, pristine, gamedir):
             print("     SURVIVED: the defect is back and %s still passes." % p["suite"])
     finally:
         io.open(path, "wb").write(raw)
-        release()
+        #...AND RELEASED ONLY ONCE THE RESTORE IS PROVEN. This cleared the lock before
+        #reading the file back, so a restore that did not take left no lock naming the file
+        #it did not take on - the one case where the lock is the only thing that knows.
         back = io.open(path, "rb").read()
         if back != raw:
             print("     RESTORE FAILED for %s - the tree is NOT as it was." % p["file"])
+            print("     The lock is LEFT IN PLACE naming it, because nothing else now knows.")
             ok = False
+        else:
+            release()
     return ok
 
 

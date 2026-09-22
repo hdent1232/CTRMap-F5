@@ -51,8 +51,6 @@ public final class ZonePreviewPane extends JPanel {
 	/** The editor's map view, one of our own - built on first use, see below. */
 	private TileMapPanel map;
 	private H3DRenderingPanel view;
-	/** The scene the map view draws into, kept so the camera can be re-aimed after a load. */
-	private Scene3D scene;
 	/** Which cells the drawn zone occupies, or null when its own content does not say. */
 	private ZoneFootprint framed;
 	private int drawn = -1;
@@ -212,19 +210,26 @@ public final class ZonePreviewPane extends JPanel {
 		//share one matrix, and the preview drew Route 132, 133 and 134 as the same image.
 		//Reported with three screenshots. Framed AFTER the load because the load is what
 		//pointed the camera at everything.
+		//WHERE THE ZONE IS, SAID IN WORDS - and the camera left exactly where loadRegions put
+		//it, which is the whole matrix.
+		//
+		//THE CAMERA WAS MOVED HERE TWICE AND BROKE THE PREVIEW BOTH TIMES. First by clamping
+		//a footprint into a matrix it did not fit, which aimed at a corner of a map the zone
+		//is not on. Then by pulling back the footprint's own depth: zone 8 occupies cells
+		//(4,7)-(5,7), one cell deep, so the camera sat 720 units from a map the working view
+		//frames from 7200 - ten times too close, inside the geometry. Both were shipped after
+		//a green suite, because the suites can assert the ARITHMETIC and nobody here can see
+		//the PICTURE. Two reports and a black preview later, the honest conclusion is that
+		//this is not something to keep guessing at from the numbers.
+		//
+		//So the footprint is not thrown away - it is the caption, which is the part that
+		//demonstrably works: "cells (8,2)-(10,3)" beside "cells (5,2)-(7,3)" tells the three
+		//routes apart at a glance and was legible in every screenshot of the broken versions.
+		//Moving the camera is a separate change, and one the owner has to be able to see
+		//before it ships.
 		framed = ZoneFootprint.of(zone.header, zone.entities);
-		//...AND ONLY IF IT CAN BE ABOUT THIS MAP. Reported twice: this used to CLAMP the
-		//footprint into the matrix, which turned "these numbers are not about this map" into
-		//a confident corner. Zone 0 measures twelve cells across and its map is one cell, so
-		//it framed cell (0,0) and the preview went black. A box that does not fit is not
-		//narrowed, it is discarded, and the whole map is framed exactly as it was before this
-		//feature existed - loadRegions has already done that, so there is nothing to undo.
 		if (framed != null && !framed.fitsIn(mm.width, mm.height)) {
 			framed = null;
-		}
-		if (framed != null) {
-			scene.frameCells(framed.minCellX(), framed.minCellY(),
-					framed.maxCellX(), framed.maxCellY());
 		}
 	}
 
@@ -265,10 +270,8 @@ public final class ZonePreviewPane extends JPanel {
 			ctrmap.humaninterface.tools.ToolSelection tools = this.tools;
 			final java.util.List<CM3DRenderable> drawnBy = new java.util.ArrayList<>();
 			final H3DRenderingPanel panel = new H3DRenderingPanel(drawnBy, tools);
-			PanelScene3D built3D = new PanelScene3D(() -> panel, drawnBy);
-			scene = built3D;
 			TileMapPanel built = new TileMapPanel(owner, tools,
-					built3D, new javax.swing.JScrollPane(),
+					new PanelScene3D(() -> panel, drawnBy), new javax.swing.JScrollPane(),
 					new CollEditPanel(tools), null);
 			drawnBy.add(built);
 			map = built;

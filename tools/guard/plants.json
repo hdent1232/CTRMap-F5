@@ -2614,18 +2614,6 @@
    "must_say": "FAIL: a header whose spawn is (0,0) and which has nothing else locates NOTHING"
   },
   {
-   "id": "the-preview-camera-may-forget-which-corner-a-zone-starts-at",
-   "why": "The whole reported defect in one line. frameCells centres on the rectangle a zone occupies; drop the corner it starts from and every zone on one matrix frames the same place again - which is precisely the three identical pictures the owner sent. The arithmetic is frameMatrix's with an origin added, so the plant restores frameMatrix's behaviour under a different name, and nothing about the picture would look broken.",
-   "file": "src/ctrmap/humaninterface/PanelScene3D.java",
-   "find": "\t\tfloat centreX = (x0 + across / 2f) * 720f;\n\t\tfloat centreY = (y0 + down / 2f) * 720f;\n",
-   "replace": "\t\tfloat centreX = (across / 2f) * 720f;  //PLANTED\n\t\tfloat centreY = (down / 2f) * 720f;\n",
-   "suite": "ctrmap.tests.MainframeShapeTest",
-   "args": [
-    "src"
-   ],
-   "must_say": "FAIL: ...and centres on the rectangle's OWN corner"
-  },
-  {
    "id": "the-zone-making-buttons-may-be-left-in-another-corner",
    "why": "REPORTED on 2026-09-22, and it was this program's own doing: the zone browser was added as a column on the right of the Zone Loader and took the load button with it, while 'Clone zone...' and 'Add zones (lift limit)...' stayed in the form's top-left corner where the NetBeans layout had always had them. The owner asked for a preview and said so plainly - 'i never told you to do this, i just said make a preview, but you are the one who moved it, and then seperated elements of the same general process across the page'. This plant stops the tab handing the two buttons over, which is the state that was complained about.",
    "file": "src/ctrmap/CtrmapMainframe.java",
@@ -2650,16 +2638,17 @@
    "must_say": "FAIL: ...and DISCARDS a footprint that cannot be about this map"
   },
   {
-   "id": "a-shallow-map-may-be-framed-from-twice-the-distance",
-   "why": "REPORTED with a picture: Fortree City's map is 2x1 cells, and the preview showed a thin strip of ground with black above and below it. frameCells pulled back by max(across, down) on the reasoning that a wide shallow rectangle would otherwise overflow the view - which was wrong on its own terms, because frameMatrix shows all SIXTEEN cells of a 16x6 matrix while pulling back only six, so the view was always far wider than deep and depth was never the constraint. It pulled the camera back twice as far as framing that same map ever did. The only difference between frameCells and frameMatrix is the corner it starts from; this plant reintroduces a second one.",
-   "file": "src/ctrmap/humaninterface/PanelScene3D.java",
-   "find": "\t\tpanel.translateZ = -down * 720f;\n",
-   "replace": "\t\tpanel.translateZ = -Math.max(across, down) * 720f;  //PLANTED\n",
-   "suite": "ctrmap.tests.MainframeShapeTest",
+   "id": "the-run-lock-may-name-the-plant-before-last",
+   "why": "PAID FOR 2026-09-22. A replant was started by accident with an argument it did not understand, held the tree, and was killed. hold(path) ran AFTER write(path, planted), so there was a window in which a file was planted and the lock still named the PREVIOUS one - and the kill landed in it. The lock said liveness_check.py, which was already clean; the live plant was in commit_guard.py, with the coupling refusal replaced by `if True`. Restoring what the lock named would have left a DISARMED GUARD in the tree with nothing saying so. It was found by diffing the whole tree, which is exactly the work the lock exists to make unnecessary. A lock naming a file that turns out to be clean costs nothing; a lock naming the wrong file is worse than no lock, because it is believed. Read from the source because the failure is an ORDER, and both orders run perfectly green until something dies between the two lines.",
+   "file": "tools/guard/replant.py",
+   "find": "        hold(path)\n        write(path, text.replace(p[\"find\"], p[\"replace\"]), crlf)\n",
+   "replace": "        write(path, text.replace(p[\"find\"], p[\"replace\"]), crlf)\n        hold(path)  #PLANTED: the lock lags a plant behind\n",
+   "suite": "ctrmap.tests.PlantLedgerTest",
    "args": [
-    "src"
+    "."
    ],
-   "must_say": "FAIL: ...and pulls back by the DEPTH it framed"
+   "no_rebuild": true,
+   "must_say": "FAIL: the lock is taken BEFORE the defect reaches disk"
   }
  ],
  "retired": [

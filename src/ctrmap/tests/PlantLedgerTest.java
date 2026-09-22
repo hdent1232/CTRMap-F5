@@ -65,6 +65,7 @@ public class PlantLedgerTest {
 		theLedgerStillMatchesTheTree(repo);
 		whatItDoesNotCoverIsCountedAndNamed(repo);
 		aTrapListWithoutTheBillGetsIgnored(repo);
+		theLockNamesTheFileItIsAboutToPlant(runner);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -162,6 +163,49 @@ public class PlantLedgerTest {
 			}
 		}
 		return "";
+	}
+
+	/**
+	 * The run lock is written BEFORE the file is planted, and cleared only once the restore
+	 * has been read back.
+	 *
+	 * <p>PAID FOR 2026-09-22. A replant was started by accident, held the tree, and was
+	 * killed. {@code hold(path)} ran AFTER {@code write(path, planted)}, so there was a window
+	 * in which a file was planted and the lock still named the PREVIOUS one - and the kill
+	 * landed in it. The lock said {@code liveness_check.py}, which was already clean; the live
+	 * plant was in {@code commit_guard.py}, its coupling refusal replaced by {@code if True}.
+	 * Restoring what the lock named would have left a disarmed guard in the tree and nothing
+	 * saying so. It was found by diffing the whole tree, which is the thing the lock exists to
+	 * make unnecessary.
+	 *
+	 * <p>A lock naming a file that turns out to be clean costs nothing. A lock naming the
+	 * wrong file is worse than no lock, because it is believed.
+	 *
+	 * <p>Read from the source, because the failure is an ORDER and an order is exactly what a
+	 * green run cannot show you: both orders work perfectly until something dies in between.
+	 */
+	static void theLockNamesTheFileItIsAboutToPlant(File runner) throws Exception {
+		System.out.println("--- the run lock names the file it is about to plant, not the last one");
+		String text = SourceSeamTest.stripComments(new String(
+				java.nio.file.Files.readAllBytes(runner.toPath()),
+				java.nio.charset.StandardCharsets.UTF_8));
+		int holds = text.indexOf("hold(path)");
+		int plants = text.indexOf("write(path, text.replace(");
+		check(holds >= 0 && plants >= 0,
+				"the runner still holds a lock and plants a file (" + holds + ", " + plants + ")");
+		if (holds < 0 || plants < 0) {
+			return;
+		}
+		check(holds < plants,
+				"the lock is taken BEFORE the defect reaches disk, so a run killed between the"
+				+ " two leaves a lock naming the file that is planted - not the one before it");
+
+		int restored = text.indexOf("back != raw");
+		int released = text.indexOf("release()", plants);
+		check(restored >= 0 && released > restored,
+				"and it is released only AFTER the restore is read back, so a restore that did"
+				+ " not take leaves the lock naming the file it did not take on (" + restored
+				+ ", " + released + ")");
 	}
 
 	static void check(boolean ok, String what) {

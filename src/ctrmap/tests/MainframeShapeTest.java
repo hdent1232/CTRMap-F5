@@ -737,33 +737,15 @@ public class MainframeShapeTest {
 				"the difference LEFT between them is pinned, not fixed: a single region frames at translateX 0,"
 				+ " where the matrix formula gives -360 for one cell across, so a loose GR sits half a region off centre");
 
-		//AND THE THIRD FRAMING, which exists because the other two could not answer the
-		//question. REPORTED with three screenshots: Routes 132, 133 and 134 are one matrix, so
-		//frameMatrix pointed the camera at all of it and drew the same picture three times.
-		int cells = text.indexOf("public void frameCells(int cellX0, int cellY0, int cellX1, int cellY1) {");
-		int cellsEnd = cells < 0 ? -1 : text.indexOf("public void redraw() {", cells);
-		if (cells < 0 || cellsEnd < cells) {
-			check(false, "PanelScene3D can frame a rectangle of cells (found at " + cells + ")");
-			return;
-		}
-		String cellsBody = text.substring(cells, cellsEnd);
-		check(cellsBody.contains("rotateY = 0f;") && cellsBody.contains("rotateX = 45f;"),
-				"framing a rectangle of cells holds the same known view as the other two");
-		check(cellsBody.contains("x0 +") && cellsBody.contains("y0 +"),
-				"...and centres on the rectangle's OWN corner, not on the matrix's - without the"
-				+ " origin every zone on one map frames the same place, which is the defect");
-		//REPORTED, with a picture. This asserted Math.max(across, down), on the reasoning that
-		//a wide shallow rectangle would overflow. Fortree's map is 2x1 cells, so max() pulled
-		//back twice as far as framing that same map ever did and left a thin strip of ground
-		//with black above and below. frameMatrix shows all sixteen cells of a 16x6 matrix
-		//while pulling back six, so the view was always far wider than deep.
-		check(cellsBody.contains("panel.translateZ = -down * 720f;"),
-				"...and pulls back by the DEPTH it framed, exactly as frameMatrix does - the"
-				+ " only difference between them is the corner");
-		check(!cellsBody.contains("Math.max(across, down)"),
-				"...not by the larger span, which framed a 2x1 map from twice the distance");
-
-		//AND THE PREVIEW HAS TO USE IT. A framing nothing calls is the same picture as before.
+		//THE PREVIEW DOES NOT MOVE THE CAMERA, and that is a decision with a bill attached.
+		//Framing a zone's own cells was tried twice and broke the preview both times: first
+		//by clamping a footprint into a matrix it did not fit, aiming at a corner of a map
+		//the zone is not on; then by pulling back the footprint's own depth, which put the
+		//camera 720 units from a map the working view frames from 7200. Both shipped with a
+		//green suite, because a suite here can assert the ARITHMETIC and cannot see the
+		//PICTURE. The camera is left where loadRegions puts it, and WHICH PART a zone
+		//occupies is said in the caption - the half that was legible in every screenshot of
+		//the broken versions.
 		File preview = new File(mainframe.getParentFile(), "ZonePreviewPane.java");
 		if (!preview.isFile()) {
 			check(false, "no ZonePreviewPane source at " + preview);
@@ -771,18 +753,16 @@ public class MainframeShapeTest {
 		}
 		String pv = SourceSeamTest.stripComments(new String(Files.readAllBytes(preview.toPath()),
 				StandardCharsets.UTF_8));
-		int loads = pv.indexOf("loadRegions(");
-		int aims = pv.indexOf("frameCells(");
-		check(loads >= 0 && aims > loads,
-				"the preview aims at the zone AFTER loading the map - loadRegions ends by framing"
-				+ " the whole matrix, so aiming first would be overwritten (load at " + loads
-				+ ", aim at " + aims + ")");
+		check(!pv.contains("scene.frame"),
+				"the preview does not aim the camera itself - twice it did, and twice the map went black");
 		check(pv.contains("ZoneFootprint.of("),
-				"...and asks the zone's own content where it is, rather than the map's size");
+				"...but it still works out which cells the zone occupies");
 		check(pv.contains("fitsIn(") && pv.contains("framed = null;"),
-				"...and DISCARDS a footprint that cannot be about this map instead of squeezing"
-				+ " it in, which is what blacked out every zone whose content outruns its"
-				+ " matrix");
+				"...and DISCARDS a footprint that cannot be about this map rather than"
+				+ " squeezing it in - zone 0 measures twelve cells on a one-cell map");
+		check(pv.contains("describeCells()") && pv.contains("whole map"),
+				"...and says which, or says it is showing the whole map, so the caption"
+				+ " tells two zones on one matrix apart when the picture cannot");
 	}
 
 	/**
