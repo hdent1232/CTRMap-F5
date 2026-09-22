@@ -172,7 +172,9 @@ public final class ZonePreviewPane extends JPanel {
 				//tell them apart, and neither could the picture. The cells are the part that
 				//differs, so they go in the words as well as in the camera - a caption a user
 				//can compare between two rows without trusting their eyes on a small canvas.
-				String where = framed == null ? "" : " - " + framed.describeCells();
+				//...and when the footprint was discarded, say the WHOLE MAP rather than
+				//nothing, so a black or unhelpful preview is explained instead of silent.
+				String where = framed == null ? " - whole map" : " - " + framed.describeCells();
 				say(mine, "Zone " + zoneIndex + " - area " + zone.header.areadataID
 						+ ", map " + zone.header.mapmatrixID + where, zoneIndex);
 			}
@@ -211,8 +213,16 @@ public final class ZonePreviewPane extends JPanel {
 		//Reported with three screenshots. Framed AFTER the load because the load is what
 		//pointed the camera at everything.
 		framed = ZoneFootprint.of(zone.header, zone.entities);
+		//...AND ONLY IF IT CAN BE ABOUT THIS MAP. Reported twice: this used to CLAMP the
+		//footprint into the matrix, which turned "these numbers are not about this map" into
+		//a confident corner. Zone 0 measures twelve cells across and its map is one cell, so
+		//it framed cell (0,0) and the preview went black. A box that does not fit is not
+		//narrowed, it is discarded, and the whole map is framed exactly as it was before this
+		//feature existed - loadRegions has already done that, so there is nothing to undo.
+		if (framed != null && !framed.fitsIn(mm.width, mm.height)) {
+			framed = null;
+		}
 		if (framed != null) {
-			framed = framed.clampedTo(mm.width, mm.height);
 			scene.frameCells(framed.minCellX(), framed.minCellY(),
 					framed.maxCellX(), framed.maxCellY());
 		}

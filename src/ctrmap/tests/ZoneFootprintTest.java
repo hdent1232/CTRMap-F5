@@ -41,7 +41,7 @@ public class ZoneFootprintTest {
 		theTileSpaceIsConverted(zones);
 		aZoneThatOwnsItsMapCoversIt(zones);
 		nothingToGoOnIsNullRatherThanTheOrigin(zones);
-		aFootprintIsKeptInsideItsMatrix(zones);
+		aFootprintThatCannotBeAboutThisMapIsRefused(zones);
 
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
 		if (fails != 0) {
@@ -147,21 +147,41 @@ public class ZoneFootprintTest {
 				"and says it was located by exactly one thing");
 	}
 
-	static void aFootprintIsKeptInsideItsMatrix(GARC zones) throws Exception {
-		System.out.println("--- a footprint is clamped to the matrix it is drawn on");
-		ZoneFootprint f = footprint(zones, 61);
-		check(f != null, "zone 61 locates itself");
-		if (f == null) {
+	/**
+	 * A footprint that cannot be about this map is REFUSED, not squeezed into it.
+	 *
+	 * <p>REPORTED TWICE, and the second time with a black preview. This used to CLAMP, which
+	 * takes a box that is not about the map and returns one that is - confidently, and in the
+	 * wrong place. MEASURED on the owner's own game: matrix 0 is 1x1 cells and matrix 15 is
+	 * 2x1, while zone 0's content measures twelve cells across. Zone 0 has no NPCs and no
+	 * props, fifty warps, and whatever space those warp coordinates are in it is not a 1x1
+	 * map's. Clamping collapsed that to cell (0,0), the camera aimed at a corner, and every
+	 * such zone previewed BLACK.
+	 *
+	 * <p>The real sizes are asserted here rather than assumed, because the whole defect was an
+	 * assumption about them.
+	 */
+	static void aFootprintThatCannotBeAboutThisMapIsRefused(GARC zones) throws Exception {
+		System.out.println("--- a footprint that cannot be about this map is refused, not clamped");
+		ZoneFootprint route = footprint(zones, 61);
+		check(route != null, "zone 61 locates itself");
+		if (route == null) {
 			return;
 		}
-		ZoneFootprint tiny = f.clampedTo(1, 1);
-		check(tiny.minCellX() == 0 && tiny.maxCellX() == 0
-				&& tiny.minCellY() == 0 && tiny.maxCellY() == 0,
-				"clamped into a one-cell matrix it is that one cell: " + tiny.describeCells());
-		check(f.clampedTo(64, 64) == f,
-				"and a box that already fits is returned unchanged, not rebuilt");
-		check(f.clampedTo(0, 0) == f,
-				"a matrix of no size cannot clamp anything, so nothing is claimed");
+		//map 12 is 16x6 on the retail dump - the route these three zones share
+		check(route.fitsIn(16, 6),
+				"a route's footprint fits the matrix it is on: " + route.describeCells());
+		check(!route.fitsIn(1, 1),
+				"...and does not fit a one-cell map, which is the question that was never asked");
+		check(!route.fitsIn(0, 0),
+				"a matrix of no size confirms nothing fits, because its size is unknown");
+
+		ZoneFootprint zero = footprint(zones, 0);
+		check(zero != null, "zone 0 locates itself");
+		check(zero != null && !zero.fitsIn(1, 1),
+				"zone 0 measures " + (zero == null ? "?" : zero.describeCells())
+				+ " and its map is ONE cell, so the preview must frame the whole map instead"
+				+ " of a corner - this is the black preview, asserted");
 	}
 
 	static ZoneFootprint footprint(GARC zones, int index) throws Exception {

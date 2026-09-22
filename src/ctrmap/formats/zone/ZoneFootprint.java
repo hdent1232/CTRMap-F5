@@ -88,24 +88,31 @@ public final class ZoneFootprint {
 	}
 
 	/**
-	 * Keeps the box inside a matrix of this size, so a zone whose header points outside its
-	 * own map cannot aim the camera off the edge of the world. Returns this when it already
-	 * fits.
+	 * Whether this box can be about a matrix of this size at all.
+	 *
+	 * <p>THIS REPLACED A CLAMP, and the clamp was a defect the owner had to report twice.
+	 * Squeezing an out-of-range box into the matrix turns "these numbers are not about this
+	 * map" into a confident, wrong, in-range answer: zone 0's content measures twelve cells
+	 * across, its map is ONE cell, and clamping collapsed that to cell (0,0) - so the camera
+	 * aimed at a corner and the preview went BLACK. Measured on the owner's own game:
+	 * matrix 0 is 1x1, matrix 15 is 2x1, matrix 12 is 16x6. Zone 0 has no NPCs and no props,
+	 * fifty warps, and its warp coordinates do not sit in its own map's space; whatever they
+	 * are about, they are not about a 1x1 matrix.
+	 *
+	 * <p>So the answer is a refusal, not a repair. A box that cannot be about this map makes
+	 * the caller frame the whole map instead - which is what the preview did before any of
+	 * this existed, and is never wrong, only unhelpful. An unhelpful picture of the right
+	 * place beats a helpful-looking picture of the wrong one.
+	 *
+	 * <p>A matrix of no size answers false: its dimensions are unknown, and an unknown map
+	 * cannot confirm that anything fits inside it.
 	 */
-	public ZoneFootprint clampedTo(int cellsAcross, int cellsDown) {
+	public boolean fitsIn(int cellsAcross, int cellsDown) {
 		if (cellsAcross <= 0 || cellsDown <= 0) {
-			return this;
+			return false;
 		}
-		int lastX = cellsAcross * WORLD_PER_CELL - 1;
-		int lastY = cellsDown * WORLD_PER_CELL - 1;
-		int nx0 = Math.max(0, Math.min(minX, lastX));
-		int ny0 = Math.max(0, Math.min(minY, lastY));
-		int nx1 = Math.max(nx0, Math.min(maxX, lastX));
-		int ny1 = Math.max(ny0, Math.min(maxY, lastY));
-		if (nx0 == minX && ny0 == minY && nx1 == maxX && ny1 == maxY) {
-			return this;
-		}
-		return new ZoneFootprint(nx0, ny0, nx1, ny1, from);
+		return minCellX() >= 0 && minCellY() >= 0
+				&& maxCellX() < cellsAcross && maxCellY() < cellsDown;
 	}
 
 	/** {@code "cells (8,2)-(10,2)"}, or {@code "cell (7,3)"} when it is one cell. */

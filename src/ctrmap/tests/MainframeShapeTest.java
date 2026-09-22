@@ -752,9 +752,16 @@ public class MainframeShapeTest {
 		check(cellsBody.contains("x0 +") && cellsBody.contains("y0 +"),
 				"...and centres on the rectangle's OWN corner, not on the matrix's - without the"
 				+ " origin every zone on one map frames the same place, which is the defect");
-		check(cellsBody.contains("Math.max(across, down)"),
-				"...pulling back by the LARGER span, so a zone three cells wide and one deep is"
-				+ " not framed half outside the view");
+		//REPORTED, with a picture. This asserted Math.max(across, down), on the reasoning that
+		//a wide shallow rectangle would overflow. Fortree's map is 2x1 cells, so max() pulled
+		//back twice as far as framing that same map ever did and left a thin strip of ground
+		//with black above and below. frameMatrix shows all sixteen cells of a 16x6 matrix
+		//while pulling back six, so the view was always far wider than deep.
+		check(cellsBody.contains("panel.translateZ = -down * 720f;"),
+				"...and pulls back by the DEPTH it framed, exactly as frameMatrix does - the"
+				+ " only difference between them is the corner");
+		check(!cellsBody.contains("Math.max(across, down)"),
+				"...not by the larger span, which framed a 2x1 map from twice the distance");
 
 		//AND THE PREVIEW HAS TO USE IT. A framing nothing calls is the same picture as before.
 		File preview = new File(mainframe.getParentFile(), "ZonePreviewPane.java");
@@ -772,6 +779,10 @@ public class MainframeShapeTest {
 				+ ", aim at " + aims + ")");
 		check(pv.contains("ZoneFootprint.of("),
 				"...and asks the zone's own content where it is, rather than the map's size");
+		check(pv.contains("fitsIn(") && pv.contains("framed = null;"),
+				"...and DISCARDS a footprint that cannot be about this map instead of squeezing"
+				+ " it in, which is what blacked out every zone whose content outruns its"
+				+ " matrix");
 	}
 
 	/**

@@ -89,19 +89,23 @@ public final class PanelScene3D implements Scene3D {
 		int y0 = Math.min(cellY0, cellY1);
 		int across = Math.abs(cellX1 - cellX0) + 1;
 		int down = Math.abs(cellY1 - cellY0) + 1;
-		//THE SAME ARITHMETIC AS frameMatrix, with an origin. That method centres on a matrix
-		//by halving it - cellsAcross * 360 is (cellsAcross * 720) / 2 - and pulls the camera
-		//back by the height it just framed. Here the centre is offset by the corner the
-		//rectangle starts at, and the pull-back uses the LARGER of the two spans: a matrix is
-		//usually taller than it is wide, so its own height is enough, while a zone occupying
-		//three cells across and one down would sit half outside the view if height alone
-		//decided it. Framing one cell keeps a cell's worth of neighbours visible, which is the
-		//difference between "which part is this" and "what is this a picture of".
+		//THE SAME ARITHMETIC AS frameMatrix, with an origin - and NOTHING ELSE changed. That
+		//method centres by halving - cellsAcross * 360 is (cellsAcross * 720) / 2 - and pulls
+		//the camera back by the DEPTH it framed. Here the centre is offset by the corner the
+		//rectangle starts at, and that is the only difference.
+		//
+		//It briefly pulled back by max(across, down) instead, reasoning that a wide, shallow
+		//rectangle would otherwise overflow the view. Reported, with a picture: Fortree's map
+		//is 2x1 cells, so max() pulled the camera back twice as far as framing that same map
+		//ever did and left a thin strip of ground with black above and below it. The reasoning
+		//was also wrong on its own terms - frameMatrix shows all sixteen cells of a 16x6
+		//matrix while pulling back only six, so the view is far wider than it is deep and
+		//depth was never the constraint. Match the call that is known to look right.
 		float centreX = (x0 + across / 2f) * 720f;
 		float centreY = (y0 + down / 2f) * 720f;
 		panel.translateX = -centreX;
 		panel.translateY = -centreY;
-		panel.translateZ = -Math.max(across, down) * 720f;
+		panel.translateZ = -down * 720f;
 		panel.rotateX = 45f;
 		panel.rotateY = 0f;
 	}
