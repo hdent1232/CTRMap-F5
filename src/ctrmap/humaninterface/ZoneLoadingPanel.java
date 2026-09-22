@@ -1340,6 +1340,45 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	}
 
 	/**
+	 * Hands out buttons the Zone Loader tab can put in the browser's row - and they are NOT
+	 * the ones this form built.
+	 *
+	 * <p>YOU CANNOT MOVE A COMPONENT OUT OF A GroupLayout. This returned the form's own
+	 * {@code btnCloneZone} and {@code btnAddZone} for the tab to re-parent, which works
+	 * exactly once: adding a component to another container removes it from this one, and the
+	 * first time this panel is LAID OUT, GroupLayout puts every component named in its groups
+	 * back. The generated layout names both of them twice, in the horizontal group and the
+	 * vertical one.
+	 *
+	 * <p>It took four wrong explanations to find that, because every check said it worked. The
+	 * tab really does move them; a diagnostic written from inside the tab builder saw them
+	 * moved, because that runs BEFORE the first layout; and the headless suite built the panel
+	 * without ever laying it out. The owner's window laid out and pulled them home, and they
+	 * had to say so four times.
+	 *
+	 * <p>So the form keeps its two, hidden - GroupLayout honours visibility by default, so a
+	 * hidden component takes no space and the corner closes up - and the fields are REPOINTED
+	 * at the copies. Everything that already enables, disables or re-tooltips
+	 * {@code btnAddZone} goes on working, and touches the button the user can actually see.
+	 */
+	private javax.swing.JButton exported(javax.swing.JButton original) {
+		javax.swing.JButton copy = new javax.swing.JButton(original.getText());
+		copy.setToolTipText(original.getToolTipText());
+		copy.setEnabled(original.isEnabled());
+		copy.setMnemonic(original.getMnemonic());
+		for (java.awt.event.ActionListener listener : original.getActionListeners()) {
+			copy.addActionListener(listener);
+			//...AND TAKEN OFF THE ORIGINAL, so this is a MOVE and not a copy. A hidden button
+			//that still fires the action is a second control for one job - the exact thing the
+			//owner reported - kept alive where nobody can see it to reason about.
+			original.removeActionListener(listener);
+		}
+		original.setVisible(false);
+		original.setEnabled(false);
+		return copy;
+	}
+
+	/**
 	 * The two buttons that MAKE a zone, in the order they should be offered.
 	 *
 	 * <p>They were laid out in this form's top-left corner, which is where NetBeans put them
@@ -1354,8 +1393,19 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	 * is still exactly one "Clone zone..." button in the window.
 	 */
 	public javax.swing.JButton[] zoneCreationButtons() {
+		if (!handedOver) {
+			handedOver = true;
+			//REPOINT THE FIELDS at the copies. Everything else in this class that touches
+			//btnAddZone - the game-type check that disables it, and its tooltip - then drives
+			//the button the user can see, instead of a hidden one behind the layout.
+			btnCloneZone = exported(btnCloneZone);
+			btnAddZone = exported(btnAddZone);
+		}
 		return new javax.swing.JButton[]{btnCloneZone, btnAddZone};
 	}
+
+	/** Handed over once; a second call must not make a third pair. */
+	private boolean handedOver;
 
 	/** The zone browser beside this panel, handed in when the tab is built. */
 	private ZoneBrowserPane browser;
