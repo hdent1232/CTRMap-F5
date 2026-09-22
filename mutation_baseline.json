@@ -195,63 +195,63 @@
   "lines": [],
   "killed_lines": [
    {
-    "line": 285,
+    "line": 325,
     "kind": "negate-if",
     "by": "ForkGuardsTest"
    },
    {
-    "line": 300,
+    "line": 356,
     "kind": "negate-if",
-    "by": "PackReportTest"
+    "by": "DataSafetyGuardsTest"
    },
    {
-    "line": 347,
-    "kind": "negate-if",
-    "by": "ForkGuardsTest"
-   },
-   {
-    "line": 396,
+    "line": 403,
     "kind": "negate-if",
     "by": "ForkGuardsTest"
    },
    {
-    "line": 401,
+    "line": 454,
     "kind": "negate-if",
     "by": "ForkGuardsTest"
    },
    {
-    "line": 408,
+    "line": 459,
     "kind": "negate-if",
     "by": "ForkGuardsTest"
    },
    {
-    "line": 409,
+    "line": 466,
+    "kind": "negate-if",
+    "by": "ForkGuardsTest"
+   },
+   {
+    "line": 467,
     "kind": "drop-throw",
     "by": "ForkGuardsTest"
    },
    {
-    "line": 409,
+    "line": 467,
     "kind": "swallow-throw",
     "by": "ForkGuardsTest"
    },
    {
-    "line": 450,
+    "line": 508,
     "kind": "negate-if",
     "by": "ZoneAppendTest"
    },
    {
-    "line": 597,
+    "line": 662,
     "kind": "drop-throw",
     "by": "DataSafetyGuardsTest"
    },
    {
-    "line": 597,
+    "line": 662,
     "kind": "swallow-throw",
     "by": "DataSafetyGuardsTest"
    }
   ],
   "excluded": [],
-  "sha256": "127fea075e4e3e6a7de048137a229093acd8db6ccdebbec62faa79fcba51efa5"
+  "sha256": "a43ad263f362c5f7c8e2ff998a6a4c502cc7cc5704822c99b096cb7f9ba23107"
  },
  "src/ctrmap/formats/h3d/BchTexturePack.java": {
   "survivors": 0,
@@ -1406,8 +1406,8 @@
   "sha256": "70794c9805981aee9136eb44b549158377b572c98ba222239d8850b731115701"
  },
  "_meta": {
-  "measured_at": "4de8135",
-  "work_order_override": null,
+  "measured_at": "b48610a",
+  "work_order_override": "The queue is the 2026-09-13 whole-app census backlog (280 confirmed, 269 open), a standing work list rather than edits in flight. Every source change this session is committed at b48610a, the tree is clean, the battery is 135 of 136 with only the mutation baseline red - which is what this sweep clears - and the 204-plant replant proof was recorded against exactly this tree.",
   "measurements": 230,
   "distinct": 202,
   "attempted": 202,
