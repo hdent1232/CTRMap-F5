@@ -47,11 +47,6 @@ public class RecordingScene implements Scene3D {
 	}
 
 	@Override
-	public void frameCells(int cellX0, int cellY0, int cellX1, int cellY1) {
-		framings.add("cells " + cellX0 + "," + cellY0 + ".." + cellX1 + "," + cellY1);
-	}
-
-	@Override
 	public void redraw() {
 		redraws++;
 	}
