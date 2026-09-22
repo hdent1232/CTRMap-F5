@@ -113,6 +113,7 @@ public class BatteryHygieneTest {
 				}
 			}
 		}
+		thePublishInstructionCannotSilentlySkipTheTag(repo);
 		theRecorderReadsTheVerdictLineWhole(repo);
 		theRecorderDoesNotCallItsOwnOutputATreeThatMoved(repo);
 		theDigestIgnoresLineEndingsButOnlyForText();
@@ -353,6 +354,92 @@ public class BatteryHygieneTest {
 				"while a real source edit mid-run still does, or this excuses everything");
 		} finally {
 			Scratch.deleteTree(dir);
+		}
+	}
+
+	/**
+	 * The packager's publish instruction must actually publish what it packaged.
+	 *
+	 * <p>MEASURED cutting 1.0.3 on 2026-09-22, two defects in one file:
+	 *
+	 * <ul>
+	 * <li>the printed command was {@code git push --follow-tags}, which pushes only ANNOTATED
+	 *     tags. Every tag this project has ever cut is lightweight. The tag was made, the
+	 *     command reported success, master moved, and <b>the tag was not on the remote</b> —
+	 *     after which {@code gh release create} would have made its own tag from wherever the
+	 *     default branch happened to point. The only thing that decides whether a user is
+	 *     offered an update is the release TAG compared against the version in their jar.</li>
+	 * <li>the file carried a SECOND publish instruction in its header comment, which had
+	 *     drifted: one zip, under a name the packager stopped producing two releases ago, and
+	 *     a name ending in neither suffix {@code Updater.Flavour} selects on — so a release cut
+	 *     by following it would have offered nothing to any user of either build.</li>
+	 * </ul>
+	 *
+	 * <p>One rule written twice, behaving differently in each copy, is the shape CLAUDE.md
+	 * records as costing this project repeatedly. So this asks for ONE instruction, and asks
+	 * that it name the tag in the push rather than hope a flag carries it.
+	 */
+	static void thePublishInstructionCannotSilentlySkipTheTag(File repo) throws Exception {
+		System.out.println("--- the publish instruction pushes the tag and both builds");
+		File packager = new File(repo, "package.ps1");
+		if (!packager.isFile()) {
+			System.out.println("  skip: no package.ps1 at " + packager);
+			return;
+		}
+		String body = read(packager);
+
+		// --follow-tags carries an annotated tag and silently skips a lightweight one, and
+		// `git tag <name>` with no -a makes a lightweight one. Refuse the pairing outright:
+		// naming the tag in the push works for both kinds and cannot be got wrong.
+		// ...asked of the CODE, not of the file. The comment above the fixed line names the
+		// flag in order to explain why it is wrong, and prose about a defect is not the
+		// defect - a check that cannot tell them apart fires on the very commit that fixes it.
+		StringBuilder instructions = new StringBuilder();
+		for (String line : body.split("\n")) {
+			if (!line.trim().startsWith("#")) {
+				instructions.append(line).append('\n');
+			}
+		}
+		String code = instructions.toString();
+		check(!code.contains("--follow-tags"),
+			"the publish instruction does not lean on --follow-tags, which skips a lightweight"
+			+ " tag without a word");
+		check(body.contains("git push origin master v$Version"),
+			"...it names the tag in the push instead");
+
+		// ONE instruction. Two copies drift, and the drifted one is the one somebody reads.
+		int pushes = 0;
+		for (String line : body.split("\n")) {
+			if (line.contains("git push") && !line.trim().startsWith("#")) {
+				pushes++;
+			}
+		}
+		check(pushes == 1, "and there is exactly ONE push instruction in the file, not a copy"
+			+ " in the header to drift from it (found " + pushes + ")");
+
+		// AND BOTH BUILDS. Updater.Flavour picks its download by asset-name suffix, so a
+		// release carrying one zip offers nothing at all to users who installed the other way.
+		int releases = 0;
+		for (String line : body.split("\n")) {
+			if (line.contains("gh release create") && !line.trim().startsWith("#")) {
+				releases++;
+				check(line.contains("$winZip") && line.contains("$zip"),
+					"the release command carries BOTH builds, named from the variables that"
+					+ " made them");
+			}
+		}
+		check(releases == 1, "and there is exactly one release command (found " + releases + ")");
+
+		// The suffixes are the contract between packager and updater. If either side renames,
+		// this says so rather than letting a release publish assets nobody can select.
+		check(body.contains("-portable.zip") && body.contains("-windows-x64.zip"),
+			"...naming the two suffixes Updater.Flavour selects on");
+		File flavour = new File(repo, "src/ctrmap/update/Updater.java");
+		if (flavour.isFile()) {
+			String updater = read(flavour);
+			check(updater.contains("\"-portable.zip\"") && updater.contains("\"-windows-x64.zip\""),
+				"and the updater still selects on those same two, or the packager is naming"
+				+ " files nothing will download");
 		}
 	}
 
