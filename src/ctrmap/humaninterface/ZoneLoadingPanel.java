@@ -1339,6 +1339,24 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		return Workspace.isValid() && Workspace.profile().supports(GameProfile.Feature.AREA_FORK);
 	}
 
+	/**
+	 * The two buttons that MAKE a zone, in the order they should be offered.
+	 *
+	 * <p>They were laid out in this form's top-left corner, which is where NetBeans put them
+	 * years ago and where they stayed when the zone browser was added to the right-hand side.
+	 * The owner reported the result: one job - pick a zone, copy a zone, add zones - split
+	 * across opposite corners of the tab, and the button that moved was one nobody asked to
+	 * move. The tab takes these and puts them in the browser's own action row; handing them
+	 * over rather than letting the tab dig them out keeps the panel in charge of what it will
+	 * give up, and means a reader of this class can see that they leave.
+	 *
+	 * <p>They are NOT copies. Adding a Swing component to another container moves it, so there
+	 * is still exactly one "Clone zone..." button in the window.
+	 */
+	public javax.swing.JButton[] zoneCreationButtons() {
+		return new javax.swing.JButton[]{btnCloneZone, btnAddZone};
+	}
+
 	/** The zone browser beside this panel, handed in when the tab is built. */
 	private ZoneBrowserPane browser;
 

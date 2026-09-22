@@ -266,6 +266,7 @@ $suites = @(
     @{ n = "MainframeActions (what each action does and refuses)"; c = "ctrmap.tests.MainframeActionGuardsTest"; a = @($pristine) },
     @{ n = "TileMapPanelState (lookups, save, refresh)"; c = "ctrmap.tests.TileMapPanelStateTest"; a = @($pristine) },
     @{ n = "ZoneLoadingState (loaded-zone transitions)"; c = "ctrmap.tests.ZoneLoadingStateTest"; a = @($pristine) },
+    @{ n = "ZoneFootprint (which part of a shared map a zone is)"; c = "ctrmap.tests.ZoneFootprintTest"; a = @($pristine) },
     @{ n = "LoadedZone (one owner, handed to every reader)"; c = "ctrmap.tests.LoadedZoneTest"; a = @($pristine, "build\classes") },
     @{ n = "MainframeEdges (what still reaches into the window)"; c = "ctrmap.tests.MainframeEdgesTest"; a = @("build\classes") },
     @{ n = "OpenEditors (one flush, one order, one refusal)"; c = "ctrmap.tests.OpenEditorsTest"; a = @() }

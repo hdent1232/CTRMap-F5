@@ -52,11 +52,43 @@ public final class ZoneBrowserPane extends JPanel {
 		void load(int zoneIndex);
 	}
 
+	/**
+	 * Puts another zone action in the row under the preview, to the LEFT of "Load this zone".
+	 *
+	 * <p>Adding the component MOVES it: a Swing component has one parent, so this takes it out
+	 * of wherever it was and its old layout drops it. That is the point - the button is not
+	 * copied into a second place, which would leave two controls for one action and the same
+	 * complaint one level worse.
+	 *
+	 * <p>Load stays rightmost because it is the one that commits. The others make or copy a
+	 * zone; that one opens it.
+	 */
+	public void addAction(javax.swing.JButton button) {
+		if (button == null) {
+			return;
+		}
+		actions.add(button, Math.max(0, actions.getComponentCount() - 1));
+		actions.revalidate();
+	}
+
 	private final DefaultListModel<String> shown = new DefaultListModel<>();
 	private final JList<String> list = new JList<>(shown);
 	private final JTextField search = new JTextField();
 	private final ZonePreviewPane preview;
 	private final JButton load = new JButton(LOAD);
+	/**
+	 * The row under the preview, and the one place the Zone Loader's "which zone am I working
+	 * on" actions live.
+	 *
+	 * <p>REPORTED, and it was my doing: the browser was added as a self-contained column on
+	 * the right, and "Clone zone..." and "Add zones..." were left in the form's top-left
+	 * corner where the NetBeans layout had always put them - so one job ended up split across
+	 * opposite corners of the tab. The owner never asked for the load button to move; a
+	 * preview was asked for and the placement came with it unbidden. Choosing a zone, cloning
+	 * one and making new ones are the same task, so they sit in one row here, beside the list
+	 * they all act on. {@link #addAction} is how the tab hands the other two over.
+	 */
+	private final JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
 
 	/** Every zone's label, by zone index. */
 	private final List<String> labels = new ArrayList<>();
@@ -82,11 +114,10 @@ public final class ZoneBrowserPane extends JPanel {
 		add(top, BorderLayout.NORTH);
 		add(preview, BorderLayout.CENTER);
 
-		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
 		load.setToolTipText("Opens the highlighted zone. Looking costs nothing - nothing is"
 				+ " opened until you press this.");
-		buttons.add(load);
-		add(buttons, BorderLayout.SOUTH);
+		actions.add(load);
+		add(actions, BorderLayout.SOUTH);
 
 		search.getDocument().addDocumentListener(new DocumentListener() {
 			@Override

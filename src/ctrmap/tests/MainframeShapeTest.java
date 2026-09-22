@@ -167,6 +167,7 @@ public class MainframeShapeTest {
 		actionRow("Extras", CtrmapMainframe.buildExtrasBar(), EXPECTED_EXTRAS_ROW);
 		shape(new File(src, "ctrmap/CtrmapMainframe.java"));
 		cameraFraming(new File(src, "ctrmap/CtrmapMainframe.java"));
+		theZoneActionsShareOneRow(src);
 		theLooseMapClearNamesEveryEntityForm(new File(src, "ctrmap/CtrmapMainframe.java"));
 		windowFree(new File(src, "ctrmap/util/Bytes.java"));
 		windowFree(new File(src, "ctrmap/humaninterface/Forms.java"));
@@ -735,6 +736,102 @@ public class MainframeShapeTest {
 		check(singleBody.contains("translateX = 0f;") && matrixBody.contains("translateX = -cellsAcross * 360f;"),
 				"the difference LEFT between them is pinned, not fixed: a single region frames at translateX 0,"
 				+ " where the matrix formula gives -360 for one cell across, so a loose GR sits half a region off centre");
+
+		//AND THE THIRD FRAMING, which exists because the other two could not answer the
+		//question. REPORTED with three screenshots: Routes 132, 133 and 134 are one matrix, so
+		//frameMatrix pointed the camera at all of it and drew the same picture three times.
+		int cells = text.indexOf("public void frameCells(int cellX0, int cellY0, int cellX1, int cellY1) {");
+		int cellsEnd = cells < 0 ? -1 : text.indexOf("public void redraw() {", cells);
+		if (cells < 0 || cellsEnd < cells) {
+			check(false, "PanelScene3D can frame a rectangle of cells (found at " + cells + ")");
+			return;
+		}
+		String cellsBody = text.substring(cells, cellsEnd);
+		check(cellsBody.contains("rotateY = 0f;") && cellsBody.contains("rotateX = 45f;"),
+				"framing a rectangle of cells holds the same known view as the other two");
+		check(cellsBody.contains("x0 +") && cellsBody.contains("y0 +"),
+				"...and centres on the rectangle's OWN corner, not on the matrix's - without the"
+				+ " origin every zone on one map frames the same place, which is the defect");
+		check(cellsBody.contains("Math.max(across, down)"),
+				"...pulling back by the LARGER span, so a zone three cells wide and one deep is"
+				+ " not framed half outside the view");
+
+		//AND THE PREVIEW HAS TO USE IT. A framing nothing calls is the same picture as before.
+		File preview = new File(mainframe.getParentFile(), "ZonePreviewPane.java");
+		if (!preview.isFile()) {
+			check(false, "no ZonePreviewPane source at " + preview);
+			return;
+		}
+		String pv = SourceSeamTest.stripComments(new String(Files.readAllBytes(preview.toPath()),
+				StandardCharsets.UTF_8));
+		int loads = pv.indexOf("loadRegions(");
+		int aims = pv.indexOf("frameCells(");
+		check(loads >= 0 && aims > loads,
+				"the preview aims at the zone AFTER loading the map - loadRegions ends by framing"
+				+ " the whole matrix, so aiming first would be overwritten (load at " + loads
+				+ ", aim at " + aims + ")");
+		check(pv.contains("ZoneFootprint.of("),
+				"...and asks the zone's own content where it is, rather than the map's size");
+	}
+
+	/**
+	 * Choosing a zone, cloning one and adding zones are one job and sit in one row.
+	 *
+	 * <p>REPORTED, and it was this program's own doing rather than anything inherited: the
+	 * zone browser was added as a column on the right of the Zone Loader, taking the load
+	 * button with it, while "Clone zone..." and "Add zones (lift limit)..." stayed in the
+	 * form's top-left corner where the NetBeans layout had always had them. The owner asked
+	 * for a preview. Nobody asked for the load button to move, and once it had, half the task
+	 * was in one corner of the tab and half in the other.
+	 *
+	 * <p>Checked as a MOVE, not a copy: a second "Clone zone..." button somewhere else would
+	 * satisfy "the browser has one" while making the original complaint worse.
+	 */
+	static void theZoneActionsShareOneRow(File src) throws Exception {
+		System.out.println("--- clone, add and load sit in one row, and the buttons MOVED there");
+		ctrmap.humaninterface.ZoneBrowserPane browser =
+				new ctrmap.humaninterface.ZoneBrowserPane(new ctrmap.LoadedZone(),
+						new ctrmap.humaninterface.tools.ToolSelection());
+		javax.swing.JPanel elsewhere = new javax.swing.JPanel();
+		javax.swing.JButton clone = new javax.swing.JButton("Clone zone...");
+		elsewhere.add(clone);
+		check(holds(elsewhere, clone), "the button starts somewhere else, or this proves nothing");
+
+		browser.addAction(clone);
+		check(holds(browser, clone), "after addAction the button is in the browser column");
+		check(!holds(elsewhere, clone),
+				"...and is GONE from where it was - moved, not copied, so there is still"
+				+ " exactly one of it in the window");
+
+		java.util.List<String> row = buttonTexts(browser);
+		check(row.contains("Clone zone...") && row.contains(ctrmap.humaninterface.ZoneBrowserPane.LOAD),
+				"the row offers both: " + row);
+		check(row.indexOf(ctrmap.humaninterface.ZoneBrowserPane.LOAD) == row.size() - 1,
+				"and the one that COMMITS is last, after the ones that make a zone: " + row);
+
+		//...and the tab really hands them over, which the check above cannot see.
+		File frame = new File(src, "ctrmap/CtrmapMainframe.java");
+		if (!frame.isFile()) {
+			check(false, "no CtrmapMainframe source at " + frame);
+			return;
+		}
+		String text = SourceSeamTest.stripComments(new String(Files.readAllBytes(frame.toPath()),
+				StandardCharsets.UTF_8));
+		check(text.contains("zoneCreationButtons()") && text.contains("browser.addAction("),
+				"buildZoneTab hands the form's zone-making buttons to the browser's row");
+	}
+
+	/** Every JButton's text under a container, in the order the layout holds them. */
+	static java.util.List<String> buttonTexts(java.awt.Container root) {
+		java.util.List<String> out = new java.util.ArrayList<>();
+		for (Component c : root.getComponents()) {
+			if (c instanceof javax.swing.JButton) {
+				out.add(((javax.swing.JButton) c).getText());
+			} else if (c instanceof java.awt.Container) {
+				out.addAll(buttonTexts((java.awt.Container) c));
+			}
+		}
+		return out;
 	}
 
 	/**
