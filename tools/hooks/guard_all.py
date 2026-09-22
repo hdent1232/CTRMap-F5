@@ -30,6 +30,7 @@ TO RUN WITH THE GUARDS BROKEN: the owner sets CTRMAP_GUARD_BROKEN=1 for that ses
 turns a crashing guard from a refusal into a warning on stderr. It does not turn off a guard
 that works.
 """
+import ast
 import glob
 import importlib.util
 import io
@@ -50,14 +51,52 @@ PATIENCE = 8.0
 
 BROKEN_OK = hook_env.name("GUARD_BROKEN")
 
-#: This file is the dispatcher, not a guard, and shellin is a library.
-NOT_A_GUARD = ("guard_all.py",)
+def event_of(path):
+    """Which hook event a guard answers, read from its OWN declaration.
+
+    A guard may say `EVENT = "Stop"` at module level; one that says nothing answers
+    PreToolUse, which is what every guard here did before any other event existed. Asked of
+    the AST rather than the text, because a mention of the word in a docstring is not a
+    declaration - the same distinction that made the __name__ grep useless two files over.
+
+    None means the file could not be read or parsed. That is NOT "PreToolUse": a guard whose
+    contract cannot be read is unknown, and the caller leaves it in the list so `ask` refuses
+    it loudly rather than dropping it silently.
+    """
+    try:
+        tree = ast.parse(io.open(path, encoding="utf-8").read())
+    except (OSError, SyntaxError, ValueError):
+        return None
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if getattr(target, "id", None) == "EVENT":
+                value = getattr(node.value, "value", None)
+                return value if isinstance(value, str) else None
+    return "PreToolUse"
 
 
 def guards():
-    """Every guard file beside this one, sorted, so the order is the same every run."""
-    found = sorted(os.path.basename(p) for p in glob.glob(os.path.join(HERE, "guard_*.py")))
-    return [name for name in found if name not in NOT_A_GUARD]
+    """Every PreToolUse guard beside this one, sorted, so the order is the same every run.
+
+    TWO EXCLUSIONS, AND NEITHER IS A LIST OF NAMES. This file is skipped because it is THIS
+    FILE - `NOT_A_GUARD = ("guard_all.py",)` was a hand-kept tuple, which is the defect this
+    dispatcher exists to remove one level down and had at its own centre. And a guard that
+    declares a different EVENT is skipped because it answers a different question: added the
+    day a Stop hook arrived and would otherwise have been handed a tool payload on every call,
+    answering nothing while being counted as a tool guard - installed, wired, running, and off,
+    which is the shape that cost seven guards here on 2026-09-20.
+    """
+    me = os.path.basename(os.path.abspath(__file__))
+    out = []
+    for path in sorted(glob.glob(os.path.join(HERE, "guard_*.py"))):
+        name = os.path.basename(path)
+        if name == me:
+            continue
+        if event_of(path) == "PreToolUse" or event_of(path) is None:
+            out.append(name)
+    return out
 
 
 def ask(name, payload):

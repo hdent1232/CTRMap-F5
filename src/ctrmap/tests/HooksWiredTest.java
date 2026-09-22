@@ -57,6 +57,7 @@ public class HooksWiredTest {
 		aGuardTheDispatcherCannotAskIsRefused(checker);
 		anUnreadableWiringIsRefusedRatherThanPassed(checker);
 		aHookEditedInPlaceIsRefused(checker);
+		aGuardWiredToNoEventIsRefused(checker);
 		aSoundWiringIsAllowed(checker);
 		theThreeAdoptedRefusalsCatchTheirDefects(repo);
 		theLiveInstallationIsSound(checker, repo);
@@ -291,6 +292,53 @@ public class HooksWiredTest {
 	/**
 	 * The negative control. Without it a checker that refuses everything scores a perfect pass.
 	 */
+	/**
+	 * A guard that answers a DIFFERENT event must be wired to that event.
+	 *
+	 * <p>WHY THIS WAS NEEDED, measured 2026-09-22. Every guard here answered
+	 * {@code PreToolUse} and one dispatcher discovered them all - so the reachability check
+	 * above passes anything at all once a dispatcher is present. The day a {@code Stop} hook
+	 * arrived, a hook declaring {@code EVENT = "Stop"} with nobody wired to {@code Stop} sailed
+	 * straight through it: installed, never asked, and indistinguishable from one with nothing
+	 * to refuse. That is the exact shape this whole file exists for - seven guards wired for a
+	 * tool name while the session ran another tool - happening one event along instead of one
+	 * tool along.
+	 *
+	 * <p>The dispatcher also stops handing such a hook a TOOL payload, which it would otherwise
+	 * do on every call: answering nothing, while being counted among the guards that answered.
+	 */
+	static void aGuardWiredToNoEventIsRefused(File checker) throws Exception {
+		System.out.println("--- a guard that answers an event nobody wired");
+		File root = install("unwired-event", "\"*\"", "guard_all.py",
+				new String[]{"guard_all.py", "guard_later.py"}, true);
+		//a dispatcher that discovers its own guards, so the reachability test is satisfied
+		write(new File(root, ".claude/hooks/guard_all.py"),
+				"import glob, os\n"
+				+ "def guards():\n"
+				+ "    return glob.glob(os.path.join('.', 'guard_*.py'))\n"
+				+ "def decide(payload):\n    return False, None\n");
+		//...and a guard that says it answers something else entirely
+		write(new File(root, ".claude/hooks/guard_later.py"),
+				"EVENT = \"Stop\"\n"
+				+ "def decide(payload):\n    return False, None\n");
+		String said = ask(checker, root);
+		check(said.contains("guard_later.py") && said.contains("Stop"),
+				"the guard wired to no event is named: " + firstReason(said));
+		check(said.contains("NOTHING IN THE WIRING RUNS IT THERE"),
+				"...and says it is never asked, not merely mis-wired");
+
+		//AND THE NEGATIVE HALF: wire it, and it is left alone. Without this the check could
+		//refuse every guard that declares an event, which is worse than not having it.
+		write(new File(root, ".claude/settings.json"),
+				"{\n \"hooks\": {\n  \"PreToolUse\": [\n   { \"matcher\": \"*\", \"hooks\": "
+				+ "[ { \"type\": \"command\", \"command\": \"python .claude/hooks/guard_all.py\""
+				+ " } ] }\n  ],\n  \"Stop\": [\n   { \"hooks\": [ { \"type\": \"command\", "
+				+ "\"command\": \"python .claude/hooks/guard_later.py\" } ] }\n  ]\n }\n}\n");
+		String wired = ask(checker, root);
+		check(!wired.contains("NOTHING IN THE WIRING RUNS IT THERE"),
+				"and once it IS wired to that event nothing is refused: " + firstReason(wired));
+	}
+
 	static void aSoundWiringIsAllowed(File checker) throws Exception {
 		System.out.println("--- a sound wiring");
 		File root = install("sound", "\"*\"", "guard_all.py",

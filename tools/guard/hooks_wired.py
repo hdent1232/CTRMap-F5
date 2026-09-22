@@ -184,14 +184,37 @@ def claude_dir(root):
     return seen[0] if seen else None
 
 
+def _declared_event(path):
+    """Which hook event a guard says it answers, or None when that cannot be read.
+
+    A guard says `EVENT = "Stop"` at module level; one that says nothing answers
+    PreToolUse, which is what every guard here did before a second event existed. Asked
+    of the AST, because the word in a docstring is not a declaration - the same
+    distinction that made a __name__ grep useless in the hook two directories over.
+    """
+    try:
+        tree = ast.parse(io.open(path, encoding="utf-8", errors="replace").read())
+    except (OSError, SyntaxError, ValueError):
+        return None
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if getattr(target, "id", None) == "EVENT":
+                value = getattr(node.value, "value", None)
+                return value if isinstance(value, str) else None
+    return "PreToolUse"
+
+
 def _wired_commands(settings):
     """(commands, matchers, trouble) from a parsed settings file."""
     commands = []
     matchers = []
     trouble = []
+    event_commands = []
     hooks = settings.get("hooks")
     if not isinstance(hooks, dict):
-        return commands, matchers, ["settings.json has no hooks object"]
+        return commands, matchers, ["settings.json has no hooks object"], event_commands
     for event, entries in hooks.items():
         if not isinstance(entries, list):
             trouble.append("hooks.%s is not a list" % event)
@@ -204,9 +227,10 @@ def _wired_commands(settings):
             for hook in entry.get("hooks") or []:
                 if isinstance(hook, dict) and isinstance(hook.get("command"), str):
                     commands.append(hook["command"])
+                    event_commands.append((event, hook["command"]))
                 else:
                     trouble.append("a hook under hooks.%s has no command string" % event)
-    return commands, matchers, trouble
+    return commands, matchers, trouble, event_commands
 
 
 def findings(root):
@@ -242,7 +266,7 @@ def findings(root):
         return ["cannot read %s (%s) - so which guards are wired is UNKNOWN, which is not "
                 "the same as all of them" % (settings_path, cannotRead)]
 
-    commands, matchers, trouble = _wired_commands(settings)
+    commands, matchers, trouble, event_commands = _wired_commands(settings)
     why.extend(trouble)
 
     #: which wired commands are dispatchers that find their own guards
@@ -272,6 +296,23 @@ def findings(root):
             "%s is installed in %s and NOTHING IN THE WIRING RUNS IT. An installed guard that "
             "is never asked is off, and looks exactly like one with nothing to refuse."
             % (name, hooks_dir))
+
+    #: A GUARD THAT ANSWERS A DIFFERENT EVENT MUST BE WIRED TO THAT EVENT. Until a Stop
+    #: hook existed every guard here answered PreToolUse and one dispatcher covered them
+    #: all - so the reachability test above passes anything at all once a dispatcher is
+    #: present. A hook declaring EVENT = "Stop" that nobody wired to Stop sails through
+    #: it: installed, never asked, indistinguishable from one with nothing to refuse.
+    #: That is the shape this whole file was written for, one event along.
+    for name in installed:
+        declared = _declared_event(os.path.join(hooks_dir, name))
+        if declared in (None, "PreToolUse"):
+            continue
+        if not [c for event, c in event_commands if event == declared and name in c]:
+            why.append(
+                "%s says it answers the %s event and NOTHING IN THE WIRING RUNS IT THERE."
+                " The dispatcher only covers PreToolUse, so this guard is installed and"
+                " never asked - wire it under hooks.%s, or it is decoration."
+                % (name, declared, declared))
 
     #: a matcher that names tools is a call-site list
     for event, matcher in matchers:
