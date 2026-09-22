@@ -51,6 +51,21 @@ public interface Scene3D {
 	/** Point the camera at a matrix this many cells across and down, yaw zeroed. */
 	void frameMatrix(int cellsAcross, int cellsDown);
 
+	/**
+	 * Point the camera at ONE RECTANGLE OF CELLS inside a matrix, inclusive, yaw zeroed.
+	 *
+	 * <p>{@link #frameMatrix} frames the whole map, which is the right answer when the map is
+	 * the subject. It is the wrong answer when several zones share one matrix: the preview
+	 * drew Route 132, Route 133 and Route 134 as the same image, because they are the same
+	 * matrix and the camera was pointed at all of it. This aims at the part a zone actually
+	 * occupies, so arrowing through those three pans along the route instead of standing still.
+	 *
+	 * <p>On the seam rather than on the panel so a suite can assert WHICH cells were framed
+	 * without a graphics context - the failure being guarded against is aiming at the wrong
+	 * part of the map, and that is a pair of numbers, not a picture.
+	 */
+	void frameCells(int cellX0, int cellY0, int cellX1, int cellY1);
+
 	/** Draw the scene again. */
 	void redraw();
 

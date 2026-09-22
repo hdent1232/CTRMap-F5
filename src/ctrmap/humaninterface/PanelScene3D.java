@@ -80,6 +80,33 @@ public final class PanelScene3D implements Scene3D {
 	}
 
 	@Override
+	public void frameCells(int cellX0, int cellY0, int cellX1, int cellY1) {
+		H3DRenderingPanel panel = view.get();
+		if (panel == null) {
+			return;
+		}
+		int x0 = Math.min(cellX0, cellX1);
+		int y0 = Math.min(cellY0, cellY1);
+		int across = Math.abs(cellX1 - cellX0) + 1;
+		int down = Math.abs(cellY1 - cellY0) + 1;
+		//THE SAME ARITHMETIC AS frameMatrix, with an origin. That method centres on a matrix
+		//by halving it - cellsAcross * 360 is (cellsAcross * 720) / 2 - and pulls the camera
+		//back by the height it just framed. Here the centre is offset by the corner the
+		//rectangle starts at, and the pull-back uses the LARGER of the two spans: a matrix is
+		//usually taller than it is wide, so its own height is enough, while a zone occupying
+		//three cells across and one down would sit half outside the view if height alone
+		//decided it. Framing one cell keeps a cell's worth of neighbours visible, which is the
+		//difference between "which part is this" and "what is this a picture of".
+		float centreX = (x0 + across / 2f) * 720f;
+		float centreY = (y0 + down / 2f) * 720f;
+		panel.translateX = -centreX;
+		panel.translateY = -centreY;
+		panel.translateZ = -Math.max(across, down) * 720f;
+		panel.rotateX = 45f;
+		panel.rotateY = 0f;
+	}
+
+	@Override
 	public void redraw() {
 		H3DRenderingPanel panel = view.get();
 		if (panel != null) {

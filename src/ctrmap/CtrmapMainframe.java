@@ -1078,7 +1078,19 @@ public class CtrmapMainframe {
 		zoneColumn.add(browser, BorderLayout.CENTER);
 		tab.add(zoneColumn, BorderLayout.EAST);
 		if (zonePanel instanceof ZoneLoadingPanel) {
-			((ZoneLoadingPanel) zonePanel).useBrowser(browser);
+			ZoneLoadingPanel loading = (ZoneLoadingPanel) zonePanel;
+			loading.useBrowser(browser);
+			//ONE COLUMN FOR "WHICH ZONE AM I WORKING ON". Reported, and it was mine: the
+			//browser arrived as a self-contained column on the right and "Clone zone..." and
+			//"Add zones..." stayed in the form's top-left corner, so choosing a zone, copying
+			//one and making new ones ended up in opposite corners of the same tab. The owner
+			//asked for a preview and never asked for the load button to move; the placement
+			//came with it unbidden, and then the rest was left behind. Moving them here -
+			//adding a component to a container takes it out of its old one - puts the whole
+			//task in one place, beside the list every one of them acts on.
+			for (javax.swing.JButton b : loading.zoneCreationButtons()) {
+				browser.addAction(b);
+			}
 		}
 		return tab;
 	}

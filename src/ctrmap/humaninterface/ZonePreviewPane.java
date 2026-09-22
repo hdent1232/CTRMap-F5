@@ -4,6 +4,7 @@ import ctrmap.WorkspaceSession;
 import ctrmap.formats.mapmatrix.MapMatrix;
 import ctrmap.formats.propdata.ADPropRegistry;
 import ctrmap.formats.zone.Zone;
+import ctrmap.formats.zone.ZoneFootprint;
 import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
@@ -50,6 +51,10 @@ public final class ZonePreviewPane extends JPanel {
 	/** The editor's map view, one of our own - built on first use, see below. */
 	private TileMapPanel map;
 	private H3DRenderingPanel view;
+	/** The scene the map view draws into, kept so the camera can be re-aimed after a load. */
+	private Scene3D scene;
+	/** Which cells the drawn zone occupies, or null when its own content does not say. */
+	private ZoneFootprint framed;
 	private int drawn = -1;
 	/** The window's loaded zone, handed in - see the constructor. */
 	private final ctrmap.LoadedZone owner;
@@ -162,8 +167,14 @@ public final class ZonePreviewPane extends JPanel {
 					say(mine, "Zone " + zoneIndex + " could not be drawn: " + ctrmap.Ui.reason(ex), -1);
 					return;
 				}
+				//SAY WHICH PART, not just which map. Three zones reading "area 19, map 12"
+				//over three identical pictures is what was reported; the map id alone cannot
+				//tell them apart, and neither could the picture. The cells are the part that
+				//differs, so they go in the words as well as in the camera - a caption a user
+				//can compare between two rows without trusting their eyes on a small canvas.
+				String where = framed == null ? "" : " - " + framed.describeCells();
 				say(mine, "Zone " + zoneIndex + " - area " + zone.header.areadataID
-						+ ", map " + zone.header.mapmatrixID, zoneIndex);
+						+ ", map " + zone.header.mapmatrixID + where, zoneIndex);
 			}
 		}, "zone-preview");
 		t.setDaemon(true);
@@ -190,9 +201,21 @@ public final class ZonePreviewPane extends JPanel {
 
 	/** Hands the zone to the editor's own loader, on our own panel. */
 	private void draw(Zone zone, WorkspaceSession reading) {
-		mapView().loadRegions(new MapMatrix(zone.header.mapmatrix, reading),
+		MapMatrix mm = new MapMatrix(zone.header.mapmatrix, reading);
+		mapView().loadRegions(mm,
 				new ADPropRegistry(zone.header.areadata, zone.header.propTextures, reading),
 				zone.header.worldTextures, zone.header.propTextures, null);
+		//AND THEN AIM AT THE ZONE, not at the map. loadRegions ends by framing the whole
+		//matrix, which is right when the map is the subject and wrong here: several zones
+		//share one matrix, and the preview drew Route 132, 133 and 134 as the same image.
+		//Reported with three screenshots. Framed AFTER the load because the load is what
+		//pointed the camera at everything.
+		framed = ZoneFootprint.of(zone.header, zone.entities);
+		if (framed != null) {
+			framed = framed.clampedTo(mm.width, mm.height);
+			scene.frameCells(framed.minCellX(), framed.minCellY(),
+					framed.maxCellX(), framed.maxCellY());
+		}
 	}
 
 	private void say(final int mine, final String what, final int zone) {
@@ -232,8 +255,10 @@ public final class ZonePreviewPane extends JPanel {
 			ctrmap.humaninterface.tools.ToolSelection tools = this.tools;
 			final java.util.List<CM3DRenderable> drawnBy = new java.util.ArrayList<>();
 			final H3DRenderingPanel panel = new H3DRenderingPanel(drawnBy, tools);
+			PanelScene3D built3D = new PanelScene3D(() -> panel, drawnBy);
+			scene = built3D;
 			TileMapPanel built = new TileMapPanel(owner, tools,
-					new PanelScene3D(() -> panel, drawnBy), new javax.swing.JScrollPane(),
+					built3D, new javax.swing.JScrollPane(),
 					new CollEditPanel(tools), null);
 			drawnBy.add(built);
 			map = built;

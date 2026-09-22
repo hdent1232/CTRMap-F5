@@ -55,15 +55,18 @@ editor carried on quietly with the wrong bytes.
 
 ### How this was checked
 
-Verified against a real dump by 136 headless test suites, 135 of which pass. The one that does
+Verified against a real dump by 137 headless test suites, 136 of which pass. The one that does
 not is an internal gate on the mutation baseline: it refuses a baseline that was measured while
 other work was still queued, which is the honest state of this repository today. The sweep behind
-it is clean — it broke 202 lines on purpose and every one of them was caught by a suite, with no
-survivors.
+1.0.3 is clean — it broke 202 lines on purpose and every one of them was caught by a suite, with
+no survivors.
 
-Every fix above also ships with a recorded defect that puts it back: 204 of them, re-applied one
+Every fix above also ships with a recorded defect that puts it back: 210 of them, re-applied one
 at a time, each required to make its own suite fail. If a fix here is ever undone, something goes
 red.
+
+(The suite and defect counts are this repository's current ones and keep rising as work lands
+after a release; the sweep figure is the one measured for 1.0.3 itself.)
 
 What the suites cannot check is the game: load a map you have edited in an emulator before you
 build on top of it.

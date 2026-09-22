@@ -1693,10 +1693,10 @@
   },
   {
    "id": "a-second-implementation-of-something-the-app-already-does",
-   "why": "The owner has asked for duplication to be removed more than once, and a sweep was run against it that counted public statics, coupling, god objects, dialogs and mutation coverage - never implementations, which is where duplication actually lives. So a zone preview got built as a second, smaller copy of the editor's map loader, and every defect reported about it was a hole in the copy: one region instead of the map, a region belonging to the zone next door, four cells of a thirteen-cell map. This puts the shape of that back - a second answer to where a region sits, in a file that is not the one that owns the question - and the rule refuses it in the BUILD, not forty minutes later in the battery.",
+   "why": "The owner has asked for duplication to be removed more than once, and a sweep was run against it that counted public statics, coupling, god objects, dialogs and mutation coverage - never implementations, which is where duplication actually lives. So a zone preview got built as a second, smaller copy of the editor's map loader, and every defect reported about it was a hole in the copy: one region instead of the map, a region belonging to the zone next door, four cells of a thirteen-cell map. This puts the shape of that back - a second answer to where a region sits, in a file that is not the one that owns the question - and the rule refuses it in the BUILD, not forty minutes later in the battery. RETARGETED 2026-09-22: the call moved onto its own line when the preview began keeping the MapMatrix it loaded, so it could clamp the zone footprint to the map size before aiming the camera. The defect this restores is unchanged.",
    "file": "src/ctrmap/humaninterface/ZonePreviewPane.java",
-   "find": "\t\tmapView().loadRegions(new MapMatrix(zone.header.mapmatrix, reading),\n",
-   "replace": "\t\tfloat where = zone.header.mapmatrixID * 720f + 360f;   //a second answer\n\t\tmapView().loadRegions(new MapMatrix(zone.header.mapmatrix, reading),\n",
+   "find": "\t\tmapView().loadRegions(mm,\n",
+   "replace": "\t\tfloat where = zone.header.mapmatrixID * 720f + 360f;   //a second answer\n\t\tmapView().loadRegions(mm,\n",
    "suite": "ctrmap.tests.DuplicateWorkTest",
    "args": [
     "src"
@@ -2588,6 +2588,54 @@
     "src"
    ],
    "must_say": "FAIL: the release command carries BOTH builds"
+  },
+  {
+   "id": "a-zones-tile-coordinates-may-be-read-as-world-ones",
+   "why": "REPORTED by the owner with three screenshots on 2026-09-22: Routes 132, 133 and 134 are zones 61, 62 and 63, all 'area 19, map 12', and the Zone Loader drew the same picture for all three. Fixing it meant working out where each zone actually sits, and the data is in TWO coordinate spaces - the spawn point and warps in world units, NPCs and props and triggers in TILES, 18 world units each. The first measurement of this mixed them and produced ranges that could not all be one unit (zone 62 reading x 217..5553), which looked like data and was arithmetic over two different things. This plant drops the conversion: zone 62 has no warps at all, so its box collapses back to cell 0 and the preview would aim at the far end of the route.",
+   "file": "src/ctrmap/formats/zone/ZoneFootprint.java",
+   "find": "\t\t\tworld(x * WORLD_PER_TILE, y * WORLD_PER_TILE);\n",
+   "replace": "\t\t\tworld(x, y);  //PLANTED: one space for two units\n",
+   "suite": "ctrmap.tests.ZoneFootprintTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "FAIL: zone 62's NPCs are read as tiles, so its box does not collapse to cell 0"
+  },
+  {
+   "id": "a-zone-nothing-locates-may-be-put-at-the-origin",
+   "why": "A zone whose header carries no position and holds nothing placed cannot be located, and cell (0,0) is a REAL cell - Littleroot is in it - so answering with the corner of the map is a guess wearing the clothes of a measurement; the preview would aim confidently at the wrong place instead of framing the whole map as it did before. Scanning all 538 ZoneData entries found exactly one such entry, 537, in the tail the game profile documents as not being zones. THE FIRST VERSION OF THIS PLANT SURVIVED: the suite asserted only of(null, null), which returns from a guard several lines earlier, so the branch that matters had nothing covering it at all.",
+   "file": "src/ctrmap/formats/zone/ZoneFootprint.java",
+   "find": "\t\treturn box.from == 0 ? null\n",
+   "replace": "\t\treturn box.from == 0 ? new ZoneFootprint(0, 0, 0, 0, 0)  //PLANTED\n",
+   "suite": "ctrmap.tests.ZoneFootprintTest",
+   "args": [
+    "${PRISTINE}"
+   ],
+   "must_say": "FAIL: a header whose spawn is (0,0) and which has nothing else locates NOTHING"
+  },
+  {
+   "id": "the-preview-camera-may-forget-which-corner-a-zone-starts-at",
+   "why": "The whole reported defect in one line. frameCells centres on the rectangle a zone occupies; drop the corner it starts from and every zone on one matrix frames the same place again - which is precisely the three identical pictures the owner sent. The arithmetic is frameMatrix's with an origin added, so the plant restores frameMatrix's behaviour under a different name, and nothing about the picture would look broken.",
+   "file": "src/ctrmap/humaninterface/PanelScene3D.java",
+   "find": "\t\tfloat centreX = (x0 + across / 2f) * 720f;\n\t\tfloat centreY = (y0 + down / 2f) * 720f;\n",
+   "replace": "\t\tfloat centreX = (across / 2f) * 720f;  //PLANTED\n\t\tfloat centreY = (down / 2f) * 720f;\n",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: ...and centres on the rectangle's OWN corner"
+  },
+  {
+   "id": "the-zone-making-buttons-may-be-left-in-another-corner",
+   "why": "REPORTED on 2026-09-22, and it was this program's own doing: the zone browser was added as a column on the right of the Zone Loader and took the load button with it, while 'Clone zone...' and 'Add zones (lift limit)...' stayed in the form's top-left corner where the NetBeans layout had always had them. The owner asked for a preview and said so plainly - 'i never told you to do this, i just said make a preview, but you are the one who moved it, and then seperated elements of the same general process across the page'. This plant stops the tab handing the two buttons over, which is the state that was complained about.",
+   "file": "src/ctrmap/CtrmapMainframe.java",
+   "find": "\t\t\t\tbrowser.addAction(b);\n",
+   "replace": "\t\t\t\tb.setEnabled(b.isEnabled());  //PLANTED: left where it was\n",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: buildZoneTab hands the form's zone-making buttons to the browser's row"
   }
  ],
  "retired": [
