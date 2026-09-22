@@ -2564,6 +2564,30 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: ...and main() ran to its end and reported the failures as a non-zero exit"
+  },
+  {
+   "id": "a-release-tag-may-never-reach-the-remote",
+   "why": "MEASURED HERE on 2026-09-22, cutting 1.0.3. The packager's printed instruction was `git push --follow-tags`, which pushes only ANNOTATED tags - and every tag this project has ever cut is lightweight. The tag was made, the documented command reported success, master moved, and the tag was NOT on the remote. A command that did not run looks exactly like a command that passed. It was caught only by asking the remote what tags it had rather than reading the push output. Had it not been, `gh release create` would have made its own tag from wherever the default branch pointed - and the release TAG compared against the version in a user's jar is the ONLY thing that decides whether they are offered an update at all.",
+   "file": "package.ps1",
+   "find": "Write-Host \"  git push origin master v$Version\"\n",
+   "replace": "Write-Host \"  git push --follow-tags\"  #PLANTED\n",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: the publish instruction does not lean on --follow-tags"
+  },
+  {
+   "id": "a-release-may-offer-nothing-to-half-its-users",
+   "why": "MEASURED HERE on 2026-09-22: package.ps1 carried a SECOND publish instruction in its header comment, and the two had drifted. The header named ONE zip, `CTRMap-F5-<v>.zip`, a name the packager stopped producing when the self-contained Windows build was added - and that name ends with neither suffix Updater.Flavour selects on, so a release cut by following it would have offered nothing to ANY user, of either build. One rule written twice behaving differently in each copy is the shape CLAUDE.md records as costing this project over and over; the header now points at the printed instruction instead of carrying a copy. This plant drops one of the two builds.",
+   "file": "package.ps1",
+   "find": " $winZip $zip --title",
+   "replace": " $zip --title",
+   "suite": "ctrmap.tests.BatteryHygieneTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: the release command carries BOTH builds"
   }
  ],
  "retired": [

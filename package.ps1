@@ -8,9 +8,15 @@
 # zip name and the release tag can never disagree - a mismatch there is exactly
 # what makes an updater offer an update that installs the same build again.
 #
-# To publish (the tag MUST match the version, that is what older copies compare):
-#   git commit -am "Release 1.1.0" ; git tag v1.1.0 ; git push --tags
-#   gh release create v1.1.0 dist\CTRMap-F5-1.1.0.zip --notes "..."
+# To publish: THIS SCRIPT PRINTS THE COMMANDS WHEN IT FINISHES. They are not
+# repeated here, and that is deliberate. This comment used to carry its own copy
+# and the two drifted: the copy here named ONE zip, under a name the packager
+# stopped producing two releases ago - and `CTRMap-F5-1.0.3.zip` ends with
+# neither of the suffixes Updater.Flavour selects on, so a release cut by
+# following it would have offered nothing to ANY user, of either build. The
+# printed version is generated from the same variables that name the files, so
+# it cannot describe files this run did not make.
+#
 # GitHub publishes its own SHA-256 for every asset and the updater checks it, so
 # the .sha256 file beside the zip is only for people verifying by hand.
 
@@ -139,5 +145,12 @@ Write-Host "  $zip   (needs Java; this is what the in-app updater installs)"
 Write-Host "  sha256 $hash"
 Write-Host ""
 Write-Host "Publish with:"
-Write-Host "  git tag v$Version ; git push --follow-tags"
+# THE TAG IS NAMED IN THE PUSH. This said `git push --follow-tags`, which pushes
+# only ANNOTATED tags - and every tag this project has ever cut is lightweight.
+# Measured cutting 1.0.3: the tag was made, the documented command reported
+# success, master moved, and the tag was not on the remote at all. A command that
+# did not run looks exactly like a command that passed, and `gh release create`
+# would then have made its own tag from whatever the default branch pointed at.
+Write-Host "  git tag v$Version"
+Write-Host "  git push origin master v$Version"
 Write-Host "  gh release create v$Version $winZip $zip --title `"CTRMap-F5 $Version`" --notes-file NOTES.md"
