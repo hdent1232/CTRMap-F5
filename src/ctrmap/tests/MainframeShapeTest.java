@@ -168,6 +168,7 @@ public class MainframeShapeTest {
 		shape(new File(src, "ctrmap/CtrmapMainframe.java"));
 		cameraFraming(new File(src, "ctrmap/CtrmapMainframe.java"));
 		theZoneActionsShareOneRow(src);
+		theZoneButtonsSurviveALayoutPass();
 		theLooseMapClearNamesEveryEntityForm(new File(src, "ctrmap/CtrmapMainframe.java"));
 		windowFree(new File(src, "ctrmap/util/Bytes.java"));
 		windowFree(new File(src, "ctrmap/humaninterface/Forms.java"));
@@ -810,6 +811,106 @@ public class MainframeShapeTest {
 				StandardCharsets.UTF_8));
 		check(text.contains("zoneCreationButtons()") && text.contains("browser.addAction("),
 				"buildZoneTab hands the form's zone-making buttons to the browser's row");
+	}
+
+	/**
+	 * The zone-making buttons are still in the browser AFTER THE FORM IS LAID OUT.
+	 *
+	 * <p>THIS IS THE CHECK THAT WAS MISSING, and its absence cost the owner four reports of
+	 * the same thing. {@code ZoneLoadingPanel} is a NetBeans form using {@code GroupLayout},
+	 * and its generated layout names both buttons in the horizontal group and again in the
+	 * vertical one. <b>GroupLayout puts every component named in its groups back into its own
+	 * container every time that container is laid out.</b> So moving them works exactly once
+	 * and the first layout pass silently undoes it.
+	 *
+	 * <p>Every check said it worked. The tab really does move them. A diagnostic written from
+	 * inside the tab builder saw them moved - it runs before the first layout. The headless
+	 * suite built the panel with a stand-in and never laid anything out. Only the owner's
+	 * window laid out, and only the owner could see the result.
+	 *
+	 * <p>So this builds the REAL panel, builds the REAL tab, and then LAYS THE FORM OUT before
+	 * asking. Without that last step it passes against the broken code, which is the whole
+	 * lesson: a UI test that never lays out is testing a tree, not a window.
+	 */
+	static void theZoneButtonsSurviveALayoutPass() throws Exception {
+		System.out.println("--- the zone-making buttons survive the form being laid out");
+		ctrmap.LoadedZone owner = new ctrmap.LoadedZone();
+		ctrmap.humaninterface.tools.ToolSelection tools =
+				new ctrmap.humaninterface.tools.ToolSelection();
+		ctrmap.humaninterface.ZoneLoadingPanel panel;
+		try {
+			panel = new ctrmap.humaninterface.ZoneLoadingPanel(owner, tools,
+					new ctrmap.humaninterface.OpenEditors(java.util.Arrays.asList(
+							(ctrmap.humaninterface.OpenEditors.Editable) askFirst -> true)),
+					new ctrmap.humaninterface.ZoneEditors(java.util.Arrays.asList(
+							new ctrmap.humaninterface.ZoneEditors.ZoneView() {
+								@Override
+								public void show(ctrmap.formats.zone.Zone zone) {
+								}
+
+								@Override
+								public void clear() {
+								}
+
+								@Override
+								public boolean commit() {
+									return true;
+								}
+							})),
+					new ctrmap.humaninterface.Navigator() {
+						@Override
+						public void follow(ctrmap.humaninterface.MapObject o) {
+						}
+
+						@Override
+						public void resync() {
+						}
+					});
+		} catch (Throwable cannotBuild) {
+			check(false, "a real ZoneLoadingPanel can be built headlessly: " + cannotBuild);
+			return;
+		}
+		java.awt.Container tab = CtrmapMainframe.buildZoneTab(panel, owner, tools);
+		javax.swing.JButton[] made = panel.zoneCreationButtons();
+		check(made.length == 2 && made[0] != null && made[1] != null,
+				"the panel hands over two zone-making buttons");
+
+		//THE LAYOUT PASS. Everything above passed against the broken version too.
+		panel.setSize(900, 700);
+		panel.doLayout();
+		panel.validate();
+
+		for (javax.swing.JButton b : made) {
+			check(!holds(panel, b),
+					"'" + b.getText() + "' is NOT pulled back into the form by GroupLayout");
+			check(holds(tab, b), "...and is still in the tab, where the user can reach it");
+		}
+		//...and exactly one visible control per action, so the hidden originals cannot be a
+		//second way to fire the same thing.
+		int visibleClone = 0;
+		for (Component c : visibleButtons(tab)) {
+			if ("Clone zone...".equals(((javax.swing.JButton) c).getText())) {
+				visibleClone++;
+			}
+		}
+		check(visibleClone == 1,
+				"exactly one VISIBLE 'Clone zone...' in the tab, not two (" + visibleClone + ")");
+	}
+
+	/** Every visible JButton under a container. */
+	static java.util.List<Component> visibleButtons(java.awt.Container root) {
+		java.util.List<Component> out = new java.util.ArrayList<>();
+		for (Component c : root.getComponents()) {
+			if (!c.isVisible()) {
+				continue;
+			}
+			if (c instanceof javax.swing.JButton) {
+				out.add(c);
+			} else if (c instanceof java.awt.Container) {
+				out.addAll(visibleButtons((java.awt.Container) c));
+			}
+		}
+		return out;
 	}
 
 	/** Every JButton's text under a container, in the order the layout holds them. */

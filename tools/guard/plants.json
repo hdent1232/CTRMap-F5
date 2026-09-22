@@ -2662,6 +2662,18 @@
    ],
    "no_rebuild": true,
    "must_say": "FAIL: the guard wired to no event is named"
+  },
+  {
+   "id": "a-component-may-be-moved-out-of-a-grouplayout",
+   "why": "REPORTED FOUR TIMES by the owner - 'how fucking hard is it to move 2 buttons?' - and every check said it worked. ZoneLoadingPanel is a NetBeans form using GroupLayout, whose generated layout names btnCloneZone and btnAddZone in the horizontal group AND the vertical one. GROUPLAYOUT PUTS EVERY COMPONENT NAMED IN ITS GROUPS BACK INTO ITS OWN CONTAINER ON EVERY LAYOUT PASS, so re-parenting them into the zone browser worked exactly once and the first layout silently undid it. The tab really did move them: a diagnostic written from inside the tab builder saw them moved, because that runs BEFORE the first layout, and the headless suite built the panel with a JPanel stand-in and never laid anything out. Only the owner's window laid out, and only the owner could see it. The fix hands out COPIES and repoints the fields at them, leaving the originals hidden, disabled and stripped of their listeners; this plant hands out the form's own buttons again.",
+   "file": "src/ctrmap/humaninterface/ZoneLoadingPanel.java",
+   "find": "\t\tif (!handedOver) {\n",
+   "replace": "\t\tif (false) {  //PLANTED: hand out the form's own buttons\n",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: 'Clone zone...' is NOT pulled back into the form by GroupLayout"
   }
  ],
  "retired": [
