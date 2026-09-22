@@ -2636,6 +2636,30 @@
     "src"
    ],
    "must_say": "FAIL: buildZoneTab hands the form's zone-making buttons to the browser's row"
+  },
+  {
+   "id": "a-footprint-may-be-squeezed-into-a-map-it-is-not-about",
+   "why": "REPORTED TWICE by the owner, the second time with a black preview and 'the map itself isnt even being loaded'. The first fix framed a zone's own cells and CLAMPED the box into the matrix, which takes numbers that are not about this map and returns numbers that are - confidently, and in a corner. MEASURED on the owner's own game afterwards: matrix 0 is 1x1 cells and matrix 15 is 2x1, while zone 0's content measures TWELVE cells across (no NPCs, no props, fifty warps whose coordinates are not in that map's space). Clamping collapsed that to cell (0,0), the camera aimed at the corner, and the preview went black - for 2 of the 15 zones sampled, including the very first one in the list. A box that cannot be about the map is discarded now and the whole map is framed, as it was before the feature existed.",
+   "file": "src/ctrmap/humaninterface/ZonePreviewPane.java",
+   "find": "\t\tif (framed != null && !framed.fitsIn(mm.width, mm.height)) {\n\t\t\tframed = null;\n",
+   "replace": "\t\tif (false) {  //PLANTED: any box will do\n\t\t\tframed = null;\n",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: ...and DISCARDS a footprint that cannot be about this map"
+  },
+  {
+   "id": "a-shallow-map-may-be-framed-from-twice-the-distance",
+   "why": "REPORTED with a picture: Fortree City's map is 2x1 cells, and the preview showed a thin strip of ground with black above and below it. frameCells pulled back by max(across, down) on the reasoning that a wide shallow rectangle would otherwise overflow the view - which was wrong on its own terms, because frameMatrix shows all SIXTEEN cells of a 16x6 matrix while pulling back only six, so the view was always far wider than deep and depth was never the constraint. It pulled the camera back twice as far as framing that same map ever did. The only difference between frameCells and frameMatrix is the corner it starts from; this plant reintroduces a second one.",
+   "file": "src/ctrmap/humaninterface/PanelScene3D.java",
+   "find": "\t\tpanel.translateZ = -down * 720f;\n",
+   "replace": "\t\tpanel.translateZ = -Math.max(across, down) * 720f;  //PLANTED\n",
+   "suite": "ctrmap.tests.MainframeShapeTest",
+   "args": [
+    "src"
+   ],
+   "must_say": "FAIL: ...and pulls back by the DEPTH it framed"
   }
  ],
  "retired": [
