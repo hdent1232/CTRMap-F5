@@ -182,9 +182,10 @@ it is a digest check, not a regression.** The fix is:
   a `sed -i` had left LF). Make the bytes match; do not re-sweep for that.
 - Commit your work **first**: the sweep ends in `git reset --hard <the sha it
   started from>`, so anything uncommitted while it runs is erased.
-- Re-run it — `python tools/mutate2.py` — and copy the baseline it writes to
-  `wt/_state/mutation_baseline.json` over the repo's `mutation_baseline.json`,
-  then commit that.
+- Re-run it — `python tools/mutate2.py` — which writes `mutation_baseline.json` in
+  the repository itself, and commit that. There is NO copy step: the sweep derives
+  that one path from its own location and `MutationBaselineTest` refuses a second
+  copy, because two baselines kept equal by hand is the defect it was written for.
 - If you are not the person who will re-run it, **say so in your handover**
   rather than silencing the suite. A failing MutationBaselineTest is the record
   telling the truth about itself.

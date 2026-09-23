@@ -1,0 +1,30 @@
+{
+  "wt/_state/mutation_baseline.json": {
+    "status": "forbidden",
+    "why": "The second baseline. The sweep wrote this one while the suite read the repository's, and the two were kept equal BY HAND until MutationBaselineTest abolished it; that suite names this path in order to assert nothing is at it, so the check here runs the other way round and refuses the day it comes back.",
+    "cited_by": [
+      "src/ctrmap/tests/MutationBaselineTest.java",
+      "tools/mutate2.py"
+    ]
+  },
+  "wt/_state/mutation.json": {
+    "status": "outside",
+    "why": "Output of tools/mutate.py - one sweep's per-mutant verdicts, 232 KB, rewritten by re-running the sweep. It is a measurement taken against one frozen tree rather than a fact about the repository, and a stale copy carried in a clone would be worse than no copy at all."
+  },
+  "wt/_state/mutation_semantic.json": {
+    "status": "outside",
+    "why": "Output of tools/mutate2.py, the same shape as mutation.json and outside for the same reason: rewritten by the sweep that produces it, and meaningless against any tree but the one it was taken on."
+  },
+  "wt/_state/items_feasibility.json": {
+    "status": "outside",
+    "why": "The raw probe findings that docs/items-plan.md was distilled from. The plan carries the conclusions and the reasoning; this is 79 KB of intermediate scan output kept for re-checking, and the doc stands up without it."
+  },
+  "wt/_state/queue1/assets/probe/": {
+    "status": "outside",
+    "why": "2.7 MB of harvested asset probes behind docs/customization-assets.md. Derived from the owner's game dump, which this project's rules keep read-only and out of the repository; re-derivable from a dump, and not redistributable with one."
+  },
+  "wt/_state/queue2/runtime/": {
+    "status": "outside",
+    "why": "38 MB of decompressed executable dumps and RTTI scans behind docs/customization-scope.md. The same reason as the asset probes and more so: it is the owner's game executable, which is read-only game data and must never be committed."
+  }
+}

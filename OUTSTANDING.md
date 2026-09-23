@@ -50,6 +50,12 @@ both would have blocked every measurement forever:
       `CLAUDE.md` and `.claude/` once no session is running from that directory, and add a
       refusal for the case - `hooks_wired.claude_dir` takes the FIRST `.claude` at or above
       the root, so a second one further up is invisible to it and would be the live one.
+      NO LONGER HYPOTHETICAL, 2026-09-23: repointing a dead path inside `guard_fanout.py`
+      edited both in-repo copies, `guard_all` refused the next tool call because the LIVE
+      outer copy still differed by three bytes, and every command stayed blocked until the
+      outer one was edited too. The drift took one edit and under a minute. The guard caught
+      it, which is the good half; the bad half is that there is a live file the repository
+      cannot see and no check in the repository can reach.
 
 - [ ] 2026-09-22 A GUARD CAN STILL BLOCK ITS OWN REPAIR, outside `.claude/hooks`. Measured
       the hard way today: a half-finished edit left `tools/guard/hooks_wired.py` raising
@@ -63,17 +69,33 @@ both would have blocked every measurement forever:
       covered. FIX: a refusal that cannot run must NAME the module it could not run, and a
       write to that module must be exempt - the same shape, one directory over.
 
-- [ ] 2026-09-22 `guard_unfinished.py` HAS NO SUITE AND NO PLANT. It is wired to Stop and
-      controlled by nine known-answer cases in the scratchpad, which is not the same as being
-      driven by the battery: a guard nobody drives is a comment with an assert in it, and this
-      one exists precisely because promises that nothing reads are worthless. It needs a
-      section in `HookRefusalsTest` (which already drives hooks through python) covering the
-      sentence it must refuse, the shapes it must NOT fire on, the `stop_hook_active` loop
-      guard, and the unreadable-queue case - plus a plant proven by breaking.
+- [ ] 2026-09-23 `guard_unfinished.py` IS THE DESIGN THE BUNDLE ALREADY REMOVED, and should
+      be replaced rather than given the suite the previous entry here asked for. It was
+      written on 2026-09-22 without checking the verification bootstrap, which has carried
+      `.claude/hooks/guard_promise.py` - a Stop hook for the same class - for longer. That
+      file's own docstring records the history: *"AN ADMISSION IS NOT THE WAY OUT. The first
+      version of this hook let a message through if it also said plainly what was not done,
+      and the cheapest way to satisfy that was to write NOT DONE and stop."* `guard_unfinished`
+      IS that first version - it passes any final message that names this file - so its
+      cheapest evasion is the one the bundle has already paid for and closed. The bundle's is
+      also the more developed guard: it refuses promises, offers and FALSE BLOCKERS (a claimed
+      blocker is checked against the tree), and carries carve-outs for quoted markers, past
+      aspect and negation that this one has none of. FIX: adopt `guard_promise.py` into
+      `.claude/hooks` and `tools/hooks`, add `EVENT = "Stop"` (this project's dispatcher reads
+      a guard's event from that assignment; the bundle's names its hooks in settings instead,
+      which is the older shape), delete `guard_unfinished.py`, and drive the adopted hook from
+      `HookRefusalsTest` with a plant proven by breaking. NOT a straight copy: check whether
+      anything in it assumes the bundle's own repo layout. This is queued rather than done
+      because it swaps the hook that governs how a turn may end, and this session is the one
+      being governed - the owner asked for a clean hand-off to cloud, and disarming or
+      misfiring that hook mid-migration is the one change that should not be made in flight.
+      KEEP `OUTSTANDING.md` itself either way: the bundle has no queue FILE, and the file is a
+      durable record that `work_order.py` gates long measurements on, which is a chokepoint
+      rather than an admission. What the bundle refuses is using it as a way to END A TURN.
 
 - [ ] 2026-09-13 THE WHOLE-APP CENSUS FOUND 280 CONFIRMED DEFECTS, and they are not
       fixed. Full inventory, ranked, with evidence and a proposed refusal for each:
-      `wt/_state/CENSUS-2026-09-13.md` (beside the repo). 71 high, 150 medium, 59 low;
+      `docs/CENSUS-2026-09-13.md` (in the repo since 2026-09-22, so a checkout has it). 71 high, 150 medium, 59 low;
       by class 69 silent-failure, 59 data-integrity, 31 duplication, 22 dead-code,
       22 guard-debt, 21 resource-leak, 17 api-trap, 14 correctness, 14 efficiency,
       7 ui-placement. Every production file was read and every finding was handed to

@@ -1,7 +1,7 @@
 # PokePartyGetParam / PokePartySetParam — what the arguments are
 
 Measured 2026-09-04 by disassembling all 536 retail ORAS zone scripts with
-CTRMap's own `PawnDisassembler`. Probe: `wt/_state/queue1/probe/Param.java`.
+CTRMap's own `PawnDisassembler`. Probe: `docs/probes/Param.java`.
 
 ## Why this was worth doing
 

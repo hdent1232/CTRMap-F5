@@ -69,6 +69,7 @@ public class CommitGuardTest {
 		theDeferredGapEscapeIsHonouredAndMustSaySomething(guard);
 		ordinaryWorkIsNotPolicedByRuleSix(guard);
 		aCensusCannotBeReportedCleanWithoutCoveringItsScope(repo);
+		aCitationToSomethingACheckoutCannotOpenIsRefused(repo);
 		theGateAsksTheDiffAndNotTheSubjectLine(guard);
 		aBlanketClaimMustCiteItsMeasurement(guard, repo);
 		aSweepRefusesATreeThePlantsWereNotProvenAgainst(repo);
@@ -510,6 +511,62 @@ public class CommitGuardTest {
 			&& said.contains("NO COMPLETENESS CHECK RAN") && said.contains("STILL NAMES"),
 			"including the anti-gaming one: scope is expanded from disk, so looking at less is"
 			+ " what gets refused: " + oneLine(said));
+	}
+
+	/**
+	 * This repository may not cite evidence that a checkout cannot open.
+	 *
+	 * <p>THE DEFECT, 2026-09-22. The queue's largest open item - the 280-finding whole-app
+	 * census - named its evidence as a file in the SESSION folder beside the repository. A
+	 * clone gets the repository and nothing else, so the work that entry described could not
+	 * be started by anyone who was not sitting at this machine, and the entry looked entirely
+	 * normal. Looking for its siblings found eight more citations of the same shape and three
+	 * that named a path with no file at it anywhere: TESTING.md told the reader to fix a red
+	 * mutation ratchet by copying a baseline from a path {@code MutationBaselineTest} actively
+	 * guarantees is absent, the fan-out cap's refusal offered a cheaper remedy at a path with
+	 * nothing at it, and the magnitude series' own docstring named the session folder twenty
+	 * lines above the assignment that puts it beside plants.json. Each was true when written;
+	 * the thing moved and the prose did not.
+	 *
+	 * <p>BOTH HALVES RUN HERE. The tool's selftest drives all six of its refusals against
+	 * trees built to be wrong in one way each, plus the case that must NOT refuse - a session
+	 * folder that is absent entirely, which is what a checkout sees, and where reporting
+	 * "clean" instead of UNKNOWN is the confident empty result this project has paid for
+	 * twice. Then the real tree is judged, so a citation added tomorrow is red here.
+	 */
+	static void aCitationToSomethingACheckoutCannotOpenIsRefused(File repo) throws Exception {
+		System.out.println("--- a citation to something a checkout cannot open is refused");
+		File tool = new File(repo, "tools/guard/citations.py");
+		check(tool.isFile(), "the citation guard is installed at " + tool.getPath());
+		if (!tool.isFile() || !onPath("python")) {
+			return;
+		}
+		ProcessBuilder pb = new ProcessBuilder("python", "-B", "tools/guard/citations.py",
+			"--selftest");
+		pb.directory(repo);
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		String said = drain(p);
+		int code = p.waitFor();
+		check(code == 0 && said.contains("ALL PASS"),
+			"and its six refusals still refuse (exit " + code + ") " + oneLine(said));
+		check(said.contains("UNDECLARED") || said.contains("an undeclared citation"),
+			"including the one that would have caught the census: " + oneLine(said));
+		check(said.contains("UNKNOWN, not clean"),
+			"and a session folder it cannot read is UNKNOWN rather than clean, which is the"
+			+ " shape a checkout is in: " + oneLine(said));
+
+		//AND THE REAL TREE, not only the fixtures. A guard proven on scratch input and never
+		//pointed at the repository is a guard with nothing to say about it.
+		ProcessBuilder live = new ProcessBuilder("python", "-B", "tools/guard/citations.py");
+		live.directory(repo);
+		live.redirectErrorStream(true);
+		Process q = live.start();
+		String about = drain(q);
+		int verdict = q.waitFor();
+		check(verdict == 0,
+			"and every session-folder citation in THIS tree is declared and checks out: "
+			+ oneLine(about));
 	}
 
 	/** One line of whatever a tool said, for a message that has to fit on a terminal. */

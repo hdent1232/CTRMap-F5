@@ -21,8 +21,9 @@ WHAT THIS REFUSES:
     no reason given
   * a quantity recorded as `--expect-change` that did not move AT ALL - the 103 case
 
-The series lives in `wt/_state/magnitudes.json`, which is measurement output rather than
-source. The escape is `--why "<what changed>"`, which is stored beside the number so the next
+The series lives in `tools/guard/magnitudes.json`, beside `plants.json` and INSIDE the
+repository - see the note on SERIES below for why it is not in the session folder, where
+it would not have travelled with a clone. The escape is `--why "<what changed>"`, which is stored beside the number so the next
 comparison starts from an explained baseline rather than a surprised one.
 
     python tools/guard/magnitude.py <name> <value> [--why "..."] [--expect-change]

@@ -409,7 +409,7 @@ def decide(payload):
                     "this is verification, do it per CLUSTER - one agent already "
                     "holds the context for several findings. If it is a guard's "
                     "strength you want to prove, that is mechanical: revert the fix, "
-                    "rebuild, re-run the suite (wt/_state/mutate.py) - it costs "
+                    "rebuild, re-run the suite (tools/mutate2.py) - it costs "
                     "builds instead of tokens and is better evidence.\n\n"
                     "Otherwise finish in the main thread, or ask the owner to raise "
                     "CTRMAP_AGENT_CAP with a stated reason and cost."
