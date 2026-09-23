@@ -1,0 +1,12 @@
+# GAME DATA IS READ-ONLY. One path component per line; a write to any path holding one of
+# these as a component is refused. Data rather than code, so this hook stays byte-identical
+# across projects and each one names its own untouchable roots.
+#
+# These are the owner's extracted game and their working copy of it. Nothing writes here but
+# the editor, under the owner's own hand. A suite cannot load the game, so a suite has no
+# business writing to it either - and one of this project's own test fixtures drove a pack
+# against a session rooted on the live dump on 2026-09-19 before anybody noticed.
+RomFS
+RomFS_original_garcs
+Workspace
+testzone_backup
