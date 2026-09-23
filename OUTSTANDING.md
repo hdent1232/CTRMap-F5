@@ -39,6 +39,18 @@ both would have blocked every measurement forever:
 
 ## Open
 
+- [ ] 2026-09-22 TWO COPIES OF THE RULES AND THE WIRING EXIST ON THIS MACHINE. `CLAUDE.md`
+      and `.claude/` were copied INTO the repo so a checkout is armed - a cloud clone gets the
+      repository and nothing else, so before this it would have run with no hooks at all and
+      no rules loaded, sixteen guards present in `tools/hooks` and every one of them off. They
+      are COPIES: the running session's hooks are loaded from the outer path
+      (`sessions/3DS Editor/.claude`), and moving them would have disarmed the guards
+      mid-session, including the ones that would have noticed. So on this machine there are
+      now two sets, byte-identical today and free to drift tomorrow. FIX: delete the outer
+      `CLAUDE.md` and `.claude/` once no session is running from that directory, and add a
+      refusal for the case - `hooks_wired.claude_dir` takes the FIRST `.claude` at or above
+      the root, so a second one further up is invisible to it and would be the live one.
+
 - [ ] 2026-09-22 A GUARD CAN STILL BLOCK ITS OWN REPAIR, outside `.claude/hooks`. Measured
       the hard way today: a half-finished edit left `tools/guard/hooks_wired.py` raising
       NameError, and since `guard_all` runs it on EVERY tool call, the dispatcher then
