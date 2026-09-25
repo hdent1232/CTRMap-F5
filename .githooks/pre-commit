@@ -1,0 +1,24 @@
+#!/bin/sh
+# THE COMMIT ASKS; NOBODY HAS TO REMEMBER. Installed with:
+#     git config core.hooksPath .githooks
+#
+# Each line is a refusal README describes and a person used to have to run:
+#   bundle_install   the bootstrap is installed, wired, current and merged (section 2, §16)
+#   tiers            every guard is asked at the point of action - a hook on the tool call, a
+#                    rule a wired hook asks at the act, or this gate while nothing can skip it
+#   timeouts         every subprocess a gate starts is bounded (section 16)
+#   format_strings   every constant `%` / `.format` string can print - a refusal that throws
+#                    while building its message is an allow (section 16)
+#   prove_plants     no guard class without a plant, none proven only at its own site, and the
+#                    must_say debt under its ceiling (section 2) - ratchets only; driving every
+#                    plant is `python -B tools/prove_plants.py`, and the commit-msg gate drives
+#                    each NEW one.
+#
+# Every one of these is ALSO asked earlier, at the act it guards - the write, the record, the
+# command - by the hooks in .claude/hooks. This gate is the backstop for a commit made outside
+# the session, and `guard_command_rules.py` refuses a commit from the session that would skip it.
+python -B tools/bundle_install.py || exit 1
+python -B tools/tiers.py || exit 1
+python -B tools/timeouts.py || exit 1
+python -B tools/format_strings.py || exit 1
+exec python -B tools/prove_plants.py --owed

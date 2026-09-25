@@ -61,6 +61,7 @@ public class LivenessProbeTest {
 		aSecondSpellingOfTheQuestionIsRefused(checker);
 		proseIsNotCode(checker);
 		aCorrectProbeIsAllowed(checker);
+		theBundlesHooksKeepTheirOwnAnswer(checker);
 		theProjectItselfIsClean(checker, repo);
 		theOneAnswerSaysHowItKnows(repo);
 
@@ -208,7 +209,56 @@ public class LivenessProbeTest {
 				"and it says in so many words that permission denied is not absence");
 	}
 
+	/**
+	 * THE VERIFICATION BOOTSTRAP'S HOOKS KEEP THEIR OWN ANSWER, and only the one-answer rule
+	 * stops at their folder.
+	 *
+	 * <p>Installed beside this project's own stack ({@code _hooks_at} in
+	 * {@code .claude/bundle-install.json}), those hooks import nothing from the project, so they
+	 * cannot ask liveness.alive - and refusing them made this rule and the bundle's design each
+	 * impossible under the other. A probe that answers WRONGLY is still refused in their folder,
+	 * the same probe in this project's code is still a second answer, and a declaration naming
+	 * this project's own hooks folder exempts nothing.
+	 */
+	static void theBundlesHooksKeepTheirOwnAnswer(File checker) throws Exception {
+		System.out.println("--- the bootstrap's hooks, installed beside this project's own");
+		String declared = "{\"_hooks_at\": \".claude/vendored\"}\n";
+		String probe = "import ctypes\n"
+				+ "def running(pid):\n"
+				+ "    return bool(ctypes.windll.kernel32.OpenProcess(0x1000, False, pid))\n";
+		File root = tree("vendored", ".claude/bundle-install.json", declared);
+		write(root, ".claude/vendored/guard_runner.py", probe);
+		String said = ask(checker, root);
+		check(said.contains("asked correctly"),
+				"VENDORED: the bootstrap's hooks answer it in their own folder: " + firstReason(said));
+		write(root, "tools/probe.py", probe);
+		said = ask(checker, root);
+		check(said.contains("OpenProcess") && said.contains("probe.py"),
+				"while the same probe in this project's code is still a second answer: "
+				+ firstReason(said));
+		File wrong = tree("vendored-kill", ".claude/bundle-install.json", declared);
+		write(wrong, ".claude/vendored/probe.py",
+				"import os\ndef running(pid):\n    os.kill(pid, 0)\n    return True\n");
+		said = ask(checker, wrong);
+		check(said.contains("os.kill(pid, 0)"),
+				"VENDORED: a WRONG answer in their folder is refused like anywhere else: "
+				+ firstReason(said));
+		File own = tree("vendored-own", ".claude/bundle-install.json",
+				"{\"_hooks_at\": \".claude/hooks\"}\n");
+		write(own, ".claude/hooks/guard_runner.py", probe);
+		said = ask(checker, own);
+		check(said.contains("OpenProcess"),
+				"VENDORED: a declaration naming this project's own hooks folder exempts nothing: "
+				+ firstReason(said));
+	}
+
 	// ---------------------------------------------------------------- fixtures
+
+	static void write(File root, String file, String body) throws Exception {
+		File target = new File(root, file);
+		target.getParentFile().mkdirs();
+		Files.write(target.toPath(), body.getBytes(StandardCharsets.UTF_8));
+	}
 
 	static File tree(String name, String file, String body) throws Exception {
 		File root = Scratch.dir("liveness-" + name);

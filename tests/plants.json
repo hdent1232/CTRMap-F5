@@ -1,0 +1,1018 @@
+{
+ "_how": "python -B tools/prove_plants.py   - drives every defect below and requires the ONE named test to fail, then restores byte-for-byte.",
+ "_why": "A guard is not verified because it is GREEN. It is verified because it can go RED. README section 2.",
+ "adopted": {
+  "at": "2026-09-25T06:30:37Z",
+  "owed": [
+   "test_bundle.py::ADigestOfNOTHINGIsNotADigest",
+   "test_bundle.py::ARecordedMeasurementCarriesTheTreeItMeasured"
+  ]
+ },
+ "evasion_ceiling": 15,
+ "generalisation_ceiling": 1,
+ "must_say_ceiling": 19,
+ "owed_ceiling": 2,
+ "plants": {
+  "test_bundle.py::ACapturedChildOpensNoWINDOW::test_no_captured_child_here_opens_a_window::elsewhere": {
+   "file": "tests/test_bundle.py",
+   "must_say": "console window",
+   "new": "        subprocess.run([\"git\", \"init\", \"-q\"], cwd=self.repo, capture_output=True, timeout=120)",
+   "old": "        subprocess.run([\"git\", \"init\", \"-q\"], cwd=self.repo, capture_output=True, timeout=120,\n                       creationflags=NO_WINDOW)",
+   "site": "elsewhere",
+   "why": "The same defect in a test rather than a tool - three of the five that arrived were in the suite itself, which is where the project's own ratchet found most of its keepers."
+  },
+  "test_bundle.py::AClaimAboutAFileMustBeAboutAnOpenedFile::test_a_claim_about_a_file_NOBODY_OPENED_is_refused": {
+   "file": ".claude/bundle-hooks/guard_read_claims.py",
+   "new": "        if False and ",
+   "old": "        if _norm(path) not in haystack and ",
+   "site": "instance",
+   "why": "A citation of a file no tool call ever opened, passed - the fourteen-read review that wrote 'everything else holds its shape' about 150 plants nobody had looked at."
+  },
+  "test_bundle.py::AClaimAboutAFileMustBeAboutAnOpenedFile::test_a_line_PAST_the_end_is_refused": {
+   "file": ".claude/bundle-hooks/guard_read_claims.py",
+   "new": "            if value and int(value) > count + 1000:",
+   "old": "            if value and int(value) > count:",
+   "site": "elsewhere",
+   "why": "A cited line past the end of the file, passed - `build.ps1 (lines 1-100 of 210)` about a file no copy of which was longer than 115 lines, and a paragraph describing lines 100-210."
+  },
+  "test_bundle.py::ACounterfactualIsNotAPromise::test_a_COUNTERFACTUAL_is_not_a_promise": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "a counterfactual was refused as a promise",
+   "new": "                    if NEGATED.search(before):\n",
+   "old": "                    if NEGATED.search(before) or COUNTERFACTUAL.search(before):\n",
+   "site": "instance",
+   "why": "THE REFUSAL AS IT WAS: `the moment` in *the sync would have made them stale the moment it landed* - an explanation of runs just stopped - refused as a promise."
+  },
+  "test_bundle.py::ACounterfactualIsNotAPromise::test_a_COUNTERFACTUAL_is_not_a_promise::elsewhere": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "a second derive could have started after that",
+   "new": "                    if NEGATED.search(before) or (hit.group(0).lower() == \"the moment\"\n                            and COUNTERFACTUAL.search(before)):\n",
+   "old": "                    if NEGATED.search(before) or COUNTERFACTUAL.search(before):\n",
+   "site": "elsewhere",
+   "why": "THE EXEMPTION KEYED TO THE ONE PHRASE: every forward marker is judged at one site, and a fix for `the moment` alone still refuses *could have started after that*."
+  },
+  "test_bundle.py::ACounterfactualIsNotAPromise::test_a_counterfactual_in_ANOTHER_CLAUSE_does_not_launder_a_promise": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "laundered a promise",
+   "new": "COUNTERFACTUAL = re.compile(r\"\\b(?:would|could|might|should)(?:n't| not)? have\\b[^.!?]{0,40}$\",\n",
+   "old": "COUNTERFACTUAL = re.compile(r\"\\b(?:would|could|might|should)(?:n't| not)? have\\b[^.!?;:,]{0,40}$\",\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST IT: a `would have` anywhere earlier in the sentence. A window that crosses a semicolon or comma lets *That would have been faster; the moment the sync lands the derive restarts* through."
+  },
+  "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_a_WORKFLOW_is_refused_and_the_refusal_PRINTS": {
+   "file": ".claude/bundle-hooks/guard_fanout.py",
+   "must_say": "crashed",
+   "new": "96% of a weekly 20x",
+   "old": "96%% of a weekly 20x",
+   "site": "elsewhere",
+   "why": "Driven through the real process contract: the refusal crashed with exit 1 and no output, which the old decision() read as an allow - the same reading the harness gives it."
+  },
+  "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_an_EMPTY_counter_is_UNKNOWN_not_zero": {
+   "file": ".claude/bundle-hooks/guard_fanout.py",
+   "must_say": "is not None",
+   "new": "        if len(fields) not in (2, 3):\n            return 0, 0",
+   "old": "        if len(fields) not in (2, 3):\n            return None",
+   "site": "instance",
+   "why": "The defect this class exists for: a counter that cannot be parsed - here the empty file an interrupted write leaves - read as zero, so every killed write forgives the whole window."
+  },
+  "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_an_UNREADABLE_payload_is_refused_through_the_real_contract": {
+   "file": ".claude/bundle-hooks/guard_fanout.py",
+   "must_say": "'allow' != 'deny'",
+   "new": "    except Exception as exc:\n        sys.exit(0)\n        # AN UNMEASURABLE QUANTITY IS NOT A SMALL ONE. This was `sys.exit(0)`",
+   "old": "    except Exception as exc:\n        # AN UNMEASURABLE QUANTITY IS NOT A SMALL ONE. This was `sys.exit(0)`",
+   "site": "elsewhere",
+   "why": "The same absence one layer up, at the payload rather than the counter: a launch nobody can read is waved through as a launch nobody needs to count, which is the original comment's 'never break a turn on a parse failure'."
+  },
+  "test_bundle.py::AHookNamesTheFolderItSitsIn::test_a_refusal_names_the_folder_its_guard_is_in": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "a refusal named a folder its guard is not in",
+   "new": "FOLDER = \".claude/hooks\"",
+   "old": "FOLDER = \".claude/\" + os.path.basename(os.path.dirname(os.path.abspath(__file__)))",
+   "site": "instance",
+   "why": "A REFUSAL NAMING THE WRONG FILE. Measured on CTRMap: the bundle's hooks beside the project's own, and every refusal sent the reader to a same-named guard of CTRMap's."
+  },
+  "test_bundle.py::AHookNamesTheFolderItSitsIn::test_a_refusal_names_the_folder_its_guard_is_in::evasion": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "a refusal named a folder its guard is not in",
+   "new": "    return \"BLOCKED BY PROJECT POLICY (%s/%s).\" % (\".claude/hooks\", os.path.basename(path))",
+   "old": "    return \"BLOCKED BY PROJECT POLICY (%s/%s).\" % (FOLDER, os.path.basename(path))",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: keep FOLDER derived, so the repair route and every other reader pass, and spell the folder in the one sentence a reader sees."
+  },
+  "test_bundle.py::AHookNamesTheFolderItSitsIn::test_no_hook_SPELLS_the_folder_it_sits_in::elsewhere": {
+   "file": ".claude/bundle-hooks/guard_agent_brief.py",
+   "must_say": "SPELLED",
+   "new": "                \"BLOCKED BY PROJECT POLICY (.claude/hooks/guard_agent_brief.py).\\n\"\n",
+   "old": "                bundle_shell.policy(__file__) + \"\\n\"\n",
+   "site": "elsewhere",
+   "why": "A FRESH OFFENDER WHERE THE FIRST TEST DOES NOT LOOK. The class drove guard_heredoc only; a different guard's refusal spelled back in went unseen by anything a project installs."
+  },
+  "test_bundle.py::AHookNamesTheFolderItSitsIn::test_no_hook_SPELLS_the_folder_it_sits_in::evasion": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "SPELLED",
+   "new": "    if False:\n",
+   "old": "    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a rule that reads one constant at a time: split the folder across a `+`."
+  },
+  "test_bundle.py::AHookNamesTheFolderItSitsIn::test_the_repair_route_is_the_folder_the_dispatcher_is_in": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "the repair route is not the folder the dispatcher sits in",
+   "new": "    r\"\\.claude[/\\\\]hooks[/\\\\]\",\n",
+   "old": "    r\"\\.claude[/\\\\]\" + re.escape(os.path.basename(HERE)) + r\"[/\\\\]\",\n",
+   "site": "instance",
+   "why": "A REPAIR ROUTE INTO THE WRONG FOLDER. Spelled, a broken bundle guard beside a project's own stack could be repaired by nothing but git."
+  },
+  "test_bundle.py::AReadIsAReadWhateverCarriesIt::test_a_MESSAGE_is_never_refused_by_the_machine_guards": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "MESSAGE",
+   "new": "    return bool(found)\n",
+   "old": "    return bool(found) and bool(paths(payload))\n",
+   "site": "instance",
+   "why": "A MESSAGE READ AS A FILE WRITE. The harness gives SendMessage a `content` key; two sessions held for seven hours could not say why to each other or the owner."
+  },
+  "test_bundle.py::AReadIsAReadWhateverCarriesIt::test_a_MESSAGE_is_never_refused_by_the_machine_guards::evasion": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "MESSAGE",
+   "new": "    return bool(found) and bool(((payload or {}).get(\"tool_input\") or {}).get(\"file_path\"))\n",
+   "old": "    return bool(found) and bool(paths(payload))\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: look for the path at the top only, and a write nested in a batch walks past as a read."
+  },
+  "test_bundle.py::AReadIsAReadWhateverCarriesIt::test_a_READ_is_never_refused_by_the_machine_guards": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "must_say": "a READ was refused",
+   "new": "    command = bundle_shell.text(payload)      # every command in the call, at any depth\n    if is_escape(command):",
+   "old": "    if not isinstance(payload, dict) or bundle_shell.reads_only(payload) \\\n            or not bundle_shell.is_tool_call(payload):\n        return 0\n    command = bundle_shell.text(payload)      # every command in the call, at any depth\n    if is_escape(command):",
+   "site": "elsewhere",
+   "why": "The opposite direction: a guard refusing READS while the machine waits, blocking the look that is the remedy - README section 15 says reading must never be blocked, and it was."
+  },
+  "test_bundle.py::AReadIsAReadWhateverCarriesIt::test_the_READ_tool_on_the_locked_module_is_refused": {
+   "file": ".claude/bundle-hooks/guard_mutation_read.py",
+   "new": "        if rel in (\".\", \"\") or target.startswith(rel + \"/\"):",
+   "old": "        if rel in (\".\", \"\") or rel == target or target.startswith(rel + \"/\"):",
+   "site": "instance",
+   "why": "The Read tool reading the unparsed module while only its directory is refused - the hook once said in a comment that Read falls through, and it read the mutant as surely as `cat`."
+  },
+  "test_bundle.py::ARefusalMustBeAbleToPRINT::test_every_hook_and_tool_here_can_print_its_messages": {
+   "file": ".claude/bundle-hooks/guard_fanout.py",
+   "must_say": "these formats throw instead of printing",
+   "new": "96% of a weekly 20x",
+   "old": "96%% of a weekly 20x",
+   "site": "instance",
+   "why": "The shipped defect: the Workflow refusal raised TypeError building its own message, so standing alone the hook exited 1 - a non-blocking error - and allowed the tool it blocks."
+  },
+  "test_bundle.py::ARefusalMustBeAbleToPRINT::test_the_shipped_defect_and_its_siblings_are_found": {
+   "file": "tools/format_strings.py",
+   "must_say": "a format that cannot print passed",
+   "new": "        elif isinstance(right, ast.Name) and False:",
+   "old": "        elif isinstance(right, ast.Name) and right.id not in maybe_tuple:",
+   "site": "elsewhere",
+   "why": "The checker's own blind spot, the first draft of it: a bare name given the benefit of being a tuple, which is exactly the operand the shipped defect had - its control said so."
+  },
+  "test_bundle.py::ARefusalMustBeAbleToPRINT::test_the_shipped_defect_and_its_siblings_are_found::evasion": {
+   "file": "tools/format_strings.py",
+   "must_say": "a format that cannot print passed",
+   "new": "    if False:",
+   "old": "    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):",
+   "site": "evasion",
+   "why": "The cheapest way past: split the literal across `+` and the checker, reading constants only, never sees one format. A banned UI label written as two concatenated halves once passed its ban."
+  },
+  "test_bundle.py::AnAgentCampaignNeedsStateAndATrendThatFalls::test_a_FLAT_trend_refuses_the_next_round_and_a_falling_one_does_not": {
+   "file": ".claude/bundle-hooks/guard_agent_campaign.py",
+   "must_say": "False is not true",
+   "new": "    if True:",
+   "old": "    if last[0] > last[1] > last[2]:",
+   "site": "elsewhere",
+   "why": "The next round launched over a flat trend - thirteen rounds at ~97M tokens in a day, flat from round 3, visible by round 6, and nothing made anyone look."
+  },
+  "test_bundle.py::AnAgentCampaignNeedsStateAndATrendThatFalls::test_a_SECOND_agent_without_state_is_refused_and_with_fresh_state_is_not": {
+   "file": ".claude/bundle-hooks/guard_agent_campaign.py",
+   "must_say": "False is not true",
+   "new": "    if agents < 99:",
+   "old": "    if agents < 1:",
+   "site": "instance",
+   "why": "A multi-agent run launched with no durable state - the session limit that took three agents and fifteen verifiers, and a relaunch that cost more than the run."
+  },
+  "test_bundle.py::AnAgentIsAskedForAStructuredResult::test_a_brief_WITH_the_contract_is_allowed": {
+   "file": ".claude/bundle-hooks/guard_agent_brief.py",
+   "new": "FIELDS = (\"provenByBreaking\", \"batteryGreen\", \"leftUndone\", \"confidence\")",
+   "old": "FIELDS = (\"provenByBreaking\", \"batteryGreen\", \"leftUndone\")",
+   "site": "elsewhere",
+   "why": "The opposite failure: a guard demanding more than the rule, refusing a brief that carries the whole contract - over-refusal is how a guard gets switched off rather than fixed."
+  },
+  "test_bundle.py::AnAgentIsAskedForAStructuredResult::test_a_brief_without_the_contract_is_refused": {
+   "file": ".claude/bundle-hooks/guard_agent_brief.py",
+   "new": "        if False:",
+   "old": "        if absent:",
+   "site": "instance",
+   "why": "A brief with no structured-result contract launched anyway - 22 agents, 2.9M tokens and 21 opinions, with no way to tell which claims were proven by breaking and which were framing."
+  },
+  "test_bundle.py::AnEditingAgentMayNotWriteBesideAnother::test_TWO_editing_agents_in_one_message_are_refused": {
+   "file": ".claude/bundle-hooks/guard_agent_edits.py",
+   "new": "    if writers > 2:",
+   "old": "    if writers > 1:",
+   "site": "instance",
+   "why": "Two editing agents launched in one message allowed side by side - the disjoint-file split whose handover listed changes that belonged in another agent's file and never reached users."
+  },
+  "test_bundle.py::AnEditingAgentMayNotWriteBesideAnother::test_an_editing_agent_in_the_BACKGROUND_is_refused": {
+   "file": ".claude/bundle-hooks/guard_agent_edits.py",
+   "new": "    if background is True:",
+   "old": "    if background is not False:",
+   "site": "elsewhere",
+   "why": "The default read as foreground: an editing agent with no `run_in_background` runs beside the main thread, two writers who cannot see each other's files, and nothing refuses it."
+  },
+  "test_bundle.py::AnEscapeIsAskedOfEveryCommand::test_a_READ_in_front_does_not_make_a_WRITE_read_only": {
+   "file": ".claude/bundle-hooks/guard_machine_worktrees.py",
+   "new": "    return any(re.search(pattern, (command or \"\").strip()) for pattern in READ_ONLY)",
+   "old": "    return bundle_shell.every_command_is(\n        command, lambda one: any(re.search(pattern, one) for pattern in READ_ONLY))",
+   "site": "elsewhere",
+   "why": "The same whole-line reading in a different guard: `cat x; rm -rf .sweep/tree-3` counts as read-only because it begins with a read, and a worker's tree is deleted mid-measurement."
+  },
+  "test_bundle.py::AnEscapeIsAskedOfEveryCommand::test_every_REMEDY_a_stalled_job_refusal_names_is_reachable": {
+   "file": ".claude/bundle-hooks/guard_idle_machine.py",
+   "must_say": "REMEDY",
+   "new": "    ways_out = ESCAPES + REMEDIES\n",
+   "old": "    ways_out = ESCAPES + REMEDIES + (removes_progress(),)\n",
+   "site": "instance",
+   "why": "A REFUSAL WHOSE REMEDY IT REFUSES. 'delete the file' was not an escape, and two sessions waited seven hours for the owner to delete it by hand."
+  },
+  "test_bundle.py::AnEscapeIsAskedOfEveryCommand::test_every_REMEDY_a_stalled_job_refusal_names_is_reachable::evasion": {
+   "file": ".claude/bundle-hooks/guard_idle_machine.py",
+   "must_say": "REMEDY",
+   "new": "            r\"(?:\\\"[^\\\"]*[/\\\\]|'[^']*[/\\\\]|[^\\s\\\"';&|]*[/\\\\]|)%s[/\\\\](?:%s)\"\n",
+   "old": "            r\"(?:\\\"[^\\\"]*[/\\\\]|'[^']*[/\\\\]|[^\\s\\\"';&|]*[/\\\\]|)%s[/\\\\](?:%s)[\\\"']?\\s*$\"\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: name the progress file first, and whatever follows it on the line - the ledgers beside it - goes too."
+  },
+  "test_bundle.py::AnEscapeIsAskedOfEveryCommand::test_every_REMEDY_a_stalled_job_refusal_names_is_reachable::stop": {
+   "file": ".claude/bundle-hooks/guard_idle_machine.py",
+   "must_say": "REMEDY",
+   "new": "",
+   "old": "    r\"^(?:Stop-Process|spps|kill|taskkill)\\b\",\n",
+   "site": "elsewhere",
+   "why": "THE OTHER REMEDY. 'Stop the job' - a stop was not an escape either."
+  },
+  "test_bundle.py::AnEscapeIsAskedOfEveryCommand::test_the_blocked_runner_escape_is_per_command": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "new": "    return any(re.search(pattern, (command or \"\").strip(), re.I | re.M) for pattern in ESCAPES)",
+   "old": "    return bundle_shell.every_command_is(\n        command, lambda one: any(re.search(pattern, one, re.I) for pattern in ESCAPES))",
+   "site": "instance",
+   "why": "The shipped escape: patterns searched anywhere in the whole line, so `git status; python evil.py` was the way out and the refusal refused nothing that started with git."
+  },
+  "test_bundle.py::AnOfferToDoTheWorkIsTheWorkNotDone::test_an_offer_after_a_LONG_report_is_still_the_end": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "at the end of a long message passed",
+   "new": "    tail = text.strip()[:OFFER_TAIL]",
+   "old": "    tail = text.strip()[-OFFER_TAIL:]",
+   "site": "evasion",
+   "why": "The cheapest way past a check on the end of a message: bury the offer under enough report that a window read from the wrong end never reaches the question."
+  },
+  "test_bundle.py::AnOfferToDoTheWorkIsTheWorkNotDone::test_an_offer_at_the_END_is_refused": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "an offer to do the work passed",
+   "new": "    if False:",
+   "old": "    if offered and not PERMISSION.search(tail):",
+   "site": "instance",
+   "why": "The shape the owner forbade outright: a turn ending on 'Want me to build it?' - measured at 33 of 1,535 real turn endings with no price and no permission behind the question."
+  },
+  "test_bundle.py::AnOfferToDoTheWorkIsTheWorkNotDone::test_appending_a_question_does_not_LAUNDER_a_promise": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "laundered a promise",
+   "new": "    r\"\\bneed you to (?:pick|choose|decide|say)\\b\", r\"\\bwhich (?:one )?do you want\\b\", r\"\\bwant me to\\b\",",
+   "old": "    r\"\\bneed you to (?:pick|choose|decide|say)\\b\", r\"\\bwhich (?:one )?do you want\\b\",",
+   "site": "elsewhere",
+   "why": "The shipped defect: `want me to` listed as a BLOCKER, and a claimed blocker exempts the whole message - two words appended to any promise made it pass."
+  },
+  "test_bundle.py::EveryEnvironmentNameComesFromONEPlace::test_a_name_hidden_in_a_CONSTANT_is_still_a_hardcoded_read": {
+   "file": ".claude/bundle-hooks/bundle_env.py",
+   "must_say": "SOMEONE_ALLOW_X",
+   "new": "        if isinstance(key, ast.Name):\n            value = None",
+   "old": "        if isinstance(key, ast.Name):\n            value = constants.get(key.id)",
+   "site": "elsewhere",
+   "why": "The literal-only reading of the rule: five hooks passed it by writing the name into a constant one line above the read, and the bundle was reported clean while its suite was red."
+  },
+  "test_bundle.py::EveryEnvironmentNameComesFromONEPlace::test_a_value_that_is_not_exactly_1_is_not_permission": {
+   "file": ".claude/bundle-hooks/bundle_env.py",
+   "new": "    return bool(os.environ.get(name(suffix)))",
+   "old": "    return os.environ.get(name(suffix)) == \"1\"",
+   "site": "elsewhere",
+   "why": "a DIFFERENT function and the opposite direction: a bypass opened by any truthy value, so a stale `0` - a string, therefore truthy - switches the guard off. An override somebody half-remembered setting last week is not a decision made now."
+  },
+  "test_bundle.py::EveryEnvironmentNameComesFromONEPlace::test_an_unreadable_cap_falls_back_LOUDLY_and_does_not_crash": {
+   "file": ".claude/bundle-hooks/bundle_env.py",
+   "new": "    except (TypeError, ValueError):\n        return default",
+   "old": "    except (TypeError, ValueError):\n        import sys\n        sys.stderr.write(\n            \"%s=%r is not a number, so the cap of %d is being used instead. An unmeasurable \"\n            \"quantity is not a small one.\\n\" % (name(suffix), raw, default))\n        return default",
+   "site": "instance",
+   "why": "the fallback made silent. A cap that quietly uses its default while somebody believes they set a lower one is how 791 agents went through a cap of six on the source project - the number was unreadable, nothing said so, and the run looked capped."
+  },
+  "test_bundle.py::EveryEnvironmentNameComesFromONEPlace::test_no_hook_SPELLS_any_prefix_the_live_one_included": {
+   "file": ".claude/bundle-hooks/guard_idle_poll.py",
+   "must_say": "spells the prefix",
+   "new": "TO WAIT ANYWAY: the owner sets VERIFY_ALLOW_SLEEP=1 for that session.",
+   "old": "TO WAIT ANYWAY: the owner sets `bundle_env.name(\"ALLOW_SLEEP\")` to 1 for that session.",
+   "site": "elsewhere",
+   "why": "A prefix spelled in a hook's own documentation - three dead names were printed at the moment of refusal, telling the reader to set a variable the hook did not read."
+  },
+  "test_bundle.py::EveryEnvironmentNameComesFromONEPlace::test_no_hook_reads_a_hardcoded_environment_name": {
+   "file": ".claude/bundle-hooks/guard_heredoc.py",
+   "must_say": "spell it with bundle_env.name",
+   "new": "    if os.environ.get(\"ALLOW_HEREDOC_NOW\") == \"1\":",
+   "old": "    if bundle_env.allowed(\"ALLOW_HEREDOC\"):",
+   "site": "elsewhere",
+   "why": "A hook that reads an environment name bundle_env did not build: changing PREFIX leaves this override on a name nobody sets, and a cap read this way would silently use its default."
+  },
+  "test_bundle.py::EveryHookMustBeIMPORTABLE::test_no_hook_calls_main_at_module_level": {
+   "file": ".claude/bundle-hooks/guard_fanout.py",
+   "must_say": "run main() on import",
+   "new": "main()",
+   "old": "if __name__ == \"__main__\":\n    main()",
+   "site": "instance",
+   "why": "the state this bundle shipped in: importing the fan-out cap read stdin, failed to parse it and called sys.exit(0), killing the importing process - so the highest-risk file here was the one no test could reach. That is not a coincidence, it is why the bundle had no hook tests at all."
+  },
+  "test_bundle.py::EveryHookRefusesItsCaseAndALLOWSTheOpposite::test_a_heredoc_that_writes_a_FILE_is_refused_however_it_is_spelled": {
+   "file": ".claude/bundle-hooks/guard_heredoc.py",
+   "new": "        segment = before",
+   "old": "        after = (commands(line[match.end():]) or [\"\"])[0]\n        segment = before + \" \" + after",
+   "site": "instance",
+   "why": "the defect this bundle actually shipped: `writes` computed from the text BEFORE the heredoc operator only, so `cat <<EOF > notes.txt` walked through the rule while `cat > notes.txt <<EOF` was refused. Three of five spellings were allowed, and the allowed one is the commoner. The rule defeated by moving six characters."
+  },
+  "test_bundle.py::EveryHookRefusesItsCaseAndALLOWSTheOpposite::test_the_sleep_UNIT_is_understood": {
+   "file": ".claude/bundle-hooks/guard_idle_poll.py",
+   "new": "FACTOR = {\"\": 1, \"s\": 1, \"m\": 1, \"h\": 1}",
+   "old": "FACTOR = {\"\": 1, \"s\": 1, \"m\": 60, \"h\": 3600}",
+   "site": "elsewhere",
+   "why": "a different hook and a different mistake: the unit dropped, so `sleep 2m` reads as two seconds and sails past the bound. A guard that passes the very case it exists for, which is the quote-spelling family this bundle's section on source greps describes."
+  },
+  "test_bundle.py::OneSplitterAndTheShapesOfACall::test_a_DEFAULT_verb_that_does_damage_is_matched_when_nothing_is_typed": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "new": "        return False",
+   "old": "        return \"-\" in choices",
+   "site": "elsewhere",
+   "why": "A destructive default verb missed because nothing was typed: plants.py with no argument runs verify, and a rule keyed on the word verify has a hole the size of typing less."
+  },
+  "test_bundle.py::OneSplitterAndTheShapesOfACall::test_a_NEWLINE_separates_commands_and_a_heredoc_body_does_not": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "new": "        if char == LF and False:\n            before = \"\".join(current).rstrip()",
+   "old": "        if char == LF:\n            before = \"\".join(current).rstrip()",
+   "site": "instance",
+   "why": "A newline that does not separate commands: `cd x`, newline, `sleep 300` becomes one command beginning `cd`, and every rule anchored at the start of a command stops seeing line two."
+  },
+  "test_bundle.py::OneSplitterAndTheShapesOfACall::test_an_escape_is_asked_of_EVERY_command_never_of_the_line": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "new": "    found = split_commands(text_)[:1]\n    if not found:",
+   "old": "    found = split_commands(text_)\n    if not found:",
+   "site": "elsewhere",
+   "why": "An escape judged by the FIRST command only - the shape two guards had, where `git status; <anything>` was an escape because the way out was put in front of the thing refused."
+  },
+  "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_command_nobody_can_READ_is_refused_once_for_every_guard": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "new": "    blind = None",
+   "old": "    blind = unreadable_refusal(payload) if isinstance(payload, dict) else None",
+   "site": "elsewhere",
+   "why": "`bundle_shell.unreadable` with no caller again - a command that is not text is read by every guard as no command at all, which is the clean negative an unmeasurable quantity produces."
+  },
+  "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_guard_that_cannot_LOAD_is_reported_not_raised": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "values to unpack",
+   "new": "\"passed - it has not been asked.\" % (name, type(exc).__name__, exc))",
+   "old": "\"passed - it has not been asked.\" % (name, type(exc).__name__, exc)), \"\"",
+   "site": "instance",
+   "why": "The shipped defect restored: `ask` returns two values on the load-failure branch and three elsewhere, so the one branch whose job is to report a broken guard raises ValueError instead."
+  },
+  "test_bundle.py::ThePowerShellSpellingIsTheSameAct::test_Select_Object_Last_buffers_like_tail": {
+   "file": ".claude/bundle-hooks/guard_background_pipe.py",
+   "new": "    return False",
+   "old": "    return lowered in BUFFERING_WHEN_TRUNCATING_PS and bool(_TRUNCATES.search(stage))",
+   "site": "elsewhere",
+   "why": "PowerShell's `tail`, unrecognised in a different guard: a sweep piped into `Select-Object -Last 70` returns nothing until EOF and the exit code is the consumer's."
+  },
+  "test_bundle.py::ThePowerShellSpellingIsTheSameAct::test_Start_Sleep_is_a_sleep": {
+   "file": ".claude/bundle-hooks/guard_idle_poll.py",
+   "new": "    found = None\n    if found:",
+   "old": "    found = START_SLEEP.match(piece)\n    if found:",
+   "site": "instance",
+   "why": "The guard knowing only bash's `sleep`, in a session whose primary shell is PowerShell - `Start-Sleep -Seconds 300; Get-Content out.txt` is the poll it exists for and it walks past."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_change_to_what_git_TRACKS_is_judged_again": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "compared by its bytes alone",
+   "new": "        found[rel] = \"  |%s\" % (_digest(root, rel),)\n",
+   "old": "        found[rel] = \"%s|%s\" % (entry[:2].decode(\"ascii\", \"replace\"), _digest(root, rel))\n",
+   "site": "elsewhere",
+   "why": "A HOLD THAT A REPAIR CANNOT RELEASE. Found by using the guard on the source project: the held finding was a file installed and not tracked by git, `git add` repaired it, and the tree compared by content alone read as unchanged, so nothing was judged again and the repair left every act refused."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_command_that_writes_a_defect_is_held_and_the_next_act_refused": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "src/b.py",
+   "new": "    if False:\n        for rel in group:\n",
+   "old": "    if worse:\n        for rel in group:\n",
+   "site": "instance",
+   "why": "A COMMAND'S WRITE THAT NOTHING HOLDS. The rules are asked of what the command wrote and refuse it, and the change is simply not held - so the next act builds on it and the commit gate is the first thing to see it, which is the lateness the whole point-of-action design exists to remove."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_deletion_is_judged_as_the_tree_it_leaves": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "src/u.py",
+   "new": "            after = read_text(root, rel)\n            if after is None:\n                continue\n            at_head = text_at(root, head, rel)\n",
+   "old": "            after = read_text(root, rel)\n            at_head = text_at(root, head, rel)\n",
+   "site": "elsewhere",
+   "why": "A DELETION IS A WRITE TOO. The Write and Edit tools cannot delete a file, so no write hook ever judged one; a command's `rm` that leaves a name made and never used is the same growth as a write adding it, and skipping absent files would let a tree rule's defect in through the one door nothing else watches."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_file_put_back_at_HEAD_is_never_held": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "the way OUT",
+   "new": "",
+   "old": "            if after == at_head:\n                held.pop(rel, None)\n                continue\n",
+   "site": "elsewhere",
+   "why": "A GUARD THAT BLOCKS THE WAY OUT. `git checkout -- <file>` is what every refusal here names, and HEAD is the last tree the gates passed; judging a file put back at HEAD's text as growth against the fix it undid would hold the repair itself and wedge the session with no act left that goes through."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_rule_tool_behind_a_runner_is_still_a_repair": {
+   "file": ".claude/bundle-hooks/guard_held_writes.py",
+   "must_say": "is not false",
+   "new": "    stage = stages[0]\n",
+   "old": "    stage = gate.peeled(stages[0])[0]\n",
+   "site": "instance",
+   "why": "THE READING AS IT WAS: the first word is the program, so `timeout 3000 python -B tools/dev/plants.py add x.json` - a record re-measured the way a held change says it may be - was refused as if it built on the change."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_rule_tool_behind_a_runner_is_still_a_repair::elsewhere": {
+   "file": ".claude/bundle-hooks/guard_held_writes.py",
+   "must_say": "is not false",
+   "new": "    typed = [w.strip(\"'\" + chr(34)) for w, t in stage[1:]]\n",
+   "old": "    typed = [(t if t is not None else w).strip(\"'\" + chr(34)) for w, t in stage[1:]]\n",
+   "site": "elsewhere",
+   "why": "THE PATH AS THE TOKENISER READS IT: a backslash is an escape to it, so `py tools\\x.py` becomes the word `toolsx.py` and a Windows path to a rule tool reads as no tool at all - the regex this replaced accepted it."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_rule_tool_behind_a_runner_is_still_a_repair::evasion": {
+   "file": ".claude/bundle-hooks/guard_held_writes.py",
+   "must_say": "walked past a held change",
+   "new": "    if len(stage) < len(stages[0]):\n        return True\n    if not stage or not re.fullmatch(r\"py|python[0-9.]*\", gate.program_of(stage[0][0])):\n",
+   "old": "    if not stage or not re.fullmatch(r\"py|python[0-9.]*\", gate.program_of(stage[0][0])):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY TO LET THE WRAPPED RUN THROUGH: anything behind a runner is a repair. `timeout 60 python src/run.py` then builds on the held change freely."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_only_a_read_or_a_repair_of_the_held_path_goes_through": {
+   "file": ".claude/bundle-hooks/guard_held_writes.py",
+   "must_say": "walked past a held change",
+   "new": "for t in command.split()]",
+   "old": "for t in _without_comment(command).split()]",
+   "site": "evasion",
+   "why": "NAMING THE HELD PATH IN A COMMENT. A command that names a held path is let through as its repair; if the name counted inside a shell comment, appending `# <held path>` to any command at all would carry it past the refusal - the cheapest evasion a list of allowed commands has."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_the_turn_cannot_end_on_a_held_change_but_is_not_refused_twice": {
+   "file": ".claude/bundle-hooks/guard_held_writes.py",
+   "must_say": "the turn ended on a held change",
+   "new": "    if not call:\n",
+   "old": "    if not call and payload.get(\"stop_hook_active\"):\n",
+   "site": "elsewhere",
+   "why": "THE END OF A TURN IS AN ACT TOO. A held change refused at every tool call but let through at the end of the turn becomes the next turn's foundation - the same building-on-it the tool-call refusal exists to stop, through the one door that carries no tool."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_with_no_record_the_before_is_HEAD_never_the_disk": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "the cheapest way past",
+   "new": "            if first:\n                continue\n",
+   "old": "            if first and not head:\n                continue\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST IS TO DELETE THE RECORD. If a missing record made the disk the baseline, one `rm` of the judged-tree file in the same command as the defect would pass every rule here; the before with no record must be HEAD, the last tree the gates passed, so deleting it costs time and never truth."
+  },
+  "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_a_git_command_that_commits_WITHOUT_commit_msg_is_refused": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a command that commits past the gate was let run",
+   "new": "    if True:\n",
+   "old": "    if sub not in _UNGATED or any(w in _STOPS for w in words):\n",
+   "site": "instance",
+   "why": "A COMMIT GIT MAKES WITHOUT THE GATE. rebase, cherry-pick, revert and am run no commit-msg - measured, the hook's log silent for each - so their commits carry no stamp; the owner's rule is that work lands through commits and merges."
+  },
+  "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_a_git_command_that_commits_WITHOUT_commit_msg_is_refused::evasion": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a command that commits past the gate was let run",
+   "new": "    if any(w.startswith(\"-\") for w in words):\n",
+   "old": "    if any(w in _UNCOMMITTED.get(sub, ()) for w in words):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST AN EXEMPTION IS TO WIDEN IT. `--no-commit` is exempt because the commit then goes through the gate; any other flag - `-x`, `--continue` - still makes an ungated commit and must not ride on it."
+  },
+  "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_an_ABBREVIATED_no_verify_is_still_no_verify": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "an abbreviated --no-verify walked past the gate",
+   "new": "        if word == \"--no-verify\":",
+   "old": "        if len(word) >= len(SHORTEST_NO_VERIFY) and \"--no-verify\".startswith(word):",
+   "site": "evasion",
+   "why": "THE WHOLE WORD ONLY. git takes any unambiguous prefix of a long option, so a check that knows `--no-verify` and nothing shorter is passed by `--no-veri` - found by asking what the cheapest way past the guard was on the day it was written."
+  },
+  "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_clustered_short_options_are_read_the_way_git_reads_them": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a clustered -m was not read as the message",
+   "new": "    parts, reuse, amend, edits = [], None, False, True\n",
+   "old": "    rest = spread(rest)\n    parts, reuse, amend, edits = [], None, False, True\n",
+   "site": "instance",
+   "why": "A GUARD THAT REFUSES HONEST WORK GETS SWITCHED OFF. git reads -qm as -q -m, and the commit refusal read only -m standing alone, so a valid commit with its message right there was refused as opening an editor - measured on the first real-project install trial."
+  },
+  "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_every_AT_COMMIT_rule_is_asked_of_the_message": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a message a commit rule refuses was let past the command",
+   "new": "    said = {}",
+   "old": "    said = bundle_rules.ask_command(call.root, message, call.rules(), kind=\"AT_COMMIT\")",
+   "site": "elsewhere",
+   "why": "THE MESSAGE READ AND NEVER ASKED. Extracted and then put to no rule, a message the git hook will refuse after every ratchet has run is let past the one point where refusing it costs nothing."
+  },
+  "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_skipping_the_gate_is_refused_however_it_is_spelled": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a commit that skips every git hook was let through",
+   "new": "        if False:",
+   "old": "        if len(word) >= len(SHORTEST_NO_VERIFY) and \"--no-verify\".startswith(word):",
+   "site": "instance",
+   "why": "--NO-VERIFY LET THROUGH. It runs no git hook at all, so every rule the commit gate asks is off for that commit while nobody bypassed anything a guard could see - a flag was passed."
+  },
+  "test_bundle_action.py::ACommitIsJudgedInTheRepositoryItLandsIn::test_a_commit_in_ANOTHER_repository_is_not_this_projects_to_judge": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "judged by this one's rules",
+   "new": "    if theirs[1] != ours[1]:\n        return root\n",
+   "old": "    if theirs[1] != ours[1]:\n        return None\n",
+   "site": "instance",
+   "why": "ANOTHER REPOSITORY JUDGED AS THIS ONE. Measured: a commit in a scratch repository in a temp folder was refused for lacking this project's trailer, and a trial install elsewhere could not set its own hooks path."
+  },
+  "test_bundle_action.py::ACommitIsJudgedInTheRepositoryItLandsIn::test_a_commit_in_a_LINKED_WORKTREE_is_judged_by_that_worktrees_own_rules": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "judged by the MAIN tree's rules",
+   "new": "    if False and target != call.root and call.delegate:\n",
+   "old": "    if target != call.root and call.delegate:\n",
+   "site": "instance",
+   "why": "A WORKTREE'S COMMIT JUDGED BY THE MAIN TREE. Measured on the project this came from: a commit in a linked worktree was refused because the worktree's own new checker and test class were not in the main tree the rules looked at."
+  },
+  "test_bundle_action.py::ACommitIsJudgedInTheRepositoryItLandsIn::test_a_commit_in_a_LINKED_WORKTREE_is_judged_by_that_worktrees_own_rules::marker": {
+   "file": "tests/test_bundle_action.py",
+   "must_say": "the stub's marker moved",
+   "new": "        + '    return [] if \"Signed-Off\" in message else [\"no sign-off\"]' + LF),\n",
+   "old": "        + '    return [] if \"Signed-off\" in message else [\"no sign-off\"]' + LF),\n",
+   "site": "elsewhere",
+   "why": "THE PREMISE MOVING UNDER THE TEST: with the stub's marker respelled, the rewrite that gives the worktree its own rule changes nothing, and the worktree would be judged by the main tree's rule while the test still read as proving the opposite."
+  },
+  "test_bundle_action.py::ACommitIsJudgedInTheRepositoryItLandsIn::test_a_place_that_cannot_be_told_is_judged_as_THIS_project": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a commit this project cannot place skipped the gate unrefused",
+   "new": "        if False:\n",
+   "old": "        if pending and before != \"&&\":\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST A GUARD THAT HONOURS WHERE A COMMIT RUNS is to make it believe the commit runs elsewhere: `false && cd elsewhere; git commit -n` never moves, and a tracker that trusts every cd lets the skipped gate through."
+  },
+  "test_bundle_action.py::ACommitIsJudgedInTheRepositoryItLandsIn::test_a_refusal_of_a_commit_it_could_not_place_says_where_it_judged_it": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "refused without saying where it was judged",
+   "new": "    if False:\n",
+   "old": "    if place is None and len(call.out) > was:\n",
+   "site": "instance",
+   "why": "A REFUSAL THAT DOES NOT SAY WHERE IT JUDGED. `git -C \"$W\" commit` in a worktree was refused as though the worktree's own test class were missing - true of the main tree, where an unplaceable commit is judged - with nothing saying so."
+  },
+  "test_bundle_action.py::ACommitIsJudgedInTheRepositoryItLandsIn::test_a_refusal_of_a_commit_it_could_not_place_says_where_it_judged_it::evasion": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "never a refusal of its own",
+   "new": "    if place is None:\n",
+   "old": "    if place is None and len(call.out) > was:\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST NOTE IS ONE ALWAYS ADDED - and then it refuses every commit this guard cannot place, honest ones included. It belongs only on a refusal that something else already made."
+  },
+  "test_bundle_action.py::ACommitIsJudgedInTheRepositoryItLandsIn::test_the_message_file_is_read_where_git_runs": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "read the message beside the root",
+   "new": "    message, unreadable = message_of(call.root, rest)\n",
+   "old": "    message, unreadable = message_of(place, rest)\n",
+   "site": "elsewhere",
+   "why": "THE MESSAGE READ FROM THE WRONG FILE. git reads `-F` beside the directory it runs in, after `-C`; the guard read it beside the project root, so the text it judged could be a different file's than the one git would commit."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_NEW_file_is_asked_as_the_write_would_leave_it": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a new file carrying a defect was let in",
+   "new": "    worse = {}\n    files = []\n    changes = {r: c for r, c in changes.items() if c[0] is not None}\n    for rel, (before, after) in sorted(changes.items()):\n",
+   "old": "    worse = {}\n    files = []\n    for rel, (before, after) in sorted(changes.items()):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST A WRITE RULE IS A FILE THAT DID NOT EXIST. A door comparing before with after can skip the case with no before, and every new module and test then lands unasked - the most common write there is."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_cached_fact_is_refreshed_when_its_file_changes": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a fact cached before its file changed was served after it",
+   "new": "        if isinstance(entry, list) and len(entry) == 2:",
+   "old": "        if isinstance(entry, list) and len(entry) == 2 and entry[0] == stamp:",
+   "site": "elsewhere",
+   "why": "A CACHE THAT SERVES A FILE AS IT WAS. Tree rules answer from per-file facts kept against each file's size and time; served regardless, a judge rules on a tree nobody has any more - the staleness refused everywhere else, inside the thing made fast enough to ask."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_record_rule_sharing_its_scope_with_a_source_rule_is_asked_only_of_records": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a source file in a mixed scope was judged as a record",
+   "new": "",
+   "old": "        if self.kind in SHAPES and not re.search(SHAPES[self.kind], rel):\n            return False\n",
+   "site": "instance",
+   "why": "A RECORD RULE ASKED OF A FILE THAT IS NOT A RECORD. skips.py declares a write rule, a change rule and a record rule over one scope naming its Layer 1 test files and its record, and the record rule refused every edit to every one of those test files as not JSON - in the project this came from, measured 2026-09-23."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_record_rule_sharing_its_scope_with_a_source_rule_is_asked_only_of_records::evasion": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "the record in a mixed scope stopped being asked",
+   "new": "    if not ok_after:\n        return [], []\n",
+   "old": "    if not ok_after:\n        return [], [\"%s is a record and the write is not JSON\" % rel]\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY TO STOP A GUARD REFUSING THE WRONG FILE IS TO STOP IT REFUSING. Dropping the not-JSON refusal ends the false refusals over test files and lets a corrupted record be written."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_record_rule_sharing_its_scope_with_a_source_rule_is_asked_only_of_records::overreach": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "the source rule in a mixed scope stopped being asked",
+   "new": "        if not re.search(SHAPES[\"AT_RECORD\"], rel):\n",
+   "old": "        if self.kind in SHAPES and not re.search(SHAPES[self.kind], rel):\n",
+   "site": "elsewhere",
+   "why": "THE SAME CLASS FROM THE OTHER SIDE: a kind not asked of a file it CAN judge. Filtering every kind by the record's shape stops the refusal and switches off every source rule in a mixed scope - the fix that looks right because the complaint goes away."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_write_INTO_the_git_folder_is_refused_and_a_look_alike_is_not": {
+   "file": ".claude/bundle-hooks/guard_write_rules.py",
+   "must_say": "a tool wrote inside the git folder",
+   "new": "    if False:\n",
+   "old": "    if inside:\n",
+   "site": "instance",
+   "why": "A TOOL WRITING GIT'S OWN FOLDER. `.git/config` can repoint the hooks and `.git/gate-stamps` says a commit passed the gate, so either write is a gate skipped or a stamp forged, whatever the text reads."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_write_INTO_the_git_folder_is_refused_and_a_look_alike_is_not::evasion": {
+   "file": ".claude/bundle-hooks/guard_write_rules.py",
+   "must_say": "a tool wrote inside the git folder",
+   "new": "    return rel if rel.replace(chr(92), \"/\") == \".git/gate-stamps\" else \"\"\n",
+   "old": "    return rel if rel.replace(chr(92), \"/\").split(\"/\")[0].lower() == \".git\" else \"\"\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST GUARD NAMES THE ONE FILE THAT WAS SEEN. Refusing only the stamp store leaves `.git/config`, which switches every gate off with one line."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_write_that_ADDS_a_finding_is_refused_and_one_that_keeps_or_removes_it_is_not": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a write adding a finding was let through",
+   "new": "    if True:\n        return None",
+   "old": "    if len(now) <= len(was):\n        return None",
+   "site": "instance",
+   "why": "THE ONE COMPARISON EVERY WRITE RULE ANSWERS THROUGH, made to find nothing worse: every per-file, tree, change and record rule is off at once while each still passes its own tests - the hole this door was built to close, reopened inside it."
+  },
+  "test_bundle_action.py::AnAnswerTakenWithAMutantOnDiskIsNeitherGivenNorKept::test_an_AT_AFTER_rule_is_neither_asked_nor_kept_under_the_lock": {
+   "file": ".claude/bundle-hooks/after_rules.py",
+   "must_say": "a rule was asked with a mutant on disk",
+   "new": "    if False:\n        return []\n",
+   "old": "    if bundle_rules.locked(root):\n        return []\n",
+   "site": "instance",
+   "why": "AN ANSWER ABOUT A MUTANT. Measured: an item reported re-opened after every call while a proof run had a module mutated, and the memo kept that answer so the same finding from the real tree would never have been new."
+  },
+  "test_bundle_action.py::AnAnswerTakenWithAMutantOnDiskIsNeitherGivenNorKept::test_an_AT_AFTER_rule_is_neither_asked_nor_kept_under_the_lock::evasion": {
+   "file": ".claude/bundle-hooks/after_rules.py",
+   "must_say": "was kept as the memo",
+   "new": "    if bundle_rules.locked(root):\n        _keep(root, tree_state(root), {})\n        return []\n",
+   "old": "    if bundle_rules.locked(root):\n        return []\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY TO STOP ASKING UNDER THE LOCK is to keep recording that the tree was looked at: the memo then names a tree with a mutant in it, and the first real answer after the lock is compared against that."
+  },
+  "test_bundle_action.py::AnAnswerTakenWithAMutantOnDiskIsNeitherGivenNorKept::test_the_module_under_mutation_is_not_judged_as_a_commands_write": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "judged, and held, as a command's write",
+   "new": "        for rel in sorted(set(prev_paths) | set(now)):\n",
+   "old": "        for rel in sorted((set(prev_paths) | set(now)) - {lock}):\n",
+   "site": "elsewhere",
+   "why": "THE SAME SUBJECT READ ELSEWHERE. A mutant on disk is a changed file to a reader that forgets the lock, and the held-change guard would hold it and refuse every act until a module nobody edited was repaired."
+  },
+  "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_a_command_HANDED_to_a_shell_is_read_as_a_command": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a command handed to a shell skipped the gate unread",
+   "new": "    if name in ():\n",
+   "old": "    if name in _POSIX_SHELLS:\n",
+   "site": "elsewhere",
+   "why": "A COMMAND HANDED TO A SHELL AS A STRING. `bash -c \"git commit --no-verify\"` is the same act as the bare command, and a guard that reads only the outer program never sees it."
+  },
+  "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_an_ALIAS_is_read_as_what_it_runs": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "skipped the gate",
+   "new": "    if True:\n",
+   "old": "    if not sub or sub in _BUILTIN or depth > MAX_NESTING:\n",
+   "site": "elsewhere",
+   "why": "AN ALIAS IS A SPELLING. `git -c alias.ci=\"commit --no-verify\" ci` and an alias in the repository's configuration run the commit the gate refuses, under a subcommand that is not the word commit."
+  },
+  "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_every_wrapper_that_only_starts_git_is_read_through": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a wrapper that only starts git let the gate be skipped",
+   "new": "        if True:\n",
+   "old": "        if word != \"&\" and name not in _RUNS_NEXT:\n",
+   "site": "instance",
+   "why": "GIT BEHIND A WRAPPER. Measured: `& git commit --no-verify`, `env git ...`, `time git ...` and a dozen more were let through while the bare spelling was refused - one act, sixteen spellings, one of them read."
+  },
+  "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_every_wrapper_that_only_starts_git_is_read_through::groups": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a wrapper that only starts git let the gate be skipped",
+   "new": "        if word in (\"(\", \")\", \"{\", \"}\"):\n            continue\n",
+   "old": "        if word in (\"(\", \")\", \"{\", \"}\"):\n            if current:\n                out.append(current)\n            current = []\n            continue\n",
+   "site": "elsewhere",
+   "why": "A GROUP DROPPED INSTEAD OF OPENED. `Measure-Command { git commit ... }` read as arguments to Measure-Command, so the commit inside the script block was never judged."
+  },
+  "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_every_wrapper_that_only_starts_git_is_read_through::operands": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a wrapper that only starts git let the gate be skipped",
+   "new": "",
+   "old": "        index += _RUNS_NEXT.get(name, 0)\n",
+   "site": "elsewhere",
+   "why": "A RUNNER'S OPERAND READ AS THE PROGRAM. Measured by the peer session: `timeout 600 git commit --no-verify` walked past, its DURATION the word before git, so the program read as `timeout` and the commit behind it was never judged."
+  },
+  "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_the_path_to_git_is_still_git": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "git named by its path skipped the gate",
+   "new": "    name = (word or \"\").lower()\n",
+   "old": "    name = re.split(r\"[\\\\/]\", word or \"\")[-1].lower()\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST A CHECK FOR THE WORD `git` is the path to it: `& \"C:/Program Files/Git/cmd/git.exe\" commit -n` is git, and a program name compared whole is not the word git."
+  },
+  "test_bundle_action.py::WhatOnlyTheChangedTreeCanAnswerIsAskedTheMomentAfter::test_an_AT_AFTER_rule_is_asked_and_a_broken_one_is_reported": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "{} != {'zzstub_after'",
+   "new": "    return {}",
+   "old": "    return ask_command(root, None, found, kind=\"AT_AFTER\")",
+   "site": "elsewhere",
+   "why": "AN AT_AFTER DECLARATION NOTHING ASKS. The rules whose verdict is a command over the tree on disk are asked by one function; returning nothing, every such declaration reads as wired while its item re-opens unseen."
+  },
+  "test_bundle_action.py::WhatOnlyTheChangedTreeCanAnswerIsAskedTheMomentAfter::test_only_findings_the_call_ADDED_are_handed_back": {
+   "file": ".claude/bundle-hooks/after_rules.py",
+   "must_say": "!= {'r': ['b']}",
+   "new": "        fresh = list(items)",
+   "old": "        fresh = [f for f in items if f not in (previous.get(name) or [])]",
+   "site": "instance",
+   "why": "EVERY STANDING FINDING REPEATED AFTER EVERY CALL. The after-hook hands back what a call ADDED; repeating what was already there after every command is how a guard gets tuned out, and a guard nobody reads is off."
+  },
+  "test_bundle_action.py::WhatOnlyTheChangedTreeCanAnswerIsAskedTheMomentAfter::test_the_tree_state_moves_when_a_file_changes_and_not_otherwise": {
+   "file": ".claude/bundle-hooks/after_rules.py",
+   "must_say": "a changed file left the state where it was",
+   "new": "    return \"the tree never moves\"",
+   "old": "    return digest.hexdigest()",
+   "site": "evasion",
+   "why": "A TREE THAT NEVER MOVES. The after-hook skips a call that left the tree as it was; a state that does not change when a file does is the cheapest way never to be asked again, and it looks exactly like a quiet session."
+  },
+  "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_a_fix_names_its_KIND_and_a_detector_says_why_it_is_not_a_refusal": {
+   "file": "tools/commit_gate.py",
+   "must_say": "[] is not true",
+   "new": "    if False:\n        why = marker_reason(message, \"No-refusal:\")",
+   "old": "    if kind != \"refusal\":\n        why = marker_reason(message, \"No-refusal:\")",
+   "site": "instance",
+   "why": "A detector accepted as closing a class with no word on why the point of action cannot refuse - the commit whose Guard line was one clause tool and one clause rhetoric."
+  },
+  "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_a_fix_proven_in_the_PROJECTS_OWN_ledger_has_its_plant": {
+   "file": "tools/commit_gate.py",
+   "must_say": "PROJECT LEDGER",
+   "new": "    if not keys:\n",
+   "old": "    if not keys and not added:\n",
+   "site": "instance",
+   "why": "ONE LEDGER ONLY. Measured on CTRMap: the first fix after the install carried two plants in the project's own ledger, both red, and was refused - as every fix there would have been."
+  },
+  "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_a_fix_proven_in_the_PROJECTS_OWN_ledger_has_its_plant::evasion": {
+   "file": "tools/commit_gate.py",
+   "must_say": "PROJECT LEDGER",
+   "new": "    for key, driver in [(k, drive) for k in keys]:\n",
+   "old": "    for key, driver in [(k, drive) for k in keys] + [(k, prove) for k in added]:\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: count a new plant in the project's ledger and never drive it, so a plant that stays green is accepted as proof."
+  },
+  "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_an_ADMISSION_needs_a_Deferred_gap_with_a_reason": {
+   "file": "tools/commit_gate.py",
+   "must_say": "[] is not true",
+   "new": "        return [] if why is not None else [",
+   "old": "        return [] if len(why) >= MIN_REASON else [",
+   "site": "elsewhere",
+   "why": "`Deferred-gap: later` accepted as a deferral - the census that filed eleven gaps as the owner's work would have passed it with one word."
+  },
+  "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_the_projects_ledger_is_READ_from_its_declaration": {
+   "file": "tools/commit_gate.py",
+   "must_say": "PROJECT LEDGER",
+   "new": "            and all(isinstance(a, str) for a in prove)):\n",
+   "old": "            and all(isinstance(a, str) for a in prove) and any(\"{key}\" in a for a in prove)):\n",
+   "site": "instance",
+   "why": "A COMMAND THAT NAMES NO PLANT. Run once per plant, a command without {key} proves the same thing every time and nothing about the plant it is asked about."
+  },
+  "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_the_projects_ledger_is_READ_from_its_declaration::shape": {
+   "file": "tools/commit_gate.py",
+   "must_say": "PROJECT LEDGER",
+   "new": "",
+   "old": "    if isinstance(plants, list) and key:\n        return {p[key] for p in plants if isinstance(p, dict) and isinstance(p.get(key), str)}\n",
+   "site": "elsewhere",
+   "why": "A LIST-SHAPED LEDGER READ AS EMPTY. CTRMap's is a list of 213 entries, not a dict; read as a dict it holds no plant, and every new one is invisible."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_CHERRY_PICKED_commit_carries_no_stamp_and_one_committed_through_the_gate_does": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a cherry-picked commit passed as gated",
+   "new": "                  r\")\")\n",
+   "old": "                  r\"|cherry-pick:|revert:|am:)\")\n",
+   "site": "instance",
+   "why": "THE LAST CHEAP WAY ROUND THE GATE. A program's --no-verify commit on a scratch branch, cherry-picked onto the main one and the scratch branch deleted, left an unstamped commit nothing asked about."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_commit_in_ANOTHER_WORKTREE_is_asked_too": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "in another worktree was not found",
+   "new": "        worktrees = []\n",
+   "old": "        worktrees = sorted(os.listdir(os.path.join(common, \"worktrees\")))\n",
+   "site": "elsewhere",
+   "why": "A REFLOG IN ANOTHER PLACE. A detached HEAD in a linked worktree logs its commits under that worktree's own folder, not under the repository's logs."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_commit_made_past_the_gate_is_found_until_it_is_off_every_ref": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a commit made past the gate was not found",
+   "new": "                if True:\n",
+   "old": "                if any((tree, d) in stamped for d in digests(message)):\n",
+   "site": "instance",
+   "why": "A COMMIT THE GATE NEVER SAW. Measured: `python -c` running `git commit --no-verify` is the one spelling of a skipped gate no hook can read, and nothing afterwards asked whether the gate had seen the commit."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_copy_installed_DEEPER_still_finds_its_repository": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "took tools/ for its repository",
+   "new": "ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))\n",
+   "old": "ROOT = _root()\n",
+   "site": "elsewhere",
+   "why": "A ROOT COUNTED IN DIRNAMES. The project this came from installs its tools under tools/audit/, where two dirnames name tools/ - and init would write the baseline where nothing reads it."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_gated_TREE_under_an_ungated_MESSAGE_is_still_ungated": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "passed as gated",
+   "new": "                if any(t == tree for t, _d in stamped):\n",
+   "old": "                if any((tree, d) in stamped for d in digests(message)):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST STAMP IS ONE ALREADY THERE. Amending a gated commit's message with `--no-verify` keeps the tree the gate stamped, so a stamp matched by tree alone passes a message the gate never read."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_every_way_a_call_could_FORGE_a_stamp_is_refused_before_it_runs": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a way to write a stamp no gate wrote was let run",
+   "new": "    if False:\n",
+   "old": "    if any(name in text for name in STORE):\n",
+   "site": "instance",
+   "why": "A STAMP NO GATE WROTE. A stamp written by anything but `commit-msg` passes every check, and a command naming the store is the plainest way to write one."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_every_way_a_call_could_FORGE_a_stamp_is_refused_before_it_runs::evasion": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a way to write a stamp no gate wrote was let run",
+   "new": "    if \"gate_stamps.py\" in text:\n        return \"\"\n    for segment in _SEGMENT.split(text):\n",
+   "old": "    for segment in _SEGMENT.split(text):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST EXEMPTION IS A NAME IN THE LINE. Letting any command that mentions the tool through lets a forging script ride on it as an argument."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_every_way_a_call_could_FORGE_a_stamp_is_refused_before_it_runs::script": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a way to write a stamp no gate wrote was let run",
+   "new": "            if False:\n",
+   "old": "            if any(store in body for store in STORE) or STAMP_CALL.search(body):\n",
+   "site": "elsewhere",
+   "why": "THE SAME FORGERY ONE FILE AWAY. A script written anywhere and then run does not name the store in the command - its text does."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_the_PROGRAM_is_one_word_and_a_linter_reading_a_file_is_not_running_it": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a linter reading a file was read as running it",
+   "new": "            return rest\n",
+   "old": "            return [] if name in _READ_ONLY_MODULES else rest\n",
+   "site": "instance",
+   "why": "THE DEFECT AS IT WAS: every word after an interpreter was a script, so `python -m ruff check` over a test that names the store was refused as forging a stamp."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_the_PROGRAM_is_one_word_and_a_linter_reading_a_file_is_not_running_it::evasion": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "an unknown module's arguments were waved through as data",
+   "new": "            return []\n",
+   "old": "            return [] if name in _READ_ONLY_MODULES else rest\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY TO LET THE LINTER THROUGH: everything after `-m` is data. Then `python -m runpy forger.py` runs a forging script nothing read."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_the_PROGRAM_is_one_word_and_a_linter_reading_a_file_is_not_running_it::local": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a module in the project run with -m was never read",
+   "new": "            local = []\n",
+   "old": "            local = _local_module(name, root)\n",
+   "site": "elsewhere",
+   "why": "THE SAME QUESTION ONE FLAG AWAY: `python -m forger` runs forger.py, and the module name is not a path, so nothing ever read the file `-m` ran."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_the_PROGRAM_is_one_word_and_a_linter_reading_a_file_is_not_running_it::shadow": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a local ruff.py shadowing the linter was read as the linter",
+   "new": "            if name in _READ_ONLY_MODULES:\n                return []\n            local = _local_module(name, root)\n            if local:\n                return local + rest\n            return rest\n",
+   "old": "            local = _local_module(name, root)\n            if local:\n                return local + rest\n            return [] if name in _READ_ONLY_MODULES else rest\n",
+   "site": "evasion",
+   "why": "THE READER'S NAME IS NOT THE READER: `-m` puts the working directory first on the path, so a ruff.py in the project IS what `python -m ruff` runs - asked by name before the project, it is waved through as the linter."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_the_PROGRAM_is_one_word_and_a_linter_reading_a_file_is_not_running_it::versioned": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a versioned interpreter ran a script nothing read",
+   "new": "_PYTHON = re.compile(r\"py|python3?|pythonw\")\n",
+   "old": "_PYTHON = re.compile(r\"py|pythonw?[0-9.]*\")\n",
+   "site": "elsewhere",
+   "why": "PYTHON BY NAME: `python3.12 forger.py` is the same program as `python`, and a list of interpreter names read it as a program called python3.12 that is no file."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_the_baseline_is_written_once_and_never_widened": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "written a second time",
+   "new": "    if False:\n",
+   "old": "    if os.path.exists(path) or _git(root, [\"cat-file\", \"-e\", \"HEAD:\" + rel]) is not None:\n",
+   "site": "evasion",
+   "why": "FORGIVING A COMMIT BY STARTING AGAIN. Writing the baseline after an ungated commit makes that commit one the stamps never had to cover."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_while_one_is_ungated_only_a_read_or_a_repair_may_run": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "the repair of an ungated commit was refused",
+   "new": "        return False\n",
+   "old": "        return not rest or rest[0] in _READS\n",
+   "site": "instance",
+   "why": "A REFUSAL THAT BLOCKS ITS OWN REPAIR. Refusing every command while a commit is ungated must leave `git reset` - the way out it names - able to run."
+  },
+  "test_bundle_gates.py::EveryGateSubprocessIsBOUNDED::test_the_checker_finds_an_unbounded_call_and_passes_a_bounded_one": {
+   "file": "tools/timeouts.py",
+   "must_say": "!= [3, 4]",
+   "new": "        if False:",
+   "old": "        if not any(keyword.arg == \"timeout\" for keyword in node.keywords):",
+   "site": "instance",
+   "why": "A timeout checker that finds nothing, reporting every gate bounded while one waits thirteen and a half hours on 0.14 seconds of CPU."
+  },
+  "test_bundle_gates.py::EveryGateSubprocessIsBOUNDED::test_the_hooks_here_are_derived_and_bounded": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "must_say": "a hook starts a child it cannot stop waiting for",
+   "new": "                              )",
+   "old": "                              timeout=GIT_TIMEOUT)",
+   "site": "elsewhere",
+   "why": "A real hook's git call unbounded again - asked on every tool call, so one git that holds its index lock would hang every command in the session."
+  },
+  "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_a_record_covering_LESS_of_the_tree_is_refused_at_its_write": {
+   "file": "tools/whole_tree.py",
+   "must_say": "a record that dropped a module was written over its ceiling",
+   "new": "                and False:\n",
+   "old": "                and len(tree - covered) > ceilings[label] + len(arrivals(tree - covered,\n                                                                         recorded)):\n",
+   "site": "elsewhere",
+   "why": "A RECORD NARROWED AT ITS OWN WRITE. The whole-tree rule is asked at the write of every module-keyed record; answering nothing, a measurement of a third of the tree replaces the whole-tree one and every later check compares against the narrower set."
+  },
+  "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_a_record_covering_LESS_of_the_tree_is_refused_at_its_write::scope": {
+   "file": "tools/whole_tree.py",
+   "must_say": "outside the scope",
+   "new": "",
+   "old": "    if folder in (\"\", \".\"):\n        return r\"^[^/]+\\.json$\"\n",
+   "site": "elsewhere",
+   "why": "A RECORD AT THE TOP, NEVER ASKED. RECORDS='.' made the scope `^\\./...`, which no project path matches - CTRMap's mutation baseline sits at its root."
+  },
+  "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_an_exclusion_from_the_guards_must_carry_its_reason": {
+   "file": "tools/tiers.py",
+   "must_say": "an exclusion with a label for a reason was accepted",
+   "new": "                  for stem, why in NOT_GUARDS.items() if len(str(why)) < 0)",
+   "old": "                  for stem, why in NOT_GUARDS.items() if len(str(why)) < MIN_REASON)",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY TO ZERO GUARDS BELOW ACTION IS TO STOP CALLING THEM GUARDS. With the reason unread, any detector is excused by adding its name to a dict, and `every guard at the point of action` stays true while one sits at the commit."
+  },
+  "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_tiers_refuses_a_guard_nothing_asks_and_credits_one_a_wired_hook_asks": {
+   "file": "tools/tiers.py",
+   "must_say": "the derivation did not tell a declared rule from a detector",
+   "new": "    return True",
+   "old": "    return (rel.startswith(\".githooks/\") or rel in gate) and protected",
+   "site": "instance",
+   "why": "EVERY GUARD CREDITED WITH THE POINT OF ACTION. The derivation that says a guard fires at the act, answering yes for all of them, is the fourteen-rules-at-the-write mistake again: a number read as progress while the detectors sit at the commit."
+  },
+  "test_bundle_gates.py::TheBundlesHooksAreFoundNotSpelled::test_a_dispatcher_asks_only_the_guards_beside_it": {
+   "file": "tools/tiers.py",
+   "must_say": "a dispatcher was credited with guards in a folder it does not discover",
+   "new": "    if \"dispatch.py\" in settings:\n",
+   "old": "    if \"dispatch.py\" in wired:\n",
+   "site": "instance",
+   "why": "ANY DISPATCHER, EVERY FOLDER. `dispatch.py` anywhere in the settings credited the bundle's dispatcher with the project's own guards, which only its own asks."
+  },
+  "test_bundle_gates.py::TheBundlesHooksAreFoundNotSpelled::test_a_tree_holding_none_answers_with_THIS_installations_layout": {
+   "file": "tools/bundle_hooks.py",
+   "must_say": "a scratch tree was answered with a layout its installation does not use",
+   "new": "    return _held(root) or DEFAULT\n",
+   "old": "    return _held(root) or _held(HOME) or DEFAULT\n",
+   "site": "instance",
+   "why": "A SCRATCH TREE IN THE WRONG LAYOUT. Answered DEFAULT, bundle_rules (which reads its own folder) and the tools disagreed in exactly the projects this exists for."
+  },
+  "test_bundle_gates.py::TheBundlesHooksAreFoundNotSpelled::test_the_folder_holding_the_bundles_hooks_is_found": {
+   "file": "tools/bundle_hooks.py",
+   "must_say": "the bundle's hooks beside a project's own were not found",
+   "new": "    found = []\n",
+   "old": "    found = [name for name in names if os.path.isfile(os.path.join(base, name, MARK))]\n",
+   "site": "instance",
+   "why": "THE FOLDER ASSUMED. Every tool looked in .claude/hooks and found the project's guards there instead of the bundle's."
+  },
+  "test_bundle_gates.py::TheBundlesHooksAreFoundNotSpelled::test_two_copies_of_the_bundles_hooks_are_refused_not_guessed": {
+   "file": "tools/bundle_hooks.py",
+   "must_say": "two copies of the bundle's hooks were guessed at",
+   "new": "    if len(found) > 99:\n",
+   "old": "    if len(found) > 1:\n",
+   "site": "instance",
+   "why": "TWO COPIES, ONE PICKED. A copy left behind by a move, and every tool silently chose one - a guess reported as a fact."
+  },
+  "test_bundle_gates.py::TheInstallIsAskedAtEveryCommit::test_a_bundle_that_CANNOT_BE_READ_refuses": {
+   "file": "tools/bundle_install.py",
+   "must_say": "False is not true",
+   "new": "    if False:",
+   "old": "    if not os.path.isdir(where):",
+   "site": "instance",
+   "why": "A bundle that is not on disk treated as checkable - the install becomes whatever an absent checker says, which is unknown rendered as clean."
+  },
+  "test_bundle_gates.py::TheInstallIsAskedAtEveryCommit::test_loading_the_checker_writes_NO_bytecode_beside_it": {
+   "file": "tools/bundle_install.py",
+   "must_say": "wrote bytecode into the bundle",
+   "new": "    try:",
+   "old": "    sys.dont_write_bytecode = True\n    try:",
+   "site": "elsewhere",
+   "why": "A project's commit runner, started without -B, writing tools/__pycache__ into the bundle folder on every commit - which the bundle then refuses to hand on."
+  },
+  "test_bundle_gates.py::TheInstallIsAskedAtEveryCommit::test_the_install_SCOPE_is_the_checkers_own_walk": {
+   "file": "tools/bundle_install.py",
+   "must_say": "is outside the scope",
+   "new": "        for rel in [os.path.relpath(os.path.join(f, n), where).replace(os.sep, \"/\") for f, _d, ns in os.walk(where) for n in ns]:\n",
+   "old": "        for rel in checker.bundle_files(where):\n",
+   "site": "instance",
+   "why": "TWO WALKS OF ONE FOLDER. The write rule's scope walked the bundle with its own skip list while the checker's walk had learned that a tool's signed cache is not a shipped file."
+  }
+ },
+ "single_site": {
+  "test_bundle.py::EveryHookMustBeIMPORTABLE": "Both of its tests are about one property of one folder - that importing a hook does nothing - and the derivation already walks every `guard_*.py`, so a hook added tomorrow is covered without a second plant. The instance plant restores the bare `main()` that shipped, which is the state this class was written against."
+ },
+ "unevadable": {}
+}

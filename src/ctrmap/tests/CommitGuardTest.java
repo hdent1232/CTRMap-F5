@@ -320,14 +320,19 @@ public class CommitGuardTest {
 	 */
 	static void everyFrozenTreeMeasurementAsksTheWorkOrder(File repo) throws Exception {
 		System.out.println("--- every tool that measures a frozen tree asks the work order first");
+		check(!pythonCode("\"\"\"reads a record such as mutation_baseline.json\"\"\"\nx = 1\n")
+				.contains("mutation_baseline.json")
+				&& pythonCode("PATH = 'mutation_baseline.json'\n").contains("mutation_baseline.json"),
+			"DOCUMENTED: a tool that only DOCUMENTS the baseline is not one that writes it, and one "
+			+ "that names it in code still is");
 		File tools = new File(repo, "tools");
 		java.util.List<String> ungated = new java.util.ArrayList<>();
 		int measured = 0;
 		java.util.List<File> all = new java.util.ArrayList<>();
 		collectPython(tools, all);
 		for (File py : all) {
-			String src = new String(java.nio.file.Files.readAllBytes(py.toPath()),
-				java.nio.charset.StandardCharsets.UTF_8);
+			String src = pythonCode(new String(java.nio.file.Files.readAllBytes(py.toPath()),
+				java.nio.charset.StandardCharsets.UTF_8));
 			if (py.getName().equals("work_order.py")) {
 				continue; //the guard itself
 			}
@@ -346,6 +351,18 @@ public class CommitGuardTest {
 			+ " anything");
 		check(ungated.isEmpty(), "and every one of them asks the work order before it starts "
 			+ ungated);
+	}
+
+	/**
+	 * Python source with its docstrings and comments blanked: what the code DOES, not what its
+	 * prose says. The verification bootstrap's whole_tree.py names mutation_baseline.json in
+	 * its docstring, as an example of a record it READS - it resets nothing and writes no
+	 * mutation baseline - and this rule, matching text, counted it as a frozen-tree measurement
+	 * owing the work order. A rule that fires on documentation is one people learn to ignore.
+	 */
+	static String pythonCode(String source) {
+		String noDocs = source.replaceAll("(?s)\"\"\".*?\"\"\"|'''.*?'''", "\"\"");
+		return noDocs.replaceAll("(?m)^\\s*#[^\\n]*$", "");
 	}
 
 	/** Every .py under a directory, recursively. */

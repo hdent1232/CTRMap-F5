@@ -32,6 +32,7 @@ Usage: python tools/guard/liveness_check.py [root]
 Exit 1 with reasons, 0 when the question is asked in one place and asked correctly.
 """
 import io
+import json
 import os
 import re
 import sys
@@ -49,6 +50,36 @@ _HAND_ROLLED = re.compile(r"OpenProcess\s*\(")
 _TASKLIST = re.compile(r"\btasklist\b[^\n]*\bPID\s+eq\b", re.I)
 
 SKIP_DIRS = ("build", "dist", ".git", "__pycache__", "node_modules", "wt", "lib")
+
+#: Where the verification bootstrap's install records its decisions.
+DECLARATIONS = os.path.join(".claude", "bundle-install.json")
+
+
+def vendored(root):
+    """The folder the verification bootstrap's hooks were installed into BESIDE this project's own
+    - `_hooks_at` in its install declarations - or None.
+
+    WHY THE ONE-ANSWER RULE STOPS AT IT. Those hooks import nothing from the project they are
+    installed in, by design, so they cannot ask `liveness.alive`; the bundle keeps its own answer
+    and its own guards over it. Refusing them here made this project's rule and the bundle's
+    design each impossible under the other - measured on the install, 2026-09-25. What stops at
+    the folder is only the ONE-ANSWER rule (a hand-rolled OpenProcess, a tasklist spelling). A
+    probe that answers WRONGLY - `os.kill(pid, 0)` without the branch, a `CommandLine` filter -
+    is refused in that folder like anywhere else. Never this project's own `.claude/hooks`, and
+    nothing at all when no folder was declared.
+    """
+    try:
+        with io.open(os.path.join(root, DECLARATIONS), encoding="utf-8") as handle:
+            held = json.load(handle)
+    except (OSError, ValueError):
+        return None                       # unreadable or absent: exempt nothing, which is loud
+    folder = held.get("_hooks_at") if isinstance(held, dict) else None
+    if not isinstance(folder, str) or not folder.strip():
+        return None
+    folder = os.path.normcase(os.path.abspath(os.path.join(root, folder)))
+    if folder == os.path.normcase(os.path.abspath(os.path.join(root, ".claude", "hooks"))):
+        return None
+    return folder
 
 
 #: What has to be nearby for a shell probe to be a shell probe rather than an explanation of
@@ -172,8 +203,12 @@ def findings(root):
     """Every place the liveness question is answered wrongly, or answered twice."""
     why = []
     looked = 0
+    apart = vendored(root)
     for path in files(root):
         base = os.path.basename(path)
+        #: this project's code, where the one-answer rule holds - see `vendored`
+        own = apart is None or not os.path.normcase(os.path.abspath(path)).startswith(
+            apart + os.sep)
         try:
             body = io.open(path, encoding="utf-8", errors="replace").read()
         except OSError as cannotRead:
@@ -213,7 +248,7 @@ def findings(root):
                 "process table, it called three live processes dead here. Ask "
                 "liveness.alive(pid) instead." % rel)
 
-        if _HAND_ROLLED.search(body):
+        if _HAND_ROLLED.search(body) and own:
             why.append(
                 "%s calls OpenProcess itself. The project has one answer to whether a process "
                 "is alive, in %s, because a question answered in several places is answered "
@@ -221,7 +256,7 @@ def findings(root):
                 "guard that never fires." % (rel, THE_ANSWER))
 
         found = _TASKLIST.search(shell)
-        if found and (path.endswith(".ps1") or _near(shell, found.start())):
+        if found and own and (path.endswith(".ps1") or _near(shell, found.start())):
             why.append(
                 "%s probes liveness with tasklist. It is not wrong, which is exactly the "
                 "problem: it is a second spelling of a question that has one answer in %s, and "

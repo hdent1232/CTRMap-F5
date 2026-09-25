@@ -1,0 +1,70 @@
+{
+ ".githooks/commit-msg": {
+  "diverged": "CTRMap's commit-msg runs its own commit guard first - per-push approval and the game-data refusals, which the bundle's gate does not know - then the bundle's commit_gate.py, and ends with the gate's stamp as the bundle's hook does."
+ },
+ "_bundle": "<desktop>/verification-bootstrap",
+ "_hooks_at": ".claude/bundle-hooks",
+ "_tests": {
+  "ledger": {
+   "key": "id",
+   "path": "tools/guard/plants.json",
+   "prove": [
+    "python",
+    "-B",
+    "tools/guard/replant.py",
+    "{key}"
+   ]
+  },
+  "not_covered": "CTRMap proves its Java tests with its own plant ledger, tools/guard/plants.json, driven and checked by src/ctrmap/tests/PlantLedgerTest.java; a second ledger over the same tests would be two records of one fact."
+ },
+ "_tiers_adopted": {
+  "at": "2026-09-25T06:30:38Z",
+  "below": [
+   ".claude/hooks/hook_env.py",
+   ".claude/hooks/liveness.py",
+   ".claude/hooks/shellin.py",
+   "tools/guard/approve_push.py",
+   "tools/guard/autoplant.py",
+   "tools/guard/census.py",
+   "tools/guard/citations.py",
+   "tools/guard/classify_guards.py",
+   "tools/guard/count_first.py",
+   "tools/guard/game_identity.py",
+   "tools/guard/hooks_wired.py",
+   "tools/guard/liveness_check.py",
+   "tools/guard/magnitude.py",
+   "tools/guard/record_run.py",
+   "tools/guard/replant.py",
+   "tools/guard/rule_map.py",
+   "tools/guard/work_order.py",
+   "tools/hooks/guard_all.py",
+   "tools/hooks/guard_background_pipe.py",
+   "tools/hooks/guard_blocked_runner.py",
+   "tools/hooks/guard_exit_code.py",
+   "tools/hooks/guard_fanout.py",
+   "tools/hooks/guard_forbidden_command.py",
+   "tools/hooks/guard_game_data.py",
+   "tools/hooks/guard_generated_code.py",
+   "tools/hooks/guard_heredoc.py",
+   "tools/hooks/guard_idle_machine.py",
+   "tools/hooks/guard_idle_poll.py",
+   "tools/hooks/guard_machine_worktrees.py",
+   "tools/hooks/guard_mutation_read.py",
+   "tools/hooks/guard_push.py",
+   "tools/hooks/guard_suite_running.py",
+   "tools/hooks/guard_unfinished.py",
+   "tools/hooks/hook_env.py",
+   "tools/hooks/liveness.py",
+   "tools/hooks/shellin.py",
+   "tools/mutate.py",
+   "tools/mutate2.py"
+  ]
+ },
+ "_why": "Where the verification bootstrap lives, and every file this project keeps elsewhere, keeps different, or does not install.",
+ "stamp.ps1": {
+  "not_installed": "CTRMap's stamp.ps1 is the original the bundle's copy was adapted from, pointed at CTRMap's own src and build/classes, and its build.ps1 writes it."
+ },
+ "tools/require_build.py": {
+  "not_installed": "CTRMap's require_build.py is the original the bundle's copy was adapted from; its test.ps1 and its Java suites read this one, with CTRMap's own roots."
+ }
+}

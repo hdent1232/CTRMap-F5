@@ -2674,6 +2674,69 @@
     "src"
    ],
    "must_say": "FAIL: 'Clone zone...' is NOT pulled back into the form by GroupLayout"
+  },
+  {
+   "id": "liveness-vendored-stops-at-its-folder",
+   "why": "The bootstrap's hooks, installed beside this project's own, import nothing from the project and cannot ask liveness.alive. Measured on the install, 2026-09-25: 1 of the 38 files it brought (its blocked-runner guard) turned LivenessProbeTest red, making this rule and the bundle's design each impossible under the other.",
+   "file": "tools/guard/liveness_check.py",
+   "find": "        if _HAND_ROLLED.search(body) and own:\n",
+   "replace": "        if _HAND_ROLLED.search(body):\n",
+   "suite": "ctrmap.tests.LivenessProbeTest",
+   "args": [
+    "."
+   ],
+   "must_say": "VENDORED: the bootstrap's hooks answer it in their own folder",
+   "no_rebuild": true
+  },
+  {
+   "id": "liveness-vendored-wrong-answer-still-refused",
+   "why": "The cheapest way past: exempt the bootstrap's folder from every rule, so an os.kill probe walks in with the vendored code - the probe that, measured against the process table, called three live processes dead here.",
+   "file": "tools/guard/liveness_check.py",
+   "find": "        if _OS_KILL.search(code) and not _BRANCHES.search(shell):\n",
+   "replace": "        if _OS_KILL.search(code) and not _BRANCHES.search(shell) and own:\n",
+   "suite": "ctrmap.tests.LivenessProbeTest",
+   "args": [
+    "."
+   ],
+   "must_say": "a WRONG answer in their folder is refused like anywhere else",
+   "no_rebuild": true
+  },
+  {
+   "id": "liveness-vendored-never-this-projects-folder",
+   "why": "A declaration naming this project's own hooks folder as the bootstrap's would exempt all 16 of this project's own guards (hooks_wired's count) from its one-answer rule.",
+   "file": "tools/guard/liveness_check.py",
+   "find": "    if folder == os.path.normcase(os.path.abspath(os.path.join(root, \".claude\", \"hooks\"))):\n        return None\n",
+   "replace": "",
+   "suite": "ctrmap.tests.LivenessProbeTest",
+   "args": [
+    "."
+   ],
+   "must_say": "exempts nothing",
+   "no_rebuild": true
+  },
+  {
+   "id": "work-order-reads-code-not-docstrings",
+   "why": "The frozen-tree rule matched text: of the 4 tools it matched, 1 - the bootstrap's whole_tree.py - names mutation_baseline.json only once, in a docstring example, and resets nothing, and was counted as a measurement owing the work order.",
+   "file": "src/ctrmap/tests/CommitGuardTest.java",
+   "find": "\t\t\tString src = pythonCode(new String(java.nio.file.Files.readAllBytes(py.toPath()),",
+   "replace": "\t\t\tString src = (new String(java.nio.file.Files.readAllBytes(py.toPath()),",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "must_say": "asks the work order before it starts [whole_tree.py]"
+  },
+  {
+   "id": "work-order-blanker-blanks-docstrings",
+   "why": "The blanker itself: of the 4 tools the rule matches, it is what separates the 1 documented mention from the 2 that really reset the tree, for every tool rather than only the one that surfaced it.",
+   "file": "src/ctrmap/tests/CommitGuardTest.java",
+   "find": "\t\tString noDocs = source.replaceAll(\"(?s)\\\"\\\"\\\".*?\\\"\\\"\\\"|'''.*?'''\", \"\\\"\\\"\");",
+   "replace": "\t\tString noDocs = source;",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "must_say": "DOCUMENTED: a tool that only DOCUMENTS the baseline"
   }
  ],
  "retired": [

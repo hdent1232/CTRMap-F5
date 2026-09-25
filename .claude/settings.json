@@ -12,6 +12,16 @@
             "statusMessage": "checking project policy"
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/bundle-hooks/dispatch.py\"",
+            "timeout": 1800
+          }
+        ]
       }
     ],
     "Stop": [
@@ -22,6 +32,28 @@
             "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_unfinished.py\"",
             "timeout": 20,
             "statusMessage": "checking nothing was left owed"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/bundle-hooks/dispatch.py\"",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/bundle-hooks/after_rules.py\"",
+            "timeout": 1800
           }
         ]
       }

@@ -154,6 +154,10 @@
    "clause_notes": {
     "The record must not be part of its own subject — exclude it by SHAPE, because excluding it by ignore-rule holds in your repository": "the subject digest covers everything git calls source MINUS dotfiles at the repository root, which is where the records live - a shape, not a list of names, because excluding the record by ignore-rule holds in this repository and fails in the scratch repositories the suites build, which carry no .gitignore at all. Proven by the plant test_a_record_at_the_ROOT_is_not_part_of_its_OWN_subject in the bootstrap bundle and by the control that drives it here"
    }
+  },
+  "A MEASUREMENT'S SCOPE IS DERIVED FROM THE TREE, NEVER FROM A LIST": {
+   "by": "tools/whole_tree.py",
+   "note": "the verification bootstrap's whole_tree.py, adapted to this tree (sources .java under src, records at the top): every module-keyed record - mutation_baseline.json - is held to the modules actually in src, its missing count may only fall, and it is asked at the write of the record itself (AT_RECORD)"
   }
  }
 }

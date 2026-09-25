@@ -196,3 +196,17 @@ never written by anything but the editor under the owner's own hand. Never run T
 Python — write the script to a file.
 
 **THE OWNER DOES THE IN-APP AND IN-GAME TESTING.** Suites cannot load the game.
+
+## Rules adopted from the verification bootstrap
+
+Stated verbatim from its CLAUDE.md, because a paraphrase is two rules. Every other rule it states, this file already did.
+
+**A MEASUREMENT'S SCOPE IS DERIVED FROM THE TREE, NEVER FROM A LIST.** Asked to measure
+everything, an agent wrote a list of six packages to sweep; eleven others held code. A month
+later three separate records each described the same third of the application, each internally
+consistent, each with its own ratchets, each passing its own tests, and nothing compared any of
+their key sets against what existed. **An internally consistent measurement of the wrong set
+looks exactly like a correct one.** Worse, the list was self-confirming: the six chosen were the
+six that already had tests, because a package without them produces a refusal that looks like
+the tool failing. Derive the scope by walking, and hold every module-keyed record to the tree -
+`tools/whole_tree.py`.

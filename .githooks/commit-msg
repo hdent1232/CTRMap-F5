@@ -1,7 +1,10 @@
 #!/bin/sh
 # Refuse a commit that fixes something and cannot notice the second one, and refuse a test count
 # that does not match the last recorded run. See tools/guard/commit_guard.py for what each
-# refusal cost the project it came from.
+# refusal cost the project it came from. Then the verification bootstrap's gate, and LAST its
+# stamp: a commit with no stamp was made past the gate, and every command after it is refused.
 #
 # Wire with:  git config core.hooksPath .githooks
-exec python tools/guard/commit_guard.py "$1"
+python tools/guard/commit_guard.py "$1" || exit 1
+python -B tools/commit_gate.py "$1" || exit 1
+exec python -B tools/gate_stamps.py stamp "$1"
