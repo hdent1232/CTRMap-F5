@@ -56,6 +56,8 @@ import time
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEDGER = os.path.join(HERE, "tests", "plants.json")
 LF = chr(10)
+sys.path.insert(0, os.path.join(HERE, "tools"))
+import bundle_hooks     # noqa: E402 - where THIS project keeps the bundle's hooks (`_hooks_at`)
 
 #: No console window for a child whose output is captured - Windows opens one for every
 #: console process unless told otherwise, and a gate that blinks windows at every commit
@@ -707,6 +709,24 @@ def add(entries, drive=None, root=None, replace=False):
     return 0, out + ["recorded %d plant(s); every one reddened its named test" % len(entries)]
 
 
+def hook_relocations(theirs, hooks, relocated=None):
+    """{bundle path: project path} for every plant on a HOOK, when this project keeps the bundle's
+    hooks somewhere other than `.claude/hooks`.
+
+    `_hooks_at` moves the whole folder with ONE declaration, and this read only per-file `at`: on
+    CTRMap, whose own guard stack is in `.claude/hooks`, a merge aimed 19 plants at files that are
+    not the bundle's there - one of them at CTRMap's own `guard_fanout.py`. Where the hooks are is
+    `bundle_hooks.folder`'s answer, the one every tool and test already asks.
+    """
+    relocated = relocated or {}
+    prefix = bundle_hooks.DEFAULT + "/"
+    if hooks == bundle_hooks.DEFAULT:
+        return {}
+    return {entry["file"]: hooks + "/" + entry["file"][len(prefix):]
+            for entry in theirs.values()
+            if str(entry.get("file") or "").startswith(prefix) and entry["file"] not in relocated}
+
+
 def merge_from(other_root):
     """(exit code, lines): adopt another ledger's plants for the tests installed here."""
     try:
@@ -722,6 +742,7 @@ def merge_from(other_root):
             return 1, ["REFUSING: %s cannot be read (%s)" % (DECLARATIONS, bad)]
     relocated = {rel: entry["at"] for rel, entry in declared.items()
                  if isinstance(entry, dict) and entry.get("at")}
+    relocated.update(hook_relocations(theirs, bundle_hooks.folder(HERE), relocated))
     apart = {rel for rel, entry in declared.items()
              if isinstance(entry, dict) and ("diverged" in entry or "not_installed" in entry)}
     installed = set(os.listdir(os.path.join(HERE, "tests")))

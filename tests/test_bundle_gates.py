@@ -541,6 +541,42 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
         self.assertEqual(tiers.below(self.tmp), ["tools/bare.py"],
                          "the derivation did not tell a declared rule from a detector")
 
+    def machinery_tree(self):
+        """A dispatched guard importing a helper that says no, and a loose module nobody asks."""
+        self.write(".claude/settings.json", '{"command": "python %s/dispatch.py"}' % OURS)
+        self.write(OURS + "/dispatch.py", "# the dispatcher" + LF)
+        self.write(OURS + "/bundle_rules.py", "# the mark" + LF)
+        self.write(OURS + "/guard_x.py", "import helper_x" + LF + "def main():" + LF
+                   + '    print("REFUSING: x")' + LF)
+        self.write(OURS + "/helper_x.py", 'WHY = "REFUSING: because"' + LF)
+        self.write(OURS + "/loose_y.py", 'WHY = "REFUSING: nobody asks me"' + LF)
+        self.write("CLAUDE.md", "# scratch" + LF)
+        return {OURS + "/" + name for name in ("helper_x.py", "loose_y.py")}
+
+    def test_a_module_a_dispatched_guard_imports_is_asked_where_the_guard_is(self):
+        """MACHINERY was a list of four names, and `request_ledger` - asked only by
+        `guard_requests` and `guard_fanout` - was refused as below the point of action by
+        CTRMap's first commit after it arrived. Imported by a dispatched guard is asked there."""
+        import tiers
+        self.machinery_tree()
+        self.assertEqual([r for r in tiers.below(self.tmp) if r.startswith(OURS + "/")],
+                         [OURS + "/loose_y.py"],
+                         "a module a dispatched guard imports was refused as nobody's")
+
+    def test_the_write_time_judge_derives_the_same_machinery(self):
+        import tiers
+        mine = self.machinery_tree()
+        self.addCleanup(setattr, tiers, "_root", tiers._root)
+        tiers._root = lambda: self.tmp
+        facts = {}
+        for base, _dirs, names in os.walk(self.tmp):
+            for name in names:
+                rel = os.path.relpath(os.path.join(base, name), self.tmp).replace(os.sep, "/")
+                facts[rel] = tiers.facts_of(rel, tiers.read(self.tmp, rel))
+        refused = [line.split(" ", 1)[0] for line in tiers.judge(facts)]
+        self.assertEqual(sorted(r for r in refused if r in mine), [OURS + "/loose_y.py"],
+                         "the write-time judge refused a module a dispatched guard imports")
+
     def test_an_exclusion_from_the_guards_must_carry_its_reason(self):
         import tiers
         self.assertEqual(tiers.excusals(), [])

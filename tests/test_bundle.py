@@ -1239,5 +1239,403 @@ class ACapturedChildOpensNoWINDOW(unittest.TestCase):
                                     "console window: pass creationflags=NO_WINDOW")
 
 
+# ------------------------------------------------------------------ the request ledger
+
+def typed(text, at):
+    return {"type": "user", "timestamp": at, "message": {"role": "user", "content": text}}
+
+
+def queued(text, at):
+    return {"type": "queue-operation", "operation": "enqueue", "timestamp": at, "content": text}
+
+
+def said(text, at):
+    return {"type": "assistant", "timestamp": at,
+            "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
+
+
+def tool_call(ident, name, given, at):
+    return {"type": "assistant", "timestamp": at, "message": {"role": "assistant", "content": [
+        {"type": "tool_use", "id": ident, "name": name, "input": given}]}}
+
+
+def tool_result(ident, text, at, error=False):
+    return {"type": "user", "timestamp": at, "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": ident, "is_error": error, "content": text}]}}
+
+
+class LedgerCase(unittest.TestCase):
+    """A scratch project, a fake session and a transcript this test writes - so nothing here
+    ever reads or pins a real session's ledger."""
+
+    def setUp(self):
+        import request_ledger
+        self.ledger = request_ledger
+        self.root = tempfile.mkdtemp(prefix="vb-ledger-")
+        self.addCleanup(shutil.rmtree, self.root, True)
+        os.makedirs(os.path.join(self.root, ".claude"))
+        self.session = "vb-test-%d-%d" % (os.getpid(), int(time.time() * 1000))
+        self.transcript = os.path.join(self.root, "t.jsonl")
+        self.rows = []
+        self.addCleanup(self._drop_mark)
+        self.addCleanup(setattr, request_ledger, "ROOT", request_ledger.ROOT)
+        request_ledger.ROOT = self.root
+
+    def _drop_mark(self):
+        try:
+            os.remove(self.ledger.mark_path(self.session, self.root))
+        except OSError:
+            pass
+
+    def add(self, *rows):
+        self.rows.extend(rows)
+        with io.open(self.transcript, "w", encoding="utf-8", newline=LF) as handle:
+            for row in self.rows:
+                handle.write(json.dumps(row) + LF)
+
+    def problems(self, last=None):
+        return self.ledger.problems(self.session, self.transcript, last, self.root)
+
+    def keys(self):
+        return [r["key"] for r in self.ledger.requests(self.rows)]
+
+    def items(self, *items):
+        """Replace the ledger's items: (request key, ask, status, said)."""
+        asked = self.ledger.requests(self.rows)
+        held, trouble = self.ledger.load(self.session, asked, self.root)
+        self.assertIsNone(trouble)
+        held["items"] = [{"id": "%s.%d" % (key, n), "request": key, "ask": ask,
+                          "status": status, "said": text}
+                         for n, (key, ask, status, text) in enumerate(items, 1)]
+        self.ledger.save(self.session, held, self.root)
+
+
+class AnOwnersRequestIsAccountedForBeforeTheTurnEnds(LedgerCase):
+    """`guard_promise` judges the WORDING of the last message, so a turn that did four of five
+    things and reported the four in the past tense passed it. Asked how "don't leave work
+    undone" was enforced, the answer was: by the sentence, not by the scope. The owner said: do
+    both - a ledger of what was asked, and a reviewer. This is the ledger."""
+
+    def test_an_unitemised_request_refuses_the_stop(self):
+        self.add(typed("build the ledger and the reviewer", "2026-01-01T00:00:01Z"))
+        found = self.problems()
+        self.assertTrue(any("not itemised" in f for f in found),
+                        "an un-itemised request let the turn end: %s" % found)
+
+    def test_the_ledger_starts_where_it_was_first_read_and_holds_every_request_after(self):
+        self.add(typed("an old request", "2026-01-01T00:00:01Z"),
+                 typed("the current one", "2026-01-01T00:00:02Z"))
+        found = self.problems()
+        self.assertEqual(len(found), 1, found)
+        self.assertIn(self.keys()[1], found[0])
+        self.add(typed("a later one", "2026-01-01T00:00:03Z"))
+        found = self.problems()
+        self.assertEqual(sorted(k for k in self.keys()[1:] if any(k in f for f in found)),
+                         sorted(self.keys()[1:]), "a request after the start was not held")
+
+    def test_an_open_item_refuses(self):
+        self.add(typed("do the thing", "2026-01-01T00:00:01Z"))
+        self.items((self.keys()[0], "do the thing", "open", None))
+        self.assertTrue(any("still open" in f for f in self.problems()))
+
+    def test_done_needs_a_call_AFTER_the_request_that_did_not_fail(self):
+        self.add(tool_call("t1", "Bash", {"command": "python build.py --all"},
+                           "2026-01-01T00:00:00Z"),
+                 tool_result("t1", "ok", "2026-01-01T00:00:00Z"),
+                 typed("build it", "2026-01-01T00:00:01Z"))
+        key = self.keys()[0]
+        self.items((key, "build it", "done", "built everything with `python build.py --all`"))
+        self.assertTrue(any("nothing checkable" in f for f in self.problems()),
+                        "evidence from before the request counted as the work")
+        self.add(tool_call("t2", "Bash", {"command": "python build.py --all"},
+                           "2026-01-01T00:00:02Z"),
+                 tool_result("t2", "Traceback", "2026-01-01T00:00:02Z", error=True))
+        self.assertTrue(any("nothing checkable" in f for f in self.problems()),
+                        "a call that FAILED counted as the work")
+        self.add(tool_call("t3", "Bash", {"command": "python build.py --all"},
+                           "2026-01-01T00:00:03Z"),
+                 tool_result("t3", "built", "2026-01-01T00:00:03Z"))
+        self.assertEqual(self.problems(), [], "real evidence after the request was refused")
+
+    def test_done_accepts_a_commit_made_after_the_request_and_not_one_before(self):
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t",
+                   GIT_COMMITTER_DATE="2026-06-01T00:00:00Z", GIT_AUTHOR_DATE="2026-06-01T00:00:00Z")
+        self.add()                                   # the file the commit carries
+        for argv in (["git", "init", "-q"], ["git", "add", "t.jsonl"],
+                     ["git", "commit", "-q", "-m", "work"]):
+            subprocess.run(argv, cwd=self.root, env=env, capture_output=True, timeout=60,
+                           creationflags=NO_WINDOW)
+        sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True,
+                             text=True, timeout=60, creationflags=NO_WINDOW).stdout.strip()
+        self.add(typed("commit the work", "2026-01-01T00:00:01Z"))
+        key = self.keys()[0]
+        text = "committed the work as %s, with its test beside it" % sha[:12]
+        self.items((key, "commit the work", "done", text))
+        self.assertEqual(self.problems(), [], "a commit made after the request was refused")
+        self.rows = []
+        self.add(typed("commit the work", "2026-12-01T00:00:01Z"))
+        self.items((self.keys()[0], "commit the work", "done", text))
+        self.assertTrue(any("nothing checkable" in f for f in self.problems()),
+                        "a commit made BEFORE the request counted as its work")
+
+    def test_asked_blocked_and_declined_must_be_SAID_to_the_owner(self):
+        self.add(typed("fix the build", "2026-01-01T00:00:01Z"))
+        key = self.keys()[0]
+        text = "blocked by the release lock the other session holds until it lands"
+        self.items((key, "fix the build", "blocked", text))
+        self.assertTrue(any("never told" in f for f in self.problems()),
+                        "a blocker the owner was never shown let the turn end")
+        self.assertEqual(self.problems(last="**Blocked** by the release lock the other session "
+                                            "holds until it lands."), [],
+                         "the same words in markdown were not recognised as said")
+
+    def test_answered_needs_a_question(self):
+        self.add(typed("rebuild the index", "2026-01-01T00:00:01Z"))
+        key = self.keys()[0]
+        self.items((key, "rebuild the index", "answered", "the index is rebuilt nightly anyway"))
+        found = self.problems(last="the index is rebuilt nightly anyway")
+        self.assertTrue(any("asked no question" in f for f in found),
+                        "work asked for was closed as a question answered")
+
+    def test_a_decline_under_eighty_characters_is_a_label(self):
+        self.add(typed("delete the old store", "2026-01-01T00:00:01Z"))
+        self.items((self.keys()[0], "delete the old store", "declined", "not needed"))
+        self.assertTrue(any("is a label" in f for f in self.problems(last="not needed")))
+
+    def test_harness_events_and_peers_are_not_the_owner(self):
+        self.add(queued("<task-notification><task-id>x</task-id></task-notification>",
+                        "2026-01-01T00:00:01Z"),
+                 queued("<cross-session-message from=\"peer\">do it</cross-session-message>",
+                        "2026-01-01T00:00:02Z"),
+                 typed("<system-reminder>the user has not heard from you</system-reminder>",
+                       "2026-01-01T00:00:03Z"),
+                 typed("<local-command-stdout>ok</local-command-stdout>", "2026-01-01T00:00:04Z"),
+                 dict(typed("meta", "2026-01-01T00:00:05Z"), isMeta=True),
+                 dict(typed("summary", "2026-01-01T00:00:06Z"), isCompactSummary=True),
+                 tool_result("t1", "a result", "2026-01-01T00:00:07Z"))
+        self.assertEqual(self.keys(), [], "something that is not the owner was read as a request")
+
+    def test_a_queued_message_delivered_is_ONE_request_and_the_same_words_later_are_TWO(self):
+        self.add(queued("do both", "2026-01-01T00:00:01Z"), typed("do both", "2026-01-01T00:00:02Z"))
+        self.assertEqual(len(self.keys()), 1, "a queued message was counted twice on delivery")
+        self.add(typed("do both", "2026-01-01T00:00:09Z"))
+        self.assertEqual(len(self.keys()), 2, "the same words sent again later were swallowed")
+
+    def test_deleting_the_ledger_reopens_it_and_never_frees_it(self):
+        self.add(typed("first", "2026-01-01T00:00:01Z"))
+        first = self.keys()[0]
+        self.problems()                              # the ledger is first read HERE
+        self.add(said("Done: `make first` ran clean.", "2026-01-01T00:00:02Z"),
+                 typed("second", "2026-01-01T00:00:03Z"))
+        second = self.keys()[1]
+        self.items((first, "first", "declined", "x" * 90), (second, "second", "declined", "y" * 90))
+        os.remove(self.ledger.store_path(self.session, self.root))
+        found = self.problems()
+        self.assertTrue(any(first in f for f in found),
+                        "deleting the ledger freed a request it held: %s" % found)
+
+
+class TheLedgersStoreIsWrittenOnlyByTheLedger(LedgerCase):
+    """Deleting the store only reopens it; what is left is WRITING it - a `done` typed in
+    without the verb, an item quietly removed. Every door a hook can see is shut, and a program
+    written to conceal that it reaches the store is named as what this cannot stop."""
+
+    def ask(self, payload):
+        import guard_requests
+        held = sys.stdin, sys.stdout, sys.stderr
+        sys.stdin, sys.stdout, sys.stderr = io.StringIO(json.dumps(payload)), io.StringIO(), \
+            io.StringIO()
+        try:
+            code = guard_requests.main()
+        finally:
+            out, err = sys.stdout.getvalue(), sys.stderr.getvalue()
+            sys.stdin, sys.stdout, sys.stderr = held
+        return code, out, err
+
+    def denied(self, payload):
+        return "permissionDecision" in self.ask(payload)[1]
+
+    def test_a_write_into_the_store_is_refused(self):
+        payload = {"tool_name": "Write", "tool_input": {
+            "file_path": os.path.join(self.root, ".claude", "requests", "s.json"),
+            "content": "{}"}}
+        self.assertTrue(self.denied(payload), "a write into the ledger's store went through")
+
+    def test_a_read_of_the_store_is_allowed(self):
+        payload = {"tool_name": "Read", "tool_input": {
+            "file_path": os.path.join(self.root, ".claude", "requests", "s.json")}}
+        self.assertFalse(self.denied(payload), "reading the ledger was refused")
+
+    def test_a_command_reaching_the_store_is_refused_in_every_spelling(self):
+        for command in ("rm -rf .claude/requests", "Remove-Item .claude\\requests\\s.json",
+                        "del %TEMP%\\" + self.ledger.MARKS + "\\x.txt"):
+            with self.subTest(command=command):
+                self.assertTrue(self.denied({"tool_name": "Bash", "tool_input": {
+                    "command": command}}), "a command deleting the ledger went through")
+
+    def test_the_ledgers_own_verbs_may_mention_it_and_hide_nothing_behind_them(self):
+        run = "python %s/request_ledger.py" % self.ledger.FOLDER
+        verb = run + " item abc \"move .claude/requests\""
+        self.assertFalse(self.denied({"tool_name": "Bash", "tool_input": {"command": verb}}),
+                         "the ledger's own verb was refused for the words of an item")
+        hidden = run + " show; rm .claude/requests/s.json"
+        self.assertTrue(self.denied({"tool_name": "Bash", "tool_input": {"command": hidden}}),
+                        "a command hid a deletion behind the ledger's own verb")
+
+    def test_the_end_of_a_turn_is_refused_and_an_unreadable_transcript_says_so(self):
+        self.add(typed("do the thing", "2026-01-01T00:00:01Z"))
+        code, _out, err = self.ask({"session_id": self.session, "transcript_path": self.transcript,
+                                    "hook_event_name": "Stop"})
+        self.assertEqual(code, 2, "an unaccounted request let the turn end")
+        self.assertIn("unaccounted for", err)
+        code, out, _err = self.ask({"session_id": self.session, "hook_event_name": "Stop",
+                                    "transcript_path": os.path.join(self.root, "missing.jsonl")})
+        self.assertEqual(code, 0)
+        self.assertIn("NOT checked", out, "an unreadable transcript passed in silence")
+
+    def test_only_the_end_of_the_owners_turn_is_judged(self):
+        self.add(typed("do the thing", "2026-01-01T00:00:01Z"))
+        for event in ("UserPromptSubmit", "SubagentStop"):
+            with self.subTest(event=event):
+                code, _out, err = self.ask({"session_id": self.session, "prompt": "hello",
+                                            "transcript_path": self.transcript,
+                                            "hook_event_name": event, "stop_hook_active": False})
+                self.assertEqual((code, err), (0, ""),
+                                 "a prompt or a subagent's stop was judged as the owner's turn")
+
+
+class ALedgerReviewIsIndependentAndReadNotRecorded(LedgerCase):
+    """The items are the agent's, and so is the cheapest way past the ledger: record fewer than
+    the request holds. The reviewer is shown the request verbatim, is launched with a prompt the
+    agent cannot word, and its verdict is read from what the harness wrote back."""
+
+    def setUp(self):
+        super().setUp()
+        with io.open(os.path.join(self.root, ".claude", "bundle-install.json"), "w",
+                     encoding="utf-8") as handle:
+            json.dump({"_review": {"model": "haiku"}}, handle)
+        self.add(typed("build the ledger and the reviewer", "2026-01-01T00:00:01Z"),
+                 tool_call("t1", "Bash", {"command": "python build.py ledger"},
+                           "2026-01-01T00:00:02Z"),
+                 tool_result("t1", "ok", "2026-01-01T00:00:02Z"))
+        self.key = self.keys()[0]
+        self.items((self.key, "build the ledger", "done",
+                    "the ledger is built: `python build.py ledger` ran clean"))
+
+    def prompt(self):
+        return self.ledger.owed_prompt(self.session, self.transcript, self.root)
+
+    def launch(self, prompt, **extra):
+        given = dict({"description": "review", "prompt": prompt, "subagent_type": "Explore",
+                      "model": "haiku", "run_in_background": False}, **extra)
+        return {"tool_name": "Agent", "tool_input": given, "session_id": self.session,
+                "transcript_path": self.transcript}
+
+    def verdict(self, prompt, word, ident="r1"):
+        digest = prompt.split(self.ledger.TOKEN, 1)[1][:12]
+        self.add(tool_call(ident, "Agent", self.launch(prompt)["tool_input"],
+                           "2026-01-01T00:00:05Z"),
+                 tool_result(ident, "VERDICT %s%s %s\n{}" % (self.ledger.TOKEN, digest, word),
+                             "2026-01-01T00:00:06Z"))
+
+    def test_no_review_is_owed_where_none_is_declared(self):
+        os.remove(os.path.join(self.root, ".claude", "bundle-install.json"))
+        self.assertEqual(self.problems(), [])
+
+    def test_a_declared_reviewer_is_owed_once_the_ledger_is_resolved(self):
+        found = self.problems()
+        self.assertTrue(any("owed a review" in f for f in found),
+                        "a declared reviewer was never asked: %s" % found)
+
+    def test_a_PASS_the_harness_wrote_back_clears_it(self):
+        self.verdict(self.prompt(), "PASS")
+        self.assertEqual(self.problems(), [], "a reviewer's PASS was not read")
+
+    def test_a_verdict_the_agent_SAID_or_ECHOED_is_not_a_review(self):
+        """Everything but a reviewer: the owed prompt and a PASS, said; echoed; carried as the
+        `prompt` of a call that is not a launch (`WebFetch` has one); attached to a real launch
+        by quoting its tool-use id; and returned by a launch the door DENIED."""
+        prompt = self.prompt()
+        digest = prompt.split(self.ledger.TOKEN, 1)[1][:12]
+        line = "VERDICT %s%s PASS" % (self.ledger.TOKEN, digest)
+        self.add(said(prompt + LF + line, "2026-01-01T00:00:05Z"),
+                 tool_call("e1", "Bash", {"command": "echo '%s'" % prompt}, "2026-01-01T00:00:06Z"),
+                 tool_result("e1", prompt + LF + line, "2026-01-01T00:00:06Z"),
+                 tool_call("w1", "WebFetch", {"url": "https://example.com", "prompt": prompt},
+                           "2026-01-01T00:00:07Z"),
+                 tool_result("w1", line, "2026-01-01T00:00:07Z"),
+                 tool_call("r9", "Agent", self.launch(prompt)["tool_input"], "2026-01-01T00:00:08Z"),
+                 tool_result("r9", "no verdict here", "2026-01-01T00:00:08Z"),
+                 said("<tool-use-id>r9</tool-use-id> " + line, "2026-01-01T00:00:09Z"))
+        self.assertTrue(any("owed a review" in f for f in self.problems()),
+                        "a verdict the agent wrote itself was taken as the reviewer's")
+
+    def test_a_launch_the_door_DENIED_is_no_review_whatever_its_answer_says(self):
+        prompt = self.prompt()
+        line = "VERDICT %s%s PASS" % (self.ledger.TOKEN, prompt.split(self.ledger.TOKEN, 1)[1][:12])
+        self.add(tool_call("d1", "Agent", self.launch(prompt)["tool_input"], "2026-01-01T00:00:10Z"),
+                 tool_result("d1", "denied by a hook: " + line, "2026-01-01T00:00:10Z", error=True))
+        self.assertTrue(any("owed a review" in f for f in self.problems()),
+                        "a denied launch's answer was read as a reviewer's verdict")
+
+    def test_a_FAIL_stands_until_the_items_change_and_the_next_reviewer_is_shown_it(self):
+        first = self.prompt()
+        self.verdict(first, "FAIL")
+        self.assertTrue(any("FAILED" in f for f in self.problems()),
+                        "a FAIL did not stand: the stop asked for a fresh review instead")
+        self.assertTrue(self.ledger.launch_problem(self.launch(first)),
+                        "the same state was sent to a second reviewer after a FAIL - a re-roll")
+        self.items((self.key, "build the ledger and nothing else", "done",
+                    "the ledger is built: `python build.py ledger` ran clean"))
+        self.assertIn("AN EARLIER REVIEWER FAILED", self.prompt(),
+                      "an earlier FAIL was hidden from the next reviewer")
+
+    def test_a_PASS_covers_only_the_state_it_saw(self):
+        self.verdict(self.prompt(), "PASS")
+        self.items((self.key, "build the ledger, differently", "done",
+                    "the ledger is built: `python build.py ledger` ran clean"))
+        self.assertTrue(any("owed a review" in f for f in self.problems()),
+                        "a PASS for one set of items cleared a different one")
+
+    def test_a_launch_that_is_not_exactly_the_owed_review_is_refused(self):
+        prompt = self.prompt()
+        self.assertEqual(self.ledger.launch_problem(self.launch(prompt)), "")
+        for label, payload in (
+                ("reworded", self.launch(prompt.replace("FAIL if", "Only fail if"))),
+                ("in the background", self.launch(prompt, run_in_background=True)),
+                ("another model", self.launch(prompt, model="opus")),
+                ("another agent", self.launch(prompt, subagent_type="general-purpose"))):
+            with self.subTest(label=label):
+                self.assertTrue(self.ledger.launch_problem(payload),
+                                "a reviewer handed a different prompt was allowed to run")
+
+    def test_the_fan_out_cap_counts_every_launch_but_the_owed_review(self):
+        import guard_fanout
+        state = os.path.join(self.root, "fanout-count")
+        self.addCleanup(setattr, guard_fanout, "STATE", guard_fanout.STATE)
+        guard_fanout.STATE = state
+
+        def decision(payload):
+            with io.open(state, "w", encoding="utf-8") as handle:
+                handle.write("%f,%d,0" % (time.time(), guard_fanout.AGENT_CAP))
+            held = sys.stdin, sys.stdout
+            sys.stdin, sys.stdout = io.StringIO(json.dumps(payload)), io.StringIO()
+            try:
+                guard_fanout.main()
+            except SystemExit:
+                pass
+            finally:
+                out = sys.stdout.getvalue()
+                sys.stdin, sys.stdout = held
+            return "deny" if "permissionDecision" in out else "allow"
+
+        prompt = self.prompt()
+        self.assertEqual(decision(self.launch(prompt)), "allow",
+                         "the owed review was counted against the fan-out cap")
+        self.assertEqual(decision(self.launch(prompt + " Also audit everything else.")), "deny",
+                         "a launch dressed as a review escaped the fan-out cap")
+
+
 if __name__ == "__main__":
     unittest.main()

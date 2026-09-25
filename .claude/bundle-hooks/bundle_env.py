@@ -37,7 +37,9 @@ ADAPT = ("PREFIX",)
 
 #: Variables this bundle does NOT own and must not rename. `CLAUDE_PROJECT_DIR` is set by the
 #: agent harness; prefixing it would read as unset and send a hook looking in the wrong tree.
-FOREIGN = ("CLAUDE_PROJECT_DIR",)
+#: `CLAUDE_CODE_SESSION_ID` is the harness naming the session a command runs in, which is how the
+#: request ledger's verbs find the transcript they account for.
+FOREIGN = ("CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID")
 
 
 def name(suffix):

@@ -86,8 +86,44 @@ MIN_REASON = 60
 #: A file that SAYS NO. Derived from its own text: a guard refuses in words or holds a ceiling.
 SAYS_NO = re.compile(r"REFUSING|refuse|_ceiling|ceiling\b", re.I)
 
-#: The hooks every dispatched guard runs ON rather than guards of their own.
-MACHINERY = ("dispatch", "bundle_shell", "bundle_env", "bundle_rules")
+#: The hooks every dispatched guard runs ON rather than guards of their own: the dispatcher, and
+#: every module a `guard_*.py` beside it imports - `machinery()`. This was a list of four names,
+#: and the fifth, `request_ledger`, was refused as "below the point of action" by the first
+#: commit on CTRMap after it arrived: a module only a dispatched guard asks is asked at the act.
+MACHINERY = ("dispatch",)
+
+
+def imported(text):
+    """The top-level names of the modules a file imports, or [] when it does not parse."""
+    try:
+        tree = ast.parse(text or "")
+    except SyntaxError:
+        return []
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            out.add(node.module.split(".")[0])
+    return sorted(out)
+
+
+def machinery(guard_imports):
+    """The names a hook folder's guards run ON: the dispatcher, and whatever its guards import."""
+    out = set(MACHINERY)
+    for names in guard_imports:
+        out.update(names)
+    return out
+
+
+def machinery_in(root, folder):
+    """`machinery` of the guards on disk in `folder`."""
+    try:
+        names = sorted(os.listdir(os.path.join(root, folder)))
+    except OSError:
+        return set(MACHINERY)
+    return machinery(imported(read(root, os.path.join(folder, name))) for name in names
+                     if name.startswith("guard_") and name.endswith(".py"))
 
 #: Adapted per project: see ADAPT.md.
 ADAPT = ("GUARD_DIRS", "NOT_GUARDS")
@@ -200,7 +236,7 @@ def at_action(root, rel, text, settings, gate, protected, by_dispatcher=None):
         return True
     folder = hook_folder_of(root, rel)
     if folder:
-        if stem.startswith("guard_") or stem in MACHINERY:
+        if stem.startswith("guard_") or stem in machinery_in(root, folder):
             return (dispatched(root, settings, folder) if by_dispatcher is None
                     else by_dispatcher)
         return os.path.basename(rel) in wired_from(settings, folder)
@@ -264,6 +300,7 @@ def facts_of(rel, text):
         out["protects"] = protects(text)
     if hook_folder_of(_root(), rel):
         out["discovers"] = discovers(text)
+        out["imports"] = imported(text)
     return out
 
 
@@ -292,8 +329,11 @@ def judge(facts):
         stem = os.path.splitext(os.path.basename(rel))[0]
         asked = any(bundle_rules.asked(root, kind, settings) for kind in held["declares"])
         folder = hook_folder_of(root, rel)
+        runs_on = machinery((held_ or {}).get("imports") or [] for rel_, held_ in facts.items()
+                            if folder and rel_.startswith(folder + "/")
+                            and os.path.basename(rel_).startswith("guard_"))
         hooked = bool(folder) and (
-            ((stem.startswith("guard_") or stem in MACHINERY) and by_dispatcher(folder))
+            ((stem.startswith("guard_") or stem in runs_on) and by_dispatcher(folder))
             or os.path.basename(rel) in wired_from(settings, folder))
         gated = (rel.startswith(".githooks/") or rel in gate) and protected
         if not (asked or hooked or gated):

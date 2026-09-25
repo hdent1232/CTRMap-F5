@@ -35,6 +35,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env      # noqa: E402  - one PREFIX renames every override
 import bundle_shell    # noqa: E402  - an agent launch, found by shape
+import request_ledger  # noqa: E402  - the one launch this cap does not count
 import time
 
 # One task-level Agent call is fine. A dozen is a screening campaign.
@@ -201,6 +202,11 @@ def main():
     # string "Agent" alone is one rename from off - the tool was called `Task` before it was
     # called `Agent` - which is the trigger-by-name defect this directory was rebuilt to remove.
     if tool in ("Agent", "Task") or (isinstance(payload, dict) and bundle_shell.launches(payload)):
+        # THE REVIEW THE PROJECT DECLARED IT CAN AFFORD IS NOT FAN-OUT. `_review` in its
+        # declarations is the owner's yes and its price; the launch must be exactly the prompt
+        # the ledger owes, one agent, on the declared model - anything else is counted as usual.
+        if request_ledger.is_owed_review(payload):
+            sys.exit(0)
         held = load()
         if held is None:
             # THE SAME DECISION AS THE WRITE BELOW, WHICH ALREADY REFUSES. Its comment says a

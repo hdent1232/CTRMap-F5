@@ -123,6 +123,54 @@
    "site": "instance",
    "why": "A REPAIR ROUTE INTO THE WRONG FOLDER. Spelled, a broken bundle guard beside a project's own stack could be repaired by nothing but git."
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_FAIL_stands_until_the_items_change_and_the_next_reviewer_is_shown_it": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a FAIL did not stand",
+   "new": "        if False:",
+   "old": "        if pairs and all(current.get(key) == state for key, state in pairs):",
+   "site": "evasion",
+   "why": "re-rolling the reviewer until it passes: the first version keyed a FAIL on the prompt's digest, which moves the moment the FAIL is read, so it never stood at all - found by this test on its first run, before any plant"
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_declared_reviewer_is_owed_once_the_ledger_is_resolved": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a declared reviewer was never asked",
+   "new": "    return []",
+   "old": "    return review_problems(held, asked, rows, config) if config else []",
+   "site": "instance",
+   "why": "the reviewer declared and never asked: the project pays for nothing and believes it has an independent check - the owner chose 'do both' because the ledger alone cannot see an item narrower than its request"
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_launch_that_is_not_exactly_the_owed_review_is_refused": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a reviewer handed a different prompt was allowed to run",
+   "new": "        if False:",
+   "old": "        if flat(prompt) != flat(wanted):",
+   "site": "elsewhere",
+   "why": "a reviewer the agent can word is not independent: one sentence softening what to fail is enough, and the measured review cost 11 calls and about $0.09 to produce a verdict that would then mean nothing"
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_launch_the_door_DENIED_is_no_review_whatever_its_answer_says": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a denied launch's answer was read as a reviewer's verdict",
+   "new": "        if not found:",
+   "old": "        if not found or call[\"error\"] is not False:",
+   "site": "elsewhere",
+   "why": "a launch the door refused still sits in the transcript, answered by the denial; read as a review, a reworded prompt that was never allowed to run would pass on whatever words the refusal happened to quote"
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_verdict_the_agent_SAID_or_ECHOED_is_not_a_review": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a verdict the agent wrote itself was taken as the reviewer's",
+   "new": "        found = [launch for launch in [call[\"input\"]]",
+   "old": "        found = [launch for launch in bundle_shell.launches({\"tool_input\": call[\"input\"]})",
+   "site": "elsewhere",
+   "why": "a `prompt` key read as a launch: WebFetch carries one, so fetching any page that prints PASS after the owed prompt would forge the whole review - found when the first plant here, an echo, did not redden and asked why not"
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_fan_out_cap_counts_every_launch_but_the_owed_review": {
+   "file": ".claude/bundle-hooks/guard_fanout.py",
+   "must_say": "a launch dressed as a review escaped the fan-out cap",
+   "new": "        if bundle_shell.launches(payload):",
+   "old": "        if request_ledger.is_owed_review(payload):",
+   "site": "evasion",
+   "why": "the exemption widened to any launch: the cap that stands between this project and another 96% of a weekly allowance in one day would count nothing, because every launch can carry a review token"
+  },
   "test_bundle.py::AReadIsAReadWhateverCarriesIt::test_a_MESSAGE_is_never_refused_by_the_machine_guards": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "MESSAGE",
@@ -284,6 +332,70 @@
    "site": "elsewhere",
    "why": "The shipped defect: `want me to` listed as a BLOCKER, and a claimed blocker exempts the whole message - two words appended to any promise made it pass."
   },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_a_queued_message_delivered_is_ONE_request_and_the_same_words_later_are_TWO": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a queued message was counted twice on delivery",
+   "new": "if False and pending.get(said):",
+   "old": "if row.get(\"type\") == \"user\" and pending.get(said):",
+   "site": "elsewhere",
+   "why": "a mid-turn message is written twice, queued and delivered - measured in this session, where 'do both' arrived that way; counting both makes one request two and the second is closed by pointing at the first"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_an_unitemised_request_refuses_the_stop": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "an un-itemised request let the turn end",
+   "new": "        if False:\n            out.append(\"request %s is not itemised",
+   "old": "        if not mine:\n            out.append(\"request %s is not itemised",
+   "site": "instance",
+   "why": "the ledger's first rule gone: a request with no item at all reads as accounted for, which is exactly how guard_promise let four of five things pass in the past tense - the failure the owner asked this ledger to close"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_asked_blocked_and_declined_must_be_SAID_to_the_owner": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a blocker the owner was never shown let the turn end",
+   "new": "                if False:",
+   "old": "                if not any(words(said) in text for text in spoken):",
+   "site": "elsewhere",
+   "why": "a refusal nobody is shown is a deletion: blocked or declined recorded in a file the owner never reads closes the request with nothing said - the one exit that stays open must be one the owner sees, in those words"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_deleting_the_ledger_reopens_it_and_never_frees_it": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "deleting the ledger freed a request it held",
+   "new": "    starts = [s for s in ((held or {}).get(\"since\"),) if s]",
+   "old": "    starts = [s for s in ((held or {}).get(\"since\"), mark) if s]",
+   "site": "evasion",
+   "why": "the cheapest way past the ledger: delete it, and it restarts at the newest request with every older one forgiven. The second copy of the start is what makes deletion reopen instead - one rm would otherwise clear a whole session's requests"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_done_accepts_a_commit_made_after_the_request_and_not_one_before": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a commit made BEFORE the request counted as its work",
+   "new": "True",
+   "old": "(after is None or int(stamp) >= after)",
+   "site": "elsewhere",
+   "why": "the commit half of the same rule: any hash that resolves - HEAD from yesterday - would evidence today's request, and this repository has 2,263 reachable commits to choose from"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_done_needs_a_call_AFTER_the_request_that_did_not_fail": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "evidence from before the request counted as the work",
+   "new": "if call[\"error\"] is False",
+   "old": "if call[\"index\"] > request[\"index\"] and call[\"error\"] is False",
+   "site": "elsewhere",
+   "why": "evidence placed by time, not by existence: without the index test, a command run an hour before the owner asked for the work is cited as having done it - one of 22,896 rows in this session's transcript would have served for most requests"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_harness_events_and_peers_are_not_the_owner": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "something that is not the owner was read as a request",
+   "new": "EVENTS = re.compile(r\"^\\s*<(",
+   "old": "EVENTS = re.compile(r\"^\\s*<(task-notification|",
+   "site": "elsewhere",
+   "why": "a background task's notification read as the owner speaking: this session queued dozens of them, and each would become a request the agent can itemise and close at will, burying the real ones among its own"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_the_ledger_starts_where_it_was_first_read_and_holds_every_request_after": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a request after the start was not held",
+   "new": "        return asked[-1:]",
+   "old": "        return asked[keys.index(since):]",
+   "site": "elsewhere",
+   "why": "a ledger that holds only the LATEST request lets every earlier one go the moment the owner says anything else - the owner sent 28 messages in this session, and only the last would ever have been held"
+  },
   "test_bundle.py::EveryEnvironmentNameComesFromONEPlace::test_a_name_hidden_in_a_CONSTANT_is_still_a_hardcoded_read": {
    "file": ".claude/bundle-hooks/bundle_env.py",
    "must_say": "SOMEONE_ALLOW_X",
@@ -379,6 +491,46 @@
    "old": "\"passed - it has not been asked.\" % (name, type(exc).__name__, exc)), \"\"",
    "site": "instance",
    "why": "The shipped defect restored: `ask` returns two values on the load-failure branch and three elsewhere, so the one branch whose job is to report a broken guard raises ValueError instead."
+  },
+  "test_bundle.py::TheLedgersStoreIsWrittenOnlyByTheLedger::test_a_command_reaching_the_store_is_refused_in_every_spelling": {
+   "file": ".claude/bundle-hooks/guard_requests.py",
+   "must_say": "a command deleting the ledger went through",
+   "new": "        if False and not",
+   "old": "        if DOORS.search(command or \"\") and not",
+   "site": "elsewhere",
+   "why": "the command half of the doors: rm, Remove-Item and del reach the store and its start mark in three spellings, and a guard that only watched the Write tool would stop one channel of four"
+  },
+  "test_bundle.py::TheLedgersStoreIsWrittenOnlyByTheLedger::test_a_write_into_the_store_is_refused": {
+   "file": ".claude/bundle-hooks/guard_requests.py",
+   "must_say": "a write into the ledger's store went through",
+   "new": "    if False:",
+   "old": "    if named and not bundle_shell.reads_only(payload):",
+   "site": "instance",
+   "why": "a Write straight into the store records done with no verb and no check at the moment of writing - the same shape as a stamp written by anything but the gate, which this bundle refuses at every door it can see"
+  },
+  "test_bundle.py::TheLedgersStoreIsWrittenOnlyByTheLedger::test_only_the_end_of_the_owners_turn_is_judged": {
+   "file": ".claude/bundle-hooks/guard_requests.py",
+   "must_say": "a prompt or a subagent's stop was judged as the owner's turn",
+   "new": "    if False:\n        return 0",
+   "old": "    if payload.get(\"hook_event_name\") not in (None, \"Stop\"):\n        return 0",
+   "site": "elsewhere",
+   "why": "a turn end asked by shape alone: SubagentStop has Stop's shape and a subagent's transcript, whose brief would read as the owner and keep every subagent from finishing; and exit 2 on UserPromptSubmit swallows the owner's message - two wirings away from a lockout like the seven hours on 2026-09-24"
+  },
+  "test_bundle.py::TheLedgersStoreIsWrittenOnlyByTheLedger::test_the_end_of_a_turn_is_refused_and_an_unreadable_transcript_says_so": {
+   "file": ".claude/bundle-hooks/guard_requests.py",
+   "must_say": "an unaccounted request let the turn end",
+   "new": "    sys.stderr.write(refusal(found) + LF)\n    return 0",
+   "old": "    sys.stderr.write(refusal(found) + LF)\n    return 2",
+   "site": "elsewhere",
+   "why": "a refusal printed with exit 0 is advice: the harness ends the turn anyway, and the Workflow block in this bundle once shipped with exactly that shape - installed, wired, and an allow on every call"
+  },
+  "test_bundle.py::TheLedgersStoreIsWrittenOnlyByTheLedger::test_the_ledgers_own_verbs_may_mention_it_and_hide_nothing_behind_them": {
+   "file": ".claude/bundle-hooks/guard_requests.py",
+   "must_say": "hid a deletion behind the ledger's own verb",
+   "new": "LEDGER_RUN.search(command)",
+   "old": "bundle_shell.every_command_is(\n                command, LEDGER_RUN.match)",
+   "site": "evasion",
+   "why": "the escape asked per LINE, not per command - the defect this bundle already paid for twice, where `git status; <anything>` was the way out of two refusals; here one ledger verb in front would carry any deletion through"
   },
   "test_bundle.py::ThePowerShellSpellingIsTheSameAct::test_Select_Object_Last_buffers_like_tail": {
    "file": ".claude/bundle-hooks/guard_background_pipe.py",
@@ -922,6 +1074,14 @@
    "site": "elsewhere",
    "why": "A real hook's git call unbounded again - asked on every tool call, so one git that holds its index lock would hang every command in the session."
   },
+  "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_a_module_a_dispatched_guard_imports_is_asked_where_the_guard_is": {
+   "file": "tools/tiers.py",
+   "must_say": "a module a dispatched guard imports was refused as nobody's",
+   "new": "        if stem.startswith(\"guard_\") or stem in (\"dispatch\", \"bundle_shell\", \"bundle_env\", \"bundle_rules\"):",
+   "old": "        if stem.startswith(\"guard_\") or stem in machinery_in(root, folder):",
+   "site": "elsewhere",
+   "why": "machinery as a list of four names: request_ledger, asked only by two dispatched guards, was refused as below the point of action at CTRMap's first commit after it arrived - the check path, found by the catch-up rehearsal"
+  },
   "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_a_record_covering_LESS_of_the_tree_is_refused_at_its_write": {
    "file": "tools/whole_tree.py",
    "must_say": "a record that dropped a module was written over its ceiling",
@@ -945,6 +1105,14 @@
    "old": "                  for stem, why in NOT_GUARDS.items() if len(str(why)) < MIN_REASON)",
    "site": "evasion",
    "why": "THE CHEAPEST WAY TO ZERO GUARDS BELOW ACTION IS TO STOP CALLING THEM GUARDS. With the reason unread, any detector is excused by adding its name to a dict, and `every guard at the point of action` stays true while one sits at the commit."
+  },
+  "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_the_write_time_judge_derives_the_same_machinery": {
+   "file": "tools/tiers.py",
+   "must_say": "the write-time judge refused a module a dispatched guard imports",
+   "new": "            ((stem.startswith(\"guard_\") or stem in (\"dispatch\", \"bundle_shell\", \"bundle_env\", \"bundle_rules\")) and by_dispatcher(folder))",
+   "old": "            ((stem.startswith(\"guard_\") or stem in runs_on) and by_dispatcher(folder))",
+   "site": "elsewhere",
+   "why": "the same list at the write: the judge asked of every hook-folder write kept its own copy of the four names, so fixing the check path alone would refuse the same module at the write - two readings of one rule, which is how DT's copy got a fifth name by hand"
   },
   "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_tiers_refuses_a_guard_nothing_asks_and_credits_one_a_wired_hook_asks": {
    "file": "tools/tiers.py",
