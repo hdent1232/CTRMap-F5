@@ -179,6 +179,14 @@
    "site": "elsewhere",
    "why": "a launch the door refused still sits in the transcript, answered by the denial; read as a review, a reworded prompt that was never allowed to run would pass on whatever words the refusal happened to quote"
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_review_is_read_from_its_verdict_so_no_reader_is_handed_the_harness_preamble": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a review was recorded with the harness's words in front of the reviewer's",
+   "new": "        own = answer\n",
+   "old": "        own = answer[found[-1].start():] if found else answer\n",
+   "site": "instance",
+   "why": "THE FIRST REAL REVIEW OF A LEDGER FAILED IT OVER THE HARNESS'S OWN WORDS. Two readers sliced a reviewer's answer from its start, and the harness opens every subagent result with a paragraph of its own, so the next reviewer was shown that paragraph cut off before the verdict and called the earlier failure incomplete. The answer is cut at its verdict where it is read now, so no reader of a review - including one written later - can be handed it."
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_verdict_the_agent_SAID_or_ECHOED_is_not_a_review": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a verdict the agent wrote itself was taken as the reviewer's",
@@ -194,6 +202,14 @@
    "old": "        if request_ledger.is_owed_review(payload):",
    "site": "evasion",
    "why": "the exemption widened to any launch: the cap that stands between this project and another 96% of a weekly allowance in one day would count nothing, because every launch can carry a review token"
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_next_reviewer_is_shown_what_was_left_undone_however_much_was_checked_first": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "the next reviewer was shown what the last one checked and not why it failed",
+   "new": "        why = None\n",
+   "old": "        why = left_undone(own) if found else None\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST 'A REVIEW IS READ FROM ITS VERDICT': keep the record starting at the verdict line, which the first test asks, and let the reasons fall past the cut. The first reader cut from the verdict fixed the preamble and still showed the next reviewer only what the last one had checked - the real FAILs put leftUndone after a provenByBreaking list longer than the slice, both times."
   },
   "test_bundle.py::AReadIsAReadWhateverCarriesIt::test_a_MESSAGE_is_never_refused_by_the_machine_guards": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
@@ -1113,6 +1129,46 @@
    "old": "        return not rest or rest[0] in _READS\n",
    "site": "instance",
    "why": "A REFUSAL THAT BLOCKS ITS OWN REPAIR. Refusing every command while a commit is ungated must leave `git reset` - the way out it names - able to run."
+  },
+  "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_a_change_to_the_planted_file_OR_the_named_test_selects_the_plant": {
+   "file": "tools/commit_gate.py",
+   "must_say": "a change to the TEST a plant names drove nothing",
+   "new": "                  and entry.get(\"file\") in changed)\n",
+   "old": "                  and (entry.get(\"file\") in changed or key.split(\"::\", 1)[0] in names))\n",
+   "site": "elsewhere",
+   "why": "A DIFFERENT HALF OF WHAT A PLANT PROVES. A plant is a defect AND the test that must notice it; a test rewritten so it no longer notices empties the plant as surely as a moved rule, and a selection that only asks about the planted file never drives it again."
+  },
+  "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_a_commit_that_is_NOT_a_fix_is_asked_too": {
+   "file": "tools/commit_gate.py",
+   "must_say": "a commit that is not a fix walked past a held plant it emptied",
+   "new": "                     + (held_plants_redden(files, keys=held, drive=redrive) if is_fix(message) else []))\n",
+   "old": "                     + held_plants_redden(files, keys=held, drive=redrive))\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: ask only a fix, as the new-plant rule does. The changes that emptied plants were refactors and features - a rule moved into a function the test now reaches instead, a second check added beside the first - and none of them called itself a fix."
+  },
+  "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_a_held_plant_that_stays_green_refuses_the_commit": {
+   "file": "tools/commit_gate.py",
+   "must_say": "a held plant that no longer reddened was let through",
+   "new": "        if False:\n            out.append(\"the held plant %s no longer reddens",
+   "old": "        if not red:\n            out.append(\"the held plant %s no longer reddens",
+   "site": "instance",
+   "why": "THE REFUSAL ITSELF, SWITCHED OFF: every held plant driven again and the answer ignored. Ten of 729 held plants on the project this came from had stopped reddening with nothing driving them, one emptied by the next edit to its own file the morning it was recorded."
+  },
+  "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_a_projects_OWN_held_plant_that_stays_green_refuses_the_commit": {
+   "file": "tools/commit_gate.py",
+   "must_say": "a project's own held plant that no longer reddened was let through",
+   "new": "    for key, driver in [(k, drive) for k in keys]:\n",
+   "old": "    for key, driver in [(k, drive) for k in keys] + [(k, prove) for k in own_keys]:\n",
+   "site": "instance",
+   "why": "THE PROJECT'S OWN LEDGER LEFT OUT. CTRMap proves its Java tests with 221 plants of its own, and a re-drive that reads only the bundle's ledger lets every one of them go vacuous under an edit to its file while the gate reports the commit clean."
+  },
+  "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_a_projects_OWN_plant_is_selected_by_its_file_or_its_suite": {
+   "file": "tools/commit_gate.py",
+   "must_say": "a change to the SUITE an own plant names drove nothing",
+   "new": "                  if entry.get(\"file\") in changed)\n",
+   "old": "                  if entry.get(\"file\") in changed or entry.get(\"suite\") in stems)\n",
+   "site": "elsewhere",
+   "why": "THE TEST'S HALF, IN THE PROJECT'S LEDGER. An own plant names the suite that must notice it, not a path; a selection that asks only about the planted file never drives a plant again when its suite is rewritten so it no longer notices."
   },
   "test_bundle_gates.py::EveryGateSubprocessIsBOUNDED::test_the_checker_finds_an_unbounded_call_and_passes_a_bounded_one": {
    "file": "tools/timeouts.py",

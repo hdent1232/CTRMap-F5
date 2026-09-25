@@ -167,6 +167,75 @@ class ACommitIsAskedWhatSections2And14Ask(unittest.TestCase):
                                                    drive=lambda k: (True, "red")), [])
 
 
+class AHeldPlantIsDrivenAgainWhenItsFileChanges(unittest.TestCase):
+    """A plant is watched red on the day it is recorded, and nothing drove it again. Measured on
+    the project this came from: 10 of 729 held plants no longer reddened, one emptied the same
+    morning by the next edit to its own file, and seven of the ten by a change to the plant's own
+    file. The commit that makes the change is where it is asked."""
+
+    HELD = {"test_x.py::C::test_t": {"file": "src/a.py"},
+            "test_y.py::D::test_u": {"file": "src/b.py"}}
+    TRAILER = LF + LF + "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" + LF
+
+    def setUp(self):
+        import commit_gate
+        self.gate = commit_gate
+
+    def test_a_change_to_the_planted_file_OR_the_named_test_selects_the_plant(self):
+        self.assertEqual(self.gate.held_plant_keys(["src/a.py"], self.HELD),
+                         ["test_x.py::C::test_t"], "a change to the planted file drove nothing")
+        self.assertEqual(self.gate.held_plant_keys(["tests/test_y.py"], self.HELD),
+                         ["test_y.py::D::test_u"],
+                         "a change to the TEST a plant names drove nothing - the test is half of "
+                         "what the plant proves")
+        self.assertEqual(self.gate.held_plant_keys(["README.md"], self.HELD), [])
+        self.assertIsNone(self.gate.held_plant_keys(None, self.HELD),
+                          "a commit git could not list was read as touching nothing")
+
+    def test_a_held_plant_that_stays_green_refuses_the_commit(self):
+        refused = self.gate.held_plants_redden(["src/a.py"], keys=["test_x.py::C::test_t"],
+                                               drive=lambda k: (False, "passed"))
+        self.assertTrue(any("no longer reddens" in line for line in refused),
+                        "a held plant that no longer reddened was let through: %r" % refused)
+        self.assertEqual(self.gate.held_plants_redden(["src/a.py"], keys=["test_x.py::C::test_t"],
+                                                      drive=lambda k: (True, "red")), [])
+        self.assertTrue(self.gate.held_plants_redden(None),
+                        "which plants a commit touches was UNKNOWN and read as none")
+
+    def test_a_commit_that_is_NOT_a_fix_is_asked_too(self):
+        """The cheapest way past: drive held plants only for a fix. The change that empties a
+        plant is usually a refactor or a feature, and says nothing about fixing anything."""
+        found = self.gate.problems("refactor(reader): the rule moves" + self.TRAILER,
+                                   files=["src/a.py"], keys=[], execute=False,
+                                   held=["test_x.py::C::test_t"],
+                                   redrive=lambda k: (False, "passed"))
+        self.assertTrue(any("no longer reddens" in line for line in found),
+                        "a commit that is not a fix walked past a held plant it emptied: %r"
+                        % found)
+
+    OWN = ("tools/guard/plants.json", "id", ["python", "prove.py", "{key}"])
+    OWN_HELD = [{"id": "p1", "file": "src/A.java", "suite": "ATest"},
+                {"id": "p2", "file": "src/B.java", "suite": "BTest"}]
+
+    def test_a_projects_OWN_plant_is_selected_by_its_file_or_its_suite(self):
+        """CTRMap proves its Java tests in its own ledger - 221 plants - and each names the file
+        it plants into and the suite that must notice."""
+        self.assertEqual(self.gate.held_own_plant_keys(["src/A.java"], self.OWN, self.OWN_HELD),
+                         ["p1"], "a change to an own plant's file drove nothing")
+        self.assertEqual(self.gate.held_own_plant_keys(["src/app/tests/BTest.java"], self.OWN,
+                                                       self.OWN_HELD),
+                         ["p2"], "a change to the SUITE an own plant names drove nothing")
+        self.assertEqual(self.gate.held_own_plant_keys(["README.md"], self.OWN, self.OWN_HELD), [])
+
+    def test_a_projects_OWN_held_plant_that_stays_green_refuses_the_commit(self):
+        refused = self.gate.held_plants_redden(["src/A.java"], keys=[],
+                                               drive=lambda k: (True, "red"), own_keys=["p1"],
+                                               prove=lambda k: (False, "passed"))
+        self.assertTrue(any("p1" in line and "no longer reddens" in line for line in refused),
+                        "a project's own held plant that no longer reddened was let through: %r"
+                        % refused)
+
+
 class EveryGateSubprocessIsBOUNDED(unittest.TestCase):
     """README section 16: thirteen and a half hours on 0.14 seconds of CPU."""
 

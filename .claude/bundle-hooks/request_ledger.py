@@ -105,6 +105,9 @@ VERDICT = re.compile(r"VERDICT\s+ledger-review:([0-9a-f]{12})\s+(PASS|FAIL)\b")
 REQUEST_LINE = re.compile(r"^\[request ([0-9a-f]{10}(?:-\d+)?) state ([0-9a-f]{8})\]", re.M)
 #: A request longer than this is shown to the reviewer cut, and says so.
 REQUEST_LIMIT = 8000
+#: An earlier FAIL longer than this is shown cut, to the next reviewer and in the refusal, and
+#: says so - a cut that does not say so was read by the first real reviewer as a broken failure.
+REASONS_LIMIT = 1500
 #: What the reviewer may spend checking evidence.
 REVIEW_CALLS = 8
 
@@ -533,6 +536,20 @@ def reviews(rows, made=None):
     because the door makes a review synchronous: a task notification matched by its tool-use id
     could be written into the agent's own message, attaching a PASS to a launch that never gave
     one.
+
+    AND ONLY THE REVIEWER'S OWN WORDS, from its verdict line on. The harness opens every
+    subagent's result with a paragraph of its own - "[Subagent hand-back] The text below is the
+    final report..." - and two readers sliced the answer from its start: the next reviewer's
+    prompt and the standing-failure refusal. Measured: the first real review of a ledger failed
+    it because the earlier failure it was shown "is incomplete/cut off", which it was - it was
+    that paragraph. Cut here, where the answer is read, a reader written later is handed the
+    same words; cut at each place it is shown, the next reader would be the next instance.
+
+    AND OF THOSE, THE VERDICT AND WHAT IT SAYS WAS LEFT UNDONE. The answer then opens with
+    `provenByBreaking`, what the reviewer checked, and puts the reasons last: the first two real
+    FAILs ran 1,570 and 2,098 characters, and a 600-character slice ended inside that first list
+    both times - the next reviewer was shown what had been checked and never why it failed. An
+    answer whose `leftUndone` cannot be read is kept whole from its verdict on, never dropped.
     """
     made = calls(rows) if made is None else made
     out = []
@@ -545,9 +562,46 @@ def reviews(rows, made=None):
         digest = prompt.split(TOKEN, 1)[1][:12]
         answer = call["result"] or ""
         found = [m for m in VERDICT.finditer(answer) if m.group(1) == digest]
+        own = answer[found[-1].start():] if found else answer
+        why = left_undone(own) if found else None
+        text = own if why is None else "%s - left undone: %s" % (found[-1].group(0), why)
         out.append({"digest": digest, "verdict": found[-1].group(2) if found else None,
-                    "text": answer, "prompt": prompt, "index": call["index"]})
+                    "text": text, "prompt": prompt, "index": call["index"]})
     return sorted(out, key=lambda r: r["index"])
+
+
+def left_undone(answer):
+    """The `leftUndone` a reviewer returned, as one line, or None when it cannot be read.
+
+    Read from the JSON the review prompt asks for - between the answer's first `{` and its last
+    `}`, which is where a fenced block puts it. An entry may be a sentence or an object (the real
+    reviewers wrote `{"item": ..., "issue": ..., "severity": ...}`), and every field is kept.
+    """
+    start, end = answer.find("{"), answer.rfind("}")
+    if not 0 <= start < end:
+        return None
+    try:
+        held = json.loads(answer[start:end + 1])
+    except ValueError:
+        return None
+    entries = held.get("leftUndone") if isinstance(held, dict) else None
+    if not isinstance(entries, list) or not entries:
+        return None
+    said = []
+    for entry in entries:
+        if isinstance(entry, dict):
+            said.append(", ".join("%s: %s" % (key, flat(value)) for key, value in entry.items()))
+        else:
+            said.append(flat(entry))
+    return " | ".join(said)
+
+
+def shown(text, limit=REASONS_LIMIT):
+    """A review as a reader shows it: whole up to `limit`, and past it cut WITH the count."""
+    text = flat(text)
+    if len(text) <= limit:
+        return text
+    return "%s [... %d more characters not shown]" % (text[:limit], len(text) - limit)
 
 
 def owed(held, asked, rows, made=None):
@@ -568,7 +622,7 @@ def earlier_failures(key, rows, made=None):
     out = []
     for review in reviews(rows, made):
         if review["verdict"] == "FAIL" and key in dict(REQUEST_LINE.findall(review["prompt"])):
-            out.append(flat(review["text"])[:600])
+            out.append(shown(review["text"]))
     return out[-2:]
 
 
@@ -652,7 +706,7 @@ def review_problems(held, asked, rows, config, made=None):
     if failed:
         return ["the reviewer FAILED this ledger, and nothing it reviewed has changed since - "
                 "change the items or the work it named; the next reviewer is shown its "
-                "reasons:" + LF + "    " + flat(failed["text"])[:900]]
+                "reasons:" + LF + "    " + shown(failed["text"])]
     prompt = review_prompt(owing, rows, made)
     digest = prompt.split(TOKEN, 1)[1][:12]
     mine = [r for r in done if r["digest"] == digest]

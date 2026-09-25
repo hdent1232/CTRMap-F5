@@ -1721,6 +1721,56 @@ class ALedgerReviewIsIndependentAndReadNotRecorded(LedgerCase):
         self.assertIn("AN EARLIER REVIEWER FAILED", self.prompt(),
                       "an earlier FAIL was hidden from the next reviewer")
 
+    def test_a_review_is_read_from_its_verdict_so_no_reader_is_handed_the_harness_preamble(self):
+        """The harness opens a subagent's result with a paragraph of its own, and two readers
+        sliced the answer from its start - the first real review of a ledger failed it because
+        the earlier failure it was shown was that paragraph, cut off before the verdict. The
+        RECORD is asked first, because a cut made there reaches a reader nobody has written yet;
+        then both readers there are, the refusal while the FAIL stands and the next prompt.
+
+        IN PROSE, NOT JSON: a `leftUndone` the ledger can read is found wherever the answer
+        starts, so a JSON answer passes this with the verdict cut deleted - measured, the plant
+        for it stopped reddening the moment `leftUndone` was read. The cut is what keeps a
+        reviewer who answered in sentences from being shown the harness's paragraph instead."""
+        import request_ledger
+        prompt = self.prompt()
+        digest = prompt.split(self.ledger.TOKEN, 1)[1][:12]
+        preamble = "[Subagent hand-back] " + "The report follows, framed by the harness. " * 30
+        verdict = "VERDICT %s%s FAIL" % (self.ledger.TOKEN, digest)
+        reason = "the README half of the request was never done"
+        self.add(tool_call("r1", "Agent", self.launch(prompt)["tool_input"], "2026-01-01T00:00:05Z"),
+                 tool_result("r1", preamble + LF + verdict + LF + "Left undone: " + reason + ".",
+                             "2026-01-01T00:00:06Z"))
+        recorded = request_ledger.reviews(self.rows)[-1]["text"]
+        self.assertTrue(recorded.startswith(verdict),
+                        "a review was recorded with the harness's words in front of the reviewer's: "
+                        "%r" % recorded[:80])
+        self.assertIn(reason, LF.join(self.problems()),
+                      "the standing FAIL's refusal showed the harness's preamble, not its reasons")
+        self.items((self.key, "build the ledger and nothing else", "done",
+                    "the ledger is built: `python build.py ledger` ran clean"))
+        self.assertIn(reason, self.prompt(),
+                      "the next reviewer was shown the harness's preamble, not the failure's reasons")
+
+    def test_the_next_reviewer_is_shown_what_was_left_undone_however_much_was_checked_first(self):
+        """The prompt asks for `provenByBreaking` before `leftUndone`, so a reviewer that checked a
+        lot puts its reasons past any fixed cut: the first two real FAILs ran 1,570 and 2,098
+        characters, and a 600-character slice ended inside the first list both times."""
+        prompt = self.prompt()
+        digest = prompt.split(self.ledger.TOKEN, 1)[1][:12]
+        checked = ["checked file number %d and found it as the item said" % n for n in range(40)]
+        left = [{"item": self.key + ".1", "issue": "the README half of the request was never done",
+                 "severity": "high"}]
+        answer = LF.join(["VERDICT %s%s FAIL" % (self.ledger.TOKEN, digest), "```json",
+                          json.dumps({"provenByBreaking": checked, "batteryGreen": None,
+                                      "leftUndone": left}), "```"])
+        self.add(tool_call("r1", "Agent", self.launch(prompt)["tool_input"], "2026-01-01T00:00:05Z"),
+                 tool_result("r1", answer, "2026-01-01T00:00:06Z"))
+        self.items((self.key, "build the ledger and nothing else", "done",
+                    "the ledger is built: `python build.py ledger` ran clean"))
+        self.assertIn("issue: the README half of the request was never done", self.prompt(),
+                      "the next reviewer was shown what the last one checked and not why it failed")
+
     def test_a_PASS_covers_only_the_state_it_saw(self):
         self.verdict(self.prompt(), "PASS")
         self.items((self.key, "build the ledger, differently", "done",

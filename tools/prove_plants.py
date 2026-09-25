@@ -17,6 +17,9 @@ Nothing is reported as proven unless the plant actually reddened.
     python -B tools/prove_plants.py --add new.json     drive NEW plants, record them if all redden
     python -B tools/prove_plants.py --reanchor x.json  the same, replacing plants whose anchor
                                                        the code they plant into has moved past
+    python -B tools/prove_plants.py --retire r.json    {key: reason} - plants whose test now
+                                                       runs and passes, because what they name
+                                                       can no longer happen; driven first
     python -B tools/prove_plants.py --merge-from DIR   the same, for another ledger's plants whose
                                                        test file is installed here (a bundle's)
     python -B tools/prove_plants.py --recount          write the ceilings from the counts
@@ -709,6 +712,65 @@ def add(entries, drive=None, root=None, replace=False):
     return 0, out + ["recorded %d plant(s); every one reddened its named test" % len(entries)]
 
 
+#: A retirement's reason - what now stops the defect the plant named, so its test cannot notice
+#: it. Longer than a plant's `why`, because retiring is the cheaper of the two acts.
+MIN_RETIRE_REASON = 80
+
+
+def retire(reasons, drive=None, root=None, classes=None):
+    """(exit code, lines). Plants that can no longer redden, moved to `retired` with the reason -
+    each DRIVEN first, and refused unless its test ran and passed.
+
+    A PLANT CAN STOP REDDENING WITHOUT ANYTHING BEING WRONG. The defect it names can become one no
+    single substitution expresses: a second check added beside the first, a rollback that puts
+    back what an early return once had to prevent. Measured on this bundle's installer,
+    2026-09-25: a refused install is stopped by two returns and then a rollback, so the plant that
+    empties the first return has nothing left to show. Re-anchoring it would invent a defect for
+    the test to catch; leaving it would refuse every commit that touches the file.
+
+    NOT A WAY TO DROP A PLANT THAT WORKS. Refused while it still reddens; refused unless the run
+    came back as unittest's own `OK` - a stale anchor, a planted file that does not compile, a
+    skip or a hang is a plant to re-anchor, not a defect that became impossible; and a class left
+    with no plant at all counts as `owed` again, against the ceiling that only falls.
+    """
+    ledger = load()
+    held = ledger.get("plants") or {}
+    failed, out = [], []
+    for key, why in sorted(reasons.items()):
+        if key not in held:
+            failed.append("%s is not in the ledger" % key)
+        elif len(str(why or "").strip()) < MIN_RETIRE_REASON:
+            failed.append("%s: the reason is %d characters, and retiring needs %d - say what now "
+                          "stops the defect it named" % (key, len(str(why or "").strip()),
+                                                         MIN_RETIRE_REASON))
+    if failed:
+        return 1, failed
+    drive = drive or (lambda key, entry: drive_plant(key, entry, root))
+    for key in sorted(reasons):
+        reddened, detail = drive(key, held[key])
+        out.append("  %-6s %s" % ("red" if reddened else "PASSED", key))
+        if reddened:
+            failed.append("%s still reddens its test - it proves something, and retiring it "
+                          "would drop a working guard" % key)
+        elif str(detail).strip() != "OK":
+            failed.append("%s did not redden, but its test did not simply pass either (%s) - "
+                          "re-anchor it with `--reanchor`" % (key, str(detail).strip()[:160]))
+    if failed:
+        return 1, out + ["REFUSING to retire:"] + ["   " + line for line in failed]
+    before = json.loads(json.dumps(ledger))
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    for key, why in sorted(reasons.items()):
+        entry = dict(ledger["plants"].pop(key))
+        entry["retired"] = {"at": stamp, "why": str(why).strip()}
+        ledger.setdefault("retired", {})[key] = entry
+    ledger, problems = recount(ledger, before, classes)
+    if problems:
+        return 1, out + ["REFUSING to retire:"] + ["   " + line for line in problems]
+    write(ledger)
+    return 0, out + ["retired %d plant(s); each was driven and its test ran and passed"
+                     % len(reasons)]
+
+
 def reanchored(theirs, installed, relocated, held, declared_apart=()):
     """{key: entry} of another ledger's plants this project ALREADY holds, whose file, old or new
     have changed there since - planted where this project keeps the file.
@@ -790,7 +852,8 @@ def merge_from(other_root):
 #: Every flag this reads. An unknown one is REFUSED: `--reanchor`, typed before it existed, fell
 #: through to the default - driving every plant in the ledger - with nothing saying the argument
 #: had been ignored. An argument nothing reads is not a request that was honoured.
-FLAGS = ("--add", "--reanchor", "--merge-from", "--recount", "--only", "--owed", "--adopt")
+FLAGS = ("--add", "--reanchor", "--retire", "--merge-from", "--recount", "--only", "--owed",
+         "--adopt")
 
 
 def committed_ledger():
@@ -820,6 +883,15 @@ def main(argv):
             code, lines = add(entries, replace=(flag == "--reanchor"))
             print(LF.join(lines))
             return code
+    if "--retire" in argv:
+        try:
+            reasons = read_json(argv[argv.index("--retire") + 1])
+        except (IndexError, OSError, ValueError) as bad:
+            print("REFUSING: --retire takes a JSON file of {key: reason} (%s)" % bad)
+            return 1
+        code, lines = retire(reasons)
+        print(LF.join(lines))
+        return code
     if "--merge-from" in argv:
         code, lines = merge_from(argv[argv.index("--merge-from") + 1])
         print(LF.join(lines))

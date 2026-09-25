@@ -24,6 +24,9 @@ again. Each has a bill attached, from that project's history:
                       plant ledger holds an `instance` AND an `elsewhere` plant for it.
   a new plant         a fix records a NEW plant in `tests/plants.json`, and every new one is DRIVEN
                       here - planted, its one test watched red, restored - before the commit lands.
+  held plants         every plant HEAD already held whose planted file or named test this commit
+                      changes is DRIVEN again, on every commit, fix or not. A plant proven once can
+                      be emptied by the next edit to its own file, and nothing else drives it.
   Deferred-gap:       a message that ADMITS work outstanding ("still owed", "not done", "I have
                       not") carries `Deferred-gap: <80+ characters why the run could not close
                       it>`. README section 14, FIND IT AND FILE IT. Admissions only, measured: the
@@ -438,6 +441,135 @@ def fix_has_a_plant(message, keys=None, drive=None, own=None, added=None, prove=
     return out
 
 
+def head_plants(ledger=LEDGER):
+    """{key: entry} of the plants HEAD's ledger holds - {} when HEAD holds none, None when git
+    cannot say."""
+    done = _git(["show", "HEAD:" + ledger], text=False)
+    if done.returncode != 0:
+        return {}
+    try:
+        plants = json.loads(done.stdout.decode("utf-8")).get("plants")
+    except (ValueError, UnicodeDecodeError, AttributeError):
+        return None
+    return plants if isinstance(plants, dict) else {}
+
+
+def held_plant_keys(files, held=None):
+    """The plants HEAD already held whose planted file, or whose named test file, this commit
+    changes - None when either cannot be read.
+
+    A PLANT PROVEN ONCE IS NOT PROVEN FOREVER. It was watched red against the code of the day it
+    was recorded, and `fix_has_a_plant` drives only NEW plants. A later change to the file it
+    plants into, or to the test it names, can leave it planting a defect nothing notices any more:
+    a rule moved to a function the test now reaches instead, a second check added beside the first,
+    a test whose example stopped moving. Measured on the project this bundle came from, 2026-09-25:
+    of 729 held plants, 10 no longer reddened - one of them recorded red that morning and emptied
+    by the next edit to its own file - and in seven of the ten the change that did it touched the
+    plant's own file. Nothing had driven any of them since the day each was added.
+    """
+    held = head_plants() if held is None else held
+    if files is None or held is None:
+        return None
+    changed = {f.replace(chr(92), "/") for f in files}
+    names = {f.rsplit("/", 1)[-1] for f in changed}
+    return sorted(key for key, entry in held.items()
+                  if isinstance(entry, dict)
+                  and (entry.get("file") in changed or key.split("::", 1)[0] in names))
+
+
+def _own_entries(held, key):
+    """{id: entry} of a project's own ledger, keyed or listed - None when it is neither."""
+    if isinstance(held, dict):
+        return {k: e for k, e in held.items() if isinstance(e, dict)}
+    if isinstance(held, list):
+        return {e[key]: e for e in held if isinstance(e, dict) and isinstance(e.get(key), str)}
+    return None
+
+
+def held_own_plant_keys(files, own=None, held=None):
+    """The plants of the project's OWN ledger (`_tests.ledger`) that HEAD held, whose planted file
+    this commit changes or whose `suite` is the name of a file it changes - [] when the project
+    declares no such ledger, None when HEAD's copy of it cannot be read.
+
+    ONE PROJECT'S TESTS ARE PROVEN IN ITS OWN LEDGER, and those plants go vacuous exactly as the
+    bundle's do. Measured on CTRMap, 2026-09-25: 221 plants over 95 files, one driven in 43 s with
+    a rebuild and 16 s without - so a commit touching its busiest file drives about eight minutes
+    of them, and the whole ledger about two hours.
+    """
+    own = project_ledger() if own is None else own
+    if not own:
+        return []
+    if files is None:
+        return None
+    path, key, _prove = own
+    if held is None:
+        done = _git(["show", "HEAD:" + path], text=False)
+        if done.returncode != 0:
+            return []
+        try:
+            held = json.loads(done.stdout.decode("utf-8")).get("plants")
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            return None
+    entries = _own_entries(held, key)
+    if entries is None:
+        return None
+    changed = {f.replace(chr(92), "/") for f in files}
+    stems = {os.path.splitext(f.rsplit("/", 1)[-1])[0] for f in changed}
+    return sorted(ident for ident, entry in entries.items()
+                  if entry.get("file") in changed or entry.get("suite") in stems)
+
+
+def held_plants_redden(files, keys=None, drive=None, own_keys=None, prove=None):
+    """Every held plant this commit could have emptied, driven again - on EVERY commit, in the
+    bundle's ledger and in the one the project proves its own tests with.
+
+    NOT ONLY A FIX. The change that empties a plant is usually not one: a refactor that moves a
+    rule out from under its plant, a feature that adds a second check beside the first. Measured
+    before building: 60 commits of that project would have driven a median of 43 plants each, 171
+    at the ninetieth percentile, at half a second a plant.
+    """
+    keys = held_plant_keys(files) if keys is None else keys
+    own = project_ledger()
+    own_keys = held_own_plant_keys(files, own) if own_keys is None else own_keys
+    if keys is None or own_keys is None:
+        return ["which held plants this commit touches cannot be read from git - UNKNOWN is not "
+                "none"]
+    if keys and drive is None:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import prove_plants
+        plants = json.load(io.open(os.path.join(ROOT, LEDGER), encoding="utf-8"))["plants"]
+
+        def drive(key):
+            if key not in plants:
+                return True, "not in the ledger being committed"
+            return prove_plants.drive_plant(key, plants[key])
+    if own_keys and prove is None:
+        try:
+            now = _own_entries(json.load(io.open(os.path.join(ROOT, own[0]), encoding="utf-8"))
+                               .get("plants"), own[1]) or {}
+        except (OSError, ValueError, AttributeError, TypeError):
+            now = None
+
+        def prove(key):
+            if now is None:
+                return False, "the project's own ledger %s cannot be read" % own[0]
+            if key not in now:
+                return True, "not in the ledger being committed"
+            return _prove_in_project(own[2], key)
+    out = []
+    for key, driver in [(k, drive) for k in keys] + [(k, prove) for k in own_keys]:
+        try:
+            red, detail = driver(key)
+        except Exception as exc:                     # noqa: BLE001 - a broken plant is a NO
+            red, detail = False, "%s: %s" % (type(exc).__name__, exc)
+        if not red:
+            out.append("the held plant %s no longer reddens its test after this change: %s - "
+                       "re-anchor it where the defect now lives (`python tools/prove_plants.py "
+                       "--reanchor <file>`), or make the test notice it again. A plant that "
+                       "cannot redden proves nothing." % (key, str(detail)[:200]))
+    return out
+
+
 #: ASKED OF THE MESSAGE BEFORE GIT IS STARTED. `.claude/hooks/guard_command_rules.py` hands every
 #: `git commit`'s message here, so a message the git hook would refuse is refused before the
 #: pre-commit gate spends its time reaching the same answer. The two checks that read what is
@@ -453,13 +585,14 @@ def message_problems(message, _root=None):
             + test_counts(message) + checker_resolves(message))
 
 
-def problems(message, files=None, keys=None, drive=None, execute=True):
-    """Every refusal, cheapest first; the plant drive runs last and only when the rest pass."""
+def problems(message, files=None, keys=None, drive=None, execute=True, held=None, redrive=None):
+    """Every refusal, cheapest first; the plant drives run last and only when the rest pass."""
     files = staged_files() if files is None else files
     cheap = (fix_touches_a_guard(message, files) + guard_claim(message) + deferred_gap(message)
              + coauthor(message) + test_counts(message)
              + checker_resolves(message, execute=execute))
-    return cheap or fix_has_a_plant(message, keys=keys, drive=drive)
+    return cheap or (fix_has_a_plant(message, keys=keys, drive=drive)
+                     + held_plants_redden(files, keys=held, drive=redrive))
 
 
 def main(argv):
