@@ -2763,6 +2763,19 @@
    ],
    "must_say": "COMMENTED: while a count that is only a comment is no count",
    "no_rebuild": true
+  },
+  {
+   "id": "guard-places-are-derived",
+   "why": "GUARD_DIRS listed 4 places and the bootstrap install relocated 2 more beside them - .claude/bundle-hooks and tests/ - so its payload-decoding fix, carrying 3 new tests and 3 plants, was refused as touching no place a guard could live.",
+   "file": "tools/guard/commit_guard.py",
+   "find": "    if any(f.startswith(d) for f in files for d in places):",
+   "replace": "    if any(f.startswith(d) for f in files for d in GUARD_DIRS):",
+   "suite": "ctrmap.tests.CommitGuardTest",
+   "args": [
+    "."
+   ],
+   "must_say": "the bundle's relocated hooks folder is a place a guard lives",
+   "no_rebuild": true
   }
  ],
  "retired": [

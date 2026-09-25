@@ -123,6 +123,30 @@
    "site": "instance",
    "why": "A REPAIR ROUTE INTO THE WRONG FOLDER. Spelled, a broken bundle guard beside a project's own stack could be repaired by nothing but git."
   },
+  "test_bundle.py::AHookPayloadIsReadAsTheUTF8TheHarnessWrote::test_no_entry_point_the_harness_runs_reads_stdin_any_other_way": {
+   "file": ".claude/bundle-hooks/after_rules.py",
+   "must_say": "an entry point reads its payload in the locale's code page",
+   "new": "        payload = json.load(sys.stdin)",
+   "old": "        payload = json.loads(bundle_shell.payload_text())   # UTF-8, not the locale's code page",
+   "site": "elsewhere",
+   "why": "the second entry point the harness runs, PostToolUse: fixing the dispatcher alone would have left every after-call rule judging a mangled path or command, the same defect one hook over"
+  },
+  "test_bundle.py::AHookPayloadIsReadAsTheUTF8TheHarnessWrote::test_the_dispatcher_hands_a_guard_the_text_the_harness_sent": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "a payload's non-ASCII text reached a guard mangled",
+   "new": "    raw = sys.stdin.read()",
+   "old": "    raw = bundle_shell.payload_text()           # UTF-8, never the locale's code page",
+   "site": "instance",
+   "why": "the dispatcher read its payload in the locale's code page: the request ledger's owed review, whose prompt quoted two ellipses, arrived mangled, was not the owed prompt, and the fan-out cap refused it twice - while every replay passed, because json.dumps escapes non-ASCII"
+  },
+  "test_bundle.py::AHookPayloadIsReadAsTheUTF8TheHarnessWrote::test_the_one_door_decodes_the_bytes_not_the_code_page": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "the payload door decoded the harness's bytes in the code page",
+   "new": "    return stream.read()",
+   "old": "    return buffer.read().decode(\"utf-8\", errors=\"replace\")",
+   "site": "evasion",
+   "why": "the cheapest way past the entry-point check: route every read through payload_text and have it read the text layer anyway - the AST is satisfied and every non-ASCII payload is as mangled as the day this was found"
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_FAIL_stands_until_the_items_change_and_the_next_reviewer_is_shown_it": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a FAIL did not stand",

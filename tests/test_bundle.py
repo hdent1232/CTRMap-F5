@@ -1239,6 +1239,71 @@ class ACapturedChildOpensNoWINDOW(unittest.TestCase):
                                     "console window: pass creationflags=NO_WINDOW")
 
 
+def stdin_reads(source):
+    """[line] of every read of `sys.stdin` itself - `.read()`, `.readline()`, `json.load(sys.stdin)`."""
+    out = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        stdin = [a for a in node.args if isinstance(a, ast.Attribute) and a.attr == "stdin"]
+        if isinstance(func, ast.Attribute) and func.attr in ("read", "readline", "readlines") \
+                and isinstance(func.value, ast.Attribute) and func.value.attr == "stdin":
+            out.append(node.lineno)
+        elif isinstance(func, ast.Attribute) and func.attr == "load" and stdin:
+            out.append(node.lineno)
+    return out
+
+
+class AHookPayloadIsReadAsTheUTF8TheHarnessWrote(unittest.TestCase):
+    """The harness writes a hook's payload as UTF-8, and `sys.stdin.read()` decodes a Windows pipe
+    as cp1252: every non-ASCII character reached every guard mangled. Found when the request
+    ledger's own review would not launch - its prompt quoted two ellipses, arrived as mojibake, was
+    no longer the owed prompt, and the fan-out cap counted it as ordinary. Every replay passed,
+    because `json.dumps` escapes non-ASCII: the test has to send the harness's BYTES."""
+
+    def test_the_dispatcher_hands_a_guard_the_text_the_harness_sent(self):
+        folder = tempfile.mkdtemp(prefix="vb-utf8-")
+        self.addCleanup(shutil.rmtree, folder, True)
+        for name in ("dispatch.py", "bundle_env.py", "bundle_shell.py"):
+            shutil.copyfile(os.path.join(HOOKS, name), os.path.join(folder, name))
+        with io.open(os.path.join(folder, "guard_echo.py"), "w", encoding="utf-8") as handle:
+            handle.write("import json, sys" + LF + "def main():" + LF
+                         + "    note = json.load(sys.stdin)['tool_input']['note']" + LF
+                         + "    if note != 'caf\\u00e9 \\u2026':" + LF
+                         + "        sys.stderr.write('MANGLED %r' % note)" + LF
+                         + "        return 2" + LF + "    return 0" + LF)
+        payload = {"tool_name": "Note", "tool_input": {"note": "café …"}}
+        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8")}
+        done = subprocess.run([sys.executable, "-B", os.path.join(folder, "dispatch.py")],
+                              input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                              capture_output=True, timeout=120, env=env, creationflags=NO_WINDOW)
+        said = (done.stdout + done.stderr).decode("utf-8", "replace")
+        self.assertEqual((done.returncode, "MANGLED" in said), (0, False),
+                         "a payload's non-ASCII text reached a guard mangled: %s" % said[-300:])
+
+    def test_the_one_door_decodes_the_bytes_not_the_code_page(self):
+        """A door that exists and still reads through the text layer satisfies the AST check and
+        fixes nothing - a Windows pipe IS a cp1252 text layer over UTF-8 bytes."""
+        import bundle_shell
+        pipe = io.TextIOWrapper(io.BytesIO("café …".encode("utf-8")), encoding="cp1252")
+        self.assertEqual(bundle_shell.payload_text(pipe), "café …",
+                         "the payload door decoded the harness's bytes in the code page")
+
+    def test_no_entry_point_the_harness_runs_reads_stdin_any_other_way(self):
+        """The harness runs the dispatcher and `after_rules`; a guard only ever reads the text
+        the dispatcher hands it. Every hook module that is not a guard reads its payload through
+        `bundle_shell.payload_text`, the one door, or not at all."""
+        found = []
+        for path in sorted(glob.glob(os.path.join(HOOKS, "*.py"))):
+            name = os.path.basename(path)
+            if name.startswith("guard_") or name == "bundle_shell.py":
+                continue
+            with io.open(path, encoding="utf-8") as handle:
+                found += ["%s:%d" % (name, line) for line in stdin_reads(handle.read())]
+        self.assertEqual(found, [], "an entry point reads its payload in the locale's code page")
+
+
 # ------------------------------------------------------------------ the request ledger
 
 def typed(text, at):

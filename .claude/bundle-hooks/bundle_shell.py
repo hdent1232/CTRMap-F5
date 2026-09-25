@@ -55,6 +55,7 @@ wrong file. `policy(__file__)` names the file that refused, wherever it was inst
 """
 import os
 import re
+import sys
 
 #: This folder, as a project path: `.claude/<the folder this file sits in>`.
 FOLDER = ".claude/" + os.path.basename(os.path.dirname(os.path.abspath(__file__)))
@@ -82,6 +83,24 @@ PATH_KEYS = ("file_path", "path", "notebook_path", "paths", "file_paths")
 WRITE_KEYS = ("content", "new_string", "edits", "new_source")
 
 LF = chr(10)
+
+
+def payload_text(stream=None):
+    """The hook payload, as the harness wrote it: UTF-8 bytes, decoded as UTF-8.
+
+    NOT IN THE LOCALE'S CODE PAGE. `sys.stdin.read()` decodes a Windows pipe as cp1252, so every
+    character outside ASCII reached every guard mangled - a path, a command, a prompt. Found when
+    the request ledger's own review could not be launched: its prompt quoted the owner's text with
+    two ellipses, each arrived as three code-page characters, the prompt was no longer the owed
+    one, and the fan-out cap counted it as an ordinary launch. Every replay passed, because
+    `json.dumps` escapes non-ASCII and hid it.
+    A stream already holding text - the dispatcher's own hand-off to a guard - is read as it is.
+    """
+    stream = sys.stdin if stream is None else stream
+    buffer = getattr(stream, "buffer", None)
+    if buffer is None:
+        return stream.read()
+    return buffer.read().decode("utf-8", errors="replace")
 
 
 def _walk(node, depth, out, trouble):

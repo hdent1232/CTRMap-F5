@@ -129,6 +129,37 @@ def source_digest(root=ROOT, exclude=()):
 #: runs; `tools/` and the hook directories are the refusals themselves.
 GUARD_DIRS = ("src/ctrmap/tests", "tools", ".githooks", ".claude/hooks")
 
+
+def guard_dirs(root=ROOT):
+    """Where a guard can live: this project's own places, and wherever the verification
+    bootstrap's guards were installed beside them - a `.claude/<folder>` holding `guard_*.py`,
+    and a `tests` folder holding `test_*.py`.
+
+    DERIVED, because the list was one relocation from wrong: the bootstrap put its hooks in
+    `.claude/bundle-hooks` and its Python suite in `tests`, and a fix to either - the payload
+    decoding fix, carrying three new tests - was refused as touching no place a guard lives.
+    """
+    out = list(GUARD_DIRS)
+    claude = os.path.join(root, ".claude")
+    try:
+        names = sorted(os.listdir(claude))
+    except OSError:
+        names = []
+    for name in names:
+        try:
+            held = os.listdir(os.path.join(claude, name))
+        except OSError:
+            continue
+        if any(n.startswith("guard_") and n.endswith(".py") for n in held):
+            out.append(".claude/" + name)
+    try:
+        if any(n.startswith("test_") and n.endswith(".py")
+               for n in os.listdir(os.path.join(root, "tests"))):
+            out.append("tests")
+    except OSError:
+        pass
+    return tuple(dict.fromkeys(out))
+
 GUARD_KINDS = ("detector", "convention", "refusal")
 MIN_GUARD_REASON = 60
 NO_GUARD = "No-guard:"
@@ -378,12 +409,13 @@ def check_fix_has_a_guard(message):
     files = staged_files()
     if not files:                                      # nothing to judge; do not block
         return 0
-    if any(f.startswith(d) for f in files for d in GUARD_DIRS):
+    places = guard_dirs()
+    if any(f.startswith(d) for f in files for d in places):
         return 0
     sys.stderr.write(
         "REFUSING THE COMMIT: this fixes something and nothing new would notice a" + LF
         + "  SECOND one. Touch one of:" + LF
-        + "".join("    %s%s" % (d, LF) for d in GUARD_DIRS)
+        + "".join("    %s%s" % (d, LF) for d in places)
         + "  'Producer with no consumer' was filed in SEVEN consecutive audits of the" + LF
         + "  project these guards came from - fixed every time, made impossible none." + LF
         + "  If this fix truly cannot carry one, say so in the message with a" + LF

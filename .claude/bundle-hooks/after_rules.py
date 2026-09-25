@@ -152,7 +152,7 @@ def verdict(payload, root):
 
 def main():
     try:
-        payload = json.load(sys.stdin)
+        payload = json.loads(bundle_shell.payload_text())   # UTF-8, not the locale's code page
     except (ValueError, IOError):
         return 0
     if not isinstance(payload, dict):

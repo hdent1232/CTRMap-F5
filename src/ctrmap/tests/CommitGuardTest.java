@@ -59,6 +59,7 @@ public class CommitGuardTest {
 		aGuardLineThatIsALabelIsRefused(guard);
 		anUnknownKindOfGuardIsRefused(guard);
 		aFixThatCarriesARealGuardIsAllowed(guard);
+		aFixInTheBundlesRelocatedPlacesIsAGuardPlace(guard);
 		theNoGuardEscapeIsHonouredAndStaysInTheMessage(guard);
 		aTestCountIsCheckedAgainstTheLastRecordedRun(guard);
 		aFixClosedByADetectorIsRefused(guard);
@@ -166,6 +167,19 @@ public class CommitGuardTest {
 				+ "cannot address its own cells, so the whole class of silent truncation is gone",
 				new String[]{"src/ctrmap/humaninterface/A.java", "src/ctrmap/tests/ATest.java"}, null);
 		check(r.code == 0, "allowed (exit " + r.code + ") " + r.said);
+	}
+
+	/** The bootstrap's hooks live in .claude/bundle-hooks and its Python suite in tests/: a list
+	 *  naming .claude/hooks refused the payload-decoding fix as touching no guard place. */
+	static void aFixInTheBundlesRelocatedPlacesIsAGuardPlace(File guard) throws Exception {
+		System.out.println("--- a fix in the bundle's relocated hooks or its tests folder is allowed");
+		String msg = "Fix the payload decoding\n\nGuard: refusal -- the dispatcher decodes the "
+				+ "harness's bytes as UTF-8, so no guard ever judges a mangled command again";
+		Run r = run(guard, msg, new String[]{".claude/bundle-hooks/guard_x.py"}, null);
+		check(r.code == 0, "the bundle's relocated hooks folder is a place a guard lives (exit "
+				+ r.code + ") " + r.said);
+		Run t = run(guard, msg, new String[]{"tests/test_bundle.py"}, null);
+		check(t.code == 0, "and so is the bundle's tests folder (exit " + t.code + ") " + t.said);
 	}
 
 	static void theNoGuardEscapeIsHonouredAndStaysInTheMessage(File guard) throws Exception {

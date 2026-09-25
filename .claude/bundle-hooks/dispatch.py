@@ -267,7 +267,7 @@ def verdict(raw, found=None):
 
 
 def main():
-    raw = sys.stdin.read()
+    raw = bundle_shell.payload_text()           # UTF-8, never the locale's code page
     try:
         json.loads(raw)
     except ValueError:
