@@ -2737,6 +2737,32 @@
     "."
    ],
    "must_say": "DOCUMENTED: a tool that only DOCUMENTS the baseline"
+  },
+  {
+   "id": "count-first-window-counts-code",
+   "why": "A window measured in raw lines: replant.py counts on line 254 and writes on line 270, and the 8 lines between explain the lock order - so the project's own replant.py was refused and RuleRefusalsTest was red on a clean checkout.",
+   "file": "tools/guard/count_first.py",
+   "find": "            window = code_window(lines, i)\n",
+   "replace": "            window = lines[max(0, i - LOOK_BACK):i + 1]\n",
+   "suite": "ctrmap.tests.RuleRefusalsTest",
+   "args": [
+    "."
+   ],
+   "must_say": "COMMENTED: an explanation between the count and the write",
+   "no_rebuild": true
+  },
+  {
+   "id": "count-first-comment-is-not-a-count",
+   "why": "The cheapest way past: a comment reading `# assert text.count(find) == 1` passed as the count it only describes - 1 line of prose standing in for the arithmetic.",
+   "file": "tools/guard/count_first.py",
+   "find": "        if stripped and not stripped.startswith(\"#\"):\n",
+   "replace": "        if stripped:\n",
+   "suite": "ctrmap.tests.RuleRefusalsTest",
+   "args": [
+    "."
+   ],
+   "must_say": "COMMENTED: while a count that is only a comment is no count",
+   "no_rebuild": true
   }
  ],
  "retired": [

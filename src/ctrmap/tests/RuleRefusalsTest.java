@@ -101,6 +101,29 @@ public class RuleRefusalsTest {
 		said = ask(repo, "count_first.py", counted);
 		check(said.contains("counts its matches first"),
 				"while a rewrite that counts first is allowed: " + firstReason(said));
+
+		//AN EXPLANATION IS NOT DISTANCE, AND A COMMENT IS NOT A COUNT. Measured on a clean
+		//checkout: replant.py counts on line 254, writes on line 270, and the eight lines
+		//between explain the lock order - a real count pushed out of a window of raw lines.
+		StringBuilder explained = new StringBuilder("def go(path, find, repl):\n"
+				+ "    text = open(path).read()\n"
+				+ "    assert text.count(find) == 1\n");
+		for (int k = 0; k < 14; k++) {
+			explained.append("    # why the order matters, line ").append(k).append("\n");
+		}
+		explained.append("    write_text(path, text.replace(find, repl))\n");
+		said = ask(repo, "count_first.py", python("edit.py", explained.toString()));
+		check(said.contains("counts its matches first"),
+				"COMMENTED: an explanation between the count and the write does not move the "
+				+ "count out of reach: " + firstReason(said));
+		File described = python("edit.py",
+				"def go(path, find, repl):\n"
+				+ "    text = open(path).read()\n"
+				+ "    # assert text.count(find) == 1\n"
+				+ "    write_text(path, text.replace(find, repl))\n");
+		said = ask(repo, "count_first.py", described);
+		check(said.contains("without counting"),
+				"COMMENTED: while a count that is only a comment is no count: " + firstReason(said));
 	}
 
 	/**

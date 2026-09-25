@@ -95,6 +95,26 @@ LOOK_BACK = 12
 LOOK_AHEAD = 8
 
 
+def code_window(lines, i, reach=LOOK_BACK):
+    """Line `i` and the `reach` CODE lines above it - comments and blank lines neither count
+    toward the distance nor stand in for a count.
+
+    MEASURED ON A CLEAN CHECKOUT, 2026-09-25: this refused the project's own replant.py, which
+    counts its find exactly once on line 254 and writes on line 270. Between them sat eight lines
+    explaining why the lock is written first - an explanation of the order, paid for, that pushed
+    a real count out of a window measured in raw lines. The same window let a comment reading
+    `# assert text.count(find) == 1` pass as the count it only describes.
+    """
+    out = [lines[i]]
+    j = i - 1
+    while j >= 0 and len(out) <= reach:
+        stripped = lines[j].strip()
+        if stripped and not stripped.startswith("#"):
+            out.append(lines[j])
+        j -= 1
+    return out
+
+
 def files(root):
     out = []
     for dirpath, dirs, names in os.walk(root):
@@ -138,7 +158,7 @@ def findings(root):
                 continue
             if not reaches_a_file(lines, i):
                 continue
-            window = lines[max(0, i - LOOK_BACK):i + 1]
+            window = code_window(lines, i)
             if any(_COUNTED.search(w) for w in window):
                 continue
             why.append(
