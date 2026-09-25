@@ -74,10 +74,11 @@ def refusal(found):
     ledger = "python %s/request_ledger.py" % request_ledger.FOLDER
     out += [
         "",
-        "  What the owner asked is read from the transcript; what it holds is yours to record:",
+        "  What the owner asked is read from the transcript, sentence by sentence - `show`",
+        "  numbers them. Every sentence is covered by an item that shares its words:",
         "",
         "    %s show" % ledger,
-        "    %s item <request> \"<one thing it asks>\"         every thing, not the gist" % ledger,
+        "    %s item <request> <clauses, e.g. 1,3> \"<what it asks>\"" % ledger,
         "    %s done <item> \"<evidence with a `command` or a commit>\"" % ledger,
         "    %s answered|asked|blocked|declined <item> \"<what you told the owner>\"" % ledger,
         "",

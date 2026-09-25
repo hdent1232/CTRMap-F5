@@ -4,6 +4,9 @@
  },
  "_bundle": "<desktop>/verification-bootstrap",
  "_hooks_at": ".claude/bundle-hooks",
+ "_review": {
+  "model": "haiku"
+ },
  "_tests": {
   "ledger": {
    "key": "id",

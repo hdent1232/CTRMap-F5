@@ -1249,6 +1249,14 @@ def queued(text, at):
     return {"type": "queue-operation", "operation": "enqueue", "timestamp": at, "content": text}
 
 
+def delivered(prompt, origin, at):
+    """A message sent mid-turn, as the harness delivers it: a `queued_command` attachment."""
+    held = {"type": "queued_command", "prompt": prompt, "commandMode": "prompt"}
+    if origin is not None:
+        held["origin"] = {"kind": origin}
+    return {"type": "attachment", "timestamp": at, "attachment": held}
+
+
 def said(text, at):
     return {"type": "assistant", "timestamp": at,
             "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}}
@@ -1300,13 +1308,19 @@ class LedgerCase(unittest.TestCase):
         return [r["key"] for r in self.ledger.requests(self.rows)]
 
     def items(self, *items):
-        """Replace the ledger's items: (request key, ask, status, said)."""
+        """Replace the ledger's items: (request key, ask, status, said[, covers]). An item covers
+        every clause of its request unless it says which."""
         asked = self.ledger.requests(self.rows)
+        by_key = {r["key"]: r for r in asked}
         held, trouble = self.ledger.load(self.session, asked, self.root)
         self.assertIsNone(trouble)
-        held["items"] = [{"id": "%s.%d" % (key, n), "request": key, "ask": ask,
-                          "status": status, "said": text}
-                         for n, (key, ask, status, text) in enumerate(items, 1)]
+        held["items"] = []
+        for n, item in enumerate(items, 1):
+            key, ask, status, text = item[:4]
+            every = list(range(1, len(self.ledger.clauses(by_key[key]["text"])) + 1))
+            held["items"].append({"id": "%s.%d" % (key, n), "request": key, "ask": ask,
+                                  "status": status, "said": text,
+                                  "covers": item[4] if len(item) > 4 else every})
         self.ledger.save(self.session, held, self.root)
 
 
@@ -1421,6 +1435,57 @@ class AnOwnersRequestIsAccountedForBeforeTheTurnEnds(LedgerCase):
         self.assertEqual(len(self.keys()), 1, "a queued message was counted twice on delivery")
         self.add(typed("do both", "2026-01-01T00:00:09Z"))
         self.assertEqual(len(self.keys()), 2, "the same words sent again later were swallowed")
+
+    def test_every_sentence_the_owner_wrote_must_be_covered(self):
+        """THE AGENT DOES NOT WRITE THE CHECKLIST. The owner asked whether an agent could cheat by
+        never writing down much it would then have to meet - one broad item, any later commit.
+        It could. The owner's own sentences are the checklist now."""
+        self.add(typed("Fix the parser. Also add a test for the empty file.",
+                       "2026-01-01T00:00:01Z"))
+        key = self.keys()[0]
+        self.items((key, "fix the parser", "declined", "p" * 90, [1]))
+        self.assertTrue(any("clause 2 is covered by no item" in f for f in self.problems()),
+                        "a sentence the owner wrote was covered by no item and the turn ended")
+        self.items((key, "fix the parser", "declined", "p" * 90, [1]),
+                   (key, "add a test for the empty file", "declined", "q" * 90, [2]))
+        self.assertFalse(any("covered by no item" in f for f in self.problems()),
+                         "a sentence an item covers was still reported uncovered")
+
+    def test_one_item_may_not_claim_a_sentence_it_says_nothing_about(self):
+        """The cheapest way past a coverage rule: ONE item claiming every sentence."""
+        self.add(typed("Fix the parser. Also add a test for the empty file.",
+                       "2026-01-01T00:00:01Z"))
+        self.items((self.keys()[0], "fix the parser", "declined", "p" * 90, [1, 2]))
+        self.assertTrue(any("shares no word" in f for f in self.problems()),
+                        "one item claimed a sentence it says nothing about")
+
+    def test_quoted_pasted_and_fenced_text_is_not_the_owner_asking(self):
+        text = LF.join(["<!-- attach -->", "> the agent's own words, quoted back.",
+                        "> More of them.", '<pasted_content id="x">A pasted log line.',
+                        "Another pasted line.</pasted_content>", "```", "a fenced block.", "```",
+                        "do both"])
+        self.assertEqual(self.ledger.clauses(text), ["do both"],
+                         "quoted text was read as the owner asking")
+
+    def test_a_message_sent_mid_turn_with_an_image_is_a_request(self):
+        """The owner's "I am tired of needing to beat in and enforce that rules and instructions
+        are followed" came with a screenshot, and the ledger it asked for could not see it: the
+        queue's own row holds NO text for a message carrying an image (135 such rows measured
+        over forty transcripts), and the delivery is an attachment the reader never looked at."""
+        image = {"type": "image", "source": {"type": "base64", "data": "AAAA"}}
+        self.add({"type": "queue-operation", "operation": "enqueue", "content": None,
+                  "timestamp": "2026-01-01T00:00:01Z"},
+                 delivered([image, {"type": "text", "text": "fix the parser"}], "human",
+                           "2026-01-01T00:00:02Z"),
+                 delivered("do the peer's thing", "peer", "2026-01-01T00:00:03Z"),
+                 queued("rename the column", "2026-01-01T00:00:04Z"),
+                 delivered("rename the column", "human", "2026-01-01T00:00:05Z"),
+                 delivered("an older message", None, "2026-01-01T00:00:06Z"),
+                 delivered("<task-notification>done</task-notification>", None,
+                           "2026-01-01T00:00:07Z"))
+        self.assertEqual([r["text"] for r in self.ledger.requests(self.rows)],
+                         ["fix the parser", "rename the column", "an older message"],
+                         "an owner message carrying an image was never read as a request")
 
     def test_deleting_the_ledger_reopens_it_and_never_frees_it(self):
         self.add(typed("first", "2026-01-01T00:00:01Z"))

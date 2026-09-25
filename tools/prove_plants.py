@@ -709,6 +709,29 @@ def add(entries, drive=None, root=None, replace=False):
     return 0, out + ["recorded %d plant(s); every one reddened its named test" % len(entries)]
 
 
+def reanchored(theirs, installed, relocated, held, declared_apart=()):
+    """{key: entry} of another ledger's plants this project ALREADY holds, whose file, old or new
+    have changed there since - planted where this project keeps the file.
+
+    A MERGE THAT SKIPS WHAT IT HOLDS NEVER CARRIES A RE-ANCHOR. The bundle re-anchored a plant
+    when the line it planted into changed; every project that had merged the old one kept it, so
+    its anchor went stale the moment the new line was copied in, and the install check refused
+    the project for a plant it had no way to update. A producer with no consumer.
+    """
+    out = {}
+    for key, entry in sorted(theirs.items()):
+        if key.split("::")[0] not in installed or key not in held:
+            continue
+        if entry.get("file") in declared_apart:
+            continue
+        entry = dict(entry)
+        entry["file"] = relocated.get(entry.get("file"), entry.get("file"))
+        mine = held[key]
+        if any(entry.get(field) != mine.get(field) for field in ("file", "old", "new")):
+            out[key] = entry
+    return out
+
+
 def hook_relocations(theirs, hooks, relocated=None):
     """{bundle path: project path} for every plant on a HOOK, when this project keeps the bundle's
     hooks somewhere other than `.claude/hooks`.
@@ -746,11 +769,22 @@ def merge_from(other_root):
     apart = {rel for rel, entry in declared.items()
              if isinstance(entry, dict) and ("diverged" in entry or "not_installed" in entry)}
     installed = set(os.listdir(os.path.join(HERE, "tests")))
-    adopting = adoptable(theirs, installed, relocated, (load().get("plants") or {}), apart)
-    if not adopting:
-        return 0, ["nothing to merge: every plant for an installed test is already recorded"]
-    code, lines = add(adopting)
-    return code, ["  + %s" % key for key in adopting] + lines
+    held = load().get("plants") or {}
+    adopting = adoptable(theirs, installed, relocated, held, apart)
+    moved = reanchored(theirs, installed, relocated, held, apart)
+    if not adopting and not moved:
+        return 0, ["nothing to merge: every plant for an installed test is already recorded, "
+                   "as the other ledger records it"]
+    out = []
+    if moved:
+        code, lines = add(moved, replace=True)
+        out += ["  ~ %s" % key for key in moved] + lines
+        if code:
+            return code, out
+    if adopting:
+        code, lines = add(adopting)
+        return code, out + ["  + %s" % key for key in adopting] + lines
+    return 0, out
 
 
 #: Every flag this reads. An unknown one is REFUSED: `--reanchor`, typed before it existed, fell

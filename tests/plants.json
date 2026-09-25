@@ -332,13 +332,21 @@
    "site": "elsewhere",
    "why": "The shipped defect: `want me to` listed as a BLOCKER, and a claimed blocker exempts the whole message - two words appended to any promise made it pass."
   },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_a_message_sent_mid_turn_with_an_image_is_a_request": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "an owner message carrying an image was never read as a request",
+   "new": "    if False:",
+   "old": "    if kind == \"attachment\":",
+   "site": "elsewhere",
+   "why": "the queue's own row holds no text for a message carrying an image - 135 such rows over forty transcripts - and the delivery is a queued_command attachment the first reader never looked at; the owner's own message asking for this guard, sent with a screenshot, was the one it could not see"
+  },
   "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_a_queued_message_delivered_is_ONE_request_and_the_same_words_later_are_TWO": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a queued message was counted twice on delivery",
    "new": "if False and pending.get(said):",
-   "old": "if row.get(\"type\") == \"user\" and pending.get(said):",
+   "old": "if row.get(\"type\") in (\"user\", \"attachment\") and pending.get(said):",
    "site": "elsewhere",
-   "why": "a mid-turn message is written twice, queued and delivered - measured in this session, where 'do both' arrived that way; counting both makes one request two and the second is closed by pointing at the first"
+   "why": "a mid-turn message is written twice, queued and delivered - measured in this session, where 'do both' arrived that way; counting both makes one request two and the second is closed by pointing at the first. Re-anchored when the delivery came to include the queued_command attachment"
   },
   "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_an_unitemised_request_refuses_the_stop": {
    "file": ".claude/bundle-hooks/request_ledger.py",
@@ -380,6 +388,14 @@
    "site": "elsewhere",
    "why": "evidence placed by time, not by existence: without the index test, a command run an hour before the owner asked for the work is cited as having done it - one of 22,896 rows in this session's transcript would have served for most requests"
   },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_every_sentence_the_owner_wrote_must_be_covered": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a sentence the owner wrote was covered by no item",
+   "new": "        if False:",
+   "old": "        if number not in covered:",
+   "site": "elsewhere",
+   "why": "the checklist back in the agent's hands: with no clause coverage, one broad item and any later commit passed, and the owner asked on 2026-09-25 whether an agent could cheat by never writing down much it would then have to meet - it could, until the owner's own sentences became the list"
+  },
   "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_harness_events_and_peers_are_not_the_owner": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "something that is not the owner was read as a request",
@@ -387,6 +403,22 @@
    "old": "EVENTS = re.compile(r\"^\\s*<(task-notification|",
    "site": "elsewhere",
    "why": "a background task's notification read as the owner speaking: this session queued dozens of them, and each would become a request the agent can itemise and close at will, burying the real ones among its own"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_one_item_may_not_claim_a_sentence_it_says_nothing_about": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "one item claimed a sentence it says nothing about",
+   "new": "            if False:",
+   "old": "            if need and not need & content(item.get(\"ask\")):",
+   "site": "evasion",
+   "why": "the cheapest way past a coverage rule is ONE item claiming every clause - the same shape as the first ledger's single broad item, one level down, and it would make the owner's two-sentence request cost exactly what a one-sentence request cost"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_quoted_pasted_and_fenced_text_is_not_the_owner_asking": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "quoted text was read as the owner asking",
+   "new": "        if False:",
+   "old": "        if QUOTED.match(line):",
+   "site": "elsewhere",
+   "why": "quoted lines read as the owner asking: the request this was built for was twenty-six quoted lines of the agent's own explanation around two words, 'do both', and each quoted sentence would have become a clause the agent then had to cover"
   },
   "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_the_ledger_starts_where_it_was_first_read_and_holds_every_request_after": {
    "file": ".claude/bundle-hooks/request_ledger.py",

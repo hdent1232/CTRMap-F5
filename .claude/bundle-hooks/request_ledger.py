@@ -13,11 +13,17 @@ session's transcript - the harness writes it - never recorded by the agent: ever
 and every message the owner queued mid-turn. Harness events, peer sessions and injected reminders
 are not the owner and are left out by their opening tag.
 
-THE ITEMS ARE THE AGENT'S, and so is the cheapest way past this: record fewer items than the
-request holds. Nothing mechanical can read that off the text, which is what the REVIEWER is for
-(below). What IS mechanical is refused mechanically:
+THE CHECKLIST IS NOT THE AGENT'S EITHER. The first version let the agent write its own items, so
+the cheapest way through was to scope the work down - one broad item, any later commit - and the
+owner asked exactly that: can it cheat by never writing down much it would then have to meet? It
+could. Every sentence the owner wrote (quoted, pasted and fenced text aside) is now a numbered
+clause, and every clause must be covered by an item that shares its words, or declined to the
+owner in writing. Doing less never shrinks the list; doing more costs nothing. And none of it
+asks the owner to review anything: the owner's words were that policing whether instructions
+were followed is exactly the job they should not have to do. What is refused:
 
   * a request since the ledger began that has no item
+  * a sentence of the owner's that no item covers, or an item claiming one it shares no word with
   * an item left open
   * `done` without evidence the transcript or git can check: a `backticked` command or path that
     appears in a tool call made AFTER the request and did not fail, or a commit made after it
@@ -33,8 +39,10 @@ the items, which REOPENS every request; it is never a way out. Every door a hook
 either copy is refused (`guard_requests.py`); a program written to conceal that it reaches them
 is not, and that is said here rather than implied.
 
-THE REVIEWER, when the project declares one (`"_review"` in `.claude/bundle-install.json`,
-because it costs tokens and a recurring cost is the owner's to switch on). Once every request is
+THE REVIEWER, where the project declares one (`"_review"` in `.claude/bundle-install.json`): a
+model judging what no mechanism can - whether the evidence shows the thing was done, and done as
+deeply as asked. It draws on the subscription's usage, not a separate bill, and whether it is
+worth that is a measurement (README: the A/B). When declared: once every request is
 itemised and resolved, the requests whose items changed since their last PASS are owed a review:
 a subagent on the declared model, launched with EXACTLY the prompt this file writes - it names the
 requests verbatim, the items, and what to fail - and synchronously, so the verdict is in the
@@ -44,8 +52,9 @@ differs from the owed prompt by one word is refused before it runs; and an earli
 to the next reviewer of the same request, so re-rolling until a PASS is not free.
 
     python <hooks>/request_ledger.py                          what would keep this turn open
-    python <hooks>/request_ledger.py show                     the requests and their items
-    python <hooks>/request_ledger.py item <request> "<what it asks>"
+    python <hooks>/request_ledger.py show                     requests, their clauses, their items
+    python <hooks>/request_ledger.py item <request> <clauses e.g. 1,3> "<what it asks>"
+    python <hooks>/request_ledger.py cover <item> <clauses>   what an existing item covers
     python <hooks>/request_ledger.py done <item> "<evidence, with a `command` or a commit>"
     python <hooks>/request_ledger.py answered|asked|blocked|declined <item> "<what you told the owner>"
     python <hooks>/request_ledger.py review                   the owed review's prompt, verbatim
@@ -113,6 +122,50 @@ def words(text):
     return " ".join(re.findall(r"[a-z0-9]+", str(text or "").lower()))
 
 
+#: What in a request is not the owner ASKING: an HTML comment the harness adds (`<!-- attach -->`),
+#: a pasted block, a fenced block - and, line by line, a quoted line. Measured on the request this
+#: was built for: twenty-six quoted lines of the agent's own explanation around two words.
+NOT_ASKING = (re.compile(r"<!--.*?-->", re.S),
+              re.compile(r"<pasted_content\b.*?</pasted_content>", re.S),
+              re.compile(r"```.*?```", re.S))
+QUOTED = re.compile(r"^\s*>")
+
+#: Words too common to show that an item is ABOUT a sentence.
+COMMON = frozenset((
+    "about", "after", "again", "also", "been", "being", "both", "could", "does", "doing", "done",
+    "each", "even", "from", "have", "here", "into", "just", "like", "make", "more", "much",
+    "need", "only", "other", "over", "same", "should", "some", "still", "such", "sure", "than",
+    "that", "their", "them", "then", "there", "these", "they", "this", "those", "very", "want",
+    "well", "were", "what", "when", "where", "which", "while", "will", "with", "would", "your"))
+
+
+def clauses(text):
+    """The owner's own sentences in a request, in order - the checklist the items must cover.
+
+    THE AGENT DOES NOT WRITE THIS LIST. The first ledger checked only that a request had SOME item,
+    so one broad item and any later commit passed, and the cheapest way through was to scope the
+    work down. Asked by the owner whether an agent could cheat by not writing much it would then
+    have to meet: it could. The list comes from what the owner wrote now, so doing less never
+    shrinks it and doing more costs nothing.
+    """
+    body = str(text or "")
+    for pattern in NOT_ASKING:
+        body = pattern.sub(" ", body)
+    out = []
+    for line in body.splitlines():
+        if QUOTED.match(line):
+            continue
+        for part in re.split(r"(?<=[.!?])\s+", line):
+            if words(part):
+                out.append(flat(part))
+    return out
+
+
+def content(text):
+    """The words that say what a sentence is ABOUT."""
+    return {w for w in words(text).split() if len(w) >= 4 and w not in COMMON}
+
+
 # ---------------------------------------------------------------------------- the transcript
 
 def read_rows(path):
@@ -139,12 +192,38 @@ def _parts(row):
     return content if isinstance(content, list) else ([] if content is None else content)
 
 
+def _text_parts(node):
+    """A prompt's words, whether it is a string or a list of parts (text beside an image)."""
+    if isinstance(node, str):
+        return node
+    if isinstance(node, list):
+        return LF.join(p.get("text") or "" for p in node
+                       if isinstance(p, dict) and p.get("type") == "text")
+    return ""
+
+
 def _owner_text(row):
     """The owner's words in this row, or None when the row is not the owner speaking."""
     kind = row.get("type")
     if kind == "queue-operation" and row.get("operation") == "enqueue":
         text = row.get("content")
         return text if isinstance(text, str) and not EVENTS.match(text) else None
+    if kind == "attachment":
+        # A MESSAGE SENT MID-TURN IS DELIVERED AS A `queued_command` ATTACHMENT, AND IT SAYS WHO
+        # SENT IT. The first reader knew only the queue's own row, whose content is EMPTY when
+        # the message carries an image - measured over forty transcripts: 135 queued messages
+        # with no text there. The owner's "I am tired of needing to beat in and enforce that
+        # rules and instructions are followed", sent with a screenshot, was the one the ledger
+        # it asked for could not see. `origin` names the sender: human is the owner, a peer is
+        # not; an attachment from before the field existed is judged by its opening tag.
+        held = row.get("attachment") if isinstance(row.get("attachment"), dict) else {}
+        if held.get("type") != "queued_command":
+            return None
+        origin = (held.get("origin") or {}).get("kind")
+        text = _text_parts(held.get("prompt"))
+        if origin not in (None, "human") or not text.strip() or EVENTS.match(text):
+            return None
+        return text
     if kind != "user" or row.get("isMeta") or row.get("isCompactSummary"):
         return None
     content = _parts(row)
@@ -170,8 +249,8 @@ def requests(rows):
         if text is None or not text.strip():
             continue
         said = flat(text)
-        if row.get("type") == "user" and pending.get(said):
-            pending[said] -= 1
+        if row.get("type") in ("user", "attachment") and pending.get(said):
+            pending[said] -= 1                   # the delivery of a message already queued
             continue
         if row.get("type") == "queue-operation":
             pending[said] = pending.get(said, 0) + 1
@@ -359,6 +438,34 @@ def item_state(items):
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:8]
 
 
+def uncovered(request, items):
+    """Every sentence the owner wrote that no item covers, and every claim an item cannot back.
+
+    An item names the clauses it covers, and must share a word with each: the cheapest way past
+    a coverage rule is ONE item claiming every sentence, and an item that says nothing about a
+    sentence is not about it.
+    """
+    said, out, covered = clauses(request["text"]), [], set()
+    for item in items:
+        for number in item.get("covers") or []:
+            if not isinstance(number, int) or not 1 <= number <= len(said):
+                out.append("%s covers clause %r, and request %s has clauses 1-%d"
+                           % (item.get("id"), number, request["key"], len(said)))
+                continue
+            need = content(said[number - 1])
+            if need and not need & content(item.get("ask")):
+                out.append("%s claims clause %d and shares no word with it: \"%s\" - an item "
+                           "covers what it names" % (item.get("id"), number, said[number - 1][:90]))
+                continue
+            covered.add(number)
+    for number, sentence in enumerate(said, 1):
+        if number not in covered:
+            out.append("request %s clause %d is covered by no item: \"%s\" - cover it, or "
+                       "decline it to the owner in writing" % (request["key"], number,
+                                                               sentence[:110]))
+    return out
+
+
 def mechanical(held, asked, rows, last=None, root=None):
     """Every reason, short of the reviewer, that this turn may not end."""
     root, out = _root(root), []
@@ -369,7 +476,8 @@ def mechanical(held, asked, rows, last=None, root=None):
             out.append("request %s is not itemised - \"%s\"" % (request["key"],
                                                                 flat(request["text"])[:110]))
             continue
-        spoken = None
+        out += uncovered(request, mine)
+        spoken = said_after(rows, request["index"], last)
         for item in mine:
             status, said = item.get("status"), flat(item.get("said"))
             label = "%s (%s)" % (item.get("id"), flat(item.get("ask"))[:70])
@@ -388,8 +496,6 @@ def mechanical(held, asked, rows, last=None, root=None):
                 out.append("%s is answered, and request %s asked no question - work asked for "
                            "is done, asked about, blocked or declined" % (label, request["key"]))
             if status in SAID_TO_OWNER:
-                if spoken is None:
-                    spoken = said_after(rows, request["index"], last)
                 if not any(words(said) in text for text in spoken):
                     out.append("%s is %s, and the owner was never told: say it, in those words, "
                                "in your message" % (label, status))
@@ -648,6 +754,15 @@ def find_transcript(session):
     return None
 
 
+def _covers(text):
+    """`1,3` -> [1, 3]; `-` -> []; anything else -> None."""
+    if text.strip() == "-":
+        return []
+    if not re.fullmatch(r"\s*\d+(\s*,\s*\d+)*\s*", text):
+        return None
+    return sorted({int(n) for n in text.split(",")})
+
+
 def main(argv, root=None):
     session = os.environ.get(SESSION_VAR)
     transcript = find_transcript(session) if session else None
@@ -672,21 +787,37 @@ def main(argv, root=None):
     if verb == "show":
         for request in held_requests(asked, held["since"]):
             print("%s  %s" % (request["key"], flat(request["text"])[:150]))
+            for number, sentence in enumerate(clauses(request["text"]), 1):
+                print("    clause %d: %s" % (number, sentence[:140]))
             for item in [i for i in held["items"] if i.get("request") == request["key"]]:
-                print("    %-16s %-9s %s" % (item["id"], item.get("status"), flat(item.get("ask"))[:90]))
+                print("    %-16s %-9s covers %-8s %s" % (
+                    item["id"], item.get("status"),
+                    ",".join(str(n) for n in item.get("covers") or []) or "-",
+                    flat(item.get("ask"))[:80]))
+        return 0
+    if verb == "cover" and len(argv) == 4:
+        hits = [i for i in held["items"] if i.get("id") == argv[2]]
+        covers = _covers(argv[3])
+        if len(hits) != 1 or covers is None:
+            print("usage: cover <item> <clauses, e.g. 1,3>")
+            return 2
+        hits[0]["covers"] = covers
+        save(session, held, root)
         return 0
     if verb == "review":
         prompt = owed_prompt(session, transcript, root)
         print(prompt if prompt else "no review is owed")
         return 0 if prompt else 1
-    if verb == "item" and len(argv) == 4:
+    if verb == "item" and len(argv) == 5:
         keys = [r["key"] for r in held_requests(asked, held["since"])]
-        if argv[2] not in keys:
-            print("no request %s in this ledger - `show` lists them" % argv[2])
+        covers = _covers(argv[3])
+        if argv[2] not in keys or covers is None:
+            print("usage: item <request> <clauses it covers, e.g. 1,3 or -> \"<what it asks>\" - "
+                  "`show` lists the requests and their clauses")
             return 2
         count = sum(1 for i in held["items"] if i.get("request") == argv[2])
         held["items"].append({"id": "%s.%d" % (argv[2], count + 1), "request": argv[2],
-                              "ask": argv[3], "status": "open"})
+                              "ask": argv[4], "covers": covers, "status": "open"})
         save(session, held, root)
         print(held["items"][-1]["id"])
         return 0
