@@ -42,7 +42,8 @@ public class RuleRefusalsTest {
 
 	public static void main(String[] args) throws Exception {
 		File repo = new File(args.length > 0 ? args[0] : ".");
-		for (String tool : new String[]{"count_first.py", "magnitude.py", "game_identity.py"}) {
+		for (String tool : new String[]{"count_first.py", "magnitude.py", "game_identity.py",
+				"unclosed.py"}) {
 			File f = new File(repo, "tools/guard/" + tool);
 			if (!f.isFile()) {
 				System.out.println("  FAIL: no " + f.getPath()
@@ -63,6 +64,8 @@ public class RuleRefusalsTest {
 		aStartlingMoveIsRefused(repo);
 		aNumberThatDidNotMoveAtAllIsRefused(repo);
 		aGameIdentityOutsideTheSeamIsRefused(repo);
+		anUnheldOpenIsRefused(repo);
+		theProjectLeavesNoHandleOpen(repo);
 
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
 		if (fails != 0) {
@@ -229,7 +232,69 @@ public class RuleRefusalsTest {
 				"and the live tree has no new site: " + firstReason(said));
 	}
 
+	// ---------------------------------------- A FILE OPENED IS A FILE CLOSED
+
+	/**
+	 * {@code tools/guard/unclosed.py}, which the bundle's hooks also ask before every write.
+	 *
+	 * <p>Measured 2026-09-26: 70 opens under tools/ and .claude/ whose handle nothing held, in
+	 * 23 files. On Windows a handle left to the collector makes the next write or delete of that
+	 * path fail - errno 22, a sharing violation - at a moment nothing chose.
+	 */
+	static void anUnheldOpenIsRefused(File repo) throws Exception {
+		System.out.println("--- an open whose handle nothing holds");
+		String said = ask(repo, "unclosed.py", tool("x.py",
+				"import io, json\n"
+				+ "def go(p):\n"
+				+ "    return json.load(io.open(p))['a']\n"));
+		check(said.contains("x.py:3") && said.contains("used inline"),
+				"an open used inline is refused: " + firstReason(said));
+
+		//THE CHEAPEST WAY PAST: assign the handle, read it, never close it
+		said = ask(repo, "unclosed.py", tool("x.py",
+				"import io\n"
+				+ "def go(p):\n"
+				+ "    handle = io.open(p)\n"
+				+ "    return handle.read()\n"));
+		check(said.contains("x.py:3") && said.contains("nothing in its scope closes"),
+				"and so is a handle assigned and never closed: " + firstReason(said));
+
+		//THE NEGATIVE HALF: a with, a factory whose caller holds it, a name the scope closes
+		said = ask(repo, "unclosed.py", tool("x.py",
+				"import io\n"
+				+ "def go(p):\n"
+				+ "    with io.open(p) as handle:\n"
+				+ "        return handle.read()\n"
+				+ "def opener(p):\n"
+				+ "    return io.open(p)\n"
+				+ "def closed(p):\n"
+				+ "    handle = io.open(p)\n"
+				+ "    try:\n"
+				+ "        return handle.read()\n"
+				+ "    finally:\n"
+				+ "        handle.close()\n"));
+		check(said.contains("every open under"),
+				"while a held handle is left alone: " + firstReason(said));
+	}
+
+	/** The live tree, which held 70 of them the day this was written. */
+	static void theProjectLeavesNoHandleOpen(File repo) throws Exception {
+		System.out.println("--- and this project's own python");
+		String said = ask(repo, "unclosed.py", repo);
+		check(said.contains("every open under"),
+				"every open under tools/ and .claude/ is held: " + firstReason(said));
+	}
+
 	// ---------------------------------------------------------------- fixtures
+
+	/** A scratch tree holding one python file under tools/. */
+	static File tool(String name, String body) throws Exception {
+		File root = Scratch.dir("rulerefusal-tool");
+		File target = new File(root, "tools/" + name);
+		target.getParentFile().mkdirs();
+		Files.write(target.toPath(), body.getBytes(StandardCharsets.UTF_8));
+		return root;
+	}
 
 	/** A scratch tree holding one python file. */
 	static File python(String name, String body) throws Exception {

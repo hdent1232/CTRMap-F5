@@ -134,7 +134,8 @@ for cid, (base, suites) in CLUSTERS.items():
 (WT / "m.patch").unlink(missing_ok=True)
 build()
 out = BASE / "wt/_state/mutation.json"
-io.open(out, "w", encoding="utf-8", newline="\n").write(json.dumps(results, indent=1))
+with io.open(out, "w", encoding="utf-8", newline="\n") as handle:
+    handle.write(json.dumps(results, indent=1))
 tally = {}
 for r in results:
     tally[r["verdict"]] = tally.get(r["verdict"], 0) + 1

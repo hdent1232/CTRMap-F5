@@ -210,7 +210,8 @@ def findings(root):
         own = apart is None or not os.path.normcase(os.path.abspath(path)).startswith(
             apart + os.sep)
         try:
-            body = io.open(path, encoding="utf-8", errors="replace").read()
+            with io.open(path, encoding="utf-8", errors="replace") as handle:
+                body = handle.read()
         except OSError as cannotRead:
             why.append("cannot read %s (%s) - an unreadable file is not a clean one"
                        % (path, cannotRead))

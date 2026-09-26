@@ -42,10 +42,11 @@ BYTECODE = re.compile(r"ClassFileScanner|build/classes|\.class\b")
 def registered():
     runner = os.path.join(ROOT, "test.ps1")
     names = []
-    for line in io.open(runner, encoding="utf-8", errors="replace"):
-        found = re.search(r'c\s*=\s*"ctrmap\.tests\.(\w+)"', line)
-        if found:
-            names.append(found.group(1))
+    with io.open(runner, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            found = re.search(r'c\s*=\s*"ctrmap\.tests\.(\w+)"', line)
+            if found:
+                names.append(found.group(1))
     return names
 
 
@@ -62,8 +63,9 @@ def kind_of(body):
 
 
 def planted():
-    text = io.open(os.path.join(ROOT, "tools", "guard", "plants.json"),
-                   encoding="utf-8").read()
+    with io.open(os.path.join(ROOT, "tools", "guard", "plants.json"),
+                   encoding="utf-8") as handle:
+        text = handle.read()
     return set(re.findall(r'"suite"\s*:\s*"ctrmap\.tests\.(\w+)"', text))
 
 
@@ -76,7 +78,8 @@ def main(argv):
         if not os.path.isfile(path):
             rows.append((name, 0, "MISSING FILE", False))
             continue
-        body = io.open(path, encoding="utf-8", errors="replace").read()
+        with io.open(path, encoding="utf-8", errors="replace") as handle:
+            body = handle.read()
         rows.append((name, body.count(LF) + 1, kind_of(body), name in have_plant))
 
     counts = {}

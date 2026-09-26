@@ -284,7 +284,8 @@ _GUARD_HOMES = ("tools/guard/", "tools/hooks/", ".claude/hooks/", ".githooks/")
 
 def _message(path):
     try:
-        return io.open(path, encoding="utf-8", errors="replace").read()
+        with io.open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.read()
     except OSError:
         return ""
 
@@ -466,7 +467,8 @@ def check_guard_class(message):
 
 def last_run():
     try:
-        return json.load(io.open(LAST_RUN, encoding="utf-8"))
+        with io.open(LAST_RUN, encoding="utf-8") as handle:
+            return json.load(handle)
     except (OSError, ValueError):
         return None
 

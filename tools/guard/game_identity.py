@@ -65,7 +65,8 @@ def sites(root):
         if os.path.normcase(path).startswith(seam):
             continue
         try:
-            body = io.open(path, encoding="utf-8", errors="replace").read()
+            with io.open(path, encoding="utf-8", errors="replace") as handle:
+                body = handle.read()
         except OSError:
             found.append((os.path.relpath(path, root).replace(os.sep, "/"), "could not read it"))
             continue

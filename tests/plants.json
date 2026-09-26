@@ -866,6 +866,38 @@
    "site": "elsewhere",
    "why": "A DELETION IS A WRITE TOO. The Write and Edit tools cannot delete a file, so no write hook ever judged one; a command's `rm` that leaves a name made and never used is the same growth as a write adding it, and skipping absent files would let a tree rule's defect in through the one door nothing else watches."
   },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_file_NO_held_finding_names_is_still_refused": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a write to src/m.py, which no held finding names, went through",
+   "new": "    return sorted(set(files or tracked(root)) - set(held))\n",
+   "old": "    return sorted(out - set(held))\n",
+   "site": "evasion",
+   "why": "WIDENED, IT LOOKS EXACTLY LIKE THE FIX: every write the test makes goes through and the hold still reports itself. A named set that grows to the whole tree is no hold at all, so an unrelated file must still be refused while one is standing."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_file_NO_held_finding_names_is_still_refused::message": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "the refusal does not say src/u.py may be written",
+   "new": "    if not judged:\n",
+   "old": "    if judged.get(\"named\"):\n",
+   "site": "elsewhere",
+   "why": "A DOOR NOBODY IS TOLD ABOUT IS A PRODUCER WITH NO CONSUMER. The refusal is the only thing the blocked session reads; if it does not list the named files, the repair it permits is found by trial, one refused write at a time."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_file_a_held_finding_names_BY_ITS_TEST_ID_is_writable_as_its_repair": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "which the held finding names by its test id, was refused",
+   "new": "        candidates = [path] + ([][:0]\n",
+   "old": "        candidates = [path] + ([\"/\".join(parts[:k]) + \".py\" for k in range(len(parts), 0, -1)]\n",
+   "site": "elsewhere",
+   "why": "THE CASE MEASURED NAMED THE TEST AS UNITTEST DOES, module.Class.test, NOT BY PATH. A derivation that reads only paths passes every path test and leaves the one incident this exists for exactly as it was."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_file_a_held_finding_names_BY_PATH_is_writable_as_its_repair": {
+   "file": ".claude/bundle-hooks/guard_held_writes.py",
+   "must_say": "a write to src/u.py, which the held finding names by path, was refused",
+   "new": "    if call and repairs(payload, root, judged[\"held\"]):\n",
+   "old": "    if call and repairs(payload, root, judged[\"held\"], judged.get(\"named\") or ()):\n",
+   "site": "instance",
+   "why": "A CHANGE AND ITS FIX, EACH WRITABLE ONLY AFTER THE OTHER. Measured 2026-09-26: a held kill-claim finding named the test making the claim and the Edit repairing that test was refused. The judgement knows what its findings name; a guard that does not ask it is back to that."
+  },
   "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_file_put_back_at_HEAD_is_never_held": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "the way OUT",
@@ -873,6 +905,14 @@
    "old": "            if after == at_head:\n                held.pop(rel, None)\n                continue\n",
    "site": "elsewhere",
    "why": "A GUARD THAT BLOCKS THE WAY OUT. `git checkout -- <file>` is what every refusal here names, and HEAD is the last tree the gates passed; judging a file put back at HEAD's text as growth against the fix it undid would hold the repair itself and wedge the session with no act left that goes through."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_name_the_HELD_CHANGE_wrote_opens_nothing": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a name the held change wrote itself opened src/m.py to a write",
+   "new": "                if word:\n",
+   "old": "                if word and not any(word in text for text in wrote):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST A HOLD THAT OPENS NAMED FILES IS TO WRITE THE NAME. A rule that quotes the line it judges names whatever the held change spells, so a comment naming the next file to write would open it. A name found in held text counts for nothing."
   },
   "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_rule_tool_behind_a_runner_is_still_a_repair": {
    "file": ".claude/bundle-hooks/guard_held_writes.py",

@@ -15,6 +15,9 @@ HELD, and while anything is held every act is refused except the ones that repai
 
     a read                                    looking is how a repair starts
     a Write or Edit to a held path            the repair itself, still judged by the write hook
+    a Write or Edit to a path a held finding  the other half of the repair - the test a kill-claim
+      NAMES (`bundle_rules.named_by`)         finding names, say - unless the held text spelled
+                                              the name itself, which is how one would be forged
     a Write or Edit to a rule or a hook       a rule that is wrong must stay fixable
     a Write or Edit outside the project       not this project's to hold
     a command that names a held path          running, restoring or replacing that file -
@@ -38,6 +41,8 @@ import json
 import os
 import re
 import sys
+if __name__ == "__main__":
+    sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env        # noqa: E402  - one PREFIX renames every override
@@ -124,13 +129,15 @@ def looks(payload):
     return bundle_shell.reads_only(payload) and not bundle_shell.launches(payload)
 
 
-def repairs(payload, root, held):
-    """Is this call a repair of a held change - or a read, which is always one?"""
+def repairs(payload, root, held, named=()):
+    """Is this call a repair of a held change - or a read, which is always one? `named` is what
+    the held findings name, which a Write or Edit may repair; a command may not."""
     if looks(payload):
         return True
     if bundle_shell.launches(payload) or bundle_shell.unreadable(payload):
         return False
     rels = set(held)
+    writable = rels | set(named)
     if bundle_shell.writes(payload):
         targets = [bundle_rules.rel_of(root, t if os.path.isabs(t) else os.path.join(root, t))
                    for t in bundle_shell.paths(payload)]
@@ -138,7 +145,7 @@ def repairs(payload, root, held):
         # same. Measured: the source project's bundle is a folder beside it, and refusing a
         # write there while a change was held left the change and its fix in two places that
         # could each only be written after the other.
-        if not targets or not all(t in rels or bundle_rules.repairs(root, t) or t == ".."
+        if not targets or not all(t in writable or bundle_rules.repairs(root, t) or t == ".."
                                   or t.startswith("../") for t in targets):
             return False
     text = bundle_shell.text(payload)
@@ -171,7 +178,7 @@ def verdict(payload, root):
                    % (judged["blind"], ALLOW))
     if not judged["held"]:
         return 0, ""
-    if call and repairs(payload, root, judged["held"]):
+    if call and repairs(payload, root, judged["held"], judged.get("named") or ()):
         return 0, ""
     said = bundle_rules.held_refusal(judged)
     if not call:

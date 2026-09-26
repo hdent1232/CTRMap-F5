@@ -82,7 +82,8 @@ def open_items(root):
     for candidate in (os.path.join(root, "OUTSTANDING.md"),
                       os.path.join(root, "CTRMap", "OUTSTANDING.md")):
         try:
-            body = io.open(candidate, encoding="utf-8").read()
+            with io.open(candidate, encoding="utf-8") as handle:
+                body = handle.read()
         except OSError:
             continue
         return [ln.strip() for ln in body.splitlines() if ln.strip().startswith("- [ ]")]
@@ -92,7 +93,8 @@ def open_items(root):
 def last_reply(transcript_path):
     """The final assistant text of the turn, or '' when it cannot be read."""
     try:
-        rows = io.open(transcript_path, encoding="utf-8", errors="replace").read().splitlines()
+        with io.open(transcript_path, encoding="utf-8", errors="replace") as handle:
+            rows = handle.read().splitlines()
     except OSError:
         return ""
     said = []

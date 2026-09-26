@@ -146,7 +146,8 @@ def findings(root):
     looked = 0
     for path in files(root):
         try:
-            lines = io.open(path, encoding="utf-8", errors="replace").read().splitlines()
+            with io.open(path, encoding="utf-8", errors="replace") as handle:
+                lines = handle.read().splitlines()
         except OSError as cannotRead:
             why.append("cannot read %s (%s) - an unreadable file is not a clean one"
                        % (path, cannotRead))

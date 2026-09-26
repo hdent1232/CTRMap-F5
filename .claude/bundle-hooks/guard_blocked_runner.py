@@ -37,6 +37,8 @@ import os
 import re
 import subprocess
 import sys
+if __name__ == "__main__":
+    sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_shell      # noqa: E402  - the command, found by shape, at any depth

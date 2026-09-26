@@ -29,12 +29,14 @@ LOG = os.path.join(ROOT, "docs", "audit-convergence.json")
 def _load():
     if not os.path.exists(LOG):
         return {"rounds": []}
-    return json.load(io.open(LOG, encoding="utf-8"))
+    with io.open(LOG, encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def _save(data):
-    io.open(LOG, "w", encoding="utf-8", newline="\n").write(
-        json.dumps(data, indent=1, sort_keys=True) + "\n")
+    with io.open(LOG, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            json.dumps(data, indent=1, sort_keys=True) + "\n")
 
 
 def add(scope, count, note=""):

@@ -177,13 +177,15 @@ def findings(root):
                 "be read at all - which is not the same as there being none"
                 % os.path.abspath(root)]
     try:
-        text = io.open(path, encoding="utf-8").read()
+        with io.open(path, encoding="utf-8") as handle:
+            text = handle.read()
     except OSError as cannotRead:
         return ["cannot read %s (%s) - an unreadable rule file is not an empty one"
                 % (path, cannotRead)]
 
     try:
-        book = json.load(io.open(os.path.join(root, MAP), encoding="utf-8"))
+        with io.open(os.path.join(root, MAP), encoding="utf-8") as handle:
+            book = json.load(handle)
     except (OSError, ValueError) as cannotRead:
         return ["cannot read %s (%s) - so which rules have a mechanism is UNKNOWN"
                 % (MAP, cannotRead)]
@@ -266,10 +268,14 @@ def findings(root):
 def summary(root):
     """(total, enforced, unenforced) - the count, for a report that has to cite one."""
     path = claude_md(root)
-    text = io.open(path, encoding="utf-8").read() if path else ""
+    text = ""
+    if path:
+        with io.open(path, encoding="utf-8") as handle:
+            text = handle.read()
     rules = rules_in(text)
     try:
-        book = json.load(io.open(os.path.join(root, MAP), encoding="utf-8"))
+        with io.open(os.path.join(root, MAP), encoding="utf-8") as handle:
+            book = json.load(handle)
     except (OSError, ValueError):
         return len(rules), 0, len(rules)
     entries = book.get("rules") or {}

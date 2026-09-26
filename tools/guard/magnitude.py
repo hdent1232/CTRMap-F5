@@ -53,7 +53,8 @@ ALLOWANCE_ABSOLUTE = 3
 
 def load():
     try:
-        return json.load(io.open(SERIES, encoding="utf-8"))
+        with io.open(SERIES, encoding="utf-8") as handle:
+            return json.load(handle)
     except (OSError, ValueError):
         return {}
 
@@ -62,8 +63,9 @@ def save(book):
     folder = os.path.dirname(SERIES)
     if not os.path.isdir(folder):
         os.makedirs(folder)
-    io.open(SERIES, "w", encoding="utf-8", newline=LF).write(
-        json.dumps(book, indent=1, sort_keys=True) + LF)
+    with io.open(SERIES, "w", encoding="utf-8", newline=LF) as handle:
+        handle.write(
+            json.dumps(book, indent=1, sort_keys=True) + LF)
 
 
 def startling(previous, now, expect_change):

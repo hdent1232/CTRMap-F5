@@ -63,14 +63,15 @@ def main(argv):
             "conditional 'publish immediately' into a standing permission here.")
 
     sha = head()
-    io.open(TOKEN, "w", encoding="utf-8", newline=LF).write(
-        "# One push, one commit. guard_push.py refuses a push this does not match." + LF
-        + "# Written " + time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()) + LF
-        + "sha=" + sha + LF
-        + "remote=" + remote + LF
-        + "ref=" + ref + LF
-        + "force=" + ("yes" if force else "no") + LF
-        + "said=" + " ".join(said.split()) + LF)
+    with io.open(TOKEN, "w", encoding="utf-8", newline=LF) as handle:
+        handle.write(
+            "# One push, one commit. guard_push.py refuses a push this does not match." + LF
+            + "# Written " + time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()) + LF
+            + "sha=" + sha + LF
+            + "remote=" + remote + LF
+            + "ref=" + ref + LF
+            + "force=" + ("yes" if force else "no") + LF
+            + "said=" + " ".join(said.split()) + LF)
     print("approved ONE push of %s to %s%s" % (sha[:12], remote, " (force)" if force else ""))
     print("recorded in " + TOKEN)
     print("It stops matching the moment there is another commit.")

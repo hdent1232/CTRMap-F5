@@ -36,6 +36,8 @@ import io
 import json
 import os
 import sys
+if __name__ == "__main__":
+    sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_rules      # noqa: E402  - the one implementation of asking a rule

@@ -27,5 +27,6 @@ for dirpath, dirnames, filenames in os.walk(os.path.join(SRC, "ctrmap")):
             found.append(rel)
 
 found.sort()
-io.open(OUT, "w", encoding="utf-8", newline=LF).write(LF.join(found) + LF)
+with io.open(OUT, "w", encoding="utf-8", newline=LF) as handle:
+    handle.write(LF.join(found) + LF)
 print("%d production class(es) recorded in %s" % (len(found), OUT))

@@ -46,7 +46,8 @@ LIBS = "build/classes;lib/jogl-all.jar;lib/gluegen-rt.jar"
 
 
 def ledger():
-    return json.load(io.open(LEDGER, encoding="utf-8"))
+    with io.open(LEDGER, encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def jdk():
@@ -63,13 +64,15 @@ def jdk():
 
 def read(path):
     """(raw bytes, text with LF endings, whether the file is CRLF)."""
-    raw = io.open(path, "rb").read()
+    with io.open(path, "rb") as handle:
+        raw = handle.read()
     text = raw.decode("utf-8", "replace")
     return raw, (text.replace(CRLF, LF) if CRLF in text else text), (CRLF in text)
 
 
 def write(path, text, crlf):
-    io.open(path, "w", encoding="utf-8", newline="").write(text.replace(LF, CRLF) if crlf else text)
+    with io.open(path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(text.replace(LF, CRLF) if crlf else text)
 
 
 def build():
@@ -155,7 +158,8 @@ def owed(book):
     the two as one number would let a machine-generated line hide the absence of
     the real proof, so they are separate and both may only fall."""
     registered = set()
-    text = io.open(os.path.join(ROOT, "test.ps1"), encoding="utf-8", errors="replace").read()
+    with io.open(os.path.join(ROOT, "test.ps1"), encoding="utf-8", errors="replace") as handle:
+        text = handle.read()
     for found in re.findall(r'c\s*=\s*"(ctrmap\.tests\.\w+)"', text):
         registered.add(found)
     planted = set(p["suite"] for p in book["plants"])
@@ -206,7 +210,8 @@ def check_args(book):
     runner either credits the plant for the wrong red or refuses it for the
     wrong reason. Either way the ledger stops meaning what it says.
     """
-    text = io.open(os.path.join(ROOT, "test.ps1"), encoding="utf-8", errors="replace").read()
+    with io.open(os.path.join(ROOT, "test.ps1"), encoding="utf-8", errors="replace") as handle:
+        text = handle.read()
     registered = {}
     for m in re.finditer(r'c\s*=\s*"(ctrmap\.tests\.\w+)"\s*;\s+a\s*=\s*@\(([^)]*)\)', text):
         #JOIN-PATH IS ONE ARGUMENT, not two. `a = @((Join-Path $pristine "a\0\1\4"))`
@@ -294,11 +299,13 @@ def replant(p, java, pristine, gamedir):
         else:
             print("     SURVIVED: the defect is back and %s still passes." % p["suite"])
     finally:
-        io.open(path, "wb").write(raw)
+        with io.open(path, "wb") as handle:
+            handle.write(raw)
         #...AND RELEASED ONLY ONCE THE RESTORE IS PROVEN. This cleared the lock before
         #reading the file back, so a restore that did not take left no lock naming the file
         #it did not take on - the one case where the lock is the only thing that knows.
-        back = io.open(path, "rb").read()
+        with io.open(path, "rb") as handle:
+            back = handle.read()
         if back != raw:
             print("     RESTORE FAILED for %s - the tree is NOT as it was." % p["file"])
             print("     The lock is LEFT IN PLACE naming it, because nothing else now knows.")
@@ -415,10 +422,11 @@ def hold(path):
         #: sync that clears another guard, which had refused the delete this
         #: guard's own message asks for. The battery lock has carried one since
         #: this morning; this one did not.
-        io.open(MUTATION_LOCK, "w", encoding="utf-8", newline=LF).write(
-            os.path.relpath(path, ROOT).replace(chr(92), "/") + LF
-            + "pid=%d" % os.getpid() + LF
-            + "what=a replant run" + LF)
+        with io.open(MUTATION_LOCK, "w", encoding="utf-8", newline=LF) as handle:
+            handle.write(
+                os.path.relpath(path, ROOT).replace(chr(92), "/") + LF
+                + "pid=%d" % os.getpid() + LF
+                + "what=a replant run" + LF)
     except OSError as cannotWrite:
         print("     WARNING: cannot write %s (%s) - a reader cannot be told this file is "
               "planted" % (MUTATION_LOCK, cannotWrite))
@@ -476,8 +484,9 @@ def record_proof(proven, not_proven):
         "proven": proven,
         "notProven": not_proven,
     }
-    io.open(PROVEN, "w", encoding="utf-8", newline=LF).write(
-        _json.dumps(body, indent=1) + LF)
+    with io.open(PROVEN, "w", encoding="utf-8", newline=LF) as handle:
+        handle.write(
+            _json.dumps(body, indent=1) + LF)
     print("recorded the proof against this tree in .last-replant")
 
 

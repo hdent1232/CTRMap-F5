@@ -65,7 +65,8 @@ def _parsed(hooks_dir, names):
     for name in names:
         path = os.path.join(hooks_dir, name)
         try:
-            out.append((path, ast.parse(io.open(path, encoding="utf-8").read(), path)))
+            with io.open(path, encoding="utf-8") as handle:
+                out.append((path, ast.parse(handle.read(), path)))
         except (OSError, SyntaxError) as bad:
             trouble.append("%s does not parse (%s) - an unreadable guard is not a clean one"
                            % (name, bad))
@@ -193,7 +194,8 @@ def _declared_event(path):
     distinction that made a __name__ grep useless in the hook two directories over.
     """
     try:
-        tree = ast.parse(io.open(path, encoding="utf-8", errors="replace").read())
+        with io.open(path, encoding="utf-8", errors="replace") as handle:
+            tree = ast.parse(handle.read())
     except (OSError, SyntaxError, ValueError):
         return None
     for node in tree.body:
@@ -261,7 +263,8 @@ def findings(root):
                 "the wrong place. Both are refusals." % hooks_dir]
 
     try:
-        settings = json.load(io.open(settings_path, encoding="utf-8"))
+        with io.open(settings_path, encoding="utf-8") as handle:
+            settings = json.load(handle)
     except (OSError, ValueError) as cannotRead:
         return ["cannot read %s (%s) - so which guards are wired is UNKNOWN, which is not "
                 "the same as all of them" % (settings_path, cannotRead)]
@@ -277,7 +280,8 @@ def findings(root):
             base = os.path.basename(named)
             path = os.path.join(hooks_dir, base)
             try:
-                body = io.open(path, encoding="utf-8", errors="replace").read()
+                with io.open(path, encoding="utf-8", errors="replace") as handle:
+                    body = handle.read()
             except OSError:
                 why.append("the wiring runs %s, which is not in %s" % (base, hooks_dir))
                 continue
@@ -337,8 +341,9 @@ def findings(root):
             if name in dispatchers:
                 continue
             try:
-                body = io.open(os.path.join(hooks_dir, name), encoding="utf-8",
-                               errors="replace").read()
+                with io.open(os.path.join(hooks_dir, name), encoding="utf-8",
+                               errors="replace") as handle:
+                    body = handle.read()
             except OSError as cannotRead:
                 why.append("cannot read %s (%s)" % (name, cannotRead))
                 continue

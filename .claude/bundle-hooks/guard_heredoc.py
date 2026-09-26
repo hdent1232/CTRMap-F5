@@ -44,6 +44,8 @@ import json
 import os
 import re
 import sys
+if __name__ == "__main__":
+    sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env        # noqa: E402  - one PREFIX renames every override

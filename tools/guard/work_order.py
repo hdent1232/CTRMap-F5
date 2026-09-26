@@ -48,7 +48,8 @@ def open_items(text=None):
     """
     if text is None:
         try:
-            text = io.open(LEDGER, encoding="utf-8", errors="replace").read()
+            with io.open(LEDGER, encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
         except (OSError, subprocess.TimeoutExpired):
             return []
     start = text.find("## Open")
@@ -87,7 +88,8 @@ def unproven_plants():
     record = os.path.join(ROOT, ".last-replant")
     try:
         import json
-        body = json.load(io.open(record, encoding="utf-8"))
+        with io.open(record, encoding="utf-8") as handle:
+            body = json.load(handle)
     except (OSError, ValueError):
         return ["the plant ledger has never been proven against this tree - run"
                 " `python tools/guard/replant.py`, which records .last-replant"]

@@ -146,7 +146,8 @@ def citations(root=ROOT):
         if _is_the_record(rel, root):
             continue
         try:
-            text = io.open(os.path.join(root, rel), encoding="utf-8", errors="replace").read()
+            with io.open(os.path.join(root, rel), encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
         except OSError:
             #: A file git lists and this cannot open is not a file with no citations in it.
             found.setdefault("<unreadable> " + rel, []).append(rel)
@@ -164,7 +165,8 @@ def manifest(root=ROOT):
     because an empty one refuses every citation in the tree and reads like a tree full of
     defects rather than a checker that could not find its own record."""
     try:
-        return json.load(io.open(manifest_path(root), encoding="utf-8"))
+        with io.open(manifest_path(root), encoding="utf-8") as handle:
+            return json.load(handle)
     except (OSError, ValueError):
         return None
 
@@ -297,16 +299,19 @@ def _scratch(tmp, cited, declared, on_disk, with_session_folder=True):
     os.makedirs(os.path.join(root, "tools", "guard"))
     os.makedirs(os.path.join(root, "docs"))
     subprocess.check_output(["git", "init", "-q", root], stderr=subprocess.STDOUT, timeout=60)
-    io.open(os.path.join(root, "docs", "note.md"), "w", encoding="utf-8").write(
-        LF.join("see `%s` for the evidence" % c for c in cited) + LF)
-    io.open(manifest_path(root), "w", encoding="utf-8").write(json.dumps(declared) + LF)
+    with io.open(os.path.join(root, "docs", "note.md"), "w", encoding="utf-8") as handle:
+        handle.write(
+            LF.join("see `%s` for the evidence" % c for c in cited) + LF)
+    with io.open(manifest_path(root), "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(declared) + LF)
     if with_session_folder:
         os.makedirs(os.path.join(tmp, SESSION_DIR, "_state"))
         for rel in on_disk:
             full = os.path.join(tmp, rel)
             if not os.path.isdir(os.path.dirname(full)):
                 os.makedirs(os.path.dirname(full))
-            io.open(full, "w", encoding="utf-8").write("x" + LF)
+            with io.open(full, "w", encoding="utf-8") as handle:
+                handle.write("x" + LF)
     return judge(root)
 
 

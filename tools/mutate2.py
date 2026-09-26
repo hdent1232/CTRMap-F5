@@ -501,11 +501,13 @@ def read_src(path):
     silently re-ended mid-sweep - harmless for javac, but the harness has no
     business rewriting bytes it was only asked to read.
     """
-    return io.open(str(WT / path), encoding="utf-8", errors="replace", newline="").read()
+    with io.open(str(WT / path), encoding="utf-8", errors="replace", newline="") as handle:
+        return handle.read()
 
 
 def write_src(path, text):
-    io.open(str(WT / path), "w", encoding="utf-8", newline="").write(text)
+    with io.open(str(WT / path), "w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
 
 
 def relocate(path, texts):
@@ -1078,10 +1080,11 @@ class _Pending(list):
                 # the PID too: a lock with no process behind it is read as live by
                 # age alone, and a killed sweep then holds it for ninety minutes -
                 # long enough to refuse the sync that clears another guard.
-                io.open(str(MUTATION_LOCK), "w", encoding="utf-8", newline=chr(10)).write(
-                    self[-1][0] + chr(10)
-                    + "pid=%d" % os.getpid() + chr(10)
-                    + "what=a mutation sweep" + chr(10))
+                with io.open(str(MUTATION_LOCK), "w", encoding="utf-8", newline=chr(10)) as handle:
+                    handle.write(
+                        self[-1][0] + chr(10)
+                        + "pid=%d" % os.getpid() + chr(10)
+                        + "what=a mutation sweep" + chr(10))
             elif MUTATION_LOCK.exists():
                 MUTATION_LOCK.unlink()
         except OSError as cannotWrite:
@@ -1258,7 +1261,8 @@ def _prior_killers():
     """
     exact, tally = {}, {}
     try:
-        old_ = json.load(io.open(baseline_path(), encoding="utf-8"))
+        with io.open(baseline_path(), encoding="utf-8") as handle:
+            old_ = json.load(handle)
     except Exception:
         return exact, {}
     for path_, rec_ in old_.items():
@@ -1357,7 +1361,8 @@ def selftest():
     saved_wt = WT
     try:
         (tmp / "src/t").mkdir(parents=True)
-        io.open(tmp / "src/t/T.java", "w", encoding="utf-8", newline="").write(SELFTEST_JAVA)
+        with io.open(tmp / "src/t/T.java", "w", encoding="utf-8", newline="") as handle:
+            handle.write(SELFTEST_JAVA)
         WT = tmp
         src = read_src("src/t/T.java").splitlines()
         lines = [n for n, t in enumerate(src, 1)
@@ -1425,8 +1430,9 @@ def selftest():
         check(not SKIPPED_AMBIGUOUS,
               "...and it is not filed as 'not uniquely relocatable', which is a different fact")
         dup = u"\t\tif (a < 0) {"
-        io.open(tmp / "src/t/T.java", "a", encoding="utf-8", newline="").write(
-            u"\nclass U {\n\tvoid f(int a) {\n" + dup + u"\n\t\t}\n\t}\n}\n")
+        with io.open(tmp / "src/t/T.java", "a", encoding="utf-8", newline="") as handle:
+            handle.write(
+                u"\nclass U {\n\tvoid f(int a) {\n" + dup + u"\n\t\t}\n\t}\n}\n")
         del SKIPPED_GONE[:]
         relocate("src/t/T.java", [dup])
         check(len(SKIPPED_AMBIGUOUS) == 1 and not SKIPPED_GONE,
@@ -1441,8 +1447,9 @@ def selftest():
         # the exact drift it exists to catch, in the test itself.
         _ex_path, _ex_line = sorted(EXCLUSIONS)[0]
         (tmp / _ex_path).parent.mkdir(parents=True, exist_ok=True)
-        io.open(tmp / _ex_path, "w", encoding="utf-8", newline="").write(
-            u"\n".join(["// not the real file"] * (_ex_line + 8)))
+        with io.open(tmp / _ex_path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(
+                u"\n".join(["// not the real file"] * (_ex_line + 8)))
         try:
             mutants_for(_ex_path, [_ex_line])
             check(False, "a stale exclusion is refused rather than applied to whatever line it lands on")
@@ -1456,17 +1463,20 @@ def selftest():
         # point - the restore, the final git reset - ran.
         victim = tmp / "src/t/Victim.java"
         victim.parent.mkdir(parents=True, exist_ok=True)
-        io.open(victim, "w", encoding="utf-8", newline="").write(u"GOOD\n")
+        with io.open(victim, "w", encoding="utf-8", newline="") as handle:
+            handle.write(u"GOOD\n")
         _PENDING_RESTORE.append((str(victim.relative_to(tmp)).replace("\\", "/"), u"GOOD\n"))
-        io.open(victim, "w", encoding="utf-8", newline="").write(u"MUTANT\n")
+        with io.open(victim, "w", encoding="utf-8", newline="") as handle:
+            handle.write(u"MUTANT\n")
         _saved_wt = globals().get("WT")
         globals()["WT"] = tmp
         try:
             _restore_pending()
         finally:
             globals()["WT"] = _saved_wt
-        check(io.open(victim, encoding="utf-8").read() == u"GOOD\n",
-              "a mutant still on disk at exit is restored to the original bytes")
+        with io.open(victim, encoding="utf-8") as handle:
+            check(handle.read() == u"GOOD\n",
+                  "a mutant still on disk at exit is restored to the original bytes")
         check(not _PENDING_RESTORE, "...and nothing remains owed afterwards")
 
         # DEFECT 7: a sampled run may not overwrite the whole-tree record.
@@ -1644,14 +1654,15 @@ def selftest():
               "the baseline records WHICH suite killed each line, so the next run starts "
               "from the answer instead of guessing it again")
         fake = Path(tempfile.mkdtemp(prefix="mutate2-prior")) / "b.json"
-        io.open(str(fake), "w", encoding="utf-8").write(json.dumps(
-            {"src/F.java": {"killed_lines": [
-                {"line": 10, "kind": "negate-if", "by": "AaaTest"},
-                {"line": 20, "kind": "negate-if", "by": "AaaTest"},
-                {"line": 30, "kind": "void-call", "by": "BbbTest"},
-                {"line": 40, "kind": "negate-if"}],
-                "sha256": "abc"},
-             "_meta": "not a file record at all"}))
+        with io.open(str(fake), "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(
+                {"src/F.java": {"killed_lines": [
+                    {"line": 10, "kind": "negate-if", "by": "AaaTest"},
+                    {"line": 20, "kind": "negate-if", "by": "AaaTest"},
+                    {"line": 30, "kind": "void-call", "by": "BbbTest"},
+                    {"line": 40, "kind": "negate-if"}],
+                    "sha256": "abc"},
+                 "_meta": "not a file record at all"}))
         globals()["baseline_path"] = lambda: fake
         ex, per = _prior_killers()
         check(ex.get("src/F.java", {}).get((10, "negate-if")) == "AaaTest",
@@ -1958,8 +1969,9 @@ for cid, (base, suites) in RESOLVED.items():
     git("reset", "--hard", FROZEN)
 
 build()
-io.open(BASE / "wt/_state/mutation_semantic.json", "w", encoding="utf-8", newline="\n").write(
-    json.dumps(results, indent=1))
+with io.open(BASE / "wt/_state/mutation_semantic.json", "w", encoding="utf-8", newline="\n") as handle:
+    handle.write(
+        json.dumps(results, indent=1))
 
 lines_, tally, disagreements = aggregate(results)
 survived = [d for d in lines_ if d["verdict"] == "SURVIVED"]
@@ -2070,7 +2082,8 @@ for _p, _f in live.items():
 
 regressed, fresh_holes = [], []
 if BASELINE.exists():
-    old = json.load(io.open(BASELINE, encoding="utf-8"))
+    with io.open(BASELINE, encoding="utf-8") as handle:
+        old = json.load(handle)
     regressed, fresh_holes, fixed, lost, had_killed_lines = compare_to_baseline(live, old)
     for line in fixed:
         print("  fixed: " + line)
@@ -2113,7 +2126,8 @@ if SAMPLED_FILES:
     print("  A record that measured a fraction of each file is byte-for-byte the shape of a whole")
     print("  one, except every number is smaller. Written to %s instead;" % _target.name)
     print("  re-run with 999 to produce a baseline the battery may be gated on.")
-io.open(_target, "w", encoding="utf-8", newline="\n").write(json.dumps(live, indent=1))
+with io.open(_target, "w", encoding="utf-8", newline="\n") as handle:
+    handle.write(json.dumps(live, indent=1))
 print("baseline written to %s" % _target)
 print("  to make it the battery's gate, copy it to CTRMap/mutation_baseline.json "
       "and commit - MutationBaselineTest reads it from there")

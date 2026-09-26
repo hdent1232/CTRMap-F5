@@ -224,8 +224,9 @@ def main(argv):
     record = run(quick="--quick" in argv, anyway=anyway)
     if record is None:
         return 2
-    io.open(LAST_RUN, "w", encoding="utf-8", newline=LF).write(
-        json.dumps(record, indent=1, sort_keys=True) + LF)
+    with io.open(LAST_RUN, "w", encoding="utf-8", newline=LF) as handle:
+        handle.write(
+            json.dumps(record, indent=1, sort_keys=True) + LF)
 
     print("%d suite(s) passed in %.1fs" % (record["suites_passed"], record["seconds"]))
 

@@ -48,6 +48,8 @@ import json
 import os
 import re
 import sys
+if __name__ == "__main__":
+    sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 import tempfile
 
 LF = chr(10)

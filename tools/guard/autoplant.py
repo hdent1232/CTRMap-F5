@@ -65,14 +65,16 @@ def jdk():
 
 def read(path):
     """(raw bytes, text with LF endings, whether the file was CRLF)."""
-    raw = io.open(path, "rb").read()
+    with io.open(path, "rb") as handle:
+        raw = handle.read()
     text = raw.decode("utf-8", "replace")
     return raw, (text.replace(CRLF, NL) if CRLF in text else text), (CRLF in text)
 
 
 def write_text(path, text, crlf):
-    io.open(path, "w", encoding="utf-8", newline="").write(
-        text.replace(NL, CRLF) if crlf else text)
+    with io.open(path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(
+            text.replace(NL, CRLF) if crlf else text)
 
 
 def compile_one(path, javac):
@@ -109,8 +111,9 @@ def run_suite(cls, args, java):
 
 def registered(pristine, gamedir):
     """{simple name: (class, args as written, args resolved)} from test.ps1."""
-    text = io.open(os.path.join(ROOT, "test.ps1"), encoding="utf-8",
-                   errors="replace").read()
+    with io.open(os.path.join(ROOT, "test.ps1"), encoding="utf-8",
+                   errors="replace") as handle:
+        text = handle.read()
     known = {"$gamedir": gamedir, "$pristine": pristine,
              "$a039": os.path.join(pristine, "a", "0", "3", "9"),
              "$a013": os.path.join(pristine, "a", "0", "1", "3"),
@@ -151,7 +154,8 @@ def guarded_files(suite_simple, limit):
     path = os.path.join(ROOT, "src", "ctrmap", "tests", suite_simple + ".java")
     if not os.path.isfile(path):
         return []
-    text = io.open(path, encoding="utf-8", errors="replace").read()
+    with io.open(path, encoding="utf-8", errors="replace") as handle:
+        text = handle.read()
     names = set(NAMED.findall(text))
     names |= set(re.findall(r'\b([A-Z]\w+)\s*\.', text))
     hits = []
@@ -229,7 +233,8 @@ def try_one(src, find, repl, cls, args, java, javac):
             return "nocompile", ""
         code, said = run_suite(cls, args, java)
     finally:
-        io.open(src, "wb").write(raw)
+        with io.open(src, "wb") as handle:
+            handle.write(raw)
         if not compile_one(src, javac):
             raise SystemExit("PUT BACK BUT WILL NOT COMPILE: %s - fix the tree by hand" % src)
     if code is None:
@@ -240,7 +245,8 @@ def try_one(src, find, repl, cls, args, java, javac):
 
 
 def main(argv):
-    book = json.load(io.open(LEDGER, encoding="utf-8"))
+    with io.open(LEDGER, encoding="utf-8") as handle:
+        book = json.load(handle)
     home = jdk()
     if not home:
         print("No JDK found and CTRMAP_JDK is not set.")
@@ -322,8 +328,9 @@ def main(argv):
             book["plants"].append(got)
             found += 1
             #written out every time, so a run that is interrupted keeps what it found
-            io.open(LEDGER, "w", encoding="utf-8", newline=NL).write(
-                json.dumps(book, indent=1, ensure_ascii=False) + NL)
+            with io.open(LEDGER, "w", encoding="utf-8", newline=NL) as handle:
+                handle.write(
+                    json.dumps(book, indent=1, ensure_ascii=False) + NL)
             print("  %-34s %-11s %ds  %s" % (
                 name, got["id"].rsplit("-", 1)[-1], time.time() - started,
                 got["must_say"][:46]), flush=True)

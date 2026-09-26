@@ -64,7 +64,8 @@ def event_of(path):
     it loudly rather than dropping it silently.
     """
     try:
-        tree = ast.parse(io.open(path, encoding="utf-8").read())
+        with io.open(path, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
     except (OSError, SyntaxError, ValueError):
         return None
     for node in tree.body:

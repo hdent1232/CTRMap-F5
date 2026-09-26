@@ -339,7 +339,8 @@ def main(argv):
         sys.stderr.write("usage: census.py <result.json> [--report out.md] | --selftest" + LF)
         return 2
     try:
-        result = json.load(io.open(argv[1], encoding="utf-8"))
+        with io.open(argv[1], encoding="utf-8") as handle:
+            result = json.load(handle)
     except (OSError, ValueError) as cannotRead:
         sys.stderr.write("census.py cannot read %s: %s%s" % (argv[1], cannotRead, LF))
         return 2
@@ -357,7 +358,8 @@ def main(argv):
     text = report(result)
     if "--report" in argv:
         out = argv[argv.index("--report") + 1]
-        io.open(out, "w", encoding="utf-8", newline=LF).write(text)
+        with io.open(out, "w", encoding="utf-8", newline=LF) as handle:
+            handle.write(text)
         print("census covered its scope and closed its gaps; report written to " + out)
     else:
         sys.stdout.write(text)

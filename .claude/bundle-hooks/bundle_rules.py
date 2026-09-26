@@ -67,6 +67,8 @@ import os
 import re
 import subprocess
 import sys
+if __name__ == "__main__":
+    sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env        # noqa: E402  - one PREFIX renames every environment name
@@ -933,7 +935,9 @@ def judge_unread(root, written=(), found=None):
             % (root, JUDGING))}
     os.environ[JUDGING] = os.pathsep.join(above + [mine])
     try:
-        return _judge_unread(root, written, found)
+        judged = _judge_unread(root, written, found)
+        judged["named"] = named_by(root, judged) if judged["held"] else []
+        return judged
     finally:
         if above:
             os.environ[JUDGING] = os.pathsep.join(above)
@@ -1038,6 +1042,61 @@ def _judge_unread(root, written=(), found=None):
             "fresh": sorted(set(now_held) - set(state.get("held") or {})), "blind": ""}
 
 
+#: A word a finding could name a file with: a path, `path:line`, or a dotted id.
+_NAMING = re.compile(r"[A-Za-z0-9_.~/\\:-]+")
+
+
+def named_by(root, judged):
+    """Every file of this project a held finding NAMES - a write there is a repair of the hold.
+
+    Measured 2026-09-26 on the project this came from: a held kill-claim finding named the test
+    making the claim, and the Edit that would repair that test was refused, so the change and its
+    fix could each be written only after the other. Read from the findings' TEXT, because a rule
+    returns strings and `_findings` keeps them so. A finding names a file by
+
+        its path          `src/u.py`, `src/u.py:12`, absolute inside the project; it must exist
+        a dotted id       `test_x.Class.test` or `pkg.mod`: the longest dotted prefix, as a
+                          module path, that a tracked file's path ends with
+        a file name       `plants.json`: every tracked file of that name
+
+    A NAME THE HELD CHANGE WROTE OPENS NOTHING. A rule that quotes the file it judges - a line,
+    a claim - names whatever that file spells, so the cheapest way past a hold would be to make
+    the held change carry the name of the file you want to write next. A word found in the text
+    of any held file does not count. What this cannot see: a tree rule quoting ANOTHER file,
+    written earlier through a Write the rules passed.
+    """
+    held = judged.get("held") or {}
+    wrote = [read_text(root, rel) or "" for rel in held]
+    words = set()
+    for _was, _now, findings in (judged.get("worse") or {}).values():
+        for finding in findings:
+            for word in _NAMING.findall(str(finding)):
+                word = word.strip(".:-")
+                if word and not any(word in text for text in wrote):
+                    words.add(word)
+    files, out = None, set()
+    for word in sorted(words):
+        path = re.sub(r":\d+(?:-\d+)?$", "", word).replace(chr(92), "/")
+        if "/" in path:
+            rel = rel_of(root, path if os.path.isabs(path) else os.path.join(root, path))
+            if rel != ".." and not rel.startswith("../") \
+                    and os.path.isfile(os.path.join(root, rel)):
+                out.add(rel)
+            continue
+        if "." not in path:
+            continue
+        files = tracked(root) if files is None else files
+        parts = path.split(".")
+        candidates = [path] + (["/".join(parts[:k]) + ".py" for k in range(len(parts), 0, -1)]
+                               if all(p.isidentifier() for p in parts) else [])
+        for candidate in candidates:
+            hits = [f for f in files if f == candidate or f.endswith("/" + candidate)]
+            if hits:
+                out.update(hits)
+                break
+    return sorted(out - set(held))
+
+
 def held_refusal(judged):
     """The message for a change the rules refuse that stands on disk."""
     lines = ["BLOCKED: a change reached the tree by a route no rule could read before it landed,",
@@ -1045,6 +1104,10 @@ def held_refusal(judged):
     for rel in sorted(judged["held"]):
         lines.append("  %s" % rel)
     lines.append("")
+    if judged.get("named"):
+        lines.append("  and the files the findings below name, which a repair may write:")
+        lines += ["    %s" % rel for rel in judged["named"]]
+        lines.append("")
     for name, (was, now, findings) in sorted(judged["worse"].items()):
         lines.append("  %-16s %s" % (name, "COULD NOT ANSWER" if was < 0 else
                                      "%d -> %d" % (was, now)))
@@ -1055,7 +1118,8 @@ def held_refusal(judged):
               "  asked the moment the tree shows it, against the tree as it was last judged.",
               "",
               "  Until it is repaired only these go through: a read; a Write or Edit to a path",
-              "  above, or to a rule or a hook; a command that names a path above; a run of a",
+              "  above, held or named, or to a rule or a hook; a command that names a HELD path;",
+              "  a run of a",
               "  tool under %s, which is how a record is re-measured; and `git checkout`,"
               % ", ".join(RULE_DIRS),
               "  `git restore` or `git stash`, which put a file back at the last committed",

@@ -739,6 +739,71 @@ def change_in(rel, before, after, root):
         self.assertFalse(self.refused({"hook_event_name": "Stop", "stop_hook_active": True}),
                          "the end of a turn was refused twice and would spin")
 
+    #: A rule whose finding NAMES files it did not read the name of from the held text - as a
+    #: kill-claim rule names the test making the claim, by its unittest id, when the MODULE the
+    #: claim is about is what changed.
+    NAMES = '''AT_WRITE = "named_in"
+AT_SCOPE = r"^named/"
+
+
+def named_in(rel, text):
+    if "BREAK" not in text:
+        return []
+    return ["%s breaks the claim test_named.Claims.test_it makes; src/u.py:1 reads it" % rel]
+'''
+
+    def edit(self, rel):
+        return {"tool_name": "Edit", "tool_input": {
+            "file_path": os.path.join(self.root, rel.replace("/", os.sep)),
+            "old_string": "y", "new_string": "w"}}
+
+    def hold_a_change_whose_finding_names_two_files(self):
+        self.write_file("tools/zzstub_names.py", self.NAMES)
+        sys.modules.pop("zzstub_names", None)
+        self.addCleanup(sys.modules.pop, "zzstub_names", None)
+        self.write_file("tests/test_named.py", "y = 1" + LF)
+        self.commit("the rule, and the test its finding names")
+        self.write_file("named/x.py", "BREAK" + LF)
+        judged = bundle_rules.judge_unread(self.root)
+        self.assertEqual(sorted(judged["held"]), ["named/x.py"])
+        return judged
+
+    def test_a_file_a_held_finding_names_BY_PATH_is_writable_as_its_repair(self):
+        """Measured 2026-09-26 on the project this came from: a held kill-claim finding named the
+        test making the claim, and the Edit that would repair that test was refused - the change
+        and its fix each writable only after the other. `src/u.py:1` is a path with a line."""
+        self.hold_a_change_whose_finding_names_two_files()
+        self.assertFalse(self.refused(self.edit("src/u.py")),
+                         "a write to src/u.py, which the held finding names by path, was refused")
+
+    def test_a_file_a_held_finding_names_BY_ITS_TEST_ID_is_writable_as_its_repair(self):
+        """The case measured: the finding named the test as unittest does, `module.Class.test`,
+        and the module resolves to a tracked file whatever folder it sits in."""
+        self.hold_a_change_whose_finding_names_two_files()
+        self.assertFalse(self.refused(self.edit("tests/test_named.py")),
+                         "a write to tests/test_named.py, which the held finding names by its "
+                         "test id, was refused")
+
+    def test_a_file_NO_held_finding_names_is_still_refused(self):
+        """The cheapest way past a hold: a write somewhere else."""
+        judged = self.hold_a_change_whose_finding_names_two_files()
+        self.assertTrue(self.refused(self.edit("src/m.py")),
+                        "a write to src/m.py, which no held finding names, went through")
+        # A LINE OF ITS OWN: `src/u.py` is inside the quoted finding too, so a substring of the
+        # message would pass with the listing gone.
+        said = bundle_rules.held_refusal(judged).splitlines()
+        for rel in ("src/u.py", "tests/test_named.py"):
+            self.assertIn("    " + rel, said, "the refusal does not say %s may be written" % rel)
+
+    def test_a_name_the_HELD_CHANGE_wrote_opens_nothing(self):
+        """A rule that quotes the file it judges - a line, a claim - names whatever that file
+        spells. So the cheapest way past a hold is to make the held change carry the name of the
+        file you want to write next. `zzstub_file`'s finding IS the offending line."""
+        self.write_file("src/b.py", "x = 1  # DEFECT, then see src/m.py" + LF)
+        self.assertEqual(self.held(), ["src/b.py"])
+        self.assertTrue(self.refused(self.edit("src/m.py")),
+                        "a name the held change wrote itself opened src/m.py to a write")
+
     def test_only_a_read_or_a_repair_of_the_held_path_goes_through(self):
         self.write_file("src/b.py", "x = 1  # DEFECT" + LF)
         target = os.path.join(self.root, "src", "b.py")

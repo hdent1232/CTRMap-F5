@@ -2776,6 +2776,58 @@
    ],
    "must_say": "the bundle's relocated hooks folder is a place a guard lives",
    "no_rebuild": true
+  },
+  {
+   "id": "an-open-may-be-left-to-the-collector",
+   "why": "A FILE OPENED IS A FILE CLOSED BY THE CODE THAT OPENED IT. Measured 2026-09-26: 70 opens under tools/ and .claude/ whose handle nothing held, in 23 files. On Windows a handle the collector has not closed makes the next write or delete of that path fail with errno 22 - the failure a restore, a lock release and a planting write each paid for on the project the rule came from. This plant puts one back.",
+   "file": "tools/guard/magnitude.py",
+   "find": "        with io.open(SERIES, encoding=\"utf-8\") as handle:\n            return json.load(handle)\n",
+   "replace": "        return json.load(io.open(SERIES, encoding=\"utf-8\"))  #PLANTED\n",
+   "suite": "ctrmap.tests.RuleRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: every open under tools/ and .claude/ is held"
+  },
+  {
+   "id": "an-open-may-be-left-to-the-collector-elsewhere",
+   "why": "THE SAME DEFECT IN A FILE THE RULE WAS NOT WRITTEN FROM. The 70 were spread over 23 files; a checker that only finds the site it was built against is an assertion about that site. work_order.py reads OUTSTANDING.md on every gated start.",
+   "file": "tools/guard/work_order.py",
+   "find": "            with io.open(LEDGER, encoding=\"utf-8\", errors=\"replace\") as handle:\n                text = handle.read()\n",
+   "replace": "            text = io.open(LEDGER, encoding=\"utf-8\", errors=\"replace\").read()  #PLANTED\n",
+   "suite": "ctrmap.tests.RuleRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: every open under tools/ and .claude/ is held"
+  },
+  {
+   "id": "a-handle-may-be-assigned-and-never-closed",
+   "why": "THE CHEAPEST WAY PAST A RULE ABOUT INLINE OPENS: assign the handle, read it, never close it. On the project the rule came from that shape kept a detached child's log open for the whole life of its parent, 1 of 170 sites and the one nothing else saw.",
+   "file": "tools/guard/work_order.py",
+   "find": "        with io.open(record, encoding=\"utf-8\") as handle:\n            body = json.load(handle)\n",
+   "replace": "        handle = io.open(record, encoding=\"utf-8\")  #PLANTED\n        body = json.load(handle)\n",
+   "suite": "ctrmap.tests.RuleRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: every open under tools/ and .claude/ is held"
+  },
+  {
+   "id": "the-open-rule-may-accept-any-assigned-handle",
+   "why": "THE RULE'S OWN HALF OF THE EVASION: a check that accepts every handle given a name passes the assign-and-never-close shape everywhere, and the tree stays at 0 while it does. This plant makes the rule stop asking whether the scope closes the name.",
+   "file": "tools/guard/unclosed.py",
+   "find": "            if names and all(_closed_in(_scope(parent, up), name) for name in names):\n",
+   "replace": "            if names:  #PLANTED: any named handle is held\n",
+   "suite": "ctrmap.tests.RuleRefusalsTest",
+   "args": [
+    "."
+   ],
+   "no_rebuild": true,
+   "must_say": "FAIL: and so is a handle assigned and never closed"
   }
  ],
  "retired": [
