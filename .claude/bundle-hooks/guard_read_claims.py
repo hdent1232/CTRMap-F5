@@ -208,13 +208,15 @@ def main():
     seen = _seen_path(payload.get("session_id"))
     if payload.get("stop_hook_active") and seen:
         try:
-            if io.open(seen, encoding="utf-8").read().strip() == digest:
-                return 0
+            with io.open(seen, encoding="utf-8") as handle:
+                if handle.read().strip() == digest:
+                    return 0
         except OSError:
             pass
     if seen:
         try:
-            io.open(seen, "w", encoding="utf-8").write(digest)
+            with io.open(seen, "w", encoding="utf-8") as handle:
+                handle.write(digest)
         except OSError:
             pass
     sys.stderr.write(LF.join(

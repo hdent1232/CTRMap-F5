@@ -1946,6 +1946,24 @@ class ALedgerReviewIsIndependentAndReadNotRecorded(LedgerCase):
         self.assertNotIn("the readme was never written", under_a,
                          "a failure about one request was shown under another it never named")
 
+    def test_a_failure_that_names_no_request_is_shown_under_every_one(self):
+        """A FAILURE NOTHING CAN PLACE MUST NOT BE HIDDEN. Scoping a failure to the requests its
+        reasons name is right when they name some; a reason that quotes the owner's words and
+        names no request key or item id can be about any of them, and hiding it everywhere would
+        make the cheapest FAIL to shake off the one that says least about where it applies."""
+        a, b = self.two_requests()
+        self.review_fails("r1", [{"quote": "build the ledger",
+                                  "issue": "nothing checkable was built at all"}],
+                          "2026-01-01T00:00:05Z")
+        # CONTROL: a FAIL that stands, or nothing here is asked - an UNSUPPORTED one is shown nowhere.
+        self.assertEqual([r["verdict"] for r in self.ledger.reviews(self.rows)], ["FAIL"],
+                         "the failure did not stand, so this test asks nothing")
+        self.itemise(a, b, "build the ledger, again", "write the readme, again")
+        for key, block in zip((a, b), self.blocks(a, b)):
+            with self.subTest(request=key):
+                self.assertIn("nothing checkable was built at all", block,
+                              "a failure that names no request was hidden from one it may be about")
+
     def test_only_the_LATEST_failure_is_shown(self):
         """Every earlier FAIL was appended to the next prompt, and each reviewer read them as fact
         - one had half-quoted the evidence rule - so the anchor only grew: four and five FAILs in a

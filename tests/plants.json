@@ -179,6 +179,22 @@
    "site": "instance",
    "why": "THE DEFECT THAT LOOPED TWO SESSIONS: a failure naming two requests was shown under all six of a review, and criterion 5 then asked the other four to answer it - some with answered items, which cannot be amended - so only contrived items could clear it."
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_failure_that_names_no_request_is_shown_under_every_one": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a failure that names no request was hidden from one it may be about",
+   "new": "    if key not in named:\n",
+   "old": "    if named and key not in named:\n",
+   "site": "evasion",
+   "why": "The cheapest way to satisfy 'show a failure only where its reasons name the request' is to show it only where they do - which hides a failure whose reasons name no request anywhere, and makes the vaguest FAIL the easiest one to shake off."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_failure_that_names_no_request_is_shown_under_every_one::return": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a failure that names no request was hidden from one it may be about",
+   "new": "    return [shown(latest[\"text\"])] if named else []\n",
+   "old": "    return [shown(latest[\"text\"])]\n",
+   "site": "elsewhere",
+   "why": "The same drop at the other line that decides it: the scoping test above can pass while the return discards a failure nothing can place, because only the fallback distinguishes a failure about no request from one about another request."
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_few_words_are_not_a_quote": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a quote of a few words, found anywhere, was taken as evidence",

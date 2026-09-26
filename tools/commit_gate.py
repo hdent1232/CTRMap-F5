@@ -203,7 +203,8 @@ def guard_claim(message):
 
 def _defines(test_file, class_name, module):
     try:
-        tree = ast.parse(io.open(os.path.join(ROOT, test_file), encoding="utf-8").read())
+        with io.open(os.path.join(ROOT, test_file), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
     except (OSError, SyntaxError):
         return "%s cannot be read" % test_file
     for node in ast.walk(tree):
@@ -246,7 +247,8 @@ def checker_resolves(message, execute=True):
     if why:
         out.append(why)
     try:
-        plants = json.load(io.open(os.path.join(ROOT, LEDGER), encoding="utf-8")).get("plants")
+        with io.open(os.path.join(ROOT, LEDGER), encoding="utf-8") as handle:
+            plants = json.load(handle).get("plants")
     except (OSError, ValueError):
         plants = None
     if plants is None:
@@ -308,7 +310,8 @@ def test_counts(message):
     if not claims:
         return []
     try:
-        run = json.load(io.open(os.path.join(ROOT, RECORD), encoding="utf-8"))
+        with io.open(os.path.join(ROOT, RECORD), encoding="utf-8") as handle:
+            run = json.load(handle)
     except (OSError, ValueError):
         return ["the message claims %s tests and no suite run is recorded in %s"
                 % (claims, RECORD)]
@@ -423,7 +426,8 @@ def fix_has_a_plant(message, keys=None, drive=None, own=None, added=None, prove=
     if keys and drive is None:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import prove_plants
-        plants = json.load(io.open(os.path.join(ROOT, LEDGER), encoding="utf-8"))["plants"]
+        with io.open(os.path.join(ROOT, LEDGER), encoding="utf-8") as handle:
+            plants = json.load(handle)["plants"]
 
         def drive(key):
             return prove_plants.drive_plant(key, plants[key])
@@ -537,7 +541,8 @@ def held_plants_redden(files, keys=None, drive=None, own_keys=None, prove=None):
     if keys and drive is None:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import prove_plants
-        plants = json.load(io.open(os.path.join(ROOT, LEDGER), encoding="utf-8"))["plants"]
+        with io.open(os.path.join(ROOT, LEDGER), encoding="utf-8") as handle:
+            plants = json.load(handle)["plants"]
 
         def drive(key):
             if key not in plants:
@@ -545,8 +550,8 @@ def held_plants_redden(files, keys=None, drive=None, own_keys=None, prove=None):
             return prove_plants.drive_plant(key, plants[key])
     if own_keys and prove is None:
         try:
-            now = _own_entries(json.load(io.open(os.path.join(ROOT, own[0]), encoding="utf-8"))
-                               .get("plants"), own[1]) or {}
+            with io.open(os.path.join(ROOT, own[0]), encoding="utf-8") as handle:
+                now = _own_entries(json.load(handle).get("plants"), own[1]) or {}
         except (OSError, ValueError, AttributeError, TypeError):
             now = None
 
@@ -600,7 +605,8 @@ def main(argv):
         sys.stdout.write(__doc__)
         return 2
     try:
-        message = io.open(argv[1], encoding="utf-8").read()
+        with io.open(argv[1], encoding="utf-8") as handle:
+            message = handle.read()
     except OSError as exc:
         sys.stderr.write("REFUSING THE COMMIT: the message cannot be read (%s)%s" % (exc, LF))
         return 1

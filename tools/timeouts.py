@@ -92,7 +92,8 @@ def _with_imports(rel, seen):
         return
     seen.add(rel)
     try:
-        tree = ast.parse(io.open(os.path.join(ROOT, rel), encoding="utf-8").read())
+        with io.open(os.path.join(ROOT, rel), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
     except (OSError, SyntaxError):
         return
     names = set()
@@ -121,7 +122,8 @@ def gates():
     if os.path.isdir(githooks):
         for name in sorted(os.listdir(githooks)):
             try:
-                text = io.open(os.path.join(githooks, name), encoding="utf-8").read()
+                with io.open(os.path.join(githooks, name), encoding="utf-8") as handle:
+                    text = handle.read()
             except (OSError, UnicodeDecodeError):
                 continue
             for script in re.findall(r"python[0-9.]*\s+(?:-\S+\s+)*(\S+\.py)", text):
@@ -162,7 +164,8 @@ def findings_in(rel, source):
 def offenders():
     out = []
     for rel in gates():
-        source = io.open(os.path.join(ROOT, rel), encoding="utf-8").read()
+        with io.open(os.path.join(ROOT, rel), encoding="utf-8") as handle:
+            source = handle.read()
         out.extend((rel, line) for line in unbounded(source))
     return out
 

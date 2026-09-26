@@ -130,7 +130,8 @@ def records(project=None, tree=None):
         if not name.endswith(".json"):
             continue
         try:
-            payload = json.loads(io.open(os.path.join(folder, name), encoding="utf-8").read())
+            with io.open(os.path.join(folder, name), encoding="utf-8") as handle:
+                payload = json.loads(handle.read())
         except (OSError, ValueError):
             continue
         if not isinstance(payload, dict):
@@ -152,8 +153,9 @@ def gaps(project=None, tree=None):
 
 def held(project=None):
     try:
-        return json.loads(
-            io.open(os.path.join(_root(project), BASELINE), encoding="utf-8").read())
+        with io.open(os.path.join(_root(project), BASELINE), encoding="utf-8") as handle:
+            return json.loads(
+                handle.read())
     except (OSError, ValueError):
         return {}
 
@@ -317,8 +319,9 @@ def record(project=None):
         # deletes its own ratchet on every run, which is a defect this bundle has seen.
         "kind": kinds,
     }
-    io.open(os.path.join(root, BASELINE), "w", encoding="utf-8", newline=LF).write(
-        json.dumps(payload, indent=1, sort_keys=True) + LF)
+    with io.open(os.path.join(root, BASELINE), "w", encoding="utf-8", newline=LF) as handle:
+        handle.write(
+            json.dumps(payload, indent=1, sort_keys=True) + LF)
     sys.stdout.write("recorded %d module-keyed record(s) against %d module(s)%s"
                      % (len(ceilings), len(tree), LF))
     return 0
