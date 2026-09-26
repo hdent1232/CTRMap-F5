@@ -68,7 +68,14 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bundle_env        # noqa: E402  - one PREFIX renames every environment name
+
 LF = chr(10)
+
+#: Set in the environment while a process judges a tree, naming that tree - so a process a rule
+#: starts, and every process under it, cannot judge the SAME tree again inside the judgement.
+JUDGING = bundle_env.name("JUDGING")
 
 #: Where a project keeps checkers that declare a marker, relative to its root.
 RULE_DIRS = ("tools",)
@@ -902,7 +909,39 @@ def _judged_by_some_rule(rel, found):
     return any(r.kind in WRITE_KINDS and (r.error or r.watches(rel)) for r in found)
 
 
+def _tree_key(root):
+    return os.path.normcase(os.path.realpath(root))
+
+
 def judge_unread(root, written=(), found=None):
+    """`_judge_unread`, refused INSIDE A JUDGEMENT OF THE SAME TREE.
+
+    A rule that must run the change - the changed tests, each alone - runs them in a child, and
+    a test that runs a real hook makes that child judge the tree again: it holds the same change,
+    asks the same rule, starts the same child. Measured 2026-09-26 on the project this came from:
+    about ninety processes, and every act in two sessions held, until the change went back to
+    HEAD. So the judgement names its tree in the environment every child inherits, and a
+    judgement of a tree already being judged above it is BLIND - told why, never a clean empty
+    answer - which `guard_held_writes` refuses on, loudly and once, where the test is visible.
+    """
+    mine = _tree_key(root)
+    above = [key for key in os.environ.get(JUDGING, "").split(os.pathsep) if key]
+    if mine in above:
+        return {"held": {}, "worse": {}, "fresh": [], "blind": (
+            "a judgement of %s is already running in a process above this one (%s) - a rule's "
+            "child that judges the same tree again would start the same rule again, without end"
+            % (root, JUDGING))}
+    os.environ[JUDGING] = os.pathsep.join(above + [mine])
+    try:
+        return _judge_unread(root, written, found)
+    finally:
+        if above:
+            os.environ[JUDGING] = os.pathsep.join(above)
+        else:
+            os.environ.pop(JUDGING, None)
+
+
+def _judge_unread(root, written=(), found=None):
     """Every change that reached the tree since it was last judged, judged now; what stays HELD.
 
     {"held": {rel: digest of its text before}, "worse": {rule: [was, now, findings]},

@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env        # noqa: E402  - one PREFIX renames every override
 import bundle_shell      # noqa: E402  - an agent launch, found by shape
 import guard_fanout      # noqa: E402  - the one reader of the one launch counter
+import request_ledger    # noqa: E402  - the one launch the ledger itself demands
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -94,6 +95,12 @@ def trend_problem():
 
 def verdict(payload):
     if not bundle_shell.launches(payload):
+        return False, None
+    # THE REVIEW THE LEDGER DEMANDS IS NOT A CAMPAIGN ROUND. Refusing it in a window that already
+    # ran an agent, or under a flat round log, leaves a turn that must be reviewed to end and may
+    # not be - the deadlock `guard_agent_edits` put two sessions in on 2026-09-26. Its own
+    # convergence is the ledger's: after REVIEW_ROUNDS without a PASS it is not asked again.
+    if request_ledger.is_owed_review(payload):
         return False, None
     if not bundle_env.allowed("ALLOW_NONCONVERGING"):
         why = trend_problem()

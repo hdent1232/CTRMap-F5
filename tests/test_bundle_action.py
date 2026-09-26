@@ -665,6 +665,73 @@ class ACommandsWriteIsJudgedAndHeldUntilRepaired(ScratchProject, unittest.TestCa
         self.assertTrue(self.refused({"tool_name": "Agent", "tool_input": {
             "prompt": "carry on", "subagent_type": "general-purpose"}}))
 
+    #: A rule that must RUN the change, as an isolation rule runs the changed tests: its child
+    #: judges the SAME tree again, which asks this rule again. Bounded at three deep, so the
+    #: recursion it exists to show costs seconds rather than every process on the machine.
+    REJUDGE = '''import os
+import subprocess
+import sys
+
+AT_WRITE_CHANGE = "change_in"
+AT_SCOPE = r"^rejudge/"
+
+
+def change_in(rel, before, after, root):
+    depth = int(os.environ.get("ZZ_DEPTH", "0"))
+    if depth >= 3:
+        return []
+    code = ("import sys; sys.path.insert(0, sys.argv[2]); import bundle_rules; "
+            "print(bundle_rules.judge_unread(sys.argv[1])['blind'] or 'JUDGED')")
+    done = subprocess.run([sys.executable, "-B", "-c", code, root, os.environ["ZZ_HOOKS"]],
+                          env=dict(os.environ, ZZ_DEPTH=str(depth + 1)),
+                          capture_output=True, text=True, timeout=120)
+    with open(os.environ["ZZ_OUT"], "a", encoding="utf-8") as handle:
+        handle.write("%d %s" % (depth + 1, (done.stdout or done.stderr).strip()[-300:]) + chr(10))
+    return []
+'''
+
+    def test_a_rules_child_that_judges_the_same_tree_is_told_why_and_starts_nothing(self):
+        """A JUDGEMENT MUST NOT START ITSELF AGAIN. Measured 2026-09-26 on the project this came
+        from: a test that ran the real hooks made the isolation rule's child judge the real tree,
+        which held that test's own file and ran it again in another child - about ninety
+        processes, and every act in two sessions held until the change went back to HEAD."""
+        from unittest import mock
+        out = os.path.join(tempfile.mkdtemp(prefix="rejudge-"), "said.txt")
+        self.addCleanup(shutil.rmtree, os.path.dirname(out), True)
+        self.write_file("tools/zzstub_rejudge.py", self.REJUDGE)
+        sys.modules.pop("zzstub_rejudge", None)
+        self.addCleanup(sys.modules.pop, "zzstub_rejudge", None)
+        self.commit("the rule")
+        self.write_file("rejudge/x.txt", "changed" + LF)
+        with mock.patch.dict(os.environ, {"ZZ_HOOKS": HOOKS, "ZZ_OUT": out}):
+            os.environ.pop("ZZ_DEPTH", None)
+            os.environ.pop(bundle_rules.JUDGING, None)
+            bundle_rules.judge_unread(self.root)
+            self.assertNotIn(bundle_rules.JUDGING, os.environ,
+                             "the judgement left its mark on the process after it ended")
+        with io.open(out, encoding="utf-8") as handle:
+            said = handle.read().splitlines()
+        self.assertEqual(len(said), 1, "a child judging the same tree started the rule again: %s"
+                         % said)
+        self.assertIn("already running", said[0],
+                      "a child judging the same tree was not told why it may not: %s" % said)
+
+    def test_the_same_tree_spelled_another_way_is_still_the_same_tree(self):
+        """The cheapest way past a guard keyed on a path is another spelling of it: a drive
+        letter in the other case, a `..` back into the same folder. The child finds its tree
+        from where its hook sits, and nothing makes that spelling match the parent's."""
+        from unittest import mock
+        spellings = [os.path.join(self.root, "src", "..")]
+        if os.name == "nt":
+            spellings.append(self.root.upper())
+        for spelled in spellings:
+            with self.subTest(spelled=spelled):
+                marked = {bundle_rules.JUDGING: bundle_rules._tree_key(self.root)}
+                with mock.patch.dict(os.environ, marked):
+                    judged = bundle_rules.judge_unread(spelled)
+                self.assertIn("already running", judged["blind"],
+                              "the tree being judged, spelled another way, was judged again")
+
     def test_the_turn_cannot_end_on_a_held_change_but_is_not_refused_twice(self):
         self.write_file("src/b.py", "x = 1  # DEFECT" + LF)
         self.assertTrue(self.refused({"hook_event_name": "Stop"}),

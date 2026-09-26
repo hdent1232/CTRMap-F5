@@ -311,19 +311,90 @@ def calls(rows):
     came back, as the harness recorded them."""
     out = {}
     for index, row in enumerate(rows):
-        for part in _parts(row):
-            if not isinstance(part, dict):
-                continue
+        parts = [part for part in _parts(row) if isinstance(part, dict)]
+        # The agent a launch ran as, from the harness's own record of the result - read only
+        # where the row answers ONE call, so it cannot be attached to the wrong one.
+        given = row.get("toolUseResult") if isinstance(row, dict) else None
+        results = [part for part in parts if part.get("type") == "tool_result"]
+        agent = given.get("agentId") if isinstance(given, dict) and len(results) == 1 else None
+        for part in parts:
             if part.get("type") == "tool_use" and part.get("id"):
                 out[part["id"]] = {"index": index, "name": part.get("name"),
                                    "input": part.get("input") or {},
                                    "strings": _strings(part.get("input"), []),
-                                   "error": None, "result": None}
+                                   "error": None, "result": None, "agent": None}
             elif part.get("type") == "tool_result" and part.get("tool_use_id") in out:
                 call = out[part["tool_use_id"]]
                 call["error"] = bool(part.get("is_error"))
                 call["result"] = LF.join(_strings(part.get("content"), []))
+                call["agent"] = agent if isinstance(agent, str) else None
     return out
+
+
+#: The sentence a launch's own result carries when the harness delivers the agent's report as a
+#: separate message instead - measured on Claude Code 2.1.281, whose result record says
+#: `handback: "send"`. The id is the agent the report will come from.
+HANDED_BACK = re.compile(r'report was delivered to you as a message from "([^"]+)"')
+
+#: The frame a handed-back report arrives in: the harness's paragraph, then the report with every
+#: line indented, then the closing tag at column zero.
+_FRAME = re.compile(r'\A<agent-message from="([^"]+)">\n(.*?)The report follows:\n(.*)\n'
+                    r'</agent-message>\s*\Z', re.S)
+
+
+def handbacks(rows):
+    """{agent id: [(row index, report)]} - each subagent's report, as the harness handed it back.
+
+    THE HARNESS CHANGED HOW A SYNCHRONOUS AGENT RETURNS. Measured 2026-09-26 in a session on
+    2.1.281: a review's own tool result read only `This agent's report was delivered to you as a
+    message from "<id>" (its SubagentHandback call)`, and the report arrived as a queued message
+    framed `<agent-message from="<id>">`. The ledger read the pointer as the answer, found no
+    verdict in it, and counted a PASS as a non-pass - until it ESCALATED over three reviews, the
+    last of which had passed.
+
+    ONLY A FRAME THE HARNESS DELIVERED FOR THAT AGENT. A `queued_command` whose delivery names a
+    PEER sender that is the agent itself (`from` and `senderTaskId`), whose frame names the same
+    id. The harness indents every line of the report, so a line at column zero inside it is a
+    forged frame, and the message is not read at all.
+    """
+    out = {}
+    for index, row in enumerate(rows):
+        held = row.get("attachment") if isinstance(row, dict) else None
+        if not isinstance(held, dict) or held.get("type") != "queued_command":
+            continue
+        origin = held.get("origin") if isinstance(held.get("origin"), dict) else {}
+        sender = origin.get("from")
+        if origin.get("kind") != "peer" or not sender or origin.get("senderTaskId") != sender:
+            continue
+        frame = _FRAME.match(str(held.get("prompt") or "").replace("\r\n", LF))
+        if not frame or frame.group(1) != sender:
+            continue
+        lines = frame.group(3).split(LF)
+        if any(line and not line.startswith("  ") for line in lines):
+            continue
+        out.setdefault(sender, []).append((index, LF.join(line[2:] for line in lines)))
+    return out
+
+
+def handed_back_answer(call, handed):
+    """The report a launch's result POINTS to, or None when its result is the report itself.
+
+    THE FIRST HAND-BACK AFTER THE LAUNCH, NEVER A LATER ONE. A finished agent is resumed by
+    messaging its id, and it hands back again under the same id - so a reviewer told its FAIL was
+    wrong, and asked to reconsider, would hand back a PASS the agent had argued it into.
+    """
+    pointed = HANDED_BACK.search(call["result"] or "")
+    if not pointed:
+        return None
+    agent = pointed.group(1)
+    if call.get("agent") not in (None, agent):
+        return ("the launch's result points to a hand-back from %s and the harness recorded the "
+                "agent as %s - its verdict is unknown" % (agent, call["agent"]))
+    after = [report for index, report in handed.get(agent, []) if index > call["index"]]
+    if not after:
+        return ("the reviewer's report was handed back as a message from %s, and no such "
+                "hand-back is in the transcript - its verdict is unknown" % agent)
+    return after[0]
 
 
 def _epoch(stamp):
@@ -568,6 +639,7 @@ def reviews(rows, made=None):
     answer whose `leftUndone` cannot be read is kept whole from its verdict on, never dropped.
     """
     made = calls(rows) if made is None else made
+    handed = handbacks(rows)
     out = []
     for call in made.values():
         found = [launch for launch in bundle_shell.launches({"tool_input": call["input"]})
@@ -576,7 +648,8 @@ def reviews(rows, made=None):
             continue
         prompt = str(found[0].get("prompt"))
         digest = prompt.split(TOKEN, 1)[1][:12]
-        answer = call["result"] or ""
+        pointed = handed_back_answer(call, handed)
+        answer = (call["result"] or "") if pointed is None else pointed
         found = [m for m in VERDICT.finditer(answer) if m.group(1) == digest]
         own = answer[found[-1].start():] if found else answer
         why = left_undone(own) if found else None
@@ -923,6 +996,10 @@ def launch_problem(payload, root=None):
         if launch.get("run_in_background") is not False:
             return ("a ledger review runs synchronously - pass run_in_background: false - so its "
                     "verdict is in the transcript when the turn tries to end")
+        if launch.get("isolation"):
+            return ("a ledger review reads THIS tree - a worktree or a remote copy holds HEAD, not "
+                    "the work it is judging - so it names no isolation (this one names %r)"
+                    % launch.get("isolation"))
     return ""
 
 

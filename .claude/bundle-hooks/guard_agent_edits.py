@@ -45,6 +45,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_env        # noqa: E402  - one PREFIX renames every override
 import bundle_shell      # noqa: E402  - the call, found by shape, at any depth
+import request_ledger    # noqa: E402  - the one launch the ledger itself demands
 
 BYPASS = bundle_env.name("ALLOW_PARALLEL_EDIT")
 
@@ -108,6 +109,14 @@ def siblings(transcript_path, tool_use_id):
 
 def verdict(payload):
     """(deny?, reason) for one call. Pure apart from reading the transcript it is pointed at."""
+    # THE REVIEW THE LEDGER DEMANDS IS A SURVEY, and a hook that refused it left a turn nothing
+    # could end - measured 2026-09-26: the ledger's stop demanded the owed review, this guard read
+    # the owner's quoted words in its prompt ("fix", "build") as an editing brief and, unable to
+    # find the call in the transcript, refused it; the only way out was an override. The owed
+    # review is one synchronous launch of the prompt the ledger writes, on the declared model -
+    # `guard_fanout` already lets exactly that through, and every launch guard must.
+    if request_ledger.is_owed_review(payload):
+        return False, None
     found = [launch for launch in bundle_shell.launches(payload) if editing(launch)]
     if not found:
         return False, None

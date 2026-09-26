@@ -187,6 +187,54 @@
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST THE QUOTE RULE: a word or two that appears somewhere in any prompt, so every FAIL supports itself and the rule checks nothing. A clause is what a failure is about; a word is not."
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_hand_back_that_is_not_the_reviewers_own_is_no_verdict": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a hand-back that is not the reviewer's own was read as its verdict",
+   "new": "        sender = sender or origin.get(\"senderTaskId\")\n",
+   "old": "        if origin.get(\"kind\") != \"peer\" or not sender or origin.get(\"senderTaskId\") != sender:\n            continue\n",
+   "site": "evasion",
+   "why": "The channel this ledger closed once already: a verdict read from a message the working agent can put in the transcript. Only a queued message the harness delivered from the reviewer itself - a peer sender whose from and senderTaskId are both the launch's agent - is its report."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_hand_back_that_is_not_the_reviewers_own_is_no_verdict::column": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a hand-back that is not the reviewer's own was read as its verdict",
+   "new": "",
+   "old": "        if any(line and not line.startswith(\"  \") for line in lines):\n            continue\n",
+   "site": "elsewhere",
+   "why": "The harness says so in the frame itself: it indents every line of a report, so a line at column zero inside it would be forged. A frame read without that check takes a report someone else framed as the reviewer's own."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_hand_back_that_is_not_the_reviewers_own_is_no_verdict::recorded": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a hand-back that is not the reviewer's own was read as its verdict",
+   "new": "    if False:\n",
+   "old": "    if call.get(\"agent\") not in (None, agent):\n",
+   "site": "elsewhere",
+   "why": "Two harness records name the agent a launch ran as - the pointer sentence and the result's agentId - and a reader that trusts either alone reads a hand-back from whichever agent the pointer names. When they disagree the verdict is unknown, never the pointer's."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_handed_back_FAIL_keeps_its_reasons": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a handed-back FAIL that quotes its item was lost",
+   "new": "        answer = call[\"result\"] or \"\"\n",
+   "old": "        answer = (call[\"result\"] or \"\") if pointed is None else pointed\n",
+   "site": "instance",
+   "why": "The same pointer, on the other verdict: the two real FAILs before that PASS quoted the owner's words and were handed back the same way, so the ledger never saw their reasons - the next reviewer could not be shown them and the owner could not be told them."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_launch_dressed_as_the_owed_review_is_still_refused_by_each": {
+   "file": ".claude/bundle-hooks/guard_agent_edits.py",
+   "must_say": "a launch dressed as the owed review walked past a launch guard",
+   "new": "    if request_ledger.TOKEN in json.dumps(payload):\n        return False, None\n    found = [launch",
+   "old": "    if request_ledger.is_owed_review(payload):\n        return False, None\n    found = [launch",
+   "site": "evasion",
+   "why": "The cheapest way to satisfy 'let the owed review through' is to excuse anything carrying the review token - which lets an editing agent through any launch guard by pasting the token and asking for more, in the background or in a worktree."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_launch_dressed_as_the_owed_review_is_still_refused_by_each::isolation": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a launch dressed as the owed review walked past a launch guard",
+   "new": "",
+   "old": "        if launch.get(\"isolation\"):\n            return (\"a ledger review reads THIS tree - a worktree or a remote copy holds HEAD, not \"\n                    \"the work it is judging - so it names no isolation (this one names %r)\"\n                    % launch.get(\"isolation\"))\n",
+   "site": "elsewhere",
+   "why": "launch_problem never asked about isolation, so the exact owed prompt launched into its own worktree was the owed review to every guard that excuses one - guard_agent_edits classes a worktree launch as EDITING, and it walked past; and a review in a worktree reads HEAD, not the work."
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_launch_that_is_not_exactly_the_owed_review_is_refused": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a reviewer handed a different prompt was allowed to run",
@@ -195,6 +243,14 @@
    "site": "elsewhere",
    "why": "a reviewer the agent can word is not independent: one sentence softening what to fail is enough, and the measured review cost 11 calls and about $0.09 to produce a verdict that would then mean nothing"
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_launch_that_is_not_exactly_the_owed_review_is_refused::isolation": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a reviewer handed a different prompt was allowed to run",
+   "new": "",
+   "old": "        if launch.get(\"isolation\"):\n            return (\"a ledger review reads THIS tree - a worktree or a remote copy holds HEAD, not \"\n                    \"the work it is judging - so it names no isolation (this one names %r)\"\n                    % launch.get(\"isolation\"))\n",
+   "site": "instance",
+   "why": "The review door itself, held directly and not only through the launch guards that ask it: a review launched into another tree reads HEAD, not the uncommitted work it is judging, and was accepted as the owed review because no line asked where it would run."
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_launch_the_door_DENIED_is_no_review_whatever_its_answer_says": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a denied launch's answer was read as a reviewer's verdict",
@@ -202,6 +258,14 @@
    "old": "        if not found or call[\"error\"] is not False:",
    "site": "elsewhere",
    "why": "a launch the door refused still sits in the transcript, answered by the denial; read as a review, a reworded prompt that was never allowed to run would pass on whatever words the refusal happened to quote"
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_pointer_with_no_hand_back_is_an_UNKNOWN_verdict_and_says_so": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a hand-back the ledger could not find was reported as if it were the answer",
+   "new": "    if not after:\n        return None\n",
+   "old": "    if not after:\n        return (\"the reviewer's report was handed back as a message from %s, and no such \"\n                \"hand-back is in the transcript - its verdict is unknown\" % agent)\n",
+   "site": "elsewhere",
+   "why": "A query that cannot read its subject must not report it absent: a pointer whose hand-back is missing was read as the answer itself, and its text - the harness's sentence - became the review's reasons, which is exactly what the escalation quoted to the peer as the reviewer's case."
   },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_quote_of_an_EARLIER_reviewer_is_not_evidence": {
    "file": ".claude/bundle-hooks/request_ledger.py",
@@ -227,6 +291,14 @@
    "site": "elsewhere",
    "why": "a `prompt` key read as a launch: WebFetch carries one, so fetching any page that prints PASS after the owed prompt would forge the whole review - found when the first plant here, an echo, did not redden and asked why not"
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_verdict_the_harness_HANDED_BACK_is_read_from_the_frame_the_launch_names": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a handed-back PASS was not read as the review's verdict",
+   "new": "        answer = call[\"result\"] or \"\"\n",
+   "old": "        answer = (call[\"result\"] or \"\") if pointed is None else pointed\n",
+   "site": "instance",
+   "why": "MEASURED 2026-09-26 in a peer session on 2.1.281: a review's own result was only a pointer to a hand-back message, the ledger read the pointer as the answer, and a PASS was counted a non-pass until the ledger ESCALATED over three reviews that had in fact settled it."
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_after_three_reviews_without_a_PASS_the_reviewer_is_no_longer_asked": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "the reviewer was asked a fourth time instead of the owner being told",
@@ -235,6 +307,30 @@
    "site": "instance",
    "why": "THE LOOP THAT SPENT THE OWNER'S USAGE: four and five reviews in a row, at about 50k tokens each, failing on reasons no item held, with nothing bounding how many more would follow. The owner asked for something to be done about exactly this."
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_every_hook_that_judges_a_launch_lets_the_owed_review_through": {
+   "file": ".claude/bundle-hooks/guard_agent_edits.py",
+   "must_say": "a hook refuses the review the ledger demands",
+   "new": "    found = [launch",
+   "old": "    if request_ledger.is_owed_review(payload):\n        return False, None\n    found = [launch",
+   "site": "instance",
+   "why": "MEASURED 2026-09-26: the ledger's stop demanded the owed review and guard_agent_edits refused it, reading the owner's quoted imperatives as an editing brief with the call's id missing from the transcript - a turn that had to be reviewed to end and could not be, short of an override."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_every_hook_that_judges_a_launch_lets_the_owed_review_through::campaign": {
+   "file": ".claude/bundle-hooks/guard_agent_campaign.py",
+   "must_say": "a hook refuses the review the ledger demands",
+   "new": "    if not bundle_env.allowed(\"ALLOW_NONCONVERGING\"):",
+   "old": "    if request_ledger.is_owed_review(payload):\n        return False, None\n    if not bundle_env.allowed(\"ALLOW_NONCONVERGING\"):",
+   "site": "elsewhere",
+   "why": "The same deadlock in a second launch guard, found by asking the class rather than the instance: guard_agent_campaign refused any launch in a window that had already run an agent without a fresh STATE.md, or under three flat logged rounds - the owed review included."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_every_hook_that_judges_a_launch_lets_the_owed_review_through::exit_code": {
+   "file": "tests/test_bundle.py",
+   "must_say": "a hook refusing by its exit code was not counted - the test is vacuous",
+   "new": "            if '\"deny\"' in done.stdout:\n",
+   "old": "            if done.returncode == 2 or '\"deny\"' in done.stdout:\n",
+   "site": "elsewhere",
+   "why": "The defect this test's first version had: it counted a refusal only as a JSON deny or a SystemExit, while guard_held_writes refuses by returning 2 - so a launch guard refusing the owed review that way would have left this test green over the very deadlock it exists to catch."
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_only_the_LATEST_failure_is_shown": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a superseded failure was shown to the next reviewer again",
@@ -242,6 +338,14 @@
    "old": "    return [shown(latest[\"text\"])]\n",
    "site": "elsewhere",
    "why": "THE ANCHOR THAT ONLY GREW. Every earlier FAIL was appended to the next prompt, each reviewer read them as established fact - one had half-quoted the evidence rule - and four and five FAILs in a row followed on stale reasons, in two sessions."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_only_the_reviewers_FIRST_hand_back_is_its_verdict": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a resumed reviewer's second hand-back replaced its verdict",
+   "new": "    return after[-1]\n",
+   "old": "    return after[0]\n",
+   "site": "evasion",
+   "why": "The cheapest way past an independent reviewer that hands back: resume it by messaging its id, argue with its FAIL, and read its second hand-back - the same agent id, a PASS the working agent talked it into. Only the first report after the launch is the review."
   },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_escalation_must_be_SAID_to_the_owner": {
    "file": ".claude/bundle-hooks/request_ledger.py",
@@ -762,6 +866,30 @@
    "site": "evasion",
    "why": "THE CHEAPEST WAY TO LET THE WRAPPED RUN THROUGH: anything behind a runner is a repair. `timeout 60 python src/run.py` then builds on the held change freely."
   },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_rules_child_that_judges_the_same_tree_is_told_why_and_starts_nothing": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a child judging the same tree started the rule again",
+   "new": "    if False:\n",
+   "old": "    if mine in above:\n",
+   "site": "instance",
+   "why": "MEASURED 2026-09-26 on DT Engine: a test that ran the real hooks made the isolation rule's child judge the real tree, which held the test's own file and ran it again in another child - about ninety processes by the peer session's count, and every act in two sessions held."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_rules_child_that_judges_the_same_tree_is_told_why_and_starts_nothing::cleanup": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "the judgement left its mark on the process after it ended",
+   "new": "",
+   "old": "        else:\n            os.environ.pop(JUDGING, None)\n",
+   "site": "elsewhere",
+   "why": "A mark left behind after the judgement ends makes every later judgement in the same process blind - a hook process that judges twice, or a test runner that judges many scratch trees, would be refused for a recursion that is not happening."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_rules_child_that_judges_the_same_tree_is_told_why_and_starts_nothing::inherit": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a child judging the same tree started the rule again",
+   "new": "",
+   "old": "    os.environ[JUDGING] = os.pathsep.join(above + [mine])\n",
+   "site": "elsewhere",
+   "why": "The refusal is only as good as the mark every child inherits: a judgement that never names its tree in the environment leaves each child free to judge it again, and the refusal above never fires anywhere the recursion actually happens."
+  },
   "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_only_a_read_or_a_repair_of_the_held_path_goes_through": {
    "file": ".claude/bundle-hooks/guard_held_writes.py",
    "must_say": "walked past a held change",
@@ -769,6 +897,14 @@
    "old": "for t in _without_comment(command).split()]",
    "site": "evasion",
    "why": "NAMING THE HELD PATH IN A COMMENT. A command that names a held path is let through as its repair; if the name counted inside a shell comment, appending `# <held path>` to any command at all would carry it past the refusal - the cheapest evasion a list of allowed commands has."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_the_same_tree_spelled_another_way_is_still_the_same_tree": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "the tree being judged, spelled another way, was judged again",
+   "new": "    return root\n",
+   "old": "    return os.path.normcase(os.path.realpath(root))\n",
+   "site": "evasion",
+   "why": "The cheapest way past a guard keyed on a path is another spelling of it: a child finds its tree from where its hook sits, and on Windows a drive letter in the other case or a path through `..` names the same tree to the filesystem and a different one to a string compare."
   },
   "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_the_turn_cannot_end_on_a_held_change_but_is_not_refused_twice": {
    "file": ".claude/bundle-hooks/guard_held_writes.py",
