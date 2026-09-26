@@ -80,15 +80,37 @@ both would have blocked every measurement forever:
       cheapest evasion is the one the bundle has already paid for and closed. The bundle's is
       also the more developed guard: it refuses promises, offers and FALSE BLOCKERS (a claimed
       blocker is checked against the tree), and carries carve-outs for quoted markers, past
-      aspect and negation that this one has none of. FIX: adopt `guard_promise.py` into
-      `.claude/hooks` and `tools/hooks`, add `EVENT = "Stop"` (this project's dispatcher reads
-      a guard's event from that assignment; the bundle's names its hooks in settings instead,
-      which is the older shape), delete `guard_unfinished.py`, and drive the adopted hook from
-      `HookRefusalsTest` with a plant proven by breaking. NOT a straight copy: check whether
-      anything in it assumes the bundle's own repo layout. This is queued rather than done
-      because it swaps the hook that governs how a turn may end, and this session is the one
-      being governed - the owner asked for a clean hand-off to cloud, and disarming or
-      misfiring that hook mid-migration is the one change that should not be made in flight.
+      aspect and negation that this one has none of.
+
+      CORRECTED 2026-09-26, because this entry told its reader to do work that was already
+      done - the exact defect the citation guard was written for, one file over. The adoption
+      is not outstanding: the Bootstrap session installed the bundle at 4fd2c2f and
+      `.claude/bundle-hooks/guard_promise.py` is here, 25,248 bytes, wired on `Stop` through
+      `.claude/bundle-hooks/dispatch.py` in the repository's `.claude/settings.json`. What is
+      outstanding is the consequence: **that settings file now runs TWO Stop guards for one
+      class**, `guard_unfinished.py` and the bundle dispatch, and the one this project wrote is
+      the superseded design sitting in front of the better one.
+
+      FIX: delete `guard_unfinished.py` from all three locations (`../.claude/hooks`,
+      `.claude/hooks`, `tools/hooks`) and drop it from the `Stop` array, leaving the bundle
+      dispatch as the single Stop guard; then drive `guard_promise.py` from `HookRefusalsTest`
+      with a plant proven by breaking, since nothing in this repository's battery drives it yet.
+
+      AND THE TWO SETTINGS FILES HAVE NOW DIVERGED IN BEHAVIOUR, not just in bytes, which the
+      entry above only warned was possible. Measured today: the repository's settings.json runs
+      `guard_all.py` plus the bundle dispatch on PreToolUse, the bundle dispatch on Stop, and
+      `after_rules.py` on PostToolUse. The OUTER live one - the file that governs any session
+      run from the parent directory, including this one - runs `guard_all.py` and
+      `guard_unfinished.py` and nothing else. So in this session the bundle's guards are NOT
+      RUNNING and the superseded Stop hook is the only one that is, while the repository looks
+      correctly wired to anyone reading it.
+
+      BLOCKED, namably, not deferred: the Bootstrap session is mid-pass over every hook file in
+      all three locations, hoisting file handles byte-identically, and named `guard_all.py` and
+      `guard_unfinished.py` as two it had hashed. Deleting a file it is holding open in a
+      three-way byte-identical edit is the collision this project's rules name outright. This
+      unblocks when that pass commits.
+
       KEEP `OUTSTANDING.md` itself either way: the bundle has no queue FILE, and the file is a
       durable record that `work_order.py` gates long measurements on, which is a chokepoint
       rather than an admission. What the bundle refuses is using it as a way to END A TURN.
