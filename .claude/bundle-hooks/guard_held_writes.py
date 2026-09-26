@@ -102,9 +102,10 @@ def runs_a_rule_tool(command):
     tools/dev/plants.py add x.json` - a record re-measured the only way a held change says it
     may be - was refused as though it built on the change. The command gate had the same blind
     spot the same day, for `timeout ... git commit --no-verify`. The program is found by the
-    gate's own `pairs`, `stages` and `peeled`, so the two hooks read one command one way.
+    gate's own `pairs`, `stages` and `peeled`, so the two hooks read one command one way - from
+    `bundle_shell`, where they live, since a project may decline the command gate itself.
     """
-    import guard_command_rules as gate                   # noqa: PLC0415 - the one peel
+    gate = bundle_shell                                   # the one reader, always installed
     held = gate.pairs(_without_comment(command))
     stages = gate.stages(held) if held else []
     if not stages:

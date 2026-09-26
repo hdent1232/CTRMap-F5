@@ -816,8 +816,159 @@ class AReadIsAReadWhateverCarriesIt(unittest.TestCase):
                                  "MESSAGE: the way to say why the work stopped was refused")
 
 
+class TheRunnerGuardNeverRefusesAStepTowardTheCommitItDemands(unittest.TestCase):
+    """Measured 2026-09-26 on the project this came from: with the sweep runner waiting on
+    uncommitted tooling, `guard_blocked_runner` refused the remedies its own refusal needed.
+
+        the commit it demands       refused by the tiers ratchet, whose remedy is
+                                    `python tools/audit/tiers.py record` - refused
+        a commit-message refusal    needed an edit to the message FILE in a scratch folder -
+                                    Write and Edit refused
+        `env -u X git commit`       refused: the escape was matched on the bare command
+        the request ledger's verbs  refused, while the turn could not end until they ran
+
+    and it told a second session the tooling was ITS uncommitted work, which it was not. Only the
+    owner stopping the runner released it. Every hook here is driven with the guard FORCED into
+    the state where it refuses, or a test of its allowances proves nothing."""
+
+    def setUp(self):
+        import guard_blocked_runner as guard
+        self.guard = guard
+        self.addCleanup(setattr, guard, "blocked_for", guard.blocked_for)
+        guard.blocked_for = lambda: (10 ** 6, ["tools/audit/waited.py"])
+        self.hooks = os.path.relpath(HOOKS, guard.ROOT).replace(os.sep, "/")
+        self.outside = tempfile.mkdtemp(prefix="runner-outside-")
+        self.addCleanup(shutil.rmtree, self.outside, True)
+
+    def verdict(self, payload):
+        held = sys.stdin, sys.stdout, sys.stderr
+        sys.stdin, sys.stdout, sys.stderr = (io.StringIO(json.dumps(payload)), io.StringIO(),
+                                             io.StringIO())
+        try:
+            return self.guard.main(), sys.stderr.getvalue()
+        finally:
+            sys.stdin, sys.stdout, sys.stderr = held
+
+    @staticmethod
+    def shell(command):
+        return {"tool_name": "Bash", "tool_input": {"command": command}}
+
+    def write(self, path):
+        return {"tool_name": "Write", "tool_input": {"file_path": path, "content": "x" + LF}}
+
+    def test_new_work_on_the_tree_is_refused_while_the_runner_waits(self):
+        """THE CONTROL, and the cheapest ways past: a wrapper in front of new work, a shell
+        handed new work behind a way out, a folder whose NAME starts like tools/, a write into
+        the tree, and one write that lands in two places, one of them inside."""
+        for command in ("python work.py", "env python work.py", "timeout 60 python work.py",
+                        'bash -c "git status; python work.py"', "python toolsX/x.py",
+                        "echo tools/dev/safe.py", "git status; python work.py"):
+            with self.subTest(command=command):
+                self.assertEqual(self.verdict(self.shell(command))[0], 2,
+                                 "NEW WORK: %s ran while the runner waited" % command)
+        inside = os.path.join(self.guard.ROOT, "src", "new.py")
+        self.assertEqual(self.verdict(self.write(inside))[0], 2,
+                         "NEW WORK: a write into the tree went through while the runner waited")
+        both = {"tool_name": "Batch", "tool_input": {"actions": [
+            {"input": {"file_path": os.path.join(self.outside, "m.txt"), "content": "x"}},
+            {"input": {"file_path": inside, "content": "x"}}]}}
+        self.assertEqual(self.verdict(both)[0], 2,
+                         "NEW WORK: a write outside carried a write inside past the refusal")
+
+    def test_a_run_of_a_tool_under_tools_is_a_step_toward_the_commit(self):
+        """How a record is re-measured - the tiers ratchet's own remedy - as guard_held_writes
+        already allows."""
+        for command in ("python -B tools/audit/tiers.py record", "python tools/dev/safe.py check",
+                        "py -3 -B tools/dev/plants.py add x.json"):
+            with self.subTest(command=command):
+                self.assertEqual(self.verdict(self.shell(command))[0], 0,
+                                 "a TOOL RUN was refused: %s" % command)
+
+    def test_the_request_ledgers_verbs_are_a_step_toward_the_commit(self):
+        """The turn cannot end until the ledger is written, so refusing it wedges every turn."""
+        for verb in ("show", "item r1 1 \"what it asks\"", "answered r1.1 \"said\"", "check"):
+            command = "python -B %s/request_ledger.py %s" % (self.hooks, verb)
+            with self.subTest(command=command):
+                self.assertEqual(self.verdict(self.shell(command))[0], 0,
+                                 "the LEDGER was refused: %s" % command)
+
+    def test_git_safe_and_plants_behind_a_WRAPPER_are_steps_toward_the_commit(self):
+        """A wrapper is not a new act - read through it, the way guard_command_rules does."""
+        for command in ("env -u PYTHONIOENCODING git commit -F msg.txt",
+                        "env PYTHONIOENCODING=utf-8 python tools/dev/safe.py check-commit-msg m",
+                        "timeout 3000 python -B tools/dev/plants.py add x.json",
+                        "time git status", 'bash -c "git add -A && git commit -F m.txt"',
+                        'powershell -Command "git status"'):
+            with self.subTest(command=command):
+                self.assertEqual(self.verdict(self.shell(command))[0], 0,
+                                 "a WRAPPER hid the way out: %s" % command)
+
+    def test_a_write_OUTSIDE_the_repository_is_a_step_toward_the_commit(self):
+        """The commit message is a file in a scratch folder, and a gate that refuses its wording
+        is answered by editing it."""
+        self.assertEqual(self.verdict(self.write(os.path.join(self.outside, "msg.txt")))[0], 0,
+                         "a write OUTSIDE the repository was refused")
+
+    def test_a_write_to_the_tooling_the_runner_waits_on_is_a_step_toward_the_commit(self):
+        """The commit demanded is of those files, and a gate refusing one is answered by
+        editing it."""
+        waited = os.path.join(self.guard.ROOT, "tools", "audit", "waited.py")
+        self.assertEqual(self.verdict(self.write(waited))[0], 0,
+                         "a write to the WAITED-ON tooling was refused")
+
+    def transcript(self, writes):
+        path = os.path.join(self.outside, "t.jsonl")
+        with io.open(path, "w", encoding="utf-8", newline=LF) as handle:
+            for target in writes:
+                handle.write(json.dumps({"type": "assistant", "message": {"content": [
+                    {"type": "tool_use", "name": "Write",
+                     "input": {"file_path": target, "content": "x"}}]}}) + LF)
+        return path
+
+    def test_the_refusal_says_WHOSE_the_tooling_is_and_never_guesses(self):
+        """It told a second session "YOUR uncommitted tooling" about files it had never
+        written. Whose they are is read from this session's own transcript of writes, and what
+        that cannot show is said to be unknown."""
+        mine = os.path.join(self.guard.ROOT, "tools", "audit", "waited.py")
+        work = dict(self.shell("python work.py"), transcript_path=self.transcript([mine]))
+        code, said = self.verdict(work)
+        self.assertEqual(code, 2)
+        self.assertIn("this session wrote", said, "WHOSE: a write this session made was not "
+                                                  "named as this session's")
+        other = dict(self.shell("python work.py"), transcript_path=self.transcript([]))
+        code, said = self.verdict(other)
+        self.assertEqual(code, 2)
+        self.assertNotIn("YOUR", said, "WHOSE: tooling this session never wrote was called its")
+        self.assertIn("unknown", said, "WHOSE: tooling nobody can place was not said to be "
+                                       "unknown")
+        self.assertIn("git commit", said, "WHOSE: not knowing whose it is dropped the command "
+                                          "that ends the wait")
+
+
 class AnEscapeIsAskedOfEveryCommand(unittest.TestCase):
     """The cheapest way past a refusal was to put the way out in front of the thing refused."""
+
+    def test_an_escape_is_read_THROUGH_a_wrapper_at_the_one_door(self):
+        """Five hooks excuse a command by a pattern on the command as typed, and all five ask
+        `bundle_shell.every_command_is` - so the wrapper is read there, once, and not in five
+        places that will disagree. `env -u X git commit` was refused as work on 2026-09-26."""
+        import bundle_shell
+        import guard_machine_worktrees
+
+        def git(one):
+            return one.startswith("git ")
+        for text in ("env -u PYTHONIOENCODING git status", "timeout 5 git log",
+                     'bash -c "git status"', "cmd /c git status", 'sh -lc "git diff"'):
+            with self.subTest(text=text):
+                self.assertTrue(bundle_shell.every_command_is(text, git),
+                                "WRAPPER: the way out behind %r was not seen" % text)
+        for text in ("env python work.py", 'bash -c "git status; python work.py"',
+                     "timeout 5 python work.py | git log"):
+            with self.subTest(text=text):
+                self.assertFalse(bundle_shell.every_command_is(text, git),
+                                 "WRAPPER: new work behind a wrapper walked out: %r" % text)
+        self.assertTrue(guard_machine_worktrees.is_read_only("env LC_ALL=C cat .sweep/tree-3/x"),
+                        "WRAPPER: another guard's escape still reads the command as typed")
 
     def test_the_blocked_runner_escape_is_per_command(self):
         import guard_blocked_runner as guard

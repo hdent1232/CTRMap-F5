@@ -839,15 +839,18 @@ def merge_from(other_root):
     if not adopting and not moved:
         return 0, ["nothing to merge: every plant for an installed test is already recorded, "
                    "as the other ledger records it"]
+    # NEW PLANTS FIRST. Every write is recounted, and a re-anchor cannot lower what is owed while an
+    # add can: measured 2026-09-26, six re-anchors written first were refused as 28 owed against
+    # 27, because the new test class those plants belonged to had not had them added yet.
     out = []
-    if moved:
-        code, lines = add(moved, replace=True)
-        out += ["  ~ %s" % key for key in moved] + lines
-        if code:
-            return code, out
     if adopting:
         code, lines = add(adopting)
-        return code, out + ["  + %s" % key for key in adopting] + lines
+        out += ["  + %s" % key for key in adopting] + lines
+        if code:
+            return code, out
+    if moved:
+        code, lines = add(moved, replace=True)
+        return code, out + ["  ~ %s" % key for key in moved] + lines
     return 0, out
 
 

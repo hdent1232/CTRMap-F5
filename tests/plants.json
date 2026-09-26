@@ -422,8 +422,8 @@
   "test_bundle.py::AReadIsAReadWhateverCarriesIt::test_a_READ_is_never_refused_by_the_machine_guards": {
    "file": ".claude/bundle-hooks/guard_blocked_runner.py",
    "must_say": "a READ was refused",
-   "new": "    command = bundle_shell.text(payload)      # every command in the call, at any depth\n    if is_escape(command):",
-   "old": "    if not isinstance(payload, dict) or bundle_shell.reads_only(payload) \\\n            or not bundle_shell.is_tool_call(payload):\n        return 0\n    command = bundle_shell.text(payload)      # every command in the call, at any depth\n    if is_escape(command):",
+   "new": "    command = bundle_shell.text(payload)      # every command in the call, at any depth\n    writes = bundle_shell.writes(payload)\n",
+   "old": "    if not isinstance(payload, dict) or bundle_shell.reads_only(payload) \\\n            or not bundle_shell.is_tool_call(payload):\n        return 0\n    command = bundle_shell.text(payload)      # every command in the call, at any depth\n    writes = bundle_shell.writes(payload)\n",
    "site": "elsewhere",
    "why": "The opposite direction: a guard refusing READS while the machine waits, blocking the look that is the remedy - README section 15 says reading must never be blocked, and it was."
   },
@@ -508,6 +508,22 @@
    "old": "    return bundle_shell.every_command_is(\n        command, lambda one: any(re.search(pattern, one) for pattern in READ_ONLY))",
    "site": "elsewhere",
    "why": "The same whole-line reading in a different guard: `cat x; rm -rf .sweep/tree-3` counts as read-only because it begins with a read, and a worker's tree is deleted mid-measurement."
+  },
+  "test_bundle.py::AnEscapeIsAskedOfEveryCommand::test_an_escape_is_read_THROUGH_a_wrapper_at_the_one_door": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "WRAPPER: the way out behind",
+   "new": "        inner = None\n",
+   "old": "        inner = _runs(command) if _depth < MAX_DEPTH else None\n",
+   "site": "elsewhere",
+   "why": "FIVE HOOKS, ONE DOOR. env -u PYTHONIOENCODING git commit was refused as new work on 2026-09-26, and five hooks excuse a command by a pattern on it as typed; reading through a wrapper in one of them would leave four that disagree."
+  },
+  "test_bundle.py::AnEscapeIsAskedOfEveryCommand::test_an_escape_is_read_THROUGH_a_wrapper_at_the_one_door::any": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "WRAPPER: new work behind a wrapper walked out",
+   "new": "        if not inner or not any(every_command_is(one, allowed, _depth + 1) for one in inner):\n",
+   "old": "        if not inner or not all(every_command_is(one, allowed, _depth + 1) for one in inner):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST A DOOR THAT READS THROUGH WRAPPERS: let one program a wrapper runs excuse the rest. A pipeline of new work and a way out, 1 stage of each, would then read as the way out."
   },
   "test_bundle.py::AnEscapeIsAskedOfEveryCommand::test_every_REMEDY_a_stalled_job_refusal_names_is_reachable": {
    "file": ".claude/bundle-hooks/guard_idle_machine.py",
@@ -842,6 +858,70 @@
    "site": "instance",
    "why": "The guard knowing only bash's `sleep`, in a session whose primary shell is PowerShell - `Start-Sleep -Seconds 300; Get-Content out.txt` is the poll it exists for and it walks past."
   },
+  "test_bundle.py::TheRunnerGuardNeverRefusesAStepTowardTheCommitItDemands::test_a_run_of_a_tool_under_tools_is_a_step_toward_the_commit": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "must_say": "a TOOL RUN was refused: python -B tools/audit/tiers.py record",
+   "new": "",
+   "old": "    _TOOL,\n",
+   "site": "instance",
+   "why": "THE REMEDY ITS OWN REFUSAL NEEDED. Measured 2026-09-26: the commit this guard demanded was refused by the tiers ratchet, whose remedy is tools/audit/tiers.py record, and this guard refused that run; only the owner stopping the runner released it."
+  },
+  "test_bundle.py::TheRunnerGuardNeverRefusesAStepTowardTheCommitItDemands::test_a_write_OUTSIDE_the_repository_is_a_step_toward_the_commit": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "must_say": "a write OUTSIDE the repository was refused",
+   "new": "    return all(rel in waited\n",
+   "old": "    return all(rel == \"..\" or rel.startswith(\"../\") or rel in waited\n",
+   "site": "instance",
+   "why": "THE COMMIT MESSAGE LIVES OUTSIDE THE TREE. Measured 2026-09-26: a commit-msg refusal needed 1 edit to the message file in the session scratchpad, and Write and Edit were refused; git commit -m carrying backticks was refused by another hook."
+  },
+  "test_bundle.py::TheRunnerGuardNeverRefusesAStepTowardTheCommitItDemands::test_a_write_to_the_tooling_the_runner_waits_on_is_a_step_toward_the_commit": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "must_say": "a write to the WAITED-ON tooling was refused",
+   "new": "    return all(rel == \"..\" or rel.startswith(\"../\")\n",
+   "old": "    return all(rel == \"..\" or rel.startswith(\"../\") or rel in waited\n",
+   "site": "elsewhere",
+   "why": "THE COMMIT DEMANDED IS OF THOSE FILES. A gate refusing 1 of the waited-on files - a lint error, a guard not yet in the tiers record - is answered by editing it, and refusing that edit is a refusal whose remedy it refuses."
+  },
+  "test_bundle.py::TheRunnerGuardNeverRefusesAStepTowardTheCommitItDemands::test_new_work_on_the_tree_is_refused_while_the_runner_waits": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "must_say": "NEW WORK: a write outside carried a write inside past the refusal",
+   "new": "    return any(rel == \"..\" or rel.startswith(\"../\") or rel in waited\n",
+   "old": "    return all(rel == \"..\" or rel.startswith(\"../\") or rel in waited\n",
+   "site": "evasion",
+   "why": "ONE WRITE OUTSIDE CARRYING ONE INSIDE. A call writing 2 files, a scratch message and a file in the tree, is the cheapest way past an allowance for writes outside the repository; every place a call writes must be allowed, not one of them."
+  },
+  "test_bundle.py::TheRunnerGuardNeverRefusesAStepTowardTheCommitItDemands::test_the_refusal_says_WHOSE_the_tooling_is_and_never_guesses": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "must_say": "WHOSE: a write this session made was not named as this session's",
+   "new": "    if True:\n",
+   "old": "    if not transcript or not paths:\n",
+   "site": "instance",
+   "why": "WHOSE IT IS, WHEN IT CAN BE KNOWN. The session's own transcript holds every write it made; a refusal that never reads it can say only one thing about every file, and on 2026-09-26 that thing was wrong for 1 of the 2 sessions it refused."
+  },
+  "test_bundle.py::TheRunnerGuardNeverRefusesAStepTowardTheCommitItDemands::test_the_refusal_says_WHOSE_the_tooling_is_and_never_guesses::command": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "must_say": "not knowing whose it is dropped the command that ends the wait",
+   "new": "    if any(owners.get(p) == \"wrote\" for p in paths):\n        lines += [\"  It ends when these files are committed:\",\n                  \"      python -m unittest discover -s tests\",\n                  \"      git add <those files> && git commit\"]\n",
+   "old": "    lines += [\"  It ends when these files are committed:\",\n              \"      python -m unittest discover -s tests\",\n              \"      git add <those files> && git commit\"]\n    if any(owners.get(p) == \"wrote\" for p in paths):\n        lines += [\"  and this session wrote them, so that is this session's to do.\"]\n",
+   "site": "elsewhere",
+   "why": "WHOSE IT IS MUST NOT DECIDE WHETHER THE WAY OUT IS SAID. The first cut of the attribution printed the landing commands only when this session wrote the tooling; DT Engine's own 2 tests of this refusal went red, rightly - a wait nobody is told how to end is the 66-line outage again."
+  },
+  "test_bundle.py::TheRunnerGuardNeverRefusesAStepTowardTheCommitItDemands::test_the_refusal_says_WHOSE_the_tooling_is_and_never_guesses::guess": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "must_say": "WHOSE: tooling this session never wrote was called its",
+   "new": "            \"\": \"YOUR uncommitted tooling\"}\n",
+   "old": "            \"\": \"this session's transcript shows no write to it - whose it is is unknown\"}\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST ANSWER TO WHOSE IS TO GUESS. Measured 2026-09-26: the refusal said YOUR uncommitted tooling to a second session whose tree held none of it, sending it toward committing another session's work; what the transcript cannot show must be said to be unknown."
+  },
+  "test_bundle.py::TheRunnerGuardNeverRefusesAStepTowardTheCommitItDemands::test_the_request_ledgers_verbs_are_a_step_toward_the_commit": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "must_say": "the LEDGER was refused",
+   "new": "\n",
+   "old": "    + (HOOKS_REL,)\n",
+   "site": "elsewhere",
+   "why": "THE TURN COULD NOT END. guard_requests refuses to end a turn until an owner request is itemised, and the ledger's verbs live in the hooks folder, not under tools/: with them refused, no session could end a turn for as long as the runner waited."
+  },
   "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_change_to_what_git_TRACKS_is_judged_again": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "compared by its bytes alone",
@@ -913,14 +993,6 @@
    "old": "                if word and not any(word in text for text in wrote):\n",
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST A HOLD THAT OPENS NAMED FILES IS TO WRITE THE NAME. A rule that quotes the line it judges names whatever the held change spells, so a comment naming the next file to write would open it. A name found in held text counts for nothing."
-  },
-  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_rule_tool_behind_a_runner_is_still_a_repair": {
-   "file": ".claude/bundle-hooks/guard_held_writes.py",
-   "must_say": "is not false",
-   "new": "    stage = stages[0]\n",
-   "old": "    stage = gate.peeled(stages[0])[0]\n",
-   "site": "instance",
-   "why": "THE READING AS IT WAS: the first word is the program, so `timeout 3000 python -B tools/dev/plants.py add x.json` - a record re-measured the way a held change says it may be - was refused as if it built on the change."
   },
   "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_rule_tool_behind_a_runner_is_still_a_repair::elsewhere": {
    "file": ".claude/bundle-hooks/guard_held_writes.py",
@@ -1187,7 +1259,7 @@
    "why": "THE SAME SUBJECT READ ELSEWHERE. A mutant on disk is a changed file to a reader that forgets the lock, and the held-change guard would hold it and refuse every act until a module nobody edited was repaired."
   },
   "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_a_command_HANDED_to_a_shell_is_read_as_a_command": {
-   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "a command handed to a shell skipped the gate unread",
    "new": "    if name in ():\n",
    "old": "    if name in _POSIX_SHELLS:\n",
@@ -1203,7 +1275,7 @@
    "why": "AN ALIAS IS A SPELLING. `git -c alias.ci=\"commit --no-verify\" ci` and an alias in the repository's configuration run the commit the gate refuses, under a subcommand that is not the word commit."
   },
   "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_every_wrapper_that_only_starts_git_is_read_through": {
-   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "a wrapper that only starts git let the gate be skipped",
    "new": "        if True:\n",
    "old": "        if word != \"&\" and name not in _RUNS_NEXT:\n",
@@ -1211,7 +1283,7 @@
    "why": "GIT BEHIND A WRAPPER. Measured: `& git commit --no-verify`, `env git ...`, `time git ...` and a dozen more were let through while the bare spelling was refused - one act, sixteen spellings, one of them read."
   },
   "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_every_wrapper_that_only_starts_git_is_read_through::groups": {
-   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "a wrapper that only starts git let the gate be skipped",
    "new": "        if word in (\"(\", \")\", \"{\", \"}\"):\n            continue\n",
    "old": "        if word in (\"(\", \")\", \"{\", \"}\"):\n            if current:\n                out.append(current)\n            current = []\n            continue\n",
@@ -1219,7 +1291,7 @@
    "why": "A GROUP DROPPED INSTEAD OF OPENED. `Measure-Command { git commit ... }` read as arguments to Measure-Command, so the commit inside the script block was never judged."
   },
   "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_every_wrapper_that_only_starts_git_is_read_through::operands": {
-   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "a wrapper that only starts git let the gate be skipped",
    "new": "",
    "old": "        index += _RUNS_NEXT.get(name, 0)\n",
@@ -1227,7 +1299,7 @@
    "why": "A RUNNER'S OPERAND READ AS THE PROGRAM. Measured by the peer session: `timeout 600 git commit --no-verify` walked past, its DURATION the word before git, so the program read as `timeout` and the commit behind it was never judged."
   },
   "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_the_path_to_git_is_still_git": {
-   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "git named by its path skipped the gate",
    "new": "    name = (word or \"\").lower()\n",
    "old": "    name = re.split(r\"[\\\\/]\", word or \"\")[-1].lower()\n",
@@ -1585,6 +1657,20 @@
    "old": "        for rel in checker.bundle_files(where):\n",
    "site": "instance",
    "why": "TWO WALKS OF ONE FOLDER. The write rule's scope walked the bundle with its own skip list while the checker's walk had learned that a tool's signed cache is not a shipped file."
+  }
+ },
+ "retired": {
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_rule_tool_behind_a_runner_is_still_a_repair": {
+   "file": ".claude/bundle-hooks/guard_held_writes.py",
+   "must_say": "is not false",
+   "new": "    stage = stages[0]\n",
+   "old": "    stage = gate.peeled(stages[0])[0]\n",
+   "retired": {
+    "at": "2026-09-26T21:24:59Z",
+    "why": "The runner is now read at the one door every escape passes through: bundle_shell.every_command_is asks again what a wrapper hands on before runs_a_rule_tool is ever asked, so reading the first word as the program inside runs_a_rule_tool can no longer refuse the wrapped rule tool. The door's own plants (AnEscapeIsAskedOfEveryCommand) hold that reading now; the elsewhere and evasion plants here still redden."
+   },
+   "site": "instance",
+   "why": "THE READING AS IT WAS: the first word is the program, so `timeout 3000 python -B tools/dev/plants.py add x.json` - a record re-measured the way a held change says it may be - was refused as if it built on the change."
   }
  },
  "single_site": {

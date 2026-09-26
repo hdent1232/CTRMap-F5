@@ -30,6 +30,27 @@ IT CANNOT FIRE WHEN NOBODY IS WAITING. No record, a record whose runner PID is d
 record younger than the threshold all allow. A stale lock that refuses forever is the failure
 this project has been wedged by three times, so the dead-PID case is checked explicitly rather
 than trusted to the runner's cleanup.
+
+EVERY STEP TOWARD THE COMMIT IT DEMANDS GOES THROUGH. Measured 2026-09-26 on the project this
+came from, it refused the remedies its own refusal needed, and only the owner stopping the runner
+released it: the commit was refused by the tiers ratchet, whose remedy `tools/audit/tiers.py
+record` this refused; a commit-message refusal needed an edit to the message file in a scratch
+folder, and Write was refused; `env -u X git commit` was read as new work; and the request
+ledger's verbs were refused while the turn could not end without them. So these go through, and
+only new work on the tree waits:
+
+    git, the suite                            as before
+    a run of a script under RULE_DIRS or the  how a record is re-measured (guard_held_writes allows
+      hooks folder                            the same), and the request ledger's verbs
+    each of these behind a wrapper            `env`, `timeout`, `bash -c` - read at the one door,
+                                              `bundle_shell.every_command_is`
+    a write outside the repository            a scratch commit message is not work on the tree
+    a write to the tooling it waits on        the commit it demands is of those files
+
+AND IT SAYS WHOSE THE TOOLING IS ONLY WHEN IT CAN KNOW. It told a second session "YOUR
+uncommitted tooling" about files it had never touched. Whose each file is, is read from the
+session's own transcript of writes; a file it shows no write to is said to be of unknown
+authorship, and the way out offered is to ask, not to commit someone else's work.
 """
 import io
 import json
@@ -41,11 +62,15 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bundle_rules      # noqa: E402  - RULE_DIRS, where a record's tools live
 import bundle_shell      # noqa: E402  - the command, found by shape, at any depth
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BLOCKED = os.path.join(ROOT, ".sweep", "blocked.json")
+
+#: Where this guard sits, relative to the project: the hooks folder, found rather than spelled.
+HOOKS_REL = os.path.relpath(os.path.dirname(os.path.abspath(__file__)), ROOT).replace(os.sep, "/")
 
 #: Four polls of the runner's own 300-second cycle. Not a taste: at one poll it would fire
 #: before the runner had finished noticing, and at sixty-six it is the outage it exists for.
@@ -65,12 +90,18 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 #: `tools/dev/safe.py` as an argument. The cheapest way past this refusal was to put the way
 #: out in front of the thing being refused. Now each command on the line must itself BE a way
 #: out - `bundle_shell.every_command_is` - and a tool only counts when it is the program RUN.
-_PY = r"^(?:python[0-9.]*(?:\.exe)?|py)(?:\s+-[A-Za-z]+)*"
+_PY = r"^(?:python[0-9.]*(?:\.exe)?|py)(?:\s+-[A-Za-z0-9.]+)*"
+#: A script under RULE_DIRS or the hooks folder, named as a path from the project root.
+_TOOL_DIRS = tuple(d.replace(os.sep, "/").strip("/") for d in bundle_rules.RULE_DIRS) \
+    + (HOOKS_REL,)
+_TOOL = _PY + r"\s+(?:\./)?(?:%s)[/\\][^\s;|&]*\.py(?:\s|$)" % "|".join(
+    re.escape(d).replace("/", r"[/\\]") for d in _TOOL_DIRS)
 ESCAPES = (
     r"^git(?:\.exe)?(?:\s|$)",
     _PY + r"\s+-m\s+unittest\b",
     _PY + r"\s+tools[/\\]dev[/\\]safe\.py\b",
     _PY + r"\s+tools[/\\]dev[/\\]plants\.py\b",
+    _TOOL,
 )
 
 #: Adapted per project: see ADAPT.md.
@@ -182,20 +213,85 @@ def still_uncommitted(paths):
 
 
 def is_escape(command):
-    """Whether EVERY command on this line is part of getting to a commit."""
+    """Whether EVERY command on this line is part of getting to a commit - read through any
+    wrapper at the one door, `bundle_shell.every_command_is`."""
     return bundle_shell.every_command_is(
         command, lambda one: any(re.search(pattern, one, re.I) for pattern in ESCAPES))
 
 
-def refusal(seconds, paths):
-    """What to say. Names the wait, the files, and the exact command that ends it."""
+def _rel(path):
+    """`path` relative to the project, `/`-separated, case-folded where the file system is."""
+    full = path if os.path.isabs(path) else os.path.join(ROOT, path)
+    return os.path.normcase(os.path.relpath(os.path.abspath(full), ROOT)).replace(os.sep, "/")
+
+
+def writes_allowed(payload, paths):
+    """Does every place this call writes lie OUTSIDE the repository, or in the tooling the
+    runner waits on? A scratch commit message is not work on the tree, and a gate refusing the
+    waited-on files is answered by editing them. Any write into the rest of the tree is new
+    work, and so is a call whose writes cannot be placed."""
+    targets = bundle_shell.paths(payload)
+    if not targets:
+        return False
+    waited = {_rel(p) for p in paths}
+    return all(rel == ".." or rel.startswith("../") or rel in waited
+               for rel in (_rel(t) for t in targets))
+
+
+def whose(payload, paths):
+    """{path: "wrote" | "named" | ""} - what this session's OWN transcript shows it did to each.
+
+    "wrote" is a Write, Edit or any call whose input writes that path; "named" is a command that
+    names it, which may or may not have written it; "" is nothing, and says nothing about who did.
+    A transcript that cannot be read leaves every path "" - unknown, never somebody's.
+    """
+    found = {p: "" for p in paths}
+    transcript = payload.get("transcript_path") if isinstance(payload, dict) else None
+    if not transcript or not paths:
+        return found
+    rels = {_rel(p): p for p in paths}
+    names = {os.path.basename(p) for p in paths}
+    try:
+        with io.open(transcript, encoding="utf-8", errors="replace") as handle:
+            lines = [line for line in handle if any(name in line for name in names)]
+    except (OSError, TypeError, ValueError):
+        return found
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        message = entry.get("message") if isinstance(entry, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict) or block.get("type") != "tool_use":
+                continue
+            call = {"tool_name": block.get("name"), "tool_input": block.get("input")}
+            if bundle_shell.writes(call):
+                for target in bundle_shell.paths(call):
+                    if _rel(target) in rels:
+                        found[rels[_rel(target)]] = "wrote"
+            said = bundle_shell.text(call).replace(chr(92), "/")
+            for path in rels.values():
+                if found[path] != "wrote" and path.replace(chr(92), "/") in said:
+                    found[path] = "named"
+    return found
+
+
+def refusal(seconds, paths, owners=None):
+    """What to say. Names the wait, the files, whose each is when that can be known, and what
+    still runs - which is every step toward the commit."""
+    owners = owners or {p: "" for p in paths}
+    said = {"wrote": "this session wrote it",
+            "named": "a command this session ran names it; whether it wrote it cannot be told",
+            "": "this session's transcript shows no write to it - whose it is is unknown"}
     lines = [
-        "BLOCKED: the sweep runner has been idle %.0f minutes waiting on YOUR uncommitted"
+        "BLOCKED: the sweep runner has been idle %.0f minutes waiting on uncommitted tooling."
         % (seconds / 60.0),
-        "tooling. It is not measuring anything while this is true.",
+        "It is not measuring anything while this is true.",
         "",
     ]
-    lines += ["    " + p for p in paths]
+    lines += ["    %s   - %s" % (p, said[owners.get(p, "")]) for p in paths]
     lines += [
         "",
         "  A worker IMPORTS these from the working tree - not from its worktree at HEAD - so",
@@ -203,15 +299,27 @@ def refusal(seconds, paths):
         "  refuses, correctly, and the runner waits.",
         "",
         "  This exact wait cost 5.5 hours on 2026-09-07. The runner printed the filename 66",
-        "  times and I did not look, then removed the guard instead of committing. So the",
-        "  wait refuses commands now rather than printing a sixty-seventh line.",
+        "  times and nobody looked, then the guard was removed instead of the file committed.",
+        "  So the wait refuses new work now rather than printing a sixty-seventh line.",
         "",
-        "  Land what you have:",
-        "      python -m unittest discover -s tests",
-        "      git add -A && git commit",
+    ]
+    # THE COMMAND THAT ENDS IT IS ALWAYS NAMED; WHOSE IT IS TO RUN IS WHAT DEPENDS ON THE TRANSCRIPT.
+    lines += ["  It ends when these files are committed:",
+              "      python -m unittest discover -s tests",
+              "      git add <those files> && git commit"]
+    if any(owners.get(p) == "wrote" for p in paths):
+        lines += ["  and this session wrote them, so that is this session's to do."]
+    else:
+        lines += ["  None of it is known to be this session's, and committing another's work is",
+                  "  theirs to do: find who (ListAgents, then SendMessage - a message is never",
+                  "  refused), or the owner can stop the runner with %s."
+                  % os.path.relpath(os.path.join(os.path.dirname(BLOCKED), "STOP"), ROOT)]
+    lines += [
         "",
-        "  git, the suite, `tools/dev/safe.py` and `tools/dev/plants.py` all still run - the",
-        "  way out of a refusal is never blocked by it. Nothing else does until this commits.",
+        "  Every step toward that commit still runs, behind env, timeout or a shell too: git,",
+        "  the suite, a script under %s (a record re-measured, the request ledger's verbs), a"
+        % " or ".join(_TOOL_DIRS),
+        "  write outside the repository, and a write to the files above. New work waits.",
     ]
     return "\n".join(lines)
 
@@ -229,12 +337,17 @@ def main():
             or not bundle_shell.is_tool_call(payload):
         return 0
     command = bundle_shell.text(payload)      # every command in the call, at any depth
-    if is_escape(command):
+    writes = bundle_shell.writes(payload)
+    if command and not writes and not bundle_shell.unreadable(payload) and is_escape(command):
         return 0
     seconds, paths = blocked_for()
     if seconds < THRESHOLD or not paths:
         return 0
-    sys.stderr.write(refusal(seconds, paths) + "\n")
+    # EVERY PART OF THE CALL MUST BE A STEP TOWARD THE COMMIT: its commands, and its writes.
+    if (not command or is_escape(command)) and writes and not bundle_shell.unreadable(payload) \
+            and writes_allowed(payload, paths):
+        return 0
+    sys.stderr.write(refusal(seconds, paths, whose(payload, paths)) + "\n")
     return 2
 
 

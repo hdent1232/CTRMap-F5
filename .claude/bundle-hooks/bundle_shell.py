@@ -53,8 +53,10 @@ in that folder for a `decide()` the bundle's guards do not have. Twenty refusals
 folder, while the project's OWN guard of that name was: a message that sends the reader to the
 wrong file. `policy(__file__)` names the file that refused, wherever it was installed.
 """
+import base64
 import os
 import re
+import shlex
 import sys
 
 #: This folder, as a project path: `.claude/<the folder this file sits in>`.
@@ -382,13 +384,185 @@ def program(command):
     return _ENV_PREFIX.sub("", command or "", count=1).strip()
 
 
-def every_command_is(text_, allowed):
+# ----------------------------------------------------------------------------- the reader
+#
+# What a command RUNS, read through wrappers and shells. It lived in guard_command_rules
+# until the escape door below needed it, and a project may decline that guard - so it
+# lives here, in the file every installation carries, and that guard imports it.
+
+#: Words that only start the NEXT word as the program: `& git`, `env X=1 git`, `time git`.
+#:
+#: EACH WITH THE OPERANDS IT TAKES BEFORE THE PROGRAM. Measured 2026-09-24 by the peer session:
+#: `timeout 600 git commit --no-verify` walked past, because `timeout` was not known as a runner
+#: and, known or not, its DURATION is a word before the program - read as the program, it hid the
+#: commit behind it. A runner that takes an operand says how many.
+_RUNS_NEXT = {"&": 0, "!": 0, "command": 0, "builtin": 0, "exec": 0, "time": 0, "nice": 0,
+              "nohup": 0, "env": 0, "sudo": 0, "doas": 0, "xargs": 0, "call": 0, "start": 0,
+              "timeout": 1, "stdbuf": 0, "unbuffer": 0, "setsid": 0, "ionice": 0, "chrt": 1,
+              "taskset": 1, "caffeinate": 0, "watch": 0}
+
+#: A runner's options that take a VALUE, so the value is not read as the program.
+_RUNNER_VALUED = {"env": ("-u", "--unset", "-C", "--chdir", "-S", "--split-string"),
+                  "nice": ("-n", "--adjustment"), "sudo": ("-u", "-g", "-C", "-D", "-h", "-p"),
+                  "doas": ("-u", "-C"),
+                  "xargs": ("-n", "-I", "-L", "-P", "-d", "-a", "-E", "-s"),
+                  "time": ("-f", "-o"), "timeout": ("-s", "--signal", "-k", "--kill-after"),
+                  "stdbuf": ("-i", "-o", "-e"), "ionice": ("-c", "-n", "-p"),
+                  "watch": ("-n", "--interval", "-d")}
+
+#: Shells handed their program as a STRING. A POSIX shell's `-c` may be clustered (`-lc`).
+_POSIX_SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh", "ash"))
+
+_POWERSHELLS = frozenset(("powershell", "pwsh"))
+
+_EVALS = frozenset(("eval", "iex", "invoke-expression"))
+
+#: PowerShell's own options that take a value, spelled out; any unambiguous prefix is accepted.
+_PS_VALUED = ("-executionpolicy", "-windowstyle", "-version", "-inputformat", "-outputformat",
+              "-configurationname", "-workingdirectory", "-psconsolefile", "-settingsfile",
+              "-custompipename")
+
+#: How deep a command handed to a shell handed to a shell is read before it is refused.
+MAX_NESTING = 6
+
+def _lex(text, posix):
+    try:
+        lexer = shlex.shlex(text, posix=posix, punctuation_chars=True)
+        lexer.whitespace_split = True
+        return list(lexer)
+    except ValueError:
+        return None
+
+def pairs(command):
+    """[(word, the word as typed)] for one command, or None when it cannot be split.
+
+    The punctuation of a shell - `( ) { } | &` - comes back as words of its own when it is not
+    quoted, so `(git commit --no-verify)` is `--no-verify` and not `--no-verify)`. The word AS
+    TYPED keeps its backslashes: a POSIX reading turns an unquoted `C:\\Users\\x` into `C:Usersx`,
+    and a directory is looked for under both spellings.
+    """
+    text = program(command)
+    words, typed = _lex(text, True), _lex(text, False)
+    if words is None:
+        words = typed
+    if words is None:
+        return None
+    if typed is None or len(typed) != len(words):
+        typed = [None] * len(words)
+    else:
+        typed = [t[1:-1] if len(t) > 1 and t[0] == t[-1] and t[0] in ("'", chr(34)) else t
+                 for t in typed]
+    return list(zip(words, typed))
+
+def program_of(word):
+    """The program a word names: `C:\\Program Files\\Git\\cmd\\git.exe` is `git`."""
+    name = re.split(r"[\\/]", word or "")[-1].lower()
+    return name[:-4] if name.endswith(".exe") else name
+
+def stages(held):
+    """The programs of one command: a pipeline's stages, and every group `( )`/`{ }` a program
+    of its own - so a PowerShell script block, `Measure-Command { git commit ... }`, is read as
+    the command it runs rather than as arguments to `Measure-Command`."""
+    out, current = [], []
+    for word, typed in held:
+        if word in ("(", ")", "{", "}"):
+            if current:
+                out.append(current)
+            current = []
+            continue
+        if word and set(word) <= set("|&") and not (word == "&" and not current):
+            if current:
+                out.append(current)
+            current = []
+            continue
+        current.append((word, typed))
+    if current:
+        out.append(current)
+    return out
+
+def peeled(stage):
+    """The stage with every word that only starts the next program taken off, and whether one
+    of them also moved where it runs (`env -C dir`)."""
+    index, moves = 0, False
+    while index < len(stage):
+        word = stage[index][0]
+        name = program_of(word)
+        if word != "&" and name not in _RUNS_NEXT:
+            break
+        valued = _RUNNER_VALUED.get(name, ())
+        index += 1
+        while index < len(stage) and (stage[index][0].startswith("-") or (
+                name == "env" and "=" in stage[index][0])):
+            option = stage[index][0]
+            if name == "env" and (option in ("-C", "--chdir") or option.startswith("--chdir=")):
+                moves = True
+            index += 2 if option in valued else 1
+        index += _RUNS_NEXT.get(name, 0)
+    return stage[index:], moves
+
+def _joined_text(stage):
+    return " ".join(typed if typed is not None else shlex.quote(word) for word, typed in stage)
+
+#: The text a stage runs, public: the escape door below and guard_command_rules read it.
+joined_text = _joined_text
+
+def handed(stage):
+    """(the command text a shell or `eval` in this stage is handed, or None; why it cannot be
+    read, or '')."""
+    if not stage:
+        return None, ""
+    name, rest = program_of(stage[0][0]), stage[1:]
+    if name in _POSIX_SHELLS:
+        for at, (word, _typed) in enumerate(rest):
+            if re.match(r"^-[A-Za-z]*c[A-Za-z]*$", word):
+                return (rest[at + 1][0], "") if at + 1 < len(rest) else (None, "")
+            if not word.startswith(("-", "+")):
+                return None, ""
+        return None, ""
+    if name == "cmd":
+        for at, (word, _typed) in enumerate(rest):
+            if word.lower() in ("/c", "/k", "/r"):
+                return _joined_text(rest[at + 1:]), ""
+        return None, ""
+    if name in _EVALS:
+        rest = [pair for pair in rest if pair[0].lower() not in ("-command", "-c")]
+        return _joined_text(rest), ""
+    if name not in _POWERSHELLS:
+        return None, ""
+    at = 0
+    while at < len(rest):
+        low = rest[at][0].lower()
+        if not low.startswith("-"):
+            # powershell.exe reads words with no parameter as the command to run.
+            return _joined_text(rest[at:]), ""
+        if len(low) >= 2 and "-file".startswith(low):
+            return None, ""
+        if len(low) >= 2 and "-command".startswith(low):
+            return _joined_text(rest[at + 1:]), ""
+        if len(low) >= 2 and ("-encodedcommand".startswith(low) or low == "-ec"):
+            try:
+                return base64.b64decode(rest[at + 1][0]).decode("utf-16-le"), ""
+            except (IndexError, ValueError, UnicodeDecodeError):
+                return None, "`%s` carries a command this cannot decode" % rest[at][0]
+        at += 2 if len(low) >= 2 and any(v.startswith(low) for v in _PS_VALUED) else 1
+    return None, ""
+
+
+def every_command_is(text_, allowed, _depth=0):
     """True when EVERY command in the text is neutral or satisfies `allowed(command)`.
 
     THE ESCAPE IS PER COMMAND, NEVER PER LINE. Two guards here asked `re.search(escape, line)`,
     so `git status; <anything at all>` was an escape - the cheapest way past a refusal was to
     put the way out in front of the thing being refused. An empty text has no commands, and is
     NOT an escape: nothing was asked for, so nothing is excused.
+
+    AND READ THROUGH A WRAPPER. Five hooks excuse a command by a pattern on it AS TYPED, and on
+    2026-09-26 `env -u PYTHONIOENCODING git commit` was refused as new work by a guard whose
+    own refusal demanded that commit. A command the pattern does not excuse as typed is asked
+    again as what it RUNS - the program `env`, `timeout` or `time` hands on, and every command
+    a shell or `eval` is handed - read by the reader above, the one reader of those, and no
+    deeper than MAX_DEPTH. Every program it runs must be excused, so new work behind a
+    wrapper, or behind a way out inside a shell, is still new work.
     """
     found = split_commands(text_)
     if not found:
@@ -396,9 +570,31 @@ def every_command_is(text_, allowed):
     for command in found:
         if NEUTRAL.match(command):
             continue
-        if not allowed(program(command)):
+        if allowed(program(command)):
+            continue
+        inner = _runs(command) if _depth < MAX_DEPTH else None
+        if not inner or not all(every_command_is(one, allowed, _depth + 1) for one in inner):
             return False
     return True
+
+
+def _runs(command):
+    """The commands a wrapper or a shell in `command` hands on, as text - or None when it
+    hands nothing on, or cannot be read. A command that cannot be read is never excused."""
+    held = pairs(command)
+    if not held:
+        return None
+    out, handed_on = [], False
+    for stage in stages(held):
+        rest, _moves = peeled(stage)
+        if not rest:
+            return None
+        text_, trouble = handed(rest)
+        if trouble:
+            return None
+        handed_on = handed_on or text_ is not None or len(rest) != len(stage)
+        out.append(text_ if text_ is not None else joined_text(rest))
+    return out if handed_on else None
 
 
 def _launch_shaped(node):

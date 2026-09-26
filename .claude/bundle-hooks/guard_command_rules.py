@@ -41,7 +41,6 @@ call, and the call does not say.
 The rules are found by `bundle_rules` - discovered from the markers checkers declare, never
 listed. This file owns only the shape of a git command.
 """
-import base64
 import io
 import json
 import os
@@ -82,38 +81,14 @@ _CONFIG_ENV = re.compile(r"GIT_CONFIG_(PARAMETERS|COUNT|KEY_\d+|VALUE_\d+|GLOBAL
 #: Environment that moves the repository a git command acts on away from where it runs.
 _PLACE_ENV = re.compile(r"\bGIT_(?:DIR|WORK_TREE|COMMON_DIR)\s*=", re.I)
 
-#: Words that only start the NEXT word as the program: `& git`, `env X=1 git`, `time git`.
-#:
-#: EACH WITH THE OPERANDS IT TAKES BEFORE THE PROGRAM. Measured 2026-09-24 by the peer session:
-#: `timeout 600 git commit --no-verify` walked past, because `timeout` was not known as a runner
-#: and, known or not, its DURATION is a word before the program - read as the program, it hid the
-#: commit behind it. A runner that takes an operand says how many.
-_RUNS_NEXT = {"&": 0, "!": 0, "command": 0, "builtin": 0, "exec": 0, "time": 0, "nice": 0,
-              "nohup": 0, "env": 0, "sudo": 0, "doas": 0, "xargs": 0, "call": 0, "start": 0,
-              "timeout": 1, "stdbuf": 0, "unbuffer": 0, "setsid": 0, "ionice": 0, "chrt": 1,
-              "taskset": 1, "caffeinate": 0, "watch": 0}
+#: THE COMMAND READER lives in `bundle_shell`, which every installation carries: a
+#: project may decline this guard for a commit gate of its own, and the escape door
+#: every hook shares reads through wrappers with it. These are its names, not a copy.
+from bundle_shell import (  # noqa: E402,F401
+    _EVALS, _POSIX_SHELLS, _POWERSHELLS, _PS_VALUED, _RUNNER_VALUED, _RUNS_NEXT,
+    MAX_NESTING, _joined_text, _lex, handed, joined_text, pairs, peeled, program_of,
+    stages)
 
-#: A runner's options that take a VALUE, so the value is not read as the program.
-_RUNNER_VALUED = {"env": ("-u", "--unset", "-C", "--chdir", "-S", "--split-string"),
-                  "nice": ("-n", "--adjustment"), "sudo": ("-u", "-g", "-C", "-D", "-h", "-p"),
-                  "doas": ("-u", "-C"),
-                  "xargs": ("-n", "-I", "-L", "-P", "-d", "-a", "-E", "-s"),
-                  "time": ("-f", "-o"), "timeout": ("-s", "--signal", "-k", "--kill-after"),
-                  "stdbuf": ("-i", "-o", "-e"), "ionice": ("-c", "-n", "-p"),
-                  "watch": ("-n", "--interval", "-d")}
-
-#: Shells handed their program as a STRING. A POSIX shell's `-c` may be clustered (`-lc`).
-_POSIX_SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh", "ash"))
-_POWERSHELLS = frozenset(("powershell", "pwsh"))
-_EVALS = frozenset(("eval", "iex", "invoke-expression"))
-
-#: PowerShell's own options that take a value, spelled out; any unambiguous prefix is accepted.
-_PS_VALUED = ("-executionpolicy", "-windowstyle", "-version", "-inputformat", "-outputformat",
-              "-configurationname", "-workingdirectory", "-psconsolefile", "-settingsfile",
-              "-custompipename")
-
-#: How deep a command handed to a shell handed to a shell is read before it is refused.
-MAX_NESTING = 6
 
 #: Commands that move where the NEXT command runs, and those that move it back somewhere unknown.
 _MOVES = frozenset(("cd", "chdir", "pushd", "set-location", "sl", "push-location"))
@@ -139,43 +114,6 @@ def tokens(command):
     """The words of one command, quotes honoured; None when it cannot be split."""
     held = pairs(command)
     return None if held is None else [word for word, _typed in held]
-
-
-def _lex(text, posix):
-    try:
-        lexer = shlex.shlex(text, posix=posix, punctuation_chars=True)
-        lexer.whitespace_split = True
-        return list(lexer)
-    except ValueError:
-        return None
-
-
-def pairs(command):
-    """[(word, the word as typed)] for one command, or None when it cannot be split.
-
-    The punctuation of a shell - `( ) { } | &` - comes back as words of its own when it is not
-    quoted, so `(git commit --no-verify)` is `--no-verify` and not `--no-verify)`. The word AS
-    TYPED keeps its backslashes: a POSIX reading turns an unquoted `C:\\Users\\x` into `C:Usersx`,
-    and a directory is looked for under both spellings.
-    """
-    text = bundle_shell.program(command)
-    words, typed = _lex(text, True), _lex(text, False)
-    if words is None:
-        words = typed
-    if words is None:
-        return None
-    if typed is None or len(typed) != len(words):
-        typed = [None] * len(words)
-    else:
-        typed = [t[1:-1] if len(t) > 1 and t[0] == t[-1] and t[0] in ("'", chr(34)) else t
-                 for t in typed]
-    return list(zip(words, typed))
-
-
-def program_of(word):
-    """The program a word names: `C:\\Program Files\\Git\\cmd\\git.exe` is `git`."""
-    name = re.split(r"[\\/]", word or "")[-1].lower()
-    return name[:-4] if name.endswith(".exe") else name
 
 
 def git_call(words):
@@ -486,94 +424,6 @@ def git_place(where, stage):
 
 
 # ----------------------------------------------------------------------------- what runs
-
-def stages(held):
-    """The programs of one command: a pipeline's stages, and every group `( )`/`{ }` a program
-    of its own - so a PowerShell script block, `Measure-Command { git commit ... }`, is read as
-    the command it runs rather than as arguments to `Measure-Command`."""
-    out, current = [], []
-    for word, typed in held:
-        if word in ("(", ")", "{", "}"):
-            if current:
-                out.append(current)
-            current = []
-            continue
-        if word and set(word) <= set("|&") and not (word == "&" and not current):
-            if current:
-                out.append(current)
-            current = []
-            continue
-        current.append((word, typed))
-    if current:
-        out.append(current)
-    return out
-
-
-def peeled(stage):
-    """The stage with every word that only starts the next program taken off, and whether one
-    of them also moved where it runs (`env -C dir`)."""
-    index, moves = 0, False
-    while index < len(stage):
-        word = stage[index][0]
-        name = program_of(word)
-        if word != "&" and name not in _RUNS_NEXT:
-            break
-        valued = _RUNNER_VALUED.get(name, ())
-        index += 1
-        while index < len(stage) and (stage[index][0].startswith("-") or (
-                name == "env" and "=" in stage[index][0])):
-            option = stage[index][0]
-            if name == "env" and (option in ("-C", "--chdir") or option.startswith("--chdir=")):
-                moves = True
-            index += 2 if option in valued else 1
-        index += _RUNS_NEXT.get(name, 0)
-    return stage[index:], moves
-
-
-def _joined_text(stage):
-    return " ".join(typed if typed is not None else shlex.quote(word) for word, typed in stage)
-
-
-def handed(stage):
-    """(the command text a shell or `eval` in this stage is handed, or None; why it cannot be
-    read, or '')."""
-    if not stage:
-        return None, ""
-    name, rest = program_of(stage[0][0]), stage[1:]
-    if name in _POSIX_SHELLS:
-        for at, (word, _typed) in enumerate(rest):
-            if re.match(r"^-[A-Za-z]*c[A-Za-z]*$", word):
-                return (rest[at + 1][0], "") if at + 1 < len(rest) else (None, "")
-            if not word.startswith(("-", "+")):
-                return None, ""
-        return None, ""
-    if name == "cmd":
-        for at, (word, _typed) in enumerate(rest):
-            if word.lower() in ("/c", "/k", "/r"):
-                return _joined_text(rest[at + 1:]), ""
-        return None, ""
-    if name in _EVALS:
-        rest = [pair for pair in rest if pair[0].lower() not in ("-command", "-c")]
-        return _joined_text(rest), ""
-    if name not in _POWERSHELLS:
-        return None, ""
-    at = 0
-    while at < len(rest):
-        low = rest[at][0].lower()
-        if not low.startswith("-"):
-            # powershell.exe reads words with no parameter as the command to run.
-            return _joined_text(rest[at:]), ""
-        if len(low) >= 2 and "-file".startswith(low):
-            return None, ""
-        if len(low) >= 2 and "-command".startswith(low):
-            return _joined_text(rest[at + 1:]), ""
-        if len(low) >= 2 and ("-encodedcommand".startswith(low) or low == "-ec"):
-            try:
-                return base64.b64decode(rest[at + 1][0]).decode("utf-16-le"), ""
-            except (IndexError, ValueError, UnicodeDecodeError):
-                return None, "`%s` carries a command this cannot decode" % rest[at][0]
-        at += 2 if len(low) >= 2 and any(v.startswith(low) for v in _PS_VALUED) else 1
-    return None, ""
 
 
 def dealiased(place, options, sub, rest, depth=0):
