@@ -88,8 +88,12 @@ REVIEW_KEY = "_review"
 SESSION_VAR = "CLAUDE_CODE_SESSION_ID"
 
 #: Content that is not the owner: harness events, peer sessions, injected reminders, a slash
-#: command's own output. By the opening tag, which the harness always writes first.
+#: command and its own output, a subagent's hand-back. By the opening tag, which the harness
+#: always writes first. The last two were read as owner requests on 2026-09-25: `/compact`, which
+#: nothing can be done about and nothing can answer, and a background reviewer's verdict, which
+#: then needed a review of its own - a loop.
 EVENTS = re.compile(r"^\s*<(task-notification|cross-session-message|system-reminder|"
+                    r"agent-message|command-(?:name|message|args)|"
                     r"local-command-(?:stdout|stderr|caveat))\b")
 
 RESOLUTIONS = ("done", "answered", "asked", "blocked", "declined")
@@ -247,11 +251,23 @@ def requests(rows):
     words sent again LATER are a new request, and get a key of their own.
     """
     out, pending, seen = [], {}, {}
+    # A QUEUED MESSAGE IS THE OWNER'S ONLY IF ITS DELIVERY SAYS SO. The queue's own row names no
+    # sender; the attachment that delivers it does. A background subagent's hand-back reached the
+    # ledger as an `enqueue` row with no origin, its delivery saying `peer`, and was itemised as an
+    # owner request - so each review whose result arrived that way owed a review of its own.
+    foreign = set()
+    for row in rows:
+        held = row.get("attachment") if isinstance(row.get("attachment"), dict) else {}
+        if row.get("type") == "attachment" and held.get("type") == "queued_command" \
+                and (held.get("origin") or {}).get("kind") not in (None, "human"):
+            foreign.add(flat(_text_parts(held.get("prompt"))))
     for index, row in enumerate(rows):
         text = _owner_text(row)
         if text is None or not text.strip():
             continue
         said = flat(text)
+        if row.get("type") == "queue-operation" and said in foreign:
+            continue
         if row.get("type") in ("user", "attachment") and pending.get(said):
             pending[said] -= 1                   # the delivery of a message already queued
             continue
@@ -564,19 +580,29 @@ def reviews(rows, made=None):
         found = [m for m in VERDICT.finditer(answer) if m.group(1) == digest]
         own = answer[found[-1].start():] if found else answer
         why = left_undone(own) if found else None
+        verdict = found[-1].group(2) if found else None
+        if verdict == "FAIL":
+            why = quoted(own, prompt)
+            verdict = "FAIL" if why else UNSUPPORTED
         text = own if why is None else "%s - left undone: %s" % (found[-1].group(0), why)
-        out.append({"digest": digest, "verdict": found[-1].group(2) if found else None,
+        out.append({"digest": digest, "verdict": verdict,
                     "text": text, "prompt": prompt, "index": call["index"]})
     return sorted(out, key=lambda r: r["index"])
 
 
-def left_undone(answer):
-    """The `leftUndone` a reviewer returned, as one line, or None when it cannot be read.
+#: A FAIL whose reasons quote nothing the reviewer was shown - a reviewer error, not a verdict.
+UNSUPPORTED = "UNSUPPORTED"
+#: The shortest quote that counts. A few words appear everywhere; a clause does not.
+MIN_QUOTE = 12
+#: The line an earlier failure is shown on. A quote of a previous reviewer is not evidence.
+EARLIER = "AN EARLIER REVIEWER FAILED THIS REQUEST:"
+
+
+def _left_entries(answer):
+    """The `leftUndone` list a reviewer returned, or None when it cannot be read.
 
     Read from the JSON the review prompt asks for - between the answer's first `{` and its last
-    `}`, which is where a fenced block puts it. An entry may be a sentence or an object (the real
-    reviewers wrote `{"item": ..., "issue": ..., "severity": ...}`), and every field is kept.
-    """
+    `}`, which is where a fenced block puts it."""
     start, end = answer.find("{"), answer.rfind("}")
     if not 0 <= start < end:
         return None
@@ -585,8 +611,12 @@ def left_undone(answer):
     except ValueError:
         return None
     entries = held.get("leftUndone") if isinstance(held, dict) else None
-    if not isinstance(entries, list) or not entries:
-        return None
+    return entries if isinstance(entries, list) and entries else None
+
+
+def _one_line(entries):
+    """Entries as one line. An entry may be a sentence or an object (the real reviewers wrote
+    `{"item": ..., "issue": ..., "severity": ...}`), and every field is kept."""
     said = []
     for entry in entries:
         if isinstance(entry, dict):
@@ -594,6 +624,35 @@ def left_undone(answer):
         else:
             said.append(flat(entry))
     return " | ".join(said)
+
+
+def left_undone(answer):
+    """The `leftUndone` a reviewer returned, as one line, or None when it cannot be read."""
+    entries = _left_entries(answer)
+    return _one_line(entries) if entries else None
+
+
+def quoted(answer, prompt):
+    """The `leftUndone` entries whose `quote` is text the prompt's requests or items hold, as one
+    line - None when there are none.
+
+    A FAIL STANDS ONLY ON A REASON THE LEDGER CAN CHECK. The owner's words, 2026-09-26: a reviewer
+    that keeps hallucinating is just as bad as shallow work, and their usage must not go on one
+    that fails its own checks. Four and five FAILs in a row, in two sessions, rested on things no
+    item said any more - an item "still citing" a script it had stopped citing, a rule quoted by
+    half. So each reason must quote, exactly, the request or item it is about, and the quote is
+    looked for in what that reviewer was SHOWN - never in an earlier reviewer's words, which are
+    not evidence about the work. An entry whose quote is not there is dropped; a FAIL with none
+    left is UNSUPPORTED - a reviewer error that stands against nothing.
+    """
+    entries = _left_entries(answer)
+    if not entries:
+        return None
+    source = flat(LF.join(line for line in prompt.splitlines() if EARLIER not in line))
+    kept = [entry for entry in entries if isinstance(entry, dict)
+            and isinstance(entry.get("quote"), str) and len(flat(entry["quote"])) >= MIN_QUOTE
+            and flat(entry["quote"]) in source]
+    return _one_line(kept) if kept else None
 
 
 def shown(text, limit=REASONS_LIMIT):
@@ -619,11 +678,28 @@ def owed(held, asked, rows, made=None):
 
 
 def earlier_failures(key, rows, made=None):
-    out = []
-    for review in reviews(rows, made):
-        if review["verdict"] == "FAIL" and key in dict(REQUEST_LINE.findall(review["prompt"])):
-            out.append(shown(review["text"]))
-    return out[-2:]
+    """[the latest FAIL of a review that covered `key`, as shown] - or [] when its reasons are
+    about other requests.
+
+    THE LATEST ONE, AND ONLY WHERE IT BELONGS. Every FAIL used to be shown, verbatim, under every
+    request its review covered. Measured 2026-09-25 in two sessions: each reviewer read the earlier
+    failures as established fact - one had quoted the evidence rule's first half and dropped
+    `or a commit made after it` - and repeated them against items that had already answered
+    them; each new FAIL was appended in turn, so the anchor only grew. Four and five FAILs in a
+    row, on stale reasons, with no change to the items able to clear them. A failure whose reasons
+    name some requests is shown under those alone; one that names none of them cannot be placed,
+    and is shown under all rather than hidden.
+    """
+    failing = [review for review in reviews(rows, made) if review["verdict"] == "FAIL"
+               and key in dict(REQUEST_LINE.findall(review["prompt"]))]
+    if not failing:
+        return []
+    latest = failing[-1]
+    named = [other for other, _state in REQUEST_LINE.findall(latest["prompt"])
+             if other in latest["text"]]
+    if named and key not in named:
+        return []
+    return [shown(latest["text"])]
 
 
 def review_prompt(owing, rows, made=None):
@@ -663,9 +739,18 @@ def review_prompt(owing, rows, made=None):
         "  3. an item marked answered does not answer the question that was asked;",
         "  4. an item marked asked, blocked or declined defers or refuses something the owner "
         "plainly authorised, or names no concrete blocker;",
-        "  5. an earlier reviewer's failure is shown and the items do not answer it.",
+        "  5. an earlier reviewer's failure is shown and the items do not answer it. An earlier "
+        "reviewer can be wrong: check each of its findings against the CURRENT item text above "
+        "and against the files, and count only the findings that still hold.",
         "Otherwise PASS. Judge the requests as the owner wrote them, not as the items restate "
         "them.",
+        "",
+        "ALREADY CHECKED MECHANICALLY, against the conversation you cannot see: every done item "
+        "cites at least one `backticked` command that a tool call made after its request ran "
+        "without failing, or a commit made after its request; and every answered, asked, "
+        "blocked or declined text was shown to the owner in the conversation. Do not fail an "
+        "item for evidence only the conversation holds - judge whether that evidence, being "
+        "true, shows the thing was done.",
         "",
         LF.join(blocks),
         "",
@@ -673,9 +758,58 @@ def review_prompt(owing, rows, made=None):
         "    VERDICT %s%s PASS" % (TOKEN, digest),
         "    VERDICT %s%s FAIL" % (TOKEN, digest),
         "and then return JSON: {\"provenByBreaking\": [what you checked and how], "
-        "\"batteryGreen\": null, \"leftUndone\": [each request or item that fails, and why]}. "
-        "An admitted gap is worth more than a confident wrong answer.",
+        "\"batteryGreen\": null, \"leftUndone\": [one object per failure: {\"quote\": \"<text "
+        "copied EXACTLY from a request or an item above - the words the failure is about>\", "
+        "\"why\": \"<what is wrong>\"}]}. A failure whose quote is not found, word for word, in "
+        "a request or an item above is discarded; a quote of an earlier reviewer counts for "
+        "nothing. An admitted gap is worth more than a confident wrong answer.",
     ])
+
+
+#: How many reviews in a row, since the owner last spoke, may come back without a PASS before the
+#: ledger stops asking. Each review spends the owner's usage.
+REVIEW_ROUNDS = 3
+#: What the closing message says once the ledger has stopped asking - the owner is told.
+ESCALATION = "The reviewer and I disagree"
+
+
+def not_passed_since_owner(asked, done):
+    """How many reviews in a row, since the owner's latest request, did not PASS."""
+    since = max((request["index"] for request in asked), default=-1)
+    count = 0
+    for review in reversed([r for r in done if r["index"] > since]):
+        if review["verdict"] == "PASS":
+            break
+        count += 1
+    return count
+
+
+def escalation(asked, owing, done, rows, last=None):
+    """None while the reviewer is still asked; once it has stopped, what keeps the turn open until
+    the owner is told.
+
+    A REVIEWER THAT LOOPS SPENDS THE OWNER'S USAGE ON NOTHING. The owner's words, 2026-09-26: a
+    reviewer that keeps hallucinating and failing its own checks is just as bad as shallow work.
+    Four and five reviews in a row, in two sessions, at about 50k tokens each, failed on reasons
+    no item held. So after REVIEW_ROUNDS reviews since the owner last spoke without a PASS, the
+    ledger stops asking - the owner's next message starts a fresh count - and the turn may end
+    only once the closing message says ESCALATION, so the disagreement reaches the person who
+    can settle it instead of looping out of sight.
+    """
+    if not owing:
+        return None
+    streak = not_passed_since_owner(asked, done)
+    if streak < REVIEW_ROUNDS:
+        return None
+    latest = done[-1]
+    spoken = said_after(rows, latest["index"], last)
+    if any(words(ESCALATION) in text for text in spoken):
+        return []
+    return ["ESCALATED: the reviewer has not passed this ledger %d times in a row since the owner "
+            "last spoke, so it is no longer asked - every review spends the owner's usage. Say "
+            "`%s` in your closing message and give the owner the latest reasons in your own "
+            "words, so the one who can settle it does: %s"
+            % (streak, ESCALATION, shown(latest["text"]))]
 
 
 def standing_failure(owing, done):
@@ -735,6 +869,11 @@ def problems(session, transcript, last=None, root=None):
     config, trouble = review_config(root)
     if trouble:
         return [trouble]
+    if config:
+        made = calls(rows)
+        stopped = escalation(asked, owed(held, asked, rows, made), reviews(rows, made), rows, last)
+        if stopped is not None:
+            return stopped
     return review_problems(held, asked, rows, config) if config else []
 
 
@@ -750,7 +889,9 @@ def owed_prompt(session, transcript, root=None):
         return None
     made = calls(rows)
     owing = owed(held, asked, rows, made)
-    if not owing or standing_failure(owing, reviews(rows, made)):
+    done = reviews(rows, made)
+    if not owing or standing_failure(owing, done) or \
+            not_passed_since_owner(asked, done) >= REVIEW_ROUNDS:
         return None
     return review_prompt(owing, rows, made)
 

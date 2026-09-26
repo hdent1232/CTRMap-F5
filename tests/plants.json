@@ -155,6 +155,14 @@
    "site": "evasion",
    "why": "re-rolling the reviewer until it passes: the first version keyed a FAIL on the prompt's digest, which moves the moment the FAIL is read, so it never stood at all - found by this test on its first run, before any plant"
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_FAIL_that_quotes_nothing_it_was_shown_stands_against_nothing": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a FAIL that quoted nothing it was shown stood against the items",
+   "new": "            verdict = \"FAIL\"\n",
+   "old": "            verdict = \"FAIL\" if why else UNSUPPORTED\n",
+   "site": "instance",
+   "why": "THE OWNER'S RULING, 2026-09-26: a reviewer that keeps hallucinating is as bad as shallow work. Six FAILs in two sessions stood on reasons no item held any more - an item 'still citing' a script it had stopped citing - and nothing could clear them but contrived items."
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_declared_reviewer_is_owed_once_the_ledger_is_resolved": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a declared reviewer was never asked",
@@ -162,6 +170,22 @@
    "old": "    return review_problems(held, asked, rows, config) if config else []",
    "site": "instance",
    "why": "the reviewer declared and never asked: the project pays for nothing and believes it has an independent check - the owner chose 'do both' because the ledger alone cannot see an item narrower than its request"
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_failure_is_shown_only_under_the_requests_its_reasons_name": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a failure about one request was shown under another it never named",
+   "new": "",
+   "old": "    if named and key not in named:\n        return []\n",
+   "site": "instance",
+   "why": "THE DEFECT THAT LOOPED TWO SESSIONS: a failure naming two requests was shown under all six of a review, and criterion 5 then asked the other four to answer it - some with answered items, which cannot be amended - so only contrived items could clear it."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_few_words_are_not_a_quote": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a quote of a few words, found anywhere, was taken as evidence",
+   "new": "            and isinstance(entry.get(\"quote\"), str)\n",
+   "old": "            and isinstance(entry.get(\"quote\"), str) and len(flat(entry[\"quote\"])) >= MIN_QUOTE\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST THE QUOTE RULE: a word or two that appears somewhere in any prompt, so every FAIL supports itself and the rule checks nothing. A clause is what a failure is about; a word is not."
   },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_launch_that_is_not_exactly_the_owed_review_is_refused": {
    "file": ".claude/bundle-hooks/request_ledger.py",
@@ -179,6 +203,14 @@
    "site": "elsewhere",
    "why": "a launch the door refused still sits in the transcript, answered by the denial; read as a review, a reworded prompt that was never allowed to run would pass on whatever words the refusal happened to quote"
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_quote_of_an_EARLIER_reviewer_is_not_evidence": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a reviewer quoting the last reviewer, not the work, was taken as a verdict",
+   "new": "    source = flat(prompt)\n",
+   "old": "    source = flat(LF.join(line for line in prompt.splitlines() if EARLIER not in line))\n",
+   "site": "elsewhere",
+   "why": "THE ANCHOR THAT GREW, in quote form. The earlier failure is in the prompt, so quoting it is always possible - and it is exactly how each reviewer repeated the last one's half-quoted rule as fact. A quote must be of the requests and items, not of a reviewer."
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_review_is_read_from_its_verdict_so_no_reader_is_handed_the_harness_preamble": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a review was recorded with the harness's words in front of the reviewer's",
@@ -195,6 +227,30 @@
    "site": "elsewhere",
    "why": "a `prompt` key read as a launch: WebFetch carries one, so fetching any page that prints PASS after the owed prompt would forge the whole review - found when the first plant here, an echo, did not redden and asked why not"
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_after_three_reviews_without_a_PASS_the_reviewer_is_no_longer_asked": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "the reviewer was asked a fourth time instead of the owner being told",
+   "new": "    if True:\n        return None\n",
+   "old": "    if streak < REVIEW_ROUNDS:\n        return None\n",
+   "site": "instance",
+   "why": "THE LOOP THAT SPENT THE OWNER'S USAGE: four and five reviews in a row, at about 50k tokens each, failing on reasons no item held, with nothing bounding how many more would follow. The owner asked for something to be done about exactly this."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_only_the_LATEST_failure_is_shown": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a superseded failure was shown to the next reviewer again",
+   "new": "    return [shown(review[\"text\"]) for review in failing]\n",
+   "old": "    return [shown(latest[\"text\"])]\n",
+   "site": "elsewhere",
+   "why": "THE ANCHOR THAT ONLY GREW. Every earlier FAIL was appended to the next prompt, each reviewer read them as established fact - one had half-quoted the evidence rule - and four and five FAILs in a row followed on stale reasons, in two sessions."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_escalation_must_be_SAID_to_the_owner": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "the disagreement ended the turn without the owner being told",
+   "new": "    if True:\n        return []\n",
+   "old": "    if any(words(ESCALATION) in text for text in spoken):\n        return []\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST THE STOP: stop asking the reviewer and tell nobody. The disagreement has to reach the one person who can settle it, or the stop is a quiet way to skip review."
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_fan_out_cap_counts_every_launch_but_the_owed_review": {
    "file": ".claude/bundle-hooks/guard_fanout.py",
    "must_say": "a launch dressed as a review escaped the fan-out cap",
@@ -206,10 +262,26 @@
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_next_reviewer_is_shown_what_was_left_undone_however_much_was_checked_first": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "the next reviewer was shown what the last one checked and not why it failed",
-   "new": "        why = None\n",
-   "old": "        why = left_undone(own) if found else None\n",
+   "new": "        text = own\n",
+   "old": "        text = own if why is None else \"%s - left undone: %s\" % (found[-1].group(0), why)\n",
    "site": "evasion",
-   "why": "THE CHEAPEST WAY PAST 'A REVIEW IS READ FROM ITS VERDICT': keep the record starting at the verdict line, which the first test asks, and let the reasons fall past the cut. The first reader cut from the verdict fixed the preamble and still showed the next reviewer only what the last one had checked - the real FAILs put leftUndone after a provenByBreaking list longer than the slice, both times."
+   "why": "THE CHEAPEST WAY PAST 'A REVIEW IS READ FROM ITS VERDICT': keep the record starting at the verdict line, which the first test asks, and let the reasons fall past the cut. The first reader cut from the verdict fixed the preamble and still showed the next reviewer only what the last one had checked - the real FAILs put leftUndone after a provenByBreaking list longer than the slice, both times. RE-ANCHORED 2026-09-26: a FAIL's reasons now come from its quoted entries, so emptying `left_undone` no longer reaches them; the record keeping the raw answer - verdict first, reasons past the cut - is the same defect at the line that builds it."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_owners_next_message_gives_the_reviewer_a_fresh_count": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "the owner's next message did not give the reviewer a fresh count",
+   "new": "    since = -1\n",
+   "old": "    since = max((request[\"index\"] for request in asked), default=-1)\n",
+   "site": "elsewhere",
+   "why": "A STOP THAT NEVER LIFTS. Counting every review in the session, one bad run turns the reviewer off for everything the owner asks afterwards - the opposite failure from the loop, and the one that would quietly bring shallow work back."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_reviewer_is_told_what_was_checked_and_that_an_earlier_one_can_be_wrong": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "the reviewer was not told to check an earlier failure against the items",
+   "new": "        \"  5. an earlier reviewer's failure is shown and the items do not answer it. A later \"\n",
+   "old": "        \"  5. an earlier reviewer's failure is shown and the items do not answer it. An earlier \"\n",
+   "site": "elsewhere",
+   "why": "A REVIEWER THAT DEFERS TO THE LAST ONE. Told only that an earlier failure must be answered, it treated each earlier finding as fact and never compared it with the item text below it; the sentence telling it an earlier reviewer can be wrong is the instruction that breaks the chain."
   },
   "test_bundle.py::AReadIsAReadWhateverCarriesIt::test_a_MESSAGE_is_never_refused_by_the_machine_guards": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
@@ -387,6 +459,22 @@
    "old": "if row.get(\"type\") in (\"user\", \"attachment\") and pending.get(said):",
    "site": "elsewhere",
    "why": "a mid-turn message is written twice, queued and delivered - measured in this session, where 'do both' arrived that way; counting both makes one request two and the second is closed by pointing at the first. Re-anchored when the delivery came to include the queued_command attachment"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_a_queued_message_whose_delivery_names_a_PEER_is_not_the_owner": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a peer's queued message was read as the owner's",
+   "new": "",
+   "old": "        if row.get(\"type\") == \"queue-operation\" and said in foreign:\n            continue\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST THE FRAME LIST: a message from a peer or a subagent with no recognised opening tag. The queue's own row names no sender and was read as the owner's; the attachment that delivers it names the sender, and that is the fact to go by."
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_a_subagent_hand_back_and_a_slash_command_are_not_the_owner": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a hand-back or a slash command was read as a request",
+   "new": "",
+   "old": "                    r\"agent-message|command-(?:name|message|args)|\"\n",
+   "site": "elsewhere",
+   "why": "TWO MORE THINGS THAT ARE NOT THE OWNER, both itemised as owner requests on 2026-09-25: `/compact`, which nothing can do or answer and so stayed open for good, and a background reviewer's hand-back, which then owed a review of its own - a loop."
   },
   "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_an_unitemised_request_refuses_the_stop": {
    "file": ".claude/bundle-hooks/request_ledger.py",

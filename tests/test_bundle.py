@@ -1495,6 +1495,23 @@ class AnOwnersRequestIsAccountedForBeforeTheTurnEnds(LedgerCase):
                  tool_result("t1", "a result", "2026-01-01T00:00:07Z"))
         self.assertEqual(self.keys(), [], "something that is not the owner was read as a request")
 
+    def test_a_subagent_hand_back_and_a_slash_command_are_not_the_owner(self):
+        """Both were itemised as owner requests on 2026-09-25: `/compact`, which nothing can do
+        or answer, and a background reviewer's verdict, which then owed a review of its own."""
+        back = "<agent-message from=\"a1\">" + LF + "[Subagent hand-back] VERDICT ledger-review:x FAIL"
+        self.add(queued(back, "2026-01-01T00:00:01Z"),
+                 delivered(back, "peer", "2026-01-01T00:00:02Z"),
+                 typed("<command-name>/compact</command-name>" + LF
+                       + "<command-message>compact</command-message>", "2026-01-01T00:00:03Z"))
+        self.assertEqual(self.keys(), [], "a hand-back or a slash command was read as a request")
+
+    def test_a_queued_message_whose_delivery_names_a_PEER_is_not_the_owner(self):
+        """The frame is one spelling of it; the delivery's origin is the fact. The queue's own
+        row names no sender, and it was read as the owner's."""
+        self.add(queued("please re-run the sweep", "2026-01-01T00:00:01Z"),
+                 delivered("please re-run the sweep", "peer", "2026-01-01T00:00:02Z"))
+        self.assertEqual(self.keys(), [], "a peer's queued message was read as the owner's")
+
     def test_a_queued_message_delivered_is_ONE_request_and_the_same_words_later_are_TWO(self):
         self.add(queued("do both", "2026-01-01T00:00:01Z"), typed("do both", "2026-01-01T00:00:02Z"))
         self.assertEqual(len(self.keys()), 1, "a queued message was counted twice on delivery")
@@ -1663,10 +1680,13 @@ class ALedgerReviewIsIndependentAndReadNotRecorded(LedgerCase):
                 "transcript_path": self.transcript}
 
     def verdict(self, prompt, word, ident="r1"):
+        """A reviewer's answer. A FAIL quotes the item it is about, as a real one must."""
         digest = prompt.split(self.ledger.TOKEN, 1)[1][:12]
+        body = "{}" if word != "FAIL" else json.dumps(
+            {"leftUndone": [{"quote": "build the ledger", "why": "half of it"}]})
         self.add(tool_call(ident, "Agent", self.launch(prompt)["tool_input"],
                            "2026-01-01T00:00:05Z"),
-                 tool_result(ident, "VERDICT %s%s %s\n{}" % (self.ledger.TOKEN, digest, word),
+                 tool_result(ident, "VERDICT %s%s %s\n%s" % (self.ledger.TOKEN, digest, word, body),
                              "2026-01-01T00:00:06Z"))
 
     def test_no_review_is_owed_where_none_is_declared(self):
@@ -1725,13 +1745,14 @@ class ALedgerReviewIsIndependentAndReadNotRecorded(LedgerCase):
         """The harness opens a subagent's result with a paragraph of its own, and two readers
         sliced the answer from its start - the first real review of a ledger failed it because
         the earlier failure it was shown was that paragraph, cut off before the verdict. The
-        RECORD is asked first, because a cut made there reaches a reader nobody has written yet;
-        then both readers there are, the refusal while the FAIL stands and the next prompt.
+        RECORD is asked, because a cut made there reaches every reader, including the escalation
+        that shows the owner a reviewer's reasons once it is no longer asked.
 
         IN PROSE, NOT JSON: a `leftUndone` the ledger can read is found wherever the answer
         starts, so a JSON answer passes this with the verdict cut deleted - measured, the plant
-        for it stopped reddening the moment `leftUndone` was read. The cut is what keeps a
-        reviewer who answered in sentences from being shown the harness's paragraph instead."""
+        for it stopped reddening the moment `leftUndone` was read. A prose FAIL quotes nothing
+        the ledger can check, so it is UNSUPPORTED and stands against nothing - and its record
+        still carries the reviewer's words, not the harness's paragraph."""
         import request_ledger
         prompt = self.prompt()
         digest = prompt.split(self.ledger.TOKEN, 1)[1][:12]
@@ -1741,16 +1762,12 @@ class ALedgerReviewIsIndependentAndReadNotRecorded(LedgerCase):
         self.add(tool_call("r1", "Agent", self.launch(prompt)["tool_input"], "2026-01-01T00:00:05Z"),
                  tool_result("r1", preamble + LF + verdict + LF + "Left undone: " + reason + ".",
                              "2026-01-01T00:00:06Z"))
-        recorded = request_ledger.reviews(self.rows)[-1]["text"]
-        self.assertTrue(recorded.startswith(verdict),
+        review = request_ledger.reviews(self.rows)[-1]
+        self.assertTrue(review["text"].startswith(verdict),
                         "a review was recorded with the harness's words in front of the reviewer's: "
-                        "%r" % recorded[:80])
-        self.assertIn(reason, LF.join(self.problems()),
-                      "the standing FAIL's refusal showed the harness's preamble, not its reasons")
-        self.items((self.key, "build the ledger and nothing else", "done",
-                    "the ledger is built: `python build.py ledger` ran clean"))
-        self.assertIn(reason, self.prompt(),
-                      "the next reviewer was shown the harness's preamble, not the failure's reasons")
+                        "%r" % review["text"][:80])
+        self.assertEqual(review["verdict"], request_ledger.UNSUPPORTED,
+                         "a FAIL that quotes nothing the ledger can check was taken as a verdict")
 
     def test_the_next_reviewer_is_shown_what_was_left_undone_however_much_was_checked_first(self):
         """The prompt asks for `provenByBreaking` before `leftUndone`, so a reviewer that checked a
@@ -1759,8 +1776,8 @@ class ALedgerReviewIsIndependentAndReadNotRecorded(LedgerCase):
         prompt = self.prompt()
         digest = prompt.split(self.ledger.TOKEN, 1)[1][:12]
         checked = ["checked file number %d and found it as the item said" % n for n in range(40)]
-        left = [{"item": self.key + ".1", "issue": "the README half of the request was never done",
-                 "severity": "high"}]
+        left = [{"item": self.key + ".1", "quote": "build the ledger",
+                 "issue": "the README half of the request was never done", "severity": "high"}]
         answer = LF.join(["VERDICT %s%s FAIL" % (self.ledger.TOKEN, digest), "```json",
                           json.dumps({"provenByBreaking": checked, "batteryGreen": None,
                                       "leftUndone": left}), "```"])
@@ -1770,6 +1787,143 @@ class ALedgerReviewIsIndependentAndReadNotRecorded(LedgerCase):
                     "the ledger is built: `python build.py ledger` ran clean"))
         self.assertIn("issue: the README half of the request was never done", self.prompt(),
                       "the next reviewer was shown what the last one checked and not why it failed")
+
+    def review_fails(self, ident, left, at):
+        """A reviewer's FAIL of the prompt owed right now, naming what it left undone."""
+        prompt = self.prompt()
+        digest = prompt.split(self.ledger.TOKEN, 1)[1][:12]
+        answer = LF.join(["VERDICT %s%s FAIL" % (self.ledger.TOKEN, digest),
+                          json.dumps({"provenByBreaking": [], "leftUndone": left})])
+        self.add(tool_call(ident, "Agent", self.launch(prompt)["tool_input"], at),
+                 tool_result(ident, answer, at))
+
+    def two_requests(self):
+        self.add(typed("write the readme too", "2026-01-01T00:00:03Z"),
+                 tool_call("t2", "Bash", {"command": "python build.py readme"},
+                           "2026-01-01T00:00:04Z"),
+                 tool_result("t2", "ok", "2026-01-01T00:00:04Z"))
+        a, b = self.keys()
+        self.itemise(a, b, "build the ledger", "write the readme")
+        return a, b
+
+    def itemise(self, a, b, ask_a, ask_b):
+        self.items((a, ask_a, "done", "the ledger is built: `python build.py ledger` ran clean"),
+                   (b, ask_b, "done", "the readme is written: `python build.py readme` ran clean"))
+
+    def blocks(self, a, b):
+        shown = self.prompt()
+        start_a, start_b = shown.index("[request %s" % a), shown.index("[request %s" % b)
+        return shown[start_a:start_b], shown[start_b:shown.index("Your final message")]
+
+    def test_a_failure_is_shown_only_under_the_requests_its_reasons_name(self):
+        """Measured 2026-09-25: a failure naming two requests was shown under all six of a review,
+        and criterion 5 then asked the other four to answer it - four of them with `answered`
+        items, which cannot be amended."""
+        a, b = self.two_requests()
+        self.review_fails("r1", [{"item": b + ".1", "quote": "write the readme",
+                                  "issue": "the readme was never written"}],
+                  "2026-01-01T00:00:05Z")
+        self.itemise(a, b, "build the ledger, again", "write the readme, again")
+        under_a, under_b = self.blocks(a, b)
+        self.assertIn("the readme was never written", under_b)
+        self.assertNotIn("the readme was never written", under_a,
+                         "a failure about one request was shown under another it never named")
+
+    def test_only_the_LATEST_failure_is_shown(self):
+        """Every earlier FAIL was appended to the next prompt, and each reviewer read them as fact
+        - one had half-quoted the evidence rule - so the anchor only grew: four and five FAILs in a
+        row on stale reasons, in two sessions."""
+        self.review_fails("r1", [{"item": self.key + ".1", "quote": "build the ledger",
+                                  "issue": "the first reason, since answered"}],
+                  "2026-01-01T00:00:05Z")
+        self.items((self.key, "build the ledger, again", "done",
+                    "the ledger is built: `python build.py ledger` ran clean"))
+        self.review_fails("r2", [{"item": self.key + ".1", "quote": "build the ledger",
+                                  "issue": "the second reason"}],
+                  "2026-01-01T00:00:07Z")
+        self.items((self.key, "build the ledger, a third time", "done",
+                    "the ledger is built: `python build.py ledger` ran clean"))
+        prompt = self.prompt()
+        self.assertIn("the second reason", prompt)
+        self.assertNotIn("the first reason, since answered", prompt,
+                         "a superseded failure was shown to the next reviewer again")
+
+    def test_a_FAIL_that_quotes_nothing_it_was_shown_stands_against_nothing(self):
+        """The owner, 2026-09-26: a reviewer that keeps hallucinating is as bad as shallow work.
+        Six FAILs in two sessions rested on things no item held any more - an item "still citing"
+        a script it had stopped citing."""
+        self.review_fails("r1", [{"quote": "python -B ab_reviewer.py build",
+                                  "why": "the script does not exist"}], "2026-01-01T00:00:05Z")
+        self.assertEqual(self.ledger.reviews(self.rows)[-1]["verdict"], self.ledger.UNSUPPORTED,
+                         "a FAIL that quoted nothing it was shown stood against the items")
+        self.assertFalse(any("FAILED this ledger" in line for line in self.problems()),
+                         "a FAIL that quoted nothing it was shown stood against the items")
+
+    def test_a_quote_of_an_EARLIER_reviewer_is_not_evidence(self):
+        """The anchor that grew: each reviewer repeated the last one's words as fact."""
+        self.review_fails("r1", [{"quote": "build the ledger",
+                                  "why": "the zebra-quokka clause was skipped"}],
+                          "2026-01-01T00:00:05Z")
+        self.items((self.key, "build the ledger, again", "done",
+                    "the ledger is built: `python build.py ledger` ran clean"))
+        self.review_fails("r2", [{"quote": "the zebra-quokka clause was skipped",
+                                  "why": "as the last reviewer said"}], "2026-01-01T00:00:07Z")
+        self.assertEqual(self.ledger.reviews(self.rows)[-1]["verdict"], self.ledger.UNSUPPORTED,
+                         "a reviewer quoting the last reviewer, not the work, was taken as a verdict")
+
+    def test_a_few_words_are_not_a_quote(self):
+        """The cheapest way past: a quote so short it is found anywhere."""
+        self.review_fails("r1", [{"quote": "ledger", "why": "vague"}], "2026-01-01T00:00:05Z")
+        self.assertEqual(self.ledger.reviews(self.rows)[-1]["verdict"], self.ledger.UNSUPPORTED,
+                         "a quote of a few words, found anywhere, was taken as evidence")
+
+    def three_without_a_pass(self):
+        for number, second in ((1, 5), (2, 7), (3, 9)):
+            self.review_fails("r%d" % number, [{"quote": "no such words in any item",
+                                                "why": "invented"}],
+                              "2026-01-01T00:00:%02dZ" % second)
+
+    def test_after_three_reviews_without_a_PASS_the_reviewer_is_no_longer_asked(self):
+        """Four and five reviews in a row, at about 50k tokens each, on the owner's usage."""
+        self.three_without_a_pass()
+        found = self.problems()
+        self.assertTrue(any("ESCALATED" in line for line in found),
+                        "the reviewer was asked a fourth time instead of the owner being told: %s"
+                        % found)
+        self.assertIsNone(self.prompt(), "a fourth review was still owed")
+        self.assertEqual(self.problems(last=self.ledger.ESCALATION + ": it says one thing, I say "
+                                            "another, and here is why"), [],
+                         "telling the owner did not let the turn end")
+
+    def test_the_escalation_must_be_SAID_to_the_owner(self):
+        """The cheapest way past: stop asking, and tell nobody."""
+        self.three_without_a_pass()
+        self.assertTrue(any("ESCALATED" in line
+                            for line in self.problems(last="all done, nothing to add")),
+                        "the disagreement ended the turn without the owner being told")
+
+    def test_the_owners_next_message_gives_the_reviewer_a_fresh_count(self):
+        self.three_without_a_pass()
+        self.add(typed("and write the readme", "2026-01-01T00:00:20Z"),
+                 tool_call("t3", "Bash", {"command": "python build.py readme"},
+                           "2026-01-01T00:00:21Z"),
+                 tool_result("t3", "ok", "2026-01-01T00:00:21Z"))
+        a, b = self.keys()
+        self.items((a, "build the ledger", "done",
+                    "the ledger is built: `python build.py ledger` ran clean"),
+                   (b, "write the readme", "done",
+                    "the readme is written: `python build.py readme` ran clean"))
+        self.assertIsNotNone(self.prompt(),
+                             "the owner's next message did not give the reviewer a fresh count")
+
+    def test_the_reviewer_is_told_what_was_checked_and_that_an_earlier_one_can_be_wrong(self):
+        """It cannot read the conversation, and it failed items four times over for evidence only
+        the conversation holds, which the ledger had already checked."""
+        prompt = self.prompt()
+        self.assertIn("ALREADY CHECKED MECHANICALLY", prompt,
+                      "the reviewer was not told what the mechanical check already established")
+        self.assertIn("An earlier reviewer can be wrong", prompt,
+                      "the reviewer was not told to check an earlier failure against the items")
 
     def test_a_PASS_covers_only_the_state_it_saw(self):
         self.verdict(self.prompt(), "PASS")
