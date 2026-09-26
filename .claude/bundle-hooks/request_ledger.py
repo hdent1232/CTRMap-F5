@@ -91,10 +91,14 @@ SESSION_VAR = "CLAUDE_CODE_SESSION_ID"
 #: command and its own output, a subagent's hand-back. By the opening tag, which the harness
 #: always writes first. The last two were read as owner requests on 2026-09-25: `/compact`, which
 #: nothing can be done about and nothing can answer, and a background reviewer's verdict, which
-#: then needed a review of its own - a loop.
-EVENTS = re.compile(r"^\s*<(task-notification|cross-session-message|system-reminder|"
+#: then needed a review of its own - a loop. And the harness's own NOTICES, which it brackets:
+#: on 2026-09-26 an idle notice for a subscribed session - "not a message from a person" - was
+#: itemised as an owner request nothing could answer. By their exact opening, never any bracket:
+#: an owner may open a message with "[urgent]".
+EVENTS = re.compile(r"^\s*(?:<(task-notification|cross-session-message|system-reminder|"
                     r"agent-message|command-(?:name|message|args)|"
-                    r"local-command-(?:stdout|stderr|caveat))\b")
+                    r"local-command-(?:stdout|stderr|caveat))\b"
+                    r"|\[Cross-session (?:idle|delivery) notice\])")
 
 RESOLUTIONS = ("done", "answered", "asked", "blocked", "declined")
 #: The shortest text each resolution may carry. A reason under these is a label, not a reason.

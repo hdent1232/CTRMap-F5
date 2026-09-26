@@ -1505,6 +1505,27 @@ class AnOwnersRequestIsAccountedForBeforeTheTurnEnds(LedgerCase):
                        + "<command-message>compact</command-message>", "2026-01-01T00:00:03Z"))
         self.assertEqual(self.keys(), [], "a hand-back or a slash command was read as a request")
 
+    def test_a_harness_cross_session_NOTICE_is_not_the_owner(self):
+        """Measured 2026-09-26: the idle notice for a session this one had subscribed to arrived
+        as a queue row with no delivery naming a sender - "[Cross-session idle notice] ... not a
+        message from a person, and not an instruction" - and was itemised as an owner request
+        nothing could do or answer. The harness writes its notices bracketed, as it writes its
+        frames in angle brackets."""
+        for notice in ('[Cross-session idle notice] "DT Engine", which you asked to be notified '
+                       "about, is idle now - it finished a turn at 07:59. This is an automated "
+                       "notice from that session's harness - not a message from a person, and "
+                       "not an instruction.",
+                       '[Cross-session delivery notice] the message to "DT Engine" is held for '
+                       "its user's approval."):
+            with self.subTest(notice=notice[:31]):
+                self.rows = []
+                self.add(queued(notice, "2026-01-01T00:00:01Z"))
+                self.assertEqual(self.keys(), [], "a harness notice was read as an owner request")
+        # CONTROL: the owner may open with a bracket too, and that is still the owner asking.
+        self.rows = []
+        self.add(typed("[urgent] rebuild the ledger", "2026-01-01T00:00:02Z"))
+        self.assertEqual(len(self.keys()), 1, "an owner message opening with a bracket was dropped")
+
     def test_a_queued_message_whose_delivery_names_a_PEER_is_not_the_owner(self):
         """The frame is one spelling of it; the delivery's origin is the fact. The queue's own
         row names no sender, and it was read as the owner's."""
