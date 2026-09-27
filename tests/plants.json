@@ -53,6 +53,14 @@
    "site": "instance",
    "why": "The import undone: the notes existed only on the owner's machine, so a cloud session started without the format research, the build recipe or the standing rules as first written, and the owner was told to clone and import by hand."
   },
+  "test_arm_checkout.py::AFreshMachineGetsTheNotes::test_a_transcript_path_outside_ascii_still_names_the_right_memory_folder::elsewhere": {
+   "file": "tools/arm_checkout.py",
+   "must_say": "LANDED IN THE WRONG FOLDER",
+   "new": "    buffer = None",
+   "old": "    buffer = getattr(stream, \"buffer\", None)",
+   "site": "elsewhere",
+   "why": "The same defect on the way IN: the payload decoded in the pipe's code page mangles a transcript path with one character outside ASCII, and the notes land in a memory folder no session reads."
+  },
   "test_arm_checkout.py::AFreshMachineGetsTheNotes::test_notes_already_on_the_machine_are_never_overwritten::evasion": {
    "file": "tools/arm_checkout.py",
    "must_say": "OVERWRITTEN",
@@ -68,6 +76,14 @@
    "old": "\"timeout\": 900,",
    "site": "elsewhere",
    "why": "The same defect in the wiring: a SessionStart entry that allows less time than the tool can take kills it mid-clone, and the half-made folder it leaves refuses every later fetch with \"already exists\"."
+  },
+  "test_arm_checkout.py::AFreshMachineGetsTheNotes::test_the_session_is_shown_the_notes_through_a_code_page_pipe": {
+   "file": "tools/arm_checkout.py",
+   "must_say": "CRASHED WRITING THE INDEX",
+   "new": "    buffer = None",
+   "old": "    buffer = getattr(sys.stdout, \"buffer\", None)",
+   "site": "instance",
+   "why": "The output written in the pipe's code page: stdout on a Windows pipe is cp1252 and strict, and the notes' index holds arrows, so the hook raised halfway through, exited 1, and the session was shown nothing it was meant to see."
   },
   "test_bundle.py::ACapturedChildOpensNoWINDOW::test_no_captured_child_here_opens_a_window::elsewhere": {
    "file": "tests/test_bundle.py",

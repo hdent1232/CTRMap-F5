@@ -191,7 +191,12 @@ def bundle_reachable(root):
 
 def session_input(stream=None, wait=INPUT_WAIT):
     """The JSON Claude Code hands this hook: {} when there is none to read (a terminal), None when
-    there was input and it could not be read in time or parsed - which is UNKNOWN, not empty."""
+    there was input and it could not be read in time or parsed - which is UNKNOWN, not empty.
+
+    Read as the UTF-8 BYTES the harness wrote, not in the locale's code page: `sys.stdin.read()`
+    decodes a Windows pipe as cp1252, and a transcript path with one character outside ASCII then
+    names a memory folder that does not exist - the notes land where no session looks. The bundle
+    measured the same thing for every guard's payload (bundle_shell.payload_text)."""
     stream = sys.stdin if stream is None else stream
     if stream is None:
         return {}
@@ -200,8 +205,11 @@ def session_input(stream=None, wait=INPUT_WAIT):
             return {}
     except (AttributeError, ValueError, OSError):
         return {}
+    buffer = getattr(stream, "buffer", None)
+    read = ((lambda: buffer.read().decode("utf-8", errors="replace")) if buffer is not None
+            else stream.read)
     box = []
-    reader = threading.Thread(target=lambda: box.append(stream.read()))
+    reader = threading.Thread(target=lambda: box.append(read()))
     reader.daemon = True
     reader.start()
     reader.join(wait)
@@ -295,6 +303,22 @@ def _shown(root, path):
         return os.path.basename(path)
 
 
+def _say(text):
+    """One line to the session, as UTF-8 bytes. NOT in the pipe's code page: stdout on a Windows
+    pipe is cp1252 and STRICT, and measured 2026-09-26 the notes' index - which holds arrows -
+    raised UnicodeEncodeError halfway through, so the hook exited 1 and the session was shown
+    nothing it was meant to see. stderr would have survived (Python writes it with
+    backslashreplace); stdout does not."""
+    data = (text + LF).encode("utf-8")
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        sys.stdout.write(data.decode("utf-8"))
+        return
+    sys.stdout.flush()
+    buffer.write(data)
+    buffer.flush()
+
+
 def main(argv):
     root = ROOT
     memory = None
@@ -309,20 +333,20 @@ def main(argv):
             else:
                 memory = os.path.abspath(argv[at + 1])
     armed, said = arm_hooks(root)
-    sys.stdout.write(("OK: " if armed else "PROBLEM: ") + said + LF)
+    _say(("OK: " if armed else "PROBLEM: ") + said)
     reached, told = bundle_reachable(root)
-    sys.stdout.write(("OK: " if reached else "PROBLEM: ") + told + LF)
+    _say(("OK: " if reached else "PROBLEM: ") + told)
     if memory is None:
         payload = session_input()
         if payload is None:
-            sys.stdout.write("PROBLEM: this hook's input could not be read, so this session's "
-                             "memory folder is UNKNOWN and the notes were not brought in" + LF)
+            _say("PROBLEM: this hook's input could not be read, so this session's memory folder "
+                 "is UNKNOWN and the notes were not brought in")
             return 0
         memory = memory_folder(payload)
     brought, lines = bring_notes(root, memory)
-    sys.stdout.write(("OK: " if brought else "PROBLEM: ") + (lines[0] if lines else "") + LF)
+    _say(("OK: " if brought else "PROBLEM: ") + (lines[0] if lines else ""))
     for line in lines[1:]:
-        sys.stdout.write(line + LF)
+        _say(line)
     return 0
 
 

@@ -152,13 +152,14 @@ class AFreshMachineGetsTheNotes(unittest.TestCase):
                  it is killed mid-clone and leaves a half-made folder that refuses every later one.
     """
 
-    def _machine(self, memory_index=None):
+    def _machine(self, memory_index=None, home="home"):
         base = tempfile.mkdtemp(prefix="arm-notes-")
         self.addCleanup(shutil.rmtree, base, True)
         remote = os.path.join(base, "owner", arm_checkout.NOTES["repo"])
         os.makedirs(remote)
         _git(remote, "init", "-q")
-        for name, text in (("MEMORY.md", "- [The recipe](recipe.md) - how the notes are indexed"),
+        #: The arrow is not in cp1252 - as in the owner's real index, where it crashed the hook.
+        for name, text in (("MEMORY.md", "- [The recipe](recipe.md) → how the notes are indexed"),
                            ("recipe.md", "a note from the repository"),
                            ("sync.py", STUB_SYNC)):
             with io.open(os.path.join(remote, name), "w", encoding="utf-8", newline=LF) as handle:
@@ -169,8 +170,9 @@ class AFreshMachineGetsTheNotes(unittest.TestCase):
         os.makedirs(root)
         _git(root, "init", "-q")
         _git(root, "remote", "add", "origin", os.path.join(base, "owner", "CTRMap-F5"))
-        payload = {"transcript_path": os.path.join(base, "home", "projects", "a-project",
+        payload = {"transcript_path": os.path.join(base, home, "projects", "a-project",
                                                    "session.jsonl")}
+        self.payload = payload
         memory = arm_checkout.memory_folder(payload)
         if memory_index is not None:
             os.makedirs(memory)
@@ -196,6 +198,31 @@ class AFreshMachineGetsTheNotes(unittest.TestCase):
         self.assertIn("written here, not yet exported", now,
                       "notes already on this machine were OVERWRITTEN by the repository's copy - "
                       "a note not yet exported existed nowhere else")
+
+    def _session_start(self, root):
+        """The hook as Claude Code runs it: a separate process, the payload written to its stdin
+        as UTF-8 bytes, its stdout a pipe - in cp1252, as a Windows pipe is, on any platform."""
+        env = dict(os.environ, PYTHONIOENCODING="cp1252")
+        env.pop("PYTHONUTF8", None)
+        done = subprocess.run([sys.executable, "-B", os.path.join(HERE, "tools", "arm_checkout.py"),
+                               "--root", root], input=json.dumps(self.payload,
+                                                                 ensure_ascii=False).encode("utf-8"),
+                              capture_output=True, env=env, timeout=300, creationflags=NO_WINDOW)
+        return done.returncode, done.stdout.decode("utf-8", errors="replace"), done.stderr
+
+    def test_the_session_is_shown_the_notes_through_a_code_page_pipe(self):
+        root, memory, notes = self._machine()
+        code, out, err = self._session_start(root)
+        self.assertTrue(code == 0 and "→ how the notes are indexed" in out,
+                        "the session start CRASHED WRITING THE INDEX to a code-page pipe - exit %d, "
+                        "so the session was shown nothing: %s" % (code, err[-600:]))
+
+    def test_a_transcript_path_outside_ascii_still_names_the_right_memory_folder(self):
+        root, memory, notes = self._machine(home="Zoë")
+        self._session_start(root)
+        self.assertTrue(os.path.isfile(os.path.join(memory, "recipe.md")),
+                        "the notes LANDED IN THE WRONG FOLDER - the hook's input was decoded in the "
+                        "pipe's code page, so %r did not reach it intact" % memory)
 
     def test_a_session_whose_memory_folder_is_unknown_is_told_so_and_nothing_is_fetched(self):
         root, memory, notes = self._machine()
