@@ -45,6 +45,30 @@
    "site": "elsewhere",
    "why": "The same defect in the WIRING rather than the code: a tool that arms the checkout is a file nobody calls unless the repository settings run it at SessionStart - installed, present and off, which is this project's oldest shape."
   },
+  "test_arm_checkout.py::AFreshMachineGetsTheNotes::test_a_machine_with_no_notes_gets_them_and_the_session_is_shown_them": {
+   "file": "tools/arm_checkout.py",
+   "must_say": "NO NOTES",
+   "new": "    code, said = _sync(tool, \"status\", memory)",
+   "old": "    code, said = _sync(tool, \"import\", memory)",
+   "site": "instance",
+   "why": "The import undone: the notes existed only on the owner's machine, so a cloud session started without the format research, the build recipe or the standing rules as first written, and the owner was told to clone and import by hand."
+  },
+  "test_arm_checkout.py::AFreshMachineGetsTheNotes::test_notes_already_on_the_machine_are_never_overwritten::evasion": {
+   "file": "tools/arm_checkout.py",
+   "must_say": "OVERWRITTEN",
+   "new": "    if False:",
+   "old": "    if os.path.isfile(os.path.join(memory, MEMORY_INDEX)):",
+   "site": "evasion",
+   "why": "The cheapest way to always have the notes is to always import - which overwrites a note written on this machine and not yet exported, the only copy of it."
+  },
+  "test_arm_checkout.py::AFreshMachineGetsTheNotes::test_session_start_outlasts_every_wait_the_tool_can_make::elsewhere": {
+   "file": ".claude/settings.json",
+   "must_say": "KILLED BEFORE THE TOOL CAN FINISH",
+   "new": "\"timeout\": 60,",
+   "old": "\"timeout\": 900,",
+   "site": "elsewhere",
+   "why": "The same defect in the wiring: a SessionStart entry that allows less time than the tool can take kills it mid-clone, and the half-made folder it leaves refuses every later fetch with \"already exists\"."
+  },
   "test_bundle.py::ACapturedChildOpensNoWINDOW::test_no_captured_child_here_opens_a_window::elsewhere": {
    "file": "tests/test_bundle.py",
    "must_say": "console window",

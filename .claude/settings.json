@@ -64,8 +64,8 @@
           {
             "type": "command",
             "command": "python -B \"$CLAUDE_PROJECT_DIR/tools/arm_checkout.py\"",
-            "timeout": 60,
-            "statusMessage": "arming this checkout's git hooks"
+            "timeout": 900,
+            "statusMessage": "arming this checkout's git hooks, bringing the bundle and the notes"
           }
         ]
       }

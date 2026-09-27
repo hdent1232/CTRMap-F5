@@ -81,8 +81,8 @@ NOT_GUARDS = {
                      "a project's harness calls immediately before it measures - the point of "
                      "action by construction, wherever it is called.",
     "arm_checkout": "Arms a checkout at SessionStart - sets core.hooksPath to .githooks, reads it "
-                    "back, and fetches the bundle beside it when nothing declared resolves. It "
-                    "refuses nothing and "
+                    "back, fetches the bundle beside it when nothing declared resolves, and "
+                    "imports the owner's notes onto a machine without them. It refuses nothing and "
                     "always exits 0; its words about refusing describe the commit gate it turns "
                     "ON, and that gate is asked at the act.",
 }
