@@ -1266,6 +1266,22 @@
    "site": "elsewhere",
    "why": "MEASURED 2026-09-26: a commit's gate re-drove the plants held in bundle_rules.py - the judge every hook imports - and with 'the lock is never read' on disk, two sessions' hooks ran the planted judge and held the tree on a planted state. The moment after asked it too, and recorded what it said."
   },
+  "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_the_plants_OWN_test_judges_the_planted_code_and_no_other_is_excused": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "the plant's own test did not judge the planted code",
+   "new": "",
+   "old": "    if named and named == os.environ.get(bundle_env.name(\"PLANTED\"), \"\").replace(chr(92), \"/\"):\n        return \"\"\n",
+   "site": "elsewhere",
+   "why": "MEASURED 2026-09-26: DT Engine's commit gate refused the change because three plants whose own tests drive a real hook could not redden - the plant's lock named that hook, and the second reading of the lock answered UNKNOWN inside the plant's own test. The second reading, in another file, answered UNKNOWN there too."
+  },
+  "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_the_plants_OWN_test_judges_the_planted_code_and_no_other_is_excused::evasion": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "a marker naming ANOTHER file excused the lock",
+   "new": "    if named and os.environ.get(bundle_env.name(\"PLANTED\")):\n        return \"\"\n",
+   "old": "    if named and named == os.environ.get(bundle_env.name(\"PLANTED\"), \"\").replace(chr(92), \"/\"):\n        return \"\"\n",
+   "site": "evasion",
+   "why": "THE SAME CHEAP WAY PAST at the second reading: excuse any lock once a marker is set. The lock names one file, and only that file is the plant's subject."
+  },
   "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_COMMIT_asked_while_a_mutation_run_holds_the_lock_is_UNKNOWN_not_clean": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "a commit asked beside a mutant was answered clean",
@@ -1281,6 +1297,22 @@
    "old": "        worse = _ask_changes_once(root, changes, found)\n        if lock_state(root) == start:\n",
    "site": "elsewhere",
    "why": "AT THE WRITE, the rule's answer before and after were taken beside a plant that was gone by the end, so a write was charged with - or excused by - the mutant's answer. An asking the lock moved under is asked again."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_lock_is_the_SUBJECT_only_of_its_own_plants_test": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "the plant's own test was told its subject was a fault beside it",
+   "new": "",
+   "old": "    if first and first == os.environ.get(PLANTED, \"\").replace(chr(92), \"/\"):\n        return \"\"                        # this process runs that plant's own test - see PLANTED\n",
+   "site": "instance",
+   "why": "MEASURED 2026-09-26: DT Engine's commit gate refused the change because three plants whose own tests drive a real hook could not redden - the plant's lock named that hook, and the second reading of the lock answered UNKNOWN inside the plant's own test. The judge's reader of the lock never let a plant's test see its subject."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_lock_is_the_SUBJECT_only_of_its_own_plants_test::evasion": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a marker naming another file excused the lock",
+   "new": "    if first and os.environ.get(PLANTED):\n        return \"\"                        # this process runs that plant's own test - see PLANTED\n",
+   "old": "    if first and first == os.environ.get(PLANTED, \"\").replace(chr(92), \"/\"):\n        return \"\"                        # this process runs that plant's own test - see PLANTED\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: a marker that excuses whatever lock is held. Anyone who set it would switch every reading of the lock off; only the file it names is the plant's subject."
   },
   "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_lock_naming_ANOTHER_file_leaves_every_verdict_UNKNOWN_and_none_clean": {
    "file": ".claude/bundle-hooks/bundle_rules.py",

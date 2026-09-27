@@ -316,6 +316,9 @@ def apply_and_run(entry, test_id, root=None, run=None, rebuild=None):
     refused = bundle_rules.take_lock(root or HERE, entry["file"])
     if refused:
         return False, refused
+    # AND THE PLANT'S OWN TEST IS TOLD WHICH FILE IS ITS SUBJECT (`bundle_rules.PLANTED`): a test
+    # that drives a hook this plant broke must see the break, not a lock read as UNKNOWN.
+    os.environ[bundle_rules.PLANTED] = entry["file"]
     try:
         with io.open(path, "wb") as handle:
             handle.write(planted_text.encode("utf-8"))
@@ -327,6 +330,7 @@ def apply_and_run(entry, test_id, root=None, run=None, rebuild=None):
                                "the guard" % broken)
         return (run or named_test_fails)(test_id, entry.get("must_say"))
     finally:
+        os.environ.pop(bundle_rules.PLANTED, None)
         failed = put_back(path, original)
         if failed:
             sys.stderr.write(

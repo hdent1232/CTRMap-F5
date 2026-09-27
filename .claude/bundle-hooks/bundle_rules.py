@@ -80,6 +80,13 @@ LF = chr(10)
 #: starts, and every process under it, cannot judge the SAME tree again inside the judgement.
 JUDGING = bundle_env.name("JUDGING")
 
+#: The file a plant runner laid its defect in, named in the environment of the process that runs
+#: THAT plant's own test - and so of every child it starts. There the planted code is the subject,
+#: not a fault beside it: a test that drives a hook the plant broke must see the break, and a lock
+#: naming that hook read as UNKNOWN left three plants unable to redden. Only the file named is
+#: exempt, and only where the runner named it; everywhere else the lock stands.
+PLANTED = bundle_env.name("PLANTED")
+
 #: Where a project keeps checkers that declare a marker, relative to its root.
 RULE_DIRS = ("tools",)
 
@@ -164,6 +171,8 @@ def locked(root, name=None):
     first = held.splitlines()[0].strip().replace(chr(92), "/")
     if os.path.isabs(first):
         first = rel_of(root, first)
+    if first and first == os.environ.get(PLANTED, "").replace(chr(92), "/"):
+        return ""                        # this process runs that plant's own test - see PLANTED
     return first
 
 

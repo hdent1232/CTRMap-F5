@@ -89,6 +89,11 @@ def judge_under_mutation(root, lock_name):
     named = (lines[0] if lines else "").strip().replace(chr(92), "/")
     if os.path.isabs(named):
         named = os.path.relpath(named, root).replace(os.sep, "/")
+    # THE PLANT'S OWN TEST judges the planted code on purpose: its runner names the file in the
+    # environment (`bundle_rules.PLANTED`, read here without importing the judge).
+    import bundle_env
+    if named and named == os.environ.get(bundle_env.name("PLANTED"), "").replace(chr(92), "/"):
+        return ""
     return named if named.startswith(FOLDER + "/") else ""
 
 #: How deep to walk a tool input looking for command strings. A batching tool nests one input

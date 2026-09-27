@@ -832,6 +832,21 @@ class AVerdictTakenWhileAMutantCameOrWentIsUnknown(ScratchProject, unittest.Test
         self.assertEqual(after[0], "", "the lock outlived its release")
         self.assertNotEqual(after[1], before[1], "a release was not counted")
 
+    def test_a_lock_is_the_SUBJECT_only_of_its_own_plants_test(self):
+        """Inside the process a plant runner starts for that plant's test, the lock on the planted
+        file is the test's subject, not a reason for UNKNOWN - the runner names the file. Named
+        wrongly, or not at all, the lock stands: a marker that excused every lock would switch the
+        whole of this off for anyone who set it."""
+        self.assertIsNone(bundle_rules.take_lock(self.root, "twin/base.py"))
+        self.addCleanup(bundle_rules.release_lock, self.root)
+        with mock.patch.dict(os.environ, {bundle_rules.PLANTED: "twin/base.py"}):
+            self.assertEqual(bundle_rules.locked(self.root), "",
+                             "the plant's own test was told its subject was a fault beside it")
+        with mock.patch.dict(os.environ, {bundle_rules.PLANTED: "src/a.py"}):
+            self.assertEqual(bundle_rules.locked(self.root), "twin/base.py",
+                             "a marker naming another file excused the lock")
+        self.assertEqual(bundle_rules.locked(self.root), "twin/base.py", "the control")
+
     def test_a_release_removes_ONLY_the_lock_its_own_run_took(self):
         """The refusal tells a person to delete a lock a killed run left, and a person can be
         wrong about which run is dead. Run A holds the lock; it is deleted; run B takes its own.
@@ -881,12 +896,33 @@ class AJudgeUnderMutationJudgesNothing(ScratchProject, unittest.TestCase):
         self.assertEqual(self.run_hook("guard_held_writes.py", self.shell("python src/run.py"))[0],
                          0, "the control: a clean tree was held")
 
-    def run_hook(self, name, payload):
+    def run_hook(self, name, payload, planted=None):
+        env = dict(os.environ)
+        env.pop(bundle_rules.PLANTED, None)
+        if planted is not None:
+            env[bundle_rules.PLANTED] = planted
         done = subprocess.run([sys.executable, "-B", os.path.join(self.hooks, name)],
                               input=json.dumps(payload), capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=300, cwd=self.root,
-                              creationflags=NO_WINDOW)
+                              creationflags=NO_WINDOW, env=env)
         return done.returncode, done.stderr
+
+    def test_the_plants_OWN_test_judges_the_planted_code_and_no_other_is_excused(self):
+        """A test that drives a hook a plant broke must see the break: the runner names the
+        planted file in the environment, and there the lock on THAT file is its subject. Measured
+        2026-09-26: without it, three plants whose tests drive a real hook could not redden. The
+        cheapest way past is a marker that excuses any lock, so one naming another file excuses
+        nothing."""
+        self.plant_the_judge()
+        self.write_file("src/b.py", "x = 1  # DEFECT" + LF)
+        code, said = self.run_hook("guard_held_writes.py", self.shell("python src/run.py"),
+                                   planted=self.folder + "/bundle_rules.py")
+        self.assertEqual(code, 2, "the plant's own test did not judge the planted code: %s"
+                         % said[-300:])
+        code, said = self.run_hook("guard_held_writes.py", self.shell("python src/run.py"),
+                                   planted="src/other.py")
+        self.assertEqual(code, 0, "a marker naming ANOTHER file excused the lock: %s"
+                         % said[-300:])
 
     @staticmethod
     def shell(command):
