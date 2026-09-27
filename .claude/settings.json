@@ -57,6 +57,18 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -B \"$CLAUDE_PROJECT_DIR/tools/arm_checkout.py\"",
+            "timeout": 60,
+            "statusMessage": "arming this checkout's git hooks"
+          }
+        ]
+      }
     ]
   }
 }

@@ -1905,6 +1905,30 @@
    "site": "evasion",
    "must_say": "the scan no longer sees",
    "why": "The cheapest way past a guard that forbids REPORTING a bad citation is to stop looking for one: a scanner that reads no file finds nothing and reports a clean tree, which is the confident empty result this project treats as a bug."
+  },
+  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_a_fresh_clone_is_armed": {
+   "file": "tools/arm_checkout.py",
+   "old": "        code, why = _git(root, [\"config\", \"--local\", \"core.hooksPath\", HOOKS_DIR])",
+   "new": "        code, why = 0, \"\"",
+   "site": "instance",
+   "must_say": "a fresh clone was left UNARMED",
+   "why": "The fix undone: core.hooksPath lives in .git/config, which a clone never carries, so a fresh clone ran no commit hook at all and every commit-time guard was off while .githooks/ sat in the repository looking armed."
+  },
+  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_the_repository_runs_this_at_session_start::elsewhere": {
+   "file": ".claude/settings.json",
+   "old": "tools/arm_checkout.py",
+   "new": "tools/arm_checkout_missing.py",
+   "site": "elsewhere",
+   "must_say": "do not run tools/arm_checkout.py at session start",
+   "why": "The same defect in the WIRING rather than the code: a tool that arms the checkout is a file nobody calls unless the repository settings run it at SessionStart - installed, present and off, which is this project's oldest shape."
+  },
+  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_a_checkout_pointing_its_hooks_elsewhere_is_repointed::evasion": {
+   "file": "tools/arm_checkout.py",
+   "old": "    if was != HOOKS_DIR:",
+   "new": "    if was is None:",
+   "site": "evasion",
+   "must_say": "was TRUSTED instead of checked",
+   "why": "The cheapest way to report a checkout armed is to trust whatever hooks path is already set without looking at what it names - a path to a directory with no commit-msg runs nothing, and reads as armed."
   }
  },
  "retired": {

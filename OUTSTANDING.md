@@ -105,15 +105,64 @@ both would have blocked every measurement forever:
       RUNNING and the superseded Stop hook is the only one that is, while the repository looks
       correctly wired to anyone reading it.
 
-      BLOCKED, namably, not deferred: the Bootstrap session is mid-pass over every hook file in
-      all three locations, hoisting file handles byte-identically, and named `guard_all.py` and
-      `guard_unfinished.py` as two it had hashed. Deleting a file it is holding open in a
-      three-way byte-identical edit is the collision this project's rules name outright. This
-      unblocks when that pass commits.
+      HELD, 2026-09-26, and the reason changed. The handle pass that blocked it committed at
+      f0ea8ec. But the retirement as written - guard_promise.py wired directly in place of
+      guard_unfinished.py - would be a DOWNGRADE, measured by DT Engine and not by this session:
+      replayed over all 1,312 turn endings on this machine, guard_unfinished refuses 55, and the
+      guard_promise of that day lets 17 of those 55 through. The evidence this session had for
+      "supersedes" was the bundle's docstring and a four-case control, neither of which is a
+      replay. UNBLOCKS WHEN DT Engine's guard_promise change lands in CTRMap - it absorbs
+      guard_unfinished with QUEUE = ("OUTSTANDING.md",) - and then the outer <session folder> Stop
+      gets the bundle DISPATCHER in its place, not guard_promise alone (the dispatcher's
+      interrupt false-positive was fixed at 85edcae).
 
       KEEP `OUTSTANDING.md` itself either way: the bundle has no queue FILE, and the file is a
       durable record that `work_order.py` gates long measurements on, which is a chokepoint
       rather than an admission. What the bundle refuses is using it as a way to END A TURN.
+
+- [ ] 2026-09-26 THE VERIFICATION BOOTSTRAP IS MOVING TO GITHUB, and a cloud clone of this
+      repository cannot commit until it has. The owner's decision: the Desktop folder becomes a
+      clone of the private repo hdent1232/verification-bootstrap (created 2026-09-26, empty), and
+      `_bundle` in `.claude/bundle-install.json` stops being one absolute Desktop path. Measured:
+      with that folder absent - every cloud machine - `bundle_install.bundle_path()` returns None
+      and the install check refuses EVERY commit. Three pieces, in order:
+        1. First commit + push of the bundle folder, with check_bundle.py run immediately before
+           and after `git init` and compared, since 20 of its files shell out to git. BLOCKED on
+           the Bootstrap session CLOSING (not merely its check finishing - its DT catch-up can
+           still write there).
+        2. `_bundle` as a LIST resolved against the project root, first folder wins, none
+           resolving refused exactly as now; this project declares [Desktop path, ".bundle"] with
+           `.bundle/` gitignored. It is bundle code (bundle_install.py and the bundle's own
+           reader), so it goes through the new flow as its first change: made in a clone,
+           pushed, pulled into the Desktop copy, caught up here.
+        3. tools/arm_checkout.py then CLONES the bundle into `.bundle/` when nothing resolves.
+           Today it reports "NOT reachable" loudly at session start rather than doing that,
+           because shipping the clone step before (2) exists would be an untested path.
+      THE FLOW, agreed with both peer sessions: GitHub main is the source of truth; nobody edits
+      the Desktop clone in place, plant drives included; changes are made in a clone of one's
+      own, merged with `git merge` after `git fetch` (never rebase - guard_command_rules refuses
+      it, because those commits run no commit-msg); the Desktop clone advances only by
+      `pull --ff-only`, by whoever pushed, who then carries the catch-up into their own projects.
+
+- [ ] 2026-09-26 A PATHSPEC COMMIT IS REFUSED BY THE STAMP IN THIS REPOSITORY. `git commit -F
+      msg -- <paths>` fails at `.githooks/commit-msg` with "the gate cannot stamp it - git could
+      not say the tree or where the repository keeps its state" (gate_stamps.stamp: `git
+      write-tree` or `rev-parse --git-common-dir` returned nothing). The same five files, staged
+      and committed without pathspecs, passed at 7c8d100. NOT REPRODUCED in a throwaway repo:
+      a commit-msg hook running those exact two calls succeeds under plain, `--`, and `--only`
+      commits alike (the temporary index is absolute and readable). So the cause is something
+      in THIS hook chain, not partial commits in general, and it is unexplained. It matters
+      because a pathspec commit is what keeps one session from sweeping another's staged files
+      into its commit, which is how two sessions share this tree. FIX: capture git's stderr in
+      gate_stamps._git (it discards it) so the refusal says WHY, reproduce, then close.
+
+- [ ] 2026-09-26 GITHUB ACTIONS IS ENABLED ON hdent1232/CTRMap-F5 WITH NO WORKFLOW. Checked
+      before the 2026-09-26 push: no .github/ in this repository or the bundle folder, and 0
+      workflows registered on GitHub, so no push triggers CI today. But the first workflow file
+      anyone adds would start billing, and the owner has been billed once already - a timer
+      that pushed ran CI on every push and spent the month's minutes in 3.5 hours. Making it
+      impossible means disabling Actions on both repositories, which is a repository setting:
+      the OWNER's decision, put to them 2026-09-26.
 
 - [ ] 2026-09-13 THE WHOLE-APP CENSUS FOUND 280 CONFIRMED DEFECTS, and they are not
       fixed. Full inventory, ranked, with evidence and a proposed refusal for each:
