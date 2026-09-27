@@ -1455,6 +1455,87 @@ class AHookPayloadIsReadAsTheUTF8TheHarnessWrote(unittest.TestCase):
         self.assertEqual(found, [], "an entry point reads its payload in the locale's code page")
 
 
+def speaks_the_code_page(source):
+    """True when a module runs as a process - it has an `if __name__ == "__main__":` block that
+    calls something - and its LAST such block does not call `bundle_shell.speak_utf8()` before
+    anything else it calls."""
+    blocks = [node for node in ast.parse(source).body
+              if isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
+              and isinstance(node.test.left, ast.Name) and node.test.left.id == "__name__"]
+    calling = [b for b in blocks if any(isinstance(n, ast.Call) for n in ast.walk(b))]
+    if not calling:
+        return False
+    for statement in calling[-1].body:
+        calls = [n for n in ast.walk(statement) if isinstance(n, ast.Call)]
+        if not calls:
+            continue
+        func = calls[0].func
+        return not (isinstance(func, ast.Attribute) and func.attr == "speak_utf8"
+                    and isinstance(func.value, ast.Name) and func.value.id == "bundle_shell")
+    return True
+
+
+class AHookAnswersTheHarnessInUTF8(unittest.TestCase):
+    """The other half of the class above. A Windows pipe's stdout is cp1252 and STRICT: measured
+    2026-09-26 in CTRMap, a SessionStart hook raised UnicodeEncodeError printing an index that held
+    arrows, exited 1, and the session was shown nothing. The dispatcher forwards a guard's deny on
+    stdout, so a deny carrying one character the code page lacks crashed it into exit 1 - which
+    the harness reads as PERMISSION. stderr never raises, but a refusal reached the harness with
+    `\\u2192` where the guard wrote an arrow. PYTHONIOENCODING=cp1252 is forced so a machine whose
+    pipes are UTF-8 judges the Windows pipe too."""
+
+    def _dispatch(self, guard_body):
+        folder = tempfile.mkdtemp(prefix="vb-utf8-out-")
+        self.addCleanup(shutil.rmtree, folder, True)
+        for name in ("dispatch.py", "bundle_env.py", "bundle_shell.py"):
+            shutil.copyfile(os.path.join(HOOKS, name), os.path.join(folder, name))
+        with io.open(os.path.join(folder, "guard_answer.py"), "w", encoding="utf-8") as handle:
+            handle.write("import json, sys" + LF + "def main():" + LF + guard_body)
+        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8")}
+        env["PYTHONIOENCODING"] = "cp1252"
+        payload = {"tool_name": "Note", "tool_input": {"note": "a note"}}
+        done = subprocess.run([sys.executable, "-B", os.path.join(folder, "dispatch.py")],
+                              input=json.dumps(payload).encode("utf-8"), capture_output=True,
+                              timeout=120, env=env, creationflags=NO_WINDOW)
+        return (done.returncode, done.stdout.decode("utf-8", "replace"),
+                done.stderr.decode("utf-8", "replace"))
+
+    def test_a_deny_the_code_page_cannot_hold_still_reaches_the_harness(self):
+        code, out, err = self._dispatch(
+            "    print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse',"
+            " 'permissionDecision': 'deny', 'permissionDecisionReason': 'no \\u2192 here'}},"
+            " ensure_ascii=False))" + LF + "    return 0" + LF)
+        self.assertTrue(code == 0 and "deny" in out and "→" in out,
+                        "THE DENY WAS LOST - the dispatcher exited %d writing it, which the harness "
+                        "reads as permission: %s" % (code, err[-400:]))
+
+    def test_a_refusal_reaches_the_harness_as_the_guard_wrote_it(self):
+        code, out, err = self._dispatch("    sys.stderr.write('no \\u2192 here')" + LF
+                                        + "    return 2" + LF)
+        self.assertEqual(code, 2, err[-400:])
+        self.assertIn("no → here", err, "the refusal reached the harness MANGLED: %r"
+                      % err[-200:])
+
+    def test_every_hook_the_harness_can_run_speaks_utf8(self):
+        """Every hook module that is not a guard and runs as a process asks for UTF-8 first. A
+        guard runs inside the dispatcher, whose capture of its streams takes any text."""
+        self.assertTrue(speaks_the_code_page(
+            "import sys" + LF + "if __name__ == '__main__':" + LF + "    sys.exit(main())" + LF),
+            "the check does not see a process that never asks for UTF-8 - it is not believed")
+        self.assertFalse(speaks_the_code_page(
+            "if __name__ == '__main__':" + LF + "    bundle_shell.speak_utf8()" + LF
+            + "    sys.exit(main())" + LF), "the check refuses the door itself")
+        found = []
+        for path in sorted(glob.glob(os.path.join(HOOKS, "*.py"))):
+            name = os.path.basename(path)
+            if name.startswith("guard_") or name == "bundle_shell.py":
+                continue
+            with io.open(path, encoding="utf-8") as handle:
+                if speaks_the_code_page(handle.read()):
+                    found.append(name)
+        self.assertEqual(found, [], "a hook the harness can run SPEAKS THE CODE PAGE: %s" % found)
+
+
 # ------------------------------------------------------------------ the request ledger
 
 def typed(text, at):
@@ -2558,6 +2639,13 @@ class EverythingGuardUnfinishedRefusedIsRefusedHere(unittest.TestCase):
         self.guard = guard_promise
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)
+        # QUEUE IS AN ADAPTATION, so a test that assumes NO queue must say so. Measured 2026-09-26
+        # in CTRMap, the project this class names, after it set QUEUE = ("OUTSTANDING.md",) as
+        # this change asks: the tests below that never call keep_queue ran under that value, and
+        # "blocked in its own paragraph" was refused as unqueued - the guard doing its job, the
+        # test reading it as a failure. keep_queue sets its own value over this one.
+        self.addCleanup(setattr, self.guard, "QUEUE", self.guard.QUEUE)
+        self.guard.QUEUE = ()
 
     def refused(self, text):
         return [kind for kind, _sentence, _marker in self.guard.outstanding(text)]

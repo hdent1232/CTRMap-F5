@@ -134,6 +134,32 @@ def payload_text(stream=None):
     return buffer.read().decode("utf-8", errors="replace")
 
 
+def speak_utf8():
+    """Make this process's stdout and stderr write UTF-8 - the other half of `payload_text`. Every
+    hook module the harness can run as a process calls it first, in its `__main__` block.
+
+    NOT IN THE LOCALE'S CODE PAGE, AND ON STDOUT NOT EVEN SURVIVABLY. A Windows pipe's stdout is
+    cp1252 and STRICT: measured 2026-09-26 in CTRMap, a SessionStart hook raised
+    UnicodeEncodeError halfway through the index it printed, exited 1, and the session was shown
+    nothing. For the dispatcher the same raise is worse than silence - it forwards a guard's deny
+    on stdout, a deny carrying one character the code page lacks crashed it into exit 1, and the
+    harness counts exit 1 as PERMISSION. stderr never raises (Python writes it with
+    backslashreplace) but reached the harness as `\\u2192` where the guard wrote an arrow.
+
+    One call per process rather than one per write, because a door at each write is one `print`
+    from broken. A stream that cannot be reconfigured is left as it was: raising here would crash
+    the dispatcher into the exit code that means yes.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8")
+        except (ValueError, OSError):
+            continue
+
+
 def _walk(node, depth, out, trouble):
     if depth > MAX_DEPTH:
         trouble.append("nested deeper than %d" % MAX_DEPTH)

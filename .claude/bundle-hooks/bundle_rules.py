@@ -1388,4 +1388,6 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    import bundle_shell                 # the one door out, as payload_text is the one in
+    bundle_shell.speak_utf8()
     sys.exit(main(sys.argv))

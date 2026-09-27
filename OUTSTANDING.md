@@ -124,10 +124,11 @@ both would have blocked every measurement forever:
       turned "blocked in its own paragraph" into "unqueued". The guard was right and the test was
       wrong, and the fix is the bundle's: e1cc1d9 in the bundle's working copy pins QUEUE = () in
       that class's setUp. Until it is pushed and caught up here, QUEUE stays at the bundle's default
-      and guard_unfinished - still wired - keeps the queue rule. UNBLOCKS WHEN e1cc1d9 reaches
-      the bundle's repository (it needs the owner's approval for that push): catch it up, set
-      QUEUE, then the retirement above. The retirement edits the session's own settings and was
-      refused once as self-modification, so it goes to the owner as its own step.
+      and guard_unfinished - still wired - keeps the queue rule. DONE the same day: e1cc1d9 and
+      3dc286a were pushed on the owner's word, caught up here, and QUEUE = ("OUTSTANDING.md",) is
+      set; the class passes under it. WHAT IS LEFT is the retirement above, and only that. It
+      edits the session's own settings and was refused once as self-modification, so it waits
+      for the owner to say so, as its own step.
 
       KEEP `OUTSTANDING.md` itself either way: the bundle has no queue FILE, and the file is a
       durable record that `work_order.py` gates long measurements on, which is a chokepoint

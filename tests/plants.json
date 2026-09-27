@@ -155,6 +155,30 @@
    "site": "elsewhere",
    "why": "The same absence one layer up, at the payload rather than the counter: a launch nobody can read is waved through as a launch nobody needs to count, which is the original comment's 'never break a turn on a parse failure'."
   },
+  "test_bundle.py::AHookAnswersTheHarnessInUTF8::test_a_deny_the_code_page_cannot_hold_still_reaches_the_harness": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "THE DENY WAS LOST",
+   "new": "    pass",
+   "old": "    bundle_shell.speak_utf8()           # the one door out, as payload_text is the one in",
+   "site": "instance",
+   "why": "The dispatcher speaking the pipe's code page: a guard's deny carrying one character cp1252 lacks crashed it into exit 1 while forwarding it, and the harness reads exit 1 as permission."
+  },
+  "test_bundle.py::AHookAnswersTheHarnessInUTF8::test_a_refusal_reaches_the_harness_as_the_guard_wrote_it::elsewhere": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "MANGLED",
+   "new": "            reconfigure(errors=\"backslashreplace\")",
+   "old": "            reconfigure(encoding=\"utf-8\")",
+   "site": "elsewhere",
+   "why": "The door itself made survivable instead of right: nothing raises, and every arrow a guard wrote reaches the harness as a backslash escape."
+  },
+  "test_bundle.py::AHookAnswersTheHarnessInUTF8::test_every_hook_the_harness_can_run_speaks_utf8::evasion": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "SPEAKS THE CODE PAGE",
+   "new": "    pass",
+   "old": "    bundle_shell.speak_utf8()           # the one door out, as payload_text is the one in",
+   "site": "evasion",
+   "why": "The cheapest fix is the measured instance only - the dispatcher - leaving every other hook module the harness or a person runs as a process printing in the code page."
+  },
   "test_bundle.py::AHookNamesTheFolderItSitsIn::test_a_refusal_names_the_folder_its_guard_is_in": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "a refusal named a folder its guard is not in",

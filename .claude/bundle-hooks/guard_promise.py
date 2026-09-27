@@ -300,7 +300,7 @@ CHECKABLE = (
 #:
 #: ITS LIMIT, SAID: it asks that the queue is named and holds open work, not that THIS work is
 #: the open item. `guard_unfinished` asked only for the name.
-QUEUE = ()
+QUEUE = ("OUTSTANDING.md",)
 
 #: Adapted per project: see ADAPT.md. The lock files a blocker can be checked against, and
 #: where the project keeps its queue.
