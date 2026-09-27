@@ -2,7 +2,7 @@
  ".githooks/commit-msg": {
   "diverged": "CTRMap's commit-msg runs its own commit guard first - per-push approval and the game-data refusals, which the bundle's gate does not know - then the bundle's commit_gate.py, and ends with the gate's stamp as the bundle's hook does."
  },
- "_bundle": "<desktop>/verification-bootstrap",
+ "_bundle": "../../../../verification-bootstrap",
  "_hooks_at": ".claude/bundle-hooks",
  "_review": {
   "model": "haiku"

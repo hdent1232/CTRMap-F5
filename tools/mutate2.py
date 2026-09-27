@@ -54,7 +54,7 @@ import threading
 import time
 from pathlib import Path
 
-BASE = Path(r"<session folder>")
+BASE = Path(__file__).resolve().parent.parent.parent   # tools -> repository -> the folder holding it
 WT = BASE / "wt" / "_guardcheck"
 DUMP = BASE / "RomFS_original_garcs"
 #the value after --anyway is a sentence, not the mutant cap

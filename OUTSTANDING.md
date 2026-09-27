@@ -156,6 +156,17 @@ both would have blocked every measurement forever:
       into its commit, which is how two sessions share this tree. FIX: capture git's stderr in
       gate_stamps._git (it discards it) so the refusal says WHY, reproduce, then close.
 
+- [ ] 2026-09-26 THE HOME-PATH GUARD IS A DETECTOR, AND THREE LEAKS WENT PAST IT. The owner's
+      paths and folder names reached this public repository - the census, `_bundle`, both mutation
+      scripts, two docs - although SourceSeamTest has refused home directories "in ANY file" since
+      df60887. Measured why, three ways: (1) its text sweep takes a LIST of extensions and `.py` is
+      not on it, so tools/mutate.py and mutate2.py were never read; (2) it knows only paths through
+      a home directory, so a bare folder chain like `sessions/<the session folder>` passes; (3) it
+      runs in the battery, not at commit, so anything committed between battery runs is public
+      before it is seen. FIX: refuse at COMMIT, over every staged text file regardless of
+      extension, both home-directory paths and the folder names this checkout actually sits in -
+      derived at run time from its own location, so it holds on any machine without naming anyone.
+
 - [ ] 2026-09-13 THE WHOLE-APP CENSUS FOUND 280 CONFIRMED DEFECTS, and they are not
       fixed. Full inventory, ranked, with evidence and a proposed refusal for each:
       `docs/CENSUS-2026-09-13.md` (in the repo since 2026-09-22, so a checkout has it). 71 high, 150 medium, 59 low;
@@ -168,23 +179,16 @@ both would have blocked every measurement forever:
 
 ## Done
 
-- [x] 2026-09-26 GITHUB ACTIONS IS DISABLED on hdent1232/CTRMap-F5, hdent1232/verification-bootstrap
-      and hdent1232/ctrmap-claude-memory, on the owner's decision the same day, and read back
+- [x] 2026-09-26 GITHUB ACTIONS IS DISABLED on hdent1232/CTRMap-F5, the bundle repository
+      and the owner's private notes repository, on the owner's decision the same day, and read back
       from the API as enabled=false on all three. None had a workflow, so nothing billed; with
       Actions off, the first workflow file anyone adds cannot run either - the owner was billed
       once already by a timer that pushed, which spent the month's minutes in 3.5 hours. The
-      third repository was created after the decision named two, and closed the same way for the
-      same reason.
+      notes repository was created after the decision named two, and closed the same way.
 
-- [x] 2026-09-26 CLAUDE'S PROJECT MEMORY IS IN A PRIVATE REPOSITORY, hdent1232/ctrmap-claude-memory:
-      32 notes and their index, 232 KB, fourteen of them ORAS and CTRMap research (format notes,
-      build recipe, executable reverse-engineering, deploy paths) that until then existed only on
-      the owner's machine. Private on the owner's choice, because this repository is public. Its
-      sync.py reports differences before moving anything, imports without deleting local notes,
-      and refuses an unreadable memory folder rather than treating it as empty. It stores bytes
-      unchanged (.gitattributes `* -text`): measured, a fresh clone on this machine otherwise came
-      out CRLF against LF memory and reported 32 false differences. A cloud session restores it
-      with `git clone` and `python sync.py import --memory <its memory folder>`.
+- [x] 2026-09-26 CLAUDE'S PROJECT MEMORY IS IN ONE OF THE OWNER'S PRIVATE REPOSITORIES,
+      not named here because this repository is public. Until then it existed only on the
+      owner's machine. A cloud session gets it from the owner.
 
 - [x] 2026-09-13 J. The camera table stops being read silently. Three readers in
       ctrmap.formats.cameradata caught their own IOException and printed it - the file,

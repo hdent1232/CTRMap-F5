@@ -24,7 +24,7 @@ Usage: python tools/mutate.py [max-hunks-per-cluster]
 import io, os, json, subprocess, sys, time
 from pathlib import Path
 
-BASE = Path(r"<session folder>")
+BASE = Path(__file__).resolve().parent.parent.parent   # tools -> repository -> the folder holding it
 WT = BASE / "wt" / "_guardcheck"
 DUMP = BASE / "RomFS_original_garcs"
 CAP = int(sys.argv[1]) if len(sys.argv) > 1 else 8
