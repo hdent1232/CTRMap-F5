@@ -125,6 +125,9 @@ public class HookRefusalsTest {
 			System.out.println("  skip: git is not on PATH");
 			return;
 		}
+		// The guard resolves the ref a push names, so the branch must BE master wherever the
+		// suite runs - a machine whose git defaults to "main" has no master to push.
+		git(repo, "symbolic-ref", "HEAD", "refs/heads/master");
 		git(repo, "config", "user.email", "suite@example.invalid");
 		git(repo, "config", "user.name", "suite");
 		Files.write(new File(repo, "a.txt").toPath(), "one\n".getBytes(StandardCharsets.UTF_8));

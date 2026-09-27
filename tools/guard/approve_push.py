@@ -6,10 +6,17 @@ push is not approval for the next. `.claude/hooks/guard_push.py` refuses a push 
 token, or a token naming a different commit, remote, ref, or not naming a force push as one.
 
 This writes that token. It pins the CURRENT HEAD, so the approval expires the moment there is
-another commit - which is what "per push" means, and what habit erodes.
+another commit - which is what "per push" means, and what habit erodes. `--commit` pins the one
+commit the owner named instead, since the guard compares the token with what the push SENDS: an
+approved ancestor of a newer local commit is pushed as `git push origin <that commit>:<ref>`.
 
     python tools/guard/approve_push.py "<what the owner actually said>"
     python tools/guard/approve_push.py "<...>" --remote origin --ref master --force
+    python tools/guard/approve_push.py "<...>" --commit <rev> --repo <another repository>
+
+`--repo` writes the token into another repository - the bundle, the notes - and makes sure that
+repository's git ignores it, so an approval can never be committed and pushed along with the
+commit it approves.
 
 The quote is not decoration. The memory index records what a missing one cost: "publish
 immediately" was read as standing permission when it had been conditional on a review that
@@ -23,17 +30,40 @@ import time
 
 LF = chr(10)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-TOKEN = os.path.join(ROOT, ".push-approved")
+TOKEN_NAME = ".push-approved"
 
 
-def head():
-    p = subprocess.Popen(["git", "-C", ROOT, "rev-parse", "HEAD"],
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def _git(root, args):
+    p = subprocess.Popen(["git", "-C", root] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate(timeout=30)
-    if p.returncode != 0:
-        raise SystemExit("cannot read HEAD in %s: %s"
-                         % (ROOT, err.decode("utf-8", "replace").strip()))
-    return out.decode("utf-8", "replace").strip()
+    return p.returncode, out.decode("utf-8", "replace").strip(), err.decode("utf-8", "replace")
+
+
+def head(root=ROOT, rev="HEAD"):
+    """The full sha of `rev` as a commit in `root`; refuses when it names none."""
+    code, out, err = _git(root, ["rev-parse", "--verify", "--quiet", rev + "^{commit}"])
+    if code != 0 or not out:
+        raise SystemExit("cannot resolve %s to a commit in %s: %s"
+                         % (rev, root, err.strip() or "it names none"))
+    return out
+
+
+def keep_out_of_commits(root):
+    """Make `root`'s git ignore the token, then ASK it again - a write is not a result."""
+    if _git(root, ["check-ignore", "-q", TOKEN_NAME])[0] == 0:
+        return
+    code, exclude, err = _git(root, ["rev-parse", "--git-path", "info/exclude"])
+    if code != 0:
+        raise SystemExit("cannot find %s's exclude file (%s) - refusing to write a token it "
+                         "could commit" % (root, err.strip()))
+    exclude = exclude if os.path.isabs(exclude) else os.path.join(root, exclude)
+    os.makedirs(os.path.dirname(exclude), exist_ok=True)
+    with io.open(exclude, "a", encoding="utf-8", newline=LF) as handle:
+        handle.write(LF + "# the push approval token: local, one push, never committed" + LF
+                     + TOKEN_NAME + LF)
+    if _git(root, ["check-ignore", "-q", TOKEN_NAME])[0] != 0:
+        raise SystemExit("%s still does not ignore %s after it was excluded - refusing to write "
+                         "a token it could commit" % (root, TOKEN_NAME))
 
 
 def main(argv):
@@ -41,6 +71,8 @@ def main(argv):
     remote = "origin"
     ref = ""
     force = False
+    commit = "HEAD"
+    root = ROOT
     rest = list(argv[1:])
     while rest:
         word = rest.pop(0)
@@ -48,6 +80,10 @@ def main(argv):
             remote = rest.pop(0)
         elif word == "--ref" and rest:
             ref = rest.pop(0)
+        elif word == "--commit" and rest:
+            commit = rest.pop(0)
+        elif word == "--repo" and rest:
+            root = os.path.abspath(rest.pop(0))
         elif word == "--force":
             force = True
         elif word.startswith("--"):
@@ -62,8 +98,10 @@ def main(argv):
             "characters of it. An approval nobody can check is the shape that turned a "
             "conditional 'publish immediately' into a standing permission here.")
 
-    sha = head()
-    with io.open(TOKEN, "w", encoding="utf-8", newline=LF) as handle:
+    sha = head(root, commit)
+    keep_out_of_commits(root)
+    token = os.path.join(root, TOKEN_NAME)
+    with io.open(token, "w", encoding="utf-8", newline=LF) as handle:
         handle.write(
             "# One push, one commit. guard_push.py refuses a push this does not match." + LF
             + "# Written " + time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()) + LF
@@ -72,9 +110,10 @@ def main(argv):
             + "ref=" + ref + LF
             + "force=" + ("yes" if force else "no") + LF
             + "said=" + " ".join(said.split()) + LF)
-    print("approved ONE push of %s to %s%s" % (sha[:12], remote, " (force)" if force else ""))
-    print("recorded in " + TOKEN)
-    print("It stops matching the moment there is another commit.")
+    print("approved ONE push of %s to %s%s%s" % (sha[:12], remote, (" " + ref) if ref else "",
+                                                " (force)" if force else ""))
+    print("recorded in %s, which that repository's git ignores" % TOKEN_NAME)
+    print("It names that one commit; a push that sends any other is refused.")
     return 0
 
 

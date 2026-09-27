@@ -2003,8 +2003,8 @@
    "id": "one-approval-covers-every-later-push",
    "why": "NEVER PUSH WITHOUT EXPLICIT PER-PUSH APPROVAL, and approval for one push is not approval for the next. The whole content of the rule is the SECOND half: a general yes that keeps applying is exactly how a conditional 'publish immediately' became a standing permission here, for a review that never happened. The token pins the commit, so a new commit expires it. This plant stops the commit being checked, which turns per-push approval back into a standing one while still looking like a guard.",
    "file": "tools/hooks/guard_push.py",
-   "find": "    if fields.get(\"sha\", \"\").lower() != head.lower():\n",
-   "replace": "    if False:  #PLANTED: any approval covers any commit\n",
+   "find": "        if sha is not None and sha.lower() != approved:\n",
+   "replace": "        if False:  #PLANTED: any approval covers any commit\n",
    "suite": "ctrmap.tests.HookRefusalsTest",
    "args": [
     "."

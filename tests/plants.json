@@ -2137,6 +2137,54 @@
    "old": "  \"wt/_state/items_feasibility.json\": {",
    "site": "elsewhere",
    "why": "The same defect arriving in the DATA rather than the code that was fixed: a declaration renamed away in the manifest leaves a real citation in docs/ undeclared, which is how a moved file strands every sentence that names it."
+  },
+  "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_a_commit_the_approval_does_not_name_is_refused_though_head_is_approved": {
+   "file": "tools/hooks/guard_push.py",
+   "must_say": "PUBLISHED A COMMIT NOBODY APPROVED",
+   "new": "        if False:",
+   "old": "        if sha is not None and sha.lower() != approved:",
+   "site": "instance",
+   "why": "With an approval for HEAD, `git push origin <any commit>:master` published a commit the owner never saw."
+  },
+  "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_a_push_spelled_any_way_git_accepts_is_still_judged::evasion": {
+   "file": "tools/hooks/guard_push.py",
+   "must_say": "NOT RECOGNISED AS A PUSH",
+   "new": "_LEAD = \"\"",
+   "old": "_LEAD = r\"(?:(?:[A-Za-z_]\\w*=\" + _WORD + r\"?|env|command|nohup|time|exec|sudo|builtin)\\s+)*\"",
+   "site": "evasion",
+   "why": "A push the guard does not recognise is a push it never judges: `VAR=value git push` and `env ... git push` went out with no token."
+  },
+  "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_a_refspec_that_deletes_needs_its_own_word::evasion": {
+   "file": "tools/hooks/guard_push.py",
+   "must_say": "DELETED THE REMOTE BRANCH",
+   "new": "        if False:",
+   "old": "        if sha is None and not forced:",
+   "site": "evasion",
+   "why": "The cheapest way past a commit comparison is to push no commit at all: `:master` deletes the remote branch and was not counted as a deletion."
+  },
+  "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_an_approval_for_a_named_commit_in_another_repository_is_one_it_never_commits": {
+   "file": "tools/guard/approve_push.py",
+   "must_say": "COMMITTED ALONG WITH",
+   "new": "    pass",
+   "old": "    keep_out_of_commits(root)",
+   "site": "instance",
+   "why": "A token written into a repository that does not ignore it - the notes repository has no ignore file - is one `git add -A` from being committed and pushed with the commit it approves."
+  },
+  "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_the_approved_commit_goes_out_though_head_has_moved_on": {
+   "file": "tools/hooks/guard_push.py",
+   "must_say": "APPROVED push was refused",
+   "new": "        sha, trouble = head_of(repo)",
+   "old": "        sha, trouble = head_of(repo, source)",
+   "site": "instance",
+   "why": "The approval judged by HEAD, not by what the push sends: the push the owner approved - an ancestor of a newer local commit - was refused, and the only way through was to move HEAD back to it."
+  },
+  "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_the_ref_the_approval_names_is_the_ref_the_push_lands_on::elsewhere": {
+   "file": "tools/hooks/guard_push.py",
+   "must_say": "LANDED ON A REF THE APPROVAL DOES NOT NAME",
+   "new": "        if False:",
+   "old": "        if fields.get(\"ref\") and ref != fields[\"ref\"]:",
+   "site": "elsewhere",
+   "why": "The same defect in the other half of the subject: the ref the token names was never compared, though the guard's docstring said it was."
   }
  },
  "retired": {
