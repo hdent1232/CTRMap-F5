@@ -71,6 +71,7 @@ public class CommitGuardTest {
 		ordinaryWorkIsNotPolicedByRuleSix(guard);
 		aCensusCannotBeReportedCleanWithoutCoveringItsScope(repo);
 		aCitationToSomethingACheckoutCannotOpenIsRefused(repo);
+		theCitationGuardIsJudgedByATreeItDidNotBuild(repo);
 		theGateAsksTheDiffAndNotTheSubjectLine(guard);
 		aBlanketClaimMustCiteItsMeasurement(guard, repo);
 		aSweepRefusesATreeThePlantsWereNotProvenAgainst(repo);
@@ -598,6 +599,80 @@ public class CommitGuardTest {
 		check(verdict == 0,
 			"and every session-folder citation in THIS tree is declared and checks out: "
 			+ oneLine(about));
+	}
+
+	/**
+	 * The citation guard is judged by a tree THIS suite built, not only by its own selftest.
+	 *
+	 * <p>A JUDGE CANNOT VOUCH FOR ITSELF. The section above proves every refusal by running
+	 * {@code citations.py --selftest}, which lives in the file it is proving. Measured on
+	 * 2026-09-26: a mutant that blinds the selftest's comparison, planted together with one
+	 * that stops {@code judge()} refusing an undeclared citation at all, and the whole of this
+	 * suite reported ALL PASS, exit 0 - a dead guard, green - because the live-tree half
+	 * passes a clean tree whether the judge works or not. The finding is the Bootstrap
+	 * session's, made about the bundle's own judge the same day.
+	 *
+	 * <p>So the fixture is built HERE, in Java, and the guard is asked about it through its
+	 * command line. Both directions, because a judge broken the other way - refusing
+	 * everything - is as dead as one refusing nothing. The fixture's path is declared
+	 * {@code forbidden} in the real manifest with this file as its only citer, rather than
+	 * spelt in pieces to slip past the pattern: nothing may exist at it in the real session
+	 * folder, and if something ever does, the fixture and the disk have been confused.
+	 */
+	static void theCitationGuardIsJudgedByATreeItDidNotBuild(File repo) throws Exception {
+		System.out.println("--- the citation guard is judged by a tree it did not build");
+		File tool = new File(repo, "tools/guard/citations.py").getAbsoluteFile();
+		if (!tool.isFile() || !onPath("python")) {
+			check(tool.isFile(), "the citation guard is installed at " + tool.getPath());
+			return;
+		}
+		String cited = "wt/_state/citations-fixture.json";
+		File session = Scratch.dir("citations");
+		try {
+			File tree = new File(session, "repo");
+			File guardDir = new File(tree, "tools/guard");
+			File docs = new File(tree, "docs");
+			if (!guardDir.mkdirs() || !docs.mkdirs()) {
+				throw new java.io.IOException("could not build the fixture tree under " + tree);
+			}
+			Files.write(new File(docs, "note.md").toPath(),
+				("The evidence is in `" + cited + "`." + NEWLINE).getBytes(StandardCharsets.UTF_8));
+			git(tree, "init", "-q");
+
+			//UNDECLARED: an empty manifest, and a citation the tree makes. It must refuse.
+			File manifest = new File(guardDir, "citations.json");
+			Files.write(manifest.toPath(), ("{}" + NEWLINE).getBytes(StandardCharsets.UTF_8));
+			Process p = new ProcessBuilder("python", "-B", tool.getPath(), "--root",
+				tree.getAbsolutePath()).directory(tree).redirectErrorStream(true).start();
+			String said = drain(p);
+			int code = p.waitFor();
+			check(code == 1 && said.contains("UNDECLARED") && said.contains(cited),
+				"an undeclared citation in a tree this suite built is refused, by name (exit "
+				+ code + "): " + oneLine(said));
+
+			//DECLARED AND PRESENT: the same citation, declared outside, with the file there.
+			//It must pass - a judge that refuses everything is as dead as one that refuses
+			//nothing, and only this half can tell them apart.
+			File evidence = new File(session, cited);
+			if (!evidence.getParentFile().mkdirs() && !evidence.getParentFile().isDirectory()) {
+				throw new java.io.IOException("could not make " + evidence.getParentFile());
+			}
+			Files.write(evidence.toPath(), ("{}" + NEWLINE).getBytes(StandardCharsets.UTF_8));
+			Files.write(manifest.toPath(), ("{" + QUOTE + cited + QUOTE + ": {"
+				+ QUOTE + "status" + QUOTE + ": " + QUOTE + "outside" + QUOTE + ", "
+				+ QUOTE + "why" + QUOTE + ": " + QUOTE
+				+ "fixture evidence that this suite wrote beside its own scratch tree" + QUOTE
+				+ "}}" + NEWLINE).getBytes(StandardCharsets.UTF_8));
+			Process q = new ProcessBuilder("python", "-B", tool.getPath(), "--root",
+				tree.getAbsolutePath()).directory(tree).redirectErrorStream(true).start();
+			String about = drain(q);
+			int verdict = q.waitFor();
+			check(verdict == 0,
+				"and the same citation declared, with the file where it says, passes (exit "
+				+ verdict + "): " + oneLine(about));
+		} finally {
+			Scratch.deleteTree(session);
+		}
 	}
 
 	/** One line of whatever a tool said, for a message that has to fit on a terminal. */

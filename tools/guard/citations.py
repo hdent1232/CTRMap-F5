@@ -436,7 +436,21 @@ def selftest():
 def main(argv):
     if "--selftest" in argv:
         return selftest()
-    problems, unknowns = judge()
+    #: --root EXISTS SO THIS FILE IS NOT ITS OWN ONLY WITNESS. Until 2026-09-26 the suite proved
+    #: every refusal by running --selftest, which lives in this file - so a mutant blinding the
+    #: selftest's comparison and a second one breaking judge() printed ALL PASS together, and
+    #: the live-tree run could not notice because a clean tree passes whether judge works or
+    #: not. Measured: both planted, the whole of CommitGuardTest reported ALL PASS, exit 0. The
+    #: suite now builds its own tree and asks THIS entry point about it, so judge() is judged by
+    #: something that is not judge().
+    root = ROOT
+    if "--root" in argv:
+        at = argv.index("--root")
+        if at + 1 >= len(argv):
+            sys.stderr.write("usage: citations.py [--root <tree>] | --selftest" + LF)
+            return 2
+        root = os.path.abspath(argv[at + 1])
+    problems, unknowns = judge(root)
     for u in unknowns:
         sys.stdout.write("UNKNOWN: " + u + LF)
     if problems:

@@ -7,6 +7,13 @@
       "tools/mutate2.py"
     ]
   },
+  "wt/_state/citations-fixture.json": {
+    "status": "forbidden",
+    "why": "The path CommitGuardTest builds inside its own scratch tree, so the citation guard is judged by a tree it did not build rather than only by its own selftest. Nothing may exist at it in the real session folder: if something ever does, the fixture and the real disk have been confused.",
+    "cited_by": [
+      "src/ctrmap/tests/CommitGuardTest.java"
+    ]
+  },
   "wt/_state/mutation.json": {
     "status": "outside",
     "why": "Output of tools/mutate.py - one sweep's per-mutant verdicts, 232 KB, rewritten by re-running the sweep. It is a measurement taken against one frozen tree rather than a fact about the repository, and a stale copy carried in a clone would be worse than no copy at all."

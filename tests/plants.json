@@ -1881,6 +1881,30 @@
    "old": "        for rel in checker.bundle_files(where):\n",
    "site": "instance",
    "why": "TWO WALKS OF ONE FOLDER. The write rule's scope walked the bundle with its own skip list while the checker's walk had learned that a tool's signed cache is not a shipped file."
+  },
+  "test_citations.py::ACitationACheckoutCannotOpenIsRefused::test_an_undeclared_citation_in_a_built_tree_is_refused": {
+   "file": "tools/guard/citations.py",
+   "old": "        if path not in declared:",
+   "new": "        if False:",
+   "site": "instance",
+   "must_say": "an undeclared citation PASSED",
+   "why": "The fix undone: the census entry that named its evidence in the session folder beside the repository, which a clone never gets - an undeclared citation passing in a tree built to contain one."
+  },
+  "test_citations.py::ACitationACheckoutCannotOpenIsRefused::test_this_tree_holds_no_undeclared_citation::elsewhere": {
+   "file": "tools/guard/citations.json",
+   "old": "  \"wt/_state/items_feasibility.json\": {",
+   "new": "  \"wt/_state/items_feasibility-renamed-away.json\": {",
+   "site": "elsewhere",
+   "must_say": "its manifest does not declare",
+   "why": "The same defect arriving in the DATA rather than the code that was fixed: a declaration renamed away in the manifest leaves a real citation in docs/ undeclared, which is how a moved file strands every sentence that names it."
+  },
+  "test_citations.py::ACitationACheckoutCannotOpenIsRefused::test_the_scan_sees_the_citations_this_tree_is_known_to_hold::evasion": {
+   "file": "tools/guard/citations.py",
+   "old": "        names.append(rel)",
+   "new": "        pass",
+   "site": "evasion",
+   "must_say": "the scan no longer sees",
+   "why": "The cheapest way past a guard that forbids REPORTING a bad citation is to stop looking for one: a scanner that reads no file finds nothing and reports a clean tree, which is the confident empty result this project treats as a bug."
   }
  },
  "retired": {
