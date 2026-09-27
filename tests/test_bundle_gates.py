@@ -323,6 +323,78 @@ class TheInstallIsAskedAtEveryCommit(unittest.TestCase):
                          "a file the checker does not count was put in scope by a second walk")
 
 
+class ABundleIsFoundWhereverItsProjectDeclaresIt(unittest.TestCase):
+    """`_bundle` may be a LIST, so a clone on a machine without the shared copy can name its own.
+
+    Before 2026-09-26 it was one absolute path to a Desktop folder, and a clone of any project on
+    a machine without that folder - every cloud machine - had every commit refused. The list is
+    tried in order, relative entries are resolved against the PROJECT, and a re-install keeps it.
+    """
+
+    def setUp(self):
+        import bundle_install
+        self.bi = bundle_install
+        self.tmp = tempfile.mkdtemp(prefix="vb-where-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.project = os.path.join(self.tmp, "project")
+        os.makedirs(os.path.join(self.project, ".claude"))
+
+    def declared(self, where):
+        path = os.path.join(self.project, ".claude", "bundle-install.json")
+        with io.open(path, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"_bundle": where}))
+        return path
+
+    def folder(self, *parts):
+        path = os.path.join(self.tmp, *parts)
+        os.makedirs(path)
+        return path
+
+    def test_the_first_listed_folder_that_exists_is_the_bundle(self):
+        present = self.folder("present")
+        where, why = self.bi.bundle_path(self.declared([os.path.join(self.tmp, "gone"), present]))
+        self.assertEqual(os.path.normcase(where or ""), os.path.normcase(present),
+                         "a listed bundle that is NOT a folder was taken over the one that is: "
+                         "%r (%s)" % (where, why))
+
+    def test_a_relative_entry_is_found_from_the_project_wherever_the_commit_runs(self):
+        os.makedirs(os.path.join(self.project, ".bundle"))
+        declarations = self.declared([os.path.join(self.tmp, "gone"), ".bundle"])
+        elsewhere = self.folder("somewhere-else")
+        before = os.getcwd()
+        os.chdir(elsewhere)
+        try:
+            where, why = self.bi.bundle_path(declarations)
+        finally:
+            os.chdir(before)
+        self.assertEqual(os.path.normcase(where or ""),
+                         os.path.normcase(os.path.join(self.project, ".bundle")),
+                         "a relative bundle entry was resolved against the WORKING DIRECTORY, "
+                         "not the project: %r (%s)" % (where, why))
+
+    def test_a_relative_entry_is_found_beside_claude_not_inside_it(self):
+        """The project is the folder HOLDING .claude/, where bundle-install.json sits. Resolved
+        against .claude/ itself, `.bundle` would be looked for inside it and never found."""
+        os.makedirs(os.path.join(self.project, ".bundle"))
+        where, why = self.bi.bundle_path(self.declared([".bundle"]))
+        self.assertEqual(os.path.normcase(where or ""),
+                         os.path.normcase(os.path.join(self.project, ".bundle")),
+                         "a relative entry was resolved against .claude/ rather than the "
+                         "project holding it: %r (%s)" % (where, why))
+
+    def test_none_resolving_is_refused_and_names_every_place_tried(self):
+        where, why = self.bi.bundle_path(self.declared(
+            [os.path.join(self.tmp, "gone"), ".bundle"]))
+        self.assertIsNone(where)
+        self.assertTrue(why and "not a folder" in why and "gone" in why and ".bundle" in why,
+                        "a refusal that does not name where it looked: %r" % why)
+
+    def test_one_path_still_works_as_it_always_did(self):
+        present = self.folder("single")
+        where, why = self.bi.bundle_path(self.declared(present))
+        self.assertEqual(os.path.normcase(where or ""), os.path.normcase(present), why)
+
+
 class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
     """`gate_stamps.py`: a hook reads the call, and a program's `git commit --no-verify` is not in
     the call. Measured 2026-09-23: fifteen spellings of a skipped gate are refused before git

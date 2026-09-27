@@ -878,7 +878,11 @@ class AJudgeUnderMutationJudgesNothing(ScratchProject, unittest.TestCase):
     inside the scratch project, run as the harness runs them, so the plant touches nothing real.
     """
 
-    BLIND = ("    return locked(root), _released(root)" + LF, '    return "", ""' + LF)
+    #: ONE LINE WITHOUT ITS ENDING. It carried "+ LF", and on a CRLF checkout - what git
+    #: gives every Windows clone - that matched nothing, the plant landed nowhere, and five
+    #: tests here failed on their own control. Without the ending, the substitution keeps
+    #: whichever one the file came with.
+    BLIND = ("    return locked(root), _released(root)", '    return "", ""')
 
     def setUp(self):
         ScratchProject.setUp(self)
@@ -927,6 +931,22 @@ class AJudgeUnderMutationJudgesNothing(ScratchProject, unittest.TestCase):
     @staticmethod
     def shell(command):
         return {"tool_name": "Bash", "tool_input": {"command": command}}
+
+    def test_the_judge_is_planted_on_a_CRLF_checkout_too(self):
+        """Measured 2026-09-26: on a CRLF checkout BLIND carried a line break the file did not
+        have, so the judge was never planted and five tests here failed on their own control.
+        This converts its own copy of the judge to CRLF first, so it holds on ANY checkout."""
+        path = os.path.join(self.hooks, "bundle_rules.py")
+        with io.open(path, encoding="utf-8", newline="") as handle:
+            text = handle.read()
+        crlf = text.replace(chr(13) + LF, LF).replace(LF, chr(13) + LF)
+        with io.open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(crlf)
+        self.plant_the_judge()
+        with io.open(path, encoding="utf-8", newline="") as handle:
+            planted = handle.read()
+        self.assertNotEqual(planted, crlf, "the judge could not be planted on a CRLF checkout")
+        self.assertIn(chr(13) + LF, planted, "planting the judge changed its line endings")
 
     def plant_the_judge(self):
         path = os.path.join(self.hooks, "bundle_rules.py")

@@ -13,6 +13,30 @@
  "must_say_ceiling": 19,
  "owed_ceiling": 2,
  "plants": {
+  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_a_checkout_pointing_its_hooks_elsewhere_is_repointed::evasion": {
+   "file": "tools/arm_checkout.py",
+   "must_say": "was TRUSTED instead of checked",
+   "new": "    if was is None:",
+   "old": "    if was != HOOKS_DIR:",
+   "site": "evasion",
+   "why": "The cheapest way to report a checkout armed is to trust whatever hooks path is already set without looking at what it names - a path to a directory with no commit-msg runs nothing, and reads as armed."
+  },
+  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_a_fresh_clone_is_armed": {
+   "file": "tools/arm_checkout.py",
+   "must_say": "a fresh clone was left UNARMED",
+   "new": "        code, why = 0, \"\"",
+   "old": "        code, why = _git(root, [\"config\", \"--local\", \"core.hooksPath\", HOOKS_DIR])",
+   "site": "instance",
+   "why": "The fix undone: core.hooksPath lives in .git/config, which a clone never carries, so a fresh clone ran no commit hook at all and every commit-time guard was off while .githooks/ sat in the repository looking armed."
+  },
+  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_the_repository_runs_this_at_session_start::elsewhere": {
+   "file": ".claude/settings.json",
+   "must_say": "do not run tools/arm_checkout.py at session start",
+   "new": "tools/arm_checkout_missing.py",
+   "old": "tools/arm_checkout.py",
+   "site": "elsewhere",
+   "why": "The same defect in the WIRING rather than the code: a tool that arms the checkout is a file nobody calls unless the repository settings run it at SessionStart - installed, present and off, which is this project's oldest shape."
+  },
   "test_bundle.py::ACapturedChildOpensNoWINDOW::test_no_captured_child_here_opens_a_window::elsewhere": {
    "file": "tests/test_bundle.py",
    "must_say": "console window",
@@ -800,6 +824,30 @@
    "site": "elsewhere",
    "why": "a different hook and a different mistake: the unit dropped, so `sleep 2m` reads as two seconds and sails past the bound. A guard that passes the very case it exists for, which is the quote-spelling family this bundle's section on source greps describes."
   },
+  "test_bundle.py::NothingTrackedNamesTheMachineItWasWrittenOn::test_a_folder_chain_below_home_is_refused_without_the_home::elsewhere": {
+   "file": "tools/owner_paths.py",
+   "must_say": "written without the home",
+   "new": "        for a, b in []:",
+   "old": "        for a, b in zip(chain, chain[1:]):",
+   "site": "elsewhere",
+   "why": "The same identification arriving WITHOUT the home in front: the folders between it and the project, written relative or after ~/, name the machine just as well, and a check that knows only home paths misses every one."
+  },
+  "test_bundle.py::NothingTrackedNamesTheMachineItWasWrittenOn::test_another_spelling_of_the_same_home_is_refused::evasion": {
+   "file": "tools/owner_paths.py",
+   "must_say": "in another SPELLING",
+   "new": "SEP = r\"/\"",
+   "old": "SEP = r\"[\\\\/]+\"",
+   "site": "evasion",
+   "why": "The cheapest way past a path check is to look for one spelling of the path. The same home written with backslashes, or in another case, names the same person."
+  },
+  "test_bundle.py::NothingTrackedNamesTheMachineItWasWrittenOn::test_this_machines_home_directory_is_refused": {
+   "file": "tools/owner_paths.py",
+   "must_say": "a file naming THIS machine's home directory",
+   "new": "    if False:",
+   "old": "    if len(parts) >= 2:",
+   "site": "instance",
+   "why": "The fix undone: a tracked file naming this machine's home directory passes - the shape that put an owner's paths into two public repositories on 2026-09-26, where getting them out took a rewrite of the whole history."
+  },
   "test_bundle.py::OneSplitterAndTheShapesOfACall::test_a_DEFAULT_verb_that_does_damage_is_matched_when_nothing_is_typed": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
    "new": "        return False",
@@ -1258,6 +1306,14 @@
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST a rule that looks for the call: make the call and ignore the answer. The rule requires the answer to decide an `if`, itself or through the name it was given."
   },
+  "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_the_judge_is_planted_on_a_CRLF_checkout_too": {
+   "file": "tests/test_bundle_action.py",
+   "must_say": "the control: the judge's reading moved",
+   "new": "    BLIND = (\"    return locked(root), _released(root)\" + LF, '    return \"\", \"\"' + LF)",
+   "old": "    BLIND = (\"    return locked(root), _released(root)\", '    return \"\", \"\"')",
+   "site": "instance",
+   "why": "An anchor carrying a line break the file does not have: on the CRLF checkout git gives every Windows clone, the judge was never planted and five tests failed on their own control, in the bundle and in every project it is installed into."
+  },
   "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_the_moment_after_SAYS_it_did_not_judge": {
    "file": ".claude/bundle-hooks/after_rules.py",
    "must_say": "the moment after judged with a planted judge",
@@ -1553,6 +1609,30 @@
    "old": "    return digest.hexdigest()",
    "site": "evasion",
    "why": "A TREE THAT NEVER MOVES. The after-hook skips a call that left the tree as it was; a state that does not change when a file does is the cheapest way never to be asked again, and it looks exactly like a quiet session."
+  },
+  "test_bundle_gates.py::ABundleIsFoundWhereverItsProjectDeclaresIt::test_a_relative_entry_is_found_beside_claude_not_inside_it::elsewhere": {
+   "file": "tools/bundle_install.py",
+   "must_say": "resolved against .claude/ rather than",
+   "new": "    return here",
+   "old": "    return os.path.dirname(here) if os.path.basename(here) == \".claude\" else here",
+   "site": "elsewhere",
+   "why": "The wrong base arriving through the other half of the resolver: the project is the folder HOLDING .claude/, and resolved against .claude/ itself a relative entry is looked for inside it and never found."
+  },
+  "test_bundle_gates.py::ABundleIsFoundWhereverItsProjectDeclaresIt::test_a_relative_entry_is_found_from_the_project_wherever_the_commit_runs::evasion": {
+   "file": "tools/bundle_install.py",
+   "must_say": "resolved against the WORKING DIRECTORY",
+   "new": "        path = entry",
+   "old": "        path = entry if os.path.isabs(entry) else os.path.join(project, entry)",
+   "site": "evasion",
+   "why": "The cheapest way to support a relative entry is to hand it to the filesystem as it stands, which passes every test run from the project root and fails the same commit run from tools/ - a verdict that depends on where you stood."
+  },
+  "test_bundle_gates.py::ABundleIsFoundWhereverItsProjectDeclaresIt::test_the_first_listed_folder_that_exists_is_the_bundle": {
+   "file": "tools/bundle_install.py",
+   "must_say": "a listed bundle that is NOT a folder was taken",
+   "new": "        if True:",
+   "old": "        if os.path.isdir(path):",
+   "site": "instance",
+   "why": "The fix undone: a listed bundle location taken without asking whether it is a folder here, so a project naming the Desktop copy first gets that path on a cloud machine that has no Desktop - the refusal it replaced, only quieter."
   },
   "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_a_fix_names_its_KIND_and_a_detector_says_why_it_is_not_a_refusal": {
    "file": "tools/commit_gate.py",
@@ -1861,8 +1941,8 @@
   "test_bundle_gates.py::TheInstallIsAskedAtEveryCommit::test_a_bundle_that_CANNOT_BE_READ_refuses": {
    "file": "tools/bundle_install.py",
    "must_say": "False is not true",
-   "new": "    if False:",
-   "old": "    if not os.path.isdir(where):",
+   "new": "        return path, None",
+   "old": "        tried.append(path)",
    "site": "instance",
    "why": "A bundle that is not on disk treated as checkable - the install becomes whatever an absent checker says, which is unknown rendered as clean."
   },
@@ -1884,51 +1964,27 @@
   },
   "test_citations.py::ACitationACheckoutCannotOpenIsRefused::test_an_undeclared_citation_in_a_built_tree_is_refused": {
    "file": "tools/guard/citations.py",
-   "old": "        if path not in declared:",
-   "new": "        if False:",
-   "site": "instance",
    "must_say": "an undeclared citation PASSED",
+   "new": "        if False:",
+   "old": "        if path not in declared:",
+   "site": "instance",
    "why": "The fix undone: the census entry that named its evidence in the session folder beside the repository, which a clone never gets - an undeclared citation passing in a tree built to contain one."
-  },
-  "test_citations.py::ACitationACheckoutCannotOpenIsRefused::test_this_tree_holds_no_undeclared_citation::elsewhere": {
-   "file": "tools/guard/citations.json",
-   "old": "  \"wt/_state/items_feasibility.json\": {",
-   "new": "  \"wt/_state/items_feasibility-renamed-away.json\": {",
-   "site": "elsewhere",
-   "must_say": "its manifest does not declare",
-   "why": "The same defect arriving in the DATA rather than the code that was fixed: a declaration renamed away in the manifest leaves a real citation in docs/ undeclared, which is how a moved file strands every sentence that names it."
   },
   "test_citations.py::ACitationACheckoutCannotOpenIsRefused::test_the_scan_sees_the_citations_this_tree_is_known_to_hold::evasion": {
    "file": "tools/guard/citations.py",
-   "old": "        names.append(rel)",
-   "new": "        pass",
-   "site": "evasion",
    "must_say": "the scan no longer sees",
+   "new": "        pass",
+   "old": "        names.append(rel)",
+   "site": "evasion",
    "why": "The cheapest way past a guard that forbids REPORTING a bad citation is to stop looking for one: a scanner that reads no file finds nothing and reports a clean tree, which is the confident empty result this project treats as a bug."
   },
-  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_a_fresh_clone_is_armed": {
-   "file": "tools/arm_checkout.py",
-   "old": "        code, why = _git(root, [\"config\", \"--local\", \"core.hooksPath\", HOOKS_DIR])",
-   "new": "        code, why = 0, \"\"",
-   "site": "instance",
-   "must_say": "a fresh clone was left UNARMED",
-   "why": "The fix undone: core.hooksPath lives in .git/config, which a clone never carries, so a fresh clone ran no commit hook at all and every commit-time guard was off while .githooks/ sat in the repository looking armed."
-  },
-  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_the_repository_runs_this_at_session_start::elsewhere": {
-   "file": ".claude/settings.json",
-   "old": "tools/arm_checkout.py",
-   "new": "tools/arm_checkout_missing.py",
+  "test_citations.py::ACitationACheckoutCannotOpenIsRefused::test_this_tree_holds_no_undeclared_citation::elsewhere": {
+   "file": "tools/guard/citations.json",
+   "must_say": "its manifest does not declare",
+   "new": "  \"wt/_state/items_feasibility-renamed-away.json\": {",
+   "old": "  \"wt/_state/items_feasibility.json\": {",
    "site": "elsewhere",
-   "must_say": "do not run tools/arm_checkout.py at session start",
-   "why": "The same defect in the WIRING rather than the code: a tool that arms the checkout is a file nobody calls unless the repository settings run it at SessionStart - installed, present and off, which is this project's oldest shape."
-  },
-  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_a_checkout_pointing_its_hooks_elsewhere_is_repointed::evasion": {
-   "file": "tools/arm_checkout.py",
-   "old": "    if was != HOOKS_DIR:",
-   "new": "    if was is None:",
-   "site": "evasion",
-   "must_say": "was TRUSTED instead of checked",
-   "why": "The cheapest way to report a checkout armed is to trust whatever hooks path is already set without looking at what it names - a path to a directory with no commit-msg runs nothing, and reads as armed."
+   "why": "The same defect arriving in the DATA rather than the code that was fixed: a declaration renamed away in the manifest leaves a real citation in docs/ undeclared, which is how a moved file strands every sentence that names it."
   }
  },
  "retired": {

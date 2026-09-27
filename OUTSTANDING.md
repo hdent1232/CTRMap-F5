@@ -126,15 +126,12 @@ both would have blocked every measurement forever:
       `_bundle` in `.claude/bundle-install.json` stops being one absolute Desktop path. Measured:
       with that folder absent - every cloud machine - `bundle_install.bundle_path()` returns None
       and the install check refuses EVERY commit. Three pieces, in order:
-        1. First commit + push of the bundle folder, with check_bundle.py run immediately before
-           and after `git init` and compared, since 20 of its files shell out to git. BLOCKED on
-           the Bootstrap session CLOSING (not merely its check finishing - its DT catch-up can
-           still write there).
-        2. `_bundle` as a LIST resolved against the project root, first folder wins, none
-           resolving refused exactly as now; this project declares [Desktop path, ".bundle"] with
-           `.bundle/` gitignored. It is bundle code (bundle_install.py and the bundle's own
-           reader), so it goes through the new flow as its first change: made in a clone,
-           pushed, pulled into the Desktop copy, caught up here.
+        1. DONE 2026-09-26: the bundle is live at hdent1232/verification-bootstrap, main a44b1fa,
+           after a green check_bundle; its four commits were rewritten on the owner's approval so
+           no identity or message names the owner. The Desktop copy is a clone of it.
+        2. DONE in the bundle (2d74032) and caught up here: `_bundle` may be a LIST resolved
+           against the project root. Still to do HERE: declare ".bundle" as this project's second
+           entry, with `.bundle/` gitignored.
         3. tools/arm_checkout.py then CLONES the bundle into `.bundle/` when nothing resolves.
            Today it reports "NOT reachable" loudly at session start rather than doing that,
            because shipping the clone step before (2) exists would be an untested path.
@@ -155,17 +152,6 @@ both would have blocked every measurement forever:
       because a pathspec commit is what keeps one session from sweeping another's staged files
       into its commit, which is how two sessions share this tree. FIX: capture git's stderr in
       gate_stamps._git (it discards it) so the refusal says WHY, reproduce, then close.
-
-- [ ] 2026-09-26 THE HOME-PATH GUARD IS A DETECTOR, AND THREE LEAKS WENT PAST IT. The owner's
-      paths and folder names reached this public repository - the census, `_bundle`, both mutation
-      scripts, two docs - although SourceSeamTest has refused home directories "in ANY file" since
-      bf77c68. Measured why, three ways: (1) its text sweep takes a LIST of extensions and `.py` is
-      not on it, so tools/mutate.py and mutate2.py were never read; (2) it knows only paths through
-      a home directory, so a bare folder chain like `sessions/<the session folder>` passes; (3) it
-      runs in the battery, not at commit, so anything committed between battery runs is public
-      before it is seen. FIX: refuse at COMMIT, over every staged text file regardless of
-      extension, both home-directory paths and the folder names this checkout actually sits in -
-      derived at run time from its own location, so it holds on any machine without naming anyone.
 
 - [ ] 2026-09-26 WHAT THE PRIVACY REWRITE COULD NOT REACH. On the owner's instruction, every
       path and folder name from their computer, and their email as author and committer, was
@@ -200,6 +186,19 @@ both would have blocked every measurement forever:
       bytes into a real game.
 
 ## Done
+
+- [x] 2026-09-26 THE OWNER'S MACHINE CANNOT BE NAMED IN A TRACKED FILE OR COMMIT MESSAGE - closed
+      in the BUNDLE, not here, because the leak was a class across every project it is installed
+      into and half of it came from the bundle's own installer. The owner caught the first answer
+      to this, which was a note in this queue: a fix written in one project reaches no other.
+      tools/owner_paths.py (verification-bootstrap 2076b2e, installed here) refuses at the WRITE of
+      any text file and in any commit message: this machine's home directory in any spelling, two
+      consecutive folders of the chain between it and the project, and a distinctive folder of that
+      chain alone - all derived when asked, so it names nobody. It sees scripted writes too, through
+      the bundle's post-command hook. The installer now records `_bundle` relative to the project
+      and replaces an absolute entry on re-install. Measured here after the catch-up: 0 findings
+      over every tracked text file; the same rule finds all 29 lines in the pre-scrub census.
+      SourceSeamTest stays as a second line, in the battery.
 
 - [x] 2026-09-26 GITHUB ACTIONS IS DISABLED on hdent1232/CTRMap-F5, the bundle repository
       and the owner's private notes repository, on the owner's decision the same day, and read back

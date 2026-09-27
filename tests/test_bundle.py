@@ -2478,5 +2478,68 @@ class ALedgerReviewIsIndependentAndReadNotRecorded(LedgerCase):
                     "a launch dressed as the owed review walked past a launch guard")
 
 
+class NothingTrackedNamesTheMachineItWasWrittenOn(unittest.TestCase):
+    """`tools/owner_paths.py` - a project's files and messages may not name the machine they came
+    from. Every identifier here is built in a temp folder, so these tests name nobody and hold on
+    any machine: a fake home with an account name in it, and a project three folders below it."""
+
+    def setUp(self):
+        import owner_paths
+        self.op = owner_paths
+        self.tmp = tempfile.mkdtemp(prefix="vb-owner-")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.home = os.path.join(self.tmp, "Users", "somebody")
+        self.root = os.path.join(self.home, "Workbench", "My Projects 2", "proj")
+        self.pats = owner_paths.identifiers(home=self.home, root=self.root)
+
+    def found(self, text):
+        return self.op.findings("f.md", text, self.pats)
+
+    def test_this_machines_home_directory_is_refused(self):
+        line = "the evidence is at %s" % os.path.join(self.home, "Desktop", "notes.txt")
+        self.assertTrue(self.found(line),
+                        "a file naming THIS machine's home directory was let through: %r" % line)
+
+    def test_a_folder_chain_below_home_is_refused_without_the_home(self):
+        line = "cd ~/Workbench/My Projects 2/proj"
+        got = [f for f in self.found(line) if "folder chain" in f]
+        self.assertTrue(got, "two folders of the chain to the project, written without the home "
+                             "in front, were let through - which is how ~/ gives it away")
+
+    def test_another_spelling_of_the_same_home_is_refused(self):
+        spelled = self.home.replace(os.sep, chr(92)).upper()
+        self.assertTrue(self.found("see %s%sx" % (spelled, chr(92))),
+                        "the same home directory in another SPELLING - backslashes, upper case - "
+                        "was let through: %r" % spelled)
+
+    def test_a_distinctive_folder_is_refused_on_its_own(self):
+        self.assertTrue(self.found("keep it in the My Projects 2 folder"))
+
+    def test_somebody_elses_home_and_ordinary_words_are_left_alone(self):
+        self.assertEqual(self.found("C:/Users/someone/x, /home/someone/y, the Workbench app"), [],
+                         "a path that is not THIS machine's was refused - that would refuse "
+                         "every test that proves a path check works")
+
+    def test_a_finding_never_repeats_what_it_found(self):
+        got = self.found("at %s" % self.home)
+        self.assertTrue(got and not any("somebody" in f for f in got),
+                        "a finding repeated the name it found: %r" % got)
+
+    def test_a_commit_message_naming_the_machine_is_refused(self):
+        message = "fix: read %s%sdata" % (self.home, os.sep)
+        got = self.op.findings("the commit message", message, self.pats)
+        self.assertTrue(got, "a commit message naming this machine was let through")
+
+    def test_a_home_that_names_nobody_refuses_nothing(self):
+        #: A `/root`-style home at the TOP of the drive, not inside the temp folder: built there it
+        #: would be a deep path full of folders, and the rule would be right to refuse it. That is
+        #: how the first version of this test failed.
+        top = os.path.splitdrive(os.path.abspath(self.tmp))[0] + os.sep
+        pats = self.op.identifiers(home=os.path.join(top, "root"),
+                                   root=os.path.join(top, "srv", "proj"))
+        self.assertEqual(pats, [], "a home of one folder, with the project outside it, names "
+                                   "nobody and must refuse nothing: %r" % pats)
+
+
 if __name__ == "__main__":
     unittest.main()

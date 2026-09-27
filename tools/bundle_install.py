@@ -50,8 +50,30 @@ ROOT = _root()
 DECLARATIONS = os.path.join(ROOT, DECLARATIONS_NAME)
 
 
+def _project_of(declarations):
+    """The project root a declarations file speaks for: the folder holding `.claude/` when the file
+    sits in it - its real place - and otherwise the file's own folder."""
+    here = os.path.dirname(os.path.abspath(declarations))
+    return os.path.dirname(here) if os.path.basename(here) == ".claude" else here
+
+
 def bundle_path(declarations=None):
-    """(path, refusal) - where the bundle lives, or why that cannot be said."""
+    """(path, refusal) - where the bundle lives, or why that cannot be said.
+
+    `_bundle` is ONE PATH OR A LIST OF THEM, tried in order, and the first that is a folder wins.
+    Added 2026-09-26, when the bundle moved from one Desktop folder to a GitHub repository: a
+    project cloned onto a machine with no such Desktop - every cloud machine - refused EVERY commit
+    here, correctly, because an install nobody can check is not an installed one. A list lets a
+    project name both the machine's shared copy and a clone of its own, and still refuses exactly
+    as before when none of them is there.
+
+    A RELATIVE entry is resolved against the PROJECT, never the working directory. Resolved
+    against the working directory it would be found by a commit run from the project root and
+    missed by the same commit run from `tools/` - a verdict that depends on where you stood.
+
+    "A moved bundle is a reviewed diff, not a flag": the list lives in the tracked declarations
+    file like the single path did, so no environment variable can point this anywhere.
+    """
     declarations = declarations or DECLARATIONS
     try:
         with io.open(declarations, encoding="utf-8") as handle:
@@ -60,13 +82,20 @@ def bundle_path(declarations=None):
         return None, "%s cannot be read (%s), so where the bundle lives is UNKNOWN" % (
             declarations, exc)
     where = held.get("_bundle") if isinstance(held, dict) else None
-    if not where:
+    entries = [where] if isinstance(where, str) else where if isinstance(where, list) else []
+    entries = [e for e in entries if isinstance(e, str) and e.strip()]
+    if not entries:
         return None, "%s names no `_bundle`, so there is nothing to check against" % declarations
-    if not os.path.isdir(where):
-        return None, ("the bundle recorded at %s is not a folder here - an install nobody can "
-                      "check is not an installed one. If it moved, change `_bundle` in %s"
-                      % (where, declarations))
-    return where, None
+    project = _project_of(declarations)
+    tried = []
+    for entry in entries:
+        path = entry if os.path.isabs(entry) else os.path.join(project, entry)
+        if os.path.isdir(path):
+            return path, None
+        tried.append(path)
+    return None, ("the bundle recorded at %s is not a folder here - an install nobody can "
+                  "check is not an installed one. If it moved, change `_bundle` in %s"
+                  % (" or ".join(tried), declarations))
 
 
 def load_checker(where):
