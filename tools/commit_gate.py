@@ -436,15 +436,31 @@ def fix_has_a_plant(message, keys=None, drive=None, own=None, added=None, prove=
     if added and prove is None:
         def prove(key):
             return _prove_in_project(own[2], key)
-    out = []
-    for key, driver in [(k, drive) for k in keys] + [(k, prove) for k in added]:
+    out, reds = [], 0
+    pairs = [(k, drive) for k in keys] + [(k, prove) for k in added]
+    for key, driver in pairs:
         try:
             red, detail = driver(key)
         except Exception as exc:                     # noqa: BLE001 - a broken plant is a NO
             red, detail = False, "%s: %s" % (type(exc).__name__, exc)
+        reds += bool(red)
         if not red:
             out.append("the new plant %s does not redden its test: %s" % (key, str(detail)[:200]))
+    say_driven("new", len(pairs), reds)
     return out
+
+
+def say_driven(kind, driven, reds):
+    """Say what a drive did, when it passes as well as when it fails.
+
+    A SUCCESS THAT PRINTS NOTHING READS LIKE A STEP THAT NEVER RAN. Measured on the project this
+    came from, 2026-09-26: a commit adding plants showed only `0 plant(s) driven` - from the
+    ratchet step, which drives none by design - while this gate had driven every new plant red and
+    said nothing. The count is of plants that REDDENED, never of plants asked: 'all' is said only
+    when it is true.
+    """
+    said = "all %d red" % driven if reds == driven else "%d of %d red" % (reds, driven)
+    sys.stdout.write("commit gate: %d %s plant(s) driven, %s%s" % (driven, kind, said, LF))
 
 
 def head_plants(ledger=LEDGER):
@@ -563,17 +579,20 @@ def held_plants_redden(files, keys=None, drive=None, own_keys=None, prove=None):
             if key not in now:
                 return True, "not in the ledger being committed"
             return _prove_in_project(own[2], key)
-    out = []
-    for key, driver in [(k, drive) for k in keys] + [(k, prove) for k in own_keys]:
+    out, reds = [], 0
+    pairs = [(k, drive) for k in keys] + [(k, prove) for k in own_keys]
+    for key, driver in pairs:
         try:
             red, detail = driver(key)
         except Exception as exc:                     # noqa: BLE001 - a broken plant is a NO
             red, detail = False, "%s: %s" % (type(exc).__name__, exc)
+        reds += bool(red)
         if not red:
             out.append("the held plant %s no longer reddens its test after this change: %s - "
                        "re-anchor it where the defect now lives (`python tools/prove_plants.py "
                        "--reanchor <file>`), or make the test notice it again. A plant that "
                        "cannot redden proves nothing." % (key, str(detail)[:200]))
+    say_driven("held", len(pairs), reds)
     return out
 
 

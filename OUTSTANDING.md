@@ -116,9 +116,33 @@ both would have blocked every measurement forever:
       gets the bundle DISPATCHER in its place, not guard_promise alone (the dispatcher's
       interrupt false-positive was fixed at ddeda0e).
 
+      LANDED AND CAUGHT UP, 2026-09-26, with one step left before the retirement. DT Engine's
+      change is bundle 6cc17eb and this repository now carries it. Setting QUEUE =
+      ("OUTSTANDING.md",) here, as that change asks, turned the bundle's own
+      `test_a_blocker_in_ANOTHER_paragraph_does_not_excuse_an_admission` red: every test in its
+      class that does not call keep_queue ran under the installed QUEUE, so this project's queue
+      turned "blocked in its own paragraph" into "unqueued". The guard was right and the test was
+      wrong, and the fix is the bundle's: e1cc1d9 in the bundle's working copy pins QUEUE = () in
+      that class's setUp. Until it is pushed and caught up here, QUEUE stays at the bundle's default
+      and guard_unfinished - still wired - keeps the queue rule. UNBLOCKS WHEN e1cc1d9 reaches
+      the bundle's repository (it needs the owner's approval for that push): catch it up, set
+      QUEUE, then the retirement above. The retirement edits the session's own settings and was
+      refused once as self-modification, so it goes to the owner as its own step.
+
       KEEP `OUTSTANDING.md` itself either way: the bundle has no queue FILE, and the file is a
       durable record that `work_order.py` gates long measurements on, which is a chokepoint
       rather than an admission. What the bundle refuses is using it as a way to END A TURN.
+
+- [ ] 2026-09-26 FIFTEEN OF THE BUNDLE'S TESTS ARE RED IN THIS REPOSITORY, and were before
+      today's catch-up - measured in a scratch worktree of 9485613 and again after it, the same
+      15. Thirteen are the bundle's tests of require_build (`ADigestOfNOTHINGIsNotADigest`,
+      `ARecordedMeasurementCarriesTheTreeItMeasured`, one in `ACommitIsAskedWhatSections2And14Ask`),
+      which this project declares NOT INSTALLED because it keeps its own original - yet the
+      bundle installs the tests, and they run against this project's module and raise
+      AttributeError. The other two: `ACapturedChildOpensNoWINDOW` and
+      `EveryToolHereIsAskedAtTheActItGuards` (35 tools listed). FIX, the thirteen: in the
+      bundle - a test of a file a project declares not installed must not run against the
+      project's own file. Then this entry's other two, here.
 
 - [ ] 2026-09-26 THE VERIFICATION BOOTSTRAP IS MOVING TO GITHUB, and a cloud clone of this
       repository cannot commit until it has. The owner's decision: the Desktop folder becomes a

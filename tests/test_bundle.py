@@ -2541,5 +2541,94 @@ class NothingTrackedNamesTheMachineItWasWrittenOn(unittest.TestCase):
                                    "nobody and must refuse nothing: %r" % pats)
 
 
+class EverythingGuardUnfinishedRefusedIsRefusedHere(unittest.TestCase):
+    """CTRMap wrote a Stop hook of its own for this class, `guard_unfinished.py`, before it had
+    this one, and its owner would delete it only if nothing it did was lost. Replayed over 1,312
+    turn-ending messages in every transcript on one machine, it refused 55 and this guard let 17
+    of them through, three ways, some messages needing two: two phrasings it had and this did not
+    (10), a blocker claimed in one paragraph excusing an admission in another (7), and an
+    apostrophe earlier in the sentence read as an open quotation (2). It also kept a QUEUE - a
+    turn could end on owed work only by naming `OUTSTANDING.md`, the file that project's long
+    runs refuse over while anything in it is open. After the change this misses 3 of the 55,
+    each honest (one quoted, two blocked in their own paragraph), and passes nothing it refused
+    before."""
+
+    def setUp(self):
+        import guard_promise
+        self.guard = guard_promise
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def refused(self, text):
+        return [kind for kind, _sentence, _marker in self.guard.outstanding(text)]
+
+    def keep_queue(self, body):
+        """A project that keeps its queue in OUTSTANDING.md, holding `body` (None: no file)."""
+        root = os.path.join(self.tmp, "tree")
+        os.makedirs(root, exist_ok=True)
+        if body is not None:
+            with io.open(os.path.join(root, "OUTSTANDING.md"), "w", encoding="utf-8") as handle:
+                handle.write(body)
+        for name, value in (("QUEUE", ("OUTSTANDING.md",)), ("_repo_root", lambda: root)):
+            self.addCleanup(setattr, self.guard, name, getattr(self.guard, name))
+            setattr(self.guard, name, value)
+
+    def test_the_words_guard_unfinished_had_are_refused(self):
+        for text in ("I still owe you the measurement of option (a) against (b).",
+                     "Still ahead: the full replant across 201 plants, then the sweep.",
+                     "The census fixes are still to come."):
+            with self.subTest(text=text):
+                self.assertIn("admission", self.refused(text), "owed work passed: " + text)
+
+    def test_an_apostrophe_or_a_CLOSED_quotation_does_not_exempt_an_admission(self):
+        """The cheapest way past the quotation carve-out was ordinary English - a contraction
+        earlier in the sentence. The second half is the carve-out still doing its job."""
+        tick = chr(96)
+        for text in ("You're right, and I haven't solved it.",
+                     "That's the one command still outstanding.",
+                     "The " + tick + "free()" + tick + " check exists and I have not wired it."):
+            with self.subTest(text=text):
+                self.assertIn("admission", self.refused(text),
+                              "an apostrophe exempted an admission: " + text)
+        for text in ("The marker " + tick + "still owed" + tick + " is in the vocabulary.",
+                     'Its wording is "I have not" and that is deliberate.',
+                     "It prints 'not done' in its refusal."):
+            with self.subTest(text=text):
+                self.assertEqual(self.guard.outstanding(text), [],
+                                 "a marker inside a quotation was refused: " + text)
+
+    def test_a_blocker_in_ANOTHER_paragraph_does_not_excuse_an_admission(self):
+        elsewhere = "The re-sweep is not done." + LF + LF + "Publishing needs your decision."
+        self.assertIn("admission", self.refused(elsewhere),
+                      "an admission was excused by a blocker in another paragraph")
+        self.assertEqual(self.guard.outstanding("The re-sweep is not done: it needs your "
+                                                "decision."), [],
+                         "an admission blocked in its own paragraph was refused")
+
+    def test_where_a_queue_is_kept_a_blocked_admission_must_be_in_it(self):
+        named = "The re-sweep is not done: it needs your decision, and it is in OUTSTANDING.md."
+        silent = "The re-sweep is not done: it needs your decision."
+        self.keep_queue("- [ ] 2026-09-27 the re-sweep" + LF)
+        self.assertEqual(self.guard.outstanding(named), [], "a queued, blocked admission refused")
+        self.assertIn("unqueued", self.refused(silent),
+                      "a blocked admission ended the turn off the queue")
+        self.assertIn("blocked, and not queued",
+                      self.guard.refusal(self.guard.outstanding(silent)))
+
+    def test_a_queue_holding_NOTHING_open_queues_nothing(self):
+        """The cheapest way past `guard_unfinished`, which asked only for the file's name."""
+        self.keep_queue("- [x] 2026-09-20 closed long ago" + LF)
+        text = "The re-sweep is not done: it needs your decision, and it is in OUTSTANDING.md."
+        self.assertIn("unqueued", self.refused(text),
+                      "naming a queue with nothing open in it was taken as queued")
+
+    def test_a_queue_that_cannot_be_READ_is_UNKNOWN_and_not_queued(self):
+        self.keep_queue(None)
+        text = "The re-sweep is not done: it needs your decision, and it is in OUTSTANDING.md."
+        found = self.guard.outstanding(text)
+        self.assertEqual([kind for kind, _s, _m in found], ["unqueued"])
+        self.assertIn("UNKNOWN", found[0][2], "an unreadable queue was not reported UNKNOWN")
+
+
 if __name__ == "__main__":
     unittest.main()

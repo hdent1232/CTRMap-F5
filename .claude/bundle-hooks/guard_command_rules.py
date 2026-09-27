@@ -311,17 +311,43 @@ def past_the_gate(sub, rest):
             "merge%s" % (sub, way))
 
 
+def names_the_gate(root, value):
+    """Does a `core.hooksPath` value name `HOOKS_DIR` in this project? THE ONE COMPARISON.
+
+    `hooks_path_problem` asks it of what git holds; `installs_the_gate` asks it of what a
+    `git config` is about to write. Two spellings of this question locked a fresh clone out of
+    its first commit (measured by the CTRMap session, 2026-09-26): the commit was refused because
+    the hooks were not installed, and `git config core.hooksPath .githooks` - the remedy that
+    refusal printed - was refused as turning the gate off.
+    """
+    held = (value or "").strip().replace(chr(92), "/").rstrip("/")
+    want = HOOKS_DIR.replace(chr(92), "/").rstrip("/")
+    return bool(held) and held in (want, "./" + want,
+                                   os.path.join(root, want).replace(chr(92), "/"))
+
+
 def hooks_path_problem(root):
     """Why a commit here would not be gated by `HOOKS_DIR`, or ''."""
     if not os.path.isdir(os.path.join(root, HOOKS_DIR)):
         return ""
     held = _git_text(root, ["config", "--get", "core.hooksPath"])
+    if names_the_gate(root, held):
+        return ""
     held = (held or "").strip().replace(chr(92), "/").rstrip("/")
     want = HOOKS_DIR.replace(chr(92), "/").rstrip("/")
-    if held in (want, "./" + want, os.path.join(root, want).replace(chr(92), "/")):
-        return ""
     return ("`core.hooksPath` is %r, not %r, so git would run none of the project's hooks. "
             "`git config core.hooksPath %s` installs them." % (held or "(unset)", want, want))
+
+
+def installs_the_gate(root, rest):
+    """Is this `git config` exactly `core.hooksPath <the gated folder>`, written to this
+    repository's own config? That is the remedy `hooks_path_problem` names, so it is the one
+    change to the key allowed. Anything else touching it - another value, an unset, `--add`,
+    another scope, a second key - turns the gate off or may, and stays refused."""
+    words = [w for w in rest if w != "--local"]
+    if len(words) != 2 or words[0].lower() != "core.hookspath":
+        return False
+    return names_the_gate(root, words[1])
 
 
 # ----------------------------------------------------------------------------- where it runs
@@ -562,9 +588,12 @@ def judge_stage(call, stage, command, where, placed, depth):
         return
     if sub == "config" and any("hookspath" in w.lower() for w in rest) and not any(
             w in ("--get", "--get-all", "--list", "-l") for w in rest):
-        if judged(call.root, place) is not None:
+        target = judged(call.root, place)
+        if target is not None and not installs_the_gate(target, rest):
             call.out.append(("gate", ["`git config` changing `core.hooksPath` turns the commit "
-                                      "gate off for every commit after it"]))
+                                      "gate off for every commit after it. Only `git config "
+                                      "core.hooksPath %s`, which installs the gate, is allowed"
+                                      % HOOKS_DIR]))
         return
     ungated = past_the_gate(sub, rest)
     if ungated:

@@ -872,6 +872,54 @@
    "site": "elsewhere",
    "why": "a different hook and a different mistake: the unit dropped, so `sleep 2m` reads as two seconds and sails past the bound. A guard that passes the very case it exists for, which is the quote-spelling family this bundle's section on source greps describes."
   },
+  "test_bundle.py::EverythingGuardUnfinishedRefusedIsRefusedHere::test_a_blocker_in_ANOTHER_paragraph_does_not_excuse_an_admission": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "an admission was excused by a blocker in another paragraph",
+   "new": "        if not blocker(text)[0]:\n",
+   "old": "        if not blocker(where)[0]:\n",
+   "site": "elsewhere",
+   "why": "THE BLOCKER READ MESSAGE-WIDE AGAIN: `the push needs your approval` in one paragraph excuses `the re-sweep is not done` in another - 7 of the 55 guard_unfinished refused went through that way."
+  },
+  "test_bundle.py::EverythingGuardUnfinishedRefusedIsRefusedHere::test_a_queue_holding_NOTHING_open_queues_nothing": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "naming a queue with nothing open in it was taken as queued",
+   "new": "        if True:\n",
+   "old": "        if any(line.strip().startswith(\"- [ ]\") for line in body.splitlines()):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST THE QUEUE, and the whole of guard_unfinished's check: name OUTSTANDING.md and the turn ends, whatever the file holds."
+  },
+  "test_bundle.py::EverythingGuardUnfinishedRefusedIsRefusedHere::test_a_queue_that_cannot_be_READ_is_UNKNOWN_and_not_queued": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "an unreadable queue was not reported UNKNOWN",
+   "new": "            continue\n",
+   "old": "            return \"%s cannot be read, so whether the work is queued is UNKNOWN\" % rel\n",
+   "site": "elsewhere",
+   "why": "COULD NOT LOOK READ AS NOTHING THERE: a queue file that cannot be opened is skipped, and the refusal says it holds no open item - a claim about a file nobody read."
+  },
+  "test_bundle.py::EverythingGuardUnfinishedRefusedIsRefusedHere::test_an_apostrophe_or_a_CLOSED_quotation_does_not_exempt_an_admission": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "an apostrophe exempted an admission",
+   "new": "def quoted(before):\n    if re.search(\"[\" + chr(96) + chr(34) + chr(39) + \"][^\" + chr(96) + chr(34) + chr(39) + \"]{0,80}$\", before):\n        return True\n    if before.count(chr(96)) % 2 or before.count(chr(34)) % 2:\n",
+   "old": "def quoted(before):\n    if before.count(chr(96)) % 2 or before.count(chr(34)) % 2:\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST THE QUOTATION CARVE-OUT, and it was the carve-out as written: any quote character within 80 characters before the marker, so `You're right, and I haven't solved it` is data because of the apostrophe in You're."
+  },
+  "test_bundle.py::EverythingGuardUnfinishedRefusedIsRefusedHere::test_the_words_guard_unfinished_had_are_refused": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "owed work passed",
+   "new": "",
+   "old": "    r\"\\bI (?:still )?owe you\\b\", r\"\\bstill (?:to come|ahead)\\b\",\n",
+   "site": "instance",
+   "why": "THE WORDS AS THEY WERE: `I still owe you the (a)/(b) measurement` - the deferral CTRMap's guard_unfinished was written for - ends a turn here, because the vocabulary it had was never in this one."
+  },
+  "test_bundle.py::EverythingGuardUnfinishedRefusedIsRefusedHere::test_where_a_queue_is_kept_a_blocked_admission_must_be_in_it": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "a blocked admission ended the turn off the queue",
+   "new": "        missing = \"\"\n",
+   "old": "        missing = unqueued(text)\n",
+   "site": "instance",
+   "why": "THE QUEUE NEVER ASKED: in a project that keeps OUTSTANDING.md, blocked owed work ends the turn without being written where its long runs would refuse over it - what guard_unfinished existed to stop."
+  },
   "test_bundle.py::NothingTrackedNamesTheMachineItWasWrittenOn::test_a_folder_chain_below_home_is_refused_without_the_home::elsewhere": {
    "file": "tools/owner_paths.py",
    "must_say": "written without the home",
@@ -1234,6 +1282,22 @@
    "site": "elsewhere",
    "why": "THE MESSAGE READ AND NEVER ASKED. Extracted and then put to no rule, a message the git hook will refuse after every ratchet has run is let past the one point where refusing it costs nothing."
   },
+  "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_installing_the_gate_the_refusal_names_is_allowed": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "the remedy the refusal names was refused",
+   "new": "        if target is not None:\n",
+   "old": "        if target is not None and not installs_the_gate(target, rest):\n",
+   "site": "instance",
+   "why": "THE DEADLOCK THE CTRMAP SESSION MEASURED: a fresh clone's first commit is refused because core.hooksPath is unset, and `git config core.hooksPath .githooks` - the remedy that refusal prints - is refused as turning the gate off. No commit can ever be made from a Claude session."
+  },
+  "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_only_the_gate_itself_may_be_installed": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a change that is not the gate was let through as installing it",
+   "new": "    words = [w for w in rest if not w.startswith(\"--\")]\n",
+   "old": "    words = [w for w in rest if w != \"--local\"]\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST THE EXCEPTION: every option ignored, so `--global`, `--add` or `--replace-all` with the right value passes as installing the gate - and `--global` repoints the hooks of every repository on the machine."
+  },
   "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_skipping_the_gate_is_refused_however_it_is_spelled": {
    "file": ".claude/bundle-hooks/guard_command_rules.py",
    "must_say": "a commit that skips every git hook was let through",
@@ -1241,6 +1305,14 @@
    "old": "        if len(word) >= len(SHORTEST_NO_VERIFY) and \"--no-verify\".startswith(word):",
    "site": "instance",
    "why": "--NO-VERIFY LET THROUGH. It runs no git hook at all, so every rule the commit gate asks is off for that commit while nobody bypassed anything a guard could see - a flag was passed."
+  },
+  "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_the_command_and_the_commit_ask_the_same_question": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "the command and the commit disagree",
+   "new": "    return words[1] in (HOOKS_DIR, \"./\" + HOOKS_DIR)\n",
+   "old": "    return names_the_gate(root, words[1])\n",
+   "site": "elsewhere",
+   "why": "A PRIVATE COPY OF THE COMPARISON: the command rule spells `names the gate` its own way, so `.githooks/` and the absolute path gate every commit yet cannot be written - two readers of one question drifting, which is how the deadlock was made."
   },
   "test_bundle_action.py::ACommitIsJudgedInTheRepositoryItLandsIn::test_a_commit_in_ANOTHER_repository_is_not_this_projects_to_judge": {
    "file": ".claude/bundle-hooks/guard_command_rules.py",
@@ -1701,10 +1773,10 @@
   "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_a_fix_proven_in_the_PROJECTS_OWN_ledger_has_its_plant::evasion": {
    "file": "tools/commit_gate.py",
    "must_say": "PROJECT LEDGER",
-   "new": "    for key, driver in [(k, drive) for k in keys]:\n",
-   "old": "    for key, driver in [(k, drive) for k in keys] + [(k, prove) for k in added]:\n",
+   "new": "    pairs = [(k, drive) for k in keys]\n",
+   "old": "    pairs = [(k, drive) for k in keys] + [(k, prove) for k in added]\n",
    "site": "evasion",
-   "why": "THE CHEAPEST WAY PAST: count a new plant in the project's ledger and never drive it, so a plant that stays green is accepted as proof."
+   "why": "THE CHEAPEST WAY PAST: count a new plant in the project's ledger and never drive it, so a plant that stays green is accepted as proof. Re-anchored 2026-09-27 onto the pairs list the drive loop now reads, when the loop learned to count what it drove."
   },
   "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_an_ADMISSION_needs_a_Deferred_gap_with_a_reason": {
    "file": "tools/commit_gate.py",
@@ -1877,10 +1949,10 @@
   "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_a_projects_OWN_held_plant_that_stays_green_refuses_the_commit": {
    "file": "tools/commit_gate.py",
    "must_say": "a project's own held plant that no longer reddened was let through",
-   "new": "    for key, driver in [(k, drive) for k in keys]:\n",
-   "old": "    for key, driver in [(k, drive) for k in keys] + [(k, prove) for k in own_keys]:\n",
+   "new": "    pairs = [(k, drive) for k in keys]\n",
+   "old": "    pairs = [(k, drive) for k in keys] + [(k, prove) for k in own_keys]\n",
    "site": "instance",
-   "why": "THE PROJECT'S OWN LEDGER LEFT OUT. CTRMap proves its Java tests with 221 plants of its own, and a re-drive that reads only the bundle's ledger lets every one of them go vacuous under an edit to its file while the gate reports the commit clean."
+   "why": "THE PROJECT'S OWN LEDGER LEFT OUT. CTRMap proves its Java tests with 221 plants of its own, and a re-drive that reads only the bundle's ledger lets every one of them go vacuous under an edit to its file while the gate reports the commit clean. Re-anchored 2026-09-27 onto the pairs list the re-drive loop now reads."
   },
   "test_bundle_gates.py::AHeldPlantIsDrivenAgainWhenItsFileChanges::test_a_projects_OWN_plant_is_selected_by_its_file_or_its_suite": {
    "file": "tools/commit_gate.py",
@@ -1905,6 +1977,38 @@
    "old": "                              timeout=GIT_TIMEOUT)",
    "site": "elsewhere",
    "why": "A real hook's git call unbounded again - asked on every tool call, so one git that holds its index lock would hang every command in the session."
+  },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_all_is_said_only_when_every_one_reddened": {
+   "file": "tools/commit_gate.py",
+   "must_say": "a drive where one plant stayed green was counted as all red",
+   "new": "    said = \"all %d red\" % driven\n",
+   "old": "    said = \"all %d red\" % driven if reds == driven else \"%d of %d red\" % (reds, driven)\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY TO SAY SOMETHING: count the plants asked and call them all red, which prints reassurance over a drive where a plant stayed green - a count that is not a measurement."
+  },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_held_plants_driven_again_are_counted": {
+   "file": "tools/commit_gate.py",
+   "must_say": "held plants were driven again and the gate said nothing",
+   "new": "    reds = reds\n",
+   "old": "    say_driven(\"held\", len(pairs), reds)\n",
+   "site": "elsewhere",
+   "why": "THE SAME SILENCE ONE STEP OVER: every held plant in the files a commit touches is driven again on every commit, tens of them, and a pass printed nothing - so whether the re-drive ran at all could not be told from the output."
+  },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_new_plants_driven_red_are_counted": {
+   "file": "tools/commit_gate.py",
+   "must_say": "new plants were driven red and the gate said nothing",
+   "new": "    reds = reds\n",
+   "old": "    say_driven(\"new\", len(pairs), reds)\n",
+   "site": "instance",
+   "why": "THE SILENT SUCCESS THE CTRMAP SESSION REPORTED: a commit adding plants drove every one red and printed nothing, so the only count on screen was the ratchet step's 0 plant(s) driven, and a proven commit read as an unproven one."
+  },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_the_ratchet_step_says_it_drives_none_rather_than_counting_zero": {
+   "file": "tools/prove_plants.py",
+   "must_say": "--owed counted zero plants driven beside a gate that drove them",
+   "new": "          if False else \"%d plant(s) driven\" % driven)",
+   "old": "          if owed_only else \"%d plant(s) driven\" % driven)",
+   "site": "elsewhere",
+   "why": "THE MISLEADING ZERO ITSELF: the ratchet step, which drives no plant by design, printed 0 plant(s) driven on every commit, and beside a gate that said nothing it was the only count anyone saw."
   },
   "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_a_module_a_dispatched_guard_imports_is_asked_where_the_guard_is": {
    "file": "tools/tiers.py",

@@ -236,6 +236,51 @@ class AHeldPlantIsDrivenAgainWhenItsFileChanges(unittest.TestCase):
                         % refused)
 
 
+class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
+    """A SUCCESS THAT PRINTS NOTHING READS LIKE A STEP THAT NEVER RAN. On the project this came
+    from, 2026-09-26, a commit adding plants showed only `0 plant(s) driven` - from `--owed`, which
+    drives none by design - while this gate had driven every new plant red and said nothing."""
+
+    FIX = "fix(reader): the empty file" + LF + LF + "Co-Authored-By: x" + LF
+
+    def setUp(self):
+        import commit_gate
+        self.gate = commit_gate
+
+    def said(self, call):
+        import contextlib
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            call()
+        return out.getvalue()
+
+    def test_new_plants_driven_red_are_counted(self):
+        said = self.said(lambda: self.gate.fix_has_a_plant(
+            self.FIX, keys=["a", "b"], drive=lambda k: (True, "red"), own=(), added=[]))
+        self.assertIn("2 new plant(s) driven, all 2 red", said,
+                      "new plants were driven red and the gate said nothing: %r" % said)
+
+    def test_held_plants_driven_again_are_counted(self):
+        said = self.said(lambda: self.gate.held_plants_redden(
+            ["src/a.py"], keys=["k1", "k2", "k3"], drive=lambda k: (True, "red")))
+        self.assertIn("3 held plant(s) driven, all 3 red", said,
+                      "held plants were driven again and the gate said nothing: %r" % said)
+
+    def test_all_is_said_only_when_every_one_reddened(self):
+        """The cheapest way to always print something reassuring is to count the plants asked."""
+        said = self.said(lambda: self.gate.held_plants_redden(
+            ["src/a.py"], keys=["k1", "k2"], drive=lambda k: (k == "k1", "red" if k == "k1"
+                                                               else "passed")))
+        self.assertIn("2 held plant(s) driven, 1 of 2 red", said,
+                      "a drive where one plant stayed green was counted as all red: %r" % said)
+
+    def test_the_ratchet_step_says_it_drives_none_rather_than_counting_zero(self):
+        import prove_plants
+        said = self.said(lambda: prove_plants.main(["prove_plants.py", "--owed"]))
+        self.assertNotIn("0 plant(s) driven", said,
+                         "--owed counted zero plants driven beside a gate that drove them")
+        self.assertIn("--owed drives no plant", said)
+
+
 class EveryGateSubprocessIsBOUNDED(unittest.TestCase):
     """README section 16: thirteen and a half hours on 0.14 seconds of CPU."""
 

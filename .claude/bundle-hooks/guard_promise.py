@@ -141,6 +141,12 @@ ADMISSION = (
     r"\bnot yet (?:done|started|written|run|wired|measured|built|applied)\b",
     r"\bremains? (?:open|undone|outstanding)\b", r"\bleft undone\b",
     r"\bnever (?:started|applied|written|wired|run)\b", r"\bstill to (?:do|be done)\b",
+    # ABSORBED FROM CTRMap's `guard_unfinished.py` (2026-09-27): a Stop hook of its own for this
+    # class, its two phrasings chosen there by measurement over 3,981 of one session's messages.
+    # Replayed over 1,312 turn-ending messages in every transcript on this machine, it refused
+    # 55 and this guard let 17 of them through; these words, which it had and this did not,
+    # are in 10 of the 17. It was deleted only once this guard refused everything it did.
+    r"\bI (?:still )?owe you\b", r"\bstill (?:to come|ahead)\b",
     # `\boutstanding\b` AND `\bunfinished\b` WERE HERE AND ARE NOT CLAIMS.
     #
     # They are single adjectives with no claim structure, so they matched any use of the word -
@@ -164,7 +170,29 @@ ADMISSION = (
 #:
 #: Backticks and quotation marks around the marker are the shape. A sentence that means it says
 #: it plainly.
-QUOTED_MARKER = re.compile(r"[`" + chr(34) + chr(39) + r"][^`" + chr(34) + chr(39) + r"]{0,80}$")
+#:
+#: INSIDE AN OPEN QUOTATION, NOT NEAR A QUOTE CHARACTER. The first version asked whether any of
+#: the three quote characters appeared in the 80 characters before the marker with none after
+#: it - so the apostrophe in `That's` or `You're`, or the CLOSING backtick of a code span earlier
+#: in the sentence, exempted the admission after it. Measured over 1,312 turn-ending messages,
+#: fixing this alone refuses 18 that it had passed (*you're right and I haven't solved it*), two
+#: of them among the 55 CTRMap's `guard_unfinished` refused. English contracts, so the cheapest
+#: evasion of this carve-out happened without anybody trying.
+#:
+#: A quotation is OPEN when the text before the marker leaves one unclosed: an odd number of
+#: backticks or straight double quotes, a curly quote opened and not closed, or a single quote
+#: opened (after a space or bracket, before a character) and not closed. An apostrophe between
+#: two letters opens nothing.
+def quoted(before):
+    if before.count(chr(96)) % 2 or before.count(chr(34)) % 2:
+        return True
+    if before.rfind(chr(0x201C)) > before.rfind(chr(0x201D)):
+        return True
+    if before.rfind(chr(0x2018)) > before.rfind(chr(0x2019)):
+        return True
+    opened = [m.end() - 1 for m in re.finditer(r"(?:^|[\s(\[])'(?=\S|$)", before)]
+    closed = [m.start() for m in re.finditer(r"(?<=\S)'(?=$|[\s.,;:!?)\]])", before)]
+    return bool(opened) and (not closed or opened[-1] > closed[-1])
 
 #: THE ONLY HONEST REASON TO STOP WITH WORK OUTSTANDING, and most of them are CHECKABLE.
 #:
@@ -262,8 +290,21 @@ CHECKABLE = (
      lambda: _lock_held(".mutation-in-flight"), "no mutation lock is held"),
 )
 
-#: Adapted per project: see ADAPT.md. The lock files a blocker can be checked against.
-ADAPT = ("CHECKABLE",)
+#: WHERE THIS PROJECT KEEPS ITS QUEUE of work a turn could not do, as paths under the root.
+#: Empty means it keeps none and nothing is asked. ABSORBED FROM CTRMap's `guard_unfinished.py`,
+#: which let a turn end on owed work only once the message named `OUTSTANDING.md` - the file
+#: that project's `work_order.py` refuses its long measurements over while anything in it is
+#: open, which is what turns a sentence into a blocker. Here a BLOCKED admission must name the
+#: queue, and the queue must be readable and hold open work (`- [ ]`): an unreadable queue is
+#: UNKNOWN, which is not queued, and a queue with nothing open queues nothing.
+#:
+#: ITS LIMIT, SAID: it asks that the queue is named and holds open work, not that THIS work is
+#: the open item. `guard_unfinished` asked only for the name.
+QUEUE = ()
+
+#: Adapted per project: see ADAPT.md. The lock files a blocker can be checked against, and
+#: where the project keeps its queue.
+ADAPT = ("CHECKABLE", "QUEUE")
 
 
 def sentences(text):
@@ -306,6 +347,32 @@ def blocker(text):
     return True, None
 
 
+def unqueued(text):
+    """Why a BLOCKED admission is not in the project's queue, or "" when it is - or when the
+    project keeps no queue at all (`QUEUE` empty), where nothing is asked.
+
+    Cannot look is not queued: a queue that cannot be read, or a root that cannot be found,
+    refuses as UNKNOWN."""
+    if not QUEUE:
+        return ""
+    named = [rel for rel in QUEUE if os.path.basename(rel).lower() in (text or "").lower()]
+    if not named:
+        return ("this project keeps its queue in %s and the message names none of it"
+                % " / ".join(QUEUE))
+    root = _repo_root()
+    if not root:
+        return "the repository root cannot be found, so whether the work is queued is UNKNOWN"
+    for rel in named:
+        try:
+            with io.open(os.path.join(root, rel), encoding="utf-8", errors="replace") as handle:
+                body = handle.read()
+        except OSError:
+            return "%s cannot be read, so whether the work is queued is UNKNOWN" % rel
+        if any(line.strip().startswith("- [ ]") for line in body.splitlines()):
+            return ""
+    return "%s holds no open item (`- [ ]`), so naming it queues nothing" % named[0]
+
+
 def outstanding(text):
     """Every reason this turn may not end, as (kind, sentence, marker).
 
@@ -315,12 +382,15 @@ def outstanding(text):
     and stop. *You should not be leaving anything knowingly undone in the first place.*
 
     Both are refused unless the message names a blocker, and a blocker that names a lock is
-    verified against the tree rather than believed.
+    verified against the tree rather than believed. An ADMISSION is excused only by a blocker in
+    its own paragraph, and in a project that keeps a queue (`QUEUE`) only once the queue is
+    named and holds open work.
     """
     if not text:
         return []
     found = []
-    for sentence in sentences(text):
+    pairs = [(p, s) for p in re.split(r"\n{2,}", text) for s in sentences(p)]
+    for paragraph, sentence in pairs:
         exempt = any(re.search(p, sentence, re.I) for p in NOT_ABOUT_WORK)
         if not exempt:
             # EVERY hit, not the first. A sentence may carry a negated marker and an unnegated
@@ -331,7 +401,8 @@ def outstanding(text):
                     before = sentence[:hit.start()]
                     if NEGATED.search(before) or COUNTERFACTUAL.search(before):
                         continue
-                    found.append(("promise", sentence.strip(), hit.group(0).strip()))
+                    found.append(("promise", sentence.strip(), hit.group(0).strip(),
+                                  paragraph))
                     break
                 else:
                     continue
@@ -342,23 +413,41 @@ def outstanding(text):
                 before = sentence[:hit.start()]
                 if PAST_ASPECT.search(before):
                     continue              # history, not a claim about now - see PAST_ASPECT
-                if QUOTED_MARKER.search(before):
-                    continue              # quoted, so it is data - see QUOTED_MARKER
-                found.append(("admission", sentence.strip(), hit.group(0).strip()))
+                if quoted(before):
+                    continue              # quoted, so it is data - see quoted()
+                found.append(("admission", sentence.strip(), hit.group(0).strip(),
+                              paragraph))
                 break
     tail = text.strip()[-OFFER_TAIL:]
     offered = OFFER.search(tail)
     if offered and not PERMISSION.search(tail):
-        found.append(("offer", offered.group(0).strip(), offered.group(0).strip()[:60]))
+        found.append(("offer", offered.group(0).strip(), offered.group(0).strip()[:60],
+                      text))
     if not found:
         return []
 
     claimed, complaint = blocker(text)
-    if claimed and complaint is None:
-        return []
     if claimed and complaint:
-        return [("false blocker", complaint, complaint)] + found
-    return found
+        return [("false blocker", complaint, complaint)] + [f[:3] for f in found]
+    out = []
+    for kind, sentence, marker, where in found:
+        if kind != "admission":
+            if not claimed:
+                out.append((kind, sentence, marker))
+            continue
+        # AN ADMISSION NEEDS ITS BLOCKER BESIDE IT. A blocker claimed anywhere used to exempt
+        # every admission in the message, so *the push needs your approval* in one paragraph
+        # carried *the re-sweep is not done* in another. Measured over 1,312 turn-ending
+        # messages: 7 of the 55 CTRMap's `guard_unfinished` refused went through that way, and
+        # an admission is a claim about ONE piece of work, blocked or not by what is said
+        # about it. Promises and offers keep the message-wide reading.
+        if not blocker(where)[0]:
+            out.append((kind, sentence, marker))
+            continue
+        missing = unqueued(text)
+        if missing:
+            out.append(("unqueued", sentence, missing))
+    return out
 
 
 #: Kept so anything reading the old name still gets an answer about the same subject.
@@ -440,6 +529,10 @@ def refusal(found):
         if kind == "false blocker":
             out.append("    the message claims it is blocked, and %s" % sentence)
             continue
+        if kind == "unqueued":
+            out.append("    %s" % sentence[:220])
+            out.append("      ^ blocked, and not queued: %s" % marker)
+            continue
         out.append("    %s" % sentence[:220])
         out.append("      ^ %s: %r" % (kind, marker))
     out += [
@@ -459,8 +552,10 @@ def refusal(found):
         "  THE EXITS:",
         "",
         "    1. DO IT NOW, in this turn, and describe it in the past tense.",
-        "    2. Be genuinely BLOCKED and say by what. A blocker naming a lock or a run is",
-        "       checked against the tree - claiming one that is not held does not work.",
+        "    2. Be genuinely BLOCKED and say by what, in the paragraph that says what is",
+        "       undone. A blocker naming a lock or a run is checked against the tree -",
+        "       claiming one that is not held does not work. Where this project keeps a",
+        "       queue (QUEUE), name it, with the work open in it.",
         "    3. Need a decision that is not yours to make, and ask for it.",
         "",
         "  Ending a turn with nothing outstanding and no announcement is fine. Silence is not",

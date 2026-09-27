@@ -299,6 +299,48 @@ class ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate(ScratchProject, unittest
         self.assertFalse(self.refused("git config --get core.hooksPath"),
                          "reading where the hooks are was refused")
 
+    def test_installing_the_gate_the_refusal_names_is_allowed(self):
+        """A fresh clone had no way to its first commit: the commit was refused because the hooks
+        were not installed, and the command installing them - the remedy that refusal printed -
+        was refused as turning the gate off. Measured by the CTRMap session, 2026-09-26."""
+        absolute = os.path.join(self.root, ".githooks")
+        for value in (".githooks", "./.githooks", ".githooks/", absolute,
+                      absolute.replace(os.sep, "/")):
+            for command in ('git config core.hooksPath "%s"' % value,
+                            'git config --local core.hooksPath "%s"' % value):
+                with self.subTest(command):
+                    self.assertEqual(self.refused(command), [],
+                                     "the remedy the refusal names was refused")
+
+    def test_only_the_gate_itself_may_be_installed(self):
+        """The cheapest way past the exception is to widen it: any value that mentions the folder,
+        or the same value written somewhere other than this repository's own config."""
+        for command in ("git config core.hooksPath .githooks-off",
+                        "git config core.hooksPath ../.githooks",
+                        "git config core.hooksPath hooks",
+                        'git config core.hooksPath ""',
+                        "git config --global core.hooksPath .githooks",
+                        "git config --system core.hooksPath .githooks",
+                        "git config --add core.hooksPath .githooks",
+                        "git config --unset core.hooksPath .githooks",
+                        "git config --replace-all core.hooksPath .githooks"):
+            with self.subTest(command):
+                self.assertTrue(self.refused(command),
+                                "a change that is not the gate was let through as installing it")
+
+    def test_the_command_and_the_commit_ask_the_same_question(self):
+        """Two spellings of one question are how the deadlock was made. Every value is asked both
+        ways: a `git config` of it is allowed exactly when git holding it gates the commit."""
+        absolute = os.path.join(self.root, ".githooks")
+        for value in (".githooks", "./.githooks", ".githooks/", absolute,
+                      absolute.replace(os.sep, "/"), ".githooks-off", "hooks", "../.githooks"):
+            with self.subTest(value):
+                self.git("config", "core.hooksPath", value)
+                gated = guard_command_rules.hooks_path_problem(self.root) == ""
+                allowed = self.refused('git config core.hooksPath "%s"' % value) == []
+                self.assertEqual(allowed, gated,
+                                 "the command and the commit disagree about %r" % value)
+
     def test_a_commit_while_the_hooks_are_NOT_installed_is_refused(self):
         self.git("config", "--unset", "core.hooksPath")
         self.assertTrue(self.refused('git commit -F "%s"' % self.good),

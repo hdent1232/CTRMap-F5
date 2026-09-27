@@ -981,7 +981,10 @@ def main(argv):
             problems.append("%s did NOT redden - %s" % (key, detail))
 
     print()
-    print("%d plant(s) driven" % driven)
+    # `--owed` DRIVES NO PLANT BY DESIGN, and saying "0 plant(s) driven" beside a commit gate that
+    # had just driven every new plant red read as nothing having been proven (2026-09-26).
+    print("ratchets only: --owed drives no plant; the commit gate drives new and held plants"
+          if owed_only else "%d plant(s) driven" % driven)
     lines, trouble = ratchet_problems(ledger)
     print(LF.join(lines))
     problems.extend(trouble)
