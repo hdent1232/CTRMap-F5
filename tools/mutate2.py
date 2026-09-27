@@ -521,7 +521,7 @@ def relocate(path, texts):
 
     The second bucket used to fall out of the loop with nothing recorded, so the
     report's one figure for "what this sweep did not look at" counted only the
-    duplicates. Measured on master at 095877f, over the added lines of all 23
+    duplicates. Measured on master at 270d58f, over the added lines of all 23
     merged branches:
 
                             occurrences     distinct (file, text)
@@ -1411,7 +1411,7 @@ def selftest():
               "a deletion leaves an empty block rather than nothing")
 
         # DEFECT 6: relocate() must ACCOUNT for every fix line it cannot place,
-        # not just the ambiguous ones. On master at 095877f the silent bucket -
+        # not just the ambiguous ones. On master at 270d58f the silent bucket -
         # a line a later merge edited, so its exact text is gone - held 133
         # occurrences against the 74 the report named. The whole point of this
         # harness is that a measurement may not quietly get smaller, and this

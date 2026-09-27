@@ -84,7 +84,7 @@ both would have blocked every measurement forever:
 
       CORRECTED 2026-09-26, because this entry told its reader to do work that was already
       done - the exact defect the citation guard was written for, one file over. The adoption
-      is not outstanding: the Bootstrap session installed the bundle at 4fd2c2f and
+      is not outstanding: the Bootstrap session installed the bundle at a85bc9a and
       `.claude/bundle-hooks/guard_promise.py` is here, 25,248 bytes, wired on `Stop` through
       `.claude/bundle-hooks/dispatch.py` in the repository's `.claude/settings.json`. What is
       outstanding is the consequence: **that settings file now runs TWO Stop guards for one
@@ -106,7 +106,7 @@ both would have blocked every measurement forever:
       correctly wired to anyone reading it.
 
       HELD, 2026-09-26, and the reason changed. The handle pass that blocked it committed at
-      f0ea8ec. But the retirement as written - guard_promise.py wired directly in place of
+      905da46. But the retirement as written - guard_promise.py wired directly in place of
       guard_unfinished.py - would be a DOWNGRADE, measured by DT Engine and not by this session:
       replayed over all 1,312 turn endings on this machine, guard_unfinished refuses 55, and the
       guard_promise of that day lets 17 of those 55 through. The evidence this session had for
@@ -114,7 +114,7 @@ both would have blocked every measurement forever:
       replay. UNBLOCKS WHEN DT Engine's guard_promise change lands in CTRMap - it absorbs
       guard_unfinished with QUEUE = ("OUTSTANDING.md",) - and then the outer <session folder> Stop
       gets the bundle DISPATCHER in its place, not guard_promise alone (the dispatcher's
-      interrupt false-positive was fixed at 85edcae).
+      interrupt false-positive was fixed at ddeda0e).
 
       KEEP `OUTSTANDING.md` itself either way: the bundle has no queue FILE, and the file is a
       durable record that `work_order.py` gates long measurements on, which is a chokepoint
@@ -148,7 +148,7 @@ both would have blocked every measurement forever:
       msg -- <paths>` fails at `.githooks/commit-msg` with "the gate cannot stamp it - git could
       not say the tree or where the repository keeps its state" (gate_stamps.stamp: `git
       write-tree` or `rev-parse --git-common-dir` returned nothing). The same five files, staged
-      and committed without pathspecs, passed at 7c8d100. NOT REPRODUCED in a throwaway repo:
+      and committed without pathspecs, passed at 617484d. NOT REPRODUCED in a throwaway repo:
       a commit-msg hook running those exact two calls succeeds under plain, `--`, and `--only`
       commits alike (the temporary index is absolute and readable). So the cause is something
       in THIS hook chain, not partial commits in general, and it is unexplained. It matters
@@ -159,13 +159,35 @@ both would have blocked every measurement forever:
 - [ ] 2026-09-26 THE HOME-PATH GUARD IS A DETECTOR, AND THREE LEAKS WENT PAST IT. The owner's
       paths and folder names reached this public repository - the census, `_bundle`, both mutation
       scripts, two docs - although SourceSeamTest has refused home directories "in ANY file" since
-      df60887. Measured why, three ways: (1) its text sweep takes a LIST of extensions and `.py` is
+      bf77c68. Measured why, three ways: (1) its text sweep takes a LIST of extensions and `.py` is
       not on it, so tools/mutate.py and mutate2.py were never read; (2) it knows only paths through
       a home directory, so a bare folder chain like `sessions/<the session folder>` passes; (3) it
       runs in the battery, not at commit, so anything committed between battery runs is public
       before it is seen. FIX: refuse at COMMIT, over every staged text file regardless of
       extension, both home-directory paths and the folder names this checkout actually sits in -
       derived at run time from its own location, so it holds on any machine without naming anyone.
+
+- [ ] 2026-09-26 WHAT THE PRIVACY REWRITE COULD NOT REACH. On the owner's instruction, every
+      path and folder name from their computer, and their email as author and committer, was
+      removed from this repository's ENTIRE history and force-pushed (master and all six tags).
+      Verified from a fresh clone of GitHub: every blob ever reachable, every message and every
+      identity - 0 matches, with the pre-rewrite backup as the control that the scan sees them.
+      Nothing else changed: the newest snapshot is byte-identical, all 632 distinct commit records
+      survive, 24 messages had the commit IDs they quote updated, and 43 twin commits from the old
+      pre-sanitise copy of history merged. What is still out of reach, and why:
+        * GITHUB'S OWN COPIES. A commit no ref points at stays viewable by its old ID until GitHub
+          garbage-collects it, and GitHub caches views. Only GitHub Support can purge those.
+        * THE FORK taken on 2026-09-19 holds history up to 2026-09-13. Measured: of everything
+          removed, only the two mutation scripts' old BASE line is in it. Only its owner, or
+          GitHub Support, can change it.
+        * THIS MACHINE. A full backup of the pre-rewrite history is kept outside the repository as
+          the rollback, and eight local branches with their worktrees, plus refs/original, still
+          sit on the old history. None is on GitHub; pushing any of them would publish it again.
+        * TWO COMMIT IDs DELIBERATELY NOT REMAPPED. mutation_baseline.json `measured_at` names the
+          old commit a sweep measured; the rewritten one holds a different snapshot, so repointing
+          it would claim a measurement nobody took - the next sweep re-records it. tools/mutate.py's
+          legacy config names a commit it checks out, not a citation. Both resolve on this machine
+          only. Every commit ID quoted in prose elsewhere was remapped and resolves on GitHub.
 
 - [ ] 2026-09-13 THE WHOLE-APP CENSUS FOUND 280 CONFIRMED DEFECTS, and they are not
       fixed. Full inventory, ranked, with evidence and a proposed refusal for each:

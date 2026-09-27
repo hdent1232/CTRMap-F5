@@ -219,7 +219,7 @@ public class TextureCodecTest {
 
 	/**
 	 * Recorded from the decoder as it stood before the restructure (commit
-	 * 705ba17), over every texture of every area texture pack in a/0/1/4, in
+	 * b19feee), over every texture of every area texture pack in a/0/1/4, in
 	 * archive order, digested per format. Re-record ONLY for a deliberate
 	 * change to how a format decodes, and say so in the commit.
 	 */

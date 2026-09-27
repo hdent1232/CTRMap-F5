@@ -158,7 +158,7 @@ merged fix branches added, breaks it in a way that still **compiles** (deletes a
 `throw`, inverts an `if`, flips a `return true`), rebuilds, and runs the battery
 to see whether anything notices. A mutant nothing notices is a line no suite
 asserts — a hole — and it is recorded in `mutation_baseline.json` with the exact
-text of the line. The last recorded sweep (2026-09-07, on 79afab8, after the
+text of the line. The last recorded sweep (2026-09-07, on 84db86d, after the
 structure merges): **227 of 227 measurable mutants
 killed, 0 survivors, 2 lines excluded by hand with a written reason each.**
 160 fix lines whose text later merges rewrote are outside that measurement
