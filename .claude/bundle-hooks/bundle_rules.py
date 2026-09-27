@@ -67,6 +67,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 
@@ -150,10 +151,11 @@ def rel_of(root, path):
     return os.path.relpath(os.path.abspath(path), root).replace(os.sep, "/")
 
 
-def locked(root):
-    """The repo-relative module a mutation run holds, or ''."""
+def locked(root, name=None):
+    """The repo-relative module a mutation run holds, or ''. `name` is the lock's file name when
+    the caller reads another project's lock, whose `LOCK` ADAPT.md lets it rename."""
     try:
-        with io.open(os.path.join(root, LOCK), encoding="utf-8") as handle:
+        with io.open(os.path.join(root, name or LOCK), encoding="utf-8") as handle:
             held = handle.read().strip()
     except OSError:
         return ""
@@ -163,6 +165,126 @@ def locked(root):
     if os.path.isabs(first):
         first = rel_of(root, first)
     return first
+
+
+# ----------------------------------------------------------------------------- the lock's door
+
+# ONE READING OF THE LOCK SAYS NOTHING ABOUT A FILE READ AT ANOTHER MOMENT. Measured 2026-09-26 on
+# the project this came from: a commit's gate re-drove 49 plants in one file back to back, and
+# another session's judgement read the status during one plant, the lock in the gap between two
+# and the file during the next - so the planted text was HELD as a command's write, with no lock
+# in sight. A rule also reads more than the file it is asked about, and a plant can come and go
+# entirely inside one judgement: no lock at its start, none at its end, a mutant read in between.
+# So every release is COUNTED, and two readings of `lock_state` around a stretch of work that are
+# equal and name no file are the only evidence that no mutation run touched it.
+
+#: How many times the lock has come off, inside the cache that ignores itself.
+RELEASED = "lock-released"
+
+
+def _released(root):
+    try:
+        with io.open(os.path.join(root, CACHE, RELEASED), encoding="utf-8") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
+
+
+def lock_state(root):
+    """(the file a mutation run's lock names or '', the count of its releases) - one reading."""
+    return locked(root), _released(root)
+
+
+#: The lock each run in THIS process took, by tree: the nonce on the lock's second line.
+_TAKEN = {}
+
+
+def take_lock(root, rel):
+    """Take the lock naming `rel`: None, or why it could not be taken. Created EXCLUSIVELY, so two
+    runs cannot both believe they hold it, and SIGNED with a nonce on its second line (`locked`
+    reads only the first), so a release removes only the lock its own run took."""
+    path = os.path.join(root, LOCK)
+    nonce = "%d-%s" % (os.getpid(), hashlib.sha256(os.urandom(16)).hexdigest()[:16])
+    try:
+        with io.open(path, "x", encoding="utf-8", newline=LF) as handle:
+            handle.write(rel + LF + nonce + LF)
+    except FileExistsError:
+        held = locked(root)
+        return ("a mutation or plant run already holds %s on %s - if none is running it was "
+                "killed: put %s back, then delete %s" % (LOCK, held or "no named file",
+                                                        held or "that file", LOCK))
+    except OSError as exc:
+        return "%s could not be taken (%s)" % (LOCK, exc)
+    _TAKEN[_tree_key(root)] = nonce
+    return None
+
+
+def note_release(root, attempts=5, pause=0.05):
+    """Count one release of the lock: None, or why it could not be counted.
+
+    Called BEFORE the lock file goes, so a judgement ending in between sees the lock or the new
+    count, never neither. Retried: on Windows a reader holding the count for a moment refuses the
+    replace, and a release nobody counted is a plant a judgement can straddle unseen.
+    """
+    why = None
+    for attempt in range(attempts):
+        try:
+            target = os.path.join(_cache_folder(root), RELEASED)
+            try:
+                count = int(_released(root) or "0")
+            except ValueError:
+                count = 0
+            temp = "%s.%d.tmp" % (target, os.getpid())
+            with io.open(temp, "w", encoding="utf-8", newline=LF) as handle:
+                handle.write("%d%s" % (count + 1, LF))
+            os.replace(temp, target)
+            return None
+        except OSError as exc:
+            why = "%s: %s" % (type(exc).__name__, exc)
+            time.sleep(pause * (attempt + 1))
+    return "the release of %s could not be counted (%s)" % (LOCK, why)
+
+
+def release_lock(root, attempts=5, pause=0.1):
+    """Count the release, THEN remove the lock: None, or why it still stands.
+
+    A release that could not be counted keeps the lock - the file is back, and a lock left standing
+    costs a refusal that names it, while an uncounted release costs a verdict taken beside a mutant.
+
+    ONLY THE LOCK THIS RUN TOOK. The refusal above tells a person to delete a lock a killed run
+    left, and a person can be wrong about which run is dead: the next run takes a fresh lock, and
+    the first one's release would remove it while the second is mutating. A lock that is GONE, or
+    signed by another run, is left as it is and returned as the reason - "already gone" is not
+    "released by me". Found by the CTRMap session reading this door, 2026-09-26.
+    """
+    path = os.path.join(root, LOCK)
+    try:
+        with io.open(path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except FileNotFoundError:
+        return ("the lock this run took (%s) is GONE - something else removed it while the run "
+                "held it, so which run holds the tree now is UNKNOWN" % path)
+    except OSError as exc:
+        return "%s could not be read to release it (%s)" % (LOCK, exc)
+    mine = _TAKEN.get(_tree_key(root))
+    if not mine or len(lines) < 2 or lines[1].strip() != mine:
+        return ("%s (on %s) is not the lock this run took - it is left in place"
+                % (LOCK, lines[0].strip() if lines else "no named file"))
+    why = note_release(root)
+    if why:
+        return why
+    for attempt in range(attempts):
+        try:
+            os.remove(path)
+            _TAKEN.pop(_tree_key(root), None)
+            return None
+        except FileNotFoundError:
+            return ("the lock this run took (%s) went while it was being released - something "
+                    "else removed it" % path)
+        except OSError as exc:
+            why = "%s: %s" % (type(exc).__name__, exc)
+            time.sleep(pause * (attempt + 1))
+    return "%s could not be removed (%s)" % (LOCK, why)
 
 
 #: The scope of a rule whose `AT_SCOPE` is an expression rather than a literal: resolved by
@@ -513,14 +635,23 @@ def _load_cache(root, rule, digest):
     return files if isinstance(files, dict) else {}
 
 
+#: The Cache Directory Tagging specification's signature - the SHAPE every walk here already
+#: reads a generated folder by, and what ruff, pytest and mypy write into theirs.
+CACHE_TAG = "Signature: 8a477f597d28d172789f06886806bc55"
+
+
 def _cache_folder(root):
-    """The cache directory, made if absent, carrying the `.gitignore` that ignores it."""
+    """The cache directory, made if absent, carrying the `.gitignore` that ignores it and the
+    `CACHEDIR.TAG` that says it is a cache. Measured 2026-09-26: ignored by git and untagged, a
+    cache made inside the bundle's own folder was copied into a project by its installer, and
+    `git add` refused the project's first install."""
     folder = os.path.join(root, CACHE)
     os.makedirs(folder, exist_ok=True)
-    ignore = os.path.join(folder, ".gitignore")
-    if not os.path.isfile(ignore):
-        with io.open(ignore, "w", encoding="utf-8", newline=LF) as handle:
-            handle.write("*" + LF)
+    for name, text in ((".gitignore", "*" + LF), ("CACHEDIR.TAG", CACHE_TAG + LF)):
+        path = os.path.join(folder, name)
+        if not os.path.isfile(path):
+            with io.open(path, "w", encoding="utf-8", newline=LF) as handle:
+                handle.write(text)
     return folder
 
 
@@ -537,7 +668,20 @@ def _save_cache(root, rule, digest, files):
 
 
 def tree_facts(root, rule, files=None):
-    """{rel: facts} for every file in the rule's scope as it is ON DISK, cached per file."""
+    """{rel: facts} for every file in the rule's scope as it is ON DISK, cached per file.
+
+    Gathered over a stretch no mutation run moved in, like every answer a rule gives here: a
+    gathering the lock moved under is taken again, and one that never holds still is refused.
+    """
+    for _attempt in range(ASK_AGAIN):
+        start = lock_state(root)
+        facts = _tree_facts_once(root, rule, files)
+        if lock_state(root) == start:
+            return facts
+    raise RuntimeError(_moved("tree"))
+
+
+def _tree_facts_once(root, rule, files):
     files = tracked(root) if files is None else files
     held = locked(root)
     facts_of = rule.call(rule.entry[0])
@@ -643,6 +787,16 @@ def _ask_one(root, rule, rel, before, after):
     return was, _findings(call(path, payload_after))
 
 
+#: How many times an asking is repeated when a mutation run took or released its lock during it.
+ASK_AGAIN = 3
+
+
+def _moved(kind):
+    return ("UNKNOWN: a mutation run took or released %s while this %s was being judged, %d times "
+            "over - a rule may have read its fault, and an unknown verdict is not a clean one. "
+            "Ask again in a moment." % (LOCK, kind, ASK_AGAIN))
+
+
 def ask_changes(root, changes, found=None):
     """{rule name: (was, now, [new findings])} for every rule a SET of changes makes worse.
 
@@ -652,8 +806,22 @@ def ask_changes(root, changes, found=None):
     once, with every changed file at its before and then every one at its after, so the verdict
     is about the tree the command left and costs one judgement rather than one per file. A
     per-file rule is asked of each file, and refuses when any one of them grows.
+
+    ASKED AGAIN WHEN A MUTATION RUN MOVED UNDER IT. A rule reads the tree as well as the text it
+    is handed, and a plant that came and went between its two askings - before and after - was
+    charged to the write. A stretch in which `lock_state` did not move is the only one whose
+    answer is given; a lock held still throughout is read the same way by both sides.
     """
     found = rules(root) if found is None else found
+    for _attempt in range(ASK_AGAIN):
+        start = lock_state(root)
+        worse = _ask_changes_once(root, changes, found)
+        if lock_state(root) == start:
+            return worse
+    return {"lock": (-1, -1, [_moved("change")])}
+
+
+def _ask_changes_once(root, changes, found):
     worse = {}
     files = []
     for rel, (before, after) in sorted(changes.items()):
@@ -718,8 +886,29 @@ def ask_after(root, found=None):
 
 
 def ask_command(root, command, found=None, kind="AT_COMMAND"):
-    """{rule name: [findings]} for a command (or, with kind AT_COMMIT, a commit message)."""
+    """{rule name: [findings]} for a command (or, with kind AT_COMMIT, a commit message).
+
+    Asked again, as a change is, when a mutation run moved under the asking. And a COMMIT beside a
+    held lock is UNKNOWN whatever its rules say: they read the tree the commit records, and one
+    file of it is an injected fault. A command is not refused for it - every act in every session
+    would stop for as long as a plant runs.
+    """
     found = rules(root) if found is None else found
+    for _attempt in range(ASK_AGAIN):
+        start = lock_state(root)
+        out = _ask_command_once(root, command, found, kind)
+        if lock_state(root) == start:
+            break
+    else:
+        return {"lock": [_moved(kind == "AT_COMMIT" and "commit" or "command")]}
+    if kind == "AT_COMMIT" and start[0]:
+        out.setdefault("lock", []).append(
+            "UNKNOWN: %s. A commit is judged by rules that read the tree it records; ask again "
+            "when the lock is gone." % _unknown_reason(start, start))
+    return out
+
+
+def _ask_command_once(root, command, found, kind):
     out = {}
     for rule in found:
         if rule.kind != kind:
@@ -929,7 +1118,7 @@ def judge_unread(root, written=(), found=None):
     mine = _tree_key(root)
     above = [key for key in os.environ.get(JUDGING, "").split(os.pathsep) if key]
     if mine in above:
-        return {"held": {}, "worse": {}, "fresh": [], "blind": (
+        return {"held": {}, "worse": {}, "fresh": [], "unknown": "", "pending": [], "blind": (
             "a judgement of %s is already running in a process above this one (%s) - a rule's "
             "child that judges the same tree again would start the same rule again, without end"
             % (root, JUDGING))}
@@ -966,29 +1155,48 @@ def _judge_unread(root, written=(), found=None):
     WITH NO RECORD, THE BEFORE IS HEAD - the last tree the gates passed - never the disk. A
     missing record read as "the disk is the baseline" would make deleting it the cheapest way
     past every rule here.
+
+    NOTHING IS A VERDICT THAT A MUTATION RUN TOUCHED. `lock_state` is read before anything and
+    after everything; a lock seen at either end, or a release counted in between, makes the whole
+    judgement UNKNOWN - `unknown` says why and `pending` names what is still to judge. Nothing is
+    held and nothing is recorded, so the same change is judged the first time the lock is gone.
+    The WHOLE judgement, not the locked file's: a rule reads more than the file it is asked about.
     """
+    start = lock_state(root)
     state = _load_judged(root)
     held = dict(state.get("held") or {})
-    out = {"held": held, "worse": state.get("worse") or {}, "fresh": [], "blind": ""}
+    out = {"held": held, "worse": state.get("worse") or {}, "fresh": [], "blind": "",
+           "unknown": "", "pending": []}
     now = dirty(root)
     head = head_commit(root)
     if now is None or head is None:
         out["blind"] = "git could not list what changed under %s" % root
         return out
-    lock = locked(root)
+    lock = start[0]
     first = not isinstance(state.get("paths"), dict)
     prev_paths = {} if first else state["paths"]
     prev_texts = state.get("texts") or {}
     prev_head = head if first else (state.get("head") or "")
+    if lock:
+        out["unknown"] = _unknown_reason(start, start)
     if (not first and head == prev_head and set(written) <= set(held)
             and {r: d for r, d in now.items() if r != lock}
             == {r: d for r, d in prev_paths.items() if r != lock}):
         return out
     found = rules(root) if found is None else found
+    if lock or lock_state(root) != start:
+        out["unknown"] = _unknown_reason(start, lock_state(root))
+        out["pending"] = sorted(
+            rel for rel in (set(prev_paths) | set(now) | set(written)) - {lock}
+            if (rel in written or prev_paths.get(rel) != now.get(rel))
+            and _judged_by_some_rule(rel, found))
+        return out
+    # FROM HERE NO LOCK IS HELD - one was returned as UNKNOWN above - so nothing below excludes the
+    # locked file: that exclusion was the whole defence once, and it read the lock at one moment.
     written = set(written)
     changes, befores = {}, {}
     try:
-        for rel in sorted((set(prev_paths) | set(now)) - {lock}):
+        for rel in sorted(set(prev_paths) | set(now)):
             current = now[rel] if rel in now else "  |%s" % _digest(root, rel)
             if rel in prev_paths and prev_paths[rel] == current:
                 continue
@@ -1026,20 +1234,42 @@ def _judge_unread(root, written=(), found=None):
             now_held[rel] = held[rel] if rel in held else _put(root, befores[rel])
     texts = {}
     for rel in now:
-        if rel == lock:
-            if rel in prev_texts:
-                texts[rel] = prev_texts[rel]
-        elif _judged_by_some_rule(rel, found):
+        if _judged_by_some_rule(rel, found):
             same = rel in prev_texts and prev_paths.get(rel) == now[rel]
             texts[rel] = prev_texts[rel] if same else _put(root, read_text(root, rel))
-    paths = {r: d for r, d in now.items() if r != lock}
-    if lock in prev_paths:
-        paths[lock] = prev_paths[lock]
-    saved = {"head": head, "paths": paths, "texts": texts, "held": now_held,
+    saved = {"head": head, "paths": dict(now), "texts": texts, "held": now_held,
              "worse": {k: list(v) for k, v in worse.items()} if now_held else {}}
+    # AFTER THE LAST READ - the texts kept above are read from disk too - and before anything is
+    # recorded: a verdict a mutation run moved under is not one.
+    end = lock_state(root)
+    if end != start:
+        out["unknown"] = _unknown_reason(start, end)
+        out["pending"] = sorted(set(changes) | set(group))
+        return out
     _save_judged(root, saved)
     return {"held": now_held, "worse": saved["worse"],
-            "fresh": sorted(set(now_held) - set(state.get("held") or {})), "blind": ""}
+            "fresh": sorted(set(now_held) - set(state.get("held") or {})), "blind": "",
+            "unknown": "", "pending": []}
+
+
+def _unknown_reason(start, end):
+    """Why a judgement is UNKNOWN, from the two readings of `lock_state` around it."""
+    held = start[0] or end[0]
+    if held:
+        return ("a mutation run holds %s on %s - until it is released that file is an injected "
+                "fault, and a rule reading it answers about the fault" % (LOCK, held))
+    return ("a mutation run took and released %s while this was being judged - a rule may have "
+            "read its fault" % LOCK)
+
+
+def unknown_note(judged):
+    """What to tell the session whose change could not be judged, never a clean answer."""
+    lines = ["NOT JUDGED YET: %s." % judged["unknown"], ""]
+    lines += ["  %s" % rel for rel in (judged.get("pending") or [])[:12]]
+    lines += ["", "  Nothing is held and nothing is recorded as judged: a verdict taken beside a",
+              "  mutant is about the mutant. What changed is judged the first time the lock is",
+              "  gone - it is not clean yet, it is unknown."]
+    return LF.join(lines)
 
 
 #: A word a finding could name a file with: a path, `path:line`, or a dotted id.

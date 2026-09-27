@@ -123,6 +123,11 @@ def verdict(payload, root):
     if change is None:
         return 0, ""
     rel, before, after = change
+    # A PLANTED JUDGE CAN REFUSE A WRITE AS WRONGLY AS IT CAN ALLOW ONE, so it is not asked. The
+    # moment after asks nothing of it either and records nothing, so this write is judged as a
+    # change the first time the real judge is back.
+    if bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):
+        return 0, ""
     worse = bundle_rules.ask_write(root, rel, before, after)
     if not worse:
         return 0, ""

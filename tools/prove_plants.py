@@ -63,6 +63,8 @@ LEDGER = os.path.join(HERE, "tests", "plants.json")
 LF = chr(10)
 sys.path.insert(0, os.path.join(HERE, "tools"))
 import bundle_hooks     # noqa: E402 - where THIS project keeps the bundle's hooks (`_hooks_at`)
+sys.path.insert(0, bundle_hooks.path(HERE))
+import bundle_rules     # noqa: E402 - the lock's one door: taken, counted, released
 
 #: No console window for a child whose output is captured - Windows opens one for every
 #: console process unless told otherwise, and a gate that blinks windows at every commit
@@ -308,6 +310,12 @@ def apply_and_run(entry, test_id, root=None, run=None, rebuild=None):
         return False, broken
     if crlf in original.decode("utf-8"):
         planted_text = planted_text.replace(LF, crlf)
+    # THE DEFECT IS ON DISK ONLY UNDER THE LOCK NAMING IT. Every judgement the hooks make reads
+    # the lock and treats what it names as UNKNOWN; this runner wrote its plant with no lock at
+    # all, so a second session judged the defect as an ordinary change and held it.
+    refused = bundle_rules.take_lock(root or HERE, entry["file"])
+    if refused:
+        return False, refused
     try:
         with io.open(path, "wb") as handle:
             handle.write(planted_text.encode("utf-8"))
@@ -332,6 +340,14 @@ def apply_and_run(entry, test_id, root=None, run=None, rebuild=None):
                     LF + "THE RESTORED TREE DOES NOT BUILD (%s) - its build output may still "
                     "carry the plant. Rebuild it before running anything else." % broken + LF)
                 raise SystemExit(2)
+        # THE LOCK GOES LAST, after the file is back and built - and counted as it goes, so a
+        # judgement that began before the plant and ends after it can tell one came and went.
+        stuck = bundle_rules.release_lock(root or HERE)
+        if stuck:
+            sys.stderr.write(LF + "%s IS RESTORED and the lock could not come off: %s. Every "
+                             "judgement reads the tree as UNKNOWN until it does - delete it."
+                             % (entry["file"], stuck) + LF)
+            raise SystemExit(2)
 
 
 # ----------------------------------------------------------------------------- other languages

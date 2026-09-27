@@ -1461,6 +1461,12 @@ def typed(text, at):
     return {"type": "user", "timestamp": at, "message": {"role": "user", "content": text}}
 
 
+def block(text, at):
+    """A user row whose content is ONE text block - how the harness writes an interrupt."""
+    return {"type": "user", "timestamp": at,
+            "message": {"role": "user", "content": [{"type": "text", "text": text}]}}
+
+
 def queued(text, at):
     return {"type": "queue-operation", "operation": "enqueue", "timestamp": at, "content": text}
 
@@ -1676,6 +1682,58 @@ class AnOwnersRequestIsAccountedForBeforeTheTurnEnds(LedgerCase):
         self.rows = []
         self.add(typed("[urgent] rebuild the ledger", "2026-01-01T00:00:02Z"))
         self.assertEqual(len(self.keys()), 1, "an owner message opening with a bracket was dropped")
+
+    def test_an_INTERRUPT_is_the_owner_withdrawing_and_never_a_request(self):
+        """Measured 2026-09-26 by the CTRMap session: a Stop refused with `request 537b0a1dcb-8 is
+        not itemised - "[Request interrupted by user]"`. An interrupt is the owner WITHDRAWING a
+        request, so it can never be itemised, and a turn could not end over it. Over 3,305 real
+        transcripts the harness wrote it 47 times, and "... for tool use" 12 times - each an
+        ordinary user row, not flagged `isMeta`, whose one text block is the whole marker."""
+        for marker in ("[Request interrupted by user]",
+                       "[Request interrupted by user for tool use]"):
+            for row in (block(marker, "2026-01-01T00:00:01Z"), typed(marker, "2026-01-01T00:00:01Z"),
+                        queued(marker, "2026-01-01T00:00:01Z"),
+                        delivered(marker, "human", "2026-01-01T00:00:01Z")):
+                with self.subTest(marker=marker, row=row["type"]):
+                    self.rows = []
+                    self.add(row)
+                    self.assertEqual(self.keys(), [], "an interrupt was read as an owner request")
+
+    def test_a_harness_MARKER_is_known_by_its_shape_not_by_its_words(self):
+        """The evasion is listing the two interrupt strings, as the notices were listed before
+        them - the class 2c5182e closed for one spelling. The harness writes a marker as ONE
+        bracketed span and nothing else; one it has never written must be read the same way."""
+        self.add(block("[Session resumed after the harness restarted]", "2026-01-01T00:00:01Z"),
+                 queued("[Tool use cancelled]", "2026-01-01T00:00:02Z"))
+        self.assertEqual(self.keys(), [], "a marker the harness had not written before was read "
+                                          "as an owner request")
+
+    def test_an_owner_message_that_OPENS_with_a_bracket_is_still_the_owners(self):
+        """The control on both sides of the shape: words outside the bracket are the owner's."""
+        for text in ("[urgent] rebuild the ledger", "[urgent]" + LF + "rebuild the ledger",
+                     "[a] then [b] - do both"):
+            with self.subTest(text=text):
+                self.rows = []
+                self.add(block(text, "2026-01-01T00:00:01Z"))
+                self.assertEqual(len(self.keys()), 1, "an owner message was dropped as a marker")
+
+    def test_the_owners_text_is_judged_by_ONE_predicate(self):
+        """Four places in `_owner_text` asked `EVENTS` each on their own; the marker added at three
+        of them is an interrupt read as the owner at the fourth. Every test of the harness's
+        shapes goes through `harness_text`, derived from the source."""
+        with io.open(os.path.join(HOOKS, "request_ledger.py"), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        stray = []
+        for fn in ast.walk(tree):
+            if not isinstance(fn, ast.FunctionDef) or fn.name == "harness_text":
+                continue
+            for node in ast.walk(fn):
+                if isinstance(node, ast.Name) and node.id in ("EVENTS", "MARKER"):
+                    stray.append("%s uses %s" % (fn.name, node.id))
+        self.assertTrue(any(isinstance(n, ast.FunctionDef) and n.name == "harness_text"
+                            for n in ast.walk(tree)), "the one predicate is gone")
+        self.assertEqual(stray, [], "a reading of the owner's text asks the harness's shapes on "
+                                    "its own, beside the one predicate")
 
     def test_a_queued_message_whose_delivery_names_a_PEER_is_not_the_owner(self):
         """The frame is one spelling of it; the delivery's origin is the fact. The queue's own

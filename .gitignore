@@ -50,3 +50,8 @@ __pycache__/
 # token authorises nothing (the hook requires it to name the CURRENT head) but it
 # publishes a record of who approved what, which is nobody else's business.
 .push-approved
+
+# The mutation lock tools/prove_plants.py holds while a plant is on disk, naming the
+# planted file. It exists for the length of one plant; committed by a `git add -A`
+# taken meanwhile, it would tell every later judgement that a run holds that file.
+.mutation-in-flight

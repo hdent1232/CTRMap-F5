@@ -166,6 +166,10 @@ def verdict(payload, root):
         return 0, ""
     if bundle_env.allowed("ALLOW_HELD_CHANGES"):
         return 0, ""
+    # A JUDGE THAT IS ITSELF A PLANT IS ASKED NOTHING: what it holds is the plant's verdict. The
+    # change is judged by the real judge the first time it is back, which is seconds - a plant.
+    if bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):
+        return 0, ""
     judged = bundle_rules.judge_unread(root)
     if judged["blind"]:
         text = bundle_shell.text(payload) if call else ""

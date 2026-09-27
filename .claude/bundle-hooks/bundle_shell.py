@@ -67,6 +67,30 @@ def policy(path):
     """`BLOCKED BY PROJECT POLICY (<this folder>/<that file>).` for the guard at `path`."""
     return "BLOCKED BY PROJECT POLICY (%s/%s)." % (FOLDER, os.path.basename(path))
 
+
+def judge_under_mutation(root, lock_name):
+    """The file of THIS hooks folder a mutation run's lock names, or '' - read here, not by the
+    judge.
+
+    A JUDGE CANNOT VOUCH FOR ITSELF. Measured 2026-09-26 on the project this came from: a commit's
+    gate re-drove the plants held in `bundle_rules.py` - the judge every hook imports - and with
+    "the lock is never read" on disk, two sessions' hooks ran the planted judge and held the tree
+    on a planted state. The judge reads the lock around every judgement, and that reading lived in
+    the file being planted. This one lives in another: a lock names ONE file, so one of the two
+    readings is always the real code. A hook asks this before it asks the judge anything, and a
+    judge under mutation is asked nothing - its answer, either way, would be the plant's.
+    """
+    import io
+    try:
+        with io.open(os.path.join(root, lock_name), encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return ""
+    named = (lines[0] if lines else "").strip().replace(chr(92), "/")
+    if os.path.isabs(named):
+        named = os.path.relpath(named, root).replace(os.sep, "/")
+    return named if named.startswith(FOLDER + "/") else ""
+
 #: How deep to walk a tool input looking for command strings. A batching tool nests one input
 #: inside another; nothing here nests deeper, and an unbounded walk on a self-referencing
 #: structure would hang a PreToolUse hook, which fails the whole turn.

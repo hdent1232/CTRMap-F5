@@ -115,8 +115,13 @@ def after_findings(root):
     project this came from: an item reported re-opened after every call while a proof run had a
     module mutated. Nothing is asked and nothing is kept; the memo still names the tree from
     before the lock, so the first call after it is asked as if the lock had never been there.
+
+    AND NOT WHEN ONE CAME AND WENT WHILE THE RULES WERE ASKED. Reading the lock once, at the start,
+    let a plant laid during the asking be kept as the memo. `lock_state` is read before and after
+    and must not move - its count of releases is what sees a plant that was gone by the end.
     """
-    if bundle_rules.locked(root):
+    start = bundle_rules.lock_state(root)
+    if start[0] or bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):
         return []
     found_rules = [r for r in bundle_rules.rules(root) if r.kind == "AT_AFTER"]
     if not found_rules:
@@ -126,6 +131,8 @@ def after_findings(root):
     if state is not None and held.get("state") == state:
         return []
     found = bundle_rules.ask_after(root, found_rules)
+    if bundle_rules.lock_state(root) != start:
+        return []                          # nothing said, nothing kept: asked again next call
     fresh = new_findings(held.get("found") or {}, found)
     _keep(root, state, found)
     if not fresh:
@@ -145,9 +152,18 @@ def verdict(payload, root):
     if not bundle_shell.is_tool_call(payload) or bundle_shell.reads_only(payload):
         return 0, ""
     lines = []
+    # THE JUDGE UNDER MUTATION IS ASKED NOTHING - neither a verdict nor a record of what this call
+    # wrote. Recorded, a write would read as judged at the write and never be judged again.
+    mutant = bundle_shell.judge_under_mutation(root, bundle_rules.LOCK)
+    if mutant:
+        return 2, ("NOT JUDGED YET: %s - the code that judges - is under a mutation run's lock, so "
+                   "what this call changed is judged the first time it is back. Nothing is held "
+                   "and nothing is recorded as judged; it is not clean, it is unknown." % mutant)
     judged = bundle_rules.judge_unread(root, written_by(payload, root))
     if judged["fresh"]:
         lines += [bundle_rules.held_refusal(judged), ""]
+    if judged.get("unknown") and judged.get("pending"):
+        lines += [bundle_rules.unknown_note(judged), ""]     # said, never read as clean
     lines += after_findings(root)
     return (2, LF.join(lines).rstrip()) if lines else (0, "")
 

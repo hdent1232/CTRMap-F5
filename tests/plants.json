@@ -580,6 +580,14 @@
    "site": "elsewhere",
    "why": "The shipped defect: `want me to` listed as a BLOCKER, and a claimed blocker exempts the whole message - two words appended to any promise made it pass."
   },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_a_harness_MARKER_is_known_by_its_shape_not_by_its_words": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "a marker the harness had not written before",
+   "new": "MARKER = re.compile(r\"^\\s*\\[Request interrupted by user(?: for tool use)?\\]\\s*$\")\n",
+   "old": "MARKER = re.compile(r\"^\\s*\\[[^\\[\\]\" + LF + r\"]*\\]\\s*$\")\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: list the two interrupt strings, as the notices were listed before them - the class commit 2c5182e closed for one spelling. A marker the harness has never written must be known by its shape."
+  },
   "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_a_harness_cross_session_NOTICE_is_not_the_owner": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "a harness notice was read as an owner request",
@@ -627,6 +635,22 @@
    "old": "                    r\"agent-message|command-(?:name|message|args)|\"\n",
    "site": "elsewhere",
    "why": "TWO MORE THINGS THAT ARE NOT THE OWNER, both itemised as owner requests on 2026-09-25: `/compact`, which nothing can do or answer and so stayed open for good, and a background reviewer's hand-back, which then owed a review of its own - a loop."
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_an_INTERRUPT_is_the_owner_withdrawing_and_never_a_request": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "an interrupt was read as an owner request",
+   "new": "\"]*\\]\\s*$(?<=NEVER)\")\n",
+   "old": "\"]*\\]\\s*$\")\n",
+   "site": "instance",
+   "why": "MEASURED 2026-09-26 by the CTRMap session: a Stop refused with request 537b0a1dcb-8 is not itemised - [Request interrupted by user]. An interrupt is the owner withdrawing a request; it can never be itemised, so no turn could end."
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_an_owner_message_that_OPENS_with_a_bracket_is_still_the_owners": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "an owner message was dropped as a marker",
+   "new": "MARKER = re.compile(r\"^\\s*\\[\")\n",
+   "old": "MARKER = re.compile(r\"^\\s*\\[[^\\[\\]\" + LF + r\"]*\\]\\s*$\")\n",
+   "site": "evasion",
+   "why": "THE OTHER CHEAP WAY PAST: drop every text that opens with a bracket. That silences the owner's own [urgent] message - and a request the ledger never lists is work nobody has to account for."
   },
   "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_an_unitemised_request_refuses_the_stop": {
    "file": ".claude/bundle-hooks/request_ledger.py",
@@ -707,6 +731,14 @@
    "old": "        return asked[keys.index(since):]",
    "site": "elsewhere",
    "why": "a ledger that holds only the LATEST request lets every earlier one go the moment the owner says anything else - the owner sent 28 messages in this session, and only the last would ever have been held"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_the_owners_text_is_judged_by_ONE_predicate": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "asks the harness's shapes on its own",
+   "new": "        if origin not in (None, \"human\") or not text.strip() or EVENTS.match(text):\n",
+   "old": "        if origin not in (None, \"human\") or not text.strip() or harness_text(text):\n",
+   "site": "elsewhere",
+   "why": "ONE PREDICATE, FOUR READINGS. _owner_text asked EVENTS at four places, each on its own; a shape added at three of them is an interrupt read as the owner at the fourth - the queued delivery here."
   },
   "test_bundle.py::EveryEnvironmentNameComesFromONEPlace::test_a_name_hidden_in_a_CONSTANT_is_still_a_hardcoded_read": {
    "file": ".claude/bundle-hooks/bundle_env.py",
@@ -1170,6 +1202,142 @@
    "site": "elsewhere",
    "why": "THE MESSAGE READ FROM THE WRONG FILE. git reads `-F` beside the directory it runs in, after `-C`; the guard read it beside the project root, so the text it judged could be a different file's than the one git would commit."
   },
+  "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_a_COMMIT_is_UNKNOWN_while_its_judge_is_a_plant": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a commit was judged by a planted judge",
+   "new": "    if False:\n        call.out.append((\"lock\", [\"UNKNOWN: %s - the code that judges this commit - is under a \"",
+   "old": "    if mutant:\n        call.out.append((\"lock\", [\"UNKNOWN: %s - the code that judges this commit - is under a \"",
+   "site": "elsewhere",
+   "why": "MEASURED 2026-09-26: a commit's gate re-drove the plants held in bundle_rules.py - the judge every hook imports - and with 'the lock is never read' on disk, two sessions' hooks ran the planted judge and held the tree on a planted state. A commit's rules read the tree it records; judged by the plant, it passes."
+  },
+  "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_a_WRITE_is_not_asked_of_a_planted_judge_and_is_judged_once_it_is_back": {
+   "file": ".claude/bundle-hooks/guard_write_rules.py",
+   "must_say": "a planted judge was asked about a write",
+   "new": "    if False:\n        return 0, \"\"\n    worse = bundle_rules.ask_write(",
+   "old": "    if bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):\n        return 0, \"\"\n    worse = bundle_rules.ask_write(",
+   "site": "elsewhere",
+   "why": "MEASURED 2026-09-26: a commit's gate re-drove the plants held in bundle_rules.py - the judge every hook imports - and with 'the lock is never read' on disk, two sessions' hooks ran the planted judge and held the tree on a planted state. A planted judge can refuse a write as wrongly as it can allow one."
+  },
+  "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_a_judge_planted_BLIND_holds_nothing_and_the_change_waits_for_it": {
+   "file": ".claude/bundle-hooks/guard_held_writes.py",
+   "must_say": "a judge that was itself a plant held the tree",
+   "new": "    if False:\n        return 0, \"\"\n    judged = bundle_rules.judge_unread(root)\n",
+   "old": "    if bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):\n        return 0, \"\"\n    judged = bundle_rules.judge_unread(root)\n",
+   "site": "instance",
+   "why": "MEASURED 2026-09-26: a commit's gate re-drove the plants held in bundle_rules.py - the judge every hook imports - and with 'the lock is never read' on disk, two sessions' hooks ran the planted judge and held the tree on a planted state. The held-change guard asked the planted judge."
+  },
+  "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_a_judge_planted_BLIND_holds_nothing_and_the_change_waits_for_it::evasion": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "a judge that was itself a plant held the tree",
+   "new": "    return \"\"\n",
+   "old": "    return named if named.startswith(FOLDER + \"/\") else \"\"\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: a second reading of the lock that never finds anything. A confident empty answer reads exactly like a tree nobody is mutating, and every hook then asks the planted judge."
+  },
+  "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_every_hook_that_asks_the_judge_reads_the_lock_in_ANOTHER_file_first": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "these ask the judge without first asking",
+   "new": "        elif depth == 0:\n",
+   "old": "        elif depth == 0 and not bundle_shell.judge_under_mutation(call.root, bundle_rules.LOCK):\n",
+   "site": "instance",
+   "why": "THE CLASS: every hook that asks the judge first asks whether the judge is under a mutation run's lock, in a file that is not the judge. One hook left out is the door the planted judge answers through."
+  },
+  "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_every_hook_that_asks_the_judge_reads_the_lock_in_ANOTHER_file_first::elsewhere": {
+   "file": ".claude/bundle-hooks/after_rules.py",
+   "must_say": "these ask the judge without first asking",
+   "new": "    if start[0]:\n",
+   "old": "    if start[0] or bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):\n",
+   "site": "elsewhere",
+   "why": "THE SAME QUESTION ASKED ELSEWHERE: the moment after asks the judge for AT_AFTER findings as well as for a command's writes, and each asking is its own door."
+  },
+  "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_every_hook_that_asks_the_judge_reads_the_lock_in_ANOTHER_file_first::evasion": {
+   "file": ".claude/bundle-hooks/guard_held_writes.py",
+   "must_say": "these ask the judge without first asking",
+   "new": "    ignored = bundle_shell.judge_under_mutation(root, bundle_rules.LOCK)\n    if False:\n        return 0, \"\"\n    judged = bundle_rules.judge_unread(root)\n",
+   "old": "    if bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):\n        return 0, \"\"\n    judged = bundle_rules.judge_unread(root)\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a rule that looks for the call: make the call and ignore the answer. The rule requires the answer to decide an `if`, itself or through the name it was given."
+  },
+  "test_bundle_action.py::AJudgeUnderMutationJudgesNothing::test_the_moment_after_SAYS_it_did_not_judge": {
+   "file": ".claude/bundle-hooks/after_rules.py",
+   "must_say": "the moment after judged with a planted judge",
+   "new": "    if False:\n        return 2, (\"NOT JUDGED YET: %s - the code that judges",
+   "old": "    if mutant:\n        return 2, (\"NOT JUDGED YET: %s - the code that judges",
+   "site": "elsewhere",
+   "why": "MEASURED 2026-09-26: a commit's gate re-drove the plants held in bundle_rules.py - the judge every hook imports - and with 'the lock is never read' on disk, two sessions' hooks ran the planted judge and held the tree on a planted state. The moment after asked it too, and recorded what it said."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_COMMIT_asked_while_a_mutation_run_holds_the_lock_is_UNKNOWN_not_clean": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a commit asked beside a mutant was answered clean",
+   "new": "    if False:\n",
+   "old": "    if kind == \"AT_COMMIT\" and start[0]:\n",
+   "site": "elsewhere",
+   "why": "A COMMIT'S RULES READ THE TREE the commit records, and while a mutation run holds the lock one file of it is an injected fault. Answered, the commit is judged by the fault; it is UNKNOWN until the lock is gone."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_WRITE_judged_while_a_plant_came_and_went_is_asked_again": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a write was let through on an answer taken beside a plant",
+   "new": "        worse = _ask_changes_once(root, changes, found)\n        if True:\n",
+   "old": "        worse = _ask_changes_once(root, changes, found)\n        if lock_state(root) == start:\n",
+   "site": "elsewhere",
+   "why": "AT THE WRITE, the rule's answer before and after were taken beside a plant that was gone by the end, so a write was charged with - or excused by - the mutant's answer. An asking the lock moved under is asked again."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_lock_naming_ANOTHER_file_leaves_every_verdict_UNKNOWN_and_none_clean": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a verdict taken beside a mutant was given",
+   "new": "    if lock_state(root) != start:\n",
+   "old": "    if lock or lock_state(root) != start:\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: honour the lock only for the file it names and judge the rest beside it. A rule reads more than the file it is asked about - the install check reads every copy - and a mutant that HIDES a finding records a change as clean, after which nothing ever judges it again."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_lock_read_BETWEEN_two_plants_does_not_let_the_next_plant_be_judged": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a PLANTED text was held as a command's write",
+   "new": "    return \"\", \"\"\n",
+   "old": "    return locked(root), _released(root)\n",
+   "site": "instance",
+   "why": "MEASURED 2026-09-26: a commit's gate re-drove 49 plants in one file and another session's judgement read the lock between two of them and the file during the next, so the planted text was HELD as a command's write and every act in that session was refused on lint 0 -> 1. The planted defect is a judgement that never reads the lock."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_plant_that_came_AND_WENT_during_the_judgement_leaves_it_UNKNOWN": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a plant came and went during the judgement",
+   "new": "    why = None\n",
+   "old": "    why = note_release(root)\n    if why:\n        return why\n",
+   "site": "elsewhere",
+   "why": "A PLANT THAT CAME AND WENT inside one judgement leaves no lock at its start and none at its end; only the count of releases says a rule may have read the mutant. A release that is not counted makes that stretch read as untouched."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_release_removes_ONLY_the_lock_its_own_run_took": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "another run's lock was released as this run's own",
+   "new": "    if False:\n",
+   "old": "    if not mine or len(lines) < 2 or lines[1].strip() != mine:\n",
+   "site": "instance",
+   "why": "A PERSON FOLLOWING THE REFUSAL deletes a live run's lock; the next run takes its own; the first run's release then removed the second run's lock while it was mutating - found by the CTRMap session reading this door, 2026-09-26."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_release_removes_ONLY_the_lock_its_own_run_took::evasion": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a lock somebody else removed was reported released by this run",
+   "new": "        return None; (\"the lock this run took (%s) is GONE - something else removed it while the run \"\n",
+   "old": "        return (\"the lock this run took (%s) is GONE - something else removed it while the run \"\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: a lock that is already gone reads as released. That is the clean empty answer this whole change exists to refuse - a run whose lock someone else removed does not know which run holds the tree."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_an_AT_AFTER_answer_taken_while_a_plant_came_and_went_is_not_kept": {
+   "file": ".claude/bundle-hooks/after_rules.py",
+   "must_say": "an answer taken while a plant came and went was kept as the memo",
+   "new": "    if False:\n",
+   "old": "    if bundle_rules.lock_state(root) != start:\n",
+   "site": "elsewhere",
+   "why": "THE MOMENT AFTER read the lock only at its start, so an answer taken while a plant came and went was kept as the memo - and a finding the mutant hid was not NEW when the real tree produced it, so it was never said."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_the_lock_is_taken_ONCE_and_every_release_is_COUNTED": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a second run took a lock another holds",
+   "new": "        with io.open(path, \"w\", encoding=\"utf-8\", newline=LF) as handle:\n            handle.write(rel + LF + nonce + LF)\n",
+   "old": "        with io.open(path, \"x\", encoding=\"utf-8\", newline=LF) as handle:\n            handle.write(rel + LF + nonce + LF)\n",
+   "site": "instance",
+   "why": "THE DOOR TAKES THE LOCK EXCLUSIVELY. Opened for writing rather than created, a second run takes a lock another holds, two runs mutate one tree, and the first one's release frees the second one's plant for every judgement to read."
+  },
   "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_NEW_file_is_asked_as_the_write_would_leave_it": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "a new file carrying a defect was let in",
@@ -1238,25 +1406,49 @@
    "file": ".claude/bundle-hooks/after_rules.py",
    "must_say": "a rule was asked with a mutant on disk",
    "new": "    if False:\n        return []\n",
-   "old": "    if bundle_rules.locked(root):\n        return []\n",
+   "old": "    if start[0] or bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):\n        return []\n",
    "site": "instance",
    "why": "AN ANSWER ABOUT A MUTANT. Measured: an item reported re-opened after every call while a proof run had a module mutated, and the memo kept that answer so the same finding from the real tree would never have been new."
   },
   "test_bundle_action.py::AnAnswerTakenWithAMutantOnDiskIsNeitherGivenNorKept::test_an_AT_AFTER_rule_is_neither_asked_nor_kept_under_the_lock::evasion": {
    "file": ".claude/bundle-hooks/after_rules.py",
    "must_say": "was kept as the memo",
-   "new": "    if bundle_rules.locked(root):\n        _keep(root, tree_state(root), {})\n        return []\n",
-   "old": "    if bundle_rules.locked(root):\n        return []\n",
+   "new": "    if start[0] or bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):\n        _keep(root, tree_state(root), {})\n        return []\n",
+   "old": "    if start[0] or bundle_shell.judge_under_mutation(root, bundle_rules.LOCK):\n        return []\n",
    "site": "evasion",
    "why": "THE CHEAPEST WAY TO STOP ASKING UNDER THE LOCK is to keep recording that the tree was looked at: the memo then names a tree with a mutant in it, and the first real answer after the lock is compared against that."
   },
   "test_bundle_action.py::AnAnswerTakenWithAMutantOnDiskIsNeitherGivenNorKept::test_the_module_under_mutation_is_not_judged_as_a_commands_write": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "judged, and held, as a command's write",
-   "new": "        for rel in sorted(set(prev_paths) | set(now)):\n",
-   "old": "        for rel in sorted((set(prev_paths) | set(now)) - {lock}):\n",
+   "new": "    if False:\n",
+   "old": "    if lock or lock_state(root) != start:\n",
    "site": "elsewhere",
    "why": "THE SAME SUBJECT READ ELSEWHERE. A mutant on disk is a changed file to a reader that forgets the lock, and the held-change guard would hold it and refuse every act until a module nobody edited was repaired."
+  },
+  "test_bundle_action.py::EveryAskingOfARuleReadsTheLockAroundIt::test_every_function_that_asks_a_rule_reads_the_lock_or_is_reached_only_through_one": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "these ask a rule with no reading of the mutation lock",
+   "new": "        return _ask_changes_once(root, changes, found)\n",
+   "old": "        start = lock_state(root)\n        worse = _ask_changes_once(root, changes, found)\n        if lock_state(root) == start:\n            return worse\n",
+   "site": "instance",
+   "why": "THE CLASS: every way of asking a rule reads the lock around it. Four were found reading the tree with none; a fifth written tomorrow would read a mutant with every behaviour test green, so the rule is derived from the hooks' source."
+  },
+  "test_bundle_action.py::EveryAskingOfARuleReadsTheLockAroundIt::test_every_function_that_asks_a_rule_reads_the_lock_or_is_reached_only_through_one::elsewhere": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "these ask a rule with no reading of the mutation lock",
+   "new": "        return _tree_facts_once(root, rule, files)\n",
+   "old": "        start = lock_state(root)\n        facts = _tree_facts_once(root, rule, files)\n        if lock_state(root) == start:\n            return facts\n",
+   "site": "elsewhere",
+   "why": "A TREE RULE'S FACTS are gathered by calling the rule over every file on disk; a public gatherer with no reading of the lock around it is callable from anywhere, and whatever called it would judge the mutant it read."
+  },
+  "test_bundle_action.py::EveryAskingOfARuleReadsTheLockAroundIt::test_every_function_that_asks_a_rule_reads_the_lock_or_is_reached_only_through_one::evasion": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "these ask a rule with no reading of the mutation lock",
+   "new": "def ask_changes_quickly(root, changes, found=None):\n    return _ask_changes_once(root, changes, found or rules(root))\n\n\ndef _ask_changes_once(root, changes, found):\n",
+   "old": "def _ask_changes_once(root, changes, found):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST: leave the guarded door as it is and add a second door beside it that asks the same private function without reading the lock. Every behaviour test drives the first door and stays green."
   },
   "test_bundle_action.py::GitBehindAWrapperIsStillGit::test_a_command_HANDED_to_a_shell_is_read_as_a_command": {
    "file": ".claude/bundle-hooks/bundle_shell.py",

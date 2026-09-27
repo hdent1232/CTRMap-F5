@@ -513,7 +513,9 @@ def judge_text(call, text, where, depth, placed=True):
             if _CONFIG_ENV.search(command):
                 call.out.append(("gate", ["`%s` rewrites git's configuration for the commands "
                                           "after it - `core.hooksPath` among it" % command[:60]]))
-        elif depth == 0:
+        elif depth == 0 and not bundle_shell.judge_under_mutation(call.root, bundle_rules.LOCK):
+            # A command is not asked of a judge that is itself a plant, and not refused for it:
+            # every act in every session would stop for as long as the plant stands.
             said = bundle_rules.ask_command(call.root, command, call.rules())
             call.out += sorted(said.items())
         programs = stages(held)
@@ -606,6 +608,12 @@ def judge_commit(call, options, rest, command, place):
     if message is None:
         call.out.append(("message", ["the commit message cannot be read before git runs: %s"
                                      % unreadable]))
+        return
+    mutant = bundle_shell.judge_under_mutation(call.root, bundle_rules.LOCK)
+    if mutant:
+        call.out.append(("lock", ["UNKNOWN: %s - the code that judges this commit - is under a "
+                                  "mutation run's lock, so its rules would answer as the plant. "
+                                  "Commit when the lock is gone." % mutant]))
         return
     said = bundle_rules.ask_command(call.root, message, call.rules(), kind="AT_COMMIT")
     call.out += sorted(said.items())

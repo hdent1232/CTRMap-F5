@@ -102,6 +102,25 @@ EVENTS = re.compile(r"^\s*(?:<(task-notification|cross-session-message|system-re
                     r"local-command-(?:stdout|stderr|caveat))\b"
                     r"|\[Cross-session (?:idle|delivery) notice\])")
 
+#: A HARNESS MARKER, KNOWN BY ITS SHAPE: the whole text is one bracketed span. Measured 2026-09-26
+#: over 3,305 transcripts, 167,351 user and queued rows: every bracketed text the harness writes
+#: into the user role is either flagged `isMeta` (image annotations, enforcement preambles,
+#: notices) or, unflagged, the ENTIRE text is one span - "[Request interrupted by user]" 47 times
+#: and "... for tool use" 12. An interrupt is the owner WITHDRAWING a request; itemised, it could
+#: never be answered, and a turn could not end over it. Listing the two strings would have closed
+#: this for two spellings, as the notices above were closed for theirs. An owner's "[urgent] ..."
+#: says something outside its bracket and stays the owner's; a message that is ONLY a bracket
+#: asks nothing an item could hold.
+MARKER = re.compile(r"^\s*\[[^\[\]" + LF + r"]*\]\s*$")
+
+
+def harness_text(text):
+    """Is this text the harness speaking - a frame, a notice, a marker - and never the owner?
+
+    THE ONE PREDICATE. `_owner_text` asked `EVENTS` at four places, each on its own; a shape added
+    at three of them is the fourth reading an interrupt as the owner."""
+    return bool(EVENTS.match(text) or MARKER.match(text))
+
 RESOLUTIONS = ("done", "answered", "asked", "blocked", "declined")
 #: The shortest text each resolution may carry. A reason under these is a label, not a reason.
 MINIMUM = {"done": 40, "answered": 20, "asked": 20, "blocked": 40, "declined": 80}
@@ -220,7 +239,7 @@ def _owner_text(row):
     kind = row.get("type")
     if kind == "queue-operation" and row.get("operation") == "enqueue":
         text = row.get("content")
-        return text if isinstance(text, str) and not EVENTS.match(text) else None
+        return text if isinstance(text, str) and not harness_text(text) else None
     if kind == "attachment":
         # A MESSAGE SENT MID-TURN IS DELIVERED AS A `queued_command` ATTACHMENT, AND IT SAYS WHO
         # SENT IT. The first reader knew only the queue's own row, whose content is EMPTY when
@@ -234,18 +253,18 @@ def _owner_text(row):
             return None
         origin = (held.get("origin") or {}).get("kind")
         text = _text_parts(held.get("prompt"))
-        if origin not in (None, "human") or not text.strip() or EVENTS.match(text):
+        if origin not in (None, "human") or not text.strip() or harness_text(text):
             return None
         return text
     if kind != "user" or row.get("isMeta") or row.get("isCompactSummary"):
         return None
     content = _parts(row)
     if isinstance(content, str):
-        return None if EVENTS.match(content) else content
+        return None if harness_text(content) else content
     if any(isinstance(p, dict) and p.get("type") == "tool_result" for p in content):
         return None
     kept = [p.get("text") or "" for p in content if isinstance(p, dict)
-            and p.get("type") == "text" and not EVENTS.match(p.get("text") or "")]
+            and p.get("type") == "text" and not harness_text(p.get("text") or "")]
     return LF.join(kept) if kept else None
 
 
