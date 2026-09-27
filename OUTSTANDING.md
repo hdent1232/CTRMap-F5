@@ -156,14 +156,6 @@ both would have blocked every measurement forever:
       into its commit, which is how two sessions share this tree. FIX: capture git's stderr in
       gate_stamps._git (it discards it) so the refusal says WHY, reproduce, then close.
 
-- [ ] 2026-09-26 GITHUB ACTIONS IS ENABLED ON hdent1232/CTRMap-F5 WITH NO WORKFLOW. Checked
-      before the 2026-09-26 push: no .github/ in this repository or the bundle folder, and 0
-      workflows registered on GitHub, so no push triggers CI today. But the first workflow file
-      anyone adds would start billing, and the owner has been billed once already - a timer
-      that pushed ran CI on every push and spent the month's minutes in 3.5 hours. Making it
-      impossible means disabling Actions on both repositories, which is a repository setting:
-      the OWNER's decision, put to them 2026-09-26.
-
 - [ ] 2026-09-13 THE WHOLE-APP CENSUS FOUND 280 CONFIRMED DEFECTS, and they are not
       fixed. Full inventory, ranked, with evidence and a proposed refusal for each:
       `docs/CENSUS-2026-09-13.md` (in the repo since 2026-09-22, so a checkout has it). 71 high, 150 medium, 59 low;
@@ -175,6 +167,24 @@ both would have blocked every measurement forever:
       bytes into a real game.
 
 ## Done
+
+- [x] 2026-09-26 GITHUB ACTIONS IS DISABLED on hdent1232/CTRMap-F5, hdent1232/verification-bootstrap
+      and hdent1232/ctrmap-claude-memory, on the owner's decision the same day, and read back
+      from the API as enabled=false on all three. None had a workflow, so nothing billed; with
+      Actions off, the first workflow file anyone adds cannot run either - the owner was billed
+      once already by a timer that pushed, which spent the month's minutes in 3.5 hours. The
+      third repository was created after the decision named two, and closed the same way for the
+      same reason.
+
+- [x] 2026-09-26 CLAUDE'S PROJECT MEMORY IS IN A PRIVATE REPOSITORY, hdent1232/ctrmap-claude-memory:
+      32 notes and their index, 232 KB, fourteen of them ORAS and CTRMap research (format notes,
+      build recipe, executable reverse-engineering, deploy paths) that until then existed only on
+      the owner's machine. Private on the owner's choice, because this repository is public. Its
+      sync.py reports differences before moving anything, imports without deleting local notes,
+      and refuses an unreadable memory folder rather than treating it as empty. It stores bytes
+      unchanged (.gitattributes `* -text`): measured, a fresh clone on this machine otherwise came
+      out CRLF against LF memory and reported 32 false differences. A cloud session restores it
+      with `git clone` and `python sync.py import --memory <its memory folder>`.
 
 - [x] 2026-09-13 J. The camera table stops being read silently. Three readers in
       ctrmap.formats.cameradata caught their own IOException and printed it - the file,
