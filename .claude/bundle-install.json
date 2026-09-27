@@ -2,7 +2,10 @@
  ".githooks/commit-msg": {
   "diverged": "CTRMap's commit-msg runs its own commit guard first - per-push approval and the game-data refusals, which the bundle's gate does not know - then the bundle's commit_gate.py, and ends with the gate's stamp as the bundle's hook does."
  },
- "_bundle": "../../../../verification-bootstrap",
+ "_bundle": [
+  "../../../../verification-bootstrap",
+  "../verification-bootstrap"
+ ],
  "_hooks_at": ".claude/bundle-hooks",
  "_review": {
   "model": "haiku"
@@ -69,5 +72,9 @@
  },
  "tools/require_build.py": {
   "not_installed": "CTRMap's require_build.py is the original the bundle's copy was adapted from; its test.ps1 and its Java suites read this one, with CTRMap's own roots."
+ },
+ "_bundle_fetch": {
+  "repo": "verification-bootstrap",
+  "into": "../verification-bootstrap"
  }
 }

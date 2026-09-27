@@ -130,11 +130,14 @@ both would have blocked every measurement forever:
            after a green check_bundle; its four commits were rewritten on the owner's approval so
            no identity or message names the owner. The Desktop copy is a clone of it.
         2. DONE in the bundle (2d74032) and caught up here: `_bundle` may be a LIST resolved
-           against the project root. Still to do HERE: declare ".bundle" as this project's second
-           entry, with `.bundle/` gitignored.
-        3. tools/arm_checkout.py then CLONES the bundle into `.bundle/` when nothing resolves.
-           Today it reports "NOT reachable" loudly at session start rather than doing that,
-           because shipping the clone step before (2) exists would be an untested path.
+           against the project root; this project declares the shared copy's place and, second,
+           the place a clone fetches it to.
+        3. DONE 2026-09-26: tools/arm_checkout.py FETCHES the bundle at session start when
+           nothing `_bundle` names resolves - from the repository beside this checkout's own
+           origin, into `../verification-bootstrap`, which `_bundle_fetch` declares and `_bundle`
+           lists. Beside the checkout rather than inside it, because the bundle's own tools walk
+           folders. If the machine's GitHub access does not reach the bundle's repository, it
+           says so at session start.
       THE FLOW, agreed with both peer sessions: GitHub main is the source of truth; nobody edits
       the Desktop clone in place, plant drives included; changes are made in a clone of one's
       own, merged with `git merge` after `git fetch` (never rebase - guard_command_rules refuses

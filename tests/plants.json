@@ -21,6 +21,14 @@
    "site": "evasion",
    "why": "The cheapest way to report a checkout armed is to trust whatever hooks path is already set without looking at what it names - a path to a directory with no commit-msg runs nothing, and reads as armed."
   },
+  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_a_clone_without_the_bundle_fetches_it_beside_itself": {
+   "file": "tools/arm_checkout.py",
+   "must_say": "UNABLE TO COMMIT",
+   "new": "        done = subprocess.run([\"git\", \"--version\"], capture_output=True,",
+   "old": "        done = subprocess.run([\"git\", \"clone\", \"--quiet\", remote, target], capture_output=True,",
+   "site": "instance",
+   "why": "The fetch undone: a cloud clone of this project has no copy of the bundle on its machine, so the install check refuses every commit there until something puts one where `_bundle` looks - and the session only learns it at its first commit."
+  },
   "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_a_fresh_clone_is_armed": {
    "file": "tools/arm_checkout.py",
    "must_say": "a fresh clone was left UNARMED",

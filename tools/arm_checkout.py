@@ -27,6 +27,7 @@ to the session, which is what has to know. A problem is printed as a problem, ne
     python -B tools/arm_checkout.py [--root <checkout>]
 """
 import io
+import json
 import os
 import subprocess
 import sys
@@ -73,8 +74,73 @@ def arm_hooks(root):
                   "commit hook until this is set" % (repr(was) if was else "unset", HOOKS_DIR))
 
 
+def _declarations(root):
+    """The project's bundle declarations, or None when they cannot be read."""
+    try:
+        with io.open(os.path.join(root, ".claude", "bundle-install.json"), encoding="utf-8") as handle:
+            held = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return held if isinstance(held, dict) else None
+
+
+def bundle_remote(root, repo):
+    """The bundle's repository BESIDE this checkout's own origin - same host, same owner, the
+    bundle's name - or None with no origin. Derived, so no public file has to spell the address."""
+    code, url = _git(root, ["remote", "get-url", "origin"])
+    if code != 0 or not url:
+        return None
+    head = url.rstrip("/")
+    tail = ".git" if head.endswith(".git") else ""
+    head = head[:-len(tail)] if tail else head
+    cut = max(head.rfind("/"), head.rfind(":"), head.rfind(chr(92)))
+    return (head[:cut + 1] + repo + tail) if cut >= 0 else None
+
+
+def fetch_bundle(root):
+    """(fetched, what happened): clone the bundle to where `_bundle_fetch` says.
+
+    WHY, measured 2026-09-26: a cloud clone of this project has no copy of the bundle on its
+    machine, so the install check refused every commit there - correctly, since an install nobody
+    can check is not an installed one. `_bundle_fetch` names the bundle's repository and where to
+    put it; that place must be one of the `_bundle` entries, or the clone would sit where nothing
+    looks. It goes BESIDE the checkout, not inside it: the bundle's own tools walk folders, and a
+    copy of them nested in this project's tree would be read as this project's.
+    """
+    held = _declarations(root)
+    if held is None:
+        return False, "the bundle declarations cannot be read, so where to fetch it is UNKNOWN"
+    fetch = held.get("_bundle_fetch")
+    if not isinstance(fetch, dict) or not fetch.get("repo") or not fetch.get("into"):
+        return False, "no `_bundle_fetch` is declared, so there is nowhere to fetch the bundle from"
+    entries = held.get("_bundle")
+    entries = [entries] if isinstance(entries, str) else entries if isinstance(entries, list) else []
+    if fetch["into"] not in entries:
+        return False, ("`_bundle_fetch` would put the bundle at %s, which `_bundle` does not list"
+                       % fetch["into"])
+    target = os.path.normpath(os.path.join(root, fetch["into"]))
+    if os.path.exists(target):
+        return False, "%s already exists and is not the bundle" % fetch["into"]
+    remote = bundle_remote(root, fetch["repo"])
+    if remote is None:
+        return False, "this checkout has no origin to find the bundle's repository beside"
+    try:
+        done = subprocess.run(["git", "clone", "--quiet", remote, target], capture_output=True,
+                              text=True, timeout=300, creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, "git could not be run to fetch the bundle (%s)" % exc
+    if done.returncode != 0:
+        return False, ("fetching the bundle from its repository failed - on a cloud machine this "
+                       "usually means its GitHub access does not reach that repository: %s"
+                       % (done.stderr or "").strip()[-200:])
+    return True, "fetched the bundle into %s from its repository beside this one's" % fetch["into"]
+
+
 def bundle_reachable(root):
-    """(reachable, what happened), asked of the installer's OWN reader rather than a second one."""
+    """(reachable, what happened), asked of the installer's OWN reader rather than a second one -
+    and when nothing it declares resolves, the bundle is fetched to where it says, then asked
+    again. The answer names the bundle's place relative to this checkout, never as an absolute
+    path, since this is printed where it can be pasted into the next commit message."""
     sys.path.insert(0, os.path.join(root, "tools"))
     try:
         import bundle_install
@@ -82,12 +148,26 @@ def bundle_reachable(root):
         return False, "the bundle installer could not be loaded (%s) - reachability UNKNOWN" % exc
     finally:
         sys.path.pop(0)
-    where, why = bundle_install.bundle_path(
-        os.path.join(root, ".claude", "bundle-install.json"))
+    declarations = os.path.join(root, ".claude", "bundle-install.json")
+    where, why = bundle_install.bundle_path(declarations)
     if where:
-        return True, "verification bootstrap reachable at %s" % where
-    return False, ("the verification bootstrap is NOT reachable from here: %s. Until it is, the "
-                   "install check refuses every commit in this checkout." % why)
+        return True, "verification bootstrap reachable at %s" % _shown(root, where)
+    fetched, how = fetch_bundle(root)
+    if fetched:
+        where, why = bundle_install.bundle_path(declarations)
+        if where:
+            return True, how
+        return False, "%s, and it still does not resolve: %s" % (how, why)
+    return False, ("the verification bootstrap is NOT reachable from here, and was not fetched: %s. "
+                   "Until it is, the install check refuses every commit in this checkout." % how)
+
+
+def _shown(root, path):
+    """A place as it relates to this checkout, not as an absolute path through a home directory."""
+    try:
+        return os.path.relpath(path, root).replace(os.sep, "/")
+    except ValueError:
+        return os.path.basename(path)
 
 
 def main(argv):

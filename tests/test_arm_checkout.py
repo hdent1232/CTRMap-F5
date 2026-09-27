@@ -69,6 +69,45 @@ class AFreshCloneArmsItsOwnHooks(unittest.TestCase):
                         "the repository's settings do not run tools/arm_checkout.py at session "
                         "start - SessionStart runs %r" % (commands,))
 
+    def _cloud_clone(self, into="../verification-bootstrap"):
+        """A checkout the way a cloud machine gets one: nothing it declares for the bundle
+        resolves, and the bundle's repository sits BESIDE its origin, as on GitHub."""
+        base = tempfile.mkdtemp(prefix="arm-cloud-")
+        self.addCleanup(shutil.rmtree, base, True)
+        remote = os.path.join(base, "owner", "verification-bootstrap")
+        os.makedirs(remote)
+        _git(remote, "init", "-q")
+        with io.open(os.path.join(remote, "README.md"), "w", encoding="utf-8") as handle:
+            handle.write("the bundle" + LF)
+        _git(remote, "add", "README.md")
+        _git(remote, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "bundle")
+        root = os.path.join(base, "work", "CTRMap")
+        os.makedirs(os.path.join(root, "tools"))
+        os.makedirs(os.path.join(root, ".claude"))
+        _git(root, "init", "-q")
+        _git(root, "remote", "add", "origin", os.path.join(base, "owner", "CTRMap-F5"))
+        shutil.copy(os.path.join(HERE, "tools", "bundle_install.py"), os.path.join(root, "tools"))
+        declared = {"_bundle": [os.path.join(base, "nowhere"), "../verification-bootstrap"],
+                    "_bundle_fetch": {"repo": "verification-bootstrap", "into": into}}
+        with io.open(os.path.join(root, ".claude", "bundle-install.json"), "w",
+                     encoding="utf-8") as handle:
+            handle.write(json.dumps(declared) + LF)
+        return root, os.path.join(base, "work", "verification-bootstrap")
+
+    def test_a_clone_without_the_bundle_fetches_it_beside_itself(self):
+        root, beside = self._cloud_clone()
+        reached, said = arm_checkout.bundle_reachable(root)
+        self.assertTrue(reached and os.path.isdir(os.path.join(beside, ".git")),
+                        "a clone with no bundle on its machine was left UNABLE TO COMMIT - the "
+                        "bundle was not fetched beside it: %s" % said)
+
+    def test_a_fetch_to_a_place_nothing_looks_is_refused(self):
+        root, beside = self._cloud_clone(into="../somewhere-else")
+        reached, said = arm_checkout.bundle_reachable(root)
+        self.assertFalse(reached, "a fetch into a place `_bundle` does not list was accepted")
+        self.assertFalse(os.path.exists(os.path.join(os.path.dirname(beside), "somewhere-else")),
+                         "the bundle was cloned where nothing will look for it")
+
     def test_a_checkout_pointing_its_hooks_elsewhere_is_repointed(self):
         root = self._checkout(hooks_path=".git/hooks")
         arm_checkout.arm_hooks(root)
