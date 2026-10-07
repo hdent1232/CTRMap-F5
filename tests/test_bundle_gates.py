@@ -93,6 +93,22 @@ class ACommitIsAskedWhatSections2And14Ask(unittest.TestCase):
         self.assertTrue(self.gate.coauthor(
             "x" + LF + "see Co-Authored-By: Claude X <noreply@anthropic.com> above" + LF))
 
+    def test_the_trailer_Claude_Code_WRITES_is_the_shape(self):
+        """Read from the Claude Code CLI itself, 2.1.291: a first-party model signs as `Claude
+        <its model>`, a Fable model and an unknown one as plain `Claude`, and some as `Claude
+        Code`. The shape required a model word, so every default commit from a session on a Fable
+        model was refused by its own project's gate. A name that is not Claude's still is."""
+        for name in ("Claude", "Claude Code", "Claude Opus 5.5"):
+            with self.subTest(name):
+                self.assertEqual(self.gate.coauthor(
+                    "x" + LF + LF + "Co-Authored-By: %s <noreply@anthropic.com>" % name + LF), [],
+                    "a trailer Claude Code writes by default was refused")
+        for name in ("Somebody", "Claudette", "ClaudeX"):
+            with self.subTest(name):
+                self.assertTrue(self.gate.coauthor(
+                    "x" + LF + LF + "Co-Authored-By: %s <noreply@anthropic.com>" % name + LF),
+                    "a trailer that does not name Claude was accepted")
+
     def test_a_QUOTED_count_is_a_mention_and_a_bare_one_is_a_claim(self):
         self.assertEqual(self.gate.test_claims("as the doc says, `green at 6,105 tests`"), [])
         self.assertEqual(self.gate.test_claims("the suite: 6,349 tests, green"), [6349])
@@ -280,6 +296,23 @@ class EveryPlantTheGateDrivesIsCountedAloud(unittest.TestCase):
                          "--owed counted zero plants driven beside a gate that drove them")
         self.assertIn("--owed drives no plant", said)
 
+    def test_a_bare_invocation_drives_nothing_and_names_the_choices(self):
+        """TYPING LESS WAS THE EXPENSIVE COMMAND. Measured 2026-09-27 on the project this came
+        from: its copy run with no argument - meant as a quick look - started a drive of every
+        held plant, about 75 minutes of defects laid on disk one after another, and one of them
+        (the hook dispatcher) held another session's every act. The whole ledger is `--all` now;
+        nothing is `--all` by omission."""
+        import prove_plants
+        from unittest import mock
+        driven = []
+        with mock.patch.object(prove_plants, "drive_plant",
+                               lambda key, entry, *a, **k: driven.append(key) or (True, "red")):
+            code = [None]
+            said = self.said(lambda: code.__setitem__(0, prove_plants.main(["prove_plants.py"])))
+        self.assertEqual(driven, [], "a bare invocation drove plants")
+        self.assertNotEqual(code[0], 0, "a bare invocation that did nothing reported success")
+        self.assertIn("--all", said, "the refusal did not say how to drive the whole ledger")
+
 
 class EveryGateSubprocessIsBOUNDED(unittest.TestCase):
     """README section 16: thirteen and a half hours on 0.14 seconds of CPU."""
@@ -343,6 +376,42 @@ class TheInstallIsAskedAtEveryCommit(unittest.TestCase):
                 encoding="utf-8").write("def problems(p):" + LF + "    return [], 0" + LF)
         found = self.bi.problems(declarations=self.declared(os.path.join(self.tmp, "c")))
         self.assertTrue(found and "NO file" in found[0], found)
+
+    @unittest.skipIf(os.name == "nt" or not shutil.which("sh"),
+                     "needs a POSIX `sh` and symlinks - the machines that lack `python` are those")
+    def test_the_gate_runs_where_only_python3_does(self):
+        """macOS since 12.3, and Debian and Ubuntu without python-is-python3, have `python3` and
+        no `python`. Both git hooks said `python -B ...`, so on those machines every commit died
+        on `python: not found` before the gate asked anything - measured 2026-10-06. Each hook is
+        run here by `sh`, as git runs it, with a PATH holding `python3` and nothing else, over
+        stubs of every tool it names that record that they ran."""
+        root = os.path.join(self.tmp, "p")
+        folder, tools = os.path.join(root, "bin"), os.path.join(root, "tools")
+        os.makedirs(folder)
+        os.makedirs(tools)
+        os.symlink(sys.executable, os.path.join(folder, "python3"))
+        ran = os.path.join(root, "ran.txt")
+        stub = ("import os" + LF + "with open(%r, 'a') as handle:" % ran + LF
+                + "    handle.write(os.path.basename(__file__) + chr(10))" + LF)
+        message = os.path.join(root, "message.txt")
+        io.open(message, "w", encoding="utf-8").write("a change" + LF)
+        for hook in ("pre-commit", "commit-msg"):
+            text = io.open(os.path.join(HERE, ".githooks", hook), encoding="utf-8").read()
+            named = sorted({rel for line in text.splitlines() if not line.lstrip().startswith("#")
+                            for rel in re.findall(r"tools/[\w.-]+\.py", line)})
+            self.assertTrue(named, "%s runs no tool - nothing here could be asked" % hook)
+            for rel in named:
+                io.open(os.path.join(root, rel), "w", encoding="utf-8").write(stub)
+            if os.path.exists(ran):
+                os.remove(ran)
+            done = subprocess.run([shutil.which("sh"), os.path.join(HERE, ".githooks", hook),
+                                   message], cwd=root, capture_output=True, text=True,
+                                  timeout=120, env={"PATH": folder, "HOME": root})
+            said = io.open(ran, encoding="utf-8").read().split() if os.path.exists(ran) else []
+            self.assertEqual((done.returncode, sorted(said)),
+                             (0, sorted(os.path.basename(r) for r in named)),
+                             "the %s hook did not run its tools with python3 alone: %s"
+                             % (hook, (done.stdout + done.stderr).strip()[-300:]))
 
     def test_the_install_SCOPE_is_the_checkers_own_walk(self):
         """The write rule's scope was a SECOND walk of the bundle, with a skip list of its own,
@@ -440,6 +509,23 @@ class ABundleIsFoundWhereverItsProjectDeclaresIt(unittest.TestCase):
         self.assertEqual(os.path.normcase(where or ""), os.path.normcase(present), why)
 
 
+def code_page(encoding):
+    """While held, a subprocess run with `text=True` and no `encoding` decodes in `encoding` - what
+    a Windows machine does with git's UTF-8 bytes - wherever the test runs. Every door Python has
+    to that default is patched, because which one `subprocess` asks differs between versions."""
+    import contextlib
+    import locale
+    from unittest import mock
+    stack = contextlib.ExitStack()
+    stack.enter_context(mock.patch.object(locale, "getpreferredencoding",
+                                          lambda *_a, **_k: encoding))
+    if hasattr(locale, "getencoding"):
+        stack.enter_context(mock.patch.object(locale, "getencoding", lambda: encoding))
+    if hasattr(subprocess, "_text_encoding"):
+        stack.enter_context(mock.patch.object(subprocess, "_text_encoding", lambda: encoding))
+    return stack
+
+
 class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
     """`gate_stamps.py`: a hook reads the call, and a program's `git commit --no-verify` is not in
     the call. Measured 2026-09-23: fifteen spellings of a skipped gate are refused before git
@@ -459,9 +545,14 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
         self.assertEqual(gate_stamps.init(self.root), 0)
         tool = os.path.abspath(gate_stamps.__file__).replace(chr(92), "/")
         python = sys.executable.replace(chr(92), "/")
-        with io.open(os.path.join(self.root, ".githooks", "commit-msg"), "w", encoding="utf-8",
-                     newline=LF) as handle:
+        hook = os.path.join(self.root, ".githooks", "commit-msg")
+        with io.open(hook, "w", encoding="utf-8", newline=LF) as handle:
             handle.write("#!/bin/sh" + LF + 'exec "%s" -B "%s" stamp "$1"' % (python, tool) + LF)
+        # EXECUTABLE, OR GIT NEVER RUNS IT. Windows runs a hook whatever its mode; Linux and macOS
+        # skip one without the bit, with only a hint - so on those every commit here was made
+        # without a stamp, five tests read gated commits as made past the gate, and two of the
+        # plants they hold could not redden, which refused every install there.
+        os.chmod(os.path.join(self.root, ".githooks", "commit-msg"), 0o755)
         self.git("config", "core.hooksPath", ".githooks")
 
     def git(self, *args, **extra):
@@ -477,6 +568,32 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
             handle.write(text + LF)
         self.git("add", "a.txt")
 
+    def test_a_commit_while_git_would_SKIP_its_hook_is_refused_before_it_is_made(self):
+        """Measured 2026-10-07: this bundle and CTRMap had committed `.githooks/*` as 100644 from
+        Windows, where git runs a hook whatever its mode. A clone on Linux or macOS takes that mode
+        and git there skips the hook with only a hint, so every cloud checkout would commit past
+        the gate while `core.hooksPath` named it. `core.fileMode` is off here, as Windows keeps it,
+        so the index records 100644 on every system and this test means the same everywhere."""
+        commit = getattr(self.gs, self.gs.AT_COMMIT)
+        self.assertEqual(commit("a change", self.root), [], "a hook git runs was refused")
+        self.git("config", "core.fileMode", "false")
+        self.git("add", "--", ".githooks/commit-msg")
+        said = commit("a change", self.root)
+        self.assertTrue(said, "a commit while git would skip its hook was let through")
+        self.assertIn("update-index --chmod=+x", " ".join(said), "the refusal names no remedy")
+        self.git("update-index", "--chmod=+x", "--", ".githooks/commit-msg")
+        self.assertEqual(commit("a change", self.root), [],
+                         "a hook committed executable was still refused")
+
+    @unittest.skipIf(os.name == "nt", "Windows has no executable bit for git to skip a hook over")
+    def test_a_hook_not_executable_ON_DISK_is_refused_too(self):
+        self.git("add", "--", ".githooks/commit-msg")
+        self.git("update-index", "--chmod=+x", "--", ".githooks/commit-msg")
+        os.chmod(os.path.join(self.root, ".githooks", "commit-msg"), 0o644)
+        said = self.gs.unrunnable_hooks(self.root)
+        self.assertTrue(any("chmod +x" in line for line in said),
+                        "a hook git would skip on this machine was let through: %r" % said)
+
     def test_a_commit_made_past_the_gate_is_found_until_it_is_off_every_ref(self):
         self.change("one")
         self.git("commit", "-q", "-m", "through the gate")
@@ -490,6 +607,48 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
         self.git("reset", "-q", "--soft", "HEAD~1")
         self.assertEqual(self.gs.ungated(self.root), [],
                          "a commit taken off every ref was still refused")
+
+    def test_a_message_that_is_not_ascii_is_matched_to_its_stamp(self):
+        """MEASURED 2026-09-27 on DT Engine: a subject led by the byte-order mark PowerShell's
+        `Set-Content -Encoding utf8` writes was stamped by `commit-msg` and then refused as made
+        past the gate, because git's copy was read back in the Windows code page. An em dash or an
+        accent does the same."""
+        self.change("one")
+        path = os.path.join(self.root, "message.txt")
+        with io.open(path, "w", encoding="utf-8-sig", newline=LF) as handle:
+            handle.write("docs: the rename — café" + LF)
+        self.git("commit", "-q", "-F", path)
+        # THE CODE PAGE, ON EVERY MACHINE. A UTF-8 locale decodes git's bytes correctly however
+        # `_git` asks, so on Linux and macOS this passed with the defect in place: the plant that
+        # drops `encoding="utf-8"` stayed green and refused every install there. git is asked as
+        # a Windows machine asks it - `text=True` decoding in cp1252.
+        with code_page("cp1252"):
+            found = self.gs.ungated(self.root)
+        self.assertEqual(found, [],
+                         "a commit the gate passed was refused because its message is not ASCII")
+
+    def test_a_verdict_is_asked_again_when_the_judge_changes(self):
+        """The memo was keyed on the reflogs and the stamps only, so a wrong verdict outlived the
+        fix to the rule that gave it - the lock stayed until some ref happened to move."""
+        judge = os.path.join(self.root, "judge.py")
+        with io.open(judge, "w", encoding="utf-8") as handle:
+            handle.write("v1" + LF)
+        original = self.gs.__file__
+        self.gs.__file__ = judge
+        self.addCleanup(setattr, self.gs, "__file__", original)
+        memo = os.path.join(self.root, ".git", self.gs.JUDGED)
+        self.assertEqual(self.gs.ungated(self.root), [])
+        with io.open(memo, encoding="utf-8") as handle:
+            held = json.load(handle)
+        held["found"] = ["a stale verdict"]
+        with io.open(memo, "w", encoding="utf-8") as handle:
+            json.dump(held, handle)
+        self.assertEqual(self.gs.ungated(self.root), ["a stale verdict"],
+                         "the control: with nothing changed the memo is what is answered")
+        with io.open(judge, "w", encoding="utf-8") as handle:
+            handle.write("version two of the judge" + LF)
+        self.assertEqual(self.gs.ungated(self.root), [],
+                         "a verdict outlived a change to the rule that gave it")
 
     def test_every_way_git_runs_the_gate_leaves_a_stamp_that_matches(self):
         """`commit -a` hands the hook a TEMPORARY index; an amend and a merge are commits too."""
@@ -644,6 +803,106 @@ class ACommitTheGateNeverSawIsFoundAndRefused(unittest.TestCase):
         self.assertTrue(self.gs.forges("python -m ruff check names_it.py", self.root),
                         "a local ruff.py shadowing the linter was read as the linter")
 
+    def _files(self):
+        """A reader and a forger in each language, and files that name the store."""
+        for name, text in (
+                ("show.py", "import json, sys; print(len(json.load(open(sys.argv[1]))))"),
+                ("show.sh", "wc -c \"$1\""),
+                ("show.ps1", "Get-Content $args[0]"),
+                ("forge.py", "open('.git/gate-stamps', 'a').write('tree digest')"),
+                ("forge.sh", "echo tree >> .git/gate-stamps"),
+                ("forge.ps1", "Add-Content .git/gate-stamps tree"),
+                ("ledger.json", '{"plants": {"x": {"old": ".git/gate-stamps"}}}'),
+                ("notes.txt", "the stamps live in .git/gate-stamps"),
+                ("names_it.py", "STORE = '.git/gate-stamps'")):
+            with io.open(os.path.join(self.root, name), "w", encoding="utf-8",
+                         newline=LF) as handle:
+                handle.write(text + LF)
+        os.makedirs(os.path.join(self.root, "a dir"))
+        for name in ("show.py", "forge.py"):
+            shutil.copy(os.path.join(self.root, name), os.path.join(self.root, "a dir", name))
+
+    def test_a_DATA_file_handed_to_a_script_is_read_by_it_not_run(self):
+        """`python -B show.py tests\\plants.json` was refused on 2026-09-27 as forging a stamp: the
+        plant ledger names the store because it holds plants for this tool's own tests, and it
+        was the ARGUMENT of a script that only reads it. The program is the interpreter's script,
+        and nothing it is handed is read, whatever its kind - the owner's rule."""
+        self._files()
+        os.makedirs(os.path.join(self.root, "tests"))
+        shutil.copy(os.path.join(self.root, "ledger.json"),
+                    os.path.join(self.root, "tests", "plants.json"))
+        for command in ("python -B show.py ledger.json", "python show.py -v notes.txt",
+                        "py -3 show.py tests\\plants.json", "python -B show.py names_it.py"):
+            with self.subTest(command):
+                self.assertEqual(self.gs.forges(command, self.root), "",
+                                 "a data file a script reads was read as a program it runs")
+
+    def test_a_program_named_by_a_VARIABLE_is_not_replaced_by_its_data(self):
+        """A program this cannot find - `$TOOLS/show.py`, a variable - was skipped, and its first
+        FILE argument read as the program instead: `python3 $T/show.py tests/plants.json` was
+        refused as forging a stamp (measured 2026-10-06), the case above for a program named
+        literally. The forger named literally, and handed nothing, is still read."""
+        self._files()
+        os.makedirs(os.path.join(self.root, "tests"))
+        shutil.copy(os.path.join(self.root, "ledger.json"),
+                    os.path.join(self.root, "tests", "plants.json"))
+        for command in ("python3 $T/show.py tests/plants.json", "time python3 $T/show.py notes.txt"):
+            with self.subTest(command):
+                self.assertEqual(self.gs.forges(command, self.root), "",
+                                 "a data file was read as the program a variable names")
+        self.assertTrue(self.gs.forges("python3 forge.py ledger.json", self.root),
+                        "the control: a forger named literally was not read")
+
+    def test_a_data_file_handed_to_ANOTHER_interpreter_is_data_too(self):
+        self._files()
+        for command in ("bash show.sh ledger.json", "sh show.sh notes.txt",
+                        "pwsh -ExecutionPolicy Bypass -File show.ps1 ledger.json"):
+            with self.subTest(command):
+                self.assertEqual(self.gs.forges(command, self.root), "",
+                                 "a data file a shell script reads was read as a program")
+
+    def test_a_PROGRAM_handed_to_a_script_is_still_read(self):
+        """The program is still read whatever follows it: the script itself, and the file `-m
+        runpy` is handed, because `-m` names a module and that file is the first thing run. The
+        cheapest widening of the rule above is to read no file at all - and then the forger itself
+        walks past, with a data file after it or an option's value in front of it."""
+        self._files()
+        for command in ("python forge.py ledger.json", "python -B forge.py notes.txt",
+                        "bash forge.sh ledger.json",
+                        "pwsh -ExecutionPolicy Bypass -File forge.ps1 ledger.json",
+                        "python -m runpy forge.py ledger.json",
+                        "@'" + LF + "open('.git/gate-stamps', 'a').write('x')" + LF
+                        + "'@ | python -"):
+            with self.subTest(command):
+                self.assertTrue(self.gs.forges(command, self.root),
+                                "the program itself was never read")
+
+    def test_a_QUOTED_script_path_is_one_word(self):
+        """Split on spaces, `python "C:\\a dir\\forge.py"` was two fragments, neither a file, so a
+        forger in any folder with a space in its name was never read. Relative, because this
+        class's root is named `gate-stamps-...` and any path through it names the store."""
+        self._files()
+        spaced = os.path.join("a dir", "forge.py")
+        for command in ('python "%s"' % spaced, "python -B '%s' ledger.json" % spaced):
+            with self.subTest(command):
+                self.assertTrue(self.gs.forges(command, self.root),
+                                "a quoted script path with a space in it was never read")
+
+    def test_a_QUOTED_interpreter_path_is_one_word_too(self):
+        self._files()
+        command = '"C:\\Program Files\\Python312\\python.exe" forge.py'
+        self.assertTrue(self.gs.forges(command, self.root),
+                        "a quoted interpreter path with a space in it ran a script nothing read")
+
+    def test_a_QUOTED_reader_handed_data_is_let_run(self):
+        """The cheapest way to refuse a quoted forger is to refuse every quote - and then the
+        command as it was refused on 2026-09-27, a quoted script path reading the plant ledger,
+        is refused again the moment its folder has a space in it."""
+        self._files()
+        shown = os.path.join("a dir", "show.py")
+        self.assertEqual(self.gs.forges('python -B "%s" ledger.json' % shown, self.root), "",
+                         "a quoted reader handed a data file was read as forging a stamp")
+
     def test_a_copy_installed_DEEPER_still_finds_its_repository(self):
         """A project may keep its tools one level down - `tools/audit/` - and a root counted in
         `dirname`s then names `tools/`, so `init` writes the baseline where nothing reads it."""
@@ -726,6 +985,55 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
         self.write("tools/bare.py", 'print("REFUSING: something")' + LF)
         self.assertEqual(tiers.below(self.tmp), ["tools/bare.py"],
                          "the derivation did not tell a declared rule from a detector")
+
+    def test_an_ADOPTED_tool_list_only_SHRINKS_at_the_write(self):
+        """`--adopt` records, once, the tools a project arrived with below the point of action,
+        and its docstring says the set "can only shrink as its tools are brought to the act".
+        Nothing asked: an Edit adding a name to it excused a new detector as starting debt at
+        the commit, and deleting the record then writing a larger one was two allowed writes."""
+        from unittest import mock
+        import tiers
+        rel = ".claude/bundle-install.json"
+
+        def record(*below):
+            return json.dumps({"_tiers_adopted": {"at": "2026-10-06T00:00:00Z",
+                                                  "below": list(below)}})
+        before, grown, shrunk = record("tools/old.py"), record("tools/old.py", "tools/new.py"), \
+            record()
+        with mock.patch.object(tiers, "committed_declarations", return_value=""):
+            self.assertTrue(tiers.adoption_change_problems(rel, before, grown, self.tmp),
+                            "a name added to the adoption by hand went through")
+            self.assertEqual(tiers.adoption_change_problems(rel, before, shrunk, self.tmp), [],
+                             "the adoption shrinking - its tools brought to the act - was refused")
+            self.assertEqual(tiers.adoption_change_problems(rel, "{}", before, self.tmp), [],
+                             "the first adoption, with none committed, was refused")
+        with mock.patch.object(tiers, "committed_declarations", return_value=before):
+            self.assertTrue(tiers.adoption_change_problems(rel, "{}", grown, self.tmp),
+                            "deleting the adoption and writing a larger one went through")
+
+    def test_the_COMMIT_holds_the_adoption_to_HEADs(self):
+        """The second layer, for a write no hook saw: `tiers.py`, which every commit runs, refuses
+        an adoption larger than the one HEAD carries."""
+        from unittest import mock
+        import tiers
+        head = json.dumps({"_tiers_adopted": {"at": "x", "below": ["tools/old.py"]}})
+        out = io.StringIO()
+        with mock.patch.object(tiers, "guards", return_value=[("tools/new.py", "")]), \
+                mock.patch.object(tiers, "below", return_value=["tools/new.py"]), \
+                mock.patch.object(tiers, "adopted", return_value={"tools/old.py", "tools/new.py"}), \
+                mock.patch.object(tiers, "committed_declarations", return_value=head), \
+                mock.patch("sys.stdout", out):
+            code = tiers.main(["tiers.py"])
+        self.assertEqual(code, 1, "an adoption grown past HEAD's passed the commit: %s"
+                         % out.getvalue())
+        self.assertIn("grows past HEAD's", out.getvalue())
+
+    def test_the_adoption_rule_is_DECLARED_where_the_write_hook_asks_it(self):
+        sys.path.insert(0, HOOKS)
+        import bundle_rules
+        asked = [rule for rule in bundle_rules.rules(HERE) if rule.name == "tiers"
+                 and rule.kind == "AT_WRITE_CHANGE" and rule.watches(".claude/bundle-install.json")]
+        self.assertEqual(len(asked), 1, "no write-time rule watches the adoption record")
 
     def machinery_tree(self):
         """A dispatched guard importing a helper that says no, and a loose module nobody asks."""

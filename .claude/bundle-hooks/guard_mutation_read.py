@@ -43,6 +43,7 @@ that the same answer the old name check gave. It was the same answer, and the sa
 exactly as `grep -rn` does, and `Edit` writes over a mutant that the `finally` then overwrites.
 A call is judged by the PATHS it carries as well as the commands, by shape, at any depth.
 """
+import fnmatch
 import json
 import os
 import re
@@ -159,10 +160,100 @@ def segments(command):
     return [s for s in re.split(r"&&|\|\||[;|\n]", command) if s.strip()]
 
 
+#: Searches that read every file beneath where they stand when handed no path: `grep -r x` and
+#: `rg x` read the working directory, and the working directory holds the module.
+_SEARCHES = ("rg", "ag", "ack", "ripgrep")
+_GREPS = ("grep", "egrep", "fgrep", "zgrep")
+
+
+def _resolve(where, token):
+    """`token` as a project path from `where` (project-relative, '' at the root), or None when it
+    is absolute or cannot be placed - an absolute path is matched as text, as before."""
+    token = token.strip(chr(39) + chr(34)).replace(chr(92), "/")
+    if not token or where is None or os.path.isabs(token) or re.match(r"^[A-Za-z]:/", token):
+        return None
+    joined = os.path.normpath(os.path.join(where or ".", token)).replace(chr(92), "/")
+    return "" if joined == "." else joined
+
+
+def _holds(path, locked):
+    """Is the project path `path` the locked module, or a folder it sits in - globs included?"""
+    if path is None:
+        return False
+    if path == "" or path == locked or locked.startswith(path + "/"):
+        return True
+    if any(c in path for c in "*?["):
+        parts = locked.split("/")
+        return any(fnmatch.fnmatchcase("/".join(parts[:n]), path) for n in range(1, len(parts) + 1))
+    return False
+
+
+def _module_names(locked):
+    """The dotted names the locked module imports as - `src/pkg/mod.py` is `pkg.mod` and
+    `src.pkg.mod` - never the bare last part, which names half the modules anywhere."""
+    parts = re.sub(r"\.py$", "", locked).split("/")
+    return [".".join(parts[n:]) for n in range(len(parts) - 1)]
+
+
+def reads_by_running(command, locked):
+    """Why one command READS the locked module by what it RUNS, or ''.
+
+    WHAT RUNS, NOT THE FIRST WORD TYPED - `bundle_shell.runs`, with `cd` followed. Measured
+    2026-10-06: `grep -rn x .`, `grep -rn x ./src`, `rg foo` (a search handed no path reads where
+    it stands), `cat src/pkg/*.py`, `python3 -c 'import pkg.mod'` and `timeout 60 python
+    tools/audit/weigh.py` all read the mutant while this guard read the words as typed."""
+    where = ""
+    for one in bundle_shell.split_commands(command):
+        moved = re.match(r"^\s*(?:cd|chdir|pushd|Set-Location|sl)\s+(\S+)\s*$", one, re.I)
+        if moved:
+            where = _resolve(where, moved.group(1))
+            continue
+        for words, _background in bundle_shell.runs(one):
+            if not words:
+                continue
+            program = bundle_shell.program_of(words[0][0])
+            if program == "git" or EXEMPT_TOOL in one:
+                continue
+            args = [(t if t is not None else w) for w, t in words[1:]]
+            if re.fullmatch(r"py|pythonw?[0-9.]*|uv|coverage", program):
+                module = next((args[at + 1] for at, a in enumerate(args[:-1]) if a == "-m"), "")
+                script = next((a for a in args if a.endswith(".py")), "")
+                tool = AUDIT_TOOL.search(script.replace(chr(92), "/")) or re.match(
+                    r"tools\.audit\.([A-Za-z_][A-Za-z0-9_]*)$", module)
+                if tool and not module.startswith(("ruff", "pyflakes", "flake8")):
+                    return "runs %s, which reads the tree it answers about" % tool.group(0)
+                code = " ".join(args)
+                for name in _module_names(locked):
+                    if module == name or re.search(r"\b%s\b" % re.escape(name), code):
+                        return "imports %s, the mutated module" % name
+            paths = [a for a in args if not a.startswith("-")]
+            recursive = program in _SEARCHES or (program in _GREPS and any(
+                re.fullmatch(r"-[A-Za-z]*[rR][A-Za-z]*|--recursive|--dereference-recursive", a)
+                for a in args))
+            if recursive:
+                given = paths[1:] if not any(a in ("-e", "--regexp") or a.startswith("--regexp=")
+                                             for a in args) else paths
+                if not given and _holds(where, locked):
+                    return "%s searches %s, where the mutated module is" % (
+                        program, "the project" if where == "" else where or "where it stands")
+            for token in paths:
+                if _holds(_resolve(where, token), locked):
+                    return "%s reads %s" % (program, token)
+    return ""
+
+
 def verdict(command, locked):
     """(deny?, reason). Pure, so a test can drive it without a lock file or a hook runner."""
     if not locked:
         return False, None
+    by_running = reads_by_running(command, locked)
+    if by_running:
+        return True, (
+            bundle_shell.policy(__file__) + "\n"
+            "A mutation run is holding %s open, so what is on disk right now is a mutant, and "
+            "this command %s.\n\n"
+            "Wait for the run to finish. To read the committed content meanwhile:\n"
+            "    git show HEAD:%s\n" % (locked, by_running, locked))
     for segment in segments(command):
         words = segment.split()
         if not words:

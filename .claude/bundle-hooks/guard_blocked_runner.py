@@ -112,47 +112,9 @@ ADAPT = ("BLOCKED", "ESCAPES")
 GIT_TIMEOUT = 20
 
 
-def alive(pid):
-    """Whether `pid` is a live process - asking WINDOWS, not assuming POSIX.
-
-    `os.kill(pid, 0)` IS NOT A PROBE HERE. Python implements `os.kill` on Windows through
-    `OpenProcess(PROCESS_TERMINATE)` for every signal, so for a process this account may not
-    open for termination it raises `[WinError 87] The parameter is incorrect`. Measured against
-    the process table on 2026-09-08 it reported three LIVE processes as dead, one of them the
-    sweep runner this hook exists to notice - so the first version of this function would have
-    found every blocked runner "dead" and NEVER FIRED. A guard that cannot fire is decoration,
-    and this one was written in the same session as that lesson.
-
-    A pid of None or 0 is not a process. An account that may not query a real pid answers
-    ALIVE: uncertainty must not silently disable the refusal.
-
-    Standalone on purpose - the `.claude/hooks/` guards import nothing from this repository, so
-    that a broken module cannot take a refusal down with it. `tools/audit/liveness.py` therefore
-    checks that a probe BRANCHES ON `os.name`, not that there is only one copy of it.
-    """
-    try:
-        pid = int(pid)
-    except (TypeError, ValueError):
-        return False
-    if pid <= 0:
-        return False
-    if os.name != "nt":
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            return False
-        return True
-    import ctypes
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.OpenProcess(0x1000, False, pid)   # QUERY_LIMITED_INFORMATION
-    if not handle:
-        # 87 is ERROR_INVALID_PARAMETER - Windows' answer for a pid that does not exist. Any
-        # other failure is a permission answer, and permission-denied is not absence.
-        return kernel32.GetLastError() != 87
-    code = ctypes.c_ulong()
-    ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-    kernel32.CloseHandle(handle)
-    return bool(ok) and code.value == 259               # 259 is STILL_ACTIVE
+#: THE ONE PROBE - `bundle_shell.alive`. This file's own copy read a POSIX permission error as a
+#: DEAD process, so a runner owned by another account switched this refusal off.
+alive = bundle_shell.alive
 
 
 def blocked_for():

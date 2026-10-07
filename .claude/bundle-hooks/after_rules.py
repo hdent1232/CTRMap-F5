@@ -97,12 +97,15 @@ def new_findings(previous, found):
 
 
 def written_by(payload, root):
-    """The project files a Write or Edit call wrote: the write hook asked those before they
-    landed, so they are recorded rather than judged a second time."""
+    """The project file a Write or Edit call wrote AND the write hook asked about before it landed,
+    recorded rather than judged a second time. Only that one: `bundle_rules.judged_at_write` is
+    the write hook's own answer, and a path it did not judge - a notebook edit, a write nested in
+    a batching tool - is judged here like any command's write (measured 2026-10-06: recorded as
+    judged by both hooks, it was judged by neither)."""
     if not bundle_shell.writes(payload):
         return []
-    return [bundle_rules.rel_of(root, t if os.path.isabs(t) else os.path.join(root, t))
-            for t in bundle_shell.paths(payload)]
+    rel = bundle_rules.judged_at_write(payload, root)
+    return [rel] if rel else []
 
 
 def after_findings(root):
@@ -134,7 +137,8 @@ def after_findings(root):
     if bundle_rules.lock_state(root) != start:
         return []                          # nothing said, nothing kept: asked again next call
     fresh = new_findings(held.get("found") or {}, found)
-    _keep(root, state, found)
+    if not bundle_rules.excused(root):
+        _keep(root, state, found)    # a plant's own test is shown its subject and keeps nothing
     if not fresh:
         return []
     lines = ["THE CALL THAT JUST RAN CHANGED SOMETHING A RULE WATCHES:", ""]

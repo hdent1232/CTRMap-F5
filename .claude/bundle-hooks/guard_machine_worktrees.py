@@ -70,58 +70,31 @@ READ_ONLY = (
 ADAPT = ("STATE", "RUN_LOCK", "WORKTREE", "READ_ONLY")
 
 
-def alive(pid):
-    """Whether `pid` is a live process, answering ALIVE whenever it cannot tell.
+#: THE ONE PROBE OF WHETHER A PROCESS LIVES, beside every other reading of the machine in
+#: `bundle_shell`. This file and `guard_blocked_runner` each kept a copy, and the copies disagreed
+#: on POSIX: this one read a permission error as ALIVE, that one as dead.
+alive = bundle_shell.alive
 
-    `os.kill(pid, 0)` IS NOT A PROBE ON WINDOWS. Python routes it through
-    `OpenProcess(PROCESS_TERMINATE)` for every signal, so a process this account may not open
-    for termination raises `[WinError 87]` - measured on 2026-09-08 against the process table,
-    where it called three live processes dead, one of them the sweep runner.
 
-    UNCERTAINTY IS ALIVE HERE, and that is the whole correction. The failure this file exists
-    for is an absence concluded from something unreadable, so every answer short of "the
-    operating system says this pid does not exist" counts as running.
-
-    Standalone on purpose - the `.claude/hooks/` guards import nothing from this repository, so
-    a broken module cannot take a refusal down with it.
-    """
-    try:
-        pid = int(pid)
-    except (TypeError, ValueError):
-        return False
-    if pid <= 0:
-        return False
-    if os.name != "nt":
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except OSError:
-            return True                      # permission, or anything else: not an absence
-        return True
-    import ctypes
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.OpenProcess(0x1000, False, pid)      # QUERY_LIMITED_INFORMATION
-    if not handle:
-        # 87 is ERROR_INVALID_PARAMETER - Windows' answer for a pid that does not exist. Every
-        # other failure is a permission answer, and permission-denied is not absence.
-        return kernel32.GetLastError() != 87
-    code = ctypes.c_ulong()
-    ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-    kernel32.CloseHandle(handle)
-    if not ok:
-        return True                          # could not read the exit code: not an absence
-    return code.value == 259                 # STILL_ACTIVE
+#: What `sweep_pid` answers for a lock that is THERE and cannot be read.
+UNREADABLE = "unreadable"
 
 
 def sweep_pid():
-    """The pid of the bounded run that owns the worktrees, or None when no run holds the lock."""
+    """The pid of the bounded run that owns the worktrees, None when no run holds the lock - or
+    UNREADABLE when the lock is there and cannot be read.
+
+    A LOCK NOBODY CAN READ IS NOT AN ABSENT ONE. This read both as None, so a run lock caught
+    half-written read as no run at all - the "could not look" collapsed into "not there" that
+    this file's own docstring is about, inside it."""
+    if not os.path.exists(RUN_LOCK):
+        return None
     try:
         with io.open(RUN_LOCK, encoding="utf-8") as handle:
             held = json.load(handle)
     except (IOError, OSError, ValueError):
-        return None
-    return held.get("pid")
+        return UNREADABLE
+    return held.get("pid") if isinstance(held, dict) else UNREADABLE
 
 
 def touches_a_worktree(command):
@@ -192,6 +165,12 @@ def main():
     if not by_command and not written:
         return 0
     pid = sweep_pid()
+    if pid == UNREADABLE:
+        sys.stderr.write(refusal("(unknown - %s exists and cannot be read; if no run is in "
+                                 "flight, remove it)" % os.path.relpath(RUN_LOCK, ROOT),
+                                 command if by_command else "writes " + ", ".join(written))
+                         + "\n")
+        return 2
     if pid is None or not alive(pid):
         return 0
     sys.stderr.write(refusal(pid, command if by_command else "writes " + ", ".join(written))

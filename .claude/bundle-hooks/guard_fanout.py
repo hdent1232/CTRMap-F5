@@ -165,7 +165,9 @@ def main():
         )
     tool = str(payload.get("tool_name") or "") if isinstance(payload, dict) else ""
 
-    if tool == "Workflow":
+    # BY SHAPE AS WELL AS BY NAME - `bundle_shell.workflows`. A script of `agent(...)` calls under
+    # another tool's name was every agent in it, uncounted.
+    if tool == "Workflow" or (isinstance(payload, dict) and bundle_shell.workflows(payload)):
         if not bundle_env.allowed("ALLOW_WORKFLOW"):
             deny(
                 bundle_shell.policy(__file__) + "\n"

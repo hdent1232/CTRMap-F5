@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A RULE ABOUT A COMMAND OR A COMMIT IS ASKED BEFORE THE COMMAND RUNS - and the gate cannot be skipped.
 
-THREE THINGS, all at the point of action rather than after it:
+FOUR THINGS, all at the point of action rather than after it:
 
 1. EVERY `AT_COMMAND` RULE, for every command in the call. A rule whose subject is an ACT - "a
    mutation sweep of a later layer while an earlier one is unfinished", "a suite runner that is
@@ -19,6 +19,19 @@ THREE THINGS, all at the point of action rather than after it:
    gate asks is off for that commit, and nobody bypassed anything a guard could see - a flag was
    passed. So a commit that would skip `HOOKS_DIR` is refused here, and so is any command that
    repoints `core.hooksPath`.
+
+4. THE GUARDS CANNOT BE SWITCHED OFF BY A COMMAND. Measured 2026-10-06 in a fresh install: one
+   call, `: > .claude/hooks/dispatch.py; : > .claude/hooks/after_rules.py`, was allowed - nothing
+   reads what a command will write - and every guard was off from that moment. The moment-after
+   judge that holds a command's writes is a file the same command can empty, and so is the guard
+   that enforces the hold; `git commit --no-verify` then went through, and nothing refused
+   anything again. A Write or Edit to those files is judged before it lands; a command is not. So
+   a command that NAMES the guard stack - this hooks folder, the git hooks' folder, the settings
+   that wire them, the tools a git hook runs (`stack`) - is refused unless every stage naming it
+   only reads it, stages or commits it, puts it back at the committed text, or runs one of the
+   stack's own tools. What this cannot see, said rather than implied: a program that builds the
+   path from pieces - deliberate concealment, which `gate_stamps.forges` also leaves to a check
+   outside the account.
 
 WHERE IS PART OF THE COMMAND. Measured 2026-09-23: every commit was judged by THIS project's rules
 against THIS project's files, wherever it ran. A commit in a linked worktree of the same
@@ -54,6 +67,7 @@ if __name__ == "__main__":
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bundle_rules      # noqa: E402  - the one implementation of asking a rule
 import bundle_shell      # noqa: E402  - the call, found by shape
+import guard_held_writes  # noqa: E402  - READERS and RESTORES, spelled once
 
 LF = chr(10)
 
@@ -213,11 +227,13 @@ def spread(words):
     return out
 
 
-def message_of(where, rest):
+def message_of(where, rest, stdin=None):
     """(message, why unreadable) for a `git commit`'s arguments. Exactly one is set.
 
     `where` is the directory git runs in - AFTER any `-C` - because that is where git reads
     `-F` from. None when it cannot be told, and then a relative message file cannot be found.
+    `stdin` is the text a heredoc on the call hands git, which `-F -` reads; None when the call
+    shows no such text.
     """
     rest = spread(rest)
     parts, reuse, amend, edits = [], None, False, True
@@ -249,7 +265,10 @@ def message_of(where, rest):
                 parts.append(value)
             elif short == "-F":
                 if value == "-":
-                    return None, "the message comes from standard input"
+                    if stdin is None:
+                        return None, "the message comes from standard input"
+                    parts.append(stdin)
+                    break
                 if where is None and not os.path.isabs(value):
                     return None, ("the message file %s is relative, and where this commit runs "
                                   "cannot be told - name it by its full path" % value)
@@ -449,6 +468,229 @@ def git_place(where, stage):
     return where
 
 
+# ----------------------------------------------------------------------------- the stack itself
+
+#: git's own commands that read, stage or commit a path, or write only inside `.git` - never into
+#: the working tree. `config` among them: `git config core.hooksPath .githooks` is the remedy a
+#: fresh clone is told to run, and what else `config` may do to the hooks path is judged above.
+#: With the held-change guard's READERS and RESTORES, what a command naming the stack may run.
+_STACK_GIT = (r"^\s*git\s+(-C\s+\S+\s+)?(add|commit|grep|cat-file|hash-object|ls-tree|config"
+              r"|tag|branch|fetch|remote|notes|reflog|rev-list|for-each-ref|merge-base|describe"
+              r"|shortlog|whatchanged|range-diff|check-ignore|check-attr)\b",)
+
+#: Commands that write only to their own output, or make a folder: a path named in one is text or
+#: a place, never a file's new content.
+_ONLY_SAYS = (r"^\s*(echo|printf|Write-Output|Write-Host|mkdir|md|New-Item\s+-ItemType\s+"
+              r"Directory)\b",)
+
+#: Words a shell reads before the program of a compound command - `for ...; do X; done`.
+_KEYWORDS = frozenset(("do", "then", "else", "elif", "if", "while", "until", "!", "time"))
+
+#: Programs that read a SCRIPT from standard input when handed no file: a heredoc into one of these
+#: is code, and a heredoc into anything else - `git commit -F -`, `cat` - is data.
+_STDIN_SCRIPTS = re.compile(r"^(py|python[0-9.]*w?|sh|bash|zsh|dash|ksh|perl|ruby|node|pwsh"
+                            r"|powershell)$")
+
+#: CODE THAT CAN WRITE A FILE, by the calls that do it: `open` with a mode that writes, a write
+#: or a removal through `os`, `shutil` or a `Path`, Node's and PowerShell's file writers, and a
+#: shell redirection. Inline code naming the stack is refused only with one of these in it: over
+#: one session, 2026-10-06, nine of the sixteen refusals that wrote nothing were scripts that
+#: READ a hook - `json.load(open(...))`, `sys.path.insert(0, '.claude/hooks')`. `str.replace`
+#: is not here; `os.replace` is.
+_WRITES_CODE = re.compile(
+    r"\bopen\s*\([^)]*,\s*(?:mode\s*=\s*)?['\"][rbt]*[wax+]"
+    r"|\.(?:write|writelines|write_text|write_bytes|truncate|unlink|touch|chmod|rename"
+    r"|rmdir|symlink_to|hardlink_to)\s*\("
+    r"|\bos\.(?:remove|unlink|rmdir|removedirs|rename|renames|replace|chmod|chown|truncate"
+    r"|symlink|link|utime)\s*\(|\bshutil\.\w+\s*\("
+    r"|\b(?:writeFile|appendFile|unlink|rename|rm|copyFile)(?:Sync)?\s*\("
+    r"|\b(?:Set|Add|Clear)-Content\b|\b(?:Out-File|Remove-Item|Move-Item|Copy-Item"
+    r"|Rename-Item)\b|(?:^|[^<>=!-])>{1,2}\s*['\"]?[\w./$]", re.I)
+
+
+def _inline_code(rest):
+    """The code a `-c`, `-e` or `-Command` hands an interpreter in this stage, or None."""
+    for at, (word, _typed) in enumerate(rest[1:], 1):
+        if re.fullmatch(r"-[A-Za-z]*[ce]|-command", word, re.I) and at + 1 < len(rest):
+            return rest[at + 1][1] if rest[at + 1][1] is not None else rest[at + 1][0]
+        if not word.startswith("-"):
+            return None
+    return None
+
+
+def stack(root):
+    """(folders, files) that ARE the guard stack, as project paths: the folder these hooks sit in,
+    the git hooks' folder, the settings that wire both, and every tool a git hook runs - read from
+    the hooks themselves, so a tool the gate gains tomorrow is in it the day it is named there.
+
+    AND THE FOLDERS ONLY GIT WRITES, which `guard_write_rules` refused to the Write tool while
+    `echo ... >> .git/config` went through (measured 2026-10-06): `config` repoints the hooks and
+    `info/exclude` hides a file from every judgement. Entries ending `/` are those - a path INSIDE
+    one is the stack, the bare name is not, so `--exclude .git` names nothing - absolute where git
+    keeps them outside the project, as a linked worktree's are; its `.git` FILE is one too."""
+    folders = [bundle_shell.FOLDER, HOOKS_DIR.replace(chr(92), "/").strip("/")]
+    files = {".claude/settings.json", ".claude/settings.local.json"}
+    for folder in bundle_rules.git_folders(root):
+        rel = bundle_rules.rel_of(root, folder)
+        folders.append((folder.replace(chr(92), "/") if rel.startswith("..") else rel) + "/")
+    if os.path.isfile(os.path.join(root, ".git")):
+        files.add(".git")
+    gate = os.path.join(root, HOOKS_DIR)
+    try:
+        hooks = sorted(os.listdir(gate))
+    except OSError:
+        hooks = []
+    for name in hooks:
+        try:
+            with io.open(os.path.join(gate, name), encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+        for line in text.splitlines():
+            if not line.strip().startswith("#"):
+                files.update(re.sub(r"^(\./)+", "", ran) for ran in
+                             re.findall(r"[\w./-]+\.py", line.replace(chr(92), "/")))
+    return folders, sorted(files)
+
+
+def _stack_named(text, folders, files, under=""):
+    """The stack path this text names - as a word, inside a word, absolute or `./` - or ''.
+
+    `under`: the project's own path, when the text runs somewhere else - then only a path that
+    spells the project's place names its stack, and `.githooks` there is another repository's."""
+    flat = (text or "").replace(chr(92), "/")
+    lead = re.escape(under.replace(chr(92), "/").rstrip("/") + "/") if under else r"(?:\./)?"
+    for path in folders:
+        if path.endswith("/"):
+            # INSIDE ONLY: `.git/config` is git's, `--exclude .git` is not a path into it.
+            if re.search(r"(?<![\w.-])%s%s" % ("" if path.startswith("/") or re.match(
+                    r"^[A-Za-z]:/", path) else lead, re.escape(path)), flat):
+                return path.rstrip("/")
+            continue
+        if re.search(r"(?<![\w.-])%s%s(?:/|(?![\w.-]))" % (lead, re.escape(path)), flat):
+            return path
+    for path in files:
+        # A FILE HAS NO INSIDE: `.git/config` is not the worktree's `.git` file, `.git/` is a folder.
+        if re.search(r"(?<![\w.-])%s%s(?![\w./-])" % (lead, re.escape(path)), flat):
+            return path
+    return ""
+
+
+def _within(path, root, folders, files):
+    """Is this filesystem path one of the stack's, or inside one of its folders?"""
+    rel = bundle_rules.rel_of(root, path)
+    real = os.path.normpath(os.path.abspath(path)).replace(chr(92), "/")
+    for folder in folders:
+        if folder.endswith("/"):
+            held = real if os.path.isabs(folder) or re.match(r"^[A-Za-z]:/", folder) else rel
+            if held == folder.rstrip("/") or held.startswith(folder):
+                return True
+        elif rel == folder or rel.startswith(folder + "/"):
+            return True
+    return rel in files
+
+
+def _runs_stack_tool(rest, where, root, folders, files):
+    """Does this stage run one of the stack's own Python files - `python <hooks>/request_ledger.py
+    item ...`, `python -B tools/prove_plants.py --all`? Running a file is not writing it, and what
+    such a tool is handed is data, as `gate_stamps.forges` reads a program and not its arguments."""
+    if not rest or not re.fullmatch(r"py|python[0-9.]*w?", program_of(rest[0][0])):
+        return False
+    index = 1
+    while index < len(rest):
+        word, typed = rest[index]
+        if word in ("-X", "-W"):
+            index += 2
+            continue
+        if re.fullmatch(r"-[A-Za-z]*[mc]", word) or word.startswith(("-m", "-c")):
+            return False                     # a module or inline code: no file of the stack runs
+        if word.startswith("-"):
+            index += 1
+            continue
+        script = (typed if typed is not None else word).strip("'" + chr(34))
+        path = script if os.path.isabs(script) else os.path.join(where or root, script)
+        return _within(path, root, folders, files)
+    return False
+
+
+def stack_write(root, command, where, held=None):
+    """Why this command could write the guard stack, or ''.
+
+    `where` is the directory it begins in, None when that cannot be told. A command that begins
+    in ANOTHER repository names this project's stack only by spelling this project's path - its
+    own `.githooks` is its own, which is how a scratch repository a test builds is left alone."""
+    folders, files = stack(root)
+    elsewhere = where is not None and bundle_rules.rel_of(root, where).startswith("..")
+    inside = where is not None and not elsewhere and _within(where, root, folders, files)
+
+    def named(text):
+        return _stack_named(text, folders, files, root if elsewhere else "")
+
+    if not inside and not named(command):
+        return ""
+    # A HEREDOC'S BODY IS ITS PROGRAM'S INPUT, NOT COMMANDS. Read as words it made a commit
+    # message naming `tools/prove_plants.py` into programs called `:` and `.read` - eleven of
+    # thirty-three refusals over one honest session. The line that opens it is judged as a
+    # command; the body only when the program it feeds runs it as a script.
+    line, body = bundle_shell.heredoc_split(command)
+    if body is not None:
+        held = pairs(line)
+    else:
+        body = ""
+        held = pairs(command) if held is None else held
+    if not held:
+        return ("`%s` names the guard stack and cannot be read as words - whether it writes it is "
+                "UNKNOWN, and unknown is not no" % command[:80])
+    for at, (word, _typed) in enumerate(held):
+        # A REDIRECTION, AS THE LEXER HANDS IT: `>`, `>>`, `>|`, `&>`, `&>>`, `>&` - a word of its
+        # own, because an unquoted operator is punctuation. A quoted `a > b` is one word and text.
+        if re.fullmatch(r"&?>>?[|&]?", word) and at + 1 < len(held):
+            target = held[at + 1][1] or held[at + 1][0]
+            if word.endswith("&") and target.isdigit():
+                continue                                # `2>&1`: a stream, not a file
+            path = target if os.path.isabs(target) else os.path.join(where or root, target)
+            if named(target) or (inside and _within(path, root, folders, files)):
+                return "`%s` redirects into %s" % (line[:80], target)
+    allowed = guard_held_writes.READERS + guard_held_writes.RESTORES + _STACK_GIT + _ONLY_SAYS
+    for stage in stages(held):
+        while stage and stage[0][0] in _KEYWORDS:
+            stage = stage[1:]
+        rest, _moves = peeled(stage)
+        if not rest:
+            continue
+        said = joined_text(rest)
+        if _runs_stack_tool(rest, where, root, folders, files):
+            continue                     # the stack's own tool, run - what it is handed is data
+        program = program_of(rest[0][0])
+        if body and _STDIN_SCRIPTS.match(program):
+            if program in _POSIX_SHELLS or program in _POWERSHELLS:
+                why = stack_write(root, body, where)          # a shell's script is commands
+                if why:
+                    return why
+            elif _WRITES_CODE.search(body) and (named(body) or named(said)):
+                return ("`%s` is handed a script on standard input that writes, and names the "
+                        "guard stack (%s)" % (said[:80], named(body) or named(said)))
+        if not inside and not named(said):
+            continue
+        if handed(rest)[0] is not None:
+            continue                     # a shell handed a command: that command is judged itself
+        code = _inline_code(rest) if _STDIN_SCRIPTS.match(program) else None
+        if code is not None:
+            # `perl -pi -e`, `ruby -i -e`: the edit in place is a FLAG, and the code a substitution
+            if _WRITES_CODE.search(code) or any(re.match(r"^-[A-Za-z]*i", w)
+                                                for w, _t in rest[1:]
+                                                if program in ("perl", "ruby")):
+                return ("`%s` hands %s code that writes, beside a name of the guard stack (%s)"
+                        % (said[:80], program, named(said) or "this folder"))
+            continue                     # code that names the stack and writes nothing reads it
+        if any(re.search(pattern, said, re.I) for pattern in allowed):
+            continue
+        return ("`%s` %s the guard stack (%s) with %s" % (
+            said[:80], "runs inside" if inside else "names", named(said) or "this folder",
+            program_of(rest[0][0])))
+    return ""
+
+
 # ----------------------------------------------------------------------------- what runs
 
 
@@ -533,7 +775,8 @@ def judge_text(call, text, where, depth, placed=True):
     for before, command in bundle_shell.separated(text):
         if pending and before != "&&":
             where, pending = None, False
-        held = pairs(command) or []
+        line, stdin = bundle_shell.heredoc_split(command)
+        held = pairs(line) or []
         grouped = any(word in ("(", ")", "{", "}") for word, _typed in held)
         if bundle_shell.NEUTRAL.match(command):
             if _CONFIG_ENV.search(command):
@@ -544,6 +787,16 @@ def judge_text(call, text, where, depth, placed=True):
             # every act in every session would stop for as long as the plant stands.
             said = bundle_rules.ask_command(call.root, command, call.rules())
             call.out += sorted(said.items())
+        if not bundle_shell.NEUTRAL.match(command):
+            written = stack_write(call.root, command, where, held or None)
+            if written:
+                call.out.append(("stack", [
+                    "%s. The guard stack is the hooks, their wiring and the gate's own tools; a "
+                    "command's writes are judged only after they land, by those very files, so "
+                    "one that empties the dispatcher switches every guard off. Change them with "
+                    "the Write or Edit tool, which is judged before it lands; put one back with "
+                    "`git checkout -- <path>` or `git restore`; read them with any reader."
+                    % written]))
         programs = stages(held)
         for stage in programs:
             stage, moves = peeled(stage)
@@ -558,12 +811,12 @@ def judge_text(call, text, where, depth, placed=True):
                 else:
                     where = None
                 continue
-            judge_stage(call, stage, command, where, placed and not moves, depth)
+            judge_stage(call, stage, command, where, placed and not moves, depth, stdin)
         if grouped:
             where = None
 
 
-def judge_stage(call, stage, command, where, placed, depth):
+def judge_stage(call, stage, command, where, placed, depth, stdin=None):
     """One program: a shell handed a command, or git - judged in the repository it acts on.
 
     `placed` is False when something other than the directory - `GIT_DIR`, `env -C` - decides
@@ -609,7 +862,7 @@ def judge_stage(call, stage, command, where, placed, depth):
         call.out += delegated(target, stage, where, call.tool)
         return
     was = len(call.out)
-    judge_commit(call, options, rest, command, place)
+    judge_commit(call, options, rest, command, place, stdin)
     # A REFUSAL SAYS WHERE IT JUDGED. Measured 2026-09-24: `git -C "$W" commit`, in a worktree,
     # was refused as though the worktree's own test class did not exist - true of the MAIN tree,
     # which is where a commit nobody can place is judged, and nothing said that had happened. A
@@ -621,7 +874,7 @@ def judge_stage(call, stage, command, where, placed, depth):
                                    "else, name that directory literally" % call.root]))
 
 
-def judge_commit(call, options, rest, command, place):
+def judge_commit(call, options, rest, command, place, stdin=None):
     """Every rule a `git commit` in this project is asked, before git starts."""
     if _CONFIG_ENV.search(command):
         call.out.append(("gate", ["this commit rewrites git's configuration through the "
@@ -633,7 +886,7 @@ def judge_commit(call, options, rest, command, place):
     unhooked = hooks_path_problem(call.root)
     if unhooked:
         call.out.append(("gate", [unhooked]))
-    message, unreadable = message_of(place, rest)
+    message, unreadable = message_of(place, rest, stdin)
     if message is None:
         call.out.append(("message", ["the commit message cannot be read before git runs: %s"
                                      % unreadable]))

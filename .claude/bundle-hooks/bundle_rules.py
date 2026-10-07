@@ -85,6 +85,12 @@ JUDGING = bundle_env.name("JUDGING")
 #: not a fault beside it: a test that drives a hook the plant broke must see the break, and a lock
 #: naming that hook read as UNKNOWN left three plants unable to redden. Only the file named is
 #: exempt, and only where the runner named it; everywhere else the lock stands.
+#:
+#: WHAT THE TEST SEES IS THE TEST'S ALONE - `excused`. Measured 2026-09-27 on the project this came
+#: from: a plant in the hook dispatcher was driven by a test that runs the dispatcher against the
+#: live tree, and inside it the judgement read the planted dispatcher lock-free, held it on
+#: `lint 0 -> 1` and SAVED the hold where every process reads it. An unrelated session was refused
+#: every act on a file back at HEAD seconds later. Nothing a judgement keeps is written under it.
 PLANTED = bundle_env.name("PLANTED")
 
 #: Where a project keeps checkers that declare a marker, relative to its root.
@@ -158,9 +164,8 @@ def rel_of(root, path):
     return os.path.relpath(os.path.abspath(path), root).replace(os.sep, "/")
 
 
-def locked(root, name=None):
-    """The repo-relative module a mutation run holds, or ''. `name` is the lock's file name when
-    the caller reads another project's lock, whose `LOCK` ADAPT.md lets it rename."""
+def _lock_names(root, name=None):
+    """The repo-relative module the lock names, or '' - read as it stands, excusing nothing."""
     try:
         with io.open(os.path.join(root, name or LOCK), encoding="utf-8") as handle:
             held = handle.read().strip()
@@ -169,11 +174,25 @@ def locked(root, name=None):
     if not held:
         return ""
     first = held.splitlines()[0].strip().replace(chr(92), "/")
-    if os.path.isabs(first):
-        first = rel_of(root, first)
-    if first and first == os.environ.get(PLANTED, "").replace(chr(92), "/"):
+    return rel_of(root, first) if os.path.isabs(first) else first
+
+
+def excused(root, name=None):
+    """True while this process runs a plant's own test: the lock names the file PLANTED names.
+
+    Then `locked` answers '' so the test sees its subject - and whatever a judgement concludes is a
+    view of a mutant, so NOTHING IT KEEPS MAY BE WRITTEN: not the judged record every process
+    enforces, not the memo the moment-after compares with. See PLANTED."""
+    first = _lock_names(root, name)
+    return bool(first) and first == os.environ.get(PLANTED, "").replace(chr(92), "/")
+
+
+def locked(root, name=None):
+    """The repo-relative module a mutation run holds, or ''. `name` is the lock's file name when
+    the caller reads another project's lock, whose `LOCK` ADAPT.md lets it rename."""
+    if excused(root, name):
         return ""                        # this process runs that plant's own test - see PLANTED
-    return first
+    return _lock_names(root, name)
 
 
 # ----------------------------------------------------------------------------- the lock's door
@@ -526,7 +545,15 @@ def rules(root, honour_lock=True):
                 try:
                     with io.open(path, encoding="utf-8", errors="replace") as handle:
                         text = handle.read()
-                except OSError:
+                except FileNotFoundError:
+                    continue            # not there - gone since the walk, or a dangling link
+                except OSError as exc:
+                    # THERE AND UNREADABLE IS UNKNOWN, NOT ABSENT. This was `continue`, so a rule
+                    # nobody could read was a rule that did not exist, and every write it should
+                    # have judged passed.
+                    found.append(Rule(name[:-3], path, "AT_WRITE", None, None,
+                                      "it cannot be read (%s: %s) - a rule nobody can read is "
+                                      "unknown, not absent" % (type(exc).__name__, exc)))
                     continue
                 for kind, entry, where, error in declarations_in(text):
                     found.append(Rule(name[:-3], path, kind, entry, where, error))
@@ -765,12 +792,83 @@ def ask_write(root, rel, before, after, found=None):
     return ask_changes(root, {rel: (before, after)}, found)
 
 
+def judged_at_write(payload, root):
+    """The project path the WRITE HOOK asks the rules about for this call, or '' - the one answer
+    to "was this write judged before it landed", which `after_rules` records instead of re-asking.
+
+    The write hook builds the file from a TOP-LEVEL `file_path` or `path` carrying `content`,
+    `new_string` or `edits`, inside the project, outside a mutation lock - this, which it asks
+    first. Anything else - a notebook edit, a write nested in a batching tool's input - was asked
+    nothing by it, and the moment-after recorded it as asked: a write judged by neither hook
+    (measured 2026-10-06)."""
+    tool_input = (payload or {}).get("tool_input")
+    if not isinstance(tool_input, dict):
+        return ""
+    target = tool_input.get("file_path") or tool_input.get("path")
+    if not isinstance(target, str) or not target:
+        return ""
+    if not (isinstance(tool_input.get("content"), str) or isinstance(tool_input.get("edits"), list)
+            or isinstance(tool_input.get("new_string"), str)):
+        return ""
+    rel = rel_of(root, target if os.path.isabs(target) else os.path.join(root, target))
+    if rel.startswith("..") or rel == locked(root):
+        return ""
+    return rel
+
+
 def _compiles(rel, text):
     try:
         compile(text, rel, "exec", dont_inherit=True)
         return True
     except (SyntaxError, ValueError):
         return False
+
+
+def javac():
+    """The Java compiler this machine has - on the PATH, else under JAVA_HOME - or None."""
+    import shutil
+    found = shutil.which("javac")
+    if found:
+        return found
+    home = os.environ.get("JAVA_HOME") or ""
+    for name in ("javac.exe", "javac") if os.name == "nt" else ("javac",):
+        candidate = os.path.join(home, "bin", name)
+        if home and os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def java_parse_error(rel, text):
+    """'' when this Java source PARSES, the compiler's first error when it does not, None when
+    nothing here can ask.
+
+    A `.py` that compiled before and would not after is refused at the write; a `.java` was asked
+    nothing, so every syntax error in a Java project met the build first. `--should-stop=ifNoError=
+    PARSE` stops javac after parsing: no classpath, so an import it cannot resolve is not an error,
+    and nothing is written - measured 2026-10-06, half a second a file on javac 21."""
+    import shutil
+    import tempfile
+    compiler = javac()
+    if compiler is None:
+        return None
+    folder = tempfile.mkdtemp(prefix="bundle-javac-")
+    try:
+        source = os.path.join(folder, os.path.basename(rel) or "Source.java")
+        with io.open(source, "w", encoding="utf-8", newline=LF) as handle:
+            handle.write(text)
+        done = subprocess.run([compiler, "--should-stop=ifNoError=PARSE", "-d",
+                               os.path.join(folder, "out"), source], capture_output=True,
+                              text=True, timeout=120, creationflags=NO_WINDOW)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    if done.returncode == 0:
+        return ""
+    errors = [line for line in (done.stdout + done.stderr).splitlines() if ": error:" in line]
+    if not errors:
+        return None                     # javac failed without a parse error: it was not asked
+    return errors[0].split(": error:", 1)[1].strip()
 
 
 def _ask_one(root, rule, rel, before, after):
@@ -834,6 +932,9 @@ def _ask_changes_once(root, changes, found):
     worse = {}
     files = []
     for rel, (before, after) in sorted(changes.items()):
+        if rel.endswith(".java") and after is not None:
+            _ask_java(rel, before, after, worse)
+            continue
         if not rel.endswith(".py") or after is None:
             continue
         if (before is None or _compiles(rel, before)) and not _compiles(rel, after):
@@ -887,6 +988,26 @@ def _ask_changes_once(root, changes, found):
         if change:
             worse[rule.name] = change
     return worse
+
+
+def _ask_java(rel, before, after, worse):
+    """The Java half of "a source that compiled before must compile after": refused when `after`
+    does not parse and `before` did - or was not there - and COULD NOT ANSWER when nothing here can
+    parse Java. An unmeasurable answer is not a parsed file; the owner's way past is
+    `bundle_env.name("ALLOW_UNPARSED_JAVA")`."""
+    error = java_parse_error(rel, after)
+    if error is None:
+        if bundle_env.allowed("ALLOW_UNPARSED_JAVA"):
+            return
+        worse["compile"] = (-1, -1, worse.get("compile", (0, 0, []))[2] + [
+            "%s cannot be parsed here: no javac on the PATH or under JAVA_HOME - whether the write "
+            "breaks it is UNKNOWN (the owner's way past: %s=1)"
+            % (rel, bundle_env.name("ALLOW_UNPARSED_JAVA"))])
+        return
+    if not error or (before is not None and java_parse_error(rel, before) != ""):
+        return
+    held = worse.get("compile", (0, 0, []))
+    worse["compile"] = (held[0], held[1] + 1, held[2] + ["%s does not parse: %s" % (rel, error)])
 
 
 def ask_after(root, found=None):
@@ -994,6 +1115,22 @@ def _digest(root, rel):
             return hashlib.sha256(handle.read()).hexdigest()
     except OSError:
         return None
+
+
+def git_folders(root):
+    """The folders only git writes, as absolute paths: this checkout's git directory and the
+    repository's common one. In a linked worktree both sit OUTSIDE the worktree - `.git` there is
+    a file naming them - so a rule that knew only `<root>/.git` read a write into the real
+    `config` as a write outside the project. Asked of git; `<root>/.git` when git cannot say."""
+    out = set()
+    done = _git(root, ["rev-parse", "--absolute-git-dir", "--git-common-dir"])
+    if done is not None and done.returncode == 0:
+        for line in done.stdout.decode("utf-8", "replace").splitlines()[:2]:
+            line = line.strip()
+            if line:
+                out.add(os.path.normpath(line if os.path.isabs(line) else
+                                         os.path.join(root, line)))
+    return sorted(out) or [os.path.join(root, ".git")]
 
 
 def head_commit(root):
@@ -1167,11 +1304,22 @@ def _judge_unread(root, written=(), found=None):
 
     NOTHING IS A VERDICT THAT A MUTATION RUN TOUCHED. `lock_state` is read before anything and
     after everything; a lock seen at either end, or a release counted in between, makes the whole
-    judgement UNKNOWN - `unknown` says why and `pending` names what is still to judge. Nothing is
-    held and nothing is recorded, so the same change is judged the first time the lock is gone.
+    judgement UNKNOWN - `unknown` says why and `pending` names what is still to judge. Nothing new
+    is held and nothing is recorded, so the same change is judged the first time the lock is gone.
     The WHOLE judgement, not the locked file's: a rule reads more than the file it is asked about.
+
+    A HOLD ON A FILE BACK AT HEAD GOES UNDER ANY LOCK. Holds recorded before the lock stand while
+    it does - UNKNOWN is not "nothing is held", or starting a plant run would lift every hold in
+    the tree - but comparing a file with HEAD asks no rule, so a held file put back is released
+    even now: only the file a lock names cannot be read for it. Measured 2026-09-27 on the project
+    this came from: a hold on a file restored byte-for-byte stayed for as long as a 730-plant run
+    held a lock on OTHER files, and the release rule above ran only when no lock stood.
+
+    AND A PLANT'S OWN TEST RECORDS NOTHING (`excused`): it judges its planted subject, and that
+    verdict is about a mutant.
     """
     start = lock_state(root)
+    excuse = excused(root)
     state = _load_judged(root)
     held = dict(state.get("held") or {})
     out = {"held": held, "worse": state.get("worse") or {}, "fresh": [], "blind": "",
@@ -1191,14 +1339,18 @@ def _judge_unread(root, written=(), found=None):
     if (not first and head == prev_head and set(written) <= set(held)
             and {r: d for r, d in now.items() if r != lock}
             == {r: d for r, d in prev_paths.items() if r != lock}):
+        if lock:
+            out["held"] = _still_changed(root, head, held, {lock})
         return out
     found = rules(root) if found is None else found
-    if lock or lock_state(root) != start:
-        out["unknown"] = _unknown_reason(start, lock_state(root))
+    moved = lock_state(root)
+    if lock or moved != start:
+        out["unknown"] = _unknown_reason(start, moved)
         out["pending"] = sorted(
             rel for rel in (set(prev_paths) | set(now) | set(written)) - {lock}
             if (rel in written or prev_paths.get(rel) != now.get(rel))
             and _judged_by_some_rule(rel, found))
+        out["held"] = _still_changed(root, head, held, {lock, moved[0]})
         return out
     # FROM HERE NO LOCK IS HELD - one was returned as UNKNOWN above - so nothing below excludes the
     # locked file: that exclusion was the whole defence once, and it read the lock at one moment.
@@ -1254,11 +1406,29 @@ def _judge_unread(root, written=(), found=None):
     if end != start:
         out["unknown"] = _unknown_reason(start, end)
         out["pending"] = sorted(set(changes) | set(group))
+        out["held"] = _still_changed(root, head, held, {start[0], end[0]})
         return out
-    _save_judged(root, saved)
+    if not (excuse or excused(root)):
+        _save_judged(root, saved)
     return {"held": now_held, "worse": saved["worse"],
             "fresh": sorted(set(now_held) - set(state.get("held") or {})), "blind": "",
             "unknown": "", "pending": []}
+
+
+def _still_changed(root, head, held, locks):
+    """`held` less every file whose text is HEAD's - asked of every file but the ones a lock
+    named, whose disk text may be a mutant. A file that cannot be read for it stays held: cannot
+    look is not back at HEAD."""
+    out = {}
+    for rel, key in held.items():
+        if rel not in locks:
+            try:
+                if read_text(root, rel) == text_at(root, head, rel):
+                    continue
+            except (LookupError, OSError):
+                pass
+        out[rel] = key
+    return out
 
 
 def _unknown_reason(start, end):
@@ -1275,9 +1445,13 @@ def unknown_note(judged):
     """What to tell the session whose change could not be judged, never a clean answer."""
     lines = ["NOT JUDGED YET: %s." % judged["unknown"], ""]
     lines += ["  %s" % rel for rel in (judged.get("pending") or [])[:12]]
-    lines += ["", "  Nothing is held and nothing is recorded as judged: a verdict taken beside a",
-              "  mutant is about the mutant. What changed is judged the first time the lock is",
+    lines += ["", "  Nothing new is held and nothing is recorded as judged: a verdict taken beside",
+              "  a mutant is about the mutant. What changed is judged the first time the lock is",
               "  gone - it is not clean yet, it is unknown."]
+    if judged.get("held"):
+        lines += ["", "  Held before the lock, and still changed, so still held:"]
+        lines += ["    %s" % rel for rel in sorted(judged["held"])[:12]]
+        lines += ["  Putting one back at HEAD's text releases it even under the lock."]
     return LF.join(lines)
 
 

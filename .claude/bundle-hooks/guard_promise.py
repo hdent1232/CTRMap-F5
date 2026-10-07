@@ -52,6 +52,9 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bundle_shell      # noqa: E402  - whose turn is ending, by shape and event
+
 LF = chr(10)
 
 
@@ -225,8 +228,11 @@ BLOCKED = (
 OFFER = re.compile(
     r"\b(?:(?:do\s+you\s+)?want\s+me\s+to|shall\s+I|should\s+I|would\s+you\s+like\s+me\s+to"
     r"|let\s+me\s+know\s+if\s+you(?:'d|\s+would)\s+like\s+me\s+to|if\s+you\s+want,?\s+I\s+can"
-    r"|I\s+can\s+(?:also\s+)?(?:do|fix|add|build|run|write|close)\b[^.?!]*\bif\s+you)"
+    r"|I\s+can\s+(?:also\s+)?(?:do|fix|add|build|run|write|close)\b[^.?!]*\bif\s+you)\b"
     r"[^.?!]*[.?!]?", re.I)
+#: The `\b` closing the group is what keeps `should\s+I` a word: without it *"Should Invest's Today
+#: open on its numbers?"* - a question about the owner's own decision - read as "should I", and a
+#: turn asking the owner to choose was refused as an offer to do the work (2026-10-03).
 
 #: How much of the END of a message is "the end".
 OFFER_TAIL = 400
@@ -584,9 +590,17 @@ def main():
     # TOOL is a tool call, whatever the event is called.
     if payload.get("tool_name") or (payload.get("tool_input") is not None):
         return 0
+    # AND ONLY THE OWNER'S: a subagent's end has this shape, and exit 2 there keeps it running.
+    if not bundle_shell.owner_turn_ends(payload):
+        return 0
 
     text = last_assistant_text(payload.get("transcript_path"))
     if text is None:
+        # COULD NOT LOOK, AND SAID SO. Refusing would wedge a turn whose transcript moved; this
+        # returned 0 for "nothing to refuse" and for "could not read it" alike, the collapse the
+        # docstring of `last_assistant_text` says the caller does not make.
+        json.dump({"systemMessage": "turn-end promise check: the transcript could not be read, "
+                                    "so this turn's last message was NOT checked"}, sys.stdout)
         return 0
     found = outstanding(text)
     if not found:

@@ -49,6 +49,7 @@ import io
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 if __name__ == "__main__":
@@ -102,8 +103,14 @@ ROOT = _root()
 
 
 def _git(root, args, given=None):
+    # UTF-8, NOT THE CODE PAGE. `text=True` alone decodes git's output as cp1252 on Windows, while
+    # `stamp` reads the message file as UTF-8 - so a message with any non-ASCII character (an em
+    # dash, an accent, the byte-order mark PowerShell's `Set-Content -Encoding utf8` writes) was
+    # digested two ways and every such commit read as made past the gate (measured 2026-09-27: a
+    # BOM-led subject stamped by commit-msg and then refused as unstamped).
     try:
         done = subprocess.run(["git"] + args, cwd=root, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace",
                               input=given, timeout=GIT_TIMEOUT, creationflags=NO_WINDOW)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -291,7 +298,11 @@ def ungated(root=ROOT):
         return ["git could not say where %s keeps its state, so no commit could be checked for "
                 "the gate's stamp" % root]
     paths = reflogs(common) + [os.path.join(common, STAMPS)]
-    mark = signature(paths) + "|" + hashlib.sha256(LF.join(start).encode("ascii")).hexdigest()
+    # THE VERDICT IS KEYED ON THE JUDGE TOO. A memo keyed only on the reflogs and the stamps kept
+    # replaying a wrong verdict after the rule that produced it was fixed (2026-09-27: the cp1252
+    # decode in `_git`, fixed, and the lock stayed until some ref happened to move).
+    mark = (signature(paths + [os.path.abspath(__file__)]) + "|"
+            + hashlib.sha256(LF.join(start).encode("ascii")).hexdigest())
     try:
         with io.open(os.path.join(common, JUDGED), encoding="utf-8") as handle:
             memo = json.load(handle)
@@ -349,6 +360,84 @@ AT_COMMAND = "before_command"
 #: ASKED THE MOMENT AFTER EVERY CALL: the call that made the commit hears about it at once.
 AT_AFTER = "after_call"
 
+#: ASKED OF EVERY COMMIT, BEFORE GIT STARTS: a hook git would skip is a gate that is off.
+AT_COMMIT = "before_commit"
+
+#: Every hook git runs, by the name it looks for (githooks(5)). A file in the hooks folder under
+#: one of these names is a gate; anything else there - `BEFORE_FILE` sits beside them - is not.
+GIT_HOOKS = ("applypatch-msg", "pre-applypatch", "post-applypatch", "pre-commit",
+             "pre-merge-commit", "prepare-commit-msg", "commit-msg", "post-commit", "pre-rebase",
+             "post-checkout", "post-merge", "pre-push", "pre-receive", "update", "proc-receive",
+             "post-receive", "post-update", "reference-transaction", "push-to-checkout",
+             "pre-auto-gc", "post-rewrite", "sendemail-validate", "fsmonitor-watchman",
+             "p4-changelist", "p4-prepare-changelist", "p4-post-changelist", "p4-pre-submit",
+             "post-index-change")
+
+
+def hooks_here(root=ROOT):
+    """(folder, [(repo-relative path or None, name, index mode or None)]) for every hook in the
+    folder git itself runs hooks from - `rev-parse --git-path hooks`, which reads `core.hooksPath` -
+    or (None, why) when that cannot be read. The path is None for a hook outside the repository."""
+    where = _git(root, ["rev-parse", "--git-path", "hooks"])
+    if where is None:
+        return None, "git could not say where its hooks are"
+    folder = os.path.join(root, where.strip())
+    try:
+        names = sorted(name for name in os.listdir(folder) if name in GIT_HOOKS)
+    except FileNotFoundError:
+        return folder, []
+    except OSError as bad:
+        return None, "%s cannot be listed (%s)" % (where.strip(), bad)
+    rels = {}
+    for name in names:
+        rel = os.path.relpath(os.path.join(folder, name), root).replace(os.sep, "/")
+        rels[name] = None if rel.startswith("../") or os.path.isabs(rel) else rel
+    asked = [rel for rel in rels.values() if rel]
+    staged = _git(root, ["ls-files", "-s", "--"] + asked) if asked else ""
+    if staged is None:
+        return None, "git could not list the hooks in %s" % where.strip()
+    modes = {}
+    for line in staged.splitlines():
+        meta, _tab, path = line.partition("\t")
+        modes[path.strip()] = (meta.split() or [""])[0]
+    return folder, [(rels[name], name, modes.get(rels[name])) for name in names]
+
+
+def unrunnable_hooks(root=ROOT):
+    """[why] for every hook git would SKIP here: committed without the executable bit, or - on a
+    system that has one - not executable on disk.
+
+    MEASURED 2026-10-07: this bundle and CTRMap had both committed `.githooks/*` as 100644, from
+    Windows, where git runs a hook whatever its mode. On Linux and macOS git skips such a hook with
+    only a hint, so on every cloud checkout `core.hooksPath` named the gate, the session-start check
+    said "armed", and the gate was off - its hooks installed, wired and present. A commit made past
+    it is found the moment after (`ungated`); nothing stopped it being made. The index is asked on
+    every system, because a clone takes a file's mode from it.
+    """
+    folder, hooks = hooks_here(root)
+    if folder is None:
+        return ["%s, so whether git would run its hooks is UNKNOWN - and a hook git skips is a "
+                "gate that is off" % hooks]
+    found = []
+    for rel, name, mode in hooks:
+        shown = rel or os.path.join(folder, name)
+        if mode is not None and mode != "100755":
+            found.append("`%s` is committed as %s, not executable, so git on Linux and macOS skips "
+                         "it with only a hint and every rule it asks is off there. `git "
+                         "update-index --chmod=+x -- %s` records it executable" % (rel, mode, rel))
+        if os.name != "nt" and not os.access(os.path.join(folder, name), os.X_OK):
+            found.append("`%s` is not executable on this machine, so git skips it with only a hint "
+                         "and every rule it asks is off. `chmod +x %s`" % (shown, shown))
+    return found
+
+
+def before_commit(message, root=ROOT):
+    """A commit is refused before git starts while git would skip one of its hooks: made, it would
+    be made past the gate, and `ungated` would then refuse every command after it."""
+    del message
+    return unrunnable_hooks(root)
+
+
 #: ASKED AT THE WRITE of the baseline: a commit added to it is a commit forgiven.
 AT_WRITE_CHANGE = "forgiven_in"
 AT_SCOPE = r"^\.githooks/gate-before$"
@@ -375,6 +464,20 @@ _READ_ONLY_MODULES = ("ruff", "pyflakes", "pycodestyle", "flake8", "py_compile",
 _READ_LIMIT = 4 * 1024 * 1024
 
 
+def _words(segment):
+    """One command's words, a QUOTED path held together as one.
+
+    Split on spaces, `python "C:\\a dir\\forge.py"` was two fragments, neither of them a file, so
+    a script in any folder with a space in its name was never read - the project this came from
+    has one in its root. A quote left open is split on spaces, as every command was before.
+    """
+    try:
+        words = shlex.split(segment, posix=False)
+    except ValueError:
+        words = segment.split()
+    return [w.strip(chr(34) + "'") for w in words]
+
+
 def _local_module(module, root):
     """The files in the project that `-m module` would run: `-m` puts the working directory first
     on the path, so a `ruff.py` in the project IS what `python -m ruff` runs."""
@@ -390,8 +493,9 @@ def _python_runs(args, root):
 
     THE PROGRAM IS ONE WORD, NOT EVERY WORD. Every argument after the interpreter was read as a
     script, so `python -m ruff check tests/test_x.py` - a linter READING a test that names the
-    store - was refused as forging a stamp. A script's own arguments stay candidates, because a
-    script can run what it is handed; so do an unknown module's.
+    store - was refused as forging a stamp. An unknown module's arguments are handed on, and
+    `forges` reads the first of them that is a file: `-m` names a module, not a file, so in
+    `python -m runpy forge.py` the file is the first thing the interpreter was handed to run.
     """
     index = 0
     while index < len(args):
@@ -424,6 +528,14 @@ def forges(command, root=ROOT):
     text naming it - the name built from pieces, or read from somewhere else at run time. That is
     deliberate concealment, and no check inside the account the gate runs in can stop a program
     written to hide what it does; a stamp only a separate account could sign would.
+
+    THE PROGRAM IS READ, AND NOTHING IT IS HANDED - the owner's rule, 2026-09-27. The program is
+    the first word after the interpreter's options that names a file: an option's value
+    (`-ExecutionPolicy Bypass`) or a module's name is not one. `python -B show.py
+    tests\\plants.json` was refused as forging a stamp because the plant ledger names the store
+    while holding this tool's own plants. A script that runs a file it is handed is a program
+    reading its code from somewhere else at run time - the concealment above - and reading its
+    arguments did not close that: a forger renamed `.txt` walked past the version that tried.
     """
     text = command or ""
     if any(name in text for name in STORE):
@@ -436,16 +548,23 @@ def forges(command, root=ROOT):
         return ("`git hook run` runs the gate's hook by hand, and the stamp it leaves would be one "
                 "no commit earned")
     for segment in _SEGMENT.split(text):
-        words = [w.strip(chr(34) + "'") for w in segment.split()]
-        words = [w for w in words if w and not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)]
+        words = [w for w in _words(segment) if w and not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w)]
         while words and words[0].lower() in _RUNNERS:
             words = words[1:]
         if not words:
             continue
-        name = os.path.basename(words[0]).lower()
+        # EITHER SEPARATOR, ON EVERY MACHINE - as `bundle_shell.program_of` reads a program.
+        # `os.path.basename` splits only on its own platform's, so on Linux and macOS
+        # `"C:\\Program Files\\Python312\\python.exe" forge.py` was no interpreter at all.
+        name = re.split(r"[\\/]", words[0])[-1].lower()
         name = name[:-4] if name.endswith(".exe") else name
         if _PYTHON.fullmatch(name):
-            candidates = _python_runs(words[1:], root)
+            # THE PROGRAM, AND ONLY IT. `_python_runs` hands back the program first and what it
+            # is handed after. Scanning past a program that is no file here - `$TOOLS/show.py` -
+            # read its first FILE argument as the program, and `python3 $T/show.py
+            # tests/plants.json` was refused as forging a stamp (measured 2026-10-06), the case
+            # b22e36d closed for a program named literally.
+            candidates = _python_runs(words[1:], root)[:1]
         elif name in _INTERPRETERS:
             candidates = words[1:]
         else:
@@ -454,8 +573,10 @@ def forges(command, root=ROOT):
             if word.startswith("-"):
                 continue
             path = word if os.path.isabs(word) else os.path.join(root, word)
-            if not os.path.isfile(path) or _is_this_tool(path):
+            if not os.path.isfile(path):  # an option's value or a module's name: not the program
                 continue
+            if _is_this_tool(path):
+                break
             try:
                 with io.open(path, encoding="utf-8", errors="replace") as handle:
                     body = handle.read(_READ_LIMIT)
@@ -465,6 +586,7 @@ def forges(command, root=ROOT):
             if any(store in body for store in STORE) or STAMP_CALL.search(body):
                 return ("`%s` runs %s, whose text reaches the gate's stamp store - the stamps are "
                         "written by `commit-msg` and by nothing else" % (segment.strip()[:60], word))
+            break                         # the program is read, and nothing it is handed
     return ""
 
 
@@ -509,7 +631,8 @@ def main(argv):
         for line in found:
             sys.stdout.write("REFUSING: %s%s" % (line, LF))
         if not found:
-            sys.stdout.write("every commit made since the stamps began carries the gate's%s" % LF)
+            sys.stdout.write("every commit made since the stamps began carries the gate's stamp%s"
+                             % LF)
         return 1 if found else 0
     sys.stdout.write(__doc__)
     return 2

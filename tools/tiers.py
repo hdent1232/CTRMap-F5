@@ -291,7 +291,8 @@ def excusals():
 #: declared, or a hook or settings edit that unwires one, is refused by the write that does it.
 AT_WRITE_TREE = ("facts_of", "judge")
 AT_SCOPE = (r"^\.claude/settings(\.local)?\.json$|^(%s)/[^/]+$|^\.githooks/[^/]+$"
-            r"|^tools/.*\.py$" % "|".join(re.escape(d) for d in hook_dirs(_root())))
+            r"|^tools/.*\.py$|^\.claude/bundle-install\.json$"
+            % "|".join(re.escape(d) for d in hook_dirs(_root())))
 
 
 def facts_of(rel, text):
@@ -381,6 +382,50 @@ def committed_declarations(root):
     return done.stdout if done.returncode == 0 else ""
 
 
+def _adopted_in(text):
+    """(record present?, the adopted set) of one declarations text - (None, None) when it is not
+    a JSON object at all."""
+    try:
+        held = json.loads(text) if text else {}
+    except ValueError:
+        return None, None
+    if not isinstance(held, dict):
+        return None, None
+    record = held.get(ADOPTED)
+    if not isinstance(record, dict):
+        return ADOPTED in held, set()
+    return True, set(record.get("below") or [])
+
+
+#: AND THE ADOPTION ONLY SHRINKS - asked at the write of the declarations that hold it, and by
+#: `main` against HEAD's. The docstring above promised it and nothing asked: an Edit adding a name
+#: excused a new detector as starting debt, and deleting the record then writing a larger one was
+#: two allowed writes. A first adoption, with none committed, is `--adopt`'s own.
+AT_WRITE_CHANGE = "adoption_change_problems"
+
+
+def adoption_change_problems(rel, before, after, root=None):
+    """[findings] for a write leaving the declarations reading `after` where they read `before`."""
+    if rel != DECLARATIONS.replace(os.sep, "/"):
+        return []
+    has_after, will = _adopted_in(after)
+    if not has_after:
+        return []                    # no adoption after the write - it only shrank, to nothing
+    had, was = _adopted_in(before)
+    committed = committed_declarations(root or _root())
+    if committed is None:
+        return ["git could not show the committed declarations, so whether this adoption grew "
+                "past HEAD's is UNKNOWN"]
+    head_had, head = _adopted_in(committed) if committed else (False, set())
+    out = []
+    for label, holds, bound in (("this file's", had, was), ("HEAD's", head_had, head)):
+        grown = sorted(will - (bound or set())) if holds else []
+        if grown:
+            out.append("%s: the adopted starting debt grows past %s by %s - it only shrinks, as "
+                       "its tools are brought to the act" % (rel, label, ", ".join(grown)))
+    return out
+
+
 def adopt(root, committed):
     """Problems, or [] after recording the guards now below the point of action - ONCE."""
     held = _declarations(root)
@@ -419,6 +464,13 @@ def main(argv):
         return 1 if problems else 0
     standing = below(root)
     known = adopted(root)
+    # HELD TO HEAD'S ADOPTION, not only to itself - the same rule the write asks.
+    committed = committed_declarations(root)
+    head_had, head = _adopted_in(committed) if committed else (False, set())
+    if head_had and known - head:
+        sys.stdout.write("REFUSING: the adopted starting debt grows past HEAD's by %s - it only "
+                         "shrinks%s" % (", ".join(sorted(known - head)), LF))
+        return 1
     problems = excusals() + ["%s is below the point of action" % rel
                              for rel in standing if rel not in known]
     for line in problems:

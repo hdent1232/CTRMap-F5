@@ -54,13 +54,14 @@ CONVERGENCE_LOG = os.path.join(ROOT, "docs", "audit-convergence.json")
 ADAPT = ("STATE_FILE", "CONVERGENCE_LOG")
 
 
-def state_problem(now=None):
-    """Why a MULTI-agent launch may not proceed for want of durable state, or None."""
+def state_problem(now=None, scripted=False):
+    """Why a MULTI-agent launch may not proceed for want of durable state, or None. A `scripted`
+    run - a workflow - is multi-agent by itself, whatever the window has launched."""
     held = guard_fanout.load()
     if held is None:
         return None             # guard_fanout refuses an unreadable counter itself, and says why
     agents, _workflows = held
-    if agents < 1:
+    if agents < 1 and not scripted:
         return None             # the first agent of a window is not yet a multi-agent run
     try:
         age = (now or time.time()) - os.path.getmtime(STATE_FILE)
@@ -96,7 +97,11 @@ def trend_problem():
 
 
 def verdict(payload):
-    if not bundle_shell.launches(payload):
+    # A SCRIPTED RUN IS A CAMPAIGN ROUND TOO. This asked agent launches only, so a workflow - the
+    # kind of run that lost three agents and fifteen verifiers to one session limit - needed no
+    # state and no falling trend at all.
+    scripted = bool(bundle_shell.workflows(payload))
+    if not bundle_shell.launches(payload) and not scripted:
         return False, None
     # THE REVIEW THE LEDGER DEMANDS IS NOT A CAMPAIGN ROUND. Refusing it in a window that already
     # ran an agent, or under a flat round log, leaves a turn that must be reviewed to end and may
@@ -114,7 +119,7 @@ def verdict(payload):
                 "nobody looked. STOP AND REPORT to the owner with the numbers. Only the owner "
                 "lifts this: %s=1.\n" % (why, bundle_env.name("ALLOW_NONCONVERGING")))
     if not bundle_env.allowed("ALLOW_NO_STATE"):
-        why = state_problem()
+        why = state_problem(scripted=scripted)
         if why:
             return True, (
                 bundle_shell.policy(__file__) + "\n%s.\n\n"

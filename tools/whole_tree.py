@@ -260,6 +260,65 @@ def scope(records):
 AT_SCOPE = scope(RECORDS)
 
 
+#: AND ASKED AT THE WRITE OF THE BASELINE ITSELF. `unheld_in` reads a record's module keys; the
+#: baseline's ceilings are keyed by RECORD, so an Edit raising one was a measurement edited that
+#: nothing asked - and nothing runs this file at a commit. `record` writes the baseline by a
+#: command, judged by this rule the moment after, and passes it because it keeps the same rule.
+AT_WRITE_CHANGE = "baseline_change_problems"
+
+
+def baseline_rises(before, after, project=None):
+    """Every way `after` raises or drops a bound that `before` held beyond what `record` may:
+    a covering ceiling rises only by the modules that arrived since `before` recorded its tree,
+    an exempting one never rises, a classification is never changed, and a ceiling is dropped
+    only with the record it bounded."""
+    if not isinstance(before, dict):
+        return []
+    if not isinstance(after, dict):
+        return ["the baseline would no longer be a JSON object"]
+    was = before.get("missing_ceiling") or {}
+    will = after.get("missing_ceiling") or {}
+    kinds = before.get("kind") or {}
+    out = []
+    for label, kind in sorted(kinds.items()):
+        if (after.get("kind") or {}).get(label, kind) != kind:
+            out.append("%s is reclassified from %s - covering and exempting ratchet in opposite "
+                       "directions, and switching one is a ceiling moved by hand" % (label, kind))
+    recorded = before.get("tree_modules")
+    arrived = len(modules(project) - set(recorded)) if isinstance(recorded, list) else 0
+    for label, ceiling in sorted(was.items()):
+        if label not in will:
+            if os.path.isfile(os.path.join(_root(project), RECORDS, label.split(" :: ")[0])):
+                out.append("%s's ceiling is dropped while the record stands - a record that "
+                           "VANISHES from the baseline is not one that passed" % label)
+            continue
+        try:
+            held, now = int(ceiling), int(will[label])
+        except (TypeError, ValueError):
+            out.append("%s's ceiling is not a whole number" % label)
+            continue
+        allowed = held + (0 if kinds.get(label) == "exempts" else arrived)
+        if now > allowed:
+            out.append("%s's ceiling rises from %d to %d, and what `record` may raise it by is %d "
+                       "- the modules that arrived since" % (label, held, now, allowed - held))
+    return out
+
+
+def baseline_change_problems(rel, before, after, root=None):
+    """[findings] for a write leaving the baseline reading `after` where it read `before`."""
+    if rel != BASELINE.replace(os.sep, "/"):
+        return []
+    try:
+        held = json.loads(before) if before else None
+    except ValueError:
+        return []
+    try:
+        will = json.loads(after)
+    except ValueError:
+        return ["%s would not be JSON - `whole_tree.py record` writes it" % rel]
+    return ["%s: %s" % (rel, line) for line in baseline_rises(held, will, root)]
+
+
 def unheld_in(path, payload, project=None):
     """Every way THIS payload leaves out more of the tree than the record's ceiling says."""
     if not isinstance(payload, dict):

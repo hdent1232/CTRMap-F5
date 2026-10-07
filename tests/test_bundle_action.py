@@ -41,6 +41,7 @@ sys.path.insert(0, HOOKS)
 
 import after_rules            # noqa: E402
 import bundle_rules           # noqa: E402
+import bundle_shell           # noqa: E402
 import guard_command_rules    # noqa: E402
 import guard_held_writes      # noqa: E402
 import guard_write_rules      # noqa: E402
@@ -232,6 +233,30 @@ class AWriteIsJudgedAsItWouldLeaveTheTree(ScratchProject, unittest.TestCase):
         self.assertEqual(guard_write_rules.verdict(repair, self.root)[0], 0,
                          "a broken rule blocked the only write that can repair it")
 
+    def test_a_rule_file_that_cannot_be_READ_is_not_silently_absent(self):
+        """`rules` skipped a file it could not open - `except OSError: continue` - so a rule
+        nobody could read was a rule that did not exist, and every write it should have judged
+        passed. A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT. A file that is
+        not there - gone since the walk, a dangling link - is not a rule; one that is there and
+        cannot be read is unknown."""
+        target = self.write_file("tools/zzstub_locked.py", 'AT_WRITE = "found_in"' + LF)
+        real_open = io.open
+
+        def failing(error):
+            def opener(path, *args, **kwargs):
+                if os.path.abspath(str(path)) == os.path.abspath(target):
+                    raise error(13, "cannot open", str(path))
+                return real_open(path, *args, **kwargs)
+            return opener
+        with mock.patch.object(bundle_rules.io, "open", side_effect=failing(PermissionError)):
+            found = [r for r in bundle_rules.rules(self.root) if r.name == "zzstub_locked"]
+        self.assertTrue(found and found[0].error,
+                        "a rule file nobody could read was reported as no rule at all")
+        with mock.patch.object(bundle_rules.io, "open", side_effect=failing(FileNotFoundError)):
+            gone = [r for r in bundle_rules.rules(self.root) if r.name == "zzstub_locked"]
+        self.assertEqual(gone, [], "a file that is not there was read as a rule that cannot "
+                                   "be asked")
+
     def test_a_MISDECLARED_rule_is_not_silently_absent(self):
         self.write_file("tools/zzstub_bad.py", 'AT_WRITE_TREE = "not a pair"' + LF)
         sys.modules.pop("zzstub_bad", None)
@@ -262,6 +287,52 @@ class AWriteIsJudgedAsItWouldLeaveTheTree(ScratchProject, unittest.TestCase):
 
 
 # ----------------------------------------------------------------------------- the commit
+    @staticmethod
+    def fake_parse(_rel, text):
+        """A Java parser for the tests that must run where no javac is: '' parses, any `return 1`
+        missing its semicolon is the error javac gives for it."""
+        return "';' expected" if "return 1" + chr(10) in text or "return 1 " in text else ""
+
+    def test_a_JAVA_file_that_parsed_and_would_not_is_refused(self):
+        """A `.py` that compiled before and would not after is refused at the write; a `.java`
+        was asked nothing at all, so a Java project's every syntax error met the build first.
+        Asked here through a stand-in parser, so it is asked on every machine; the real one is
+        `test_javac_PARSES_without_a_classpath_and_writes_nothing`."""
+        rel = "src/main/java/a/Calc.java"
+        before = "package a;" + LF + "public class Calc {" + LF + "    int f() { return 1; }" \
+            + LF + "}" + LF
+        broken = before.replace("return 1;", "return 1 ")
+        with mock.patch.object(bundle_rules, "java_parse_error", side_effect=self.fake_parse):
+            self.assertIn("compile", bundle_rules.ask_write(self.root, rel, before, broken),
+                          "a Java file broken by the write was let through")
+            self.assertEqual(bundle_rules.ask_write(self.root, rel, before,
+                                                    before.replace("1;", "2;")), {},
+                             "a Java edit that parses was refused")
+            self.assertNotIn("compile", bundle_rules.ask_write(self.root, rel, broken,
+                                                               broken + LF),
+                             "a file that did not parse before was refused for still not parsing")
+
+    def test_a_JAVA_file_nobody_can_parse_here_is_UNKNOWN_not_clean(self):
+        rel = "src/main/java/a/Calc.java"
+        with mock.patch.object(bundle_rules, "javac", return_value=None):
+            worse = bundle_rules.ask_write(self.root, rel, "class Calc {}" + LF,
+                                           "class Calc { }" + LF)
+        self.assertEqual(worse.get("compile", (0,))[0], -1,
+                         "a Java write with no javac to ask was let through as parsed")
+
+    @unittest.skipUnless(bundle_rules.javac(), "no javac on this machine to ask")
+    def test_javac_PARSES_without_a_classpath_and_writes_nothing(self):
+        """The real parser, where there is one: an import nothing can resolve is not a parse
+        error, a missing semicolon is, and the class file is never written. Machine-dependent, so
+        it carries no plant - one that cannot redden where javac is missing would refuse every
+        install there."""
+        good = "package a;" + LF + "import b.Missing;" + LF + "public class Calc {" + LF \
+            + "    Missing m;" + LF + "    int f() { return 1; }" + LF + "}" + LF
+        self.assertEqual(bundle_rules.java_parse_error("Calc.java", good), "",
+                         "an unresolved import was read as a parse error")
+        self.assertIn("expected", bundle_rules.java_parse_error(
+            "Calc.java", good.replace("return 1;", "return 1")) or "",
+            "a missing semicolon parsed")
 
 class ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate(ScratchProject, unittest.TestCase):
     """`guard_command_rules`: the message before git runs, and no commit may skip the gate."""
@@ -292,6 +363,21 @@ class ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate(ScratchProject, unittest
                         "an abbreviated --no-verify walked past the gate")
         self.assertFalse([n for n, _f in self.refused('git commit --no-ver -F "%s"' % self.good)
                           if n == "gate"])
+
+    def test_a_message_on_STDIN_from_a_heredoc_is_read_and_its_words_are_not_flags(self):
+        """`git commit -F - <<'EOF'` carries its message in the call, and was refused as
+        "comes from standard input" - and the body's words were lexed as the commit's own, so a
+        message that MENTIONS `--no-verify` was refused as skipping the gate. Measured
+        2026-10-06 replaying 318 real calls through an install: eighteen such refusals."""
+        signed = ("git commit -q -F - <<'EOF'" + LF + "a change that says --no-verify" + LF + LF
+                  + "Signed-off" + LF + "EOF")
+        self.assertEqual(self.refused(signed), [],
+                         "a heredoc message on stdin was not read, or its words read as flags")
+        unsigned = "git commit -q -F - <<'EOF'" + LF + "a change" + LF + "EOF"
+        self.assertEqual([n for n, _f in self.refused(unsigned)], ["zzstub_commit"],
+                         "the heredoc message was not ASKED - only a rule reading it can refuse it")
+        self.assertTrue(self.refused("git commit -q -F - < msg.txt"),
+                        "a message on stdin from somewhere the call does not show was let through")
 
     def test_repointing_the_hooks_is_refused_and_reading_them_is_not(self):
         self.assertTrue(self.refused("git config core.hooksPath elsewhere"))
@@ -392,6 +478,146 @@ class ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate(ScratchProject, unittest
             with self.subTest(command):
                 self.assertEqual(self.refused(command), [],
                                  "a way that makes no ungated commit was refused")
+
+
+class TheGuardStackCannotBeSwitchedOffByACommand(ScratchProject, unittest.TestCase):
+    """`guard_command_rules.stack_write`: a command naming the hooks, their wiring or the gate's
+    own tools is refused unless it only reads, stages, commits, restores or runs them.
+
+    MEASURED 2026-10-06 in a fresh install: `: > .claude/hooks/dispatch.py; : > .claude/hooks/
+    after_rules.py` was allowed, every guard was off from that moment, and `git commit
+    --no-verify` then went through. The moment-after judge saw the drift and could only say so -
+    the guard that enforces its hold was a file the same command could empty."""
+
+    def setUp(self):
+        ScratchProject.setUp(self)
+        self.git("init", "-q")
+        os.makedirs(os.path.join(self.root, bundle_shell.FOLDER.replace("/", os.sep)))
+        self.write_file(".githooks/pre-commit",
+                        "#!/bin/sh" + LF + "# tools/not_run.py is only mentioned here" + LF
+                        + '"$PY" -B tools/gate_tool.py || exit 1' + LF)
+
+    def stack(self, command):
+        payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": self.root}
+        return [found for name, found in guard_command_rules.problems(payload, self.root)
+                if name == "stack"]
+
+    def test_emptying_the_dispatcher_is_refused(self):
+        hooks = bundle_shell.FOLDER
+        found = self.stack(": > %s/dispatch.py; : > %s/after_rules.py" % (hooks, hooks))
+        self.assertTrue(found, "a command that switches every guard off was allowed")
+        self.assertIn("guard stack", found[0][0], "the guard stack was not named in the refusal")
+
+    def test_every_way_a_command_writes_the_stack_is_refused(self):
+        """The same act through every channel a shell offers - an editor in place, a copy, a
+        removal, a mode, inline code, a script on stdin, a wrapper, a shell handed the command,
+        a folder moved into, and the gate's own tools and wiring rather than a hook."""
+        hooks = bundle_shell.FOLDER
+        for command in ("sed -i 's/a/b/' %s/guard_held_writes.py" % hooks,
+                        "cp /dev/null %s/guard_held_writes.py" % hooks,
+                        "rm -rf %s" % hooks,
+                        "chmod -x .githooks/pre-commit",
+                        "echo '{}' > .claude/settings.json",
+                        "cat x | tee -a %s/dispatch.py" % hooks,
+                        'python3 -c "open(\'%s/dispatch.py\', \'w\').write(\'\')"' % hooks,
+                        "python3 - <<'EOF'" + LF + "open('%s/dispatch.py', 'w')" % hooks + LF
+                        + "EOF",
+                        "bash -c 'rm %s/dispatch.py'" % hooks,
+                        "env X=1 truncate -s0 .githooks/commit-msg",
+                        "cd %s && : > dispatch.py" % hooks,
+                        ": > tools/gate_tool.py",
+                        "perl -pi -e 's/a/b/' tools/gate_tool.py",
+                        "python3 scratch.py %s/dispatch.py" % hooks,
+                        "echo x > %s/%s/dispatch.py" % (self.root.replace(chr(92), "/"), hooks)):
+            with self.subTest(command):
+                self.assertTrue(self.stack(command),
+                                "a command that writes the guard stack was allowed")
+
+    def test_reading_staging_restoring_and_running_the_stack_are_let_through(self):
+        """The opposite direction: a guard that refuses every command naming a hook is one an
+        honest session meets on every `git diff`, and is switched off for it."""
+        hooks = bundle_shell.FOLDER
+        for command in ("cat %s/dispatch.py" % hooks, "ls -la %s/" % hooks,
+                        "grep -rn main %s" % hooks, "git diff %s" % hooks,
+                        "git add %s/dispatch.py" % hooks, "git checkout -- %s/dispatch.py" % hooks,
+                        "git restore .githooks/pre-commit", "git config core.hooksPath .githooks",
+                        "python %s/request_ledger.py show" % hooks,
+                        'python %s/request_ledger.py done a.1 "ran python -B tools/gate_tool.py"'
+                        % hooks,
+                        "python -B tools/gate_tool.py", "sed -n 1,10p .githooks/pre-commit",
+                        "cat %s/dispatch.py > /tmp/copy.py" % hooks,
+                        "git commit -m 'fix %s/dispatch.py'" % hooks,
+                        "git commit -F - <<'EOF'" + LF + "names tools/gate_tool.py" + LF + "EOF",
+                        "python3 -c \"import json; print(len(open('%s/x.json').read()))\"" % hooks,
+                        "echo see %s/x" % hooks, "mkdir -p %s" % hooks,
+                        ": > tools/not_run.py", "find %s -name '*.py'" % hooks):
+            with self.subTest(command):
+                self.assertEqual(self.stack(command), [],
+                                 "a command that only reads or runs the stack was refused")
+
+    def test_a_command_writing_INSIDE_THE_GIT_FOLDER_is_refused_as_the_Write_tool_is(self):
+        """MEASURED 2026-10-06 in a fresh install: `guard_write_rules` refused a Write into `.git` -
+        only git writes there, `.git/config` repoints the hooks and `.git/info/exclude` hides a file
+        from every judgement - while `echo ... >> .git/config`, `sed -i` on it and inline Python
+        opening it for append all went through. One act, refused by one tool, allowed by the
+        other. A name that only EXCLUDES the folder, or reads it, is not a write into it."""
+        for command in ("echo '[core]' >> .git/config", "sed -i s/a/b/ .git/config",
+                        "cd .git && echo x > config",
+                        'python3 -c "open(\'.git/config\', \'a\').write(\'x\')"',
+                        "cp /tmp/x .git/info/exclude", "rm -f .git/index",
+                        "echo x > %s/.git/HEAD" % self.root.replace(chr(92), "/")):
+            with self.subTest(command):
+                self.assertTrue(self.stack(command), "a command writing into .git was allowed")
+        for command in ("cat .git/config", "ls .git/", "git config user.name t",
+                        "rsync -a --exclude .git src/ /tmp/out/", "tar --exclude=.git -cf x.tar .",
+                        "grep -rn x --exclude-dir=.git .", "cat .gitignore > /tmp/x",
+                        "echo x >> .gitignore"):
+            with self.subTest(command):
+                self.assertEqual(self.stack(command), [],
+                                 "a command that reads or excludes .git was refused")
+
+    def test_a_WORKTREES_git_folder_is_the_git_folder_too(self):
+        """In a linked worktree `.git` is a FILE naming the real git folder, which sits outside the
+        worktree - so `.git/config` there was a path no rule recognised, and the Write tool was let
+        through as writing outside the project."""
+        self.write_file("f.txt", "x" + LF)
+        self.git("add", "f.txt")
+        self.git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x")
+        tree = tempfile.mkdtemp(prefix="bundle-worktree-")
+        self.addCleanup(shutil.rmtree, tree, True)
+        os.rmdir(tree)
+        self.assertEqual(self.git("worktree", "add", "-q", tree).returncode, 0)
+        shared = os.path.join(self.root, ".git", "config").replace(chr(92), "/")
+        payload = {"tool_name": "Bash", "cwd": tree,
+                   "tool_input": {"command": "echo '[core]' >> %s" % shared}}
+        self.assertTrue([f for n, f in guard_command_rules.problems(payload, tree) if n == "stack"],
+                        "a command writing the worktree's real git folder was allowed")
+        write = {"tool_name": "Write", "tool_input": {"file_path": shared, "content": "x"}}
+        self.assertEqual(guard_write_rules.verdict(write, tree)[0], 2,
+                         "a Write into the worktree's real git folder was allowed")
+        pointer = {"tool_name": "Bash", "cwd": tree,
+                   "tool_input": {"command": "echo 'gitdir: /elsewhere' > .git"}}
+        self.assertTrue([f for n, f in guard_command_rules.problems(pointer, tree)
+                         if n == "stack"], "repointing the worktree's .git file was allowed")
+
+    def test_the_stack_is_DERIVED_from_what_the_git_hooks_run(self):
+        """A tool the gate gains is in the stack the day a hook names it - a list of tools would be
+        the stack minus the next one."""
+        self.assertFalse(self.stack(": > tools/later.py"))
+        self.write_file(".githooks/commit-msg", '"$PY" -B tools/later.py "$1"' + LF)
+        self.assertTrue(self.stack(": > tools/later.py"),
+                        "a tool a git hook runs was not part of the stack")
+
+    def test_a_command_in_ANOTHER_repository_writes_its_own_hooks(self):
+        """A scratch repository a test builds has a `.githooks` of its own: a command that runs
+        there and spells no path of this project names nothing of this project's stack."""
+        other = tempfile.mkdtemp(prefix="other-repo-")
+        self.addCleanup(shutil.rmtree, other, True)
+        os.makedirs(os.path.join(other, ".githooks"))
+        payload = {"tool_name": "Bash", "cwd": other,
+                   "tool_input": {"command": "chmod +x .githooks/commit-msg"}}
+        self.assertEqual([f for n, f in guard_command_rules.problems(payload, self.root)
+                          if n == "stack"], [], "another repository's hooks were judged as ours")
 
 
 class ACommitIsJudgedInTheRepositoryItLandsIn(ScratchProject, unittest.TestCase):
@@ -654,6 +880,20 @@ class AnAnswerTakenWithAMutantOnDiskIsNeitherGivenNorKept(ScratchProject, unitte
         self.assertTrue(after_rules.after_findings(self.root),
                         "the finding was never said once the module was back")
 
+    def test_a_plants_own_test_is_ASKED_and_keeps_no_memo(self):
+        """The sibling of a plant's own test recording a hold: under the excuse the lock reads as
+        absent, so the rule is asked of the mutant - right, it is the test's subject - and the
+        answer was KEPT as the memo, so the real tree's same finding was never NEW again."""
+        self.hold_the_lock("src/a.py")
+        with mock.patch.dict(os.environ, {bundle_rules.PLANTED: "src/a.py"}):
+            self.assertTrue(after_rules.after_findings(self.root),
+                            "the control: the plant's own test was not shown its subject")
+        self.assertEqual(after_rules._held(self.root), {},
+                         "an answer the plant's own test took of a mutant was kept as the memo")
+        os.remove(self.lock)
+        self.assertTrue(after_rules.after_findings(self.root),
+                        "the finding was never said once the module was back")
+
     def test_the_module_under_mutation_is_not_judged_as_a_commands_write(self):
         self.hold_the_lock("src/a.py")
         self.write_file("src/a.py", "MADE = x" + LF + "USE(x)  # DEFECT" + LF)
@@ -888,6 +1128,91 @@ class AVerdictTakenWhileAMutantCameOrWentIsUnknown(ScratchProject, unittest.Test
             self.assertEqual(bundle_rules.locked(self.root), "twin/base.py",
                              "a marker naming another file excused the lock")
         self.assertEqual(bundle_rules.locked(self.root), "twin/base.py", "the control")
+
+    def test_a_plants_own_test_judges_its_subject_and_RECORDS_nothing(self):
+        """THE HOLD NOBODY COULD LIFT, measured 2026-09-27 on the project this came from. A plant
+        in the hook dispatcher was driven by a test that runs the real dispatcher against the live
+        tree. Inside that test the lock is excused - PLANTED names its file - so the judgement read
+        the planted dispatcher lock-free, held it on `lint 0 -> 1`, and SAVED that hold to the
+        tree's own record. Every other process read the record: an unrelated session was refused
+        every act on a file that was back at HEAD seconds later. The excuse is for the test's own
+        view; a judgement taken under it is the test's alone and is never recorded."""
+        self.write_file("src/other.py", "q = 1" + LF)
+        for args in (["add", "-A"], ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
+                                     "-c", "core.autocrlf=false", "commit", "-qm", "other"]):
+            self.assertEqual(self.git(*args).returncode, 0)
+        self.assertEqual(bundle_rules.judge_unread(self.root)["held"], {})
+        original = self.plant("src/a.py", "MADE = x" + LF + "USE(x)" + LF + "z = 1  # DEFECT" + LF)
+        try:
+            with mock.patch.dict(os.environ, {bundle_rules.PLANTED: "src/a.py"}):
+                subject = bundle_rules.judge_unread(self.root)
+            self.assertIn("src/a.py", subject["held"],
+                          "the control: the plant's own test did not judge its subject")
+            other = bundle_rules.judge_unread(self.root)
+            self.assertEqual(other["held"], {},
+                             "a hold the plant's own test took on its planted subject was RECORDED "
+                             "for every other process to be refused on")
+        finally:
+            self.unplant("src/a.py", original)
+        self.assertEqual(bundle_rules.judge_unread(self.root)["held"], {},
+                         "the plant was back and something was still held")
+
+    def test_a_hold_on_a_file_put_back_at_HEAD_goes_even_while_a_lock_stands(self):
+        """THE HALF THAT KEPT IT: a lock anywhere made the judgement UNKNOWN, and UNKNOWN handed
+        back the record's old holds untouched - so the "a file back at HEAD is never held" rule
+        ran only when no lock stood, and a plant run of 730 plants kept a stale hold for as long
+        as it ran. Comparing a file with HEAD asks no rule and reads no mutant, so it is asked
+        under any lock but the one on that file."""
+        self.write_file("src/other.py", "q = 1" + LF)
+        for args in (["add", "-A"], ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
+                                     "-c", "core.autocrlf=false", "commit", "-qm", "other"]):
+            self.assertEqual(self.git(*args).returncode, 0)
+        base = "MADE = x" + LF + "USE(x)" + LF
+        self.write_file("src/a.py", base + "z = 1  # DEFECT" + LF)
+        self.assertIn("src/a.py", bundle_rules.judge_unread(self.root)["held"],
+                      "the control: a command's defect was not held")
+        self.write_file("src/a.py", base)
+        original = self.plant("src/other.py", "q = 2  # PLANTED" + LF)
+        try:
+            judged = bundle_rules.judge_unread(self.root)
+            self.assertTrue(judged.get("unknown"), "the control: the lock did not make it UNKNOWN")
+            self.assertEqual(judged["held"], {},
+                             "a file back at HEAD stayed held because a lock stood on ANOTHER file")
+        finally:
+            self.unplant("src/other.py", original)
+
+    def test_a_hold_on_a_file_still_changed_STANDS_while_a_lock_stands(self):
+        """The evasion the fix above invites: UNKNOWN read as "nothing is held". Then starting any
+        plant run would be the cheapest way past every hold in the tree."""
+        self.write_file("src/other.py", "q = 1" + LF)
+        for args in (["add", "-A"], ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
+                                     "-c", "core.autocrlf=false", "commit", "-qm", "other"]):
+            self.assertEqual(self.git(*args).returncode, 0)
+        self.write_file("src/a.py", "MADE = x" + LF + "USE(x)" + LF + "z = 1  # DEFECT" + LF)
+        self.assertIn("src/a.py", bundle_rules.judge_unread(self.root)["held"])
+        original = self.plant("src/other.py", "q = 2  # PLANTED" + LF)
+        try:
+            self.assertIn("src/a.py", bundle_rules.judge_unread(self.root)["held"],
+                          "a real hold was lifted because a plant run held a lock elsewhere")
+        finally:
+            self.unplant("src/other.py", original)
+
+    def test_the_note_under_a_lock_names_the_hold_that_stands(self):
+        """It said "Nothing is held" while a recorded hold was refusing every act - the sentence
+        the session reads beside the refusal, contradicting it."""
+        self.write_file("src/other.py", "q = 1" + LF)
+        for args in (["add", "-A"], ["-c", "user.email=t@example.invalid", "-c", "user.name=t",
+                                     "-c", "core.autocrlf=false", "commit", "-qm", "other"]):
+            self.assertEqual(self.git(*args).returncode, 0)
+        self.write_file("src/a.py", "MADE = x" + LF + "USE(x)" + LF + "z = 1  # DEFECT" + LF)
+        self.assertIn("src/a.py", bundle_rules.judge_unread(self.root)["held"])
+        original = self.plant("src/other.py", "q = 2  # PLANTED" + LF)
+        try:
+            said = bundle_rules.unknown_note(bundle_rules.judge_unread(self.root))
+        finally:
+            self.unplant("src/other.py", original)
+        self.assertIn("src/a.py", said, "the note did not name the hold that stands")
+        self.assertNotIn("Nothing is held", said, "the note says nothing is held over a hold")
 
     def test_a_release_removes_ONLY_the_lock_its_own_run_took(self):
         """The refusal tells a person to delete a lock a killed run left, and a person can be
@@ -1482,6 +1807,29 @@ def named_in(rel, text):
         self.assertEqual(after_rules.written_by({"tool_name": "Write", "tool_input": {
             "file_path": os.path.join(self.root, "src", "c.py"), "content": ""}}, self.root),
             ["src/c.py"])
+
+    def test_a_write_the_write_hook_did_NOT_judge_is_not_recorded_as_judged(self):
+        """`after_rules.written_by` named every path a write-shaped call carried, at any depth, as
+        asked by the write hook before it landed - and the write hook asks only a top-level
+        `file_path` or `path` with `content`, `new_string` or `edits`. A notebook edit, or a write
+        nested in a batching tool's input, was judged by neither: skipped before, recorded after."""
+        rel = "src/a.py"
+        judged = {"tool_name": "Edit", "tool_input": {
+            "file_path": os.path.join(self.root, rel), "old_string": "x", "new_string": "y"}}
+        self.assertEqual(after_rules.written_by(judged, self.root), [rel],
+                         "a write the write hook judged was not recorded as judged")
+        for unjudged in ({"tool_name": "NotebookEdit", "tool_input": {
+                              "notebook_path": os.path.join(self.root, "n.ipynb"),
+                              "new_source": "x = 1"}},
+                         {"tool_name": "Batch", "tool_input": {"calls": [{
+                             "file_path": os.path.join(self.root, rel), "content": "z = 1"}]}}):
+            with self.subTest(unjudged["tool_name"]):
+                self.assertEqual(after_rules.written_by(unjudged, self.root), [],
+                                 "a write no hook judged was recorded as judged at the write")
+        nested = {"tool_name": "Batch", "tool_input": {"calls": [{
+            "file_path": os.path.join(self.root, ".git", "config"), "content": "x"}]}}
+        self.assertEqual(guard_write_rules.verdict(nested, self.root)[0], 2,
+                         "a write into .git nested in a batching tool's input went through")
 
 
 if __name__ == "__main__":

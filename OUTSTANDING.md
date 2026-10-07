@@ -169,6 +169,48 @@ both would have blocked every measurement forever:
       it, because those commits run no commit-msg); the Desktop clone advances only by
       `pull --ff-only`, by whoever pushed, who then carries the catch-up into their own projects.
 
+- [x] 2026-10-06 THE UPDATED VERIFICATION BOOTSTRAP (e1fc321) IS NOT INSTALLED HERE, and the
+      owner asked for it before any more audit fixing. DONE 2026-10-07: installed from GitHub main
+      040ced8 plus the bundle fixes below (local bundle commit 9de9750). `install.py` exited 0,
+      merged 11 plants, every one red, drove the ledger with `--all`, and `check_install`
+      reported it installed. The three ADAPT-adapted files (guard_promise.py, tools/tiers.py,
+      tools/whole_tree.py) were taken at the new version with this project's ADAPT values
+      carried over. Each was first measured to be a past bundle version once ADAPT is blanked
+      (`check_install.same`), so no local edit was lost. The original entry follows. `install.py --dry-run` refuses on exactly
+      8 files that differ from the bundle's copies: `.claude/bundle-hooks/after_rules.py`,
+      `bundle_rules.py`, `guard_promise.py`, `tests/test_bundle.py`, `test_bundle_action.py`,
+      `test_bundle_gates.py`, `tools/gate_stamps.py`, `tools/prove_plants.py`. Measured with
+      `git log --find-object` in the bundle: 7 of the 8 are byte-for-byte OLDER bundle versions;
+      `guard_promise.py` differs from the bundle's by its `\b` fix plus this project's own
+      `QUEUE = ("OUTSTANDING.md",)`, which is an ADAPT constant and must be kept. Every module the
+      new copies import is already present. BLOCKED ON THE OWNER: auto mode refuses the overwrite
+      as the session changing its own guards, so it needs the owner's explicit yes or the
+      "Accept edits" mode and a click. Then: overwrite the 8, re-set QUEUE, `install.py`,
+      `check_install.py`, a local commit of the install only (no push without approval).
+      ALSO OWED, IN THE BUNDLE: its refusal's advice "TAKE THE BUNDLE'S - delete the project's
+      copy and rerun" locks a session out when the file is one the live dispatcher imports.
+      Followed on 2026-10-06, deleting `bundle_rules.py` made every `python` tool call refuse
+      (the rerun included) for a whole turn, and the owner was handed a `!` command the Claude
+      app cannot run. The installer should take the bundle's copy itself for a file whose
+      project copy is a clean, committed, older bundle version, instead of asking for a delete.
+
+- [ ] 2026-10-07 FOUR BUNDLE INSTALL DEFECTS ARE NOT ON THE BUNDLE'S GITHUB MAIN YET. Each was
+      found installing it here, and each was reported to the bundle's own session (Bootstrap
+      verification repository audit) by message on 2026-10-07. Owed in hdent1232/verification-bootstrap:
+        1. GIT HOOKS COMMITTED 100644. On Linux and macOS git skips them with only a hint, so
+           every commit gate was off on every cloud checkout. FIXED on branch ctrmap/hook-modes
+           (51b3a2a, pushed with the owner's approval); waiting for the bundle session's merge.
+        2. THE INSTALL DROVE THE LEDGER BEFORE STAGING. The first update to 040ced8 refused 6 new
+           plants on 3 files and rolled back. FIXED in local bundle commit 9de9750, with a test
+           and 2 plants. NOT PUSHED: it needs the owner's per-push approval.
+        3. AN ADAPT-ADAPTED FILE IS REFUSED ON EVERY UPDATE. shipped_before compares exact blobs,
+           so a file whose ADAPT constant a project set, as ADAPT.md says to, can never be taken.
+           NOT FIXED: the carry-over was done here by a standalone script, and the bundle session
+           was sent a proposal for it. install.py is that session's file.
+        4. check_bundle's lint is unpinned. ruff 0.16.10's default rule set reports about 1,400
+           findings on a tree that ruff 0.15.22 reports clean. NOT FIXED; the pin is the bundle
+           session's call.
+
 - [ ] 2026-09-26 A PATHSPEC COMMIT IS REFUSED BY THE STAMP IN THIS REPOSITORY. `git commit -F
       msg -- <paths>` fails at `.githooks/commit-msg` with "the gate cannot stamp it - git could
       not say the tree or where the repository keeps its state" (gate_stamps.stamp: `git

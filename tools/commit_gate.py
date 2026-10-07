@@ -36,7 +36,7 @@ again. Each has a bill attached, from that project's history:
                       cannot look, and a subject that cannot be computed REFUSES. The first version
                       of this passed on an unknown subject, one line from the check it sat beside.
   Co-Authored-By      when a project requires the trailer, it is a flush-left line of the SHAPE
-                      `Co-Authored-By: Claude <model> <noreply@anthropic.com>` - never one model's
+                      `Co-Authored-By: Claude [<model>] <noreply@anthropic.com>` - never one model's
                       exact string, which refused every correct trailer from any other version and
                       left a false one as the only way through.
 
@@ -90,7 +90,7 @@ RECORD = ".last-suite-run"
 LEDGER = "tests/plants.json"
 
 #: The required trailer's SHAPE, or None when the project requires none.
-COAUTHOR_SHAPE = re.compile(r"^Co-Authored-By: Claude [^<>\n]*\S <noreply@anthropic\.com>\s*$",
+COAUTHOR_SHAPE = re.compile(r"^Co-Authored-By: Claude(?: [^<>\n]*\S)? <noreply@anthropic\.com>\s*$",
                             re.M)
 
 #: Paths the subject digest leaves out - a status page a publisher rewrites, read by no test.
@@ -298,7 +298,7 @@ def coauthor(message):
     if COAUTHOR_SHAPE is None or COAUTHOR_SHAPE.search(body_of(message)):
         return []
     return ["the message carries no co-author trailer of the shape `Co-Authored-By: Claude "
-            "<model> <noreply@anthropic.com>` on a line of its own"]
+            "[<model>] <noreply@anthropic.com>` on a line of its own"]
 
 
 def test_claims(message):

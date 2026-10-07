@@ -58,7 +58,11 @@ BYPASS = bundle_env.name("ALLOW_SLEEP")
 #: segment, never against the whole command string - see `segments`.
 SLEEP = re.compile(r"^sleep\s+([0-9]+(?:\.[0-9]+)?)\s*([smh]?)$")
 
-FACTOR = {"": 1, "s": 1, "m": 60, "h": 3600}
+FACTOR = {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}
+
+#: A wait whose length cannot be read. AN UNMEASURABLE QUANTITY IS NOT A SMALL ONE: `sleep
+#: $((600))` is read as longer than any bound, never as a moment.
+UNREADABLE = float("inf")
 
 #: THE OTHER SPELLINGS, each returning (amount, unit). Matched against one command, like SLEEP.
 #: `Start-Sleep 5`, `Start-Sleep -Seconds 5`, `Start-Sleep -s 5`, `Start-Sleep -Milliseconds
@@ -73,9 +77,19 @@ PING_WAIT = re.compile(r"^ping(?:\.exe)?\s+-n\s+(?P<n>[0-9]+)\s+(?:127\.0\.0\.1|
 #: `time.sleep(115)` inside an inline program - the python spelling.
 PY_SLEEP = re.compile(r"\btime\.sleep\(\s*([0-9]+(?:\.[0-9]+)?)\s*\)")
 
-#: Any sleep at all, for the loop rule - the duration does not matter inside a poll loop.
-ANY_SLEEP = re.compile(r"(?:^|[\s;{(&|])(?:sleep\s+[0-9]|Start-Sleep\b|timeout(?:\.exe)?\s+/t\b)"
+#: Any sleep at all, for the loop rule - the duration does not matter inside a poll loop. By any
+#: path (`/bin/sleep`) and any length, a variable's included.
+ANY_SLEEP = re.compile(r"(?:^|[\s;{(&|/])(?:sleep\s+\S|Start-Sleep\b|timeout(?:\.exe)?\s+/t\b)"
                        r"|\btime\.sleep\(", re.I)
+
+#: A sleep inside a program handed its code on the command line, by language: Python's
+#: `time.sleep(N)` or `from time import sleep` then `sleep(N)`, Perl's and Ruby's `sleep N`, and
+#: Node's `setTimeout(f, ms)`. (pattern, seconds per unit); a call whose argument is not a number
+#: is UNREADABLE.
+CODE_SLEEPS = {"python": (r"\b(?:time\.)?sleep\(\s*([^)]*?)\s*\)", 1.0),
+               "perl": (r"\bsleep\b\s*\(?\s*([^\s;)]+)", 1.0),
+               "ruby": (r"\bsleep\b\s*\(?\s*([^\s;)]+)", 1.0),
+               "node": (r"\bsetTimeout\s*\([^,]*,\s*([^)]*?)\s*\)", 0.001)}
 #: An UNBOUNDED loop: `while`/`until` in bash, `while (...)` and `do { } while|until` in
 #: PowerShell. `for` is not here - a fixed range has a deadline built in.
 UNBOUNDED_LOOP = re.compile(r"(?:^|[\s;{(&|])(?:while|until)\b|\bdo\s*\{", re.I)
@@ -167,6 +181,73 @@ def waits(piece):
     return None
 
 
+def _duration(words):
+    """Seconds a `sleep`'s operands add up to - GNU sleep sums them - or UNREADABLE."""
+    total = 0.0
+    for word in words or ["?"]:
+        if word.lower() in ("inf", "infinity"):
+            return UNREADABLE
+        found = re.fullmatch(r"([0-9]*\.?[0-9]+)([smhd]?)", word)
+        if not found:
+            return UNREADABLE
+        total += float(found.group(1)) * FACTOR[found.group(2)]
+    return total
+
+
+def _language(program):
+    for name in CODE_SLEEPS:
+        if re.fullmatch(r"py|pythonw?" if name == "python" else name, re.sub(r"[0-9.]+$", "",
+                                                                              program)):
+            return name
+    return None
+
+
+def stage_waits(words):
+    """Seconds ONE program - `bundle_shell.runs` hands its words, runners already peeled - waits
+    before anything else happens, UNREADABLE when its length cannot be read, None for no wait."""
+    names = [bundle_shell.program_of(word) for word, _typed in words]
+    if names and names[0] == "busybox":
+        words, names = words[1:], names[1:]
+    if not names:
+        return None
+    program, args = names[0], [word for word, _typed in words[1:]]
+    if program == "sleep":
+        return _duration([a for a in args if not a.startswith("-")])
+    joined = " ".join(["Start-Sleep" if program == "start-sleep" else program] + args)
+    if program == "start-sleep":
+        found = START_SLEEP.match(joined)
+        if found:
+            unit = (found.group("unit") or "Seconds").lower()
+            return float(found.group("n")) * (0.001 if unit in ("milliseconds", "ms", "m") else 1.0)
+        found = re.search(r"-Duration\s+(?:(\d+)\.)?(\d+):(\d+):(\d+)", joined, re.I)
+        if found:
+            days, hours, minutes, secs = (int(n or 0) for n in found.groups())
+            return days * 86400.0 + hours * 3600 + minutes * 60 + secs
+        return UNREADABLE
+    for pattern in (CMD_TIMEOUT, PING_WAIT):
+        found = pattern.match(joined)
+        if found:
+            return float(found.group("n")) - (1 if pattern is PING_WAIT else 0)
+    language = _language(program)
+    if language is None:
+        return None
+    code = next((args[at + 1] for at, word in enumerate(args[:-1])
+                 if re.fullmatch(r"-[A-Za-z]*[ce]", word)), None)
+    if code is None:
+        return None
+    pattern, scale = CODE_SLEEPS[language]
+    found = re.findall(pattern, code)
+    if not found:
+        return None
+    total = 0.0
+    for value in found:
+        try:
+            total += float(value) * scale
+        except ValueError:
+            return UNREADABLE
+    return total
+
+
 def _unquoted(text):
     """`text` with the contents of quoted runs blanked, so a quoted WORD is not a keyword."""
     out, quote = [], None
@@ -184,10 +265,13 @@ def _unquoted(text):
 
 
 def poll_loop(command):
-    """True when the text is an UNBOUNDED loop that sleeps - a wait with no deadline."""
-    bare = _unquoted(command)
-    if UNBOUNDED_LOOP.search(bare) and ANY_SLEEP.search(bare):
-        return True
+    """True when the text is an UNBOUNDED loop that sleeps - a wait with no deadline. Asked of the
+    text and of every command a shell in it is handed: quoted for `bash -c`, the loop is blanked
+    out of the outer text, and that is all the outer text is."""
+    for text in bundle_shell.texts(command):
+        bare = _unquoted(text)
+        if UNBOUNDED_LOOP.search(bare) and ANY_SLEEP.search(bare):
+            return True
     # The same shape inside an inline python program: `while ...: time.sleep(5)`.
     for match in re.finditer(r"\s-c\s+(['" + chr(34) + r"])(.*?)\1", command or "", re.S):
         body = match.group(2)
@@ -211,7 +295,22 @@ def seconds(command):
         a long sleep with anything AFTER it         a poll - something is waiting on it
         a long sleep with no real work BEFORE it    a pure wait - end the turn instead
         a long sleep LAST, after real work          allowed, exactly as before
+
+    WHAT RUNS, NOT WHAT IS TYPED FIRST. Matched against each segment's text, a sleep behind a
+    runner (`timeout 700 sleep 600`), a path (`/bin/sleep`), a group or a shell (`bash -c`) was
+    no sleep at all - measured 2026-10-06. `bundle_shell.runs` hands each PROGRAM, and a program
+    sent to the background waits for nobody. A line that cannot be read is asked as before.
     """
+    found = bundle_shell.runs(command)
+    if all(words is not None for words, _background in found):
+        pieces = [words for words, background in found if not background]
+        for index, words in enumerate(pieces):
+            waited = stage_waits(words)
+            if waited is None:
+                continue
+            if index < len(pieces) - 1 or index == 0:
+                return waited
+        return None
     pieces = segments(command)
     for index, piece in enumerate(pieces):
         waited = waits(piece)
@@ -238,8 +337,9 @@ def verdict(command):
     waited = seconds(command)
     if waited is None or waited <= LONGEST_HONEST:
         return False, None
+    said = "%g-second" % waited if waited != UNREADABLE else "sleep whose length cannot be read - a"
     return True, (
-        "A %g-second sleep at the start of a command is a POLL, and the harness already tells "
+        "A %s sleep at the start of a command is a POLL, and the harness already tells "
         "you when a background task finishes - with its exit status, and its output already in "
         "a file.\n\n"
         "MEASURED: one sweep took 113 hours of wall clock to do 29 hours of work, and this is "
@@ -249,7 +349,7 @@ def verdict(command):
         "targeted run. If there is genuinely nothing to do until it lands, END THE TURN; the "
         "notification is what wakes it up and it costs nothing.\n\n"
         "A short pause to let a process come up is still allowed (up to %ds)."
-        % (waited, LONGEST_HONEST))
+        % (said, LONGEST_HONEST))
 
 
 def main():

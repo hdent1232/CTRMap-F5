@@ -27,12 +27,14 @@ import glob
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(HERE, "tools"))
@@ -413,12 +415,60 @@ class AFanOutThisHookCannotMEASUREIsRefused(unittest.TestCase):
         env = self.clean_env(**{self.guard.ALLOW_UNMEASURED: "1"})
         self.assertEqual(self.decision("this is not json", env), "allow")
 
+    def test_a_WORKFLOW_under_another_name_is_refused_by_its_SHAPE(self):
+        """`tool == "Workflow"` was the trigger - the trigger-by-name this folder was rebuilt to
+        remove. A scripted multi-agent run is a script of `agent(...)` calls, or one named by its
+        path or resumed by its run, whatever the tool carrying it is called."""
+        env = {k: v for k, v in self.clean_env().items() if k != self.guard.ALLOW_WORKFLOW}
+        for given in ({"script": "export const meta = {name: 'x'}" + LF + "await agent('go')"},
+                      {"scriptPath": "/tmp/wf.js"}, {"resumeFromRunId": "wf_abc123"}):
+            with self.subTest(sorted(given)):
+                self.assertEqual(self.decision(json.dumps({"tool_name": "Orchestrate",
+                                                           "tool_input": given}), env), "deny",
+                                 "a scripted fan-out under another name went through")
+        shell = {"tool_name": "Bash", "tool_input": {"command": "grep -n 'agent(' run.js"}}
+        self.assertEqual(self.decision(json.dumps(shell), env), "allow",
+                         "a command MENTIONING a fan-out was refused as one")
+
+    def test_a_WORKFLOW_is_a_multi_agent_run_and_needs_its_state_FIRST(self):
+        """README section 11: write the first STATE.md BEFORE THE FIRST MULTI-AGENT RUN. The
+        campaign guard asked only agent launches, so a scripted fan-out - the run that lost three
+        agents and fifteen verifiers to one session limit - needed no state at all."""
+        import guard_agent_campaign
+        scripted = {"tool_name": "Orchestrate", "tool_input": {
+            "script": "export const meta = {name: 'x'}" + LF + "await agent('go')"}}
+        with mock.patch.object(guard_agent_campaign, "STATE_FILE",
+                               os.path.join(self.tmp, "no", "STATE.md")), \
+                mock.patch.object(guard_agent_campaign, "CONVERGENCE_LOG",
+                                  os.path.join(self.tmp, "none.json")):
+            self.assertTrue(guard_agent_campaign.verdict(scripted)[0],
+                            "a scripted multi-agent run went ahead with no campaign state")
+
     def test_an_agent_launch_under_ANOTHER_NAME_is_counted(self):
         """The launching tool was `Task` before it was `Agent`. By shape, whatever its name."""
         import bundle_shell
         launch = {"tool_name": "Delegate", "tool_input": {
             "prompt": "survey x", "description": "survey", "subagent_type": "Explore"}}
         self.assertEqual(len(bundle_shell.launches(launch)), 1)
+
+    def test_a_REMOTE_or_SCHEDULED_session_launched_on_a_prompt_is_counted(self):
+        """A session started in the cloud on a prompt, or a routine that starts one on a schedule,
+        is an agent working a brief on the same metered plan - and the launch shape asked only
+        for `subagent_type` or `description`, so neither was counted, capped or asked for a
+        structured result. A prompt alone is not a launch: an image generator takes one too."""
+        import bundle_shell
+        for given in ({"prompt": "fix the parser", "title": "fix", "environment_id": "env_1"},
+                      {"prompt": "fix the parser", "source_url": "https://example.com/r.git"},
+                      {"name": "nightly", "prompt": "audit the tree",
+                       "cron_expression": "0 3 * * *", "create_new_session_on_fire": True},
+                      {"name": "later", "prompt": "check the PR", "run_once_at": "2026-10-07T00:00:00Z"}):
+            with self.subTest(sorted(given)):
+                self.assertEqual(len(bundle_shell.launches({"tool_name": "Anything",
+                                                            "tool_input": given})), 1,
+                                 "a session launched on a prompt was not counted as a launch")
+        self.assertEqual(bundle_shell.launches({"tool_name": "Paint", "tool_input": {
+            "prompt": "a red bicycle", "aspect_ratio": "16:9"}}), [],
+            "a prompt with nothing that starts an agent on it was counted as a launch")
 
 
 class ARecordedMeasurementCarriesTheTreeItMeasured(unittest.TestCase):
@@ -602,6 +652,46 @@ class TheDispatcherAsksEveryGuardAndCannotBeWedged(unittest.TestCase):
             dispatch.ask = held
         self.assertEqual((first, again), (2, 0))
 
+    def test_a_guard_that_ALLOWS_and_says_why_is_heard(self):
+        """`guard_requests` allows a stop whose transcript it cannot read and prints a
+        `systemMessage` saying the requests were NOT checked - "allowing silently would read as a
+        clean ledger". Under the dispatcher that message went nowhere: only a deny was forwarded,
+        so the one sentence that kept "could not look" apart from "nothing found" was dropped."""
+        dispatch = _dispatch()
+        folder = tempfile.mkdtemp(prefix="vb-dispatch-")
+        self.addCleanup(shutil.rmtree, folder, True)
+        says = os.path.join(folder, "guard_says.py")
+        io.open(says, "w", encoding="utf-8", newline=LF).write(
+            "import json, sys" + LF + LF + LF + "def main():" + LF
+            + '    json.dump({"systemMessage": "the ledger was NOT checked"}, sys.stdout)' + LF
+            + "    return 0" + LF)
+        code, _said, forward = dispatch.verdict(json.dumps({"session_id": "s"}), found=[says])
+        self.assertEqual(code, 0)
+        self.assertIn("NOT checked", forward,
+                      "a guard's word that it could not look never reached the owner")
+
+    def test_a_turn_end_guard_that_cannot_read_the_transcript_SAYS_SO(self):
+        """`guard_promise` documented None as COULD NOT LOOK, "treated differently from nothing to
+        refuse" - and returned 0 for both, as `guard_read_claims` did. A query that cannot read its
+        subject must not report it absent: it allows, so a moved transcript cannot wedge a turn,
+        and says so."""
+        import guard_promise
+        import guard_read_claims
+        payload = json.dumps({"session_id": "s", "hook_event_name": "Stop",
+                              "transcript_path": os.path.join(tempfile.gettempdir(), "no-such.jsonl")})
+        for module in (guard_promise, guard_read_claims):
+            with self.subTest(module.__name__):
+                held = (sys.stdin, sys.stdout)
+                sys.stdin, sys.stdout = io.StringIO(payload), io.StringIO()
+                try:
+                    code = module.main()
+                    said = sys.stdout.getvalue()
+                finally:
+                    sys.stdin, sys.stdout = held
+                self.assertEqual(code, 0)
+                self.assertIn("NOT checked", said,
+                              "a transcript nobody could read was reported as nothing to refuse")
+
 
 class AHookNamesTheFolderItSitsIn(unittest.TestCase):
     """A project that keeps its own guard stack in `.claude/hooks` installs the bundle's beside it
@@ -667,6 +757,154 @@ class AHookNamesTheFolderItSitsIn(unittest.TestCase):
                         'M = "%s/" + "%s"' % (claude, hooks)):
             self.assertTrue(bundle_rules.spelled_folders(control + LF),
                             "SPELLED: the rule missed the spelling it exists for: %s" % control)
+
+
+class AProgramIsWhatRunsNotTheFirstWordTyped(unittest.TestCase):
+    """THREE GUARDS READ A COMMAND'S PROGRAM AS ITS FIRST WORD. Measured 2026-10-06: the idle-poll
+    guard let `timeout 700 sleep 600`, `/bin/sleep 600`, `bash -c 'sleep 600'` and `sleep 1d`
+    through; the sweep guard let `timeout 3000 python <sweep>` run in the foreground - the exact
+    kill its docstring records costing a restored file - and `env A=1 python <sweep> | tail`; the
+    mutation-read guard let `grep -rn x .`, `rg foo`, `cat src/pkg/*.py` and `timeout 60 python
+    tools/audit/weigh.py` read a module while a mutant was on disk. Each guard asked which word came
+    first; the question is which program RUNS - `bundle_shell.runs`, through runners and shells."""
+
+    def test_a_sleep_behind_a_runner_a_path_a_group_or_a_shell_is_a_sleep(self):
+        import guard_idle_poll
+        for command in ("/bin/sleep 600", "env sleep 600", "nice sleep 600",
+                        "timeout 700 sleep 600", "(sleep 600)", "{ sleep 600; }",
+                        "bash -c 'sleep 600'", 'sh -c "sleep 600; cat x"', "sleep 1d",
+                        "sleep infinity", "sleep 5m 30s", "busybox sleep 600",
+                        "python3 -c 'from time import sleep; sleep(600)'",
+                        "pwsh -c 'Start-Sleep 600'", "Start-Sleep -Duration 00:10:00",
+                        "perl -e 'sleep 600'", "node -e 'setTimeout(() => {}, 600000)'",
+                        "bash -c 'while true; do sleep 5; done'",
+                        "while true; do /bin/sleep 5; done"):
+            with self.subTest(command):
+                self.assertTrue(guard_idle_poll.verdict(command)[0],
+                                "a long wait spelled another way went through")
+
+    def test_a_sleep_whose_length_cannot_be_read_is_not_a_short_one(self):
+        import guard_idle_poll
+        self.assertTrue(guard_idle_poll.verdict("sleep $((600)); cat out.txt")[0],
+                        "an unreadable duration was read as a short one")
+
+    def test_short_backgrounded_and_bounding_waits_still_go_through(self):
+        import guard_idle_poll
+        for command in ("sleep 5", "env X=1 sleep 2", "timeout 600 python -m pytest -q",
+                        "sleep 600 &", "python3 -c 'import time; time.sleep(2)'",
+                        "nohup ./server & sleep 3; curl -s localhost:8000",
+                        "git commit -m 'sleep 600'", "echo sleep 600", "make all; sleep 45"):
+            with self.subTest(command):
+                self.assertFalse(guard_idle_poll.verdict(command)[0],
+                                 "a short, backgrounded or bounding wait was refused")
+
+    SWEEP = "tools/audit/mutate.py"
+
+    def test_a_sweep_behind_a_runner_or_a_shell_must_run_in_the_background(self):
+        import guard_background_pipe
+        sweep = self.SWEEP
+        for command, background in (("timeout 3000 python %s x" % sweep, False),
+                                    ("env A=1 python %s x > o.txt" % sweep, False),
+                                    ("A=1 python %s x > o.txt" % sweep, False),
+                                    ("bash -c 'python %s x' > o.txt" % sweep, False),
+                                    ("python3.12 %s x > o.txt" % sweep, False),
+                                    ("timeout 3000 python %s x | tail -5" % sweep, True),
+                                    ("python -B %s x | timeout 9 tail -5" % sweep, True),
+                                    ("pytest -x | timeout 9 tail -5", True),
+                                    ("pytest -x | (tail -5)", True)):
+            with self.subTest(command):
+                with mock.patch.object(guard_background_pipe, "destructive",
+                                       return_value=[(sweep, None)]):
+                    self.assertTrue(guard_background_pipe.verdict(command, background)[0],
+                                    "a sweep or a buffered pipe spelled another way went through")
+
+    def test_a_backgrounded_redirected_sweep_and_a_read_of_one_still_go_through(self):
+        import guard_background_pipe
+        sweep = self.SWEEP
+        for command, background in (("timeout 3000 python %s x > o.txt 2>&1" % sweep, True),
+                                    ("grep -n x %s | tail -5" % sweep, False),
+                                    ("python -m ruff check %s" % sweep, False),
+                                    ("env A=1 python other.py | tail -5", False)):
+            with self.subTest(command):
+                with mock.patch.object(guard_background_pipe, "destructive",
+                                       return_value=[(sweep, None)]):
+                    self.assertFalse(guard_background_pipe.verdict(command, background)[0],
+                                     "honest work around a sweep was refused")
+
+    LOCKED = "src/pkg/mod.py"
+
+    def test_a_read_of_the_mutated_module_spelled_any_way_is_refused(self):
+        import guard_mutation_read
+        for command in ("grep -rn x .", "grep -rn x", "rg foo", "grep -rn x ./src",
+                        "cat src/pkg/*.py", "wc -l src/pkg/m*", "cat ./src/pkg/mod.py",
+                        "timeout 60 python tools/audit/weigh.py",
+                        "python -m tools.audit.weigh", "python3 -c 'import pkg.mod'",
+                        "cd src && grep -rn x ."):
+            with self.subTest(command):
+                self.assertTrue(guard_mutation_read.verdict(command, self.LOCKED)[0],
+                                "a read of the mutated module spelled another way went through")
+
+    def test_a_read_of_anything_else_still_goes_through(self):
+        import guard_mutation_read
+        for command in ("grep -rn x tests/", "cat src/pkg/other.py", "rg foo tests",
+                        "git diff", "cat src/pkg/o*.py", "python3 -c 'import pkg.other'",
+                        "grep -n tools/audit/weigh.py README.md", "ls"):
+            with self.subTest(command):
+                self.assertFalse(guard_mutation_read.verdict(command, self.LOCKED)[0],
+                                 "a read of a file no mutant is in was refused")
+
+
+class FileContentNeverTravelsInACommandString(unittest.TestCase):
+    """`guard_heredoc`'s rule - the Write tool for a file, a file for a script - measured from
+    its other spellings on 2026-10-06."""
+
+    def test_a_refusal_sends_the_reader_only_to_what_EXISTS(self):
+        """Two of its refusals said `python tools/dev/safe.py run-script <path>` - a tool of the
+        project this came from, shipped nowhere. A refusal whose remedy is a file that is not
+        there leaves the reader at a dead end, and the next attempt is a guess."""
+        import guard_heredoc
+        long_heredoc = "python - <<'EOF'" + LF + LF.join("x%d = %d" % (n, n) for n in range(30)) \
+            + LF + "EOF"
+        here_string = "@'" + LF + "print(1)" + LF + "'@ | Set-Content x.py"
+        for command in (long_heredoc, here_string):
+            with self.subTest(command[:20]):
+                deny, said = guard_heredoc.verdict(command)
+                self.assertTrue(deny)
+                for named in re.findall(r"[\w./\\-]+\.py\b", said):
+                    if "/" in named.replace(chr(92), "/"):
+                        self.assertTrue(os.path.isfile(os.path.join(HERE, named)),
+                                        "the refusal names %s, which this bundle does not ship"
+                                        % named)
+
+    def test_printf_and_echo_carrying_ESCAPES_into_a_file_are_the_same_channel(self):
+        """`printf 'a\\nb' > f` is file content with backslash escapes inside a command string - the
+        exact bytes the heredoc rule was bought with (`\\b` arriving as 0x08). A plain word echoed
+        into a file carries no escape and is left alone."""
+        import guard_heredoc
+        back = chr(92)
+        for command in ("printf 'line one%snline two%sn' > notes.txt" % (back, back),
+                        "echo -e 'a%stb' >> data.tsv" % back,
+                        "printf '%%s%sn' x | tee out.txt" % back,
+                        "cd src && printf 'x = 1%sn' > a.py" % back):
+            with self.subTest(command):
+                self.assertTrue(guard_heredoc.verdict(command)[0],
+                                "escaped content written into a file went through")
+        for command in ("echo done > status.txt", "printf '%%s%sn' x" % back,
+                        "echo 'a%snb'" % back, "printf 'x' 2>/dev/null"):
+            with self.subTest(command):
+                self.assertFalse(guard_heredoc.verdict(command)[0],
+                                 "a command that writes no escaped content to a file was refused")
+
+    def test_EVERY_interpreter_handed_a_long_program_is_one_channel(self):
+        """The inline-program rule named python, py, node, pwsh, powershell, bash and sh - a list
+        of interpreters, so `perl -e`, `ruby -e` and `zsh -c` carried a long program unasked."""
+        import guard_heredoc
+        body = LF.join("x%d = %d;" % (n, n) for n in range(30))
+        for program in ("perl -e", "ruby -e", "zsh -c", "python3.12 -c", "php -r"):
+            with self.subTest(program):
+                self.assertTrue(guard_heredoc.verdict("%s '%s'" % (program, body))[0],
+                                "a long program handed to %s went through" % program)
+        self.assertFalse(guard_heredoc.verdict("perl -e 'print 1'")[0], "a one-liner was refused")
 
 
 class ThePowerShellSpellingIsTheSameAct(unittest.TestCase):
@@ -1017,6 +1255,53 @@ class AnEscapeIsAskedOfEveryCommand(unittest.TestCase):
         self.assertEqual(guard.written_worktree_paths(read), [])
 
 
+class AProcessNobodyCanReadIsAlive(unittest.TestCase):
+    """UNCERTAINTY IS ALIVE, PRESENT, UNKNOWN - NEVER ABSENT. Two guards here each kept a copy of
+    `alive`, and the copies disagreed: `guard_machine_worktrees` read a POSIX permission error as a
+    live process, `guard_blocked_runner` read the same error as a dead one - so a runner owned by
+    another account switched its refusal off. And a run lock that existed and could not be read
+    was read as no run at all, by the guard written about exactly that mistake."""
+
+    def test_a_process_this_account_may_not_signal_is_ALIVE_in_every_guard(self):
+        """Asked of the POSIX half on ANY machine - a test that skips where the guard runs leaves
+        its plants green there - and of every guard's probe being that one probe."""
+        import bundle_shell
+        import guard_blocked_runner
+        import guard_machine_worktrees
+        with mock.patch("os.kill", side_effect=PermissionError(1, "not permitted")):
+            self.assertTrue(bundle_shell.posix_alive(4242),
+                            "a live process another account owns was read as dead")
+        with mock.patch("os.kill", side_effect=ProcessLookupError(3, "no such process")):
+            self.assertFalse(bundle_shell.posix_alive(4242),
+                             "a process that is gone was read as live")
+        for module in (guard_blocked_runner, guard_machine_worktrees):
+            with self.subTest(module.__name__):
+                self.assertIs(module.alive, bundle_shell.alive,
+                              "a live process another account owns was read as dead: %s keeps a "
+                              "probe of its own" % module.__name__)
+
+    def test_a_run_lock_that_cannot_be_READ_is_a_run_in_flight(self):
+        import guard_machine_worktrees as guard
+        folder = tempfile.mkdtemp(prefix="vb-sweep-")
+        self.addCleanup(shutil.rmtree, folder, True)
+        lock = os.path.join(folder, "running")
+        write = {"tool_name": "Bash", "tool_input": {"command": "git -C .sweep/tree-3 checkout -- x"}}
+        with mock.patch.object(guard, "RUN_LOCK", lock):
+            self.assertEqual(self._ask(guard, write), 0, "no lock at all refused a write")
+            io.open(lock, "w", encoding="utf-8").write("{half a json")
+            self.assertEqual(self._ask(guard, write), 2,
+                             "a run lock nobody could read was read as no run")
+
+    @staticmethod
+    def _ask(guard, payload):
+        held_in, held_err = sys.stdin, sys.stderr
+        sys.stdin, sys.stderr = io.StringIO(json.dumps(payload)), io.StringIO()
+        try:
+            return guard.main()
+        finally:
+            sys.stdin, sys.stderr = held_in, held_err
+
+
 def _transcript(folder, messages):
     """A transcript holding `messages`: [(message id, [(tool_use id, input)])]."""
     path = os.path.join(folder, "t.jsonl")
@@ -1028,6 +1313,219 @@ def _transcript(folder, messages):
                         {"type": "tool_use", "id": use_id, "name": "Agent",
                          "input": tool_input}]}}) + LF)
     return path
+
+
+class TwoWritersAreRefusedAtTheSecondWrite(unittest.TestCase):
+    """AGENTS THAT CANNOT EDIT EACH OTHER'S FILES MUST NOT EDIT AT THE SAME TIME - asked at the
+    WRITE, where the act is. `guard_agent_edits` asks at the launch, from the brief's words, and
+    measured 2026-10-06 it let ten of twelve editing briefs through: "Make the tests pass", "Add
+    error handling", "Move helper() into utils.py". A brief is prose; a write is a fact. Every
+    tool call a subagent makes carries its `agent_id` (the harness's hook contract), and the
+    harness reports when each subagent starts and stops - so whether another writer is live when
+    a Write or Edit is asked is a measurement, not a reading of intent."""
+
+    def setUp(self):
+        import guard_agent_writers
+        self.guard = guard_agent_writers
+        self.folder = tempfile.mkdtemp(prefix="vb-writers-")
+        self.addCleanup(shutil.rmtree, self.folder, True)
+        self.session = "vb-writers-%d-%d" % (os.getpid(), int(time.time() * 1000))
+        patcher = mock.patch.object(guard_agent_writers, "STATE_DIR", self.folder)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def event(self, name, agent):
+        return {"session_id": self.session, "hook_event_name": name, "agent_id": agent,
+                "agent_type": "general-purpose"}
+
+    def edit(self, agent=None, path="src/a.py"):
+        payload = {"session_id": self.session, "hook_event_name": "PreToolUse",
+                   "tool_name": "Edit", "tool_input": {"file_path": path, "old_string": "a",
+                                                        "new_string": "b"}}
+        if agent:
+            payload.update(agent_id=agent, agent_type="general-purpose")
+        return payload
+
+    def read(self, agent=None):
+        payload = {"session_id": self.session, "hook_event_name": "PreToolUse",
+                   "tool_name": "Read", "tool_input": {"file_path": "src/a.py"}}
+        if agent:
+            payload.update(agent_id=agent, agent_type="Explore")
+        return payload
+
+    def ask(self, payload):
+        return self.guard.verdict(payload)[0]
+
+    def test_a_second_AGENT_writing_beside_a_live_writing_agent_is_refused(self):
+        for agent in ("a1", "a2"):
+            self.assertEqual(self.ask(self.event("SubagentStart", agent)), 0)
+        self.assertEqual(self.ask(self.edit("a1")), 0, "the first writer was refused")
+        self.assertEqual(self.ask(self.edit("a2", "src/b.py")), 2,
+                         "a second agent edited beside a live writing agent")
+        self.assertEqual(self.ask(self.event("SubagentStop", "a1")), 0)
+        self.assertEqual(self.ask(self.edit("a2", "src/b.py")), 0,
+                         "a writer that has STOPPED still blocked the next one")
+
+    def test_the_MAIN_THREAD_writing_beside_a_live_writing_agent_is_refused(self):
+        self.ask(self.event("SubagentStart", "bg"))
+        self.ask(self.edit("bg"))
+        self.assertEqual(self.ask(self.edit()), 2,
+                         "the main thread edited while a background agent was editing")
+        self.assertEqual(self.ask(self.read()), 0, "a READ was refused - reading is never blocked")
+        self.ask(self.event("SubagentStop", "bg"))
+        self.assertEqual(self.ask(self.edit()), 0)
+
+    def test_an_agent_writing_after_the_main_thread_wrote_beside_it_is_refused(self):
+        self.ask(self.event("SubagentStart", "bg"))
+        self.assertEqual(self.ask(self.edit()), 0, "the main thread's first write was refused")
+        self.assertEqual(self.ask(self.edit("bg")), 2,
+                         "an agent edited a tree the main thread was editing beside it")
+
+    def test_a_SURVEY_that_only_reads_blocks_no_writer(self):
+        """Fan out to READ, bring the findings back to one writer: a survey composes."""
+        for agent in ("s1", "s2", "s3"):
+            self.ask(self.event("SubagentStart", agent))
+            self.assertEqual(self.ask(self.read(agent)), 0, "a survey's reads blocked each other")
+        self.assertEqual(self.ask(self.edit()), 0, "a survey's reads blocked the main thread")
+
+    def test_one_FOREGROUND_writer_at_a_time_is_one_writer(self):
+        self.ask(self.event("SubagentStart", "fg"))
+        self.assertEqual(self.ask(self.edit("fg")), 0)
+        self.ask(self.event("SubagentStop", "fg"))
+        self.assertEqual(self.ask(self.edit()), 0)
+        self.ask(self.event("SubagentStart", "fg2"))
+        self.assertEqual(self.ask(self.edit("fg2")), 0,
+                         "a writer that started after the main thread's last write was refused")
+
+    def test_a_record_nobody_can_read_is_UNKNOWN_not_empty(self):
+        self.ask(self.event("SubagentStart", "bg"))
+        path = self.guard.state_path(self.session)
+        io.open(path, "w", encoding="utf-8").write("{half")
+        self.assertEqual(self.ask(self.edit()), 2,
+                         "a writer record nobody could read was read as no writer at all")
+
+    def test_the_end_of_a_SUBAGENT_is_not_the_end_of_the_turn(self):
+        """A `SubagentStop` has a `Stop`'s shape, and exit 2 there keeps the SUBAGENT running: a
+        turn-end guard that judged it would trap every subagent behind the owner's last message."""
+        import guard_held_writes
+        import guard_promise
+        import guard_read_claims
+        transcript = os.path.join(self.folder, "t.jsonl")
+        with io.open(transcript, "w", encoding="utf-8", newline=LF) as handle:
+            handle.write(json.dumps({"type": "assistant", "message": {"content": [
+                {"type": "text", "text": "I'll fix `nowhere/missing.py:10` next."}]}}) + LF)
+
+        def ends(module, event):
+            payload = {"session_id": self.session, "hook_event_name": event, "agent_id": "x",
+                       "transcript_path": transcript}
+            held = (sys.stdin, sys.stdout, sys.stderr)
+            sys.stdin, sys.stdout, sys.stderr = (io.StringIO(json.dumps(payload)), io.StringIO(),
+                                                 io.StringIO())
+            try:
+                return module.main()
+            finally:
+                sys.stdin, sys.stdout, sys.stderr = held
+        for module in (guard_promise, guard_read_claims):
+            with self.subTest(module.__name__):
+                self.assertEqual(ends(module, "Stop"), 2, "the control: the owner's turn end")
+                self.assertEqual(ends(module, "SubagentStop"), 0,
+                                 "%s judged a subagent's end" % module.__name__)
+        stop = {"session_id": self.session, "hook_event_name": "SubagentStop", "agent_id": "x"}
+        with mock.patch.object(guard_held_writes.bundle_rules, "judge_unread",
+                               return_value={"held": {"x.py": "k"}, "blind": "", "worse": {}}):
+            self.assertEqual(guard_held_writes.verdict(stop, self.folder)[0], 0,
+                             "a held change refused a subagent's end")
+
+
+class NoSourceIsWrittenWhileTheSuiteRuns(unittest.TestCase):
+    """NEVER EDIT SOURCE WHILE THE SUITE IS RUNNING - the result is neither the old code nor the
+    new one, and it looks green; two full runs were invalidated this way. A rule with nothing
+    behind it: refused here at the write, from the session's own transcript - a background command
+    gets a task id, and the harness records a notification when it ends."""
+
+    def setUp(self):
+        import guard_suite_running
+        self.guard = guard_suite_running
+        self.root = tempfile.mkdtemp(prefix="vb-suite-")
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.transcript = os.path.join(self.root, "t.jsonl")
+        self.rows = []
+
+    def launch(self, use, task, command):
+        self.rows += [
+            {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": use,
+                                                           "name": "Bash", "input": {
+                "command": command, "run_in_background": True}}]}},
+            {"type": "user", "toolUseResult": {"backgroundTaskId": task},
+             "message": {"content": [{"type": "tool_result", "tool_use_id": use,
+                                      "content": "Command running in background with ID: %s"
+                                                 % task}]}}]
+
+    def notify(self, task, status="completed"):
+        self.rows.append({"type": "queue-operation", "operation": "enqueue", "content":
+                          "<task-notification>" + LF + "<task-id>%s</task-id>" % task + LF
+                          + "<status>%s</status>" % status + LF + "</task-notification>"})
+
+    def write(self, tool="Edit"):
+        with io.open(self.transcript, "w", encoding="utf-8", newline=LF) as handle:
+            for row in self.rows:
+                handle.write(json.dumps(row) + LF)
+        given = {"file_path": os.path.join(self.root, "src", "a.py"), "old_string": "a",
+                 "new_string": "b"} if tool == "Edit" else {
+            "file_path": os.path.join(self.root, "src", "a.py"), "content": "x = 1" + LF}
+        return self.guard.verdict({"tool_name": tool, "tool_input": given,
+                                   "transcript_path": self.transcript}, self.root)[0]
+
+    def test_a_source_write_while_a_background_SUITE_runs_is_refused(self):
+        self.launch("u1", "t1", "cd x && timeout 3000 python -m pytest -q > out.txt 2>&1")
+        self.assertEqual(self.write(), 2, "a source file was edited while the suite ran")
+        self.assertEqual(self.write("Write"), 2, "a source file was written while the suite ran")
+        self.notify("t1")
+        self.assertEqual(self.write(), 0, "a suite that had FINISHED still refused the write")
+
+    def test_a_suite_STOPPED_or_lost_to_a_restart_has_ended(self):
+        """MEASURED on this guard's own session transcript, 2026-10-06: a task stopped with
+        `TaskStop` gets no notification - its end is the stop's result - and a container restart
+        reports the tasks it took in a notice of its own. Read only from notifications, both
+        were running for ever, and every write after them would have been refused."""
+        self.launch("u1", "t1", "python -m pytest -q")
+        self.rows += [{"type": "assistant", "message": {"content": [{"type": "tool_use",
+                       "id": "u2", "name": "TaskStop", "input": {"task_id": "t1"}}]}},
+                      {"type": "user", "message": {"content": [{"type": "tool_result",
+                       "tool_use_id": "u2", "content": '{"message":"Successfully stopped task: '
+                                                       't1 (python -m pytest -q)"}'}]}}]
+        self.assertEqual(self.write(), 0, "a suite stopped with TaskStop still refused the write")
+        self.rows = []
+        self.launch("u1", "t2", "python -m pytest -q")
+        self.rows.append({"type": "user", "message": {"content": "<system-reminder>" + LF
+                          + "The container was restarted. The following background tasks were "
+                            "running and are now stopped:" + LF + "- Run the suite (task t2)"
+                          + LF + "</system-reminder>"}})
+        self.assertEqual(self.write(), 0, "a suite the restart took still refused the write")
+
+    def test_a_suite_behind_a_runner_or_a_shell_is_a_suite(self):
+        for command in ("bash -c './gradlew test'", "env CI=1 mvn -q verify",
+                        "python3 -B tools/check_bundle.py", "npm run test"):
+            with self.subTest(command):
+                self.rows = []
+                self.launch("u1", "t1", command)
+                self.assertEqual(self.write(), 2, "a suite spelled another way was not one")
+
+    def test_a_background_command_that_measures_nothing_blocks_no_write(self):
+        for command in ("python -m http.server 8000", "tail -f server.log", "sleep 5"):
+            with self.subTest(command):
+                self.rows = []
+                self.launch("u1", "t1", command)
+                self.assertEqual(self.write(), 0, "a write was refused beside a run that "
+                                                  "measures nothing")
+
+    def test_a_transcript_nobody_can_read_is_said_not_read_as_idle(self):
+        code, _said, note = self.guard.verdict(
+            {"tool_name": "Edit", "tool_input": {"file_path": os.path.join(self.root, "a.py"),
+                                                 "old_string": "a", "new_string": "b"},
+             "transcript_path": os.path.join(self.root, "missing.jsonl")}, self.root)
+        self.assertEqual(code, 0)
+        self.assertIn("NOT checked", note, "an unreadable transcript was read as no suite")
 
 
 class AnEditingAgentMayNotWriteBesideAnother(unittest.TestCase):
@@ -1293,6 +1791,17 @@ class AnOfferToDoTheWorkIsTheWorkNotDone(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIn("offer", self.kinds(text), "an offer to do the work passed")
 
+    def test_a_question_whose_next_word_merely_STARTS_with_I_is_not_an_offer(self):
+        """*"Should Invest's Today open on its numbers on a phone too?"* asked the owner to choose
+        between two of their own decisions, and was refused as `should I` (2026-10-03): the
+        pattern ended at the letter, not the word. "Should I fix it?" is still an offer."""
+        for text in ("Invest's Today puts Needs you first. Should Invest's Today open on its numbers too?",
+                     "Two layouts are possible. Shall Ideas come before the table?"):
+            with self.subTest(text=text):
+                self.assertNotIn("offer", self.kinds(text), "a question about a word starting with I read as an offer")
+        self.assertIn("offer", self.kinds("The defect is understood. Should I fix it?"),
+                      "the boundary swallowed the offer it is there to keep")
+
     def test_appending_a_question_does_not_LAUNDER_a_promise(self):
         self.assertIn("promise", self.kinds("I will fix the recount next. Want me to?"),
                       "two words appended laundered a promise")
@@ -1426,6 +1935,11 @@ class AHookPayloadIsReadAsTheUTF8TheHarnessWrote(unittest.TestCase):
                          + "        return 2" + LF + "    return 0" + LF)
         payload = {"tool_name": "Note", "tool_input": {"note": "café …"}}
         env = {k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8")}
+        # THE WINDOWS PIPE, ON EVERY MACHINE - as `AHookAnswersTheHarnessInUTF8` below already
+        # forces for stdout. A UTF-8 locale reads the harness's bytes right however stdin is read,
+        # so on Linux and macOS the plant that reads `sys.stdin` directly stayed green and refused
+        # every install there.
+        env["PYTHONIOENCODING"] = "cp1252"
         done = subprocess.run([sys.executable, "-B", os.path.join(folder, "dispatch.py")],
                               input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
                               capture_output=True, timeout=120, env=env, creationflags=NO_WINDOW)
@@ -1650,6 +2164,26 @@ class AnOwnersRequestIsAccountedForBeforeTheTurnEnds(LedgerCase):
         self.assertEqual(sorted(k for k in self.keys()[1:] if any(k in f for f in found)),
                          sorted(self.keys()[1:]), "a request after the start was not held")
 
+    def test_an_item_naming_a_clause_the_owner_never_wrote_is_refused_by_the_verb(self):
+        """`uncovered` refused it at the end of the turn; the `item` verb that wrote it accepted
+        it - measured 2026-10-06, `item <request> 3` over a request of two clauses. The verb is
+        the act, and the refusal belongs there."""
+        from unittest import mock
+        self.add(typed("Add multiply. Run the tests.", "2026-01-01T00:00:01Z"))
+        key = self.keys()[0]
+        out = io.StringIO()
+        with mock.patch.object(self.ledger, "find_transcript", lambda _s: self.transcript), \
+                mock.patch.dict(os.environ, {self.ledger.SESSION_VAR: self.session}), \
+                mock.patch("sys.stdout", out):
+            beyond = self.ledger.main(["request_ledger.py", "item", key, "3", "a clause nobody "
+                                       "wrote"], self.root)
+            within = self.ledger.main(["request_ledger.py", "item", key, "2", "run the tests"],
+                                      self.root)
+        self.assertEqual((beyond, within), (2, 0),
+                         "an item naming a clause the owner never wrote was recorded: %s"
+                         % out.getvalue()[-300:])
+        self.assertIn("has no clause 3", out.getvalue())
+
     def test_an_open_item_refuses(self):
         self.add(typed("do the thing", "2026-01-01T00:00:01Z"))
         self.items((self.keys()[0], "do the thing", "open", None))
@@ -1673,6 +2207,73 @@ class AnOwnersRequestIsAccountedForBeforeTheTurnEnds(LedgerCase):
                            "2026-01-01T00:00:03Z"),
                  tool_result("t3", "built", "2026-01-01T00:00:03Z"))
         self.assertEqual(self.problems(), [], "real evidence after the request was refused")
+
+    def test_done_is_not_evidenced_by_the_LEDGERS_OWN_VERB_or_a_command_that_only_says_it(self):
+        """MEASURED 2026-10-06: `done` cites a backticked command, and the `done` verb's own call
+        CARRIES that command in its arguments - after the request, and exiting 0 - so writing the
+        evidence was the evidence. An `echo` of it was the same. A call that only records to the
+        ledger, or only says something, is not a call that did the work."""
+        self.add(typed("build it", "2026-01-01T00:00:01Z"))
+        key = self.keys()[0]
+        said = "built everything with `python build.py --all`"
+        verb = "python %s/request_ledger.py done %s.1 \"%s\"" % (self.ledger.FOLDER, key, said)
+        self.add(tool_call("t1", "Bash", {"command": verb, "description": "python build.py --all"},
+                           "2026-01-01T00:00:02Z"),
+                 tool_result("t1", "", "2026-01-01T00:00:02Z"),
+                 tool_call("t2", "PowerShell", {"command": "echo 'python build.py --all'"},
+                           "2026-01-01T00:00:03Z"),
+                 tool_result("t2", "python build.py --all", "2026-01-01T00:00:03Z"),
+                 tool_call("t3", "Bash", {"command": "cd x && printf '%s' 'python build.py --all'"},
+                           "2026-01-01T00:00:04Z"),
+                 tool_result("t3", "", "2026-01-01T00:00:04Z"))
+        self.items((key, "build it", "done", said))
+        self.assertTrue(any("nothing checkable" in f for f in self.problems()),
+                        "the ledger's own record of the evidence counted as the evidence")
+        self.add(tool_call("t4", "Bash", {"command": "timeout 600 python build.py --all"},
+                           "2026-01-01T00:00:05Z"),
+                 tool_result("t4", "built", "2026-01-01T00:00:05Z"))
+        self.assertEqual(self.problems(), [], "the command that did the work was refused")
+
+    def run_verb(self, *argv):
+        from unittest import mock
+        out = io.StringIO()
+        with mock.patch.object(self.ledger, "find_transcript", lambda _s: self.transcript), \
+                mock.patch.dict(os.environ, {self.ledger.SESSION_VAR: self.session}), \
+                mock.patch("sys.stdout", out):
+            code = self.ledger.main(["request_ledger.py"] + list(argv), self.root)
+        return code, out.getvalue()
+
+    def test_done_with_nothing_checkable_is_refused_BY_THE_VERB(self):
+        """The end of the turn refused it, after the item was recorded and the turn built on it.
+        Whether the evidence stands is known when `done` is written, so `done` is where it is
+        asked - and so are the floor on its words and `answered` for a request with no question."""
+        self.add(typed("Add multiply. Run the tests.", "2026-01-01T00:00:01Z"))
+        key = self.keys()[0]
+        self.assertEqual(self.run_verb("item", key, "1,2", "add multiply and run the tests")[0], 0)
+        said = "added multiply and ran `python -m unittest tests.test_calc` green"
+        code, out = self.run_verb("done", key + ".1", said)
+        self.assertEqual(code, 2, "done was recorded with nothing checkable behind it: %s" % out)
+        self.assertIn("nothing checkable", out)
+        self.assertEqual(self.run_verb("answered", key + ".1", "it is added and the tests pass")[0],
+                         2, "answered was recorded for a request that asked no question")
+        self.add(tool_call("t1", "Bash", {"command": "python -m unittest tests.test_calc"},
+                           "2026-01-01T00:00:02Z"),
+                 tool_result("t1", "OK", "2026-01-01T00:00:02Z"))
+        self.assertEqual(self.run_verb("done", key + ".1", "`python -m unittest tests.test_calc`")
+                         [0], 2, "done was recorded in under its floor of characters")
+        self.assertEqual(self.run_verb("done", key + ".1", said)[0], 0,
+                         "done with the work's own call behind it was refused")
+
+    def test_cover_naming_a_clause_the_owner_never_wrote_is_refused(self):
+        """`item` refuses a clause past the request's last; `cover` re-points an item's clauses
+        and asked nothing - the same act by its other verb."""
+        self.add(typed("Add multiply. Run the tests.", "2026-01-01T00:00:01Z"))
+        key = self.keys()[0]
+        self.assertEqual(self.run_verb("item", key, "1", "add multiply")[0], 0)
+        code, out = self.run_verb("cover", key + ".1", "1,3")
+        self.assertEqual(code, 2, "cover recorded a clause the owner never wrote: %s" % out)
+        self.assertIn("has no clause 3", out)
+        self.assertEqual(self.run_verb("cover", key + ".1", "1,2")[0], 0)
 
     def test_done_accepts_a_commit_made_after_the_request_and_not_one_before(self):
         env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",

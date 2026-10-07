@@ -108,7 +108,7 @@ def main():
     # "user" rows are its brief - read as the owner, no subagent could ever finish. And a
     # `UserPromptSubmit` refused with exit 2 is the owner's message swallowed. The dispatcher is
     # wired on `PreToolUse` and `Stop` today; this keeps a wider wiring from becoming either.
-    if payload.get("hook_event_name") not in (None, "Stop"):
+    if not bundle_shell.owner_turn_ends(payload):
         return 0
     found = request_ledger.problems(payload.get("session_id"), payload.get("transcript_path"),
                                     payload.get("last_assistant_message"))

@@ -8,7 +8,7 @@
    "test_bundle.py::ARecordedMeasurementCarriesTheTreeItMeasured"
   ]
  },
- "evasion_ceiling": 15,
+ "evasion_ceiling": 14,
  "generalisation_ceiling": 1,
  "must_say_ceiling": 19,
  "owed_ceiling": 2,
@@ -131,6 +131,30 @@
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST IT: a `would have` anywhere earlier in the sentence. A window that crosses a semicolon or comma lets *That would have been faster; the moment the sync lands the derive restarts* through."
   },
+  "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_a_REMOTE_or_SCHEDULED_session_launched_on_a_prompt_is_counted": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "was not counted as a launch",
+   "new": "LAUNCH_KEYS = (\"subagent_type\", \"description\")\n",
+   "old": "LAUNCH_KEYS = (\"subagent_type\", \"description\", \"environment_id\", \"source_url\", \"cron_expression\",\n               \"run_once_at\", \"create_new_session_on_fire\", \"persistent_session_id\")\n",
+   "site": "elsewhere",
+   "why": "THE MEASURED GAP: a session started in the cloud on a prompt, or a routine starting one on a schedule, is an agent on the same metered plan, and the launch shape knew only a subagent's two keys."
+  },
+  "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_a_REMOTE_or_SCHEDULED_session_launched_on_a_prompt_is_counted::caption": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "a prompt with nothing that starts an agent on it was counted",
+   "new": "            and True)\n",
+   "old": "            and any(key in node for key in LAUNCH_KEYS))\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: an image generator's prompt starts no agent, and counting every prompt as a launch spends the fan-out cap on pictures and refuses them for lacking a structured-result contract."
+  },
+  "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_a_WORKFLOW_is_a_multi_agent_run_and_needs_its_state_FIRST": {
+   "file": ".claude/bundle-hooks/guard_agent_campaign.py",
+   "must_say": "a scripted multi-agent run went ahead with no campaign state",
+   "new": "    scripted = False\n",
+   "old": "    scripted = bool(bundle_shell.workflows(payload))\n",
+   "site": "elsewhere",
+   "why": "THE SAME RUN, ASKED BY THE CAMPAIGN GUARD: it asked agent launches only, so a workflow - the shape of run that lost three agents and fifteen verifiers to one session limit - needed no state first."
+  },
   "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_a_WORKFLOW_is_refused_and_the_refusal_PRINTS": {
    "file": ".claude/bundle-hooks/guard_fanout.py",
    "must_say": "crashed",
@@ -138,6 +162,30 @@
    "old": "96%% of a weekly 20x",
    "site": "elsewhere",
    "why": "Driven through the real process contract: the refusal crashed with exit 1 and no output, which the old decision() read as an allow - the same reading the harness gives it."
+  },
+  "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_a_WORKFLOW_under_another_name_is_refused_by_its_SHAPE": {
+   "file": ".claude/bundle-hooks/guard_fanout.py",
+   "must_say": "a scripted fan-out under another name went through",
+   "new": "    if tool == \"Workflow\":\n",
+   "old": "    if tool == \"Workflow\" or (isinstance(payload, dict) and bundle_shell.workflows(payload)):\n",
+   "site": "instance",
+   "why": "THE MEASURED TRIGGER-BY-NAME: the cap asked whether the tool was called `Workflow`, so a script of agent calls handed to a tool with any other name launched every agent in it uncounted."
+  },
+  "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_a_WORKFLOW_under_another_name_is_refused_by_its_SHAPE::mention": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "a command MENTIONING a fan-out was refused as one",
+   "new": "            script = node.get(\"script\") or node.get(\"command\")\n",
+   "old": "            script = node.get(\"script\")\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: a shell command that greps for `agent(` names a fan-out and launches nothing; read as one, every search of a workflow's own source is refused, and a cap that refuses reading is switched off."
+  },
+  "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_a_WORKFLOW_under_another_name_is_refused_by_its_SHAPE::saved": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "a scripted fan-out under another name went through",
+   "new": "            if (isinstance(script, str) and _SCRIPTED.search(script)):\n",
+   "old": "            if (\"scriptPath\" in node or \"resumeFromRunId\" in node\n                    or (isinstance(script, str) and _SCRIPTED.search(script))):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a shape read from a script's text: hand no text - name the saved script by its path, or resume a run - and the same agents launch with nothing inline to read."
   },
   "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_an_EMPTY_counter_is_UNKNOWN_not_zero": {
    "file": ".claude/bundle-hooks/guard_fanout.py",
@@ -499,6 +547,126 @@
    "site": "elsewhere",
    "why": "A REVIEWER THAT DEFERS TO THE LAST ONE. Told only that an earlier failure must be answered, it treated each earlier finding as fact and never compared it with the item text below it; the sentence telling it an earlier reviewer can be wrong is the instruction that breaks the chain."
   },
+  "test_bundle.py::AProcessNobodyCanReadIsAlive::test_a_process_this_account_may_not_signal_is_ALIVE_in_every_guard": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "a live process another account owns was read as dead",
+   "new": "    except OSError:\n        return False\n",
+   "old": "    except OSError:\n        return True                          # permission, or anything else: not an absence\n",
+   "site": "instance",
+   "why": "THE MEASURED DISAGREEMENT: one guard's copy of the probe read a POSIX permission error as a dead process, so a runner another account owns switched that guard's refusal off."
+  },
+  "test_bundle.py::AProcessNobodyCanReadIsAlive::test_a_process_this_account_may_not_signal_is_ALIVE_in_every_guard::copy": {
+   "file": ".claude/bundle-hooks/guard_blocked_runner.py",
+   "must_say": "a live process another account owns was read as dead",
+   "new": "alive = lambda pid: False  # noqa: E731\n",
+   "old": "alive = bundle_shell.alive\n",
+   "site": "elsewhere",
+   "why": "ONE PROBE, OR TWO THAT DRIFT: a guard keeping its own copy of `alive` is how the copies came to disagree, and a copy that answers dead is a refusal switched off without anyone deciding to."
+  },
+  "test_bundle.py::AProcessNobodyCanReadIsAlive::test_a_process_this_account_may_not_signal_is_ALIVE_in_every_guard::gone": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "a process that is gone was read as live",
+   "new": "    except ProcessLookupError:\n        return True\n    except OSError:\n        return True",
+   "old": "    except ProcessLookupError:\n        return False\n    except OSError:\n        return True",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: a probe that answers alive for a process the operating system says is gone holds a stale lock forever, the wedge these guards exist to avoid as much as the miss."
+  },
+  "test_bundle.py::AProcessNobodyCanReadIsAlive::test_a_run_lock_that_cannot_be_READ_is_a_run_in_flight": {
+   "file": ".claude/bundle-hooks/guard_machine_worktrees.py",
+   "must_say": "a run lock nobody could read was read as no run",
+   "new": "        return None\n    return held.get(\"pid\") if isinstance(held, dict) else UNREADABLE\n",
+   "old": "        return UNREADABLE\n    return held.get(\"pid\") if isinstance(held, dict) else UNREADABLE\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a guard that asks whether a run holds its lock: a lock caught half-written, read as no lock at all - the could-not-look read as not-there this guard's own docstring is about."
+  },
+  "test_bundle.py::AProgramIsWhatRunsNotTheFirstWordTyped::test_a_backgrounded_redirected_sweep_and_a_read_of_one_still_go_through": {
+   "file": ".claude/bundle-hooks/guard_background_pipe.py",
+   "must_say": "honest work around a sweep was refused",
+   "new": "        if False:\n            continue\n",
+   "old": "        if any(re.fullmatch(r\"-[A-Za-z]*[mc]\", w) for w, _t in words[1:]):\n            continue\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: `python -m ruff check <sweep>` runs ruff with the sweep as data; read as a run of the sweep it refuses a lint, and a guard that refuses lints is the one people switch off."
+  },
+  "test_bundle.py::AProgramIsWhatRunsNotTheFirstWordTyped::test_a_read_of_anything_else_still_goes_through": {
+   "file": ".claude/bundle-hooks/guard_mutation_read.py",
+   "must_say": "a read of a file no mutant is in was refused",
+   "new": "        return True\n",
+   "old": "        return any(fnmatch.fnmatchcase(\"/\".join(parts[:n]), path) for n in range(1, len(parts) + 1))\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: a glob that cannot match the mutant reads no mutant, and refusing every glob while a sweep runs for hours refuses most honest reads in that time."
+  },
+  "test_bundle.py::AProgramIsWhatRunsNotTheFirstWordTyped::test_a_read_of_the_mutated_module_spelled_any_way_is_refused": {
+   "file": ".claude/bundle-hooks/guard_mutation_read.py",
+   "must_say": "a read of the mutated module spelled another way went through",
+   "new": "    by_running = \"\"\n",
+   "old": "    by_running = reads_by_running(command, locked)\n",
+   "site": "instance",
+   "why": "THE MEASURED HOLE: `grep -rn x .`, `cat src/pkg/*.py`, `python3 -c 'import pkg.mod'` and a timeout-wrapped audit tool all read the mutant, because the guard matched the module's path as typed."
+  },
+  "test_bundle.py::AProgramIsWhatRunsNotTheFirstWordTyped::test_a_read_of_the_mutated_module_spelled_any_way_is_refused::glob": {
+   "file": ".claude/bundle-hooks/guard_mutation_read.py",
+   "must_say": "a read of the mutated module spelled another way went through",
+   "new": "    if False:\n",
+   "old": "    if any(c in path for c in \"*?[\"):\n",
+   "site": "elsewhere",
+   "why": "THE SHELL EXPANDS WHAT THE GUARD READS AS TEXT: `cat src/pkg/*.py` names no module and reads every one, the mutant among them, so a glob is matched against the locked path."
+  },
+  "test_bundle.py::AProgramIsWhatRunsNotTheFirstWordTyped::test_a_read_of_the_mutated_module_spelled_any_way_is_refused::nopath": {
+   "file": ".claude/bundle-hooks/guard_mutation_read.py",
+   "must_say": "a read of the mutated module spelled another way went through",
+   "new": "                if False:\n",
+   "old": "                if not given and _holds(where, locked):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a guard on paths: name none. `rg foo` and `grep -rn x` read every file beneath where they stand, and the working directory holds the module."
+  },
+  "test_bundle.py::AProgramIsWhatRunsNotTheFirstWordTyped::test_a_sleep_behind_a_runner_a_path_a_group_or_a_shell_is_a_sleep": {
+   "file": ".claude/bundle-hooks/guard_idle_poll.py",
+   "must_say": "a long wait spelled another way went through",
+   "new": "    found = [(None, False)]\n",
+   "old": "    found = bundle_shell.runs(command)\n",
+   "site": "instance",
+   "why": "THE MEASURED HOLE: each segment's text matched against `^sleep`, so a sleep behind `timeout`, `env`, a path, a group or a shell was no sleep - the guard read the first word typed, not the program that runs."
+  },
+  "test_bundle.py::AProgramIsWhatRunsNotTheFirstWordTyped::test_a_sleep_behind_a_runner_a_path_a_group_or_a_shell_is_a_sleep::loop": {
+   "file": ".claude/bundle-hooks/guard_idle_poll.py",
+   "must_say": "a long wait spelled another way went through",
+   "new": "    for text in [command]:\n",
+   "old": "    for text in bundle_shell.texts(command):\n",
+   "site": "elsewhere",
+   "why": "THE LOOP RULE, ONE LEVEL IN: quoted for `bash -c`, a while-loop that sleeps is blanked out of the outer text, so a poll with no deadline handed to a shell was read as no loop at all."
+  },
+  "test_bundle.py::AProgramIsWhatRunsNotTheFirstWordTyped::test_a_sleep_whose_length_cannot_be_read_is_not_a_short_one": {
+   "file": ".claude/bundle-hooks/guard_idle_poll.py",
+   "must_say": "an unreadable duration was read as a short one",
+   "new": "        if not found:\n            return 0.0\n        total += float(found.group(1))",
+   "old": "        if not found:\n            return UNREADABLE\n        total += float(found.group(1))",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a bound on how long a sleep is: spell the length so it cannot be read. An unmeasurable quantity read as zero is a bound with a hole the size of `$((600))`."
+  },
+  "test_bundle.py::AProgramIsWhatRunsNotTheFirstWordTyped::test_a_sweep_behind_a_runner_or_a_shell_must_run_in_the_background": {
+   "file": ".claude/bundle-hooks/guard_background_pipe.py",
+   "must_say": "a sweep or a buffered pipe spelled another way went through",
+   "new": "    for words, _background in [(bundle_shell.pairs(stage) or [], False)]:\n        if not words:\n            continue\n        typed =",
+   "old": "    for words, _background in bundle_shell.runs(stage):\n        if not words:\n            continue\n        typed =",
+   "site": "instance",
+   "why": "THE MEASURED HOLE: `timeout 3000 python <sweep>` in the foreground - the kill this guard's own docstring says cost a restored file - was no sweep, because the first word typed was `timeout`."
+  },
+  "test_bundle.py::AProgramIsWhatRunsNotTheFirstWordTyped::test_a_sweep_behind_a_runner_or_a_shell_must_run_in_the_background::consumer": {
+   "file": ".claude/bundle-hooks/guard_background_pipe.py",
+   "must_say": "a sweep or a buffered pipe spelled another way went through",
+   "new": "    found = []\n",
+   "old": "    found = [words for words, _bg in bundle_shell.runs(stage) if words]\n",
+   "site": "elsewhere",
+   "why": "THE SAME READING ON THE OTHER SIDE OF THE PIPE: `timeout 9 tail -5` and `(tail -5)` buffer exactly as `tail` does, and the consumer's first word typed is not the program reading the pipe."
+  },
+  "test_bundle.py::AProgramIsWhatRunsNotTheFirstWordTyped::test_short_backgrounded_and_bounding_waits_still_go_through": {
+   "file": ".claude/bundle-hooks/guard_idle_poll.py",
+   "must_say": "a short, backgrounded or bounding wait was refused",
+   "new": "        pieces = [words for words, background in found]\n",
+   "old": "        pieces = [words for words, background in found if not background]\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: a program sent to the background waits for nobody, and refusing `sleep 600 &` - or a timeout that bounds a command - is the guard firing on honest work, the kind it is switched off for."
+  },
   "test_bundle.py::AReadIsAReadWhateverCarriesIt::test_a_MESSAGE_is_never_refused_by_the_machine_guards": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
    "must_say": "MESSAGE",
@@ -565,8 +733,8 @@
   "test_bundle.py::AnAgentCampaignNeedsStateAndATrendThatFalls::test_a_SECOND_agent_without_state_is_refused_and_with_fresh_state_is_not": {
    "file": ".claude/bundle-hooks/guard_agent_campaign.py",
    "must_say": "False is not true",
-   "new": "    if agents < 99:",
-   "old": "    if agents < 1:",
+   "new": "    if agents < 99 and not scripted:",
+   "old": "    if agents < 1 and not scripted:",
    "site": "instance",
    "why": "A multi-agent run launched with no durable state - the session limit that took three agents and fifteen verifiers, and a relaunch that cost more than the run."
   },
@@ -651,6 +819,22 @@
    "old": "    return bundle_shell.every_command_is(\n        command, lambda one: any(re.search(pattern, one, re.I) for pattern in ESCAPES))",
    "site": "instance",
    "why": "The shipped escape: patterns searched anywhere in the whole line, so `git status; python evil.py` was the way out and the refusal refused nothing that started with git."
+  },
+  "test_bundle.py::AnOfferToDoTheWorkIsTheWorkNotDone::test_a_question_whose_next_word_merely_STARTS_with_I_is_not_an_offer": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "a question about a word starting with I read as an offer",
+   "new": "\\bif\\s+you)\"",
+   "old": "\\bif\\s+you)\\b\"",
+   "site": "instance",
+   "why": "The defect as it was: the offer pattern ended at the letter, so 'Should Invest's Today open on its numbers?' - the owner asked to choose - read as 'should I' and the turn was refused."
+  },
+  "test_bundle.py::AnOfferToDoTheWorkIsTheWorkNotDone::test_a_question_whose_next_word_merely_STARTS_with_I_is_not_an_offer::evasion": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "the boundary swallowed the offer it is there to keep",
+   "new": "|shall\\s+I|",
+   "old": "|shall\\s+I|should\\s+I|",
+   "site": "evasion",
+   "why": "The cheapest way to stop 'Should Invest...' being refused is to stop reading 'should I' at all, which lets every real 'Should I fix it?' end a turn with the work handed back."
   },
   "test_bundle.py::AnOfferToDoTheWorkIsTheWorkNotDone::test_an_offer_after_a_LONG_report_is_still_the_end": {
    "file": ".claude/bundle-hooks/guard_promise.py",
@@ -740,6 +924,14 @@
    "site": "instance",
    "why": "MEASURED 2026-09-26 by the CTRMap session: a Stop refused with request 537b0a1dcb-8 is not itemised - [Request interrupted by user]. An interrupt is the owner withdrawing a request; it can never be itemised, so no turn could end."
   },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_an_item_naming_a_clause_the_owner_never_wrote_is_refused_by_the_verb": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "an item naming a clause the owner never wrote was recorded",
+   "new": "        beyond = \"\"\n",
+   "old": "        beyond = beyond_clauses(held_now[argv[2]], covers)\n",
+   "site": "instance",
+   "why": "the item verb recorded an item covering a clause the request did not have, and only the end of the turn refused it - after the item had been closed and built on"
+  },
   "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_an_owner_message_that_OPENS_with_a_bracket_is_still_the_owners": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "an owner message was dropped as a marker",
@@ -764,6 +956,14 @@
    "site": "elsewhere",
    "why": "a refusal nobody is shown is a deletion: blocked or declined recorded in a file the owner never reads closes the request with nothing said - the one exit that stays open must be one the owner sees, in those words"
   },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_cover_naming_a_clause_the_owner_never_wrote_is_refused": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "cover recorded a clause the owner never wrote",
+   "new": "        beyond = \"\" if request else (",
+   "old": "        beyond = beyond_clauses(request, covers) if request else (",
+   "site": "elsewhere",
+   "why": "THE SAME ACT BY ITS OTHER VERB: item refuses a clause past the request's last, and cover re-points an existing item - so an item could be written honestly and moved to a clause nobody wrote."
+  },
   "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_deleting_the_ledger_reopens_it_and_never_frees_it": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "deleting the ledger freed a request it held",
@@ -780,6 +980,30 @@
    "site": "elsewhere",
    "why": "the commit half of the same rule: any hash that resolves - HEAD from yesterday - would evidence today's request, and this repository has 2,263 reachable commits to choose from"
   },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_done_is_not_evidenced_by_the_LEDGERS_OWN_VERB_or_a_command_that_only_says_it": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "counted as the evidence",
+   "new": "                    and any(span in value for value in call[\"strings\"]):",
+   "old": "                    and any(span in value for value in call[\"evidence\"]):",
+   "site": "instance",
+   "why": "THE MEASURED HOLE: every string of every call counted, so the done verb's own call - carrying the backticked command it cites, after the request, exiting 0 - was the evidence it recorded."
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_done_is_not_evidenced_by_the_LEDGERS_OWN_VERB_or_a_command_that_only_says_it::description": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "counted as the evidence",
+   "new": "    if not commands:\n        return _strings(given, [])\n    out = [flat(given.get(\"description\") or \"\")]\n",
+   "old": "    if not commands:\n        return _strings(given, [])\n    out = []\n",
+   "site": "evasion",
+   "why": "THE OTHER FIELD A SHELL CALL CARRIES: its description is the agent's prose, written beside any command at all, so naming the evidence there and running something else would satisfy a check that reads every string."
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_done_is_not_evidenced_by_the_LEDGERS_OWN_VERB_or_a_command_that_only_says_it::evasion": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "counted as the evidence",
+   "new": "RECORDS_OR_SAYS = re.compile(r\"^\\s*(?:no-such-program)\\b\"",
+   "old": "RECORDS_OR_SAYS = re.compile(r\"^\\s*(?:echo|printf|Write-Output|Write-Host|Write-Information)\\b\"",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST once the verb is excluded: echo the command. A call that only says a thing carries any text it is handed, and the span appears in it, after the request, exiting 0."
+  },
   "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_done_needs_a_call_AFTER_the_request_that_did_not_fail": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "evidence from before the request counted as the work",
@@ -787,6 +1011,30 @@
    "old": "if call[\"index\"] > request[\"index\"] and call[\"error\"] is False",
    "site": "elsewhere",
    "why": "evidence placed by time, not by existence: without the index test, a command run an hour before the owner asked for the work is cited as having done it - one of 22,896 rows in this session's transcript would have served for most requests"
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_done_with_nothing_checkable_is_refused_BY_THE_VERB": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "nothing checkable behind it",
+   "new": "    if False:\n",
+   "old": "    if verb == \"done\" and not evidence_holds(said, request, rows, _root(root)):\n",
+   "site": "elsewhere",
+   "why": "THE SAME RULE AT THE EARLIER ACT: refused only at the stop, a done with nothing behind it is recorded and built on first. Whether the evidence stands is known when the verb is written."
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_done_with_nothing_checkable_is_refused_BY_THE_VERB::answered": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "asked no question",
+   "new": "    if False:\n",
+   "old": "    if verb == \"answered\" and \"?\" not in request[\"text\"]:\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST RESOLUTION for work asked for: call it answered. It needs no evidence, so a request with no question resolved that way escapes the done rule entirely until the stop."
+  },
+  "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_done_with_nothing_checkable_is_refused_BY_THE_VERB::floor": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "under its floor of characters",
+   "new": "    if False:\n        return (",
+   "old": "    if len(flat(said)) < MINIMUM[verb]:\n        return (",
+   "site": "elsewhere",
+   "why": "A LABEL IN PLACE OF A REASON, recorded: the floor was asked only at the end of the turn, so a resolution of a few words stood in the ledger until then, as the record of the work."
   },
   "test_bundle.py::AnOwnersRequestIsAccountedForBeforeTheTurnEnds::test_every_sentence_the_owner_wrote_must_be_covered": {
    "file": ".claude/bundle-hooks/request_ledger.py",
@@ -891,8 +1139,8 @@
   },
   "test_bundle.py::EveryHookRefusesItsCaseAndALLOWSTheOpposite::test_the_sleep_UNIT_is_understood": {
    "file": ".claude/bundle-hooks/guard_idle_poll.py",
-   "new": "FACTOR = {\"\": 1, \"s\": 1, \"m\": 1, \"h\": 1}",
-   "old": "FACTOR = {\"\": 1, \"s\": 1, \"m\": 60, \"h\": 3600}",
+   "new": "FACTOR = {\"\": 1, \"s\": 1, \"m\": 1, \"h\": 1, \"d\": 1}",
+   "old": "FACTOR = {\"\": 1, \"s\": 1, \"m\": 60, \"h\": 3600, \"d\": 86400}",
    "site": "elsewhere",
    "why": "a different hook and a different mistake: the unit dropped, so `sleep 2m` reads as two seconds and sails past the bound. A guard that passes the very case it exists for, which is the quote-spelling family this bundle's section on source greps describes."
   },
@@ -943,6 +1191,102 @@
    "old": "        missing = unqueued(text)\n",
    "site": "instance",
    "why": "THE QUEUE NEVER ASKED: in a project that keeps OUTSTANDING.md, blocked owed work ends the turn without being written where its long runs would refuse over it - what guard_unfinished existed to stop."
+  },
+  "test_bundle.py::FileContentNeverTravelsInACommandString::test_EVERY_interpreter_handed_a_long_program_is_one_channel": {
+   "file": ".claude/bundle-hooks/guard_heredoc.py",
+   "must_say": "a long program handed to",
+   "new": "                    if False:\n",
+   "old": "                    if re.fullmatch(r\"-[A-Za-z]*[cer]|-command\", word, re.I):\n",
+   "site": "elsewhere",
+   "why": "A LIST OF INTERPRETERS IS THE CLASS MINUS THE NEXT ONE: python, node, pwsh and two shells were named, and perl, ruby, zsh and php carried a long program in a command string unasked."
+  },
+  "test_bundle.py::FileContentNeverTravelsInACommandString::test_a_refusal_sends_the_reader_only_to_what_EXISTS": {
+   "file": ".claude/bundle-hooks/guard_heredoc.py",
+   "must_say": "which this bundle does not ship",
+   "new": "                \"    python tools/dev/safe.py run-script <path>\\n\"",
+   "old": "                \"    python <path>        (or bash <path>, node <path>)\\n\"",
+   "site": "elsewhere",
+   "why": "A REMEDY THAT IS NOT THERE: two refusals sent their reader to `tools/dev/safe.py`, a tool of the project this came from that ships nowhere - a dead end where the refusal promised a way."
+  },
+  "test_bundle.py::FileContentNeverTravelsInACommandString::test_printf_and_echo_carrying_ESCAPES_into_a_file_are_the_same_channel": {
+   "file": ".claude/bundle-hooks/guard_heredoc.py",
+   "must_say": "escaped content written into a file went through",
+   "new": "    escaped = \"\"\n",
+   "old": "    escaped = escaped_into_file(command)\n",
+   "site": "instance",
+   "why": "THE SAME CHANNEL ON ONE LINE: `printf 'a\\nb' > f` lands escaped content in a file through a command string, the bytes the heredoc rule was bought with, and fifteen of one session's commands did it."
+  },
+  "test_bundle.py::FileContentNeverTravelsInACommandString::test_printf_and_echo_carrying_ESCAPES_into_a_file_are_the_same_channel::screen": {
+   "file": ".claude/bundle-hooks/guard_heredoc.py",
+   "must_say": "a command that writes no escaped content to a file was refused",
+   "new": "        lands = True\n        for at, (word, _typed) in enumerate(held):\n",
+   "old": "        lands = False\n        for at, (word, _typed) in enumerate(held):\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: an escape printed to the screen lands in no file, and refusing every `printf '%s\\n'` is the guard firing on the commonest honest command a shell has."
+  },
+  "test_bundle.py::FileContentNeverTravelsInACommandString::test_printf_and_echo_carrying_ESCAPES_into_a_file_are_the_same_channel::tee": {
+   "file": ".claude/bundle-hooks/guard_heredoc.py",
+   "must_say": "escaped content written into a file went through",
+   "new": "        lands = lands\n",
+   "old": "        lands = lands or any(bundle_shell.program_of(words[0][0]) in _FILE_WRITERS\n                             for words in stages)\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a rule that looks for a redirect: write through `| tee file` instead - no `>` anywhere, and the same escaped bytes land in the same file."
+  },
+  "test_bundle.py::NoSourceIsWrittenWhileTheSuiteRuns::test_a_background_command_that_measures_nothing_blocks_no_write": {
+   "file": ".claude/bundle-hooks/guard_suite_running.py",
+   "must_say": "a write was refused beside a run that measures nothing",
+   "new": "    \"\"\"Does this command run a program that measures the tree?\"\"\"\n    return True\n",
+   "old": "    \"\"\"Does this command run a program that measures the tree?\"\"\"\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: a dev server or a log tail in the background measures nothing, and refusing every write beside one is the guard firing on honest work."
+  },
+  "test_bundle.py::NoSourceIsWrittenWhileTheSuiteRuns::test_a_source_write_while_a_background_SUITE_runs_is_refused": {
+   "file": ".claude/bundle-hooks/guard_suite_running.py",
+   "must_say": "a source file was edited while the suite ran",
+   "new": "        if False:\n",
+   "old": "        if task and task not in ended and measures(command):\n",
+   "site": "instance",
+   "why": "THE RULE WITH NOTHING BEHIND IT: a file edited while a suite ran in the background, and a green result reported about a tree that never existed - two full runs invalidated this way."
+  },
+  "test_bundle.py::NoSourceIsWrittenWhileTheSuiteRuns::test_a_source_write_while_a_background_SUITE_runs_is_refused::finished": {
+   "file": ".claude/bundle-hooks/guard_suite_running.py",
+   "must_say": "a suite that had FINISHED still refused the write",
+   "new": "                if False:\n",
+   "old": "                if ident and status and status.group(1).lower() not in (\"running\", \"started\"):\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: a run whose end the harness reported is over, and a guard that never reads the notification refuses every write for the rest of the session after the first suite it saw."
+  },
+  "test_bundle.py::NoSourceIsWrittenWhileTheSuiteRuns::test_a_suite_STOPPED_or_lost_to_a_restart_has_ended": {
+   "file": ".claude/bundle-hooks/guard_suite_running.py",
+   "must_say": "a suite stopped with TaskStop still refused the write",
+   "new": "        pass\n",
+   "old": "        ended.update(_STOPPED.findall(line))\n",
+   "site": "elsewhere",
+   "why": "MEASURED ON THIS GUARD'S OWN TRANSCRIPT: a stopped task gets no notification, only the stop's result; read from notifications alone it ran for ever, and every later write was refused."
+  },
+  "test_bundle.py::NoSourceIsWrittenWhileTheSuiteRuns::test_a_suite_STOPPED_or_lost_to_a_restart_has_ended::restart": {
+   "file": ".claude/bundle-hooks/guard_suite_running.py",
+   "must_say": "a suite the restart took still refused the write",
+   "new": "        if False:\n",
+   "old": "        if \"are now stopped\" in line:\n",
+   "site": "elsewhere",
+   "why": "THE SAME END BY A RESTART: the container took the task and said so in a notice of its own; unread, the run it killed holds every write in the session as though it were still measuring."
+  },
+  "test_bundle.py::NoSourceIsWrittenWhileTheSuiteRuns::test_a_suite_behind_a_runner_or_a_shell_is_a_suite": {
+   "file": ".claude/bundle-hooks/guard_suite_running.py",
+   "must_say": "a suite spelled another way was not one",
+   "new": "    for words, _background in [(bundle_shell.pairs(command or \"\") or [], False)]:\n",
+   "old": "    for words, _background in bundle_shell.runs(command or \"\"):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a list of runners read from the first word: put `bash -c`, `env` or a timeout in front, and the suite runs under a program the list does not name."
+  },
+  "test_bundle.py::NoSourceIsWrittenWhileTheSuiteRuns::test_a_transcript_nobody_can_read_is_said_not_read_as_idle": {
+   "file": ".claude/bundle-hooks/guard_suite_running.py",
+   "must_say": "an unreadable transcript was read as no suite",
+   "new": "    if live is None:\n        return 0, \"\", \"\"\n",
+   "old": "    if live is None:\n",
+   "site": "evasion",
+   "why": "COULD NOT LOOK READ AS NOTHING THERE: a transcript nobody can read says nothing about whether a suite runs, and a silent allow reads exactly like the answer that none does."
   },
   "test_bundle.py::NothingTrackedNamesTheMachineItWasWrittenOn::test_a_folder_chain_below_home_is_refused_without_the_home::elsewhere": {
    "file": "tools/owner_paths.py",
@@ -996,6 +1340,14 @@
    "site": "elsewhere",
    "why": "`bundle_shell.unreadable` with no caller again - a command that is not text is read by every guard as no command at all, which is the clean negative an unmeasurable quantity produces."
   },
+  "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_guard_that_ALLOWS_and_says_why_is_heard": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "never reached the owner",
+   "new": "            message = None\n",
+   "old": "            message = said(out)\n",
+   "site": "elsewhere",
+   "why": "THE MEASURED SILENCE: the dispatcher forwarded a deny and nothing else, so a guard that allowed a turn it could not check, and said so, was heard by nobody - could-not-look arriving as nothing-found."
+  },
   "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_guard_that_cannot_LOAD_is_reported_not_raised": {
    "file": ".claude/bundle-hooks/dispatch.py",
    "must_say": "values to unpack",
@@ -1003,6 +1355,22 @@
    "old": "\"passed - it has not been asked.\" % (name, type(exc).__name__, exc)), \"\"",
    "site": "instance",
    "why": "The shipped defect restored: `ask` returns two values on the load-failure branch and three elsewhere, so the one branch whose job is to report a broken guard raises ValueError instead."
+  },
+  "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_turn_end_guard_that_cannot_read_the_transcript_SAYS_SO": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "reported as nothing to refuse",
+   "new": "        pass\n",
+   "old": "        json.dump({\"systemMessage\": \"turn-end promise check: the transcript could not be read, \"\n                                    \"so this turn's last message was NOT checked\"}, sys.stdout)\n",
+   "site": "elsewhere",
+   "why": "THE COLLAPSE THE DOCSTRING DENIED: `last_assistant_text` returns None for could-not-look so the caller can treat it differently, and the caller returned 0 for it exactly as for nothing to refuse."
+  },
+  "test_bundle.py::TheDispatcherAsksEveryGuardAndCannotBeWedged::test_a_turn_end_guard_that_cannot_read_the_transcript_SAYS_SO::claims": {
+   "file": ".claude/bundle-hooks/guard_read_claims.py",
+   "must_say": "reported as nothing to refuse",
+   "new": "        pass\n",
+   "old": "        json.dump({\"systemMessage\": \"turn-end claim check: the transcript could not be read, so \"\n                                    \"the claims in this turn's last message were NOT checked\"},\n                  sys.stdout)\n",
+   "site": "elsewhere",
+   "why": "THE SAME COLLAPSE IN THE OTHER TURN-END GUARD: a claim check that could not read the transcript returned what a turn with no claims returns, so a moved transcript switched it off without a word."
   },
   "test_bundle.py::TheLedgersStoreIsWrittenOnlyByTheLedger::test_a_command_reaching_the_store_is_refused_in_every_spelling": {
    "file": ".claude/bundle-hooks/guard_requests.py",
@@ -1024,7 +1392,7 @@
    "file": ".claude/bundle-hooks/guard_requests.py",
    "must_say": "a prompt or a subagent's stop was judged as the owner's turn",
    "new": "    if False:\n        return 0",
-   "old": "    if payload.get(\"hook_event_name\") not in (None, \"Stop\"):\n        return 0",
+   "old": "    if not bundle_shell.owner_turn_ends(payload):\n        return 0",
    "site": "elsewhere",
    "why": "a turn end asked by shape alone: SubagentStop has Stop's shape and a subagent's transcript, whose brief would read as the owner and keep every subagent from finishing; and exit 2 on UserPromptSubmit swallows the owner's message - two wirings away from a lockout like the seven hours on 2026-09-24"
   },
@@ -1053,8 +1421,8 @@
   },
   "test_bundle.py::ThePowerShellSpellingIsTheSameAct::test_Start_Sleep_is_a_sleep": {
    "file": ".claude/bundle-hooks/guard_idle_poll.py",
-   "new": "    found = None\n    if found:",
-   "old": "    found = START_SLEEP.match(piece)\n    if found:",
+   "new": "        found = None\n        if found:",
+   "old": "        found = START_SLEEP.match(joined)\n        if found:",
    "site": "instance",
    "why": "The guard knowing only bash's `sleep`, in a session whose primary shell is PowerShell - `Start-Sleep -Seconds 300; Get-Content out.txt` is the poll it exists for and it walks past."
   },
@@ -1121,6 +1489,78 @@
    "old": "    + (HOOKS_REL,)\n",
    "site": "elsewhere",
    "why": "THE TURN COULD NOT END. guard_requests refuses to end a turn until an owner request is itemised, and the ledger's verbs live in the hooks folder, not under tools/: with them refused, no session could end a turn for as long as the runner waited."
+  },
+  "test_bundle.py::TwoWritersAreRefusedAtTheSecondWrite::test_a_SURVEY_that_only_reads_blocks_no_writer": {
+   "file": ".claude/bundle-hooks/guard_agent_writers.py",
+   "must_say": "a survey's reads blocked",
+   "new": "    writes = bundle_shell.is_tool_call(payload)\n",
+   "old": "    writes = bundle_shell.writes(payload)\n",
+   "site": "elsewhere",
+   "why": "FAN OUT TO READ: a survey that only reads composes, and a guard that counted its reads as writes would refuse the one shape of fan-out the rule exists to leave alone."
+  },
+  "test_bundle.py::TwoWritersAreRefusedAtTheSecondWrite::test_a_record_nobody_can_read_is_UNKNOWN_not_empty": {
+   "file": ".claude/bundle-hooks/guard_agent_writers.py",
+   "must_say": "was read as no writer at all",
+   "new": "        return 0, \"\"\n        return 2, (bundle_shell.policy(__file__) + LF + \"Whether another writer is live cannot \"",
+   "old": "        if not writes:\n            return 0, \"\"\n        return 2, (bundle_shell.policy(__file__) + LF + \"Whether another writer is live cannot \"",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a record of who is writing: a record nobody can read, read as nobody writing. An unknown count is not a count of one."
+  },
+  "test_bundle.py::TwoWritersAreRefusedAtTheSecondWrite::test_a_second_AGENT_writing_beside_a_live_writing_agent_is_refused": {
+   "file": ".claude/bundle-hooks/guard_agent_writers.py",
+   "must_say": "a second agent edited beside a live writing agent",
+   "new": "        if True:\n",
+   "old": "        if name == party or not entry.get(\"wrote\") or entry.get(\"stopped\"):\n",
+   "site": "instance",
+   "why": "THE RULE ITSELF: two agents that cannot see each other's files editing at once - the fix pass whose handover listed changes each could not make because they belonged in the other's file."
+  },
+  "test_bundle.py::TwoWritersAreRefusedAtTheSecondWrite::test_a_second_AGENT_writing_beside_a_live_writing_agent_is_refused::stopped": {
+   "file": ".claude/bundle-hooks/guard_agent_writers.py",
+   "must_say": "a writer that has STOPPED still blocked the next one",
+   "new": "        if name == party or not entry.get(\"wrote\"):\n",
+   "old": "        if name == party or not entry.get(\"wrote\") or entry.get(\"stopped\"):\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: a writer that has finished is not beside anyone, and a record that forgets stops refuses every write after the first agent ever wrote - one writer at a time becomes one writer, ever."
+  },
+  "test_bundle.py::TwoWritersAreRefusedAtTheSecondWrite::test_an_agent_writing_after_the_main_thread_wrote_beside_it_is_refused": {
+   "file": ".claude/bundle-hooks/guard_agent_writers.py",
+   "must_say": "an agent edited a tree the main thread was editing beside it",
+   "new": "    if False:\n",
+   "old": "    if party != \"main\" and held.get(\"main\") is not None and started is not None \\\n            and float(held[\"main\"]) >= float(started):\n",
+   "site": "elsewhere",
+   "why": "THE MAIN THREAD IS A WRITER TOO: a background agent writing after the main thread wrote beside it is two writers, whichever wrote first - the shape the launch guard refuses in the background, met at the write."
+  },
+  "test_bundle.py::TwoWritersAreRefusedAtTheSecondWrite::test_one_FOREGROUND_writer_at_a_time_is_one_writer": {
+   "file": ".claude/bundle-hooks/guard_agent_writers.py",
+   "must_say": "a writer that started after the main thread's last write was refused",
+   "new": "            and True:\n",
+   "old": "            and float(held[\"main\"]) >= float(started):\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: a foreground agent runs while the main thread waits, so a main write BEFORE it started is not beside it; refusing that refuses every agent launched after any edit at all."
+  },
+  "test_bundle.py::TwoWritersAreRefusedAtTheSecondWrite::test_the_end_of_a_SUBAGENT_is_not_the_end_of_the_turn": {
+   "file": ".claude/bundle-hooks/guard_held_writes.py",
+   "must_say": "a held change refused a subagent's end",
+   "new": "    if not call and payload.get(\"stop_hook_active\"):\n",
+   "old": "    if not call and (payload.get(\"stop_hook_active\") or not bundle_shell.owner_turn_ends(payload)):\n",
+   "site": "elsewhere",
+   "why": "A SUBAGENT'S END HAS A STOP'S SHAPE: exit 2 there keeps the subagent running, so a held change - perhaps not even its own - would trap every subagent until somebody repaired the tree for it."
+  },
+  "test_bundle.py::TwoWritersAreRefusedAtTheSecondWrite::test_the_end_of_a_SUBAGENT_is_not_the_end_of_the_turn::claims": {
+   "file": ".claude/bundle-hooks/guard_read_claims.py",
+   "must_say": "judged a subagent's end",
+   "new": "    if not isinstance(payload, dict) or bundle_shell.is_tool_call(payload):\n",
+   "old": "    if not isinstance(payload, dict) or not bundle_shell.owner_turn_ends(payload):\n",
+   "site": "evasion",
+   "why": "THE SHAPE ALONE: a turn end asked as 'not a tool call' is also a subagent's end, and the claim guard judged it - the defect guard_requests had already closed by the event's name, open in its neighbour."
+  },
+  "test_bundle.py::TwoWritersAreRefusedAtTheSecondWrite::test_the_end_of_a_SUBAGENT_is_not_the_end_of_the_turn::promise": {
+   "file": ".claude/bundle-hooks/guard_promise.py",
+   "must_say": "judged a subagent's end",
+   "new": "    if False:\n        return 0\n",
+   "old": "    if not bundle_shell.owner_turn_ends(payload):\n        return 0\n",
+   "site": "elsewhere",
+   "why": "THE OWNER'S LAST MESSAGE IS NOT THE SUBAGENT'S: judged at a subagent's stop, a promise the owner's turn ended on would refuse the subagent's end and keep it working on the owner's words."
   },
   "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_change_to_what_git_TRACKS_is_judged_again": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
@@ -1234,6 +1674,30 @@
    "site": "elsewhere",
    "why": "The refusal is only as good as the mark every child inherits: a judgement that never names its tree in the environment leaves each child free to judge it again, and the refusal above never fires anywhere the recursion actually happens."
   },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_write_the_write_hook_did_NOT_judge_is_not_recorded_as_judged": {
+   "file": ".claude/bundle-hooks/after_rules.py",
+   "must_say": "recorded as judged at the write",
+   "new": "    return [bundle_rules.rel_of(root, t if os.path.isabs(t) else os.path.join(root, t))\n            for t in bundle_shell.paths(payload)]\n",
+   "old": "    rel = bundle_rules.judged_at_write(payload, root)\n    return [rel] if rel else []\n",
+   "site": "instance",
+   "why": "THE MEASURED GAP: every path a write-shaped call carried was recorded as asked by the write hook, which asks only a top-level path with content - so a notebook edit or a nested write was judged by neither hook."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_write_the_write_hook_did_NOT_judge_is_not_recorded_as_judged::judged": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a write the write hook judged was not recorded as judged",
+   "new": "    if rel.startswith(\"..\") or rel == locked(root):\n        return \"\"\n    return \"\"\n",
+   "old": "    if rel.startswith(\"..\") or rel == locked(root):\n        return \"\"\n    return rel\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: a predicate that answers nothing was judged sends every Write to be judged again the moment after, against a before that is already the written text - two judgements of one write, disagreeing whenever the tree moved between them."
+  },
+  "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_a_write_the_write_hook_did_NOT_judge_is_not_recorded_as_judged::nested": {
+   "file": ".claude/bundle-hooks/guard_write_rules.py",
+   "must_say": "nested in a batching tool's input went through",
+   "new": "    for target in [((payload or {}).get(\"tool_input\") or {}).get(\"file_path\") or \"\"]:\n",
+   "old": "    for target in bundle_shell.paths(payload):          # every path, at any depth\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a refusal that reads one top-level key: nest the write one level down. A batching tool's input carries the same path into git's folder, and only git writes there."
+  },
   "test_bundle_action.py::ACommandsWriteIsJudgedAndHeldUntilRepaired::test_only_a_read_or_a_repair_of_the_held_path_goes_through": {
    "file": ".claude/bundle-hooks/guard_held_writes.py",
    "must_say": "walked past a held change",
@@ -1254,7 +1718,7 @@
    "file": ".claude/bundle-hooks/guard_held_writes.py",
    "must_say": "the turn ended on a held change",
    "new": "    if not call:\n",
-   "old": "    if not call and payload.get(\"stop_hook_active\"):\n",
+   "old": "    if not call and (payload.get(\"stop_hook_active\") or not bundle_shell.owner_turn_ends(payload)):\n",
    "site": "elsewhere",
    "why": "THE END OF A TURN IS AN ACT TOO. A held change refused at every tool call but let through at the end of the turn becomes the next turn's foundation - the same building-on-it the tool-call refusal exists to stop, through the one door that carries no tool."
   },
@@ -1281,6 +1745,14 @@
    "old": "    if any(w in _UNCOMMITTED.get(sub, ()) for w in words):\n",
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST AN EXEMPTION IS TO WIDEN IT. `--no-commit` is exempt because the commit then goes through the gate; any other flag - `-x`, `--continue` - still makes an ungated commit and must not ride on it."
+  },
+  "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_a_message_on_STDIN_from_a_heredoc_is_read_and_its_words_are_not_flags": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a heredoc message on stdin was not read, or its words read as flags",
+   "new": "        line, stdin = command, None\n",
+   "old": "        line, stdin = bundle_shell.heredoc_split(command)\n",
+   "site": "instance",
+   "why": "a heredoc's body was lexed as the commit's own words, so a message mentioning --no-verify was refused as skipping the gate, and a message on stdin was refused as unreadable while it stood in the call"
   },
   "test_bundle_action.py::ACommitIsAskedBeforeGitStartsAndNeverSkipsTheGate::test_an_ABBREVIATED_no_verify_is_still_no_verify": {
    "file": ".claude/bundle-hooks/guard_command_rules.py",
@@ -1389,8 +1861,8 @@
   "test_bundle_action.py::ACommitIsJudgedInTheRepositoryItLandsIn::test_the_message_file_is_read_where_git_runs": {
    "file": ".claude/bundle-hooks/guard_command_rules.py",
    "must_say": "read the message beside the root",
-   "new": "    message, unreadable = message_of(call.root, rest)\n",
-   "old": "    message, unreadable = message_of(place, rest)\n",
+   "new": "    message, unreadable = message_of(call.root, rest, stdin)\n",
+   "old": "    message, unreadable = message_of(place, rest, stdin)\n",
    "site": "elsewhere",
    "why": "THE MESSAGE READ FROM THE WRONG FILE. git reads `-F` beside the directory it runs in, after `-C`; the guard read it beside the project root, so the text it judged could be a different file's than the one git would commit."
   },
@@ -1498,27 +1970,43 @@
    "site": "elsewhere",
    "why": "AT THE WRITE, the rule's answer before and after were taken beside a plant that was gone by the end, so a write was charged with - or excused by - the mutant's answer. An asking the lock moved under is asked again."
   },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_hold_on_a_file_put_back_at_HEAD_goes_even_while_a_lock_stands": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a file back at HEAD stayed held",
+   "new": "        out[\"held\"] = held\n",
+   "old": "        out[\"held\"] = _still_changed(root, head, held, {lock, moved[0]})\n",
+   "site": "instance",
+   "why": "The shipped defect: an UNKNOWN judgement handed back the record's old holds untouched, so a file restored byte-for-byte stayed held for as long as any lock stood on any other file."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_hold_on_a_file_still_changed_STANDS_while_a_lock_stands": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a real hold was lifted",
+   "new": "        out[rel] = key\n    return {}\n",
+   "old": "        out[rel] = key\n    return out\n",
+   "site": "evasion",
+   "why": "The cheapest way past the release fix: read UNKNOWN as nothing held, which releases the stale hold and every real one with it - so starting any plant run would lift every hold in the tree."
+  },
   "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_lock_is_the_SUBJECT_only_of_its_own_plants_test": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "the plant's own test was told its subject was a fault beside it",
    "new": "",
-   "old": "    if first and first == os.environ.get(PLANTED, \"\").replace(chr(92), \"/\"):\n        return \"\"                        # this process runs that plant's own test - see PLANTED\n",
+   "old": "    if excused(root, name):\n        return \"\"                        # this process runs that plant's own test - see PLANTED\n",
    "site": "instance",
    "why": "MEASURED 2026-09-26: DT Engine's commit gate refused the change because three plants whose own tests drive a real hook could not redden - the plant's lock named that hook, and the second reading of the lock answered UNKNOWN inside the plant's own test. The judge's reader of the lock never let a plant's test see its subject."
   },
   "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_lock_is_the_SUBJECT_only_of_its_own_plants_test::evasion": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "a marker naming another file excused the lock",
-   "new": "    if first and os.environ.get(PLANTED):\n        return \"\"                        # this process runs that plant's own test - see PLANTED\n",
-   "old": "    if first and first == os.environ.get(PLANTED, \"\").replace(chr(92), \"/\"):\n        return \"\"                        # this process runs that plant's own test - see PLANTED\n",
+   "new": "    return bool(first) and bool(os.environ.get(PLANTED))\n",
+   "old": "    return bool(first) and first == os.environ.get(PLANTED, \"\").replace(chr(92), \"/\")\n",
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST: a marker that excuses whatever lock is held. Anyone who set it would switch every reading of the lock off; only the file it names is the plant's subject."
   },
   "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_lock_naming_ANOTHER_file_leaves_every_verdict_UNKNOWN_and_none_clean": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "a verdict taken beside a mutant was given",
-   "new": "    if lock_state(root) != start:\n",
-   "old": "    if lock or lock_state(root) != start:\n",
+   "new": "    if moved != start:\n",
+   "old": "    if lock or moved != start:\n",
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST: honour the lock only for the file it names and judge the rest beside it. A rule reads more than the file it is asked about - the install check reads every copy - and a mutant that HIDES a finding records a change as clean, after which nothing ever judges it again."
   },
@@ -1537,6 +2025,14 @@
    "old": "    why = note_release(root)\n    if why:\n        return why\n",
    "site": "elsewhere",
    "why": "A PLANT THAT CAME AND WENT inside one judgement leaves no lock at its start and none at its end; only the count of releases says a rule may have read the mutant. A release that is not counted makes that stretch read as untouched."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_plants_own_test_judges_its_subject_and_RECORDS_nothing": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "RECORDED for every other process",
+   "new": "    _save_judged(root, saved)\n",
+   "old": "    if not (excuse or excused(root)):\n        _save_judged(root, saved)\n",
+   "site": "instance",
+   "why": "The shipped defect: a plant's own test judged its planted subject lock-free, as the excuse intends, and SAVED the hold where every other process reads it - measured on the dispatcher plant in a scratch copy of the project this came from."
   },
   "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_a_release_removes_ONLY_the_lock_its_own_run_took": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
@@ -1569,6 +2065,38 @@
    "old": "        with io.open(path, \"x\", encoding=\"utf-8\", newline=LF) as handle:\n            handle.write(rel + LF + nonce + LF)\n",
    "site": "instance",
    "why": "THE DOOR TAKES THE LOCK EXCLUSIVELY. Opened for writing rather than created, a second run takes a lock another holds, two runs mutate one tree, and the first one's release frees the second one's plant for every judgement to read."
+  },
+  "test_bundle_action.py::AVerdictTakenWhileAMutantCameOrWentIsUnknown::test_the_note_under_a_lock_names_the_hold_that_stands": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "did not name the hold",
+   "new": "    if False:\n",
+   "old": "    if judged.get(\"held\"):\n",
+   "site": "instance",
+   "why": "The note beside an UNKNOWN judgement said nothing was held while a recorded hold refused every act, so the one sentence the session read contradicted the refusal it sat beside."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_JAVA_file_nobody_can_parse_here_is_UNKNOWN_not_clean": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "was let through as parsed",
+   "new": "        return\n",
+   "old": "        if bundle_env.allowed(\"ALLOW_UNPARSED_JAVA\"):\n            return\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a check that needs a compiler: have none. A machine with no javac read as every Java write parsing is an unmeasurable answer reported as a clean one."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_JAVA_file_that_parsed_and_would_not_is_refused": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a Java file broken by the write was let through",
+   "new": "        if rel.endswith(\".java\") and after is not None:\n            continue\n",
+   "old": "        if rel.endswith(\".java\") and after is not None:\n            _ask_java(rel, before, after, worse)\n            continue\n",
+   "site": "instance",
+   "why": "THE MEASURED ABSENCE: a `.py` that stopped compiling was refused at the write and a `.java` was asked nothing, so every syntax error in a Java project was found by the build, after it was built on."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_JAVA_file_that_parsed_and_would_not_is_refused::growth": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "refused for still not parsing",
+   "new": "    if not error:\n",
+   "old": "    if not error or (before is not None and java_parse_error(rel, before) != \"\"):\n",
+   "site": "elsewhere",
+   "why": "GROWTH, NOT EXISTENCE: a file that did not parse before - a preview feature, a newer syntax than this javac - may be written as long as the write breaks nothing; refusing it refuses every edit to it."
   },
   "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_NEW_file_is_asked_as_the_write_would_leave_it": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
@@ -1610,6 +2138,22 @@
    "site": "elsewhere",
    "why": "THE SAME CLASS FROM THE OTHER SIDE: a kind not asked of a file it CAN judge. Filtering every kind by the record's shape stops the refusal and switches off every source rule in a mixed scope - the fix that looks right because the complaint goes away."
   },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_rule_file_that_cannot_be_READ_is_not_silently_absent": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "was reported as no rule at all",
+   "new": "                except OSError as exc:\n                    continue\n                    # THERE AND UNREADABLE IS UNKNOWN",
+   "old": "                except OSError as exc:\n                    # THERE AND UNREADABLE IS UNKNOWN",
+   "site": "instance",
+   "why": "THE MEASURED COLLAPSE: `except OSError: continue` - a rule file nobody could read was a rule that did not exist, and every write it should have judged went through as judged."
+  },
+  "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_rule_file_that_cannot_be_READ_is_not_silently_absent::gone": {
+   "file": ".claude/bundle-hooks/bundle_rules.py",
+   "must_say": "a file that is not there",
+   "new": "                except ZeroDivisionError:\n                    continue            # not there",
+   "old": "                except FileNotFoundError:\n                    continue            # not there",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: a file gone since the walk, or a dangling link, is not a rule; read as one that cannot answer, it refuses every write in the project over a file that is not there."
+  },
   "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_write_INTO_the_git_folder_is_refused_and_a_look_alike_is_not": {
    "file": ".claude/bundle-hooks/guard_write_rules.py",
    "must_say": "a tool wrote inside the git folder",
@@ -1621,8 +2165,8 @@
   "test_bundle_action.py::AWriteIsJudgedAsItWouldLeaveTheTree::test_a_write_INTO_the_git_folder_is_refused_and_a_look_alike_is_not::evasion": {
    "file": ".claude/bundle-hooks/guard_write_rules.py",
    "must_say": "a tool wrote inside the git folder",
-   "new": "    return rel if rel.replace(chr(92), \"/\") == \".git/gate-stamps\" else \"\"\n",
-   "old": "    return rel if rel.replace(chr(92), \"/\").split(\"/\")[0].lower() == \".git\" else \"\"\n",
+   "new": "    for target in bundle_shell.paths(payload):\n        rel = bundle_rules.rel_of(root, os.path.abspath(\n            target if os.path.isabs(target) else os.path.join(root, target)))\n        if rel.replace(chr(92), \"/\") == \".git/gate-stamps\":\n            return rel\n    return \"\"\n",
+   "old": "    folders = None\n    for target in bundle_shell.paths(payload):          # every path, at any depth\n        path = os.path.abspath(target if os.path.isabs(target) else os.path.join(root, target))\n        rel = bundle_rules.rel_of(root, path)\n        if rel.replace(chr(92), \"/\").split(\"/\")[0].lower() == \".git\":\n            return rel\n        real = os.path.normcase(os.path.normpath(path))\n        folders = bundle_rules.git_folders(root) if folders is None else folders\n        for folder in folders:\n            folder = os.path.normcase(folder)\n            if real == folder or real.startswith(folder.rstrip(os.sep) + os.sep):\n                return path.replace(chr(92), \"/\")\n    return \"\"\n",
    "site": "evasion",
    "why": "THE CHEAPEST GUARD NAMES THE ONE FILE THAT WAS SEEN. Refusing only the stamp store leaves `.git/config`, which switches every gate off with one line."
   },
@@ -1633,6 +2177,14 @@
    "old": "    if len(now) <= len(was):\n        return None",
    "site": "instance",
    "why": "THE ONE COMPARISON EVERY WRITE RULE ANSWERS THROUGH, made to find nothing worse: every per-file, tree, change and record rule is off at once while each still passes its own tests - the hole this door was built to close, reopened inside it."
+  },
+  "test_bundle_action.py::AnAnswerTakenWithAMutantOnDiskIsNeitherGivenNorKept::test_a_plants_own_test_is_ASKED_and_keeps_no_memo": {
+   "file": ".claude/bundle-hooks/after_rules.py",
+   "must_say": "kept as the memo",
+   "new": "    _keep(root, state, found)",
+   "old": "    if not bundle_rules.excused(root):\n        _keep(root, state, found)",
+   "site": "elsewhere",
+   "why": "The sibling the AST sweep of every cache writer found: under the same excuse the moment-after rules were asked of the mutant and their answer kept as the memo, so the real tree's same finding was never new."
   },
   "test_bundle_action.py::AnAnswerTakenWithAMutantOnDiskIsNeitherGivenNorKept::test_an_AT_AFTER_rule_is_neither_asked_nor_kept_under_the_lock": {
    "file": ".claude/bundle-hooks/after_rules.py",
@@ -1654,7 +2206,7 @@
    "file": ".claude/bundle-hooks/bundle_rules.py",
    "must_say": "judged, and held, as a command's write",
    "new": "    if False:\n",
-   "old": "    if lock or lock_state(root) != start:\n",
+   "old": "    if lock or moved != start:\n",
    "site": "elsewhere",
    "why": "THE SAME SUBJECT READ ELSEWHERE. A mutant on disk is a changed file to a reader that forgets the lock, and the held-change guard would hold it and refuse every act until a module nobody edited was repaired."
   },
@@ -1729,6 +2281,94 @@
    "old": "    name = re.split(r\"[\\\\/]\", word or \"\")[-1].lower()\n",
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST A CHECK FOR THE WORD `git` is the path to it: `& \"C:/Program Files/Git/cmd/git.exe\" commit -n` is git, and a program name compared whole is not the word git."
+  },
+  "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_a_WORKTREES_git_folder_is_the_git_folder_too": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "writing the worktree's real git folder was allowed",
+   "new": "        folders.append(rel + \"/\")\n",
+   "old": "        folders.append((folder.replace(chr(92), \"/\") if rel.startswith(\"..\") else rel) + \"/\")\n",
+   "site": "elsewhere",
+   "why": "THE FOLDER OUTSIDE THE CHECKOUT: in a linked worktree git's folders sit elsewhere, and a project-relative spelling of them is `../..` that no command writes - so the real `config` was nobody's stack."
+  },
+  "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_a_WORKTREES_git_folder_is_the_git_folder_too::pointer": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "repointing the worktree's .git file was allowed",
+   "new": "    if False:\n        files.add(\".git\")\n",
+   "old": "    if os.path.isfile(os.path.join(root, \".git\")):\n        files.add(\".git\")\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a guard on git's folders in a worktree: rewrite the `.git` FILE that says where they are, and the checkout's git reads another repository's hooks and config."
+  },
+  "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_a_WORKTREES_git_folder_is_the_git_folder_too::write": {
+   "file": ".claude/bundle-hooks/guard_write_rules.py",
+   "must_say": "a Write into the worktree's real git folder was allowed",
+   "new": "        folders = [] if folders is None else folders\n",
+   "old": "        folders = bundle_rules.git_folders(root) if folders is None else folders\n",
+   "site": "elsewhere",
+   "why": "THE SAME FOLDER, BY THE WRITE TOOL: a Write into a worktree's real git folder was read as a file outside the project and let through, though it repoints the hooks of every checkout of the repository."
+  },
+  "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_a_command_in_ANOTHER_repository_writes_its_own_hooks": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "another repository's hooks were judged as ours",
+   "new": "    elsewhere = False\n",
+   "old": "    elsewhere = where is not None and bundle_rules.rel_of(root, where).startswith(\"..\")\n",
+   "site": "elsewhere",
+   "why": "a command that runs in a scratch repository - every test that builds one has a .githooks of its own - was read as writing this project's stack, and refused work that touches nothing here"
+  },
+  "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_a_command_writing_INSIDE_THE_GIT_FOLDER_is_refused_as_the_Write_tool_is": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a command writing into .git was allowed",
+   "new": "    for folder in []:\n        rel = bundle_rules.rel_of(root, folder)\n",
+   "old": "    for folder in bundle_rules.git_folders(root):\n        rel = bundle_rules.rel_of(root, folder)\n",
+   "site": "instance",
+   "why": "THE MEASURED HOLE: the guard stack knew the hooks, their wiring and the gate's tools, and not the folder only git writes - so `echo >> .git/config` went through while a Write of it was refused."
+  },
+  "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_a_command_writing_INSIDE_THE_GIT_FOLDER_is_refused_as_the_Write_tool_is::exclude": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a command that reads or excludes .git was refused",
+   "new": "            if re.search(r\"(?<![\\w.-])%s%s?\" % (\"\" if path.startswith(\"/\") or re.match(\n",
+   "old": "            if re.search(r\"(?<![\\w.-])%s%s\" % (\"\" if path.startswith(\"/\") or re.match(\n",
+   "site": "elsewhere",
+   "why": "THE OTHER DIRECTION: a bare `.git` read as a path into it refuses `rsync --exclude .git` and `tar --exclude=.git` - honest commands that name the folder only to leave it out, the kind a guard is switched off for."
+  },
+  "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_emptying_the_dispatcher_is_refused": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a command that switches every guard off was allowed",
+   "new": "            written = \"\"\n",
+   "old": "            written = stack_write(call.root, command, where, held or None)\n",
+   "site": "instance",
+   "why": "the stack check never asked: `: > .claude/hooks/dispatch.py` was allowed, every guard was off from that moment, and `git commit --no-verify` then went through with nothing left to refuse it"
+  },
+  "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_every_way_a_command_writes_the_stack_is_refused": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a command that writes the guard stack was allowed",
+   "new": "    inside = False\n",
+   "old": "    inside = where is not None and not elsewhere and _within(where, root, folders, files)\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a check that reads paths: `cd .claude/hooks && : > dispatch.py` names no stack path at all once the folder is entered, so a check that does not follow the cd lets it write the dispatcher"
+  },
+  "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_every_way_a_command_writes_the_stack_is_refused::inline": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a command that writes the guard stack was allowed",
+   "new": "            if False and any(",
+   "old": "            if _WRITES_CODE.search(code) or any(",
+   "site": "evasion",
+   "why": "code handed inline - python3 -c with open(path, 'w') - names the hook as a string inside one word, and a check that lets inline code through unread lets that code empty the dispatcher"
+  },
+  "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_reading_staging_restoring_and_running_the_stack_are_let_through": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a command that only reads or runs the stack was refused",
+   "new": "",
+   "old": "        if any(re.search(pattern, said, re.I) for pattern in allowed):\n            continue\n",
+   "site": "elsewhere",
+   "why": "THE OPPOSITE DIRECTION: a stack check that refuses every command naming a hook refuses `git diff` and `cat` of it, and a guard an honest session meets on every read is one somebody switches off"
+  },
+  "test_bundle_action.py::TheGuardStackCannotBeSwitchedOffByACommand::test_the_stack_is_DERIVED_from_what_the_git_hooks_run": {
+   "file": ".claude/bundle-hooks/guard_command_rules.py",
+   "must_say": "a tool a git hook runs was not part of the stack",
+   "new": "            if False:\n",
+   "old": "            if not line.strip().startswith(\"#\"):\n",
+   "site": "instance",
+   "why": "a stack check that knows the hooks folder and not the tools the git hooks run lets `: > tools/bundle_install.py` empty the install check, and the pre-commit then runs an empty file and passes"
   },
   "test_bundle_action.py::WhatOnlyTheChangedTreeCanAnswerIsAskedTheMomentAfter::test_an_AT_AFTER_rule_is_asked_and_a_broken_one_is_reported": {
    "file": ".claude/bundle-hooks/bundle_rules.py",
@@ -1826,6 +2466,14 @@
    "site": "elsewhere",
    "why": "A LIST-SHAPED LEDGER READ AS EMPTY. CTRMap's is a list of 213 entries, not a dict; read as a dict it holds no plant, and every new one is invisible."
   },
+  "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_the_trailer_Claude_Code_WRITES_is_the_shape": {
+   "file": "tools/commit_gate.py",
+   "must_say": "a trailer Claude Code writes by default was refused",
+   "new": "COAUTHOR_SHAPE = re.compile(r\"^Co-Authored-By: Claude [^<>\\n]*\\S <noreply@anthropic\\.com>\\s*$\",",
+   "old": "COAUTHOR_SHAPE = re.compile(r\"^Co-Authored-By: Claude(?: [^<>\\n]*\\S)? <noreply@anthropic\\.com>\\s*$\",",
+   "site": "instance",
+   "why": "the gate's trailer shape demanded a model word, and Claude Code signs a Fable session's commits as plain Claude, so every default commit from such a session was refused by its own project's gate"
+  },
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_CHERRY_PICKED_commit_carries_no_stamp_and_one_committed_through_the_gate_does": {
    "file": "tools/gate_stamps.py",
    "must_say": "a cherry-picked commit passed as gated",
@@ -1833,6 +2481,46 @@
    "old": "                  r\"|cherry-pick:|revert:|am:)\")\n",
    "site": "instance",
    "why": "THE LAST CHEAP WAY ROUND THE GATE. A program's --no-verify commit on a scratch branch, cherry-picked onto the main one and the scratch branch deleted, left an unstamped commit nothing asked about."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_PROGRAM_handed_to_a_script_is_still_read": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "the program itself was never read",
+   "new": "            if True:\n",
+   "old": "            if not os.path.isfile(path):  # an option's value or a module's name: not the program\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST THE FALSE REFUSAL: read no file at all. Every honest command then passes, and so does the forger itself - `python forge.py ledger.json`, `pwsh -ExecutionPolicy Bypass -File forge.ps1`, `python -m runpy forge.py` - which is the rule the false refusal was fixed without losing."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_QUOTED_interpreter_path_is_one_word_too": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a quoted interpreter path with a space in it ran a script nothing read",
+   "new": "        words = segment.split()\n",
+   "old": "        words = shlex.split(segment, posix=False)\n",
+   "site": "elsewhere",
+   "why": "THE SAME SPLIT ONE WORD EARLIER: `\"C:\\Program Files\\Python312\\python.exe\" forge.py` split on spaces names an interpreter called `Program`, which is no interpreter, so the script it runs was never read. The default install path of Python on Windows has a space in it."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_QUOTED_interpreter_path_is_one_word_too::separator": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a quoted interpreter path with a space in it ran a script nothing read",
+   "new": "        name = words[0].split(\"/\")[-1].lower()\n",
+   "old": "        name = re.split(r\"[\\\\/]\", words[0])[-1].lower()\n",
+   "site": "instance",
+   "why": "an interpreter named by a path with backslashes was not read as Python wherever the split knew one separator only, so a quoted Windows interpreter path ran a stamp-forging script nothing read"
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_QUOTED_reader_handed_data_is_let_run": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a quoted reader handed a data file was read as forging a stamp",
+   "new": "    if chr(34) in text:\n        return 'a quoted word'\n    for segment in _SEGMENT.split(text):\n",
+   "old": "    for segment in _SEGMENT.split(text):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY TO REFUSE A QUOTED FORGER: refuse every quote. The forger tests pass, and the command refused on 2026-09-27 - a quoted script path reading the plant ledger - is refused again the moment its folder has a space in it."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_QUOTED_script_path_is_one_word": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a quoted script path with a space in it was never read",
+   "new": "        words = segment.split()\n",
+   "old": "        words = shlex.split(segment, posix=False)\n",
+   "site": "instance",
+   "why": "WHICH FILE IS THE PROGRAM, MISREAD AGAIN: split on spaces, a quoted script path in a folder with a space in its name - this project's own root has one - is two fragments, neither a file, and the forger in it was never read. Measured 2026-09-27 before the fix: `python \"<root>\\a dir\\forge.py\"` was allowed."
   },
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_commit_in_ANOTHER_WORKTREE_is_asked_too": {
    "file": "tools/gate_stamps.py",
@@ -1850,6 +2538,30 @@
    "site": "instance",
    "why": "A COMMIT THE GATE NEVER SAW. Measured: `python -c` running `git commit --no-verify` is the one spelling of a skipped gate no hook can read, and nothing afterwards asked whether the gate had seen the commit."
   },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_commit_while_git_would_SKIP_its_hook_is_refused_before_it_is_made": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a commit while git would skip its hook was let through",
+   "new": "    return []\n",
+   "old": "    return unrunnable_hooks(root)\n",
+   "site": "instance",
+   "why": "A COMMIT MADE PAST A GATE THAT CANNOT RUN. This bundle and CTRMap committed .githooks/* as 100644 from Windows; git on Linux skips such a hook with only a hint, so on every cloud checkout the commit gate was off while core.hooksPath named it (2026-10-07, 2 repositories, 4 hooks)."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_commit_while_git_would_SKIP_its_hook_is_refused_before_it_is_made::mode": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a commit while git would skip its hook was let through",
+   "new": "        if mode is not None and mode not in (\"100755\", \"100644\"):\n",
+   "old": "        if mode is not None and mode != \"100755\":\n",
+   "site": "elsewhere",
+   "why": "100644 READ AS RUNNABLE. It is the mode git records for every new file on Windows, where core.fileMode is off, so accepting it accepts exactly the defect: all 4 hooks across the two repositories were 100644 and every one of them was skipped on Linux."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_commit_while_git_would_SKIP_its_hook_is_refused_before_it_is_made::undeclared": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "has no attribute 'AT_COMMIT'",
+   "new": "AT_COMMIT_OFF = \"before_commit\"\n",
+   "old": "AT_COMMIT = \"before_commit\"\n",
+   "site": "evasion",
+   "why": "THE CHECK KEPT AND NOTHING ASKING IT. bundle_rules discovers a rule by its marker, so a renamed marker leaves unrunnable_hooks in the file, passing every test of the function, and no commit asked - the cheapest way to stop the refusal: a producer with no consumer, filed in 7 consecutive audits."
+  },
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_copy_installed_DEEPER_still_finds_its_repository": {
    "file": "tools/gate_stamps.py",
    "must_say": "took tools/ for its repository",
@@ -1858,6 +2570,14 @@
    "site": "elsewhere",
    "why": "A ROOT COUNTED IN DIRNAMES. The project this came from installs its tools under tools/audit/, where two dirnames name tools/ - and init would write the baseline where nothing reads it."
   },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_data_file_handed_to_ANOTHER_interpreter_is_data_too": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a data file a shell script reads was read as a program",
+   "new": "            if _PYTHON.fullmatch(name): break\n",
+   "old": "            break                         # the program is read, and nothing it is handed\n",
+   "site": "elsewhere",
+   "why": "THE FIX MADE FOR PYTHON ONLY: the natural place to write it is `_python_runs`, and then `bash show.sh ledger.json` and `pwsh -File show.ps1 ledger.json` are still refused - the same false forge through the next interpreter, the site this rule was not first written for."
+  },
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_gated_TREE_under_an_ungated_MESSAGE_is_still_ungated": {
    "file": "tools/gate_stamps.py",
    "must_say": "passed as gated",
@@ -1865,6 +2585,30 @@
    "old": "                if any((tree, d) in stamped for d in digests(message)):\n",
    "site": "evasion",
    "why": "THE CHEAPEST STAMP IS ONE ALREADY THERE. Amending a gated commit's message with `--no-verify` keeps the tree the gate stamped, so a stamp matched by tree alone passes a message the gate never read."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_message_that_is_not_ascii_is_matched_to_its_stamp": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a commit the gate passed was refused because its message is not ASCII",
+   "new": "",
+   "old": "                              encoding=\"utf-8\", errors=\"replace\",\n",
+   "site": "instance",
+   "why": "MEASURED 2026-09-27 on DT Engine: a BOM-led subject stamped by commit-msg and refused as made past the gate, because git's copy was decoded in the Windows code page - every command held until the repair."
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_program_named_by_a_VARIABLE_is_not_replaced_by_its_data": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a data file was read as the program a variable names",
+   "new": "            candidates = _python_runs(words[1:], root)\n",
+   "old": "            candidates = _python_runs(words[1:], root)[:1]\n",
+   "site": "instance",
+   "why": "a Python program named by a variable is no file here, so the scan went on and read its first data argument as the program, refusing a script that only reads the plant ledger as forging a gate stamp"
+  },
+  "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_a_verdict_is_asked_again_when_the_judge_changes": {
+   "file": "tools/gate_stamps.py",
+   "must_say": "a verdict outlived a change to the rule that gave it",
+   "new": "    mark = (signature(paths) + \"|\"\n",
+   "old": "    mark = (signature(paths + [os.path.abspath(__file__)]) + \"|\"\n",
+   "site": "elsewhere",
+   "why": "THE SAME DAY, ONE STEP LATER: with the decode fixed the lock stayed, because the memo was keyed on the reflogs and the stamps only and replayed the wrong verdict until some ref happened to move."
   },
   "test_bundle_gates.py::ACommitTheGateNeverSawIsFoundAndRefused::test_every_way_a_call_could_FORGE_a_stamp_is_refused_before_it_runs": {
    "file": "tools/gate_stamps.py",
@@ -2002,6 +2746,14 @@
    "site": "elsewhere",
    "why": "A real hook's git call unbounded again - asked on every tool call, so one git that holds its index lock would hang every command in the session."
   },
+  "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_a_bare_invocation_drives_nothing_and_names_the_choices": {
+   "file": "tools/prove_plants.py",
+   "must_say": "a bare invocation drove plants",
+   "new": "    if False:\n",
+   "old": "    if len(argv) <= 1:\n",
+   "site": "instance",
+   "why": "The shipped defect: with no argument the driver fell through to its default and drove every plant in the ledger - on the project this came from, 75 minutes of planted defects started by a run meant as a quick look."
+  },
   "test_bundle_gates.py::EveryPlantTheGateDrivesIsCountedAloud::test_all_is_said_only_when_every_one_reddened": {
    "file": "tools/commit_gate.py",
    "must_say": "a drive where one plant stayed green was counted as all red",
@@ -2058,6 +2810,22 @@
    "site": "elsewhere",
    "why": "A RECORD AT THE TOP, NEVER ASKED. RECORDS='.' made the scope `^\\./...`, which no project path matches - CTRMap's mutation baseline sits at its root."
   },
+  "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_an_ADOPTED_tool_list_only_SHRINKS_at_the_write": {
+   "file": "tools/tiers.py",
+   "must_say": "a name added to the adoption by hand went through",
+   "new": "        grown = []\n",
+   "old": "        grown = sorted(will - (bound or set())) if holds else []\n",
+   "site": "elsewhere",
+   "why": "THE PROMISE NOTHING ASKED: the adopted starting debt 'only shrinks', and an Edit adding a name to it excused a new detector below the point of action as debt the project arrived with."
+  },
+  "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_an_ADOPTED_tool_list_only_SHRINKS_at_the_write::head": {
+   "file": "tools/tiers.py",
+   "must_say": "deleting the adoption and writing a larger one went through",
+   "new": "    for label, holds, bound in ((\"this file's\", had, was),):\n",
+   "old": "    for label, holds, bound in ((\"this file's\", had, was), (\"HEAD's\", head_had, head)):\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY PAST a rule that compares a write with the file before it: two writes - delete the record, then write a larger one. Each passes alone; only HEAD's record says what was adopted."
+  },
   "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_an_exclusion_from_the_guards_must_carry_its_reason": {
    "file": "tools/tiers.py",
    "must_say": "an exclusion with a label for a reason was accepted",
@@ -2065,6 +2833,22 @@
    "old": "                  for stem, why in NOT_GUARDS.items() if len(str(why)) < MIN_REASON)",
    "site": "evasion",
    "why": "THE CHEAPEST WAY TO ZERO GUARDS BELOW ACTION IS TO STOP CALLING THEM GUARDS. With the reason unread, any detector is excused by adding its name to a dict, and `every guard at the point of action` stays true while one sits at the commit."
+  },
+  "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_the_COMMIT_holds_the_adoption_to_HEADs": {
+   "file": "tools/tiers.py",
+   "must_say": "an adoption grown past HEAD's passed the commit",
+   "new": "    if False:\n",
+   "old": "    if head_had and known - head:\n",
+   "site": "elsewhere",
+   "why": "THE SECOND LAYER, for a write no hook saw: the commit read the adoption in the file and never compared it with the one HEAD carries, so a grown list committed as cleanly as the original."
+  },
+  "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_the_adoption_rule_is_DECLARED_where_the_write_hook_asks_it": {
+   "file": "tools/tiers.py",
+   "must_say": "no write-time rule watches the adoption record",
+   "new": "_AT_WRITE_CHANGE = \"adoption_change_problems\"\n",
+   "old": "AT_WRITE_CHANGE = \"adoption_change_problems\"\n",
+   "site": "elsewhere",
+   "why": "A RULE NOTHING ASKS IS A FUNCTION: the comparison written and never declared leaves the adoption exactly as measured - grown by an Edit with nothing at the write."
   },
   "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_the_write_time_judge_derives_the_same_machinery": {
    "file": "tools/tiers.py",

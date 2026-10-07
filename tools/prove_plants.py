@@ -11,7 +11,7 @@ into a real file, and the ONE test that must go red when it is applied. This per
 substitution, runs that single test, requires it to FAIL, and puts the file back byte-for-byte.
 Nothing is reported as proven unless the plant actually reddened.
 
-    python -B tools/prove_plants.py                    drive every plant
+    python -B tools/prove_plants.py --all              drive every plant (no argument refuses)
     python -B tools/prove_plants.py --only Heredoc     one, by test-id substring
     python -B tools/prove_plants.py --owed             the ratchets only - milliseconds
     python -B tools/prove_plants.py --add new.json     drive NEW plants, record them if all redden
@@ -281,6 +281,37 @@ def put_back(path, original, attempts=5):
     return why
 
 
+def not_restorable(root, rel):
+    """Why git could not put `rel` back if a run were killed with its defect on disk, or ''.
+
+    COMMIT BEFORE RUNNING ANYTHING THAT MUTATES SOURCES. A plant is written into the file and
+    restored in a `finally`; a kill skips the `finally`, and the recovery the lock names is
+    `git checkout -- <file>` - which restores git's INDEX, erasing with the defect every change
+    the index does not hold. The mutation harness this rule was written after nearly erased an
+    uncommitted fix that way. A file the index holds exactly is one a kill cannot cost anything:
+    staging is enough, and a commit gate driving its plants is driving staged files.
+    """
+    def git(*argv):
+        return subprocess.run(["git"] + list(argv), cwd=root, capture_output=True, timeout=60,
+                              creationflags=NO_WINDOW)
+    try:
+        tracked = git("ls-files", "--error-unmatch", "--", rel)
+        differs = git("diff", "--quiet", "--", rel) if tracked.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError) as exc:
+        return ("git could not say whether %s can be put back (%s) - unknown is not restorable"
+                % (rel, exc))
+    if differs is None:
+        return ("%s is not in git's index, so a run killed with its defect on disk leaves "
+                "nothing to put it back from - `git add %s` first" % (rel, rel))
+    if differs.returncode == 1:
+        return ("%s has changes git's index does not hold, and a run killed with its defect on "
+                "disk is recovered by `git checkout -- %s`, which would erase them - `git add %s` "
+                "first" % (rel, rel, rel))
+    if differs.returncode != 0:
+        return "git could not compare %s with its index - unknown is not restorable" % rel
+    return ""
+
+
 def apply_and_run(entry, test_id, root=None, run=None, rebuild=None):
     """(reddened?, detail). Restores byte-for-byte whatever happens.
 
@@ -310,6 +341,9 @@ def apply_and_run(entry, test_id, root=None, run=None, rebuild=None):
         return False, broken
     if crlf in original.decode("utf-8"):
         planted_text = planted_text.replace(LF, crlf)
+    unsafe = not_restorable(root or HERE, entry["file"])
+    if unsafe:
+        return False, unsafe
     # THE DEFECT IS ON DISK ONLY UNDER THE LOCK NAMING IT. Every judgement the hooks make reads
     # the lock and treats what it names as UNKNOWN; this runner wrote its plant with no lock at
     # all, so a second session judged the defect as an ordinary change and held it.
@@ -383,8 +417,35 @@ def declared_tests(path=None):
     return tests if isinstance(tests, dict) and tests.get("find") and tests.get("run") else None
 
 
+def natively_seen(rel, text):
+    """Is this Python test file one `guard_classes` reads WHOLE - in `tests/` itself, named
+    `test_*.py`, every test a method of a class that derives from something (a `TestCase`, or a
+    project's base over one)? Then the ledger keys its classes and `unittest` drives them; a test
+    function, or pytest's bare `class TestX:`, is one only a declared runner can see.
+
+    MEASURED 2026-10-06: an existing project's `tests/test_price.py` - one pytest function -
+    was adopted as "0 test class(es)", and the install reported clean over a project whose every
+    test the ledger could not see. A function at module level, a file in `tests/unit/`, a
+    `*_test.py` beside the code: each is pytest's default shape and none was read."""
+    import ast
+    if not re.fullmatch(r"tests/test_[^/]*\.py", rel or ""):
+        return False
+    try:
+        tree = ast.parse(text or "")
+    except SyntaxError:
+        return False                          # cannot be read is not seen
+    tests = (ast.FunctionDef, ast.AsyncFunctionDef)
+    loose = any(isinstance(n, tests) and n.name.startswith("test") for n in tree.body)
+    bare = any(isinstance(n, ast.ClassDef) and not n.bases
+               and any(isinstance(c, tests) and c.name.startswith("test") for c in n.body)
+               for n in tree.body)
+    return not loose and not bare
+
+
 def declared_classes(config=None, root=None):
-    """{"<file>::<Class>"} for every test file the declared runner's `find` matches."""
+    """{"<file>::<Class>"} for every test file the declared runner's `find` matches - except a
+    Python file `guard_classes` already reads whole, whose classes it keys itself: a `find` of
+    `tests/**/test_*.py` would otherwise count the bundle's own suites twice."""
     import glob
     config = declared_tests() if config is None else config
     if not config:
@@ -394,6 +455,10 @@ def declared_classes(config=None, root=None):
     for path in sorted(glob.glob(os.path.join(root, config["find"]), recursive=True)):
         if os.path.isfile(path):
             rel = os.path.relpath(path, root).replace(os.sep, "/")
+            if rel.endswith(".py"):
+                with io.open(path, encoding="utf-8", errors="replace") as handle:
+                    if natively_seen(rel, handle.read()):
+                        continue
             out.add("%s::%s" % (rel, os.path.splitext(os.path.basename(rel))[0]))
     return out
 
@@ -472,11 +537,15 @@ def build_declared(config, root=None):
 
 
 def drive_plant(key, entry, root=None):
-    """(reddened?, detail) for ONE plant, by whichever runner its test needs. The one door."""
-    if key.split("::")[0].endswith(".py"):
-        return apply_and_run(entry, unittest_id(key), root)
+    """(reddened?, detail) for ONE plant, by whichever runner its test needs. The one door.
+
+    A key the declared runner owns goes to it, whatever its language: a pytest file is `.py` and
+    `unittest` cannot run it."""
     config = declared_tests(os.path.join(root, ".claude", "bundle-install.json") if root
                             else None)
+    owned = config is not None and "::".join(key.split("::")[:2]) in declared_classes(config, root)
+    if key.split("::")[0].endswith(".py") and not owned:
+        return apply_and_run(entry, unittest_id(key), root)
     if config is None:
         return False, ("%s is not a Python test, and this project declares no `_tests` runner "
                        "that could run it" % key.split("::")[0])
@@ -631,6 +700,76 @@ def recount(ledger, before, classes=None):
             continue
         ledger[key] = count
     return ledger, problems
+
+
+def ceiling_rises(before, after):
+    """Every way `after` raises a bound that `before` held beyond what this tool's own writes may
+    raise it - `recount`'s rule, asked of ANY write, whoever makes it.
+
+    MEASURED 2026-10-06 on a fresh install: an Edit raising `owed_ceiling` from 1 to 2 went
+    through, and a commit adding an unplanted test class beside it passed the gate - `owed 2,
+    ceiling 2` - because `ratchet_problems` compares a count with the ceiling IN THE SAME FILE.
+    It cannot tell a ceiling the tool measured from one typed in, and a ceiling typed in is a
+    measurement edited. What the tool may do to a ceiling is fixed: seed an absent one, lower one
+    to its count, raise the two site debts by the classes given their FIRST plant (`recount`), and
+    set the owed debt once, at adoption (`adopt`). Anything else is a hand edit, refused.
+    """
+    if not isinstance(before, dict):
+        return []
+    if not isinstance(after, dict):
+        return ["the ledger would no longer be a JSON object"]
+    out = []
+    new_classes = set(sites_by_class(after)) - set(sites_by_class(before))
+    now = debts(after, classes=set())
+    adopted = after.get("adopted") if isinstance(after.get("adopted"), dict) else {}
+    adopting = not before.get("adopted") and bool(adopted)
+    if before.get("adopted") and after.get("adopted") != before.get("adopted"):
+        out.append("the adoption record is rewritten - it IS the starting debt, recorded once, "
+                   "and changing it resets that debt")
+    for debt, key in CEILINGS:
+        if key not in before:
+            continue                                    # the first write IS the seed
+        if key not in after:
+            out.append("%s is dropped - an absent ceiling is not no ceiling, and deleting it "
+                       "deletes its ratchet" % key)
+            continue
+        try:
+            was, will = int(before[key]), int(after[key])
+        except (TypeError, ValueError):
+            out.append("%s is not a whole number" % key)
+            continue
+        allowed = was
+        if debt in ("generalisation", "evasion"):
+            allowed += len([name for name in now[debt]
+                            if "::".join(name.split("::")[:2]) in new_classes])
+        elif debt == "owed" and adopting:
+            allowed = max(was, len(adopted.get("owed") or []))
+        if will > allowed:
+            out.append("%s rises from %d to %d, and what this tool may raise it by is %d - a "
+                       "ceiling only falls, by `--recount`, or rises by the classes `--add` gives "
+                       "a first plant" % (key, was, will, allowed - was))
+    return out
+
+
+#: ASKED AT THE WRITE OF THE LEDGER. `guard_write_rules` asks it before an Edit or Write lands,
+#: and `after_rules` the moment a command's write shows - this tool's own write included, which
+#: passes it because `recount` keeps the same rule. A change rule, because the question is what
+#: the write does to a ceiling: no reading of one file alone can say whether its ceiling rose.
+AT_WRITE_CHANGE = "ledger_change_problems"
+AT_SCOPE = "^%s$" % re.escape(os.path.relpath(LEDGER, HERE).replace(os.sep, "/"))
+
+
+def ledger_change_problems(rel, before, after, root=None):
+    """[findings] for a write that would leave the ledger reading `after` where it read `before`."""
+    try:
+        held = json.loads(before) if before else None
+    except ValueError:
+        return []                  # a ledger that is not JSON now is repaired by any JSON write
+    try:
+        will = json.loads(after)
+    except ValueError:
+        return ["%s would not be JSON - this tool writes it, whole" % rel]
+    return ["%s: %s" % (rel, line) for line in ceiling_rises(held, will)]
 
 
 def adopt(ledger, classes=None, committed=None):
@@ -835,10 +974,13 @@ def hook_relocations(theirs, hooks, relocated=None):
 
 
 def merge_from(other_root):
-    """(exit code, lines): adopt another ledger's plants for the tests installed here."""
+    """(exit code, lines): adopt another ledger's plants for the tests installed here - its new
+    plants, its re-anchors, and its retirements."""
     try:
-        theirs = read_json(os.path.join(other_root, "tests", "plants.json")).get("plants") or {}
-    except (OSError, ValueError) as bad:
+        other = read_json(os.path.join(other_root, "tests", "plants.json"))
+        theirs = other.get("plants") or {}
+        their_retired = other.get("retired") or {}
+    except (OSError, ValueError, AttributeError) as bad:
         return 1, ["REFUSING: the other ledger cannot be read (%s) - a subject that cannot be "
                    "read is not an empty one" % bad]
     declared = {}
@@ -849,14 +991,16 @@ def merge_from(other_root):
             return 1, ["REFUSING: %s cannot be read (%s)" % (DECLARATIONS, bad)]
     relocated = {rel: entry["at"] for rel, entry in declared.items()
                  if isinstance(entry, dict) and entry.get("at")}
-    relocated.update(hook_relocations(theirs, bundle_hooks.folder(HERE), relocated))
+    relocated.update(hook_relocations(dict(their_retired, **theirs), bundle_hooks.folder(HERE),
+                                      relocated))
     apart = {rel for rel, entry in declared.items()
              if isinstance(entry, dict) and ("diverged" in entry or "not_installed" in entry)}
     installed = set(os.listdir(os.path.join(HERE, "tests")))
     held = load().get("plants") or {}
     adopting = adoptable(theirs, installed, relocated, held, apart)
     moved = reanchored(theirs, installed, relocated, held, apart)
-    if not adopting and not moved:
+    retiring = retired_there(their_retired, installed, relocated, held, apart)
+    if not adopting and not moved and not retiring:
         return 0, ["nothing to merge: every plant for an installed test is already recorded, "
                    "as the other ledger records it"]
     # NEW PLANTS FIRST. Every write is recounted, and a re-anchor cannot lower what is owed while an
@@ -870,15 +1014,47 @@ def merge_from(other_root):
             return code, out
     if moved:
         code, lines = add(moved, replace=True)
-        return code, out + ["  ~ %s" % key for key in moved] + lines
+        out += ["  ~ %s" % key for key in moved] + lines
+        if code:
+            return code, out
+    if retiring:
+        code, lines = retire(retiring)
+        return code, out + ["  - %s" % key for key in retiring] + lines
     return 0, out
+
+
+def retired_there(their_retired, installed, relocated, held, declared_apart=()):
+    """{key: reason} for the plants this project holds LIVE that the other ledger has RETIRED -
+    the same plant: its file (where this project keeps it), its old text and its new.
+
+    A MERGE THAT CARRIES RE-ANCHORS AND NOT RETIREMENTS leaves the project holding a plant whose
+    defect the code it just took can no longer show: measured 2026-10-06, an update took the
+    bundle's new gate_stamps.py, drove the plant the bundle had retired over that very change,
+    watched it pass, and refused the whole update. Each is retired here through `retire`, driven
+    and watched passing like any other; a project's own plant under the key is left alone.
+    """
+    out = {}
+    for key, entry in sorted(their_retired.items()):
+        if key.split("::")[0] not in installed or key not in held or not isinstance(entry, dict):
+            continue
+        if entry.get("file") in declared_apart:
+            continue
+        planted = relocated.get(entry.get("file"), entry.get("file"))
+        mine = held[key]
+        if (planted, entry.get("old"), entry.get("new")) != (mine.get("file"), mine.get("old"),
+                                                              mine.get("new")):
+            continue
+        why = str((entry.get("retired") or {}).get("why") or "").strip()
+        if why:
+            out[key] = "Retired where this plant was written: " + why
+    return out
 
 
 #: Every flag this reads. An unknown one is REFUSED: `--reanchor`, typed before it existed, fell
 #: through to the default - driving every plant in the ledger - with nothing saying the argument
 #: had been ignored. An argument nothing reads is not a request that was honoured.
 FLAGS = ("--add", "--reanchor", "--retire", "--merge-from", "--recount", "--only", "--owed",
-         "--adopt")
+         "--adopt", "--all")
 
 
 def committed_ledger():
@@ -897,6 +1073,14 @@ def main(argv):
     if unknown:
         print("REFUSING: %s is not a flag this reads (%s) - an ignored argument runs the "
               "default, which drives every plant" % (", ".join(unknown), ", ".join(FLAGS)))
+        return 2
+    # NOTHING IS `--all` BY OMISSION. Measured 2026-09-27 on the project this came from: its copy
+    # run with no argument, meant as a quick look, started a drive of every held plant - about 75
+    # minutes of defects laid on disk in turn - and one of them held another session's every act.
+    if len(argv) <= 1:
+        print("REFUSING: say what to drive. `--all` drives every plant in the ledger (the whole "
+              "suite's worth of planted defects, one after another); `--only X` the plants whose "
+              "test id holds X; `--owed` the ratchets only. " + ", ".join(FLAGS))
         return 2
     for flag in ("--add", "--reanchor"):
         if flag in argv:
@@ -988,6 +1172,19 @@ def main(argv):
     lines, trouble = ratchet_problems(ledger)
     print(LF.join(lines))
     problems.extend(trouble)
+    # AND AGAINST THE COMMITTED LEDGER, not only against itself: a count equal to its own ceiling
+    # says nothing about a ceiling raised to meet it (measured 2026-10-06 - the commit went
+    # through). A write no hook saw is held to HEAD here, by the rule the write hook asks.
+    committed = committed_ledger()
+    if committed is None:
+        problems.append("git could not show the committed ledger, so whether a ceiling rose "
+                        "since HEAD is UNKNOWN - and unknown is not unchanged")
+    elif committed:
+        try:
+            held = json.loads(committed)
+        except ValueError:
+            held = None
+        problems.extend("since HEAD: %s" % line for line in ceiling_rises(held, ledger))
     for key, matches in stale_anchors(ledger):
         problems.append("%s: its anchor matches %d time(s), not once - re-anchor it in the same "
                         "change with `--reanchor`, driven red" % (key, matches))

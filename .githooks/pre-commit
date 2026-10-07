@@ -11,14 +11,20 @@
 #                    while building its message is an allow (section 16)
 #   prove_plants     no guard class without a plant, none proven only at its own site, and the
 #                    must_say debt under its ceiling (section 2) - ratchets only; driving every
-#                    plant is `python -B tools/prove_plants.py`, and the commit-msg gate drives
-#                    each NEW one.
+#                    plant is `python -B tools/prove_plants.py --all`, and the commit-msg gate
+#                    drives each NEW one.
 #
 # Every one of these is ALSO asked earlier, at the act it guards - the write, the record, the
 # command - by the hooks in .claude/hooks. This gate is the backstop for a commit made outside
 # the session, and `guard_command_rules.py` refuses a commit from the session that would skip it.
-python -B tools/bundle_install.py || exit 1
-python -B tools/tiers.py || exit 1
-python -B tools/timeouts.py || exit 1
-python -B tools/format_strings.py || exit 1
-exec python -B tools/prove_plants.py --owed
+# THE INTERPRETER THIS MACHINE HAS. `python` alone refused every commit on a machine that only
+# has `python3` - macOS since 12.3, Debian and Ubuntu without python-is-python3: the gate died
+# on "python: not found" before it asked anything. `python` first, because on Windows
+# `python3` can be the Store stub that exits 9009 without running anything.
+PY=python
+command -v python >/dev/null 2>&1 || PY=python3
+"$PY" -B tools/bundle_install.py || exit 1
+"$PY" -B tools/tiers.py || exit 1
+"$PY" -B tools/timeouts.py || exit 1
+"$PY" -B tools/format_strings.py || exit 1
+exec "$PY" -B tools/prove_plants.py --owed

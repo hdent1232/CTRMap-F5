@@ -91,31 +91,37 @@ def invokes(stage, scripts=None):
     `scripts` is a list of paths or of (path, sub-command) pairs; the project's list by default.
     A sub-command narrows the rule to the verb that does the damage: `sweep.py run` puts mutants
     on disk and `sweep.py status` reads a ledger.
+
+    WHAT RUNS, NOT THE FIRST WORD TYPED. This read the first word, so `timeout 3000 python <sweep>`
+    - the foreground kill this file records costing a restored file - was no sweep, nor was
+    `env A=1 python`, `bash -c 'python ...'` or `python3.12`. `bundle_shell.runs` hands each
+    program with its runners peeled and every shell's command read; an interpreter is any
+    `python`, `python3.12` or `py`, by shape.
     """
     table = destructive() if scripts is None else [
         s if isinstance(s, tuple) else (s, None) for s in scripts]
-    for command in bundle_shell.split_commands(stage):
-        words = command.strip().split()
+    for words, _background in bundle_shell.runs(stage):
         if not words:
             continue
-        head = os.path.basename(words[0].strip(chr(34) + chr(39))).lower()
-        if any(_is(words[0], words[1:], script, sub) for script, sub in table):
+        typed = [(t if t is not None else w).strip(chr(34) + chr(39)) for w, t in words]
+        if any(_is(typed[0], typed[1:], script, sub) for script, sub in table):
             return True
         # `python -m ruff check tools/audit/weigh.py` runs RUFF. With -m or -c the
         # interpreter runs THAT module and everything after is the module's argv, so the
         # script is data there - as much as it is to `grep`. Refusing a lint is how a guard
         # gets switched off.
-        if "-m" in words or "-c" in words:
+        if not re.fullmatch(r"py|pythonw?[0-9.]*", bundle_shell.program_of(words[0][0])):
             continue
-        if head in INTERPRETERS or head.endswith(".exe") and head[:-4] in INTERPRETERS:
-            # The interpreter runs the FIRST .py on the line; everything after it is that
-            # script's own argv. `python tools/dev/safe.py check-script mutate.py` runs
-            # safe.py. Matching any word would refuse that; matching the first non-flag
-            # word would let `python -W ignore mutate.py` through, which is worse.
-            at = next((i for i, w in enumerate(words) if i and w.endswith(".py")), None)
-            if at is not None and any(_is(words[at], words[at + 1:], script, sub)
-                                      for script, sub in table):
-                return True
+        if any(re.fullmatch(r"-[A-Za-z]*[mc]", w) for w, _t in words[1:]):
+            continue
+        # The interpreter runs the FIRST .py on the line; everything after it is that
+        # script's own argv. `python tools/dev/safe.py check-script mutate.py` runs
+        # safe.py. Matching any word would refuse that; matching the first non-flag
+        # word would let `python -W ignore mutate.py` through, which is worse.
+        at = next((i for i, w in enumerate(typed) if i and w.endswith(".py")), None)
+        if at is not None and any(_is(typed[at], typed[at + 1:], script, sub)
+                                  for script, sub in table):
+            return True
     return False
 
 
@@ -169,11 +175,13 @@ def piped_consumers(command):
 
 
 def buffers(stage):
-    """Does this pipeline stage read to EOF before emitting, or close the pipe early?"""
-    words = stage.strip().split()
+    """Does this pipeline stage read to EOF before emitting, or close the pipe early? Asked of the
+    program that RUNS - `timeout 9 tail -5` and `(tail -5)` are `tail`."""
+    found = [words for words, _bg in bundle_shell.runs(stage) if words]
+    words = [w for w, _t in found[0]] if found else stage.strip().split()
     if not words:
         return False
-    name = os.path.basename(words[0])
+    name = bundle_shell.program_of(words[0])
     if name in BUFFERING:
         return True
     lowered = name.lower()
@@ -206,8 +214,7 @@ def verdict(command, background):
 def _verdict_for(command, background):
     """One command - no `;`, `&&` or `||` inside it."""
     producer = command.split("|")[0]
-    consumers = [os.path.basename(stage.strip().split()[0])
-                 for stage in piped_stages(command) if buffers(stage)]
+    consumers = [stage.strip().split()[0] for stage in piped_stages(command) if buffers(stage)]
     # THE CLASS IS "a sweep that can be killed", not "a sweep behind a pipe". The foreground
     # timeout is the other member, and it cost a restored file an hour after the pipe rule
     # went in. Both are refused here.

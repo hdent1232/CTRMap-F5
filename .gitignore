@@ -55,3 +55,6 @@ __pycache__/
 # planted file. It exists for the length of one plant; committed by a `git add -A`
 # taken meanwhile, it would tell every later judgement that a run holds that file.
 .mutation-in-flight
+
+# What the verification bootstrap's hooks write while they run - never shipped, never tracked.
+/.claude/bundle-hooks/.fanout-count

@@ -26,7 +26,9 @@ were followed is exactly the job they should not have to do. What is refused:
   * a sentence of the owner's that no item covers, or an item claiming one it shares no word with
   * an item left open
   * `done` without evidence the transcript or git can check: a `backticked` command or path that
-    appears in a tool call made AFTER the request and did not fail, or a commit made after it
+    appears in a tool call made AFTER the request and did not fail, or a commit made after it -
+    never this ledger's own verb, which carries the evidence it cites, nor a command that only
+    says it (`echo`); refused by the `done` verb itself, when it is written
   * `answered` for a request that asked no question, or an answer the owner was never shown
   * `asked`, `blocked` or `declined` whose text never reached the owner - each must appear in
     something the agent SAID after the request, because a refusal nobody sees is a deletion
@@ -331,9 +333,33 @@ def _strings(node, out):
     return out
 
 
+#: A command that only RECORDS to this ledger, or only SAYS something, did no work: the `done`
+#: verb carries the evidence it cites in its own arguments, and `echo` carries whatever it is
+#: handed. Measured 2026-10-06: the verb's own call, after the request and exiting 0, was accepted
+#: as the evidence it was recording - writing the evidence was the evidence.
+RECORDS_OR_SAYS = re.compile(r"^\s*(?:echo|printf|Write-Output|Write-Host|Write-Information)\b"
+                             r"|(?:^|[\s/\\\"'])request_ledger\.py\b", re.I)
+
+
+def evidence_strings(given):
+    """The strings of one call's input that can evidence work. A call carrying commands counts by
+    them alone - its `description` is the agent's prose - less every command that, read through
+    its wrappers, only records to this ledger or only says something."""
+    commands = bundle_shell.commands({"tool_input": given})
+    if not commands:
+        return _strings(given, [])
+    out = []
+    for command in commands:
+        for one in bundle_shell.split_commands(command):
+            if not bundle_shell.every_command_is(
+                    one, lambda each: bool(RECORDS_OR_SAYS.search(each))):
+                out.append(flat(one))
+    return out
+
+
 def calls(rows):
-    """{tool_use id: {index, name, input, strings, error, result}} - every tool call and what
-    came back, as the harness recorded them."""
+    """{tool_use id: {index, name, input, strings, evidence, error, result}} - every tool call and
+    what came back, as the harness recorded them."""
     out = {}
     for index, row in enumerate(rows):
         parts = [part for part in _parts(row) if isinstance(part, dict)]
@@ -347,6 +373,7 @@ def calls(rows):
                 out[part["id"]] = {"index": index, "name": part.get("name"),
                                    "input": part.get("input") or {},
                                    "strings": _strings(part.get("input"), []),
+                                   "evidence": evidence_strings(part.get("input") or {}),
                                    "error": None, "result": None, "agent": None}
             elif part.get("type") == "tool_result" and part.get("tool_use_id") in out:
                 call = out[part["tool_use_id"]]
@@ -448,7 +475,7 @@ def evidence_holds(said, request, rows, root, made=None):
         span = flat(span)
         for call in made.values():
             if call["index"] > request["index"] and call["error"] is False \
-                    and any(span in value for value in call["strings"]):
+                    and any(span in value for value in call["evidence"]):
                 return True
     after = _epoch(request.get("at"))
     return any(_commit_after(sha, after, root) for sha in COMMIT.findall(said))
@@ -1051,6 +1078,34 @@ def find_transcript(session):
     return None
 
 
+def beyond_clauses(request, covers):
+    """Why `covers` names a clause `request` does not have, or ''."""
+    said = len(clauses(request["text"]))
+    beyond = [n for n in covers if not 1 <= n <= said]
+    if not beyond:
+        return ""
+    return ("request %s has clauses 1-%d, so it has no clause %s - `show` numbers them"
+            % (request["key"], said, ", ".join(str(n) for n in beyond)))
+
+
+def resolution_problem(verb, said, request, rows, root):
+    """Why this resolution may not be recorded NOW, or '' - every check `mechanical` makes that
+    does not wait on the message to the owner."""
+    if request is None:
+        return "this item belongs to no request this ledger holds"
+    if len(flat(said)) < MINIMUM[verb]:
+        return ("%s in %d characters is a label, not a reason - %d are the floor"
+                % (verb, len(flat(said)), MINIMUM[verb]))
+    if verb == "answered" and "?" not in request["text"]:
+        return ("request %s asked no question - work asked for is done, asked about, blocked "
+                "or declined" % request["key"])
+    if verb == "done" and not evidence_holds(said, request, rows, _root(root)):
+        return ("nothing checkable stands behind this yet: name a `command` or path that a tool "
+                "call made after request %s carried and did not fail - not this verb, not an "
+                "echo - or a commit made after it" % request["key"])
+    return ""
+
+
 def _covers(text):
     """`1,3` -> [1, 3]; `-` -> []; anything else -> None."""
     if text.strip() == "-":
@@ -1098,6 +1153,15 @@ def main(argv, root=None):
         if len(hits) != 1 or covers is None:
             print("usage: cover <item> <clauses, e.g. 1,3>")
             return 2
+        # THE SAME ACT BY ITS OTHER VERB: `item` refused a clause past the request's last, and
+        # `cover` re-pointed an item at one with nothing asked.
+        request = {r["key"]: r for r in held_requests(asked, held["since"])}.get(
+            hits[0].get("request"))
+        beyond = beyond_clauses(request, covers) if request else (
+            "item %s belongs to no request this ledger holds" % argv[2])
+        if beyond:
+            print(beyond)
+            return 2
         hits[0]["covers"] = covers
         save(session, held, root)
         return 0
@@ -1106,11 +1170,18 @@ def main(argv, root=None):
         print(prompt if prompt else "no review is owed")
         return 0 if prompt else 1
     if verb == "item" and len(argv) == 5:
-        keys = [r["key"] for r in held_requests(asked, held["since"])]
+        held_now = {r["key"]: r for r in held_requests(asked, held["since"])}
         covers = _covers(argv[3])
-        if argv[2] not in keys or covers is None:
+        if argv[2] not in held_now or covers is None:
             print("usage: item <request> <clauses it covers, e.g. 1,3 or -> \"<what it asks>\" - "
                   "`show` lists the requests and their clauses")
+            return 2
+        # A CLAUSE THE OWNER NEVER WROTE IS REFUSED HERE, where it is written - `uncovered` refused
+        # it only at the end of the turn, after the item was recorded and built on (measured
+        # 2026-10-06: `item <request> 3` accepted over a request of two clauses).
+        beyond = beyond_clauses(held_now[argv[2]], covers)
+        if beyond:
+            print(beyond)
             return 2
         count = sum(1 for i in held["items"] if i.get("request") == argv[2])
         held["items"].append({"id": "%s.%d" % (argv[2], count + 1), "request": argv[2],
@@ -1122,6 +1193,15 @@ def main(argv, root=None):
         hits = [i for i in held["items"] if i.get("id") == argv[2]]
         if len(hits) != 1:
             print("no item %s - `show` lists them" % argv[2])
+            return 2
+        # WHAT CAN BE KNOWN WHEN THE VERB IS WRITTEN IS ASKED WHEN IT IS WRITTEN. The end of the
+        # turn refused these after the resolution was recorded and the turn built on it; only
+        # whether the owner was TOLD has to wait for the message that tells them.
+        request = {r["key"]: r for r in held_requests(asked, held["since"])}.get(
+            hits[0].get("request"))
+        why = resolution_problem(verb, argv[3], request, rows, root)
+        if why:
+            print(why)
             return 2
         hits[0]["status"], hits[0]["said"] = verb, argv[3]
         save(session, held, root)

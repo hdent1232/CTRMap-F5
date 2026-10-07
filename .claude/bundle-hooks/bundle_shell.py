@@ -233,6 +233,20 @@ def is_tool_call(payload):
         return False
 
 
+def owner_turn_ends(payload):
+    """Is this payload the end of the OWNER's turn - not a tool call, and no event but `Stop`?
+
+    A SUBAGENT'S END HAS A STOP'S SHAPE. `SubagentStop` carries no tool, and exit 2 there keeps
+    the SUBAGENT running: a turn-end guard that judged it would hold every subagent behind the
+    owner's last message or a change the subagent never made. `guard_requests` asked the event's
+    name; the promise, claim and held-change guards asked only the shape, and judged a subagent's
+    end as the turn's (measured 2026-10-06). One predicate, asked by all four."""
+    try:
+        return not is_tool_call(payload) and payload.get("hook_event_name") in (None, "Stop")
+    except AttributeError:
+        return False
+
+
 def _collect(node, depth, keys, out):
     if depth > MAX_DEPTH:
         return
@@ -314,6 +328,28 @@ def _heredoc_delimiters(line):
         raw = line[match.start(1):match.end(1)]
         found.append(raw.strip("'" + chr(34)))
     return found
+
+
+def heredoc_split(command):
+    """(the command's own line, the text its heredoc hands it on stdin - or None).
+
+    ONE READING OF "WHAT IS THE COMMAND AND WHAT IS ITS INPUT". `separated` keeps a heredoc's body
+    with the command that opened it, and lexed whole, the body's words became the command's own:
+    `git commit -F - <<'EOF'` with a message that MENTIONS `--no-verify` was refused as skipping
+    the gate, and the message itself as unreadable (measured 2026-10-06, eighteen refusals over
+    one session's calls). A heredoc opened inside quotes - `-m "$(cat <<'EOF' ...)"` - is part of
+    an argument, not stdin, and is left where it is.
+    """
+    line, lf, rest = (command or "").partition(LF)
+    delimiters = _heredoc_delimiters(line)
+    if not lf or not delimiters:
+        return command, None
+    body = []
+    for text in rest.split(LF):
+        if text.strip() == delimiters[0]:
+            break
+        body.append(text)
+    return line, LF.join(body) + LF
 
 
 def split_commands(line):
@@ -544,6 +580,8 @@ def peeled(stage):
         name = program_of(word)
         if word != "&" and name not in _RUNS_NEXT:
             break
+        if name == "timeout" and index + 1 < len(stage) and stage[index + 1][0].lower() == "/t":
+            break                       # cmd's `timeout /t 115` is a wait, not a runner
         valued = _RUNNER_VALUED.get(name, ())
         index += 1
         while index < len(stage) and (stage[index][0].startswith("-") or (
@@ -652,9 +690,129 @@ def _runs(command):
     return out if handed_on else None
 
 
+#: Words a shell reads before the program of a compound command - `for ...; do X; done`.
+KEYWORDS = frozenset(("do", "then", "else", "elif", "if", "while", "until", "!", "time"))
+
+
+def _ended_stages(held):
+    """`stages`, each with the word that ended it: `&` alone means it was sent to the background."""
+    out, current = [], []
+    for word, typed in held:
+        if word in ("(", ")", "{", "}") or (word and set(word) <= set("|&")
+                                            and not (word == "&" and not current)):
+            if current:
+                out.append((current, word))
+            current = []
+            continue
+        current.append((word, typed))
+    if current:
+        out.append((current, ""))
+    return out
+
+
+def runs(text_, _depth=0):
+    """[(words, backgrounded)] - every PROGRAM this shell text runs, in order: through `;`, `&&`,
+    `|`, a newline and a group, with the runners in front of it peeled (`env`, `timeout 700`,
+    `nice`, `VAR=value`) and into every command a shell or `eval` is handed, to MAX_NESTING. A
+    command that cannot be split comes back as (None, False) - unknown, never nothing.
+
+    THE PROGRAM IS WHAT RUNS, NOT THE FIRST WORD TYPED. Three guards read a command's first word:
+    measured 2026-10-06, `timeout 700 sleep 600` was no sleep, `timeout 3000 python <sweep>` in the
+    foreground no sweep, and `timeout 60 python <audit tool>` beside a mutant no run of one. A
+    guard asking which program runs asks this - the one reader of that, as `every_command_is` is
+    the one reader of whether every command is excused."""
+    out = []
+    for command in split_commands(text_):
+        if NEUTRAL.match(command):
+            continue
+        line, _body = heredoc_split(command)
+        held = pairs(line)
+        if held is None:
+            out.append((None, False))
+            continue
+        for stage, ended in _ended_stages(held):
+            while stage and stage[0][0] in KEYWORDS:
+                stage = stage[1:]
+            rest, _moves = peeled(stage)
+            if not rest:
+                continue
+            inner, trouble = handed(rest)
+            if trouble:
+                out.append((None, False))
+            elif inner is not None and _depth < MAX_NESTING:
+                out.extend(runs(inner, _depth + 1))
+            else:
+                out.append((rest, ended == "&"))
+    return out
+
+
+def texts(text_, _depth=0):
+    """The text and every command text a shell or `eval` in it is handed, at any depth - for a
+    question asked of a command's SHAPE, such as whether it loops, rather than of its programs."""
+    out = [text_ or ""]
+    if _depth >= MAX_NESTING:
+        return out
+    for command in split_commands(text_):
+        held = pairs(heredoc_split(command)[0])
+        for stage in stages(held) if held else []:
+            rest, _moves = peeled(stage)
+            inner = handed(rest)[0] if rest else None
+            if inner is not None:
+                out.extend(texts(inner, _depth + 1))
+    return out
+
+
+#: A SCRIPTED multi-agent run, by shape: a script that calls `agent(` or declares its `meta`, or
+#: one named by its path or resumed by its run - whatever the tool carrying it is called.
+_SCRIPTED = re.compile(r"\bagent\s*\(|\bexport\s+const\s+meta\b")
+
+
+def workflows(payload):
+    """Every SCRIPTED fan-out in this call, by shape - the other way a session launches agents.
+
+    THE NAME WAS THE TRIGGER. `guard_fanout` asked `tool == "Workflow"`, the trigger-by-name this
+    folder was rebuilt to remove: a script of `agent(...)` calls handed to a tool called anything
+    else launched every agent in it uncounted. A saved one called only by its `name` carries no
+    shape of its own, so `guard_fanout` still asks the name beside this, never instead of it."""
+    found = []
+
+    def walk(node, depth):
+        if depth > MAX_DEPTH:
+            return
+        if isinstance(node, dict):
+            script = node.get("script")
+            if ("scriptPath" in node or "resumeFromRunId" in node
+                    or (isinstance(script, str) and _SCRIPTED.search(script))):
+                found.append(node)
+            for value in node.values():
+                walk(value, depth + 1)
+        elif isinstance(node, (list, tuple)):
+            for value in node:
+                walk(value, depth + 1)
+
+    try:
+        walk(payload.get("tool_input"), 0)
+    except AttributeError:
+        return []
+    return found
+
+
+#: What makes a `prompt` the brief of an AGENT rather than a picture's caption: a key that starts
+#: a model working on it - an agent type or a task description, an environment or a repository a
+#: session is started in, a schedule a routine starts one on. A prompt alone is not a launch: an
+#: image generator takes one too.
+LAUNCH_KEYS = ("subagent_type", "description", "environment_id", "source_url", "cron_expression",
+               "run_once_at", "create_new_session_on_fire", "persistent_session_id")
+
+
 def _launch_shaped(node):
+    """A REMOTE OR SCHEDULED SESSION IS AN AGENT TOO. This asked for `subagent_type` or
+    `description` only, so a session started in the cloud on a prompt, or a routine that starts
+    one on a schedule - an agent working a brief on the same metered plan - was never counted,
+    capped or asked for a structured result (measured 2026-10-06 against the session tools
+    offered here)."""
     return (isinstance(node, dict) and isinstance(node.get("prompt"), str)
-            and ("subagent_type" in node or "description" in node))
+            and any(key in node for key in LAUNCH_KEYS))
 
 
 def launches(payload):
@@ -684,6 +842,57 @@ def launches(payload):
     except AttributeError:
         return []
     return found
+
+
+def alive(pid):
+    """Whether `pid` is a live process, answering ALIVE whenever it cannot tell. THE ONE PROBE.
+
+    `os.kill(pid, 0)` IS NOT A PROBE ON WINDOWS. Python routes it through
+    `OpenProcess(PROCESS_TERMINATE)` for every signal, so a process this account may not open for
+    termination raises `[WinError 87]` - measured on 2026-09-08 against the process table, where it
+    called three live processes dead, one of them the sweep runner. And on POSIX a process another
+    account owns raises a PERMISSION error, which is not an absence either: two guards each kept a
+    copy of this function, and one of them read that error as a dead process.
+
+    UNCERTAINTY IS ALIVE. Every answer short of "the operating system says this pid does not
+    exist" counts as running. A pid that is not a positive number is no process.
+    """
+    import os
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if os.name != "nt":
+        return posix_alive(pid)
+    import ctypes
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(0x1000, False, pid)      # QUERY_LIMITED_INFORMATION
+    if not handle:
+        # 87 is ERROR_INVALID_PARAMETER - Windows' answer for a pid that does not exist. Every
+        # other failure is a permission answer, and permission-denied is not absence.
+        return kernel32.GetLastError() != 87
+    code = ctypes.c_ulong()
+    ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+    kernel32.CloseHandle(handle)
+    if not ok:
+        return True                          # could not read the exit code: not an absence
+    return code.value == 259                 # STILL_ACTIVE
+
+
+def posix_alive(pid):
+    """`alive`'s POSIX half, apart so it can be asked on any machine: `os.kill(pid, 0)` answers
+    "no such process" for a pid that is gone, and anything else - a permission error above all,
+    the answer for a live process another account owns - is not an absence."""
+    import os
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True                          # permission, or anything else: not an absence
+    return True
 
 
 #: WHERE A PROJECT NAMES THE SCRIPTS THAT LEAVE DAMAGE WHEN KILLED MID-RUN - one path per line,

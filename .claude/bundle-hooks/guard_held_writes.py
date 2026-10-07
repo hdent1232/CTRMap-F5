@@ -56,8 +56,16 @@ READERS = (
     r"^\s*git\s+(-C\s+\S+\s+)?(status|diff|log|show|rev-parse|ls-files|blame)\b",
     r"^\s*(ls|dir|cat|head|tail|wc|stat|file|grep|rg|findstr|pwd)\b",
     r"^\s*sed\s+-n\b(?!.*\s-i)",
-    r"^\s*Get-(ChildItem|Content|Item|ItemProperty|Location)\b",
+    r"^\s*Get-(ChildItem|Content|Item|ItemProperty|Location|FileHash)\b",
     r"^\s*(Test-Path|Select-String)\b",
+    # Asked of the guard stack by `guard_command_rules` too, where an honest session reads it
+    # with these (measured over one session's 165 commands, 2026-10-06): each looks and writes
+    # nothing, and the ones that can write are excluded by the flag that makes them.
+    r"^\s*(diff|cmp|sha\d*sum|md5sum|cksum|du|tree|less|more|od|xxd|hexdump|strings)\b",
+    r"^\s*find\b(?!.*\s-(delete|exec|execdir|ok|okdir|fprint\w*|fls)\b)",
+    r"^\s*awk\b(?!.*\s-i\b)",
+    r"^\s*(python[0-9.]*\s+(-\S+\s+)*-m\s+)?(ruff\s+check|pyflakes|pycodestyle|flake8)\b"
+    r"(?!.*\s--(fix|unsafe-fixes)\b)",
 )
 
 #: git's ways back to the last committed text, which `judge_unread` never holds.
@@ -162,8 +170,8 @@ def verdict(payload, root):
     call = bundle_shell.is_tool_call(payload)
     if call and looks(payload):
         return 0, ""
-    if not call and payload.get("stop_hook_active"):
-        return 0, ""
+    if not call and (payload.get("stop_hook_active") or not bundle_shell.owner_turn_ends(payload)):
+        return 0, ""                   # a second stop, or a SUBAGENT's end - never held here
     if bundle_env.allowed("ALLOW_HELD_CHANGES"):
         return 0, ""
     # A JUDGE THAT IS ITSELF A PLANT IS ASKED NOTHING: what it holds is the plant's verdict. The

@@ -57,18 +57,11 @@ def _replace(text, old, new, every):
 
 def proposed(payload, root):
     """(rel, before, after) for a call that writes one project file, or None when it does not."""
-    tool_input = (payload or {}).get("tool_input")
-    if not isinstance(tool_input, dict):
+    rel = bundle_rules.judged_at_write(payload, root)       # the one answer, asked first
+    if not rel:
         return None
-    target = tool_input.get("file_path") or tool_input.get("path")
-    if not isinstance(target, str) or not target:
-        return None
-    path = os.path.abspath(target if os.path.isabs(target) else os.path.join(root, target))
-    rel = bundle_rules.rel_of(root, path)
-    if rel.startswith(".."):
-        return None
-    if rel == bundle_rules.locked(root):
-        return None
+    tool_input = payload["tool_input"]
+    path = os.path.join(root, rel.replace("/", os.sep))
     try:
         with io.open(path, encoding="utf-8", errors="replace") as handle:
             before = handle.read()
@@ -94,6 +87,12 @@ def proposed(payload, root):
     return rel, before, after
 
 
+#: The one answer to "was this write judged before it landed" - `bundle_rules.judged_at_write`,
+#: which the moment-after asks too. It lives beside the judge because a project may decline this
+#: hook, and the moment-after must not import a file that is not there.
+judged_path = bundle_rules.judged_at_write
+
+
 def into_git(payload, root):
     """The project-relative path when this call writes INSIDE the repository's git folder, else ''.
 
@@ -101,15 +100,24 @@ def into_git(payload, root):
     gate off, and `.git/gate-stamps` holds the stamps that say a commit passed the gate - a write
     to either by a tool is a gate skipped or a stamp forged, however the text reads. A name that
     merely starts with `.git` - `.gitignore`, `.githooks/` - is a project file like any other.
+
+    AND WHEREVER GIT KEEPS IT. In a linked worktree `.git` is a file naming a folder OUTSIDE the
+    worktree, and a Write into that folder's `config` was let through as a file outside the
+    project. `bundle_rules.git_folders` asks git where its folders are.
     """
-    tool_input = (payload or {}).get("tool_input")
-    target = tool_input.get("file_path") or tool_input.get("path") if isinstance(
-        tool_input, dict) else None
-    if not isinstance(target, str) or not target:
-        return ""
-    path = os.path.abspath(target if os.path.isabs(target) else os.path.join(root, target))
-    rel = bundle_rules.rel_of(root, path)
-    return rel if rel.replace(chr(92), "/").split("/")[0].lower() == ".git" else ""
+    folders = None
+    for target in bundle_shell.paths(payload):          # every path, at any depth
+        path = os.path.abspath(target if os.path.isabs(target) else os.path.join(root, target))
+        rel = bundle_rules.rel_of(root, path)
+        if rel.replace(chr(92), "/").split("/")[0].lower() == ".git":
+            return rel
+        real = os.path.normcase(os.path.normpath(path))
+        folders = bundle_rules.git_folders(root) if folders is None else folders
+        for folder in folders:
+            folder = os.path.normcase(folder)
+            if real == folder or real.startswith(folder.rstrip(os.sep) + os.sep):
+                return path.replace(chr(92), "/")
+    return ""
 
 
 def verdict(payload, root):

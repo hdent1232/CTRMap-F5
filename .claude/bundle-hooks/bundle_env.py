@@ -38,8 +38,9 @@ ADAPT = ("PREFIX",)
 #: Variables this bundle does NOT own and must not rename. `CLAUDE_PROJECT_DIR` is set by the
 #: agent harness; prefixing it would read as unset and send a hook looking in the wrong tree.
 #: `CLAUDE_CODE_SESSION_ID` is the harness naming the session a command runs in, which is how the
-#: request ledger's verbs find the transcript they account for.
-FOREIGN = ("CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID")
+#: request ledger's verbs find the transcript they account for. `JAVA_HOME` is the JDK's own,
+#: where the write-time Java parse finds `javac` when it is not on the PATH.
+FOREIGN = ("CLAUDE_PROJECT_DIR", "CLAUDE_CODE_SESSION_ID", "JAVA_HOME")
 
 
 def name(suffix):

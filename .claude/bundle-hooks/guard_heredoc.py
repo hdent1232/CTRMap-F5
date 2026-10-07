@@ -25,8 +25,10 @@ guards kept reporting OK.
 THE RULE: file content never travels in a command string.
 
     writing a file        -> the Write tool. It is exact and it is not a shell.
-    running a script      -> Write it, then `python tools/dev/safe.py run-script <path>`,
-                             which compiles it and refuses the mangling this hook is about.
+    running a script      -> Write it with the Write tool, then run the FILE with its
+                             interpreter: `python <path>`, `bash <path>`. (The project this came
+                             from ran it through a checker of its own, `tools/dev/safe.py`; it
+                             ships nowhere, and a refusal must not send its reader there.)
     a genuine one-liner   -> still fine; a short heredoc feeding an interpreter is allowed.
 
 THE OTHER SPELLINGS OF THE SAME CHANNEL. A heredoc is bash's way of carrying a body inside a
@@ -236,8 +238,93 @@ def inline_programs(command):
     return found
 
 
+#: Programs that write their arguments: content with an escape in it, handed to one of these and
+#: sent into a file, is file content in a command string.
+_SAYS = ("printf", "echo", "write-output", "write-host")
+
+#: Where a stage's output lands in a FILE: a redirect to a path, or a program that writes one.
+_FILE_WRITERS = ("tee", "set-content", "add-content", "out-file", "sc", "ac")
+
+
+def escaped_into_file(command):
+    """The command that sends content carrying a backslash escape into a FILE through `printf` or
+    `echo`, or ''.
+
+    THE SAME CHANNEL, SPELLED AS A ONE-LINER. A heredoc into a file is refused at any length; so
+    is an inline program writing escaped content. `printf 'a\\nb' > f` is the same bytes - an
+    escape inside a command string, landing in a file - and the escape is exactly what arrived
+    mangled six times (`\\b` as 0x08). A plain word echoed into a file carries no escape and is
+    left alone; an escape echoed to the screen lands nowhere."""
+    for one in bundle_shell.split_commands(command):
+        held = bundle_shell.pairs(bundle_shell.heredoc_split(one)[0])
+        if not held:
+            continue
+        lands = False
+        for at, (word, _typed) in enumerate(held):
+            if re.fullmatch(r"&?>>?\|?", word) and at + 1 < len(held):
+                target = held[at + 1][1] or held[at + 1][0]
+                if not target.startswith("&") and target.lower() not in ("/dev/null", "nul",
+                                                                           "$null"):
+                    lands = True
+        stages = [words for words, _bg in bundle_shell.runs(one) if words]
+        lands = lands or any(bundle_shell.program_of(words[0][0]) in _FILE_WRITERS
+                             for words in stages)
+        if not lands:
+            continue
+        for words in stages:
+            if bundle_shell.program_of(words[0][0]) in _SAYS and any(
+                    chr(92) in (typed if typed is not None else word)
+                    for word, typed in words[1:]):
+                return one
+    return ""
+
+
+def long_programs(command):
+    """[(program, body lines, writes with an escape)] for every program handed code as an
+    argument - `-c`, `-e`, `-r`, `-Command` - whatever the program is called.
+
+    A LIST OF INTERPRETERS IS THE CLASS MINUS THE NEXT ONE. `_INLINE_PROGRAM` names python, py,
+    node, pwsh, powershell, bash and sh, so `perl -e`, `ruby -e`, `zsh -c` and `php -r` carried a
+    long program unasked. Asked of every program's flags instead, and of every command a shell in
+    the text is handed - read, not run."""
+    found = []
+    for text in bundle_shell.texts(command):
+        for one in bundle_shell.split_commands(text):
+            held = bundle_shell.pairs(bundle_shell.heredoc_split(one)[0])
+            for stage in bundle_shell.stages(held) if held else []:
+                rest, _moves = bundle_shell.peeled(stage)
+                for at, (word, _typed) in enumerate(rest[1:-1], 1):
+                    if re.fullmatch(r"-[A-Za-z]*[cer]|-command", word, re.I):
+                        body = rest[at + 1][1] if rest[at + 1][1] is not None else rest[at + 1][0]
+                        found.append((bundle_shell.program_of(rest[0][0]),
+                                      body.count(chr(10)) + 1,
+                                      bool(_BODY_WRITES.search(body)) and chr(92) in body))
+                        break
+    return found
+
+
 def verdict(command):
     """(deny?, reason). Separated from the I/O so it can be driven directly by a test."""
+    escaped = escaped_into_file(command)
+    if escaped:
+        return True, (
+            bundle_shell.policy(__file__) + "\n"
+            "This writes content carrying a backslash escape into a file through a command "
+            "string: %s\n\n"
+            "That is the channel this project has had content mangled through six times - a "
+            "backslash-n arriving as a real newline, a backslash-b arriving as 0x08 in a file "
+            "that still compiled. A heredoc into a file is refused for it; this is the same "
+            "bytes on one line.\n\n"
+            "Use the Write tool. It is exact and it is not a shell.\n" % escaped[:160])
+    for program, body, writes in long_programs(command):
+        if body > MAX_SCRIPT_LINES or writes:
+            return True, (
+                bundle_shell.policy(__file__) + "\n"
+                "This hands %s a %d-line program as a command-line argument%s - the same shell "
+                "string one flag away from a heredoc, whatever the interpreter.\n\n"
+                "Write the program to a file with the Write tool and run the file.\n"
+                % (program, body, ", writing a file whose content carries backslash escapes"
+                   if writes else ""))
     for body, writes in here_strings(command):
         if writes or body > MAX_SCRIPT_LINES:
             return True, (
@@ -245,8 +332,8 @@ def verdict(command):
                 "This carries a %d-line PowerShell here-string %s. A here-string is a heredoc "
                 "with another name: the body travels inside the command string, which is the "
                 "channel this project has had content mangled through six times.\n\n"
-                "Use the Write tool for a file. For a script, Write it and run it through "
-                "`python tools/dev/safe.py run-script <path>`.\n"
+                "Use the Write tool for a file. For a script, Write it and run the file with "
+                "its interpreter - `pwsh -File <path>`, `python <path>`.\n"
                 % (body, "into a file" if writes else "as a program"))
     for body, writes in inline_programs(command):
         if body > MAX_SCRIPT_LINES or writes:
@@ -278,9 +365,8 @@ def verdict(command):
                 "A %d-line heredoc (<<%s) is a file being typed through a channel that loses "
                 "bytes, not a one-liner. Five of this project's six heredoc manglings were "
                 "exactly this shape: an edit script inlined into the command.\n\n"
-                "Write the script with the Write tool, then run it through the checker that "
-                "refuses the mangling:\n"
-                "    python tools/dev/safe.py run-script <path>\n"
+                "Write the script with the Write tool, then run the file with its interpreter:\n"
+                "    python <path>        (or bash <path>, node <path>)\n"
                 "Short heredocs feeding an interpreter (up to %d lines) are still allowed.\n"
                 % (body, delimiter, MAX_SCRIPT_LINES))
     return False, None

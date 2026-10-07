@@ -63,8 +63,12 @@ PREFIX = "guard_"
 #: blinks ten terminals on every tool call is a hook somebody deletes within the hour.
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
-#: A guard gets this long to answer. Longer than any of them needs, short enough that a hung one
-#: is noticed rather than silently making every tool call slow.
+#: NOT ENFORCED, AND SAID SO. A guard is asked in this process (`ask`), where nothing can stop
+#: it, and some guards legitimately take minutes - a write-time rule runs the tests a write
+#: changes. What bounds a hung guard is the hook's own `timeout` in the settings (1800 s for
+#: `PreToolUse`), and a hook the harness times out is a hook it IGNORES: the call goes ahead. So
+#: every subprocess a guard starts is bounded (`tools/timeouts.py`), which is the bound that
+#: holds. This constant was documented here as "this long to answer" while nothing read it.
 TIMEOUT = 20
 
 #: The owner's way past the unreadable-command refusal, spelled once in `bundle_env`.
@@ -211,6 +215,28 @@ def denies(out):
     return None
 
 
+def said(out):
+    """The `systemMessage` a guard printed on stdout while ALLOWING, or None.
+
+    A GUARD THAT LETS A CALL THROUGH MAY STILL HAVE SOMETHING TO SAY. `guard_requests` allows a
+    turn whose transcript it cannot read - refusing would wedge it - and prints that the requests
+    were NOT checked, because "allowing silently would read as a clean ledger". This forwarded a
+    deny and nothing else, so under the dispatcher that sentence went nowhere, and "could not look"
+    reached the owner exactly as "nothing found" does.
+    """
+    for line in (out or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            held = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(held, dict) and isinstance(held.get("systemMessage"), str):
+            return held["systemMessage"]
+    return None
+
+
 def unreadable_refusal(payload):
     """The refusal for a call carrying a command nobody can read, or None when all of it read."""
     trouble = bundle_shell.unreadable(payload)
@@ -235,6 +261,7 @@ def verdict(raw, found=None):
     blind = unreadable_refusal(payload) if isinstance(payload, dict) else None
     if blind:
         return 2, blind, ""
+    heard = []
     for path in (guards() if found is None else found):
         code, err, out = ask(path, raw)
         denial = denies(out)
@@ -244,6 +271,9 @@ def verdict(raw, found=None):
             # rule gets written.
             return 0, "", denial
         if code == 0:
+            message = said(out)
+            if message:
+                heard.append(message)
             continue
         if code == 2:
             return 2, (err or out), ""
@@ -265,7 +295,7 @@ def verdict(raw, found=None):
         return 2, ("%s exited %s, which is neither allow (0) nor refuse (2). A guard whose "
                    "answer cannot be read must not be counted as permission.%s%s"
                    % (os.path.basename(path), code, LF, (err + out).strip()[-800:])), ""
-    return 0, "", ""
+    return 0, "", json.dumps({"systemMessage": LF.join(heard)}) if heard else ""
 
 
 def main():

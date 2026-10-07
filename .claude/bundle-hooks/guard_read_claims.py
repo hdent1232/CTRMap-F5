@@ -195,10 +195,14 @@ def main():
     except (ValueError, OSError):
         return 0
     # ONLY AT THE END OF A TURN - a payload that names a tool is a tool call (see guard_promise).
-    if not isinstance(payload, dict) or bundle_shell.is_tool_call(payload):
-        return 0
+    if not isinstance(payload, dict) or not bundle_shell.owner_turn_ends(payload):
+        return 0                       # a tool call, or a SUBAGENT's end - never the owner's
     entries = _entries(payload.get("transcript_path"))
     if entries is None:
+        # COULD NOT LOOK, AND SAID SO - never the silence that reads as no claim to check.
+        json.dump({"systemMessage": "turn-end claim check: the transcript could not be read, so "
+                                    "the claims in this turn's last message were NOT checked"},
+                  sys.stdout)
         return 0
     text = last_text(entries)
     if not text:
