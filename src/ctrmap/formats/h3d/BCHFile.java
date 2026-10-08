@@ -33,45 +33,49 @@ public class BCHFile {
 			buf = src.clone();
 			RandomAccessBAIS in = new RandomAccessBAIS(new ByteArrayInputStream(buf));
 			header = new BCHHeader();
-			header.magic = StringUtils.readString(in);
-			if (!header.magic.equals("BCH")) {
-				System.err.println("BCH magic mismatch! - " + src[0] + src[1] + src[2]);
+			if (!BchSections.isBch(buf)) {
+				//NOT A BCH IS AN ERROR, NOT AN EMPTY ONE. This returned with errorlevel 0, so every
+				//caller that asks errorlevel read bytes that are not a BCH as one holding no models
+				//and no textures - a merged prop pack that would not read came back "holds 0 of 1"
+				//instead of refused, once the check here grew from the magic to the whole header (F066)
+				errorlevel++;
 				return;
 			}
-			header.backwardCompatibility = in.readByte();
-			header.forwardCompatibility = in.readByte();
-			header.version = in.readShort();
-
-			header.mainHeaderOffset = in.readInt();
-			header.stringTableOffset = in.readInt();
-			header.gpuCommandsOffset = in.readInt();
-			header.dataOffset = in.readInt();
-			if (header.backwardCompatibility > 0x20) {
-				header.dataExtendedOffset = in.readInt();
+			//the header and the relocation words, read by the one reader of both (F066); this
+			//loader keeps its own version-by-version meaning of the words below
+			BchSections s;
+			try {
+				s = BchSections.read(buf);
+			} catch (IllegalArgumentException notWhole) {
+				throw new IOException(notWhole.getMessage(), notWhole);
 			}
-			header.relocationTableOffset = in.readInt();
+			header.magic = "BCH";
+			header.backwardCompatibility = (byte) s.bc;
+			header.forwardCompatibility = (byte) s.fc;
+			header.version = (short) s.version;
 
-			header.mainHeaderLength = in.readInt();
-			header.stringTableLength = in.readInt();
-			header.gpuCommandsLength = in.readInt();
-			header.dataLength = in.readInt();
-			if (header.backwardCompatibility > 0x20) {
-				header.dataExtendedLength = in.readInt();
-			}
-			header.relocationTableLength = in.readInt();
+			header.mainHeaderOffset = s.contentsAddr;
+			header.stringTableOffset = s.stringsAddr;
+			header.gpuCommandsOffset = s.commandsAddr;
+			header.dataOffset = s.rawDataAddr;
+			header.dataExtendedOffset = s.rawExtAddr;
+			header.relocationTableOffset = s.relocAddr;
 
-			header.uninitializedDataSectionLength = in.readInt();
-			header.uninitializedDescriptionSectionLength = in.readInt();
+			header.mainHeaderLength = s.contentsLen;
+			header.stringTableLength = s.stringsLen;
+			header.gpuCommandsLength = s.commandsLen;
+			header.dataLength = s.rawDataLen;
+			header.dataExtendedLength = s.rawExtLen;
+			header.relocationTableLength = s.relocLen;
 
-			if (header.backwardCompatibility > 7) {
-				header.flags = in.readShort();
-				header.addressCount = in.readShort();
-			}
+			header.uninitializedDataSectionLength = s.uninitData;
+			header.uninitializedDescriptionSectionLength = s.uninitCmd;
+
+			header.flags = (short) s.flags;
+			header.addressCount = (short) s.addressCount;
 
 			//Normally we would parse the content header now. But first, we need to absolutize the offsets for it not to be a living hell.
-			for (int o = header.relocationTableOffset; o < header.relocationTableOffset + header.relocationTableLength; o += 4) {
-				in.seek(o);
-				int value = in.readInt();
+			for (int value : s.relocWords) {
 				int offset = value & 0x1ffffff;
 				byte flags = (byte) (value >> 25);
 				int seek;

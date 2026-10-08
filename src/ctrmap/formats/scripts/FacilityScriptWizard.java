@@ -17,8 +17,14 @@ import java.util.List;
  */
 public class FacilityScriptWizard {
 
-	/** Adds {@code amount} Battle Points to the player (clamped by the engine to 9999). */
-	public static int addGiveBpScript(GFLPawnScript script, int amount) {
+	/**
+	 * Adds {@code amount} Battle Points to the player (clamped by the engine to 9999).
+	 *
+	 * @param measured the game the zone is from, already asked (NpcTemplates.measuredOn): the
+	 * native names and the BP frame are ORAS's
+	 */
+	public static int addGiveBpScript(NpcTemplates.Measured measured, GFLPawnScript script, int amount) {
+		NpcTemplates.asked(measured);
 		script.decompressThis();
 		if (amount == 0) {
 			throw new IllegalArgumentException("BP amount must be non-zero.");
@@ -44,11 +50,15 @@ public class FacilityScriptWizard {
 		body.add(makeIns(PawnInstruction.Commands.ZERO_PRI, ptr, 0));
 		ptr += 4;
 		body.add(makeIns(PawnInstruction.Commands.RETN, ptr, 0));
-		return TalkerScriptWizard.installCase(script, body);
+		return TalkerScriptWizard.installCase(measured, script, body);
 	}
 
-	/** natives[] index for a name hash, appending a {0, hash} entry if absent. */
-	public static int findOrAddNative(GFLPawnScript script, int hash) {
+	/**
+	 * natives[] index for a name hash, appending a {0, hash} entry if absent. Package-private: it
+	 * writes the script and has no gate of its own, so only a template that was handed a
+	 * {@link NpcTemplates.Measured} may call it (F085).
+	 */
+	static int findOrAddNative(GFLPawnScript script, int hash) {
 		for (int i = 0; i < script.natives.size(); i++) {
 			if (script.natives.get(i).data[1] == hash) {
 				return i;

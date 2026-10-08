@@ -160,7 +160,7 @@ public class MsgWrapperInjectTest {
 				byte[] before = s.getScriptBytes();
 				boolean refused = false;
 				try {
-					MsgWrapperInjector.injectMsgWrapper(s, donor);
+					MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, s, donor);
 				} catch (MsgWrapperInjector.InjectionException ex) {
 					refused = true;
 				}
@@ -227,7 +227,7 @@ public class MsgWrapperInjectTest {
 
 		int wrapperPtr;
 		try {
-			wrapperPtr = MsgWrapperInjector.injectMsgWrapper(t, donor);
+			wrapperPtr = MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, t, donor);
 		} catch (MsgWrapperInjector.InjectionException ex) {
 			return "refused: " + ex.getMessage();
 		}
@@ -387,7 +387,7 @@ public class MsgWrapperInjectTest {
 		//double-inject guard: the injected script must now be refused
 		boolean refused = false;
 		try {
-			MsgWrapperInjector.injectMsgWrapper(fresh, donor);
+			MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, fresh, donor);
 		} catch (MsgWrapperInjector.InjectionException ex) {
 			refused = true;
 		}
@@ -431,7 +431,7 @@ public class MsgWrapperInjectTest {
 
 		int newId;
 		try {
-			newId = TalkerScriptWizard.cloneTalker(s2, FAKE_LINE);
+			newId = TalkerScriptWizard.cloneTalker(NpcScriptGateTest.ORAS, s2, FAKE_LINE);
 		} catch (RuntimeException ex) {
 			return "cloneTalker failed on injected script: " + ex.getMessage();
 		}

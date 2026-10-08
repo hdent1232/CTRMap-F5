@@ -116,7 +116,8 @@ public class MaisonEditDialog {
 		ctrmap.humaninterface.pokepick.PokePickers.installDoubleClickPickers(jt, col
 				-> col == 1 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.SPECIES
 				: (col >= 2 && col <= 5) ? ctrmap.humaninterface.pokepick.PokePickers.Kind.MOVE
-				: col == 7 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.ITEM : null);
+				: col == 7 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.ITEM : null,
+				Workspace.session());
 
 		//A PANEL, not a window: everything under this is unchanged.
 		final JPanel dlg = new JPanel();
@@ -138,7 +139,7 @@ public class MaisonEditDialog {
 
 		Runnable refreshUsed = () -> usedLbl.setText("   " + model.usedCount() + " / " + model.rowCount()
 				+ " sets used, " + model.guard.freeCount() + " free"
-				+ (model.guard.exact ? "" : " (no pristine snapshot - non-empty rows treated as retail)"));
+				+ (model.guard.exact ? "" : " (" + model.guard.inexact + " - non-empty rows treated as retail)"));
 		refreshUsed.run();
 		goFree.addActionListener(e -> {
 			int free = model.guard.firstFreeSlot(model.sets);
@@ -227,6 +228,8 @@ public class MaisonEditDialog {
 		int poolIndex = 0;
 		MaisonSet[] sets = new MaisonSet[0];
 		ctrmap.formats.maison.MaisonPoolGuard guard;
+		/** What could not be read, and what each record held - Save writes only what changed (F102). */
+		ctrmap.RecordPool pool;
 		boolean dirty = false;
 		/** The user explicitly chose to edit retail data in this dialog instance. */
 		boolean allowVanillaEdits = false;
@@ -243,14 +246,9 @@ public class MaisonEditDialog {
 			poolIndex = idx;
 			GARC g = Workspace.getArchive(POOLS[idx]);
 			sets = new MaisonSet[g.length];
-			for (int i = 0; i < g.length; i++) {
-				try {
-					byte[] rec = Files.readAllBytes(Workspace.getWorkspaceFile(POOLS[idx], i).toPath());
-					sets[i] = MaisonSet.read(rec);
-				} catch (Exception ex) {
-					sets[i] = new MaisonSet();
-				}
-			}
+			//A SET THAT CANNOT BE READ IS NAMED AND READ-ONLY (F102): it was a blank set - species 0,
+			//which the guard then offered as free - and Save wrote that over the retail record
+			pool = ctrmap.RecordPool.load(Workspace.session(), POOLS[idx], sets, MaisonSet::read, MaisonSet::new);
 			guard = ctrmap.formats.maison.MaisonPoolGuard.load(Workspace.session(), POOLS[idx], PAIRED_LISTS[idx], sets);
 			dirty = false;
 			fireTableDataChanged();
@@ -262,7 +260,7 @@ public class MaisonEditDialog {
 
 		/** Copies row {@code r} into the first free slot; returns it or -1. */
 		int copyToFreeSlot(int r) {
-			int free = guard.firstFreeSlot(sets);
+			int free = guard.firstFreeSlot(sets, pool::unreadable);
 			if (free < 0) {
 				return -1;
 			}
@@ -281,12 +279,11 @@ public class MaisonEditDialog {
 		}
 
 		void save() throws Exception {
-			for (int i = 0; i < sets.length; i++) {
-				File f = Workspace.getWorkspaceFile(POOLS[poolIndex], i);
-				try (FileOutputStream fos = new FileOutputStream(f)) {
-					fos.write(sets[i].write());
-				}
-				Workspace.addPersist(f);
+			//ONLY WHAT CHANGED, never a set that could not be read, as one unit (F102): this rewrote all
+			//999 through a truncating stream and marked every one edited for the next pack
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save " + POOL_NAMES[poolIndex], Workspace.session())) {
+				pool.save(sets, MaisonSet::write);
+				unit.commit();
 			}
 			dirty = false;
 		}
@@ -326,7 +323,8 @@ public class MaisonEditDialog {
 				case 5: return "Move 4";
 				case 6: return "Nature";
 				case 7: return "Item";
-				default: return "EV/Form";
+				//raw and read-only: the preset numbering is not decoded, so a typed value could not be checked
+				default: return "EV/Form (raw)";
 			}
 		}
 
@@ -337,6 +335,9 @@ public class MaisonEditDialog {
 
 		@Override
 		public Object getValueAt(int r, int c) {
+			if (pool != null && pool.unreadable(r)) {
+				return c == 0 ? (Object) r : c == 1 ? "(could not be read: " + pool.why(r) + ")" : "";
+			}
 			MaisonSet s = sets[r];
 			switch (c) {
 				case 0: return r;
@@ -350,6 +351,11 @@ public class MaisonEditDialog {
 
 		@Override
 		public void setValueAt(Object v, int r, int c) {
+			if (pool != null && pool.unreadable(r)) {
+				ctrmap.Ui.error(table, "Set #" + r + " could not be read (" + pool.why(r) + "), so it is not edited:"
+						+ " saving it would replace what it holds with what is shown here.", "Battle facility opponents");
+				return;
+			}
 			//validate the value FIRST - an unparseable edit must not trigger the
 			//guard flow (or create a stray free-slot copy)
 			if (!parses(v, c)) {
@@ -388,15 +394,16 @@ public class MaisonEditDialog {
 			String str = String.valueOf(v).trim();
 			try {
 				switch (c) {
-					case 1: s.species = clampId(str, species, 0, 721); break;
-					case 2: case 3: case 4: case 5: s.moves[c - 2] = clampId(str, moves, 0, 621); break;
+					case 1: s.species = clampId(str, species, 0, ctrmap.Workspace.profile().speciesIdMax()); break;
+					case 2: case 3: case 4: case 5: s.moves[c - 2] = clampId(str, moves, 0, ctrmap.Workspace.profile().moveIdMax()); break;
 					case 6: s.nature = clampNature(str); break;
-					case 7: s.heldItem = clampId(str, items, 0, 775); break;
+					case 7: s.heldItem = clampId(str, items, 0, ctrmap.Workspace.profile().itemIdMax()); break;
 					default: break; // EV/Form is read-only-ish (raw), leave for now
 				}
 				dirty = true;
 				fireTableRowsUpdated(row, row);
-			} catch (NumberFormatException ignore) {
+			} catch (NumberFormatException notANumber) {
+				Forms.refuseTyped(null); //the cell keeps its old value; the signal says the typed one was refused (F211)
 			}
 		}
 
@@ -405,10 +412,10 @@ public class MaisonEditDialog {
 			String str = String.valueOf(v).trim();
 			try {
 				switch (c) {
-					case 1: clampId(str, species, 0, 721); break;
-					case 2: case 3: case 4: case 5: clampId(str, moves, 0, 621); break;
+					case 1: clampId(str, species, 0, ctrmap.Workspace.profile().speciesIdMax()); break;
+					case 2: case 3: case 4: case 5: clampId(str, moves, 0, ctrmap.Workspace.profile().moveIdMax()); break;
 					case 6: clampNature(str); break;
-					case 7: clampId(str, items, 0, 775); break;
+					case 7: clampId(str, items, 0, ctrmap.Workspace.profile().itemIdMax()); break;
 					default: return false; // EV/Form stays read-only
 				}
 				return true;

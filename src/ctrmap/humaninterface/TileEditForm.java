@@ -28,9 +28,6 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 	private DefaultListModel<String>[] models = new DefaultListModel[13];
 	public EditorTileset tileset;
 
-	/**
-	 * Creates new form TileEditForm
-	 */
 	/** Which tool the editor is holding, handed in: this class only asks. */
 	private final ctrmap.humaninterface.tools.ToolSelection tools;
 
@@ -61,6 +58,9 @@ public class TileEditForm extends javax.swing.JPanel implements TileInspector {
 	 */
 	private final TileMapPanel map;
 
+	/**
+	 * Creates new form TileEditForm
+	 */
 	public TileEditForm(ctrmap.humaninterface.tools.ToolSelection tools, Runnable pickSetTool,
 			TileMapPanel map) {
 		this.map = map;

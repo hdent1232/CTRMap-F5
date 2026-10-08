@@ -30,9 +30,8 @@ public class ZoneFootprintTest {
 		File dump = new File(args.length > 0 ? args[0] : ".");
 		File zoneData = new File(dump, "a/0/1/3".replace('/', File.separatorChar));
 		if (!zoneData.isFile()) {
-			System.out.println("  skip: no ZoneData at " + zoneData
+			Skip.suite("no ZoneData at " + zoneData
 					+ " - this suite reads the real dump, because the defect is in the data");
-			System.out.println("ALL PASS");
 			return;
 		}
 		GARC zones = new GARC(zoneData);

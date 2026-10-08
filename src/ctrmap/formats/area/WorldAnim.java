@@ -46,21 +46,27 @@ public class WorldAnim {
 
 	public WorldAnim(byte[] data) {
 		this.raw = data;
-		if (data == null || data.length < 0x44 || data[0] != 'B' || data[1] != 'C' || data[2] != 'H' || data[3] != 0) {
-			throw new IllegalArgumentException("not a BCH");
+		//the one header and relocation reader (F066). This class read the header at fixed offsets
+		//and placed every relocation as if it came from the contents section, so an entry from
+		//the command section was recorded at a contents address it has nothing to do with
+		ctrmap.formats.h3d.BchSections s = ctrmap.formats.h3d.BchSections.read(data);
+		if (s.bc <= 0x20) {
+			//the layout this reader's fixed offsets always assumed; an older one has no raw
+			//extension section, and every offset after it was misread
+			throw new IllegalArgumentException("BCH backwardCompatibility 0x" + Integer.toHexString(s.bc)
+					+ " predates the layout the area animation reader reads");
 		}
-		contentsAddr = le32(8);
-		stringsAddr = le32(0xC);
-		relocAddr = le32(0x1C);
-		contentsLen = le32(0x20);
-		stringsLen = le32(0x24);
-		relocLen = le32(0x34);
-		int n = relocLen / 4;
-		for (int i = 0; i < n; i++) {
-			int v = le32(relocAddr + i * 4);
-			int off = v & 0x1FFFFFF, flag = v >>> 25;
-			int loc = flag == 1 ? contentsAddr + off : contentsAddr + off * 4;
-			relocMap.put(loc, flag);
+		contentsAddr = s.contentsAddr;
+		stringsAddr = s.stringsAddr;
+		relocAddr = s.relocAddr;
+		contentsLen = s.contentsLen;
+		stringsLen = s.stringsLen;
+		relocLen = s.relocLen;
+		for (int i = 0; i < s.relocCount(); i++) {
+			ctrmap.formats.h3d.BchSections.Reloc r = s.reloc(i);
+			if (r.ptrLoc >= 0) {
+				relocMap.put(r.ptrLoc, r.flag);
+			}
 		}
 	}
 
@@ -75,11 +81,7 @@ public class WorldAnim {
 	}
 
 	private String str(int strOff) {
-		StringBuilder sb = new StringBuilder();
-		for (int p = stringsAddr + strOff; p < raw.length && raw[p] != 0; p++) {
-			sb.append((char) (raw[p] & 0xFF));
-		}
-		return sb.toString();
+		return ctrmap.formats.h3d.StringUtils.cString(raw, stringsAddr + strOff);
 	}
 
 	/** dict9 header (contents-relative 0x6C): [valuesPtr, count, nameTreePtr]. */
@@ -255,14 +257,15 @@ public class WorldAnim {
 		}
 		// relocation entries: flags, bounds, no duplicates
 		Set<Integer> seen = new HashSet<>();
-		for (int i = 0; i < relocLen / 4; i++) {
-			int v = le32(relocAddr + i * 4);
-			int off = v & 0x1FFFFFF, flag = v >>> 25;
+		ctrmap.formats.h3d.BchSections sections = ctrmap.formats.h3d.BchSections.read(raw); //the one reader (F066)
+		for (int i = 0; i < sections.relocCount(); i++) {
+			ctrmap.formats.h3d.BchSections.Reloc r = sections.reloc(i);
+			int flag = r.flag;
 			if (flag != 0 && flag != 1) {
 				errs.add("reloc flag " + flag);
 				continue;
 			}
-			int loc = flag == 1 ? contentsAddr + off : contentsAddr + off * 4;
+			int loc = r.ptrLoc;
 			chk(errs, loc >= contentsAddr && loc + 4 <= contentsAddr + contentsLen, "reloc loc in contents");
 			chk(errs, seen.add(loc), "duplicate reloc loc @" + loc);
 			int val = le32(loc);
@@ -360,64 +363,25 @@ public class WorldAnim {
 	}
 
 	/**
-	 * Builds the patricia tree for the given names IN ORDER (node i+1 must map
-	 * to values[i] - the retail invariant). Returns the node list; caller
-	 * serializes. The algorithm is verified by rebuilding every retail dict-9
-	 * tree byte-identically (see AnimSpliceTest).
+	 * The tree for these names IN ORDER (node i+1 must map to values[i] - the retail
+	 * invariant), each node carrying its name's string offset; the caller serializes. Rebuilding
+	 * every retail dict-9 tree byte-identically is the check (AnimSpliceTest). Built by the one
+	 * GameFreak name-tree builder the BCH writers use (F066): this class had its own formulation,
+	 * measured identical to it on 20,000 random name sets before it went. A name given twice is
+	 * refused there, where this copy used to build a tree that found only one of them.
 	 */
 	static List<PNode> buildTree(List<String> names, List<Integer> nameOffs) {
+		List<ctrmap.formats.h3d.Patricia.Node> built = ctrmap.formats.h3d.Patricia.build(names);
 		List<PNode> nodes = new ArrayList<>();
-		PNode root = new PNode(0xFFFFFFFFL, 0, "");
-		root.left = 0;
-		root.right = 0;
-		nodes.add(root);
-		for (int i = 0; i < names.size(); i++) {
-			insert(nodes, names.get(i), nameOffs.get(i));
+		for (int i = 0; i < built.size(); i++) {
+			ctrmap.formats.h3d.Patricia.Node n = built.get(i);
+			//node i holds name i - 1: the builder adds one node per name, in order
+			PNode p = new PNode(n.refBit, i == 0 ? 0 : nameOffs.get(i - 1), n.name == null ? "" : n.name);
+			p.left = n.left;
+			p.right = n.right;
+			nodes.add(p);
 		}
 		return nodes;
-	}
-
-	private static void insert(List<PNode> nodes, String name, int nameOff) {
-		int nk = nodes.size();
-		// current lookup result for this name
-		int index = nodes.get(0).left;
-		long prevBit = nodes.get(0).refBit;
-		while (nodes.get(index).refBit < prevBit) {
-			prevBit = nodes.get(index).refBit;
-			index = bitOf(name, prevBit) != 0 ? nodes.get(index).right : nodes.get(index).left;
-		}
-		String found = nodes.get(index).name;
-		// discriminating bit: highest index where the names differ
-		long bit = Math.max(name.length(), found.length()) * 8L - 1;
-		while (bit > 0 && bitOf(name, bit) == bitOf(found, bit)) {
-			bit--;
-		}
-		PNode nn = new PNode(bit, nameOff, name);
-		// walk again to the insertion point: descend while the child is a real
-		// downward link AND still tests a higher bit than ours
-		int parent = 0;
-		boolean fromLeft = true;
-		int child = nodes.get(0).left;
-		prevBit = nodes.get(0).refBit;
-		while (nodes.get(child).refBit < prevBit && nodes.get(child).refBit > bit) {
-			parent = child;
-			prevBit = nodes.get(child).refBit;
-			fromLeft = bitOf(name, prevBit) == 0;
-			child = fromLeft ? nodes.get(child).left : nodes.get(child).right;
-		}
-		if (bitOf(name, bit) != 0) {
-			nn.right = nk;
-			nn.left = child;
-		} else {
-			nn.left = nk;
-			nn.right = child;
-		}
-		nodes.add(nn);
-		if (fromLeft) {
-			nodes.get(parent).left = nk;
-		} else {
-			nodes.get(parent).right = nk;
-		}
 	}
 
 	/** Serializes tree nodes (12 bytes each). */
@@ -606,9 +570,9 @@ public class WorldAnim {
 			int newContentsLen = contentsLen + cont.size();
 			int newStringsLen = stringsLen + strs.size();
 			int newStringsAddr = 0x44 + newContentsLen;
-			int newRelocAddr = align(newStringsAddr + newStringsLen, 128);
+			int newRelocAddr = ctrmap.util.Bytes.align(newStringsAddr + newStringsLen, 128);
 			int newRelocLen = relocLen + relocs.size() * 4;
-			int newLen = align(newRelocAddr + newRelocLen, 128);
+			int newLen = ctrmap.util.Bytes.align(newRelocAddr + newRelocLen, 128);
 			byte[] out = new byte[newLen];
 			System.arraycopy(raw, 0, out, 0, 0x44);
 			putI32(out, 0x0C, newStringsAddr);
@@ -744,7 +708,4 @@ public class WorldAnim {
 
 	// ---- utils -------------------------------------------------------------
 
-	private static int align(int v, int a) {
-		return (v + a - 1) / a * a;
-	}
 }

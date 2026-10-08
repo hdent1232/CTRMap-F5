@@ -9,7 +9,6 @@ import java.awt.Dimension;
 import java.awt.Frame;
 import java.io.File;
 import java.nio.file.Files;
-import java.util.prefs.Preferences;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -31,7 +30,6 @@ import javax.swing.table.AbstractTableModel;
  */
 public class ShopEditDialog {
 
-	private static final String PREF_CODEBIN = "SHOP_CODEBIN_PATH";
 
 	/**
 	 * The editor, as a panel for the Game Data tab.
@@ -65,25 +63,12 @@ public class ShopEditDialog {
 					"Shop editor");
 			return null;
 		}
-		Preferences prefs = Preferences.userRoot().node(ShopEditDialog.class.getName());
-
-		// locate the decompressed code.bin (remembered across sessions)
-		File codeFile = null;
-		String remembered = prefs.get(PREF_CODEBIN, "");
-		if (!remembered.isEmpty() && new File(remembered).exists()) {
-			codeFile = new File(remembered);
-		}
+		// the decompressed code.bin, remembered across sessions and shared with the other
+		// editors that patch the executable
+		File codeFile = CodeBinFile.pick(parent, "Shop lists live inside it, not in the RomFS.",
+				new File(ctrmap.Workspace.GAMEDIR_PATH));
 		if (codeFile == null) {
-			ctrmap.Ui.message(parent,
-					"Pick your DECOMPRESSED code.bin (the executable - shop lists live inside it,\n"
-					+ "not in the RomFS). It's the same file the zone-limit patch uses.",
-					"Shop editor", JOptionPane.INFORMATION_MESSAGE);
-			JFileChooser fc = new JFileChooser(Workspace.GAMEDIR_PATH);
-			fc.setDialogTitle("Pick the decompressed code.bin");
-			if (fc.showOpenDialog(parent) != JFileChooser.APPROVE_OPTION) {
-				return null;
-			}
-			codeFile = fc.getSelectedFile();
+			return null;
 		}
 		final byte[] code;
 		final int[][] shops;
@@ -91,13 +76,13 @@ public class ShopEditDialog {
 			code = Files.readAllBytes(codeFile.toPath());
 			shops = ShopData.read(code);
 		} catch (Exception ex) {
-			prefs.remove(PREF_CODEBIN);
-			ctrmap.Ui.error(parent, "Could not read the shop table:\n" + ex.getMessage()
+			CodeBinFile.forget();
+			ctrmap.Ui.error(parent, "Could not read the shop table:\n" + ctrmap.util.Bytes.reason(ex)
 					+ "\n\n(The file must be the DECOMPRESSED ORAS code.bin - pick it again next time.)",
 					"Shop editor");
 			return null;
 		}
-		prefs.put(PREF_CODEBIN, codeFile.getAbsolutePath());
+		CodeBinFile.remember(codeFile);
 		final File fCodeFile = codeFile;
 
 		//A PANEL, not a window: everything under this is unchanged.
@@ -110,7 +95,7 @@ public class ShopEditDialog {
 		final JTable table = new JTable(model);
 		table.setRowHeight(22);
 		table.getColumnModel().getColumn(0).setMaxWidth(50);
-		PokePickers.installDoubleClickPickers(table, col -> col == 1 ? PokePickers.Kind.ITEM : null);
+		PokePickers.installDoubleClickPickers(table, col -> col == 1 ? PokePickers.Kind.ITEM : null, Workspace.session());
 		shopBox.addActionListener(e -> model.setShop(shopBox.getSelectedIndex()));
 
 		JPanel north = new JPanel(new BorderLayout(4, 4));
@@ -130,51 +115,44 @@ public class ShopEditDialog {
 		buttons.add(close);
 		dlg.add(buttons, BorderLayout.SOUTH);
 
-		save.addActionListener(e -> {
-			try {
-				byte[] patched = ShopData.write(code, model.shops);
-				if (java.util.Arrays.equals(patched, code)) {
-					ctrmap.Ui.message(dlg, "No changes to save.", "Shop editor", JOptionPane.INFORMATION_MESSAGE);
-					return;
-				}
-				byte[] ips = ShopData.diffIPS(code, patched);
-				JFileChooser fc = new JFileChooser(fCodeFile.getParentFile());
-				fc.setDialogTitle("Save code.ips (Luma/Azahar executable patch)");
-				fc.setSelectedFile(new File(fCodeFile.getParentFile(), "code.ips"));
-				if (fc.showSaveDialog(dlg) != JFileChooser.APPROVE_OPTION) {
-					return;
-				}
-				File out = fc.getSelectedFile();
-				String note = "";
-				if (out.exists()) {
-					int rsl = ctrmap.Ui.confirm(dlg,
-							"code.ips already exists (e.g. the zone-limit patch).\n"
-							+ "MERGE the shop changes into it? (No = overwrite with shops only)",
-							"Shop editor", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
-					if (rsl == JOptionPane.CANCEL_OPTION) {
-						return;
-					}
-					if (rsl == JOptionPane.YES_OPTION) {
-						ips = ShopData.mergeIPS(Files.readAllBytes(out.toPath()), ips);
-						note = " (merged with the existing patch)";
-					}
-				}
-				Files.write(out.toPath(), ips);
-				ctrmap.Ui.message(dlg,
-						"Saved " + out.getName() + note + ".\n\n"
-						+ "Deploy it like the zone patch:\n"
-						+ "  Azahar: load/mods/<titleid>/exefs/code.ips\n"
-						+ "  Luma3DS: sdmc:/luma/titles/<titleid>/code.ips (+ enable Game Patching)\n\n"
-						+ "Then fully restart the emulator and talk to a shop clerk (TESTING.md item).",
-						"Shop editor", JOptionPane.INFORMATION_MESSAGE);
-			} catch (Exception ex) {
-				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Shop editor");
-			}
-		});
+		save.addActionListener(e -> savePatch(dlg, fCodeFile, code, model.shops));
 		close.addActionListener(e -> onClose.run());
 
 		//no pack: a pane is sized by the tab it is in
 		return dlg;
+	}
+
+	/**
+	 * The Save button's work: the code.ips the user picks beside {@code codeFile} gets these shop
+	 * lists. Public so a suite can press it headless - the chooser is answered through the Ui seam
+	 * (F152).
+	 */
+	public static void savePatch(java.awt.Component dlg, File codeFile, byte[] code, int[][] shops) {
+		try {
+			byte[] patched = ShopData.write(code, shops);
+			//NO "nothing to save" (F152): every list put back to the game's own is still a change to
+			//a code.ips that carries an old edit, and saving it takes the shop table out of that file
+			byte[] ips = ShopData.diffIPS(code, patched);
+			JFileChooser fc = new JFileChooser(codeFile.getParentFile());
+			fc.setDialogTitle("Save code.ips (Luma/Azahar executable patch)");
+			fc.setSelectedFile(new File(codeFile.getParentFile(), "code.ips"));
+			if (ctrmap.Ui.choose(dlg, fc, true) == null) {
+				return;
+			}
+			File out = fc.getSelectedFile();
+			//ONE WRITER FOR THE ONE code.ips (F152): the patches already in it are kept and only the
+			//table this editor owns is replaced - there is no question to close by mistake
+			String note = ctrmap.formats.codepatch.CodeIps.save(out, ips, ShopData.owned());
+			ctrmap.Ui.message(dlg,
+					"Saved " + out.getName() + note + ".\n\n"
+					+ "Deploy it like the zone patch:\n"
+					+ "  Azahar: load/mods/<titleid>/exefs/code.ips\n"
+					+ "  Luma3DS: sdmc:/luma/titles/<titleid>/code.ips (+ enable Game Patching)\n\n"
+					+ "Then fully restart the emulator and talk to a shop clerk (TESTING.md item).",
+					"Shop editor", JOptionPane.INFORMATION_MESSAGE);
+		} catch (Exception ex) {
+			ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Shop editor");
+		}
 	}
 
 	/** Table model over one shop's item list (ids shown with names). */
@@ -218,7 +196,8 @@ public class ShopEditDialog {
 				return r + 1;
 			}
 			int id = shops[shop][r];
-			String name = PokeData.itemName(id);
+			ctrmap.WorkspaceSession game = ctrmap.Workspace.session();
+			String name = (game == null ? PokeData.none() : PokeData.of(game)).itemName(id);
 			return id + "  " + (name != null ? name : "?");
 		}
 

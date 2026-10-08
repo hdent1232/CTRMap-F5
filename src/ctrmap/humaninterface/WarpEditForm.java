@@ -33,7 +33,7 @@ public class WarpEditForm extends javax.swing.JPanel {
 			return;
 		}
 		for (int i = 0; i < loadedZone.count(); i++) {
-			tgtZone.addItem(i + " - " + LocationNames.getLocName(loadedZone.at(i).header.parentMap));
+			tgtZone.addItem(i + " - " + LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap));
 		}
 		fillTransitionDropdown();
 		reloadEntries(e.warpCount > 0 ? 0 : -1);
@@ -69,7 +69,7 @@ public class WarpEditForm extends javax.swing.JPanel {
 		if (warp.targetZone >= loadedZone.count()) {
 			return "zone " + warp.targetZone + " (missing)";
 		}
-		return LocationNames.getLocName(loadedZone.at(warp.targetZone).header.parentMap);
+		return LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(warp.targetZone).header.parentMap);
 	}
 
 	/** The zone owner this form was handed; its table names the warp destinations. */
@@ -118,16 +118,21 @@ public class WarpEditForm extends javax.swing.JPanel {
 		//nothing selected for a destination that is unset or no longer exists
 		tgtZone.setSelectedIndex(warp.targetZone >= 0 && warp.targetZone < tgtZone.getItemCount() ? warp.targetZone : -1);
 		tgtWarp.setValue(warp.targetWarpId == ZoneEntities.Warp.NO_TARGET ? null : warp.targetWarpId);
-		warpType.setSelectedIndex(warp.directionality);
-		posType.setSelectedIndex(warp.coordinateType);
+		//through the one bound (F126): a raw value past a box's rows threw here, after "warp" was
+		//already the new one, so the fields below kept the previous warp and the next save wrote them in
+		shownDirectionality = Combos.show(warpType, warp.directionality);
+		shownCoordinate = Combos.show(posType, warp.coordinateType);
 		transition.setSelectedIndex(getTransitionIndex(warp.transitionType));
 		x.setValue(warp.x);
 		y.setValue(warp.y);
 		z.setValue(warp.z);
 		w.setValue(warp.w);
 		h.setValue(warp.h);
-		facedir.setSelectedIndex(warp.faceDirection);
+		shownFacing = Combos.show(facedir, warp.faceDirection);
 	}
+
+	/** What each raw-valued box showed for the current warp: written back only when moved from it (F126). */
+	private int shownDirectionality = -1, shownCoordinate = -1, shownFacing = -1;
 
 	/**
 	 * The transition rows for the loaded game, in {@link WarpTransitions}'
@@ -175,15 +180,15 @@ public class WarpEditForm extends javax.swing.JPanel {
 		//refuses to save it; a stand-in destination would be a working door
 		warp2.targetZone = tgtZone.getSelectedIndex() == -1 ? ZoneEntities.Warp.NO_TARGET : tgtZone.getSelectedIndex();
 		warp2.targetWarpId = tgtWarp.getValue() == null ? ZoneEntities.Warp.NO_TARGET : (Integer) tgtWarp.getValue();
-		warp2.directionality = warpType.getSelectedIndex();
+		warp2.directionality = Combos.keep(warpType, shownDirectionality, warp.directionality);
 		warp2.transitionType = transitionToWrite(transition.getSelectedIndex(), warp.transitionType);
-		warp2.coordinateType = posType.getSelectedIndex();
+		warp2.coordinateType = Combos.keep(posType, shownCoordinate, warp.coordinateType);
 		warp2.x = (Integer) x.getValue();
 		warp2.y = (Integer) y.getValue();
 		warp2.z = (Integer) z.getValue();
 		warp2.w = (Integer) w.getValue();
 		warp2.h = (Integer) h.getValue();
-		warp2.faceDirection = facedir.getSelectedIndex();
+		warp2.faceDirection = Combos.keep(facedir, shownFacing, warp.faceDirection);
 		if (!warp.sameValues(warp2)) {
 			e.warps.set(warpIndex, warp2);
 			reloadEntries(warpIndex);

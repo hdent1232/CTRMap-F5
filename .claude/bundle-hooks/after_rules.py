@@ -35,6 +35,7 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True     # run from its folder, a tool leaves no bytecode there
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bundle_env        # noqa: E402  - the one spelling of the owner's way past
 import bundle_rules      # noqa: E402  - the one implementation of asking a rule
 import bundle_shell      # noqa: E402  - the call, found by shape
 
@@ -173,16 +174,24 @@ def verdict(payload, root):
 
 
 def main():
-    try:
-        payload = json.loads(bundle_shell.payload_text())   # UTF-8, not the locale's code page
-    except (ValueError, IOError):
-        return 0
-    if not isinstance(payload, dict):
-        return 0
+    """Every rule asked after a call - or, when that cannot be done, SAID (CTRMap F213): an
+    unreadable payload and a project root that cannot be found each returned 0 with nothing said,
+    which reads exactly as "asked, and nothing found"."""
+    raw = bundle_shell.payload_text()       # UTF-8, not the locale's code page
+    problem = bundle_shell.payload_problem(raw)
     root = bundle_rules.repo_root(__file__)
-    if root is None:
-        return 0
-    code, said = verdict(payload, root)
+    if problem is None and root is None:
+        problem = ("the hook payload read, but no project root (.git or CLAUDE.md) lies above %s,"
+                   " so there is no tree to ask the rules about" % os.path.dirname(__file__))
+    if problem:
+        bypass = bundle_env.name("ALLOW_UNREADABLE")
+        if bundle_env.allowed("ALLOW_UNREADABLE"):
+            sys.stdout.write(json.dumps({"systemMessage": "after_rules.py: %s and %s is set, so NO "
+                                         "rule was asked after this call" % (problem, bypass)}) + LF)
+            return 0
+        sys.stderr.write(bundle_shell.unreadable_payload(__file__, problem, bypass))
+        return 2
+    code, said = verdict(json.loads(raw), root)
     if code:
         sys.stderr.write(said + LF)
     return code

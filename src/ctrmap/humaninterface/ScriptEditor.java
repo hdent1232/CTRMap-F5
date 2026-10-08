@@ -30,9 +30,6 @@ import javax.swing.text.SimpleAttributeSet;
 
 public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 
-	/**
-	 * Creates new form ScriptEditor
-	 */
 	public GFLPawnScript script;
 	public ScriptDocumentListener sdl;
 	public ScriptDocumentFilter sdf;
@@ -50,6 +47,77 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 	/** Writing the open zone back, handed in: the Save button does exactly that. */
 	private final ZoneSaver zoneSaver;
 
+	/** What the last live edit did, under the editor - see {@link #withStatus} (F242). */
+	private final javax.swing.JLabel status = new javax.swing.JLabel(" ");
+
+	/**
+	 * What the party-parameter call under the caret passes, named (F052): the selector table was
+	 * decoded from the executable and could only be read in the Java source. Shown here, not
+	 * written into the text, which the assembler reads back.
+	 */
+	private final javax.swing.JLabel partyParam = new javax.swing.JLabel(" ");
+
+	/**
+	 * This editor with a line under it saying what the last edit did - built here rather than in
+	 * the generated layout, which is the form designer's. An argument the editor could not take
+	 * left the typed text on screen and the instruction as it was, without a word (F242). Under
+	 * it, the party-parameter call the caret is on, named (F052).
+	 */
+	public javax.swing.JComponent withStatus() {
+		javax.swing.JPanel box = new javax.swing.JPanel(new java.awt.BorderLayout());
+		box.add(this, java.awt.BorderLayout.CENTER);
+		javax.swing.JPanel lines = new javax.swing.JPanel(new java.awt.GridLayout(0, 1));
+		lines.add(status);
+		lines.add(partyParam);
+		box.add(lines, java.awt.BorderLayout.SOUTH);
+		return box;
+	}
+
+	/** The status line's text now. */
+	public String status() {
+		return status.getText();
+	}
+
+	/** The party-parameter line's text now. */
+	public String partyParamLine() {
+		return partyParam.getText();
+	}
+
+	/**
+	 * Names the PokePartyGetParam / PokePartySetParam call the caret is on - its SYSREQ_N or one
+	 * of the pushes feeding it - and clears the line anywhere else.
+	 */
+	void showPartyParam() {
+		String said = " ";
+		if (script != null && !editData) {
+			try {
+				int line = disassemblyArea.getLineOfOffset(disassemblyArea.getCaretPosition());
+				for (int i = 0; i < script.instructions.size(); i++) {
+					if (script.instructions.get(i).line == line) {
+						ctrmap.formats.scripts.PartyParamCall call = ctrmap.formats.scripts.PartyParamCall.at(script, i);
+						if (call != null) {
+							said = call.describe();
+						}
+						break;
+					}
+				}
+			} catch (BadLocationException ex) {
+				said = " "; //a caret past the text names nothing
+			}
+		}
+		partyParam.setText(said);
+	}
+
+	/** Says whether the line's arguments were taken, and why not when not; true when taken. */
+	public boolean sayTaken(int line, String notTaken) {
+		status.setText(notTaken.isEmpty() ? " " : "Line " + (line + 1) + " not taken: " + notTaken
+				+ " - the instruction is as it was.");
+		return notTaken.isEmpty();
+	}
+
+	/**
+	 * Creates new form ScriptEditor
+	 */
 	public ScriptEditor(ZoneSaver zoneSaver) {
 		if (zoneSaver == null) {
 			throw new IllegalArgumentException("ScriptEditor must be handed the zone saver its Save button uses");
@@ -79,6 +147,7 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 		disassemblyScrollPane.setRowHeaderView(ptrs);
 		((AbstractDocument) disassemblyArea.getDocument()).setDocumentFilter(sdf);
 		((DefaultCaret) disassemblyArea.getCaret()).setUpdatePolicy(DefaultCaret.UPDATE_WHEN_ON_EDT);
+		disassemblyArea.addCaretListener(e -> showPartyParam());
 	}
 
 	@Override
@@ -225,31 +294,20 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 			this.scr = scr;
 		}
 
-		private int scanBackwardsFindUntil(String text, int pos, String toFind, String stopAt, boolean caseSensitive) {
-			int idx = pos;
-			if (caseSensitive) {
-				while (idx > 0) {
-					if (text.length() <= idx + toFind.length() || !text.substring(idx, idx + toFind.length()).equals(toFind)) {
-						if (text.length() <= idx + toFind.length() && text.substring(idx, idx + stopAt.length()).equals(stopAt)) {
-							return -1;
-						}
-						idx--;
-					} else {
-						return idx;
-					}
+		/**
+		 * Where {@code toFind} starts, scanning back from {@code pos}, or -1 when {@code stopAt} comes
+		 * first or the text runs out. ONE LOOP FOR BOTH CASES (F109): the case-sensitive copy tested its
+		 * stop marker with {@code &&} where {@code ||} belonged, so it never stopped and a '{' typed for
+		 * a CASETBL in any subroutine but the first got the SUBROUTINE template; the insensitive copy
+		 * took a substring past the end of the text and threw; neither looked at index 0.
+		 */
+		static int scanBackwardsFindUntil(String text, int pos, String toFind, String stopAt, boolean caseSensitive) {
+			for (int idx = Math.min(pos, text.length() - 1); idx >= 0; idx--) {
+				if (text.regionMatches(!caseSensitive, idx, toFind, 0, toFind.length())) {
+					return idx;
 				}
-			} else {
-				String upperTF = toFind.toUpperCase();
-				String upperSA = stopAt.toUpperCase();
-				while (idx > 0) {
-					if (!text.substring(idx, idx + toFind.length()).toUpperCase().equals(upperTF)) {
-						if (text.substring(idx, idx + stopAt.length()).toUpperCase().equals(upperSA)) {
-							return -1;
-						}
-						idx--;
-					} else {
-						return idx;
-					}
+				if (text.regionMatches(!caseSensitive, idx, stopAt, 0, stopAt.length())) {
+					return -1;
 				}
 			}
 			return -1;
@@ -264,7 +322,7 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 					String text = e.getDocument().getText(0, e.getDocument().getLength());
 					if (text.substring(off, off + len).equals("{")) {
 						//scan if sub or casetbl
-						if (text.charAt(off - 1) != '\n') {
+						if (off > 0 && text.charAt(off - 1) != '\n') {
 							SwingUtilities.invokeLater(() -> {
 								try {
 									e.getDocument().insertString(off, "\n", new SimpleAttributeSet());
@@ -283,7 +341,7 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 							});
 						} else {
 							int idx = off - 1;
-							while (text.charAt(idx) == '\n' || text.charAt(idx) == '\t') {
+							while (idx > 0 && (text.charAt(idx) == '\n' || text.charAt(idx) == '\t')) {
 								idx--;
 							}
 							if (scanBackwardsFindUntil(text, idx, "CASETBL", "\t", false) != -1) {
@@ -354,6 +412,12 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 						insCount += s.instructions.size();
 					}
 					if (insCount > scr.instructions.size()) {
+						//AN INSERT RENUMBERS: refused, before anything changes, when a branch cannot follow (F086)
+						String unrenumberable = scr.whyNotRenumberable();
+						if (!unrenumberable.isEmpty()) {
+							ctrmap.Ui.error(se, "Not inserted. " + unrenumberable, "Script editor");
+							return;
+						}
 						setLines(reassembled);
 						List<PawnInstruction> addedInstructions = new ArrayList<>();
 						for (PawnSubroutine s : reassembled) {
@@ -422,7 +486,7 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 										}
 									}
 								} else if (i.line >= changedLineStart && i.line <= changedLineEnd) {
-									scr.lookupInstructionByPtr(i.pointer).setArgsFromString(changedLine.toString());
+									se.sayTaken(i.line, scr.lookupInstructionByPtr(i.pointer).takeArgs(changedLine.toString()));
 									break Outer;
 								}
 							}
@@ -466,7 +530,7 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 						int changedLineEnd = getCountOfLineEndsInString(text, off + len);
 						for (PawnInstruction i : scr.instructions) {
 							if (i.line >= changedLineStart && i.line <= changedLineEnd) {
-								boolean success = scr.lookupInstructionByPtr(i.pointer).setArgsFromString(changedLine.toString());
+								boolean success = se.sayTaken(i.line, scr.lookupInstructionByPtr(i.pointer).takeArgs(changedLine.toString()));
 								if (success) {
 									se.updateDocument(false, CaretMotion.BACKWARD);
 								}
@@ -617,6 +681,7 @@ public class ScriptEditor extends javax.swing.JPanel implements ScriptView {
 					caretPlus = -1;
 				}
 				disassemblyArea.setCaretPosition(Math.min(putCaretAtEnd ? finalIdx : originalLocation + caretPlus, newText.length() - 1));
+				showPartyParam(); //the lines were renumbered after the caret moved
 				int disLine = getCountOfLineEndsInString(newText, disassemblyArea.getCaretPosition());
 				int lines = 0;
 				for (int i = 0; i < ptrText.length(); i++) {

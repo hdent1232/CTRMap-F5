@@ -87,7 +87,7 @@ public class MainframeActionGuardsTest {
 		openingAGrMapfileAsksBeforeItDiscards();
 
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump
+			Skip.section("no dump at " + dump
 					+ " - the loaded-workspace checks need one");
 		} else {
 			ScratchGame.open(dump);
@@ -129,7 +129,7 @@ public class MainframeActionGuardsTest {
 
 		String settings = "Load a workspace first (Options > Workspace settings).";
 		refuses("deployModAction", "Deploy mod: Load a workspace first.");
-		refuses("forkGeometryAction", "Fork map geometry: " + settings);
+		refuses("makeZoneIndependentAction", "Make zone independent: " + settings);
 		refuses("renameZoneAction", "Rename zone: " + settings);
 		refuses("emptyZoneAction", "Empty zone: " + settings);
 		refuses("findReusableZonesAction", "Find reusable zones: " + settings);
@@ -176,10 +176,11 @@ public class MainframeActionGuardsTest {
 		openWithNoArchives(GameType.XY);
 		CtrmapMainframe.mZonePnl = null;
 
-		refuses("forkGeometryAction", "Fork map geometry: " + unsupported("Forking map geometry",
+		refuses("makeZoneIndependentAction", "Make zone independent: " + unsupported("Making a zone independent",
 				"Giving one zone its own copy of its map appends to FieldData and the"
-				+ " MapMatrix and repoints the zone in the master zone-header table;"
-				+ " every one of those offsets was measured on Omega Ruby / Alpha"
+				+ " MapMatrix, giving it its own area appends to AreaData and the NPC registry and"
+				+ " grows the engine's per-area table, and both repoint the zone in the master"
+				+ " zone-header table; every one of those offsets was measured on Omega Ruby / Alpha"
 				+ " Sapphire."));
 		refuses("findReusableZonesAction", "Find reusable zones: " + unsupported("Finding reusable base zones",
 				"The scan reads every zone header, its script and its warps to judge"
@@ -234,7 +235,7 @@ public class MainframeActionGuardsTest {
 		openWithNoArchives(GameType.ORAS);
 		CtrmapMainframe.mZonePnl = null;
 
-		refuses("forkGeometryAction", "Fork map geometry: ZoneData archive unavailable.");
+		refuses("makeZoneIndependentAction", "Make zone independent: ZoneData archive unavailable.");
 		refuses("renameZoneAction", "Rename zone: ZoneData archive unavailable.");
 		refuses("emptyZoneAction", "Empty zone: ZoneData archive unavailable.");
 		//PINNED AS IS, NOT AS IT SHOULD BE - see the javadoc above
@@ -342,11 +343,11 @@ public class MainframeActionGuardsTest {
 	 * dismissed dialog give the same answer, and consent must never be the
 	 * default reading of either.
 	 *
-	 * <p>Also pinned here, and NOT fixed: the second prompt offers the loaded
-	 * game's archive path as the initial value, with a leading slash
-	 * ("/a/0/1/3"), while the vault's manifest keys have none - so a user who
-	 * accepts the suggestion the dialog itself made is told the backup does not
-	 * contain it. Both halves are asserted below exactly as they behave.
+	 * <p>The second prompt offers the loaded game's archive path as the initial
+	 * value, with a leading slash ("/a/0/1/3"), while the vault's manifest keys
+	 * have none. A user who accepted the suggestion the dialog itself made was
+	 * told the backup did not contain it, which was pinned here as it behaved;
+	 * the two are one spelling now (F155), and the suggestion restores.
 	 */
 	static void restoreRoutesToTheChoiceThatWasMade() throws Exception {
 		System.out.println("--- restore from vault: the choice, and what each answer reaches");
@@ -369,7 +370,7 @@ public class MainframeActionGuardsTest {
 					"and says how to take one");
 
 			//a seal that was started and never finished must never read as one
-			File entry = ctrmap.vault.Vault.entryDir(game, null);
+			File entry = ctrmap.vault.Vault.entryFor(game);
 			write(new File(entry, "sealing.in-progress"), "");
 			said = restore();
 			check(said.size() == 1 && said.get(0).contains("never finished"),
@@ -417,14 +418,20 @@ public class MainframeActionGuardsTest {
 			check(str(new File(game, "a/0/4/0")).equals("pristine map matrix"),
 					"and nothing else in the game folder was touched");
 
-			//PINNED AS IS: the dialog's own suggestion is refused by the restore
+			//THE DIALOG'S OWN SUGGESTION RESTORES (F155): it was refused, the backup keying the path
+			//without the leading slash the suggestion carries
 			write(new File(game, "a/0/1/3"), "EDITED AGAIN");
 			String offered = Workspace.profile().archivePath(ArchiveType.ZONE_DATA);
 			said = restore("Restore ONE archive", offered);
-			check(said.size() == 3 && said.get(2).startsWith("Could not restore " + offered + ":"),
-					"accepting the path the dialog itself offered is REFUSED today: " + (said.size() > 2 ? said.get(2) : said.toString()));
-			check(str(new File(game, "a/0/1/3")).equals("EDITED AGAIN"),
-					"and nothing is put back, so the user is left where they started");
+			check(offered.startsWith("/") && said.size() == 3 && said.get(2).startsWith("Restored a/0/1/3:"),
+					"accepting the path the dialog itself offered restores it: " + (said.size() > 2 ? said.get(2) : said.toString()));
+			check(str(new File(game, "a/0/1/3")).equals("pristine zone data"),
+					"and the archive is put back");
+			write(new File(game, "a/0/1/3"), "EDITED ONCE MORE");
+			said = restore("Restore ONE archive", "a\\0\\1\\3");
+			check(said.size() == 3 && said.get(2).startsWith("Restored a/0/1/3:") && str(new File(game, "a/0/1/3")).equals("pristine zone data"),
+					"as is the same path typed the Windows way: " + (said.size() > 2 ? said.get(2) : said.toString()));
+			write(new File(game, "a/0/1/3"), "EDITED AGAIN");
 
 			//the whole game, with the confirmation unanswered
 			said = restore("Restore the WHOLE game");
@@ -570,7 +577,7 @@ public class MainframeActionGuardsTest {
 		said = record("setupFacilityAction", 0);
 		check(said.size() == 2 && said.get(1).startsWith("Independent battle facility:"),
 				"the independent path explains itself and stops: " + (said.size() > 1 ? first2(said) : said.toString()));
-		check(said.size() == 2 && said.get(1).contains("Game Data -> Trainers")
+		check(said.size() == 2 && said.get(1).contains("Game Data > Edit trainer")
 				&& said.get(1).contains("Battle challenge"),
 				"naming both halves of the workflow it is asking for");
 
@@ -837,7 +844,7 @@ public class MainframeActionGuardsTest {
 		//every check above stays green while the user goes back to being unasked.
 		File src = new File("src/ctrmap/CtrmapMainframe.java");
 		if (!src.isFile()) {
-			System.out.println("  skip: no source at " + src.getAbsolutePath()
+			check(false, "no source at " + src.getAbsolutePath()
 					+ " - the routing check reads the window's source");
 		} else {
 			String text = new String(java.nio.file.Files.readAllBytes(src.toPath()), "UTF-8");

@@ -63,9 +63,10 @@ public class DuplicateWorkTest {
 			"a region sits at cell * 720 + 360, and the height lookups and picking divide by"
 			+ " the same number. A second answer to where region (3,4) goes is a map whose"
 			+ " pieces do not line up, which is what the owner was shown."},
-		{"assembling a matrix into a drawable map", "loadRegions\\s*\\(",
-			"TileMapPanel.java,ZonePreviewPane.java,CtrmapMainframe.java",
-			"TileMapPanel.loadRegions is the body; the preview and the window CALL it."
+		{"assembling a matrix into a drawable map", "readRegions\\s*\\(",
+			"TileMapPanel.java,ZonePreviewPane.java",
+			"TileMapPanel.readRegions is the body (its show half, showRegions, installs what it"
+			+ " read - F220); the preview and the window's own load CALL it."
 			+ " Anything else naming it is fine - anything else DOING it is the defect this"
 			+ " suite exists for."},
 		{"walking a Pawn routine and its callees",
@@ -76,6 +77,68 @@ public class DuplicateWorkTest {
 			+ "shared, byte-identical in the walk itself - and it rewrites bytecode in zone "
 			+ "scripts bound to the save, so a fix landing on one copy and not the other is "
 			+ "a zone that hangs on entry for whoever used the other one"},
+		{"building a GameFreak name tree", "<<\\s*3\\)\\s*-\\s*1|\\*\\s*8L?\\s*-\\s*1\\b",
+			"Patricia.java",
+			"the discriminating-bit start of a Patricia insertion. It existed three times - the"
+			+ " texture pack, the model appender and the area animation each built their own"
+			+ " tree, each claimed byte-exact on its own - and a fix to one would not have"
+			+ " reached the others (F066)."},
+		{"recognising a BCH by its magic", "\\[1\\]\\s*[!=]=\\s*'C'\\s*(&&|\\|\\|)\\s*\\w+\\[2\\]\\s*[!=]=\\s*'H'",
+			"BchSections.java",
+			"BchSections.hasMagic is the sniff and isBch the whole-header check; seven hand-written"
+			+ " copies disagreed on three bytes or four and on how long a file must be (F066)."},
+		{"reading a BCH header or its relocation table", "relocLen\\s*/\\s*4|i32\\(\\s*\\w+\\s*,\\s*0x1C\\s*\\)",
+			"BchSections.java",
+			"BchSections reads the header for every layout and decodes the relocation words; five"
+			+ " readers did it themselves and one placed command-section entries at contents"
+			+ " addresses (F066)."},
+		{"reading a NUL-terminated string", "\\(char\\)\\s*\\(\\s*\\w+\\[\\w+\\]\\s*&\\s*0xFF\\)",
+			"StringUtils.java,DressUpIndex.java",
+			"StringUtils.cString is the one loop; there were seven, with two contracts, and the"
+			+ " stream reader beside them looped forever on a string nothing ended (F066)."
+			+ " DressUpIndex builds a two-byte magic this way, not a string."},
+		{"rounding up to a boundary", "\\(\\s*\\w+\\s*\\+\\s*\\w+\\s*-\\s*1\\s*\\)\\s*/\\s*\\w+\\s*\\*\\s*\\w+",
+			"Bytes.java",
+			"Bytes.align is the one copy; the texture pack, the model appender and the area"
+			+ " animation each had their own (F066)."},
+		{"finding the mesh that draws a named material",
+			"for\\s*\\(\\s*int\\s+(\\w+)\\s*=\\s*0\\s*;\\s*\\1\\s*<\\s*(?:\\w+\\.)?(?:meshCount|meshes\\.size\\(\\))"
+			+ "\\s*;\\s*\\1\\+\\+\\s*\\)\\s*\\{\\s*if\\s*\\(\\s*[\\w.]+\\.equals\\(\\s*(?:\\w+\\.)?getMaterialName\\("
+			+ "\\s*(?:\\w+\\.)?getMeshMaterialIndex\\(\\s*\\1\\s*\\)",
+			"BchMapModel.java",
+			"BchMapModel.meshWithMaterial is the one first-match lookup by exact name. Seven loops"
+			+ " wrote it out across the importers, the prefab stamper and the painter (F092); a loop"
+			+ " that also filters on layout, or matches loosely, is a different job and does not"
+			+ " open this way."},
+		{"starting a background thread", "new\\s+Thread\\s*\\(|Executors\\s*\\.\\s*new\\w+\\s*\\(",
+			"NewestOnly.java,UpdateUI.java,CM3DInputManager.java,ESPICAControl.java",
+			"a preview asks NewestOnly: one daemon worker, newest request wins (F206). Both previews"
+			+ " started a raw thread per list selection and ran every superseded one to the end. The"
+			+ " other three are argued: the updater's download, the 3D walker's loop and ESPICA's"
+			+ " process reader are one long-lived daemon each. SwingWorker is not this and is not"
+			+ " counted."},
+		{"reading text with a Scanner", "new\\s+(java\\.util\\.)?Scanner\\s*\\(",
+			"ScriptEditor.java,PawnAssembly.java",
+			"a Scanner keeps a read failure to itself and simply runs out of lines (F211): the terrain and"
+			+ " ground-material tables, the building catalog and the snapshot stamp each read a failed read as"
+			+ " a shorter file. These two scan a String, which cannot fail; a file or a stream is read with a"
+			+ " BufferedReader, whose readLine throws."},
+		{"finding the game as it shipped", "originalSnapshotDir\\s*\\(",
+			"WorkspaceSession.java,Workspace.java",
+			"GameFiles.pristineArchive is the one pristine reader: the snapshot, else the sealed backup's"
+			+ " verified copy, else nothing - never the live folder (F232). Three readers built"
+			+ " \"snapshot + path\" by hand and two of them, with no snapshot, read the user's edited"
+			+ " game instead. The session owns the snapshot folder; the static facade only names it."},
+		{"escaping text for an HTML label", "replace(All)?\\(\\s*\"&\"\\s*,\\s*\"&amp;\"\\s*\\)",
+			"Ui.java",
+			"Ui.html is the one escape. The update dialog and the setup wizard each kept a private"
+			+ " copy, and the painter's preview note (F211) would have been the third; a copy that"
+			+ " forgets one character draws a reason with a '<' in it as a broken tag."},
+		{"defining the zone header's size", "static\\s+final\\s+int\\s+\\w+\\s*=\\s*0x38\\s*;",
+			"ZoneHeader.java",
+			"ZoneHeader.SIZE is the one definition. Six classes each wrote their own 0x38 (F205); the"
+			+ " master table, both forkers, the cloner, the integrity check and the zone-limit patch now"
+			+ " alias it, so a correction lands everywhere at once."},
 		{"preparing map geometry for drawing", "\\.makeAllBOs\\(\\)",
 			"H3DModel.java,NPCRegistry.java,ADPropRegistry.java,CustomH3DPreview.java,"
 			+ "MapPreview3D.java,PropEditForm.java,TileMapPanel.java",
@@ -104,14 +167,10 @@ public class DuplicateWorkTest {
 			+ "and it is recorded here rather than left looking alive"},
 		{"DressUpArchive.java",
 			"the other half of the same unshipped feature"},
-		{"PartyParam.java",
-			"MEASURED, NOT SHIPPED: 71 script-selector names proven by PartyParamTest, which "
-			+ "a user can only read out of the Java source. Surfacing it is queued work, not "
-			+ "debt to delete"},
 	};
 
 	/** How many may be unreached. It may fall and may not rise quietly. */
-	private static final int UNREACHED_CEILING = 8;
+	private static final int UNREACHED_CEILING = 7;
 	/** The snapshot of classes that predate the rule. */
 	private static final String LIST = "tools/guard/classes.txt";
 
@@ -145,6 +204,7 @@ public class DuplicateWorkTest {
 			Pattern marker = Pattern.compile(owned[1]);
 			List<String> allowed = Arrays.asList(owned[2].split(","));
 			List<String> strays = new ArrayList<>();
+			boolean seen = false;
 			for (File f : DialogSeamTest.javaSources(new File(root, "ctrmap"))) {
 				if (f.getParentFile() != null && f.getParentFile().getName().equals("tests")) {
 					continue;
@@ -152,10 +212,15 @@ public class DuplicateWorkTest {
 				String src = SourceSeamTest.stripComments(
 						new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
 				Matcher m = marker.matcher(src);
-				if (m.find() && !allowed.contains(f.getName())) {
+				boolean found = m.find();
+				seen |= found && allowed.contains(f.getName());
+				if (found && !allowed.contains(f.getName())) {
 					strays.add(f.getName());
 				}
 			}
+			//a marker that matches nothing anywhere passes the stray check by never looking:
+			//it must find the capability where it IS owned before its silence elsewhere means anything
+			check(seen, "control: the marker for " + owned[0] + " is found in its owner " + owned[2]);
 			check(strays.isEmpty(), "only " + owned[2] + " does " + owned[0]
 					+ (strays.isEmpty() ? "" : " - but so does " + strays + ". " + owned[3]
 					+ " If this really is a different job, give it its own entry in OWNED;"
@@ -264,6 +329,19 @@ public class DuplicateWorkTest {
 		check(stranded.isEmpty(), live.size() + " of " + src.size() + " production class(es)"
 			+ " are reached from the application" + (stranded.isEmpty() ? "" : " - and these are not, and are not argued for: " + stranded + ". Either something should call it, or it should be deleted, or it goes in UNREACHED with what it is. A class nothing reaches still compiles, still ships, and still counts toward every other ceiling in this battery"));
 		check(UNREACHED.length <= UNREACHED_CEILING, UNREACHED.length + " class(es) argued as unreached, ceiling " + UNREACHED_CEILING + " - this may fall and may not rise quietly");
+		//an argument for a class that is reached now, or is gone, is a record of a tree that no
+		//longer exists: it tells the next reader "nothing uses this" about something that is used
+		List<String> stale = new ArrayList<>();
+		for (String[] e : UNREACHED) {
+			String cls = e[0].substring(0, e[0].length() - ".java".length());
+			if (!src.containsKey(cls)) {
+				stale.add(e[0] + " (no such production class)");
+			} else if (live.contains(cls)) {
+				stale.add(e[0] + " (reached from the application)");
+			}
+		}
+		check(stale.isEmpty(), "every class argued as unreached still is one" + (stale.isEmpty() ? ""
+			: " - not " + stale + ". Take its entry out of UNREACHED and lower the ceiling with it"));
 	}
 
 	static String relative(File root, File f) {

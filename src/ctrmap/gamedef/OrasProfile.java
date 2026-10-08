@@ -119,8 +119,14 @@ public class OrasProfile extends GameProfile {
 		return 2;
 	}
 
+	/** The Battle Maison lobby (Battle Resort) is zone 517, the Battle Institute (Mauville) 448. */
+	@Override
+	public int facilityLobbyZone(Facility f) {
+		return f == Facility.MAISON ? 517 : f == Facility.INSTITUTE ? 448 : -1;
+	}
+
 	/**
-	 * 1, not 2. MEASURED on the pristine retail dump: AREA_DATA (/a/0/1/4)
+	 * 228. MEASURED on the pristine retail dump: AREA_DATA (/a/0/1/4)
 	 * holds 229 entries - areas 0..227, then entry 228, the engine's global
 	 * per-area table (10032 bytes = 228 rows of 44). Three independent
 	 * confirmations that 227 is a real area and 228 is the only non-area:
@@ -132,11 +138,61 @@ public class OrasProfile extends GameProfile {
 	 * <p>Recorded here because the editor did not agree with itself: the
 	 * AreaData mass-edits in the Extras panel loop to
 	 * {@code length - (isOA() ? 2 : 1)}, which is 227 on ORAS and so has always
-	 * skipped area 227 - the one belonging to a real zone.
+	 * skipped area 227 - the one belonging to a real zone. And it is an INDEX, not
+	 * a count of trailing tables: an area fork appends after entry 228, so after
+	 * one fork "the last entry" was the forked area (F235). AreaForker's
+	 * AD_GLOBAL_TABLE is the same 228, held equal by AreaTableTest.
 	 */
 	@Override
-	public int areaDataTrailingEntries() {
-		return 1;
+	public int areaTableIndex() {
+		return 228;
+	}
+
+	/** 950 trainer entries with 0 the dummy; TrainerDataTest round-trips every one of 1..949. */
+	@Override
+	public int trainerIdMax() {
+		return 949;
+	}
+
+	/** 776 item-name lines, index 0 the null item. */
+	@Override
+	public int itemIdMax() {
+		return 775;
+	}
+
+	/**
+	 * 536: the zone-limit patch is measured from it - the executable's master-table buffer is
+	 * 536 * 0x38 bytes (ZoneLimitPatch's OFF_MASTER_SIZE word) - and ZoneTables reads 536 zones
+	 * before the master table and the EN pack on an unmodified dump.
+	 */
+	@Override
+	public int retailZoneCount() {
+		return 536;
+	}
+
+	/** 721: the Generation 6 national dex, the editor's species bound since before F205. */
+	@Override
+	public int speciesIdMax() {
+		return 721;
+	}
+
+	/**
+	 * 621: carried over from the 622 the reference tables fell back to when the move names were
+	 * not loaded (622 lines, index 0 the null move). Re-measuring against the dump's move text
+	 * is owed with the dump.
+	 */
+	@Override
+	public int moveIdMax() {
+		return 621;
+	}
+
+	/**
+	 * 279: carried over from the trainer editor's class spinner bound (F205). Re-measuring
+	 * against the dump's trainer-class text is owed with the dump.
+	 */
+	@Override
+	public int trainerClassMax() {
+		return 279;
 	}
 
 	/**
@@ -162,17 +218,27 @@ public class OrasProfile extends GameProfile {
 		return true;
 	}
 
+	/**
+	 * 1, as the camera form's author recorded ORAS's neutral cameras (X/Y's are 2). Not
+	 * re-read in this tree, which holds no game data: CameraFormTest's dump half reads every
+	 * area's table and refuses any other value.
+	 */
+	@Override
+	public int neutralCameraValue() {
+		return 1;
+	}
+
 	//cyclingFlagSafe: inherits false, and here that is a measurement rather
 	//than a gap. ORAS softlocks when the player mounts the bike in a zone whose
 	//header carries the cycling flag, on hardware and under an emulator alike,
 	//so the Extras panel's mass edit must leave the bit clear on this game.
 
-	/**
-	 * Omega Ruby. Alpha Sapphire is 000400000011C500 and this profile covers
-	 * both, which is why the deployer prefers the dumped folder's own name.
-	 */
+	/** Omega Ruby and Alpha Sapphire: the two titles this profile covers, neither the default (F238). */
 	@Override
-	public String titleId() {
-		return "000400000011C400";
+	public java.util.Map<String, String> titleIds() {
+		java.util.Map<String, String> ids = new java.util.LinkedHashMap<>();
+		ids.put("000400000011C400", "Omega Ruby");
+		ids.put("000400000011C500", "Alpha Sapphire");
+		return java.util.Collections.unmodifiableMap(ids);
 	}
 }

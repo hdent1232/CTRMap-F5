@@ -133,22 +133,11 @@ public class PawnInstruction {
 			if (argsUnparsed.length == ret.argumentCount) {
 				for (int i = 0; i < argsUnparsed.length; i++) {
 					try {
-						if (PawnInstruction.checkFlt(ret)) {
-							ret.argumentCells[i] = Float.floatToIntBits(Float.parseFloat(argsUnparsed[i].replaceAll("f", "")));
-						} else if (ret.getCommand() == 0x87 && i == 0 && !isNumeric(argsUnparsed[i])) {
-							// SYSREQ_N by native NAME: resolve to the natives-table index
-							// of the script this assembly was given
-							int ix = asm.resolveNativeIndex(argsUnparsed[i]);
-							if (ix < 0) {
-								asm.error("\"" + instruction + "\": unknown native " + argsUnparsed[i]);
-							} else {
-								ret.argumentCells[i] = ix;
-							}
-						} else {
-							ret.argumentCells[i] = Integer.parseInt(argsUnparsed[i]);
-						}
+						ret.argumentCells[i] = parseArg(ret, i, argsUnparsed[i], asm.nativesFrom());
 					} catch (NumberFormatException e) {
 						asm.error("\"" + instruction + "\": argument " + i + " \"" + argsUnparsed[i] + "\" is not a decimal number");
+					} catch (IllegalArgumentException unknown) {
+						asm.error("\"" + instruction + "\": unknown native " + argsUnparsed[i]);
 					}
 				}
 			} else {
@@ -187,6 +176,7 @@ public class PawnInstruction {
 		jmpListeners.clear();
 		if (checkJmp(this) && parent != null) {
 			JumpListener jl = new JumpListener(this);
+			jl.targetAt = argumentCells[0] + pointer;
 			jl.setParent(parent.lookupInstructionByPtr(argumentCells[0] + pointer));
 			jmpListeners.add(jl);
 		}
@@ -202,6 +192,15 @@ public class PawnInstruction {
 		chkAddJumpListener();
 	}
 
+	/** Why each of this instruction's branches cannot follow a renumber - empty when all can (F086). */
+	public List<String> unresolvedBranches(java.util.Set<PawnInstruction> live) {
+		List<String> out = new ArrayList<>();
+		for (JumpListener l : jmpListeners) {
+			out.addAll(l.unresolved(live));
+		}
+		return out;
+	}
+
 	public void callJumpListeners() {
 		for (int i = 0; i < jmpListeners.size(); i++) {
 			jmpListeners.get(i).onAddressChange();
@@ -209,35 +208,77 @@ public class PawnInstruction {
 	}
 
 	public boolean setArgsFromString(String str) {
+		return takeArgs(str).isEmpty();
+	}
+
+	/**
+	 * Takes the arguments the editor's text gives this instruction, or says in words why not - and
+	 * then leaves every cell as it was (F242). The live-edit parser read only decimals, so a native
+	 * call the editor itself showed by name could not be edited - the typed text stayed on screen and
+	 * a save wrote the old instruction - and a line that failed at its second argument had already
+	 * changed its first.
+	 *
+	 * @return "" when taken, else why not
+	 */
+	public String takeArgs(String str) {
 		if (!checkJmp(this)) {
-			String allArgs = str.replace("(", "").replace(")", "").replaceAll(" ", "");
-			String[] argsUnparsed = allArgs.split(",");
-			if (argsUnparsed.length == argumentCount) {
-				for (int i = 0; i < argsUnparsed.length; i++) {
-					try {
-						if (PawnInstruction.checkFlt(this)) {
-							argumentCells[i] = Float.floatToIntBits(Float.parseFloat(argsUnparsed[i].replaceAll("f", "")));
-						} else {
-							argumentCells[i] = Integer.parseInt(argsUnparsed[i]);
-						}
-					} catch (NumberFormatException e) {
-						return false;
-					}
+			String[] argsUnparsed = str.replace("(", "").replace(")", "").replaceAll(" ", "").split(",");
+			if (argsUnparsed.length != argumentCount) {
+				return "this instruction takes " + argumentCount + " argument(s), not " + argsUnparsed.length;
+			}
+			int[] cells = new int[argumentCount];
+			for (int i = 0; i < argsUnparsed.length; i++) {
+				try {
+					cells[i] = parseArg(this, i, argsUnparsed[i], parent);
+				} catch (NumberFormatException notANumber) {
+					return "argument " + (i + 1) + " \"" + argsUnparsed[i] + "\" is not a number";
+				} catch (IllegalArgumentException noSuchNative) {
+					return "argument " + (i + 1) + " \"" + argsUnparsed[i] + "\" is not a native this script calls";
 				}
-			} else {
-				return false;
 			}
-		} else {
-			String jumpOnly = str.replaceAll("=>", "").replaceAll(" ", "").replace("0x", "").replace("\n", "");
-			try {
-				argumentCells[0] = Integer.parseInt(jumpOnly, 16) - pointer;
-				jmpListeners.clear();
-				chkAddJumpListener();
-			} catch (NumberFormatException e) {
-				return false;
-			}
+			System.arraycopy(cells, 0, argumentCells, 0, cells.length);
+			return "";
 		}
-		return true;
+		String jumpOnly = str.replaceAll("=>", "").replaceAll(" ", "").replace("0x", "").replace("\n", "");
+		int target;
+		try {
+			target = Integer.parseInt(jumpOnly, 16);
+		} catch (NumberFormatException notHex) {
+			return "\"" + jumpOnly + "\" is not a hex address";
+		}
+		//A TARGET THAT IS NOT THE START OF AN INSTRUCTION IS REFUSED, the cell kept (F086): taken,
+		//the next renumber rewrote it as a jump to address 0
+		if (parent != null && parent.lookupInstructionByPtr(target) == null) {
+			return "0x" + Integer.toHexString(target) + " is not the start of an instruction";
+		}
+		argumentCells[0] = target - pointer;
+		jmpListeners.clear();
+		chkAddJumpListener();
+		return "";
+	}
+
+	/**
+	 * One argument, as the editor and the assembler write it, as the cell it is (F242): a float for
+	 * a float instruction, a native's name or index for SYSREQ_N's first, else a decimal - the one
+	 * reading both parsers use. Only the assembler knew names, so the editor could not re-read its
+	 * own "SYSREQ_N(PlayerSetBP,4)".
+	 *
+	 * @param natives the script a native's name is looked up in; null takes no names
+	 * @throws NumberFormatException when a number does not parse
+	 * @throws IllegalArgumentException for a name the script calls no native by
+	 */
+	static int parseArg(PawnInstruction ins, int i, String text, GFLPawnScript natives) {
+		if (checkFlt(ins)) {
+			return Float.floatToIntBits(Float.parseFloat(text.replaceAll("f", "")));
+		}
+		if (ins.getCommand() == 0x87 && i == 0 && !isNumeric(text)) {
+			int ix = natives == null ? -1 : natives.nativeIndexOf(text);
+			if (ix < 0) {
+				throw new IllegalArgumentException(text + " is not a native this script calls");
+			}
+			return ix;
+		}
+		return Integer.parseInt(text);
 	}
 
 	public static boolean getHasCompressedArg(int command) {
@@ -577,7 +618,12 @@ public class PawnInstruction {
 		String op;
 		switch (c & 0x7FFF) {
 			default:
-				System.out.println("Invalid Command ID " + (c & 0x7FFF));
+				//AN OPCODE THIS TABLE DOES NOT LIST (F086): named when the enum has it, else shown as the
+				//raw cell - it printed to stdout and fell into eA, whose Commands.values()[c] threw for
+				//every opcode past NUM_OPCODES
+				op = (c & 0x7FFF) < Commands.NUM_OPCODES.ordinal() ? eA(ins)
+						: String.format("UNKNOWN_OPCODE_0x%X(cell 0x%08X)", c & 0x7FFF, c);
+				break;
 			case 0x01:
 			case 0x02:
 			case 0x05:
@@ -923,9 +969,25 @@ public class PawnInstruction {
 
 		private final PawnInstruction src;
 		private PawnInstruction target;
+		/** The address the branch named when it was bound - what a refusal names (F086). */
+		int targetAt;
 
 		public JumpListener(PawnInstruction jumpSource) {
 			src = jumpSource;
+		}
+
+		/**
+		 * Why this branch cannot follow a renumber, or nothing (F086): its target is not the start of
+		 * an instruction, or is one the script no longer holds. A renumber rewrote the first as a
+		 * jump to address 0 and carried the second to a stale address, without a word.
+		 */
+		public List<String> unresolved(java.util.Set<PawnInstruction> live) {
+			if (target != null && live.contains(target)) {
+				return Collections.emptyList();
+			}
+			return Collections.singletonList("the branch at 0x" + Integer.toHexString(src.pointer) + " to 0x"
+					+ Integer.toHexString(targetAt) + (target == null ? ", which is not the start of an instruction"
+					: ", an instruction no longer in the script"));
 		}
 
 		public void setParent(PawnInstruction target) {
@@ -933,11 +995,11 @@ public class PawnInstruction {
 		}
 
 		public void onAddressChange() {
-			try {
-				src.argumentCells[0] = target.pointer - src.pointer;
-			} catch (NullPointerException e) {
-				src.argumentCells[0] = -src.pointer;
+			if (target == null) {   //it wrote -src.pointer here: a jump to address 0, the HALT_P head (F086)
+				throw new IllegalStateException(unresolved(Collections.<PawnInstruction>emptySet()).get(0)
+						+ " - it cannot follow a renumber");
 			}
+			src.argumentCells[0] = target.pointer - src.pointer;
 		}
 	}
 
@@ -961,15 +1023,41 @@ public class PawnInstruction {
 		}
 
 		@Override
-		public void onAddressChange() {
-			for (int i = 2; i < src.argumentCells.length; i += 2) {
-				if (targets.get(src.argumentCells[i]) != null) {
-					try {
-						src.argumentCells[i + 1] = targets.get(src.argumentCells[i]).pointer - (src.pointer + i * 4) - 4;
-					} catch (NullPointerException e) {
-						//invalid ptr
-					}
+		public List<String> unresolved(java.util.Set<PawnInstruction> live) {
+			List<String> out = new ArrayList<>();
+			for (Map.Entry<Integer, PawnInstruction> t : targets.entrySet()) {
+				if (t.getValue() == null || !live.contains(t.getValue())) {
+					out.add("case " + t.getKey() + " of the CASETBL at 0x" + Integer.toHexString(src.pointer)
+							+ (t.getValue() == null ? ", which does not land on an instruction" : ", which lands on an instruction no longer in the script"));
 				}
+			}
+			if (defaultTarget == null || !live.contains(defaultTarget)) {
+				out.add("the default of the CASETBL at 0x" + Integer.toHexString(src.pointer)
+						+ (defaultTarget == null ? ", which does not land on an instruction" : ", which lands on an instruction no longer in the script"));
+			}
+			return out;
+		}
+
+		@Override
+		public void onAddressChange() {
+			//A CASE OR DEFAULT WITH NO INSTRUCTION TO FOLLOW THROWS (F086): a case kept its stale offset
+			//and a missing default threw a bare NullPointerException. A key added since binding has no
+			//entry at all - its adder points it after the renumber (TalkerScriptWizard.installCase).
+			for (int i = 2; i < src.argumentCells.length; i += 2) {
+				int key = src.argumentCells[i];
+				if (!targets.containsKey(key)) {
+					continue;
+				}
+				PawnInstruction t = targets.get(key);
+				if (t == null) {
+					throw new IllegalStateException("case " + key + " of the CASETBL at 0x" + Integer.toHexString(src.pointer)
+							+ " does not land on an instruction - it cannot follow a renumber");
+				}
+				src.argumentCells[i + 1] = t.pointer - (src.pointer + i * 4) - 4;
+			}
+			if (defaultTarget == null) {
+				throw new IllegalStateException("the default of the CASETBL at 0x" + Integer.toHexString(src.pointer)
+						+ " does not land on an instruction - it cannot follow a renumber");
 			}
 			src.argumentCells[1] = defaultTarget.pointer - (src.pointer + 4);
 			src.updateDisassembly();

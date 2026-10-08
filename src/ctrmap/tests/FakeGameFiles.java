@@ -46,6 +46,8 @@ final class FakeGameFiles implements GameFiles {
 	private GameProfile profile = GameProfile.of(GameType.ORAS);
 	private GameProfile.Variant variant = GameProfile.Variant.RETAIL;
 	private File pristine;
+	/** What has been read from this game and kept: its own, as the session's is (F218). */
+	private final ctrmap.formats.GameCache cache = new ctrmap.formats.GameCache();
 
 	/** An empty ORAS-shaped game under a fresh scratch directory. */
 	FakeGameFiles() throws IOException {
@@ -150,9 +152,20 @@ final class FakeGameFiles implements GameFiles {
 		}
 	}
 
+	/** Reported through {@link #edited(File)} and still on disk, as the workspace answers it. */
+	@Override
+	public boolean isEdit(File f) {
+		return f != null && edited.contains(f.getAbsoluteFile()) && f.exists();
+	}
+
 	@Override
 	public File scratch() {
 		return scratch;
+	}
+
+	@Override
+	public ctrmap.formats.GameCache cache() {
+		return cache;
 	}
 
 	@Override

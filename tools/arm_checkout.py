@@ -29,6 +29,7 @@ to the session, which is what has to know. A problem is printed as a problem, ne
 
     python -B tools/arm_checkout.py [--root <checkout>] [--memory <memory folder>]
 """
+import importlib.util
 import io
 import json
 import os
@@ -70,8 +71,35 @@ def _git(root, args):
     return done.returncode, (done.stdout or "").strip()
 
 
+def unrunnable(root):
+    """[why] for every hook in the hooks folder git would skip - gate_stamps.unrunnable_hooks, the
+    one implementation the commit gate refuses by - after giving the executable bit back to any
+    hook that lost it on disk, where the system has the bit.
+
+    F182, MEASURED 2026-10-07: the hooks were committed 100644 from Windows, every POSIX clone
+    took that mode, git skipped commit-msg and pre-commit with only a hint, and this tool reported
+    them ARMED because it read the hooks path and never asked whether git could run what it named.
+    The bit on disk is restored here because session start is the act that makes a checkout
+    usable; a mode in the INDEX is a commit's to fix and is said, never changed behind the user.
+    """
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import gate_stamps
+    except ImportError as exc:
+        return ["whether git would run the hooks is UNKNOWN: tools/gate_stamps.py cannot be loaded"
+                " (%s)" % exc]
+    if os.name != "nt":
+        folder = os.path.join(root, HOOKS_DIR)
+        for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+            path = os.path.join(folder, name)
+            if name in gate_stamps.GIT_HOOKS and os.path.isfile(path) and not os.access(path, os.X_OK):
+                os.chmod(path, os.stat(path).st_mode | 0o111)
+    return gate_stamps.unrunnable_hooks(root)
+
+
 def arm_hooks(root):
-    """(armed, what happened). Armed means READ BACK and pointing at a real commit-msg."""
+    """(armed, what happened). Armed means READ BACK, pointing at a real commit-msg, and holding
+    hooks git will actually run."""
     hook = os.path.join(root, HOOKS_DIR, "commit-msg")
     if not os.path.isfile(hook):
         return False, ("this checkout has no %s/commit-msg, so there is nothing to arm - every "
@@ -90,6 +118,9 @@ def arm_hooks(root):
                        "armed" % (now, HOOKS_DIR))
     if not os.path.isfile(os.path.join(root, now, "commit-msg")):
         return False, "core.hooksPath names %s, which holds no commit-msg" % now
+    skipped = unrunnable(root)
+    if skipped:
+        return False, "the hooks are wired and git would SKIP them: " + "; ".join(skipped)
     if was == HOOKS_DIR:
         return True, "git hooks already armed (core.hooksPath = %s)" % HOOKS_DIR
     return True, ("git hooks ARMED: core.hooksPath was %s, is now %s - a fresh clone runs no "
@@ -168,13 +199,16 @@ def bundle_reachable(root):
     and when nothing it declares resolves, the bundle is fetched to where it says, then asked
     again. The answer names the bundle's place relative to this checkout, never as an absolute
     path, since this is printed where it can be pasted into the next commit message."""
-    sys.path.insert(0, os.path.join(root, "tools"))
+    # THE CLONE'S OWN INSTALLER, loaded from its file and kept out of the module cache. `import
+    # bundle_install` with root/tools on the path was answered by whatever copy the process had
+    # loaded first, and when this loaded first it left the clone's copy for everyone after it.
+    path = os.path.join(root, "tools", "bundle_install.py")
     try:
-        import bundle_install
-    except ImportError as exc:
+        spec = importlib.util.spec_from_file_location("bundle_install_of_checkout", path)
+        bundle_install = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bundle_install)
+    except (OSError, ImportError, AttributeError, SyntaxError) as exc:
         return False, "the bundle installer could not be loaded (%s) - reachability UNKNOWN" % exc
-    finally:
-        sys.path.pop(0)
     declarations = os.path.join(root, ".claude", "bundle-install.json")
     where, why = bundle_install.bundle_path(declarations)
     if where:

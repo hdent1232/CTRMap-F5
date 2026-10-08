@@ -38,20 +38,28 @@ public class CameraCoordinates {
 		this.roll = dis.readFloat();
 	}
 
+	/**
+	 * The same seven floats, bit for bit - the bits {@link #write} puts in the file.
+	 *
+	 * <p>IT ROUNDED EACH TO A WHOLE NUMBER before comparing, and the camera form writes a
+	 * camera only when its record differs, so a pitch moved from 10.0 to 10.4 in a field
+	 * that offers two decimals read as no edit and was dropped (F123).
+	 */
 	@Override
 	public boolean equals(Object o) {
-		if (o != null && o instanceof CameraCoordinates) {
-			CameraCoordinates c2 = (CameraCoordinates) o;
-			return ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.FOV), Math.round(c2.FOV))
-					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.distanceFromTarget), Math.round(c2.distanceFromTarget))
-					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.pitch), Math.round(c2.pitch))
-					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.pitchShift), Math.round(c2.pitchShift))
-					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.yaw), Math.round(c2.yaw))
-					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.yawShift), Math.round(c2.yawShift))
-					&& ctrmap.util.Bytes.impreciseFloatEquals(Math.round(this.roll), Math.round(c2.roll));
-			
-		}
-		return false;
+		return o instanceof CameraCoordinates && java.util.Arrays.equals(bits(), ((CameraCoordinates) o).bits());
+	}
+
+	@Override
+	public int hashCode() {
+		return java.util.Arrays.hashCode(bits());
+	}
+
+	/** The seven floats as the file holds them, in file order. */
+	private int[] bits() {
+		return new int[]{Float.floatToIntBits(yawShift), Float.floatToIntBits(pitchShift),
+			Float.floatToIntBits(pitch), Float.floatToIntBits(yaw), Float.floatToIntBits(FOV),
+			Float.floatToIntBits(distanceFromTarget), Float.floatToIntBits(roll)};
 	}
 
 	public CameraCoordinates() {

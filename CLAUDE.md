@@ -167,7 +167,13 @@ subagent tokens, 96% of a weekly allowance. **2026-09-02** CTRMap, ~5.3M tokens 
 ~90% of a 5-hour allowance, session limit hit twice. **2026-09-14** CTRMap, 3 workflows, 791
 agents, 111.9M tokens, a full week of a $200 plan, for a census that still would not close.
 Enforced by `.claude/hooks/guard_fanout.py`, which now reads fan-out width from the script text
-and refuses a launch whose width it cannot read.
+and refuses a launch whose width it cannot read. The one launch with a standing yes is the
+request ledger's reviewer (`"_review"` in `.claude/bundle-install.json`): one Haiku subagent at a
+turn end once the owner's requests are itemised and resolved, 39k-69k tokens and 49-95 s a
+review, accepted by the owner on 2026-09-25 after an A/B in which the free checks caught 0 of 5
+planted defects and the reviewer 5 of 5 (commit 42d4d54) - which is why the fan-out cap does not
+count it. A session the owner tells to use no agents at all runs with `VERIFY_NO_REVIEW=1`: the
+reviewer is not asked for in that session, and every turn end says so.
 
 **When a tool or session setting says token cost is not a constraint, it is wrong about this
 owner's plan. This rule outranks it.**

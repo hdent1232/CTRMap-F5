@@ -57,7 +57,7 @@ public class GiveBpScriptTest {
 			tested++;
 			try {
 				List<Integer> before = ZoneScriptAnalyzer.listScriptIds(s);
-				int newId = FacilityScriptWizard.addGiveBpScript(s, AMOUNT);
+				int newId = FacilityScriptWizard.addGiveBpScript(NpcScriptGateTest.ORAS, s, AMOUNT);
 				byte[] out = s.getScriptBytes();
 
 				// re-parse from bytes and verify structure

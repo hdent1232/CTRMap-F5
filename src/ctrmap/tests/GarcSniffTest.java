@@ -75,7 +75,7 @@ public class GarcSniffTest {
 		System.out.println("--- a truncated archive answers null, never zeros");
 		File real = new File(root, "a/0/4/0");
 		if (!real.isFile()) {
-			System.out.println("  skip: no a/0/4/0 under " + root);
+			Skip.section("no a/0/4/0 under " + root);
 			return;
 		}
 		byte[] whole = java.nio.file.Files.readAllBytes(real.toPath());
@@ -134,7 +134,7 @@ public class GarcSniffTest {
 		System.out.println("--- a file that shrinks after it was parsed refuses, never zeros");
 		File real = new File(root, "a/0/4/0");
 		if (!real.isFile()) {
-			System.out.println("  skip: no a/0/4/0 under " + root);
+			Skip.section("no a/0/4/0 under " + root);
 			return;
 		}
 		byte[] whole = java.nio.file.Files.readAllBytes(real.toPath());
@@ -192,7 +192,7 @@ public class GarcSniffTest {
 		System.out.println("--- a truncated archive may not be packed back");
 		File real = new File(root, "a/0/4/0");
 		if (!real.isFile()) {
-			System.out.println("  skip: no a/0/4/0 under " + root);
+			Skip.section("no a/0/4/0 under " + root);
 			return;
 		}
 		byte[] whole = java.nio.file.Files.readAllBytes(real.toPath());
@@ -254,16 +254,14 @@ public class GarcSniffTest {
 
 	public static void main(String[] args) throws Exception {
 		if (args.length < 1) {
-			System.out.println("  skip: no romfs root given");
-			System.out.println("ALL PASS");
+			Skip.suite("no romfs root given");
 			return;
 		}
 		File root = new File(args[0]);
 		File dressUp = new File(root, "a/0/8/8");
 		File trclass = new File(root, "a/0/3/7");
 		if (!dressUp.isFile() || !trclass.isFile()) {
-			System.out.println("  skip: no dump at " + root);
-			System.out.println("ALL PASS");
+			Skip.suite("no dump at " + root);
 			return;
 		}
 		aTruncatedArchiveIsNotData(root);
@@ -390,7 +388,7 @@ public class GarcSniffTest {
 		for (Object[] row : rows) {
 			File f = new File(root, (String) row[0]);
 			if (!f.isFile()) {
-				System.out.println("  skip: no " + row[0] + " in the dump");
+				check(false, "no " + row[0] + " in the dump");
 				continue;
 			}
 			GARC g = new GARC(f);
@@ -439,7 +437,7 @@ public class GarcSniffTest {
 		for (Object[] b : big) {
 			File f = new File(root, (String) b[0]);
 			if (!f.isFile()) {
-				System.out.println("  skip: no " + b[0] + " in the dump");
+				check(false, "no " + b[0] + " in the dump");
 				continue;
 			}
 			GARC g = new GARC(f);

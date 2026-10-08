@@ -44,6 +44,8 @@ import java.util.regex.Pattern;
  * <ul>
  * <li>{@link ClassFile#globals} - the public static non-final fields of a
  *     class, which is what {@link GlobalStateTest} counts;</li>
+ * <li>{@link ClassFile#statics} - every static field it declares, with its
+ *     flags and type, which is what {@link GlobalStateTest} argues;</li>
  * <li>{@link #edgesTo} - every distinct (referencing class, member name) pair
  *     that touches a named owner, with inner and anonymous classes folded to
  *     their outer class so one listener does not read as a separate reader;</li>
@@ -65,6 +67,7 @@ public final class ClassFileScanner {
 	private static final int ACC_STATIC = 0x0008;
 	private static final int ACC_FINAL = 0x0010;
 	private static final int ACC_SYNTHETIC = 0x1000;
+	private static final int ACC_ENUM = 0x4000;
 
 	private ClassFileScanner() {
 	}
@@ -110,6 +113,42 @@ public final class ClassFileScanner {
 		}
 	}
 
+	/**
+	 * One static field a class declares, with its access flags and its type
+	 * descriptor - enough to tell a constant from state that can change.
+	 * Synthetic fields and enum constants are not reported: the compiler's and
+	 * the enum's own, never written by anything here.
+	 */
+	public static final class StaticField {
+
+		/** Internal name of the declaring class, inner classes keeping their {@code $}. */
+		public final String owner;
+		public final String name;
+		/** The field's type, e.g. {@code [Ljava/lang/String;} or {@code Ljava/util/Map;}. */
+		public final String descriptor;
+		public final int flags;
+
+		StaticField(String owner, String name, String descriptor, int flags) {
+			this.owner = owner;
+			this.name = name;
+			this.descriptor = descriptor;
+			this.flags = flags;
+		}
+
+		public boolean isFinal() {
+			return (flags & ACC_FINAL) != 0;
+		}
+
+		public boolean isPublic() {
+			return (flags & ACC_PUBLIC) != 0;
+		}
+
+		@Override
+		public String toString() {
+			return simpleName(owner) + "." + name;
+		}
+	}
+
 	/** One Fieldref, Methodref or InterfaceMethodref out of a constant pool. */
 	public static final class Ref {
 
@@ -140,6 +179,8 @@ public final class ClassFileScanner {
 		public final String name;
 		/** Its public static non-final fields. */
 		public final List<Member> globals;
+		/** Every static field it declares, but the synthetic ones and enum constants. */
+		public final List<StaticField> statics;
 		/** Every field and method reference in its constant pool. */
 		public final List<Ref> refs;
 		/** Every string constant in its constant pool, folded as javac left it. */
@@ -164,10 +205,11 @@ public final class ClassFileScanner {
 		 */
 		public final List<Ref> declares;
 
-		ClassFile(String name, List<Member> globals, List<Ref> refs, List<String> strings,
+		ClassFile(String name, List<Member> globals, List<StaticField> statics, List<Ref> refs, List<String> strings,
 				Set<String> classes, List<Ref> declares) {
 			this.name = name;
 			this.globals = Collections.unmodifiableList(globals);
+			this.statics = Collections.unmodifiableList(statics);
 			this.refs = Collections.unmodifiableList(refs);
 			this.strings = Collections.unmodifiableList(strings);
 			this.classes = Collections.unmodifiableSet(classes);
@@ -300,12 +342,20 @@ public final class ClassFileScanner {
 			skip(in, 6);                          //access flags, this class, super class
 			skip(in, 2 * in.readUnsignedShort()); //interfaces
 			List<Member> globals = new ArrayList<>();
+			List<StaticField> statics = new ArrayList<>();
 			int fieldCount = in.readUnsignedShort();
 			for (int i = 0; i < fieldCount; i++) {
 				int flags = in.readUnsignedShort();
 				String name = utf[in.readUnsignedShort()];
-				classesIn(utf[in.readUnsignedShort()], classes); //the field's type
+				String type = utf[in.readUnsignedShort()];
+				classesIn(type, classes); //the field's type
 				skipAttributes(in);
+				if ((flags & ACC_STATIC) != 0 && (flags & (ACC_SYNTHETIC | ACC_ENUM)) == 0) {
+					if (type == null) {
+						throw new IOException(internalName + "." + name + ": its type is not a UTF-8 constant");
+					}
+					statics.add(new StaticField(internalName, name, type, flags));
+				}
 				boolean mutableGlobal = (flags & ACC_PUBLIC) != 0 && (flags & ACC_STATIC) != 0
 						&& (flags & ACC_FINAL) == 0 && (flags & ACC_SYNTHETIC) == 0;
 				if (mutableGlobal) {
@@ -322,7 +372,7 @@ public final class ClassFileScanner {
 				classesIn(descriptor, classes);
 				declares.add(new Ref(internalName, name, descriptor, true));
 			}
-			return new ClassFile(internalName, globals, refs, strings, classes, declares);
+			return new ClassFile(internalName, globals, statics, refs, strings, classes, declares);
 		} finally {
 			in.close();
 		}

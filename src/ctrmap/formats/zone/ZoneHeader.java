@@ -87,8 +87,37 @@ public class ZoneHeader {
 	public int OAZoneNumber;
 
 	public ZoneHeader(byte[] data, GameType game) {
+		this.game = game;
+		parse(data);
+	}
+
+	/**
+	 * The parent map - the location a zone is named by - out of a raw zone header: the low 10 bits
+	 * of the word at 0x1C (its high 6 are the OL value). The one spelling of that field: the
+	 * repurpose scanner and the atmosphere picker each spelled it themselves (F225, lead 55).
+	 */
+	public static int parentMapOf(byte[] header) {
+		return ((header[0x1C] & 0xFF) | (header[0x1D] & 0xFF) << 8) & 0x3FF;
+	}
+
+	/**
+	 * Reads every field the bytes hold over this header's own, leaving the area, registry and matrix
+	 * it opened: what it is made with, and what a discard puts back (F106).
+	 *
+	 * @throws IllegalStateException when the bytes are shorter than a header; nothing is read then
+	 */
+	public void parse(byte[] data) {
+		if (data == null || data.length < SIZE) {
+			//REFUSED, NOT LOGGED (F115): a short header left every field past the end at its default,
+			//and the next save wrote those defaults over the zone
+			throw new IllegalStateException("A zone header is " + SIZE + " bytes; this one is "
+					+ (data == null ? "absent" : data.length + " byte(s)") + ", so the zone was not read.");
+		}
+		tail = java.util.Arrays.copyOfRange(data, SIZE, data.length);
+		//as declared: each game reads only its own of the two
+		enableSpecialWalking = false;
+		enableFlashableDarkness = false;
 		try {
-			this.game = game;
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(data));
 			mapType = dis.read();
 			mapMove = dis.read();
@@ -105,7 +134,7 @@ public class ZoneHeader {
 			townMapGroup = dis.readShort();
 
 			int H0x1C = dis.readShort();
-			parentMap = H0x1C & 0x3FF;
+			parentMap = parentMapOf(data);
 			OLvalue = H0x1C >> 10;
 
 			int H0x1E = dis.readShort();
@@ -113,9 +142,11 @@ public class ZoneHeader {
 			enableSkybox = ((H0x1E >> 5) & 1) == 1;
 			enableRollerSkates = ((H0x1E >> 6) & 1) == 1;
 			battleBG = (H0x1E >> 7) & 0x7F;
+			unnamed1E = H0x1E & 0xC000;
 
 			int H0x20 = dis.readShort();
 			mapChange = H0x20 & 0x1F;
+			unnamed20 = H0x20 & 0x03E0;
 			enableCycling = ((H0x20 >> 10) & 1) == 1;
 			enableRunning = ((H0x20 >> 11) & 1) == 1;
 			enableEscapeRope = ((H0x20 >> 12) & 1) == 1;
@@ -179,6 +210,7 @@ public class ZoneHeader {
 			H0x1E = (short) (H0x1E | ((enableSkybox) ? 1 : 0) << 5);
 			H0x1E = (short) (H0x1E | ((enableRollerSkates) ? 1 : 0) << 6);
 			H0x1E = (short) (H0x1E | (battleBG << 7));
+			H0x1E = (short) (H0x1E | unnamed1E);
 			dos.writeShort(H0x1E);
 
 			short H0x20 = (short) mapChange;
@@ -188,6 +220,7 @@ public class ZoneHeader {
 			H0x20 = (short) (H0x20 | ((enableFlyFrom) ? 1 : 0) << 13);
 			H0x20 = (short) (H0x20 | ((enableCyclingBGM) ? 1 : 0) << 14);
 			H0x20 = (short) (H0x20 | ((unknownFlag) ? 1 : 0) << 15);
+			H0x20 = (short) (H0x20 | unnamed20);
 			dos.writeShort(H0x20);
 
 			dos.writeShort((short) camera1);
@@ -205,6 +238,7 @@ public class ZoneHeader {
 			dos.writeShort((short) X2);
 			dos.writeShort((short) Z2);
 			dos.writeShort((short) Y2);
+			dos.write(tail);
 
 			return baos.toByteArray();
 		} catch (IOException ex) {
@@ -212,6 +246,17 @@ public class ZoneHeader {
 			return null;
 		}
 	}
+
+	/** A zone header's length; the parser reads exactly this much. */
+	public static final int SIZE = 0x38;
+
+	/**
+	 * The bits the parser does not name - 0x1E bits 14-15 and 0x20 bits 5-9 - and any bytes past
+	 * {@link #SIZE}, carried through to the write (F115): they were dropped, so a zone holding any
+	 * of them read as modified the moment it opened and was saved stripped.
+	 */
+	private int unnamed1E, unnamed20;
+	private byte[] tail = new byte[0];
 
 	public void calculateFlags() {
 		if (game == GameType.XY) {
@@ -251,7 +296,7 @@ public class ZoneHeader {
 		}
 		areadata = new AD(files.staged(ArchiveType.AREA_DATA, areadataID), files);
 		byte[] adbch1 = areadata.getFile(1);
-		if (ctrmap.util.Bytes.checkBCHMagic(adbch1)) {
+		if (ctrmap.formats.h3d.BchSections.hasMagic(adbch1)) {
 			BCHFile adbch1bch = new BCHFile(adbch1);
 			if (adbch1bch.errorlevel == 0) {
 				propTextures.addAll(adbch1bch.textures);

@@ -66,48 +66,60 @@ public class UpdateChecker {
 	}
 
 	/**
-	 * The latest published release when it is newer than the running build, else
-	 * null. Never throws: any failure means "no update to report".
+	 * The STARTUP check: the latest published release when it is newer than the running
+	 * build, else null. Never throws, because nobody asked - offline, rate-limited or a
+	 * moved API says nothing at startup. "Check for updates" calls {@link #latest()}.
 	 */
 	public static Release check() {
 		try {
-			String json = get(API);
-			if (json == null) {
-				return null;
-			}
-			String tag = field(json, "tag_name");
-			if (tag == null || !AppVersion.isNewerThanCurrent(tag)) {
-				return null;
-			}
-			Release r = new Release();
-			r.version = tag.startsWith("v") || tag.startsWith("V") ? tag.substring(1) : tag;
-			r.notes = field(json, "body");
-			//A release carries several files - two builds and a checksum beside
-			//each - so the asset has to be chosen, not just taken. Each asset is
-			//read as its OWN object: name, size and digest scanned independently
-			//across the whole payload could each come from a different file, and
-			//the very first one is usually a .sha256, which is not an update.
-			String want = Updater.flavour() == null ? null : Updater.flavour().assetSuffix;
-			if (want != null) {
-				for (String asset : assetObjects(json)) {
-					String name = field(asset, "name");
-					String url = field(asset, "browser_download_url");
-					if (name == null || url == null
-							|| !name.toLowerCase().endsWith(want.toLowerCase())
-							|| !isGithubHttps(url)) {
-						continue;
-					}
-					r.downloadUrl = url;
-					r.assetName = name;
-					r.assetSize = longField(asset, "size");
-					r.sha256 = sha256Of(asset);
-					break;
-				}
-			}
-			return r;
+			return latest();
 		} catch (Exception ex) {
-			return null; //offline, rate-limited, or the API moved: say nothing
+			//nobody asked, so a failed check is not news; the menu action asks latest() and says it
+			return null;
 		}
+	}
+
+	/**
+	 * The latest published release when it is newer than the running build, null when
+	 * there is none, and an exception when it COULD NOT TELL (F211). Check for updates
+	 * answered "you are on the latest release" for both, with a line admitting that an
+	 * offline machine reads the same - a query that could not look, reporting absent.
+	 */
+	public static Release latest() throws Exception {
+		String json = get(API);
+		String tag = field(json, "tag_name");
+		if (tag == null) {
+			throw new java.io.IOException("GitHub's answer named no release (no tag_name in it)");
+		}
+		if (!AppVersion.isNewerThanCurrent(tag)) {
+			return null;
+		}
+		Release r = new Release();
+		r.version = tag.startsWith("v") || tag.startsWith("V") ? tag.substring(1) : tag;
+		r.notes = field(json, "body");
+		//A release carries several files - two builds and a checksum beside
+		//each - so the asset has to be chosen, not just taken. Each asset is
+		//read as its OWN object: name, size and digest scanned independently
+		//across the whole payload could each come from a different file, and
+		//the very first one is usually a .sha256, which is not an update.
+		String want = Updater.flavour() == null ? null : Updater.flavour().assetSuffix;
+		if (want != null) {
+			for (String asset : assetObjects(json)) {
+				String name = field(asset, "name");
+				String url = field(asset, "browser_download_url");
+				if (name == null || url == null
+						|| !name.toLowerCase().endsWith(want.toLowerCase())
+						|| !isGithubHttps(url)) {
+					continue;
+				}
+				r.downloadUrl = url;
+				r.assetName = name;
+				r.assetSize = longField(asset, "size");
+				r.sha256 = sha256Of(asset);
+				break;
+			}
+		}
+		return r;
 	}
 
 	/**
@@ -196,8 +208,10 @@ public class UpdateChecker {
 		c.setRequestProperty("User-Agent", "CTRMap-F5/" + AppVersion.current());
 		c.setConnectTimeout(6000);
 		c.setReadTimeout(8000);
-		if (c.getResponseCode() != 200) {
-			return null;
+		int code = c.getResponseCode();
+		if (code != 200) {
+			throw new java.io.IOException("GitHub answered " + code
+					+ (c.getResponseMessage() == null ? "" : " " + c.getResponseMessage()));
 		}
 		try (InputStream in = c.getInputStream()) {
 			ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -206,7 +220,8 @@ public class UpdateChecker {
 			while ((n = in.read(buf)) > 0) {
 				out.write(buf, 0, n);
 				if (out.size() > 4 << 20) {
-					break; //a releases payload is never this big
+					//it stopped reading here and parsed the first 4 MB as if it were the answer
+					throw new java.io.IOException("GitHub's answer is over 4 MB, which a release never is");
 				}
 			}
 			return new String(out.toByteArray(), "UTF-8");
@@ -246,13 +261,13 @@ public class UpdateChecker {
 						sb.append('\t');
 						break;
 					case 'u':
-						if (i + 4 < json.length()) {
-							try {
-								sb.append((char) Integer.parseInt(json.substring(i + 1, i + 5), 16));
-							} catch (NumberFormatException ignore) {
-							}
-							i += 4;
+						//a \\u that is not four hex digits is not JSON; it was dropped and the rest of
+						//the string read on as if nothing were missing (F211)
+						if (i + 4 >= json.length() || !json.substring(i + 1, i + 5).matches("[0-9A-Fa-f]{4}")) {
+							throw new IllegalArgumentException("\"" + name + "\" holds a \\u escape that is not four hex digits");
 						}
+						sb.append((char) Integer.parseInt(json.substring(i + 1, i + 5), 16));
+						i += 4;
 						break;
 					default:
 						sb.append(e);

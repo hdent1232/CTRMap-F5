@@ -48,17 +48,16 @@ public class TextureCarryGuardsTest {
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " (pass the romfs root as args[0])");
-			System.out.println("ALL PASS");
+			Skip.suite("no dump at " + dump + " (pass the romfs root as args[0])");
 			return;
 		}
 		ScratchGame.open(dump);
 
 		int target = privateArea();
 		if (target < 0) {
-			System.out.println("  skip: no area in this dump is used by exactly one zone");
-			System.out.println("ALL PASS");
-			return;
+			check(false, "no area in this dump is used by exactly one zone");
+			System.out.println("FAILURES PRESENT");
+			System.exit(1);
 		}
 		int zone = zoneOn(target);
 		check(BchTexturePack.zonesUsingArea(Workspace.session(), target, zone) == null,
@@ -83,9 +82,9 @@ public class TextureCarryGuardsTest {
 			}
 		}
 		if (donor < 0) {
-			System.out.println("  skip: no area in this dump holds four textures area " + target + " lacks");
-			System.out.println("ALL PASS");
-			return;
+			check(false, "no area in this dump holds four textures area " + target + " lacks");
+			System.out.println("FAILURES PRESENT");
+			System.exit(1);
 		}
 		List<String> first = new ArrayList<>(spare.subList(0, 2));
 		List<String> second = new ArrayList<>(spare.subList(2, 4));
@@ -137,7 +136,7 @@ public class TextureCarryGuardsTest {
 		Exception thrown = null;
 		String note = null;
 		if (!tgtFile.setWritable(false)) {
-			System.out.println("  skip: this filesystem will not make " + tgtFile + " read-only");
+			Skip.section("this filesystem will not make " + tgtFile + " read-only");
 			return;
 		}
 		try {

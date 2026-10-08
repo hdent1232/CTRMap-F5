@@ -194,15 +194,17 @@ both would have blocked every measurement forever:
       app cannot run. The installer should take the bundle's copy itself for a file whose
       project copy is a clean, committed, older bundle version, instead of asking for a delete.
 
-- [ ] 2026-10-07 FOUR BUNDLE INSTALL DEFECTS ARE NOT ON THE BUNDLE'S GITHUB MAIN YET. Each was
-      found installing it here, and each was reported to the bundle's own session (Bootstrap
-      verification repository audit) by message on 2026-10-07. Owed in hdent1232/verification-bootstrap:
+- [ ] 2026-10-07 EIGHT BUNDLE DEFECTS ARE NOT ON THE BUNDLE'S GITHUB MAIN YET. Each was
+      found installing it here, or fixing this repository's audit, and each was reported to the
+      bundle's own session (Bootstrap verification repository audit) by message on 2026-10-07.
+      Owed in hdent1232/verification-bootstrap:
         1. GIT HOOKS COMMITTED 100644. On Linux and macOS git skips them with only a hint, so
            every commit gate was off on every cloud checkout. FIXED on branch ctrmap/hook-modes
            (51b3a2a, pushed with the owner's approval); waiting for the bundle session's merge.
         2. THE INSTALL DROVE THE LEDGER BEFORE STAGING. The first update to 040ced8 refused 6 new
-           plants on 3 files and rolled back. FIXED in local bundle commit 9de9750, with a test
-           and 2 plants. NOT PUSHED: it needs the owner's per-push approval.
+           plants on 3 files and rolled back. FIXED in bundle commit 9de9750, with a test and 2
+           plants, pushed with the owner's approval to branch ctrmap/hook-modes; waiting for the
+           bundle session's merge.
         3. AN ADAPT-ADAPTED FILE IS REFUSED ON EVERY UPDATE. shipped_before compares exact blobs,
            so a file whose ADAPT constant a project set, as ADAPT.md says to, can never be taken.
            NOT FIXED: the carry-over was done here by a standalone script, and the bundle session
@@ -210,6 +212,19 @@ both would have blocked every measurement forever:
         4. check_bundle's lint is unpinned. ruff 0.16.10's default rule set reports about 1,400
            findings on a tree that ruff 0.15.22 reports clean. NOT FIXED; the pin is the bundle
            session's call.
+        5. The bundle's guard_background_pipe does not read a command handed to `bash -c`:
+           `bash -c 'python tools/mutate2.py x | head -3'` passes it. This project's copy
+           refuses it, so both stay installed until the bundle's does too (audit F172, F167).
+        6. The bundle's guard_mutation_read takes the whole three-line lock as the locked path,
+           so a read of the mutated file passes under every lock written here. This project's
+           copy reads the first line (audit F171, plant mutation-lock-read-whole).
+        7. guard_blocked_runner, guard_idle_machine and guard_machine_worktrees ship into
+           .claude/bundle-hooks with no .sweep runner here to watch. This project's copies are
+           removed; the bundle's run on every call and cannot fire (audit F170).
+        8. Nothing refuses a guard name present both in .claude/bundle-hooks and in
+           .claude/hooks, where both dispatchers run both copies. 4 of 8 such names here now
+           exist once (audit F167). The bundle's pipe guard also needed this project's
+           destructive_scripts.txt placed beside it by hand; no install step does that.
 
 - [ ] 2026-09-26 A PATHSPEC COMMIT IS REFUSED BY THE STAMP IN THIS REPOSITORY. `git commit -F
       msg -- <paths>` fails at `.githooks/commit-msg` with "the gate cannot stamp it - git could
@@ -254,6 +269,50 @@ both would have blocked every measurement forever:
       an independent agent told to refute it; 76 did not survive that and are gone.
       WORK THE DATA-INTEGRITY HIGHS FIRST - those are the paths that can write wrong
       bytes into a real game.
+
+- [ ] 2026-10-07 A RAMP PAINTED ONE TILE OUT OF A HILL, ONTO GROUND THE PAINTER LEAVES ALONE,
+      LEAVES SKY BESIDE IT. `PaintSealTest` paints that notch as a composite edit - the way the
+      painter edits a real route - and 22 of 1140 sight lines across the hill's foot see through,
+      the first at tile (19,18)'s south edge, 70% along, 3.6 units up: the hill's face beside the
+      ramp's top stops short of it, and on an edge whose low side is untouched ground no backing
+      wall is built (`CliffEdge.donorSide`) to stand behind the gap. Painted from scratch the same
+      terrain is sealed, because there the backing wall is built. The suite holds the count at
+      `NOTCH_COMPOSITE_CEILING`: it may fall, not rise. The taller ramp skirt ("its cost is a few
+      blades near corridors") is the old workaround for this same missing wall; bounding it opens
+      nothing on the suite's flat stand-in ground, so its 348px-to-2338px measurement over retail
+      ground is the owner's to repeat in game. FIX: close the face against the ramp's side on a
+      donor-side edge - a backing wall on that edge, or the face carried round the junction - then
+      lower the ceiling to 0 and tick this. OWNER CHECK: paint a ramp out of a hill's edge on an
+      existing route and look along the hill's foot beside it. (F092)
+
+## In-game verification owed
+
+What the editor ships and the game has not yet been seen to run. Each line QUOTES the warning the
+action shows its user, so the owner's in-game test queue is here and not only inside dialogs a
+reader sees by clicking the action they guard (F217). `tests/test_in_game_queue.py` refuses a
+production warning this list does not quote, and a quote no warning carries any more - so when the
+owner records a result in game, the warning and its line go together. These are the OWNER's to
+check (THE OWNER DOES THE IN-APP AND IN-GAME TESTING), so they are not `- [ ]` items: no
+measurement is held on a game nobody here can boot.
+
+- Script Editor tab - "Script Editor (experimental)" (CtrmapMainframe.java), shipped 2019-10-23
+  upstream. In Azahar: change one line of a zone's script, pack, and trigger it in that zone.
+- Set up Battle facility, independent battles - "(New - unproven in-game.)" (CtrmapMainframe.java),
+  shipped 2026-08-30. In Azahar: set one up in an ordinary zone, pack, and talk to its NPC twice -
+  one battle per talk, no zone replaced.
+- Set up Battle facility, grown or custom - "(A grown/custom facility is unproven in-game - test it.)"
+  (CtrmapMainframe.java), shipped 2026-08-27. In Azahar: grow a facility past its stock pool, pack,
+  and run a streak far enough to draw from the added trainers.
+- Challenge NPC - "UNPROVEN IN-GAME - test it first." (ChallengeForm.java), shipped 2026-09-08. In
+  Azahar: talk to it, win, and talk again - the battle follows the current streak.
+- Resize map - "EXPERIMENTAL: multi-region retail maps prove the engine path, but a grown"
+  (CtrmapMainframe.java), shipped 2026-08-27. In Azahar: grow a retail map by a column and a row,
+  pack, and walk the new cells - collision, camera, no crash at the edge.
+- Import map model (.bch) - "EXPERIMENTAL - untested on real hardware." (CtrmapMainframe.java),
+  shipped 2026-07-22. In Azahar, and on a 3DS if one is to hand: import a model for one region,
+  pack, and walk the region.
+- Add zones - "the in-game boot is unproven - test in" (ZoneLoadingPanel.java), shipped 2026-07-22.
+  In Azahar: add a zone, pack, warp into it - it loads, and the save survives leaving it.
 
 ## Done
 
@@ -496,12 +555,14 @@ not count them.
   managed - at which point SCRIPT joins `MADE_PRIVATE` and both the refusal and
   the repair follow on their own.
 
-- **Two formats are measured and proven, and nothing in the editor reaches them.**
+- **The X/Y wardrobe is measured and proven, and nothing in the editor reaches it.**
   DressUpIndex/DressUpArchive read the whole XY wardrobe (101 rigged parts, proven by
-  DressUpIndexTest) and PartyParam holds 71 script-selector names (proven by
-  PartyParamTest). Both are the expensive half of a feature, already done; neither has
-  a UI, so today the only way to use PartyParam's names is to read the Java source.
-  This is NOT debt to delete and it is not work anyone has committed to: it is
-  recorded here, and in DuplicateWorkTest's UNREACHED table as MEASURED, NOT
-  SHIPPED, so neither can sit in the tree looking alive. Surfacing either is a
-  feature decision for the owner, not a cleanup.
+  DressUpIndexTest). It is parked until X/Y opens for more than maps (F052): the editor
+  cannot write an X/Y archive today, so a wardrobe UI would have nothing to save into.
+  The cost of parking it is that its two classes are compiled into every release. It is
+  recorded here, and in DuplicateWorkTest's UNREACHED table as MEASURED, NOT SHIPPED,
+  so it cannot sit in the tree looking alive; that suite now also refuses an UNREACHED
+  entry for a class that is reached, so the record cannot outlive the fact.
+  PartyParam's 71 script-selector names, which used to share this entry, are shipped:
+  the Script Editor names the PokePartyGetParam / PokePartySetParam call under the caret
+  (PartyParamCall, PartyParamCallTest).

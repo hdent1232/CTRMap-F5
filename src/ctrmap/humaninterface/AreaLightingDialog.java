@@ -34,16 +34,14 @@ import javax.swing.SpinnerNumberModel;
 public class AreaLightingDialog {
 
 	/**
-	 * @param worldTextures the open map's decoded world textures, or null - the
-	 *        environment picker previews with them, and this dialog is the only
-	 *        thing that opens it.
-	 */
-	/**
 	 * The fog and lighting editor, as a pane for the World Editor's tool column.
 	 *
 	 * <p>It edits the area the open zone belongs to, which is what that column is for.
 	 * It was a modal window, which is what this project does not do with features.
 	 *
+	 * @param worldTextures the open map's decoded world textures, or null - the
+	 *        environment picker previews with them, and this dialog is the only
+	 *        thing that opens it.
 	 * @param onClose what to do when the user is finished with it
 	 * @return the editor, or null when there is nothing to edit (it says why first)
 	 */

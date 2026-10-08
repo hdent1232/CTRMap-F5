@@ -67,7 +67,16 @@ public class AreaForkPrompt {
 		try {
 			sharers = AreaForker.areaSharers(zoneIndex);
 		} catch (Exception ex) {
-			return unforked(zoneIndex, currentArea); //cannot tell - let the edit proceed as before
+			//ASKED, NOT WAVED THROUGH (F211, census M.121): this answered "not shared" and let the
+			//edit proceed - the one guard between an edit and 400-odd maps, open whenever it could
+			//not look. Uncertainty is a question; a closed dialog is Cancel, as everywhere here
+			String[] unsure = {"Edit this area anyway", "Cancel"};
+			Object pick = ctrmap.Ui.input(parent,
+					"Could not check whether this zone's area is shared with other zones:\n"
+					+ ctrmap.Ui.reason(ex) + "\n\n"
+					+ "If it is shared, " + whatEdit + " here would change those zones too.",
+					"Shared area", JOptionPane.WARNING_MESSAGE, unsure, unsure[1]);
+			return unsure[0].equals(pick) ? unforked(zoneIndex, currentArea) : null;
 		}
 		if (sharers == 0) {
 			return unforked(zoneIndex, currentArea); //already this zone's own area
@@ -96,7 +105,7 @@ public class AreaForkPrompt {
 			return r;
 		} catch (Exception ex) {
 			ctrmap.Ui.error(parent,
-					"Could not give this zone its own area:\n" + ex.getMessage()
+					"Could not give this zone its own area:\n" + ctrmap.Ui.reason(ex)
 					+ "\n\nThe edit was not applied.",
 					"Shared area");
 			return null;
@@ -136,7 +145,7 @@ public class AreaForkPrompt {
 			int shown = 0, extra = 0;
 			for (int i = 0; i < loaded.count(); i++) {
 				Zone other = loaded.at(i);
-				if (i == zoneIndex || other == null || other.header == null
+				if (i == zoneIndex || other.header == null   //a slot always holds a zone (F208)
 						|| other.header.areadataID != area) {
 					continue;
 				}
@@ -144,7 +153,7 @@ public class AreaForkPrompt {
 					if (shown > 0) {
 						sb.append(", ");
 					}
-					sb.append(ctrmap.formats.text.LocationNames.getLocName(loaded.at(i).header.parentMap));
+					sb.append(ctrmap.formats.text.LocationNames.getLocName(ctrmap.Workspace.session(), loaded.at(i).header.parentMap));
 					shown++;
 				} else {
 					extra++;

@@ -69,14 +69,12 @@ public class ItemEditTest {
 
 	public static void main(String[] args) throws Exception {
 		if (args.length < 1) {
-			System.out.println("  skip: no romfs root given");
-			System.out.println("ALL PASS");
+			Skip.suite("no romfs root given");
 			return;
 		}
 		File src = new File(args[0] + itemArchive());
 		if (!src.isFile()) {
-			System.out.println("  skip: no item archive at " + src);
-			System.out.println("ALL PASS");
+			Skip.suite("no item archive at " + src);
 			return;
 		}
 		File tmp = Scratch.dir("ctrmap_item_edit");

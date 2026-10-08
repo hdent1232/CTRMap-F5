@@ -1,5 +1,6 @@
 package ctrmap.formats.npcreg;
 
+import ctrmap.formats.GameCache;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.MM;
 import ctrmap.formats.garc.GARC;
@@ -7,6 +8,7 @@ import ctrmap.formats.h3d.H3DModelNameGet;
 import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -18,8 +20,9 @@ import java.util.List;
  * <p>Names come from each model's own BCH (via {@link H3DModelNameGet}, a cheap
  * header read - no full parse), read from the handed game's staged copy of
  * each entry so an edited model is named by what the workspace holds. The list
- * is loaded once per game handed in and cached until {@link #invalidate()} or
- * until a different game is handed.
+ * is read once per game and kept in that game's own store (F218), which a pack
+ * empties: it promised to be dropped "when the archives were repacked" through
+ * an {@code invalidate()} nothing called, so a pack never reached it.
  *
  * <p>Handed its game rather than fetching the application's: the pool used to
  * read the global's archive and workspace files, so it could only ever list
@@ -29,26 +32,22 @@ import java.util.List;
  */
 public class MoveModelPool {
 
-	private static List<String> names; // MoveModels index -> internal model name (may be null)
-	/** The game {@link #names} was read from, by identity; see {@link ctrmap.formats.propdata.PropDatabase} for why the cache is keyed. */
-	private static GameFiles loadedFrom;
+	/** MoveModels index -> internal model name (may be null), kept by the game it was read from. */
+	private static final GameCache.Key<List<String>> NAMES = new GameCache.Key<>("move-model names");
 
-	/** Number of models in the handed game's pool (loads + caches on first call); 0 when it has no MoveModels archive open. */
-	public static synchronized int size(GameFiles files) {
-		ensureLoaded(handed(files));
-		return names == null ? 0 : names.size();
+	/** Number of models in the handed game's pool (read and kept on first call); 0 when it has no MoveModels archive open. */
+	public static int size(GameFiles files) {
+		return names(handed(files)).size();
 	}
 
 	/** Internal BCH model name for a MoveModels index of the handed game, or null if unknown. */
-	public static synchronized String name(GameFiles files, int index) {
-		ensureLoaded(handed(files));
-		return (names != null && index >= 0 && index < names.size()) ? names.get(index) : null;
+	public static String name(GameFiles files, int index) {
+		List<String> names = names(handed(files));
+		return index >= 0 && index < names.size() ? names.get(index) : null;
 	}
 
-	/** Drop the cache (e.g. when the archives were repacked). */
-	public static synchronized void invalidate() {
-		names = null;
-		loadedFrom = null;
+	private static List<String> names(GameFiles files) {
+		return files.cache().get(NAMES, () -> read(files));
 	}
 
 	/** A handed game must exist: null here would be a pool listed for no game at all. */
@@ -60,10 +59,7 @@ public class MoveModelPool {
 		return files;
 	}
 
-	private static void ensureLoaded(GameFiles files) {
-		if (names != null && loadedFrom == files) {
-			return;
-		}
+	private static List<String> read(GameFiles files) {
 		List<String> loaded = new ArrayList<>();
 		GARC pool = files.archive(ArchiveType.MOVE_MODELS);
 		if (pool != null) {
@@ -81,7 +77,6 @@ public class MoveModelPool {
 				loaded.add(nm != null ? nm.trim() : null);
 			}
 		}
-		names = loaded;
-		loadedFrom = files;
+		return Collections.unmodifiableList(loaded);
 	}
 }

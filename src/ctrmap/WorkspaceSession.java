@@ -12,13 +12,13 @@ import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -61,7 +61,15 @@ public final class WorkspaceSession implements GameFiles {
 	 * class's business.
 	 */
 	public static void mkDirsIfNotContains(File container, String[] requiredContents) {
-		java.util.List<String> contents = java.util.Arrays.asList(container.list());
+		//a folder that is not there, or cannot be listed, is said - never a NullPointerException out
+		//of Arrays.asList (found building a game by hand, 2026-10-07) - and not made: a workspace
+		//path that names nothing is a setting to fix, not a folder to invent
+		String[] held = container.list();
+		if (held == null) {
+			throw new IllegalStateException("The workspace folder " + container.getAbsolutePath()
+					+ " does not exist or cannot be read, so its folders were not made.");
+		}
+		java.util.List<String> contents = java.util.Arrays.asList(held);
 		for (int i = 0; i < requiredContents.length; i++) {
 			if (!contents.contains(requiredContents[i])) {
 				new File(container.getAbsolutePath() + "/" + requiredContents[i]).mkdir();
@@ -85,83 +93,93 @@ public final class WorkspaceSession implements GameFiles {
 		}
 	}
 
-	/** An archive every supported game must have, and the name it is reported missing under. */
-	private static final Object[][] REQUIRED = {
-		{ArchiveType.AREA_DATA, "AreaData"},
-		{ArchiveType.FIELD_DATA, "FieldData"},
-		{ArchiveType.MAP_MATRIX, "MapMatrix"},
-		{ArchiveType.GAMETEXT, "GameText"},
-		{ArchiveType.ZONE_DATA, "ZoneData"},
-		{ArchiveType.BUILDING_MODELS, "BuildingModels"},
-		{ArchiveType.NPC_REGISTRIES, "NPCRegistries"},
-		{ArchiveType.MOVE_MODELS, "MoveModels"}
+	/**
+	 * EVERY FACT ABOUT AN ARCHIVE THE WORKSPACE HOLDS, ONE ROW EACH (F038). They were six parallel
+	 * lists here - the extraction folders twice (a map, and the list of folders to make and empty),
+	 * the archives every game must have, the ones opened with compression sniffing off, the reload
+	 * order and the pack order - plus a copy of the required list in the setup check and two in the
+	 * suites, all agreeing by hand. The folder list's own javadoc recorded what drift between two of
+	 * them cost: editors writing into a folder nobody made, failing silently.
+	 *
+	 * <p>Columns: the archive; its extraction folder; the name it is reported missing under, when
+	 * every game must have it (null when optional); whether its entries are sniffed for compression
+	 * (false: always raw, and may legitimately start with 0x11); whether a pack writes it back.
+	 *
+	 * <p>The ORDER is the reload order, and the required archives come first, in the order a missing
+	 * one has always been reported. {@link #reloadGARC} reloads the archive asked for and every one
+	 * after it, so the trainer and Maison archives - which nothing asks for by name - stay last.
+	 */
+	private static final Object[][] ARCHIVES = {
+		{ArchiveType.AREA_DATA, "areadata", "AreaData", true, true},
+		{ArchiveType.FIELD_DATA, "fielddata", "FieldData", true, true},
+		{ArchiveType.MAP_MATRIX, "mapmatrix", "MapMatrix", true, true},
+		{ArchiveType.GAMETEXT, "gametext", "GameText", true, true},
+		{ArchiveType.ZONE_DATA, "zonedata", "ZoneData", true, true},
+		{ArchiveType.BUILDING_MODELS, "buildingmodels", "BuildingModels", true, true},
+		{ArchiveType.NPC_REGISTRIES, "npcregistries", "NPCRegistries", true, true},
+		{ArchiveType.MOVE_MODELS, "movemodels", "MoveModels", true, false},
+		//lazy-loaded on demand and huge: never required, opened only when asked for
+		{ArchiveType.STORYTEXT, "storytext", null, true, true},
+		//ORAS-only and optional - older partial dumps lack them
+		{ArchiveType.TRAINER_DATA, "trdata", null, false, true},
+		{ArchiveType.TRAINER_CLASS, "trclass", null, false, false},
+		{ArchiveType.TRAINER_POKE, "trpoke", null, false, true},
+		{ArchiveType.MAISON_SET_POOL_A, "maison_setA", null, false, true},
+		{ArchiveType.MAISON_CLASS_LIST_A, "maison_listA", null, false, true},
+		{ArchiveType.MAISON_SET_POOL_B, "maison_setB", null, false, true},
+		{ArchiveType.MAISON_CLASS_LIST_B, "maison_listB", null, false, true},
+		{ArchiveType.MAISON_SET_POOL_C, "maison_setC", null, false, true}
 	};
+
+	/** Derived from {@link #ARCHIVES}: each archive's extraction folder. */
+	private static final EnumMap<ArchiveType, String> SUBDIR = new EnumMap<>(ArchiveType.class);
+	/** Derived from {@link #ARCHIVES}: the archives every game must have, in the order they are reported. */
+	private static final List<ArchiveType> REQUIRED = new ArrayList<>();
+	/** Derived from {@link #ARCHIVES}: the reload order. */
+	private static final ArchiveType[] RELOAD_ORDER = new ArchiveType[ARCHIVES.length];
+	/** Derived from {@link #ARCHIVES}: the archives a pack may write, in its order. */
+	private static final List<ArchiveType> PACK_ORDER = new ArrayList<>();
 
 	/**
-	 * Archives opened with compression sniffing DISABLED: their entries are
-	 * always raw and may legitimately start with 0x11. ORAS-only and optional
-	 * - older partial dumps lack them.
+	 * Every per-archive extraction directory, derived from {@link #ARCHIVES}, and the workspace's
+	 * scratch folder. {@link #prepareDirectories} creates all of them and {@link #cleanAll} empties
+	 * all of them. {@code _original_garcs} is deliberately absent - it is the pristine backup and
+	 * must survive cleaning.
 	 */
-	private static final ArchiveType[] SNIFF_OFF = {
-		ArchiveType.TRAINER_DATA, ArchiveType.TRAINER_CLASS, ArchiveType.TRAINER_POKE,
-		ArchiveType.MAISON_SET_POOL_A, ArchiveType.MAISON_CLASS_LIST_A,
-		ArchiveType.MAISON_SET_POOL_B, ArchiveType.MAISON_CLASS_LIST_B, ArchiveType.MAISON_SET_POOL_C
-	};
-
-	/** The extraction directory of each archive that has one, under the workspace folder. */
-	private static final EnumMap<ArchiveType, String> SUBDIR = new EnumMap<>(ArchiveType.class);
+	public static final String[] WORKSPACE_SUBDIRS;
 
 	static {
-		SUBDIR.put(ArchiveType.AREA_DATA, "areadata");
-		SUBDIR.put(ArchiveType.FIELD_DATA, "fielddata");
-		SUBDIR.put(ArchiveType.TRAINER_DATA, "trdata");
-		SUBDIR.put(ArchiveType.TRAINER_CLASS, "trclass");
-		SUBDIR.put(ArchiveType.TRAINER_POKE, "trpoke");
-		SUBDIR.put(ArchiveType.MAISON_SET_POOL_A, "maison_setA");
-		SUBDIR.put(ArchiveType.MAISON_CLASS_LIST_A, "maison_listA");
-		SUBDIR.put(ArchiveType.MAISON_SET_POOL_B, "maison_setB");
-		SUBDIR.put(ArchiveType.MAISON_CLASS_LIST_B, "maison_listB");
-		SUBDIR.put(ArchiveType.MAISON_SET_POOL_C, "maison_setC");
-		SUBDIR.put(ArchiveType.MAP_MATRIX, "mapmatrix");
-		SUBDIR.put(ArchiveType.GAMETEXT, "gametext");
-		SUBDIR.put(ArchiveType.STORYTEXT, "storytext");
-		SUBDIR.put(ArchiveType.ZONE_DATA, "zonedata");
-		SUBDIR.put(ArchiveType.BUILDING_MODELS, "buildingmodels");
-		SUBDIR.put(ArchiveType.NPC_REGISTRIES, "npcregistries");
-		SUBDIR.put(ArchiveType.MOVE_MODELS, "movemodels");
+		List<String> dirs = new ArrayList<>();
+		for (int i = 0; i < ARCHIVES.length; i++) {
+			ArchiveType t = (ArchiveType) ARCHIVES[i][0];
+			SUBDIR.put(t, (String) ARCHIVES[i][1]);
+			dirs.add((String) ARCHIVES[i][1]);
+			if (ARCHIVES[i][2] != null) {
+				REQUIRED.add(t);
+			}
+			RELOAD_ORDER[i] = t;
+			if ((Boolean) ARCHIVES[i][4]) {
+				PACK_ORDER.add(t);
+			}
+		}
+		dirs.add("temp");
+		WORKSPACE_SUBDIRS = dirs.toArray(new String[0]);
 	}
 
-	/**
-	 * Every per-archive extraction directory, in one place. {@link
-	 * #prepareDirectories} creates all of them and {@link #cleanAll} empties
-	 * all of them; when the two lists drifted apart, the directories only the
-	 * second one knew about were never created and the editors that wrote
-	 * into them failed silently. {@code _original_garcs} is deliberately
-	 * absent - it is the pristine backup and must survive cleaning.
-	 */
-	public static final String[] WORKSPACE_SUBDIRS = {
-		"areadata", "fielddata", "mapmatrix", "gametext", "storytext", "zonedata",
-		"buildingmodels", "npcregistries", "movemodels",
-		"trdata", "trclass", "trpoke",
-		"maison_setA", "maison_listA", "maison_setB", "maison_listB", "maison_setC",
-		"temp"
-	};
+	/** The archives every supported game must have, in the order a missing one is reported. */
+	public static List<ArchiveType> requiredArchives() {
+		return Collections.unmodifiableList(REQUIRED);
+	}
 
-	/**
-	 * The order {@link #reloadGARC} walks. It reloads the archive asked for
-	 * AND every one after it in this list. That is the original switch's
-	 * missing {@code break}s, kept on purpose: {@link #packArchives} never
-	 * asks for the trainer or Maison archives by name, and only their reload
-	 * on the way through here keeps those handles current after a pack.
-	 */
-	private static final ArchiveType[] RELOAD_ORDER = {
-		ArchiveType.AREA_DATA, ArchiveType.BUILDING_MODELS, ArchiveType.FIELD_DATA, ArchiveType.GAMETEXT,
-		ArchiveType.MAP_MATRIX, ArchiveType.MOVE_MODELS, ArchiveType.NPC_REGISTRIES, ArchiveType.ZONE_DATA,
-		ArchiveType.STORYTEXT,
-		ArchiveType.TRAINER_DATA, ArchiveType.TRAINER_CLASS, ArchiveType.TRAINER_POKE,
-		ArchiveType.MAISON_SET_POOL_A, ArchiveType.MAISON_CLASS_LIST_A, ArchiveType.MAISON_SET_POOL_B,
-		ArchiveType.MAISON_CLASS_LIST_B, ArchiveType.MAISON_SET_POOL_C
-	};
+	/** The name a required archive is reported missing under; its enum name for any other. */
+	public static String archiveName(ArchiveType t) {
+		for (Object[] row : ARCHIVES) {
+			if (row[0] == t && row[2] != null) {
+				return (String) row[2];
+			}
+		}
+		return t.name();
+	}
 
 	private final File workspaceDir;
 	private final File gameDir;
@@ -173,10 +191,14 @@ public final class WorkspaceSession implements GameFiles {
 	private final EnumMap<ArchiveType, GARC> archives = new EnumMap<>(ArchiveType.class);
 	private final File temp;
 	private final File persistConfig;
+	/** Set when the list of edits exists and could not be read: see {@link #readPersist}. */
+	private boolean editListUnreadable;
 	/** Absolute paths of extracted files marked as edited - the ones a pack writes back. */
 	private final ArrayList<String> persistPaths;
 	/** True for a session whose game folder must never be written; see {@link #readOnly}. */
 	private final boolean readOnly;
+	/** What has been read from this game and kept: this session's own, emptied by a pack (F218). */
+	private final ctrmap.formats.GameCache cache = new ctrmap.formats.GameCache();
 
 	/**
 	 * A session from its parts, checked against nothing. {@link #open} is the
@@ -207,7 +229,50 @@ public final class WorkspaceSession implements GameFiles {
 			this.archives.putAll(archives);
 		}
 		temp = new File(workspaceDir.getPath() + "/temp");
-		persistConfig = new File(workspaceDir.getPath() + "/ctrmap_persist.txt");
+		persistConfig = persistFile(workspaceDir);
+	}
+
+	/** The file in a workspace folder that lists which of its extracted files are the user's edits. */
+	public static File persistFile(File workspaceDir) {
+		return new File(workspaceDir.getPath() + "/ctrmap_persist.txt");
+	}
+
+	/**
+	 * The user's edits a workspace folder records, read from its own list, as
+	 * absolute paths - for a caller with no session open over that folder.
+	 *
+	 * <p>THE ONE READER OF THAT LIST. A session reads it through here on open,
+	 * and so does anything that has to decide what to delete while no session
+	 * is open: closing the window after a game failed to open used to clean the
+	 * workspace against an EMPTY list, because the list it had was the open
+	 * session's and there was none - and every unpacked edit went with the
+	 * scratch files (census H.13).
+	 *
+	 * <p>A line whose file is gone is not an edit and is dropped, for the
+	 * reason {@link #readPersist} gives.
+	 *
+	 * @throws IOException when the list exists and cannot be read. "Could not
+	 *         look" is not "there are none": a caller about to delete must not
+	 *         read it as that
+	 */
+	public static List<String> persistedIn(File workspaceDir) throws IOException {
+		List<String> out = new ArrayList<>();
+		File list = persistFile(workspaceDir);
+		if (!list.exists()) {
+			return out;
+		}
+		String root = workspaceDir.getAbsolutePath();
+		//"\n" on every platform (savePersist writes it so); a stray "\r" is tolerated
+		for (String line : new String(Files.readAllBytes(list.toPath())).split("\r?\n")) {
+			if (line.isEmpty()) {
+				continue; //an empty line names the workspace folder itself, which is not an edit
+			}
+			String path = root + line;
+			if (new File(path).exists()) {
+				out.add(path);
+			}
+		}
+		return out;
 	}
 
 	/**
@@ -277,10 +342,10 @@ public final class WorkspaceSession implements GameFiles {
 		}
 		if (game != null) {
 			GameProfile profile = GameProfile.of(game);
-			for (Object[] r : REQUIRED) {
+			for (ArchiveType t : REQUIRED) {
 				//STORYTEXT deliberately has no existence check: lazy-loaded on demand
-				if (!new File(gameDir.getPath() + profile.archivePath((ArchiveType) r[0])).exists()) {
-					errors.add(r[1] + " GARC not found");
+				if (!new File(gameDir.getPath() + profile.archivePath(t)).exists()) {
+					errors.add(archiveName(t) + " GARC not found");
 				}
 			}
 		}
@@ -288,60 +353,108 @@ public final class WorkspaceSession implements GameFiles {
 			throw new OpenFailed(errors);
 		}
 		WorkspaceSession s = new WorkspaceSession(workspaceDir, gameDir, game, null);
-		s.openArchives();
+		List<String> unreadable = s.openArchives();
+		if (!unreadable.isEmpty()) {
+			throw new OpenFailed(unreadable);
+		}
 		s.readPersist();
 		return s;
 	}
 
-	private void openArchives() {
+	/**
+	 * Opens every archive this session holds.
+	 *
+	 * <p>A DAMAGED ARCHIVE IS A PROBLEM THE USER IS SHOWN, LIKE A MISSING ONE (F231).
+	 * {@link #open} checked only that each file exists; a present archive that is not
+	 * a readable GARC threw RuntimeException out of here, past OpenFailed - the one
+	 * path that names the problem to the user - and the editor came up with no
+	 * workspace and no word about why. Each failure is now collected against the
+	 * archive's name; a TRUNCATED archive, which opens with the entries before the
+	 * cut, is recorded in {@link #openWarnings} so it is said rather than only logged.
+	 *
+	 * @return one line per archive that could not be read; empty when all opened
+	 */
+	private List<String> openArchives() {
+		List<String> problems = new ArrayList<>();
+		openWarnings.clear();
 		archives.clear(); //STORYTEXT stays lazy: re-read from this game folder when asked for
-		for (Object[] r : REQUIRED) {
-			ArchiveType t = (ArchiveType) r[0];
-			archives.put(t, new GARC(archiveFiles.get(t)));
+		for (ArchiveType t : REQUIRED) {
+			openOne(t, archiveName(t), archiveFiles.get(t), sniffs(t), problems);
 		}
-		for (ArchiveType t : SNIFF_OFF) {
+		//the optional archives that are opened up front: every one but the lazy story text
+		for (ArchiveType t : RELOAD_ORDER) {
 			File f = archiveFiles.get(t);
-			if (f != null && f.exists()) {
-				archives.put(t, new GARC(f, false));
+			if (!REQUIRED.contains(t) && t != ArchiveType.STORYTEXT && f != null && f.exists()) {
+				openOne(t, t.name(), f, sniffs(t), problems);
 			}
+		}
+		return problems;
+	}
+
+	private void openOne(ArchiveType t, String name, File f, boolean sniff, List<String> problems) {
+		GARC g;
+		try {
+			g = sniff ? new GARC(f) : new GARC(f, false);
+		} catch (RuntimeException ex) {
+			problems.add(name + " GARC could not be read (" + f.getName() + "): " + ctrmap.util.Bytes.reason(ex));
+			return;
+		}
+		if (g.readableEntries >= 0) {
+			openWarnings.add(name + " (" + f.getName() + ") is TRUNCATED: " + g.readableEntries + " of its "
+					+ g.length + " entries could be read. The rest refuse, and it cannot be packed back"
+					+ " until the archive is restored.");
+		}
+		archives.put(t, g);
+	}
+
+	/** What opened but is damaged, as the user is told it: see {@link #openArchives}. */
+	public List<String> openWarnings() {
+		return Collections.unmodifiableList(openWarnings);
+	}
+
+	private final List<String> openWarnings = new ArrayList<>();
+
+	/**
+	 * The persisted-paths file, if the workspace has one, through {@link #persistedIn}.
+	 * Written paths are workspace-relative; read ones are absolute, because every test of
+	 * this list ({@link #isPersisted}, {@link #addPersist}, cleaning) asks it with
+	 * {@code getAbsolutePath()}, and a workspace folder named relatively used to load
+	 * entries none of those tests could ever match.
+	 */
+	private void readPersist() {
+		persistPaths.clear();
+		//A LINE WHOSE FILE IS GONE IS NOT AN EDIT, AND KEEPING IT BLOCKS THINGS
+		//FOREVER. This list is "the extracted files the user edited", and it is
+		//the only durable record of them - so five operations use "is this path
+		//listed?" as their test for "is one of me already pending?"
+		//(ZoneAppender, AreaForker, GeometryForker, MapResizer and the encounter
+		//editor). Nothing pruned it: cleanAll() empties it wholesale, and Remove
+		//added zones drops entries by walking the DIRECTORY, so it cannot reach
+		//an entry whose file has already gone. Once one is orphaned - a pack that
+		//threw part way, a revert, a hand-deleted file - the operation it names is
+		//refused for the rest of that workspace's life, and the refusal tells the
+		//user to pack, which cannot clear it because packing never touches this
+		//list. A real workspace was found with NINE orphaned entries of fourteen,
+		//five of them zonedata slots, and zone appending had been dead in it since.
+		//Dropping them on load (persistedIn does) is where it belongs: this is the
+		//one moment the list is rebuilt from disk, so the check costs one stat per
+		//entry and the file heals itself the next time it is written.
+		try {
+			persistPaths.addAll(persistedIn(workspaceDir));
+			editListUnreadable = false;
+		} catch (IOException ex) {
+			//WHICH FILES ARE EDITS IS NOW UNKNOWN, NOT "NONE". It used to log and go on
+			//with an empty list, and the next cleanUnchanged - every window close - then
+			//deleted the edits as scratch. Sweeping is refused instead (cleanUnchanged).
+			editListUnreadable = true;
+			Logger.getLogger(WorkspaceSession.class.getName()).log(Level.SEVERE,
+					"the workspace's list of edited files could not be read", ex);
 		}
 	}
 
-	/** The persisted-paths file, if the workspace has one. Written paths are workspace-relative. */
-	private void readPersist() {
-		persistPaths.clear();
-		if (!persistConfig.exists()) {
-			return;
-		}
-		try {
-			Scanner scanner = new Scanner(persistConfig);
-			scanner.useDelimiter("\n"); //for better crossplatformness, force the Linux endline everywhere
-			while (scanner.hasNextLine()) {
-				String path = workspaceDir.getPath() + scanner.nextLine();
-				//A LINE WHOSE FILE IS GONE IS NOT AN EDIT, AND KEEPING IT BLOCKS THINGS
-				//FOREVER. This list is "the extracted files the user edited", and it is
-				//the only durable record of them - so five operations use "is this path
-				//listed?" as their test for "is one of me already pending?"
-				//(ZoneAppender, AreaForker, GeometryForker, MapResizer and the encounter
-				//editor). Nothing pruned it: cleanAll() empties it wholesale, and Remove
-				//added zones drops entries by walking the DIRECTORY, so it cannot reach
-				//an entry whose file has already gone. Once one is orphaned - a pack that
-				//threw part way, a revert, a hand-deleted file - the operation it names is
-				//refused for the rest of that workspace's life, and the refusal tells the
-				//user to pack, which cannot clear it because packing never touches this
-				//list. A real workspace was found with NINE orphaned entries of fourteen,
-				//five of them zonedata slots, and zone appending had been dead in it since.
-				//Dropping them on load is where it belongs: this is the one moment the
-				//list is rebuilt from disk, so the check costs one stat per entry and the
-				//file heals itself the next time it is written.
-				if (new File(path).exists()) {
-					persistPaths.add(path);
-				}
-			}
-			scanner.close();
-		} catch (IOException ex) {
-			Logger.getLogger(WorkspaceSession.class.getName()).log(Level.SEVERE, null, ex);
-		}
+	/** True when the list of edits could not be read on open: see {@link #readPersist}. */
+	public boolean editListUnreadable() {
+		return editListUnreadable;
 	}
 
 	/**
@@ -358,15 +471,40 @@ public final class WorkspaceSession implements GameFiles {
 	/** Writes the persisted-paths file, relative to the workspace so it can move between machines. */
 	public void savePersist() {
 		try {
-			persistConfig.delete();
-			persistConfig.createNewFile();
-			BufferedWriter writer = new BufferedWriter(new FileWriter(persistConfig));
-			for (String line : persistPaths) {
-				writer.write(line.replace(workspaceDir.getPath(), "") + "\n");
-			}
-			writer.close();
+			writePersist();
 		} catch (IOException ex) {
+			//every entry was written through as it was added (addPersist), so a failure here
+			//leaves the list as the last successful write left it - whole - and loses nothing
 			Logger.getLogger(WorkspaceSession.class.getName()).log(Level.SEVERE, null, ex);
+		}
+	}
+
+	/**
+	 * Writes the list of edits WHOLE OR NOT AT ALL (F034). It was rewritten delete-then-write,
+	 * and a failure or a crash between the two left no list - which the next open reads as
+	 * "no edits", and the next window close then deletes every unpacked edit as scratch. It is
+	 * written beside the old one and moved over it, so the file on disk is always one whole list.
+	 * A read-only session writes nothing: it is often a game nobody may write.
+	 */
+	void writePersist() throws IOException {
+		if (readOnly) {
+			return;
+		}
+		StringBuilder sb = new StringBuilder();
+		//the root as persistedIn adds it back - absolute - and only as a PREFIX: a
+		//replace() of a relative folder name also cut it out of the middle of paths
+		String root = workspaceDir.getAbsolutePath();
+		for (String line : persistPaths) {
+			sb.append(line.startsWith(root) ? line.substring(root.length()) : line).append("\n");
+		}
+		WorkspaceUnit.touching(persistConfig);
+		File writing = new File(persistConfig.getPath() + ".writing");
+		Files.write(writing.toPath(), sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		try {
+			Files.move(writing.toPath(), persistConfig.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+					java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+		} catch (java.nio.file.AtomicMoveNotSupportedException notHere) {
+			Files.move(writing.toPath(), persistConfig.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 		}
 	}
 
@@ -450,8 +588,16 @@ public final class WorkspaceSession implements GameFiles {
 		return g;
 	}
 
-	/** Re-reads an archive's entry table from disk - and every archive after it in {@link #RELOAD_ORDER}. */
+	/**
+	 * Re-reads an archive's entry table from disk - and every archive after it in {@link #RELOAD_ORDER}.
+	 *
+	 * <p>Asked for because an archive was rewritten - by a pack, the map builder, a zone removal -
+	 * so everything this session kept from its archives goes with the old handles (F218). One
+	 * rule at the one door every rewrite already passes, rather than one remembered by each
+	 * writer for each cache: the pack used to drop the prop database and nothing else.
+	 */
 	public void reloadGARC(ArchiveType arc) {
+		cache.drop();
 		int start = -1;
 		for (int i = 0; i < RELOAD_ORDER.length; i++) {
 			if (RELOAD_ORDER[i] == arc) {
@@ -470,10 +616,18 @@ public final class WorkspaceSession implements GameFiles {
 		}
 	}
 
+	/**
+	 * Any archive may have been rewritten under this session - a restore from the backup put files
+	 * back into the game folder: every handle is re-read, and everything kept from them goes.
+	 */
+	public void archivesRewritten() {
+		reloadGARC(RELOAD_ORDER[0]);
+	}
+
 	private static boolean sniffs(ArchiveType t) {
-		for (ArchiveType off : SNIFF_OFF) {
-			if (off == t) {
-				return false;
+		for (Object[] row : ARCHIVES) {
+			if (row[0] == t) {
+				return (Boolean) row[3];
 			}
 		}
 		return true;
@@ -533,33 +687,59 @@ public final class WorkspaceSession implements GameFiles {
 		return wsFile;
 	}
 
+	// ------------------------------------------------------------ pending compression (F014)
+
 	/**
-	 * Packs one archive with its overrides, and puts them BACK if the pack throws.
+	 * Whether each archive entry a fork or an append ADDED is stored LZ11, by
+	 * archive, waiting for the next pack - which has no other way to know what
+	 * a new slot should be.
 	 *
-	 * <p>THE DRAIN USED TO BE THE ARGUMENT, so it ran before packDirectory - and packArchives
-	 * stops at the first archive it cannot rewrite, which this class documents as an emulator
-	 * or a virus scanner holding the file open. The overrides for that archive were already
-	 * gone. The user clears the cause and packs again, and the appended slot falls through to
-	 * "inherit the last entry's flag" - the guess the overrides exist to avoid - so a region
-	 * is stored raw in a slot the game inflates, or LZ11 in one it reads raw: a map the game
-	 * cannot load, out of a pack that reported success. The class javadoc promised the
-	 * opposite - "Nothing is lost: the edits stay staged and marked pending."
+	 * <p>THEY WERE FIVE PRIVATE STATIC MAPS on three classes - two on
+	 * GeometryForker, two on AreaForker, one on ZoneAppender - filled by
+	 * whoever forked and drained by the pack (F014). Static meant keyed to
+	 * nothing: what a fork staged in one game survived repointing the
+	 * workspace at another, and no unit of work could put them back when the
+	 * fork failed part way. They describe this workspace's files, so this
+	 * workspace holds them; {@link WorkspaceUnit} snapshots and restores them
+	 * with the files.
 	 */
-	//VISIBLE FOR THE GUARD. packArchives refuses a read-only session at the top, before
-	//any drain, so a suite driving the whole pack would pass without ever reaching the
-	//restore this method exists for - a guard that cannot fail is the thing being fixed.
-	public void packWithOverrides(ArchiveType arc, java.util.Map<Integer, Boolean> overrides,
-			java.util.function.BiConsumer<Integer, Boolean> putBack) throws IOException {
-		try {
-			getArchive(arc).packDirectory(getExtractionDirectory(arc), this::isPersisted,
-				workspaceDir, overrides);
-		} catch (IOException | RuntimeException notPacked) {
-			if (overrides != null) {
-				for (java.util.Map.Entry<Integer, Boolean> one : overrides.entrySet()) {
-					putBack.accept(one.getKey(), one.getValue());
-				}
-			}
-			throw notPacked;
+	private final EnumMap<ArchiveType, Map<Integer, Boolean>> pendingCompression = new EnumMap<>(ArchiveType.class);
+
+	/** Records that the added entry {@code index} of {@code t} is (or is not) stored compressed. */
+	public void registerPendingCompression(ArchiveType t, int index, boolean compressed) {
+		Map<Integer, Boolean> m = pendingCompression.get(t);
+		if (m == null) {
+			m = new java.util.HashMap<>();
+			pendingCompression.put(t, m);
+		}
+		m.put(index, compressed);
+	}
+
+	/** Whether a fork or an append left flags for {@code t} that only a pack can carry. */
+	public boolean hasPendingCompression(ArchiveType t) {
+		Map<Integer, Boolean> m = pendingCompression.get(t);
+		return m != null && !m.isEmpty();
+	}
+
+	/** Takes one archive's pending flags for a pack, or null when there are none. */
+	public Map<Integer, Boolean> consumePendingCompression(ArchiveType t) {
+		return pendingCompression.remove(t);
+	}
+
+	/** A copy of every pending flag, for {@link WorkspaceUnit} to put back. */
+	public EnumMap<ArchiveType, Map<Integer, Boolean>> pendingCompressionSnapshot() {
+		EnumMap<ArchiveType, Map<Integer, Boolean>> copy = new EnumMap<>(ArchiveType.class);
+		for (Map.Entry<ArchiveType, Map<Integer, Boolean>> e : pendingCompression.entrySet()) {
+			copy.put(e.getKey(), new java.util.HashMap<>(e.getValue()));
+		}
+		return copy;
+	}
+
+	/** Puts every pending flag back as {@code snapshot} held it. */
+	public void restorePendingCompression(EnumMap<ArchiveType, Map<Integer, Boolean>> snapshot) {
+		pendingCompression.clear();
+		for (Map.Entry<ArchiveType, Map<Integer, Boolean>> e : snapshot.entrySet()) {
+			pendingCompression.put(e.getKey(), new java.util.HashMap<>(e.getValue()));
 		}
 	}
 
@@ -567,6 +747,18 @@ public final class WorkspaceSession implements GameFiles {
 	public void addPersist(File f) {
 		if (!persistPaths.contains(f.getAbsolutePath())) {
 			persistPaths.add(f.getAbsolutePath());
+			//WRITTEN THROUGH (F034). The list was written only when the window closed, so a crash
+			//forgot every edit made since the workspace opened - and the next close swept those
+			//files away as unchanged. A list that cannot be written is thrown, not logged: an edit
+			//the list does not hold is an edit the next close deletes, and inside a unit the throw
+			//puts the edit back instead.
+			try {
+				writePersist();
+			} catch (IOException ex) {
+				throw new IllegalStateException("The workspace's list of edited files could not be written, so "
+						+ f.getName() + " would not be known as an edit and the next close would delete it: "
+						+ ctrmap.util.Bytes.reason(ex), ex);
+			}
 		}
 	}
 
@@ -595,9 +787,25 @@ public final class WorkspaceSession implements GameFiles {
 		addPersist(f);
 	}
 
+	/** The open {@link WorkspaceUnit}, if there is one, copies the file before it changes. */
+	@Override
+	public boolean isEdit(File f) {
+		return isPendingArtifact(f);
+	}
+
+	@Override
+	public void aboutToWrite(File f) {
+		WorkspaceUnit.touching(f);
+	}
+
 	@Override
 	public File scratch() {
 		return temp();
+	}
+
+	@Override
+	public ctrmap.formats.GameCache cache() {
+		return cache;
 	}
 
 	@Override
@@ -610,6 +818,37 @@ public final class WorkspaceSession implements GameFiles {
 	public File pristine() {
 		File snap = originalSnapshotDir();
 		return snap.isDirectory() ? snap : null;
+	}
+
+	/**
+	 * The snapshot's copy; else the sealed backup's VERIFIED copy, read into this workspace's scratch
+	 * once; else null - never the live folder (F232). The backup is the one the vault keeps for this
+	 * dump, matched by its title (F121); a backup that is there and does not match what was sealed
+	 * throws, because a damaged copy is not an absent one.
+	 */
+	@Override
+	public File pristineArchive(ArchiveType type) throws IOException {
+		File snapshotted = GameFiles.super.pristineArchive(type);
+		if (snapshotted != null) {
+			return snapshotted;
+		}
+		String rel = profile.archivePath(type);
+		if (rel == null || gameDir == null) {
+			return null;
+		}
+		File entry = ctrmap.vault.Vault.entryFor(gameDir);
+		if (!ctrmap.vault.Vault.isSealed(entry)) {
+			return null;
+		}
+		File into = new File(new File(scratch(), "pristine-from-vault"), rel.replace('/', File.separatorChar));
+		if (into.isFile()) {
+			return into;   //verified when it was copied here; a clean empties scratch and it is copied again
+		}
+		String why = ctrmap.vault.Vault.verifiedCopy(entry, gameDir, rel, into);
+		if (!why.isEmpty()) {
+			throw new IOException("the sealed backup's copy of " + type + " could not be used: " + why);
+		}
+		return into;
 	}
 
 	/**
@@ -647,6 +886,40 @@ public final class WorkspaceSession implements GameFiles {
 	/** The live list of edited files' absolute paths. */
 	public List<String> persistPaths() {
 		return persistPaths;
+	}
+
+	/**
+	 * Drops the workspace's extracted copies of the entries of one archive that {@code which}
+	 * names, and their edited marks: the archive was rewritten under them (a zone removal), so
+	 * the next read extracts afresh rather than finding a copy of an entry that is gone.
+	 *
+	 * @throws IOException naming every copy that could not be deleted; the rest are dropped
+	 */
+	public void dropExtracted(ArchiveType type, java.util.function.IntPredicate which) throws IOException {
+		File dir = getExtractionDirectory(type);
+		File[] kids = dir == null ? null : dir.listFiles();
+		if (kids == null) {
+			return; //nothing was ever extracted from it
+		}
+		List<File> stuck = new ArrayList<>();
+		for (File f : kids) {
+			int n;
+			try {
+				n = Integer.parseInt(f.getName());
+			} catch (NumberFormatException notAnEntry) {
+				continue;
+			}
+			if (which.test(n)) {
+				persistPaths.remove(f.getAbsolutePath());
+				if (f.exists() && !f.delete()) {
+					stuck.add(f);
+				}
+			}
+		}
+		if (!stuck.isEmpty()) {
+			throw new IOException("These extracted copies could not be deleted, and now describe entries the archive no"
+					+ " longer has: " + stuck + ". Delete them before editing those entries.");
+		}
 	}
 
 	/**
@@ -692,8 +965,14 @@ public final class WorkspaceSession implements GameFiles {
 		persistPaths.clear();
 	}
 
-	/** Empties every extraction directory of everything NOT marked edited. */
+	/**
+	 * Empties every extraction directory of everything NOT marked edited - unless
+	 * which files are edited could not be read, when nothing is swept at all.
+	 */
 	public void cleanUnchanged() {
+		if (editListUnreadable) {
+			return; //see readPersist: unknown edits are kept, never swept as scratch
+		}
 		cleanDirectories(workspaceDir, false, persistPaths);
 	}
 
@@ -741,9 +1020,11 @@ public final class WorkspaceSession implements GameFiles {
 		if (!stamp.isFile()) {
 			return null;
 		}
-		try (Scanner sc = new Scanner(stamp, "UTF-8")) {
-			while (sc.hasNextLine()) {
-				String line = sc.nextLine().trim();
+		//a BufferedReader: a Scanner kept a read failure to itself, so the catch below never saw one
+		try (java.io.BufferedReader lines = java.nio.file.Files.newBufferedReader(stamp.toPath(),
+				java.nio.charset.StandardCharsets.UTF_8)) {
+			for (String raw; (raw = lines.readLine()) != null;) {
+				String line = raw.trim();
 				if (line.startsWith("gamedir=")) {
 					return line.substring("gamedir=".length()).trim();
 				}
@@ -972,66 +1253,76 @@ public final class WorkspaceSession implements GameFiles {
 		}
 		//leftovers from a pack that threw are not this pack's news
 		GARC.drainPackWarnings();
-		progress.at(0, "Packing - fielddata");
-		//a pending geometry fork appends private region copies (see GeometryForker)
-		packWithOverrides(ArchiveType.FIELD_DATA, GeometryForker.consumePendingFieldOverrides(), GeometryForker::registerPendingField);
-		progress.at(30, "Packing - areadata");
-		//a pending area fork appends a private area copy (see AreaForker)
-		packWithOverrides(ArchiveType.AREA_DATA, AreaForker.consumePendingAreaOverrides(), AreaForker::registerPendingArea);
-		progress.at(60, "Packing - zonedata");
-		//a pending zone append needs its compression overrides exactly once (see ZoneAppender)
-		packWithOverrides(ArchiveType.ZONE_DATA, ZoneAppender.consumePendingZoneDataOverrides(), ZoneAppender::registerPendingZoneData);
-		progress.at(65, "Packing - mapmatrix");
-		//a pending geometry fork appends a rewired matrix (see GeometryForker)
-		packWithOverrides(ArchiveType.MAP_MATRIX, GeometryForker.consumePendingMatrixOverrides(), GeometryForker::registerPendingMatrix);
-		progress.at(70, "Packing - buildingmodels");
-		getArchive(ArchiveType.BUILDING_MODELS).packDirectory(getExtractionDirectory(ArchiveType.BUILDING_MODELS), this::isPersisted, workspaceDir);
-		progress.at(90, "Packing - npcregistries");
-		//an area fork appends the matching registry entry (indexed by area id)
-		packWithOverrides(ArchiveType.NPC_REGISTRIES, AreaForker.consumePendingNpcRegOverrides(), AreaForker::registerPendingNpcReg);
-		progress.at(95, "Packing - trainers");
-		//trainer archives: pack only when actually edited (rewriting them
-		//without edits would still be byte-faithful, but skip the churn)
-		GARC trdata = getArchive(ArchiveType.TRAINER_DATA);
-		if (trdata != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.TRAINER_DATA))) {
-			trdata.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_DATA), this::isPersisted, workspaceDir);
+		//ALL OF THEM WRITTEN, THEN ALL OF THEM SWAPPED (F035). Each archive was rewritten straight
+		//into the game folder in turn, so a failure part way - the emulator holding ZoneData open
+		//is the usual cause - left an area appended to AreaData and its NPC registry not, the
+		//state that stops a zone loading. Every replacement is written beside the workspace first;
+		//the game folder is touched only once all of them exist, one move each.
+		//
+		//ONLY WHAT WAS EDITED (F036). The six big archives were rewritten and recompressed on every
+		//pack whether or not anything in them changed, which is also why Deploy has to decompress
+		//every entry to tell what did. An archive is packed when it holds a staged edit or a
+		//pending compression override - what the small archives were already gated on.
+		List<ArchiveType> packed = new ArrayList<>();
+		List<File> prepared = new ArrayList<>();
+		Map<ArchiveType, Map<Integer, Boolean>> consumed = new EnumMap<>(ArchiveType.class);
+		try {
+			int step = 0;
+			for (ArchiveType t : PACK_ORDER) {
+				progress.at(step++ * 90 / PACK_ORDER.size(), "Packing - " + SUBDIR.get(t));
+				//asked before the archive is fetched: story text is loaded lazily and is huge
+				File dir = getExtractionDirectory(t);
+				if (dir == null || !(hasPersistedFiles(dir) || hasPendingCompression(t))) {
+					continue;
+				}
+				GARC g = t == ArchiveType.STORYTEXT ? getStoryTextGARC() : getArchive(t);
+				if (g == null) {
+					continue;
+				}
+				Map<Integer, Boolean> overrides = consumePendingCompression(t);
+				if (overrides != null) {
+					consumed.put(t, overrides);
+				}
+				File next = new File(workspaceDir, "pack_" + t.name() + ".garc");
+				g.prepareRepack(dir, this::isPersisted, overrides, next);
+				packed.add(t);
+				prepared.add(next);
+			}
+		} catch (IOException | RuntimeException notPacked) {
+			//nothing reached the game: drop what was written and give back what was taken
+			for (File f : prepared) {
+				f.delete();
+			}
+			for (Map.Entry<ArchiveType, Map<Integer, Boolean>> e : consumed.entrySet()) {
+				for (Map.Entry<Integer, Boolean> one : e.getValue().entrySet()) {
+					registerPendingCompression(e.getKey(), one.getKey(), one.getValue());
+				}
+			}
+			throw notPacked;
 		}
-		GARC trpoke = getArchive(ArchiveType.TRAINER_POKE);
-		if (trpoke != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.TRAINER_POKE))) {
-			trpoke.packDirectory(getExtractionDirectory(ArchiveType.TRAINER_POKE), this::isPersisted, workspaceDir);
-		}
-		//Battle Maison opponent pools/lists (edited-only)
-		for (ArchiveType mt : new ArchiveType[]{ArchiveType.MAISON_SET_POOL_A, ArchiveType.MAISON_CLASS_LIST_A,
-			ArchiveType.MAISON_SET_POOL_B, ArchiveType.MAISON_CLASS_LIST_B, ArchiveType.MAISON_SET_POOL_C}) {
-			GARC mg = getArchive(mt);
-			if (mg != null && hasPersistedFiles(getExtractionDirectory(mt))) {
-				mg.packDirectory(getExtractionDirectory(mt), this::isPersisted, workspaceDir);
+		progress.at(95, "Moving the packed archives into the game");
+		for (int i = 0; i < packed.size(); i++) {
+			ArchiveType t = packed.get(i);
+			GARC g = t == ArchiveType.STORYTEXT ? getStoryTextGARC() : getArchive(t);
+			try {
+				g.commitRepack(prepared.get(i));
+			} catch (IOException moveFailed) {
+				for (int j = i + 1; j < prepared.size(); j++) {
+					prepared.get(j).delete();
+				}
+				throw new IOException("The pack moved " + packed.subList(0, i) + " into the game and then could not"
+						+ " move " + t + ": " + moveFailed.getMessage() + " Those already moved are in the game; the"
+						+ " rest stay staged, so packing again carries them.", moveFailed);
 			}
 		}
-		progress.at(95, "Packing - gametext");
-		//packDirectory rewrites the GARC in the game directory even with zero persisted files - only pack when text was actually edited
-		if (hasPersistedFiles(getExtractionDirectory(ArchiveType.GAMETEXT))) {
-			getArchive(ArchiveType.GAMETEXT).packDirectory(getExtractionDirectory(ArchiveType.GAMETEXT), this::isPersisted, workspaceDir);
-		}
-		progress.at(97, "Packing - storytext");
-		//storytext is lazy-loaded and huge - only pack when dialogue was actually edited
-		GARC storyGarc = getStoryTextGARC();
-		if (storyGarc != null && hasPersistedFiles(getExtractionDirectory(ArchiveType.STORYTEXT))) {
-			storyGarc.packDirectory(getExtractionDirectory(ArchiveType.STORYTEXT), this::isPersisted, workspaceDir);
+		if (packed.contains(ArchiveType.STORYTEXT)) {
 			reloadGARC(ArchiveType.STORYTEXT);
 		}
 		progress.at(100, "Done, updating GARCs");
 		//the GARC indices may have changed and as such we need to reload them
-		reloadGARC(ArchiveType.AREA_DATA);
-		reloadGARC(ArchiveType.FIELD_DATA);
-		reloadGARC(ArchiveType.ZONE_DATA);
-		reloadGARC(ArchiveType.MAP_MATRIX);
-		reloadGARC(ArchiveType.BUILDING_MODELS);
-		reloadGARC(ArchiveType.NPC_REGISTRIES);
-		reloadGARC(ArchiveType.GAMETEXT);
-		//the session prop database was built from the pre-pack GARCs;
-		//drop it so the next palette use rebuilds from the fresh archives
-		ctrmap.formats.propdata.PropDatabase.invalidate();
+		//the first archive of the reload order reloads every one after it - all of them -
+		//and the reload empties what was kept from the old ones (the prop database among them)
+		reloadGARC(RELOAD_ORDER[0]);
 		//The archives now on disk are what the game will load. Cross-
 		//archive references are by bare index and nothing else checks
 		//them, so an operation that grew one archive and not another

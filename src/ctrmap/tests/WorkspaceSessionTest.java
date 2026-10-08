@@ -85,8 +85,17 @@ public class WorkspaceSessionTest {
 		theSessionKeepsNoGlobals(src);
 		fewerFilesReachTheGlobal(src);
 		aFolderThatIsNotAGameOpensNothing();
+		//NEITHER NEEDS A GAME: a bare session opens nothing, so these run with or without a dump -
+		//behind the dump they never ran on a machine without one, which is every cloud checkout
+		Workspace.reset();
+		try {
+			File noGame = Scratch.dir("ctrmap_session_nogame");
+			stagedCompressionBelongsToItsWorkspace(noGame);
+		} finally {
+			Workspace.reset();
+		}
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no complete dump at " + dump + " - the opened-session checks need one");
+			Skip.section("no complete dump at " + dump + " - the opened-session checks need one");
 		} else {
 			Workspace.reset();
 			try {
@@ -95,7 +104,6 @@ public class WorkspaceSessionTest {
 				aFailedSwitchLeavesNothingOfTheOldGame(dump);
 				anEntryWhoseFileIsGoneDoesNotBlockTheOperationThatWroteIt(dump);
 				aFailedExtractionLeavesNothingBehind(dump);
-				aPackThatThrowsKeepsItsCompressionOverrides(dump);
 			} finally {
 				Workspace.reset();
 			}
@@ -278,18 +286,17 @@ public class WorkspaceSessionTest {
 		check(new File(ws, "areadata").isDirectory() && new File(ws, "temp").isDirectory(),
 				"and a validated workspace has its extraction directories");
 		check(said.isEmpty(), "with nothing to complain about; said " + said);
-		//the two tables derived from the game are loaded by validate, handed the
-		//session it opened: neither LocationNames nor PokeData reads the global
-		//any more, so a validate that forgot would leave the dropdowns refusing
+		//the two tables derived from the game are read by validate into the
+		//session it opened (F218): kept by that session, asked of it
 		String name0;
 		try {
-			name0 = ctrmap.formats.text.LocationNames.getLocName(0);
+			name0 = ctrmap.formats.text.LocationNames.getLocName(Workspace.session(), 0);
 		} catch (IllegalStateException ex) {
 			name0 = null;
 		}
 		check(name0 != null, "validate loaded the location names from the session it opened"
 				+ (name0 == null ? " (a name is refused)" : " (line 0 answers, " + name0.length() + " chars)"));
-		check(ctrmap.formats.pokedata.PokeData.available(),
+		check(Workspace.session() != null && ctrmap.formats.pokedata.PokeData.of(Workspace.session()).available(),
 				"and the Pokemon reference tables, from the game folder it opened");
 	}
 
@@ -353,50 +360,36 @@ public class WorkspaceSessionTest {
 	}
 
 	/**
-	 * A pack that throws puts its compression overrides BACK, so the retry does not guess.
+	 * What a fork stages for one workspace's next pack is that workspace's, and no other's.
 	 *
-	 * <p>THE DEFECT. The overrides were drained as the ARGUMENT to packDirectory, so
-	 * {@code consumePending...()} ran first and nulled the static. packArchives stops at the
-	 * first archive it cannot rewrite - which this class documents as an emulator or a virus
-	 * scanner holding the file open - and that archive's overrides were already gone. The
-	 * user clears the cause, packs again, and the appended slot falls through to "inherit the
-	 * last entry's flag": a region stored raw in a slot the game inflates, or LZ11 in one it
-	 * reads raw. A map the game cannot load, out of a pack that reported success - while the
-	 * class javadoc promised "Nothing is lost".
+	 * <p>THE DEFECT (F014). Whether each entry a fork ADDED is stored LZ11 travelled to the pack
+	 * through five private static maps on GeometryForker, AreaForker and ZoneAppender - keyed to
+	 * nothing, so what a fork staged in game A was still waiting when the workspace was
+	 * repointed at game B, and B's next pack read A's flags for its own new slots. They were
+	 * outside every global-state count because they were private. Any static holder fails this
+	 * check, whichever class it moves to: the second session must see nothing the first staged,
+	 * and the snapshot a unit of work restores must be the first session's own.
 	 */
-	static void aPackThatThrowsKeepsItsCompressionOverrides(File dump) throws Exception {
-		System.out.println("--- a pack that throws keeps its compression overrides");
-		File ws = Scratch.dir("ctrmap_session_overrides");
-		WorkspaceSession s = Sessions.bare(ws, dump, ctrmap.gamedef.GameType.ORAS);
-		
-		ctrmap.GeometryForker.registerPendingField(4242, true);
-		check(ctrmap.GeometryForker.consumePendingFieldOverrides() != null,
-			"fixture: an override can be registered and drained");
-		ctrmap.GeometryForker.registerPendingField(4242, true);
-		
-		//DRIVE THE SEAM, not the whole pack: packArchives refuses a read-only session at
-		//the top, before any drain, so driving it would pass without reaching the restore.
-		//The fault is an archive this session does not hold open - packDirectory is then
-		//called on nothing and throws, after the overrides have been taken. No file is
-		//written anywhere by this check: a bare session holds no FieldData archive, so
-		//the pack faults before it can reach a file. STORYTEXT is the wrong lever - it opens
-		//lazily, and packDirectory returns silently when the directory is not there, so the
-		//first version of this fixture provoked nothing and proved nothing.
-		java.util.Map<Integer, Boolean> taken =
-			ctrmap.GeometryForker.consumePendingFieldOverrides();
-		Throwable stopped = null;
-		try {
-			s.packWithOverrides(ArchiveType.FIELD_DATA, taken,
-				ctrmap.GeometryForker::registerPendingField);
-		} catch (Throwable t) {
-			stopped = t;
-		}
-		check(stopped != null, "fixture: the pack stopped (" + stopped + ")");
-		java.util.Map<Integer, Boolean> kept =
-			ctrmap.GeometryForker.consumePendingFieldOverrides();
-		check(kept != null && Boolean.TRUE.equals(kept.get(4242)),
-			"and the override survived it - a retry that has to guess the stored form writes a"
-			+ " map the game cannot load, out of a pack that reported success (kept " + kept + ")");
+	static void stagedCompressionBelongsToItsWorkspace(File dump) throws Exception {
+		System.out.println("--- staged compression belongs to the workspace it was staged in");
+		WorkspaceSession a = Sessions.bare(Scratch.dir("ctrmap_session_pending_a"), dump,
+			ctrmap.gamedef.GameType.ORAS);
+		WorkspaceSession b = Sessions.bare(Scratch.dir("ctrmap_session_pending_b"), dump,
+			ctrmap.gamedef.GameType.ORAS);
+		a.registerPendingCompression(ArchiveType.ZONE_DATA, 707, false);
+		java.util.Map<Integer, Boolean> other = b.consumePendingCompression(ArchiveType.ZONE_DATA);
+		check(other == null || other.isEmpty(),
+			"a second workspace sees nothing the first staged - a static holder hands game A's"
+			+ " flags to game B's next pack (B saw " + other + ")");
+		java.util.EnumMap<ArchiveType, java.util.Map<Integer, Boolean>> held = a.pendingCompressionSnapshot();
+		java.util.Map<Integer, Boolean> own = a.consumePendingCompression(ArchiveType.ZONE_DATA);
+		check(own != null && Boolean.FALSE.equals(own.get(707)),
+			"and the first still holds its own (" + own + ")");
+		a.restorePendingCompression(held);
+		java.util.Map<Integer, Boolean> back = a.consumePendingCompression(ArchiveType.ZONE_DATA);
+		check(back != null && Boolean.FALSE.equals(back.get(707)),
+			"a snapshot puts back exactly what was staged, as a rolled-back unit of work needs ("
+			+ back + ")");
 	}
 
 	static void theSessionKeepsNoGlobals(File src) throws Exception {

@@ -95,8 +95,7 @@ public class PaintApplyGuardsTest {
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!new File(dump, "a/0/3/9").isFile()) {
-			System.out.println("  skip: no pristine dump at " + dump);
-			System.out.println("ALL PASS");
+			Skip.suite("no pristine dump at " + dump);
 			return;
 		}
 		System.setProperty("java.awt.headless", "true");
@@ -185,7 +184,7 @@ public class PaintApplyGuardsTest {
 		check(said(said, "SHARES its area"), "the shared-area question was asked: " + said);
 		String why = stop == null ? "(nothing was thrown)" : String.valueOf(stop.getMessage());
 		check(stop instanceof IllegalStateException && why.contains("Area 43 is also used by zones 72, 73")
-				&& why.contains("nothing was applied") && why.contains("(Map > Fork map geometry) and Apply again"),
+				&& why.contains("nothing was applied") && why.contains("(Map > Make zone independent) and Apply again"),
 				"answering \"edit the shared area anyway\" does not get this map's textures into zones 72"
 				+ " and 73's area: the Apply refuses in its own words, naming them, saying nothing was"
 				+ " applied and what to do instead (stopped by: " + stop + ")");
@@ -209,7 +208,7 @@ public class PaintApplyGuardsTest {
 			}
 		}
 		if (gym == null) {
-			System.out.println("  skip: no Gym in the building catalogue");
+			check(false, "no Gym in the building catalogue");
 			return;
 		}
 		List<TilePainterForm.Placed> placed = new ArrayList<>();
@@ -340,7 +339,7 @@ public class PaintApplyGuardsTest {
 
 		File root = new File(src, "ctrmap");
 		if (!root.isDirectory()) {
-			System.out.println("  skip: no source at " + root);
+			check(false, "no source at " + root);
 			return;
 		}
 		List<String> raw = new ArrayList<>();
@@ -461,7 +460,7 @@ public class PaintApplyGuardsTest {
 				return e;
 			}
 		}
-		System.out.println("  skip: no Gym in the building catalogue");
+		check(false, "no Gym in the building catalogue");
 		return null;
 	}
 

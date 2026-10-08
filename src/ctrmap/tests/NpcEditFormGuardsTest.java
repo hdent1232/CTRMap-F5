@@ -161,7 +161,7 @@ public class NpcEditFormGuardsTest {
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " - the form checks need zone 24");
+			Skip.section("no dump at " + dump + " - the form checks need zone 24");
 		} else {
 			Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
 			//the form only looks up its zone inside a workspace; it is handed its archives, none is opened through the session
@@ -250,11 +250,6 @@ public class NpcEditFormGuardsTest {
 	}
 
 	/**
-	 * Save and the NPC dropdown with a script id zone 24 does not define. The
-	 * record stays, the user is told, and the dropdown stays on the NPC that
-	 * needs fixing; a defined id saves and switches.
-	 */
-	/**
 	 * A zone that would not save is not followed by re-showing its script.
 	 *
 	 * <p>WHY. Repointing a dialogue and adding a scripted NPC both write the zone
@@ -292,6 +287,11 @@ public class NpcEditFormGuardsTest {
 		SAVER.reset();
 	}
 
+	/**
+	 * Save and the NPC dropdown with a script id zone 24 does not define. The
+	 * record stays, the user is told, and the dropdown stays on the NPC that
+	 * needs fixing; a defined id saves and switches.
+	 */
 	static void saveRefusesUndefinedScript(GARC zo) throws Exception {
 		Zone zone = openZone(zo, ZONE);
 		ZoneEntities e = zone.entities;
@@ -552,7 +552,7 @@ public class NpcEditFormGuardsTest {
 			NPCRegistry.NPCRegistryEntry filler = new NPCRegistry.NPCRegistryEntry();
 			filler.uid = uid;
 			filler.model = uid;
-			reg.entries.put(uid, filler);
+			reg.register(filler, uid);
 		}
 		said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
 		try {
@@ -588,6 +588,21 @@ public class NpcEditFormGuardsTest {
 		}
 		check(saved && e.npcs.get(0).script == 8, "the save goes through - a missing message is a warning, not a refusal");
 		check(said.size() == 1 && said.get(0).contains("soft-lock"), "and the user is warned: " + said);
+
+		//F211: with no story text to read the check answered "fine" and the save said nothing - the
+		//guard silent exactly when it could not look. Now the user is told it was NOT checked
+		form.loadFromEntities(e, null);
+		((JSpinner) field(form, "scr")).setValue(8);
+		((JSpinner) field(form, "x")).setValue(((Integer) ((JSpinner) field(form, "x")).getValue()) + 1);
+		said = ctrmap.Ui.record();
+		try {
+			saved = form.saveEntry();
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(saved && said.size() == 1 && said.get(0).startsWith("NPC message not checked")
+				&& said.get(0).contains("story text archive is not open"),
+				"with no story text to read, the user is told the message was not checked, and why: " + said);
 	}
 
 	/**
@@ -729,7 +744,7 @@ public class NpcEditFormGuardsTest {
 		try {
 			new ZoneScriptEdit(zone, "the talker script")
 					.withText(msg, TEXT, Arrays.asList("Hello there"))
-					.apply((work, line) -> {
+					.apply((measured, work, line) -> {
 						throw new IllegalStateException("no room in the dispatch");
 					}, (id, m) -> stored.add(new int[]{id, m.getLineCount()}));
 		} catch (Throwable t) {
@@ -1168,7 +1183,7 @@ public class NpcEditFormGuardsTest {
 			NPCRegistry.NPCRegistryEntry filler = new NPCRegistry.NPCRegistryEntry();
 			filler.uid = uid;
 			filler.model = uid;
-			full.entries.put(uid, filler);
+			full.register(filler, uid);
 		}
 		NPCEditForm form = new NPCEditForm(LOADED, TOOLS, REDRAW, NAVI, CENTRE, SAVER, SAVER, CtrmapMainframe.mTileMapPanel, pane -> { });
 		ctrmap.Ui.record(JOptionPane.NO_OPTION); //the form asks about the NPCs with no entry; not this test's business
@@ -1292,6 +1307,7 @@ public class NpcEditFormGuardsTest {
 		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		Zone[] table = new Zone[index + 1];
 		table[index] = new Zone(new ZO(temp(zo.getDecompressedEntry(index)), Workspace.session()), Workspace.game());
+		java.util.Arrays.fill(table, 0, index, table[index]);   //a table has no holes (F208)
 		LOADED.table(table);
 		LOADED.open(index, table[index]);
 		CtrmapMainframe.mZonePnl = pnl;
@@ -1314,7 +1330,7 @@ public class NpcEditFormGuardsTest {
 			NPCRegistry.NPCRegistryEntry entry = new NPCRegistry.NPCRegistryEntry();
 			entry.uid = npc.model;
 			entry.model = npc.model;
-			reg.entries.put(npc.model, entry);
+			reg.register(entry, npc.model);
 			reg.models.put(npc.model, new BCHFile(bch).models.get(0));
 		}
 		return reg;

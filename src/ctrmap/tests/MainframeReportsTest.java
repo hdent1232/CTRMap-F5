@@ -63,10 +63,12 @@ public class MainframeReportsTest {
 		//that has no corpus.
 		aRefusedEditorNamesTheGameAndWhatIsMissing();
 		aGameThatCannotForkIsNotOfferedTheForkPrompt();
+		anAreaThatCannotBeCheckedIsAskedAbout();
+		theAreaReportSaysWhetherTheAreaWasForked();
 
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " - the fork and matrix checks need one");
+			Skip.section("no dump at " + dump + " - the fork and matrix checks need one");
 			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 			if (fails > 0) {
 				System.exit(1);
@@ -77,6 +79,7 @@ public class MainframeReportsTest {
 
 		aForkThatDidNothingSaysSo();
 		aForkThatWorkedSaysWhatItDid();
+		aZoneMadeIndependentOwnsItsArea();
 		everyRegionTheForkMadeIsAccountedFor();
 		groundBelongingToOtherZonesIsNamed();
 		aFileThatIsNotAMapMatrixSaysSo();
@@ -86,6 +89,56 @@ public class MainframeReportsTest {
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * F064: what the user is told an area fork did. The door every shared-area refusal names now
+	 * gives the zone its own area; "already its own" over a fork that happened sends them to do it
+	 * again, and a fork said as nothing leaves them editing an area they think is shared.
+	 */
+	static void theAreaReportSaysWhetherTheAreaWasForked() {
+		System.out.println("--- the area half of making a zone independent says what it did");
+		ctrmap.AreaForker.ForkResult kept = new ctrmap.AreaForker.ForkResult();
+		kept.zoneIndex = 9;
+		kept.oldArea = 24;
+		kept.newArea = 24;
+		kept.forked = false;
+		String none = CtrmapMainframe.forkAreaReport(9, kept);
+		check(none.contains("already has its own area (area 24)") && none.contains("Nothing was changed"),
+				"an area already the zone's own is said, and that nothing changed: " + firstLine(none));
+		ctrmap.AreaForker.ForkResult made = new ctrmap.AreaForker.ForkResult();
+		made.zoneIndex = 9;
+		made.oldArea = 24;
+		made.newArea = 229;
+		made.forked = true;
+		String did = CtrmapMainframe.forkAreaReport(9, made);
+		check(did.contains("now has its own area") && did.contains("Area 24 -> 229") && !did.contains("already"),
+				"a fork says which area the copy is, and never that nothing changed: " + firstLine(did));
+		String both = new CtrmapMainframe.Independence(9, forked(), made).report();
+		check(both.contains("now has private map geometry") && both.contains("now has its own area"),
+				"making a zone independent reports both halves it did");
+	}
+
+	/**
+	 * F064: the door the shared-area refusals name gives the zone its own AREA. It forked the map
+	 * alone, so doing what the refusal said appended map copies and the same refusal came back.
+	 */
+	static void aZoneMadeIndependentOwnsItsArea() throws Exception {
+		int zone = -1;
+		for (int z = 0; z < 120 && zone < 0; z++) {
+			if (ctrmap.AreaForker.areaSharers(z) > 0) {
+				zone = z;
+			}
+		}
+		check(zone >= 0, "the corpus has a zone sharing its area (" + zone + ")");
+		if (zone < 0) {
+			return;
+		}
+		CtrmapMainframe.Independence done = CtrmapMainframe.makeZoneIndependent(zone, false, true);
+		check(done.area != null && done.area.forked, "zone " + zone + "'s area really is forked");
+		check(ctrmap.AreaForker.areaSharers(zone) == 0,
+				"and afterwards zone " + zone + " shares its area with nobody (" + ctrmap.AreaForker.areaSharers(zone) + ")");
+		check(done.map == null, "and its map was left alone, as it was not asked for");
 	}
 
 	/** A zone that already owns its map must be told nothing was done. */
@@ -400,6 +453,52 @@ public class MainframeReportsTest {
 			check(r != null && !r.forked && r.newArea == 7 && r.oldArea == 7 && r.zoneIndex == 10,
 					"and the caller is handed the area it already had, unforked: "
 					+ (r == null ? "null" : r.newArea + ", forked=" + r.forked));
+		} finally {
+			Workspace.reset();
+		}
+	}
+
+	/**
+	 * An area whose sharing cannot be checked is ASKED about, not waved through (F211, census M.121).
+	 *
+	 * <p>The prompt answered "not shared" whenever the master table would not read, and the edit went
+	 * on to an area that 77% of retail zones share - the guard open exactly when it could not look.
+	 * An ORAS workspace with no game data behind it cannot read its master table: the user is told
+	 * that, closing the question cancels, and only "Edit this area anyway" hands the area back.
+	 */
+	static void anAreaThatCannotBeCheckedIsAskedAbout() throws Exception {
+		File root = Scratch.dir("ctrmap_unchecked_area");
+		Sessions.bare(new File(root, "ws"), new File(root, "game"), GameType.ORAS);
+		try {
+			String sharers;
+			try {
+				sharers = "answered " + ctrmap.AreaForker.areaSharers(10);
+			} catch (Exception ex) {
+				sharers = null;
+			}
+			check(sharers == null, "control: with no game data the master table cannot be read ("
+					+ (sharers == null ? "it throws" : sharers) + ")");
+			List<String> said = Ui.record();
+			ctrmap.AreaForker.ForkResult closed;
+			try {
+				closed = ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(new ctrmap.LoadedZone(), null, 10, 7, "a test edit");
+			} finally {
+				Ui.stopRecording();
+			}
+			check(said.size() == 1 && said.get(0).contains("Could not check whether this zone's area is shared"),
+					"an area whose sharing cannot be checked is asked about, in words: " + said);
+			check(closed == null, "and closing that question cancels the edit, as everywhere else here: "
+					+ (closed == null ? "null" : "area " + closed.newArea));
+			said = Ui.record("Edit this area anyway");
+			ctrmap.AreaForker.ForkResult anyway;
+			try {
+				anyway = ctrmap.humaninterface.AreaForkPrompt.ensurePrivate(new ctrmap.LoadedZone(), null, 10, 7, "a test edit");
+			} finally {
+				Ui.stopRecording();
+			}
+			check(anyway != null && !anyway.forked && anyway.newArea == 7,
+					"only an explicit 'edit anyway' hands back the area, unforked: "
+					+ (anyway == null ? "null" : anyway.newArea + ", forked=" + anyway.forked));
 		} finally {
 			Workspace.reset();
 		}

@@ -67,8 +67,7 @@ public class DressUpIndexTest {
 		String root = args.length > 0 ? args[0] : "../RomFS/000400000011C400";
 		File archive = new File(root + "/a/0/8/8");
 		if (!archive.isFile()) {
-			System.out.println("SKIP: no player-parts archive at " + archive);
-			System.out.println("ALL PASS");
+			Skip.suite("no player-parts archive at " + archive);
 			return;
 		}
 		GARC g = new GARC(archive, true);

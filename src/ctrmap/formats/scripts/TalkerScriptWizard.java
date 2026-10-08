@@ -33,6 +33,7 @@ public class TalkerScriptWizard {
 	/**
 	 * Clones a simple talker into the zone script's dispatch.
 	 *
+	 * @param measured the game the zone is from, already asked (NpcTemplates.measuredOn)
 	 * @param script a decompressThis()'d zone script, modified in place
 	 * @param msgLine STORYTEXT line the new talker displays
 	 * @return the newly allocated local script ID (dispatch case key)
@@ -42,7 +43,8 @@ public class TalkerScriptWizard {
 	 * resolve to an instruction boundary; the script is not modified in that
 	 * case
 	 */
-	public static int cloneTalker(GFLPawnScript script, int msgLine) {
+	public static int cloneTalker(NpcTemplates.Measured measured, GFLPawnScript script, int msgLine) {
+		NpcTemplates.asked(measured);
 		script.decompressThis();
 		if (ZoneScriptAnalyzer.findDispatch(script) == null) {
 			throw new IllegalStateException("The zone script has no script dispatch (main SWITCH/CASETBL).");
@@ -55,7 +57,7 @@ public class TalkerScriptWizard {
 			//packed PUSH_P_C stores its argument in the upper 16 bits of the cell
 			throw new IllegalStateException("Message line " + msgLine + " does not fit a packed PUSH_P_C argument.");
 		}
-		return cloneCallerSub(script, wrapper, new int[]{-1, 1, msgLine, 12});
+		return cloneCallerSub(measured, script, wrapper, new int[]{-1, 1, msgLine, 12});
 	}
 
 	/**
@@ -65,6 +67,7 @@ public class TalkerScriptWizard {
 	 * dispatch. The insertion machinery is byte-identical to the proven
 	 * talking-NPC surgery; only the push constants and the callee vary.
 	 *
+	 * @param measured the game the zone is from, already asked (NpcTemplates.measuredOn)
 	 * @param script a decompressThis()'d zone script, modified in place
 	 * @param wrapper the PROC entry of the wrapper sub the clone will CALL
 	 * (from ZoneScriptAnalyzer.findMsgWrapper/findSignWrapper/findGiveWrapper)
@@ -78,7 +81,8 @@ public class TalkerScriptWizard {
 	 * resolve to an instruction boundary; the script is not modified in that
 	 * case
 	 */
-	public static int cloneCallerSub(GFLPawnScript script, PawnInstruction wrapper, int[] pushConsts) {
+	public static int cloneCallerSub(NpcTemplates.Measured measured, GFLPawnScript script, PawnInstruction wrapper, int[] pushConsts) {
+		NpcTemplates.asked(measured);
 		script.decompressThis();
 		if (wrapper == null) {
 			throw new IllegalStateException("The zone script has no wrapper subroutine to call.");
@@ -104,7 +108,7 @@ public class TalkerScriptWizard {
 		body.add(makeIns(PawnInstruction.Commands.ZERO_PRI, ptr, 0));
 		ptr += 4;
 		body.add(makeIns(PawnInstruction.Commands.RETN, ptr, 0));
-		return installCase(script, body);
+		return installCase(measured, script, body);
 	}
 
 	/**
@@ -129,8 +133,12 @@ public class TalkerScriptWizard {
 	 * are a PROC, and all 2853 are the three-instruction trampoline this method
 	 * emits into main's own PROC frame -
 	 * {@code PUSH_P_C(0); CALL <body>; JUMP <epilogue>}.
+	 *
+	 * @param measured the game the zone is from, already asked (NpcTemplates.measuredOn):
+	 * the trampoline and the dispatch shape are ORAS's measurements
 	 */
-	public static int installCase(GFLPawnScript script, List<PawnInstruction> body) {
+	public static int installCase(NpcTemplates.Measured measured, GFLPawnScript script, List<PawnInstruction> body) {
+		NpcTemplates.asked(measured);
 		script.decompressThis();
 		ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(script);
 		if (d == null) {
@@ -173,6 +181,11 @@ public class TalkerScriptWizard {
 
 		//snapshot every branch target while the layout is still consistent
 		script.setInstructionListeners();
+		//...and refuse, before anything changes, a branch the renumber below cannot carry (F086)
+		String unrenumberable = script.whyNotRenumberable();
+		if (!unrenumberable.isEmpty()) {
+			throw new IllegalStateException(unrenumberable);
+		}
 		//publics hold absolute code addresses that no listener owns - resolve
 		//them to instructions now so they can be re-pointed after the shift
 		PawnInstruction[] publicTargets = new PawnInstruction[script.publics.size()];

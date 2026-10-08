@@ -46,9 +46,8 @@ public class HooksWiredTest {
 			System.exit(1);
 		}
 		if (!CommitGuardTest.onPath("python")) {
-			System.out.println("  skip: python is not on PATH - the wiring check is a python "
+			Skip.suite("python is not on PATH - the wiring check is a python "
 					+ "script, so this suite cannot run it here");
-			System.out.println("ALL PASS");
 			return;
 		}
 
@@ -290,9 +289,6 @@ public class HooksWiredTest {
 	static final String STUB = "def decide(payload):\n    return False, None\n";
 
 	/**
-	 * The negative control. Without it a checker that refuses everything scores a perfect pass.
-	 */
-	/**
 	 * A guard that answers a DIFFERENT event must be wired to that event.
 	 *
 	 * <p>WHY THIS WAS NEEDED, measured 2026-09-22. Every guard here answered
@@ -339,6 +335,9 @@ public class HooksWiredTest {
 				"and once it IS wired to that event nothing is refused: " + firstReason(wired));
 	}
 
+	/**
+	 * The negative control. Without it a checker that refuses everything scores a perfect pass.
+	 */
 	static void aSoundWiringIsAllowed(File checker) throws Exception {
 		System.out.println("--- a sound wiring");
 		File root = install("sound", "\"*\"", "guard_all.py",
@@ -353,6 +352,13 @@ public class HooksWiredTest {
 		check(said.contains("reachable for every tool"),
 				"one universal entry over a dispatcher that finds its own guards passes: "
 				+ firstReason(said));
+		//...and stays sound with the cache running the hooks leaves in BOTH copies: this suite's
+		//own mirroring threw on it, so the second battery on any machine died before asking
+		write(new File(root, ".claude/hooks/__pycache__/guard_one.cpython-313.pyc"), "x");
+		write(new File(root, "tools/hooks/__pycache__/guard_two.cpython-313.pyc"), "y");
+		said = ask(checker, root);
+		check(said.contains("reachable for every tool"),
+				"and a __pycache__ folder beside both copies is not a hook: " + firstReason(said));
 	}
 
 	/**
@@ -421,6 +427,12 @@ public class HooksWiredTest {
 		if (beside != null) {
 			versioned.mkdirs();
 			for (File one : beside) {
+				//FILES ONLY. Running the hooks leaves a __pycache__ folder in both copies, and
+				//copying a folder over a non-empty one throws: the second battery on any machine
+				//died here, after a run of the refusal suite had imported the versioned copies
+				if (!one.isFile()) {
+					continue;
+				}
 				Files.copy(one.toPath(), new File(versioned, one.getName()).toPath(),
 						java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 			}

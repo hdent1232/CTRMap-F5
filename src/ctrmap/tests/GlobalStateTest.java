@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import ctrmap.Workspace;
+import ctrmap.WorkspaceSession;
 import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.IOException;
@@ -9,11 +10,14 @@ import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 /**
@@ -74,6 +78,20 @@ import java.util.regex.Pattern;
  * installed and must be gone afterwards, since everything the old fields
  * held now hangs off it.
  *
+ * <h2>4. Every static that can change is argued (F218)</h2>
+ * Section 1 counted 34 of the 186 statics that could change, so state read
+ * from the open game grew in the other 152 with seven rules for when it went,
+ * two of them never. Every one is now NAMED under the reason it may be a
+ * static, read from the bytecode; one that is not named fails, one named and
+ * gone fails, and the "constant tables" are measured unwritten rather than
+ * argued. There is no reason for "read from the open game".
+ *
+ * <h2>5. What is read from a game is kept by that game (F218)</h2>
+ * Its home instead: {@link ctrmap.formats.GameCache}, one per game, emptied at
+ * the one door every archive rewrite passes. A read that throws keeps nothing,
+ * an answer read across a drop is not kept, and the facility editor's labels
+ * name the game open when they are asked for.
+ *
  * <p>ORDER: this suite needs no dump, no workspace and no scratch space, and
  * writes no file. It can run first, last, or alone.
  *
@@ -115,7 +133,9 @@ public class GlobalStateTest {
 	 */
 	//38 -> 36: the decoupling steps deleted the window's held tool and made its
 	//frame private, both of which were public and mutable.
-	private static final int CEILING = 36;
+	//36 -> 34: measured by this suite on 2026-10-07 (F218), the number it printed;
+	//section 4 now names every one of them, and every other static that can change.
+	private static final int CEILING = 34;
 
 	static int fails = 0;
 
@@ -135,6 +155,8 @@ public class GlobalStateTest {
 		List<ClassFileScanner.Member> globals = ceiling(classes);
 		neverWritten(src, globals);
 		resetCoversWorkspace(src);
+		everyStaticThatCanChangeIsArgued(src, classes);
+		whatIsReadFromAGameIsKeptByIt();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -292,6 +314,386 @@ public class GlobalStateTest {
 				+ (survived.isEmpty() ? "" : " - these survived it: " + survived));
 		check(Workspace.session() == null && !Workspace.isValid() && Workspace.game() == null,
 				"including the current session, which is dropped so no archive of it is reachable");
+	}
+
+	// ---------------------------------- 4. every static that can change is argued (F218)
+
+	/** The reason whose fields are measured, not argued: nothing writes into them after class init. */
+	static final String CONSTANT = "constant tables";
+
+	/**
+	 * Every static field of the program that can change - not final, or final and holding an
+	 * array, a collection or any object but a String, a Pattern or a store key - named under the
+	 * reason it may be one. The ceiling above counts only the public non-final ones: 34 of the
+	 * 186 measured on 2026-10-06, so the rest grew unseen, and state read from the open game was
+	 * kept in seven of them with seven different rules for when it went - two of them never (F218).
+	 *
+	 * <p>NOT A CEILING. A count lets a new static cache in for every one taken out; a name cannot
+	 * arrive without being written here, under a reason a reader can hold it to. There is no reason
+	 * for "read from the open game": that belongs in the game's own store, {@link
+	 * ctrmap.formats.GameFiles#cache}, which a repoint replaces and a pack empties.
+	 *
+	 * <p>Each row: the reason, its words, then "owner field field ..." in internal names.
+	 */
+	static final String[][] ARGUED = {
+		{"the window", "the one main window's parts and what its editors have selected: one window per"
+			+ " process. Its current game and zone are the window's own, replaced whole when a workspace"
+			+ " opens - not a copy of anything read from the game. The tile undo history holds the loaded"
+			+ " zone's own tile maps and is cleared whenever they change; the clipboard is what the user"
+			+ " copied",
+			"ctrmap/CtrmapMainframe CM3DComponents collEditMasterPnl extrasBrowser extrasDefault extrasHost extrasOpen frame game gameDataHost jsp jsp2 jsp3 loadedZone m3DDebugPanel mBuilder mCamEditForm mCamScrollPane mCollEditPanel mGeoEditForm mMtxEditForm mMtxPanel mNPCEditForm mPaintForm mPropEditForm mScriptPnl mTextEditor mTileEditForm mTileMapPanel mTilemapScrollPane mTriggerEditForm mWarpEditForm mZonePnl mtxEditMasterPnl navigator openEditors redraw tabs tileEditMasterPnl tools worldToolbar zoneBrowser zoneColumn zoneTabPnl",
+			"ctrmap/humaninterface/TileUndo listeners open redoStack undoStack",
+			"ctrmap/TileDBWriter mSingleton",
+			"ctrmap/humaninterface/GeoEditForm clipboard",
+			"ctrmap/humaninterface/MatrixSelector hilightRegionX hilightRegionY selRegionX selRegionY selectSubChunks selecting",
+			"ctrmap/humaninterface/Selector hilightTileX hilightTileY selTileX selTileY selecting",
+		},
+		{"the process", "settings, the holder of the open session, logging, the dialog sink, each thread's"
+			+ " open unit, a pack's warnings (drained by the pack that made them), the update lock and a"
+			+ " said-once flag: one of each per running program, whichever game is open",
+			"ctrmap/ErrorSink SAYING fileHandler logFile",
+			"ctrmap/formats/garc/GARC packWarnings",
+			"ctrmap/WorkspaceUnit OPEN",
+			"ctrmap/Ui dialogsEnabled parent sink",
+			"ctrmap/Workspace ESPICA_PATH GAMEDIR_PATH TILESET_DEFAULT TILESET_PATH WORKSPACE_PATH current prefs snapshotProblemShown",
+			"ctrmap/humaninterface/BuildingPaletteDialog catalogProblemsSaid",
+			"ctrmap/update/AppVersion current",
+			"ctrmap/update/Updater runLock runLockFile",
+		},
+		{"the build's own tables", "read from resources inside this build - the building catalog, the"
+			+ " terrain donor table, the ground materials, the native names - the same for every game"
+			+ " opened, so kept for the run; nothing here reads a dump",
+			"ctrmap/formats/h3d/BuildingCatalog entries problems",
+			"ctrmap/formats/tilemap/PaintedMaterials spriteMaterials",
+			"ctrmap/formats/tilemap/TerrainCatalog churnDonor churnLoaded cliffDonor cliffLoaded donors",
+			"ctrmap/scripts/GfHash HASH_BY_NAME NAME_BY_HASH",
+		},
+		{"answers that depend on nothing but their key", "a pure function's results, kept: the colour a"
+			+ " height draws in is the same for every game, every time",
+			"ctrmap/formats/Triangle HEIGHT_COLOURS",
+		},
+		{"files kept by their own length and time", "an open handle to one snapshot file, keyed by its"
+			+ " path, length and time, so a rewritten file is opened anew and another game's file is"
+			+ " another key",
+			"ctrmap/formats/h3d/BuildingCatalog SNAPSHOTS",
+		},
+		{"registered once by the class initializer", "filled row by row by helpers the static"
+			+ " initializer calls, and only read after",
+			"ctrmap/formats/pokedata/PartyParam GET SET",
+		},
+		{CONSTANT, "built when the class loads and never written after - measured below, not taken on"
+			+ " trust: a write into one anywhere but a static initializer fails this suite",
+			"ctrmap/ModDeployer MODDABLE MODDABLE_IN_PLACE",
+			"ctrmap/WorkspaceSession ARCHIVES PACK_ORDER RELOAD_ORDER REQUIRED SUBDIR WORKSPACE_SUBDIRS",
+			"ctrmap/formats/area/AreaEnv COLOR_CHANNELS TIME_NAMES",
+			"ctrmap/formats/cameradata/CameraData FIELDS",
+			"ctrmap/formats/codepatch/CodeIps EMPTY",
+			"ctrmap/formats/codepatch/ItemIconTable ANCHOR NEXT_TABLE_STOCK",
+			"ctrmap/formats/codepatch/ShopData ANCHOR ANCHOR_PATCHED COUNTS NAMES",
+			"ctrmap/formats/encounters/EncounterTable BANK_NAMES BANK_RATE BANK_SIZES DEFAULT_RATES",
+			"ctrmap/formats/h3d/BchMapModel TYPE_BYTES",
+			"ctrmap/formats/h3d/BchTexturePack BPP UNIT_REGS",
+			"ctrmap/formats/h3d/MapPrefab PASSENGER_CUES",
+			"ctrmap/formats/h3d/texturing/TextureCodec etc1LUT tileOrder",
+			"ctrmap/formats/pokedata/PokeData CATEGORY_NAMES TYPE_NAMES TYPE_RGB",
+			"ctrmap/formats/scripts/MsgWrapperInjector CLOSURE_SUB_CELLS REWRITE_SITES",
+			"ctrmap/formats/scripts/NpcTemplates SIGN_TYPES SIGN_TYPE_LABELS",
+			"ctrmap/formats/scripts/SignWrapperInjector CLOSURE_SUB_CELLS",
+			"ctrmap/formats/text/GFMessageFile VAR_CODES VAR_NAMES",
+			"ctrmap/formats/tilemap/PaintedRegionBuilder COMP_BYTES DIR_NAMES",
+			"ctrmap/formats/zone/NpcMoveCodes MOVE1_BASE MOVE1_OA MOVE1_XY MOVE2_BASE MOVE2_BASE_RAW MOVE2_OA MOVE2_OA_RAW MOVE2_XY MOVE2_XY_RAW NO_LABELS NO_RAWS",
+			"ctrmap/formats/zone/WarpTransitions BASE_LABELS BASE_RAWS NO_LABELS NO_RAWS ORAS_LABELS ORAS_RAWS XY_LABELS XY_RAWS",
+			"ctrmap/formats/zone/Zone SUBFILES",
+			"ctrmap/gamedef/GameProfile ALL",
+			"ctrmap/humaninterface/GfEnvPicker CUSTOM",
+			"ctrmap/humaninterface/MaisonClassListDialog TABLES",
+			"ctrmap/humaninterface/MaisonEditDialog NATURES POOLS POOL_NAMES",
+			"ctrmap/humaninterface/MaisonEditDialog$SetModel PAIRED_LISTS",
+			"ctrmap/humaninterface/PropEditForm SEARCH_ALIASES",
+			"ctrmap/humaninterface/WorldEditorToolbar TOOLS",
+			"ctrmap/setup/SetupWizard TITLES",
+			"ctrmap/tools/BuildingHarvester HINT_FAMILIES",
+			"ctrmap/tools/TerrainDonorHarvester PROBE_TARGETS",
+			"ctrmap/tools/TerrainHarvester SIZES",
+			"ctrmap/Workspace NO_PERSISTED",
+			"ctrmap/ZoneAppender MADE_PRIVATE",
+			"ctrmap/formats/scripts/PawnInstruction cmdList",
+			"ctrmap/formats/tilemap/TerrainCatalog NOT_BRUSHES",
+			"ctrmap/setup/DumpCheck REQUIRED",
+			"ctrmap/formats/zone/ZoneEntities$GroundHeight NONE",
+		},
+		{"an offline tool's own scratch", "a harvester run from the command line to build this program's"
+			+ " tables, never loaded by the editor",
+			"ctrmap/tools/TerrainHarvester rockMaterial",
+		},
+	};
+
+	/** Final references to these cannot change what they hold; every other final reference can. */
+	static final List<String> IMMUTABLE = Arrays.asList("Ljava/lang/String;", "Ljava/util/regex/Pattern;",
+			"Lctrmap/formats/GameCache$Key;");
+
+	/** Whether a static can change: not final, or final over something that is not a constant. */
+	static boolean changes(ClassFileScanner.StaticField f) {
+		return !f.isFinal() || (f.descriptor.length() > 1 && !IMMUTABLE.contains(f.descriptor));
+	}
+
+	/** "owner.name" of every argued field, by its reason; a field argued twice is reported. */
+	static Map<String, String> argued(List<String> twice) {
+		Map<String, String> reasonOf = new LinkedHashMap<>();
+		for (String[] row : ARGUED) {
+			for (int i = 2; i < row.length; i++) {
+				String[] words = row[i].trim().split("\\s+");
+				for (int j = 1; j < words.length; j++) {
+					if (reasonOf.put(words[0] + "." + words[j], row[0]) != null) {
+						twice.add(words[0] + "." + words[j]);
+					}
+				}
+			}
+		}
+		return reasonOf;
+	}
+
+	static void everyStaticThatCanChangeIsArgued(File src, File classes) throws IOException {
+		System.out.println("--- every static that can change is argued, and none holds what was read from a game (F218)");
+		if (!classes.isDirectory()) {
+			check(false, "there is a compiled program to read the statics of - none at " + classes);
+			return;
+		}
+		Set<String> counted = new TreeSet<>();
+		Set<String> constantsSeen = new TreeSet<>();
+		for (ClassFileScanner.ClassFile cf : ClassFileScanner.application(classes)) {
+			for (ClassFileScanner.StaticField f : cf.statics) {
+				(changes(f) ? counted : constantsSeen).add(f.owner + "." + f.name);
+			}
+		}
+		//KNOWN ANSWERS FIRST: a scan that read the wrong field table answers "nothing to argue"
+		check(counted.contains("ctrmap/Workspace.current") && counted.contains("ctrmap/humaninterface/TileUndo.undoStack")
+				&& counted.contains("ctrmap/formats/pokedata/PokeData.TYPE_NAMES"),
+				"control: a non-final static, a final collection and a final array are each counted");
+		check(constantsSeen.contains("ctrmap/formats/pokedata/PokeData.TABLES")
+				&& constantsSeen.contains("ctrmap/humaninterface/BuildingPaletteDialog.PREFABS"),
+				"control: a store key is a constant, so the caches moved onto the game's store are not counted as statics");
+		check(counted.size() >= 150, "the scan read the program's statics (" + counted.size() + " that can change)");
+
+		List<String> twice = new ArrayList<>();
+		Map<String, String> reasonOf = argued(twice);
+		List<String> unargued = new ArrayList<>(counted);
+		unargued.removeAll(reasonOf.keySet());
+		List<String> stale = new ArrayList<>(reasonOf.keySet());
+		stale.removeAll(counted);
+		check(twice.isEmpty(), "no static is argued twice" + (twice.isEmpty() ? "" : " - " + twice));
+		check(unargued.isEmpty(), "every static that can change is argued here (" + counted.size() + ")"
+				+ (unargued.isEmpty() ? "" : " - these are not: " + unargued + ". What is read from a game"
+				+ " belongs in that game's store (GameFiles.cache()), where a repoint or a pack cannot leave it"
+				+ " behind; anything else goes under the reason it truly fits, and if none fits it should not"
+				+ " be a static"));
+		check(stale.isEmpty(), "and every argued static still is one" + (stale.isEmpty() ? ""
+				: " - these are gone or no longer change, so take them out: " + stale));
+		constantTablesAreNotWritten(src, reasonOf);
+	}
+
+	/**
+	 * The fields argued as constant tables, held to it: no write into one - an element stored, an
+	 * entry put, added, removed, cleared or sorted - outside a static initializer of its class, and
+	 * none at all from another class. Known answers first: the same finder sees TileUndo's undo stack
+	 * written, nothing written into PokeData's type names, and Workspace's game folder written from
+	 * the classes that set it.
+	 */
+	static void constantTablesAreNotWritten(File src, Map<String, String> reasonOf) throws IOException {
+		Writes writes = new Writes(src);
+		List<String> written = new ArrayList<>();
+		int read = 0;
+		for (Map.Entry<String, String> e : reasonOf.entrySet()) {
+			if (!CONSTANT.equals(e.getValue())) {
+				continue;
+			}
+			List<String> where = writes.after(e.getKey());
+			if (where == null) {
+				written.add(e.getKey() + " (its source could not be read)");
+				continue;
+			}
+			read++;
+			if (!where.isEmpty()) {
+				written.add(e.getKey() + " at " + where);
+			}
+		}
+		List<String> undo = writes.after("ctrmap/humaninterface/TileUndo.undoStack");
+		List<String> types = writes.after("ctrmap/formats/pokedata/PokeData.TYPE_NAMES");
+		List<String> outside = writes.after("ctrmap/Workspace.GAMEDIR_PATH");
+		check(undo != null && !undo.isEmpty() && types != null && types.isEmpty() && outside != null
+				&& outside.toString().contains(".java:"),
+				"control: the write finder sees TileUndo's stack written " + undo + ", PokeData's type names not "
+				+ types + ", and Workspace.GAMEDIR_PATH written from other classes (" + (outside == null ? 0 : outside.size()) + ")");
+		check(read >= 60 && written.isEmpty(), "no constant table is written after its class loads, by its class or any"
+				+ " other (" + read + " read)" + (written.isEmpty() ? "" : " - these are: " + written + ". A table that"
+				+ " changes is state: argue it under the reason it fits, or keep it where its lifetime is"));
+	}
+
+	private static final String MUTATION = "\\s*(?:\\[[^\\]]*\\]\\s*(?:=(?!=)|\\+=|-=|\\+\\+|--)"
+			+ "|=(?!=)|\\.(?:put|putAll|putIfAbsent|add|addAll|addFirst|addLast|push|pop|poll|remove|removeIf|clear|set"
+			+ "|offer|computeIfAbsent|compute|merge|replaceAll|sort)\\s*\\()";
+
+	/**
+	 * Where the program writes into a static: in its own class outside a static initializer, and in
+	 * any other production class through its qualified name - a public table can be written from
+	 * anywhere, and a finder that read only the owner would pass every such write. The other
+	 * classes are read once, in one pass each, for every qualified write they hold.
+	 */
+	static final class Writes {
+
+		private final File src;
+		/** "Simple.field" -> "File.java:line" of each write from outside the owner's file. */
+		private final Map<String, List<String>> qualified = new java.util.HashMap<>();
+
+		Writes(File src) throws IOException {
+			this.src = src;
+			Pattern p = Pattern.compile("(?<![\\w.])([A-Z]\\w*)\\s*\\.\\s*(\\w+)" + MUTATION
+					+ "|(?:Arrays\\.fill|Arrays\\.sort|Collections\\.sort)\\s*\\(\\s*([A-Z]\\w*)\\s*\\.\\s*(\\w+)\\b");
+			for (File f : javaFiles(src)) {
+				if (f.getPath().contains(File.separator + "tests" + File.separator)) {
+					continue;
+				}
+				String text = stripped(f);
+				java.util.regex.Matcher m = p.matcher(text);
+				while (m.find()) {
+					String key = m.group(1) != null ? m.group(1) + "." + m.group(2) : m.group(3) + "." + m.group(4);
+					List<String> at = qualified.get(key);
+					if (at == null) {
+						at = new ArrayList<>();
+						qualified.put(key, at);
+					}
+					at.add(f.getName() + ":" + lineOf(text, m.start()));
+				}
+			}
+		}
+
+		/** Every write into {@code owner.field} after its class loaded; null when its source cannot be read. */
+		List<String> after(String ownerDotField) throws IOException {
+			int dot = ownerDotField.lastIndexOf('.');
+			String owner = ownerDotField.substring(0, dot);
+			String field = ownerDotField.substring(dot + 1);
+			File own = new File(src, owner.split("\\$")[0] + ".java");
+			if (!own.isFile()) {
+				return null;
+			}
+			String text = stripped(own);
+			List<int[]> clinit = new ArrayList<>();
+			java.util.regex.Matcher s = Pattern.compile("\\bstatic\\s*\\{").matcher(text);
+			while (s.find()) {
+				int depth = 1;
+				int i = s.end();
+				while (i < text.length() && depth > 0) {
+					char c = text.charAt(i++);
+					depth += c == '{' ? 1 : c == '}' ? -1 : 0;
+				}
+				clinit.add(new int[]{s.start(), i});
+			}
+			List<String> out = new ArrayList<>();
+			String named = "(?<![\\w.])" + Pattern.quote(field);
+			java.util.regex.Matcher m = Pattern.compile(named + "\\s*(?:\\[[^\\]]*\\]\\s*(?:=(?!=)|\\+=|-=|\\+\\+|--)"
+					+ "|\\.(?:put|putAll|putIfAbsent|add|addAll|addFirst|addLast|push|pop|poll|remove|removeIf|clear|set"
+					+ "|offer|computeIfAbsent|compute|merge|replaceAll|sort)\\s*\\()"
+					+ "|(?:Arrays\\.fill|Arrays\\.sort|Collections\\.sort)\\s*\\(\\s*" + named + "\\b").matcher(text);
+			while (m.find()) {
+				boolean inInit = false;
+				for (int[] span : clinit) {
+					inInit |= m.start() >= span[0] && m.start() < span[1];
+				}
+				if (!inInit) {
+					out.add(String.valueOf(lineOf(text, m.start())));
+				}
+			}
+			String simple = owner.substring(Math.max(owner.lastIndexOf('/'), owner.lastIndexOf('$')) + 1);
+			for (String at : qualified.getOrDefault(simple + "." + field, Collections.<String>emptyList())) {
+				if (!at.startsWith(own.getName() + ":")) {
+					out.add(at);
+				}
+			}
+			return out;
+		}
+
+		private final Map<File, String> read = new java.util.HashMap<>();
+
+		private String stripped(File f) throws IOException {
+			String text = read.get(f);
+			if (text == null) {
+				text = SourceSeamTest.stripComments(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+				read.put(f, text);
+			}
+			return text;
+		}
+
+		private static int lineOf(String text, int at) {
+			int line = 1;
+			for (int i = 0; i < at; i++) {
+				line += text.charAt(i) == '\n' ? 1 : 0;
+			}
+			return line;
+		}
+	}
+
+	// ------------------------------ 5. what is read from a game is kept by that game (F218)
+	static void whatIsReadFromAGameIsKeptByIt() throws Exception {
+		System.out.println("--- what is read from a game is kept by that game, and goes when the game changes (F218)");
+		ctrmap.formats.GameCache store = new ctrmap.formats.GameCache();
+		ctrmap.formats.GameCache.Key<String> key = new ctrmap.formats.GameCache.Key<>("an answer");
+		int[] reads = {0};
+		String failed = null;
+		try {
+			store.get(key, () -> {
+				reads[0]++;
+				throw new IOException("the archive did not read");
+			});
+		} catch (IOException said) {
+			failed = said.getMessage();
+		}
+		check(failed != null && !store.holds(key),
+				"a read that throws is said, and keeps nothing - a failure is said again, never remembered as an empty answer");
+		String first = store.get(key, () -> {
+			reads[0]++;
+			return "read";
+		});
+		String again = store.get(key, () -> {
+			reads[0]++;
+			return "read twice";
+		});
+		check("read".equals(first) && "read".equals(again) && reads[0] == 2,
+				"the next read is kept, and asked again the store answers it without reading (" + reads[0] + " reads)");
+		ctrmap.formats.GameCache.Key<String> nothing = new ctrmap.formats.GameCache.Key<>("an absence");
+		store.get(nothing, () -> null);
+		check(store.holds(nothing), "an answer of nothing is kept like any other");
+		ctrmap.formats.GameCache.Key<String> across = new ctrmap.formats.GameCache.Key<>("read across a pack");
+		String during = store.get(across, () -> {
+			store.drop();   //the pack lands while this was reading the old archives
+			return "the old archives' answer";
+		});
+		check("the old archives' answer".equals(during) && !store.holds(across) && !store.holds(key),
+				"an answer read while the store was emptied is handed back but not kept, and the drop took the rest");
+
+		WorkspaceSession one = new WorkspaceSession(new File("ws-one"), new File("game-one"), GameType.ORAS, null);
+		WorkspaceSession two = new WorkspaceSession(new File("ws-two"), new File("game-two"), GameType.ORAS, null);
+		one.cache().get(key, () -> "game one's");
+		check(one.cache() == one.cache() && one.cache() != two.cache() && !two.cache().holds(key),
+				"each game has its own store, the same one every time it is asked - a repoint is another store");
+		one.reloadGARC(ctrmap.gamedef.ArchiveType.ZONE_DATA);
+		check(!one.cache().holds(key),
+				"re-reading an archive - what a pack, the builder and a zone removal do after rewriting one - empties the session's store");
+		one.cache().get(key, () -> "game one's, again");
+		one.archivesRewritten();
+		check(!one.cache().holds(key), "and so does re-reading every archive after a restore from the backup");
+
+		//the facility editor's labels name the game open when it is built, not the one open when the class loaded
+		java.lang.reflect.Method labels = ctrmap.humaninterface.MaisonClassListDialog.class.getDeclaredMethod("tableNames");
+		labels.setAccessible(true);
+		Workspace.reset();
+		String[] none = (String[]) labels.invoke(null);
+		Workspace.install(new WorkspaceSession(new File("ws-labels"), new File("game-labels"), GameType.ORAS, null));
+		String[] open = (String[]) labels.invoke(null);
+		Workspace.reset();
+		String path = ctrmap.gamedef.GameProfile.of(GameType.ORAS).archivePath(ctrmap.gamedef.ArchiveType.MAISON_CLASS_LIST_A);
+		check(none[0].contains("?") && path != null && open[0].contains(path) && !none[0].equals(open[0]),
+				"the facility tables' labels name the game open when they are asked for: \"" + none[0] + "\" with none, \""
+				+ open[0] + "\" with one");
 	}
 
 	private static final Object NOT_CONSTRUCTIBLE = new Object();

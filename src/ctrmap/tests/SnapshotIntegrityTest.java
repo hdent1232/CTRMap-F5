@@ -192,7 +192,7 @@ public class SnapshotIntegrityTest {
 		//It never mentioned it, which is the whole defect.
 		File settings = new File(src, "ctrmap/humaninterface/WorkspaceSettings.java");
 		if (!settings.isFile()) {
-			System.out.println("  skip: no WorkspaceSettings source at " + settings);
+			check(false, "no WorkspaceSettings source at " + settings);
 			return;
 		}
 		String source = new String(Files.readAllBytes(settings.toPath()), StandardCharsets.UTF_8);

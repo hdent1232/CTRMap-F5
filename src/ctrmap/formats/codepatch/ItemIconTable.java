@@ -36,8 +36,8 @@ public final class ItemIconTable {
 	/** File offset of the table in a decompressed ORAS code.bin, as measured. */
 	public static final int FILE_OFFSET = 0x47C644;
 
-	/** Entries in the table - one per item, item id == index. */
-	public static final int COUNT = 776;
+	/** Entries in the table - one per item, item id == index, so the profile's highest item id plus one (F205). */
+	public static final int COUNT = ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS).itemIdMax() + 1;
 
 	/** Where the NEXT table starts. FILE_OFFSET + COUNT*4 exactly: no slack. */
 	public static final int NEXT_TABLE = 0x47D264;
@@ -162,6 +162,11 @@ public final class ItemIconTable {
 			out[i] = i32(code, FILE_OFFSET + i * 4);
 		}
 		return out;
+	}
+
+	/** The code.bin bytes an icon save writes: the whole table (F152). */
+	public static int[][] owned() {
+		return new int[][]{{FILE_OFFSET, FILE_OFFSET + COUNT * 4}};
 	}
 
 	/**

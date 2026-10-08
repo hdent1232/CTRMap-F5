@@ -60,7 +60,7 @@ public class NpcEntityGuardsTest {
 		File garcFile = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/1/3");
 		GARC garc = garcFile.isFile() ? new GARC(garcFile) : null;
 		if (garc == null) {
-			System.out.println("  skip: no ZoneData GARC at " + garcFile + " - corpus checks not run");
+			Skip.section("no ZoneData GARC at " + garcFile + " - corpus checks not run");
 		}
 		//record checks first: each refusal is also logged to stderr by
 		//assembleData, and test.ps1 shows a suite's last two lines - the
@@ -180,7 +180,7 @@ public class NpcEntityGuardsTest {
 		}
 		ZoneEntities z451 = zoneEntities(garc, 451); //27 NPCs, the audit's example
 		if (z451 == null || z451.npcs.size() < 2) {
-			System.out.println("  skip: zone 451 has no NPCs to remove");
+			check(false, "zone 451 has no NPCs to remove");
 			return;
 		}
 		int before = z451.npcs.size();
@@ -200,7 +200,7 @@ public class NpcEntityGuardsTest {
 		}
 		GFLPawnScript z24 = zoneScript(garc, 24);
 		if (z24 == null) {
-			System.out.println("  skip: zone 24 script not readable");
+			check(false, "zone 24 script not readable");
 			return;
 		}
 		check(TalkerScriptWizard.scriptIdExists(z24, 7), "zone 24: script 7 is defined");

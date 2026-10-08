@@ -88,9 +88,9 @@ public class GeoEditFormGuardsTest {
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "no-dump-given");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " - the geometry form checks need FieldData region " + REGION);
+			Skip.section("no dump at " + dump + " - the geometry form checks need FieldData region " + REGION);
 			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
-			return;
+			System.exit(fails == 0 ? 0 : 1);
 		}
 		ScratchGame.open(dump);
 		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
@@ -270,7 +270,7 @@ public class GeoEditFormGuardsTest {
 
 	/**
 	 * Leaving the tool with an unsaved edit asks first. Cancel refuses the
-	 * switch, No throws the edit away and writes nothing.
+	 * switch, No puts the region back and writes nothing.
 	 */
 	static void storeAsksFirstAndCancelKeepsTheEdit() throws Exception {
 		Fixture f = open();
@@ -286,7 +286,7 @@ public class GeoEditFormGuardsTest {
 			ctrmap.Ui.stopRecording();
 		}
 		check(!ok, "Cancel refuses the store");
-		check(said.size() == 1 && said.get(0).contains("Save the geometry edits"), "having asked: " + said);
+		check(said.size() == 1 && said.get(0).contains("Map geometry of region"), "having asked: " + said);
 		check(button(f.form, "btnSave").isEnabled(), "and the edit is still there to save");
 		check(Arrays.equals(f.gr.getFile(1), f.model0), "with nothing written");
 
@@ -299,9 +299,10 @@ public class GeoEditFormGuardsTest {
 		check(ok && said.size() == 1, "No lets the store through");
 		check(Arrays.equals(f.gr.getFile(1), f.model0), "writes nothing");
 		check(!((Boolean) field(f.form, "unsaved")), "and drops the edit");
-		//store() does not refresh the buttons on this arm, so Save goes on
-		//offering itself for an edit that has been thrown away - pinned, see the report
-		check(button(f.form, "btnSave").isEnabled(), "but Save is still offered, for an edit that is now gone");
+		//PUT BACK, NOT FORGOTTEN (F106): No cleared the flag and left the moved model held and drawn,
+		//with Save still offered for an edit that was gone
+		check(Arrays.equals((byte[]) field(f.form, "currentModel"), f.model0), "and holds the model as the region does again");
+		check(!button(f.form, "btnSave").isEnabled(), "and Save is no longer offered for it");
 
 		said = ctrmap.Ui.record();
 		try {

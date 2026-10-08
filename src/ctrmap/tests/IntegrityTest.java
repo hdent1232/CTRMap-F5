@@ -30,21 +30,79 @@ public class IntegrityTest {
 
 	static int fails = 0;
 
+	/**
+	 * F031: the integrity check never compared a zone's own header with its master-table row - the
+	 * one divergence the forks and the open-time repair can produce, since they write the two
+	 * separately and the game reads only the row. Two zones on one map, hand-built: agreeing, the
+	 * check is quiet about headers; zone 1's header moved to area 1 while its row stays on area 0,
+	 * the check names zone 1.
+	 */
+	static void aZoneWhoseHeaderAndRowDisagreeIsNamed() throws Exception {
+		System.out.println("--- a zone whose header and master row disagree is named (F031)");
+		Workspace.reset();
+		try {
+			String agreeing = String.valueOf(WorkspaceIntegrity.check(handBuilt("agree", 0, 0), true));
+			check(!agreeing.contains("disagree") && !agreeing.contains("could not read any of the"),
+					"headers that match their rows are not reported, and the headers were read: " + agreeing);
+			String moved = String.valueOf(WorkspaceIntegrity.check(handBuilt("moved", 0, 1), true));
+			check(moved.contains("1 zone(s) whose own header and master-table row disagree")
+					&& moved.contains("zone 1's area: its header says 1, the master table says 0"),
+					"zone 1's header on area 1 and its row on area 0 are reported, naming the zone: " + moved);
+		} finally {
+			Workspace.reset();
+		}
+	}
+
+	/** Two zones on map 0 with master rows on area 0; zone 1's own header names {@code headerArea1}. */
+	static ctrmap.WorkspaceSession handBuilt(String name, int headerArea0, int headerArea1) throws Exception {
+		File root = Scratch.dir("ctrmap_integrity_" + name);
+		File zo = new File(root, "zonedata");
+		HandedGameTest.writeGarc(zo, zoneOn(headerArea0), zoneOn(headerArea1), rowsOnArea0(2), "EN".getBytes("US-ASCII"));
+		File ad = new File(root, "areas");
+		HandedGameTest.writeGarc(ad, new byte[]{1}, new byte[]{2});
+		File np = new File(root, "registries");
+		HandedGameTest.writeGarc(np, new byte[]{1}, new byte[]{2});
+		File mm = new File(root, "matrices");
+		HandedGameTest.writeGarc(mm, MapResizeTest.matrix(0));
+		File fd = new File(root, "regions");
+		HandedGameTest.writeGarc(fd, MapResizeTest.region("region zero"));
+		return Sessions.bare(new File(root, "workspace"), new File(root, "game"), GameType.ORAS)
+				.withArchive(ArchiveType.ZONE_DATA, new ctrmap.formats.garc.GARC(zo))
+				.withArchive(ArchiveType.AREA_DATA, new ctrmap.formats.garc.GARC(ad))
+				.withArchive(ArchiveType.NPC_REGISTRIES, new ctrmap.formats.garc.GARC(np))
+				.withArchive(ArchiveType.MAP_MATRIX, new ctrmap.formats.garc.GARC(mm))
+				.withArchive(ArchiveType.FIELD_DATA, new ctrmap.formats.garc.GARC(fd));
+	}
+
+	/** A zone container whose header names {@code area} and map 0. */
+	static byte[] zoneOn(int area) {
+		byte[] header = new byte[ctrmap.MasterTable.ROW];
+		MapResizeTest.putU16(header, ctrmap.ZoneResource.AREA.headerOffset, area);
+		return MapResizeTest.container(0x5a4f, header);
+	}
+
+	/** {@code zones} master rows, every one on area 0 and map 0. */
+	static byte[] rowsOnArea0(int zones) {
+		return new byte[zones * ctrmap.MasterTable.ROW];
+	}
+
 	public static void main(String[] args) throws Exception {
+		//needs no dump: a game written by hand
+		aZoneWhoseHeaderAndRowDisagreeIsNamed();
 		String root = args.length > 0 ? args[0] : "../RomFS_original_garcs";
 		File gamedir = new File(root);
 		if (!gamedir.isDirectory()) {
-			System.out.println("  skip: no dump at " + gamedir);
-			System.out.println("ALL PASS");
-			return;
+			Skip.section("no dump at " + gamedir);
+			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
+			System.exit(fails == 0 ? 0 : 1);
 		}
 
 		if (!new File(gamedir.getAbsolutePath()
 				+ Workspace.getArchivePath(ArchiveType.NPC_REGISTRIES,
 						GameType.ORAS)).isFile()) {
-			System.out.println("  skip: dump does not carry the archives this checks");
-			System.out.println("ALL PASS");
-			return;
+			check(false, "dump does not carry the archives this checks");
+			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
+			System.exit(fails == 0 ? 0 : 1);
 		}
 		//a scratch copy, because the last check below has to BREAK an archive
 		ScratchGame.open(gamedir);

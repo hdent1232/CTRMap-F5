@@ -1,5 +1,6 @@
 package ctrmap.formats.text;
 
+import ctrmap.formats.GameCache;
 import ctrmap.formats.GameFiles;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
@@ -12,29 +13,19 @@ import java.io.File;
  * location-name table must be resolved, so the decision lives in exactly one
  * place.
  *
- * <p>WHOSE GAME. The loader is handed the {@link GameFiles} to read, and the
- * table it fills is read back by {@link #getLocName} until the next load or
- * {@link #unload}. This class used to fetch the open workspace from the
- * application's global itself, both to resolve the entry and to load the
- * table on the first name asked for; so the table could only ever be the
- * application's game's, and a suite that wanted another game's names had to
- * install a workspace in the global first. The application loads it when a
- * workspace opens and after anything rewrites the entry (a zone rename, a
- * text save); a suite hands the loader a fake. There is no loading on demand
- * any more, because on demand meant from the global: a name asked for with
- * nothing loaded is refused in words.
+ * <p>WHOSE GAME. Every name is asked of a handed {@link GameFiles}, and the
+ * table is that game's, kept in its own store (F218). This class used to fetch
+ * the open workspace from the application's global itself, so the table could
+ * only ever be the application's game's; then it held one static table that
+ * the application loaded when a workspace opened, reloaded after anything
+ * rewrote the entry and forgot on reset - a lifetime of its own, kept by three
+ * callers remembering to. Now a different game is a different store, a pack
+ * empties it, and a writer of the entry says so through {@link #loadFromGarc}.
  */
 public class LocationNames {
 
-	/**
-	 * The loaded table, or null until a game is loaded. Private on purpose:
-	 * this was a public field that {@link #getLocName} dereferenced with no
-	 * null check, so the first caller before a load got a bare
-	 * NullPointerException, and ZoneRepurposeScanner loaded the table by hand
-	 * first rather than risk it. A caller with nothing loaded is refused in
-	 * words now.
-	 */
-	private static TextFile textfile;
+	/** The handed game's table, read from its staged GAMETEXT entry and kept in its store. */
+	private static final GameCache.Key<TextFile> TABLE = new GameCache.Key<>("location names");
 
 	private static GameFiles handed(GameFiles game, String what) {
 		if (game == null) {
@@ -60,50 +51,50 @@ public class LocationNames {
 				.textIndex(GameProfile.TextIndex.LOCATION_NAMES, game.variant());
 	}
 
-	/** (Re)loads the names from the handed game's staged GAMETEXT entry. */
+	/**
+	 * Reads the names from the handed game's staged GAMETEXT entry NOW, and keeps them for that
+	 * game: asked when a workspace opens, so a game whose text lacks the entry is refused there,
+	 * and by anything that has just rewritten the entry (a zone rename, a text save).
+	 *
+	 * @throws IllegalStateException when the entry cannot be read; what the game kept before is
+	 * left as it was
+	 */
 	public static void loadFromGarc(GameFiles game) {
-		int index = gametextIndex(handed(game, "loadFromGarc"));
+		TextFile read = read(handed(game, "loadFromGarc"));
+		game.cache().forget(TABLE);
+		game.cache().get(TABLE, () -> read);
+	}
+
+	private static TextFile read(GameFiles game) {
+		int index = gametextIndex(game);
 		File extracted = game.staged(ArchiveType.GAMETEXT, index);
 		if (extracted == null || !extracted.isFile()) {
 			throw new IllegalStateException("Location names: GAMETEXT entry " + index
 					+ " could not be read from the game handed in (" + game + ").");
 		}
-		load(extracted);
+		return new TextFile(extracted);
 	}
 
 	/**
-	 * Loads the names from an already-extracted GAMETEXT entry - a game's
-	 * staged one, or a copy a suite made for itself without a game.
+	 * Keeps for the handed game the names in an already-extracted GAMETEXT entry - a copy a
+	 * suite made for itself, standing in for the game's own.
 	 */
-	public static void load(File extracted) {
-		textfile = new TextFile(extracted);
+	public static void load(GameFiles game, File extracted) {
+		TextFile read = new TextFile(extracted);
+		handed(game, "load").cache().forget(TABLE);
+		game.cache().get(TABLE, () -> read);
 	}
 
 	/**
-	 * Forgets the loaded table, so the next name asked for is refused until a
-	 * game is loaded. {@code Workspace.reset} calls this: the table is
-	 * derived from a game, and a reset that kept it would hand one game's
-	 * names to the next.
-	 */
-	public static void unload() {
-		textfile = null;
-	}
-
-	/**
-	 * The name of a location, from the table last loaded.
+	 * The name of a location in the handed game: its table, read the first time a name is asked
+	 * for and kept until a pack or a rewrite of the entry.
 	 *
-	 * @throws IllegalStateException when nothing is loaded - in words, rather
-	 * than the NullPointerException the bare field used to give. The names are
-	 * loaded when a workspace opens; nothing loads them here, because the only
-	 * thing that could be loaded from here is the global this class no longer
-	 * reads
+	 * @throws IllegalStateException when the game's location names cannot be read - in words,
+	 * never a blank or another game's name
 	 */
-	public static String getLocName(int parentLoc) {
-		if (textfile == null) {
-			throw new IllegalStateException("Location names are not loaded. They are read from a workspace's"
-					+ " GAMETEXT when it opens, and nothing has handed this table a game since the last reset.");
-		}
-		String out = textfile.getLine(parentLoc);
+	public static String getLocName(GameFiles game, int parentLoc) {
+		GameFiles g = handed(game, "getLocName");
+		String out = g.cache().get(TABLE, () -> read(g)).getLine(parentLoc);
 		if (out == null) {
 			return "NullPointerException";
 		} else {

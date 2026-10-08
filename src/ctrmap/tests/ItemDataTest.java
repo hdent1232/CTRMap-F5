@@ -65,14 +65,12 @@ public class ItemDataTest {
 
 	public static void main(String[] args) throws Exception {
 		if (args.length < 1) {
-			System.out.println("  skip: no romfs root given");
-			System.out.println("ALL PASS");
+			Skip.suite("no romfs root given");
 			return;
 		}
 		File garcFile = new File(args[0] + itemArchive());
 		if (!garcFile.isFile()) {
-			System.out.println("  skip: no item archive at " + garcFile);
-			System.out.println("ALL PASS");
+			Skip.suite("no item archive at " + garcFile);
 			return;
 		}
 

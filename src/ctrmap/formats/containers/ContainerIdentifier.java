@@ -46,11 +46,9 @@ public class ContainerIdentifier {
 
 	/** The container at {@code f}, its magic read from the file, reporting its writes to {@code files}. */
 	public static AbstractGamefreakContainer makeAGFC(File f, GameFiles files) {
-		try {
-			InputStream in = new FileInputStream(f);
+		try (InputStream in = new FileInputStream(f)) {
 			byte[] magic = new byte[2];
 			in.read(magic);
-			in.close();
 			return makeAGFC(f, magic, files);
 		} catch (IOException ex) {
 			Logger.getLogger(ContainerIdentifier.class.getName()).log(Level.SEVERE, null, ex);

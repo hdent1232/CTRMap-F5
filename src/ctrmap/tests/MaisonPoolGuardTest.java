@@ -102,7 +102,7 @@ public class MaisonPoolGuardTest {
 			System.out.println("pool " + p + ": " + used + " retail, " + g.freeCount() + " free, first free = " + free);
 		}
 		if (!snapshotRan) {
-			System.out.println("note: no pristine snapshot found - exact-path checks skipped");
+			Skip.section("no pristine snapshot found - the exact-path checks did not run");
 		}
 
 		Workspace.WORKSPACE_PATH = savedWs;

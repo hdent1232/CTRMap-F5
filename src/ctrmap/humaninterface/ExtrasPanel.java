@@ -4,6 +4,7 @@ import ctrmap.gamedef.ArchiveType;
 import ctrmap.resources.ResourceAccess;
 import ctrmap.LoadedZone;
 import ctrmap.Workspace;
+import ctrmap.WorkspaceUnit;
 import ctrmap.ZoneTables;
 import ctrmap.formats.containers.AD;
 import ctrmap.formats.zone.Zone;
@@ -33,13 +34,14 @@ import javax.swing.JOptionPane;
  *     44-byte strides walked through a table of some other shape.</li>
  * </ul>
  *
- * <p>Both numbers are asked for now instead of assumed: the count comes from
- * {@link ZoneTables#areaCount}, which refuses in words for a game whose archive
- * tail nobody has measured, and the stride is DERIVED from the table that is
- * actually open (its length divided by the number of areas in it), which is a
- * measurement of this dump rather than a constant copied from another game. On
- * the reference dump that derivation reproduces the old ORAS numbers exactly:
- * 10032 / 228 = 44 = 0x0f + 1 + 0x1c = 0x0a + 1 + 0x21.
+ * <p>Both numbers are asked for now instead of assumed: the areas and the table
+ * come from {@link ZoneTables#areaIds} and {@link ZoneTables#areaTableIndex},
+ * which refuse in words for a game nobody has measured - and which know that an
+ * area fork appends after the table (F235) - and the stride is DERIVED from the
+ * table that is actually open (its length divided by its rows, one per area id),
+ * which is a measurement of this dump rather than a constant copied from another
+ * game. On the reference dump that derivation reproduces the old ORAS numbers
+ * exactly: 10032 / 228 = 44 = 0x0f + 1 + 0x1c = 0x0a + 1 + 0x21.
  */
 public class ExtrasPanel extends javax.swing.JPanel {
 
@@ -56,14 +58,14 @@ public class ExtrasPanel extends javax.swing.JPanel {
 	public static final int STEREO_FLAG_OFFSET = 0x0a;
 
 	/**
-	 * Creates new form ExtrasPanel
-	 */
-	/**
 	 * The zone table the two mass edits walk. The panel used to be handed the
 	 * Zone tab itself and read its public array; the owner is all it needs.
 	 */
 	private final LoadedZone loadedZone;
 
+	/**
+	 * Creates new form ExtrasPanel
+	 */
 	public ExtrasPanel(LoadedZone loadedZone) {
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("ExtrasPanel must be handed a LoadedZone");
@@ -150,27 +152,41 @@ public class ExtrasPanel extends javax.swing.JPanel {
     }// </editor-fold>//GEN-END:initComponents
 
     private void freecamActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_freecamActionPerformed
-		int areas;
+		String title = "Inject dummy camera collisions";
+		if (!freeCameraOffered(title)) {
+			return;
+		}
+		int[] areas;
 		try {
-			areas = areaEditRange();
+			areas = areaIds();
 		} catch (IOException ex) {
 			//refuse BEFORE asking: a question we cannot honour is not a question
-			ctrmap.Ui.error(this, ctrmap.Ui.reason(ex), "Inject dummy camera collisions");
+			ctrmap.Ui.error(this, ctrmap.Ui.reason(ex), title);
 			return;
 		}
-		if (!confirmMassEdit("This will inject dummy camera collision data into ALL " + areas
-				+ " AreaData areas.\n"
-				+ "It cannot be undone from within CTRMap. Continue?")) {
+		if (!confirmMassEdit("This will inject dummy camera collision data - cut from X/Y's"
+				+ " Lumiose City - into ALL " + areas.length + " AreaData areas.\n"
+				+ UNDO_SENTENCE + " Continue?")) {
 			return;
 		}
-		byte[] ad7 = ResourceAccess.getByteArray("DummyLumioseCollision.bin");
-		for (int i = 0; i < areas; i++) {
-			AD ad = new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, i), Workspace.session());
-			ad.storeFile(7, ad7);
+		//ONE UNIT (F100, census H.66): an area that could not be extracted or written threw out of
+		//this loop with every earlier area already written, and nothing said so
+		try (WorkspaceUnit unit = WorkspaceUnit.begin(title, Workspace.session())) {
+			byte[] ad7 = ResourceAccess.getByteArray("DummyLumioseCollision.bin");
+			for (int i : areas) {   //the areas, forked ones included - never the per-area table (F235)
+				AD ad = new AD(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, i), Workspace.session());
+				ad.storeFile(7, ad7);
+			}
+			keep(unit.commitKeeping());
+		} catch (RuntimeException failed) {
+			ctrmap.Ui.error(this, "No camera collision was injected; every area is as it was:\n" + ctrmap.Ui.reason(failed), title);
 		}
     }//GEN-LAST:event_freecamActionPerformed
 
     private void freecamRegActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_freecamRegActionPerformed
+		if (!freeCameraOffered("Set camera flags + Zone failsafes")) {
+			return;
+		}
 		AreaTable table;
 		try {
 			table = openAreaTable();
@@ -181,13 +197,24 @@ public class ExtrasPanel extends javax.swing.JPanel {
 			ctrmap.Ui.error(this, ctrmap.Ui.reason(ex), "Set camera flags + Zone failsafes");
 			return;
 		}
+		String title = "Set camera flags + Zone failsafes";
 		if (!confirmMassEdit("This will modify the headers of ALL zones (camera flags + failsafes) and patch AreaData.\n"
-				+ "It cannot be undone from within CTRMap. Continue?")) {
+				+ UNDO_SENTENCE + " Continue?")) {
 			return;
 		}
 		Zone[] zones = allZones();
-		if (zones != null) {
+		//ONE UNIT (F100): a zone that refused stopped the loop with every earlier zone written
+		try (WorkspaceUnit unit = WorkspaceUnit.begin(title, Workspace.session())) {
 			for (int i = 0; i < zones.length; i++) {
+				final ctrmap.formats.zone.ZoneHeader h = zones[i].header;
+				final boolean[] was = {h.enableRollerSkates, h.enableEscapeRope, h.enableFlyFrom, h.enableRunning, h.enableCycling};
+				WorkspaceUnit.onRollback(() -> {
+					h.enableRollerSkates = was[0];
+					h.enableEscapeRope = was[1];
+					h.enableFlyFrom = was[2];
+					h.enableRunning = was[3];
+					h.enableCycling = was[4];
+				});
 				zones[i].header.enableRollerSkates = true;
 				zones[i].header.enableEscapeRope = true;
 				zones[i].header.enableFlyFrom = true;
@@ -199,15 +226,20 @@ public class ExtrasPanel extends javax.swing.JPanel {
 				//had tried it there. cyclingFlagSafe() answers the same "no"
 				//for the same games and says why it is saying it.
 				zones[i].header.enableCycling = Workspace.profile().cyclingFlagSafe();
-				if (!storeZone(zones[i], i, "Set camera flags + Zone failsafes")) {
-					return;
-				}
+				storeZone(zones[i], i);
 			}
+			patchAreaTable(table, CAMERA_FLAG_OFFSET, (byte) 1);
+			keep(unit.commitKeeping());
+		} catch (IOException | RuntimeException failed) {
+			ctrmap.Ui.error(this, "Nothing was changed; every zone and the per-area table are as they were:\n"
+					+ ctrmap.Ui.reason(failed), title);
 		}
-		patchAreaTable(table, CAMERA_FLAG_OFFSET, (byte) 1, "Set camera flags + Zone failsafes");
     }//GEN-LAST:event_freecamRegActionPerformed
 
     private void btn3dActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btn3dActionPerformed
+		if (!freeCameraOffered("Enable stereoscopic 3D")) {
+			return;
+		}
 		AreaTable table;
 		try {
 			table = openAreaTable();
@@ -215,21 +247,26 @@ public class ExtrasPanel extends javax.swing.JPanel {
 			ctrmap.Ui.error(this, ctrmap.Ui.reason(ex), "Enable stereoscopic 3D");
 			return;
 		}
+		String title = "Enable stereoscopic 3D";
 		if (!confirmMassEdit("This will modify the headers of ALL zones and patch AreaData to enable stereoscopic 3D.\n"
-				+ "It cannot be undone from within CTRMap. Continue?")) {
+				+ UNDO_SENTENCE + " Continue?")) {
 			return;
 		}
 		Zone[] zones = allZones();
-
-		if (zones != null) {
+		try (WorkspaceUnit unit = WorkspaceUnit.begin(title, Workspace.session())) {
 			for (int i = 0; i < zones.length; i++) {
+				final ctrmap.formats.zone.ZoneHeader h = zones[i].header;
+				final boolean was = h.enable3D;
+				WorkspaceUnit.onRollback(() -> h.enable3D = was);
 				zones[i].header.enable3D = true;
-				if (!storeZone(zones[i], i, "Enable stereoscopic 3D")) {
-					return;
-				}
+				storeZone(zones[i], i);
 			}
+			patchAreaTable(table, STEREO_FLAG_OFFSET, (byte) 0x2c);
+			keep(unit.commitKeeping());
+		} catch (IOException | RuntimeException failed) {
+			ctrmap.Ui.error(this, "Nothing was changed; every zone and the per-area table are as they were:\n"
+					+ ctrmap.Ui.reason(failed), title);
 		}
-		patchAreaTable(table, STEREO_FLAG_OFFSET, (byte) 0x2c, "Enable stereoscopic 3D");
     }//GEN-LAST:event_btn3dActionPerformed
 
 	/**
@@ -240,23 +277,86 @@ public class ExtrasPanel extends javax.swing.JPanel {
 	 * was never written; now the zone throws with the reason and the edit
 	 * stops here, before the table is touched.
 	 *
-	 * @return true when the zone was written, false when it refused and the
-	 * user has been told
+	 * <p>It throws rather than answering now: the mass edit is one unit, and
+	 * the throw is what puts every zone written before this one back.
+	 *
+	 * @throws IllegalStateException naming the zone, when it refused
 	 */
-	private boolean storeZone(Zone zone, int index, String title) {
+	private static void storeZone(Zone zone, int index) {
 		try {
 			zone.store();
-			return true;
 		} catch (IllegalStateException ex) {
-			ctrmap.Ui.error(this, "Zone " + index + " was not saved, and the mass edit stopped there.\n"
-					+ ctrmap.Ui.reason(ex), title);
-			return false;
+			throw new IllegalStateException("zone " + index + " was not saved: " + ctrmap.Ui.reason(ex), ex);
+		}
+	}
+
+	private static final String UNDO_SENTENCE = "Undo last mass edit, below this panel, puts it back.";
+
+	/**
+	 * Whether the open game is one the free-camera mod is offered on, saying why not when it is
+	 * not. The mod writes X/Y Lumiose collision and flag offsets measured on one game (F100).
+	 */
+	private boolean freeCameraOffered(String title) {
+		if (Workspace.game() != null && Workspace.profile().supports(ctrmap.gamedef.GameProfile.Feature.FREE_CAMERA)) {
+			return true;
+		}
+		ctrmap.Ui.error(this, (Workspace.game() == null ? "No workspace is open"
+				: Workspace.profile().displayName() + " has no verified free-camera mod")
+				+ ", so nothing was changed: what it writes was measured on another game.", title);
+		return false;
+	}
+
+	/** The last mass edit, kept so it can be taken back; null when there is none. */
+	private WorkspaceUnit.Kept lastMassEdit;
+	private final javax.swing.JButton undoMassEdit = new javax.swing.JButton("Undo last mass edit");
+
+	private void keep(WorkspaceUnit.Kept kept) {
+		lastMassEdit = kept;
+		undoMassEdit.setEnabled(true);
+		undoMassEdit.setToolTipText("Put back what \"" + kept.name() + "\" changed.");
+	}
+
+	/**
+	 * This panel with the way back under it - built here rather than in the generated layout,
+	 * which is the form designer's. Every mass edit above said "It cannot be undone from within
+	 * CTRMap" (F100); now the last one can, while nothing it wrote has changed since.
+	 */
+	public javax.swing.JComponent withUndo() {
+		javax.swing.JPanel box = new javax.swing.JPanel(new java.awt.BorderLayout());
+		box.add(this, java.awt.BorderLayout.CENTER);
+		javax.swing.JPanel bar = new javax.swing.JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT));
+		undoMassEdit.setEnabled(lastMassEdit != null);
+		if (undoMassEdit.getActionListeners().length == 0) {
+			undoMassEdit.addActionListener(e -> undoLastMassEdit());
+		}
+		bar.add(undoMassEdit);
+		box.add(bar, java.awt.BorderLayout.SOUTH);
+		return box;
+	}
+
+	/** Puts the last mass edit back, or says why it cannot. */
+	void undoLastMassEdit() {
+		if (lastMassEdit == null) {
+			return;
+		}
+		String title = "Undo " + lastMassEdit.name();
+		if (ctrmap.Ui.confirm(this, "Put back everything \"" + lastMassEdit.name() + "\" changed?", title,
+				JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
+			return;
+		}
+		try {
+			lastMassEdit.revert();
+			lastMassEdit = null;
+			undoMassEdit.setEnabled(false);
+			ctrmap.Ui.message(this, "Put back.", title, JOptionPane.INFORMATION_MESSAGE);
+		} catch (IOException | RuntimeException failed) {
+			ctrmap.Ui.error(this, ctrmap.Ui.reason(failed), title);
 		}
 	}
 
 	/**
-	 * How many AreaData entries the mass edits on this panel cover: every entry
-	 * that IS an area, per the open game's measured archive tail.
+	 * The AreaData entries the mass edits on this panel cover: every entry that
+	 * IS an area - the forked ones after the per-area table included (F235).
 	 *
 	 * <p>THE DEFECT THIS REPLACES. The camera-collision injection looped to
 	 * {@code archive.length - (isOA() ? 2 : 1)}. ORAS's AreaData is 229 entries
@@ -265,11 +365,20 @@ public class ExtrasPanel extends javax.swing.JPanel {
 	 * in the master zone-header table - was never injected, on every run since
 	 * the button existed. Nothing said so; the loop simply stopped one early.
 	 *
-	 * @throws IOException naming the game when its AreaData tail is unmeasured,
-	 * so a game nobody has counted is refused rather than handed ORAS's 2
+	 * @throws IOException naming the game when where its per-area table sits is
+	 * unmeasured, so a game nobody has counted is refused rather than handed ORAS's
 	 */
-	public static int areaEditRange() throws IOException {
-		return ZoneTables.areaCount(Workspace.getArchive(ArchiveType.AREA_DATA));
+	public static int[] areaIds() throws IOException {
+		return ZoneTables.areaIds(Workspace.getArchive(ArchiveType.AREA_DATA));
+	}
+
+	/**
+	 * How many rows the per-area table holds for these areas: one per area id up to the last, as
+	 * the engine indexes it and as AreaForker grows it - so after a fork it holds a filler row for
+	 * the table's own id, which no area owns and no edit writes (F235).
+	 */
+	public static int areaTableRows(int[] areaIds) {
+		return areaIds.length == 0 ? 0 : areaIds[areaIds.length - 1] + 1;
 	}
 
 	/**
@@ -279,12 +388,12 @@ public class ExtrasPanel extends javax.swing.JPanel {
 	private static final class AreaTable {
 
 		final File file;
-		final int rows;
+		final int[] areaIds;
 		final int rowSize;
 
-		AreaTable(File file, int rows, int rowSize) {
+		AreaTable(File file, int[] areaIds, int rowSize) {
 			this.file = file;
-			this.rows = rows;
+			this.areaIds = areaIds;
 			this.rowSize = rowSize;
 		}
 	}
@@ -293,11 +402,10 @@ public class ExtrasPanel extends javax.swing.JPanel {
 	 * Locates the global per-area table of the open game and measures its row
 	 * stride, or refuses in words.
 	 *
-	 * <p>The table is the first AreaData entry past the last area, so its index
-	 * IS the area count - which is why {@link ZoneTables#areaCount} answers both
-	 * questions and the hardcoded {@code isXY() ? 170 : 228} is gone: 228 is
-	 * what the count comes to on ORAS and 170 is what it comes to on XY, and on
-	 * a game nobody has measured this throws instead of picking one.
+	 * <p>The table's index is the profile's ({@link ZoneTables#areaTableIndex}: 228
+	 * on ORAS, 170 on XY, a refusal on a game nobody has measured). It used to be
+	 * "the area count", which is the same number only until an area fork appends
+	 * an area after the table - then it opened the forked area as the table (F235).
 	 *
 	 * @throws IOException naming the game when its AreaData tail is unmeasured,
 	 * when the table entry cannot be extracted, or when the table is not a whole
@@ -306,13 +414,14 @@ public class ExtrasPanel extends javax.swing.JPanel {
 	 * middle of whatever the rows really are
 	 */
 	private AreaTable openAreaTable() throws IOException {
-		int areas = areaEditRange();
-		File f = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, areas);
+		int index = ZoneTables.areaTableIndex(Workspace.getArchive(ArchiveType.AREA_DATA));
+		int[] areas = areaIds();
+		File f = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, index);
 		if (f == null || !f.isFile()) {
-			throw new IOException("The engine's global per-area table (AreaData entry " + areas
+			throw new IOException("The engine's global per-area table (AreaData entry " + index
 					+ ") could not be extracted from the open workspace, so there is nothing to patch.");
 		}
-		return new AreaTable(f, areas, areaTableRowSize(f.length(), areas));
+		return new AreaTable(f, areas, areaTableRowSize(f.length(), areaTableRows(areas)));
 	}
 
 	/**
@@ -328,15 +437,15 @@ public class ExtrasPanel extends javax.swing.JPanel {
 	 * @throws IOException when the length is not a whole number of rows, or
 	 * when a row would be too short to hold the flags this panel writes
 	 */
-	public static int areaTableRowSize(long tableLength, int areas) throws IOException {
-		if (areas <= 0 || tableLength <= 0 || tableLength % areas != 0) {
+	public static int areaTableRowSize(long tableLength, int rows) throws IOException {
+		if (rows <= 0 || tableLength <= 0 || tableLength % rows != 0) {
 			throw new IOException("The engine's global per-area table is " + tableLength
-					+ " bytes across " + areas + " areas, which is not a whole number of equal rows."
+					+ " bytes across " + rows + " rows, which is not a whole number of equal rows."
 					+ "\n\nCTRMap works out the row stride by dividing, so it cannot patch a table"
 					+ " it cannot divide - and it will not fall back to another game's stride,"
 					+ " which would write single bytes into the middle of rows.");
 		}
-		int rowSize = (int) (tableLength / areas);
+		int rowSize = (int) (tableLength / rows);
 		int needed = Math.max(CAMERA_FLAG_OFFSET, STEREO_FLAG_OFFSET) + 1;
 		if (rowSize < needed) {
 			throw new IOException("The engine's global per-area table has " + rowSize
@@ -357,29 +466,22 @@ public class ExtrasPanel extends javax.swing.JPanel {
 	 * number of rows for any table whose length was not a multiple of the
 	 * stride it had been handed.
 	 */
-	private void patchAreaTable(AreaTable table, int offsetInRow, byte value, String title) {
-		RandomAccessFile raf = null;
-		try {
-			raf = new RandomAccessFile(table.file, "rw");
-			for (int row = 0; row < table.rows; row++) {
-				raf.seek((long) row * table.rowSize + offsetInRow);
+	private static void patchAreaTable(AreaTable table, int offsetInRow, byte value) throws IOException {
+		patchAreaRows(table.file, table.areaIds, table.rowSize, offsetInRow, value);
+	}
+
+	/** The row of every one of {@code areaIds}, and no other - the filler row a fork leaves included (F235). */
+	public static void patchAreaRows(File table, int[] areaIds, int rowSize, int offsetInRow, byte value) throws IOException {
+		//IN THE UNIT, AND THROWN (F100): the zones were already written when this failed, and it
+		//said so and left them; the unit remembers the table first and the throw puts them back
+		WorkspaceUnit.touching(table);
+		try (RandomAccessFile raf = new RandomAccessFile(table, "rw")) {
+			for (int id : areaIds) {
+				raf.seek((long) id * rowSize + offsetInRow);
 				raf.write(value);
 			}
-			raf.close();
-			raf = null;
-			Workspace.addPersist(table.file);
-		} catch (IOException ex) {
-			Logger.getLogger(ExtrasPanel.class.getName()).log(Level.SEVERE, null, ex);
-			ctrmap.Ui.error(this, "The zone headers were changed, but patching the per-area table failed:\n"
-					+ ctrmap.Ui.reason(ex), title);
-		} finally {
-			if (raf != null) {
-				try {
-					raf.close();
-				} catch (IOException ignore) {
-				}
-			}
 		}
+		Workspace.addPersist(table);
 	}
 
 	private boolean confirmMassEdit(String message) {

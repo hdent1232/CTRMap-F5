@@ -57,6 +57,14 @@ public final class Ui {
 		int option(Component parent, String text, String title, Object[] options);
 
 		Object input(Component parent, String text, String title, int type, Object[] options, Object initial);
+
+		/**
+		 * The file a chooser titled {@code title} is answered with, or null for a cancel - which is
+		 * what a sink that answers no file says.
+		 */
+		default java.io.File choose(Component parent, String title, boolean save) {
+			return null;
+		}
 	}
 
 	private static Sink sink;
@@ -187,7 +195,22 @@ public final class Ui {
 			System.out.println("[Ui] " + title + ": " + text.replace("\n", " | "));
 			return;
 		}
+		onTheEventThread(title);
 		JOptionPane.showMessageDialog(parent, text, title, type);
+	}
+
+	/**
+	 * Refuses a REAL dialog asked for off the event thread (F220). A worker that reached one -
+	 * opening a zone reached two - put a modal window up from a thread Swing does not run on, and
+	 * the worker sat inside it. Only real dialogs are refused: a suite's recording and the
+	 * dialogs-off log answer from any thread, since a suite's own main thread is not the event
+	 * thread either. EdtReachTest is the half that finds such a call before anything runs.
+	 */
+	private static void onTheEventThread(String title) {
+		if (!javax.swing.SwingUtilities.isEventDispatchThread()) {
+			throw new IllegalStateException("\"" + title + "\" was asked off the event thread, on "
+					+ Thread.currentThread().getName() + " - a dialog belongs to the event thread (F220)");
+		}
 	}
 
 	/** An error, which is what nearly every one of these is. */
@@ -209,6 +232,16 @@ public final class Ui {
 		//ONE BODY, in ctrmap.util.Bytes, because the format layer needs it too and may
 		//not call anything up here. This stays as the name every UI caller already uses.
 		return ctrmap.util.Bytes.reason(ex);
+	}
+
+	/**
+	 * {@code s} made safe to put inside an {@code <html>} label: text from GitHub, a file
+	 * name or an exception's message can hold a {@code <} that Swing would read as a tag.
+	 * Null reads as empty. The one copy - the update dialog and the setup wizard each had
+	 * their own, and the painter's preview note would have been the third.
+	 */
+	public static String html(String s) {
+		return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 	}
 
 	/**
@@ -244,6 +277,7 @@ public final class Ui {
 			System.out.println("[Ui] " + title + "? " + text.replace("\n", " | "));
 			return JOptionPane.CLOSED_OPTION;
 		}
+		onTheEventThread(title);
 		return JOptionPane.showConfirmDialog(parent, text, title, optionType, messageType);
 	}
 
@@ -267,6 +301,7 @@ public final class Ui {
 			System.out.println("[Ui] " + title + "? " + text.replace("\n", " | "));
 			return JOptionPane.CLOSED_OPTION;
 		}
+		onTheEventThread(title);
 		return JOptionPane.showOptionDialog(parent, text, title, optionType, messageType, null, options, initial);
 	}
 
@@ -283,6 +318,7 @@ public final class Ui {
 			System.out.println("[Ui] " + title + "? " + text.replace("\n", " | "));
 			return null;
 		}
+		onTheEventThread(title);
 		return JOptionPane.showInputDialog(parent, text, title, type, null, options, initial);
 	}
 
@@ -322,8 +358,45 @@ public final class Ui {
 				said.add(title + ": " + text);
 				return queue.poll();
 			}
+
+			@Override
+			public java.io.File choose(Component parent, String title, boolean save) {
+				said.add((save ? "Save file: " : "Open file: ") + title);
+				Object answer = queue.poll();
+				return answer instanceof java.io.File ? (java.io.File) answer : null;
+			}
 		};
 		return said;
+	}
+
+	/**
+	 * Shows {@code chooser} and answers the file the user approved; null for anything else (F147).
+	 *
+	 * <p>EVERY FILE CHOOSER IS SHOWN HERE. Swing does not clear the selection on Cancel, and nine
+	 * sites read it whatever the dialog answered, so Cancel could replace a container in the
+	 * workspace or overwrite an export or the tile database (F004). And every branch behind a
+	 * chooser was out of a headless suite's reach, which is what this class exists to end: a
+	 * recording ({@link #record}) answers a chooser as it answers a question - a File is approved,
+	 * anything else is a cancel - and with dialogs off nobody can approve one.
+	 *
+	 * @param save a Save dialog: what a file that will be written is picked with
+	 */
+	public static java.io.File choose(Component parent, javax.swing.JFileChooser chooser, boolean save) {
+		Component over = parent != null ? parent : Ui.parent;
+		if (sink != null) {
+			java.io.File answered = sink.choose(over, chooser.getDialogTitle(), save);
+			if (answered != null) {
+				chooser.setSelectedFile(answered);   //callers that read the chooser afterwards read this
+			}
+			return answered;
+		}
+		if (!dialogsEnabled) {
+			System.out.println("[Ui] " + (save ? "Save" : "Open") + " file? " + chooser.getDialogTitle() + " - nobody can answer");
+			return null;
+		}
+		onTheEventThread(chooser.getDialogTitle());
+		int answer = save ? chooser.showSaveDialog(over) : chooser.showOpenDialog(over);
+		return answer == javax.swing.JFileChooser.APPROVE_OPTION ? chooser.getSelectedFile() : null;
 	}
 
 	/**
@@ -357,8 +430,22 @@ public final class Ui {
 	 * <p>It lived on {@code ctrmap.Utils} until the package split, which had
 	 * put the one question this program asks about unsaved work in the same
 	 * class as the byte helpers the format layer reads with.
+	 *
+	 * <p>NO PUTS THE EDITOR BACK, and a caller cannot leave that out (F106). The question was asked
+	 * in thirteen places and No meant three things there: two forgot that the edit was made and
+	 * left it in memory, five cleared a flag and left the edit drawn, four did nothing at all. Every
+	 * one of them left the discarded edit on screen once a LATER question of the same save was
+	 * cancelled - and marked clean, so the next save wrote it. So what No does is handed in with the
+	 * question and run here: an editor cannot ask without saying it. DiscardRevertsTest refuses a
+	 * discard that does nothing or only clears a flag.
+	 *
+	 * @param discard puts the editor back to what was last saved; run on No, and only on No
 	 */
-	public static Keep askToKeep(boolean dialog, String changeSubject) {
+	public static Keep askToKeep(boolean dialog, String changeSubject, Runnable discard) {
+		if (discard == null) {
+			throw new IllegalArgumentException("askToKeep must be handed what No does for \"" + changeSubject
+					+ "\": an editor asked without one keeps the discarded edit on screen");
+		}
 		if (!dialog) {
 			return Keep.SAVE;
 		}
@@ -367,6 +454,7 @@ public final class Ui {
 			case JOptionPane.YES_OPTION:
 				return Keep.SAVE;
 			case JOptionPane.NO_OPTION:
+				discard.run();
 				return Keep.DISCARD;
 			//closing the dialog is cancel, never "write it anyway"
 			case JOptionPane.CLOSED_OPTION:

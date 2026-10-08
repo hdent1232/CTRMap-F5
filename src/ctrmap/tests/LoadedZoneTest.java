@@ -150,14 +150,22 @@ public class LoadedZoneTest {
 	 * {@code build/classes} as "declared type is Zone or Zone[]". The owner's
 	 * two, and one more: {@code ZoneScriptEdit} keeps the zone ONE edit is
 	 * against, private and final, handed in at construction and dropped with
-	 * the edit - a subject, not a copy of what is open. The three public
-	 * mutable fields this step removed would appear here, which is why the
-	 * rule is equality over the whole set rather than a count.
+	 * the edit - a subject, not a copy of what is open. And one in transit:
+	 * {@code ZoneLoadingPanel.Listed}, private, is what the zone-list worker
+	 * reads off the event thread and the event thread hands to the owner's
+	 * {@code table} in one call (F116) - the owner's table before it is the
+	 * owner's, never read by anything else. The three public mutable fields
+	 * this step removed would appear here, which is why the rule is equality
+	 * over the whole set rather than a count.
 	 */
 	private static final String[] ZONE_KEEPERS = {
 		"ctrmap/LoadedZone private Zone[] table",
 		"ctrmap/LoadedZone private Zone open",
-		"ctrmap/formats/scripts/ZoneScriptEdit private final Zone zone"
+		"ctrmap/formats/scripts/ZoneScriptEdit private final Zone zone",
+		"ctrmap/humaninterface/ZoneLoadingPanel$Listed final Zone[] zones",
+		//the preview's worker hands its read zone to the event thread in one of these, which frees it
+		//once shown or superseded (F206) - a hand-off, as Listed is, not a second "what is open"
+		"ctrmap/humaninterface/ZonePreviewPane$Fetched  Zone zone"
 	};
 
 	/**
@@ -190,7 +198,7 @@ public class LoadedZoneTest {
 		}
 
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump
+			Skip.section("no dump at " + dump
 					+ " - the two-owner proof needs real zones to hand two readers");
 		} else {
 			ScratchGame.open(dump);
@@ -219,15 +227,16 @@ public class LoadedZoneTest {
 				"asking for a slot of an empty table refuses NAMING the slot and the count: " + refusal);
 	}
 
-	static void theTableIsCopiedAndTheSlotsAreNeverHandedOut() {
+	static void theTableIsCopiedAndTheSlotsAreNeverHandedOut() throws Exception {
 		System.out.println("--- the table is copied in, and no caller keeps a handle on it");
 		LoadedZone lz = new LoadedZone();
-		Zone[] mine = new Zone[3];
+		Zone[] mine = blanks(3);
+		Zone first = mine[0];
 		lz.table(mine);
 		check(lz.count() == 3, "the table is as long as the array handed in (" + lz.count() + ")");
 		//the caller's array is theirs: writing to it afterwards must not reach the owner
-		mine[0] = null;
-		check(lz.at(0) == null && lz.count() == 3, "and slot 0 is what the owner holds, not what the caller does");
+		mine[0] = blank();
+		check(lz.at(0) == first && lz.count() == 3, "and slot 0 is what the owner holds, not what the caller does");
 		String refusal = refusedBy(() -> lz.at(3));
 		check(refusal.contains("3") && refusal.contains("holds 3"),
 				"a slot past the end refuses naming it and the count: " + refusal);
@@ -238,6 +247,16 @@ public class LoadedZoneTest {
 				"and a null table is refused with what to hand instead: " + refusal);
 		refusal = refusedBy(() -> lz.replace(9, null));
 		check(refusal.contains("9"), "replacing a slot the table does not have refuses too: " + refusal);
+
+		//NO HOLES (F208): one unreadable entry left every later slot null, five readers dereferenced
+		//what at() answered, and from then on no zone could be opened at all
+		Zone[] holed = blanks(3);
+		holed[1] = null;
+		refusal = refusedBy(() -> lz.table(holed));
+		check(refusal.contains("slot 1") && lz.count() == 3 && lz.at(0) == first,
+				"a table with a hole is refused naming the slot, and the table before it stays: " + refusal);
+		refusal = refusedBy(() -> lz.replace(2, null));
+		check(refusal.contains("slot 2") && lz.at(2) != null, "and a slot cannot be emptied: " + refusal);
 	}
 
 	/**
@@ -245,10 +264,10 @@ public class LoadedZoneTest {
 	 * before this owner existed, because ZoneLoadingStateTest pins the panel's
 	 * behaviour and would go red for any of them.
 	 */
-	static void whatEachWriteMeans() {
+	static void whatEachWriteMeans() throws Exception {
 		System.out.println("--- what each write means, pinned to what the three public fields did");
 		LoadedZone lz = new LoadedZone();
-		Zone[] table = new Zone[4];
+		Zone[] table = blanks(4);
 		lz.table(table);
 		lz.open(2, null);
 		check(lz.index() == 2 && lz.open() == null,
@@ -256,7 +275,7 @@ public class LoadedZoneTest {
 
 		//a rebuild: the open zone belonged to the old table, the index is kept
 		lz.open(2, null);
-		lz.table(new Zone[6]);
+		lz.table(blanks(6));
 		check(lz.count() == 6, "a rebuild replaces the table");
 		check(lz.open() == null, "and lets go of whatever was open");
 		check(lz.index() == 2, "and PINNED AS IS: does NOT reset the index (" + lz.index() + ")");
@@ -271,9 +290,12 @@ public class LoadedZoneTest {
 		String refusal = refusedBy(() -> lz.open(-2, null));
 		check(refusal.contains("-2") && refusal.contains("-1"),
 				"an index below -1 is refused, saying what -1 means: " + refusal);
-		refusal = refusedBy(() -> lz.open(1));
-		check(refusal.contains("1") && refusal.toLowerCase().contains("no zone"),
-				"and opening a slot the rebuild could not fill refuses rather than opening null: " + refusal);
+		refusal = refusedBy(() -> lz.open(6));
+		check(refusal.contains("6") && refusal.contains("holds 6"),
+				"and opening a slot the table does not have refuses rather than opening null: " + refusal);
+		lz.open(1);
+		check(lz.open() == lz.at(1) && lz.open() != null && lz.index() == 1,
+				"and a slot it has opens a zone - every slot holds one (F208)");
 	}
 
 	// -------------------------------------------------- 2. handed, by declaration
@@ -455,12 +477,13 @@ public class LoadedZoneTest {
 			ZoneLoadingPanel panelA = new ZoneLoadingPanel(a, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 			ZoneLoadingPanel panelB = new ZoneLoadingPanel(b, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 
-			//the offer walks the whole table, so give both owners the same first
-			//forty zones - reading all 536 would cost the suite a minute and prove
-			//nothing more. Only ONE of the two is given a zone to have open.
+			//the offer walks the whole table, so give both owners a table of the same
+			//first forty zones - reading all 536 would cost the suite a minute and prove
+			//nothing more, and a table has no holes (F208). Only ONE of the two is given
+			//a zone to have open.
 			int entries = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
-			Zone[] table = new Zone[entries - 2];
-			int filled = Math.min(40, table.length);
+			Zone[] table = new Zone[Math.min(40, entries - 2)];
+			int filled = table.length;
 			for (int i = 0; i < filled; i++) {
 				table[i] = zoneAt(i);
 			}
@@ -702,6 +725,20 @@ public class LoadedZoneTest {
 		Method m = CtrmapMainframe.class.getDeclaredMethod("defaultRegionForLoadedZone");
 		m.setAccessible(true);
 		return (Integer) m.invoke(null);
+	}
+
+	/** A zone read from the smallest ZO the readers take: no game data, so a suite's table has no hole. */
+	static Zone blank() throws Exception {
+		FakeGameFiles fake = new FakeGameFiles().plant(ArchiveType.ZONE_DATA, 3, HandedGameTest.zoneBytes());
+		return new Zone(new ZO(fake.staged(ArchiveType.ZONE_DATA, 3), fake), ctrmap.gamedef.GameType.ORAS);
+	}
+
+	static Zone[] blanks(int n) throws Exception {
+		Zone[] out = new Zone[n];
+		for (int i = 0; i < n; i++) {
+			out[i] = blank();
+		}
+		return out;
 	}
 
 	static Zone zoneAt(int index) throws Exception {

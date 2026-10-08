@@ -2,9 +2,7 @@ package ctrmap.humaninterface;
 
 import ctrmap.CtrmapMainframe;
 import ctrmap.formats.Triangle;
-import ctrmap.formats.containers.GR;
 import ctrmap.formats.gfcollision.GRCollisionFile;
-import ctrmap.formats.h3d.H3DModelNameGet;
 import ctrmap.humaninterface.tools.AbstractTool;
 import ctrmap.humaninterface.tools.FillTool;
 import java.util.ArrayList;
@@ -30,12 +28,12 @@ public class CollEditPanel extends javax.swing.JPanel {
 	public int selectedMesh = -1;
 	public int selectedTri = -1;
 
-	/**
-	 * Creates new form CollEditPanel
-	 */
 	/** Which tool the editor is holding, handed in: this class only asks. */
 	private final ctrmap.humaninterface.tools.ToolSelection tools;
 
+	/**
+	 * Creates new form CollEditPanel
+	 */
 	public CollEditPanel(ctrmap.humaninterface.tools.ToolSelection tools) {
 		this.tools = tools;
 		initComponents();
@@ -206,10 +204,6 @@ public class CollEditPanel extends javax.swing.JPanel {
 		files.clear();
 	}
 
-	public void loadCollision(GR f) {
-		loadCollision(new GRCollisionFile(f), H3DModelNameGet.H3DModelNameGet(f.getFile(1)));
-	}
-
 	public void store() {
 		for (int i = 0; i < files.size(); i++) {
 			if (files.get(i).modified) {
@@ -220,6 +214,12 @@ public class CollEditPanel extends javax.swing.JPanel {
 	}
 
 	public void loadCollision(GRCollisionFile f, String name) {
+		if (f.unreadable != null) {
+			//an empty stand-in for bytes nobody could read: edited here and saved, it would
+			//replace them (F058)
+			throw new IllegalArgumentException("The collision editor is not given a collision it could not read: "
+					+ f.unreadable);
+		}
 		this.coll = f;
 		root.setUserObject("Collision data");
 		files.add(coll);
@@ -588,7 +588,6 @@ public class CollEditPanel extends javax.swing.JPanel {
 			root.removeAllChildren();
 			meshNodes.clear();
 			for (int file = 0; file < files.size(); file++) {
-				files.get(file).dedupe();
 				meshNodes.add(new DefaultMutableTreeNode[16]);
 				meshContainers.get(file).removeAllChildren();
 				for (int i = 0; i < 16; i++) {

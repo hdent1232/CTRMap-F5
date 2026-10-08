@@ -9,7 +9,6 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
 
 /**
  * The building palette's catalog: named, tile-box-exact locations of the
@@ -60,11 +59,11 @@ public class BuildingCatalog {
 		public boolean auto;
 
 		public int tilesW() {
-			return tx1 - tx0 + 1;
+			return MapPrefab.span(tx0, tx1);
 		}
 
 		public int tilesH() {
-			return ty1 - ty0 + 1;
+			return MapPrefab.span(ty0, ty1);
 		}
 
 		public boolean enterable() {
@@ -78,6 +77,7 @@ public class BuildingCatalog {
 	}
 
 	private static List<Entry> entries;
+	private static List<String> problems;
 
 	/** All catalog entries: the 48 hand-curated ones (door/interior wiring,
 	 *  pinned first) plus the auto-harvested game-wide sweep. */
@@ -85,28 +85,71 @@ public class BuildingCatalog {
 		if (entries != null) {
 			return entries;
 		}
-		entries = new ArrayList<>();
-		load("ctrmap/resources/oras_buildings.tsv", false);
-		load("ctrmap/resources/oras_buildings_auto.tsv", true);
+		List<Entry> read = new ArrayList<>();
+		List<String> said = new ArrayList<>();
+		load("ctrmap/resources/oras_buildings.tsv", false, read, said);
+		load("ctrmap/resources/oras_buildings_auto.tsv", true, read, said);
+		entries = read;
+		problems = said;
 		return entries;
 	}
 
-	private static void load(String resource, boolean auto) {
+	/**
+	 * What the catalog could not read - a missing file, or a row by its line - each skipped with
+	 * the rest kept. Empty when every row read. They went to stderr, and one malformed number
+	 * ended the whole file there, so a catalog could lose most of itself and say so nowhere the
+	 * user looks (F067).
+	 */
+	public static synchronized List<String> loadProblems() {
+		entries();
+		return java.util.Collections.unmodifiableList(problems);
+	}
+
+	private static void load(String resource, boolean auto, List<Entry> into, List<String> problems) {
 		try (InputStream in = BuildingCatalog.class.getClassLoader().getResourceAsStream(resource)) {
 			if (in == null) {
+				problems.add(resource + " is missing from this build");
 				return;
 			}
-			Scanner sc = new Scanner(in, "UTF-8");
-			while (sc.hasNextLine()) {
-				String line = sc.nextLine().trim();
-				if (line.isEmpty() || line.startsWith("#")) {
-					continue;
-				}
-				String[] f = line.split("\t");
-				if (f.length < 14) {
-					continue;
-				}
-				Entry e = new Entry();
+			parse(in, resource, auto, into, problems);
+		} catch (java.io.IOException ex) {
+			problems.add(resource + " could not be read: " + ex);
+		}
+	}
+
+	/**
+	 * Reads one catalog file's rows into {@code into}. A row it cannot read is named in
+	 * {@code problems} by its line and skipped, and the rows after it are still read.
+	 */
+	public static void parse(InputStream in, String name, boolean auto, List<Entry> into, List<String> problems) {
+		//a BufferedReader, not a Scanner: a Scanner keeps a read failure to itself and simply runs
+		//out of lines, so a catalog cut short by the disk read as a shorter catalog (F211)
+		java.io.BufferedReader lines = new java.io.BufferedReader(
+				new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
+		int lineNo = 0;
+		while (true) {
+			String raw;
+			try {
+				raw = lines.readLine();
+			} catch (java.io.IOException ex) {
+				problems.add(name + " could not be read past line " + lineNo + ": " + ctrmap.util.Bytes.reason(ex));
+				return;
+			}
+			if (raw == null) {
+				break;
+			}
+			lineNo++;
+			String line = raw.trim();
+			if (line.isEmpty() || line.startsWith("#")) {
+				continue;
+			}
+			String[] f = line.split("\t");
+			if (f.length < 14) {
+				problems.add(name + " line " + lineNo + " has " + f.length + " fields; a row needs 14");
+				continue;
+			}
+			Entry e = new Entry();
+			try {
 				e.kind = f[0];
 				e.name = f[1];
 				e.donorRegion = Integer.parseInt(f[2]);
@@ -121,18 +164,27 @@ public class BuildingCatalog {
 				e.doorProp = f[11];
 				e.interiorZone = Integer.parseInt(f[12]);
 				e.interiorWarpId = Integer.parseInt(f[13]);
-				if (f.length >= 16) {
-					e.location = f[14];
-					try {
-						e.retailCount = Integer.parseInt(f[15]);
-					} catch (NumberFormatException ignore) {
-					}
-				}
-				e.auto = auto;
-				entries.add(e);
+			} catch (NumberFormatException notANumber) {
+				problems.add(name + " line " + lineNo + ": " + notANumber.getMessage());
+				continue;
 			}
-		} catch (Exception ex) {
-			System.err.println("BuildingCatalog: load " + resource + " failed: " + ex);
+			//AN INVERTED BOX IS REFUSED, BY ITS LINE (F129): one was listed 0 wide and cut 2 wide
+			if (e.tx1 < e.tx0 || e.ty1 < e.ty0) {
+				problems.add(name + " line " + lineNo + ": \"" + e.name + "\" has a box that ends before it starts ("
+						+ e.tx0 + "," + e.ty0 + " to " + e.tx1 + "," + e.ty1 + ")");
+				continue;
+			}
+			if (f.length >= 16) {
+				e.location = f[14];
+				try {
+					e.retailCount = Integer.parseInt(f[15]);
+				} catch (NumberFormatException notANumber) {
+					problems.add(name + " line " + lineNo + ": the retail count " + notANumber.getMessage()
+							+ "; 1 is used");
+				}
+			}
+			e.auto = auto;
+			into.add(e);
 		}
 	}
 
@@ -196,15 +248,19 @@ public class BuildingCatalog {
 		return files != null && snapshotArchive(files) != null;
 	}
 
-	/** The pristine FieldData archive of the handed game, or null when there is no snapshot or it does not hold one. */
+	/**
+	 * The pristine FieldData archive of the handed game, or null when there is no untouched copy -
+	 * asked of the one pristine reader, {@link GameFiles#pristineArchive} (F232). An untouched copy
+	 * that is there and cannot be read as one is not "none": it is thrown, unchecked, because a
+	 * damaged backup answered "cannot cut" here would read exactly as never having had one.
+	 */
 	private static File snapshotArchive(GameFiles files) {
-		File snap = files.pristine();
-		String rel = files.profile().archivePath(ArchiveType.FIELD_DATA);
-		if (snap == null || rel == null) {
-			return null;
+		try {
+			return files.pristineArchive(ArchiveType.FIELD_DATA);
+		} catch (java.io.IOException damaged) {
+			throw new IllegalStateException("The untouched copy of the map archive could not be read: "
+					+ damaged.getMessage(), damaged);
 		}
-		File garcFile = new File(snap.getAbsolutePath() + rel);
-		return garcFile.exists() ? garcFile : null;
 	}
 
 	/**
@@ -240,7 +296,7 @@ public class BuildingCatalog {
 					+ " edited data. Load the workspace in CTRMap once to create it.");
 			return null;
 		}
-		byte[] bytes = new GARC(garcFile).getDecompressedEntry(region);
+		byte[] bytes = snapshotHandle(garcFile).getDecompressedEntry(region);
 		if (bytes == null) {
 			return null;
 		}
@@ -248,6 +304,26 @@ public class BuildingCatalog {
 		try (FileOutputStream fo = new FileOutputStream(tmp)) {
 			fo.write(bytes);
 		}
+		//THE COPY GOES WITH THE PROGRAM (F067): it was left behind, one per donor region cut
+		tmp.deleteOnExit();
 		return new GR(tmp, files);
+	}
+
+	private static final java.util.Map<String, GARC> SNAPSHOTS = new java.util.HashMap<>();
+
+	/**
+	 * The snapshot's archive, opened once while the file is unchanged. Every cut - a placement, a
+	 * preview, each of a catalog's thousands of entries - opened it again (F067). A snapshot that
+	 * has been rewritten since has another length or time, and is opened anew.
+	 */
+	public static synchronized GARC snapshotHandle(File garcFile) {
+		String key = garcFile.getAbsolutePath() + "|" + garcFile.length() + "|" + garcFile.lastModified();
+		GARC g = SNAPSHOTS.get(key);
+		if (g == null) {
+			SNAPSHOTS.keySet().removeIf(k -> k.startsWith(garcFile.getAbsolutePath() + "|"));
+			g = new GARC(garcFile);
+			SNAPSHOTS.put(key, g);
+		}
+		return g;
 	}
 }

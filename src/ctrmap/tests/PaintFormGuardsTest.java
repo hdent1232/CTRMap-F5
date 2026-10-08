@@ -357,7 +357,7 @@ public class PaintFormGuardsTest {
 	 */
 	static void seedLabelCountsBorrowedTiles(File dump) throws Exception {
 		if (!new File(dump, "a/0/3/9").isFile()) {
-			System.out.println("  skip: no pristine dump at " + dump);
+			Skip.section("no pristine dump at " + dump);
 			return;
 		}
 		PaintApplyGuardsTest.openWorkspace(dump);
@@ -423,7 +423,7 @@ public class PaintFormGuardsTest {
 	static void noMapViewMeansNoSceneToPutBack(File dump) throws Exception {
 		System.out.println("--- a painter with no map view puts nothing back, and still says the refusal");
 		if (!new File(dump, "a/0/3/9").isFile()) {
-			System.out.println("  skip: no pristine dump at " + dump);
+			Skip.section("no pristine dump at " + dump);
 			return;
 		}
 		PaintApplyGuardsTest.openWorkspace(dump);

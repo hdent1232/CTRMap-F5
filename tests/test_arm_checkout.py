@@ -50,6 +50,31 @@ class AFreshCloneArmsItsOwnHooks(unittest.TestCase):
             _git(root, "config", "--local", "core.hooksPath", hooks_path)
         return root
 
+    def test_a_hook_COMMITTED_not_executable_is_never_reported_armed(self):
+        """F182: committed 100644 from Windows, every POSIX clone's hooks were skipped by git while
+        this tool said ARMED. core.fileMode is off here, as Windows keeps it, so `git add` records
+        100644 on every system and the test means the same everywhere."""
+        root = self._checkout()
+        _git(root, "config", "core.fileMode", "false")
+        _git(root, "add", "--", arm_checkout.HOOKS_DIR + "/commit-msg")
+        armed, said = arm_checkout.arm_hooks(root)
+        self.assertFalse(armed, "a hook git would skip was reported armed: %s" % said)
+        self.assertIn("update-index --chmod=+x", said, "and the report names no remedy")
+        _git(root, "update-index", "--chmod=+x", "--", arm_checkout.HOOKS_DIR + "/commit-msg")
+        armed, said = arm_checkout.arm_hooks(root)
+        self.assertTrue(armed, "once recorded executable the hooks are armed: %s" % said)
+
+    @unittest.skipIf(os.name == "nt", "Windows has no executable bit for git to skip a hook over")
+    def test_a_hook_that_lost_its_bit_ON_DISK_gets_it_back_at_session_start(self):
+        root = self._checkout()
+        hook = os.path.join(root, arm_checkout.HOOKS_DIR, "commit-msg")
+        _git(root, "add", "--", arm_checkout.HOOKS_DIR + "/commit-msg")
+        _git(root, "update-index", "--chmod=+x", "--", arm_checkout.HOOKS_DIR + "/commit-msg")
+        os.chmod(hook, 0o644)
+        armed, said = arm_checkout.arm_hooks(root)
+        self.assertTrue(armed and os.access(hook, os.X_OK),
+                        "session start leaves a hook git would skip on this machine: %s" % said)
+
     def test_a_fresh_clone_is_armed(self):
         root = self._checkout()
         arm_checkout.arm_hooks(root)
@@ -100,6 +125,19 @@ class AFreshCloneArmsItsOwnHooks(unittest.TestCase):
         self.assertTrue(reached and os.path.isdir(os.path.join(beside, ".git")),
                         "a clone with no bundle on its machine was left UNABLE TO COMMIT - the "
                         "bundle was not fetched beside it: %s" % said)
+
+    def test_asking_a_scratch_clone_leaves_no_installer_behind(self):
+        """`import bundle_install` with a scratch clone's tools/ on the path put THAT copy in the
+        module cache, so every later `import bundle_install` in the process got a module whose root
+        was a deleted temp folder - measured 2026-10-07: the bundle's install test, run after this
+        file, could not say where the bundle lives. Python's cache also answers the import with a
+        copy loaded earlier, so the clone was not even asked with its own installer."""
+        before = sys.modules.get("bundle_install")
+        root, beside = self._cloud_clone()
+        arm_checkout.bundle_reachable(root)
+        after = sys.modules.get("bundle_install")
+        self.assertIs(after, before, "asking a clone left its installer in the module cache: %r"
+                      % getattr(after, "__file__", after))
 
     def test_a_fetch_to_a_place_nothing_looks_is_refused(self):
         root, beside = self._cloud_clone(into="../somewhere-else")

@@ -1,5 +1,6 @@
 package ctrmap.humaninterface.pokepick;
 
+import ctrmap.formats.GameFiles;
 import ctrmap.formats.pokedata.PokeData;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -39,19 +40,19 @@ public class PokePickers {
 		SPECIES, MOVE, ITEM
 	}
 
-	/** Opens the species picker (with the stat/type card). Returns id or -1. */
-	public static int pickSpecies(Component parent, int current) {
-		return pick(parent, current, Kind.SPECIES, "Choose a Pokemon");
+	/** Opens the species picker (with the stat/type card) over the handed game's tables. Returns id or -1. */
+	public static int pickSpecies(Component parent, int current, GameFiles game) {
+		return pick(parent, current, Kind.SPECIES, "Choose a Pokemon", game);
 	}
 
-	/** Opens the move picker (with the type/category card). Returns id or -1. */
-	public static int pickMove(Component parent, int current) {
-		return pick(parent, current, Kind.MOVE, "Choose a move");
+	/** Opens the move picker (with the type/category card) over the handed game's tables. Returns id or -1. */
+	public static int pickMove(Component parent, int current, GameFiles game) {
+		return pick(parent, current, Kind.MOVE, "Choose a move", game);
 	}
 
-	/** Opens the item picker. Returns id or -1. */
-	public static int pickItem(Component parent, int current) {
-		return pick(parent, current, Kind.ITEM, "Choose an item");
+	/** Opens the item picker over the handed game's tables. Returns id or -1. */
+	public static int pickItem(Component parent, int current, GameFiles game) {
+		return pick(parent, current, Kind.ITEM, "Choose an item", game);
 	}
 
 	/**
@@ -60,10 +61,10 @@ public class PokePickers {
 	 * seeded with the cell's current id and writes the chosen id back through the
 	 * table model. The mapped columns should be marked non-editable so the picker
 	 * (not a text editor) opens. Column index passed to the mapper is the MODEL
-	 * index.
+	 * index. {@code game} is the game whose names the pickers list; null lists ids alone.
 	 */
 	public static void installDoubleClickPickers(final javax.swing.JTable table,
-			final java.util.function.IntFunction<Kind> colToKind) {
+			final java.util.function.IntFunction<Kind> colToKind, final GameFiles game) {
 		table.addMouseListener(new java.awt.event.MouseAdapter() {
 			@Override
 			public void mouseClicked(java.awt.event.MouseEvent e) {
@@ -81,8 +82,8 @@ public class PokePickers {
 					return;
 				}
 				int cur = parseLeadingInt(String.valueOf(table.getModel().getValueAt(row, col)));
-				int picked = k == Kind.SPECIES ? pickSpecies(table, cur)
-						: k == Kind.MOVE ? pickMove(table, cur) : pickItem(table, cur);
+				int picked = k == Kind.SPECIES ? pickSpecies(table, cur, game)
+						: k == Kind.MOVE ? pickMove(table, cur, game) : pickItem(table, cur, game);
 				if (picked >= 0) {
 					table.getModel().setValueAt(picked, row, col);
 				}
@@ -113,25 +114,26 @@ public class PokePickers {
 		}
 	}
 
-	private static int pick(Component parent, int current, Kind kind, String title) {
+	private static int pick(Component parent, int current, Kind kind, String title, GameFiles game) {
 		Window owner = parent == null ? null : SwingUtilities.getWindowAncestor(parent);
 		final JDialog dlg = new JDialog(owner, title, JDialog.ModalityType.APPLICATION_MODAL);
 		final int[] result = {-1};
 
-		int count = kind == Kind.SPECIES ? PokeData.speciesCount()
-				: kind == Kind.MOVE ? PokeData.moveCount() : PokeData.itemCount();
+		final PokeData data = game == null ? PokeData.none() : PokeData.of(game);
+		int count = kind == Kind.SPECIES ? data.speciesCount()
+				: kind == Kind.MOVE ? data.moveCount() : data.itemCount();
 		final List<int[]> all = new ArrayList<>();   // {id}
 		final List<String> labels = new ArrayList<>();
 		for (int id = 0; id < count; id++) {
 			all.add(new int[]{id});
-			labels.add(id + "  " + nameOf(kind, id));
+			labels.add(id + "  " + nameOf(data, kind, id));
 		}
 
 		final DefaultListModel<String> lm = new DefaultListModel<>();
 		final List<Integer> visibleIds = new ArrayList<>();
 		final JList<String> list = new JList<>(lm);
 		list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-		final PreviewPanel preview = new PreviewPanel(kind);
+		final PreviewPanel preview = new PreviewPanel(kind, data);
 		final JTextField search = new JTextField();
 
 		Runnable rebuild = () -> {
@@ -225,11 +227,11 @@ public class PokePickers {
 		}
 	}
 
-	static String nameOf(Kind kind, int id) {
+	static String nameOf(PokeData data, Kind kind, int id) {
 		switch (kind) {
-			case SPECIES: return PokeData.speciesName(id);
-			case MOVE: return PokeData.moveName(id);
-			default: return PokeData.itemName(id);
+			case SPECIES: return data.speciesName(id);
+			case MOVE: return data.moveName(id);
+			default: return data.itemName(id);
 		}
 	}
 
@@ -237,10 +239,13 @@ public class PokePickers {
 	private static class PreviewPanel extends JPanel {
 
 		final Kind kind;
+		/** The tables the picker listed from, so the card and the list are one game's. */
+		final PokeData data;
 		int id = -1;
 
-		PreviewPanel(Kind kind) {
+		PreviewPanel(Kind kind, PokeData data) {
 			this.kind = kind;
+			this.data = data;
 			setPreferredSize(new Dimension(300, 320));
 			setBackground(null);
 		}
@@ -264,7 +269,7 @@ public class PokePickers {
 			}
 			g.setColor(fg);
 			g.setFont(getFont().deriveFont(Font.BOLD, 18f));
-			String title = id + "  " + nameOf(kind, id);
+			String title = id + "  " + nameOf(data, kind, id);
 			g.drawString(title, x, y);
 			y += 14;
 
@@ -280,9 +285,9 @@ public class PokePickers {
 		}
 
 		private void paintSpecies(Graphics2D g, int x, int y, int cardW, Color fg) {
-			int[] tp = PokeData.types(id);
-			int[] st = PokeData.baseStats(id);
-			int[] ab = PokeData.abilities(id);
+			int[] tp = data.types(id);
+			int[] st = data.baseStats(id);
+			int[] ab = data.abilities(id);
 			y += 18;
 			if (tp != null) {
 				int bx = x;
@@ -322,19 +327,19 @@ public class PokePickers {
 			if (ab != null) {
 				g.setFont(getFont().deriveFont(Font.PLAIN, 12f));
 				g.setColor(fg);
-				String a = PokeData.abilityName(ab[0]);
+				String a = data.abilityName(ab[0]);
 				if (ab[1] != 0 && ab[1] != ab[0]) {
-					a += " / " + PokeData.abilityName(ab[1]);
+					a += " / " + data.abilityName(ab[1]);
 				}
 				g.drawString("Ability: " + a, x, y + 10);
 				if (ab[2] != 0) {
-					g.drawString("Hidden: " + PokeData.abilityName(ab[2]), x, y + 28);
+					g.drawString("Hidden: " + data.abilityName(ab[2]), x, y + 28);
 				}
 			}
 		}
 
 		private void paintMove(Graphics2D g, int x, int y, Color fg) {
-			int[] mi = PokeData.moveInfo(id);
+			int[] mi = data.moveInfo(id);
 			y += 18;
 			if (mi == null) {
 				g.setColor(fg);

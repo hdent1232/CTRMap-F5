@@ -58,12 +58,29 @@ public class ShopData {
 		return b;
 	}
 
+	/**
+	 * Where the table starts in the retail decompressed code.bin - measured, and checked against
+	 * the real file by ShopDataTest. A file whose anchor ends anywhere else is another build.
+	 */
+	public static final int FILE_OFFSET = 0x47AA3E;
+
+	/** Item ids run 0 to this less one: one per entry of the item icon table. */
+	public static final int ITEM_COUNT = ItemIconTable.COUNT;
+
 	public static int totalItems() {
 		int n = 0;
 		for (int c : COUNTS) {
 			n += c;
 		}
 		return n;
+	}
+
+	/**
+	 * The code.bin bytes a shop save writes: the whole table, so an inventory put back to the
+	 * game's own is put back in code.ips too (F152).
+	 */
+	public static int[][] owned() {
+		return new int[][]{{FILE_OFFSET, FILE_OFFSET + totalItems() * 2}};
 	}
 
 	/** File offset of the shop table in a decompressed code.bin, or -1. */
@@ -77,14 +94,52 @@ public class ShopData {
 		return -1;
 	}
 
-	/** Reads all shops: int[shop][slot] item ids. Throws if the table is absent. */
-	public static int[][] read(byte[] code) {
+	/**
+	 * Refuses a file that is not the build this table was measured in (F045).
+	 *
+	 * <p>Checked BEFORE any read or write, as {@link ItemIconTable#verify} and
+	 * {@link ZoneLimitPatch#applyToCode} check theirs: the anchor used to be found anywhere past
+	 * 0x400000 and {@link #totalItems} words written from wherever it ended, so on another build -
+	 * Alpha Sapphire, a revision, an executable relocated by another tool - this wrote 430 bytes
+	 * over whatever followed the string. A patch applied to the wrong executable does not fail; it
+	 * produces a build that boots and is wrong somewhere else.
+	 */
+	public static void verify(byte[] code) {
+		if (code == null) {
+			throw new IllegalArgumentException("no code.bin");
+		}
 		int table = locate(code);
 		if (table < 0) {
-			throw new IllegalStateException("shop table not found - is this a decompressed ORAS code.bin?");
+			throw new IllegalStateException("this file does not contain the ORAS shop table - is it the DECOMPRESSED"
+					+ " code.bin? (the anchor before the table was not found)");
 		}
+		if (table != FILE_OFFSET) {
+			throw new IllegalStateException("the shop table is at 0x" + Integer.toHexString(table)
+					+ " in this file but was measured at 0x" + Integer.toHexString(FILE_OFFSET)
+					+ " - this is a different build, so it is neither read nor patched: its "
+					+ totalItems() * 2 + " bytes written there would land on something else entirely");
+		}
+		if (code.length < FILE_OFFSET + totalItems() * 2) {
+			throw new IllegalStateException("code.bin is too short to hold the shop table (" + code.length + " bytes)");
+		}
+		int p = FILE_OFFSET;
+		for (int s = 0; s < COUNTS.length; s++) {
+			for (int i = 0; i < COUNTS[s]; i++) {
+				int id = u16(code, p);
+				if (id >= ITEM_COUNT) {
+					throw new IllegalStateException(NAMES[s] + ", slot " + (i + 1) + ", holds " + id + ", which is no item"
+							+ " (they run 0 to " + (ITEM_COUNT - 1) + ") - this is not the shop table, so it is not patched");
+				}
+				p += 2;
+			}
+		}
+	}
+
+	/** Reads all shops: int[shop][slot] item ids. Verifies the build first. */
+	public static int[][] read(byte[] code) {
+		verify(code);
 		int[][] shops = new int[COUNTS.length][];
-		int p = table;
+		int p = FILE_OFFSET;
 		for (int s = 0; s < COUNTS.length; s++) {
 			shops[s] = new int[COUNTS[s]];
 			for (int i = 0; i < COUNTS[s]; i++) {
@@ -95,24 +150,22 @@ public class ShopData {
 		return shops;
 	}
 
-	/** Returns a copy of code with the given inventories written in. */
+	/** Returns a copy of code with the given inventories written in. Verifies the build first. */
 	public static byte[] write(byte[] code, int[][] shops) {
 		if (shops.length != COUNTS.length) {
 			throw new IllegalArgumentException("expected " + COUNTS.length + " shops");
 		}
-		int table = locate(code);
-		if (table < 0) {
-			throw new IllegalStateException("shop table not found");
-		}
+		verify(code);
 		byte[] out = code.clone();
-		int p = table;
+		int p = FILE_OFFSET;
 		for (int s = 0; s < COUNTS.length; s++) {
 			if (shops[s].length != COUNTS[s]) {
 				throw new IllegalArgumentException("shop " + s + " must keep " + COUNTS[s] + " items (the engine reads fixed-length lists)");
 			}
 			for (int id : shops[s]) {
-				if (id < 0 || id > 0xFFFF) {
-					throw new IllegalArgumentException("item id out of range: " + id);
+				if (id < 0 || id >= ITEM_COUNT) {
+					throw new IllegalArgumentException(NAMES[s] + ": " + id + " is no item (they run 0 to "
+							+ (ITEM_COUNT - 1) + "), so it is not written");
 				}
 				out[p] = (byte) id;
 				out[p + 1] = (byte) (id >> 8);

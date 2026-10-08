@@ -41,7 +41,7 @@ import static ctrmap.formats.containers.ContainerBytes.subfile;
  */
 public class WorkspaceIntegrity {
 
-	public static final int MASTER_ROW = 0x38;
+	public static final int MASTER_ROW = ctrmap.formats.zone.ZoneHeader.SIZE;
 	public static final int HDR_AREA_OFF = 2;
 	public static final int HDR_MATRIX_OFF = 4;
 
@@ -87,11 +87,20 @@ public class WorkspaceIntegrity {
 			int maxAreaInUse = -1, maxAreaZone = -1;
 			//forked area id -> the first zone that names it, for check 4 below
 			Map<Integer, Integer> forkedAreaZone = new TreeMap<>();
-			byte[] masterTable = zo.getDecompressedEntry(zo.length - 2);
-			if (masterTable != null && masterTable.length % MASTER_ROW == 0) {
-				int n = Math.min(masterTable.length / MASTER_ROW, zo.length - 2);
-				for (int z = 0; z < n; z++) {
-					int a = u16(masterTable, z * MASTER_ROW + HDR_AREA_OFF);
+			//THE ONE READER, AT THE PROFILE'S ZONE COUNT (F013). This read entry "length - 2" -
+			//ORAS's tail as a literal - and took any whole number of rows as the table. The archive's
+			//copy is the right one here: this runs after a pack, on what the game will load.
+			int zoneCount = ZoneTables.zoneCount(zo, ws.profile());
+			MasterTable masterRows = null;
+			String masterUnread = null;
+			try {
+				masterRows = MasterTable.detached(zo.getDecompressedEntry(zoneCount), zoneCount);
+			} catch (java.io.IOException wrong) {
+				masterUnread = ctrmap.util.Bytes.reason(wrong);
+			}
+			if (masterRows != null) {
+				for (int z = 0; z < masterRows.zones(); z++) {
+					int a = masterRows.id(ZoneResource.AREA, z);
 					if (a > maxAreaInUse) {
 						maxAreaInUse = a;
 						maxAreaZone = z;
@@ -183,23 +192,14 @@ public class WorkspaceIntegrity {
 			}
 
 			//2. every zone must point at an area and a matrix that exist
-			int zoneCount = zo.length - 2;
-			byte[] master = masterTable;
-			if (master == null || master.length % MASTER_ROW != 0) {
-				bad.add("the master zone table is unreadable or misaligned ("
-						+ (master == null ? "absent" : master.length + " bytes, not a multiple of "
-						+ MASTER_ROW) + ")");
+			if (masterRows == null) {
+				bad.add("the master zone table could not be read: " + masterUnread);
 				return bad;
 			}
-			int rows = master.length / MASTER_ROW;
-			if (rows != zoneCount) {
-				bad.add("the master table describes " + rows + " zones but ZoneData holds "
-						+ zoneCount + "; the two disagree about how many zones exist");
-			}
 			int badArea = 0, badMatrix = 0, firstBadZone = -1;
-			for (int z = 0; z < Math.min(rows, zoneCount); z++) {
-				int area = u16(master, z * MASTER_ROW + HDR_AREA_OFF);
-				int matrix = u16(master, z * MASTER_ROW + HDR_MATRIX_OFF);
+			for (int z = 0; z < zoneCount; z++) {
+				int area = masterRows.id(ZoneResource.AREA, z);
+				int matrix = masterRows.id(ZoneResource.MAP, z);
 				if (area >= ad.length) {
 					badArea++;
 					firstBadZone = firstBadZone < 0 ? z : firstBadZone;
@@ -216,6 +216,50 @@ public class WorkspaceIntegrity {
 			if (badMatrix > 0) {
 				bad.add(badMatrix + " zone(s) point at a map matrix that does not exist;"
 						+ " MapMatrix has " + mm.length);
+			}
+
+			//5. EVERY ZONE'S OWN HEADER AGREES WITH ITS MASTER ROW (F031). The forks and the
+			//open-time repair write the two separately, and the game reads only the master row: a
+			//zone whose header names one area and whose row names another is edited as one place
+			//and loaded as the other. The ids those paths write - area, map, story text - are
+			//compared; a ZoneData entry that is not a zone container is not a zone, and is left out.
+			int disagree = 0, headersRead = 0;
+			String firstDisagreement = null;
+			for (int z = 0; z < zoneCount; z++) {
+				byte[] zoBytes;
+				try {
+					zoBytes = zo.getDecompressedEntry(z);
+				} catch (RuntimeException unreadable) {
+					zoBytes = null;
+				}
+				byte[] header = zoBytes == null || zoBytes.length < 2 || zoBytes[0] != 'Z' || zoBytes[1] != 'O'
+						? null : subfile(zoBytes, 0);
+				if (header == null || header.length < MASTER_ROW) {
+					continue;
+				}
+				headersRead++;
+				for (ZoneResource res : ZoneAppender.madePrivate()) {
+					int own = u16(header, res.headerOffset);
+					int row = masterRows.id(res, z);
+					if (own != row) {
+						disagree++;
+						if (firstDisagreement == null) {
+							firstDisagreement = "zone " + z + "'s " + res.label + ": its header says " + own
+									+ ", the master table says " + row;
+						}
+						break;
+					}
+				}
+			}
+			if (disagree > 0) {
+				bad.add(disagree + " zone(s) whose own header and master-table row disagree (first: "
+						+ firstDisagreement + "); the game reads the master row, so the editor shows one"
+						+ " place and the game loads another");
+			}
+			//a pass that read no header proved nothing; said, as the matrix pass says it
+			if (zoneCount > 0 && headersRead == 0) {
+				bad.add("the header check could not read any of the " + zoneCount + " zones, so nothing"
+						+ " was verified about headers agreeing with the master table");
 			}
 
 			//3. every matrix cell must name a region that exists
@@ -294,10 +338,4 @@ public class WorkspaceIntegrity {
 		}
 		return bad;
 	}
-
-	/**
-	 * One subfile out of a Gamefreak container: u16 magic, u16 subfile count,
-	 * then count+1 u32 offsets. Null when the bytes are not a container of that
-	 * shape, or do not hold subfile {@code i}.
-	 */
 }

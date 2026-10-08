@@ -50,7 +50,6 @@ public class PaintedRegionBuilder {
 	public static final int NO_RAMP = -1;
 	static final String[] DIR_NAMES = {"east", "west", "south", "north"};
 
-
 	/** A textured quad (4 corners TL/TR/BL/BR) destined for one mesh. */
 	static final class Quad {
 
@@ -213,22 +212,6 @@ public class PaintedRegionBuilder {
 		float[][] ground = baseY != null ? nearestGround(baseY, walkableTiles(donorTilemap)) : null;
 		return buildModel(files, donorModel, grid, height, ramp, touched, baseY, ground, light, edges);
 	}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	// ---- visual model -----------------------------------------------------
 
@@ -414,13 +397,12 @@ public class PaintedRegionBuilder {
 						//low the ordinary wall that should cover the rest is not
 						//actually there. Until that is fixed the taller skirt
 						//stays, and its cost is a few blades near corridors.
+						//PaintSealTest measures the seal and OUTSTANDING.md owns
+						//the missing wall (F092).
 						List<Quad> cl = quadsByMesh.computeIfAbsent(cliffMesh, k -> new ArrayList<>());
 						Quad sk = rampSkirt(tx, ty, side, rd, myY, rampLo2);
 						if (sk != null) {
 							cl.add(sk);
-							SKIRTS[0]++;
-						} else {
-							SKIRTS[1]++;
 						}
 						//And the UNDERSIDE. The skirt fills the wedge between the
 						//ramp's sloping floor and the flat ground level with its
@@ -432,7 +414,6 @@ public class PaintedRegionBuilder {
 						Quad ap = rampApron(tx, ty, side, rd, myY, rampLo2);
 						if (ap != null) {
 							cl.add(ap);
-							SKIRTS[2]++;
 						}
 					}
 				}
@@ -451,14 +432,9 @@ public class PaintedRegionBuilder {
 		//wall behind it cannot have a seam at all.
 		List<Quad> backing = quadsByMesh.computeIfAbsent(cliffMesh, k -> new ArrayList<>());
 		for (CliffEdge e : cliffEdges) {
-			if (System.getProperty("nobacking") != null) {
-				break;
-			}
 			if (e.donorSide) {
-				SKIRTS[1]++;
 				continue;
 			}
-			SKIRTS[0]++;
 			backing.add(backingWall(e));
 		}
 
@@ -487,9 +463,6 @@ public class PaintedRegionBuilder {
 			}
 		}
 		for (Map.Entry<String, float[]> en : post.entrySet()) {
-			if (System.getProperty("noposts") != null) {
-				break;
-			}
 			if (postLevels.get(en.getKey()).size() < 2) {
 				continue;   //one depth only: the strip's own mitre already closes it
 			}
@@ -512,10 +485,6 @@ public class PaintedRegionBuilder {
 
 		addChurnLayer(grid, height, yTop, touched, quadsByMesh, probe);
 		addShoreBands(grid, height, yTop, touched, quadsByMesh, terrainMesh, groundMesh, probe);
-		if (System.getProperty("skirtstats") != null) {
-			System.out.println("  backing walls: " + SKIRTS[0] + " emitted, " + SKIRTS[1]
-					+ " skipped as donor-side; aprons " + SKIRTS[2]);
-		}
 
 		//composite clip regions: painted tiles exactly; the edge-ribbon mesh
 		//uses a dilated region so stale ribbons NEXT to painted tiles go too
@@ -579,9 +548,6 @@ public class PaintedRegionBuilder {
 		}
 		return current;
 	}
-
-
-
 
 	/**
 	 * Composite rewrite of one mesh: donor triangles are CLIPPED at the region
@@ -751,8 +717,6 @@ public class PaintedRegionBuilder {
 	/** Bytes per PICA component type: 0=s8, 1=u8, 2=s16, 3=float. */
 	static final int[] COMP_BYTES = {1, 1, 2, 4};
 
-
-
 	// ---- edge transition strips (the GameFreak "blend" look) --------------
 
 	static final int GRP_GRASS = 1, GRP_DIRT = 2;
@@ -760,29 +724,11 @@ public class PaintedRegionBuilder {
 	 *  (dirt/sand) side of a seam, lifted EDGE_LIFT above ground to overlay it. */
 	static final float EDGE_W = 9f, EDGE_LIFT = 0.6f;
 
-	/** [emitted, rejected-as-flat] ramp skirts, for diagnosis. */
-	static final int[] SKIRTS = new int[3];
-
 	/** Ground texture repeats: one per 72 world units, i.e. per four tiles. */
 	static final float FLOOR_UV = 1f / 72f;
 
 	/** How far the water surface sits below the ground it runs through. */
 	static final float WATER_SINK = 7f;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	/** One tile-boundary segment where water meets land at the same height. */
 	static final class ShoreEdge {
@@ -802,35 +748,9 @@ public class PaintedRegionBuilder {
 		}
 	}
 
-
-
-
 	/** How far a bank reaches out over the water before meeting its surface. */
 	static final float BANK_RUN = 7f;
 
-
-
-
-	/**
-	 * The cliff face on tile edge {@code dir}, dropping from {@code yt} to
-	 * {@code yb}, as a SLOPE rather than a wall.
-	 *
-	 * <p>This used to emit one vertical quad: top edge and bottom edge at the
-	 * same horizontal position, zero run, a 90-degree drop. Nothing in the
-	 * retail game looks like that. Measured over real cliff meshes - the face
-	 * angles of {@code d112r0103_gake1}, {@code d112r0103_gake2},
-	 * {@code gake_basic} and {@code chip_rock_b} - a Pokemon cliff averages
-	 * 42-46 degrees, with mean vertical rise almost exactly equal to mean
-	 * horizontal run, and a large share of its area (44%, 62%) sitting at only
-	 * 20-30 degrees. That shallow band is the shoulder: the ground rolls over
-	 * the top before the face steepens.
-	 *
-	 * <p>So the face is built in two pieces. A shoulder taking the first 30% of
-	 * the drop at a shallow angle, and a steeper lower face taking the rest;
-	 * together they run out about one unit horizontally per unit of fall, which
-	 * is what the corpus does. The face leans OUT over the lower tile, as the
-	 * retail geometry does - the ground below tucks under it.
-	 */
 	/**
 	 * One tile-edge segment where the ground steps down, before it is joined to
 	 * its neighbours. Endpoints run head-to-tail around a raised area (east,
@@ -865,64 +785,6 @@ public class PaintedRegionBuilder {
 		}
 	}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	/** Fraction of a mesh's surface area that faces up; a floor ~1, a wall ~0. */
 	static final double MIN_GROUND_FLATNESS = 0.5;
-
-
-
-
-
-
-
-	/**
-	 * Materials whose texture is mostly transparent - sprite strips, decals and
-	 * decoration atlases. Measured game-wide by
-	 * {@link ctrmap.tools.GroundMaterialAudit}; anything not listed is treated as
-	 * usable, so imported and user-supplied materials are never restricted.
-	 */
-	static Set<String> spriteMaterials;
-
-
-
-
-
-
-
-
-
-
-
-
 }

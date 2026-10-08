@@ -46,9 +46,8 @@ public class CommitGuardTest {
 			System.exit(1);
 		}
 		if (!onPath("python") || !onPath("git")) {
-			System.out.println("  skip: python or git is not on PATH - the gate is a python hook, "
+			Skip.suite("python or git is not on PATH - the gate is a python hook, "
 					+ "so this suite cannot run it here");
-			System.out.println("ALL PASS");
 			return;
 		}
 
@@ -61,6 +60,8 @@ public class CommitGuardTest {
 		aFixThatCarriesARealGuardIsAllowed(guard);
 		aFixInTheBundlesRelocatedPlacesIsAGuardPlace(guard);
 		theNoGuardEscapeIsHonouredAndStaysInTheMessage(guard);
+		aGitThatCannotBeAskedIsRefused(guard);
+		anUnreadableMessageIsRefused(guard);
 		aTestCountIsCheckedAgainstTheLastRecordedRun(guard);
 		aFixClosedByADetectorIsRefused(guard);
 		theNoRefusalEscapeIsHonouredAndStaysInTheMessage(guard);
@@ -148,6 +149,15 @@ public class CommitGuardTest {
 				new String[]{"src/ctrmap/tests/ATest.java"}, null);
 		check(r.code != 0, "refused (exit " + r.code + ")");
 		check(r.said.contains("is a label"), "and says so by counting it: " + firstLine(r.said));
+
+		//THE REASON IS THE LINE. The pattern here ran on to the end of the message, so the same
+		//label passed the floor on the strength of the trailers every real commit carries (F186).
+		Run trailed = run(guard, "Fix the off-by-one in the matrix loader\n\nGuard: refusal -- "
+				+ "guarded above\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n"
+				+ "Claude-Session: https://claude.ai/code/session_0123456789",
+				new String[]{"src/ctrmap/tests/ATest.java"}, null);
+		check(trailed.code != 0, "and the same label followed by its trailers is refused too"
+				+ " (exit " + trailed.code + ") " + oneLine(trailed.said));
 	}
 
 	static void anUnknownKindOfGuardIsRefused(File guard) throws Exception {
@@ -156,7 +166,7 @@ public class CommitGuardTest {
 				+ "this reason is long enough to pass the length check on its own, easily",
 				new String[]{"src/ctrmap/tests/ATest.java"}, null);
 		check(r.code != 0, "refused (exit " + r.code + ")");
-		check(r.said.contains("detector, convention, refusal"),
+		check(r.said.contains("refusal, detector, convention"),
 				"naming the three it knows: " + firstLine(r.said));
 	}
 
@@ -176,7 +186,10 @@ public class CommitGuardTest {
 		System.out.println("--- a fix in the bundle's relocated hooks or its tests folder is allowed");
 		String msg = "Fix the payload decoding\n\nGuard: refusal -- the dispatcher decodes the "
 				+ "harness's bytes as UTF-8, so no guard ever judges a mangled command again";
-		Run r = run(guard, msg, new String[]{".claude/bundle-hooks/guard_x.py"}, null);
+		//bundle_rules.py is what makes a folder the bundle's hooks (tools/bundle_hooks.py), and
+		//the gate's guard_paths - which this guard now asks (F186) - finds it by that file
+		Run r = run(guard, msg, new String[]{".claude/bundle-hooks/guard_x.py",
+				".claude/bundle-hooks/bundle_rules.py"}, null);
 		check(r.code == 0, "the bundle's relocated hooks folder is a place a guard lives (exit "
 				+ r.code + ") " + r.said);
 		Run t = run(guard, msg, new String[]{"tests/test_bundle.py"}, null);
@@ -189,6 +202,44 @@ public class CommitGuardTest {
 				+ "behaviour behind it; nothing could notice a second typo that a person could not",
 				new String[]{"src/ctrmap/humaninterface/A.java"}, null);
 		check(r.code == 0, "allowed with no guard at all (exit " + r.code + ") " + r.said);
+
+		//THE MARKER IS A LINE THAT STARTS WITH IT, AND IT SAYS WHY (F186). Matched anywhere, the
+		//commit explaining the rule was excused by its own sentence; with no floor, `x` was a reason.
+		Run prose = run(guard, "Fix the typo in the About box\n\nThis drops the old rule that let a"
+				+ " No-guard: line of any length through, and says nothing else about this fix.",
+				new String[]{"src/ctrmap/humaninterface/A.java"}, null);
+		check(prose.code != 0, "a No-guard: MENTIONED in a sentence excuses nothing (exit "
+				+ prose.code + ")");
+		Run bare = run(guard, "Fix the typo in the About box\n\nNo-guard: x",
+				new String[]{"src/ctrmap/humaninterface/A.java"}, null);
+		check(bare.code != 0, "and a No-guard: line with no reason excuses nothing (exit "
+				+ bare.code + ")");
+	}
+
+	/** A git that cannot be asked what the commit holds is UNKNOWN, never "nothing staged". */
+	static void aGitThatCannotBeAskedIsRefused(File guard) throws Exception {
+		System.out.println("--- a git that cannot be asked what the commit holds");
+		java.util.Map<String, String> lost = new java.util.HashMap<>();
+		lost.put("GIT_DIR", "no-such-git-directory");
+		Run r = run(guard, "Rename two files and move a third", new String[]{"src/ctrmap/A.java"},
+				null, "int id = 2;", lost);
+		check(r.code != 0, "is refused rather than read as an empty commit - every rule passed"
+				+ " an empty answer (exit " + r.code + ") " + oneLine(r.said));
+		check(r.said.contains("UNKNOWN"), "and says it is UNKNOWN: " + oneLine(r.said));
+		Run control = run(guard, "Rename two files and move a third",
+				new String[]{"src/ctrmap/A.java", "src/ctrmap/tests/ATest.java"}, null, "//moved",
+				null);
+		check(control.code == 0, "while the same commit with git answering is allowed (exit "
+				+ control.code + ") " + oneLine(control.said));
+	}
+
+	/** A message the guard cannot read has not been judged. */
+	static void anUnreadableMessageIsRefused(File guard) throws Exception {
+		System.out.println("--- a message that cannot be read");
+		Run r = run(guard, null, new String[]{}, null);
+		check(r.code != 0, "is refused - it was read as empty, and an empty message passed every"
+				+ " rule (exit " + r.code + ")");
+		check(r.said.contains("cannot be read"), "and says why: " + oneLine(r.said));
 	}
 
 	// ------------------------------------------------ 7. refusal four: the count
@@ -198,7 +249,9 @@ public class CommitGuardTest {
 	 */
 	static void aTestCountIsCheckedAgainstTheLastRecordedRun(File guard) throws Exception {
 		System.out.println("--- a test count in the message is checked against the last recorded run");
-		String ran = "{\"ran\": 124, \"ok\": true, \"subject\": \"__SUBJECT__\"}";
+		//`rc` IS THE VERDICT THE GATE READS. record_run wrote `ok` and `exit_code` and no `rc`, so
+		//the bootstrap's gate refused every honest count as a FAILED run (F186).
+		String ran = "{\"ran\": 124, \"rc\": 0, \"ok\": true, \"subject\": \"__SUBJECT__\"}";
 
 		Run wrong = run(guard, "Move two files\n\nMeasured: 125 tests, all green", new String[]{}, ran);
 		check(wrong.code != 0, "a claim of 125 against a recorded 124 is refused (exit " + wrong.code + ")");
@@ -221,22 +274,32 @@ public class CommitGuardTest {
 		// word. The number was being checked; WHICH TREE it was a number about was not.
 		// work_order.unproven_plants, ten lines away in a sibling file, had digested src/,
 		// the plant targets and the plant count since the day it was written.
-		String moved = "{\"ran\": 124, \"ok\": true, \"subject\": \""
+		String moved = "{\"ran\": 124, \"rc\": 0, \"ok\": true, \"subject\": \""
 				+ "0000000000000000000000000000000000000000000000000000000000000000\"}";
 		Run stale = run(guard, "Move two files\n\nMeasured: 124 tests, all green",
 				new String[]{}, moved);
 		check(stale.code != 0, "a count TRUE for another tree is refused (exit " + stale.code + ")");
-		check(stale.said.contains("the tree has CHANGED since that run"),
+		check(stale.said.contains("DIFFERENT code, not this tree"),
 				"saying the run is about a different tree: " + firstLine(stale.said));
 		check(stale.said.contains("Measured: 124 tests"),
 				"and quoting the line, the same way a wrong count is quoted");
 
-		String noSubject = "{\"ran\": 124, \"ok\": true}";
+		String noSubject = "{\"ran\": 124, \"rc\": 0, \"ok\": true}";
 		Run unknown = run(guard, "Move two files\n\nMeasured: 124 tests, all green",
 				new String[]{}, noSubject);
 		check(unknown.code != 0, "a record that does not say WHICH tree it measured is refused");
-		check(unknown.said.contains("UNKNOWN"), "as unknown rather than as fine: "
+		check(unknown.said.contains("unrecorded code"), "as unrecorded rather than as fine: "
 				+ firstLine(unknown.said));
+
+		//A RED BATTERY'S COUNT. This guard compared the number and the tree and never asked
+		//whether the run it quoted had PASSED; the gate's copy did (F186).
+		String red = "{\"ran\": 124, \"rc\": 1, \"ok\": false, \"subject\": \"__SUBJECT__\"}";
+		Run failed = run(guard, "Move two files\n\nMeasured: 124 tests, all green",
+				new String[]{}, red);
+		check(failed.code != 0, "a count true of a run that FAILED is refused (exit "
+				+ failed.code + ") " + oneLine(failed.said));
+		check(failed.said.contains("that run FAILED"), "saying the run failed: "
+				+ firstLine(failed.said));
 	}
 
 	// -------------------------------------- 8. refusal five: close it by refusing
@@ -464,6 +527,12 @@ public class CommitGuardTest {
 		Run bare = run(guard, hole + "Deferred-gap: later", new String[]{"OUTSTANDING.md"}, null);
 		check(bare.code != 0, "a Deferred-gap line that says nothing is refused (exit "
 			+ bare.code + ")");
+		Run trailed = run(guard, hole + "Deferred-gap: later\n\nCo-Authored-By: Claude"
+			+ " <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_0123456789",
+			new String[]{"OUTSTANDING.md"}, null);
+		check(trailed.code != 0, "and so is the same line followed by its trailers, which a"
+			+ " pattern running to the end of the message counted as its reason (exit "
+			+ trailed.code + ")");
 		Run honest = run(guard, hole + "Deferred-gap: closing it needs a Sun or Moon dump, which"
 			+ " nobody working on this project has - the profiles are stubs by necessity, not by"
 			+ " omission", new String[]{"OUTSTANDING.md"}, null);
@@ -675,13 +744,13 @@ public class CommitGuardTest {
 		}
 	}
 
-	/** One line of whatever a tool said, for a message that has to fit on a terminal. */
 	/** A newline, for building a script without a heredoc. */
 	static final String NEWLINE = String.valueOf((char) 10);
 
 	/** A double quote, for building a message without escaping it twice. */
 	static final String QUOTE = String.valueOf((char) 34);
 
+	/** One line of whatever a tool said, for a message that has to fit on a terminal. */
 	static String oneLine(String said) {
 		String flat = said == null ? "" : said.replace('\n', ' ').replace('\r', ' ').trim();
 		return flat.length() > 150 ? flat.substring(0, 150) + "..." : flat;
@@ -729,6 +798,23 @@ public class CommitGuardTest {
 			"int id = 2;");
 		check(answered.code == 0, "and is allowed once it says what kind of guard it carries"
 			+ " (exit " + answered.code + ") " + oneLine(answered.said));
+
+		//BOTH RULES ARE ASKED WITH THE DIFF'S ANSWER, each on its own. They are the gate's rules
+		//now (F186), triggered by the subject line unless told otherwise - so each call has to
+		//pass this trigger, and each is driven here by a commit only IT refuses.
+		Run unclassed = run(guard, houseStyle,
+			new String[]{"src/ctrmap/Zone.java", "src/ctrmap/tests/ZoneTest.java"}, null,
+			"int id = 2;");
+		check(unclassed.code != 0 && unclassed.said.contains("never says what it built"),
+			"a house-style fix that touches its test but names no kind of guard is refused (exit "
+			+ unclassed.code + ") " + oneLine(unclassed.said));
+		Run placeless = run(guard, houseStyle + "\n\nGuard: refusal -- a reader that cannot"
+			+ " read its subject throws instead of answering null, so no caller can mistake an"
+			+ " unreadable table for an empty one",
+			new String[]{"src/ctrmap/Zone.java"}, null, "int id = 2;");
+		check(placeless.code != 0 && placeless.said.contains("SECOND one"),
+			"and one that names its guard but touches no place a guard lives is refused (exit "
+			+ placeless.code + ") " + oneLine(placeless.said));
 		
 		//a comment is not behaviour
 		Run commented = run(guard, "Explain why the loop stops at four",
@@ -864,11 +950,26 @@ public class CommitGuardTest {
 			"and it says which rule, with the two numbers that bought it");
 		
 		Run excused = run(guard, message + NEWLINE + NEWLINE
-			+ "No-test: a generated stub with no behaviour of its own yet.",
+			+ "No-test: a generated stub with no behaviour of its own yet, so a test of it would"
+			+ " assert only what the generator wrote.",
 			new String[]{"src/ctrmap/NewThing.java", "src/ctrmap/tests/UnrelatedTest.java"},
 			null, "int id = 2;");
 		check(excused.code == 0, "and allowed when the message says why there is none"
 			+ " (exit " + excused.code + ") " + oneLine(excused.said));
+
+		//THE ESCAPE IS A LINE THAT STARTS WITH IT, WITH ITS REASON (F186)
+		Run mentioned = run(guard, message + NEWLINE + NEWLINE
+			+ "A No-test: line would excuse this commit, and there is none here - only this"
+			+ " sentence, which describes the escape rather than using it.",
+			new String[]{"src/ctrmap/NewThing.java", "src/ctrmap/tests/UnrelatedTest.java"},
+			null, "int id = 2;");
+		check(mentioned.code != 0, "a No-test: MENTIONED mid-sentence excuses nothing (exit "
+			+ mentioned.code + ")");
+		Run unreasoned = run(guard, message + NEWLINE + NEWLINE + "No-test: stub",
+			new String[]{"src/ctrmap/NewThing.java", "src/ctrmap/tests/UnrelatedTest.java"},
+			null, "int id = 2;");
+		check(unreasoned.code != 0, "and a No-test: line with no reason excuses nothing (exit "
+			+ unreasoned.code + ")");
 		
 		//THE NEGATIVE HALF: a class its test names must not be refused.
 		Run tested = run(guard, message,
@@ -1065,6 +1166,16 @@ public class CommitGuardTest {
 	 */
 	static Run run(File guard, String message, String[] staged, String lastRun, String stagedBody)
 			throws Exception {
+		return run(guard, message, staged, lastRun, stagedBody, null);
+	}
+
+	/**
+	 * @param message the message, or null to hand the guard a path with no file at it
+	 * @param env     variables set for the guard's process only - the scratch repository is built
+	 *                without them - or null
+	 */
+	static Run run(File guard, String message, String[] staged, String lastRun, String stagedBody,
+			java.util.Map<String, String> env) throws Exception {
 		File dir = Scratch.dir("commit-guard");
 		try {
 			File tools = new File(dir, "tools/guard");
@@ -1072,6 +1183,19 @@ public class CommitGuardTest {
 				throw new java.io.IOException("could not make " + tools);
 			}
 			Files.copy(guard.toPath(), new File(tools, "commit_guard.py").toPath());
+			//THE GUARD'S SIBLINGS COME WITH IT. It asks the bundle's commit_gate.py for every rule
+			//the two share, and require_build.py for the tree's subject (F183, F186); a copy of
+			//this one file crashed the first fixture that needed either. Every top-level tool, not
+			//a list of the ones it loads today - the next one it loads would be missing from a list.
+			File[] siblings = guard.getParentFile().getParentFile().listFiles();
+			if (siblings == null) {
+				throw new java.io.IOException("cannot list the tools beside " + guard);
+			}
+			for (File sibling : siblings) {
+				if (sibling.isFile() && sibling.getName().endsWith(".py")) {
+					Files.copy(sibling.toPath(), new File(dir, "tools/" + sibling.getName()).toPath());
+				}
+			}
 			git(dir, "init", "-q");
 			for (String rel : staged) {
 				File f = new File(dir, rel);
@@ -1087,7 +1211,9 @@ public class CommitGuardTest {
 			// would be of a tree that does not include it and every honest case would be
 			// refused for the right reason at the wrong moment.
 			File msg = new File(dir, "MSG");
-			Files.write(msg.toPath(), message.getBytes(StandardCharsets.UTF_8));
+			if (message != null) {
+				Files.write(msg.toPath(), message.getBytes(StandardCharsets.UTF_8));
+			}
 
 			if (lastRun != null) {
 				// A record is only evidence about the tree it was taken against, so the
@@ -1107,6 +1233,9 @@ public class CommitGuardTest {
 					msg.getAbsolutePath());
 			pb.directory(dir);
 			pb.redirectErrorStream(true);
+			if (env != null) {
+				pb.environment().putAll(env);
+			}
 			Process p = pb.start();
 			String said = drain(p);
 			return new Run(p.waitFor(), said);

@@ -34,15 +34,41 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 LF = chr(10)
 CR = chr(13)
 CRLF = CR + LF
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LEDGER = os.path.join(ROOT, "tools", "guard", "plants.json")
-LIBS = "build/classes;lib/jogl-all.jar;lib/gluegen-rt.jar"
+#: THE PLATFORM'S SEPARATOR. A literal ";" is a classpath on Windows only; on Linux java read the
+#: whole string as one missing path, and every suite failed to load (2026-10-07).
+LIBS = os.pathsep.join(["build/classes", "lib/jogl-all.jar", "lib/gluegen-rt.jar"])
+JAVA_EXE = "java.exe" if os.name == "nt" else "java"
+JAVAC_EXE = "javac.exe" if os.name == "nt" else "javac"
+
+#: THE EXIT CODE FOR "COULD NOT BE ASKED": a plant whose suite reads game data this machine does
+#: not have - the owner's dump lives on their PC, never in a cloud checkout. Neither a kill (0) nor
+#: a survivor (1): reading it as a survivor told the commit gate 19 guards had been emptied that
+#: nobody had touched, and reading it as a kill would be a proof nobody ran (2026-10-07).
+UNKNOWN = 3
+
+#: The tokens a plant's arguments use for the owner's game data (see `expand`).
+GAME_DATA = ("${PRISTINE}", "${GAMEDIR}", "${A039}", "${A013}", "${A040}", "${CODE}")
+
+
+def code_path():
+    """The decompressed code.bin, found as test.ps1 finds $code: CTRMAP_CODE, else beside the
+    checkout, else one folder further up - the first that exists, else the first."""
+    given = os.environ.get("CTRMAP_CODE")
+    if given:
+        return given
+    near = os.path.join(os.path.dirname(ROOT), "code.bin")
+    far = os.path.join(os.path.dirname(os.path.dirname(ROOT)), "code.bin")
+    return near if os.path.exists(near) or not os.path.exists(far) else far
 
 
 def ledger():
@@ -50,16 +76,30 @@ def ledger():
         return json.load(handle)
 
 
-def jdk():
-    """The JDK the battery uses, or None."""
+def jdk(adoptium=r"C:\Program Files\Eclipse Adoptium"):
+    """The JDK the battery uses, or None. `adoptium` is a parameter so the self-test can ask the
+    search on a machine that has that folder as on one that has not.
+
+    In build.ps1's order first - CTRMAP_JDK, then the newest Adoptium JDK, the owner's - so on
+    the owner's machine nothing changes. Then JAVA_HOME and the javac on PATH, because a Linux
+    checkout has neither of the first two and its JDK is wherever the system put it: this
+    answered None there, and every plant the commit gate drove read as emptied (2026-10-07).
+    """
     override = os.environ.get("CTRMAP_JDK")
     if override and os.path.isdir(override):
         return override
-    base = r"C:\Program Files\Eclipse Adoptium"
-    if not os.path.isdir(base):
-        return None
-    found = sorted(d for d in os.listdir(base) if d.lower().startswith("jdk"))
-    return os.path.join(base, found[-1]) if found else None
+    base = adoptium
+    if os.path.isdir(base):
+        found = sorted(d for d in os.listdir(base) if d.lower().startswith("jdk"))
+        if found:
+            return os.path.join(base, found[-1])
+    home = os.environ.get("JAVA_HOME")
+    if home and os.path.isfile(os.path.join(home, "bin", JAVAC_EXE)):
+        return home
+    javac = shutil.which("javac")
+    if javac:
+        return os.path.dirname(os.path.dirname(os.path.realpath(javac)))
+    return None
 
 
 def read(path):
@@ -83,11 +123,53 @@ def build():
     #planted tree from building and the plant could never be proven, so it is skipped
     #HERE and only here: the suite is what has to notice, which is the whole exercise.
     env = dict(os.environ, CTRMAP_SKIP_STRUCTURE_GATE="1")
-    done = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+    shell = shutil.which("powershell") or shutil.which("pwsh")
+    if not shell:
+        return build_without_powershell()
+    done = subprocess.run([shell, "-NoProfile", "-ExecutionPolicy", "Bypass",
                            "-File", os.path.join(ROOT, "build.ps1")],
-                          cwd=ROOT, capture_output=True, text=True, errors="replace", env=env, timeout=1800)
+                          cwd=ROOT, capture_output=True, text=True, errors="replace", env=env, timeout=1800, creationflags=NO_WINDOW)
     out = (done.stdout or "") + (done.stderr or "")
     return ("Build OK" in out), out
+
+
+def build_without_powershell():
+    """(ok, output): build.ps1's compile, for a machine that has no PowerShell to run it on.
+
+    build.ps1 stays THE build wherever PowerShell exists - this is reached only where it does not,
+    which is every Linux cloud checkout, where the commit gate could otherwise drive no plant at
+    all. It does exactly what build.ps1 does for a planted tree: refuse while a battery runs out of
+    build/classes, compile src with --release 8 against the two JOGL jars, copy the resources.
+    The structure gate is skipped here as build() always skips it for a plant. What it does NOT
+    do, said: write the build stamp, whose writer (stamp.ps1) is PowerShell - so nothing here
+    claims the tree was built by build.ps1.
+    """
+    lock = os.path.join(ROOT, "build", ".battery-running")
+    if os.path.exists(lock) and not os.environ.get("CTRMAP_BUILD_ANYWAY"):
+        return False, "REFUSING to build: a battery is running out of build/classes (%s)" % lock
+    home = jdk()
+    if not home:
+        return False, "No JDK: set CTRMAP_JDK or JAVA_HOME, or put javac on PATH"
+    classes = os.path.join(ROOT, "build", "classes")
+    if os.path.isdir(classes):
+        shutil.rmtree(classes)
+    os.makedirs(classes)
+    sources = []
+    for folder, _dirs, names in os.walk(os.path.join(ROOT, "src")):
+        sources += [os.path.join(folder, n).replace(os.sep, "/") for n in names if n.endswith(".java")]
+    listing = os.path.join(ROOT, "build", "sources.txt")
+    with io.open(listing, "w", encoding="ascii", errors="replace") as handle:
+        handle.write(LF.join('"%s"' % s for s in sorted(sources)))
+    done = subprocess.run([os.path.join(home, "bin", JAVAC_EXE), "--release", "8", "-encoding", "UTF-8",
+                           "-cp", os.pathsep.join(["lib/jogl-all.jar", "lib/gluegen-rt.jar"]),
+                           "-d", classes, "@" + listing],
+                          cwd=ROOT, capture_output=True, text=True, errors="replace", timeout=1800, creationflags=NO_WINDOW)
+    out = (done.stdout or "") + (done.stderr or "")
+    if done.returncode != 0:
+        return False, out + LF + "javac failed with exit code %d" % done.returncode
+    shutil.copytree(os.path.join(ROOT, "src", "ctrmap", "resources"),
+                    os.path.join(classes, "ctrmap", "resources"), dirs_exist_ok=True)
+    return True, out + LF + "Build OK (javac, no PowerShell: no build stamp written)"
 
 
 #: A planted suite that never finishes is not a proof. A suite whose main() throws
@@ -101,8 +183,23 @@ def build():
 SUITE_TIMEOUT = 1500
 
 
+#: A SUITE THAT SAYS IT FAILED HAS FAILED, whatever it exits with. Four suites printed their
+#: verdict on a skip path and returned, so "FAILURES PRESENT" went out with exit 0: a plant was
+#: scored SURVIVED here, and the battery passed the suite, while it printed "FAIL: the prop is
+#: refused" (2026-10-07). test.ps1 judges the same line the same way; autoplant imports this.
+_SAID_FAILED = re.compile(r"^FAILURES PRESENT", re.M)
+
+
+def verdict(code, said):
+    """The battery's verdict on one run: its exit code, or 1 when it exited 0 having printed
+    FAILURES PRESENT at the start of a line. None - it never finished - stays None."""
+    if code == 0 and _SAID_FAILED.search(said or ""):
+        return 1
+    return code
+
+
 def run_suite(cls, args, java):
-    """Exactly as test.ps1 runs it, flags included.
+    """Exactly as test.ps1 runs it, flags included - and judged as it judges it (see verdict).
 
     This used to add -Djava.awt.headless=true, which the battery does not, and
     a suite can behave differently under it: a map load that a headless JVM
@@ -113,7 +210,7 @@ def run_suite(cls, args, java):
     command = [java, "-Xmx4g", "-cp", LIBS, cls] + args
     try:
         done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
-                              errors="replace", timeout=SUITE_TIMEOUT)
+                              errors="replace", timeout=SUITE_TIMEOUT, creationflags=NO_WINDOW)
     except subprocess.TimeoutExpired as late:
         out = late.stdout or ""
         err = late.stderr or ""
@@ -122,7 +219,8 @@ def run_suite(cls, args, java):
         if isinstance(err, bytes):
             err = err.decode("utf-8", "replace")
         return None, out + err
-    return done.returncode, (done.stdout or "") + (done.stderr or "")
+    said = (done.stdout or "") + (done.stderr or "")
+    return verdict(done.returncode, said), said
 
 
 def expand(args, pristine, gamedir):
@@ -144,7 +242,7 @@ def expand(args, pristine, gamedir):
                             ("A013", ("a", "0", "1", "3")),
                             ("A040", ("a", "0", "4", "0"))):
             a = a.replace("${%s}" % name, os.path.join(pristine, *parts))
-        out.append(a)
+        out.append(a.replace("${CODE}", code_path()))
     return out
 
 
@@ -229,7 +327,7 @@ def check_args(book):
         registered[m.group(1)] = raw
     #the tokens a plant writes, and the test.ps1 variable each one stands for
     same = {"${PRISTINE}": "$pristine", "${GAMEDIR}": "$gamedir",
-            "${A039}": "$a039", "${A013}": "$a013", "${A040}": "$a040"}
+            "${A039}": "$a039", "${A013}": "$a013", "${A040}": "$a040", "${CODE}": "$code"}
     bad = []
     for p in book["plants"]:
         want = registered.get(p.get("suite"))
@@ -252,14 +350,44 @@ def check_args(book):
     return bad
 
 
+def missing_game_data(p, pristine, gamedir):
+    """The game-data path a plant's suite would read and this machine does not have, or None.
+
+    Asked from the plant's own arguments - a token from GAME_DATA, expanded - never from its
+    suite's name, so a suite that starts reading the dump is asked the moment its plant says so.
+    """
+    raw = p.get("args", [])
+    for given, done in zip(raw, expand(raw, pristine, gamedir)):
+        if any(token in given for token in GAME_DATA) and not os.path.exists(done):
+            return done
+    return None
+
+
 def replant(p, java, pristine, gamedir):
-    """True when the guard noticed. Restores the file whatever happens."""
+    """True when the guard noticed, False when it did not, None when it could not be asked
+    (UNKNOWN: its suite reads game data this machine does not have). Restores the file whatever
+    happens."""
     path = os.path.join(ROOT, p["file"].replace("/", os.sep))
     raw, text, crlf = read(path)
     if text.count(p["find"]) != 1:
         print("  REFUSED %s: its substitution no longer matches %s exactly once"
               % (p["id"], p["file"]))
         return False
+    planted = text.replace(p["find"], p["replace"])
+    #A SUITE HANDED A PATH THAT IS NOT THERE PASSES OR SKIPS, and a plant that then survived read
+    #as a guard that stopped noticing (2026-10-07, 19 of them) - so with game data missing, only a
+    #KILL counts: the section that caught it needed no game, and that is proof on any machine.
+    #Anything short of one is UNKNOWN, never NOT PROVEN.
+    absent = missing_game_data(p, pristine, gamedir)
+    if p.get("no_rebuild") and not os.path.isdir(os.path.join(ROOT, "build", "classes")):
+        #A PLANT THAT REUSES THE BUILD NEEDS ONE: on a checkout nobody had built, its suite could
+        #not even load, and that read as "failed but never said it" (2026-10-07). Built clean,
+        #BEFORE anything is planted, so the build is of the tree as it is.
+        built, out = build()
+        if not built:
+            print("     the clean tree does not build, so this plant's suite cannot be run: %s"
+                  % out.strip().splitlines()[-1:])
+            return False
     print("  %s -> %s" % (p["id"], p["suite"]))
     ok = False
     try:
@@ -271,8 +399,12 @@ def replant(p, java, pristine, gamedir):
         #would have restored the wrong file and left the guard disarmed in the tree. A lock
         #naming a file that turns out to be clean costs nothing; a lock naming the wrong file
         #is worse than none, because it is believed.
-        hold(path)
-        write(path, text.replace(p["find"], p["replace"]), crlf)
+        refused = hold(path)
+        if refused:
+            #nothing is planted under a lock this run does not hold
+            print("     NOT PLANTED: %s" % refused)
+            return False
+        write(path, planted, crlf)
         if not p.get("no_rebuild"):
             built, out = build()
             if not built:
@@ -292,6 +424,11 @@ def replant(p, java, pristine, gamedir):
         if noticed and named:
             print("     ok: red, and it said what it was watching for")
             ok = True
+        elif absent:
+            print("  UNKNOWN %s: %s reads game data at %s, which this machine does not have, and"
+                  " nothing without it caught the plant - not proven, not refuted"
+                  % (p["id"], p["suite"], absent))
+            ok = None
         elif noticed:
             print("     NOT PROVEN: the suite failed but never said %r." % p["must_say"])
             print("     It may have failed for something else entirely, which would record this")
@@ -311,7 +448,11 @@ def replant(p, java, pristine, gamedir):
             print("     The lock is LEFT IN PLACE naming it, because nothing else now knows.")
             ok = False
         else:
-            release()
+            stuck = release()
+            if stuck:
+                print("     %s IS RESTORED and the lock could not come off: %s. Every judgement"
+                      " reads the tree as UNKNOWN until it does - delete it." % (p["file"], stuck))
+                raise SystemExit(2)
     return ok
 
 
@@ -399,6 +540,42 @@ def selftest():
     fake["plants"] = [dict(fake["plants"][0], id="dup"), dict(fake["plants"][0], id="dup")]
     check(any("share an id" in b for b in check_shape(fake)), "and two plants may not share an id")
 
+    #A MACHINE WITHOUT THE OWNER'S JDK OR GAME DATA. Every Linux cloud checkout is one: jdk()
+    #answered None there and a missing dump read as an emptied guard (2026-10-07).
+    check(len(LIBS.split(os.pathsep)) == 3,
+          "the classpath is joined with this platform's separator (%r)" % LIBS)
+    import tempfile
+    home = tempfile.mkdtemp(prefix="replant-jdk-")
+    os.makedirs(os.path.join(home, "bin"))
+    with io.open(os.path.join(home, "bin", JAVAC_EXE), "w"):
+        pass
+    saved = {k: os.environ.get(k) for k in ("CTRMAP_JDK", "JAVA_HOME")}
+    try:
+        os.environ.pop("CTRMAP_JDK", None)
+        os.environ["JAVA_HOME"] = home
+        found = jdk(adoptium=os.path.join(home, "no-adoptium-here"))
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(home, True)
+    check(found == home, "with no Adoptium folder, the JDK JAVA_HOME names is found (found %r)" % found)
+    nowhere = os.path.join(home, "no-game-here")
+    check(missing_game_data({"args": ["${GAMEDIR}", "src"]}, nowhere, nowhere) == nowhere,
+          "a plant whose suite reads game data this machine lacks is UNKNOWN, named by its path")
+    check(missing_game_data({"args": ["src", "build/classes"]}, nowhere, nowhere) is None,
+          "and a plant whose suite reads no game data is asked as before")
+
+    #THE VERDICT IS THE BATTERY'S: a suite that printed FAILURES PRESENT and exited 0 failed
+    check(verdict(0, "  FAIL: the prop is refused" + LF + "FAILURES PRESENT (1)" + LF) == 1,
+          "a suite that printed FAILURES PRESENT and exited 0 has failed")
+    check(verdict(0, "  ok: nothing says FAILURES PRESENT at a line's start" + LF + "ALL PASS" + LF) == 0,
+          "and the words inside another line are not the verdict")
+    check(verdict(3, "ALL PASS" + LF) == 3 and verdict(None, "FAILURES PRESENT" + LF) is None,
+          "a non-zero exit stands, and a run that never finished stays unfinished")
+
     print("ALL PASS" if not fails else "FAILURES PRESENT (%d)" % len(fails))
     return 0 if not fails else 1
 
@@ -414,31 +591,31 @@ PROVEN = os.path.join(ROOT, ".last-replant")
 MUTATION_LOCK = os.path.join(ROOT, ".mutation-in-flight")
 
 
+def _door():
+    """bundle_rules, where the lock's one door is: take_lock and release_lock (F179)."""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import bundle_hooks
+    sys.path.insert(0, bundle_hooks.path(ROOT))
+    import bundle_rules
+    return bundle_rules
+
+
 def hold(path):
-    """Record that `path` is on disk carrying a planted defect right now."""
-    try:
-        #: THE PID, because a lock without one is read as live by age alone and a
-        #: killed run then holds it for ninety minutes - long enough to refuse the
-        #: sync that clears another guard, which had refused the delete this
-        #: guard's own message asks for. The battery lock has carried one since
-        #: this morning; this one did not.
-        with io.open(MUTATION_LOCK, "w", encoding="utf-8", newline=LF) as handle:
-            handle.write(
-                os.path.relpath(path, ROOT).replace(chr(92), "/") + LF
-                + "pid=%d" % os.getpid() + LF
-                + "what=a replant run" + LF)
-    except OSError as cannotWrite:
-        print("     WARNING: cannot write %s (%s) - a reader cannot be told this file is "
-              "planted" % (MUTATION_LOCK, cannotWrite))
+    """Take the lock naming `path` before its defect lands: None, or why it could not be taken.
+
+    THROUGH THE DOOR (F179). This opened the lock with mode 'w', so it silently OVERWROTE a lock
+    another run held - a replant beside a prove_plants run could then delete that run's lock while
+    its plant was on disk - and its release was never counted, so the hooks' came-and-went check
+    was blind to every plant run here. take_lock creates it exclusively and signs it with this
+    process's id, which guard_suite_running reads as liveness, as it read `pid=` before.
+    """
+    return _door().take_lock(ROOT, os.path.relpath(path, ROOT).replace(chr(92), "/"))
 
 
 def release():
-    """The defect is off disk again."""
-    try:
-        if os.path.exists(MUTATION_LOCK):
-            os.remove(MUTATION_LOCK)
-    except OSError as cannotRemove:
-        print("     WARNING: cannot remove %s (%s)" % (MUTATION_LOCK, cannotRemove))
+    """The defect is off disk again: count the release, then remove this run's own lock. None, or
+    why it still stands."""
+    return _door().release_lock(ROOT)
 
 
 def target_digest(book):
@@ -552,9 +729,10 @@ def main(argv):
 
     java = jdk()
     if not java:
-        print("No JDK found under C:\\Program Files\\Eclipse Adoptium and CTRMAP_JDK is not set.")
+        print("No JDK found: not CTRMAP_JDK, not under C:\\Program Files\\Eclipse Adoptium, not"
+              " JAVA_HOME, and no javac on PATH.")
         return 2
-    java = os.path.join(java, "bin", "java.exe")
+    java = os.path.join(java, "bin", JAVA_EXE)
     pristine = os.environ.get("CTRMAP_PRISTINE",
                               os.path.join(os.path.dirname(ROOT), "RomFS_original_garcs"))
     gamedir = os.environ.get("CTRMAP_GAMEDIR",
@@ -568,26 +746,36 @@ def main(argv):
         return 2
 
     print("replanting %d defect(s); each must make its guard go red" % len(plants))
-    held, lost = [], []
+    held, lost, unknown = [], [], []
+    planted = False
     try:
         for p in plants:
-            (held if replant(p, java, pristine, gamedir) else lost).append(p["id"])
+            verdict = replant(p, java, pristine, gamedir)
+            #EVERY plant may have been built into the classes, an UNKNOWN one too - it is planted
+            #and run now even with game data missing - so the tree is rebuilt whatever the verdicts
+            planted = True
+            (unknown if verdict is None else held if verdict else lost).append(p["id"])
     finally:
-        print("rebuilding, so nobody is left with a planted tree")
-        built, _ = build()
-        print("  %s" % ("Build OK" if built else "THE REBUILD FAILED - check the tree by hand"))
+        if planted:
+            print("rebuilding, so nobody is left with a planted tree")
+            built, _ = build()
+            print("  %s" % ("Build OK" if built else "THE REBUILD FAILED - check the tree by hand"))
 
     print("")
-    print("%d guard(s) still notice; %d do not" % (len(held), len(lost)))
+    print("%d guard(s) still notice; %d do not; %d could not be asked here"
+          % (len(held), len(lost), len(unknown)))
     for pid in lost:
         print("    NOT PROVEN: %s" % pid)
+    for pid in unknown:
+        print("    UNKNOWN: %s" % pid)
     #A FULL RUN IS PROOF ABOUT THIS TREE; a filtered one is not, so only the full run
-    #records it. work_order refuses a frozen-tree measurement when src/ has moved since.
-    if not wanted:
+    #records it - and a run that could not ask some of its plants is not a full proof either.
+    #work_order refuses a frozen-tree measurement when src/ has moved since.
+    if not wanted and not unknown:
         record_proof(len(held), len(lost))
     print("owed: %d suite(s) with no plant; owed_generalisation: %d; owed_real_defect: %d"
           % (n_owed, n_site, n_auto))
-    return 0 if not lost else 1
+    return 1 if lost else UNKNOWN if unknown else 0
 
 
 if __name__ == "__main__":

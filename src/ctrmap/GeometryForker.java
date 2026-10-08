@@ -56,10 +56,7 @@ import java.nio.file.Files;
 public class GeometryForker {
 
 	/** Master zone-header table row stride (a 0x38 zone header per zone). */
-	public static final int MASTER_ROW = 0x38;
-
-	private static Map<Integer, Boolean> pendingFieldOverrides = null;
-	private static Map<Integer, Boolean> pendingMatrixOverrides = null;
+	public static final int MASTER_ROW = ctrmap.formats.zone.ZoneHeader.SIZE;
 
 	/** What a manual fork produced, for user-facing reporting. */
 	public static class ForkResult {
@@ -115,24 +112,14 @@ public class GeometryForker {
 		}
 		int oldMatrix = u16(zoBytes, hdrOff + 4);
 
-		if (matBytes == null || matBytes.length < 12) {
-			throw new IllegalArgumentException("Map matrix container too short.");
-		}
-		int sub0 = i32(matBytes, 4);
-		if (sub0 < 0 || sub0 + 8 > matBytes.length) {
-			throw new IllegalArgumentException("Map matrix grid subfile out of range.");
-		}
-		int w = u16(matBytes, sub0 + 4);
-		int h = u16(matBytes, sub0 + 6);
-		long cells = (long) w * h;
-		if (w <= 0 || h <= 0 || cells > 4096 || sub0 + 8 + cells * 2 > matBytes.length) {
-			throw new IllegalArgumentException("Map matrix grid " + w + "x" + h + " does not fit its subfile.");
-		}
+		ctrmap.formats.mapmatrix.MapMatrix.Grid grid = ctrmap.formats.mapmatrix.MapMatrix.Grid.of(matBytes);
+		int w = grid.width;
+		int h = grid.height;
 
 		LinkedHashMap<Integer, Integer> map = new LinkedHashMap<>();
 		int next = firstNewRegion;
 		for (int k = 0; k < w * h; k++) {
-			int id = u16(matBytes, sub0 + 8 + k * 2);
+			int id = grid.id(k);
 			if (id != 0xFFFF && !map.containsKey(id)) {
 				map.put(id, next++);
 			}
@@ -143,7 +130,7 @@ public class GeometryForker {
 
 		byte[] newMat = matBytes.clone();
 		for (int k = 0; k < w * h; k++) {
-			int pos = sub0 + 8 + k * 2;
+			int pos = grid.idOffset(k);
 			Integer nid = map.get(u16(newMat, pos));
 			if (nid != null) {
 				putU16(newMat, pos, nid);
@@ -170,8 +157,8 @@ public class GeometryForker {
 		//are, and the caller tells the user whose ground came along.
 		int zoneCells = 0;
 		java.util.List<Integer> others = new java.util.ArrayList<>();
-		if (u16(matBytes, sub0) == 1) {
-			int layerOff = sub0 + 8 + w * h * 2;
+		if (grid.hasZoneLayer) {
+			int layerOff = grid.zoneLayerOffset();
 			long quads = (long) (w * 4) * (h * 4);
 			if (layerOff + quads * 2 > matBytes.length) {
 				throw new IllegalArgumentException("Map matrix zone-switch layer "
@@ -235,12 +222,7 @@ public class GeometryForker {
 		ForkPlan plan = planFork(zoBytes, Files.readAllBytes(srcMatrixFile.toPath()), firstNewRegion, newMatrix, owningZone,
 				claimEveryCell);
 
-		if (pendingFieldOverrides == null) {
-			pendingFieldOverrides = new HashMap<>();
-		}
-		if (pendingMatrixOverrides == null) {
-			pendingMatrixOverrides = new HashMap<>();
-		}
+		WorkspaceSession session = Workspace.session();
 		for (int i = 0; i < plan.srcRegions.length; i++) {
 			int oldR = plan.srcRegions[i], newR = plan.newRegions[i];
 			if (oldR < 0 || oldR >= gr.length) {
@@ -251,14 +233,14 @@ public class GeometryForker {
 				throw new IOException("Could not extract FieldData region " + oldR + " from the workspace.");
 			}
 			File out = new File(fdDir, String.valueOf(newR));
-			Files.write(out.toPath(), Files.readAllBytes(srcRegionFile.toPath()));
+			WorkspaceUnit.copy(srcRegionFile, out);
 			Workspace.addPersist(out);
-			pendingFieldOverrides.put(newR, gr.isEntryCompressed(oldR));
+			session.registerPendingCompression(ArchiveType.FIELD_DATA, newR, gr.isEntryCompressed(oldR));
 		}
 		File matrixOut = new File(mmDir, String.valueOf(newMatrix));
-		Files.write(matrixOut.toPath(), plan.newMatrixBytes);
+		WorkspaceUnit.write(matrixOut, plan.newMatrixBytes);
 		Workspace.addPersist(matrixOut);
-		pendingMatrixOverrides.put(newMatrix, mm.isEntryCompressed(oldMatrix));
+		session.registerPendingCompression(ArchiveType.MAP_MATRIX, newMatrix, mm.isEntryCompressed(oldMatrix));
 		return plan;
 	}
 
@@ -279,7 +261,7 @@ public class GeometryForker {
 	 * @param newRealZones how many were ASKED for; the rest are the padding
 	 *                     spares, which are forked too and then blanked
 	 */
-	public static void forkAppendedZones(byte[][] newZos, byte[] master, int oldCount, int newRealZones) throws IOException {
+	public static void forkAppendedZones(byte[][] newZos, MasterTable master, int oldCount, int newRealZones) throws IOException {
 		GARC gr = Workspace.getArchive(ArchiveType.FIELD_DATA);
 		GARC mm = Workspace.getArchive(ArchiveType.MAP_MATRIX);
 		if (gr == null || mm == null) {
@@ -330,11 +312,10 @@ public class GeometryForker {
 				}
 			}
 			newZos[i] = plan.newZoBytes;                              // caller writes the repointed ZO
-			int rowOff = (oldCount + i) * MASTER_ROW + 4;
-			if (rowOff + 2 > master.length) {
+			if ((oldCount + i) < 0 || (oldCount + i) >= master.zones()) {
 				throw new IOException("Master-table row for zone " + (oldCount + i) + " out of range.");
 			}
-			putU16(master, rowOff, newMatrix);                        // repoint the master-table row
+			master.set(ZoneResource.MAP, (oldCount + i), newMatrix);
 		}
 	}
 
@@ -360,7 +341,11 @@ public class GeometryForker {
 	 */
 	public static RepairReport repairSharedResources(int baseZones) {
 		RepairReport r = new RepairReport();
-		try {
+		//ALL OF IT OR NONE OF IT (F011). Each resource's pass wrote its zone headers as it went
+		//and the master table once at the end, so a throw in the TEXT pass after the AREA pass
+		//had written left headers and master rows naming different areas - the editor reading
+		//one copy and the game the other - on every open, with nothing comparing the two
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Repair shared resources", Workspace.session())) {
 			GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 			if (zo == null || Workspace.session() == null || Workspace.session().isReadOnly()) {
 				r.refusedBecause = zo == null ? "no workspace is loaded" : "this workspace is open read-only";
@@ -370,38 +355,24 @@ public class GeometryForker {
 			if (zoneCount <= baseZones) {
 				return r;
 			}
-			File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
-			if (masterFile == null) {
-				r.refusedBecause = "the master zone-header table could not be read";
-				return r;
-			}
-			byte[] master = Files.readAllBytes(masterFile.toPath());
-			if (master.length != zoneCount * MASTER_ROW) {
-				r.refusedBecause = "the master zone-header table is " + master.length + " bytes, not the "
-					+ (zoneCount * MASTER_ROW) + " this game's " + zoneCount + " zones need";
-				return r;
-			}
+			//through the one reader (F013), which refuses in words rather than guessing
+			MasterTable table = MasterTable.read(Workspace.session());
 			boolean wrote = false;
 			for (ZoneResource res : ZoneAppender.madePrivate()) {
 				if (res == ZoneResource.MAP) {
 					continue; //repaired by repairSharedAppendedZones, which also blanks
 				}
 				//who shares what, read from the master table - the copy the game reads
-				java.util.Map<Integer, Integer> users = new HashMap<>();
-				for (int z = 0; z < zoneCount; z++) {
-					int id = res.idInMasterRow(master, z);
-					Integer n = users.get(id);
-					users.put(id, n == null ? 1 : n + 1);
-				}
 				java.util.List<Integer> needy = new java.util.ArrayList<>();
-				for (int z = baseZones; z < zoneCount; z++) {
-					if (users.get(res.idInMasterRow(master, z)) > 1) {
+				for (int z = baseZones; z < table.zones(); z++) {
+					if (!table.sharing(res, z).isEmpty()) {
 						needy.add(z);
 					}
 				}
 				if (needy.isEmpty()) {
 					continue;
 				}
+				r.wanted.add("zone(s) " + needy + " share another zone's " + res.label);
 				int[] zones = new int[needy.size()];
 				byte[][] zos = new byte[needy.size()][];
 				for (int i = 0; i < zones.length; i++) {
@@ -413,9 +384,9 @@ public class GeometryForker {
 					zos[i] = Files.readAllBytes(zf.toPath());
 				}
 				if (res == ZoneResource.AREA) {
-					AreaForker.forkAppendedAreas(zos, master, zones);
+					AreaForker.forkAppendedAreas(zos, table, zones);
 				} else if (res == ZoneResource.TEXT) {
-					TextForker.forkAppendedTexts(Workspace.session(), zos, master, zones);
+					TextForker.forkAppendedTexts(Workspace.session(), zos, table, zones);
 				} else {
 					//a row joined MADE_PRIVATE and nothing here knows how to repair it. Said,
 					//not skipped: a repair that quietly does nothing for a resource is the
@@ -426,7 +397,7 @@ public class GeometryForker {
 				}
 				for (int i = 0; i < zones.length; i++) {
 					File zf = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zones[i]);
-					Files.write(zf.toPath(), zos[i]);
+					WorkspaceUnit.write(zf, zos[i]);
 					Workspace.addPersist(zf);
 					if (!r.forked.contains(zones[i])) {
 						r.forked.add(zones[i]);
@@ -436,12 +407,14 @@ public class GeometryForker {
 				wrote = true;
 			}
 			if (wrote) {
-				Files.write(masterFile.toPath(), master);
-				Workspace.addPersist(masterFile);
+				table.write();
 			}
+			unit.commit();
 		} catch (Exception ex) {
-		//said, never swallowed - this runs while the editor is opening
-			r.refusedBecause = String.valueOf(ex.getMessage());
+			//said, never swallowed - this runs while the editor is opening - and what the report
+			//said was repaired is put back with the files, so it no longer claims any of it
+			r.unsay();
+			r.refusedBecause = ctrmap.util.Bytes.reason(ex);
 		}
 		return r;
 	}
@@ -457,10 +430,24 @@ public class GeometryForker {
 		public final java.util.List<String> kept = new java.util.ArrayList<>();
 		/** Why the pass did nothing, when it did nothing. Empty means it ran. */
 		public String refusedBecause = "";
+		/**
+		 * What the pass found needing repair, in words - kept when its writes are put back (F024).
+		 * A rolled-back pass forgot whom it had found sharing, so a refusal had nothing to say
+		 * and was said to nobody.
+		 */
+		public final java.util.List<String> wanted = new java.util.ArrayList<>();
 		
 		/** True when files were staged and the workspace therefore needs a pack. */
 		public boolean changedAnything() {
 			return !forked.isEmpty();
+		}
+
+		/** Forgets what the pass did, for a pass whose writes were all put back. */
+		void unsay() {
+			shared.clear();
+			forked.clear();
+			blanked.clear();
+			kept.clear();
 		}
 	}
 
@@ -500,7 +487,9 @@ public class GeometryForker {
 	 */
 	public static RepairReport repairSharedAppendedZones(int baseZones) {
 		RepairReport r = new RepairReport();
-		try {
+		//ONE UNIT FOR THE WHOLE PASS (F011): zone N's fork or blank throwing after zones before it
+		//were repointed left their headers on new matrices and the master table on the old ones
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Repair shared maps", Workspace.session())) {
 			GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
 			GARC gr = Workspace.getArchive(ArchiveType.FIELD_DATA);
 			GARC mm = Workspace.getArchive(ArchiveType.MAP_MATRIX);
@@ -525,39 +514,27 @@ public class GeometryForker {
 			if (zoneCount <= baseZones) {
 				return r; //no appended zones at all, which is the normal case
 			}
-			File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
-			if (masterFile == null) {
-				r.refusedBecause = "the master zone-header table could not be read";
-				return r;
-			}
-			byte[] master = Files.readAllBytes(masterFile.toPath());
-			if (master.length != zoneCount * MASTER_ROW) {
-				r.refusedBecause = "the master zone-header table is " + master.length
-					+ " bytes, not the " + (zoneCount * MASTER_ROW) + " this game's "
-					+ zoneCount + " zones need";
-				return r;
-			}
-			
+			//through the one reader (F013), which refuses in words rather than guessing
+			MasterTable table = MasterTable.read(Workspace.session());
+
 			//WHO SHARES WITH WHOM, from the master table, which is the copy the game
 			//actually reads. Counting sharers across EVERY zone matters: a spare can
 			//share with the retail donor it was padded out of and with its sibling
 			//spares at the same time, which is exactly what the reporter's workspace
 			//holds - 538 and 539 both on zone 534's matrix.
-			int[] matrixOf = new int[zoneCount];
-			java.util.Map<Integer, Integer> users = new HashMap<>();
-			for (int z = 0; z < zoneCount; z++) {
-				matrixOf[z] = u16(master, z * MASTER_ROW + 4);
-				Integer n = users.get(matrixOf[z]);
-				users.put(matrixOf[z], n == null ? 1 : n + 1);
+			int[] matrixOf = new int[table.zones()];
+			for (int z = 0; z < table.zones(); z++) {
+				matrixOf[z] = table.id(ZoneResource.MAP, z);
 			}
-			for (int z = baseZones; z < zoneCount; z++) {
-				if (users.get(matrixOf[z]) > 1) {
+			for (int z = baseZones; z < table.zones(); z++) {
+				if (!table.sharing(ZoneResource.MAP, z).isEmpty()) {
 					r.shared.add(z);
 				}
 			}
 			if (r.shared.isEmpty()) {
 				return r;
 			}
+			r.wanted.add("zone(s) " + r.shared + " share another zone's map");
 			
 			File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
 			File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
@@ -577,9 +554,9 @@ public class GeometryForker {
 				boolean untouched = looksUntouched(zoBytes, matrixOf[z], z);
 				ForkPlan plan = forkArchives(zoBytes, nextRegion, nextMatrix, z, true, gr, mm, fdDir, mmDir);
 				nextRegion += plan.srcRegions.length;
-				Files.write(zoneFile.toPath(), plan.newZoBytes);
+				WorkspaceUnit.write(zoneFile, plan.newZoBytes);
 				Workspace.addPersist(zoneFile);
-				putU16(master, z * MASTER_ROW + 4, nextMatrix);
+				table.set(ZoneResource.MAP, z, nextMatrix);
 				nextMatrix++;
 				r.forked.add(z);
 				if (!untouched) {
@@ -599,15 +576,16 @@ public class GeometryForker {
 				}
 			}
 			if (!r.forked.isEmpty()) {
-				Files.write(masterFile.toPath(), master);
-				Workspace.addPersist(masterFile);
+				table.write();
 			}
+			unit.commit();
 		} catch (Exception ex) {
 		//SAID, NEVER SWALLOWED. This runs while the editor is opening, where a
 		//thrown exception would take the whole window with it for a repair nobody
 		//asked for - so it is caught, and the caller reports it like any other
 		//outcome rather than the user meeting a workspace that half-repaired.
-			r.refusedBecause = String.valueOf(ex.getMessage());
+			r.unsay();
+			r.refusedBecause = ctrmap.util.Bytes.reason(ex);
 		}
 		return r;
 	}
@@ -636,13 +614,12 @@ public class GeometryForker {
 	 * not know it was leaving anything behind.
 	 */
 	static boolean looksUntouched(byte[] spareZo, int matrix, int zoneIndex) throws IOException {
-		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
-		int zoneCount = ZoneTables.zoneCount(zo);
+		//through the one reader (F013): with no check here, a missing table was a
+		//NullPointerException its caller reported as the refusal "null"
+		MasterTable master = MasterTable.read(Workspace.session());
 		int donor = -1;
-		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
-		byte[] master = Files.readAllBytes(masterFile.toPath());
-		for (int z = 0; z < zoneCount && donor < 0; z++) {
-			if (z != zoneIndex && u16(master, z * MASTER_ROW + 4) == matrix) {
+		for (int z = 0; z < master.zones() && donor < 0; z++) {
+			if (z != zoneIndex && master.id(ZoneResource.MAP, z) == matrix) {
 				donor = z;
 			}
 		}
@@ -692,6 +669,82 @@ public class GeometryForker {
 		return currentGeometry(zoneIndex);
 	}
 
+	/** What Blank map canvas did: the map it worked on, the regions it emptied and the ones it could not. */
+	public static final class Canvas {
+
+		public final int zoneIndex;
+		public final ForkResult map;
+		public final int[] blanked;
+		public final int[] kept;
+
+		public Canvas(int zoneIndex, ForkResult map, int[] blanked, int[] kept) {
+			this.zoneIndex = zoneIndex;
+			this.map = map;
+			this.blanked = blanked;
+			this.kept = kept;
+		}
+
+		/** What the user is told: every region of the map accounted for, the ones left as they were by name. */
+		public String report() {
+			StringBuilder sb = new StringBuilder("Zone " + zoneIndex + " now has a private blank canvas (region(s) "
+					+ java.util.Arrays.toString(blanked) + ").");
+			if (kept.length > 0) {
+				sb.append("\n\nRegion(s) ").append(java.util.Arrays.toString(kept)).append(" could NOT be emptied:"
+						+ " their map model is not one this can rebuild, so they still hold what they held. They are"
+						+ " this zone's own, so editing them changes no other zone.");
+			}
+			sb.append("\n\nBuild on it with prefabs, the Geometry tool, or Blender OBJ import.\n"
+					+ "Deploy to emulator to walk on it.");
+			return sb.toString();
+		}
+	}
+
+	/**
+	 * Blank map canvas, with no dialog (F072, F227): gives zone {@code zoneIndex} its own map when it
+	 * still shares one, then empties every region of it, as ONE unit.
+	 *
+	 * <p>THE ACTION CALLED THE FACTORY AS A BARE STATEMENT and then told the user every region was
+	 * blank. A region whose model cannot be rebuilt keeps its content and is now NAMED in
+	 * {@link Canvas#kept}. A write that fails part-way puts everything back, the fork included - half
+	 * a blanked region is not blanked - and so does a map none of whose regions could be emptied,
+	 * where the fork alone would be a change nobody asked for.
+	 *
+	 * @param groundMesh the mesh whose material becomes the ground, picked from one region's model;
+	 * a region it does not fit uses its own ground
+	 */
+	public static Canvas blankCanvas(int zoneIndex, int groundMesh) throws IOException {
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Blank map canvas", Workspace.session())) {
+			ForkResult r = ensurePrivate(zoneIndex);
+			File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
+			java.util.List<Integer> blanked = new java.util.ArrayList<>();
+			java.util.List<Integer> kept = new java.util.ArrayList<>();
+			for (int region : r.newRegions) {
+				ctrmap.formats.containers.GR gr = new ctrmap.formats.containers.GR(
+						new File(fdDir, String.valueOf(region)), Workspace.session());
+				if (ctrmap.formats.h3d.RegionFactory.blankOrThrow(gr, groundMesh)) {
+					blanked.add(region);
+				} else {
+					kept.add(region);
+				}
+			}
+			if (blanked.isEmpty()) {
+				throw new IllegalStateException("None of zone " + zoneIndex + "'s " + r.newRegions.length
+						+ " region(s) has a map model this can rebuild, so nothing was changed"
+						+ (r.forked ? " - not even the private copy of its map, which would have been made for nothing." : "."));
+			}
+			unit.commit();
+			return new Canvas(zoneIndex, r, ints(blanked), ints(kept));
+		}
+	}
+
+	private static int[] ints(java.util.List<Integer> list) {
+		int[] out = new int[list.size()];
+		for (int i = 0; i < out.length; i++) {
+			out[i] = list.get(i);
+		}
+		return out;
+	}
+
 	/**
 	 * Forks the given (already-existing) zone's map geometry to a private copy
 	 * in the current ORAS workspace. Private because a fork that was not needed
@@ -706,11 +759,11 @@ public class GeometryForker {
 		if (zo == null || gr == null || mm == null) {
 			throw new IOException("No workspace is loaded (ZoneData/FieldData/MapMatrix unavailable).");
 		}
-		int trailing = ZoneTables.zoneTrailing();
-		int zoneCount = zo.length - trailing;
+		//the one zone count (F013), not the subtraction written out again here
+		int zoneCount = ZoneTables.zoneCount(zo);
 		if (zoneIndex < 0 || zoneIndex >= zoneCount) {
 			throw new IOException("Zone " + zoneIndex + " out of range (0.." + (zoneCount - 1) + "). "
-					+ "Note: the last " + trailing + " ZoneData entries are tables, not zones.");
+					+ "Note: the last " + (zo.length - zoneCount) + " ZoneData entries are tables, not zones.");
 		}
 		File fdDir = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
 		File mmDir = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
@@ -724,14 +777,22 @@ public class GeometryForker {
 			throw new IOException("Could not extract zone " + zoneIndex + " from the workspace.");
 		}
 		byte[] zoBytes = Files.readAllBytes(zoneFile.toPath());
-		//an existing zone keeps its own cells and leaves its neighbours' alone
-		ForkPlan plan = forkArchives(zoBytes, gr.length, newMatrix, zoneIndex, false, gr, mm, fdDir, mmDir);
+		ForkPlan plan;
+		//ONE UNIT, whoever calls (F227): the regions, the matrix, the zone file and the master row
+		//are written in that order, and only Make zone independent and Blank map canvas opened a
+		//unit around them - a fork from anywhere else that failed part way left a matrix nothing
+		//points to, or a zone header and master row that disagree. Inside a caller's unit this joins it.
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Fork geometry", Workspace.session())) {
+			//an existing zone keeps its own cells and leaves its neighbours' alone
+			plan = forkArchives(zoBytes, gr.length, newMatrix, zoneIndex, false, gr, mm, fdDir, mmDir);
 
-		// repoint the ZO container header, in place
-		Files.write(zoneFile.toPath(), plan.newZoBytes);
-		Workspace.addPersist(zoneFile);
-		// repoint the master zone-header table row (the runtime-authoritative copy)
-		repointMasterRow(zo, zoneIndex, newMatrix);
+			// repoint the ZO container header, in place
+			WorkspaceUnit.write(zoneFile, plan.newZoBytes);
+			Workspace.addPersist(zoneFile);
+			// repoint the master zone-header table row (the runtime-authoritative copy)
+			repointMasterRow(zo, zoneIndex, newMatrix);
+			unit.commit();
+		}
 
 		ForkResult r = new ForkResult();
 		r.zoneIndex = zoneIndex;
@@ -750,38 +811,12 @@ public class GeometryForker {
 	 * already private and a fork would only orphan archive entries.
 	 */
 	public static int matrixSharers(int zoneIndex) throws IOException {
-		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
-		if (zo == null) {
-			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
-		}
-		int zoneCount = ZoneTables.zoneCount(zo);
-		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
-		if (masterFile == null) {
-			throw new IOException("Could not extract the master zone-header table.");
-		}
-		byte[] master = Files.readAllBytes(masterFile.toPath());
-		if (master.length != zoneCount * MASTER_ROW) {
-			//a stale/foreign artifact in the workspace slot; the pristine table
-			//comes from the archive itself. If even that disagrees, report
-			//"shared" - forking needlessly is safe, skipping it is not.
-			byte[] fromGarc = zo.getDecompressedEntry(zoneCount);
-			if (fromGarc == null || fromGarc.length != zoneCount * MASTER_ROW) {
-				return 1;
-			}
-			master = fromGarc;
-		}
-		int off = zoneIndex * MASTER_ROW + 4;
-		if (off + 2 > master.length) {
+		//through the one reader (F013): an unreadable table is said, not answered "1 sharer"
+		MasterTable master = MasterTable.read(Workspace.session());
+		if (zoneIndex < 0 || zoneIndex >= master.zones()) {
 			throw new IOException("Master-table row for zone " + zoneIndex + " out of range.");
 		}
-		int mm = u16(master, off);
-		int sharers = 0;
-		for (int z = 0; z < zoneCount; z++) {
-			if (z != zoneIndex && u16(master, z * MASTER_ROW + 4) == mm) {
-				sharers++;
-			}
-		}
-		return sharers;
+		return master.sharing(ZoneResource.MAP, zoneIndex).size();
 	}
 
 	/**
@@ -802,11 +837,10 @@ public class GeometryForker {
 			throw new IOException("Could not extract map matrix " + matrix + " from the workspace.");
 		}
 		byte[] mat = Files.readAllBytes(matFile.toPath());
-		int sub0 = i32(mat, 4);
-		int w = u16(mat, sub0 + 4), h = u16(mat, sub0 + 6);
+		ctrmap.formats.mapmatrix.MapMatrix.Grid grid = ctrmap.formats.mapmatrix.MapMatrix.Grid.of(mat);
 		LinkedHashMap<Integer, Integer> seen = new LinkedHashMap<>();
-		for (int k = 0; k < w * h; k++) {
-			int id = u16(mat, sub0 + 8 + k * 2);
+		for (int k = 0; k < grid.cells(); k++) {
+			int id = grid.id(k);
 			if (id != 0xFFFF && !seen.containsKey(id)) {
 				seen.put(id, id);
 			}
@@ -826,22 +860,6 @@ public class GeometryForker {
 		return r;
 	}
 
-	/** Registers a pending FieldData compression override (appenders other than the fork reuse this). */
-	public static void registerPendingField(int index, boolean compressed) {
-		if (pendingFieldOverrides == null) {
-			pendingFieldOverrides = new HashMap<>();
-		}
-		pendingFieldOverrides.put(index, compressed);
-	}
-
-	/** Registers a pending MapMatrix compression override (appenders other than the fork reuse this). */
-	public static void registerPendingMatrix(int index, boolean compressed) {
-		if (pendingMatrixOverrides == null) {
-			pendingMatrixOverrides = new HashMap<>();
-		}
-		pendingMatrixOverrides.put(index, compressed);
-	}
-
 	/** Repoints a zone's mapmatrixID in the master zone-header table file. */
 	public static void repointMasterRow(GARC zo, int zoneIndex, int newMatrix) throws IOException {
 		repointMasterRow(zo, zoneIndex, ZoneResource.MAP, newMatrix);
@@ -858,33 +876,29 @@ public class GeometryForker {
 	 */
 	public static void repointMasterRow(GARC zo, int zoneIndex, ZoneResource res, int newId)
 			throws IOException {
-		int masterIndex = ZoneTables.masterIndex(zo);
-		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
-		if (masterFile == null) {
-			throw new IOException("Could not extract the master zone-header table.");
+		repointMasterRow(Workspace.session(), zo, zoneIndex, res, newId);
+	}
+
+	/**
+	 * The same, in the session handed in.
+	 *
+	 * <p>F019: MapResizer was handed its session and did every write through it -
+	 * except this one, which resolved the master table and recorded the edit
+	 * through the application's global. A caller holding a session other than
+	 * the installed one got its regions, matrix and zone header in one workspace
+	 * and the runtime-authoritative master row in another.
+	 */
+	public static void repointMasterRow(WorkspaceSession ws, GARC zo, int zoneIndex, ZoneResource res, int newId)
+			throws IOException {
+		if (ws == null) {
+			throw new IOException("No workspace is loaded, so there is no master zone-header table to repoint.");
 		}
-		byte[] master = Files.readAllBytes(masterFile.toPath());
-		int rowOff = zoneIndex * MASTER_ROW + res.headerOffset;
-		if (rowOff + 2 > master.length) {
+		MasterTable master = MasterTable.read(ws);
+		if (zoneIndex < 0 || zoneIndex >= master.zones()) {
 			throw new IOException("Master-table row for zone " + zoneIndex + " out of range.");
 		}
-		putU16(master, rowOff, newId);
-		Files.write(masterFile.toPath(), master);
-		Workspace.addPersist(masterFile);
-	}
-
-	/** Drains the FieldData compression overrides of a pending fork (one packDirectory call). */
-	public static Map<Integer, Boolean> consumePendingFieldOverrides() {
-		Map<Integer, Boolean> m = pendingFieldOverrides;
-		pendingFieldOverrides = null;
-		return m;
-	}
-
-	/** Drains the MapMatrix compression overrides of a pending fork (one packDirectory call). */
-	public static Map<Integer, Boolean> consumePendingMatrixOverrides() {
-		Map<Integer, Boolean> m = pendingMatrixOverrides;
-		pendingMatrixOverrides = null;
-		return m;
+		master.set(res, zoneIndex, newId);
+		master.write();
 	}
 
 	/**

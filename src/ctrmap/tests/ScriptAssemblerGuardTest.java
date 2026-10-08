@@ -171,7 +171,7 @@ public class ScriptAssemblerGuardTest {
 	 */
 	static void corpusRoundTrip(File garc) throws Exception {
 		if (!garc.isFile()) {
-			System.out.println("  skip: no ZoneData GARC at " + garc);
+			Skip.section("no ZoneData GARC at " + garc);
 			return;
 		}
 		GARC zo = new GARC(garc);
@@ -210,7 +210,7 @@ public class ScriptAssemblerGuardTest {
 	 */
 	static void editorButtons(File garc) throws Exception {
 		if (!garc.isFile()) {
-			System.out.println("  skip: no ZoneData GARC at " + garc);
+			Skip.section("no ZoneData GARC at " + garc);
 			return;
 		}
 		GARC zo = new GARC(garc);
@@ -233,7 +233,7 @@ public class ScriptAssemblerGuardTest {
 			}
 		}
 		if (s == null) {
-			System.out.println("  skip: no zone script with a PUSH_C to mistype");
+			check(false, "no zone script with a PUSH_C to mistype");
 			return;
 		}
 		CtrmapMainframe.mZonePnl = new ZoneLoadingPanel(new LoadedZone(), TOOLS, EDITORS, ZONE_EDITORS, NAVI);

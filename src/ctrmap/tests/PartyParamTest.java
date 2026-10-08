@@ -3,6 +3,7 @@ package ctrmap.tests;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.pokedata.PartyParam;
 import ctrmap.formats.scripts.GFLPawnScript;
+import ctrmap.formats.scripts.PartyParamCall;
 import ctrmap.formats.scripts.PawnDisassembler;
 import ctrmap.formats.scripts.PawnInstruction;
 import ctrmap.formats.scripts.PawnSubroutine;
@@ -105,6 +106,11 @@ public class PartyParamTest {
 			for (PawnSubroutine sub : PawnDisassembler.disassembleScript(scr)) {
 				flat.addAll(sub.instructions);
 			}
+			if (!flat.equals(scr.instructions)) {
+				fails.add("zone " + z + ": the subroutines are not the script's instruction list, so the"
+						+ " decoder and this scan would not be reading the same calls");
+				continue;
+			}
 			for (int i = 0; i < flat.size(); i++) {
 				PawnInstruction ins = flat.get(i);
 				if (ins.getCommand() != PawnInstruction.Commands.SYSREQ_N.ordinal()) {
@@ -117,10 +123,22 @@ public class PartyParamTest {
 				if (hash == null) {
 					continue;
 				}
-				int nargs = ins.argumentCells[1] / 4;
-				int[] argv = argsOf(flat, i, nargs);
-				if (argv == null) {
+				//the editor's decoder reads the call: what it names here is what retail passes (F052)
+				PartyParamCall call = PartyParamCall.at(scr, i);
+				if (call == null) {
+					if (PartyParamCall.argsOf(flat, i, ins.argumentCells[1] / 4) != null) {
+						fails.add("zone " + z + " instruction " + i + ": a " + scans.get(hash).name
+								+ " call this scan found is one the editor's decoder does not recognise");
+					}
 					continue;
+				}
+				if (call.isSet != (hash == H_SET)) {
+					fails.add("zone " + z + " instruction " + i + ": the decoder calls it the "
+							+ (call.isSet ? "setter" : "getter") + ", the native table the other");
+				}
+				int[] argv = new int[call.args.length];
+				for (int a = 0; a < argv.length; a++) {
+					argv[a] = call.args[a] == null ? -1 : call.args[a];
 				}
 				scans.get(hash).add(z, argv);
 			}
@@ -254,33 +272,6 @@ public class PartyParamTest {
 				}
 			}
 		}
-	}
-
-	/**
-	 * The literal arguments of a native call, argv[0] = argument 1 (the PUSH
-	 * nearest the SYSREQ_N). -1 where the pushed value is not a constant.
-	 */
-	static int[] argsOf(List<PawnInstruction> flat, int sysreqAt, int nargs) {
-		PawnInstruction.Commands[] all = PawnInstruction.Commands.values();
-		List<Integer> nearestFirst = new ArrayList<>();
-		for (int k = sysreqAt - 1; k >= 0 && nearestFirst.size() < nargs; k--) {
-			PawnInstruction p = flat.get(k);
-			String op = all[p.getCommand()].name();
-			if (!op.startsWith("PUSH")) {
-				break;
-			}
-			boolean isConst = op.endsWith("_C");
-			nearestFirst.add(isConst && p.argumentCells != null && p.argumentCells.length > 0
-					? p.argumentCells[0] : -1);
-		}
-		if (nearestFirst.size() < nargs) {
-			return null;
-		}
-		int[] argv = new int[nargs];
-		for (int i = 0; i < nargs; i++) {
-			argv[i] = nearestFirst.get(i);
-		}
-		return argv;
 	}
 
 	static class Scan {

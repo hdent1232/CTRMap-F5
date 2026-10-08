@@ -32,7 +32,14 @@ import static ctrmap.CtrmapMainframe.*;
  */
 public class TrainerEditDialog {
 
-	/** Opens the editor, defaulting to the selected NPC's trainer when it is one. */
+	/**
+	 * Opens the editor, defaulting to the selected NPC's trainer when it is one.
+	 *
+	 * @param selectedNpcScript the script of the NPC the user has selected, or null when none
+	 *        is. Handed in rather than read off the NPC form: a trainer id is pre-filled from it
+	 *        when the script is a battle script, and that is a fact about the selection, not
+	 *        about which editor is on screen.
+	 */
 	public static javax.swing.JComponent panelForSelection(java.awt.Component parent,
 			Integer selectedNpcScript, Runnable onClose) {
 		//TRAINER_EDITING, not "is it ORAS". "Load an ORAS workspace first" was
@@ -70,7 +77,7 @@ public class TrainerEditDialog {
 			}
 		}
 		String in = (String) ctrmap.Ui.input(parent,
-				"Trainer ID (1..949). A map NPC with script 3000+ID battles that trainer;\n"
+				"Trainer ID (1.." + ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX + "). A map NPC with script 3000+ID battles that trainer;\n"
 				+ "the selected NPC's trainer is pre-filled when it is one.", "Input", JOptionPane.QUESTION_MESSAGE, null, def);
 		if (in == null) {
 			return null;
@@ -97,13 +104,6 @@ public class TrainerEditDialog {
 		return null;
 	}
 
-	/**
-	 * The script of the NPC the user has selected, or null when none is.
-	 *
-	 * <p>Handed to {@link #showForSelection} rather than read off the NPC form:
-	 * a trainer id is pre-filled from it when the script is a battle script, and
-	 * that is a fact about the selection, not about which editor is on screen.
-	 */
 	/**
 	 * The editor, as a panel for the Game Data tab.
 	 *
@@ -138,13 +138,14 @@ public class TrainerEditDialog {
 			ctrmap.humaninterface.pokepick.PokePickers.installDoubleClickPickers(jt, col
 					-> col == 0 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.SPECIES
 					: col == 6 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.ITEM
-					: (col >= 8 && col <= 11) ? ctrmap.humaninterface.pokepick.PokePickers.Kind.MOVE : null);
+					: (col >= 8 && col <= 11) ? ctrmap.humaninterface.pokepick.PokePickers.Kind.MOVE : null,
+					Workspace.session());
 
 			//A PANEL, not a window: everything under this is unchanged.
 			final JPanel dlg = new JPanel();
 			dlg.setLayout(new BorderLayout());
 			JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
-			final JSpinner classSpin = new JSpinner(new SpinnerNumberModel(t.classId, 0, 279, 1));
+			final JSpinner classSpin = new JSpinner(new SpinnerNumberModel(t.classId, 0, Math.max(t.classId, ctrmap.Workspace.profile().trainerClassMax()), 1));
 			final JSpinner typeSpin = new JSpinner(new SpinnerNumberModel(t.battleType, 0, 4, 1));
 			final JSpinner moneySpin = new JSpinner(new SpinnerNumberModel(t.moneyRate, 0, 255, 1));
 			final String[] classNames = classes;
@@ -327,16 +328,17 @@ public class TrainerEditDialog {
 				int val = Integer.parseInt(s.contains(" ") ? s.substring(0, s.indexOf(' ')) : s);
 				TrainerEntry.PartyMon m = t.party.get(r);
 				switch (c) {
-					case 0: m.species = Math.max(1, Math.min(721, val)); break;
+					case 0: m.species = Math.max(1, Math.min(ctrmap.Workspace.profile().speciesIdMax(), val)); break;
 					case 2: m.form = Math.max(0, Math.min(31, val)); break;
 					case 3: m.level = Math.max(1, Math.min(100, val)); break;
 					case 4: m.ivByte = Math.max(0, Math.min(255, val)); break;
 					case 5: m.genderAbility = Math.max(0, Math.min(0x32, val)); break;
-					case 6: m.heldItem = Math.max(0, Math.min(775, val)); break;
-					default: m.moves[c - 8] = Math.max(0, Math.min(621, val)); break;
+					case 6: m.heldItem = Math.max(0, Math.min(ctrmap.Workspace.profile().itemIdMax(), val)); break;
+					default: m.moves[c - 8] = Math.max(0, Math.min(ctrmap.Workspace.profile().moveIdMax(), val)); break;
 				}
 				fireTableRowsUpdated(r, r);
-			} catch (NumberFormatException ignore) {
+			} catch (NumberFormatException notANumber) {
+				Forms.refuseTyped(null); //the cell keeps its old value; the signal says the typed one was refused (F211)
 			}
 		}
 	}

@@ -1,8 +1,6 @@
 package ctrmap.formats.garc;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.nio.ByteBuffer;
 
 /**
  * LZ11 decompression ported from C# source of PK3DS, originally from dsdecmp
@@ -11,17 +9,44 @@ import java.nio.ByteBuffer;
  */
 public class LZ11 {
 
+	/**
+	 * Decodes an LZ11 stream, STRICTLY (F057). It used to decode anything: a wrong type byte was a
+	 * line on stderr, input that ran out read as -1 - a flag byte with every bit set and runs at
+	 * displacement 0 - and the loop padded its way to the declared length, so a truncated or damaged
+	 * entry in the game's archives opened in the editor as garbage of a plausible length, and could
+	 * be saved back. {@link #prefixDecodes} already knew the rules; this applies them to the whole
+	 * stream. A well-formed stream decodes to exactly the bytes it always did.
+	 *
+	 * <p>A three-byte size of zero is the extended header: the size follows in four bytes. A bare
+	 * four-byte header of size zero is an empty stream, which is what {@link #compress} writes for
+	 * no input.
+	 *
+	 * @throws IllegalStateException naming what is wrong, for anything that is not a well-formed stream
+	 */
 	public static byte[] decompress(byte[] data) {
-		ByteArrayInputStream instream = new ByteArrayInputStream(data);
-		ByteArrayOutputStream outstream = new ByteArrayOutputStream();
-
-		byte type = (byte) instream.read();
-		if (type != 0x11) {
-			System.err.println("Not a LZ11 compressed file");
+		if (data == null || data.length < 4) {
+			throw new IllegalStateException("Not an LZ11 stream: it needs a 4-byte header and is "
+					+ (data == null ? "absent" : data.length + " byte(s)") + ".");
 		}
-		byte[] sizeBytes = new byte[4];
-		instream.read(sizeBytes, 0, 3);
-		int decompressedSize = Integer.reverseBytes(ByteBuffer.wrap(sizeBytes).getInt());
+		if ((data[0] & 0xFF) != 0x11) {
+			throw new IllegalStateException("Not an LZ11 stream: its type byte is 0x"
+					+ Integer.toHexString(data[0] & 0xFF) + ", not 0x11.");
+		}
+		int decompressedSize = (data[1] & 0xFF) | ((data[2] & 0xFF) << 8) | ((data[3] & 0xFF) << 16);
+		int in = 4;
+		if (decompressedSize == 0 && data.length > 4) {
+			if (data.length < 8) {
+				throw new IllegalStateException("An LZ11 stream with an extended size header needs 8 header bytes;"
+						+ " this is " + data.length + ".");
+			}
+			decompressedSize = (data[4] & 0xFF) | ((data[5] & 0xFF) << 8) | ((data[6] & 0xFF) << 16) | ((data[7] & 0xFF) << 24);
+			if (decompressedSize < 0) {
+				throw new IllegalStateException("An LZ11 stream declares " + Integer.toUnsignedString(decompressedSize)
+						+ " bytes, more than this program can hold.");
+			}
+			in = 8;
+		}
+		ByteArrayOutputStream outstream = new ByteArrayOutputStream(decompressedSize);
 
 		final int bufferLength = 0x1000;
 		byte[] buffer = new byte[bufferLength];
@@ -31,38 +56,42 @@ public class LZ11 {
 		int flags = 0, mask = 1;
 		while (currentOutSize < decompressedSize) {
 			if (mask == 1) {
-				flags = instream.read();
+				flags = next(data, in++, currentOutSize, decompressedSize);
 				mask = 0x80;
 			} else {
 				mask >>= 1;
 			}
 			if ((flags & mask) > 0) {
-				int byte1 = instream.read();
+				int byte1 = next(data, in++, currentOutSize, decompressedSize);
 				int length = byte1 >> 4;
 				int disp;
 
 				switch (length) {
 					case 0: {
-						int byte2 = instream.read();
-						int byte3 = instream.read();
+						int byte2 = next(data, in++, currentOutSize, decompressedSize);
+						int byte3 = next(data, in++, currentOutSize, decompressedSize);
 						length = (((byte1 & 0x0F) << 4) | (byte2 >> 4)) + 0x11;
 						disp = (((byte2 & 0x0F) << 8) | byte3) + 0x1;
 						break;
 					}
 					case 1: {
-						int byte2 = instream.read();
-						int byte3 = instream.read();
-						int byte4 = instream.read();
+						int byte2 = next(data, in++, currentOutSize, decompressedSize);
+						int byte3 = next(data, in++, currentOutSize, decompressedSize);
+						int byte4 = next(data, in++, currentOutSize, decompressedSize);
 						length = (((byte1 & 0x0F) << 12) | (byte2 << 4) | (byte3 >> 4)) + 0x111;
 						disp = (((byte3 & 0x0F) << 8) | byte4) + 0x1;
 						break;
 					}
 					default: {
-						int byte2 = instream.read();
+						int byte2 = next(data, in++, currentOutSize, decompressedSize);
 						length = ((byte1 & 0xF0) >> 4) + 0x1;
 						disp = (((byte1 & 0x0F) << 8) | byte2) + 0x1;
 						break;
 					}
+				}
+				if (disp > currentOutSize) {
+					throw new IllegalStateException("The LZ11 stream refers " + disp + " byte(s) back when only "
+							+ currentOutSize + " have been written - it is damaged, or not LZ11 at all.");
 				}
 
 				int bufIdx = bufferOffset + bufferLength - disp;
@@ -75,7 +104,7 @@ public class LZ11 {
 				}
 				currentOutSize += length;
 			} else {
-				int next = instream.read();
+				int next = next(data, in++, currentOutSize, decompressedSize);
 
 				outstream.write((byte) next);
 				currentOutSize++;
@@ -84,6 +113,15 @@ public class LZ11 {
 			}
 		}
 		return outstream.toByteArray();
+	}
+
+	/** The byte at {@code at}, or a refusal saying the stream ran out before its declared size. */
+	private static int next(byte[] data, int at, int written, int declared) {
+		if (at >= data.length) {
+			throw new IllegalStateException("The LZ11 stream ends after " + written + " of the " + declared
+					+ " bytes it declares - it is truncated or damaged.");
+		}
+		return data[at] & 0xFF;
 	}
 
 	/**
@@ -123,18 +161,28 @@ public class LZ11 {
 	 * 42-second trial decode of the whole dump.
 	 */
 	public static boolean prefixDecodes(byte[] data, int maxInput) {
-		if (data.length < 4) {
+		return prefixDecodes(data, maxInput, data.length);
+	}
+
+	/**
+	 * The same check when {@code data} holds only the stream's first bytes and the stream itself
+	 * is {@code stored} bytes long - what an archive's parse reads to sniff an entry it has not
+	 * read whole (F055). Every "ran out" decision is about the stream, so it asks {@code stored};
+	 * only bytes below the bound are read, and {@code data} must hold all of those.
+	 */
+	public static boolean prefixDecodes(byte[] data, int maxInput, int stored) {
+		if (stored < 4 || data.length < Math.min(maxInput, stored)) {
 			return false;
 		}
 		int declared = (data[1] & 0xFF) | ((data[2] & 0xFF) << 8) | ((data[3] & 0xFF) << 16);
 		if (declared <= 0) {
 			return false;
 		}
-		int limit = Math.min(maxInput, data.length);
+		int limit = Math.min(maxInput, stored);
 		int in = 4, out = 0, flags = 0, mask = 1;
 		while (out < declared) {
 			if (in >= limit) {
-				return in < data.length; //ran out of bound: fine; ran out of data: a fault
+				return in < stored; //ran out of bound: fine; ran out of data: a fault
 			}
 			if (mask == 1) {
 				flags = data[in++] & 0xFF;
@@ -144,20 +192,20 @@ public class LZ11 {
 			}
 			if ((flags & mask) == 0) {
 				if (in >= limit) {
-					return in < data.length;
+					return in < stored;
 				}
 				in++;
 				out++;
 				continue;
 			}
 			if (in >= limit) {
-				return in < data.length;
+				return in < stored;
 			}
 			int b1 = data[in++] & 0xFF;
 			int form = b1 >> 4;
 			int need = form == 0 ? 2 : form == 1 ? 3 : 1; //bytes the token still needs
 			if (in + need > limit) {
-				return in + need <= data.length;
+				return in + need <= stored;
 			}
 			int length, disp;
 			if (form == 0) {
@@ -221,6 +269,11 @@ public class LZ11 {
 	 */
 	public static byte[] compress(byte[] data) {
 		int n = data.length;
+		//the three-byte size this writes holds 16 MB less one; past it the header would lie (F057)
+		if (n > 0xFFFFFF) {
+			throw new IllegalArgumentException("LZ11 compression here writes sizes up to 16 MB; this is " + n
+					+ " bytes, and its header could not say so.");
+		}
 		Buf out = new Buf();
 		out.w(0x11);
 		out.w(n & 0xFF);

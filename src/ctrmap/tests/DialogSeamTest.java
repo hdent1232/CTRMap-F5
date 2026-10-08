@@ -44,7 +44,9 @@ import javax.swing.JOptionPane;
  *     CLOSED_OPTION. Closing a dialog must never mean consent, and six of these
  *     switches simply ran off the end into the write: pressing X on "keep your
  *     changes?" saved, and a headless caller - which gets CLOSED_OPTION by
- *     definition - wrote the file with nobody there.</li>
+ *     definition - wrote the file with nobody there. Nor an answer compared with
+ *     CANCEL_OPTION in an if, which is the same fall-through without a switch
+ *     (F152: closing the shop editor's merge question overwrote code.ips).</li>
  * <li>A report whose whole text is a bare {@code getMessage()}. It is null for
  *     a whole family of exceptions, and a dialog that says "null" tells the user
  *     nothing. The tree's idiom is {@code Ui.reason(ex)}, which names the
@@ -150,16 +152,137 @@ public class DialogSeamTest {
 		theAllowedListCannotGrowQuietly();
 		aFeatureLivesInItsTabAndNotInAWindow(root);
 		closingADialogIsNeverConsent(root);
+		aCancelIsNeverTheOnlyNo(root);
 		aReportNeverSaysOnlyNull(root);
 		theSeamCannotSayNothing();
 		theSeamCarriesTheWindowItWasGiven();
 		theOneKeepQuestionAnswersClosedAsCancel();
 		closedMeansTheRegistryIsNotWritten();
+		aFileDialogsAnswerIsNeverDiscarded(root);
+		onlyTheSeamShowsAFileChooser(root);
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * A file dialog called as a bare statement: its answer - Approve or Cancel - thrown away. A
+	 * file chooser is always handed its parent, so a call with no argument at all - the progress
+	 * dialog's own {@code showDialog()}, which has no answer to give - is not one. The seam's own
+	 * {@code Ui.choose} is one too: once every chooser went through it (F147), a bare call to it was
+	 * the same thrown-away Cancel, and the show*Dialog shape alone no longer saw any of them.
+	 */
+	static final Pattern DISCARDED_FILE_DIALOG = Pattern.compile(
+			"(?m)^\\s*(?:(?!JOptionPane\\b)[A-Za-z_][\\w.]*\\.show(?:Open|Save)?Dialog\\([^);][^;]*"
+			+ "|(?:ctrmap\\.)?Ui\\.choose\\([^;]*)\\);");
+
+	/**
+	 * A file dialog's answer is read, never thrown away (F004).
+	 *
+	 * <p>Swing does not clear the selection on Cancel. Nine dialogs here called {@code
+	 * showOpenDialog} or {@code showSaveDialog} as a statement and then asked for the selected
+	 * file, so clicking a file and then Cancel went ahead with that file anyway - opening a map
+	 * over the loaded one, replacing every collision mesh with an OBJ, setting the workspace
+	 * folder. A dialog's answer is the user saying no; dropping it is not hearing them.
+	 */
+	static void aFileDialogsAnswerIsNeverDiscarded(File root) throws Exception {
+		System.out.println("--- a file dialog's Cancel is heard");
+		String sample = "jfc.showOpenDialog(this);\n"
+				+ "if (fc.showSaveDialog(dlg) != JFileChooser.APPROVE_OPTION) { return; }\n"
+				+ "JOptionPane.showMessageDialog(null, \"x\");\n"
+				+ "progress.showDialog();\n"
+				+ "\t\tctrmap.Ui.choose(frame, jfc, false);\n"
+				+ "\t\tif (ctrmap.Ui.choose(frame, jfc, false) == null) { return null; }\n"
+				+ "\t\tFile f = Ui.choose(dlg, fc, true);\n";
+		int inSample = 0;
+		for (Matcher m = DISCARDED_FILE_DIALOG.matcher(sample); m.find(); ) {
+			inSample++;
+		}
+		check(inSample == 2, "the scan finds a bare call, the seam's included, and not one whose answer is read ("
+				+ inSample + " of 2)");
+		List<String> found = new ArrayList<>();
+		for (File f : javaSources(new File(root, "ctrmap"))) {
+			if (f.getName().equals("DialogSeamTest.java")) {
+				continue;
+			}
+			String src = SourceSeamTest.stripComments(read(f));
+			for (Matcher m = DISCARDED_FILE_DIALOG.matcher(src); m.find(); ) {
+				found.add(f.getName() + ":" + lineOf(src, m.start()));
+			}
+		}
+		check(found.isEmpty(), "no file dialog throws its answer away" + (found.isEmpty() ? "" : ": " + found));
+	}
+
+	/** A file chooser shown by hand rather than through {@code Ui.choose}. */
+	static final Pattern SHOWS_A_CHOOSER = Pattern.compile("\\.show(?:Open|Save)Dialog\\s*\\(");
+
+	/**
+	 * Every file chooser is shown by the seam, which answers the file only on approve and which a
+	 * recording can answer (F147). Shown by hand, a chooser's Cancel could be read as the file last
+	 * clicked (F004), and every branch behind one was out of a headless suite's reach.
+	 */
+	static void onlyTheSeamShowsAFileChooser(File root) throws Exception {
+		System.out.println("--- every file chooser is shown by the seam, and answers only an approve (F147)");
+		check(SHOWS_A_CHOOSER.matcher("if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {").find()
+				&& !SHOWS_A_CHOOSER.matcher("if (ctrmap.Ui.choose(this, fc, false) == null) {").find(),
+				"control: a chooser shown by hand is seen, and one shown through the seam is not");
+		List<String> found = new ArrayList<>();
+		int sites = 0;
+		for (File f : javaSources(new File(root, "ctrmap"))) {
+			if (f.getPath().contains(File.separator + "tests" + File.separator) || f.getName().equals("Ui.java")) {
+				continue;
+			}
+			String src = SourceSeamTest.stripComments(read(f));
+			for (Matcher m = SHOWS_A_CHOOSER.matcher(src); m.find(); ) {
+				found.add(f.getName() + ":" + lineOf(src, m.start()));
+			}
+			for (Matcher m = Pattern.compile("\\bUi\\.choose\\s*\\(").matcher(src); m.find(); ) {
+				sites++;
+			}
+		}
+		check(found.isEmpty(), "no file chooser is shown outside Ui: " + found);
+		check(sites >= 21, "control: the 21 choosers that go through it are seen: " + sites);
+		String builder = read(new File(root, "ctrmap/humaninterface/builder/Builder.java"));
+		check(builder.contains("saveFileDialog(\"Select external location\")") && builder.contains("saveFileDialog(\"Select export location\")"),
+				"and the builder's two save targets are picked with a Save dialog, not an Open one");
+
+		javax.swing.JFileChooser fc = new javax.swing.JFileChooser();
+		File picked = new File("picked.bin").getAbsoluteFile();
+		List<String> said = Ui.record(picked);
+		File got;
+		try {
+			got = Ui.choose(null, fc, false);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(picked.equals(got) && picked.equals(fc.getSelectedFile()) && said.size() == 1 && said.get(0).startsWith("Open file"),
+				"a recording answers a chooser with the file it holds: " + got + " " + said);
+		said = Ui.record(Integer.valueOf(JOptionPane.YES_OPTION));
+		try {
+			got = Ui.choose(null, fc, true);
+		} finally {
+			Ui.stopRecording();
+		}
+		check(got == null && said.size() == 1 && said.get(0).startsWith("Save file"),
+				"anything but a file is a cancel, though the chooser still holds the last file: " + got);
+		check(Ui.choose(null, fc, false) == null, "and with dialogs off and nobody recording, nobody can approve one");
+
+		said = Ui.record(picked);
+		try {
+			got = ctrmap.humaninterface.CodeBinFile.choose(null, new File("."));
+		} finally {
+			Ui.stopRecording();
+		}
+		check(picked.equals(got), "a branch behind a chooser is reached headless now: the code.bin picker answers " + got);
+		said = Ui.record();
+		try {
+			got = ctrmap.humaninterface.CodeBinFile.choose(null, new File("."));
+		} finally {
+			Ui.stopRecording();
+		}
+		check(got == null && said.size() == 1, "and a cancelled one answers nothing: " + got);
 	}
 
 	/** Rule one: every dialog in this program is opened by Ui, or is listed. */
@@ -203,7 +326,6 @@ public class DialogSeamTest {
 		check(violations.isEmpty(), scanned + " source(s) scanned, every dialog opened through Ui or listed");
 	}
 
-	/** Rule two: the list of exceptions is a ceiling, and each one is argued. */
 	/**
 	 * Every top-level window this application can put on screen, and why each one is
 	 * not part of a tab.
@@ -310,6 +432,7 @@ public class DialogSeamTest {
 		check(recorded <= WINDOW_CEILING, recorded + " window(s) recorded, ceiling "
 			+ WINDOW_CEILING + " - this may fall and may not rise quietly");
 	}
+	/** Rule two: the list of exceptions is a ceiling, and each one is argued. */
 	static void theAllowedListCannotGrowQuietly() {
 		check(ALLOWED.length <= ALLOWED_CEILING, ALLOWED.length + " allowed entry/entries, ceiling "
 				+ ALLOWED_CEILING + " - growing the list is a decision a human has to make");
@@ -355,6 +478,38 @@ public class DialogSeamTest {
 		}
 		check(violations.isEmpty(), paired + " confirm switch(es), every one answering a closed"
 				+ " dialog the same as cancel");
+	}
+
+	/** A confirm's answer compared with CANCEL_OPTION, either way round, however it is qualified. */
+	static final Pattern CANCEL_COMPARED = Pattern.compile(
+			"[!=]=\\s*(?:javax\\.swing\\.)?(?:JOptionPane\\.)?CANCEL_OPTION\\b|(?<![A-Za-z0-9_])CANCEL_OPTION\\s*[!=]=");
+
+	/**
+	 * Rule three for an if: an answer is never compared with CANCEL_OPTION (F152).
+	 *
+	 * <p>The switch rule above could not see this. The shop editor asked "merge into the code.ips
+	 * there?" and returned only on {@code rsl == JOptionPane.CANCEL_OPTION} - so closing the
+	 * dialog, which answers CLOSED_OPTION, fell through to "overwrite with shops only" and deleted
+	 * the zone-limit patch the game needs to boot. The safe comparison names the answer that goes
+	 * ahead ({@code != OK_OPTION}), so everything else, closed included, does nothing.
+	 */
+	static void aCancelIsNeverTheOnlyNo(File root) throws Exception {
+		System.out.println("--- a confirm's answer is never compared with CANCEL_OPTION alone (F152)");
+		check(CANCEL_COMPARED.matcher("if (rsl == JOptionPane.CANCEL_OPTION) {").find()
+				&& CANCEL_COMPARED.matcher("if (javax.swing.JOptionPane.CANCEL_OPTION != r) {").find()
+				&& !CANCEL_COMPARED.matcher("JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) {").find()
+				&& !CANCEL_COMPARED.matcher("case JOptionPane.CANCEL_OPTION:").find(),
+				"control: a comparison with CANCEL_OPTION is seen, an OK_CANCEL_OPTION argument and a case label are not");
+		List<String> found = new ArrayList<>();
+		for (File f : javaSources(new File(root, "ctrmap"))) {
+			if (f.getName().equals("DialogSeamTest.java")) {
+				continue;
+			}
+			if (CANCEL_COMPARED.matcher(SourceSeamTest.stripComments(read(f))).find()) {
+				found.add(f.getName());
+			}
+		}
+		check(found.isEmpty(), "no answer is compared with CANCEL_OPTION, which a closed dialog is not: " + found);
 	}
 
 	static int count(Pattern p, String src) {
@@ -403,11 +558,6 @@ public class DialogSeamTest {
 		return line;
 	}
 
-	/**
-	 * ...and the floor under all of them: whatever a call site hands it, the
-	 * seam says something. All three of Ui's paths are checked through the sink
-	 * a recording test sees, which is the one every other guard asserts on.
-	 */
 	/**
 	 * Rule six: a dialog opened without naming a window is parented to the one
 	 * the application gave the seam.
@@ -483,6 +633,11 @@ public class DialogSeamTest {
 				"and the seam can be given no window at all, which is what a headless run is");
 	}
 
+	/**
+	 * ...and the floor under all of them: whatever a call site hands it, the
+	 * seam says something. All three of Ui's paths are checked through the sink
+	 * a recording test sees, which is the one every other guard asserts on.
+	 */
 	static void theSeamCannotSayNothing() {
 		List<String> said = Ui.record();
 		try {
@@ -523,17 +678,26 @@ public class DialogSeamTest {
 	static void theOneKeepQuestionAnswersClosedAsCancel() {
 		List<String> said = Ui.record(JOptionPane.YES_OPTION, JOptionPane.NO_OPTION,
 				JOptionPane.CANCEL_OPTION, JOptionPane.CLOSED_OPTION);
+		//what No does is handed in with the question and run there (F106): counted, so each answer
+		//is seen to run it exactly when it should
+		int[] putBack = {0};
+		Runnable discard = () -> putBack[0]++;
 		try {
-			check(ctrmap.Ui.askToKeep(true, "Zone header") == ctrmap.Ui.Keep.SAVE, "askToKeep: yes is SAVE");
-			check(ctrmap.Ui.askToKeep(true, "Zone header") == ctrmap.Ui.Keep.DISCARD, "askToKeep: no is DISCARD");
-			check(ctrmap.Ui.askToKeep(true, "Zone header") == ctrmap.Ui.Keep.CANCEL, "askToKeep: cancel is CANCEL");
-			check(ctrmap.Ui.askToKeep(true, "Zone header") == ctrmap.Ui.Keep.CANCEL, "askToKeep: a closed dialog is CANCEL, never consent");
-			check(ctrmap.Ui.askToKeep(true, "Zone header") == ctrmap.Ui.Keep.CANCEL, "askToKeep: an answer that never comes is CANCEL too");
+			check(ctrmap.Ui.askToKeep(true, "Zone header", discard) == ctrmap.Ui.Keep.SAVE && putBack[0] == 0,
+					"askToKeep: yes is SAVE, and nothing is put back");
+			check(ctrmap.Ui.askToKeep(true, "Zone header", discard) == ctrmap.Ui.Keep.DISCARD && putBack[0] == 1,
+					"askToKeep: no is DISCARD, and the editor is put back, once: " + putBack[0]);
+			check(ctrmap.Ui.askToKeep(true, "Zone header", discard) == ctrmap.Ui.Keep.CANCEL && putBack[0] == 1,
+					"askToKeep: cancel is CANCEL, with nothing put back");
+			check(ctrmap.Ui.askToKeep(true, "Zone header", discard) == ctrmap.Ui.Keep.CANCEL && putBack[0] == 1,
+					"askToKeep: a closed dialog is CANCEL, never consent, and puts nothing back");
+			check(ctrmap.Ui.askToKeep(true, "Zone header", discard) == ctrmap.Ui.Keep.CANCEL && putBack[0] == 1,
+					"askToKeep: an answer that never comes is CANCEL too");
 			check(said.size() == 5 && said.get(0).equals("Save changes: Zone header has been modified. Do you want to keep the changes?"),
 					"askToKeep names what changed, in the words every store() always used: " + (said.isEmpty() ? said : said.get(0)));
 			int asked = said.size();
-			check(ctrmap.Ui.askToKeep(false, "Zone header") == ctrmap.Ui.Keep.SAVE && said.size() == asked,
-					"askToKeep with no dialog wanted is SAVE, and nobody is asked");
+			check(ctrmap.Ui.askToKeep(false, "Zone header", discard) == ctrmap.Ui.Keep.SAVE && said.size() == asked
+					&& putBack[0] == 1, "askToKeep with no dialog wanted is SAVE, nobody is asked and nothing is put back");
 		} finally {
 			Ui.stopRecording();
 		}

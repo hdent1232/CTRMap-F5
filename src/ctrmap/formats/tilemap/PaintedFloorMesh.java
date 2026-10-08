@@ -184,17 +184,6 @@ public final class PaintedFloorMesh {
 	}
 
 	/**
-	 * Ensures a vertical quad's triangles wind so its face points OUT along
-	 * {@code (nx, nz)}, not into the terrain it walls off.
-	 *
-	 * <p>Unlike {@link #fixWindingUp} this carries the per-corner AO across the
-	 * swap as well. That helper is only used on quads whose AO is uniform, so
-	 * it can leave shading alone; a cliff is deliberately darker toward its
-	 * base, and moving the positions without the shading would light the wall
-	 * upside down - a fault no geometry check would catch, because every
-	 * triangle would be facing the right way.
-	 */
-	/**
 	 * Winds a quad so its face points along an arbitrary 3D direction, carrying
 	 * UVs, normals and AO with the swap.
 	 *
@@ -217,6 +206,17 @@ public final class PaintedFloorMesh {
 		}
 	}
 
+	/**
+	 * Ensures a vertical quad's triangles wind so its face points OUT along
+	 * {@code (nx, nz)}, not into the terrain it walls off.
+	 *
+	 * <p>Unlike {@link #fixWindingUp} this carries the per-corner AO across the
+	 * swap as well. That helper is only used on quads whose AO is uniform, so
+	 * it can leave shading alone; a cliff is deliberately darker toward its
+	 * base, and moving the positions without the shading would light the wall
+	 * upside down - a fault no geometry check would catch, because every
+	 * triangle would be facing the right way.
+	 */
 	static void fixWindingOut(Quad q, float nx, float nz) {
 		float[] a = q.pos[0], b = q.pos[2], c = q.pos[1];
 		float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
@@ -275,10 +275,6 @@ public final class PaintedFloorMesh {
 		return om;
 	}
 
-	/** Floor quad for a tile; flat at {@code yHi} (the painted-floor Y - level
-	 *  frame or retail-surface frame), or SLOPED when rd>=0 (a ramp descending
-	 *  toward direction rd drops that edge's 2 corners to {@code yLo} - the
-	 *  descent neighbour's actual floor). The level h drives the AO sampling. */
 	/**
 	 * A flat vertical wall spanning one tile-boundary segment, from the top of
 	 * the step to a little below its foot, wound to face downhill.
@@ -479,13 +475,7 @@ public final class PaintedFloorMesh {
 		if (churn == null) {
 			return;
 		}
-		int mesh = -1;
-		for (int i = 0; i < probe.meshCount; i++) {
-			if (churn.injectName.equals(probe.getMaterialName(probe.getMeshMaterialIndex(i)))) {
-				mesh = i;
-				break;
-			}
-		}
+		int mesh = probe.meshWithMaterial(churn.injectName);
 		if (mesh < 0) {
 			return;   //the material never imported; better nothing than a wrong layer
 		}

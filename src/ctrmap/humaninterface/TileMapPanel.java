@@ -39,6 +39,7 @@ import java.awt.Transparency;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.MouseEvent;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.logging.Level;
@@ -84,6 +85,10 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	private final GLProfile glp;
 	private final GLCapabilities caps;
 	private GLAutoDrawable CM2DDrawable;
+	/** Owns CM2DDrawable: a resize ends the old one before the new is made (F110). */
+	private final OffscreenSlot offscreen = new OffscreenSlot();
+	/** Reads the drawn frame back; one for the panel, not a new one every frame (F110). */
+	private AWTGLReadBufferUtil frameReader;
 	private BufferedImage CM2DTempImage;
 	/** The 3D scene this view shares, handed in: what it draws and where its camera looks. */
 	private final Scene3D scene;
@@ -126,6 +131,9 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 
 	/** The collision editor drawn alongside this view, handed in. */
 	private final CollEditPanel collision;
+
+	/** The regions whose collision the last load could not read, each with why - for {@link #collisionRefused}. */
+	private final List<String> collisionRefusals = new ArrayList<>();
 
 	public boolean update = true;
 
@@ -185,7 +193,10 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 					update = true;
 				}
 				GLDrawableFactory factory = GLDrawableFactory.getFactory(glp);
-				CM2DDrawable = factory.createOffscreenAutoDrawable(factory.getDefaultDevice(), caps, new DefaultGLCapabilitiesChooser(), viewport.getViewport().getWidth(), viewport.getViewport().getHeight());
+				//THE OLD ONE IS ENDED FIRST (F110): it was dropped with its context and framebuffer
+				//alive, one per step of a window drag
+				CM2DDrawable = offscreen.replace(() -> factory.createOffscreenAutoDrawable(factory.getDefaultDevice(), caps,
+						new DefaultGLCapabilitiesChooser(), viewport.getViewport().getWidth(), viewport.getViewport().getHeight()));
 				CM2DDrawable.display();
 				CM2DDrawable.getContext().makeCurrent();
 
@@ -261,7 +272,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		models[0][0] = new BCHFile(file.getFile(1));
 		tallgrass = new BCHFile[1][1];
 		byte[] tg = file.getFile(5);
-		if (tg[0] == 'B' && tg[1] == 'C' && tg[2] == 'H') {
+		if (ctrmap.formats.h3d.BchSections.hasMagic(tg)) {
 			BCHFile tgbch = new BCHFile(tg);
 			if (!tgbch.models.isEmpty()) {
 				H3DModel tgmdl = tgbch.models.get(0);
@@ -269,7 +280,15 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			}
 		}
 		colls = new GRCollisionFile[1][1];
-		colls[0][0] = new GRCollisionFile(file);
+		collisionRefusals.clear();
+		colls[0][0] = collisionOf(file, "This region", collisionRefusals);
+		//ONE PARSE, SHARED, as the matrix load does: the collision editor used to read the region a
+		//second time, so what it edited was not what this view reads heights from
+		collision.unload();
+		if (colls[0][0].unreadable == null) {
+			collision.loadCollision(colls[0][0], models[0][0].models.isEmpty()
+					? "Region" : models[0][0].models.get(0).name);
+		}
 		tilemaps[0][0] = new Tilemap(file, tileColors());
 		tilemapImage = tilemaps[0][0].getImage();
 		tilemapScaledImage = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration().createCompatibleImage(400, 400);
@@ -281,18 +300,12 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			editors.clearEntities();
 		}
 		scene.frameSingleRegion();
+		collisionRefused(collisionRefusals);
 	}
 
 	public void loadProps(List<H3DTexture> propTextures, ADPropRegistry reg) {
 		if (mode == ViewportMode.MULTI) {
-			GRPropData comb = new GRPropData();
-			for (int i = 0; i < mm.height; i++) {
-				for (int j = 0; j < mm.width; j++) {
-					if (mm.regions.get(j, i) != null) {
-						comb.props.addAll(new GRPropData(mm.regions.get(j, i)).props);
-					}
-				}
-			}
+			GRPropData comb = GRPropData.combined(mm);
 			if (editors != null) {
 				editors.showProps(comb, reg, propTextures);
 			}
@@ -384,11 +397,11 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			boolean broken = false;
 			for (int i = 0; i < mm.height & !broken; i++) {
 				for (int j = 0; j < mm.width; j++) {
-					if (j >= tilemaps.length || i >= tilemaps[j].length || tilemaps[j][i] == null) {
+					if (cell(tilemaps, j, i) == null) {
 						continue;
 					}
-					if (tilemaps[j][i].modified) {
-						switch (ctrmap.Ui.askToKeep(dialog, "Region data")) {
+					if (cell(tilemaps, j, i).modified) {
+						switch (ctrmap.Ui.askToKeep(dialog, "Region data", this::discardTiles)) {
 							case SAVE:
 								LoadingDialog progress = LoadingDialog.makeDialog("Saving matrix");
 								SwingWorker worker = new SwingWorker() {
@@ -421,14 +434,15 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 												//DISCARD arm below straight out of saveMatrix on the event
 												//thread with nothing to catch it. A cell the panel never
 												//loaded a tilemap for has nothing to write back.
-												if (j >= tilemaps.length || i >= tilemaps[j].length || tilemaps[j][i] == null) {
+												Tilemap tm = cell(tilemaps, j, i);
+												if (tm == null) {
 													continue;
 												}
 												if (mm.regions.get(j, i) == null) {
 													continue;
 												}
-												mm.regions.get(j, i).storeFile(0, tilemaps[j][i].assembleTilemap());
-												tilemaps[j][i].modified = false; //prevent save dialog popping up until changed again
+												mm.regions.get(j, i).storeFile(0, tm.assembleTilemap());
+												tm.modified = false; //prevent save dialog popping up until changed again
 												progress.setBarPercent((int) (((i * mm.width + j) / (float) (mm.width * mm.height)) * 100));
 											}
 										}
@@ -446,23 +460,7 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 								}
 								return true; //save as normal
 							case DISCARD:
-								for (int k = 0; k < mm.height; k++) {
-									for (int l = 0; l < mm.width; l++) {
-										//the same bound as the save loop above, for the same reason: a
-										//column the matrix editor added has no tilemap to unmark. This
-										//arm is the worse of the two - it runs on the event thread, so
-										//what it threw left saveMatrix altogether and the save simply
-										//stopped, with a stack trace on stderr and the user told nothing.
-										if (l >= tilemaps.length || k >= tilemaps[l].length || tilemaps[l][k] == null) {
-											continue;
-										}
-										if (mm.regions.get(l, k) == null) {
-											continue;
-										}
-										tilemaps[l][k].modified = false; //prevent save dialog popping up until changed again
-									}
-								}
-								return true; //don't save, but don't interrupt the editor
+								return true; //put back by discardTiles; don't save, but don't interrupt the editor
 							default:
 								return false;//stop anything going on in the editor, cancel
 						}
@@ -481,123 +479,220 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		//smaller one threw on the EDT out of getRegionForTile.
 		Selector.unfocus(this);
 		LoadingDialog progress = LoadingDialog.makeDialog("Loading matrix");
-		SwingWorker worker = new SwingWorker() {
+		final Tilemap.TileColors palette = tileColors();
+		SwingWorker<Regions, Void> worker = new SwingWorker<Regions, Void>() {
 			@Override
 			protected void done() {
-				progress.close();
-				try {
-					get(); //without this, a map that failed half-way closes the dialog and the
-					//zone comes up over the previous map's regions
-				} catch (Exception ex) {
-					Logger.getLogger(TileMapPanel.class.getName()).log(Level.SEVERE, "loading matrix", ex.getCause() != null ? ex.getCause() : ex);
-				}
+				progress.close(); //what failed is thrown by awaitLoad, below, to the caller
 			}
 
 			@Override
-			protected Object doInBackground() {
-				loadRegions(matrix, reg, worldTextures, propTextures, progress);
-				return null;
+			protected Regions doInBackground() {
+				//THE READ HALF (F220): files and parsing only. It used to be the whole load,
+				//so the collision tree, the prop form and this panel's own layout were
+				//rebuilt from the worker while the event thread painted the old map
+				return readRegions(matrix, worldTextures, propTextures, palette, progress);
 			}
 		};
 		worker.execute();
 		progress.showDialog();
-		awaitLoad(worker);
+		Regions read = awaitLoad(worker);
+		try {
+			showRegions(read, reg, progress);
+		} catch (RuntimeException ex) {
+			unload(); //the placeholder, not half of a map
+			throw new IllegalStateException("The map did not load: " + ex, ex);
+		}
+		collisionRefused(collisionRefusals);
 	}
 
 	/**
-	 * Assembles a matrix into this panel: every filled cell's tilemap, map model, tall
-	 * grass and collision, placed at {@code cell * 720 + 360} and textured with the
-	 * zone's own world and prop textures.
+	 * A matrix read into what this view draws, before any of it is shown: what the background
+	 * half of a load makes (F220). Nothing in it is a widget, and nothing on screen reads it
+	 * until {@link #showRegions} installs it, on the event thread.
 	 *
-	 * <p>THE ONE BODY that turns a matrix into a picture, with two callers:
-	 * {@link #loadMatrix} runs it behind a progress dialog after clearing what belonged
-	 * to the previous zone, and the Zone Loader's preview runs it with a null progress
-	 * on a panel of its own. A second implementation of this is what the preview used to
-	 * be, and every defect the owner reported about it lived in the gap between the two.
-	 *
-	 * @param progress may be null - then there is nothing to report into, which is what
-	 * a preview is: a zone nobody asked to open
+	 * <p>Not: MapMatrix - that is the file's cells; this is the picture made from them, tilemaps,
+	 * models, grass and collision, which only this view draws and only once it is installed.
 	 */
-	public void loadRegions(MapMatrix matrix, ADPropRegistry reg, List<H3DTexture> worldTextures,
-			List<H3DTexture> propTextures, LoadingDialog progress) {
-			mode = ViewportMode.MULTI;
-			savedWorldTextures = worldTextures;
-			savedPropTextures = propTextures;
-			mm = matrix;
-			width = mm.width * 40;
-			height = mm.height * 40;
-			tilemaps = new Tilemap[mm.width][mm.height];
-			models = new BCHFile[mm.width][mm.height];
-			tallgrass = new BCHFile[mm.width][mm.height];
-			colls = new GRCollisionFile[mm.width][mm.height];
-			collision.unload();
-			for (int i = 0; i < mm.height; i++) {
-				for (int j = 0; j < mm.width; j++) {
-					if (mm.ids.get(j, i) != -1) {
-						tilemaps[j][i] = new Tilemap(mm.regions.get(j, i), tileColors());
-						byte[] tg = mm.regions.get(j, i).getFile(5);
-						if (tg.length > 0 && tg[0] == 'B' && tg[1] == 'C' && tg[2] == 'H') {
-							BCHFile tgbch = new BCHFile(tg);
-							if (!tgbch.models.isEmpty()) {
-								H3DModel tgmdl = tgbch.models.get(0);
-								tgmdl.setMaterialTextures(worldTextures);
-								//GR overworld map BCH files have just 1 model, the tall grass is entirely separate BCH
-								tgmdl.worldLocX = j * 720f + 360f;
-								tgmdl.worldLocZ = i * 720f + 360f;
-								tgmdl.makeAllBOs();
-								tallgrass[j][i] = tgbch;
-							}
-						}
-						BCHFile bch = new BCHFile(mm.regions.get(j, i).getFile(1));
-						if (!bch.models.isEmpty()) {
-							H3DModel model = bch.models.get(0);
-							if (worldTextures != null) {
-								worldTextures.addAll(bch.textures);
-								model.setMaterialTextures(worldTextures);
-							}
-							if (propTextures != null) {
-								model.setMaterialTextures(propTextures);
-							}
+	public static final class Regions {
+
+		final MapMatrix matrix;
+		final List<H3DTexture> worldTextures;
+		final List<H3DTexture> propTextures;
+		final Tilemap[][] tilemaps;
+		final BCHFile[][] models;
+		final BCHFile[][] tallgrass;
+		final GRCollisionFile[][] colls;
+		/** The collision tree's caption for each cell whose collision was read; null elsewhere. */
+		final String[][] captions;
+		final List<String> refusals = new ArrayList<>();
+
+		Regions(MapMatrix matrix, List<H3DTexture> worldTextures, List<H3DTexture> propTextures) {
+			this.matrix = matrix;
+			this.worldTextures = worldTextures;
+			this.propTextures = propTextures;
+			tilemaps = new Tilemap[matrix.width][matrix.height];
+			models = new BCHFile[matrix.width][matrix.height];
+			tallgrass = new BCHFile[matrix.width][matrix.height];
+			colls = new GRCollisionFile[matrix.width][matrix.height];
+			captions = new String[matrix.width][matrix.height];
+		}
+	}
+
+	/**
+	 * Reads a matrix into what this view draws: every filled cell's tilemap, map model, tall
+	 * grass and collision, placed at {@code cell * 720 + 360} and textured with the zone's own
+	 * world and prop textures.
+	 *
+	 * <p>THE ONE BODY that turns a matrix into a picture, with two callers: {@link #loadMatrix}
+	 * runs it behind a progress dialog, and the Zone Loader's preview runs it with a null
+	 * progress for a panel of its own. A second implementation of this is what the preview used
+	 * to be, and every defect the owner reported about it lived in the gap between the two.
+	 *
+	 * <p>THE READ HALF, SAFE OFF THE EVENT THREAD (F220): it touches no widget and no field of a
+	 * panel - it is static so that it cannot - and what it makes is shown by {@link #showRegions}.
+	 *
+	 * @param colours what the tilemaps are painted in; null paints nothing, which is a preview's
+	 * @param progress may be null - then there is nothing to report into, which is what a
+	 * preview is: a zone nobody asked to open
+	 */
+	public static Regions readRegions(MapMatrix matrix, List<H3DTexture> worldTextures,
+			List<H3DTexture> propTextures, Tilemap.TileColors colours, LoadingDialog progress) {
+		Regions r = new Regions(matrix, worldTextures, propTextures);
+		MapMatrix mm = matrix;
+		for (int i = 0; i < mm.height; i++) {
+			for (int j = 0; j < mm.width; j++) {
+				if (mm.ids.get(j, i) != -1) {
+					r.tilemaps[j][i] = new Tilemap(mm.regions.get(j, i), colours);
+					byte[] tg = mm.regions.get(j, i).getFile(5);
+					if (ctrmap.formats.h3d.BchSections.hasMagic(tg)) {
+						BCHFile tgbch = new BCHFile(tg);
+						if (!tgbch.models.isEmpty()) {
+							H3DModel tgmdl = tgbch.models.get(0);
+							tgmdl.setMaterialTextures(worldTextures);
 							//GR overworld map BCH files have just 1 model, the tall grass is entirely separate BCH
-							model.worldLocX = j * 720f + 360f;
-							model.worldLocZ = i * 720f + 360f;
-							model.makeAllBOs();
-							models[j][i] = bch;
+							tgmdl.worldLocX = j * 720f + 360f;
+							tgmdl.worldLocZ = i * 720f + 360f;
+							tgmdl.makeAllBOs();
+							r.tallgrass[j][i] = tgbch;
 						}
-						colls[j][i] = new GRCollisionFile(mm.regions.get(j, i));
-						//THE NAME IS A TREE CAPTION AND IT MUST NOT COST THE WHOLE ZONE.
-						//Thirteen lines up the model setup is wrapped in
-						//"if (!bch.models.isEmpty())" because a region's FieldData subfile 1
-						//is not guaranteed to parse to a model - BCHFile returns with an empty
-						//model list for anything that is not a BCH - and then this line, which
-						//is OUTSIDE that guard, called bch.models.get(0) anyway. On such a
-						//region it threw IndexOutOfBoundsException out of doInBackground, which
-						//awaitLoad turns into "The map did not load", so the entire zone refused
-						//to open and the reason the user was shown was a collision-panel
-						//caption. The collision file itself is read on the line above and never
-						//needed the model, and this name only ever becomes a JTree node label,
-						//so name the cell instead and let the rest of the zone open.
-						collision.loadCollision(colls[j][i], bch.models.isEmpty()
-								? "Region " + j + "x" + i : bch.models.get(0).name);
 					}
-					if (progress != null) {
-						progress.setBarPercent((int) (((i * mm.width + j) / (float) (mm.width * mm.height)) * 100));
+					BCHFile bch = new BCHFile(mm.regions.get(j, i).getFile(1));
+					if (!bch.models.isEmpty()) {
+						H3DModel model = bch.models.get(0);
+						if (worldTextures != null) {
+							worldTextures.addAll(bch.textures);
+							model.setMaterialTextures(worldTextures);
+						}
+						if (propTextures != null) {
+							model.setMaterialTextures(propTextures);
+						}
+						//GR overworld map BCH files have just 1 model, the tall grass is entirely separate BCH
+						model.worldLocX = j * 720f + 360f;
+						model.worldLocZ = i * 720f + 360f;
+						model.makeAllBOs();
+						r.models[j][i] = bch;
+					}
+					r.colls[j][i] = collisionOf(mm.regions.get(j, i), "Region " + j + "x" + i, r.refusals);
+					//THE NAME IS A TREE CAPTION AND IT MUST NOT COST THE WHOLE ZONE.
+					//Thirteen lines up the model setup is wrapped in
+					//"if (!bch.models.isEmpty())" because a region's FieldData subfile 1
+					//is not guaranteed to parse to a model - BCHFile returns with an empty
+					//model list for anything that is not a BCH - and then this line, which
+					//is OUTSIDE that guard, called bch.models.get(0) anyway. On such a
+					//region it threw IndexOutOfBoundsException out of doInBackground, which
+					//awaitLoad turns into "The map did not load", so the entire zone refused
+					//to open and the reason the user was shown was a collision-panel
+					//caption. The collision file itself is read on the line above and never
+					//needed the model, and this name only ever becomes a JTree node label,
+					//so name the cell instead and let the rest of the zone open.
+					if (r.colls[j][i].unreadable == null) {
+						r.captions[j][i] = bch.models.isEmpty() ? "Region " + j + "x" + i : bch.models.get(0).name;
 					}
 				}
+				if (progress != null) {
+					progress.setBarPercent((int) (((i * mm.width + j) / (float) (mm.width * mm.height)) * 100));
+				}
 			}
-			scene.frameMatrix(mm.width, mm.height);
-			remove(placeholder);
-			invalidate();
-			revalidate();
-			if (progress != null) {
-				progress.setDescription("Checking compatibility");
+		}
+		return r;
+	}
+
+	/**
+	 * Shows what {@link #readRegions} made: it becomes this panel's map, the collision editor's
+	 * tree, the 3D framing and the prop form. THE SHOW HALF - on the event thread (F220).
+	 *
+	 * @param progress may be null, as for {@link #readRegions}
+	 */
+	public void showRegions(Regions r, ADPropRegistry reg, LoadingDialog progress) {
+		mode = ViewportMode.MULTI;
+		savedWorldTextures = r.worldTextures;
+		savedPropTextures = r.propTextures;
+		mm = r.matrix;
+		width = mm.width * 40;
+		height = mm.height * 40;
+		tilemaps = r.tilemaps;
+		models = r.models;
+		tallgrass = r.tallgrass;
+		colls = r.colls;
+		collision.unload();
+		collisionRefusals.clear();
+		collisionRefusals.addAll(r.refusals);
+		//in the order the read made them - row by row - over the arrays the read sized
+		for (int i = 0; r.captions.length > 0 && i < r.captions[0].length; i++) {
+			for (int j = 0; j < r.captions.length; j++) {
+				if (r.captions[j][i] != null) {
+					collision.loadCollision(r.colls[j][i], r.captions[j][i]);
+				}
 			}
-			if (progress != null) {
-				progress.setDescription("Preparing viewport");
-			}
-			loaded = true;
-			loadProps(propTextures, reg);
-			scaleImage(1);
+		}
+		scene.frameMatrix(mm.width, mm.height);
+		remove(placeholder);
+		invalidate();
+		revalidate();
+		if (progress != null) {
+			progress.setDescription("Preparing viewport");
+		}
+		loaded = true;
+		loadProps(r.propTextures, reg);
+		scaleImage(1);
+	}
+
+	/**
+	 * One region's collision for this view, read strictly (F058). When it cannot be read this is
+	 * the {@link GRCollisionFile#unreadable} stand-in - its heights read as unknown and it refuses
+	 * to be written - and {@code where} and the reason are added to {@code refused}. It used to be
+	 * read by a parser that printed what was wrong to a console the shipped build does not have,
+	 * opened whatever part it had read, and saved that part over the region's real collision.
+	 *
+	 * <p>Static, and the one place both loads read collision, because the loads themselves need
+	 * a GL context no suite here can make.
+	 */
+	public static GRCollisionFile collisionOf(GR region, String where, List<String> refused) {
+		GRCollisionFile coll = GRCollisionFile.readOrRefuse(region);
+		if (coll.unreadable != null) {
+			refused.add(where + ": " + coll.unreadable);
+		}
+		return coll;
+	}
+
+	/**
+	 * What a load owes the user about collision it could not read: which regions, and why. They
+	 * opened without it - the collision editor does not offer them, heights over them read as
+	 * unknown and nothing is saved over their collision - and without this, that looks exactly
+	 * like a region with nothing to walk on.
+	 *
+	 * <p>Through {@link ctrmap.Ui}, so a suite can read it.
+	 */
+	public void collisionRefused(List<String> refused) {
+		if (refused.isEmpty()) {
+			return;
+		}
+		Logger.getLogger(TileMapPanel.class.getName()).log(Level.WARNING, "collision not read: {0}", refused);
+		ctrmap.Ui.error(this, "The collision of " + refused.size() + " region(s) could not be read. The rest of the"
+				+ " map opened; the collision editor does not offer these, heights over them read as unknown,"
+				+ " and nothing will be saved over their collision.\n\n" + String.join("\n", refused),
+				"Collision");
 	}
 
 	/**
@@ -611,9 +706,9 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	 * modal progress dialog, and a guard with no display cannot open one. What
 	 * a failed load leaves behind does not have to go untested for that.
 	 */
-	public void awaitLoad(SwingWorker<?, ?> worker) {
+	public <T> T awaitLoad(SwingWorker<T, ?> worker) {
 		try {
-			worker.get();
+			return worker.get(); //what the read half made, for the show half (F220)
 		} catch (InterruptedException | ExecutionException ex) {
 			Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
 			unload(); //the placeholder, not half of a map
@@ -642,11 +737,12 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 					tilemaps[0][0].modified = false;
 					return true;
 				}
-				switch (ctrmap.Ui.askToKeep(true, "Tilemap")) {
+				switch (ctrmap.Ui.askToKeep(true, "Tilemap", this::discardTiles)) {
 					case SAVE:
 						mainGR.storeFile(0, tilemaps[0][0].assembleTilemap());
-					case DISCARD:
 						tilemaps[0][0].modified = false;
+						return true;
+					case DISCARD:
 						return true;
 					default:
 						return false;
@@ -654,6 +750,30 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * Puts every changed region's tiles back to what the region holds, draws them again and lets
+	 * the tile undo history go, since it describes edits that are gone (F106). Discard used to clear
+	 * the flags alone: the discarded tiles stayed drawn and in memory, and the next tile edit in a
+	 * region wrote them with it. Bounded by the tilemaps this view loaded, as the save is: a column
+	 * the matrix editor added has none.
+	 */
+	private void discardTiles() {
+		int w = mm != null ? mm.width : 1;
+		int h = mm != null ? mm.height : 1;
+		for (int k = 0; k < h; k++) {
+			for (int l = 0; l < w; l++) {
+				Tilemap tm = cell(tilemaps, l, k);
+				if (tm == null || !tm.modified) {
+					continue;
+				}
+				tm.discard();
+				perfScale(tilemapScale, l, k);
+			}
+		}
+		TileUndo.clear();
+		firePropertyChange(PROP_REPAINT, false, true);
 	}
 
 	public void renderTileMap() {
@@ -671,9 +791,9 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		} else if (mode == ViewportMode.MULTI) {
 			for (int i = 0; i < mm.height; i++) {
 				for (int j = 0; j < mm.width; j++) {
-					if (tilemaps[j][i] != null) {
+					if (cell(tilemaps, j, i) != null) {
 						//we stretch the regions a few pixels to cover gaps when zooming due to float imprecision
-						g.drawImage(tilemaps[j][i].getImage(), (int) (Math.round(400d * tilemapScale * j)), (int) (Math.round(400d * tilemapScale * i)), regionSize + 1, regionSize, null);
+						g.drawImage(cell(tilemaps, j, i).getImage(), (int) (Math.round(400d * tilemapScale * j)), (int) (Math.round(400d * tilemapScale * i)), regionSize + 1, regionSize, null);
 					}
 				}
 			}
@@ -693,7 +813,10 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		});
 
 		gl.glFlush();
-		return new AWTGLReadBufferUtil(glp, true).readPixelsToBufferedImage(gl, true);
+		if (frameReader == null) {
+			frameReader = new AWTGLReadBufferUtil(glp, true);
+		}
+		return frameReader.readPixelsToBufferedImage(gl, true);
 	}
 
 	@Override
@@ -719,11 +842,11 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		if (mode == ViewportMode.MULTI) {
 			for (int i = 0; i < mm.height; i++) {
 				for (int j = 0; j < mm.width; j++) {
-					if (j < models.length && i < models[j].length && models[j][i] != null) {
-						models[j][i].render(gl);
+					if (cell(models, j, i) != null) {
+						cell(models, j, i).render(gl);
 					}
-					if (j < tallgrass.length && i < tallgrass[j].length && tallgrass[j][i] != null) {
-						tallgrass[j][i].render(gl);
+					if (cell(tallgrass, j, i) != null) {
+						cell(tallgrass, j, i).render(gl);
 					}
 					//useless probably? Can't really edit it in CM3D so it's better to just link it with CollEd per region.
 					/*if (colls[j][i] != null) {
@@ -804,11 +927,11 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		if (loaded && mode == ViewportMode.MULTI && mm != null) {
 			for (int i = 0; i < mm.height; i++) {
 				for (int j = 0; j < mm.width; j++) {
-					if (j < models.length && i < models[j].length && models[j][i] != null) {
-						models[j][i].models.get(0).uploadAllBOs(gl);
+					if (cell(models, j, i) != null) {
+						cell(models, j, i).models.get(0).uploadAllBOs(gl);
 					}
-					if (j < tallgrass.length && i < tallgrass[j].length && tallgrass[j][i] != null) {
-						tallgrass[j][i].models.get(0).uploadAllBOs(gl);
+					if (cell(tallgrass, j, i) != null) {
+						cell(tallgrass, j, i).models.get(0).uploadAllBOs(gl);
 					}
 				}
 			}
@@ -820,11 +943,11 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		if (loaded && mode == ViewportMode.MULTI && mm != null) {
 			for (int i = 0; i < mm.height; i++) {
 				for (int j = 0; j < mm.width; j++) {
-					if (models[j][i] != null) {
-						models[j][i].models.get(0).destroyAllBOs(gl);
+					if (cell(models, j, i) != null) {
+						cell(models, j, i).models.get(0).destroyAllBOs(gl);
 					}
-					if (tallgrass[j][i] != null) {
-						tallgrass[j][i].models.get(0).destroyAllBOs(gl);
+					if (cell(tallgrass, j, i) != null) {
+						cell(tallgrass, j, i).models.get(0).destroyAllBOs(gl);
 					}
 				}
 			}
@@ -832,10 +955,18 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 	}
 
 	public Tilemap getRegionForTile(int x, int y) {
-		if (tilemaps == null) {
-			return null;
-		}
-		return tilemaps[x / 40][y / 40];
+		return x < 0 || y < 0 ? null : cell(tilemaps, x / 40, y / 40);
+	}
+
+	/**
+	 * Cell (x, y) of one of this panel's per-region arrays, or null where the array does not reach
+	 * (F111). The arrays are sized from the matrix when it loads, and the matrix editor grows the
+	 * SAME matrix in place, so a loop bounded by mm.width/mm.height outruns them. The bound had been
+	 * added call site by call site: renderTileMap (every zoom) and deleteGLInstanceBuffers (every
+	 * resize, where the throw also skipped the drawable rebuild) were the sites it did not reach.
+	 */
+	static <T> T cell(T[][] grid, int x, int y) {
+		return grid != null && x >= 0 && y >= 0 && x < grid.length && grid[x] != null && y < grid[x].length ? grid[x][y] : null;
 	}
 
 	public Point getRawAtViewportCentre() {
@@ -974,12 +1105,32 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 		SwingWorker worker = new SwingWorker() {
 			@Override
 			protected void done() {
-				progress.close();
+				Throwable failed = null;
 				try {
 					get(); //without this, a tile image that failed to rebuild closes the dialog and
 					//the old picture stays up as if it were current
-				} catch (Exception ex) {
-					refreshFailed(ex.getCause() != null ? ex.getCause() : ex);
+					//THE RESCALE IS LAYOUT, SO IT IS THE EVENT THREAD'S (F220): it sizes this
+					//panel and revalidates the viewport, and it ran at the end of the worker.
+					//THE PANEL THAT JUST REBUILT ITS IMAGES IS THE ONE THAT MUST RESCALE
+					//THEM. This said mTileMapPanel - the main window's static - from inside
+					//a worker whose enclosing instance is this panel, so the loop
+					//rebuilt THIS panel's region images and this line then rescaled
+					//whichever panel the window happened to be holding. Today that is
+					//always the same object and the editor behaves identically; the cost was
+					//latent, and paid by anyone who ever builds a second panel or runs this
+					//with the static unset, where it is a NullPointerException that this
+					//reports as "the tilemap view was not refreshed" - a true sentence
+					//about the wrong panel.
+					TileMapPanel.this.scaleImage(TileMapPanel.this.tilemapScale);
+				} catch (ExecutionException ex) {
+					failed = ex.getCause() != null ? ex.getCause() : ex;
+				} catch (InterruptedException | RuntimeException ex) {
+					failed = ex;
+				} finally {
+					progress.close();
+				}
+				if (failed != null) {
+					refreshFailed(failed);
 				}
 			}
 
@@ -996,17 +1147,6 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 						progress.setBarPercent((int) (((i * tilemaps[i].length + j) / (float) (tilemaps.length * tilemaps[i].length)) * 100));
 					}
 				}
-				//THE PANEL THAT JUST REBUILT ITS IMAGES IS THE ONE THAT MUST RESCALE
-				//THEM. This said mTileMapPanel - the main window's static - from inside
-				//a worker whose enclosing instance is this panel, so the loop above
-				//rebuilt THIS panel's region images and this line then rescaled
-				//whichever panel the window happened to be holding. Today that is
-				//always the same object and the editor behaves identically; the cost was
-				//latent, and paid by anyone who ever builds a second panel or runs this
-				//with the static unset, where it is a NullPointerException inside the
-				//worker that done() reports as "the tilemap view was not refreshed" -
-				//a true sentence about the wrong panel.
-				TileMapPanel.this.scaleImage(TileMapPanel.this.tilemapScale);
 				return null;
 			}
 		};
@@ -1031,7 +1171,11 @@ public class TileMapPanel extends JPanel implements CM3DRenderable {
 			this.setPreferredSize(new Dimension(tilemapScaledImage.getWidth(), tilemapScaledImage.getHeight()));
 			g = tilemapScaledImage.getGraphics();
 			int regionSize = (int) (Math.round(400 * tilemapScale));
-			g.drawImage(tilemaps[changedRegionX][changedRegionY].getImage(), (int) (Math.round(400d * tilemapScale * changedRegionX)), (int) (Math.round(400d * tilemapScale * changedRegionY)), regionSize + 1, regionSize, null);
+			Tilemap changed = cell(tilemaps, changedRegionX, changedRegionY);
+			if (changed == null) {
+				return;
+			}
+			g.drawImage(changed.getImage(), (int) (Math.round(400d * tilemapScale * changedRegionX)), (int) (Math.round(400d * tilemapScale * changedRegionY)), regionSize + 1, regionSize, null);
 			viewport.repaint();
 		}
 	}

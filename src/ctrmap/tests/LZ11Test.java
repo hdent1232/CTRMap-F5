@@ -40,6 +40,32 @@ public class LZ11Test {
 			}
 		}
 
+		// (1c) STRICT (F057): what is not a well-formed stream is refused, never padded into data
+		byte[] whole = LZ11.compress(ramp(5000));
+		failures += refused("a truncated stream", Arrays.copyOf(whole, whole.length - 3), "ends after");
+		byte[] wrongType = whole.clone();
+		wrongType[0] = 0x10;
+		failures += refused("a stream whose type byte is not 0x11", wrongType, "type byte");
+		//one token, compressed, reaching six bytes back before anything is written
+		failures += refused("a back-reference before the start", new byte[]{0x11, 0x10, 0, 0, (byte) 0x80, 0x20, 0x05},
+				"refers 6 byte(s) back");
+		failures += refused("a header with nothing after it", new byte[]{0x11, 5, 0, 0}, "ends after");
+		//the extended header: a three-byte size of zero, then the size in four bytes
+		byte[] extended = {0x11, 0, 0, 0, 3, 0, 0, 0, 0x00, 'a', 'b', 'c'};
+		if (!Arrays.equals(LZ11.decompress(extended), new byte[]{'a', 'b', 'c'})) {
+			failures++;
+			System.out.println("FAIL the extended size header is not read");
+		} else {
+			System.out.println("ok the extended size header is read");
+		}
+		try {
+			LZ11.compress(new byte[0x1000000]);
+			failures++;
+			System.out.println("FAIL compressing 16 MB wrote a header that cannot say its size");
+		} catch (IllegalArgumentException refusedSize) {
+			System.out.println("ok compressing 16 MB is refused: " + refusedSize.getMessage());
+		}
+
 		// (1b)+(2) real corpus
 		String path = args.length > 0 ? args[0]
 				: "../RomFS_original_garcs/a/0/1/3";
@@ -79,12 +105,28 @@ public class LZ11Test {
 						ratioVsRaw, vsRetail, compared);
 			}
 		} else {
-			System.out.println("(corpus GARC not found at " + path + " - synthetic cases only)");
+			Skip.section("corpus GARC not found at " + path + " - synthetic cases only");
 		}
 
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT (" + failures + ")");
 		if (failures > 0) {
 			System.exit(1);
+		}
+	}
+
+	/** 0 when {@code stream} is refused with a message holding {@code why}; 1 (a failure) otherwise. */
+	static int refused(String what, byte[] stream, String why) {
+		try {
+			byte[] got = LZ11.decompress(stream);
+			System.out.println("FAIL " + what + " is refused (it decoded to " + got.length + " bytes)");
+			return 1;
+		} catch (IllegalStateException said) {
+			boolean named = said.getMessage().contains(why);
+			System.out.println((named ? "ok " : "FAIL ") + what + " is refused: " + said.getMessage());
+			return named ? 0 : 1;
+		} catch (RuntimeException crash) {
+			System.out.println("FAIL " + what + " is refused in words (it threw " + crash + ")");
+			return 1;
 		}
 	}
 

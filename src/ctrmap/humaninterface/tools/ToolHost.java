@@ -40,13 +40,6 @@ public interface ToolHost {
 	void releaseNavi();
 
 	/**
-	 * The map view: the tools draw their overlays on it and hit-test against
-	 * its scale and image. Handed as itself rather than as a narrower
-	 * interface because the tools that use it use a dozen of its members
-	 * between them, and naming a capability per member would be a longer way
-	 * of writing the same class.
-	 */
-	/**
 	 * The tile inspector, for the tools that pick a tile.
 	 *
 	 * <p>Three of the ten do, and they used to reach through the main window for
@@ -55,5 +48,12 @@ public interface ToolHost {
 	 */
 	ctrmap.humaninterface.TileInspector inspector();
 
+	/**
+	 * The map view: the tools draw their overlays on it and hit-test against
+	 * its scale and image. Handed as itself rather than as a narrower
+	 * interface because the tools that use it use a dozen of its members
+	 * between them, and naming a capability per member would be a longer way
+	 * of writing the same class.
+	 */
 	TileMapPanel map();
 }

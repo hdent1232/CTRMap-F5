@@ -42,6 +42,7 @@ import os
 import re
 import subprocess
 import sys
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import shellin                                    # noqa: E402  (path set above)
@@ -109,7 +110,7 @@ def head_of(repo, rev="HEAD"):
     try:
         p = subprocess.Popen(["git", "-C", repo, "rev-parse", "--verify", "--quiet",
                               rev + "^{commit}"],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
         out, err = p.communicate(timeout=20)
     except Exception as cannotAsk:
         return None, "%s: %s" % (type(cannotAsk).__name__, cannotAsk)
@@ -123,7 +124,7 @@ def _branch_of(repo):
     """The branch HEAD is on, or None when detached or unreadable."""
     try:
         p = subprocess.Popen(["git", "-C", repo, "symbolic-ref", "--quiet", "--short", "HEAD"],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
         out, _ = p.communicate(timeout=20)
     except Exception:
         return None
@@ -222,6 +223,74 @@ def verdict(command, cwd):
     return False, None
 
 
+#: git's own commands. An alias cannot shadow one, so only another word is looked up as an alias.
+_BUILTIN = frozenset((
+    "add", "am", "apply", "archive", "bisect", "blame", "branch", "bundle", "cat-file", "checkout",
+    "cherry", "cherry-pick", "clean", "clone", "commit", "config", "describe", "diff", "fetch",
+    "for-each-ref", "format-patch", "fsck", "gc", "grep", "hash-object", "help", "init", "log",
+    "ls-files", "ls-remote", "ls-tree", "merge", "merge-base", "mv", "name-rev", "notes", "pull",
+    "push", "rebase", "reflog", "remote", "reset", "restore", "rev-list", "rev-parse", "revert",
+    "rm", "shortlog", "show", "show-ref", "stash", "status", "submodule", "switch",
+    "symbolic-ref", "tag", "update-index", "update-ref", "var", "version", "worktree"))
+#: git's options before the subcommand that take the NEXT word as their value.
+_GIT_VALUED = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path",
+               "--config-env")
+
+
+def _alias(directory, options, sub):
+    """What alias `sub` expands to - from a `-c alias.<sub>=` on the line, else the repository's
+    own config - or None when it is not an alias."""
+    key = "alias.%s=" % sub.lower()
+    for option, value in options:
+        if option == "-c" and value and value.lower().startswith(key):
+            return value.split("=", 1)[1]
+        if option.lower().startswith("-c" + key):
+            return option.split("=", 1)[1]
+    try:
+        p = subprocess.Popen(["git", "-C", directory, "config", "--get", "alias." + sub],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
+        out, _ = p.communicate(timeout=20)
+    except Exception:
+        return None
+    if p.returncode != 0:
+        return None
+    return out.decode("utf-8", "replace").strip() or None
+
+
+def dealiased(command, cwd, depth=0):
+    """The commands `command` runs once a git alias in it is expanded: `git -c alias.p=push p
+    origin master` is `git push origin master` (F175), and a `!` alias is the shell text it runs.
+    Empty when there is no alias to expand."""
+    read = shellin.reader()
+    held = read.pairs(command)
+    if not held or depth > 4 or read.program_of(held[0][0]) != "git":
+        return []
+    at, options = 1, []
+    while at < len(held) and held[at][0].startswith("-"):
+        option = held[at][0]
+        if option in _GIT_VALUED and at + 1 < len(held):
+            options.append((option, held[at + 1][0]))
+            at += 2
+            continue
+        options.append((option, None))
+        at += 1
+    if at >= len(held) or held[at][0].lower() in _BUILTIN:
+        return []
+    directory = cwd
+    for option, value in options:
+        if option == "-C" and value:
+            directory = os.path.join(directory, value)
+    value = _alias(directory, options, held[at][0])
+    if not value:
+        return []
+    rest = read.joined_text(held[at + 1:])
+    if value.startswith("!"):
+        return shellin.each_command(value[1:] + " " + rest)
+    spelled = " ".join(["git"] + [w for o, v in options for w in ((o, v) if v else (o,))]
+                       + [value, rest]).strip()
+    return [spelled] + dealiased(spelled, cwd, depth + 1)
+
+
 def _judge(repo, tail):
     """(deny, reason) for one push of `tail`, run in `repo`."""
     fields, trouble = token_of(repo)
@@ -247,6 +316,14 @@ def _judge(repo, tail):
     if sent is None:
         return True, _no("which commit this push publishes is UNKNOWN (%s) - and an unknown "
                          "commit is not an approved one" % trouble)
+    return _judge_sent(fields, sent)
+
+
+def _judge_sent(fields, sent):
+    """(deny, reason) for the commits a push sends, [(commit or None, ref it lands on, spec)],
+    against the token's fields - the question this hook and the pre-push hook both ask."""
+    forced = fields.get("force", "").lower() in ("yes", "true", "1")
+    approved = fields.get("sha", "").lower()
     for sha, ref, spec in sent:
         if sha is None and not forced:
             return True, _no("%s DELETES the remote ref %r, and the approval does not say it is "
@@ -274,11 +351,77 @@ def decide(payload):
     if blind:
         return True, shellin.blind_refusal(HOOK, "; ".join(blind), "<no bypass>")
     cwd = str((payload or {}).get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
-    for command in shellin.commands(payload):
-        deny, reason = verdict(command, cwd)
-        if deny:
-            return deny, reason
+    #EACH PUSH IN THE FOLDER IT RUNS IN (F175): split into single commands, `cd x && git push`
+    #lost its `cd`, and a push judged in the call's own folder reads THAT repository's approval
+    for command, where in shellin.located(payload):
+        for one in [command] + dealiased(command, cwd if where is None
+                                         else os.path.join(cwd, where)):
+            if where is None and pushes(one):
+                return True, _no("this push runs after a move to a folder the command does "
+                                 "not name (%s), so which repository it publishes is UNKNOWN - "
+                                 "and an unknown repository is not an approved one. Name the "
+                                 "folder, or use git -C <folder> push." % command.strip()[:80])
+            deny, reason = verdict(one, os.path.join(cwd, where or ""))
+            if deny:
+                return deny, reason
     return False, None
+
+
+def pre_push(remote, lines, repo):
+    """(deny, reason) for what git hands a pre-push hook: the remote's name, and one line per ref
+    - `<local ref> <local sha> <remote ref> <remote sha>`.
+
+    THE SECOND DOOR (F175). The hook above judges a push it can READ in a tool call; a push it
+    cannot read - spelled some way no reader knows, or typed in a terminal by an agent with no
+    hooks - reached the remote with nothing asked. git itself hands this the commits it is about
+    to send, already resolved, so nothing here depends on how the push was spelled.
+    """
+    fields, trouble = token_of(repo)
+    if fields is None:
+        return True, _no("%s." % trouble)
+    if len(fields.get("said", "")) < 20:
+        return True, _no("the approval token records no usable quote of what the owner said.")
+    if fields.get("remote") and remote != fields["remote"]:
+        return True, _no("the approval is for remote %r and this pushes to %r"
+                         % (fields["remote"], remote))
+    forced = fields.get("force", "").lower() in ("yes", "true", "1")
+    sent = []
+    for line in lines:
+        words = line.split()
+        if len(words) != 4:
+            continue
+        local_ref, local_sha, remote_ref, remote_sha = words
+        landed = remote_ref[len("refs/heads/"):] if remote_ref.startswith("refs/heads/") \
+            else remote_ref
+        deleting = set(local_sha) == {"0"}
+        sent.append((None if deleting else local_sha, landed, local_ref))
+        if not deleting and set(remote_sha) != {"0"} and not forced:
+            #a push that is not a fast-forward discards what the remote holds: a force push,
+            #whether or not the word `--force` was typed - and one this cannot check is not
+            #known to be anything else
+            try:
+                behind = subprocess.call(["git", "-C", repo, "merge-base", "--is-ancestor",
+                                          remote_sha, local_sha],
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                behind = 2
+            if behind != 0:
+                return True, _no("%s does not fast-forward %s on the remote (or that cannot be "
+                                 "told), so it discards published history - a force push, and "
+                                 "the approval does not say so." % (local_ref, remote_ref))
+    if not sent:
+        return False, None
+    return _judge_sent(fields, sent)
+
+
+def main_pre_push(argv, stdin):
+    """The `.githooks/pre-push` entry: exit 1 with the refusal when the push is not approved."""
+    repo = os.getcwd()
+    deny, reason = pre_push(argv[0] if argv else "", stdin.read().splitlines(), repo)
+    if deny:
+        sys.stderr.write(reason)
+        return 1
+    return 0
 
 
 def main():
@@ -298,4 +441,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--pre-push"]:
+        sys.exit(main_pre_push(sys.argv[2:], sys.stdin))
     main()

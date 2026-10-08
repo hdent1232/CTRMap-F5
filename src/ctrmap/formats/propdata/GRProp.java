@@ -9,8 +9,6 @@ import ctrmap.gamedef.ArchiveType;
 import ctrmap.humaninterface.MapObject;
 import java.io.File;
 import java.io.IOException;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 public class GRProp implements MapObject{
 
@@ -29,22 +27,25 @@ public class GRProp implements MapObject{
 	public int nameWidth; //NONSTANDARD
 	public int nameHeight; //NONSTANDARD - w and h are present as placeholders for the GUI representations of the props, set with their paintComponent
 
-	public GRProp(LittleEndianDataInputStream dis) {
-		try {
-			uid = dis.readInt();
-			scaleX = dis.readFloat();
-			scaleY = dis.readFloat();
-			scaleZ = dis.readFloat();
-			rotateX = dis.readFloat();
-			rotateY = dis.readFloat();
-			rotateZ = dis.readFloat();
-			x = dis.readFloat();
-			y = dis.readFloat();
-			z = dis.readFloat();
-			unknown = dis.readInt();
-		} catch (IOException ex) {
-			Logger.getLogger(GRProp.class.getName()).log(Level.SEVERE, null, ex);
-		}
+	/**
+	 * Reads one prop.
+	 *
+	 * @throws IOException when the bytes run out - NOT a prop of zeros. Caught and logged here,
+	 *         a section that said it held five props and held none read as five props at the
+	 *         map's origin, which the next save then wrote back as real ones.
+	 */
+	public GRProp(LittleEndianDataInputStream dis) throws IOException {
+		uid = dis.readInt();
+		scaleX = dis.readFloat();
+		scaleY = dis.readFloat();
+		scaleZ = dis.readFloat();
+		rotateX = dis.readFloat();
+		rotateY = dis.readFloat();
+		rotateZ = dis.readFloat();
+		x = dis.readFloat();
+		y = dis.readFloat();
+		z = dis.readFloat();
+		unknown = dis.readInt();
 	}
 
 	public GRProp() {
@@ -59,6 +60,40 @@ public class GRProp implements MapObject{
 		y = 0f;
 		z = 0f;
 		unknown = 0;
+	}
+
+	/**
+	 * This record whole - the four-byte tail no widget shows included - so an edit changes only what
+	 * it edits. The prop editor built a fresh record on every Save, and the tail went to the file as
+	 * zero whatever it held (F161).
+	 */
+	public GRProp copy() {
+		GRProp c = new GRProp();
+		c.uid = uid;
+		c.scaleX = scaleX;
+		c.scaleY = scaleY;
+		c.scaleZ = scaleZ;
+		c.rotateX = rotateX;
+		c.rotateY = rotateY;
+		c.rotateZ = rotateZ;
+		c.x = x;
+		c.y = y;
+		c.z = z;
+		c.unknown = unknown;
+		c.name = name;
+		c.nameWidth = nameWidth;
+		c.nameHeight = nameHeight;
+		return c;
+	}
+
+	/**
+	 * Whether {@code o} is the same 44-byte record, the tail included: the editor's test left it
+	 * out, so a record that differed only there was "unchanged" and never written (F161).
+	 */
+	public boolean sameRecord(GRProp o) {
+		return uid == o.uid && x == o.x && y == o.y && z == o.z && rotateX == o.rotateX && rotateY == o.rotateY
+				&& rotateZ == o.rotateZ && scaleX == o.scaleX && scaleY == o.scaleY && scaleZ == o.scaleZ
+				&& unknown == o.unknown;
 	}
 
 	/**
@@ -86,25 +121,27 @@ public class GRProp implements MapObject{
 			name = "Model not found";
 			return;
 		}
-		name = H3DModelNameGet.H3DModelNameGet(new BM(f, files).getFile(0));
+		try {
+			name = H3DModelNameGet.H3DModelNameGet(new BM(f, files).getFile(0));
+		} catch (IllegalStateException unreadable) {
+			//the prop is still placed and saved by its uid; only its caption could not be read (F069)
+			name = "Model " + model + " (its name cannot be read)";
+		}
 	}
 
-	public void write(LittleEndianDataOutputStream dos) {
-		try {
-			dos.writeInt(uid);
-			dos.writeFloat(scaleX);
-			dos.writeFloat(scaleY);
-			dos.writeFloat(scaleZ);
-			dos.writeFloat(rotateX);
-			dos.writeFloat(rotateY);
-			dos.writeFloat(rotateZ);
-			dos.writeFloat(x);
-			dos.writeFloat(y);
-			dos.writeFloat(z);
-			dos.writeInt(unknown);
-		} catch (IOException ex) {
-			Logger.getLogger(GRProp.class.getName()).log(Level.SEVERE, null, ex);
-		}
+	/** Writes one prop; a failure is the caller's to report, never a half-written prop called saved. */
+	public void write(LittleEndianDataOutputStream dos) throws IOException {
+		dos.writeInt(uid);
+		dos.writeFloat(scaleX);
+		dos.writeFloat(scaleY);
+		dos.writeFloat(scaleZ);
+		dos.writeFloat(rotateX);
+		dos.writeFloat(rotateY);
+		dos.writeFloat(rotateZ);
+		dos.writeFloat(x);
+		dos.writeFloat(y);
+		dos.writeFloat(z);
+		dos.writeInt(unknown);
 	}
 
 	@Override

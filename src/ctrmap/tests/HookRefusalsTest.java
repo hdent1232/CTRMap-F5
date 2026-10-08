@@ -52,9 +52,8 @@ public class HookRefusalsTest {
 			System.exit(1);
 		}
 		if (!CommitGuardTest.onPath("python")) {
-			System.out.println("  skip: python is not on PATH - these guards are python hooks, "
+			Skip.suite("python is not on PATH - these guards are python hooks, "
 					+ "so this suite cannot run them here");
-			System.out.println("ALL PASS");
 			return;
 		}
 
@@ -67,6 +66,10 @@ public class HookRefusalsTest {
 		aBackslashInAnInlineScriptIsRefused(hooks);
 		agentsMayNotEditAtTheSameTime(hooks);
 		aForbiddenCommandIsRefused(hooks);
+		aPayloadOutsideTheCodePageIsStillJudged(hooks);
+		aSweepRunsWhereNothingCanKillIt(hooks);
+		theFileBeingMutatedIsNotRead(hooks);
+		everyShellReadingGuardIsHeldInEverySpelling(hooks);
 
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
 		if (fails != 0) {
@@ -87,6 +90,25 @@ public class HookRefusalsTest {
 				"a PowerShell write to the workspace is refused");
 		check(refuses(guard, writes("Quux", "RomFS/a/0/1/3/0001")),
 				"and so is a write by a file tool nobody has heard of - it is read by shape");
+		//F173, AS MEASURED: each of these deleted from the dump while the guard allowed it
+		check(refuses(guard, bash("env rm RomFS/a/0/1/3")), "a delete behind env is refused");
+		check(refuses(guard, bash("sudo rm RomFS/a/0/1/3")), "a delete behind sudo is refused");
+		check(refuses(guard, bash("bash -c " + QUOTE + "rm RomFS/a/0/1/3" + QUOTE)),
+				"a delete handed to bash -c is refused");
+		check(refuses(guard, bash("find RomFS -name '*.bak' -delete")),
+				"find with -delete under the dump is refused - a writer by shape, not by name");
+		check(refuses(guard, bash("rsync -a --delete empty/ RomFS/")),
+				"rsync INTO the dump is refused - it writes its last argument");
+		check(refuses(guard, bash("tar -xf backup.tar -C Workspace")),
+				"tar extracting into the workspace is refused");
+		check(refuses(guard, bash("cd RomFS && rm a/0/1/3")),
+				"a relative delete after a cd into the dump is refused - judged where it lands");
+		check(refuses(guard, bash("dd if=/tmp/x of=RomFS/a/0/1/3")),
+				"dd writing into the dump is refused - its target is the of= word");
+		check(refuses(guard, bash("rm /mnt/backup/project/RomFS/a")),
+				"an absolute path into the dump is refused");
+		check(refuses(guard, bash("cd " + QUOTE + "$X" + QUOTE + " && rm a")),
+				"a relative write after a move to a folder the text does not name is UNKNOWN, and refused");
 	}
 
 	/**
@@ -108,6 +130,19 @@ public class HookRefusalsTest {
 				"and a plain read of a dump file is allowed");
 		check(!refuses(guard, writes("Write", "src/ctrmap/WorkspaceSession.java")),
 				"and a source file whose NAME holds a protected word is not a protected path");
+		check(!refuses(guard, bash("find RomFS -name '*.bak'")),
+				"find with no action only READS the dump, and is allowed");
+		check(!refuses(guard, bash("rsync -a RomFS/ build/copy/")),
+				"and rsync OUT of the dump is allowed - its last argument is the only one written");
+		//F173's other direction, observed live: the guard refused edits that never touched the game
+		check(!refuses(guard, bash("cp RomFS/a/0/1/3 build/copy")),
+				"cp OUT of the dump is allowed - a copier writes only where it copies to");
+		check(!refuses(guard, bash("sed -i 's/RomFS/x/' /tmp/scratch.txt")),
+				"a sed -i whose SCRIPT names the dump is not a write to it");
+		check(!refuses(guard, bash("python3 fnd.py add " + QUOTE + "Options > Workspace settings"
+				+ QUOTE)), "a > inside a quoted argument is not a redirect");
+		check(!refuses(guard, bash("dd if=RomFS/a/0/1/3 of=/tmp/x")),
+				"and dd reading the dump is allowed");
 	}
 
 	/**
@@ -122,7 +157,7 @@ public class HookRefusalsTest {
 		check(guard.isFile(), "the guard is installed at " + guard.getPath());
 		File repo = Scratch.dir("pushgate");
 		if (!git(repo, "init", "-q")) {
-			System.out.println("  skip: git is not on PATH");
+			Skip.section("git is not on PATH");
 			return;
 		}
 		// The guard resolves the ref a push names, so the branch must BE master wherever the
@@ -137,10 +172,70 @@ public class HookRefusalsTest {
 		String said = ask(guard, "verdict", "git push origin master", repo.getAbsolutePath());
 		check(said.contains("DENY"), "a push with no approval at all is refused");
 
+		//F175: asked as the harness asks it, and in every spelling that runs the same push
+		String here = repo.getAbsolutePath();
+		check(refusesIn(guard, bash("git push origin master"), here, null),
+				"a push in a tool call is refused with no approval");
+		git(repo, "config", "alias.pp", "push");
+		String[][] spellings = {
+			{"echo pushing" + NL + "git push -u origin HEAD", "on a second line"},
+			{"sh -c 'git push origin master'", "handed to sh -c"},
+			{"powershell -Command " + QUOTE + "git push origin master" + QUOTE, "handed to PowerShell"},
+			{"xargs git push origin master", "run by xargs"},
+			{"timeout 60 git push origin master", "behind a runner with an operand"},
+			{"git -c alias.p=push p origin master", "through an alias on the line"},
+			{"git pp origin master", "through an alias in the repository's config"},
+			{"git -c 'alias.s=!git push' s origin master", "through a shell alias"},
+		};
+		for (String[] spelling : spellings) {
+			check(ask(guard, "decide", payload("Bash", "command", spelling[0], ""), here)
+					.contains("DENY"), "a push " + spelling[1] + " is refused too");
+		}
+		check(ask(guard, "decide", payload("Bash", "command", "git push --help", ""), here)
+				.contains("ALLOW"), "while a push's help page is not a push");
+
 		String sha = capture(repo, "rev-parse", "HEAD").trim();
 		approve(repo, sha);
 		said = ask(guard, "verdict", "git push origin master", repo.getAbsolutePath());
 		check(said.contains("ALLOW"), "an approval naming THIS commit allows the push");
+
+		//EACH PUSH IN THE FOLDER IT RUNS IN: split one command at a time, `cd <other> && git push`
+		//lost its cd and read THIS repository's approval for another one
+		File other = new File(repo.getParentFile(), repo.getName() + "-other");
+		check(other.mkdirs() && git(other, "init", "-q"), "built a second repository with no approval");
+		git(other, "symbolic-ref", "HEAD", "refs/heads/master");
+		git(other, "config", "user.email", "suite@example.invalid");
+		git(other, "config", "user.name", "suite");
+		git(other, "commit", "-q", "--allow-empty", "-m", "other");
+		check(ask(guard, "decide", payload("Bash", "command", "git push origin master", ""), here)
+				.contains("ALLOW"), "the approved push is allowed asked as a tool call");
+		check(ask(guard, "decide", payload("Bash", "command", "cd " + other.getAbsolutePath()
+				+ " && git push origin master", ""), here).contains("DENY"),
+				"a push after a cd into a repository with no approval is judged THERE and refused");
+		check(ask(guard, "decide", payload("Bash", "command", "cd ../" + other.getName() + NL
+				+ "git push origin master", ""), here).contains("DENY"),
+				"and so is one a line after a relative cd");
+		check(ask(guard, "decide", payload("Bash", "command", "cd -" + NL
+				+ "git push origin master", ""), here).contains("DENY"),
+				"a push after a move to a folder the text does not name is UNKNOWN, and refused");
+		check(ask(guard, "decide", payload("Bash", "command", "cd " + here
+				+ " && git push origin master", ""), other.getAbsolutePath()).contains("ALLOW"),
+				"while a cd INTO the approved repository is judged there and allowed");
+
+		//THE SECOND DOOR: what git hands a pre-push hook, already resolved
+		String zero = "0000000000000000000000000000000000000000";
+		check(ask(guard, "prepush", "origin" + NL + "refs/heads/master " + sha
+				+ " refs/heads/master " + zero, here).contains("ALLOW"),
+				"git's pre-push door lets the approved commit through");
+		check(ask(guard, "prepush", "origin" + NL + "refs/heads/master "
+				+ "1111111111111111111111111111111111111111 refs/heads/master " + zero, here)
+				.contains("DENY"), "and refuses a commit the approval does not name");
+		check(ask(guard, "prepush", "origin" + NL + "(delete) " + zero + " refs/heads/master "
+				+ sha, here).contains("DENY"), "and a deletion the approval does not say");
+		check(ask(guard, "prepush", "upstream" + NL + "refs/heads/master " + sha
+				+ " refs/heads/master " + zero, here).contains("DENY"),
+				"and a remote the approval does not name");
+		pushedThroughGitsOwnDoor(hooks);
 
 		Files.write(new File(repo, "a.txt").toPath(), "two\n".getBytes(StandardCharsets.UTF_8));
 		git(repo, "add", "a.txt");
@@ -155,6 +250,95 @@ public class HookRefusalsTest {
 
 		said = ask(guard, "verdict", "git status", repo.getAbsolutePath());
 		check(said.contains("ALLOW"), "a command that is not a push is left alone");
+	}
+
+	/**
+	 * F175's second door, end to end: a real {@code git push} to a scratch remote, through this
+	 * project's own {@code .githooks/pre-push}. A hook git does not run - not executable, or not
+	 * there - lets the unapproved push through, and this fails.
+	 */
+	static void pushedThroughGitsOwnDoor(File hooks) throws Exception {
+		File root = hooks.getParentFile().getParentFile();
+		File door = new File(root, ".githooks/pre-push");
+		check(door.isFile(), "git's own door is installed at " + door.getPath());
+		File remote = Scratch.dir("pushgate-remote");
+		File repo = Scratch.dir("pushgate-door");
+		check(git(remote, "init", "-q", "--bare") && git(repo, "init", "-q"),
+				"built a repository and a remote for it");
+		git(repo, "symbolic-ref", "HEAD", "refs/heads/master");
+		git(repo, "config", "user.email", "suite@example.invalid");
+		git(repo, "config", "user.name", "suite");
+		git(repo, "remote", "add", "origin", remote.getAbsolutePath());
+		File installed = new File(repo, ".claude/hooks");
+		check(installed.mkdirs(), "gave it the push guard the door runs");
+		for (String name : new String[]{"guard_push.py", "shellin.py"}) {
+			Files.copy(new File(hooks, name).toPath(), new File(installed, name).toPath());
+		}
+		//THE DOOR FOR THE PUSH ONLY: wired for the commit too, this project's commit hooks refused
+		//the scratch commit, there was nothing to push, and "the push is refused" passed for that
+		String doors = "core.hooksPath=" + door.getParentFile().getAbsolutePath();
+		check(git(repo, "commit", "-q", "--allow-empty", "-m", "one"), "made a commit to push");
+		check(!git(repo, "-c", doors, "push", "-q", "origin", "master"),
+				"git itself refuses a push with no approval");
+		approve(repo, capture(repo, "rev-parse", "HEAD").trim());
+		check(git(repo, "-c", doors, "push", "-q", "origin", "master"),
+				"and lets the approved commit through");
+		check(git(repo, "commit", "-q", "--allow-empty", "-m", "two"), "made one more commit");
+		check(!git(repo, "-c", doors, "push", "-q", "origin", "master"),
+				"and one more commit needs its own approval at git's door too");
+		check(git(repo, "push", "-q", "origin", "master"),
+				"while the same push with no door goes through - so the door, and nothing else, refused it");
+	}
+
+	/**
+	 * A mutation sweep is never run where a pipe or the foreground timeout can kill it mid-mutant:
+	 * the {@code finally} that restores the module does not run, and a file carrying an injected
+	 * fault is left on disk looking like an ordinary edit. Measured in F172: on the second line,
+	 * after a {@code cd}, both copies of this guard let it through.
+	 */
+	static void aSweepRunsWhereNothingCanKillIt(File hooks) throws Exception {
+		System.out.println("--- a mutation sweep is never piped or run in the foreground");
+		File guard = new File(hooks, "guard_background_pipe.py");
+		check(guard.isFile(), "the guard is installed at " + guard.getPath());
+		check(refuses(guard, bash("python tools/mutate2.py x | tail -5")),
+				"a sweep piped into a filter is refused");
+		check(refuses(guard, bash("python tools/mutate2.py x")),
+				"and one in the foreground");
+		check(!refuses(guard, bash("python tools/mutate2.py --list")),
+				"while --list, which writes nothing, is not");
+		check(!refuses(guard, bash("python x.py | tail -5")),
+				"and neither is an ordinary pipe in the foreground");
+		//F172's other half: the bundle's twin of this guard, run on every call too, read another
+		//project's list - `destructive_scripts.txt` beside it is how a project hands it this one's
+		File twin = new File(hooks.getParentFile().getParentFile(), ".claude/bundle-hooks/guard_background_pipe.py");
+		//IN THE FOREGROUND, so only the list can refuse it: backgrounded, a pipe into tail is refused
+		//for being a backgrounded pipe whatever runs - and this check passed with the list emptied
+		String said = runWhole(twin, payload("Bash", "command",
+				"cd src" + NL + "python tools/mutate2.py x | tail -5", ""));
+		check(said.contains("\"deny\"") && said.contains("mutat"),
+				"the bundle's pipe guard refuses this project's sweep on a second line too - said " + oneLine(said));
+	}
+
+	/**
+	 * A read of the file a mutation run holds is refused: it shows the injected fault, not the
+	 * source. F171: the lock every writer here leaves is {@code path}, then {@code pid=} and
+	 * {@code what=} lines, and the guard took the whole of it as the path - so a read of the
+	 * mutated file itself was allowed under every lock this project writes.
+	 */
+	static void theFileBeingMutatedIsNotRead(File hooks) throws Exception {
+		System.out.println("--- the file a mutation run holds is not read");
+		File guard = new File(hooks, "guard_mutation_read.py");
+		check(guard.isFile(), "the guard is installed at " + guard.getPath());
+		File root = Scratch.dir("mutationread");
+		Files.write(new File(root, ".mutation-in-flight").toPath(),
+				("src/ctrmap/A.java" + NL + "pid=" + pid() + NL + "what=a mutation sweep" + NL)
+						.getBytes(StandardCharsets.UTF_8));
+		java.util.Map<String, String> env = new java.util.HashMap<>();
+		env.put("CLAUDE_PROJECT_DIR", root.getAbsolutePath());
+		check(refusesIn(guard, bash("cat src/ctrmap/A.java"), root.getAbsolutePath(), env),
+				"a read of the mutated file is refused under the lock mutate2.py writes");
+		check(!refusesIn(guard, bash("cat src/ctrmap/B.java"), root.getAbsolutePath(), env),
+				"while a read of another file is not");
 	}
 
 	static void approve(File repo, String sha) throws Exception {
@@ -190,6 +374,11 @@ public class HookRefusalsTest {
 				"a live run refuses an edit to source");
 		check(ask(guard, "decide", read, root.getAbsolutePath()).contains("ALLOW"),
 				"but never a read - the run itself is reading");
+		//F176: a shell write to source, in every spelling - `cd .` on the line before it passed
+		check(refusesIn(guard, bash("rm src/ctrmap/A.java"), root.getAbsolutePath(), null),
+				"a live run refuses a shell command that deletes source");
+		check(!refusesIn(guard, bash("cat src/ctrmap/A.java"), root.getAbsolutePath(), null),
+				"and not one that reads it");
 
 		check(lock.delete(), "released the battery lock");
 		File mutating = new File(repo, ".mutation-in-flight");
@@ -321,9 +510,17 @@ public class HookRefusalsTest {
 		//AN UNREADABLE LIST IS NOT AN EMPTY ONE. A copy of the guard with no list beside it
 		//must refuse everything rather than permit everything - the same shape as the fan-out
 		//cap reading an unmeasurable width as zero and letting 791 agents through.
-		File nolist = Scratch.dir("nolist");
+		File nolistRoot = Scratch.dir("nolist");
+		File nolist = new File(nolistRoot, ".claude/hooks");
+		File reader = new File(nolistRoot, ".claude/bundle-hooks");
+		check(nolist.mkdirs() && reader.mkdirs(), "built a project with no forbidden list");
 		File alone = new File(nolist, "guard_forbidden_command.py");
 		Files.copy(guard.toPath(), alone.toPath());
+		//AND THE SHARED SHELL READER, where shellin looks for it. Without it every call is refused
+		//as UNREADABLE - list or no list - and this check passed for that reason while a plant
+		//made a missing list permit everything (measured: the plant survived)
+		Files.copy(new File(hooks.getParentFile().getParentFile(), ".claude/bundle-hooks/bundle_shell.py")
+				.toPath(), new File(reader, "bundle_shell.py").toPath());
 		//...with the SIBLINGS every guard imports beside it. Without them the copy could not
 		//load at all, and "the guard never answered" is a different finding from "the guard
 		//permitted everything" - a fixture that cannot ask the question cannot answer it.
@@ -335,8 +532,10 @@ public class HookRefusalsTest {
 			Files.copy(new File(hooks, sibling).toPath(),
 					new File(nolist, sibling).toPath());
 		}
-		check(refuses(alone, bash("echo hello")),
-				"a guard whose list has gone missing refuses rather than permits");
+		String said = ask(alone, "decide", bash("echo hello"), nolistRoot.getAbsolutePath());
+		check(said.contains("DENY") && said.contains("list of commands that must never run here"),
+				"a guard whose list has gone missing refuses rather than permits - and says it is the list: "
+				+ oneLine(said));
 
 		//...and the generated block nobody may hand-edit
 		File gen = new File(hooks, "guard_generated_code.py");
@@ -376,8 +575,13 @@ public class HookRefusalsTest {
 	}
 
 	static String bash(String command) {
-		return payload("Bash", "command", command, "");
+		String built = payload("Bash", "command", command, "");
+		COMMANDS.put(built, command);
+		return built;
 	}
+
+	/** The shell command each payload {@link #bash} built carries, so a refusal can be re-asked. */
+	static final java.util.Map<String, String> COMMANDS = new java.util.HashMap<>();
 
 	/** A double quote, for building a command without escaping it twice. */
 	static final String QUOTE = String.valueOf((char) 34);
@@ -427,6 +631,43 @@ public class HookRefusalsTest {
 				"and neither is a single agent, at any isolation");
 	}
 
+	/**
+	 * F177: guard_all read its payload with json.load(sys.stdin) - the locale's code page, cp1252 on
+	 * Windows - and exited 0, which is ALLOW, on any failure to read it. One character the code page
+	 * cannot decode, in a path, a commit message or a comment, and every project guard was skipped.
+	 * The whole hook runs as the harness runs it, payload on stdin; PYTHONIOENCODING pins the code
+	 * page so this means the same on every system. U+3041 is E3 81 81 in UTF-8, and 0x81 is one of
+	 * the five bytes cp1252 leaves undefined - most non-Latin text decodes to garbage WITHOUT
+	 * raising, which would prove nothing.
+	 */
+	static void aPayloadOutsideTheCodePageIsStillJudged(File hooks) throws Exception {
+		System.out.println("--- a payload the code page cannot decode is still judged");
+		File all = new File(hooks, "guard_all.py");
+		String said = runWhole(all, "{\"tool_name\": \"Bash\", \"tool_input\": {\"command\":"
+				+ " \"git stash  # ぁ\"}, \"cwd\": " + quoted(hooks.getParentFile().getParentFile().getAbsolutePath()) + "}");
+		check(said.contains("\"deny\"") && said.contains("stash"),
+				"a forbidden command carrying one character cp1252 cannot decode is still refused - said "
+				+ oneLine(said));
+		said = runWhole(all, "this is not a payload");
+		check(said.contains("\"deny\""),
+				"and a payload the guard stack cannot read is refused, never waved through - said " + oneLine(said));
+	}
+
+	/** Runs a hook as the harness does: the payload as UTF-8 on stdin, its answer on stdout. */
+	static String runWhole(File guard, String payload) throws Exception {
+		ProcessBuilder pb = new ProcessBuilder("python", guard.getAbsolutePath());
+		pb.environment().put("PYTHONIOENCODING", "cp1252");
+		pb.environment().put("CTRMAP_GUARD_BROKEN", "1");
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		try (java.io.OutputStream in = p.getOutputStream()) {
+			in.write(payload.getBytes(StandardCharsets.UTF_8));
+		}
+		String said = CommitGuardTest.drain(p);
+		p.waitFor();
+		return said;
+	}
+
 	/** Asks the guard whether a script has the parallel-edit shape. SHAPE or NONE. */
 	static String shape(File guard, String script, int width) throws Exception {
 		File dir = Scratch.dir("fanoutshape");
@@ -464,14 +705,89 @@ public class HookRefusalsTest {
 			if (c == '"' || c == '\\') {
 				sb.append('\\');
 			}
+			//A NEWLINE IS ESCAPED TOO: JSON forbids a raw one inside a string, and a payload
+			//json.loads cannot read is a guard that never answered
+			if (c == '\n') {
+				sb.append("\\n");
+				continue;
+			}
 			sb.append(c);
 		}
 		return sb.append('"').toString();
 	}
 
 	static boolean refuses(File guard, String payload) throws Exception {
-		return ask(guard, "decide", payload, guard.getParentFile().getAbsolutePath())
-				.contains("DENY");
+		return refusesIn(guard, payload, guard.getParentFile().getAbsolutePath(), null);
+	}
+
+	/** {@link #refuses}, asked in a working folder and with environment entries of its own. */
+	static boolean refusesIn(File guard, String payload, String cwd,
+			java.util.Map<String, String> env) throws Exception {
+		boolean refused = ask(guard, "decide", payload, cwd, env).contains("DENY");
+		String command = COMMANDS.get(payload);
+		if (refused && command != null) {
+			heldInEverySpelling(guard, command, cwd, env);
+		}
+		return refused;
+	}
+
+	/** Every guard a shell refusal of which held in every spelling this suite asks. */
+	static final java.util.Set<String> HELD = new java.util.TreeSet<>();
+
+	/**
+	 * F176, THE CLASS: a command a guard refuses as one line is refused behind a preceding line and
+	 * handed to a shell too. Five of the project's guards passed their own refused case once a
+	 * {@code cd .} line came first, and the push and game-data guards passed it handed to
+	 * {@code bash -c} - each split shell text for itself. Asked here of EVERY refusal this suite
+	 * checks, so a guard added tomorrow is held to it by its first refused case, not by a list.
+	 */
+	static void heldInEverySpelling(File guard, String command, String cwd,
+			java.util.Map<String, String> env) throws Exception {
+		String shellQuoted = "'" + command.replace("'", "'\\''") + "'";
+		java.util.List<String[]> spellings = new java.util.ArrayList<>();
+		spellings.add(new String[]{"cd ." + NL + command, "behind a preceding line"});
+		spellings.add(new String[]{"bash -c " + shellQuoted, "handed to bash -c"});
+		//a runner runs ONE command: `env cd x && rm a` does not move the rm, so only a single
+		//command is the same command behind it
+		if (!command.matches("(?s).*(&&|\\|\\||;|\\||\\n).*")) {
+			spellings.add(new String[]{"env " + command, "behind a runner"});
+		}
+		boolean all = true;
+		for (String[] spelling : spellings) {
+			String again = payload("Bash", "command", spelling[0], "");
+			boolean held = ask(guard, "decide", again, cwd, env).contains("DENY");
+			check(held, guard.getName() + " refuses " + oneLine(command) + " " + spelling[1] + " too");
+			all &= held;
+		}
+		if (all) {
+			HELD.add(guard.getName());
+		}
+	}
+
+	/**
+	 * F176, THE CLASS BY THE TREE: every guard that reads shell text must show this suite one refusal
+	 * held in every spelling above. The guards are found by reading their source for the shared
+	 * reader, not listed - three guards whose subject was a list kept here passed their own one-line
+	 * case and nothing else, and a list would have kept doing so for a guard added tomorrow.
+	 */
+	static void everyShellReadingGuardIsHeldInEverySpelling(File hooks) throws Exception {
+		System.out.println("--- F176: every guard that reads shell text, held in every spelling");
+		java.util.List<String> readers = new java.util.ArrayList<>();
+		File[] found = hooks.listFiles((dir, name) -> name.startsWith("guard_") && name.endsWith(".py"));
+		for (File guard : found == null ? new File[0] : found) {
+			String body = new String(Files.readAllBytes(guard.toPath()), StandardCharsets.UTF_8);
+			if (body.matches("(?s).*shellin\\.(commands|located|scripts|text)\\(.*")) {
+				readers.add(guard.getName());
+			}
+		}
+		java.util.Collections.sort(readers);
+		//a scan that finds nothing reads as a clean pass: the guard this whole class began with
+		//must be among what it found, or the scan itself is broken
+		check(readers.contains("guard_game_data.py"),
+				"the scan finds the shell readers (" + readers.size() + ": " + readers + ")");
+		for (String name : readers) {
+			check(HELD.contains(name), name + " shows a refusal held in every spelling");
+		}
 	}
 
 	/**
@@ -482,6 +798,11 @@ public class HookRefusalsTest {
 	 * not a Java re-implementation of it.
 	 */
 	static String ask(File guard, String what, String arg, String cwd) throws Exception {
+		return ask(guard, what, arg, cwd, null);
+	}
+
+	static String ask(File guard, String what, String arg, String cwd,
+			java.util.Map<String, String> env) throws Exception {
 		//THE PAYLOAD GOES IN A FILE, NOT ON THE COMMAND LINE. Windows re-quotes an argv entry
 		//full of double quotes on its way through CreateProcess, so every JSON payload arrived
 		//as something json.loads could not read - and a guard asked a malformed question
@@ -494,6 +815,9 @@ public class HookRefusalsTest {
 				+ "cwd = io.open(sys.argv[4], encoding='utf-8').read()\n"
 				+ "if sys.argv[2] == 'verdict':\n"
 				+ "    deny, why = m.verdict(arg, cwd)\n"
+				+ "elif sys.argv[2] == 'prepush':\n"
+				+ "    lines = arg.split(chr(10))\n"
+				+ "    deny, why = m.pre_push(lines[0], lines[1:], cwd)\n"
 				+ "else:\n"
 				+ "    p = json.loads(arg)\n"
 				+ "    p['cwd'] = cwd\n"
@@ -510,6 +834,9 @@ public class HookRefusalsTest {
 		ProcessBuilder pb = new ProcessBuilder("python", file.getAbsolutePath(),
 				guard.getAbsolutePath(), what, payload.getAbsolutePath(),
 				where.getAbsolutePath());
+		if (env != null) {
+			pb.environment().putAll(env);
+		}
 		pb.redirectErrorStream(true);
 		Process p = pb.start();
 		String said = CommitGuardTest.drain(p);
@@ -522,8 +849,6 @@ public class HookRefusalsTest {
 		}
 		return said;
 	}
-
-
 
 	static boolean git(File repo, String... args) throws Exception {
 		java.util.List<String> line = new java.util.ArrayList<>();

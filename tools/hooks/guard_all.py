@@ -299,12 +299,45 @@ def decide(payload):
     return False, None
 
 
+def read_payload(stream=None):
+    """The call as the harness wrote it: UTF-8 bytes, decoded as UTF-8.
+
+    F177. This was `json.load(sys.stdin)`, which decodes a Windows pipe in the locale's code page,
+    cp1252, and a payload holding one character that code page leaves undefined - most of the
+    hiragana, among others - raised, and the raise was answered with exit 0: ALLOW, every guard
+    skipped. A text stream already holding the payload is read as it is.
+    """
+    stream = sys.stdin if stream is None else stream
+    buffer = getattr(stream, "buffer", None)
+    text = stream.read() if buffer is None else buffer.read().decode("utf-8", errors="replace")
+    return json.loads(text)
+
+
 def main():
     try:
-        payload = json.load(sys.stdin)
-    except Exception:
-        sys.exit(0)                      # never break a turn on a parse failure
-    deny, reason = decide(payload)
+        payload = read_payload()
+        #`{}` PARSES AND NAMES NOTHING (F213): every guard asked about it found nothing to refuse,
+        #and the call went through as judged. What a payload must carry to be judged is the
+        #bundle's one definition, through the reader this stack already shares (shellin).
+        problem = shellin.reader().payload_problem(json.dumps(payload))
+        if problem:
+            raise ValueError(problem)
+    except Exception as exc:  # noqa: BLE001 - a payload nobody can read is UNKNOWN, never ALLOW
+        #A CALL THIS STACK CANNOT READ IS NOT A CALL IT ALLOWED. Exiting 0 here waved through
+        #anything the parse failed on - and with the payload decoded in the code page, a
+        #parse failure was one character away (F177). The owner's one way past for a harness
+        #that changed what it sends is a variable, and a call let through by it SAYS so (F213).
+        if hook_env.allowed("ALLOW_UNREADABLE"):
+            json.dump({"systemMessage": "guard_all.py: the call could not be read (%s: %s) and %s is"
+                       " set, so NO project guard judged it" % (type(exc).__name__, str(exc)[:120],
+                                                                 hook_env.name("ALLOW_UNREADABLE"))},
+                      sys.stdout)
+            sys.exit(0)
+        deny, reason = True, ("the project's guard stack could not read the call it was handed (%s: %s),"
+                              " so whether it is allowed is UNKNOWN - and UNKNOWN is not permission"
+                              % (type(exc).__name__, str(exc)[:120]))
+    else:
+        deny, reason = decide(payload)
     if deny:
         json.dump({"hookSpecificOutput": {
             "hookEventName": "PreToolUse",

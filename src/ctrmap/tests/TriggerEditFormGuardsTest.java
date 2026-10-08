@@ -94,9 +94,9 @@ public class TriggerEditFormGuardsTest {
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "no-dump-given");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " - the trigger form checks need zone " + ZONE);
+			Skip.section("no dump at " + dump + " - the trigger form checks need zone " + ZONE);
 			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
-			return;
+			System.exit(fails == 0 ? 0 : 1);
 		}
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
 		//the script dropdown only reads the zone inside a workspace; the form is
@@ -307,7 +307,7 @@ public class TriggerEditFormGuardsTest {
 			}
 		}
 		if (other == -1) {
-			System.out.println("  skip: zone " + ZONE + " defines only one script id, so choosing another cannot be driven");
+			check(false, "zone " + ZONE + " defines only one script id, so choosing another cannot be driven");
 			return;
 		}
 		drop.setSelectedIndex(otherIndex);
@@ -323,7 +323,7 @@ public class TriggerEditFormGuardsTest {
 	/** Type 2 is a second, independent list, with its own count byte. */
 	static void stepOnTriggersAreASecondList(GARC zo) throws Exception {
 		if (!windowed) {
-			System.out.println("  skip: the Type dropdown repaints the main window - no display");
+			Skip.section("the Type dropdown repaints the main window - no display");
 			return;
 		}
 		Zone zone = openZone(zo, ZONE);
@@ -390,7 +390,7 @@ public class TriggerEditFormGuardsTest {
 	/** Remove entry deletes the selected slot, not the first field-identical one. */
 	static void removeEntryTakesTheSelectedSlot(GARC zo) throws Exception {
 		if (!windowed) {
-			System.out.println("  skip: Remove entry repaints the main window - no display");
+			Skip.section("Remove entry repaints the main window - no display");
 			return;
 		}
 		Zone zone = openZone(zo, ZONE);
@@ -420,6 +420,7 @@ public class TriggerEditFormGuardsTest {
 		ZoneLoadingPanel pnl = new ZoneLoadingPanel(LOADED, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
 		Zone[] table = new Zone[index + 1];
 		table[index] = new Zone(new ZO(f, Workspace.session()), Workspace.game());
+		java.util.Arrays.fill(table, 0, index, table[index]);   //a table has no holes (F208)
 		LOADED.table(table);
 		LOADED.open(index, table[index]);
 		CtrmapMainframe.mZonePnl = pnl;

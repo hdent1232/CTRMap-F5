@@ -256,8 +256,13 @@ It now paints the zone's own cell.
 map in the game** (plus the 48 curated, door-wired entries pinned first —
 3,583 in all):
 houses, domes, fountains, lamps, stair blocks, bridges, trees, rocks —
-each one machine-verified to cut and stamp cleanly. Narrow by type and by
+each one offered machine-verified to cut and stamp cleanly. Twelve harvested
+rows (11 in Rustboro City, 1 on Route 119) have a box that ends a tile before
+it starts; the palette refuses them and says so once, until the catalog is
+regenerated with the fixed harvester (F129). Narrow by type and by
 place ("Sootopolis City", "Rustboro City"...), or search.
+- [ ] After regenerating `oras_buildings_auto.tsv` from the dump, the palette
+  opens with no "skipped rows" warning.
 - [ ] Open the palette in the Map Builder → filter to a town → previews
   render for harvested entries.
 - [ ] Place a harvested structure (e.g. a Sootopolis dome house) on a map,
@@ -325,7 +330,7 @@ byte-round-trips, renders) — these checks are about how the REAL game engine
 reacts, which can't be verified without the emulator.
 
 ## Tile painter — core loop
-- [ ] **Paint & deploy**: open a zone → Tools → Tile painter → paint some
+- [ ] **Paint & deploy**: open a zone → Map → Map Builder (this zone) → paint some
   grass/path/rock → Apply to zone → Deploy. Walk around. Expect: you walk on
   painted ground, rock blocks you, the map looks like the 3D preview.
 - [ ] **Tall grass**: walk through painted tall grass. Expect: rustle animation
@@ -365,7 +370,7 @@ reacts, which can't be verified without the emulator.
 ## Lighting (baked) + area fog
 - [ ] **Lighting presets**: apply the same map twice — once Day, once Night
   preset. Expect: visibly darker/tinted ground at Night.
-- [ ] **Area fog editor** (Tools → Edit area fog & lighting): push fog near/far
+- [ ] **Area fog editor** (Map → Edit area fog & lighting): push fog near/far
   in close + strong color. Expect: in-game distance fog changes to match.
   REMEMBER: fog is per-AREA — other zones sharing the area change too.
 - [ ] **GameFreak atmosphere picker**: copy e.g. the Sootopolis or a cave
@@ -405,7 +410,7 @@ renders complete) — these checks are about the in-game result.
   automatically, registry + textures handled) into your own private copy of
   the Center room, then step on the exit mat and come back OUT onto your
   map at the same door. The apply dialog names which zone slot the interior
-  clone used (rename it via Tools → Rename zone).
+  clone used (rename it via Zone → Rename zone).
 - [ ] The "Link retail interiors" option instead: entering works, the exit
   leads to the retail town (as the dialog warns).
 - [ ] The swinging door prop animates (opens on contact) — its registry
@@ -426,18 +431,19 @@ renders complete) — these checks are about the in-game result.
 - [ ] Place a TV / PC / door prop via the Prop Tool on a painted map → Deploy.
   Expect: visible, and interaction (PC menu) works if scripted/expected.
 
-## Shop inventories (NEW — Tools → "Edit shop inventories (Marts)...")
+## Shop inventories (NEW — Game Data → "Edit shop inventories (Marts)...")
 Shop lists live in the executable, so this ships as a code.ips like the zone
 patch (offline: all 24 retail inventories byte-verified in your code.bin).
 - [ ] Change an easy-to-check shop (e.g. Lavaridge Herbs, or the 0-badge
   Mart list) → Save code.ips → deploy to Azahar
   (load/mods/&lt;titleid&gt;/exefs/code.ips) → full emulator restart → talk to the
   clerk. Expect: your items, at their normal prices.
-- [ ] If you also use the zone-limit patch: save with MERGE when asked, then
+- [ ] If you also use the zone-limit patch: save into the same code.ips (it is
+  merged, never asked about — the other patches in it are kept), then
   confirm BOTH still work (game boots with added zones AND the shop sells
   the edited items) — one code.ips carries both.
 
-## Items (NEW — Game Data tab → "Item editor")
+## Items (NEW — Game Data → "Edit items (price, effects, name)...")
 Two tiers, and they install differently. **Tier 1 (the record, the name, the
 description) is plain data**: it saves straight into your game folder, Deploy
 ships it, no patch. **Tier 2 is the icon only** — that word lives in the
@@ -466,7 +472,7 @@ Reassigning an existing effect to a different item is the whole trick.
   (a script `ItemGetNum`, or put it in a shop with the shop editor) and check
   the bag shows your name and the item works.
 - [ ] **Icon** (needs the patch): "Load code.bin...", set an icon (or "Use
-  another item's icon..."), "Save code.ips...", MERGE if asked, deploy,
+  another item's icon..."), "Save code.ips..." into the same file, deploy,
   restart. Expect: the new icon in the bag, and the zone and shop patches
   still working — one code.ips carries all three.
 - [ ] **Revert**: change an item, save, then "Revert to pre-edit copy" and
@@ -477,11 +483,13 @@ Reassigning an existing effect to a different item is the whole trick.
   ordinary zones), move an NPC or prop, Apply/Deploy. Expect: the change
   shows inside every Center that uses that interior zone.
 
-## Zone removal (NEW — Tools → "Remove added zones (restore stock 536)...")
+## Zone removal (NEW — Zone → "Remove added zones (restore stock 536)...")
 Offline-proven: append-then-remove restores the pristine archive content
 byte-for-byte. The in-game check:
-- [ ] After removing added zones AND deleting code.ips, the game boots and
-  plays like stock (title screen, load save, walk around).
+- [ ] After removing added zones, pick the deployed code.ips when asked (the
+  zone-limit patch is taken out of it, shop and icon patches kept): the game
+  boots and plays like stock (title screen, load save, walk around), and an
+  edited shop still sells its edited items.
 
 ## Independent battle challenge (NEW — the highest-priority battle test)
 An NPC that battles YOUR trainer entries through the game's ordinary
@@ -510,7 +518,7 @@ the checklist below is for when you build your own:
   shared was touched).
 
 ## Battle facility opponents (UPDATED — vanilla-safe by default)
-The editor (Game Data → Facility opponents) now marks RETAIL rows grey and
+The editor (Game Data → Edit battle facility opponents) now marks RETAIL rows grey and
 guards them: editing one offers "Copy to a free slot" first, so the shipped
 game's teams stay vanilla unless you explicitly choose otherwise. The pools
 are engine-wide (retail facility + every clone share them) and the dialog

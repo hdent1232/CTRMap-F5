@@ -4,8 +4,10 @@ import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.ArchiveType;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import static ctrmap.formats.LittleEndian.u16;
 import static ctrmap.formats.LittleEndian.i32;
@@ -51,8 +53,11 @@ import java.nio.file.Files;
  */
 public class AreaForker {
 
-	/** AreaData index of the global per-area table (not an area itself). */
-	public static final int AD_GLOBAL_TABLE = 228;
+	/**
+	 * AreaData index of the global per-area table (not an area itself): Omega Ruby / Alpha Sapphire's
+	 * profile answers it, the only game the fork is open to (F205).
+	 */
+	public static final int AD_GLOBAL_TABLE = ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS).areaTableIndex();
 	/** Its per-area record stride, measured from the engine's row arithmetic. */
 	public static final int AREA_ROW = 44;
 	/** The engine masks area ids to 8 bits in the global-table lookup. */
@@ -61,9 +66,6 @@ public class AreaForker {
 	public static final int MASTER_ROW = GeometryForker.MASTER_ROW;
 	/** Byte offset of areadataID inside a zone header. */
 	public static final int HDR_AREA_OFF = 2;
-
-	private static Map<Integer, Boolean> pendingAreaOverrides = null;
-	private static Map<Integer, Boolean> pendingNpcRegOverrides = null;
 
 	/** What a fork produced, for user-facing reporting. */
 	public static class ForkResult {
@@ -108,7 +110,9 @@ public class AreaForker {
 			throw new IllegalArgumentException("Zone header subfile out of range.");
 		}
 		int oldArea = u16(zoBytes, hdrOff + HDR_AREA_OFF);
-		if (oldArea >= AD_GLOBAL_TABLE) {
+		//ONLY THE TABLE'S SLOT IS NOT AN AREA (F001). This refused every id from 228 up - and a
+		//fork's new areas are 229..255, so a zone cloned from a forked one could never be forked
+		if (oldArea == AD_GLOBAL_TABLE || oldArea > MAX_AREA_ID) {
 			throw new IllegalArgumentException("Zone references area " + oldArea + ", which is not a real area.");
 		}
 		if (srcAd == null || srcAd.length == 0) {
@@ -124,8 +128,10 @@ public class AreaForker {
 		p.newAdBytes = srcAd.clone();
 		p.newNpcBytes = srcNpc == null ? new byte[0] : srcNpc.clone();
 		//grow the global table so the new id has a row, copied from the source
-		//area (rows between the old tail and the new id stay zero filler)
-		p.newTableBytes = Arrays.copyOf(table, (newArea + 1) * AREA_ROW);
+		//area (rows between the old tail and the new id stay zero filler). Never
+		//SHRINK it: an id given back (F043) sits inside the table, and cutting the
+		//table at it would drop every row past it - other forked zones' rows
+		p.newTableBytes = Arrays.copyOf(table, Math.max(table.length, (newArea + 1) * AREA_ROW));
 		System.arraycopy(table, oldArea * AREA_ROW, p.newTableBytes, newArea * AREA_ROW, AREA_ROW);
 		return p;
 	}
@@ -135,58 +141,12 @@ public class AreaForker {
 	 * table. 0 = the area is already private.
 	 */
 	public static int areaSharers(int zoneIndex) throws IOException {
-		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
-		if (zo == null) {
-			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
-		}
-		int zoneCount = ZoneTables.zoneCount(zo);
-		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
-		if (masterFile == null) {
-			throw new IOException("Could not extract the master zone-header table.");
-		}
-		byte[] master = Files.readAllBytes(masterFile.toPath());
-		if (master.length != zoneCount * MASTER_ROW) {
-			byte[] fromGarc = zo.getDecompressedEntry(zoneCount);
-			if (fromGarc == null || fromGarc.length != zoneCount * MASTER_ROW) {
-				return 1; //unreadable: report shared - forking needlessly is safe
-			}
-			master = fromGarc;
-		}
-		int off = zoneIndex * MASTER_ROW + HDR_AREA_OFF;
-		if (off + 2 > master.length) {
+		//through the one reader (F013): an unreadable table is said, not answered "1 sharer"
+		MasterTable master = MasterTable.read(Workspace.session());
+		if (zoneIndex < 0 || zoneIndex >= master.zones()) {
 			throw new IOException("Master-table row for zone " + zoneIndex + " out of range.");
 		}
-		return zonesUsingArea(master, u16(master, off), zoneIndex).size();
-	}
-
-	/**
-	 * Which zones point at an area, per a master zone-header table - excluding
-	 * one zone, normally the one being edited.
-	 *
-	 * <p>That exclusion is the whole point. "Does another map depend on this
-	 * area?" and "which rows name this area?" are different questions, and a
-	 * caller that asks the second while meaning the first will always find the
-	 * editing zone itself and conclude the area is shared. Every custom zone in
-	 * this project occupies a repurposed retail slot, so the moment one is given
-	 * a private area, its own row is the only row naming it - and a guard that
-	 * counted rows refused every texture import into it, reporting the zone as
-	 * conflicting with itself.
-	 *
-	 * <p>Pass -1 to exclude nothing. Returns empty for a null or misaligned
-	 * table; callers that must fail closed check for that themselves.
-	 */
-	public static java.util.List<Integer> zonesUsingArea(byte[] master, int area, int excludeZone) {
-		java.util.List<Integer> hits = new java.util.ArrayList<>();
-		if (master == null || master.length < MASTER_ROW) {
-			return hits;
-		}
-		int rows = master.length / MASTER_ROW;
-		for (int z = 0; z < rows; z++) {
-			if (z != excludeZone && u16(master, z * MASTER_ROW + HDR_AREA_OFF) == area) {
-				hits.add(z);
-			}
-		}
-		return hits;
+		return master.sharing(ZoneResource.AREA, zoneIndex).size();
 	}
 
 	/** The zone's current areadataID, straight from its container header. */
@@ -223,10 +183,101 @@ public class AreaForker {
 	 */
 	public static int areaIdsLeft() throws IOException {
 		GARC ad = Workspace.getArchive(ArchiveType.AREA_DATA);
-		if (ad == null) {
+		GARC np = Workspace.getArchive(ArchiveType.NPC_REGISTRIES);
+		if (ad == null || np == null) {
 			throw new IOException("No workspace is loaded (AreaData unavailable).");
 		}
-		return Math.max(0, MAX_AREA_ID - ad.length + 1);
+		return idsLeft(MasterTable.read(Workspace.session()), ad.length, registryEmpty(Workspace.session(), np));
+	}
+
+	/**
+	 * The forked area ids past the per-area table's slot, below the archive's end, that no
+	 * master-table row names, lowest first. Retail's areas all sit below the table's slot, so
+	 * every id here was made by a fork and its zone has since gone (F043).
+	 *
+	 * @param master every zone's row, as the game will read them
+	 * @param adLength how many AreaData entries exist
+	 */
+	public static List<Integer> unnamedForkedAreas(MasterTable master, int adLength) {
+		boolean[] named = new boolean[Math.max(adLength, MAX_AREA_ID + 1)];
+		for (int z = 0; z < master.zones(); z++) {
+			int a = master.id(ZoneResource.AREA, z);
+			if (a >= 0 && a < named.length) {
+				named[a] = true;
+			}
+		}
+		List<Integer> out = new ArrayList<>();
+		for (int id = AD_GLOBAL_TABLE + 1; id < adLength && id <= MAX_AREA_ID; id++) {
+			if (!named[id]) {
+				out.add(id);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * The ids a fork may take back: forked, named by no zone, AND with an empty NPC registry -
+	 * the mark {@link ZoneRemover#remove} leaves on the ids of the zones it removed.
+	 *
+	 * <p>NOT EVERY UNNAMED ID. A non-empty registry at an id no zone names is what an older
+	 * build's misplaced fork left, and {@link WorkspaceIntegrity} tells the user to move it into
+	 * place by hand; it may be the only copy of those NPCs. Reusing that id would overwrite it.
+	 */
+	public static List<Integer> givenBack(MasterTable master, int adLength, java.util.function.IntPredicate registryEmpty) {
+		List<Integer> out = new ArrayList<>();
+		for (int id : unnamedForkedAreas(master, adLength)) {
+			if (registryEmpty.test(id)) {
+				out.add(id);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Whether the open workspace's NPC registry at an id is empty: the staged copy when there is
+	 * one, else the archive's entry; an id past the archive's end has none.
+	 */
+	static java.util.function.IntPredicate registryEmpty(WorkspaceSession s, GARC np) {
+		File dir = s.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
+		return id -> {
+			File staged = new File(dir, String.valueOf(id));
+			if (s.isPendingArtifact(staged)) {
+				return staged.length() == 0;
+			}
+			return id >= np.length || np.getEntryStoredLength(id) == 0;
+		};
+	}
+
+	/** How many forks can still be made: the ids given back, then the ones past the archive's end. */
+	static int idsLeft(MasterTable master, int adLength, java.util.function.IntPredicate registryEmpty) {
+		return givenBack(master, adLength, registryEmpty).size() + Math.max(0, MAX_AREA_ID - adLength + 1);
+	}
+
+	/**
+	 * The ids {@code count} forks take: the ones given back first, lowest first, then new ids
+	 * at the archive's end. Refused in words, before anything is written, when there are not
+	 * that many.
+	 *
+	 * <p>WHY IT REUSES (F043). Every id came from the archive's end and nothing ever gave one
+	 * back, so removing added zones left their areas behind on no zone's row, and the 27 ids
+	 * past retail's 229 ran out after about six add-four-remove-four cycles - on a workspace
+	 * with no added zones at all, refused for good.
+	 */
+	public static int[] takeAreaIds(MasterTable master, int adLength, java.util.function.IntPredicate registryEmpty,
+			int count) throws IOException {
+		List<Integer> back = givenBack(master, adLength, registryEmpty);
+		int left = back.size() + Math.max(0, MAX_AREA_ID - adLength + 1);
+		if (count > left) {
+			throw new IOException("Giving " + count + " zone(s) their own area needs " + count
+				+ " area id(s), and only " + left + " are left: the engine indexes areas"
+				+ " with 8 bits, so " + MAX_AREA_ID + " is the last usable id."
+				+ "\n\nRemove some added zones, or some forked areas, first.");
+		}
+		int[] ids = new int[count];
+		for (int i = 0; i < count; i++) {
+			ids[i] = i < back.size() ? back.get(i) : adLength + (i - back.size());
+		}
+		return ids;
 	}
 
 	/**
@@ -262,7 +313,19 @@ public class AreaForker {
 	 * @param master the master zone-header table (rows repointed in place)
 	 * @param zoneIndices which zone each entry of {@code zos} is
 	 */
-	public static void forkAppendedAreas(byte[][] zos, byte[] master, int[] zoneIndices)
+	public static void forkAppendedAreas(byte[][] zos, MasterTable master, int[] zoneIndices)
+			throws IOException {
+		//ONE UNIT (F002): the budget was the only thing checked before the loop wrote, so a zone
+		//that failed half way through left the earlier ones' area and NPC entries staged with no
+		//row in the per-area table - the state the class comment says makes the engine read past
+		//the end. Inside an append or a repair this joins theirs.
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Give new zones their own area", Workspace.session())) {
+			forkAppendedAreasWrites(zos, master, zoneIndices);
+			unit.commit();
+		}
+	}
+
+	private static void forkAppendedAreasWrites(byte[][] zos, MasterTable master, int[] zoneIndices)
 			throws IOException {
 		int count = zoneIndices == null ? 0 : zoneIndices.length;
 		if (count <= 0) {
@@ -275,17 +338,14 @@ public class AreaForker {
 		if (ad == null || np == null || zo == null) {
 			throw new IOException("No workspace is loaded (AreaData/NPCRegistries unavailable).");
 		}
-		int firstArea = ad.length;
-		if (firstArea + count - 1 > MAX_AREA_ID) {
-			throw new IOException("Giving " + count + " new zone(s) their own area needs " + count
-				+ " area id(s), and only " + areaIdsLeft() + " are left: the engine indexes areas"
-				+ " with 8 bits, so " + MAX_AREA_ID + " is the last usable id."
-				+ "\n\nRemove some added zones, or some forked areas, first.");
-		}
+		//the ids given back first, then the archive's end (F043); refused here, before any write
+		int[] ids = takeAreaIds(master, ad.length, registryEmpty(Workspace.session(), np), count);
 		File adDir = Workspace.getExtractionDirectory(ArchiveType.AREA_DATA);
 		File npDir = Workspace.getExtractionDirectory(ArchiveType.NPC_REGISTRIES);
-		if (Workspace.isPendingArtifact(new File(adDir, String.valueOf(firstArea)))) {
-			throw new IOException("An area fork is already staged and not yet packed.");
+		for (int id : ids) {
+			if (Workspace.isPendingArtifact(new File(adDir, String.valueOf(id)))) {
+				throw new IOException("An area fork is already staged and not yet packed.");
+			}
 		}
 		File tableFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AD_GLOBAL_TABLE);
 		if (tableFile == null) {
@@ -297,7 +357,7 @@ public class AreaForker {
 		//engine indexes registries by area id, and an archive only grows at its tail
 		int npReaches = np.length;
 		for (int i = 0; i < count; i++) {
-			int newArea = firstArea + i;
+			int newArea = ids[i];
 			int oldArea = u16(zos[i], i32(zos[i], 4) + HDR_AREA_OFF);
 			File srcAdFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, oldArea);
 			if (srcAdFile == null) {
@@ -310,31 +370,32 @@ public class AreaForker {
 				table, newArea);
 			
 			File adOut = new File(adDir, String.valueOf(newArea));
-			Files.write(adOut.toPath(), plan.newAdBytes);
+			WorkspaceUnit.write(adOut, plan.newAdBytes);
 			Workspace.addPersist(adOut);
 			registerPendingArea(newArea, ad.isEntryCompressed(oldArea));
 			for (int filler = npReaches; filler < newArea; filler++) {
 				File fillOut = new File(npDir, String.valueOf(filler));
-				Files.write(fillOut.toPath(), new byte[0]);
+				WorkspaceUnit.write(fillOut, new byte[0]);
 				Workspace.addPersist(fillOut);
 				registerPendingNpcReg(filler, false);
 			}
 			File npOut = new File(npDir, String.valueOf(newArea));
-			Files.write(npOut.toPath(), plan.newNpcBytes);
+			WorkspaceUnit.write(npOut, plan.newNpcBytes);
 			Workspace.addPersist(npOut);
 			registerPendingNpcReg(newArea,
 				np.length > 0 && np.isEntryCompressed(Math.min(oldArea, np.length - 1)));
-			npReaches = newArea + 1;
+			//an id given back lies inside the archive: the reach never moves backwards, or the
+			//next tail id's fillers would overwrite real registries with empty ones
+			npReaches = Math.max(npReaches, newArea + 1);
 			
 			table = plan.newTableBytes;   // each fork grows it; the next grows the grown one
 			zos[i] = plan.newZoBytes;  // the repointed container the caller will write
-			int rowOff = zoneIndices[i] * MASTER_ROW + HDR_AREA_OFF;
-			if (rowOff + 2 > master.length) {
+			if (zoneIndices[i] < 0 || zoneIndices[i] >= master.zones()) {
 				throw new IOException("Master-table row for zone " + zoneIndices[i] + " out of range.");
 			}
-			putU16(master, rowOff, newArea);
+			master.set(ZoneResource.AREA, zoneIndices[i], newArea);
 		}
-		Files.write(tableFile.toPath(), table);
+		WorkspaceUnit.write(tableFile, table);
 		Workspace.addPersist(tableFile);
 	}
 	/**
@@ -342,6 +403,17 @@ public class AreaForker {
 	 * repoints the zone at them. Pack the Workspace afterwards.
 	 */
 	public static ForkResult forkArea(int zoneIndex) throws IOException {
+		//ONE UNIT (F003): the area, its NPC fillers and registry, the per-area table, the zone and
+		//its master row were written in turn, and the master row's write can refuse after the zone
+		//header was rewritten - a zone header and master row naming different areas
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Fork area", Workspace.session())) {
+			ForkResult r = forkAreaWrites(zoneIndex);
+			unit.commit();
+			return r;
+		}
+	}
+
+	private static ForkResult forkAreaWrites(int zoneIndex) throws IOException {
 		//asks what this game CAN DO, not which game it is: a gate reading
 		//"not ORAS" refuses XY and Sun/Moon for the same reason and tells the
 		//user neither of them
@@ -356,17 +428,16 @@ public class AreaForker {
 		if (zoneIndex < 0 || zoneIndex >= zoneCount) {
 			throw new IOException("Zone " + zoneIndex + " out of range (0.." + (zoneCount - 1) + ").");
 		}
-		int newArea = ad.length;
-		if (newArea > MAX_AREA_ID) {
-			throw new IOException("No area ids left: the engine indexes areas with 8 bits, so "
-					+ MAX_AREA_ID + " is the last usable id.");
-		}
+		//one allocator for every fork: an id given back first, then the archive's end (F043)
+		int newArea = takeAreaIds(MasterTable.read(Workspace.session()), ad.length,
+				registryEmpty(Workspace.session(), np), 1)[0];
 		//The engine indexes the NPC registry by area id, so the archive has to
 		//REACH the new id - a count relationship is not the same thing. Retail
 		//ships 229 AreaData entries (228 of them areas, plus the per-area table
 		//at index 228) against 228 registries, so the first forked id, 229, is
-		//two past the end of the registry archive. The gap is filled below.
-		if (np.length > newArea + 1) {
+		//two past the end of the registry archive. The gap is filled below. An id
+		//given back sits inside both archives, where there is no gap to fill.
+		if (newArea >= ad.length && np.length > newArea + 1) {
 			throw new IOException("The NPC registry (" + np.length + " entries) already reaches"
 					+ " past the new area id " + newArea + "; it and AreaData (" + ad.length
 					+ " entries) are out of step, and an area fork would not repair that.");
@@ -393,7 +464,7 @@ public class AreaForker {
 		ForkPlan plan = planFork(zoBytes, Files.readAllBytes(srcAdFile.toPath()), srcNp, Files.readAllBytes(tableFile.toPath()), newArea);
 
 		//stage: new area, its registry, the grown table, the repointed zone
-		Files.write(adOut.toPath(), plan.newAdBytes);
+		WorkspaceUnit.write(adOut, plan.newAdBytes);
 		Workspace.addPersist(adOut);
 		registerPendingArea(newArea, ad.isEntryCompressed(oldArea));
 
@@ -408,19 +479,19 @@ public class AreaForker {
 		//per-area table's slot, which planFork refuses as an area.
 		for (int filler = np.length; filler < newArea; filler++) {
 			File fillOut = new File(npDir, String.valueOf(filler));
-			Files.write(fillOut.toPath(), new byte[0]);
+			WorkspaceUnit.write(fillOut, new byte[0]);
 			Workspace.addPersist(fillOut);
 			registerPendingNpcReg(filler, false);
 		}
 		File npOut = new File(npDir, String.valueOf(newArea));
-		Files.write(npOut.toPath(), plan.newNpcBytes);
+		WorkspaceUnit.write(npOut, plan.newNpcBytes);
 		Workspace.addPersist(npOut);
 		registerPendingNpcReg(newArea, np.length > 0 && np.isEntryCompressed(Math.min(oldArea, np.length - 1)));
 
-		Files.write(tableFile.toPath(), plan.newTableBytes);
+		WorkspaceUnit.write(tableFile, plan.newTableBytes);
 		Workspace.addPersist(tableFile);
 
-		Files.write(zoneFile.toPath(), plan.newZoBytes);
+		WorkspaceUnit.write(zoneFile, plan.newZoBytes);
 		Workspace.addPersist(zoneFile);
 		repointMasterArea(zo, zoneIndex, newArea);
 
@@ -440,47 +511,22 @@ public class AreaForker {
 
 	/** Repoints a zone's areadataID in the master zone-header table file. */
 	public static void repointMasterArea(GARC zo, int zoneIndex, int newArea) throws IOException {
-		int masterIndex = ZoneTables.masterIndex(zo);
-		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
-		if (masterFile == null) {
-			throw new IOException("Could not extract the master zone-header table.");
-		}
-		byte[] master = Files.readAllBytes(masterFile.toPath());
-		int rowOff = zoneIndex * MASTER_ROW + HDR_AREA_OFF;
-		if (rowOff + 2 > master.length) {
+		MasterTable master = MasterTable.read(Workspace.session());
+		if (zoneIndex < 0 || zoneIndex >= master.zones()) {
 			throw new IOException("Master-table row for zone " + zoneIndex + " out of range.");
 		}
-		putU16(master, rowOff, newArea);
-		Files.write(masterFile.toPath(), master);
-		Workspace.addPersist(masterFile);
+		master.set(ZoneResource.AREA, zoneIndex, newArea);
+		master.write();
 	}
 
-	public static void registerPendingArea(int index, boolean compressed) {
-		if (pendingAreaOverrides == null) {
-			pendingAreaOverrides = new HashMap<>();
-		}
-		pendingAreaOverrides.put(index, compressed);
+	/** The open workspace's AreaData pending-compression flag for an added area (F014: the session holds them). */
+	private static void registerPendingArea(int index, boolean compressed) {
+		Workspace.session().registerPendingCompression(ArchiveType.AREA_DATA, index, compressed);
 	}
 
-	public static void registerPendingNpcReg(int index, boolean compressed) {
-		if (pendingNpcRegOverrides == null) {
-			pendingNpcRegOverrides = new HashMap<>();
-		}
-		pendingNpcRegOverrides.put(index, compressed);
-	}
-
-	/** Drains the AreaData compression overrides of a pending fork (one pack). */
-	public static Map<Integer, Boolean> consumePendingAreaOverrides() {
-		Map<Integer, Boolean> m = pendingAreaOverrides;
-		pendingAreaOverrides = null;
-		return m;
-	}
-
-	/** Drains the NPC-registry compression overrides of a pending fork. */
-	public static Map<Integer, Boolean> consumePendingNpcRegOverrides() {
-		Map<Integer, Boolean> m = pendingNpcRegOverrides;
-		pendingNpcRegOverrides = null;
-		return m;
+	/** The same for an added NPC-registry entry. */
+	private static void registerPendingNpcReg(int index, boolean compressed) {
+		Workspace.session().registerPendingCompression(ArchiveType.NPC_REGISTRIES, index, compressed);
 	}
 
 	/**

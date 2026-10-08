@@ -7,7 +7,6 @@ import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLJPanel;
 import com.jogamp.opengl.glu.GLU;
-import com.jogamp.opengl.util.FPSAnimator;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.formats.h3d.texturing.H3DTexture;
@@ -28,7 +27,7 @@ import java.util.List;
 public class MapPreview3D extends GLJPanel implements GLEventListener {
 
 	private H3DModel model;
-	private final FPSAnimator animator;
+	private final ShownLoop animator;
 	private float yaw = 0.6f;      // radians, orbit around Y
 	private float pitch = 1.0f;    // radians, look-down angle (0 = horizon, PI/2 = straight down)
 	private float dist = 1300f;    // camera distance (region is 720 units wide)
@@ -37,21 +36,13 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 	private boolean fogOn = false;
 	private float[] fogColor = {0.53f, 0.70f, 0.92f, 1f};
 	private float fogNear = 800f, fogFar = 4000f;
-	/**
-	 * The smallest buffer a BCH header can occupy: the 4-byte magic, two
-	 * compatibility bytes, a version short, and the ten ints of offsets and lengths
-	 * that follow. Anything shorter cannot be read, let alone refused.
-	 */
-	public static final int BCH_MIN_HEADER = 0x30;
-
 	/** Models swapped out, waiting for a GL thread to free their buffers. */
 	private final java.util.List<H3DModel> retired = new java.util.ArrayList<>();
 
 	public MapPreview3D() {
 		super(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
 		addGLEventListener(this);
-		animator = new FPSAnimator(this, 40);
-		animator.start();
+		animator = ShownLoop.of(this, 40);   //while it is seen (F098)
 		MouseAdapter ma = new MouseAdapter() {
 			@Override
 			public void mousePressed(MouseEvent e) {
@@ -77,7 +68,6 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 		addMouseWheelListener(ma);
 	}
 
-	/** Parses the region model bytes, binds the world textures, and shows it. */
 	/**
 	 * The model in a region's bytes, or NULL when there is not one.
 	 *
@@ -122,8 +112,8 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 	 * header {@link BCHFile} reads before it is able to refuse one.
 	 */
 	public static boolean looksLikeBch(byte[] b) {
-		return b != null && b.length >= BCH_MIN_HEADER
-			&& b[0] == 'B' && b[1] == 'C' && b[2] == 'H' && b[3] == 0;
+		//the one reading of it (F066): the magic, and the header length its own version declares
+		return ctrmap.formats.h3d.BchSections.isBch(b);
 	}
 	/**
 	 * Shows a region's map model. Answers FALSE when there was nothing to show,
@@ -175,9 +165,7 @@ public class MapPreview3D extends GLJPanel implements GLEventListener {
 	}
 
 	public void stop() {
-		if (animator.isStarted()) {
-			animator.stop();
-		}
+		animator.end();
 	}
 
 	@Override

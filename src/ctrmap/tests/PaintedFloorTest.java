@@ -59,16 +59,15 @@ public class PaintedFloorTest {
 	public static void main(String[] args) throws Exception {
 		File garc = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/3/9");
 		if (!garc.isFile()) {
-			System.out.println("  skip: no FieldData GARC at " + garc);
-			System.out.println("ALL PASS");
+			Skip.suite("no FieldData GARC at " + garc);
 			return;
 		}
 		GARC gr = new GARC(garc);
 		byte[] donor = subfile(gr.getDecompressedEntry(1), 1); //Route 101: the default tileset donor
 		if (donor == null || !BchMapModel.isMapModel(donor)) {
-			System.out.println("  skip: region 1 is not a map model");
-			System.out.println("ALL PASS");
-			return;
+			check(false, "region 1 is not a map model");
+			System.out.println("FAILURES PRESENT");
+			System.exit(1);
 		}
 		rampRunsAlongTheCorridor(donor);
 		rampSpansAnyDrop(donor);
@@ -325,7 +324,7 @@ public class PaintedFloorTest {
 					+ ": and the floor you can see is there too, at Y=" + expected);
 			return;
 		}
-		System.out.println("  skip: no region has an unsampled tile beside raised walkable ground");
+		check(false, "no region has an unsampled tile beside raised walkable ground");
 	}
 
 	// ---- geometry probes ----

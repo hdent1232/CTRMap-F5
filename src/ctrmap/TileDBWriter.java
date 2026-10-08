@@ -1,24 +1,19 @@
 package ctrmap;
 
+import ctrmap.formats.tilemap.EditorTileset;
 import java.awt.Dimension;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import javax.swing.Action;
 import javax.swing.JFileChooser;
 import javax.swing.JFormattedTextField;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.event.ChangeEvent;
-import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultFormatterFactory;
 
 /**
@@ -26,14 +21,14 @@ import javax.swing.text.DefaultFormatterFactory;
  */
 public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 
+	private static TileDBWriter mSingleton;
+	private File f;
+	private List<EditorTileset.Record> tiles = new ArrayList<>();
+	private int curTile = 0;
+
 	/**
 	 * Creates new form TileDBWriter
 	 */
-	private static TileDBWriter mSingleton;
-	private File f;
-	private List<Tile> tiles = new ArrayList<>();
-	private int curTile = 0;
-
 	public TileDBWriter() {
 		initComponents();
 		mSingleton = this;
@@ -42,7 +37,7 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 		color.getSelectionModel().addChangeListener((ChangeEvent e) -> {
 			tiles.get(curTile).color = color.getColor().getRGB();
 		});
-		tiles.add(new Tile(0, "", 0xFF0000, 0, 0));
+		tiles.add(blank());
 		curTile = 0;
 		showTile();
 	}
@@ -324,48 +319,17 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 		details.actionPerformed(null);
 		jfc.setDialogTitle("Open a tile database");
 		jfc.setPreferredSize(new Dimension(jfc.getPreferredSize().width, jfc.getPreferredSize().height * 2));
-		jfc.showOpenDialog(this);
-		f = jfc.getSelectedFile();
-		if (f == null) {
+		if (ctrmap.Ui.choose(this, jfc, false) == null) {
 			return;
 		}
-		tiles.clear();
-		try {
-			DataInputStream dis = new DataInputStream(new FileInputStream(f));
-			if (dis.available() > 0) {
-				int magic = dis.readInt();
-				if (magic != 0x4D455453){
-					Ui.error(null, "Tileset magic mismatch", "Parse error");
-					dis.close();
-					return;
-				}
-				int length = dis.readInt();
-				for (int i = 0; i < length; i++) {
-					int strlen = dis.read();
-					byte[] strbuf = new byte[strlen];
-					dis.read(strbuf);
-					String nameString = new String(strbuf, "UTF-8");
-					int binaryInt = dis.readInt();
-					int colorInt = dis.readInt();
-					int cat1 = dis.read();
-					int cat2 = dis.read();
-					tiles.add(new Tile(binaryInt, nameString, colorInt, cat1, cat2));
-					System.out.println("added " + i);
-				}
-			}
-			dis.close();
-		} catch (IOException ex) {
-			Logger.getLogger(TileDBWriter.class.getName()).log(Level.SEVERE, null, ex);
-		}
-		curTile = 0;
-		showTile();
+		open(jfc.getSelectedFile());
     }//GEN-LAST:event_openfileActionPerformed
 
 	private void showTile() {
 		if (tiles.size() <= curTile) {
-			tiles.add(new Tile(0, "", 0xFF0000, 0, 0));
+			tiles.add(blank());
 		}
-		Tile tile = tiles.get(curTile);
+		EditorTileset.Record tile = tiles.get(curTile);
 		name.setText(tile.name);
 		binary.setValue(tile.binary);
 		color.setColor(tile.color);
@@ -484,25 +448,23 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 		details.actionPerformed(null);
 		jfc.setPreferredSize(new Dimension(jfc.getPreferredSize().width, jfc.getPreferredSize().height * 2));
 		jfc.setDialogTitle("Select the new file's location");
-		jfc.showSaveDialog(this);
+		if (ctrmap.Ui.choose(this, jfc, true) == null) {
+			return;
+		}
 		f = jfc.getSelectedFile();
 		if (f == null) {
 			return;
 		}
 		tiles.clear();
-		tiles.add(new Tile(0, "", 0xFF0000, 0, 0));
+		tiles.add(blank());
 		curTile = 0;
 		showTile();
-		f = jfc.getSelectedFile();
     }//GEN-LAST:event_newfileActionPerformed
 
     private void btnPrevTileActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnPrevTileActionPerformed
-		try {
-			tiles.get(curTile).name = name.getDocument().getText(0, name.getDocument().getLength());
-		} catch (BadLocationException ex) {
-			Logger.getLogger(TileDBWriter.class.getName()).log(Level.SEVERE, null, ex);
+		if (!commitCurrent()) {
+			return;
 		}
-		tiles.get(curTile).binary = Integer.parseInt(getStringFromDocument(binary), 16);
 		if (curTile > 0) {
 			curTile--;
 			showTile();
@@ -510,27 +472,80 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
     }//GEN-LAST:event_btnPrevTileActionPerformed
 
     private void btnNextTileActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNextTileActionPerformed
-		try {
-			tiles.get(curTile).name = name.getDocument().getText(0, name.getDocument().getLength());
-		} catch (BadLocationException ex) {
-			Logger.getLogger(TileDBWriter.class.getName()).log(Level.SEVERE, null, ex);
-		}
-		try {
-			tiles.get(curTile).binary = Integer.parseInt(getStringFromDocument(binary), 16);
-		} catch (NumberFormatException ex) {
-			ex.printStackTrace();
+		if (!commitCurrent()) {
+			return;
 		}
 		curTile++;
 		showTile();
     }//GEN-LAST:event_btnNextTileActionPerformed
 
-	private String getStringFromDocument(JFormattedTextField docOwner) {
+	/** A new tile: no name, binary 0, red, the first category of each. */
+	private static EditorTileset.Record blank() {
+		return new EditorTileset.Record(0, "", 0xFF0000, 0, 0);
+	}
+
+	/**
+	 * Takes the shown tile's name and binary from their fields, or says why the binary cannot be
+	 * taken and answers false, leaving the tile as it is. Previous threw on a value that was not
+	 * hex and Next printed it and moved on; neither took a binary with the top bit set, which the
+	 * field itself shows (FFFFFFFF), because they parsed it as a signed int (F026).
+	 */
+	boolean commitCurrent() {
+		String hex = binary.getText().trim();
+		int value;
 		try {
-			String val = docOwner.getDocument().getText(0, docOwner.getDocument().getLength()).replace(',', '.');
-			return val;
-		} catch (BadLocationException ex) {
-			return "";
+			value = Integer.parseUnsignedInt(hex, 16);
+		} catch (NumberFormatException notHex) {
+			Ui.error(this, "The tile's binary value \"" + hex + "\" is not a hexadecimal number of at most"
+					+ " eight digits, so the tile stays as it is.", "Tileset editor");
+			return false;
 		}
+		EditorTileset.Record tile = tiles.get(curTile);
+		tile.name = name.getText();
+		tile.binary = value;
+		return true;
+	}
+
+	/**
+	 * Shows the tiles of {@code file}, or says why it cannot and keeps the set that is open. The
+	 * set used to be cleared BEFORE the file was parsed, so a file that did not read lost it, and
+	 * every failure went to a log (F026).
+	 */
+	void open(File file) {
+		if (file == null) {
+			return;
+		}
+		List<EditorTileset.Record> read;
+		try {
+			read = EditorTileset.read(Files.readAllBytes(file.toPath()));
+		} catch (IOException unreadable) {
+			Ui.error(this, "The tileset " + file.getName() + " could not be read, so the one that is open is"
+					+ " kept:\n" + Ui.reason(unreadable), "Tileset editor");
+			return;
+		}
+		f = file;
+		tiles = new ArrayList<>(read);
+		curTile = 0;
+		showTile();
+	}
+
+	/**
+	 * Writes every tile to {@code file}, whole or not at all, and says when it could not. The tile
+	 * being edited is taken from its fields first: a name typed and not entered was lost (F026).
+	 */
+	boolean save(File file) {
+		if (file == null || !commitCurrent()) {
+			return false;
+		}
+		try {
+			ctrmap.util.Bytes.replaceFile(file, EditorTileset.write(tiles));
+		} catch (IOException cannotWrite) {
+			Ui.error(this, "The tileset was not saved to " + file.getName() + ":\n" + Ui.reason(cannotWrite),
+					"Tileset editor");
+			return false;
+		}
+		f = file;
+		return true;
 	}
 
     private void savefileActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_savefileActionPerformed
@@ -540,22 +555,10 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 		jfc.setPreferredSize(new Dimension(jfc.getPreferredSize().width, jfc.getPreferredSize().height * 2));
 		jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
 		jfc.setDialogTitle("Save as");
-		jfc.showSaveDialog(this);
-		f = jfc.getSelectedFile();
-		if (f == null) {
+		if (ctrmap.Ui.choose(this, jfc, true) == null) {
 			return;
 		}
-		try {
-			DataOutputStream dos = new DataOutputStream(new FileOutputStream(f));
-			dos.writeInt(0x4D455453);
-			dos.writeInt(tiles.size());
-			for (int i = 0; i < tiles.size(); i++) {
-				tiles.get(i).write(dos);
-			}
-			dos.close();
-		} catch (IOException ex) {
-			Logger.getLogger(TileDBWriter.class.getName()).log(Level.SEVERE, null, ex);
-		}
+		save(jfc.getSelectedFile());
     }//GEN-LAST:event_savefileActionPerformed
 
     private void nameActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_nameActionPerformed
@@ -588,6 +591,9 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 
     private void btnRemoveTileActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveTileActionPerformed
 		tiles.remove(curTile);
+		if (curTile > 0 && curTile >= tiles.size()) {
+			curTile--;
+		}
 		showTile();
     }//GEN-LAST:event_btnRemoveTileActionPerformed
 
@@ -600,16 +606,19 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
 		/* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
          * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
 		 */
-		try {
-			for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-				if ("Nimbus".equals(info.getName())) {
-					javax.swing.UIManager.setLookAndFeel(info.getClassName());
-					break;
+		//on the event thread, ahead of the form queued below: the look and feel is Swing's too (F220)
+		java.awt.EventQueue.invokeLater(() -> {
+			try {
+				for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
+					if ("Nimbus".equals(info.getName())) {
+						javax.swing.UIManager.setLookAndFeel(info.getClassName());
+						break;
+					}
 				}
+			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
+				java.util.logging.Logger.getLogger(TileDBWriter.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
 			}
-		} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
-			java.util.logging.Logger.getLogger(TileDBWriter.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-		}
+		});
 		//</editor-fold>
 		
 		//</editor-fold>
@@ -647,34 +656,4 @@ public class TileDBWriter extends ctrmap.humaninterface.FormPanel {
     private javax.swing.JMenuItem savefile;
     private javax.swing.JRadioButton water;
     // End of variables declaration//GEN-END:variables
-}
-
-class Tile {
-
-	public int binary;
-	public String name;
-	public int color;
-	public int cat1;
-	public int cat2;
-
-	public Tile(int binary, String name, int color, int cat1, int cat2) {
-		this.binary = binary;
-		this.color = color;
-		this.name = name;
-		this.cat1 = cat1;
-		this.cat2 = cat2;
-	}
-
-	public void write(DataOutputStream dos) {
-		try {
-			dos.writeByte(name.length());
-			dos.write(name.getBytes("UTF-8"));
-			dos.writeInt(binary);
-			dos.writeInt(color);
-			dos.write(cat1);
-			dos.write(cat2);
-		} catch (IOException ex) {
-			Logger.getLogger(Tile.class.getName()).log(Level.SEVERE, null, ex);
-		}
-	}
 }

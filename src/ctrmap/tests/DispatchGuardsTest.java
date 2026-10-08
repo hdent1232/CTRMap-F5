@@ -83,7 +83,7 @@ public class DispatchGuardsTest {
 	public static void main(String[] args) throws Exception {
 		File garcFile = new File(args.length > 0 ? args[0] : DEFAULT_GARC_PATH);
 		if (!garcFile.exists()) {
-			System.out.println("  skip: no pristine ZoneData GARC at " + garcFile.getAbsolutePath());
+			Skip.section("no pristine ZoneData GARC at " + garcFile.getAbsolutePath());
 			report();
 			return;
 		}
@@ -353,7 +353,7 @@ public class DispatchGuardsTest {
 		int belowIdx = s.publics.size() - 2;
 		int aboveIdx = s.publics.size() - 1;
 
-		int newId = TalkerScriptWizard.cloneTalker(s, FAKE_LINE);
+		int newId = TalkerScriptWizard.cloneTalker(NpcScriptGateTest.ORAS, s, FAKE_LINE);
 		ZoneScriptAnalyzer.Dispatch post = ZoneScriptAnalyzer.findDispatch(s);
 		PawnInstruction tramp = post == null ? null : post.cases.get(newId);
 		check(tramp != null, "the emit installed case " + newId);
@@ -395,7 +395,7 @@ public class DispatchGuardsTest {
 		verify.setAccessible(true);
 
 		GFLPawnScript s = parse(ref);
-		int newId = TalkerScriptWizard.cloneTalker(s, FAKE_LINE);
+		int newId = TalkerScriptWizard.cloneTalker(NpcScriptGateTest.ORAS, s, FAKE_LINE);
 		ZoneScriptAnalyzer.Dispatch d = ZoneScriptAnalyzer.findDispatch(s);
 		PawnInstruction trampPush = d == null ? null : d.cases.get(newId);
 		check(trampPush != null, "the emitted case " + newId + " resolves to its trampoline");
@@ -478,7 +478,7 @@ public class DispatchGuardsTest {
 	 */
 	private static String refusalMessage(GFLPawnScript s) {
 		try {
-			TalkerScriptWizard.cloneTalker(s, FAKE_LINE);
+			TalkerScriptWizard.cloneTalker(NpcScriptGateTest.ORAS, s, FAKE_LINE);
 			return null;
 		} catch (IllegalStateException ex) {
 			return ex.getMessage();

@@ -58,10 +58,15 @@ public class ForkGuardsTest {
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
+		aForkedAreaCanBeForkedAgain();
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump);
-			System.out.println("ALL PASS");
+			Skip.section("no dump at " + dump);
+			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
+			//the section above runs with no dump, and its failure must fail the run
+			if (fails > 0) {
+				System.exit(1);
+			}
 			return;
 		}
 		ScratchGame.open(dump);
@@ -70,10 +75,120 @@ public class ForkGuardsTest {
 		theForkPromptHandsBackWhatItDid();
 		gappedAppendIsRefused();
 		aRegistryAlreadyPastTheNewAreaIdIsRefusedOutLoud();
+		anAppendThatRunsOutOfAreaIdsStagesNothing(dump);
+		anAreaForkThatFailsAtTheMasterRowPutsEverythingBack(dump);
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * F001, with no game: a zone whose area was itself forked can be forked again.
+	 *
+	 * <p>planFork refused every area id from 228 up as "not a real area", and a fork's new areas
+	 * are 229 to 255 - so a zone cloned from a created or forked zone could never get an area of
+	 * its own. Only 228, the engine's per-area table, is not an area.
+	 */
+	static void aForkedAreaCanBeForkedAgain() {
+		System.out.println("--- a zone on a forked area (229) can be forked again; the table slot (228) cannot");
+		byte[] zo = new byte[64];
+		zo[4] = 8;                                    //the header subfile starts at 8
+		byte[] table = new byte[231 * AreaForker.AREA_ROW];
+		for (int area : new int[]{229, AreaForker.AD_GLOBAL_TABLE}) {
+			zo[8 + AreaForker.HDR_AREA_OFF] = (byte) area;
+			String refused = null;
+			AreaForker.ForkPlan p = null;
+			try {
+				p = AreaForker.planFork(zo, new byte[]{1, 2, 3}, null, table, 230);
+			} catch (IllegalArgumentException ex) {
+				refused = ex.getMessage();
+			}
+			if (area == 229) {
+				check(p != null && p.oldArea == 229, "a zone on area 229 plans a fork to 230: " + refused);
+			} else {
+				check(refused != null && refused.contains("not a real area"),
+						"while a zone naming the table's own slot is refused: " + refused);
+			}
+		}
+	}
+
+	/**
+	 * F040: an append that runs out of area ids stages nothing.
+	 *
+	 * <p>The map fork staged every new zone's regions and matrix before the area fork checked its
+	 * id budget, so a refusal there left megabytes of region copies staged for the next pack with
+	 * nothing pointing at them. The append is one unit now; a refusal anywhere in it puts back
+	 * everything it wrote.
+	 */
+	static void anAppendThatRunsOutOfAreaIdsStagesNothing(File dump) throws Exception {
+		System.out.println("--- an append that runs out of area ids stages nothing");
+		ScratchGame.open(dump);
+		int left = AreaForker.areaIdsLeft();
+		java.util.List<String> persistedBefore = new java.util.ArrayList<>(Workspace.session().persistPaths());
+		File fd = Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA);
+		File mm = Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX);
+		String[] fdBefore = fd.list();
+		String[] mmBefore = mm.list();
+		String refused = null;
+		try {
+			ctrmap.ZoneAppender.appendZones(left + 1, 533, true);
+		} catch (java.io.IOException ex) {
+			refused = ex.getMessage();
+		}
+		check(refused != null && refused.contains("area id"),
+				"asking for " + (left + 1) + " zones with " + left + " area ids left is refused: " + refused);
+		check(Workspace.session().persistPaths().equals(persistedBefore),
+				"and the list of staged edits is exactly as it was (" + Workspace.session().persistPaths().size()
+				+ " vs " + persistedBefore.size() + ")");
+		check(java.util.Arrays.equals(sorted(fd.list()), sorted(fdBefore))
+				&& java.util.Arrays.equals(sorted(mm.list()), sorted(mmBefore)),
+				"and no region or matrix the map fork copied is left in the workspace");
+	}
+
+	/**
+	 * F003: an area fork that fails at its last step puts back everything it wrote.
+	 *
+	 * <p>The fork wrote the area, its NPC registry, the per-area table and the zone header in
+	 * turn, and then the master row - which can refuse, leaving the zone header and the master row
+	 * naming different areas. Made to refuse the way it can: the master table's workspace file is
+	 * not readable (a folder stands where it should be).
+	 */
+	static void anAreaForkThatFailsAtTheMasterRowPutsEverythingBack(File dump) throws Exception {
+		System.out.println("--- an area fork that fails at the master row puts back what it wrote");
+		ScratchGame.open(dump);
+		int zone = ZONES[0];
+		ctrmap.formats.garc.GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
+		File zoneFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zone);
+		File tableFile = Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, AreaForker.AD_GLOBAL_TABLE);
+		File master = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, ctrmap.ZoneTables.masterIndex(zo));
+		byte[] zoneBefore = Files.readAllBytes(zoneFile.toPath());
+		byte[] tableBefore = Files.readAllBytes(tableFile.toPath());
+		File ad = Workspace.getExtractionDirectory(ArchiveType.AREA_DATA);
+		String[] adBefore = ad.list();
+		java.util.List<String> persistedBefore = new java.util.ArrayList<>(Workspace.session().persistPaths());
+		check(master.delete() && master.mkdir(), "a folder stands where the master table's file was");
+		String refused = null;
+		try {
+			AreaForker.forkArea(zone);
+		} catch (IOException ex) {
+			refused = ex.getMessage();
+		} finally {
+			master.delete();
+		}
+		check(refused != null, "the fork refuses at the master row: " + refused);
+		check(Arrays.equals(Files.readAllBytes(zoneFile.toPath()), zoneBefore),
+				"zone " + zone + "'s header is exactly as it was");
+		check(Arrays.equals(Files.readAllBytes(tableFile.toPath()), tableBefore),
+				"the per-area table is exactly as it was");
+		check(Arrays.equals(sorted(ad.list()), sorted(adBefore)), "no area the fork copied is left staged");
+		check(Workspace.session().persistPaths().equals(persistedBefore), "and the list of staged edits is as it was");
+	}
+
+	static String[] sorted(String[] names) {
+		String[] out = names == null ? new String[0] : names.clone();
+		java.util.Arrays.sort(out);
+		return out;
 	}
 
 	/** Three forks in a row, each packed, each leaving a game that can load. */

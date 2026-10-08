@@ -90,9 +90,9 @@ public class BatteryHygieneTest {
 		File root = new File(args.length > 0 ? args[0] : "src");
 		File tests = new File(root, "ctrmap/tests");
 		if (!tests.isDirectory()) {
-			System.out.println("  skip: no test sources at " + tests);
-			System.out.println("ALL PASS");
-			return;
+			check(false, "no test sources at " + tests);
+			System.out.println("FAILURES PRESENT");
+			System.exit(1);
 		}
 		fixedTempPaths(tests);
 		overridableCorpusPath(tests);
@@ -128,33 +128,6 @@ public class BatteryHygieneTest {
 		}
 	}
 
-	/** Every suite must take its scratch space from Scratch, not name it. */
-	/**
-	 * A check that bans a literal must also pin that the SYMBOL it bans still exists.
-	 *
-	 * <p>THE SHAPE. Thirteen checks in this battery assert that some text is ABSENT from a
-	 * source file - {@code check(!text.contains("new ActionListener()"))},
-	 * {@code check(!save.contains("populateScriptDropdown();"))}. Each is a real rule, and
-	 * each has the same hole: it passes the instant the thing it forbids is spelled
-	 * differently. A rename, a reformat, an extra space, a split across a {@code +}
-	 * concatenation - and the check goes on reporting OK about a file it no longer describes.
-	 * The verification bootstrap paid for this one: deleting two spaces from
-	 * {@code live_allowed = True} opened live trading with the guard green, and an AST tool
-	 * written to avoid that mistake made it again by matching a substring.
-	 *
-	 * <p>WHAT CANNOT BE DONE HERE. "Ask the object, not the file" is the right answer and it
-	 * does not reach these: {@code new ActionListener()} is a source SHAPE, and the compiled
-	 * class carries a synthetic inner class either way. So the textual check stays, and this
-	 * closes the part that can be closed - the bootstrap’s own prescription, verbatim: "pin
-	 * that the guarded symbol still EXISTS - or a rename makes every other assertion
-	 * vacuous."
-	 *
-	 * <p>SO: for every banned literal, the longest identifier inside it must appear somewhere
-	 * in the tree. {@code new ActionListener()} pins {@code ActionListener};
-	 * {@code populateScriptDropdown();} pins {@code populateScriptDropdown}. When the method
-	 * is renamed the pin fails and names the check that has quietly stopped asserting
-	 * anything, instead of that check passing for ever.
-	 */
 	/**
 	 * Every string this file WRITES, with the banned literals themselves taken out.
 	 *
@@ -193,7 +166,7 @@ public class BatteryHygieneTest {
 		System.out.println("--- the recorder reads a verdict line whose suite names hold commas");
 		File recorder = new File(repo, "tools/guard/record_run.py");
 		if (!recorder.isFile() || !CommitGuardTest.onPath("python")) {
-			System.out.println("  skip: no recorder or no python on PATH");
+			Skip.section("no recorder or no python on PATH");
 			return;
 		}
 		String q = String.valueOf((char) 34);
@@ -303,7 +276,7 @@ public class BatteryHygieneTest {
 		System.out.println("--- the battery's own recorded readings are not a tree that moved");
 		File guard = new File(repo, "tools/guard/commit_guard.py");
 		if (!guard.isFile() || !CommitGuardTest.onPath("python")) {
-			System.out.println("  skip: no guard or no python on PATH");
+			Skip.section("no guard or no python on PATH");
 			return;
 		}
 		String script =
@@ -383,7 +356,7 @@ public class BatteryHygieneTest {
 		System.out.println("--- the publish instruction pushes the tag and both builds");
 		File packager = new File(repo, "package.ps1");
 		if (!packager.isFile()) {
-			System.out.println("  skip: no package.ps1 at " + packager);
+			check(false, "no package.ps1 at " + packager);
 			return;
 		}
 		String body = read(packager);
@@ -443,6 +416,32 @@ public class BatteryHygieneTest {
 		}
 	}
 
+	/**
+	 * A check that bans a literal must also pin that the SYMBOL it bans still exists.
+	 *
+	 * <p>THE SHAPE. Thirteen checks in this battery assert that some text is ABSENT from a
+	 * source file - {@code check(!text.contains("new ActionListener()"))},
+	 * {@code check(!save.contains("populateScriptDropdown();"))}. Each is a real rule, and
+	 * each has the same hole: it passes the instant the thing it forbids is spelled
+	 * differently. A rename, a reformat, an extra space, a split across a {@code +}
+	 * concatenation - and the check goes on reporting OK about a file it no longer describes.
+	 * The verification bootstrap paid for this one: deleting two spaces from
+	 * {@code live_allowed = True} opened live trading with the guard green, and an AST tool
+	 * written to avoid that mistake made it again by matching a substring.
+	 *
+	 * <p>WHAT CANNOT BE DONE HERE. "Ask the object, not the file" is the right answer and it
+	 * does not reach these: {@code new ActionListener()} is a source SHAPE, and the compiled
+	 * class carries a synthetic inner class either way. So the textual check stays, and this
+	 * closes the part that can be closed - the bootstrap’s own prescription, verbatim: "pin
+	 * that the guarded symbol still EXISTS - or a rename makes every other assertion
+	 * vacuous."
+	 *
+	 * <p>SO: for every banned literal, the longest identifier inside it must appear somewhere
+	 * in the tree. {@code new ActionListener()} pins {@code ActionListener};
+	 * {@code populateScriptDropdown();} pins {@code populateScriptDropdown}. When the method
+	 * is renamed the pin fails and names the check that has quietly stopped asserting
+	 * anything, instead of that check passing for ever.
+	 */
 	static void everyBannedLiteralPinsItsSymbol(File tests, File src) throws Exception {
 		System.out.println("--- every banned-literal check pins that its symbol still exists");
 		java.util.regex.Pattern ban = java.util.regex.Pattern.compile(
@@ -545,6 +544,7 @@ public class BatteryHygieneTest {
 		}
 	}
 
+	/** Every suite must take its scratch space from Scratch, not name it. */
 	static void fixedTempPaths(File tests) throws Exception {
 		List<String> named = new ArrayList<>();
 		List<File> sources = sources(tests);
@@ -584,7 +584,7 @@ public class BatteryHygieneTest {
 	 */
 	static void registeredWithItsCorpus(File runner, File tests) throws Exception {
 		if (!runner.isFile()) {
-			System.out.println("  skip: no runner at " + runner);
+			check(false, "no runner at " + runner);
 			return;
 		}
 		List<String> starved = new ArrayList<>();
@@ -645,7 +645,7 @@ public class BatteryHygieneTest {
 		int curated = tsvRows(new File(res, "oras_buildings.tsv"));
 		int auto = tsvRows(new File(res, "oras_buildings_auto.tsv"));
 		if (curated < 0 || auto < 0) {
-			System.out.println("  skip: no building catalogue at " + res);
+			check(false, "no building catalogue at " + res);
 			return;
 		}
 		//COUNT WHAT THE BATTERY ANNOUNCES, NOT WHAT ONE ARRAY LITERAL HOLDS. This counted the
@@ -732,7 +732,7 @@ public class BatteryHygieneTest {
 	 */
 	static void runnerIsPlainText(File runner) throws Exception {
 		if (!runner.isFile()) {
-			System.out.println("  skip: no runner at " + runner);
+			check(false, "no runner at " + runner);
 			return;
 		}
 		byte[] b = Files.readAllBytes(runner.toPath());
@@ -781,9 +781,8 @@ public class BatteryHygieneTest {
 
 	/**
 	 * A top-level type declared in a source file that is not named after it.
-	 * Five exist here (FATBEntry and GARCEntry in GARC.java, BoundStructure in
-	 * GRCollisionBounds.java, OBJMesh in WavefrontOBJ.java, Tile in
-	 * TileDBWriter.java), and each compiles to a class file whose name matches
+	 * Three exist here (FATBEntry and GARCEntry in GARC.java, OBJMesh in
+	 * WavefrontOBJ.java; TileDBWriter.java's Tile went with F026), and each compiles to a class file whose name matches
 	 * no .java at all. Anchored at column 0 because that is where a top-level
 	 * declaration sits: a nested type is indented, and it compiles to
 	 * Outer$Inner.class, which this check has already resolved to its outer name
@@ -824,7 +823,7 @@ public class BatteryHygieneTest {
 	static void noOrphanClassFiles(File repo, File srcRoot) throws Exception {
 		File classes = new File(repo, "build/classes");
 		if (!classes.isDirectory()) {
-			System.out.println("  skip: no build at " + classes);
+			check(false, "no build at " + classes);
 			return;
 		}
 		java.util.Map<String, java.util.Set<String>> declaredByPackage = new java.util.HashMap<>();

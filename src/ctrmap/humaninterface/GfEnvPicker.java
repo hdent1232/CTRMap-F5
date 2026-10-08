@@ -62,8 +62,7 @@ public class GfEnvPicker {
 	 * Opens the picker; returns the chosen env block, {@link #CUSTOM} when the
 	 * user pressed "Custom settings..." (offered only when {@code offerCustom}),
 	 * or null on cancel.
-	 */
-	/**
+	 *
 	 * @param worldTextures the open map's decoded world textures, or null when
 	 *        no map is open. Handed in rather than read off the map view through
 	 *        the main window: this picker uses exactly this one thing from it.
@@ -73,9 +72,18 @@ public class GfEnvPicker {
 		if (loaded == null) {
 			throw new IllegalArgumentException("GfEnvPicker must be handed the LoadedZone");
 		}
-		final GARC zoG = pristineOrLive(ArchiveType.ZONE_DATA);
-		final GARC adG = pristineOrLive(ArchiveType.AREA_DATA);
+		//both refusals returned null without a word, which the caller reads as Cancel (F211)
+		if (!Workspace.isValid()) {
+			ctrmap.Ui.error(parent, "Open a workspace first (Options > Workspace settings): the atmospheres are read"
+					+ " from its game data.", "Atmosphere");
+			return null;
+		}
+		List<String> sourceNotes = new ArrayList<>();
+		final GARC zoG = pristineOrLive(ArchiveType.ZONE_DATA, sourceNotes);
+		final GARC adG = pristineOrLive(ArchiveType.AREA_DATA, sourceNotes);
 		if (zoG == null || adG == null) {
+			ctrmap.Ui.error(parent, "This workspace's " + (zoG == null ? ArchiveType.ZONE_DATA : ArchiveType.AREA_DATA)
+					+ " archive is not open, so there are no atmospheres to pick from.", "Atmosphere");
 			return null;
 		}
 		String[] locs = locationNames();
@@ -83,14 +91,22 @@ public class GfEnvPicker {
 		// zone list: id, location name, area id
 		final List<int[]> zones = new ArrayList<>();   // {zoneId, areaId}
 		final List<String> labels = new ArrayList<>();
-		int zoneCount = zoG.length - 2;
+		//the profile's measured tail, not ORAS's "2" (F029): on a game ending with the master
+		//table alone, length - 2 counted that table as a zone
+		int zoneCount;
+		try {
+			zoneCount = ctrmap.ZoneTables.zoneCount(zoG, Workspace.profile());
+		} catch (java.io.IOException unmeasured) {
+			ctrmap.Ui.error(parent, ctrmap.Ui.reason(unmeasured), "Atmosphere");
+			return null;
+		}
 		for (int z = 0; z < zoneCount; z++) {
 			byte[] hdr = subfile(zoG.getDecompressedEntry(z), 0);
 			if (hdr == null || hdr.length < 0x20) {
 				continue;
 			}
 			int area = u16(hdr, 2);
-			int loc = u16(hdr, 0x1C) & 0x3FF;
+			int loc = ctrmap.formats.zone.ZoneHeader.parentMapOf(hdr);
 			String nm = loc < locs.length ? locs[loc] : "";
 			zones.add(new int[]{z, area});
 			labels.add(z + "  " + nm + "  (area " + area + ")");
@@ -174,6 +190,10 @@ public class GfEnvPicker {
 		JScrollPane sp = new JScrollPane(list);
 		sp.setPreferredSize(new Dimension(280, 340));
 		left.add(sp, BorderLayout.CENTER);
+		if (!sourceNotes.isEmpty()) {
+			left.add(new javax.swing.JLabel("<html><body style='width:270px'><font color='#b00000'>"
+					+ ctrmap.Ui.html(String.join(" ", sourceNotes)) + "</font></body></html>"), BorderLayout.SOUTH);
+		}
 		dlg.add(left, BorderLayout.WEST);
 		if (view3d != null) {
 			// your zone in 3D (top), with the atmosphere's values card (bottom)
@@ -272,17 +292,35 @@ public class GfEnvPicker {
 		}
 	}
 
-	/** Pristine snapshot GARC when available (true retail values), else the live one. */
-	private static GARC pristineOrLive(ArchiveType type) {
+	/**
+	 * Pristine snapshot GARC when available (true retail values), else the live one - and
+	 * when it is the live one, {@code notes} says so and why (F211). A snapshot that existed
+	 * and would not open was swallowed, and the picker went on calling the workspace's own,
+	 * possibly edited, values GameFreak's.
+	 */
+	private static GARC pristineOrLive(ArchiveType type, List<String> notes) {
+		//THE ONE PRISTINE READER (F232): the snapshot, else the sealed backup's verified copy. The
+		//workspace's own values are shown only when neither is there, and then SAID to be the
+		//workspace's - a picker labels what it shows; it does not stamp it into anything.
+		ctrmap.WorkspaceSession session = Workspace.session();
+		File snap = null;
 		try {
-			String rel = Workspace.getArchivePath(type, Workspace.game());
-			if (rel != null) {
-				File snap = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
-				if (snap.exists()) {
-					return new GARC(snap);
-				}
+			snap = session == null ? null : session.pristineArchive(type);
+		} catch (java.io.IOException damaged) {
+			notes.add("The untouched copy of " + type + " could not be read (" + ctrmap.Ui.reason(damaged)
+					+ "), so these are this workspace's values.");
+			return Workspace.getArchive(type);
+		}
+		if (snap != null) {
+			try {
+				return new GARC(snap);
+			} catch (Exception ex) {
+				notes.add("The pristine copy of " + type + " could not be read (" + ctrmap.Ui.reason(ex)
+						+ "), so these are this workspace's values.");
 			}
-		} catch (Exception ignore) {
+		} else {
+			notes.add("This workspace has no pristine copy of " + type
+					+ ", so a zone it has edited shows its edited values, not GameFreak's.");
 		}
 		return Workspace.getArchive(type);
 	}
@@ -308,13 +346,13 @@ public class GfEnvPicker {
 		}
 	}
 
-	/** Paints the selected zone's atmosphere: sky gradient, swatches, fog range. */
 	/**
-	 * The atmosphere card. PUBLIC so a suite can paint one and measure it: this
-	 * panel was laid out for 340px and handed 92 whenever the 3D view existed, so
-	 * everything below the gradient band was clipped and the owner reported the
-	 * atmospheres as "a white blank page". A panel that draws past its own
-	 * preferred size cannot be caught by reading it; it has to be drawn.
+	 * The atmosphere card: sky gradient, swatches, fog range. PUBLIC so a suite can
+	 * paint one and measure it: this panel was laid out for 340px and handed 92
+	 * whenever the 3D view existed, so everything below the gradient band was clipped
+	 * and the owner reported the atmospheres as "a white blank page". A panel that
+	 * draws past its own preferred size cannot be caught by reading it; it has to be
+	 * drawn.
 	 */
 	public static class EnvPreview extends JPanel {
 

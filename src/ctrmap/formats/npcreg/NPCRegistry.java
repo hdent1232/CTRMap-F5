@@ -7,14 +7,19 @@ import ctrmap.formats.containers.MM;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.model.H3DModel;
 import ctrmap.gamedef.ArchiveType;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.Objects;
 
 /**
  * Provides access to and manipulation of MoveModel/NPC registry, specified in a
@@ -28,13 +33,31 @@ import java.util.logging.Logger;
  * user whether to keep its changes, from inside the format layer, which no
  * suite could answer and no caller could decide for it; the question now
  * belongs to the window that owns it (the NPC form), and this class only
- * {@link #store() writes} or {@link #discard() forgets} and says which.
+ * {@link #store() writes} or {@link #discard() puts back} and says which.
  * {@code ctrmap.tests.HandedGameTest} hands it two games.
  */
 public class NPCRegistry {
 
-	public Map<Integer, NPCRegistryEntry> entries = new HashMap<>();
+	/** One entry's length: the format has no count, so the file is as many as fit. */
+	public static final int ENTRY = 0x18;
+
+	/** Every entry in file order - a UID held twice included, which a map by UID cannot hold (F081). */
+	private final List<NPCRegistryEntry> all = new ArrayList<>();
+	private final Map<Integer, NPCRegistryEntry> byUid = new LinkedHashMap<>();
+	/** The bytes after the last whole entry, written back as they were read. */
+	private byte[] tail = new byte[0];
+
+	/**
+	 * The entries by UID, in file order. READ-ONLY (F081): it was a HashMap every caller put into
+	 * and removed from, so the registry was written in hash order, a UID held twice (retail carries
+	 * UID-0 dummies) was dropped when read and again when written, and nothing could keep the
+	 * bytes after the last entry. Every change goes through {@link #register}, {@link #replace} or
+	 * {@link #remove}.
+	 */
+	public final Map<Integer, NPCRegistryEntry> entries = Collections.unmodifiableMap(byUid);
 	public Map<Integer, H3DModel> models = new HashMap<>();
+	/** The models as read or last stored: what a discard puts back (F106). */
+	private Map<Integer, H3DModel> savedModels = new HashMap<>();
 	public boolean modified = false;
 	private File f;
 	/** The game the models are staged in and the write is reported to. */
@@ -49,18 +72,118 @@ public class NPCRegistry {
 	public NPCRegistry(File f, GameFiles files) {
 		this.f = f;
 		this.files = handed(files);
-		try {
-			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(f));
-			//this struct does not describe length in any way. idk why. it works when I add new entries, so it's not described anywhere, even externally.
-			while (dis.available() >= 0x18) {
-				NPCRegistryEntry e = new NPCRegistryEntry(dis);
-				entries.put(e.uid, e);
-				mapModel(e.uid, e.model);
-			}
-			dis.close();
-		} catch (IOException ex) {
-			Logger.getLogger(NPCRegistry.class.getName()).log(Level.SEVERE, null, ex);
+		read();
+		for (NPCRegistryEntry e : byUid.values()) {
+			mapModel(e.uid, e.model);
 		}
+		savedModels = new HashMap<>(models);
+	}
+
+	/**
+	 * Every entry and the bytes after them, from the file: what the registry opens with and what a
+	 * discard goes back to (F106). Read whole before anything held is replaced, so a read that fails
+	 * leaves the registry as it was.
+	 */
+	private void read() {
+		byte[] b;
+		try {
+			b = Files.readAllBytes(f.toPath());
+		} catch (IOException ex) {
+			//REFUSED, NOT LOGGED (F081): an empty registry stood in for one that could not be read,
+			//and the next store wrote that emptiness over it
+			throw new IllegalStateException("The NPC registry " + f.getName() + " could not be read, so it was not opened: "
+					+ ctrmap.util.Bytes.reason(ex), ex);
+		}
+		//this struct does not describe length in any way. idk why. it works when I add new entries, so it's not described anywhere, even externally.
+		int whole = b.length / ENTRY * ENTRY;
+		List<NPCRegistryEntry> read = new ArrayList<>();
+		try {
+			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(b, 0, whole));
+			for (int at = 0; at < whole; at += ENTRY) {
+				read.add(new NPCRegistryEntry(dis));
+			}
+		} catch (IOException cannot) {
+			throw new IllegalStateException("The NPC registry " + f.getName() + " could not be read: "
+					+ ctrmap.util.Bytes.reason(cannot), cannot);
+		}
+		all.clear();
+		all.addAll(read);
+		tail = Arrays.copyOfRange(b, whole, b.length);
+		reindex();
+	}
+
+	/** The map by UID, rebuilt from the file-order list: where a UID is held twice, the later one answers. */
+	private void reindex() {
+		byUid.clear();
+		for (NPCRegistryEntry e : all) {
+			byUid.put(e.uid, e);
+		}
+	}
+
+	private int indexOf(NPCRegistryEntry e) {
+		for (int i = 0; i < all.size(); i++) {
+			if (all.get(i) == e) {
+				return i;
+			}
+		}
+		throw new IllegalStateException("an NPC registry entry is mapped by UID but not in the registry");
+	}
+
+	/**
+	 * Adds {@code entry} under the lowest free UID from {@code preferredUid} up, after the entries
+	 * already there, and answers the UID. The registry editor's Add used the default UID 0, which
+	 * replaced the UID-0 dummy retail registries carry (F081).
+	 */
+	public int register(NPCRegistryEntry entry, int preferredUid) {
+		int uid = Math.max(0, preferredUid);
+		while (byUid.containsKey(uid)) {
+			uid++;
+		}
+		if (uid > 0xFFFF) {
+			throw new IllegalStateException("no NPC registry UID is free from " + preferredUid + " up: UIDs are 16-bit");
+		}
+		entry.uid = uid;
+		all.add(entry);
+		byUid.put(uid, entry);
+		modified = true;
+		return uid;
+	}
+
+	/**
+	 * Puts {@code entry} where the entry with {@code oldUid} was - its place in the file and the
+	 * bytes of its own the editor does not show (F081): the editor removed it and put a new one
+	 * built from defaults.
+	 *
+	 * @throws IllegalArgumentException when there is no such entry, or the entry's UID is another's
+	 */
+	public void replace(int oldUid, NPCRegistryEntry entry) {
+		NPCRegistryEntry old = byUid.get(oldUid);
+		if (old == null) {
+			throw new IllegalArgumentException("no NPC registry entry has UID " + oldUid);
+		}
+		if (entry.uid != oldUid && byUid.containsKey(entry.uid)) {
+			throw new IllegalArgumentException("UID " + entry.uid + " is already registered");
+		}
+		all.set(indexOf(old), entry);
+		reindex();
+		if (!byUid.containsKey(oldUid)) {
+			models.remove(oldUid);
+		}
+		modified = true;
+	}
+
+	/** Removes the entry with {@code uid}; where the UID is held twice, the one the map answered. */
+	public void remove(int uid) {
+		NPCRegistryEntry old = byUid.get(uid);
+		if (old == null) {
+			throw new IllegalArgumentException("no NPC registry entry has UID " + uid);
+		}
+		all.remove(indexOf(old));
+		reindex();
+		if (!byUid.containsKey(uid)) {
+			models.remove(uid);
+		}
+		modified = true;
 	}
 
 	/** A handed game must exist: null here would be models read from nowhere and a write nobody packs. */
@@ -124,19 +247,10 @@ public class NPCRegistry {
 		if (entries.size() >= MAX_ENTRIES) {
 			return -1;
 		}
-		int uid = moveModelsIndex;
-		if (entries.containsKey(uid)) {
-			uid = 1;
-			while (entries.containsKey(uid)) {
-				uid++;
-			}
-		}
 		NPCRegistryEntry ne = new NPCRegistryEntry();
-		ne.uid = uid;
 		ne.model = moveModelsIndex;
-		entries.put(uid, ne);
+		int uid = register(ne, byUid.containsKey(moveModelsIndex) ? 1 : moveModelsIndex);
 		mapModel(uid, moveModelsIndex);
-		modified = true;
 		return uid;
 	}
 
@@ -204,32 +318,41 @@ public class NPCRegistry {
 		if (!modified) {
 			return false;
 		}
-		LittleEndianDataOutputStream dos = new LittleEndianDataOutputStream(new FileOutputStream(f));
-		try {
-			for (Map.Entry<Integer, NPCRegistryEntry> e : entries.entrySet()) {
-				e.getValue().write(dos);
-			}
-		} finally {
-			dos.close();
+		//EVERY ENTRY IN FILE ORDER AND THE BYTES AFTER THEM (F081), written beside the file and moved
+		//over it: this wrote a HashMap in hash order through a stream that truncated the file first
+		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		LittleEndianDataOutputStream dos = new LittleEndianDataOutputStream(baos);
+		for (NPCRegistryEntry e : all) {
+			e.write(dos);
 		}
+		dos.write(tail);
+		dos.close();
+		files.aboutToWrite(f);
+		ctrmap.util.Bytes.replaceFile(f, baos.toByteArray());
 		//reported after the write, not before: a mark taken first and then a
 		//failed write would send the next pack an unwritten file
 		files.edited(f);
 		modified = false;
+		savedModels = new HashMap<>(models);
 		return true;
 	}
 
 	/**
-	 * Forgets that the registry was modified without writing anything; the
-	 * in-memory entries are left as they are, for a caller that reloads them.
+	 * Puts the entries back to what the file holds and the models to what they were when it was read
+	 * or last stored, writing nothing (F106). It used to forget that the registry was modified and
+	 * leave the edited entries in memory - drawn, and written by the next store of anything that
+	 * registered a model.
 	 *
-	 * @return true when there were changes to forget, false when the
-	 * registry was not modified
+	 * @return true when there were changes to put back, false when the registry was not modified
+	 * @throws IllegalStateException when the file no longer reads; nothing here is changed then
 	 */
 	public boolean discard() {
 		if (!modified) {
 			return false;
 		}
+		read();
+		models.clear();
+		models.putAll(savedModels);
 		modified = false;
 		return true;
 	}
@@ -301,8 +424,10 @@ public class NPCRegistry {
 			uE = 0;
 			isDummy = 0;
 			u10 = 0;
-			u11 = 0;
-			u12 = 2;
+			//the right way round (F081): this set u12 - "always 0" - to 2 and u11 - "1 or 2, always
+			//used" - to 0, one field off
+			u11 = 2;
+			u12 = 0;
 			u13 = 0;
 			model = 0;
 			u16 = 0;
@@ -334,16 +459,55 @@ public class NPCRegistry {
 			dos.write(u17);
 		}
 
+		/**
+		 * A copy to edit (F081): the editor built the edited entry from defaults and copied back only
+		 * what it shows, so u5, uD, uE, u10, u12, u13, u16 and u17 took the defaults on every edit.
+		 */
+		public NPCRegistryEntry copy() {
+			NPCRegistryEntry c = new NPCRegistryEntry();
+			c.uid = uid;
+			c.u1 = u1;
+			c.renderEnabled = renderEnabled;
+			c.u4 = u4;
+			c.u5 = u5;
+			c.shadowEnabled = shadowEnabled;
+			c.isItOb = isItOb;
+			c.u8 = u8;
+			c.u9 = u9;
+			c.collW = collW;
+			c.collH = collH;
+			c.uC = uC;
+			c.uD = uD;
+			c.uE = uE;
+			c.isDummy = isDummy;
+			c.u10 = u10;
+			c.u11 = u11;
+			c.u12 = u12;
+			c.u13 = u13;
+			c.model = model;
+			c.u16 = u16;
+			c.u17 = u17;
+			return c;
+		}
+
+		/** All 22 fields (F081): the eight left out are exactly the ones an edit lost, so the change check could not see it. */
 		@Override
 		public boolean equals(Object o2) {
-			if (o2 != null && o2 instanceof NPCRegistryEntry) {
-				NPCRegistryEntry e = (NPCRegistryEntry) o2;
-				return e.uid == uid && e.u1 == u1 && e.renderEnabled == renderEnabled && e.u4 == u4
-						&& e.shadowEnabled == shadowEnabled && e.isItOb == isItOb && e.u8 == u8
-						&& e.u9 == u9 && e.collW == collW && e.collH == collH && e.uC == uC
-						&& e.isDummy == isDummy && e.u11 == u11 && e.model == model;
+			if (!(o2 instanceof NPCRegistryEntry)) {
+				return false;
 			}
-			return false;
+			NPCRegistryEntry e = (NPCRegistryEntry) o2;
+			return e.uid == uid && e.u1 == u1 && e.renderEnabled == renderEnabled && e.u4 == u4 && e.u5 == u5
+					&& e.shadowEnabled == shadowEnabled && e.isItOb == isItOb && e.u8 == u8
+					&& e.u9 == u9 && e.collW == collW && e.collH == collH && e.uC == uC && e.uD == uD && e.uE == uE
+					&& e.isDummy == isDummy && e.u10 == u10 && e.u11 == u11 && e.u12 == u12 && e.u13 == u13
+					&& e.model == model && e.u16 == u16 && e.u17 == u17;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(uid, u1, renderEnabled, u4, u5, shadowEnabled, isItOb, u8, u9, collW, collH, uC, uD, uE,
+					isDummy, u10, u11, u12, u13, model, u16, u17);
 		}
 	}
 }

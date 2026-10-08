@@ -16,8 +16,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import static ctrmap.formats.LittleEndian.u16;
 import static ctrmap.formats.LittleEndian.i32;
 
@@ -35,6 +33,8 @@ public class MapMatrix {
 	public ResizeableMatrix<Short> LOD;
 
 	private int boundaryEntries;
+	/** The game the regions were opened from, for a discard that opens one again (F106); null for the grid only. */
+	private GameFiles files;
 
 	/**
 	 * Reads a map matrix, opening each populated cell's region container
@@ -53,9 +53,15 @@ public class MapMatrix {
 	 * builder's blank matrix and a suite reading a matrix straight out of the
 	 * dump want, and what "no workspace open" used to mean here - except that
 	 * now it is the caller's stated choice, not a global's state.
+	 *
+	 * @throws IllegalStateException naming the matrix and the reason, when it cannot be read whole
+	 * (F080): the whole parse sat in a catch that logged, so a short or damaged subfile left the
+	 * grid half filled - or null - and the camera bounds cut short, and {@link #write} then saved
+	 * that back over the map
 	 */
 	public MapMatrix(MM f, GameFiles files) {
 		file = f;
+		this.files = files;
 		try {
 			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(f.getFile(0)));
 			hasLOD = dis.readShort();
@@ -94,8 +100,10 @@ public class MapMatrix {
 				cambounds.add(new MatrixCameraBoundaries(dis));
 			}
 			dis.close();
-		} catch (Exception ex) {
-			Logger.getLogger(MapMatrix.class.getName()).log(Level.SEVERE, null, ex);
+		} catch (IOException | RuntimeException ex) {
+			throw new IllegalStateException("The map matrix " + (f == null ? "(none)" : f.getOriginFile().getName())
+					+ " could not be read, so it was not opened: " + (ex instanceof java.io.EOFException
+					? "it ends before everything it declares has been read" : ctrmap.util.Bytes.reason(ex)), ex);
 		}
 	}
 
@@ -115,27 +123,10 @@ public class MapMatrix {
 		mcb.south = 740;
 		mcb.west = -20;
 		mcb.east = 740;
+		//built and then dropped (F080), so the builder's new map shipped with no camera boundary
+		cambounds.add(mcb);
 	}
 
-	/**
-	 * The first FieldData region a map matrix uses, or -1.
-	 *
-	 * <p>This is what "the map of the loaded zone" means to the tools that work
-	 * on one region at a time - Export/Import OBJ default to it, and Blank map
-	 * canvas probes it for the zone's own materials. Getting it wrong is not a
-	 * cosmetic default: Import OBJ writes the mesh into whatever region the
-	 * spinner is showing, so a wrong answer here drops the user's edited model
-	 * on top of somebody else's town.
-	 *
-	 * <p>Takes the whole .mm container rather than a parsed MapMatrix because
-	 * the callers have a file and want one number; building a MapMatrix would
-	 * open a GR per populated cell against the live workspace. Cells read
-	 * 0xFFFF where the zone puts no region, so the first cell that is not
-	 * 0xFFFF is the map's top-left corner in reading order.
-	 *
-	 * @param mmContainer the raw bytes of the map matrix file (header + subfiles)
-	 * @return the region id, or -1 if the file is unreadable or wholly empty
-	 */
 	/**
 	 * WHICH REGIONS A GIVEN ZONE OWNS, read out of the matrix's own zone grid.
 	 *
@@ -223,6 +214,25 @@ public class MapMatrix {
 		}
 		return sawSomebody;
 	}
+	/**
+	 * The first FieldData region a map matrix uses, or -1.
+	 *
+	 * <p>This is what "the map of the loaded zone" means to the tools that work
+	 * on one region at a time - Export/Import OBJ default to it, and Blank map
+	 * canvas probes it for the zone's own materials. Getting it wrong is not a
+	 * cosmetic default: Import OBJ writes the mesh into whatever region the
+	 * spinner is showing, so a wrong answer here drops the user's edited model
+	 * on top of somebody else's town.
+	 *
+	 * <p>Takes the whole .mm container rather than a parsed MapMatrix because
+	 * the callers have a file and want one number; building a MapMatrix would
+	 * open a GR per populated cell against the live workspace. Cells read
+	 * 0xFFFF where the zone puts no region, so the first cell that is not
+	 * 0xFFFF is the map's top-left corner in reading order.
+	 *
+	 * @param mmContainer the raw bytes of the map matrix file (header + subfiles)
+	 * @return the region id, or -1 if the file is unreadable or wholly empty
+	 */
 	public static int firstRegionId(byte[] mmContainer) {
 		if (mmContainer == null || mmContainer.length < 8) {
 			return -1;
@@ -280,8 +290,8 @@ public class MapMatrix {
 			dos.close();
 			return out.toByteArray();
 		} catch (IOException ex) {
-			Logger.getLogger(MapMatrix.class.getName()).log(Level.SEVERE, null, ex);
-			return file.getFile(0);
+			//never the bytes it was read from: those are not the matrix being saved (F080)
+			throw new IllegalStateException("the map matrix grid could not be assembled: " + ctrmap.util.Bytes.reason(ex), ex);
 		}
 	}
 
@@ -297,14 +307,117 @@ public class MapMatrix {
 			dos.close();
 			return out.toByteArray();
 		} catch (IOException ex) {
-			Logger.getLogger(MapMatrix.class.getName()).log(Level.SEVERE, null, ex);
-			return file.getFile(1);
+			throw new IllegalStateException("the map matrix camera bounds could not be assembled: "
+					+ ctrmap.util.Bytes.reason(ex), ex);
 		}
 	}
 
 	public void write() {
 		file.storeFile(0, assembleData());
 		file.storeFile(1, assembleCamData());
+	}
+
+	/**
+	 * Puts the grid, the zone layer, the LOD and the camera bounds back to what the file holds, IN
+	 * PLACE (F106): the map view, the matrix editor and the prop form all hold this one matrix, so a
+	 * new one would be put back for one of them only. A cell whose region is still open keeps it; one
+	 * the edit had dropped, or that names another region now, is opened again from its game.
+	 *
+	 * @throws IllegalStateException when the file no longer reads; nothing here is changed then
+	 */
+	public void discard() {
+		MapMatrix saved = new MapMatrix(file, null);
+		ResizeableMatrix<GR> back = new ResizeableMatrix<>(saved.width, saved.height, null);
+		for (int i = 0; i < saved.height; i++) {
+			for (int j = 0; j < saved.width; j++) {
+				short id = saved.ids.get(j, i);
+				if (id == -1 || files == null) {
+					continue;
+				}
+				java.io.File want = files.staged(ArchiveType.FIELD_DATA, id);
+				GR open = j < regions.getWidth() && i < regions.getHeight() ? regions.get(j, i) : null;
+				back.set(j, i, open != null && want != null && want.equals(open.getOriginFile()) ? open : new GR(want, files));
+			}
+		}
+		hasLOD = saved.hasLOD;
+		unknown = saved.unknown;
+		width = saved.width;
+		height = saved.height;
+		ids = saved.ids;
+		zones = saved.zones;
+		LOD = saved.LOD;
+		regions = back;
+		cambounds.clear();
+		cambounds.addAll(saved.cambounds);
+		boundaryEntries = saved.boundaryEntries;
+	}
+
+	/**
+	 * The region grid of a raw matrix container - width, height, each cell's region id, and where
+	 * the zone-switch layer starts - read in ONE place (F118). It was parsed by hand wherever it was
+	 * wanted: "sub0 + 8 + k * 2" fourteen times in eight files, some checking that the grid fits its
+	 * subfile and some not.
+	 */
+	public static final class Grid {
+
+		public final int width;
+		public final int height;
+		/** A zone-switch layer, (width*4)x(height*4) u16 zone ids, follows the region ids. */
+		public final boolean hasZoneLayer;
+		private final byte[] mm;
+		private final int ids;
+
+		private Grid(byte[] mm, int sub0) {
+			this.mm = mm;
+			this.ids = sub0 + 8;
+			this.width = u16(mm, sub0 + 4);
+			this.height = u16(mm, sub0 + 6);
+			this.hasZoneLayer = u16(mm, sub0) == 1;
+		}
+
+		/**
+		 * The grid of {@code mmContainer}.
+		 *
+		 * @throws IllegalArgumentException naming what does not fit
+		 */
+		public static Grid of(byte[] mmContainer) {
+			if (mmContainer == null || mmContainer.length < 12) {
+				throw new IllegalArgumentException("Map matrix container too short.");
+			}
+			int sub0 = i32(mmContainer, 4);
+			if (sub0 < 0 || sub0 + 8 > mmContainer.length) {
+				throw new IllegalArgumentException("Map matrix grid subfile out of range.");
+			}
+			Grid g = new Grid(mmContainer, sub0);
+			long cells = (long) g.width * g.height;
+			if (g.width <= 0 || g.height <= 0 || cells > 4096 || g.ids + cells * 2 > mmContainer.length) {
+				throw new IllegalArgumentException("Map matrix grid " + g.width + "x" + g.height + " does not fit its subfile.");
+			}
+			return g;
+		}
+
+		public int cells() {
+			return width * height;
+		}
+
+		/** Cell {@code k}'s region id, in reading order; 0xFFFF for an empty cell. */
+		public int id(int k) {
+			return u16(mm, idOffset(k));
+		}
+
+		public int id(int col, int row) {
+			return id(row * width + col);
+		}
+
+		/** Where cell {@code k}'s id sits in the container: for a writer rewriting ids in a copy of it. */
+		public int idOffset(int k) {
+			return ids + k * 2;
+		}
+
+		/** Where the zone-switch layer starts in the container, or -1 when there is none. */
+		public int zoneLayerOffset() {
+			return hasZoneLayer ? ids + cells() * 2 : -1;
+		}
 	}
 
 	public static class ResizeableMatrix<T> {
@@ -346,27 +459,6 @@ public class MapMatrix {
 			return list.get(x).get(y);
 		}
 
-		public void resizeMatrix(int newWidth, int newHeight) {
-			for (int i = list.size() - 1; i >= 0; i--) {
-				if (i >= newWidth) {
-					list.remove(i);
-				}
-			}
-			for (int i = 0; i < list.size(); i++) {
-				ArrayList<T> l = list.get(i);
-				for (int j = l.size(); j >= 0; j--) {
-					if (j >= newHeight) {
-						l.remove(j);
-					}
-				}
-			}
-			//removal done, now ensure size if width or height was upped
-			ensureSize(list, newWidth, false);
-			for (int i = 0; i < newWidth; i++) {
-				ensureSize(list.get(i), newHeight, true);
-			}
-		}
-
 		public void addColumn() {
 			addColumns(1);
 		}
@@ -395,6 +487,9 @@ public class MapMatrix {
 		}
 
 		public void removeColumns(int count) {
+			if (count < 0 || count > list.size()) {
+				throw new IllegalArgumentException("cannot remove " + count + " column(s) of " + list.size());
+			}
 			for (int i = 0; i < count; i++) {
 				list.remove(list.size() - 1);
 			}
@@ -405,6 +500,9 @@ public class MapMatrix {
 		}
 
 		public void removeRows(int count) {
+			if (count < 0 || count > getHeight()) {
+				throw new IllegalArgumentException("cannot remove " + count + " row(s) of " + getHeight());
+			}
 			for (int i = 0; i < list.size(); i++) {
 				for (int j = 0; j < count; j++) {
 					list.get(i).remove(list.get(i).size() - 1);

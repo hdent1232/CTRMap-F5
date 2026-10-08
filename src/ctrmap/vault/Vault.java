@@ -122,21 +122,74 @@ public final class Vault {
 	}
 
 	/**
-	 * The vault folder for a dump, named by its title id.
+	 * The vault folder for a dump: named by its title id when the dump says one ({@link #titleIdOf}),
+	 * else by its game.
 	 *
-	 * <p>A 3DS RomFS dump sits in a folder named for the title, which is what
-	 * makes one dump distinguishable from another of a different region. When
-	 * the folder is not named that way the game type is used instead, which
-	 * still separates ORAS from XY but cannot separate two regions - so
-	 * {@link #seal} records the detected name in the manifest and
-	 * {@link #wouldOverwriteDifferentGame} checks it before writing.
+	 * <p>THE ONE WAY AN ENTRY IS NAMED (F121). Seal named it with the game it detected, and the setup
+	 * offer and the restore action with none, so a dump in a folder not named by its title was sealed
+	 * under one name and looked for under another. Named by game, an entry cannot tell the two
+	 * versions of a pair apart - Omega Ruby and Alpha Sapphire share a game and a display name - so a
+	 * backup is never called a dump's until {@link #mismatch} has matched the two.
 	 */
-	public static File entryDir(File dumpRoot, GameProfile profile) {
-		String name = dumpRoot == null ? null : dumpRoot.getName();
-		String key = looksLikeTitleId(name) ? name
-				: ("game-" + (profile != null ? profile.type().name() : "UNKNOWN"));
-		return new File(root(), key);
+	public static File entryFor(File dumpRoot) {
+		String tid = titleIdOf(dumpRoot);
+		if (tid != null) {
+			return new File(root(), tid);
+		}
+		GameProfile p = dumpRoot == null ? null : GameProfile.detect(dumpRoot);
+		return new File(root(), "game-" + (p != null ? p.type().name() : "UNKNOWN"));
 	}
+
+	/**
+	 * The dump's title id, from where the dump tools leave it: the folder's own name, its parent's (a
+	 * romfs folder inside one named by the title), or the ExHeader beside the romfs. Null when none
+	 * says - which is unknown, and never read as "the same as the backup".
+	 */
+	public static String titleIdOf(File dumpRoot) {
+		if (dumpRoot == null) {
+			return null;
+		}
+		if (looksLikeTitleId(dumpRoot.getName())) {
+			return dumpRoot.getName();
+		}
+		File parent = dumpRoot.getAbsoluteFile().getParentFile();
+		if (parent != null && looksLikeTitleId(parent.getName())) {
+			return parent.getName();
+		}
+		for (File dir : new File[]{dumpRoot, parent}) {
+			String tid = dir == null ? null : programIdIn(new File(dir, "exheader.bin"));
+			if (tid != null) {
+				return tid;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The program id an ExHeader records at 0x200 - the first field of the ARM11 local system
+	 * capabilities - when it is an application title's (high word 0x00040000); null otherwise, or
+	 * when it cannot be read.
+	 */
+	static String programIdIn(File exheader) {
+		//an ExHeader is 0x800 bytes (0x400 without its access descriptor): anything far larger is not one
+		if (!exheader.isFile() || exheader.length() < PROGRAM_ID + 8 || exheader.length() > 0x10000) {
+			return null;
+		}
+		byte[] b;
+		try {
+			b = java.nio.file.Files.readAllBytes(exheader.toPath());
+		} catch (IOException unread) {
+			return null;
+		}
+		long id = 0;
+		for (int i = 7; i >= 0; i--) {
+			id = (id << 8) | (b[PROGRAM_ID + i] & 0xFF);
+		}
+		return (id >>> 32) == 0x00040000L ? String.format("%016X", id) : null;
+	}
+
+	/** Where an ExHeader records the program id: the first field of its ARM11 local system capabilities. */
+	static final int PROGRAM_ID = 0x200;
 
 	static boolean looksLikeTitleId(String s) {
 		if (s == null || s.length() != 16) {
@@ -204,15 +257,17 @@ public final class Vault {
 		SealResult out = new SealResult();
 		DumpCheck.Result dc = DumpCheck.check(dumpRoot);
 		GameProfile profile = dc.profile;
-		File entry = entryDir(dumpRoot, profile);
+		File entry = entryFor(dumpRoot);
 		out.entry = entry;
 
 		if (isSealed(entry)) {
 			VaultManifest existing = VaultManifest.read(entry);
-			if (existing != null && wouldOverwriteDifferentGame(existing, dc)) {
-				out.problem = "That vault already holds " + existing.displayName
-						+ ", and this folder is " + dc.gameName()
-						+ ". Refusing to replace one game's backup with another's.";
+			//ALREADY BACKED UP ONLY WHEN IT IS THIS DUMP'S (F121): the second of a version pair in a folder
+			//not named by its title was told it was backed up, by the first one's backup
+			String why = existing == null ? "The backup there cannot be read." : mismatch(existing, dumpRoot);
+			if (!why.isEmpty()) {
+				out.problem = "The vault holds a backup under that name, and it may not be this dump's:\n" + why
+						+ "\nThis dump has NOT been backed up, and the backup there was left as it is.";
 				return out;
 			}
 			out.sealed = true;
@@ -228,7 +283,8 @@ public final class Vault {
 		}
 
 		VaultManifest man = new VaultManifest();
-		man.titleId = looksLikeTitleId(dumpRoot.getName()) ? dumpRoot.getName() : "";
+		String tid = titleIdOf(dumpRoot);
+		man.titleId = tid != null ? tid : "";
 		man.gameType = profile != null ? profile.type().name() : "UNKNOWN";
 		man.displayName = dc.gameName();
 		man.scope = scope.name();
@@ -367,12 +423,32 @@ public final class Vault {
 		return sb.toString();
 	}
 
-	/** True when this entry belongs to a different game than the folder being sealed. */
-	static boolean wouldOverwriteDifferentGame(VaultManifest existing, DumpCheck.Result dc) {
-		if (existing == null || dc == null || dc.profile == null) {
-			return false;
+	/**
+	 * Why {@code dumpRoot} cannot be matched to the backup {@code m} records, or "" when it can: the
+	 * same game, and the same title by id - or, when neither knows its id, the folder the backup was
+	 * taken from (F121). Unknown is never taken for the same: a version pair shares a game and a
+	 * display name, and only checking those let the second version be called backed up by the
+	 * first's backup, and a restore write the first one's files into it.
+	 */
+	public static String mismatch(VaultManifest m, File dumpRoot) {
+		GameProfile p = dumpRoot == null ? null : GameProfile.detect(dumpRoot);
+		if (p != null && !p.type().name().equals(m.gameType)) {
+			return "The backup is of " + m.displayName + ", and this folder is " + p.displayName() + ".";
 		}
-		return !existing.gameType.equals(dc.profile.type().name());
+		String tid = titleIdOf(dumpRoot);
+		boolean recorded = m.titleId != null && !m.titleId.isEmpty();
+		if (tid != null && recorded) {
+			return tid.equalsIgnoreCase(m.titleId) ? ""
+					: "The backup is of title " + m.titleId + ", and this folder is title " + tid + ".";
+		}
+		if (tid == null && !recorded && dumpRoot != null && m.takenFrom != null
+				&& new File(m.takenFrom).getAbsoluteFile().equals(dumpRoot.getAbsoluteFile())) {
+			return "";
+		}
+		return "The backup is of " + m.displayName + (recorded ? " (title " + m.titleId + ")" : "") + ", taken from "
+				+ m.takenFrom + ", and this folder's title id " + (tid != null ? "is " + tid : "cannot be read")
+				+ ", so CTRMap cannot tell that they are the same version of the same game.\n"
+				+ "Name the dump folder by its title id - the 16-digit number the dump tool shows - and try again.";
 	}
 
 	private static List<String> filesToSeal(File dumpRoot, Scope scope, GameProfile profile) {
@@ -391,7 +467,7 @@ public final class Vault {
 					//for this game" - absence, never a guess. Skip it rather
 					//than invent a path that would silently back up nothing.
 					if (rel != null && new File(dumpRoot, rel).isFile()) {
-						out.add(rel.replace('\\', '/').replaceAll("^/+", ""));
+						out.add(key(rel));
 					}
 				}
 			}
@@ -407,6 +483,16 @@ public final class Vault {
 		}
 		Collections.sort(out);
 		return out;
+	}
+
+	/**
+	 * A path inside a dump as a backup keys it: forward slashes, no leading slash. The one spelling
+	 * (F155) - the manifest stripped the slash the profile's paths start with and the restore looked
+	 * up what it was handed, so the restore dialog's own suggestion, "/a/0/1/3", was refused, and so
+	 * was a Windows user's "a\\0\\1\\3".
+	 */
+	public static String key(String relPath) {
+		return relPath == null ? null : relPath.trim().replace('\\', '/').replaceAll("^/+", "");
 	}
 
 	private static void collect(File dir, String prefix, List<String> out) {
@@ -463,11 +549,8 @@ public final class Vault {
 			return bad;
 		}
 		boolean zipped = Scope.FULL_COMPRESSED.name().equals(man.scope);
-		ZipFile zf = null;
-		try {
-			if (zipped) {
-				zf = new ZipFile(new File(entry, "dump.zip"));
-			}
+		//a null resource is not closed, so the loose-file backup needs no second shape
+		try (ZipFile zf = zipped ? new ZipFile(new File(entry, "dump.zip")) : null) {
 			for (Map.Entry<String, VaultManifest.Entry> e : man.entries.entrySet()) {
 				VaultManifest.Entry want = e.getValue();
 				if (zipped) {
@@ -492,7 +575,10 @@ public final class Vault {
 					}
 					boolean cheapOk = f.length() == want.size && f.lastModified() == want.mtime;
 					if (!cheapOk || deep) {
-						String got = digestOf(new FileInputStream(f));
+						String got;
+						try (InputStream in = new FileInputStream(f)) {
+							got = digestOf(in);
+						}
 						if (!want.sha256.equals(got)) {
 							bad.add(new Drift(e.getKey(), "contents have changed since the backup was sealed"));
 						}
@@ -502,13 +588,6 @@ public final class Vault {
 		} catch (IOException ex) {
 			bad.add(new Drift("", "the backup could not be read: "
 					+ Ui.reason(ex)));
-		} finally {
-			if (zf != null) {
-				try {
-					zf.close();
-				} catch (IOException ignored) {
-				}
-			}
 		}
 		return bad;
 	}
@@ -538,50 +617,108 @@ public final class Vault {
 	 * not.
 	 */
 	public static String restoreOne(File entry, String relPath, File targetRoot) {
+		relPath = key(relPath);
 		VaultManifest man = VaultManifest.read(entry);
 		if (man == null) {
 			return "There is no finished backup to restore from.";
 		}
+		//NOTHING IS WRITTEN FROM ANOTHER GAME'S BACKUP (F121): the digest check after the write compares
+		//against the backup's own manifest, so it passed another version's bytes
+		String other = mismatch(man, targetRoot);
+		if (!other.isEmpty()) {
+			return "Nothing was restored: " + other;
+		}
+		File dst = new File(targetRoot, relPath);
+		//STAGED BESIDE THE GAME FILE AND CHECKED BEFORE IT REPLACES IT (F140): the backup's bytes were
+		//copied over the file first and checked after, so a damaged backup destroyed the very file it
+		//was asked to repair, and a copy that failed half way left it cut short
+		File staged = new File(dst.getParentFile(), dst.getName() + ".restoring");
+		try {
+			dst.getParentFile().mkdirs();
+			String why = stageVerified(man, entry, relPath, staged);
+			if (!why.isEmpty()) {
+				return why.startsWith(DAMAGED) ? "Nothing was restored: " + why + " " + relPath + " was left as it was."
+						: why;
+			}
+			ctrmap.util.Bytes.moveOver(staged, dst);
+		} catch (IOException ex) {
+			return "Could not restore " + relPath + ", and it was left as it was: " + Ui.reason(ex);
+		} finally {
+			staged.delete();   //gone already when it was moved over; a refused or failed copy is not left behind
+		}
+		return "";
+	}
+
+	/**
+	 * One sealed file copied to {@code into} and checked against what was sealed: the game as it
+	 * SHIPPED, verified, for a reader that needs retail bytes rather than the user's edits (F232).
+	 * "" when {@code into} holds exactly the sealed bytes, or why not - and then nothing is left at
+	 * {@code into}. Only from this dump's own backup (F121).
+	 */
+	public static String verifiedCopy(File entry, File dumpRoot, String relPath, File into) {
+		relPath = key(relPath);
+		VaultManifest man = VaultManifest.read(entry);
+		if (man == null) {
+			return "There is no finished backup to read " + relPath + " from.";
+		}
+		String other = mismatch(man, dumpRoot);
+		if (!other.isEmpty()) {
+			return "The backup is not this game's: " + other;
+		}
+		String why;
+		try {
+			into.getParentFile().mkdirs();
+			why = stageVerified(man, entry, relPath, into);
+		} catch (IOException ex) {
+			why = "The backup's copy of " + relPath + " could not be read: " + Ui.reason(ex);
+		}
+		if (!why.isEmpty()) {
+			into.delete();
+		}
+		return why;
+	}
+
+	/** How {@link #stageVerified} opens the answer for sealed bytes that do not match the manifest. */
+	private static final String DAMAGED = "the backup's copy of ";
+
+	/**
+	 * {@code relPath}'s sealed bytes written to {@code staged} and checked against the manifest - the
+	 * one reading of a sealed file, for a restore and for a verified copy alike. "" or why not.
+	 */
+	private static String stageVerified(VaultManifest man, File entry, String relPath, File staged) throws IOException {
 		VaultManifest.Entry want = man.entries.get(relPath);
 		if (want == null) {
 			return "The backup does not contain " + relPath + ".";
 		}
-		File dst = new File(targetRoot, relPath);
-		try {
-			dst.getParentFile().mkdirs();
-			if (Scope.FULL_COMPRESSED.name().equals(man.scope)) {
-				ZipFile zf = new ZipFile(new File(entry, "dump.zip"));
-				try {
-					ZipEntry ze = zf.getEntry(relPath);
-					if (ze == null) {
-						return "The backup archive is missing " + relPath
-								+ " - it is listed in the manifest but not present, so this backup is damaged.";
-					}
-					pipe(zf.getInputStream(ze), dst);
-				} finally {
-					zf.close();
-				}
-			} else {
-				File src = new File(new File(entry, "files"), relPath);
-				if (!src.isFile()) {
-					return "The backup is missing " + relPath
+		if (Scope.FULL_COMPRESSED.name().equals(man.scope)) {
+			ZipFile zf = new ZipFile(new File(entry, "dump.zip"));
+			try {
+				ZipEntry ze = zf.getEntry(relPath);
+				if (ze == null) {
+					return "The backup archive is missing " + relPath
 							+ " - it is listed in the manifest but not present, so this backup is damaged.";
 				}
-				pipe(new FileInputStream(src), dst);
+				pipe(zf.getInputStream(ze), staged);
+			} finally {
+				zf.close();
 			}
-		} catch (IOException ex) {
-			return "Could not restore " + relPath + ": "
-					+ Ui.reason(ex);
+		} else {
+			File src = new File(new File(entry, "files"), relPath);
+			if (!src.isFile()) {
+				return "The backup is missing " + relPath
+						+ " - it is listed in the manifest but not present, so this backup is damaged.";
+			}
+			try (InputStream in = new FileInputStream(src)) {
+				pipe(in, staged);
+			}
 		}
-		//restoring must land the bytes that were sealed, not merely some bytes
+		//what lands must be the bytes that were sealed, not merely some bytes
 		String got;
-		try {
-			got = digestOf(new FileInputStream(dst));
-		} catch (IOException ex) {
-			return "Restored " + relPath + " but could not read it back to check it.";
+		try (InputStream in = new FileInputStream(staged)) {
+			got = digestOf(in);
 		}
 		if (!want.sha256.equals(got)) {
-			return "Restored " + relPath + " but it does not match the backup - the vault is damaged.";
+			return DAMAGED + relPath + " does not match what was sealed - the vault is damaged.";
 		}
 		return "";
 	}
@@ -595,6 +732,11 @@ public final class Vault {
 		VaultManifest man = VaultManifest.read(entry);
 		if (man == null) {
 			bad.add("There is no finished backup to restore from.");
+			return bad;
+		}
+		String other = mismatch(man, targetRoot);
+		if (!other.isEmpty()) {
+			bad.add("Nothing was restored: " + other);
 			return bad;
 		}
 		int i = 0, n = man.entries.size();

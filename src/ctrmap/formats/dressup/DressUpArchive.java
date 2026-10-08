@@ -18,12 +18,18 @@ import static ctrmap.formats.LittleEndian.i32;
  * identified reports -1 for both, and a caller must treat that as absence, not
  * as zero.
  *
- * <p>One dependency worth knowing: a model subfile that {@link GARC}'s
- * compression sniff hands back still compressed would not look like a model
- * and would split the run. That does not happen in the archive measured here -
- * the 46 subfiles the sniff misses are all textures - and if it ever did, the
+ * <p>One dependency worth knowing: a model subfile that {@link GARC} handed
+ * back still compressed would not look like a model and would split the run.
+ * GARC's sniff no longer misses any entry of this archive - it used to carry a
+ * 64:1 ratio cap that handed back 46 mask textures compressed, and the cap is
+ * gone ({@code GarcSniffTest}; {@code DressUpIndexTest} asserts it had to
+ * decompress none itself). If a sniff regression ever split a model run, the
  * run length would stop matching the part count and the base would come back
  * -1 rather than come back wrong.
+ *
+ * <p>PARKED (F052): nothing in the editor reaches this class. It reads X/Y's
+ * wardrobe, and the editor does not open X/Y for anything but maps; it is
+ * argued for in DuplicateWorkTest's UNREACHED table until X/Y opens.
  */
 public class DressUpArchive {
 
@@ -143,10 +149,15 @@ public class DressUpArchive {
 	 * and a texture-only BCH answers 0 without being decoded at all.
 	 */
 	private static int modelCount(byte[] d) {
-		if (d.length < 16 || d[0] != 'B' || d[1] != 'C' || d[2] != 'H' || d[3] != 0) {
+		if (!ctrmap.formats.h3d.BchSections.isBch(d)) {
 			return 0;
 		}
-		int contentHeader = i32(d, 8);
+		int contentHeader;
+		try {
+			contentHeader = ctrmap.formats.h3d.BchSections.read(d).contentsAddr; //the one header reader (F066)
+		} catch (IllegalArgumentException notWhole) {
+			return 0;
+		}
 		if (contentHeader < 0 || contentHeader + 8 > d.length) {
 			return 0;
 		}

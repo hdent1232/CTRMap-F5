@@ -20,14 +20,14 @@ import javax.swing.text.NumberFormatter;
  */
 public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 
-	/**
-	 * Creates new form NPCRegistryEditor
-	 */
 	private NPCRegistry reg;
 	private NPCRegistry.NPCRegistryEntry e;
 	private DefaultListModel<String> model = new DefaultListModel<>();
 	private ArrayList<Integer> dict = new ArrayList<>();
 
+	/**
+	 * Creates new form NPCRegistryEditor
+	 */
 	public NPCRegistryEditor() {
 		initComponents();
 		setUnsignedByteValueClass(new JFormattedTextField[]{shadowType, areaW, areaH});
@@ -44,9 +44,9 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 	 */
 	@Override
 	public boolean closeRequested() {
-		if (saveEntry(true)) {
-			}
-		return true;
+		//what the save answered (F105): this said true over a refused save, so the pane went and the
+		//edit with it
+		return saveEntry(true);
 	}
 
 	public void setUnsignedByteValueClass(JFormattedTextField[] fields) {
@@ -109,13 +109,16 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 
 	public boolean saveEntry(boolean dialog) {
 		if (e != null) {
-			if (reg.entries.containsKey((Integer) uid.getValue()) && !reg.entries.get((Integer) uid.getValue()).equals(e)) {
+			int newUid = ((Number) uid.getValue()).intValue();
+			if (newUid != e.uid && reg.entries.containsKey(newUid)) {
 				ctrmap.Ui.error(this, "The specified UID is already registered. Please use another one.", "UID not unique");
 				return false;
 			}
-			NPCRegistry.NPCRegistryEntry e2 = new NPCRegistry.NPCRegistryEntry();
-			e2.uid = (Integer) uid.getValue();
-			e2.model = (Integer) mdl.getValue();
+			//EDITED ON A COPY (F081): rebuilt from defaults, every edit reset the eight fields this form
+			//does not show
+			NPCRegistry.NPCRegistryEntry e2 = e.copy();
+			e2.uid = newUid;
+			e2.model = ((Number) mdl.getValue()).intValue();
 			if (render.isSelected()) {
 				if (e.renderEnabled != 0) {
 					e2.renderEnabled = e.renderEnabled;
@@ -125,19 +128,14 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 			} else {
 				e2.renderEnabled = 0;
 			}
-			e2.shadowEnabled = (Integer) shadowType.getValue();
+			e2.shadowEnabled = ((Number) shadowType.getValue()).intValue();
 			e2.isItOb = item.isSelected() ? 0 : 1;
 			e2.isDummy = dummy.isSelected() ? 1 : 0;
-			e2.collW = (Integer) areaW.getValue();
-			e2.collH = (Integer) areaH.getValue();
-			e2.u1 = e.u1;
-			e2.u4 = e.u4;
-			e2.u8 = e.u8;
-			e2.u9 = e.u9;
-			e2.uC = e.uC;
-			e2.u11 = e.u11;
+			e2.collW = ((Number) areaW.getValue()).intValue();
+			e2.collH = ((Number) areaH.getValue()).intValue();
 			if (!e2.equals(e)) {
-				switch (ctrmap.Ui.askToKeep(dialog, "NPC registry")) {
+				//NO SHOWS THE ENTRY AS IT IS (F106): it left the boxes showing the edit it threw away
+				switch (ctrmap.Ui.askToKeep(dialog, "NPC registry", () -> showEntry(e.uid))) {
 					case DISCARD:
 						return true;
 					case CANCEL:
@@ -145,12 +143,10 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 				}
 				model.setElementAt("UID: " + e2.uid + " | Model: " + e2.model, dict.indexOf(e.uid));
 				dict.set(dict.indexOf(e.uid), e2.uid);
-				reg.entries.remove(e.uid);
-				reg.models.remove(e.uid);
+				//IN ITS OWN PLACE in the file, through the registry (F081)
+				reg.replace(e.uid, e2);
 				e = e2;
-				reg.entries.put(e.uid, e);
 				reg.mapModel(e.uid, e.model);
-				reg.modified = true;
 				showEntry(e.uid);
 			}
 		}
@@ -374,22 +370,29 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
     }//GEN-LAST:event_btnSaveActionPerformed
 
     private void btnAddActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddActionPerformed
-		if (reg.entries.size() < 31) {
+		if (reg.entries.size() < NPCRegistry.MAX_ENTRIES) {
 			NPCRegistry.NPCRegistryEntry e2 = new NPCRegistry.NPCRegistryEntry();
-			reg.entries.put(e2.uid, e2);
+			//a FREE UID (F081): the default 0 replaced the UID-0 dummy retail registries carry, and the
+			//model was never mapped, so nothing referencing the new UID could be drawn
+			reg.register(e2, 1);
+			try {
+				reg.mapModel(e2.uid, e2.model);
+			} catch (RuntimeException unmapped) {
+				reg.remove(e2.uid);
+				throw unmapped;
+			}
 			model.addElement("UID: " + e2.uid + " | Model: " + e2.model);
 			dict.add(e2.uid);
 			setEntry(e2.uid);
-			reg.modified = true;
 		} else {
-			ctrmap.Ui.error(this, "An area can hold a maximum of 31 NPCs.\n"
+			ctrmap.Ui.error(this, "An area can hold a maximum of " + NPCRegistry.MAX_ENTRIES + " NPCs.\n"
 					+ "Reassign duplicates, free some space and try again.", "Registry limit error");
 		}
     }//GEN-LAST:event_btnAddActionPerformed
 
     private void btnRemoveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveActionPerformed
 		int index = entryList.getSelectedIndex();
-		reg.entries.remove(dict.get(index));
+		reg.remove(dict.get(index));
 		model.removeElementAt(index);
 		dict.remove(index);
 		if (index >= model.size()) {
@@ -421,16 +424,19 @@ public class NPCRegistryEditor extends ctrmap.humaninterface.FormPanel {
 		/* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
          * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
 		 */
-		try {
-			for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-				if ("Nimbus".equals(info.getName())) {
-					javax.swing.UIManager.setLookAndFeel(info.getClassName());
-					break;
+		//on the event thread, ahead of the form queued below: the look and feel is Swing's too (F220)
+		java.awt.EventQueue.invokeLater(() -> {
+			try {
+				for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
+					if ("Nimbus".equals(info.getName())) {
+						javax.swing.UIManager.setLookAndFeel(info.getClassName());
+						break;
+					}
 				}
+			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
+				java.util.logging.Logger.getLogger(NPCRegistryEditor.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
 			}
-		} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
-			java.util.logging.Logger.getLogger(NPCRegistryEditor.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-		}
+		});
 		//</editor-fold>
 
 		//</editor-fold>

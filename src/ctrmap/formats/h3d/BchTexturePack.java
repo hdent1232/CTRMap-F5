@@ -2,7 +2,6 @@ package ctrmap.formats.h3d;
 
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.AD;
-import ctrmap.formats.garc.GARC;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameProfile;
 import java.io.File;
@@ -86,13 +85,15 @@ public class BchTexturePack {
 	 * least one texture.
 	 */
 	public static boolean isTexturePack(byte[] bch) {
-		if (bch == null || bch.length < 0x44 + 360 || bch[0] != 'B' || bch[1] != 'C' || bch[2] != 'H' || bch[3] != 0) {
+		if (bch == null || bch.length < 0x44 + 360 || !BchSections.isBch(bch) || (bch[4] & 0xFF) != 0x21) {
 			return false;
 		}
-		if ((bch[4] & 0xFF) != 0x21) {
+		int contentsAdr;
+		try {
+			contentsAdr = BchSections.read(bch).contentsAddr;
+		} catch (IllegalArgumentException notWhole) {
 			return false;
 		}
-		int contentsAdr = i32(bch, 8);
 		if (contentsAdr < 0 || contentsAdr + 44 > bch.length) {
 			return false;
 		}
@@ -107,16 +108,14 @@ public class BchTexturePack {
 	 * texture pack - never returns a lossy result.
 	 */
 	public static List<Texture> parse(byte[] p) {
-		if (p == null || p.length < 0x44 || p[0] != 'B' || p[1] != 'C' || p[2] != 'H' || p[3] != 0) {
-			throw new IllegalArgumentException("not a BCH");
+		BchSections s = BchSections.read(p); //the one header reader (F066)
+		if (s.bc != 0x21) {
+			throw new IllegalArgumentException("unsupported BCH backwardCompat " + s.bc + " (expected 0x21)");
 		}
-		if ((p[4] & 0xFF) != 0x21) {
-			throw new IllegalArgumentException("unsupported BCH backwardCompat " + (p[4] & 0xFF) + " (expected 0x21)");
-		}
-		int contentsAdr = i32(p, 8);
-		int stringsAdr = i32(p, 12);
-		int commandsAdr = i32(p, 16);
-		int rawAdr = i32(p, 20);
+		int contentsAdr = s.contentsAddr;
+		int stringsAdr = s.stringsAddr;
+		int commandsAdr = s.commandsAddr;
+		int rawAdr = s.rawDataAddr;
 		int count = i32(p, contentsAdr + 40);
 		int ptrTab = i32(p, contentsAdr + 36) + contentsAdr;
 		List<Texture> out = new ArrayList<>();
@@ -148,7 +147,7 @@ public class BchTexturePack {
 					throw new IllegalArgumentException("unsupported texture command layout");
 				}
 			}
-			t.name = readCString(p, i32(p, st + 28) + stringsAdr);
+			t.name = StringUtils.cString(p, i32(p, st + 28) + stringsAdr);
 			if (!seen.add(t.name)) {
 				throw new IllegalArgumentException("duplicate texture name in pack: " + t.name);
 			}
@@ -190,20 +189,20 @@ public class BchTexturePack {
 			stringsLen += texes.get(i).name.length() + 1;
 		}
 		int stringsAdr = contentsAdr + contentsLen;
-		int commandsAdr = align(stringsAdr + stringsLen, 16);
+		int commandsAdr = ctrmap.util.Bytes.align(stringsAdr + stringsLen, 16);
 		int commandsLen = 144 * count;
-		int rawAdr = align(commandsAdr + commandsLen, 128);
+		int rawAdr = ctrmap.util.Bytes.align(commandsAdr + commandsLen, 128);
 		int[] dataAdr = new int[count];
 		int rawEnd = 0;
 		for (int i = 0; i < count; i++) {
-			rawEnd = align(rawEnd, 128);
+			rawEnd = ctrmap.util.Bytes.align(rawEnd, 128);
 			dataAdr[i] = rawEnd;
 			rawEnd += texes.get(i).data.length;
 		}
-		int rawLen = align(rawEnd, 128);
+		int rawLen = ctrmap.util.Bytes.align(rawEnd, 128);
 		int relocAdr = rawAdr + rawLen;
 		int relocLen = 4 * (16 + 9 * count);
-		int total = align(relocAdr + relocLen, 128);
+		int total = ctrmap.util.Bytes.align(relocAdr + relocLen, 128);
 
 		byte[] o = new byte[total];
 		//header
@@ -239,9 +238,13 @@ public class BchTexturePack {
 		}
 
 		//patricia name tree
-		List<Node> nodes = buildTree(texes);
+		List<String> treeNames = new ArrayList<>();
+		for (Texture t : texes) {
+			treeNames.add(t.name);
+		}
+		List<Patricia.Node> nodes = Patricia.build(treeNames);
 		for (int i = 0; i < nodes.size(); i++) {
-			Node n = nodes.get(i);
+			Patricia.Node n = nodes.get(i);
 			int base = contentsAdr + treeOff + i * 12;
 			putI32(o, base, (int) n.refBit);
 			putU16(o, base + 4, n.left);
@@ -328,7 +331,9 @@ public class BchTexturePack {
 
 	/**
 	 * Other zones that would be affected by growing {@code area}, as a readable
-	 * list, or null when none would be - so the caller may proceed.
+	 * list, or null when none would be - so the caller may proceed. When it
+	 * cannot tell, it throws {@link IllegalStateException} saying why: null is
+	 * an answer, never a shrug.
 	 *
 	 * <p>{@code editingZone} is excluded, and excluding it is the entire
 	 * correctness of this method. The question worth asking is "would this
@@ -358,59 +363,45 @@ public class BchTexturePack {
 	 * textures into Mauville City's area.
 	 */
 	public static String zonesUsingArea(GameFiles files, int area, int editingZone) {
-		//refused before the try below: the catch at its end exists for the
-		//guard's own failures, and a caller that handed nothing is not one
+		//refused first: a caller that handed nothing has no game to ask
 		handed(files);
-		try {
-			//This scan only means anything where an area CAN be forked: it
-			//exists to say "carrying a texture in here would change somebody
-			//else's map, fork it first", and on a game with no fork there is no
-			//"first". Asking the capability rather than "is this ORAS" is also
-			//what stops the master-table index below being computed from
-			//another game's number - which on XY would parse an ordinary zone
-			//as the master table and invent sharers out of it.
-			GameProfile prof = files.profile();
-			if (!prof.supports(GameProfile.Feature.AREA_FORK)
-					|| prof.zoneDataTrailingEntries() < 0) {
-				return null;
-			}
-			GARC zo = files.archive(ArchiveType.ZONE_DATA);
-			if (zo == null) {
-				return null;
-			}
-			int masterIndex = zo.length - prof.zoneDataTrailingEntries();
-			//Prefer the WORKSPACE copy of the master table. Edits land there
-			//first and are only packed into the archive later, so reading the
-			//archive would judge this against zone-to-area assignments that have
-			//already been changed - and refuse a carry into an area the zone no
-			//longer shares with anybody.
-			byte[] master = null;
-			File mf = files.staged(ArchiveType.ZONE_DATA, masterIndex);
-			if (mf != null && mf.isFile()) {
-				try {
-					master = java.nio.file.Files.readAllBytes(mf.toPath());
-				} catch (java.io.IOException ignore) {
-					master = null;
-				}
-			}
-			if (master == null || master.length % 0x38 != 0) {
-				master = zo.getDecompressedEntry(masterIndex);
-			}
-			List<Integer> hits = ctrmap.AreaForker.zonesUsingArea(master, area, editingZone);
-			if (hits.isEmpty()) {
-				return null;
-			}
-			StringBuilder sb = new StringBuilder("zone" + (hits.size() > 1 ? "s " : " "));
-			for (int i = 0; i < Math.min(6, hits.size()); i++) {
-				sb.append(i > 0 ? ", " : "").append(hits.get(i));
-			}
-			if (hits.size() > 6) {
-				sb.append(" and ").append(hits.size() - 6).append(" more");
-			}
-			return sb.toString();
-		} catch (RuntimeException ex) {
-			return null; //never block an edit because the guard itself failed
+		//CANNOT TELL IS NOT "NOBODY" (F065). This answered null - nobody, go ahead - for a game
+		//with no measured fork, for a game with no zone archive open, for a master table it could
+		//not read or whose size was any multiple of a row, and for ANY exception inside it ("never
+		//block an edit because the guard itself failed"). Each of those is the guard not knowing,
+		//and null is the answer that put 855 KB of textures into Mauville City's area. Each is now
+		//a refusal that says what could not be read, and nothing is carried.
+		GameProfile prof = files.profile();
+		if (prof == null || !prof.supports(GameProfile.Feature.AREA_FORK)) {
+			throw cannotTell(area, "where " + (prof == null ? "this game" : prof.displayName())
+					+ " keeps its zone table, and where a zone names its area in it, was measured on"
+					+ " Omega Ruby / Alpha Sapphire only", null);
 		}
+		//the one reader (F013): the workspace's copy wins over the archive's, because edits land
+		//there first, and a staged copy of the wrong size is refused rather than replaced
+		List<Integer> hits;
+		try {
+			hits = ctrmap.MasterTable.read(files).using(ctrmap.ZoneResource.AREA, area, editingZone);
+		} catch (java.io.IOException | RuntimeException cannot) {
+			throw cannotTell(area, ctrmap.util.Bytes.reason(cannot), cannot);
+		}
+		if (hits.isEmpty()) {
+			return null;
+		}
+		StringBuilder sb = new StringBuilder("zone" + (hits.size() > 1 ? "s " : " "));
+		for (int i = 0; i < Math.min(6, hits.size()); i++) {
+			sb.append(i > 0 ? ", " : "").append(hits.get(i));
+		}
+		if (hits.size() > 6) {
+			sb.append(" and ").append(hits.size() - 6).append(" more");
+		}
+		return sb.toString();
+	}
+
+	/** The shared-area question's third answer: it could not be asked, so nothing may go ahead. */
+	private static IllegalStateException cannotTell(int area, String why, Throwable cause) {
+		return new IllegalStateException("Could not tell whether area " + area + " is used by another"
+				+ " zone, so nothing was put into it:\n" + why, cause);
 	}
 
 	/**
@@ -546,7 +537,7 @@ public class BchTexturePack {
 		if (shared != null) {
 			throw new IllegalStateException("Area " + targetArea + " is also used by "
 					+ shared + ".\nCarrying textures into it would change those maps."
-					+ "\nGive this zone its own area first (Map > Fork map geometry).");
+					+ "\nGive this zone its own area first (Map > Make zone independent).");
 		}
 	}
 
@@ -689,89 +680,9 @@ public class BchTexturePack {
 		return emit(target);
 	}
 
-	//--- patricia name tree (converter-compatible insertion) ------------------
-
-	private static class Node {
-
-		long refBit;
-		int left;
-		int right;
-		String name; //null for the root
-	}
-
-	private static boolean getBit(String name, long bit) {
-		int pos = (int) (bit >>> 3);
-		if (name != null && pos < name.length()) {
-			return ((name.charAt(pos) >> (int) (bit & 7)) & 1) != 0;
-		}
-		return false;
-	}
-
-	private static int traverse(String name, List<Node> nodes, Node[] rootOut, long bit) {
-		Node root = nodes.get(0);
-		int out = root.left;
-		Node left = nodes.get(out);
-		while (root.refBit > left.refBit && left.refBit > bit) {
-			out = getBit(name, left.refBit) ? left.right : left.left;
-			root = left;
-			left = nodes.get(out);
-		}
-		rootOut[0] = root;
-		return out;
-	}
-
-	private static List<Node> buildTree(List<Texture> texes) {
-		List<Node> nodes = new ArrayList<>();
-		Node root = new Node();
-		root.refBit = 0xFFFFFFFFL;
-		nodes.add(root);
-		int maxLen = 0;
-		for (Texture t : texes) {
-			maxLen = Math.max(maxLen, t.name.length());
-		}
-		Node[] rootOut = new Node[1];
-		for (Texture t : texes) {
-			long bit = (maxLen << 3) - 1;
-			int index = traverse(t.name, nodes, rootOut, 0);
-			while (getBit(nodes.get(index).name, bit) == getBit(t.name, bit)) {
-				if (--bit < 0) {
-					throw new IllegalArgumentException("duplicate texture name " + t.name);
-				}
-			}
-			Node n = new Node();
-			n.name = t.name;
-			n.refBit = bit;
-			if (getBit(t.name, bit)) {
-				n.left = traverse(t.name, nodes, rootOut, bit);
-				n.right = nodes.size();
-			} else {
-				n.left = nodes.size();
-				n.right = traverse(t.name, nodes, rootOut, bit);
-			}
-			Node r = rootOut[0];
-			if (getBit(t.name, r.refBit)) {
-				r.right = nodes.size();
-			} else {
-				r.left = nodes.size();
-			}
-			nodes.add(n);
-		}
-		return nodes;
-	}
+	//the patricia name tree is ctrmap.formats.h3d.Patricia, shared with the other writers (F066)
 
 	//--- byte helpers ---------------------------------------------------------
-
-	private static int align(int v, int a) {
-		return (v + a - 1) / a * a;
-	}
-
-	private static String readCString(byte[] b, int off) {
-		StringBuilder sb = new StringBuilder();
-		for (int i = off; i < b.length && b[i] != 0; i++) {
-			sb.append((char) (b[i] & 0xFF));
-		}
-		return sb.toString();
-	}
 
 	/**
 	 * Writes one relocation entry (offset | flags << 25) and returns the

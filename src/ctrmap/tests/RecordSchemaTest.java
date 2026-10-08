@@ -68,11 +68,11 @@ public class RecordSchemaTest {
 				agreesWithItemData(new GARC(garcFile, false));
 				theGeneratedFormCarriesTheRecordFaithfully(new GARC(garcFile, false));
 			} else {
-				System.out.println("  skip: no item archive at " + garcFile
+				Skip.section("no item archive at " + garcFile
 						+ " - the cross-check against real records did NOT run");
 			}
 		} else {
-			System.out.println("  skip: no romfs root given"
+			Skip.section("no romfs root given"
 					+ " - the cross-check against real records did NOT run");
 		}
 

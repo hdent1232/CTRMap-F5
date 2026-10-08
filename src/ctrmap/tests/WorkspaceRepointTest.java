@@ -58,8 +58,7 @@ public class WorkspaceRepointTest {
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump);
-			System.out.println("ALL PASS");
+			Skip.suite("no dump at " + dump);
 			return;
 		}
 		ScratchGame.open(dump);
@@ -356,7 +355,7 @@ public class WorkspaceRepointTest {
 	 */
 	static void theSaveThatWasRefused(String own, String other) throws Exception {
 		if (java.awt.GraphicsEnvironment.isHeadless()) {
-			System.out.println("  skip: no display, and the settings window is a JFrame");
+			Skip.section("no display, and the settings window is a JFrame");
 			return;
 		}
 		freshBackupOf(own);
@@ -405,7 +404,7 @@ public class WorkspaceRepointTest {
 	 */
 	static void theFinishThatWasRefused(String own, String other) throws Exception {
 		if (java.awt.GraphicsEnvironment.isHeadless()) {
-			System.out.println("  skip: no display, and the wizard is a JDialog");
+			Skip.section("no display, and the wizard is a JDialog");
 			return;
 		}
 		freshBackupOf(own);

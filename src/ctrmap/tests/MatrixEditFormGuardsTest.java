@@ -163,11 +163,103 @@ public class MatrixEditFormGuardsTest {
 			"picking copies the highlighted cell to the picked one, and does nothing else");
 	}
 
+	/**
+	 * F096, with no game: the Multizone tool stores the zone it is shown, picked, typed or filled.
+	 *
+	 * <p>The zone-reference field has no formatter of its own. Showing a cell put a Short in it,
+	 * the dropdown's listener an Integer, and one path cast it to Short while two cast it to
+	 * Integer - so showing any cell that named a zone threw, and so did Fill chunk after it. A
+	 * cold form over a matrix made here, so this runs on every machine and not only on the one
+	 * with a dump.
+	 */
+	static void theMultizoneToolStoresTheZoneItIsGiven() throws Exception {
+		System.out.println("--- the Multizone tool stores the zone it is shown, picked, typed or filled (F096)");
+		FakeGameFiles fake = new FakeGameFiles();
+		MapMatrix mm = new MapMatrix(new MM(new File(fake.scratch(), "multizone.mm"), 2, MM.MM_MAP_MATRIX, fake), 2, 2, 1);
+		for (int y = 0; y < mm.zones.getHeight(); y++) {
+			for (int x = 0; x < mm.zones.getWidth(); x++) {
+				mm.zones.set(x, y, (short) 0);
+			}
+		}
+		mm.zones.set(5, 2, (short) 2);
+		MatrixEditForm form = new MatrixEditForm(new LoadedZone(), CANVAS);
+		form.mm = mm;
+		JComboBox<String> zones = combo(form, "zoneRefDropdown");
+		for (int i = 0; i < 4; i++) {
+			zones.addItem(i + " - a zone");
+		}
+		form.loaded = true;
+		//as loadMatrix leaves it for a matrix with a zone layer: every save re-reads hasLOD from
+		//this box, so without it the first showRegion turned the layer off and stored nothing
+		((JCheckBox) field(form, "allowExtended")).setSelected(true);
+		selectTool(form, "btnMzTool");
+
+		Throwable thrown = null;
+		try {
+			form.showRegion(5, 2);
+		} catch (Throwable t) {
+			thrown = t;
+		}
+		check(thrown == null, "showing a cell that names zone 2 throws nothing: " + thrown);
+		check(mm.zones.get(5, 2) == 2 && zones.getSelectedIndex() == 2,
+				"and the cell and the dropdown both still name zone 2 (" + mm.zones.get(5, 2) + ", "
+				+ zones.getSelectedIndex() + ")");
+
+		zones.setSelectedIndex(3);
+		check(mm.zones.get(5, 2) == 3, "picking zone 3 in the dropdown stores it in the cell: " + mm.zones.get(5, 2));
+
+		((JFormattedTextField) field(form, "zoneRefNumber")).setValue((short) 1);
+		thrown = null;
+		try {
+			invoke(form, "zoneRefNumberActionPerformed");
+		} catch (Throwable t) {
+			thrown = t;
+		}
+		check(thrown == null && mm.zones.get(5, 2) == 1,
+				"typing zone 1 stores it, whatever number type the field holds: " + mm.zones.get(5, 2) + " " + thrown);
+
+		thrown = null;
+		try {
+			invoke(form, "btnFillChunkActionPerformed");
+		} catch (Throwable t) {
+			thrown = t;
+		}
+		boolean filled = thrown == null;
+		for (int y = 0; y < 4 && filled; y++) {
+			for (int x = 4; x < 8 && filled; x++) {
+				filled = mm.zones.get(x, y) == 1;
+			}
+		}
+		check(filled, "and Fill chunk fills the cell's 4x4 block with it: " + thrown);
+
+		//a zone past the dropdown's last row stays in the field as typed - a Short here - which
+		//is where Fill's own read met the type nobody else had cast it to
+		((JFormattedTextField) field(form, "zoneRefNumber")).setValue((short) 9);
+		List<String> said = ctrmap.Ui.record(javax.swing.JOptionPane.OK_OPTION);
+		thrown = null;
+		try {
+			invoke(form, "btnFillChunkActionPerformed");
+		} catch (Throwable t) {
+			thrown = t;
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(thrown == null && said.size() == 1 && said.get(0).contains("Zone 9")
+				&& said.get(0).contains("nothing was filled"),
+				"Fill with a zone the game does not have refuses in words, and throws nothing: " + said + " " + thrown);
+		check(mm.zones.get(5, 2) == 1, "and fills nothing (" + mm.zones.get(5, 2) + ")");
+	}
+
 	public static void main(String[] args) throws Exception {
+		theMultizoneToolStoresTheZoneItIsGiven();
 		File dump = new File(args.length > 0 ? args[0] : "no-dump-given");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " - the matrix form checks need matrix " + MATRIX);
+			Skip.section("no dump at " + dump + " - the matrix form checks need matrix " + MATRIX);
 			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
+			//a section above runs with no dump, and its failure must fail the run
+			if (fails > 0) {
+				System.exit(1);
+			}
 			return;
 		}
 		ScratchGame.open(dump);
@@ -187,7 +279,7 @@ public class MatrixEditFormGuardsTest {
 		newAndRemoveCameraChangeTheEntryCount();
 		rowsAndColumnsGrowAndShrinkTheWrittenMatrix();
 		theRegionGridGrowsWithTheGridItIsIndexedBy();
-		theMultizoneToolThrowsOnACellThatNamesAZone();
+		theMultizoneToolWorksOnACellThatNamesAZone();
 		aToolButtonBeforeAMatrixIsLoadedDoesNothing();
 		switchingToolsDropsACursorMeasuredInTheOtherScale();
 		loadingAMatrixDropsTheCellPickedInTheLastOne();
@@ -400,16 +492,13 @@ public class MatrixEditFormGuardsTest {
 	}
 
 	/**
-	 * The Multizone tool, pinned exactly as it behaves. {@code showRegion} sets
-	 * the zone-reference field to a Short and then moves the dropdown, whose
-	 * listener sets the same field to an Integer and hands it to
-	 * {@code setZoneByNumber}, which casts it back to Short. The cast throws.
-	 *
-	 * <p>This check asserts the throw. It is here because a suite that
-	 * asserted what the tool SHOULD do would go green the day somebody moves
-	 * this file and quietly changes it; the report says what is wrong.
+	 * The Multizone tool on the real matrix. {@code showRegion} set the zone-reference field to a
+	 * Short and then moved the dropdown, whose listener set the same field to an Integer and
+	 * handed it to {@code setZoneByNumber}, which cast it back to Short - and threw. This section
+	 * PINNED that throw until F096 was fixed; it now asserts the tool works on the game's own
+	 * matrix, as {@link #theMultizoneToolStoresTheZoneItIsGiven} does on a made one.
 	 */
-	static void theMultizoneToolThrowsOnACellThatNamesAZone() throws Exception {
+	static void theMultizoneToolWorksOnACellThatNamesAZone() throws Exception {
 		Fixture f = open();
 		int cx = -1, cy = -1;
 		for (int y = 0; y < f.mm.zones.getHeight() && cx == -1; y++) {
@@ -421,7 +510,7 @@ public class MatrixEditFormGuardsTest {
 			}
 		}
 		if (cx == -1) {
-			System.out.println("  skip: matrix " + MATRIX + " names no zone above 0, so the dropdown never has to move");
+			check(false, "matrix " + MATRIX + " names no zone above 0, so the dropdown never has to move");
 			return;
 		}
 		check(true, "matrix " + MATRIX + " sub-cell (" + cx + "," + cy + ") names zone " + f.mm.zones.get(cx, cy));
@@ -435,13 +524,12 @@ public class MatrixEditFormGuardsTest {
 		} catch (Throwable t) {
 			thrown = t;
 		}
-		check(thrown instanceof ClassCastException, "showing a Multizone cell throws " + thrown);
-		check(thrown != null && String.valueOf(thrown.getMessage()).contains("Integer")
-				&& String.valueOf(thrown.getMessage()).contains("Short"),
-				"because an Integer meets a Short cast: " + (thrown == null ? "nothing thrown" : thrown.getMessage()));
+		short named = f.mm.zones.get(cx, cy);
+		check(thrown == null, "showing a Multizone cell throws nothing: " + thrown);
+		check(f.mm.zones.get(cx, cy) == named, "and the cell still names zone " + named);
 
-		//and the same collision from the other side: Fill chunk reads the field
-		//as an Integer while showRegion has just put a Short in it
+		//and from the other side: Fill chunk read the field as an Integer while showRegion had
+		//just put a Short in it
 		Fixture g = open();
 		selectTool(g.form, "btnMzTool");
 		((JFormattedTextField) field(g.form, "zoneRefNumber")).setValue((short) 0);
@@ -451,7 +539,7 @@ public class MatrixEditFormGuardsTest {
 		} catch (Throwable t) {
 			fill = t;
 		}
-		check(fill instanceof ClassCastException, "Fill chunk throws " + fill);
+		check(fill == null, "Fill chunk throws nothing: " + fill);
 	}
 
 	/**
@@ -644,12 +732,16 @@ public class MatrixEditFormGuardsTest {
 		Fixture f = open();
 		LoadedZone lz = (LoadedZone) field(f.form, "loadedZone");
 		check(lz.count() > 3, "the fixture table has " + lz.count() + " rows to hole");
-		lz.replace(3, null);
+		//A HOLE CANNOT BE MADE ANY MORE (F208); a zone whose header is missing throws in the same fill
+		Zone unnamed = lz.at(3);
+		ctrmap.formats.zone.ZoneHeader header = unnamed.header;
+		unnamed.header = null;
 		List<String> said = ctrmap.Ui.record();
 		try {
 			f.form.loadMatrix(f.mm);
 		} finally {
 			ctrmap.Ui.stopRecording();
+			unnamed.header = header;
 		}
 		check(said.size() == 1 && said.get(0).contains("could not be shown"),
 			"the failure reaches the user: " + said);
@@ -854,9 +946,9 @@ public class MatrixEditFormGuardsTest {
 		//the consequence, not the shape. This is the prop editor's save path with no
 		//props in it: it walks the whole matrix and dereferences mm.regions, so a
 		//short grid throws here instead of writing. An empty prop list on purpose -
-		//a populated one would run that method's fallback scan, which has a defect of
-		//its own and would fail this for the wrong reason. No dialog, no display,
-		//no file: the fixture's cells are all null, so nothing is opened or stored.
+		//where a populated one goes is GRPropDataTest's subject (F083), and this asks
+		//only that the walk reaches every cell. No dialog, no display, no file: the
+		//fixture's cells are all null, so nothing is opened or stored.
 		try {
 			new ctrmap.formats.propdata.GRPropData().write(f.mm);
 			check(true, "and a prop write over the resized matrix reaches every cell");

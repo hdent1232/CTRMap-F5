@@ -31,6 +31,31 @@ public class ZoneLimitPatchTest {
 		checkEq(0, ZoneLimitPatch.spareZones(4), "N=4 spares=0");
 		checkEq(0, ZoneLimitPatch.spareZones(8), "N=8 spares=0");
 
+		// 1b. growing a game a previous append grew (F039): counted from the stock base, the
+		// previous append's spares included, so a second append is the same patch for a larger N
+		checkEq(540, ZoneLimitPatch.masterIndexFrom(536, 1), "from stock, +1 -> 540");
+		checkEq(544, ZoneLimitPatch.masterIndexFrom(540, 1), "from 540 (an append before), +1 -> 544");
+		checkEq(544, ZoneLimitPatch.masterIndexFrom(540, 4), "from 540, +4 -> 544");
+		checkEq(552, ZoneLimitPatch.masterIndexFrom(544, 5), "from 544, +5 -> 552");
+		int grown = ZoneLimitPatch.masterIndexFrom(540, 1);
+		checkEq(grown, ZoneLimitPatch.masterIndex(grown - ZoneLimitPatch.BASE_ZONES),
+				"the patch for N = M - 536 names that same master index");
+		String fewer = null;
+		try {
+			ZoneLimitPatch.masterIndexFrom(535, 1);
+		} catch (IllegalArgumentException refused) {
+			fewer = refused.getMessage();
+		}
+		check(fewer != null && fewer.contains("fewer than the stock"),
+				"a game with fewer than the stock zones is refused, in words: " + fewer);
+		String past = null;
+		try {
+			ZoneLimitPatch.masterIndexFrom(ZoneLimitPatch.BASE_ZONES + ZoneLimitPatch.MAX_NEW_ZONES - 4, 5);
+		} catch (IllegalArgumentException refused) {
+			past = refused.getMessage();
+		}
+		check(past != null && past.contains("at most"), "and a total past the limit is refused: " + past);
+
 		// 2. patch values for N=1 (M=540): master idx 540, size 540*0x38=0x7620, EN 541, bound 540
 		List<Patch> p = ZoneLimitPatch.patches(1);
 		checkEq(5, p.size(), "5 patch sites");
@@ -40,11 +65,41 @@ public class ZoneLimitPatchTest {
 		checkBytes(p.get(3), 0x012c0c, new byte[]{0x20, 0x76, 0x00, 0x00}, "master size -> 0x7620 (540*0x38)");
 		checkBytes(p.get(4), 0x00eae0, new byte[]{0x1D, 0x02, 0x00, 0x00}, "EN idx -> 541");
 
-		// 3. IPS well-formed: 'PATCH' + 5*(3+2+4) + 'EOF'
-		byte[] ips = ZoneLimitPatch.buildIPS(1);
+		// 3. IPS well-formed: 'PATCH' + 5*(3+2+4) + 'EOF' - built against an executable holding
+		// the stock words, which is the only kind it may be built against now (F046)
+		byte[] stock = stockCode();
+		byte[] ips = ZoneLimitPatch.buildIPS(1, stock);
 		check("PATCH".equals(new String(ips, 0, 5, "ASCII")), "IPS starts with PATCH");
 		check("EOF".equals(new String(ips, ips.length - 3, 3, "ASCII")), "IPS ends with EOF");
 		checkEq(5 + 5 * 9 + 3, ips.length, "IPS length = 53");
+
+		// 3b. any other build is refused, naming the site - never patched blind (F046). One site
+		// differing is what another build's executable looks like from here.
+		final byte[] other = stock.clone();
+		other[0x2d9774] ^= 0x01;
+		String refused = refusal(() -> ZoneLimitPatch.buildIPS(1, other));
+		check(refused != null && refused.contains("0x2D9774") && refused.contains("Alpha Sapphire"),
+				"a code.bin that differs at one site is refused, naming the site and the edition: " + refused);
+		check(refusal(() -> ZoneLimitPatch.applyToCode(1, other)) != null, "and applyToCode refuses it too");
+		String tooShort = refusal(() -> ZoneLimitPatch.buildIPS(1, new byte[0x1000]));
+		check(tooShort != null && tooShort.contains("too short"),
+				"a file too short to hold the sites is refused, not read past its end: " + tooShort);
+
+		// 3c. the dialog that hands the patch out verifies the user's executable BEFORE it stages
+		// a single zone, and builds the patch from that same file
+		File panel = new File("src/ctrmap/humaninterface/ZoneLoadingPanel.java");
+		if (!panel.isFile()) {
+			fail("the zone dialog's source is there to read: " + panel.getAbsolutePath());
+		} else {
+			String body = SourceSeamTest.stripComments(new String(Files.readAllBytes(panel.toPath()),
+					java.nio.charset.StandardCharsets.UTF_8));
+			int verified = body.indexOf("ZoneLimitPatch.verify(code)");
+			int appended = body.indexOf("ZoneAppender.appendZones(realZones");
+			int built = body.indexOf("ZoneLimitPatch.buildIPS(res.patchZones, code)");
+			check(verified >= 0 && appended > verified && built > appended,
+					"the dialog verifies code.bin, then appends, then builds the patch from it ("
+					+ verified + ", " + appended + ", " + built + ")");
+		}
 
 		// 4. against the real code.bin: stock words must all match (verifier throws otherwise)
 		File codeFile = new File(args.length > 0 ? args[0] : DEFAULT_CODE);
@@ -78,7 +133,7 @@ public class ZoneLimitPatchTest {
 				System.out.println("FAILURE: real code.bin stock-word mismatch: " + ex.getMessage());
 			}
 		} else {
-			System.out.println("(code.bin not found - skipped real-binary verification)");
+			Skip.section("code.bin not found - the real-binary verification did not run");
 		}
 
 		System.out.println();
@@ -87,6 +142,31 @@ public class ZoneLimitPatchTest {
 		} else {
 			System.out.println("FAIL (" + fails + ")");
 			System.exit(1);
+		}
+	}
+
+	/** An executable holding the stock word at every site and nothing anywhere else. */
+	private static byte[] stockCode() {
+		byte[] code = new byte[0x2E0000];
+		for (Patch p : ZoneLimitPatch.patches(1)) {
+			System.arraycopy(p.original, 0, code, p.fileOffset, 4);
+		}
+		return code;
+	}
+
+	private interface Act {
+		void run();
+	}
+
+	/** The refusal an act threw, or null when it did not refuse; any other exception is named. */
+	private static String refusal(Act act) {
+		try {
+			act.run();
+			return null;
+		} catch (IllegalStateException refused) {
+			return refused.getMessage();
+		} catch (RuntimeException threw) {
+			return "threw instead of refusing: " + threw;
 		}
 	}
 

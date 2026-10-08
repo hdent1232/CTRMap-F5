@@ -44,9 +44,8 @@ public class RuleMapTest {
 			System.exit(1);
 		}
 		if (!CommitGuardTest.onPath("python")) {
-			System.out.println("  skip: python is not on PATH - the map is a python script, "
+			Skip.suite("python is not on PATH - the map is a python script, "
 					+ "so this suite cannot run it here");
-			System.out.println("ALL PASS");
 			return;
 		}
 

@@ -21,7 +21,6 @@ belongs, or writing the `.form` file, which is the supported way to change the b
 TO EDIT IT ANYWAY: the owner sets CTRMAP_ALLOW_GENERATED_EDIT=1.
 """
 import os
-import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -31,33 +30,26 @@ import shellin                                    # noqa: E402  (path set above)
 HOOK = "guard_generated_code.py"
 BYPASS = hook_env.name("ALLOW_GENERATED_EDIT")
 
-#: How NetBeans fences the regions it owns. `//GEN-BEGIN:<name>` ... `//GEN-END:<name>` are
-#: the markers the IDE itself keys on; the editor-fold comment beside them is for the reader.
-#: A form has MORE THAN ONE - initComponents and the variables declaration at least - so this
-#: reads them all. Reading only the first left the variables block unguarded, which is the
-#: block a hand-edit is most likely to touch.
-_BEGIN = re.compile(r"//GEN-BEGIN:(\w+)")
-_END = re.compile(r"//GEN-END:(\w+)")
+def _rule():
+    """tools/guard/generated_code.py - the ONE region parser, and the AT_WRITE_CHANGE rule that
+    asks what ANY write changed, a command's included (F194). Loaded by its path from the
+    repository this hook sits in, never by name."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                        "tools", "guard", "generated_code.py")
+    spec = importlib.util.spec_from_file_location("ctrmap_generated_code", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def generated_regions(body):
-    """(start, end, name) for every region NetBeans owns in this file."""
-    out = []
-    for begin in _BEGIN.finditer(body):
-        name = begin.group(1)
-        end = None
-        for candidate in _END.finditer(body, begin.end()):
-            if candidate.group(1) == name:
-                end = candidate
-                break
-        #: AN UNCLOSED REGION RUNS TO THE END OF THE FILE. Treating it as absent would let an
-        #: edit into exactly the file whose fences are already damaged.
-        out.append((begin.start(), end.end() if end else len(body), name))
-    return out
+generated_regions = _rule().generated_regions
 
 
 def _targets(payload):
-    """(path, text being placed) for each file this call edits."""
+    """(path, key, text being placed) for each file this call edits - an Edit's, a Write's, and
+    every entry of an `edits[]` batch, which passed here unasked (F194). A relative path is the
+    call's, resolved against its own `cwd`, not this hook's working directory."""
     out = []
     tool_input = (payload or {}).get("tool_input")
     if not isinstance(tool_input, dict):
@@ -65,11 +57,20 @@ def _targets(payload):
     path = tool_input.get("file_path")
     if not isinstance(path, str) or not path.endswith(".java"):
         return out
+    cwd = (payload or {}).get("cwd")
+    if not os.path.isabs(path) and isinstance(cwd, str) and cwd:
+        path = os.path.join(cwd, path)
     #: an Edit says which text it is replacing; a Write replaces everything
     for key in ("old_string", "content", "new_string"):
         value = tool_input.get(key)
         if isinstance(value, str) and value:
             out.append((path, key, value))
+    for edit in tool_input.get("edits") or []:
+        if isinstance(edit, dict):
+            for key in ("old_string", "new_string"):
+                value = edit.get(key)
+                if isinstance(value, str) and value:
+                    out.append((path, key, value))
     return out
 
 

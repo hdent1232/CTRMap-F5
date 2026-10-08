@@ -29,12 +29,12 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 	private int currentCam = -1;
 	private MatrixCameraBoundaries cam;
 
-	/**
-	 * Creates new form MatrixEditForm
-	 */
 	/** The zone owner this form was handed; its table fills the zone-reference dropdown. */
 	private final LoadedZone loadedZone;
 
+	/**
+	 * Creates new form MatrixEditForm
+	 */
 	public MatrixEditForm(LoadedZone loadedZone, MatrixCanvas canvas) {
 		if (loadedZone == null) {
 			throw new IllegalArgumentException("MatrixEditForm must be handed a LoadedZone");
@@ -81,7 +81,7 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 				allowExtended.setSelected(mm.hasLOD == 1);
 				if (loadedZone.count() > 0) {
 					for (int i = 0; i < loadedZone.count(); i++) {
-						zoneRefDropdown.addItem(i + " - " + LocationNames.getLocName(loadedZone.at(i).header.parentMap));
+						zoneRefDropdown.addItem(i + " - " + LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap));
 					}
 				}
 				for (int i = 0; i < mm.cambounds.size(); i++) {
@@ -115,9 +115,28 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 		}
 	}
 
+	/**
+	 * After the matrix changes size, the selected cell is let go (F103), as {@link #switchTools}
+	 * does for a scale change. The four resize buttons kept it, so after Remove column the cursor
+	 * sat past the new edge and the next save - Save, the next click, File &gt; Save, a zone switch -
+	 * threw out of it and wrote nothing.
+	 */
+	private void resized() {
+		curRegX = -1;
+		curRegY = -1;
+		MatrixSelector.unfocus();
+		canvas.redraw();
+	}
+
 	public void saveAll() {
 		if (mm != null && loaded) {
 			mm.hasLOD = (short) (allowExtended.isSelected() ? 1 : 0);
+			if (curRegX >= mm.ids.getWidth() || curRegY >= mm.ids.getHeight()) {
+				//a cell that is not there any more, whatever left the cursor on it: nothing to save
+				//into, and writing through it threw and lost the save (F103)
+				curRegX = -1;
+				curRegY = -1;
+			}
 			if (curRegX != -1) {
 				if (btnChunkTool.isSelected()) {
 					short id = (Short) chunkId.getValue();
@@ -158,7 +177,7 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 			saveAll();
 			byte[] newCamData = mm.assembleCamData();
 			if (!Arrays.equals(mm.file.getFile(0), mm.assembleData()) || !Arrays.equals(Arrays.copyOf(mm.file.getFile(1), newCamData.length), newCamData)) {
-				switch (ctrmap.Ui.askToKeep(dialog, "Map matrix")) {
+				switch (ctrmap.Ui.askToKeep(dialog, "Map matrix", this::discard)) {
 					case DISCARD:
 						return true;
 					case CANCEL:
@@ -168,6 +187,17 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * Puts the matrix back to what its file holds, IN PLACE - the map view and the prop form hold
+	 * this same matrix - and shows it again (F106). No did nothing: typed chunk ids, camera bounds
+	 * and a resize stayed in the matrix every one of them reads, and were not asked about again.
+	 */
+	private void discard() {
+		mm.discard();
+		loadMatrix(mm);
+		canvas.redraw();
 	}
 
 	public void showRegion(int x, int y) {
@@ -822,12 +852,21 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
     private void btnFillChunkActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnFillChunkActionPerformed
 		zoneRefNumberActionPerformed(evt);
 		if (mm != null && btnMzTool.isSelected() && curRegX != -1) {
-			int toFill = (Integer) zoneRefNumber.getValue();
+			Integer toFill = zoneRef();
+			//A ZONE THE GAME DOES NOT HAVE IS REFUSED, not filled: typed past the last one, the
+			//field kept a number the dropdown could not show, and sixteen cells were written with it
+			if (toFill == null || toFill < -1 || toFill >= zoneRefDropdown.getItemCount()) {
+				ctrmap.Ui.error(this, "Zone " + toFill + " is not one of this game's zones (0.."
+						+ (zoneRefDropdown.getItemCount() - 1) + ", or -1 for none) - nothing was filled.",
+						"Fill chunk");
+				canvas.redraw();
+				return;
+			}
 			int begX = curRegX - (curRegX % 4);
 			int begY = curRegY - (curRegY % 4);
 			for (int x = begX; x < begX + 4; x++) {
 				for (int y = begY; y < begY + 4; y++) {
-					mm.zones.set(x, y, (short) toFill);
+					mm.zones.set(x, y, toFill.shortValue());
 				}
 			}
 		}
@@ -835,8 +874,9 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
     }//GEN-LAST:event_btnFillChunkActionPerformed
 
     private void zoneRefNumberActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_zoneRefNumberActionPerformed
-		if ((Integer) zoneRefNumber.getValue() < zoneRefDropdown.getItemCount()) {
-			zoneRefDropdown.setSelectedIndex((Integer) zoneRefNumber.getValue());
+		Integer zone = zoneRef();
+		if (zone != null && zone >= -1 && zone < zoneRefDropdown.getItemCount()) {
+			zoneRefDropdown.setSelectedIndex(zone);
 			setZoneByNumber();
 		}
     }//GEN-LAST:event_zoneRefNumberActionPerformed
@@ -893,7 +933,7 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 			mm.LOD.addColumn();
 			mm.zones.addColumns(4);
 			mm.width++;
-			canvas.redraw();
+			resized();
 		}
     }//GEN-LAST:event_btnAddColActionPerformed
 
@@ -908,29 +948,38 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 			mm.LOD.addRow();
 			mm.zones.addRows(4);
 			mm.height++;
-			canvas.redraw();
+			resized();
 		}
     }//GEN-LAST:event_btnAddRowActionPerformed
 
     private void btnRemoveRowActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveRowActionPerformed
+		if (mm != null && mm.height <= 1) {
+			//a map keeps one row: past it every layer would be asked for a row it does not have (F080)
+			ctrmap.Ui.error(this, "A map keeps at least one row, so the last one is not removed.", "Map matrix");
+			return;
+		}
 		if (mm != null) {
 			//unconditional for the reason spelled out in btnAddColActionPerformed
 			mm.ids.removeRow();
 			mm.LOD.removeRow();
 			mm.zones.removeRows(4);
 			mm.height--;
-			canvas.redraw();
+			resized();
 		}
     }//GEN-LAST:event_btnRemoveRowActionPerformed
 
     private void btnRemoveColActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveColActionPerformed
+		if (mm != null && mm.width <= 1) {
+			ctrmap.Ui.error(this, "A map keeps at least one column, so the last one is not removed.", "Map matrix");
+			return;
+		}
 		if (mm != null) {
 			//unconditional for the reason spelled out in btnAddColActionPerformed
 			mm.ids.removeColumn();
 			mm.LOD.removeColumn();
 			mm.zones.removeColumns(4);
 			mm.width--;
-			canvas.redraw();
+			resized();
 		}
     }//GEN-LAST:event_btnRemoveColActionPerformed
 
@@ -982,6 +1031,11 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
     }//GEN-LAST:event_btnNewCamActionPerformed
 
     private void btnRemoveCamActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveCamActionPerformed
+		if (mm != null && (boundEntryBox.getSelectedIndex() < 0 || cam == null)) {
+			//enabled whenever the camera tool is, so it was pressed with no boundary at all (F103)
+			ctrmap.Ui.error(this, "There is no camera boundary selected to remove.", "Camera boundaries");
+			return;
+		}
 		if (mm != null) {
 			mm.cambounds.remove(cam);
 			boundEntryBox.removeItemAt(boundEntryBox.getSelectedIndex());
@@ -1000,10 +1054,24 @@ public class MatrixEditForm extends javax.swing.JPanel implements MatrixTools {
 	}
 
 	private void setZoneByNumber() {
-		if (mm != null && btnMzTool.isSelected() && mm.hasLOD == 1 && curRegX != -1) {
-			mm.zones.set(curRegX, curRegY, (Short) zoneRefNumber.getValue());
+		Integer zone = zoneRef();
+		if (zone != null && mm != null && btnMzTool.isSelected() && mm.hasLOD == 1 && curRegX != -1) {
+			mm.zones.set(curRegX, curRegY, (short) (int) zone);
 			canvas.redraw();
 		}
+	}
+
+	/**
+	 * The zone number in the reference field, whatever number type it holds.
+	 *
+	 * <p>ONE READER (F096). The field has no formatter of its own: showing a cell put a Short in
+	 * it, the dropdown's listener an Integer, and a typed value whatever the first one installed -
+	 * while one path cast it to Short and two to Integer, so every path threw on a value another
+	 * had put there, on the Multizone tool's normal use. Null when it holds no number.
+	 */
+	private Integer zoneRef() {
+		Object held = zoneRefNumber.getValue();
+		return held instanceof Number ? ((Number) held).intValue() : null;
 	}
 
     // Variables declaration - do not modify//GEN-BEGIN:variables

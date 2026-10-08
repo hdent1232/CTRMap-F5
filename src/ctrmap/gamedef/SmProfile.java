@@ -43,7 +43,7 @@ public class SmProfile extends GameProfile {
 		return null; // TODO: pick a probe file once a dump is available
 	}
 
-	//zoneDataTrailingEntries / areaDataTrailingEntries / fieldDataSubfileCount
+	//zoneDataTrailingEntries / areaTableIndex / fieldDataSubfileCount
 	//are deliberately NOT overridden: the base class answers -1 for each, which
 	//means "nobody has measured this", and every caller is required to refuse
 	//in words rather than compute a count from another game's number. Fill them

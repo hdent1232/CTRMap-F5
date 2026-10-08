@@ -142,14 +142,24 @@ $suites = @(
     @{ n = "ClassFileScanner (bytecode sees what a grep cannot)"; c = "ctrmap.tests.ClassFileScannerTest"; a = @("src", "build\classes") },
     @{ n = "GameFilesSeam (the format layer is handed its game, never fetches it)"; c = "ctrmap.tests.GameFilesSeamTest"; a = @("src", "build\classes") },
     @{ n = "HandedGame (two more format classes handed their game)"; c = "ctrmap.tests.HandedGameTest"; a = @() },
+    @{ n = "ModelName (a model's name is read from inside its BCH or refused, never looped for)"; c = "ctrmap.tests.ModelNameTest"; a = @() },
+    @{ n = "PropRegistry (an area's prop registry keeps what it does not model, its order and its entries)"; c = "ctrmap.tests.PropRegistryTest"; a = @() },
+    @{ n = "NpcRegistry (an area's NPC registry is written back as read, and an edit changes only what was edited)"; c = "ctrmap.tests.NpcRegistryTest"; a = @() },
+    @{ n = "RecordPool (the facility editors never write a record they could not read, and write only what changed)"; c = "ctrmap.tests.RecordPoolTest"; a = @() },
     @{ n = "GlobalState (the public-static ceiling, and Workspace.reset)"; c = "ctrmap.tests.GlobalStateTest"; a = @("src", "build\classes") },
     @{ n = "MainframeShape (menus and toolbars, built headless)"; c = "ctrmap.tests.MainframeShapeTest"; a = @("src") },
     @{ n = "Ui output paths (printed, and shown)"; c = "ctrmap.tests.UiOutputTest";           a = @() },
     @{ n = "Dialog seam (only Ui opens one)"; c = "ctrmap.tests.DialogSeamTest";     a = @("src") },
     @{ n = "Duplicate work (one implementation per capability)"; c = "ctrmap.tests.DuplicateWorkTest"; a = @("src") },
     @{ n = "Silent catches (the ceiling that may only fall)"; c = "ctrmap.tests.SilentCatchTest"; a = @("src") },
+    @{ n = "Boxed value casts (a field's value is read through Number; the casts only fall)"; c = "ctrmap.tests.BoxedValueCastTest"; a = @("src") },
+    @{ n = "Error sink (an error nobody caught reaches a log file and a person)"; c = "ctrmap.tests.ErrorSinkTest"; a = @("src") },
     @{ n = "LittleEndian (the one byte[] codec)"; c = "ctrmap.tests.LittleEndianTest"; a = @() },
     @{ n = "ContainerBytes (the one in-memory mini-pack reader)"; c = "ctrmap.tests.ContainerBytesTest"; a = @() },
+    @{ n = "ContainerWriteSafety (a store is whole or nothing, read by the file's own table)"; c = "ctrmap.tests.ContainerWriteSafetyTest"; a = @() },
+    @{ n = "ZoneWrittenElsewhere (a zone another action wrote is never written back over)"; c = "ctrmap.tests.ZoneWrittenElsewhereTest"; a = @("src") },
+    @{ n = "ZoneLinkUnit (Connect zones writes both ends or neither)"; c = "ctrmap.tests.ZoneLinkUnitTest"; a = @() },
+    @{ n = "NpcScriptGate (scripted-NPC templates only where they were measured)"; c = "ctrmap.tests.NpcScriptGateTest"; a = @("src") },
     @{ n = "Mutation baseline (guards still measured)"; c = "ctrmap.tests.MutationBaselineTest"; a = @("src") },
     @{ n = "BchMapModel (engine)";        c = "ctrmap.tests.BchMapModelTest";       a = @($a039) },
     @{ n = "OBJ export round-trip";       c = "ctrmap.tests.MapModelObjTest";        a = @($a039) },
@@ -159,6 +169,7 @@ $suites = @(
     @{ n = "GfColl (collision codec)";    c = "ctrmap.tests.GfCollTest";             a = @($a039) },
     @{ n = "GfColl box ops";              c = "ctrmap.tests.GfCollBoxOpsTest";       a = @($a039, $step) },
     @{ n = "GfColl legacy bridge";        c = "ctrmap.tests.GfCollLegacyBridgeTest"; a = @($a039, $(if ($Quick) { "10" } else { "1" })) },
+    @{ n = "CollisionRead (one strict collision parser; a region it cannot read is not opened or saved over)"; c = "ctrmap.tests.CollisionReadTest"; a = @() },
     @{ n = "Model appender gate";         c = "ctrmap.tests.BchModelAppenderTest";   a = @($pristine, $step) },
     @{ n = "Prefabs";                     c = "ctrmap.tests.MapPrefabTest";          a = @($a039, $step) },
     @{ n = "RegionFactory (blank maps)";  c = "ctrmap.tests.RegionFactoryTest";      a = @($a039, $step) },
@@ -237,6 +248,59 @@ $suites = @(
     @{ n = "PackRollback (a refused pack keeps its table)"; c = "ctrmap.tests.PackRollbackTest"; a = @($pristine) },
     @{ n = "PackScope (a pack writes what was edited)"; c = "ctrmap.tests.PackScopeTest"; a = @($pristine) },
     @{ n = "WorkspaceRepoint (the backup when the game folder changes)"; c = "ctrmap.tests.WorkspaceRepointTest"; a = @($pristine) },
+    @{ n = "WorkspaceClean (asked first; a pack that failed cleans nothing)"; c = "ctrmap.tests.WorkspaceCleanGuardsTest"; a = @() },
+    @{ n = "WorkspaceOpen (a game that cannot open is named, never thrown)"; c = "ctrmap.tests.WorkspaceOpenGuardsTest"; a = @() },
+    @{ n = "WorkspaceUnit (a change that writes several files happens whole or not at all)"; c = "ctrmap.tests.WorkspaceUnitTest"; a = @() },
+    @{ n = "GRPropData (a prop save never drops a prop, nor writes over one it could not read)"; c = "ctrmap.tests.GRPropDataTest"; a = @() },
+    @{ n = "MasterTable (the master zone-header table is read, asked and written by one policy)"; c = "ctrmap.tests.MasterTableTest"; a = @("src") },
+    @{ n = "MapResize (a grown map's old cells are the zone's own, on the game it is handed, whole or not at all)"; c = "ctrmap.tests.MapResizeTest"; a = @() },
+    @{ n = "BlankCanvas (Blank map canvas names the regions it could not empty, and is one unit)"; c = "ctrmap.tests.BlankCanvasTest"; a = @() },
+    @{ n = "MapMatrix (a matrix is read whole or refused; a new one keeps its camera boundary)"; c = "ctrmap.tests.MapMatrixTest"; a = @() },
+    @{ n = "MatrixCursor (the matrix form's selected cell never outlives the cell)"; c = "ctrmap.tests.MatrixCursorTest"; a = @() },
+    @{ n = "ToolColumn (the World Editor's tool column asks the pane it replaces)"; c = "ctrmap.tests.ToolColumnTest"; a = @() },
+    @{ n = "MapViewCells (the map view reads its per-region arrays through one bounded accessor)"; c = "ctrmap.tests.MapViewCellsTest"; a = @() },
+    @{ n = "ScriptScan (the script editor tells a subroutine's brace from a CASETBL's)"; c = "ctrmap.tests.ScriptScanTest"; a = @() },
+    @{ n = "PaintCommit (the map painter's Apply writes its map as one unit)"; c = "ctrmap.tests.PaintCommitTest"; a = @() },
+    @{ n = "SettingsSave (an interrupted settings save changes nothing)"; c = "ctrmap.tests.SettingsSaveTest"; a = @() },
+    @{ n = "ZoneHeader (a zone header round-trips, and the Zone tab writes back only what changed)"; c = "ctrmap.tests.ZoneHeaderTest"; a = @() },
+    @{ n = "ZoneListThread (the zone list is filled on the event thread)"; c = "ctrmap.tests.ZoneListThreadTest"; a = @() },
+    @{ n = "ComboRaw (a stored value a combo box cannot show neither throws nor comes back changed)"; c = "ctrmap.tests.ComboRawTest"; a = @() },
+    @{ n = "CameraForm (the camera form writes what it was moved to and every other byte as read)"; c = "ctrmap.tests.CameraFormTest"; a = @($pristine) },
+    @{ n = "RecordEquality (a record that says what equal means says what its hash is, and no editor finds one by equality)"; c = "ctrmap.tests.RecordEqualityTest"; a = @() },
+    @{ n = "TilesetFile (a tileset reads whole or not at all, and the tileset editor says when it cannot read or write)"; c = "ctrmap.tests.TilesetFileTest"; a = @() },
+    @{ n = "HandleClose (every file opened is closed on every path, whole-file reads read the whole file, and a text file that cannot be read or written is said)"; c = "ctrmap.tests.HandleCloseTest"; a = @() },
+    @{ n = "GarcPrefix (opening an archive reads its entries' first bytes, and decides what the whole read decided)"; c = "ctrmap.tests.GarcPrefixTest"; a = @() },
+    @{ n = "CatalogLoad (the building catalog reads every row it can and says which it could not; its donor archive is opened once)"; c = "ctrmap.tests.CatalogLoadTest"; a = @() },
+    @{ n = "PickerText (what a material picker says about its order is the order it has)"; c = "ctrmap.tests.PickerTextTest"; a = @() },
+    @{ n = "SignCommit (the map painter's sign wiring writes its text, furniture and script together or not at all)"; c = "ctrmap.tests.SignCommitTest"; a = @() },
+    @{ n = "RenderLoop (a render loop runs only while its panel is seen, and a model preview uploads its model once)"; c = "ctrmap.tests.RenderLoopTest"; a = @() },
+    @{ n = "MassEdit (the Extras mass edits happen whole or not at all, can be taken back, and are offered only where they were made)"; c = "ctrmap.tests.MassEditTest"; a = @() },
+    @{ n = "GeoSave (the geometry form touches the workspace only on Save, and writes it as one unit)"; c = "ctrmap.tests.GeoSaveTest"; a = @() },
+    @{ n = "DiscardReverts (every keep question's No puts the editor back to what was last saved)"; c = "ctrmap.tests.DiscardRevertsTest"; a = @() },
+    @{ n = "PropRegistration (a prop is registered in an area one way, whichever button placed it)"; c = "ctrmap.tests.PropRegistrationTest"; a = @() },
+    @{ n = "PawnHeader (a zone script is read only when its header holds together, and refused in words when not)"; c = "ctrmap.tests.PawnHeaderTest"; a = @() },
+    @{ n = "GameSupportDoc (what the docs say works on each game is what the profiles switch on)"; c = "ctrmap.tests.GameSupportDocTest"; a = @() },
+    @{ n = "CodeIps (one code.ips carries the zone, shop and icon patches; saving one keeps the others)"; c = "ctrmap.tests.CodeIpsTest"; a = @("src") },
+    @{ n = "PawnRenumber (a script renumber carries every branch, or is refused before anything changes)"; c = "ctrmap.tests.PawnRenumberTest"; a = @("src") },
+    @{ n = "AreaTable (which AreaData entries are areas, and where the per-area table is, before and after a fork)"; c = "ctrmap.tests.AreaTableTest"; a = @("src") },
+    @{ n = "ScriptArgs (the Script Editor reads back the native names it shows, and says when a line is not taken)"; c = "ctrmap.tests.ScriptArgsTest"; a = @("src") },
+    @{ n = "PartyParamCall (the Script Editor names the party parameter a PokePartyGet/SetParam call passes)"; c = "ctrmap.tests.PartyParamCallTest"; a = @() },
+    @{ n = "PainterReactivate (re-activating the map painter keeps the painting unless the region really changed)"; c = "ctrmap.tests.PainterReactivateTest"; a = @("src") },
+    @{ n = "ZoneScanView (the zone-safety scans read the workspace's zones and name those they cannot read)"; c = "ctrmap.tests.ZoneScanViewTest"; a = @("src") },
+    @{ n = "DialogueShare (a talker line is never rewritten in a story-text file another zone shows)"; c = "ctrmap.tests.DialogueShareTest"; a = @("src") },
+    @{ n = "RepairOnOpen (a repair that cannot finish what it found says so, whichever pass found it)"; c = "ctrmap.tests.RepairOnOpenTest"; a = @() },
+    @{ n = "AreaIdBudget (removing added zones gives their area ids back, and forks take them first)"; c = "ctrmap.tests.AreaIdBudgetTest"; a = @() },
+    @{ n = "Patricia (one GameFreak name-tree builder, building the trees the old ones did)"; c = "ctrmap.tests.PatriciaTest"; a = @() },
+    @{ n = "BchSections (one BCH header and relocation reader; every reader still reads what it did)"; c = "ctrmap.tests.BchSectionsTest"; a = @() },
+    @{ n = "SwitchDoc (every -D switch the program reads is written down)"; c = "ctrmap.tests.SwitchDocTest"; a = @(".") },
+    @{ n = "MaterialImport (a terrain material that cannot be imported says so)"; c = "ctrmap.tests.MaterialImportTest"; a = @() },
+    @{ n = "PaintSeal (no sky through a painted map where the ground steps)"; c = "ctrmap.tests.PaintSealTest"; a = @() },
+    @{ n = "SourceDebris (no javadoc documents nothing, no runs of blank lines)"; c = "ctrmap.tests.SourceDebrisTest"; a = @("src") },
+    @{ n = "NewestOnly (a preview's worker runs one request at a time, newest wins)"; c = "ctrmap.tests.NewestOnlyTest"; a = @() },
+    @{ n = "EditList (the list of edits survives a crash and is never missing)"; c = "ctrmap.tests.EditListTest"; a = @() },
+    @{ n = "PackTransaction (a pack changes the game whole or not at all, and only what was edited)"; c = "ctrmap.tests.PackTransactionTest"; a = @() },
+    @{ n = "WavefrontOBJ (OBJ to collisions reads what real tools write, and a floor stays a floor)"; c = "ctrmap.tests.WavefrontOBJTest"; a = @() },
+    @{ n = "GarcHeader (a file that is not a GARC is not read as one; no layout is written back that the writer cannot keep)"; c = "ctrmap.tests.GarcHeaderTest"; a = @() },
     @{ n = "WorkspaceSession (the open game is an instance, not statics)"; c = "ctrmap.tests.WorkspaceSessionTest"; a = @($gamedir, "src") },
     @{ n = "MainframeReports (what the main window says it did)"; c = "ctrmap.tests.MainframeReportsTest"; a = @($pristine) },
     @{ n = "MapDefaults (which region, and which mesh is the ground)"; c = "ctrmap.tests.MapDefaultsTest"; a = @($pristine) },
@@ -269,6 +333,7 @@ $suites = @(
     @{ n = "ZoneFootprint (which part of a shared map a zone is)"; c = "ctrmap.tests.ZoneFootprintTest"; a = @($pristine) },
     @{ n = "LoadedZone (one owner, handed to every reader)"; c = "ctrmap.tests.LoadedZoneTest"; a = @($pristine, "build\classes") },
     @{ n = "MainframeEdges (what still reaches into the window)"; c = "ctrmap.tests.MainframeEdgesTest"; a = @("build\classes") },
+    @{ n = "EdtReach (nothing off the event thread reaches Swing)"; c = "ctrmap.tests.EdtReachTest"; a = @("src", "build\classes") },
     @{ n = "OpenEditors (one flush, one order, one refusal)"; c = "ctrmap.tests.OpenEditorsTest"; a = @() }
 )
 
@@ -289,6 +354,13 @@ if ($Order -eq "desc") {
 if ($Order -ne "asc") { Write-Host ("Suite order: " + $Order) -ForegroundColor Yellow }
 
 $failed = @()
+# A SKIP IS UNKNOWN, NEVER PASSED (F144). Measured 2026-10-06: 50 of the 136 suites exited 0 after
+# printing that they had skipped their data checks, and this loop counted every one as a pass.
+# A suite that ran nothing it was written for exits 3 (ctrmap.tests.Skip.EXIT); one that skipped a
+# section prints "SKIPPED: <why>" (Skip.MARK). Both are counted and named, and either one keeps
+# this battery from saying ALL SUITES PASS. tools/guard/record_run.py reads the same lines.
+$skipped = @()
+$partly = @()
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 # A suite that writes to stderr is not a suite that failed. Under
 # PowerShell 5.1, "2>&1" on a native exe wraps every stderr line in an
@@ -299,8 +371,22 @@ $prevEAP = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
 foreach ($s in $suites) {
     Write-Host ("--- " + $s.n) -ForegroundColor Cyan
-    & "$jdk\bin\java.exe" -Xmx4g -cp "$cls;$libs" $s.c @($s.a) 2>&1 | Select-Object -Last 2 | ForEach-Object { Write-Host ("    " + $_) }
-    if ($LASTEXITCODE -ne 0) { $failed += $s.n }
+    $said = @(& "$jdk\bin\java.exe" -Xmx4g -cp "$cls;$libs" $s.c @($s.a) 2>&1 | ForEach-Object { "$_" })
+    $exit = $LASTEXITCODE
+    $said | Select-Object -Last 2 | ForEach-Object { Write-Host ("    " + $_) }
+    # A SUITE THAT SAYS IT FAILED HAS FAILED, whatever it exits with. Four suites printed
+    # their verdict on a skip path and returned, so FAILURES PRESENT went out with exit 0
+    # and this loop passed a suite that had printed "FAIL: the prop is refused"
+    # (2026-10-07). tools/guard/replant.py judges the same line the same way.
+    $holes = @($said | Where-Object { $_ -match '^\s*SKIPPED: ' })
+    if ($exit -eq 3 -and @($said -match '^FAILURES PRESENT').Count -eq 0) {
+        $skipped += $s.n
+        $holes | Select-Object -First 1 | ForEach-Object { Write-Host ("    " + $_.Trim()) -ForegroundColor Yellow }
+    } elseif ($exit -ne 0 -or @($said -match '^FAILURES PRESENT').Count -gt 0) { $failed += $s.n
+    } elseif ($holes.Count -gt 0) {
+        $partly += $s.n
+        Write-Host ("    " + $holes.Count + " section(s) did not run - " + $holes[0].Trim()) -ForegroundColor Yellow
+    }
 }
 
 # The mutation harness's own guard, and it is Python because the harness is.
@@ -315,11 +401,31 @@ $hname = "Mutation harness selftest"
 Write-Host ("--- " + $hname) -ForegroundColor Cyan
 $py = Get-Command python -ErrorAction SilentlyContinue
 if (-not $py) {
-    Write-Host "    skip: no python on PATH - run 'python tools/mutate2.py --selftest' by hand"
+    Write-Host "    SKIPPED: no python on PATH - run 'python tools/mutate2.py --selftest' by hand" -ForegroundColor Yellow
+    $skipped += $hname
 } else {
     & $py.Source (Join-Path $root "tools\mutate2.py") --selftest |
         Select-Object -Last 2 | ForEach-Object { Write-Host ("    " + $_) }
     if ($LASTEXITCODE -ne 0) { $failed += $hname }
+}
+
+# THE PYTHON SUITE (F184). tests/ holds the tests of the hooks, the commit gate and the tools
+# that guard this battery - 422 on 2026-10-07 - and nothing ran them: this file ran two Python
+# tools, the pre-commit five, and the 19 that had gone red, two of them real defects, were found
+# by an audit running it by hand. Announced like any suite, so record_run counts it beside the
+# Java ones and a commit's test count covers it. NOT skipped without python, unlike the selftest
+# above: a suite that could not run is not one that passed, and nothing here can commit without
+# python anyway - every git hook runs it.
+$pname = "Python suite (tests/ - the hooks, the gate and the tools)"
+Write-Host ("--- " + $pname) -ForegroundColor Cyan
+if (-not $py) {
+    Write-Host "    FAIL: no python on PATH - the Python suite could not run, which is not a pass"
+    $failed += $pname
+} else {
+    $pySaid = @(& $py.Source -B -m unittest discover -s (Join-Path $root "tests") 2>&1 | ForEach-Object { "$_" })
+    $pyExit = $LASTEXITCODE
+    $pySaid | Where-Object { $_ -match '^(Ran \d+ tests|OK|FAILED)' } | ForEach-Object { Write-Host ("    " + $_) }
+    if ($pyExit -ne 0) { $failed += $pname }
 }
 $ErrorActionPreference = $prevEAP
 $sw.Stop()
@@ -328,9 +434,16 @@ Write-Host ""
 # a failing run never reaches - so a red battery left build.ps1 refusing to build for
 # ninety minutes, which is to say the guard blocked the fix for the thing it reported.
 Remove-Item -Force -ErrorAction SilentlyContinue $batteryLock
-if ($failed.Count -eq 0) {
-    Write-Host ("ALL SUITES PASS  (" + [int]$sw.Elapsed.TotalSeconds + "s)") -ForegroundColor Green
-} else {
+if ($skipped.Count -gt 0) { Write-Host ("SKIPPED: " + ($skipped -join ", ")) -ForegroundColor Yellow }
+if ($partly.Count -gt 0) { Write-Host ("PARTLY SKIPPED: " + ($partly -join ", ")) -ForegroundColor Yellow }
+if ($failed.Count -gt 0) {
     Write-Host ("FAILED: " + ($failed -join ", ")) -ForegroundColor Red
     exit 1
+} elseif ($skipped.Count -gt 0 -or $partly.Count -gt 0) {
+    # NO SUITE FAILED, AND THAT IS ALL THIS RUN CAN SAY. Exit 0, because nothing it ran failed;
+    # never ALL SUITES PASS, because some of what it is for did not run.
+    Write-Host ("NO FAILURES, AND NOT ALL RAN: " + $skipped.Count + " suite(s) skipped, " +
+        $partly.Count + " partly  (" + [int]$sw.Elapsed.TotalSeconds + "s)") -ForegroundColor Yellow
+} else {
+    Write-Host ("ALL SUITES PASS  (" + [int]$sw.Elapsed.TotalSeconds + "s)") -ForegroundColor Green
 }

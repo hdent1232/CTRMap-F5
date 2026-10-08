@@ -147,11 +147,32 @@ def decide(payload):
 
 
 def main():
-    try:
-        payload = json.loads(sys.stdin.read() or "{}")
-    except ValueError:
-        return 0
-    block, why = decide(payload)
+    """A turn end it cannot read is refused ONCE, in words (F213). This answered 0 - "nothing owed"
+    - for a payload that did not parse and for `{}`, exactly as for a reply that owes nothing. The
+    retry is let through and SAID, because a second refusal of the same stop spins forever; the
+    owner's way past for a changed harness is one variable. Read as UTF-8 through the bundle's door,
+    not `sys.stdin.read()` in the locale's code page (F177)."""
+    import hook_env
+    import shellin
+    reader = shellin.reader()
+    raw = reader.payload_text()
+    problem = reader.payload_problem(raw)
+    if problem:
+        retried = reader.refused_before(raw)
+        if retried or hook_env.allowed("ALLOW_UNREADABLE"):
+            sys.stdout.write(json.dumps({"systemMessage": "guard_unfinished.py: %s, and this is %s -"
+                                         " so whether this reply leaves work owed was NOT checked"
+                                         % (problem, "a turn end already sent back once" if retried
+                                            else hook_env.name("ALLOW_UNREADABLE") + " is set")})
+                             + LF)
+            return 0
+        sys.stderr.write(
+            "BLOCKED BY PROJECT POLICY (guard_unfinished.py): this turn end could not be judged:"
+            " %s - and a reply nobody could read is UNKNOWN, not one that owes nothing." % problem
+            + LF + "  The retry of this stop is let through and said. If the harness changed what"
+            + LF + "  it sends, the owner can set %s=1." % hook_env.name("ALLOW_UNREADABLE") + LF)
+        return 2
+    block, why = decide(json.loads(raw))
     if not block:
         return 0
     sys.stderr.write(

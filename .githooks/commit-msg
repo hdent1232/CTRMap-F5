@@ -5,6 +5,13 @@
 # stamp: a commit with no stamp was made past the gate, and every command after it is refused.
 #
 # Wire with:  git config core.hooksPath .githooks
-python tools/guard/commit_guard.py "$1" || exit 1
-python -B tools/commit_gate.py "$1" || exit 1
-exec python -B tools/gate_stamps.py stamp "$1"
+#
+# THE INTERPRETER THIS MACHINE HAS, as the bundle's own hook and pre-commit choose it. This hook
+# said `python` three times and the bundle's fix never reached it, because it is kept different
+# on purpose: on a machine with only `python3` every commit died on "python: not found" (F184).
+# `python` first, because on Windows `python3` can be the Store stub that exits 9009.
+PY=python
+command -v python >/dev/null 2>&1 || PY=python3
+"$PY" tools/guard/commit_guard.py "$1" || exit 1
+"$PY" -B tools/commit_gate.py "$1" || exit 1
+exec "$PY" -B tools/gate_stamps.py stamp "$1"

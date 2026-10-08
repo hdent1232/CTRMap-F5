@@ -28,11 +28,8 @@ import java.nio.file.StandardCopyOption;
 final class ScratchGame {
 
 	/**
-	 * The archives {@link WorkspaceSession#open} requires. All of them, because
-	 * a pack reloads all of them - leave one out and the reload dereferences null.
-	 */
-	/**
-	 * The archives a scratch game needs to be a game.
+	 * The archives a scratch game needs to be a game: every one {@link WorkspaceSession#open}
+	 * requires, because a pack reloads all of them - leave one out and the reload dereferences null.
 	 *
 	 * <p>STORYTEXT joined the list when an append started giving every zone it
 	 * creates its own dialogue file. It is 1.6 MB, which is real but small beside
@@ -108,12 +105,11 @@ final class ScratchGame {
 		ctrmap.CtrmapMainframe.onWorkspaceOpened(session);
 		//the app takes the pristine backup on every load; the pack guards read it
 		Workspace.snapshotOriginals();
-		//and loads the two tables derived from the game, handed the session it
-		//opened - exactly what Workspace.validate does. Neither table loads
-		//itself from the global any more, so a stand-in for "open a workspace"
-		//that skipped this would leave every zone dropdown refusing names
+		//and reads the two tables derived from the game into the session's store,
+		//exactly what Workspace.validate does, so a game whose text lacks the
+		//location names is refused here as it is there
 		ctrmap.formats.text.LocationNames.loadFromGarc(session);
-		ctrmap.formats.pokedata.PokeData.load(session);
+		ctrmap.formats.pokedata.PokeData.of(session);
 		return root;
 	}
 }

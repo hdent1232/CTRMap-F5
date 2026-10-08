@@ -34,11 +34,6 @@ public final class ZoneLinkDialog {
 	}
 
 	/**
-	 * @param parent what the dialog belongs to
-	 * @param ws the open game, handed in
-	 * @param zones the zone table, for the default and the range
-	 */
-	/**
 	 * The connect-zones form, as a pane for the Zone Loader tab.
 	 *
 	 * <p>It was a modal window that waited, then did the work after it closed. A pane
@@ -46,6 +41,9 @@ public final class ZoneLinkDialog {
 	 * the sequence - ask what would be abandoned, then link - is unchanged and still
 	 * refuses in the same places.
 	 *
+	 * @param parent what the form's messages belong to
+	 * @param ws the open game, handed in
+	 * @param zones the zone table, for the default and the range
 	 * @param onClose what to do when the user is finished; the host puts the browser back
 	 * @return the form, or null when there is nothing to connect (it says why first)
 	 */

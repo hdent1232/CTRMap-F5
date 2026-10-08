@@ -36,10 +36,18 @@ public class MaisonClassListDialog {
 		ArchiveType.MAISON_CLASS_LIST_A,
 		ArchiveType.MAISON_CLASS_LIST_B
 	};
-	private static final String[] TABLE_NAMES = {
-		"Table A (-> set pool A, " + arcName(ArchiveType.MAISON_CLASS_LIST_A) + ")",
-		"Table B (-> set pool B, " + arcName(ArchiveType.MAISON_CLASS_LIST_B) + ")"
-	};
+
+	/**
+	 * The two tables' labels, named from the game open NOW (F218). They were a static final array
+	 * computed when the class loaded, so the labels said "?" for the whole run when the class first
+	 * loaded with no workspace, and named the first game's archives after a repoint.
+	 */
+	static String[] tableNames() {
+		return new String[]{
+			"Table A (-> set pool A, " + arcName(ArchiveType.MAISON_CLASS_LIST_A) + ")",
+			"Table B (-> set pool B, " + arcName(ArchiveType.MAISON_CLASS_LIST_B) + ")"
+		};
+	}
 
 	/**
 	 * The archive path shown in the table label, or "?" when there is nothing
@@ -74,8 +82,9 @@ public class MaisonClassListDialog {
 			return null;
 		}
 		String[] classNames = text(Workspace.profile().textIndex(ctrmap.gamedef.GameProfile.TextIndex.TRAINER_CLASS_NAMES));
-		final JComboBox<String> tableBox = new JComboBox<>(TABLE_NAMES);
-		final ListModel model = new ListModel(classNames);
+		final String[] tableNames = tableNames();
+		final JComboBox<String> tableBox = new JComboBox<>(tableNames);
+		final ListModel model = new ListModel(classNames, tableNames);
 		model.loadTable(0);
 		final JTable jt = new JTable(model);
 		jt.getColumnModel().getColumn(1).setPreferredWidth(150);
@@ -104,9 +113,13 @@ public class MaisonClassListDialog {
 				ctrmap.Ui.message(dlg, "Select a class row first.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
 				return;
 			}
-			if (!model.restoreRetailRow(r)) {
-				ctrmap.Ui.error(dlg, "No pristine snapshot is available to restore from.",
-						"Class assignments");
+			try {
+				if (!model.restoreRetailRow(r)) {
+					ctrmap.Ui.error(dlg, "No pristine snapshot is available to restore from.",
+							"Class assignments");
+				}
+			} catch (IllegalStateException unreadable) {
+				ctrmap.Ui.error(dlg, ctrmap.Ui.reason(unreadable), "Class assignments");
 			}
 		});
 
@@ -131,7 +144,7 @@ public class MaisonClassListDialog {
 					jt.getCellEditor().stopCellEditing();
 				}
 				model.save();
-				ctrmap.Ui.message(dlg, "Saved " + TABLE_NAMES[model.tableIndex]
+				ctrmap.Ui.message(dlg, "Saved " + tableNames[model.tableIndex]
 						+ ".\nDeploy to emulator to apply.", "Class assignments", JOptionPane.INFORMATION_MESSAGE);
 			} catch (Exception ex) {
 				ctrmap.Ui.error(dlg, "Save failed:\n" + ex.getMessage(), "Class assignments");
@@ -165,31 +178,31 @@ public class MaisonClassListDialog {
 	private static class ListModel extends AbstractTableModel {
 
 		final String[] classNames;
+		/** The labels the panel showed, for the save's unit name. */
+		final String[] tableNames;
 		int tableIndex = 0;
 		MaisonClassList[] lists = new MaisonClassList[0];
 		MaisonClassList[] vanilla = null;
+		/** What could not be read, and what each record held - Save writes only what changed (F102). */
+		ctrmap.RecordPool pool;
 		boolean dirty = false;
 		/** The one-time engine-wide disclosure was ACCEPTED in this dialog instance. */
 		boolean disclosed = false;
 		/** Owner for the disclosure prompt (the dialog itself, set in show). */
 		java.awt.Component promptOwner = null;
 
-		ListModel(String[] classNames) {
+		ListModel(String[] classNames, String[] tableNames) {
 			this.classNames = classNames;
+			this.tableNames = tableNames;
 		}
 
 		void loadTable(int idx) {
 			tableIndex = idx;
 			GARC g = Workspace.getArchive(TABLES[idx]);
 			lists = new MaisonClassList[g.length];
-			for (int i = 0; i < g.length; i++) {
-				try {
-					byte[] rec = Files.readAllBytes(Workspace.getWorkspaceFile(TABLES[idx], i).toPath());
-					lists[i] = MaisonClassList.read(rec);
-				} catch (Exception ex) {
-					lists[i] = new MaisonClassList();
-				}
-			}
+			//A ROW THAT CANNOT BE READ IS NAMED AND READ-ONLY (F102): it was class 0 with no sets, and
+			//Save wrote that over the retail row as a 4-byte record
+			pool = ctrmap.RecordPool.load(Workspace.session(), TABLES[idx], lists, MaisonClassList::read, MaisonClassList::new);
 			vanilla = ctrmap.formats.maison.MaisonPoolGuard.readSnapshotLists(Workspace.session(), TABLES[idx]);
 			dirty = false;
 			fireTableDataChanged();
@@ -197,6 +210,9 @@ public class MaisonClassListDialog {
 
 		/** Puts the retail set list back into row r (snapshot-sourced). */
 		boolean restoreRetailRow(int r) {
+			if (pool != null && pool.unreadable(r)) {
+				throw new IllegalStateException("Class #" + r + " could not be read (" + pool.why(r) + "), so it is not edited.");
+			}
 			if (vanilla == null || r >= vanilla.length || vanilla[r] == null) {
 				return false;
 			}
@@ -208,12 +224,10 @@ public class MaisonClassListDialog {
 		}
 
 		void save() throws Exception {
-			for (int i = 0; i < lists.length; i++) {
-				File f = Workspace.getWorkspaceFile(TABLES[tableIndex], i);
-				try (FileOutputStream fos = new FileOutputStream(f)) {
-					fos.write(lists[i].write());
-				}
-				Workspace.addPersist(f);
+			//ONLY WHAT CHANGED, never a row that could not be read, as one unit (F102)
+			try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save " + tableNames[tableIndex], Workspace.session())) {
+				pool.save(lists, MaisonClassList::write);
+				unit.commit();
 			}
 			dirty = false;
 		}
@@ -240,6 +254,9 @@ public class MaisonClassListDialog {
 
 		@Override
 		public Object getValueAt(int r, int c) {
+			if (pool != null && pool.unreadable(r)) {
+				return c == 0 ? (Object) "-" : c == 1 ? "(could not be read: " + pool.why(r) + ")" : "";
+			}
 			MaisonClassList l = lists[r];
 			switch (c) {
 				case 0: return l.classTag;
@@ -259,6 +276,11 @@ public class MaisonClassListDialog {
 		@Override
 		public void setValueAt(Object v, int r, int c) {
 			if (c != 2) {
+				return;
+			}
+			if (pool != null && pool.unreadable(r)) {
+				ctrmap.Ui.error(promptOwner, "Class #" + r + " could not be read (" + pool.why(r) + "), so it is not edited:"
+						+ " saving it would replace what it holds with what is shown here.", "Class assignments");
 				return;
 			}
 			if (!disclosed) {
@@ -283,8 +305,10 @@ public class MaisonClassListDialog {
 				}
 				try {
 					parsed.add(Math.max(0, Math.min(0xFFFF, Integer.parseInt(tok))));
-				} catch (NumberFormatException ignore) {
-					return; // reject the whole edit on any bad token
+				} catch (NumberFormatException notANumber) {
+					//the whole edit is refused on any bad token, and the list keeps what it held (F211)
+					Forms.refuseTyped(null);
+					return;
 				}
 			}
 			l.setIndices.clear();

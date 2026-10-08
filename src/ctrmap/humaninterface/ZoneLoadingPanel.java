@@ -17,8 +17,6 @@ import ctrmap.gamedef.GameProfile;
 import ctrmap.gamedef.GameType;
 import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -44,7 +42,6 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	private final LoadedZone loadedZone;
 	private boolean loaded = false;
 
-	/** Creates the form over the zone owner it is handed. */
 	/** Which tool the editor is holding, handed in: this class only asks. */
 	private final ctrmap.humaninterface.tools.ToolSelection tools;
 
@@ -57,6 +54,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	/** The 3D gizmo, handed in: a zone switch lets go of whatever it was over. */
 	private final Navigator navi;
 
+	/** Creates the form over the zone owner it is handed. */
 	public ZoneLoadingPanel(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, OpenEditors openEditors, ZoneEditors zoneEditors, Navigator navi) {
 		if (navi == null) {
 			throw new IllegalArgumentException("the Zone tab must be handed a Navigator - it lets the gizmo go");
@@ -76,7 +74,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		initComponents();
 		zoneList.setToolTipText(LOAD_HINT);
 		btnCloneZone.setToolTipText("Copy the currently loaded zone over another existing zone slot.");
-		btnAddZone.setToolTipText("Add new zones and lift ORAS's 536-zone limit; also generates the required code.ips patch. ORAS only - test in Azahar first.");
+		btnAddZone.setToolTipText("Add new zones and lift ORAS's " + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + "-zone limit; also generates the required code.ips patch. ORAS only - test in Azahar first.");
 		setIntValueClass(new JFormattedTextField[]{cam1, cam2, camFlags, unknownFlags, battleBG, ad, bgmSpring,
 			matrix, textFile, script, move, parentMap, x1, y1, z1, x2, y2, z2});
 	}
@@ -87,58 +85,66 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			Zone previous = loadedZone.open();
 			if (previous != null) {
 				previous.header.freeArchives();
-				System.gc();
 			}
 			//z is open at whatever index is selected: the list worker records
 			//the index it picked right after this call, and a zone opened from
 			//a file has no slot to record
 			loadedZone.open(loadedZone.index(), z);
 
-			isParentMap.setSelected(z.header.OLvalue == 1);
-			cam1.setValue(z.header.camera1);
-			cam2.setValue(z.header.camera2);
-			camFlags.setValue(z.header.cameraFlags);
-			x1.setValue(z.header.X);
-			x2.setValue(z.header.X2);
-			unknownFlags.setValue(z.header.unknownFlags);
-			coldbreath.setSelected(z.header.enableBreathFX);
-			ghosting.setSelected(z.header.enableGhosting);
-			dowsing.setSelected(z.header.enableDowsingMachine);
-			enable3d.setSelected(z.header.enable3D);
-			unknownFlag.setSelected(z.header.unknownFlag);
-			ad.setValue(z.header.areadataID);
-			battleBG.setValue(z.header.battleBG);
-			bgmSpring.setValue(z.header.BGMSpring);
-			run.setSelected(z.header.enableRunning);
-			skate.setSelected(z.header.enableRollerSkates);
-			cycling.setSelected(z.header.enableCycling);
-			escrope.setSelected(z.header.enableEscapeRope);
-			fly.setSelected(z.header.enableFlyFrom);
-			skybox.setSelected(z.header.enableSkybox);
-			bgmCyclingEnable.setSelected(z.header.enableCyclingBGM);
-			mapTransition.setSelectedIndex(z.header.mapChange);
-			matrix.setValue(z.header.mapmatrixID);
-			move.setValue(z.header.mapMove);
-			parentMap.setValue(z.header.parentMap);
-			script.setValue(z.header.script);
-			textFile.setValue(z.header.textID);
-			tmg.setSelectedIndex(z.header.townMapGroup);
-			type.setSelectedIndex(getTypeIndex(z.header.mapType));
-			weather.setSelectedIndex(getWeatherIndex(z.header.weather));
-			y1.setValue(z.header.Y);
-			z1.setValue(z.header.Z);
-			y2.setValue(z.header.Y2);
-			z2.setValue(z.header.Z2);
-
-			specWalk.setSelected(z.header.enableSpecialWalking);
-			flash.setSelected(z.header.enableFlashableDarkness);
-			flash.setEnabled(Workspace.game() == GameType.ORAS);
-			specWalk.setEnabled(Workspace.game() == GameType.XY);
+			showHeader(z.header);
 
 			loaded = true;
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
+	}
+
+	/**
+	 * Fills the boxes from a header and remembers what each showed (F115): what opening a zone shows,
+	 * and what a discarded header goes back to (F106).
+	 */
+	private void showHeader(ctrmap.formats.zone.ZoneHeader h) {
+		isParentMap.setSelected(h.OLvalue == 1);
+		shownParent = isParentMap.isSelected();
+		cam1.setValue(h.camera1);
+		cam2.setValue(h.camera2);
+		camFlags.setValue(h.cameraFlags);
+		x1.setValue(h.X);
+		x2.setValue(h.X2);
+		unknownFlags.setValue(h.unknownFlags);
+		coldbreath.setSelected(h.enableBreathFX);
+		ghosting.setSelected(h.enableGhosting);
+		dowsing.setSelected(h.enableDowsingMachine);
+		enable3d.setSelected(h.enable3D);
+		unknownFlag.setSelected(h.unknownFlag);
+		ad.setValue(h.areadataID);
+		battleBG.setValue(h.battleBG);
+		bgmSpring.setValue(h.BGMSpring);
+		run.setSelected(h.enableRunning);
+		skate.setSelected(h.enableRollerSkates);
+		cycling.setSelected(h.enableCycling);
+		escrope.setSelected(h.enableEscapeRope);
+		fly.setSelected(h.enableFlyFrom);
+		skybox.setSelected(h.enableSkybox);
+		bgmCyclingEnable.setSelected(h.enableCyclingBGM);
+		shownTransition = Combos.show(mapTransition, h.mapChange);
+		matrix.setValue(h.mapmatrixID);
+		move.setValue(h.mapMove);
+		parentMap.setValue(h.parentMap);
+		script.setValue(h.script);
+		textFile.setValue(h.textID);
+		shownTownMap = Combos.show(tmg, h.townMapGroup);
+		shownType = Combos.show(type, getTypeIndex(h.mapType));
+		shownWeather = Combos.show(weather, getWeatherIndex(h.weather));
+		y1.setValue(h.Y);
+		z1.setValue(h.Z);
+		y2.setValue(h.Y2);
+		z2.setValue(h.Z2);
+
+		specWalk.setSelected(h.enableSpecialWalking);
+		flash.setSelected(h.enableFlashableDarkness);
+		flash.setEnabled(Workspace.game() == GameType.ORAS);
+		specWalk.setEnabled(Workspace.game() == GameType.XY);
 	}
 
 	/** Programmatically opens a zone, as if picked from the dropdown. */
@@ -181,12 +187,22 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 	 */
 	public void loadEverything(final Runnable onDone) {
 		LoadingDialog progress = LoadingDialog.makeDialog("Loading Zone data");
-		SwingWorker worker = new SwingWorker() {
+		//READ ON THE WORKER, SHOWN ON THE EVENT THREAD (F116): the worker filled zoneList and tmg,
+		//set the type and weather models and enabled a button - four Swing components, their
+		//listeners firing - while the event thread painted the progress dialog
+		loaded = false;
+		Zone previous = loadedZone.open();
+		if (previous != null) {
+			previous.header.freeArchives();
+		}
+		loadedZone.release();
+		SwingWorker<Listed, Void> worker = new SwingWorker<Listed, Void>() {
 			@Override
 			protected void done() {
 				progress.close();
+				Listed listed;
 				try {
-					get(); //without this, anything thrown below vanishes and the
+					listed = get(); //without this, anything thrown below vanishes and the
 					//zone list is just silently empty with no error anywhere
 				} catch (Exception ex) {
 					Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, "loading zones", ex);
@@ -195,6 +211,10 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 					//refuse in words for a game nobody has measured; that
 					//sentence is worth nothing if it only reaches stderr.
 					ctrmap.Ui.error(ZoneLoadingPanel.this, ctrmap.Ui.reason(ex), "Loading Zone data");
+					listed = null;
+				}
+				if (listed != null) {
+					showListed(listed);
 				}
 				if (onDone != null) {
 					onDone.run();
@@ -202,32 +222,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			}
 
 			@Override
-			protected Object doInBackground() throws Exception {
-				loaded = false;
-				Zone previous = loadedZone.open();
-				if (previous != null) {
-					previous.header.freeArchives();
-				}
-				System.gc();
-				loadedZone.release();
-				zoneList.setSelectedIndex(-1);
-				zoneList.removeAllItems();
-				tmg.setSelectedIndex(-1);
-				tmg.removeAllItems();
-				//The button follows the same capability the action behind it
-				//refuses on. It used to be disabled for XY and enabled for
-				//everything else, so Sun/Moon and Ultra Sun/Ultra Moon got a
-				//live "Add zones" button that opens a dialog which cannot
-				//finish - the gate said "not XY", the appender means "ORAS".
-				if (!Workspace.profile().supports(GameProfile.Feature.ZONE_APPEND)) {
-					btnAddZone.setEnabled(false);
-					btnAddZone.setToolTipText("Adding new zones is not available for "
-							+ Workspace.profile().displayName()
-							+ " - it needs that game's zone-table limit found in its executable.");
-				} else {
-					btnAddZone.setEnabled(true);
-					btnAddZone.setToolTipText("Add new zones and lift ORAS's 536-zone limit; also generates the required code.ips patch. ORAS only - test in Azahar first.");
-				}
+			protected Listed doInBackground() throws Exception {
 				//WAS "length - (isXY() ? 1 : 2)": two answers for four games,
 				//and the "else" arm handed every unmeasured game ORAS's 2 - a
 				//zone count two short, with an ordinary zone read as the master
@@ -240,87 +235,112 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 							+ Workspace.getArchive(ArchiveType.ZONE_DATA).length
 							+ " entries). The game folder is probably incomplete or damaged.");
 				}
-				loadedZone.table(new Zone[totalZones]); //last file is not a ZO; filled slot by slot below
+				Listed listed = new Listed(totalZones); //last file is not a ZO; filled slot by slot below
 				for (int i = 0; i < totalZones; i++) {
 					ZO zo = new ZO(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, i), Workspace.session());
-					Zone read = new Zone(zo, Workspace.game());
-					loadedZone.replace(i, read);
-					//unknown flags 1024 == 8192 ???, 4096, 16384 always 0, >> 20 lumi warp zone?,
-					String name = LocationNames.getLocName(read.header.parentMap) + " - " + i;
-					if (read.s.publics.size() > 3) {
-						System.out.println(i + "/" + name);
-					}
-					/*for (int j = 0; j < zones[i].entities.NPCCount; j++){
-						ZoneEntities.NPC npc = zones[i].entities.npcs.get(j);
-						if (npc.movePerm2 != 1 && npc.movePerm2 != 0 && npc.movePerm2 != 4 && npc.movePerm2 != 9){
-							System.out.println(name + "/NPC " + j + " - " + npc.movePerm2);
-						}
-					}*/
-					zoneList.addItem(name);
-					tmg.addItem(name);
+					listed.zones[i] = new Zone(zo, Workspace.game());
+					listed.names.add(LocationNames.getLocName(ctrmap.Workspace.session(), listed.zones[i].header.parentMap) + " - " + i);
 					progress.setBarPercent((int) ((float) i / totalZones * 100));
 				}
-				if (Workspace.game() == GameType.XY) {
-					type.setModel(new DefaultComboBoxModel<>(new String[]{
-						"Small generic",
-						"Outside generic",
-						"Grass gym",
-						"Inside generic",
-						"Anistar Sundial",
-						"Lumiose Boulevard",
-						"??? Route 6/19",
-						"Lumiose Plazas"
-					}));
-					weather.setModel(new DefaultComboBoxModel<>(new String[]{
-						"None",
-						"Default 1",
-						"Default 2",
-						"Default 3",
-						"Default 4",
-						"Default 5",
-						"Default 6",
-						"Default 7",
-						"Default 8",
-						"Default 9",
-						"Default 10",
-						"Default 11",
-						"Default 12",
-						"Default 13",
-						"Default 14",
-						"Clear (perpetual)",
-						"Clear (debris storms)",
-						"Clear (battle sandstorms)",
-						"Clear (snowstorms)",
-						"Snow (perpetual)",
-						"Snow/Clear/Overcast",
-						"Snow/Overcast",
-						"Starry/Clear/Snowstorm",
-						"Starry/Cloudless",
-						"Starry/Clear"
-					}));
-				} else {
-					type.setModel(new DefaultComboBoxModel<>(new String[]{
-						"Default map",
-						"Single zone map"}));
-					weather.setModel(new DefaultComboBoxModel<>(new String[]{
-						"Clear",
-						"Rain",
-						"Thunderstorm",
-						"Foggy",
-						"Volcanic ash",
-						"Sandstorm",
-						"Dark",
-						"Primordial rain",
-						"Primordial drought",
-						"Clear (No skybox)"
-					}));
-				}
-				loaded = true;
-				return null;
+				return listed;
 			}
 		};
 		worker.execute();
 		progress.showDialog();
+	}
+
+	/** The zones a load read, and the name each is listed under - built on the worker, shown on the EDT. */
+	private static final class Listed {
+
+		final Zone[] zones;
+		final java.util.List<String> names = new java.util.ArrayList<>();
+
+		Listed(int count) {
+			zones = new Zone[count];
+		}
+	}
+
+	/** Puts what a load read into the boxes - on the event thread, where every Swing component lives. */
+	private void showListed(Listed listed) {
+		loadedZone.table(listed.zones);
+		zoneList.setSelectedIndex(-1);
+		zoneList.removeAllItems();
+		tmg.setSelectedIndex(-1);
+		tmg.removeAllItems();
+		for (String name : listed.names) {
+			zoneList.addItem(name);
+			tmg.addItem(name);
+		}
+		//The button follows the same capability the action behind it
+		//refuses on. It used to be disabled for XY and enabled for
+		//everything else, so Sun/Moon and Ultra Sun/Ultra Moon got a
+		//live "Add zones" button that opens a dialog which cannot
+		//finish - the gate said "not XY", the appender means "ORAS".
+		if (!Workspace.profile().supports(GameProfile.Feature.ZONE_APPEND)) {
+			btnAddZone.setEnabled(false);
+			btnAddZone.setToolTipText("Adding new zones is not available for "
+					+ Workspace.profile().displayName()
+					+ " - it needs that game's zone-table limit found in its executable.");
+		} else {
+			btnAddZone.setEnabled(true);
+			btnAddZone.setToolTipText("Add new zones and lift ORAS's " + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + "-zone limit; also generates the required code.ips patch. ORAS only - test in Azahar first.");
+		}
+		if (Workspace.game() == GameType.XY) {
+			type.setModel(new DefaultComboBoxModel<>(new String[]{
+				"Small generic",
+				"Outside generic",
+				"Grass gym",
+				"Inside generic",
+				"Anistar Sundial",
+				"Lumiose Boulevard",
+				"??? Route 6/19",
+				"Lumiose Plazas"
+			}));
+			weather.setModel(new DefaultComboBoxModel<>(new String[]{
+				"None",
+				"Default 1",
+				"Default 2",
+				"Default 3",
+				"Default 4",
+				"Default 5",
+				"Default 6",
+				"Default 7",
+				"Default 8",
+				"Default 9",
+				"Default 10",
+				"Default 11",
+				"Default 12",
+				"Default 13",
+				"Default 14",
+				"Clear (perpetual)",
+				"Clear (debris storms)",
+				"Clear (battle sandstorms)",
+				"Clear (snowstorms)",
+				"Snow (perpetual)",
+				"Snow/Clear/Overcast",
+				"Snow/Overcast",
+				"Starry/Clear/Snowstorm",
+				"Starry/Cloudless",
+				"Starry/Clear"
+			}));
+		} else {
+			type.setModel(new DefaultComboBoxModel<>(new String[]{
+				"Default map",
+				"Single zone map"}));
+			weather.setModel(new DefaultComboBoxModel<>(new String[]{
+				"Clear",
+				"Rain",
+				"Thunderstorm",
+				"Foggy",
+				"Volcanic ash",
+				"Sandstorm",
+				"Dark",
+				"Primordial rain",
+				"Primordial drought",
+				"Clear (No skybox)"
+			}));
+		}
+		loaded = true;
 	}
 
 	@Override
@@ -363,19 +383,32 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			return true;
 		}
 		int zoneIndex = loadedZone.index();
-		zone.header.mapType = getTypeRaw(type.getSelectedIndex());
+		//A BOX'S FIELD IS WRITTEN ONLY WHEN THE BOX WAS CHANGED (F115): written back from every box,
+		//an ORAS map type 1 was saved as 3, unknown types as 0xFF, unknown XY weathers as 29 and the
+		//6-bit OL value as 0 or 1 - on every save, edited or not
+		if (type.getSelectedIndex() != shownType) {
+			zone.header.mapType = getTypeRaw(type.getSelectedIndex());
+		}
 		zone.header.mapMove = (Integer) move.getValue();
 		zone.header.areadataID = (Integer) ad.getValue();
 		zone.header.mapmatrixID = (Integer) matrix.getValue();
 		zone.header.textID = (Integer) textFile.getValue();
 		zone.header.script = (Integer) script.getValue();
 
-		zone.header.townMapGroup = (Integer) tmg.getSelectedIndex();
-		zone.header.mapChange = mapTransition.getSelectedIndex();
+		if (tmg.getSelectedIndex() != shownTownMap) {
+			zone.header.townMapGroup = tmg.getSelectedIndex();
+		}
+		if (mapTransition.getSelectedIndex() != shownTransition) {
+			zone.header.mapChange = mapTransition.getSelectedIndex();
+		}
 		zone.header.parentMap = (Integer) parentMap.getValue();
-		zone.header.OLvalue = isParentMap.isSelected() ? 1 : 0;
+		if (isParentMap.isSelected() != shownParent) {
+			zone.header.OLvalue = isParentMap.isSelected() ? 1 : 0;
+		}
 
-		zone.header.weather = getWeatherRaw(weather.getSelectedIndex());
+		if (weather.getSelectedIndex() != shownWeather) {
+			zone.header.weather = getWeatherRaw(weather.getSelectedIndex());
+		}
 		zone.header.battleBG = (Integer) battleBG.getValue();
 		zone.header.BGMSpring = (Integer) bgmSpring.getValue();
 		zone.header.enableCyclingBGM = bgmCyclingEnable.isSelected();
@@ -431,7 +464,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			//A ZONE WITH NO ROW IN THE TABLE MUST NOT BE WRITTEN INTO SOMEBODY ELSE'S.
 			//A zone opened from a loose .zo file is open at index -1, which is what
 			//LoadedZone.open(int, Zone) documents for a zone that came from a file. The
-			//write below is "seek to index * 0x38 and put this header there", and at -1
+			//write below was "seek to index * 0x38 and put this header there", and at -1
 			//that is a NEGATIVE seek, which RandomAccessFile refuses with an IOException
 			//- so the catch fired and the user was told. That worked, and it worked by
 			//accident: skipBytes(-56) silently does nothing, so the read above it
@@ -451,25 +484,17 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 				return true;
 			}
 			try {
-				//save to master table - the entry just past the last zone.
-				//WAS "length - (isXY() ? 1 : 2)", the same two-answers-for-four-
-				//games arithmetic as the zone count: on a game whose tail nobody
-				//has counted this wrote a zone header 0x38 bytes at a time into
-				//an ORDINARY ZONE.
-				File master = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA,
-						ZoneTables.masterIndex(Workspace.getArchive(ArchiveType.ZONE_DATA)));
-				RandomAccessFile dos = new RandomAccessFile(master, "rw");
-				dos.skipBytes(zoneIndex * 0x38);
-				byte[] test = new byte[0x38];
-				dos.read(test);
-				byte[] replace = zone.file.getFile(0);
-				if (!Arrays.equals(replace, test)) {
-					dos.seek(zoneIndex * 0x38);
-					dos.write(replace);
-					Workspace.addPersist(master);
+				//THROUGH THE ONE READER (F013). This opened the table with a RandomAccessFile and
+				//wrote the header at index * 0x38 whatever the file held: a short or stale table
+				//was written into or grown to fit, the read before it ignored how many bytes came
+				//back, a header longer than a row ran into the next zone's, and the write went
+				//around the open unit of work. The table is now read by the one policy, the row
+				//replaced only when it is one row long, and written through the unit.
+				ctrmap.MasterTable table = ctrmap.MasterTable.read(Workspace.session());
+				if (table.setRow(zoneIndex, zone.file.getFile(0))) {
+					table.write();
 				}
-				dos.close();
-			} catch (IOException ex) {
+			} catch (IOException | RuntimeException ex) {
 				Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, null, ex);
 				//the zone file itself IS written by here, so this is a half
 				//save: the game reads its headers from the master table and
@@ -504,7 +529,12 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		EnumSet<Zone.Part> changed = zone.changed();
 		EnumSet<Zone.Part> keep = EnumSet.noneOf(Zone.Part.class);
 		if (changed.contains(Zone.Part.HEADER)) {
-			switch (ctrmap.Ui.askToKeep(dialog, "Zone header")) {
+			//NO PUTS THE HEADER AND ITS BOXES BACK (F106): it did nothing, and the boxes and the header
+			//went on holding the edit for the next save to write
+			switch (ctrmap.Ui.askToKeep(dialog, "Zone header", () -> {
+				zone.discardHeader();
+				showHeader(zone.header);
+			})) {
 				case SAVE:
 					keep.add(Zone.Part.HEADER);
 					break;
@@ -516,12 +546,16 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			}
 		}
 		if (changed.contains(Zone.Part.ENTITIES)) {
-			switch (ctrmap.Ui.askToKeep(dialog, "Entity data")) {
+			//NO PUTS THE ENTITIES BACK AND SHOWS THEM (F106): it forgot the change and left the edited
+			//records in the forms; only the editors that show entities are asked, because showing the
+			//whole zone again would reset editors whose own questions have not been asked yet
+			switch (ctrmap.Ui.askToKeep(dialog, "Entity data", () -> {
+				zone.discardEntities();
+				zoneEditors.showEntities(zone);
+				navi.follow(null);   //the record it was over went with the edit
+			})) {
 				case SAVE:
 					keep.add(Zone.Part.ENTITIES);
-					break;
-				case DISCARD:
-					zone.discardEntities();
 					break;
 				case CANCEL:
 					return false;
@@ -532,6 +566,10 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		zone.store(keep);
 		return true;
 	}
+
+	/** What each box showed when the zone loaded: a field is written back only when its box moved from it (F115). */
+	private int shownType = -1, shownWeather = -1, shownTransition = -1, shownTownMap = -1;
+	private boolean shownParent;
 
 	public void setIntValueClass(JFormattedTextField[] fields) {
 		for (int i = 0; i < fields.length; i++) {
@@ -1235,15 +1273,39 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		if (zoneList.getSelectedIndex() != -1 && loaded) {
 			if (openEditors.saveAll(true)) {
 				LoadingDialog progress = LoadingDialog.makeDialog("Loading zone");
-				SwingWorker worker = new SwingWorker() {
+				//READ HERE, ON THE EVENT THREAD, ONCE: the worker used to ask the dropdown
+				//twice from its own thread, and a user arrowing on meanwhile opened one zone
+				//into the slot of another
+				final int opening = zoneList.getSelectedIndex();
+				SwingWorker<Zone, Void> worker = new SwingWorker<Zone, Void>() {
 					@Override
 					protected void done() {
-						progress.close();
+						//THE SHOW HALF, ON THE EVENT THREAD (F220). Handing the zone to the
+						//property form and all nine editors used to happen in doInBackground:
+						//some two hundred widget writes off the event thread, a nested modal
+						//progress dialog shown from the worker, and two questions asked from it.
+						//The dialog closes AFTER the editors have the zone, so whoever waits on
+						//it - a headless suite included - sees the zone open, not half of it.
+						Throwable failed = null;
 						try {
-							get(); //without this, anything thrown below vanishes and a zone
-							//that failed to load looks loaded, the editors half on the last one
-						} catch (Exception ex) {
-							Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+							Zone z = get(); //without this, anything thrown in the read vanishes and a
+							//zone that failed to load looks loaded, the editors half on the last one
+							if (z != loadedZone.at(opening)) {
+								loadedZone.replace(opening, z); //the table holds what the file holds (F234)
+							}
+							loadZone(z);
+							loadedZone.open(opening, z);
+							zoneEditors.show(z);
+							navi.follow(null);   //the record it was over belongs to the zone being closed
+						} catch (java.util.concurrent.ExecutionException ex) {
+							failed = ex.getCause() != null ? ex.getCause() : ex;
+						} catch (InterruptedException | RuntimeException ex) {
+							failed = ex;
+						} finally {
+							progress.close();
+						}
+						if (failed != null) {
+							Throwable cause = failed;
 							Logger.getLogger(ZoneLoadingPanel.class.getName()).log(Level.SEVERE, "loading zone", cause);
 							unloadZone();
 							//through Ui: the progress dialog closes on failure
@@ -1269,7 +1331,10 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 					}
 
 					@Override
-					protected Object doInBackground() {
+					protected Zone doInBackground() {
+						//THE READ HALF (F220): files and parsing only, returning the zone. Nothing
+						//here may touch a widget - EdtReachTest follows every call it makes.
+						//
 						//The camera form is NOT stored here. It was, and it was the
 						//second store of the same form: openEditors.saveAll(true), the
 						//guard this worker runs inside, has mCamEditForm.store as its
@@ -1280,18 +1345,20 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 						//and it asked from doInBackground - a modal dialog off the event
 						//thread. It never fired only because the first store leaves the
 						//record unmodified, which is luck, not a design.
+						//A SLOT ANOTHER WRITER CHANGED IS READ AGAIN (F234): the table read every
+						//zone once, and Empty zone, Rename, Connect zones, a door wired from another
+						//map and an interior clone write a zone file through containers of their
+						//own - so opening it showed the old warps, and its first save cut the link off
+						//READ FROM THE OWNER, NOT CAPTURED: a worker holding the zone in a field of its
+						//own is a second holder of a zone, which LoadedZoneTest refuses (F208)
+						Zone slot = loadedZone.at(opening);
+						Zone z = slot.changedOnDisk().isEmpty() ? slot : slot.reread();
 						progress.setBarPercent(20);
-						Zone z = loadedZone.at(zoneList.getSelectedIndex());
-						loadZone(z);
-						loadedZone.open(zoneList.getSelectedIndex(), z);
-						progress.setBarPercent(50);
 						z.header.fetchArchives(Workspace.session());
+						progress.setBarPercent(50);
 						z.s.decompressThis();
 						progress.setBarPercent(100);
-						zoneEditors.show(z);
-						navi.follow(null);   //the record it was over belongs to the zone being closed
-						System.gc();
-						return null;
+						return z;
 					}
 				};
 				worker.execute();
@@ -1299,6 +1366,23 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 			}
 		}
     }//GEN-LAST:event_zoneListActionPerformed
+
+	/**
+	 * Opens the open zone again when another writer has changed its file (F234) - Empty zone,
+	 * Rename and Connect zones write zones through containers of their own, and the editors went
+	 * on showing, and saving, what they held before. It goes the way picking the zone in the
+	 * dropdown goes: what the editors hold is saved first, asked as a zone switch asks (a part
+	 * edited here AND changed on disk is refused, never written over), and the zone is then read
+	 * again from its file. Nothing happens when the open zone's file is as it was read.
+	 */
+	public void reopenIfChangedOnDisk() {
+		Zone open = loadedZone.open();
+		if (open == null || loadedZone.index() < 0 || zoneList.getSelectedIndex() != loadedZone.index()
+				|| open.changedOnDisk().isEmpty()) {
+			return;
+		}
+		zoneListActionPerformed(null);
+	}
 
 	/**
 	 * Back to "no zone open", for a load that failed partway. The editors that
@@ -1510,15 +1594,17 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		if (forkDeclined == null || !java.util.Objects.equals(forkDeclinedWs, Workspace.WORKSPACE_PATH)) {
 			forkDeclined = new java.util.HashSet<>();
 			forkDeclinedWs = Workspace.WORKSPACE_PATH;
-			try {
+			//NO CATCH-ALL (F211): one swallowed everything, so a single bad token dropped every decline
+			//after it. Only saveForkDeclined writes this list; a token that is not a zone number was
+			//edited by hand, and skipping it costs one fork offer asked again - the safe direction
+			if (forkDeclinedWs != null) {
 				String csv = java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel")
-						.get("FORK_DECLINED_" + Workspace.WORKSPACE_PATH.hashCode(), "");
+						.get("FORK_DECLINED_" + forkDeclinedWs.hashCode(), "");
 				for (String tok : csv.split(",")) {
-					if (!tok.trim().isEmpty()) {
+					if (tok.trim().matches("\\d{1,9}")) {
 						forkDeclined.add(Integer.parseInt(tok.trim()));
 					}
 				}
-			} catch (Exception ignore) {
 			}
 		}
 		return forkDeclined;
@@ -1608,7 +1694,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		java.util.List<Integer> sharerIdx = new java.util.ArrayList<>();
 		for (int i = 0; i < loadedZone.count(); i++) {
 			Zone other = loadedZone.at(i);
-			if (i != zoneIndex && other != null && other.header != null && other.header.mapmatrixID == mm) {
+			if (i != zoneIndex && other.header != null && other.header.mapmatrixID == mm) {   //never a null slot (F208)
 				sharerIdx.add(i);
 			}
 		}
@@ -1621,7 +1707,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		StringBuilder who = new StringBuilder();
 		for (int k = 0; k < sharerIdx.size() && k < 6; k++) {
 			int i = sharerIdx.get(k);
-			who.append("  - zone ").append(i).append(" (").append(LocationNames.getLocName(loadedZone.at(i).header.parentMap))
+			who.append("  - zone ").append(i).append(" (").append(LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap))
 					.append(i >= baseZones ? ", added zone" : "").append(")\n");
 		}
 		if (sharerIdx.size() > 6) {
@@ -1695,7 +1781,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		int srcIndex = zoneIndex;
 		String[] names = new String[loadedZone.count()];
 		for (int i = 0; i < names.length; i++) {
-			names[i] = LocationNames.getLocName(loadedZone.at(i).header.parentMap) + " - " + i;
+			names[i] = LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap) + " - " + i;
 		}
 		JComboBox<String> dstPicker = new JComboBox<>(names);
 		dstPicker.setMaximumRowCount(20);
@@ -1808,7 +1894,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		int baseCount = loadedZone.count();
 		String[] names = new String[baseCount];
 		for (int i = 0; i < baseCount; i++) {
-			names[i] = LocationNames.getLocName(loadedZone.at(i).header.parentMap) + " - " + i;
+			names[i] = LocationNames.getLocName(ctrmap.Workspace.session(), loadedZone.at(i).header.parentMap) + " - " + i;
 		}
 		JComboBox<String> srcPicker = new JComboBox<>(names);
 		srcPicker.setMaximumRowCount(20);
@@ -1819,7 +1905,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		javax.swing.JSpinner countSpin = new javax.swing.JSpinner(
 				new javax.swing.SpinnerNumberModel(1, 1, ctrmap.formats.codepatch.ZoneLimitPatch.MAX_NEW_ZONES, 1));
 		Object[] form = {
-			"Lift ORAS's 536-zone limit and add new zones for your fan game.",
+			"Lift ORAS's " + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + "-zone limit and add new zones for your fan game.",
 			" ",
 			"How many new zones to add?",
 			countSpin,
@@ -1838,8 +1924,21 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		}
 		int realZones = (Integer) countSpin.getValue();
 		int srcIndex = srcPicker.getSelectedIndex();
-		int m = ctrmap.formats.codepatch.ZoneLimitPatch.masterIndex(realZones);
+		int m;
+		try {
+			//FROM THE ZONES THERE ARE NOW, a previous append's included (F039)
+			m = ctrmap.formats.codepatch.ZoneLimitPatch.masterIndexFrom(baseCount, realZones);
+		} catch (IllegalArgumentException tooMany) {
+			ctrmap.Ui.error(this, "Cannot add " + realZones + " zone(s): " + ctrmap.util.Bytes.reason(tooMany) + ".",
+					"Add new zones");
+			return;
+		}
 		int spares = m - baseCount - realZones;
+		String replaces = baseCount > ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES
+				? "This game already has added zones, so the zone-limit patch saved now REPLACES the\n"
+				+ "one in your code.ips - the old one names a zone table this game no longer has.\n"
+				+ "Shop and item-icon changes already in that code.ips are kept.\n\n"
+				: "";
 		//strong warning, Cancel is the default option
 		Object[] options = {"Continue", "Cancel"};
 		int confirm = ctrmap.Ui.option(this,
@@ -1849,6 +1948,7 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 				+ "FIRST-OF-ITS-KIND: no fan hack has ever added an ORAS zone. The archive and the\n"
 				+ "code patch are byte-verified here, but the in-game boot is unproven - test in\n"
 				+ "Azahar first and keep a RomFS backup.\n\n"
+				+ replaces
 				+ "You MUST install the generated code.ips or the game will black-screen:\n"
 				+ "  Azahar: right-click the game -> Open Mods Location -> exefs\\code.ips\n"
 				+ "  3DS Luma: sdmc:/luma/titles/000400000011C400/code.ips (enable Game Patching)\n\n"
@@ -1860,6 +1960,25 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		if (confirm != 0) {
 			return;
 		}
+		//THE EXECUTABLE FIRST, BEFORE ANYTHING IS STAGED (F046). The patch is built against the
+		//user's own code.bin and refused for any other build - and an append whose code patch
+		//cannot be made is a game that black-screens, so nothing is appended without one.
+		java.io.File codeFile = CodeBinFile.pick(this, "The zone-limit patch is built against it.",
+				new java.io.File(Workspace.GAMEDIR_PATH));
+		if (codeFile == null) {
+			return;
+		}
+		final byte[] code;
+		try {
+			code = java.nio.file.Files.readAllBytes(codeFile.toPath());
+			ctrmap.formats.codepatch.ZoneLimitPatch.verify(code);
+		} catch (java.io.IOException | IllegalStateException notPatchable) {
+			CodeBinFile.forget();
+			ctrmap.Ui.error(this, "No zones were added: the zone-limit patch cannot be made for "
+					+ codeFile.getName() + ".\n\n" + ctrmap.util.Bytes.reason(notPatchable), "Add new zones");
+			return;
+		}
+		CodeBinFile.remember(codeFile);
 		ctrmap.ZoneAppender.AppendResult res;
 		try {
 			//THE USER HAS JUST BEEN SHOWN WHAT THESE ZONES WILL SHARE, in the dialog
@@ -1874,14 +1993,14 @@ public class ZoneLoadingPanel extends javax.swing.JPanel implements ZoneSaver, Z
 		//generate + save the paired code patch (same N drives both sides)
 		boolean savedIps = false;
 		try {
-			byte[] ips = ctrmap.formats.codepatch.ZoneLimitPatch.buildIPS(realZones);
+			byte[] ips = ctrmap.formats.codepatch.ZoneLimitPatch.buildIPS(res.patchZones, code);
 			javax.swing.JFileChooser fc = new javax.swing.JFileChooser();
 			fc.setDialogTitle("Save the zone-limit code patch (name it code.ips)");
 			fc.setSelectedFile(new java.io.File("code.ips"));
-			if (fc.showSaveDialog(this) == javax.swing.JFileChooser.APPROVE_OPTION) {
-				java.io.FileOutputStream fos = new java.io.FileOutputStream(fc.getSelectedFile());
-				fos.write(ips);
-				fos.close();
+			if (ctrmap.Ui.choose(this, fc, true) != null) {
+				//into the code.ips already there, its shop and icon patches kept (F152)
+				ctrmap.formats.codepatch.CodeIps.save(fc.getSelectedFile(), ips,
+						ctrmap.formats.codepatch.ZoneLimitPatch.owned());
 				savedIps = true;
 			}
 		} catch (Exception ex) {

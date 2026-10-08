@@ -1,5 +1,6 @@
 package ctrmap.formats.tilemap;
 
+import ctrmap.formats.GameCache;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.h3d.BchMapModel;
@@ -10,7 +11,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Scanner;
 
 /**
  * Lets EVERY terrain brush paint on ANY map. A map's own model only carries the
@@ -44,20 +44,14 @@ import java.util.Scanner;
 public class TerrainCatalog {
 
 	/**
-	 * The game the two caches below were filled from. Identity, not equality:
-	 * two sessions over one folder are two games, and a cache keyed by nothing
-	 * handed the second game the first's answers.
+	 * What was measured from a game's pristine copy, kept in that game's own store (F218). These
+	 * were two static maps emptied whenever a game other than the last one was handed, so two
+	 * games took turns throwing each other's measurements away; and a cache keyed by nothing
+	 * before that handed the second game the first's answers.
 	 */
-	private static GameFiles cachedFor;
-
-	/** Empties the caches when a different game is handed than the one they were filled from. */
-	private static synchronized void cachesFor(GameFiles files) {
-		if (files != cachedFor) {
-			uvScaleCache.clear();
-			donorTextureCache.clear();
-			cachedFor = files;
-		}
-	}
+	private static final GameCache.Key<Map<String, float[]>> UV_SCALES = new GameCache.Key<>("terrain donor UV scales");
+	private static final GameCache.Key<Map<String, List<String>>> DONOR_TEXTURES
+			= new GameCache.Key<>("terrain donor textures");
 
 	/** What a report says about an exception: its message, or the exception itself when it gave none. */
 	private static String reason(Throwable ex) {
@@ -109,8 +103,6 @@ public class TerrainCatalog {
 		public float vLip = 0.2483f, vMid = 0.2015f, vWall = 0.0485f, vFoot = 0.0031f;
 	}
 
-	private static final java.util.Map<String, float[]> uvScaleCache = new java.util.HashMap<>();
-
 	/**
 	 * The UV scale the DONOR mesh was authored at, for a material this catalog
 	 * injected - or null when the name is not one of ours, or the donor cannot
@@ -135,10 +127,10 @@ public class TerrainCatalog {
 	 * and the caller that owns a window says so
 	 */
 	public static synchronized float[] donorUvScale(GameFiles files, String injectName) {
-		if (injectName == null) {
+		if (injectName == null || files == null) {
 			return null;
 		}
-		cachesFor(files);
+		Map<String, float[]> uvScaleCache = files.cache().get(UV_SCALES, java.util.HashMap::new);
 		if (uvScaleCache.containsKey(injectName)) {
 			return uvScaleCache.get(injectName);
 		}
@@ -197,38 +189,10 @@ public class TerrainCatalog {
 			return donors;
 		}
 		Map<TilePalette, Donor> read = new LinkedHashMap<>();
-		try (InputStream in = openCatalog()) {
-			if (in == null) {
-				donors = read;
-				return donors;
-			}
-			Scanner sc = new Scanner(in, "UTF-8");
-			while (sc.hasNextLine()) {
-				String line = sc.nextLine().trim();
-				if (line.isEmpty() || line.startsWith("#")) {
-					continue;
-				}
-				String[] f = line.split("\t");
-				if (f.length < 6) {
-					continue;
-				}
-				try {
-					Donor d = new Donor();
-					d.brush = TilePalette.valueOf(f[0]);
-					d.donorRegion = Integer.parseInt(f[1]);
-					d.donorArea = Integer.parseInt(f[2]);
-					d.donorMesh = Integer.parseInt(f[3]);
-				//row is: BRUSH region area mesh material injectName [vLip vMid vFoot]
-				if (f.length > 9) {
-					d.vLip = Float.parseFloat(f[6]);
-					d.vMid = Float.parseFloat(f[7]);
-					d.vWall = Float.parseFloat(f[8]);
-					d.vFoot = Float.parseFloat(f[9]);
-				}
-					d.material = f[4];
-					d.injectName = f[5];
+		try {
+			for (Donor d : rows().values()) {
+				if (d.brush != null) {
 					read.put(d.brush, d);
-				} catch (IllegalArgumentException ignore) {
 				}
 			}
 		} catch (Exception ex) {
@@ -237,6 +201,64 @@ public class TerrainCatalog {
 		}
 		donors = read;
 		return donors;
+	}
+
+	/** The table's rows that are not brushes: read by name, passed over by {@link #donors()}. */
+	private static final java.util.Set<String> NOT_BRUSHES = new java.util.HashSet<>(
+			java.util.Arrays.asList("CLIFF", "LAVA_CHURN"));
+
+	/**
+	 * Every row of the table by its leading name, in file order; a brush row's donor carries
+	 * its brush. STRICT (F211): a row of the wrong width, a number that is not one, a name this
+	 * build has no brush for, or a name given twice THROWS, naming the line. The brush reader
+	 * swallowed each of those and dropped the row - a brush that then could not be given to
+	 * any map, with nothing said - and the two named-row readers skipped a short row and
+	 * answered "no such row". A missing table is refused too: it ships inside the build.
+	 */
+	private static Map<String, Donor> rows() throws java.io.IOException {
+		Map<String, Donor> out = new LinkedHashMap<>();
+		try (InputStream in = openCatalog()) {
+			if (in == null) {
+				throw new java.io.IOException("ctrmap/resources/oras_terrain.tsv is missing from this build");
+			}
+			java.io.BufferedReader lines = new java.io.BufferedReader(
+					new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
+			int lineNo = 0;
+			for (String raw; (raw = lines.readLine()) != null;) {
+				lineNo++;
+				String line = raw.trim();
+				if (line.isEmpty() || line.startsWith("#")) {
+					continue;
+				}
+				String[] f = line.split("\t");
+				try {
+					//row is: NAME region area mesh material injectName [vLip vMid vWall vFoot]
+					if (f.length != 6 && f.length != 10) {
+						throw new IllegalArgumentException(f.length + " fields; a row has 6, or 10 with the cliff bands");
+					}
+					if (out.containsKey(f[0])) {
+						throw new IllegalArgumentException("the name is given twice");
+					}
+					Donor d = new Donor();
+					d.brush = NOT_BRUSHES.contains(f[0]) ? null : TilePalette.valueOf(f[0]);
+					d.donorRegion = Integer.parseInt(f[1]);
+					d.donorArea = Integer.parseInt(f[2]);
+					d.donorMesh = Integer.parseInt(f[3]);
+					d.material = f[4];
+					d.injectName = f[5];
+					if (f.length == 10) {
+						d.vLip = Float.parseFloat(f[6]);
+						d.vMid = Float.parseFloat(f[7]);
+						d.vWall = Float.parseFloat(f[8]);
+						d.vFoot = Float.parseFloat(f[9]);
+					}
+					out.put(f[0], d);
+				} catch (IllegalArgumentException ex) {
+					throw new java.io.IOException("line " + lineNo + " (" + f[0] + "): " + reason(ex), ex);
+				}
+			}
+		}
+		return out;
 	}
 
 	/** True when this brush can be given to a map that lacks its material. */
@@ -262,38 +284,8 @@ public class TerrainCatalog {
 		if (cliffLoaded) {
 			return cliffDonor;
 		}
-		try (InputStream in = openCatalog()) {
-			if (in == null) {
-				cliffLoaded = true;
-				return null;
-			}
-			Scanner sc = new Scanner(in, "UTF-8");
-			while (sc.hasNextLine()) {
-				String line = sc.nextLine().trim();
-				if (!line.startsWith("CLIFF\t")) {
-					continue;
-				}
-				String[] f = line.split("\t");
-				if (f.length < 6) {
-					continue;
-				}
-				Donor d = new Donor();
-				d.brush = null;
-				d.donorRegion = Integer.parseInt(f[1]);
-				d.donorArea = Integer.parseInt(f[2]);
-				d.donorMesh = Integer.parseInt(f[3]);
-				//row is: BRUSH region area mesh material injectName [vLip vMid vFoot]
-				if (f.length > 9) {
-					d.vLip = Float.parseFloat(f[6]);
-					d.vMid = Float.parseFloat(f[7]);
-					d.vWall = Float.parseFloat(f[8]);
-					d.vFoot = Float.parseFloat(f[9]);
-				}
-				d.material = f[4];
-				d.injectName = f[5];
-				cliffDonor = d;
-				break;
-			}
+		try {
+			cliffDonor = rows().get("CLIFF");
 		} catch (Exception ex) {
 			//not marked loaded: a repaired table is read next time
 			throw new IllegalStateException("The CLIFF row of the terrain donor table could not be read;"
@@ -301,13 +293,6 @@ public class TerrainCatalog {
 		}
 		cliffLoaded = true;
 		return cliffDonor;
-	}
-
-	/** Why the cliff import gave up, when -Dcliffdebug is set. */
-	private static void say(String why) {
-		if (System.getProperty("cliffdebug") != null) {
-			System.out.println("  cliff import: " + why);
-		}
 	}
 
 	/**
@@ -340,33 +325,12 @@ public class TerrainCatalog {
 	 * @throws IllegalStateException when the table cannot be read
 	 */
 	private static Donor rowNamed(String key) {
-		try (InputStream in = openCatalog()) {
-			if (in == null) {
-				return null;
-			}
-			Scanner sc = new Scanner(in, "UTF-8");
-			while (sc.hasNextLine()) {
-				String line = sc.nextLine().trim();
-				if (!line.startsWith(key + "	")) {
-					continue;
-				}
-				String[] f = line.split("	");
-				if (f.length < 6) {
-					continue;
-				}
-				Donor d = new Donor();
-				d.donorRegion = Integer.parseInt(f[1]);
-				d.donorArea = Integer.parseInt(f[2]);
-				d.donorMesh = Integer.parseInt(f[3]);
-				d.material = f[4];
-				d.injectName = f[5];
-				return d;
-			}
+		try {
+			return rows().get(key);
 		} catch (Exception ex) {
 			throw new IllegalStateException("The " + key + " row of the terrain donor table could not be read: "
 					+ reason(ex), ex);
 		}
-		return null;
 	}
 
 	/**
@@ -396,63 +360,24 @@ public class TerrainCatalog {
 		ImportResult r = new ImportResult();
 		r.model = model;
 		if (d == null) {
-			say("no CLIFF row in the catalogue");
-			return r;
+			return r; //the catalogue has no CLIFF row: nothing to import
 		}
 		if (!BuildingCatalog.canCutDonor(files)) {
 			//no game handed, or none with a snapshot, so there is nothing to
 			//cut the donor out of. Asking anyway is what printed "cliff import
 			//failed" on every single build; the painter's own fallback covers it.
-			say("no pristine snapshot to cut " + d.injectName + " from");
 			return r;
 		}
 		try {
 			BchMapModel probe = new BchMapModel(model);
-			for (int i = 0; i < probe.meshCount; i++) {
-				if (d.injectName.equals(probe.getMaterialName(probe.getMeshMaterialIndex(i)))) {
-					//already imported - but its textures still belong to the
-					//donor's area, which this model cannot vouch for
-					r.donorArea = d.donorArea;
-					r.texturesNeeded.addAll(donorTextures(files, d));
-					return r;
-				}
-			}
-			GR donorGr = BuildingCatalog.pristineRegion(files, d.donorRegion);
-			if (donorGr == null) {
-				say("donor region " + d.donorRegion + " could not be opened");
+			if (probe.meshWithMaterial(d.injectName) >= 0) {
+				//already imported - but its textures still belong to the
+				//donor's area, which this model cannot vouch for
+				r.donorArea = d.donorArea;
+				r.texturesNeeded.addAll(donorTextures(files, d));
 				return r;
 			}
-			byte[] donorModel = donorGr.getFile(1);
-			if (!BchMapModel.isMapModel(donorModel)) {
-				say("donor region " + d.donorRegion + " subfile 1 is not a map model");
-				return r;
-			}
-			byte[] merged = BchModelAppender.append(model, donorModel, d.donorMesh, d.injectName);
-			BchMapModel mm = new BchMapModel(merged);
-			int newMesh = -1;
-			for (int i = 0; i < mm.meshCount; i++) {
-				if (d.injectName.equals(mm.getMaterialName(mm.getMeshMaterialIndex(i)))) {
-					newMesh = i;
-					break;
-				}
-			}
-			if (newMesh < 0) {
-				say("append produced no mesh named " + d.injectName);
-				return r;
-			}
-			BchMapModel.MeshGeom g = mm.geometry().get(newMesh);
-			byte[] one = new byte[g.stride];
-			System.arraycopy(mm.raw, g.vtxAbs, one, 0, g.stride);
-			merged = mm.setMeshGeometry(newMesh, one, new int[]{0, 0, 0});
-			if (!new BchMapModel(merged).validate().isEmpty()) {
-				say("merged model failed validation: "
-						+ new BchMapModel(merged).validate().get(0));
-				return r;
-			}
-			r.model = merged;
-			r.injected = true;
-			r.donorArea = d.donorArea;
-			r.texturesNeeded.addAll(textureNamesOf(new BchMapModel(donorModel), d.donorMesh));
+			cutFromPristine(files, model, d, r);
 		} catch (Exception ex) {
 			//thrown, not shown: the map would otherwise keep the material it
 			//already had, which may be the wrong rock, and the caller that owns
@@ -490,15 +415,10 @@ public class TerrainCatalog {
 			//already imported by an earlier paint? (idempotent by exact name)
 			//Checked BEFORE the has-a-material test, which the imported material
 			//itself satisfies - the two are only distinguishable by name.
-			if (d != null) {
-				for (int i = 0; i < probe.meshCount; i++) {
-					String n = probe.getMaterialName(probe.getMeshMaterialIndex(i));
-					if (d.injectName.equals(n)) {
-						r.donorArea = d.donorArea;
-						r.texturesNeeded.addAll(donorTextures(files, d));
-						return r;
-					}
-				}
+			if (d != null && probe.meshWithMaterial(d.injectName) >= 0) {
+				r.donorArea = d.donorArea;
+				r.texturesNeeded.addAll(donorTextures(files, d));
+				return r;
 			}
 			if (PaintedMaterials.hasMaterialFor(probe, brush)) {
 				return r; //the map paints this brush with its OWN material - nothing to carry
@@ -509,43 +429,7 @@ public class TerrainCatalog {
 			if (!BuildingCatalog.canCutDonor(files)) {
 				return r; //no snapshot to cut from yet - see ensureNamedMaterial
 			}
-			GR donorGr = BuildingCatalog.pristineRegion(files, d.donorRegion);
-			if (donorGr == null) {
-				return r;
-			}
-			byte[] donorModel = donorGr.getFile(1);
-			if (!BchMapModel.isMapModel(donorModel)) {
-				return r;
-			}
-			byte[] merged = BchModelAppender.append(model, donorModel, d.donorMesh, d.injectName);
-			BchMapModel mm = new BchMapModel(merged);
-			//the append brings the donor's own terrain along - blank it, we only
-			//wanted the material; the painter fills it with the user's tiles.
-			//The new mesh is NOT necessarily the last one: the appender inserts
-			//it in render-layer order, shifting the meshes after it. Find it by
-			//name, or we would blank an innocent mesh and leave a slab of the
-			//donor's map floating in this one.
-			int newMesh = -1;
-			for (int i = 0; i < mm.meshCount; i++) {
-				if (d.injectName.equals(mm.getMaterialName(mm.getMeshMaterialIndex(i)))) {
-					newMesh = i;
-					break;
-				}
-			}
-			if (newMesh < 0) {
-				return r; //the append did not produce the material we asked for
-			}
-			BchMapModel.MeshGeom g = mm.geometry().get(newMesh);
-			byte[] one = new byte[g.stride];
-			System.arraycopy(mm.raw, g.vtxAbs, one, 0, g.stride);
-			merged = mm.setMeshGeometry(newMesh, one, new int[]{0, 0, 0});
-			if (!new BchMapModel(merged).validate().isEmpty()) {
-				return r; //never ship a model that stopped parsing
-			}
-			r.model = merged;
-			r.injected = true;
-			r.donorArea = d.donorArea;
-			r.texturesNeeded.addAll(textureNamesOf(new BchMapModel(donorModel), d.donorMesh));
+			cutFromPristine(files, model, d, r);
 		} catch (Exception ex) {
 			throw new IllegalStateException("Could not import a " + brush + " material into this map: "
 					+ reason(ex), ex);
@@ -553,7 +437,52 @@ public class TerrainCatalog {
 		return r;
 	}
 
-	private static final Map<String, List<String>> donorTextureCache = new LinkedHashMap<>();
+	/**
+	 * Cuts {@code d}'s material out of the pristine copy and appends it to {@code model} as an
+	 * empty mesh, recording the merged model and what it needs in {@code r}. The one copy of
+	 * this sequence: the cliff and brush importers each carried their own until F092, and the
+	 * two had already drifted apart in what they said about it.
+	 *
+	 * <p>CALLED ONLY ONCE THERE IS A SNAPSHOT TO CUT FROM, so every failure here is THROWN:
+	 * returning the model unchanged would paint on whatever material the map already has, which
+	 * both importers promise not to do. With no snapshot, the callers return before this.
+	 */
+	private static void cutFromPristine(GameFiles files, byte[] model, Donor d, ImportResult r) throws Exception {
+		GR donorGr = BuildingCatalog.pristineRegion(files, d.donorRegion);
+		if (donorGr == null) {
+			throw new IllegalStateException("the pristine copy holds no region " + d.donorRegion);
+		}
+		byte[] donorModel = donorGr.getFile(1);
+		if (!BchMapModel.isMapModel(donorModel)) {
+			throw new IllegalStateException("the model in region " + d.donorRegion + " of the pristine copy is not"
+					+ " a map model");
+		}
+		byte[] merged = BchModelAppender.append(model, donorModel, d.donorMesh, d.injectName);
+		BchMapModel mm = new BchMapModel(merged);
+		//the append brings the donor's own terrain along - blank it, we only
+		//wanted the material; the painter fills it with the user's tiles.
+		//The new mesh is NOT necessarily the last one: the appender inserts
+		//it in render-layer order, shifting the meshes after it. Find it by
+		//name, or we would blank an innocent mesh and leave a slab of the
+		//donor's map floating in this one.
+		int newMesh = mm.meshWithMaterial(d.injectName);
+		if (newMesh < 0) {
+			throw new IllegalStateException("the append produced no mesh named " + d.injectName);
+		}
+		BchMapModel.MeshGeom g = mm.geometry().get(newMesh);
+		byte[] one = new byte[g.stride];
+		System.arraycopy(mm.raw, g.vtxAbs, one, 0, g.stride);
+		merged = mm.setMeshGeometry(newMesh, one, new int[]{0, 0, 0});
+		if (!new BchMapModel(merged).validate().isEmpty()) {
+			//never ship a model that stopped parsing - and never pretend it was not asked for
+			throw new IllegalStateException("the merged model failed validation: "
+					+ new BchMapModel(merged).validate().get(0));
+		}
+		r.model = merged;
+		r.injected = true;
+		r.donorArea = d.donorArea;
+		r.texturesNeeded.addAll(textureNamesOf(new BchMapModel(donorModel), d.donorMesh));
+	}
 
 	/**
 	 * The textures a donor's material references, read from the handed game's
@@ -567,7 +496,10 @@ public class TerrainCatalog {
 	 * that owns a window says so
 	 */
 	public static synchronized List<String> donorTextures(GameFiles files, Donor d) {
-		cachesFor(files);
+		if (files == null) {
+			return new ArrayList<>();   //no game, no snapshot: nothing to read and nothing kept
+		}
+		Map<String, List<String>> donorTextureCache = files.cache().get(DONOR_TEXTURES, LinkedHashMap::new);
 		String key = d.donorRegion + ":" + d.donorMesh;
 		List<String> cached = donorTextureCache.get(key);
 		if (cached != null) {
@@ -591,24 +523,26 @@ public class TerrainCatalog {
 		return names;
 	}
 
-	/** The texture names a donor mesh's material references (header slots). */
+	/**
+	 * The texture names a donor mesh's material references (header slots). THROWS when the
+	 * header cannot be read (F211): a failure part way answered the names read so far, the
+	 * import carried fewer textures than the material draws with, and the tiles came out
+	 * white. Both callers already turn a throw into words.
+	 */
 	static List<String> textureNamesOf(BchMapModel m, int meshIndex) {
 		List<String> out = new ArrayList<>();
-		try {
-			int matHdr = m.matValuesPtr + m.getMeshMaterialIndex(meshIndex) * 0x2C;
-			for (int slot : new int[]{0x1C, 0x20, 0x24}) {
-				int sp = m.ptr(matHdr + slot);
-				if (sp > 0) {
-					StringBuilder sb = new StringBuilder();
-					for (int q = sp; q < m.raw.length && m.raw[q] != 0; q++) {
-						sb.append((char) (m.raw[q] & 0xFF));
-					}
-					if (sb.length() > 0 && !out.contains(sb.toString())) {
-						out.add(sb.toString());
-					}
+		int matHdr = m.matValuesPtr + m.getMeshMaterialIndex(meshIndex) * 0x2C;
+		for (int slot : new int[]{0x1C, 0x20, 0x24}) {
+			int sp = m.ptr(matHdr + slot);
+			if (sp > 0) {
+				StringBuilder sb = new StringBuilder();
+				for (int q = sp; q < m.raw.length && m.raw[q] != 0; q++) {
+					sb.append((char) (m.raw[q] & 0xFF));
+				}
+				if (sb.length() > 0 && !out.contains(sb.toString())) {
+					out.add(sb.toString());
 				}
 			}
-		} catch (RuntimeException ignore) {
 		}
 		return out;
 	}

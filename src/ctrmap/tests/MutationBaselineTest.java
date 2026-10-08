@@ -86,9 +86,9 @@ public class MutationBaselineTest {
 		File repo = root.getParentFile() == null ? new File(".") : root.getParentFile();
 		File baseline = new File(repo, "mutation_baseline.json");
 		if (!baseline.isFile()) {
-			System.out.println("  skip: no baseline at " + baseline + " - run tools/mutate2.py and commit its output");
-			System.out.println("ALL PASS");
-			return;
+			check(false, "no baseline at " + baseline + " - run tools/mutate2.py and commit its output");
+			System.out.println("FAILURES PRESENT");
+			System.exit(1);
 		}
 		thereIsOneBaselineAndTheSweepWritesIt(repo);
 		theHarnessStillPassesItsOwnSelftest(repo);
@@ -359,7 +359,7 @@ public class MutationBaselineTest {
 		} catch (java.io.IOException noPython) {
 			//the same skip CommitGuardTest takes: a python guard cannot be judged
 			//without python, and saying so is not the same as passing
-			System.out.println("  skip: python is not on PATH, so the harness selftest cannot run ("
+			Skip.section("python is not on PATH, so the harness selftest cannot run ("
 				+ noPython.getMessage() + ")");
 			return;
 		} catch (InterruptedException stopped) {

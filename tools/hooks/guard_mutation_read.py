@@ -85,10 +85,18 @@ def locked_module(root):
     """
     try:
         with open(os.path.join(root, LOCK), encoding="utf-8") as handle:
-            held = handle.read().strip()
+            lines = handle.read().splitlines()
     except OSError:
         return None
-    return held.replace(chr(92), "/") or None
+    #THE PATH IS THE FIRST LINE (F171). Every writer of this lock here - mutate2.py, replant.py,
+    #the bundle's take_lock - writes `path`, then `pid=N` and `what=...`. Read whole, the lock
+    #named a path no file has, so a read of the mutated file itself was allowed under every lock
+    #this project writes.
+    for line in lines:
+        held = line.strip()
+        if held and not re.match(r"^[A-Za-z_]+=", held):
+            return held.replace(chr(92), "/")
+    return None
 
 
 def readers_of(command, locked):

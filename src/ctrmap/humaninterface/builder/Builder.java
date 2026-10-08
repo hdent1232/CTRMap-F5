@@ -45,15 +45,15 @@ public class Builder extends javax.swing.JPanel {
 	 */
 	public static final int KAGE_SLOT = 6;
 
-	/**
-	 * Creates new form Builder
-	 */
 	public DefaultListModel<String> GARCmodel = new DefaultListModel<>();
 	public DefaultListModel<String> contModel = new DefaultListModel<>();
 	public ArrayList<BuilderFile> currentFiles = new ArrayList<>();
 	public AbstractGamefreakContainer currentAGFC;
 	public ArchiveType currentGARC;
 
+	/**
+	 * Creates new form Builder
+	 */
 	public Builder() {
 		initComponents();
 		garcFileList.setModel(GARCmodel);
@@ -66,14 +66,14 @@ public class Builder extends javax.swing.JPanel {
 					try {
 						File decFile = Workspace.getWorkspaceFile(currentGARC, index);
 						byte[] magicarr = new byte[3];
-						InputStream in = new FileInputStream(decFile);
-						if (in.available() > 3) {
-							in.read(magicarr);
+						try (InputStream in = new FileInputStream(decFile)) {
+							if (in.available() > 3) {
+								in.read(magicarr);
+							}
 						}
 						if (ctrmap.util.Bytes.isUTF8Capital(magicarr[0]) && ctrmap.util.Bytes.isUTF8Capital(magicarr[1]) && !ctrmap.util.Bytes.isUTF8Capital(magicarr[2])) {
 							loadContainer(ContainerIdentifier.makeAGFC(decFile, magicarr, Workspace.session()));
 						}
-						in.close();
 					} catch (IOException ex) {
 						Logger.getLogger(Builder.class.getName()).log(Level.SEVERE, null, ex);
 					}
@@ -102,7 +102,7 @@ public class Builder extends javax.swing.JPanel {
 			StringBuilder name = new StringBuilder();
 			name.append(i);
 			String type = "";
-			if (ctrmap.util.Bytes.checkBCHMagic(file)) {
+			if (ctrmap.formats.h3d.BchSections.hasMagic(file)) {
 				BCHFile bch = new BCHFile(file);
 				bf.bchData = bch;
 				Iterator mdlIt = bch.models.iterator();
@@ -184,13 +184,24 @@ public class Builder extends javax.swing.JPanel {
 	}
 
 	public File openFileDialog(String title) {
+		return fileDialog(title, false);
+	}
+
+	/** A file to WRITE: picked with a Save dialog (F147) - the two save targets were picked with Open. */
+	public File saveFileDialog(String title) {
+		return fileDialog(title, true);
+	}
+
+	private File fileDialog(String title, boolean save) {
 		Preferences prefs = Preferences.userRoot().node(getClass().getName());
 		JFileChooser jfc = new JFileChooser(prefs.get("LAST_DIR",
 				new File(".").getAbsolutePath()));
 		jfc.setDialogTitle(title);
 		jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
 		jfc.setMultiSelectionEnabled(false);
-		jfc.showOpenDialog(this);
+		if (ctrmap.Ui.choose(this, jfc, save) == null) {
+			return null;
+		}
 		if (jfc.getSelectedFile() != null) {
 			prefs.put("LAST_DIR", jfc.getSelectedFile().getParent());
 		}
@@ -479,7 +490,7 @@ public class Builder extends javax.swing.JPanel {
     }//GEN-LAST:event_btnImportContainerActionPerformed
 
     private void btnContSaveExternalActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnContSaveExternalActionPerformed
-		File fNew = openFileDialog("Select external location");
+		File fNew = saveFileDialog("Select external location");
 		if (fNew != null && currentAGFC != null) {
 			try {
 				Files.copy(currentAGFC.getOriginFile().toPath(), fNew.toPath(), StandardCopyOption.REPLACE_EXISTING);
@@ -519,7 +530,7 @@ public class Builder extends javax.swing.JPanel {
 			GR gr = new GR(Workspace.getWorkspaceFile(currentGARC, arc.length), subfiles, Workspace.session());
 			currentAGFC = gr;
 			Tilemap tm = new Tilemap(gr, 40, 40);
-			GRCollisionFile coll = new GRCollisionFile(gr, true);
+			GRCollisionFile coll = GRCollisionFile.blank(gr);
 			tm.modified = true;
 			gr.storeFile(0, tm.assembleTilemap());
 			//The shadow ("KAGE") entry is the SEVENTH slot - the one ORAS added
@@ -537,11 +548,23 @@ public class Builder extends javax.swing.JPanel {
 			SwingWorker worker = new SwingWorker() {
 				@Override
 				protected void done() {
-					dlg.close();
+					Throwable failed = null;
 					try {
 						get(); //without this, a pack that threw closes the dialog and the file looks added
-					} catch (Exception ex) {
-						Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+						//THE LISTS ARE WIDGETS, so they are refilled here, on the event thread
+						//(F220) - the worker used to rebuild both list models and read the
+						//archive dropdown itself
+						reloadContainer();
+						loadGARC(garc.getSelectedIndex());
+					} catch (java.util.concurrent.ExecutionException ex) {
+						failed = ex.getCause() != null ? ex.getCause() : ex;
+					} catch (InterruptedException | RuntimeException ex) {
+						failed = ex;
+					} finally {
+						dlg.close();
+					}
+					if (failed != null) {
+						Throwable cause = failed;
 						Logger.getLogger(Builder.class.getName()).log(Level.SEVERE, "adding a file", cause);
 						//through Ui: the workspace file exists either way, so this
 						//sentence is the only thing that says the ARCHIVE does
@@ -557,8 +580,6 @@ public class Builder extends javax.swing.JPanel {
 					ctrmap.WorkspaceSession ws = Workspace.session();
 					arc.packDirectory(ws.getExtractionDirectory(currentGARC), ws::isPersisted, ws.workspaceDir());
 					Workspace.reloadGARC(currentGARC);
-					reloadContainer();
-					loadGARC(garc.getSelectedIndex());
 					return null;
 				}
 			};
@@ -570,7 +591,7 @@ public class Builder extends javax.swing.JPanel {
     private void btnFAExportActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnFAExportActionPerformed
 		int index = contFileList.getSelectedIndex();
 		if (index != -1 && currentAGFC != null) {
-			File fNew = openFileDialog("Select export location");
+			File fNew = saveFileDialog("Select export location");
 			if (fNew != null) {
 				try {
 					Files.copy(currentAGFC.getIOFile(index).toPath(), fNew.toPath(), StandardCopyOption.REPLACE_EXISTING);

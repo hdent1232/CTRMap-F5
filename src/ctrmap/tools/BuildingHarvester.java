@@ -74,27 +74,35 @@ public class BuildingHarvester {
 		String[] regionLoc = new String[gr.length];
 		int[] regionArea = new int[gr.length];
 		java.util.Arrays.fill(regionArea, -1);
-		int zones = Math.min(536, zo.length - 2);
+		//the profile's measured zone count, not "length - 2" (F029)
+		ctrmap.gamedef.GameProfile prof = ctrmap.gamedef.GameProfile.of(game);
+		int retail = prof.retailZoneCount();
+		int zones = ctrmap.ZoneTables.zoneCount(zo, prof);
+		zones = retail < 0 ? zones : Math.min(retail, zones); //retail zones only, when the profile knows how many
+		//SAID, NOT DROPPED (F211): a zone or region that would not read was skipped in silence, and the
+		//catalog this writes came out short with nothing to show for it
+		List<String> skipped = new ArrayList<>();
 		for (int z = 0; z < zones; z++) {
 			try {
 				byte[] c = zo.getDecompressedEntry(z);
 				byte[] hdr = subfile(c, 0);
 				ZoneHeader h = new ZoneHeader(hdr, GameType.ORAS);
 				byte[] mat = mm.getDecompressedEntry(h.mapmatrixID);
-				int sub0 = i32(mat, 4);
-				int w = u16(mat, sub0 + 4), ht = u16(mat, sub0 + 6);
+				ctrmap.formats.mapmatrix.MapMatrix.Grid grid = ctrmap.formats.mapmatrix.MapMatrix.Grid.of(mat);
+				int w = grid.width, ht = grid.height;
 				String loc = h.parentMap >= 0 && h.parentMap < locNames.size() ? locNames.get(h.parentMap) : "";
 				if (loc == null || loc.isEmpty()) {
 					loc = "Area " + h.areadataID;
 				}
 				for (int k = 0; k < w * ht; k++) {
-					int id = u16(mat, sub0 + 8 + k * 2);
+					int id = grid.id(k);
 					if (id != 0xFFFF && id < regionLoc.length && regionArea[id] < 0) {
 						regionArea[id] = h.areadataID;
 						regionLoc[id] = loc;
 					}
 				}
-			} catch (Exception ignore) {
+			} catch (Exception ex) {
+				skipped.add("zone " + z + " (" + ctrmap.util.Bytes.reason(ex) + ")");
 			}
 		}
 
@@ -138,11 +146,14 @@ public class BuildingHarvester {
 						prev.count++;
 					}
 				}
-			} catch (RuntimeException ignore) {
+			} catch (RuntimeException ex) {
+				skipped.add("region " + r + " (" + ctrmap.util.Bytes.reason(ex) + ")");
 			}
 		}
 		System.out.println("sweep: " + regionsScanned + " regions, " + detected + " structures ("
 				+ terrain + " terrain, " + edge + " edge-straddling), " + bySig.size() + " unique");
+		System.out.println(skipped.isEmpty() ? "skipped nothing"
+				: "SKIPPED " + skipped.size() + " - the catalog below was harvested without them: " + skipped);
 
 		//verify every candidate through the curated-catalog gate
 		byte[] grassDonor = subfile(gr.getDecompressedEntry(1), 1); //Route 101 tileset
@@ -259,19 +270,21 @@ public class BuildingHarvester {
 			}
 		}
 
-		void computeTiles() {
+		public void computeTiles() {
 			tx0 = Math.max(0, (int) Math.floor((minX - ORIGIN) / TILE));
 			ty0 = Math.max(0, (int) Math.floor((minZ - ORIGIN) / TILE));
-			tx1 = Math.min(DIM - 1, (int) Math.floor((maxX - ORIGIN - 0.01f) / TILE));
-			ty1 = Math.min(DIM - 1, (int) Math.floor((maxZ - ORIGIN - 0.01f) / TILE));
+			//NEVER BEFORE THE START (F129): the end is floored a hair inside the max, so a component of
+			//no thickness lying on a tile line ended one tile before it began - 12 shipped rows
+			tx1 = Math.max(tx0, Math.min(DIM - 1, (int) Math.floor((maxX - ORIGIN - 0.01f) / TILE)));
+			ty1 = Math.max(ty0, Math.min(DIM - 1, (int) Math.floor((maxZ - ORIGIN - 0.01f) / TILE)));
 		}
 
 		public int tilesW() {
-			return tx1 - tx0 + 1;
+			return MapPrefab.span(tx0, tx1);
 		}
 
 		public int tilesH() {
-			return ty1 - ty0 + 1;
+			return MapPrefab.span(ty0, ty1);
 		}
 
 		/** Rotation-canonical, order-independent geometry signature. */

@@ -1,0 +1,11 @@
+#!/bin/sh
+# NEVER PUSH WITHOUT EXPLICIT PER-PUSH APPROVAL - the door git itself keeps (F175).
+#
+# The PreToolUse guard judges a push it can READ in a tool call. A push spelled some way no
+# reader knows reached the remote with nothing asked, and there was no second door: this folder
+# held commit-msg and pre-commit, and no pre-push. git hands this hook the commits it is about to
+# send, already resolved, so the question here does not depend on how the push was spelled.
+#
+# No python, or a guard that cannot be found, refuses: a door that cannot ask is not open.
+root=$(git rev-parse --show-toplevel) || exit 1
+exec python "$root/.claude/hooks/guard_push.py" --pre-push "$1"

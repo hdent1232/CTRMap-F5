@@ -1,4 +1,4 @@
-# CTRMap Quickstart (Gen 6: X/Y, Omega Ruby/Alpha Sapphire)
+# CTRMap Quickstart (Omega Ruby / Alpha Sapphire; X / Y for map viewing and geometry editing only)
 
 The original tool shipped with no usage docs. This is the flow that actually works.
 
@@ -13,7 +13,8 @@ Instead: **Options → Workspace settings**
 - Leave Tileset on "Default". The ESPICA path is only for 3D model injection; ignore it.
 - **Save**
 
-The game is auto-detected: `a/2/9/8` present → ORAS, `a/2/7/0` → X/Y. Gen 7 (Sun/Moon,
+The game is auto-detected: `a/2/9/8` present → ORAS, `a/2/7/0` → X/Y (map viewing and geometry
+editing only - see the README's table of what works on which game). Gen 7 (Sun/Moon,
 USUM) is **not supported** — it will say "Could not detect game version".
 
 > **Work on a COPY of your dump.** `File → Pack Workspace` repacks the archives and writes

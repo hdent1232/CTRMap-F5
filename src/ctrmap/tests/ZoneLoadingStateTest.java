@@ -110,7 +110,7 @@ public class ZoneLoadingStateTest {
 		aDeclineThatCannotBeSavedIsSaidOutLoudOnce();
 
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " - the state transitions need a zone table");
+			Skip.section("no dump at " + dump + " - the state transitions need a zone table");
 		} else {
 			ScratchGame.open(dump);
 			LocationNames.loadFromGarc(Workspace.session());
@@ -503,16 +503,6 @@ public class ZoneLoadingStateTest {
 	}
 
 	/**
-	 * The dropdown can only be pointed at a zone it actually has.
-	 *
-	 * <p>{@code selectZone} is how the editor opens a zone it has just made -
-	 * the appender, the cloner and the facility setup all end in it - and each
-	 * of them computes the index itself, from a list that has just been
-	 * rebuilt. An index the list does not have has to do nothing; without the
-	 * bound it is an IllegalArgumentException at the end of an operation that
-	 * otherwise worked, which reads as the whole thing having failed.
-	 */
-	/**
 	 * A zone opened from a loose .zo file writes no other zone's table slot.
 	 *
 	 * <p>{@code loadZone} deliberately keeps whatever index was last recorded,
@@ -661,6 +651,16 @@ public class ZoneLoadingStateTest {
 		pnl.loadZone(victim);
 	}
 
+	/**
+	 * The dropdown can only be pointed at a zone it actually has.
+	 *
+	 * <p>{@code selectZone} is how the editor opens a zone it has just made -
+	 * the appender, the cloner and the facility setup all end in it - and each
+	 * of them computes the index itself, from a list that has just been
+	 * rebuilt. An index the list does not have has to do nothing; without the
+	 * bound it is an IllegalArgumentException at the end of an operation that
+	 * otherwise worked, which reads as the whole thing having failed.
+	 */
 	static void selectingOutsideTheListChangesNothing(ZoneLoadingPanel pnl) throws Exception {
 		System.out.println("--- selecting a zone the list does not have does nothing");
 		//the dropdown's listener is what opens a zone, and opening one drives
@@ -679,7 +679,7 @@ public class ZoneLoadingStateTest {
 		pnl.selectZone(PRIVATE_ZONE);
 		check(list.getSelectedIndex() == PRIVATE_ZONE,
 				"an index the list has selects that zone (" + list.getSelectedIndex() + ")");
-		System.out.println("  skip: what the selection then LOADS drives six editors and the 3D view"
+		Skip.section("what the selection then LOADS drives six editors and the 3D view"
 				+ " - DataSafetyGuardsTest covers that path");
 		list.setSelectedIndex(-1);
 	}
@@ -882,7 +882,7 @@ public class ZoneLoadingStateTest {
 				java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel").put(key, "probe");
 				java.util.prefs.Preferences.userRoot().node("ctrmap.ZoneLoadingPanel").remove(key);
 			} catch (Exception ex) {
-				System.out.println("  skip: no writable preferences store on this machine (" + Ui.reason(ex)
+				Skip.section("no writable preferences store on this machine (" + Ui.reason(ex)
 						+ ") - the decline memory cannot be driven here");
 				return;
 			}
@@ -1028,12 +1028,6 @@ public class ZoneLoadingStateTest {
 
 	// ---- plumbing ----------------------------------------------------------
 
-	/**
-	 * The header save, with anything it throws coming back as null rather than
-	 * ending the run. A form field the load never reached is a
-	 * NullPointerException out of {@code store}, and one broken zone must not
-	 * stop the suite reporting the rest.
-	 */
 	/** What {@code pnl.zoneIndex = i} used to do: the index alone, whatever is open stays open. */
 	static void index(LoadedZone lz, int i) {
 		lz.open(i, lz.open());
@@ -1061,6 +1055,12 @@ public class ZoneLoadingStateTest {
 		return true;
 	}
 
+	/**
+	 * The header save, with anything it throws coming back as null rather than
+	 * ending the run. A form field the load never reached is a
+	 * NullPointerException out of {@code store}, and one broken zone must not
+	 * stop the suite reporting the rest.
+	 */
 	static Boolean storeOrNull(ZoneLoadingPanel pnl) {
 		try {
 			return pnl.store(false);

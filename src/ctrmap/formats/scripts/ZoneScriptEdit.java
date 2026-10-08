@@ -27,10 +27,14 @@ import java.util.List;
  */
 public final class ZoneScriptEdit {
 
-	/** The addition itself: adds a case to work and returns its case id. Lines it shows start at firstNewLine. */
+	/**
+	 * The addition itself: adds a case to work and returns its case id. Lines it shows start at
+	 * firstNewLine. It is handed the edit's answer to {@link NpcTemplates#measuredOn}, which every
+	 * template it can call requires.
+	 */
 	public interface Surgery {
 
-		int addCase(GFLPawnScript work, int firstNewLine);
+		int addCase(NpcTemplates.Measured measured, GFLPawnScript work, int firstNewLine);
 	}
 
 	/** Writes a story-text file where the game will read it; throws with the reason when it cannot. */
@@ -107,6 +111,16 @@ public final class ZoneScriptEdit {
 	 * nothing: the zone keeps its script, the story file its lines.
 	 */
 	public int apply(Surgery surgery, Store store) {
+		//MEASURED ON ONE GAME (F085): every template reproduces ORAS's call sites, argument
+		//layouts and native hashes, and NpcTemplates said callers should gate them - none did.
+		//Asked first, before anything is copied; every template the surgery can call takes the
+		//answer, so none can be reached without it.
+		NpcTemplates.Measured measured;
+		try {
+			measured = NpcTemplates.measuredOn(zone.game());
+		} catch (NpcTemplates.NotMeasured no) {
+			throw new Refused("Could not add " + what + ": " + no.getMessage());
+		}
 		if (!lines.isEmpty() && msg == null) {
 			//refused before anything moves: text with nowhere to go
 			throw new Refused("Could not add " + what + ": it shows text, but the zone's story text file is not loaded.");
@@ -120,7 +134,7 @@ public final class ZoneScriptEdit {
 		}
 		if (msgDonor != null && ZoneScriptAnalyzer.findMsgWrapper(work) == null) {
 			try {
-				MsgWrapperInjector.injectMsgWrapper(work, msgDonor);
+				MsgWrapperInjector.injectMsgWrapper(measured, work, msgDonor);
 				if (ZoneScriptAnalyzer.findMsgWrapper(work) == null) {
 					throw new MsgWrapperInjector.InjectionException("The injected routine did not verify.");
 				}
@@ -130,7 +144,7 @@ public final class ZoneScriptEdit {
 		}
 		if (signDonor != null && ZoneScriptAnalyzer.findSignWrapper(work) == null) {
 			try {
-				SignWrapperInjector.injectSignWrapper(work, signDonor);
+				SignWrapperInjector.injectSignWrapper(measured, work, signDonor);
 				if (ZoneScriptAnalyzer.findSignWrapper(work) == null) {
 					throw new SignWrapperInjector.InjectionException("The injected routine did not verify.");
 				}
@@ -141,7 +155,7 @@ public final class ZoneScriptEdit {
 		int firstNew = firstNewLine();
 		int caseId;
 		try {
-			caseId = surgery.addCase(work, firstNew);
+			caseId = surgery.addCase(measured, work, firstNew);
 		} catch (RuntimeException ex) {
 			throw new Refused("Could not add " + what + ":\n" + reason(ex));
 		}

@@ -47,6 +47,12 @@ public class WorldEditorToolbar extends JToolBar {
 	private final JToggleButton view3D = new JToggleButton("3D view");
 	private final JToggleButton fogOff = new JToggleButton("Fog off");
 
+	/** The tile inspector the undo buttons re-show a tile in, handed in. */
+	private final TileInspector inspector;
+
+	/** The map view the undo buttons repaint, handed in. */
+	private final TileMapPanel map;
+
 	/**
 	 * @param toolSwitch gets each tool button's action command ("edit", "set",
 	 * "fill", "cam", "prop", "npc", "warp", "trigger", "paint", "geo") when the
@@ -55,12 +61,6 @@ public class WorldEditorToolbar extends JToolBar {
 	 * what it is actually showing and calls {@link #setView3D} back, so the
 	 * toggle can never disagree with the view
 	 */
-	/** The tile inspector the undo buttons re-show a tile in, handed in. */
-	private final TileInspector inspector;
-
-	/** The map view the undo buttons repaint, handed in. */
-	private final TileMapPanel map;
-
 	public WorldEditorToolbar(ActionListener toolSwitch, Runnable viewToggle, Runnable fogToggle,
 			TileInspector inspector, TileMapPanel map) {
 		this.map = map;

@@ -85,6 +85,8 @@ public class PaintForm extends JPanel {
 	private final JButton fillAll = new JButton("Fill all with brush");
 	private final javax.swing.JList<TilePalette> brushList = new javax.swing.JList<>(TilePalette.brushes());
 	private final JLabel placeStatus = new JLabel(" ");
+	/** Under Apply: empty while the 3D preview is current, the reason when it is not (F211). */
+	private final JLabel previewStatus = new JLabel(" ");
 	private final JCheckBox edgeChk = new JCheckBox("Blend grass edges (GameFreak look)", true);
 	private final JSlider bright = new JSlider(30, 130, 100);
 	private final JSlider shadow = new JSlider(0, 90, 35);
@@ -92,10 +94,10 @@ public class PaintForm extends JPanel {
 	/** The zone owner this painter was handed: the open zone, its index, its area. */
 	private final LoadedZone loadedZone;
 
-	/** The editors that hold unsaved work, handed in: this class flushes them, it does not own them. */
 	/** The zone list, handed in: applying a painted map rebuilds it and lands on the zone. */
 	private final ZoneList zoneList;
 
+	/** The editors that hold unsaved work, handed in: this class flushes them, it does not own them. */
 	private final OpenEditors openEditors;
 
 	/**
@@ -305,6 +307,7 @@ public class PaintForm extends JPanel {
 		apply.setFont(apply.getFont().deriveFont(java.awt.Font.BOLD));
 		apply.addActionListener(e -> applyAction());
 		add(apply);
+		add(left(previewStatus));
 		add(left(new JLabel("<html><small>Only tiles you touch are rebuilt - the rest<br>of the map keeps its existing look.<br>Ramp: the arrow points down the slope;<br>click again to turn it, right-click to clear.<br>Right-click a placed building to remove it.<br>Apply writes the real map, then Deploy<br>to walk on it.</small></html>")));
 		setPreferredSize(new Dimension(250, 780));
 		regenTimer.setRepeats(false);
@@ -382,28 +385,95 @@ public class PaintForm extends JPanel {
 			seededZone = -1;
 			return;
 		}
-		if (seededZone != loadedZone.index() || regionChangedUnderneath()) {
+		if (seededZone != loadedZone.index()) {
 			seed();
+		} else {
+			checkUnderneath();
 		}
 		syncWater();
 		schedule3DRegen();
 	}
 
-	/** True when another editor (geometry tool, OBJ import, resize) rewrote the
-	 *  seeded region since we seeded - the painter document is then stale. */
-	private boolean regionChangedUnderneath() {
-		if (originalModel == null) {
-			return false;
+	/** What re-activating the painter finds about the region it seeded (F247). */
+	public enum Underneath {
+		SAME, CHANGED, UNKNOWN
+	}
+
+	/** What re-activating the painter does with the painting it holds (F247). */
+	public enum OnActivate {
+		KEEP, RESEED, ASK
+	}
+
+	/**
+	 * Whether another editor (geometry tool, OBJ import, resize) rewrote the seeded region since
+	 * the painter seeded it (F247): SAME, CHANGED, or UNKNOWN - with why in {@code why} - when the
+	 * region cannot be found or read, or there was no model to compare against. Every one of
+	 * those was answered "changed", so a transient read failure - an emulator or a virus scanner
+	 * holding the file - discarded the unapplied painting and its undo history without a word.
+	 *
+	 * @param now receives the model as it reads now, when it reads
+	 */
+	public static Underneath underneath(LoadedZone loadedZone, byte[] seeded, byte[][] now, StringBuilder why) {
+		if (seeded == null) {
+			why.append("there was no map model to compare against when painting started");
+			return Underneath.UNKNOWN;
 		}
 		try {
 			int[] cell = TilePainterForm.firstRegionCell(loadedZone);
 			if (cell == null) {
-				return true;
+				why.append("the zone's map has no region to read");
+				return Underneath.UNKNOWN;
 			}
-			byte[] m = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, cell[0]), Workspace.session()).getFile(1);
-			return !java.util.Arrays.equals(m, originalModel);
-		} catch (Exception ex) {
-			return true;
+			now[0] = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, cell[0]), Workspace.session()).getFile(1);
+		} catch (Exception unread) {
+			why.append("the region could not be read: ").append(ctrmap.Ui.reason(unread));
+			return Underneath.UNKNOWN;
+		}
+		return java.util.Arrays.equals(now[0], seeded) ? Underneath.SAME : Underneath.CHANGED;
+	}
+
+	/**
+	 * Re-activated on the zone it holds (F247): a region it cannot check keeps the painting, a
+	 * changed one starts over only when nothing is painted, and asks when something is.
+	 */
+	public static OnActivate onActivate(Underneath u, boolean painted) {
+		if (u != Underneath.CHANGED) {
+			return OnActivate.KEEP;
+		}
+		return painted ? OnActivate.ASK : OnActivate.RESEED;
+	}
+
+	/** Unapplied painting: something on the undo stack, or something placed. */
+	boolean painted() {
+		return !undoStack.isEmpty() || !placed.isEmpty();
+	}
+
+	/** The painter re-activated on the zone it holds: check the region under it, and say what was done. */
+	private void checkUnderneath() {
+		byte[][] now = new byte[1][];
+		StringBuilder why = new StringBuilder();
+		Underneath u = underneath(loadedZone, originalModel, now, why);
+		switch (onActivate(u, painted())) {
+			case RESEED:
+				seed();
+				break;
+			case ASK:
+				if (ctrmap.Ui.confirm(this, "Another editor changed this zone's map since you started painting it.\n\n"
+						+ "Start over from the changed map? Your unapplied painting and its undo history are\n"
+						+ "discarded. No keeps painting over the map as it was when you started.", "Map painter",
+						JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION) {
+					seed();
+				} else {
+					originalModel = now[0];   //asked once: the change is known now, not asked about again
+					zoneLabel.setText("<html>Painting zone " + seededZone + "<br><small>over the map as it was -"
+							+ " another editor has changed it since</small></html>");
+				}
+				break;
+			default:
+				if (u == Underneath.UNKNOWN) {
+					zoneLabel.setText("<html>Painting zone " + seededZone + "<br><small>Could not check whether another"
+							+ " editor changed this map (" + why + "), so your painting is kept.</small></html>");
+				}
 		}
 	}
 
@@ -411,13 +481,22 @@ public class PaintForm extends JPanel {
 		toolActive = false;
 		pendingPlace = null;
 		placeStatus.setText(" ");
+		previewNote(null);
 		regenTimer.stop();
 		restoreRealModel();
+	}
+
+	/** Says, under Apply, why the 3D preview is not what Apply would write; null clears it. */
+	private void previewNote(String problem) {
+		previewStatus.setText(problem == null ? " "
+				: "<html><body style='width:220px'><font color='#b00000'>" + ctrmap.Ui.html(problem)
+				+ "</font></body></html>");
 	}
 
 	void seed() {
 		seededZone = loadedZone.index();
 		zoneLabel.setText("Painting zone " + seededZone);
+		previewNote(null);
 		//a zone switch rebuilds the whole scene, so any old preview swap is gone
 		previewInScene = false;
 		originalModel = null;
@@ -436,7 +515,15 @@ public class PaintForm extends JPanel {
 		redoBtn.setEnabled(false);
 		pendingPlace = null;
 		placeStatus.setText(" ");
-		int[] cell = TilePainterForm.firstRegionCell(loadedZone);
+		int[] cell;
+		try {
+			cell = TilePainterForm.firstRegionCell(loadedZone);
+		} catch (RuntimeException unread) {
+			//SAID (F247): it read as "no region" and the painter started blank without a word
+			cell = null;
+			zoneLabel.setText("<html>Painting zone " + seededZone + "<br><small>Its map could not be read ("
+					+ ctrmap.Ui.reason(unread) + "), so painting starts blank</small></html>");
+		}
 		cellX = cell != null ? cell[1] : 0;
 		cellY = cell != null ? cell[2] : 0;
 		int region = cell != null ? cell[0] : -1;
@@ -460,7 +547,12 @@ public class PaintForm extends JPanel {
 								+ " tile(s) have no ground of their own and start<br>level with their nearest neighbour</small></html>");
 					}
 				}
-			} catch (Exception ignore) {
+			} catch (Exception unread) {
+				//SAID, NOT SWALLOWED (F247): it read as "no donor" - edge blending off, heights at 0 -
+				//with the label giving no reason
+				zoneLabel.setText("<html>Painting zone " + seededZone + "<br><small>Region " + region
+						+ " could not be read (" + ctrmap.Ui.reason(unread) + "): no edge blending, and heights"
+						+ " start at 0</small></html>");
 			}
 		}
 		originalModel = donorModel;
@@ -801,10 +893,13 @@ public class PaintForm extends JPanel {
 
 		final byte[] model;
 		final java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extraTextures;
+		/** Why the preview is not what Apply would write, or null when it is. */
+		final String problem;
 
-		RegenResult(byte[] model, java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extra) {
+		RegenResult(byte[] model, java.util.List<ctrmap.formats.h3d.texturing.H3DTexture> extra, String problem) {
 			this.model = model;
 			this.extraTextures = extra;
+			this.problem = problem;
 		}
 	}
 
@@ -866,16 +961,25 @@ public class PaintForm extends JPanel {
 						for (Placed pl : p2) {
 							areas.add(pl.e.donorArea);
 						}
+						java.util.List<String> unloaded = new java.util.ArrayList<>();
 						for (int area : areas) {
 							try {
 								extra.addAll(BuildingPaletteDialog.donorTextures(area));
-							} catch (Exception ignore) {
+							} catch (Exception ex) {
+								unloaded.add("area " + area + " (" + ctrmap.Ui.reason(ex) + ")");
 							}
 						}
+						if (!unloaded.isEmpty()) {
+							return new RegenResult(model, extra, "the textures of placed buildings from "
+									+ String.join(", ", unloaded) + " could not be loaded, so they show untextured here");
+						}
 					}
-					return new RegenResult(model, extra);
+					return new RegenResult(model, extra, null);
 				} catch (Exception ex) {
-					return null; // keep the last good preview; painting goes on
+					//F211: this answered null, the last preview stayed up and looked current. It still
+					//stays up - painting goes on - but the note under Apply says it is stale and why
+					return new RegenResult(null, null, "the 3D preview could not be rebuilt and shows your earlier"
+							+ " strokes: " + ctrmap.Ui.reason(ex));
 				}
 			}
 
@@ -889,13 +993,18 @@ public class PaintForm extends JPanel {
 					//state restoreRealModel() then has nothing to put back. Without the
 					//clause the reach threw a NullPointerException that the catch below
 					//swallowed whole, leaving the same state by accident and in silence.
-					if (res != null && res.model != null && toolActive && map != null
-							&& zoneAtStart == seededZone && seededZone == loadedZone.index()
-							&& epochAtStart == regenEpoch && loadedZone.isOpen()) {
+					boolean current = toolActive && zoneAtStart == seededZone && seededZone == loadedZone.index()
+							&& epochAtStart == regenEpoch && loadedZone.isOpen();
+					if (current) {
+						previewNote(res.problem);
+					}
+					if (res.model != null && current && map != null) {
 						map.reloadRegionModel(cellX, cellY, res.model, res.extraTextures);
 						previewInScene = true;
 					}
-				} catch (Exception ignore) {
+				} catch (Exception ex) {
+					//the worker answers every failure as a RegenResult, so this is the swap into the scene
+					previewNote("the 3D preview could not be shown: " + ctrmap.Ui.reason(ex));
 				}
 				if (regenQueued) {
 					regenQueued = false;

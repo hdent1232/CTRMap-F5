@@ -63,23 +63,28 @@ public class UpdateUI {
 		}
 		new SwingWorker<UpdateChecker.Release, Void>() {
 			@Override
-			protected UpdateChecker.Release doInBackground() {
-				return UpdateChecker.check();
+			protected UpdateChecker.Release doInBackground() throws Exception {
+				return UpdateChecker.latest();
 			}
 
 			@Override
 			protected void done() {
-				UpdateChecker.Release rel = null;
+				UpdateChecker.Release rel;
 				try {
 					rel = get();
 				} catch (Exception ex) {
-					//treated as "nothing to report" below
+					//F211: this said "you are on the latest release" here too, with a line admitting an
+					//offline machine reads the same. The user asked, so a check that could not look says so
+					Throwable why = ex instanceof java.util.concurrent.ExecutionException && ex.getCause() != null
+							? ex.getCause() : ex;
+					ctrmap.Ui.error(parent, "Could not check for updates: " + ctrmap.Ui.reason(why) + "\n\n"
+							+ "You are on CTRMap-F5 " + AppVersion.current() + ". Nothing was downloaded or changed.",
+							"Check for updates");
+					return;
 				}
 				if (rel == null) {
 					ctrmap.Ui.message(parent,
-							"You are on CTRMap-F5 " + AppVersion.current() + ", which is the latest release.\n\n"
-							+ "(If you are offline or GitHub is unreachable, this says the same thing -\n"
-							+ "the check never interrupts you to report a network problem.)",
+							"You are on CTRMap-F5 " + AppVersion.current() + ", which is the latest release.",
 							"No update available", JOptionPane.INFORMATION_MESSAGE);
 					return;
 				}
@@ -104,8 +109,8 @@ public class UpdateUI {
 
 		JPanel body = new JPanel();
 		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-		body.add(new JLabel("<html><b>CTRMap-F5 " + esc(rel.version) + "</b> is available."
-				+ "<br>You have " + esc(AppVersion.current()) + ".</html>"));
+		body.add(new JLabel("<html><b>CTRMap-F5 " + ctrmap.Ui.html(rel.version) + "</b> is available."
+				+ "<br>You have " + ctrmap.Ui.html(AppVersion.current()) + ".</html>"));
 		body.add(Box.createVerticalStrut(8));
 		if (rel.notes != null && !rel.notes.trim().isEmpty()) {
 			JTextArea notes = new JTextArea(rel.notes.trim(), 10, 58);
@@ -248,13 +253,5 @@ public class UpdateUI {
 			ctrmap.Ui.message(parent, "Open this in your browser:\n" + url,
 					"Releases", JOptionPane.INFORMATION_MESSAGE);
 		}
-	}
-
-	/** Release text comes from GitHub, so it is escaped before it reaches HTML labels. */
-	private static String esc(String s) {
-		if (s == null) {
-			return "";
-		}
-		return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 	}
 }

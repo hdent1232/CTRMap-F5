@@ -52,9 +52,8 @@ public class RuleRefusalsTest {
 			}
 		}
 		if (!CommitGuardTest.onPath("python")) {
-			System.out.println("  skip: python is not on PATH - these are python checkers, "
+			Skip.suite("python is not on PATH - these are python checkers, "
 					+ "so this suite cannot run them here");
-			System.out.println("ALL PASS");
 			return;
 		}
 
@@ -158,6 +157,27 @@ public class RuleRefusalsTest {
 		said = ask(repo, "count_first.py", readonly);
 		check(said.contains("counts its matches first"),
 				"and neither is a rewrite that never reaches a file: " + firstReason(said));
+
+		//A JUDGE IS NOT A WRITER. The bundle's own test hands a rewritten string to
+		//ask_write(root, rel, before, after), which judges a write and writes nothing, and the
+		//checker refused it because the name CONTAINED "write" (2026-10-07).
+		File judged = python("judge.py",
+				"def go(root, rel, text):\n"
+				+ "    after = text.replace('return 1;', 'return 1 ')\n"
+				+ "    return ask_write(root, rel, text, after)\n");
+		said = ask(repo, "count_first.py", judged);
+		check(said.contains("counts its matches first"),
+				"and neither is a string handed to a judge whose name merely contains write: "
+				+ firstReason(said));
+		//...while a writer that only LOOKS private is still a writer: narrowing the pattern to
+		//names that begin with "write" must not stop it seeing _write, the one such writer
+		//the project has
+		File hidden = python("private.py",
+				"def go(path, text):\n"
+				+ "    _write(path, text.replace('a', 'b'))\n");
+		said = ask(repo, "count_first.py", hidden);
+		check(said.contains("without counting"),
+				"but a private _write handed an uncounted rewrite is refused: " + firstReason(said));
 	}
 
 	/** The live answer, which is the one that found a real defect. */

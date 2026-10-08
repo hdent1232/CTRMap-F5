@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Refuse a commit that fixes something and cannot notice the second one.
 
-SELF-CONTAINED ON PURPOSE. The project this came from spreads these checks across a larger
-toolchain; here they are one file with no imports beyond the standard library, so the whole guard
-can be copied into a repository and read in one sitting. A guard nobody can read is a guard
-nobody keeps.
+ONE IMPLEMENTATION PER RULE (F186). `.githooks/commit-msg` runs this file and then the
+verification bootstrap's `tools/commit_gate.py`, and the two ran the same rules separately and
+differently: escape markers matched anywhere in a message here and only at a line start there,
+with no minimum reason here; a `Guard:` or `Deferred-gap:` reason that ran on into the trailers
+here; a git that could not be asked read as "nothing staged" here and as UNKNOWN there; two lists
+of where a guard lives; and a test count checked twice against one record, only one of them asking
+whether that run passed. Every rule both ask is now asked through the gate's own function - loaded
+from its file by `gate()` - and this file keeps what the gate has no copy of: the diff-based
+trigger, which it passes to the gate's rules as `fix=`, and the rules below the count.
 
 Four refusals, each with a bill attached:
 
@@ -37,14 +42,17 @@ An honest exception is `No-guard: <reason>` in the message. It stays in `git log
 point: the decision is visible rather than absent.
 """
 import io
-import json
 import os
 import re
 import sys
+if __name__ == "__main__":
+    #: A GATE THAT DIGESTS THE TREE MUST NOT WRITE INTO IT. Loading commit_gate and require_build
+    #: left __pycache__ beside them, so a scratch tree - no .gitignore - digested differently the
+    #: second time it was asked, and a true count was refused as measured on DIFFERENT code.
+    sys.dont_write_bytecode = True
 
 LF = chr(10)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-LAST_RUN = os.path.join(ROOT, ".last-suite-run")
 
 
 def source_digest(root=ROOT, exclude=()):
@@ -76,92 +84,65 @@ def source_digest(root=ROOT, exclude=()):
     and the caller must refuse on it rather than read it as "nothing has changed". A query
     that cannot read its subject must not report it absent.
     """
-    import hashlib
-    import subprocess
+    #: ONE BODY (F183): this was a second implementation of require_build.subject_digest that read
+    #: the rule file differently - the first CLAUDE.md within four levels, where the gate's reads
+    #: every ancestor's - so record_run wrote one digest and commit_gate compared it with the other.
+    #: Loaded from its file beside this tree's tools/, never by name: a name is answered by
+    #: whichever copy the process loaded first (F184, arm_checkout).
+    global _REQUIRE_BUILD
+    if _REQUIRE_BUILD is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "require_build_of_commit_guard",
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "require_build.py"))
+        _REQUIRE_BUILD = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_REQUIRE_BUILD)
     try:
-        done = subprocess.run(
-            ["git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard"],
-            capture_output=True, text=True, timeout=300)
-    except (OSError, subprocess.SubprocessError):
-        #: TimeoutExpired is a SubprocessError and NOT an OSError - catching only OSError
-        #: here would let a hung git escape as a traceback, which is the third time that
-        #: exact pair has been got wrong in this repository.
+        return _REQUIRE_BUILD.subject_digest(root, exclude)
+    except _REQUIRE_BUILD.NothingToDigest:
         return None
+
+
+_REQUIRE_BUILD = None
+_GATE = None
+
+
+def gate():
+    """The verification bootstrap's `tools/commit_gate.py`, loaded from its FILE beside this tree's
+    tools/ - never by name, which is answered by whichever copy the process loaded first (F184).
+
+    Every rule it and this file both ask is asked through it (F186), so a marker's parse, an
+    escape's floor, where a guard lives, what an unanswering git means and whether a count is true
+    each have one implementation. A gate that cannot be loaded is a crash, never a pass."""
+    global _GATE
+    if _GATE is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "commit_gate_of_commit_guard",
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "commit_gate.py"))
+        _GATE = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_GATE)
+    return _GATE
+
+
+class CannotAsk(Exception):
+    """git could not be asked about this commit. UNKNOWN - never "nothing staged" (F186)."""
+
+
+def _git_out(args):
+    """What git answers, or CannotAsk. Every question this file puts to git comes through here:
+    five of them answered "" when git could not run or failed, and "" reads as "this commit
+    touches nothing", which every rule here then passes."""
+    try:
+        done = gate()._git(args)
+    except OSError as exc:
+        raise CannotAsk("git could not be started (%s)" % exc)
     if done.returncode != 0:
-        return None
-    digest = hashlib.sha256()
-    for rel in sorted(line.strip() for line in done.stdout.splitlines() if line.strip()):
-        if rel.startswith(".") and "/" not in rel:
-            continue
-        if rel in exclude:
-            continue
-        digest.update(rel.encode("utf-8"))
-        try:
-            with open(os.path.join(root, rel.replace("/", os.sep)), "rb") as handle:
-                digest.update(handle.read().replace(b"\r\n", b"\n"))
-        except OSError:
-            digest.update(b"<unreadable>")
-    #: AND THE RULE FILE, WHICH IS NOT IN THE REPOSITORY. CLAUDE.md governing this tree sits
-    #: ABOVE the repository root, so git has never heard of it - yet RuleMapTest's verdict is
-    #: a reading of it, and so is every clause obligation in the map. Without this a rule could
-    #: be added, the battery's record would still call itself current, and the count it carries
-    #: would be about a rule set that no longer exists. The same walk `rule_map.claude_md` does,
-    #: written out rather than imported because the scratch repositories the suites build carry
-    #: this file and nothing else.
-    here = os.path.abspath(root)
-    for _ in range(4):
-        rules = os.path.join(here, "CLAUDE.md")
-        if os.path.isfile(rules):
-            digest.update(b"CLAUDE.md")
-            try:
-                with open(rules, "rb") as handle:
-                    digest.update(handle.read().replace(b"\r\n", b"\n"))
-            except OSError:
-                digest.update(b"<unreadable>")
-            break
-        parent = os.path.dirname(here)
-        if parent == here:
-            break
-        here = parent
-    return digest.hexdigest()
-
-#: Where a guard can live in THIS repository. `src/ctrmap/tests` is the Java suite the battery
-#: runs; `tools/` and the hook directories are the refusals themselves.
-GUARD_DIRS = ("src/ctrmap/tests", "tools", ".githooks", ".claude/hooks")
+        raise CannotAsk("`git %s` exited %d: %s" % (" ".join(args), done.returncode,
+                                                    " ".join((done.stderr or "").split())[:200]))
+    return done.stdout
 
 
-def guard_dirs(root=ROOT):
-    """Where a guard can live: this project's own places, and wherever the verification
-    bootstrap's guards were installed beside them - a `.claude/<folder>` holding `guard_*.py`,
-    and a `tests` folder holding `test_*.py`.
-
-    DERIVED, because the list was one relocation from wrong: the bootstrap put its hooks in
-    `.claude/bundle-hooks` and its Python suite in `tests`, and a fix to either - the payload
-    decoding fix, carrying three new tests - was refused as touching no place a guard lives.
-    """
-    out = list(GUARD_DIRS)
-    claude = os.path.join(root, ".claude")
-    try:
-        names = sorted(os.listdir(claude))
-    except OSError:
-        names = []
-    for name in names:
-        try:
-            held = os.listdir(os.path.join(claude, name))
-        except OSError:
-            continue
-        if any(n.startswith("guard_") and n.endswith(".py") for n in held):
-            out.append(".claude/" + name)
-    try:
-        if any(n.startswith("test_") and n.endswith(".py")
-               for n in os.listdir(os.path.join(root, "tests"))):
-            out.append("tests")
-    except OSError:
-        pass
-    return tuple(dict.fromkeys(out))
-
-GUARD_KINDS = ("detector", "convention", "refusal")
-MIN_GUARD_REASON = 60
 NO_GUARD = "No-guard:"
 #: The escape from rule 5. A detector or a convention is allowed only with this line,
 #: which stays in git log and says why a refusal was impossible HERE.
@@ -203,14 +184,6 @@ _HOLE_PHRASES = (
 #: hole is how a fix for one gets written, so matching prose would refuse the very commits this
 #: rule is trying to produce - including its own. An unticked box is the handover.
 _OPEN_ITEM = re.compile(r"^\s*[-*]\s*\[\s*\]", re.M)
-#: The escape, anchored the way `Guard:` is. Mentioning the token in a sentence about the rule is
-#: not using it - the first version checked for the token anywhere and refused this file's own
-#: commit for a zero-length reason it had read out of its own documentation.
-_DEFERRED_LINE = re.compile(r"^Deferred-gap:\s*(.+)$", re.M | re.S)
-
-#: `1,234 tests` or `57 tests`. A bare number followed by the word.
-_TEST_CLAIM = re.compile(r"([0-9][0-9,]*)[ \t]+tests\b")
-_GUARD_LINE = re.compile(r"^Guard:\s*([A-Za-z]+)\s*--\s*(.+)$", re.M | re.S)
 
 #: -------- EXTRACTION IS NOT TESTING ------------------------------------------------
 #: Two modules split out of one function in the same refactor scored 94.7% and 37.3% under
@@ -283,11 +256,13 @@ _GUARD_HOMES = ("tools/guard/", "tools/hooks/", ".claude/hooks/", ".githooks/")
 
 
 def _message(path):
+    """The message git handed over, or None when it cannot be read - which `main` refuses. It
+    answered "" and the empty message passed every rule (F186)."""
     try:
         with io.open(path, encoding="utf-8", errors="replace") as handle:
             return handle.read()
     except OSError:
-        return ""
+        return None
 
 
 def subject_of(message):
@@ -296,6 +271,28 @@ def subject_of(message):
         if line.strip() and not line.startswith("#"):
             return line
     return ""
+
+
+#: How long the text after a marker that NAMES something must be - the control, the evasion,
+#: the menu path, the undo. An ESCAPE's floor is the gate's MIN_REASON, asked where it is used.
+NAMED = 20
+#: ...and for an owner's words quoted back, which may be short.
+QUOTED = 10
+
+
+def marked(message, marker, minimum=None):
+    """True when a line of `message` STARTS with `marker` and carries `minimum` characters after it;
+    `minimum` None is an ESCAPE, held to the gate's floor.
+
+    EVERY MARKER COUNTS ONLY AT THE START OF A LINE, WITH ITS REASON (F186). Eleven were matched
+    anywhere in the message with no reason at all, so a commit explaining a rule - "drops the old
+    rule that let a No-guard: line of any length through" - was excused by its own sentence.
+    tools/commit_gate.py had fixed exactly that in its copy only. The line is found by the gate's
+    own `marker_reason`, so there is one parse of a marker, not two.
+    """
+    why = gate().marker_reason(message, marker)
+    floor = gate().MIN_REASON if minimum is None else minimum
+    return why is not None and len(why) >= floor
 
 
 #: Production source: the program, not its proofs and not its tooling.
@@ -307,19 +304,13 @@ def _changes_behaviour():
     """True when this commit changes production CODE, as opposed to its comments.
 
     Asked of the staged DIFF rather than of the message, and that is the whole point of this
-    function. See `is_a_fix`.
+    function. See `is_a_fix`. A git that cannot answer raises CannotAsk.
     """
-    import subprocess
     prod = [p for p in staged_files() if _is_production(p)]
     if not prod:
         return False
-    try:
-        done = subprocess.run(["git", "diff", "--cached", "-U0", "--"] + prod,
-                              cwd=ROOT, capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired):       # pragma: no cover
-        return True                                    # cannot tell: ask, do not assume innocent
     added, removed = [], []
-    for line in done.stdout.splitlines():
+    for line in _git_out(["diff", "--cached", "-U0", "--"] + prod).splitlines():
         if line.startswith(("+++", "---", "@@")):
             continue
         if not line.startswith(("+", "-")):
@@ -385,157 +376,73 @@ def is_a_fix(message):
     return _changes_behaviour() or subject_of(message).lower().startswith("fix")
 
 
-def guard_line(message):
-    """(kind, reason) from a `Guard:` line, or (None, '')."""
-    found = _GUARD_LINE.search(message)
-    if not found:
-        return None, ""
-    return found.group(1).strip().lower(), " ".join(found.group(2).split())
-
-
 def staged_files():
-    """Paths in the index, with forward slashes. Empty when git cannot be asked."""
-    import subprocess
-    try:
-        done = subprocess.run(["git", "diff", "--cached", "--name-only"],
-                              cwd=ROOT, capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired):       # pragma: no cover
-        return []
-    return [p.strip().replace(chr(92), "/") for p in done.stdout.splitlines() if p.strip()]
+    """Paths in the index, with forward slashes. A git that cannot answer raises CannotAsk."""
+    return [p.strip().replace(chr(92), "/")
+            for p in _git_out(["diff", "--cached", "--name-only"]).splitlines() if p.strip()]
 
 
 def check_fix_has_a_guard(message):
-    if not is_a_fix(message) or NO_GUARD.lower() in message.lower():
-        return 0
-    files = staged_files()
-    if not files:                                      # nothing to judge; do not block
-        return 0
-    places = guard_dirs()
-    if any(f.startswith(d) for f in files for d in places):
+    """The gate's `fix_touches_a_guard`, asked with THIS file's trigger (F186)."""
+    found = gate().fix_touches_a_guard(message, staged_files(), fix=is_a_fix(message))
+    if not found:
         return 0
     sys.stderr.write(
-        "REFUSING THE COMMIT: this fixes something and nothing new would notice a" + LF
-        + "  SECOND one. Touch one of:" + LF
-        + "".join("    %s%s" % (d, LF) for d in places)
+        "REFUSING THE COMMIT: %s" % found[0] + LF + LF
+        + "  This fixes something and nothing new would notice a SECOND one." + LF
         + "  'Producer with no consumer' was filed in SEVEN consecutive audits of the" + LF
         + "  project these guards came from - fixed every time, made impossible none." + LF
         + "  If this fix truly cannot carry one, say so in the message with a" + LF
-        + "    %s <reason>" % NO_GUARD + LF
+        + "    %s <reason, %d characters at least>" % (NO_GUARD, gate().MIN_REASON) + LF
         + "  line, which stays in git log where anyone can find it." + LF)
     return 1
 
 
 def check_guard_class(message):
-    """Asks what the file-list check cannot: is what landed a REFUSAL, or a detector in its coat."""
-    if not is_a_fix(message) or NO_GUARD.lower() in message.lower():
+    """Asks what the file-list check cannot: is what landed a REFUSAL, or a detector in its coat.
+    The gate's `guard_claim`, asked with THIS file's trigger (F186): its `Guard:` reason is the
+    LINE, where the pattern here ran on to the end of the message - so `Guard: refusal -- guarded
+    above` passed the sixty-character floor on the strength of the Co-Authored-By trailer."""
+    found = gate().guard_claim(message, fix=is_a_fix(message))
+    if not found:
         return 0
-    kind, reason = guard_line(message)
-    if kind is None:
-        sys.stderr.write(
-            "REFUSING THE COMMIT: this fixes something and never says what kind of guard" + LF
-            + "  it carries. Add a line:" + LF + LF
-            + "    Guard: refusal -- <the CLASS this makes impossible, not the instance>" + LF
-            + LF
-            + "  A DETECTOR reports the wreckage. A CONVENTION asks somebody to be careful." + LF
-            + "  Only a REFUSAL closes the class." + LF)
-        return 1
-    if kind not in GUARD_KINDS:
-        sys.stderr.write("REFUSING THE COMMIT: `Guard: %s` is not one of %s.%s"
-                         % (kind, ", ".join(GUARD_KINDS), LF))
-        return 1
-    if kind != "refusal" and NO_REFUSAL.lower() not in message.lower():
-        sys.stderr.write(
-            "REFUSING THE COMMIT: this fixes something and closes it with a %s." % kind + LF
-            + "  A DETECTOR reports the wreckage after it happens. A CONVENTION asks" + LF
-            + "  somebody to be careful. Neither makes a second occurrence IMPOSSIBLE," + LF
-            + "  and the defects this project has had to fix twice were closed by one" + LF
-            + "  of them the first time." + LF + LF
-            + "  Close it where the mistake is MADE instead - refuse the action there." + LF
-            + "  If the point of action genuinely cannot refuse, say why:" + LF + LF
-            + "    %s <why a refusal is impossible here>" % NO_REFUSAL + LF + LF
-            + "  That line stays in git log, which is the point." + LF)
-        return 1
-    if len(reason) < MIN_GUARD_REASON:
-        sys.stderr.write(
-            "REFUSING THE COMMIT: the Guard line names a kind and not a CLASS." + LF
-            + "  %d characters is a label. Say what second occurrence is now" % len(reason) + LF
-            + "  impossible, or impossible to miss. `guarded above` shipped once as an" + LF
-            + "  entire justification and it was false." + LF)
-        return 1
-    return 0
-
-
-def last_run():
-    try:
-        with io.open(LAST_RUN, encoding="utf-8") as handle:
-            return json.load(handle)
-    except (OSError, ValueError):
-        return None
-
-
-def record_is_about_another_tree(run):
-    """Why the recorded run is not evidence about THIS tree. None means it is.
-
-    MEASURED 2026-09-21: the record on disk was eight days and twenty-two changed files old
-    and this check was still comparing against it - it would have APPROVED a claim of the
-    stale count and REFUSED the true one, both silently. `work_order.unproven_plants` sits
-    ten lines from here and digests src/, the plant targets and the plant count before it
-    will call a proof current; this one read a number out of a file and believed it. A rule
-    enforced for one measurement and not for its neighbour is the shape that keeps costing.
-    """
-    if not run.get("subject"):
-        return ("the recorded run carries no subject digest, so WHICH TREE it measured is"
-                " UNKNOWN - re-run `python tools\\guard\\record_run.py`")
-    now = source_digest()
-    if now is None:
-        return ("this tree cannot be digested, so whether that run is about it cannot be"
-                " read - and an unreadable subject is not an unchanged one")
-    if now != run["subject"]:
-        return ("the tree has CHANGED since that run - it measured %s, this is %s"
-                % (run["subject"][:12], now[:12]))
-    return None
+    sys.stderr.write(
+        "REFUSING THE COMMIT: %s" % found[0] + LF + LF
+        + "  Add a line:" + LF + LF
+        + "    Guard: refusal -- <the CLASS this makes impossible, not the instance>" + LF + LF
+        + "  A DETECTOR reports the wreckage after it happens. A CONVENTION asks" + LF
+        + "  somebody to be careful. Neither makes a second occurrence IMPOSSIBLE, and" + LF
+        + "  the defects this project has had to fix twice were closed by one of them" + LF
+        + "  the first time. Only a REFUSAL closes the class: refuse the action where" + LF
+        + "  the mistake is MADE. If the point of action genuinely cannot refuse, say why:" + LF
+        + LF + "    %s <why a refusal is impossible here>" % NO_REFUSAL + LF + LF
+        + "  `guarded above` shipped once as an entire justification and it was false." + LF)
+    return 1
 
 
 def check_test_claim(message):
-    """Every `N tests` claim must match the last recorded run.
+    """Every `N tests` claim must match the last recorded run, that run must have passed, and it
+    must have measured THIS tree: the gate's `test_counts`, the one implementation (F186).
 
-    The LINE each claim sits on is quoted back, not just the number: a refusal that makes
-    somebody scan a sixty-line message for a digit is its own small defect.
+    This file kept a second one that never asked whether the run passed - a count from a red
+    battery went through it - and that would have APPROVED a stale count and REFUSED the true one
+    on 2026-09-21, when the record on disk was eight days and twenty-two changed files old, until
+    it learnt to compare subjects. The LINE each claim sits on is still quoted back: a refusal
+    that makes somebody scan a sixty-line message for a digit is its own small defect.
     """
-    claimed = {}
-    for line in message.splitlines():
-        if line.startswith("#"):
-            continue
-        for found in _TEST_CLAIM.findall(line):
-            claimed.setdefault(int(found.replace(",", "")), line.strip())
-    if not claimed:
+    found = gate().test_counts(message)
+    if not found:
         return 0
-    run = last_run()
-    if run is None:
-        sys.stderr.write(
-            "REFUSING THE COMMIT: the message claims %s tests and no suite run has" % sorted(claimed)
-            + LF + "  been recorded. Run `python tools\\guard\\record_run.py` first, or drop" + LF
-            + "  the claim." + LF)
-        return 1
-    why = record_is_about_another_tree(run)
-    if why:
-        sys.stderr.write(
-            "REFUSING THE COMMIT: the message claims %s tests and %s." % (sorted(claimed), why)
-            + LF + "  A count measured against a different tree is not a measurement of this" + LF
-            + "  one, in either direction: it approves a stale number and refuses the true" + LF
-            + "  one. Re-run the battery, or drop the claim. The claim is on:" + LF
-            + "".join("    %s%s" % (claimed[c], LF) for c in sorted(claimed)))
-        return 1
-    ran = int(run.get("ran") or 0)
-    wrong = sorted(c for c in claimed if c != ran)
-    if wrong:
-        sys.stderr.write(
-            "REFUSING THE COMMIT: the message claims %s tests; the last run said %d." % (wrong, ran)
-            + LF + "  A count in a commit message is a measurement, and a wrong one is" + LF
-            + "  permanent. The claim is on:" + LF
-            + "".join("    %s%s" % (claimed[c], LF) for c in wrong))
-        return 1
-    return 0
+    lines = [line.strip() for line in message.splitlines()
+             if not line.startswith("#") and gate().test_claims(line)]
+    sys.stderr.write(
+        "".join("REFUSING THE COMMIT: %s%s" % (problem, LF) for problem in found)
+        + "  A count in a commit message is a measurement, and a wrong one is permanent -" + LF
+        + "  in either direction, a count from another tree approves a stale number and" + LF
+        + "  refuses the true one. Record a run with `python tools\\guard\\record_run.py`," + LF
+        + "  or drop the claim. It is on:" + LF
+        + "".join("    %s%s" % (line, LF) for line in lines))
+    return 1
 
 
 def names_a_known_hole(text):
@@ -557,14 +464,9 @@ def names_a_known_hole(text):
 
 
 def _added_to_queue():
-    """Lines this commit ADDS to OUTSTANDING.md. Empty when git cannot be asked."""
-    import subprocess
-    try:
-        done = subprocess.run(["git", "diff", "--cached", "--unified=0", "--", "OUTSTANDING.md"],
-                              cwd=ROOT, capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired):       # pragma: no cover
-        return ""
-    return LF.join(l[1:] for l in done.stdout.splitlines()
+    """Lines this commit ADDS to OUTSTANDING.md. A git that cannot answer raises CannotAsk."""
+    return LF.join(l[1:] for l in _git_out(["diff", "--cached", "--unified=0", "--",
+                                            "OUTSTANDING.md"]).splitlines()
                    if l.startswith("+") and not l.startswith("+++"))
 
 
@@ -585,13 +487,15 @@ def check_known_hole(message):
     this refuses the queue entry. Stopping the search fails the first; filing the result fails
     the second; the only way through both is to go and read the thing.
     """
-    used = _DEFERRED_LINE.search(message or "")
-    if used:
-        reason = " ".join(used.group(1).split())
-        if len(reason) < MIN_GUARD_REASON:
+    #: THE ESCAPE IS THE GATE'S (F186): its line, read by `marker_reason`, and its floor, asked by
+    #: `deferred_gap`. The pattern here ran on to the end of the message, so `Deferred-gap: later`
+    #: cleared sixty characters on the trailers under it, while the gate held the same line to 80.
+    if gate().marker_reason(message, DEFERRED_GAP) is not None:
+        short = gate().deferred_gap(message)
+        if short:
             sys.stderr.write(
-                "REFUSING THE COMMIT: `%s` is there but says almost nothing (%d chars)." % (DEFERRED_GAP, len(reason))
-                + LF + "  A hole handed to somebody else has to arrive with the reason the run" + LF
+                "REFUSING THE COMMIT: %s" % short[0] + LF
+                + "  A hole handed to somebody else has to arrive with the reason the run" + LF
                 + "  that found it could not close it, in a sentence they can disagree with." + LF)
             return 1
         return 0
@@ -661,8 +565,7 @@ def check_blanket_claim(message):
     hits = blanket_claim(message)
     if not hits:
         return 0
-    low = message.lower()
-    if NO_REVIEW.lower() in low:
+    if marked(message, NO_REVIEW):
         return 0
     cited = re.search(r"^Reviewed:\s*(.+)$", message, re.M)
     if cited:
@@ -692,15 +595,9 @@ def check_blanket_claim(message):
 
 
 def added_files():
-    """Paths ADDED by this commit, with forward slashes. Empty when git cannot be asked."""
-    import subprocess
-    try:
-        done = subprocess.run(["git", "diff", "--cached", "--name-status", "--diff-filter=A"],
-                              cwd=ROOT, capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired):       # pragma: no cover
-        return []
+    """Paths ADDED by this commit, with forward slashes. A git that cannot answer raises CannotAsk."""
     out = []
-    for line in done.stdout.splitlines():
+    for line in _git_out(["diff", "--cached", "--name-status", "--diff-filter=A"]).splitlines():
         parts = line.split(chr(9))
         if len(parts) >= 2:
             out.append(parts[-1].strip().replace(chr(92), "/"))
@@ -716,7 +613,7 @@ def check_extraction_is_tested(message):
     test file mention the class at all - because the expensive version, "is it tested well",
     is what the mutation sweep answers, and a commit gate cannot run one.
     """
-    if NO_TEST.lower() in message.lower():
+    if marked(message, NO_TEST):
         return 0
     #: A REPOSITORY WITH NO TEST TREE IS NOT ONE THIS RULE IS ABOUT. Without this, every
     #: commit in a scratch repository - which is how the suites drive this gate - was refused
@@ -783,7 +680,7 @@ def check_detangle(message):
     has moved code rather than untangled it.
     """
     low = message.lower()
-    if NO_COUPLING.lower() in low:
+    if marked(message, NO_COUPLING):
         return 0
     if not any(word in low for word in _SPLIT_WORDS):
         return 0
@@ -815,7 +712,7 @@ def check_in_game_claim(message):
     is a claim nobody can act on - and it is the one claim that ends a review.
     """
     low = message.lower()
-    if OWNER_TESTED.lower() in low:
+    if marked(message, OWNER_TESTED, QUOTED):
         return 0
     said = [phrase for phrase in _IN_GAME if phrase in low]
     if not said:
@@ -841,7 +738,7 @@ def check_zero_claim(message):
     good news. A scan that has never been shown to find a planted case is not evidence of
     absence; it is evidence of nothing.
     """
-    if CONTROL.lower() in message.lower():
+    if marked(message, CONTROL, NAMED):
         return 0
     found = _ZERO_CLAIM.search(message)
     if not found:
@@ -866,7 +763,7 @@ def check_cheapest_evasion(message):
     looking for one. A guard nobody has asked that question of has a way round it that nobody
     has written down.
     """
-    if EVASION.lower() in message.lower():
+    if marked(message, EVASION, NAMED):
         return 0
     added = [f for f in added_files()
              if any(f.startswith(home) for home in _GUARD_HOMES)
@@ -887,16 +784,10 @@ def check_cheapest_evasion(message):
 
 
 def _added_lines():
-    """The lines this commit ADDS, per staged file. Empty when git cannot be asked."""
-    import subprocess
-    try:
-        done = subprocess.run(["git", "diff", "--cached", "-U0"],
-                              cwd=ROOT, capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired):       # pragma: no cover
-        return {}
+    """The lines this commit ADDS, per staged file. A git that cannot answer raises CannotAsk."""
     out = {}
     path = None
-    for line in done.stdout.splitlines():
+    for line in _git_out(["diff", "--cached", "-U0"]).splitlines():
         if line.startswith("+++ b/"):
             path = line[len("+++ b/"):].strip().replace(chr(92), "/")
             out.setdefault(path, [])
@@ -913,7 +804,7 @@ def check_menu_item(message):
     right-click menu on the map canvas is already in its own area, and refusing those would
     fire on honest work, which is how a rule gets a ceiling raised and then ignored.
     """
-    if MENU_ITEM.lower() in message.lower():
+    if marked(message, MENU_ITEM, NAMED):
         return 0
     guilty = []
     for path, lines in _added_lines().items():
@@ -952,8 +843,7 @@ def check_undo(message):
     the answer is cheapest, because the person writing the form is the one who knows what its
     inverse is.
     """
-    low = message.lower()
-    if UNDO.lower() in low or NO_UNDO.lower() in low:
+    if marked(message, UNDO, NAMED) or marked(message, NO_UNDO):
         return 0
     added = [f for f in added_files()
              if f.startswith(_UI_HOME) and f.endswith(".java")
@@ -989,15 +879,25 @@ def main(argv):
     if len(argv) < 2:
         return 0
     message = _message(argv[1])
+    if message is None:
+        sys.stderr.write("REFUSING THE COMMIT: the message at %s cannot be read, so nothing here"
+                         " has judged it.%s" % (argv[1], LF))
+        return 1
     if not message.strip():
         return 0
-    for check in (check_fix_has_a_guard, check_guard_class, check_test_claim, check_known_hole,
-                  check_blanket_claim, check_extraction_is_tested, check_detangle,
-                  check_in_game_claim, check_zero_claim, check_cheapest_evasion,
-                  check_menu_item, check_undo):
-        code = check(message)
-        if code:
-            return code
+    try:
+        for check in (check_fix_has_a_guard, check_guard_class, check_test_claim,
+                      check_known_hole, check_blanket_claim, check_extraction_is_tested,
+                      check_detangle, check_in_game_claim, check_zero_claim,
+                      check_cheapest_evasion, check_menu_item, check_undo):
+            code = check(message)
+            if code:
+                return code
+    except CannotAsk as exc:
+        sys.stderr.write(
+            "REFUSING THE COMMIT: %s - so what this commit holds is UNKNOWN, and UNKNOWN is" % exc
+            + LF + "  not \"nothing staged\". Every rule here would have passed an empty answer." + LF)
+        return 1
     return 0
 
 

@@ -159,7 +159,7 @@ def decide(payload):
     blind = shellin.unreadable(payload)
     if blind:
         return True, shellin.blind_refusal(HOOK, "; ".join(blind), BYPASS)
-    for command in shellin.commands(payload):
+    for command in shellin.scripts(payload):
         deny, reason = verdict(command)
         if deny:
             return deny, reason

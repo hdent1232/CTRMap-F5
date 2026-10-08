@@ -1,6 +1,7 @@
 package ctrmap.formats.gfcollision;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,14 +50,33 @@ public class GfColl {
 
 	/** Unique triangles in first-seen (bucket-scan) order; each float[9]. */
 	public final List<float[]> uniqueTris = new ArrayList<>();
+	/** The bucket each of {@link #uniqueTris} was first seen in, index for index - where the
+	 *  collision editor shows it. */
+	public final List<Integer> uniqueTriBucket = new ArrayList<>();
 
 	public static boolean isColl(byte[] b) {
 		return b != null && b.length >= 0x20 && b[0] == 'c' && b[1] == 'o' && b[2] == 'l' && b[3] == 'l';
 	}
 
+	/**
+	 * Parses a coll subfile, STRICTLY (F058). This is the one collision reader: the editor's
+	 * {@link GRCollisionFile} used to parse the same bytes with one of its own, which printed
+	 * "Coll magic mismatch" or "Term missing" on a console the shipped build does not have and
+	 * carried on, so a damaged region opened showing whatever part was read and its Save wrote that
+	 * part over the real collision. A subfile cut short or laid out past its own end is refused
+	 * here, in words, before any triangle in it is believed.
+	 *
+	 * @throws IllegalArgumentException when the bytes are not a coll subfile at all
+	 * @throws IllegalStateException naming the damage, when they are one that is cut short or
+	 * whose buckets do not fit it
+	 */
 	public GfColl(byte[] data) {
 		if (!isColl(data)) {
 			throw new IllegalArgumentException("not a coll subfile");
+		}
+		if (data.length < 0x320) {
+			throw new IllegalStateException("The collision is " + data.length
+					+ " bytes, too short for its 0x320-byte header and bucket table - it is truncated.");
 		}
 		payloadLen = i32(data, 4);
 		const5d8a = i32(data, 8);
@@ -64,20 +84,43 @@ public class GfColl {
 			consts13212[i] = i32(data, 0xC + i * 4);
 		}
 		System.arraycopy(data, 0x20, boundsRaw, 0, 640);
+		long verts = 0;
 		for (int i = 0; i < 16; i++) {
 			bucketOff[i] = i32(data, 0x2A0 + i * 8);
 			bucketCnt[i] = i32(data, 0x2A0 + i * 8 + 4);
+			if (bucketCnt[i] < 0 || bucketCnt[i] % 3 != 0) {
+				throw new IllegalStateException("Bucket " + i + " of the collision holds " + bucketCnt[i]
+						+ " vertices, which is not a whole number of triangles - it is damaged.");
+			}
+			verts += bucketCnt[i];
+		}
+		long termAt = 0x320 + verts * 16;
+		if (termAt + 16 > data.length) {
+			throw new IllegalStateException("The collision's buckets hold " + verts + " vertices, which run past the end of its "
+					+ data.length + " bytes - it is truncated.");
+		}
+		for (int i = 0; i < 16; i++) {
+			if (bucketOff[i] < 0 || (long) bucketOff[i] + bucketCnt[i] > verts) {
+				throw new IllegalStateException("Bucket " + i + " of the collision names vertices " + bucketOff[i] + " to "
+						+ ((long) bucketOff[i] + bucketCnt[i]) + ", outside the " + verts + " its table holds - it is damaged.");
+			}
+		}
+		int term = (int) termAt;
+		if (data[term] != 't' || data[term + 1] != 'e' || data[term + 2] != 'r' || data[term + 3] != 'm') {
+			throw new IllegalStateException("The collision has no \"term\" marker where its " + verts
+					+ " vertices end (byte 0x" + Integer.toHexString(term) + ") - it is damaged.");
 		}
 		bucketTris = new float[16][];
 		//source-triangle reconstruction: buckets DUPLICATE spanning tris, and the
 		//source mesh itself may contain genuinely repeated triangles - a tri's
 		//source multiplicity is its max occurrence count across buckets
-		Map<Long, float[]> firstSeen = new LinkedHashMap<>();
-		Map<Long, Integer> multiplicity = new LinkedHashMap<>();
+		Map<TriKey, float[]> firstSeen = new LinkedHashMap<>();
+		Map<TriKey, Integer> seenIn = new LinkedHashMap<>();
+		Map<TriKey, Integer> multiplicity = new LinkedHashMap<>();
 		for (int b = 0; b < 16; b++) {
 			int nv = bucketCnt[b];
 			float[] tris = new float[(nv / 3) * 9];
-			Map<Long, Integer> inBucket = new LinkedHashMap<>();
+			Map<TriKey, Integer> inBucket = new LinkedHashMap<>();
 			for (int t = 0; t < nv / 3; t++) {
 				for (int v = 0; v < 3; v++) {
 					int src = 0x320 + (bucketOff[b] + t * 3 + v) * 16;
@@ -85,28 +128,30 @@ public class GfColl {
 					tris[t * 9 + v * 3 + 1] = f32(data, src + 4);
 					tris[t * 9 + v * 3 + 2] = f32(data, src + 8);
 				}
-				long key = triKey(tris, t * 9);
+				TriKey key = new TriKey(tris, t * 9);
 				if (!firstSeen.containsKey(key)) {
 					float[] u = new float[9];
 					System.arraycopy(tris, t * 9, u, 0, 9);
 					firstSeen.put(key, u);
+					seenIn.put(key, b);
 				}
 				inBucket.merge(key, 1, Integer::sum);
 			}
-			for (Map.Entry<Long, Integer> e : inBucket.entrySet()) {
+			for (Map.Entry<TriKey, Integer> e : inBucket.entrySet()) {
 				multiplicity.merge(e.getKey(), e.getValue(), Math::max);
 			}
 			bucketTris[b] = tris;
 		}
-		for (Map.Entry<Long, float[]> e : firstSeen.entrySet()) {
+		for (Map.Entry<TriKey, float[]> e : firstSeen.entrySet()) {
 			int m = multiplicity.get(e.getKey());
+			int seen = seenIn.get(e.getKey());
 			for (int k = 0; k < m; k++) {
 				uniqueTris.add(e.getValue());
+				uniqueTriBucket.add(seen);
 			}
 		}
-		int termAt = 0x320 + totalVerts() * 16;
-		const5d8b = i32(data, termAt + 8);
-		tailPad = data.length - (termAt + 16);
+		const5d8b = i32(data, term + 8);
+		tailPad = data.length - (term + 16);
 	}
 
 	public int totalVerts() {
@@ -386,11 +431,31 @@ public class GfColl {
 		return x >= minX && x <= maxX && z >= minZ && z <= maxZ;
 	}
 
-	private static long triKey(float[] a, int off) {
-		long h = 1125899906842597L;
-		for (int i = 0; i < 9; i++) {
-			h = 31 * h + Float.floatToIntBits(a[off + i]);
+	/**
+	 * A triangle's identity: the bit patterns of its nine coordinates, compared whole. It was a
+	 * 64-bit hash of them (F061), and two distinct triangles whose hashes met were merged into one,
+	 * silently, in a mesh the game walks on.
+	 */
+	private static final class TriKey {
+
+		private final int[] bits = new int[9];
+		private final int hash;
+
+		TriKey(float[] a, int off) {
+			for (int i = 0; i < 9; i++) {
+				bits[i] = Float.floatToIntBits(a[off + i]);
+			}
+			hash = Arrays.hashCode(bits);
 		}
-		return h;
+
+		@Override
+		public boolean equals(Object o) {
+			return o instanceof TriKey && Arrays.equals(bits, ((TriKey) o).bits);
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
+		}
 	}
 }

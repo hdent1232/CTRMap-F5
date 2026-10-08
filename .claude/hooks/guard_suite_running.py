@@ -92,6 +92,10 @@ def _live(path):
         return True, ("the lock at %s could not be read (%s), so whether a run is in flight is "
                       "unknown - and an unknown is not a finished run" % (path, cannotRead))
     found = re.search(r"\bpid\s*=\s*(\d+)", body)
+    #: OR THE DOOR'S SIGNATURE (F179): bundle_rules.take_lock writes `rel`, then `<pid>-<nonce>`,
+    #: and every run that plants goes through it now - read by age alone, a killed run's lock
+    #: refused edits for ninety minutes after its process was gone
+    found = found or re.search(r"(?m)^(\d+)-[0-9a-f]{16}\s*$", body)
     if found:
         return alive(int(found.group(1)))
     if age <= ABANDONED:

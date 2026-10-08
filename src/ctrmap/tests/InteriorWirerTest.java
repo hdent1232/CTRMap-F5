@@ -25,14 +25,39 @@ public class InteriorWirerTest {
 
 	static GARC zo;
 
-	// the catalog's interior zones (oras_buildings.tsv interiorZone column)
-	static final int[] INTERIORS = {228, 229, 428, 223, 227, 230, 235, 238, 244, 273, 321, 345, 256, 339, 522};
+	/**
+	 * Every interior the building catalog links, read from the catalog itself (F153). It was a list
+	 * copied by hand - 15 of what are now 39 - and the javadoc above went on saying "every".
+	 */
+	static int[] interiors() {
+		java.util.TreeSet<Integer> zones = new java.util.TreeSet<>();
+		for (ctrmap.formats.h3d.BuildingCatalog.Entry e : ctrmap.formats.h3d.BuildingCatalog.entries()) {
+			if (e.interiorZone >= 0) {
+				zones.add(e.interiorZone);
+			}
+		}
+		int[] out = new int[zones.size()];
+		int i = 0;
+		for (int z : zones) {
+			out[i++] = z;
+		}
+		return out;
+	}
+
+	/** The floor under it: a catalog read that came back empty must not check nothing and pass. */
+	static final int AT_LEAST = 39;
 
 	public static void main(String[] args) throws Exception {
+		int[] interiors = interiors();
+		if (interiors.length < AT_LEAST) {
+			System.out.println("FAIL: the catalog links " + interiors.length + " interiors, fewer than the " + AT_LEAST
+					+ " it did - a read that lost them would check nothing and pass");
+			System.exit(1);
+		}
 		zo = new GARC(new File(args.length > 0 ? args[0]
 				: "../RomFS_original_garcs/a/0/1/3"));
 		int fails = 0, singles = 0, multis = 0;
-		for (int zone : INTERIORS) {
+		for (int zone : interiors) {
 			try {
 				ZoneEntities ent = entities(zone);
 				int area = area(zone);
@@ -97,7 +122,7 @@ public class InteriorWirerTest {
 				fails++;
 			}
 		}
-		System.out.println("interiors: " + INTERIORS.length + " (" + singles + " single-warp, " + multis + " multi), " + fails + " failure(s)");
+		System.out.println("interiors: " + interiors.length + " (" + singles + " single-warp, " + multis + " multi), " + fails + " failure(s)");
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (fails > 0) {
 			System.exit(1);

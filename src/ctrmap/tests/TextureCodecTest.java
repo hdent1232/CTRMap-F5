@@ -239,7 +239,7 @@ public class TextureCodecTest {
 	static void theCorpusDecodesAsItAlwaysHas(File a014) throws Exception {
 		System.out.println("--- the corpus decodes as it always has");
 		if (a014 == null || !a014.isFile()) {
-			System.out.println("  skip: no a/0/1/4 GARC at " + a014);
+			Skip.section("no a/0/1/4 GARC at " + a014);
 			return;
 		}
 		GARC ad = new GARC(a014);

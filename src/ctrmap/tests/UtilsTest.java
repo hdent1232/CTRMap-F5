@@ -104,9 +104,10 @@ public class UtilsTest {
 	}
 
 	private static void magicBytes() {
-		check(ctrmap.util.Bytes.checkBCHMagic(new byte[]{'B', 'C', 'H', 0}), "BCH is recognised");
-		check(!ctrmap.util.Bytes.checkBCHMagic(new byte[]{'B', 'C', 'X'}), "BCX is not");
-		check(!ctrmap.util.Bytes.checkBCHMagic(new byte[]{'B', 'C'}), "two bytes are too few to say");
+		check(ctrmap.formats.h3d.BchSections.hasMagic(new byte[]{'B', 'C', 'H', 0}), "BCH is recognised");
+		check(!ctrmap.formats.h3d.BchSections.hasMagic(new byte[]{'B', 'C', 'X'}), "BCX is not");
+		check(!ctrmap.formats.h3d.BchSections.hasMagic(new byte[]{'B', 'C'}), "two bytes are too few to say");
+		check(!ctrmap.formats.h3d.BchSections.hasMagic(new byte[]{'B', 'C', 'H', 1}), "BCH with no NUL after it is not (F066: three bytes was one reading, four the other)");
 		check(ctrmap.util.Bytes.checkMagic(new byte[]{'Z', 'O', 1}, "ZO"), "a leading magic string is found");
 		check(!ctrmap.util.Bytes.checkMagic(new byte[]{'Z', 'X', 1}, "ZO"), "a different one is not");
 		check(!ctrmap.util.Bytes.checkMagic(new byte[]{'Z'}, "ZO"), "data shorter than the magic is refused, not read past");
@@ -129,7 +130,15 @@ public class UtilsTest {
 		File none = new File(tmp, "none");
 		Files.write(none.toPath(), new byte[0]);
 		check(!ctrmap.util.Bytes.checkMagicLE16(none, 0x5A4F), "an empty file cannot match and does not throw");
-		check(!ctrmap.util.Bytes.checkMagicLE16(new File(tmp, "absent"), 0x5A4F), "a file that is not there is simply false");
+		String absent;
+		try {
+			absent = "answered " + ctrmap.util.Bytes.checkMagicLE16(new File(tmp, "absent"), 0x5A4F);
+		} catch (IOException ex) {
+			absent = null;
+		}
+		//F211: it answered false, and the zone opener reported a file it could not read as "not a zone mini-pack"
+		check(absent == null, "a file that cannot be read THROWS - it is not 'some other kind of file' ("
+				+ (absent == null ? "threw" : absent) + ")");
 	}
 
 	private static void capitalLetters() {
@@ -211,9 +220,12 @@ public class UtilsTest {
 		try {
 			ctrmap.WorkspaceSession.mkDirsIfNotContains(new File(tmp, "not_there"), new String[]{"x"});
 			check(false, "asked about a directory that does not exist, it fails rather than creating one");
-		} catch (NullPointerException ex) {
-			check(true, "a container directory that does not exist throws NullPointerException"
-					+ " (File.list() returns null and is wrapped without a check)");
+		} catch (IllegalStateException said) {
+			check(said.getMessage().contains("does not exist") && !new File(tmp, "not_there").exists(),
+					"asked about a directory that does not exist, it refuses in words and makes nothing: "
+					+ said.getMessage());
+		} catch (RuntimeException crash) {
+			check(false, "asked about a directory that does not exist, it refuses in words (it threw " + crash + ")");
 		}
 	}
 
@@ -338,12 +350,14 @@ public class UtilsTest {
 		//DialogSeamTest pins all four of the mappings.
 		said = Ui.record(Integer.valueOf(JOptionPane.NO_OPTION));
 		ctrmap.Ui.Keep answer;
+		boolean[] putBack = {false};
 		try {
-			answer = ctrmap.Ui.askToKeep(true, "The zone");
+			answer = ctrmap.Ui.askToKeep(true, "The zone", () -> putBack[0] = true);
 		} finally {
 			Ui.stopRecording();
 		}
-		check(answer == ctrmap.Ui.Keep.DISCARD, "the save question hands the user's NO back as DISCARD, not as consent");
+		check(answer == ctrmap.Ui.Keep.DISCARD && putBack[0],
+				"the save question hands the user's NO back as DISCARD, not as consent, having put the editor back (F106)");
 		check(said.size() == 1 && said.get(0).equals(
 				"Save changes: The zone has been modified. Do you want to keep the changes?"),
 				"the save question names what changed: " + said.get(0));
@@ -362,7 +376,7 @@ public class UtilsTest {
 	 * left as a hole nobody knows about.
 	 */
 	private static void theTwoThatNeedTheWholeWindow() {
-		System.out.println("  skip: switchToolUI/setGraphicUI need CtrmapMainframe's live split panes"
+		Skip.section("switchToolUI/setGraphicUI need CtrmapMainframe's live split panes"
 				+ " (jsp, frame, mCamScrollPane, mCamEditForm, tileEditMasterPnl) - not reachable without"
 				+ " constructing the main window");
 	}

@@ -47,8 +47,6 @@ import ctrmap.formats.containers.ContainerBytes;
  */
 public class ZoneAppender {
 
-	private static Map<Integer, Boolean> pendingZoneDataOverrides = null;
-
 	/**
 	 * The three rebuilt ZoneData payloads of an append, keyed to workspace
 	 * file names: compressedZo -> "newIndex", master -> "newIndex + 1",
@@ -78,10 +76,16 @@ public class ZoneAppender {
 	 * patch must target (== {@link ctrmap.formats.codepatch.ZoneLimitPatch#masterIndex}).
 	 */
 	public static class AppendResult {
-		public int firstNewZone;   // index of the first added zone (== old zone count, 536)
+		public int firstNewZone;   // index of the first added zone (== old zone count; 536 on a stock game)
 		public int realZones;      // how many the user asked for
 		public int spareZones;     // padding to keep M a multiple of 4
 		public int newZoneCount;   // M = firstNewZone + realZones + spareZones
+		/**
+		 * The N the code patch is built for: every zone past the stock base, this append's and the
+		 * ones before it, spares included - NOT realZones, which is only this append's. On a second
+		 * append a patch built from realZones names a master index the archive no longer has.
+		 */
+		public int patchZones;
 		/** What the created zones still SHARE with the zone they were cloned from. */
 		public java.util.List<ZoneResource> shared = java.util.Collections.emptyList();
 		/** The same, as the sentence the user was shown before any of it was written. */
@@ -137,19 +141,6 @@ public class ZoneAppender {
 	}
 
 	/**
-	 * Appends {@code newRealZones} new zones to the current ORAS workspace, plus
-	 * enough spare slots to raise the total to M = the next multiple of 4, so it
-	 * matches the {@link ctrmap.formats.codepatch.ZoneLimitPatch} code patch for
-	 * the same N. All new zones (real + spare) are cloned from {@code srcIndex};
-	 * the caller turns the real ones into their own maps afterwards. As with the
-	 * single-zone path, the GARC is NOT rewritten here - Pack Workspace must run
-	 * immediately after, and only one append is allowed per pack cycle.
-	 *
-	 * <p>Generate the paired code patch with
-	 * {@code ZoneLimitPatch.buildIPS(newRealZones)} and deploy the resulting
-	 * code.ips (Azahar: load/mods/&lt;titleid&gt;/exefs/; Luma: luma/titles/&lt;titleid&gt;/).
-	 */
-	/**
 	 * REFUSES, and says what a created zone would share. This is the two-argument
 	 * form and it exists to be refused: an append that cannot make its zones
 	 * independent must not happen because a caller did not think to ask.
@@ -181,10 +172,33 @@ public class ZoneAppender {
 	 * Appends the zones, having been told the caller has shown the user what they
 	 * will share.
 	 *
+	 * <p>Appends {@code newRealZones} new zones to the current ORAS workspace, plus
+	 * enough spare slots to raise the total to M = the next multiple of 4, so it
+	 * matches the {@link ctrmap.formats.codepatch.ZoneLimitPatch} code patch for
+	 * the same N. All new zones (real + spare) are cloned from {@code srcIndex};
+	 * the caller turns the real ones into their own maps afterwards. The GARC is
+	 * NOT rewritten here - Pack Workspace must run immediately after, and only one
+	 * append is allowed per pack cycle.
+	 *
+	 * <p>Generate the paired code patch with
+	 * {@code ZoneLimitPatch.buildIPS(newRealZones, code)} against the user's own code.bin and deploy
+	 * the resulting code.ips (Azahar: load/mods/&lt;titleid&gt;/exefs/; Luma: luma/titles/&lt;titleid&gt;/).
+	 *
 	 * @param acceptShared true when the user has SEEN {@link #sharedWarning} and
 	 *        chosen to go on. False refuses, with that sentence.
 	 */
 	public static AppendResult appendZones(int newRealZones, int srcIndex, boolean acceptShared) throws IOException {
+		//ONE UNIT FOR THE WHOLE APPEND (F040, F227): the map fork staged megabytes of regions and
+		//matrices before the area fork checked its id budget, so running out of area ids left
+		//them all behind with nothing pointing at them - and any later refusal did the same
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Add zones", Workspace.session())) {
+			AppendResult r = appendZonesWrites(newRealZones, srcIndex, acceptShared);
+			unit.commit();
+			return r;
+		}
+	}
+
+	private static AppendResult appendZonesWrites(int newRealZones, int srcIndex, boolean acceptShared) throws IOException {
 		java.util.List<ZoneResource> stillShared = sharedAfterAppend();
 		//asked BEFORE anything is written, like the area budget: a game folder with no
 		//STORYTEXT archive is a real situation, and finding out at the fork would leave
@@ -221,11 +235,15 @@ public class ZoneAppender {
 			throw new IOException("No workspace is loaded (ZoneData archive unavailable).");
 		}
 		int oldCount = ZoneTables.zoneCount(garc);            // current zone count (master's GARC index)
-		int m = ctrmap.formats.codepatch.ZoneLimitPatch.masterIndex(newRealZones);
-		int addCount = m - oldCount;
-		if (oldCount != ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES) {
-			throw new IOException("ZoneData already has " + oldCount + " zones; the code patch assumes a stock 536-zone base. Revert first.");
+		//GROWS FROM WHAT IS THERE (F039): a game a previous append grew is grown again - master and
+		//EN move up once more - rather than refused until every added zone was removed
+		int m;
+		try {
+			m = ctrmap.formats.codepatch.ZoneLimitPatch.masterIndexFrom(oldCount, newRealZones);
+		} catch (IllegalArgumentException cannot) {
+			throw new IOException("Cannot add " + newRealZones + " zone(s) here: " + cannot.getMessage() + ".", cannot);
 		}
+		int addCount = m - oldCount;
 		if (srcIndex < 0 || srcIndex >= oldCount) {
 			throw new IOException("Source zone " + srcIndex + " out of range (0.." + (oldCount - 1) + ").");
 		}
@@ -235,17 +253,14 @@ public class ZoneAppender {
 			throw new IOException("An appended zone is already pending. Pack the workspace before adding more.");
 		}
 		File srcFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, srcIndex);
-		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, oldCount);
-		if (srcFile == null || masterFile == null) {
+		if (srcFile == null) {
 			throw new IOException("Could not extract the required ZoneData files from the workspace.");
 		}
-		// Master respects saved zone-header edits via the workspace file, but fall
-		// back to the authoritative GARC bytes if it is the wrong structure (a
-		// reverted single-zone append can leave a grown-master artifact behind).
-		byte[] masterBytes = Files.readAllBytes(masterFile.toPath());
-		if (masterBytes.length != oldCount * ZoneCloner.ZONE_HEADER_SIZE) {
-			masterBytes = garc.getDecompressedEntry(oldCount);
-		}
+		// Through the one reader (F013): the staged table when it is right, the archive's when
+		// the workspace holds a stale extraction (a reverted single-zone append can leave a
+		// grown-master artifact behind) - and a refusal for a STAGED table of the wrong size,
+		// which this used to replace with the archive's copy, dropping the edit
+		byte[] masterBytes = MasterTable.read(Workspace.session()).bytes();
 		// EN pack source: prefer a PENDING encounter edit (persisted workspace file
 		// that validates - the encounter editor writes those), else the GARC. Never
 		// trust a non-persisted extraction file: a stale one in the EN slot (from
@@ -274,7 +289,9 @@ public class ZoneAppender {
 		// too and then BLANKED: a slot nobody asked for opens empty rather than as a
 		// second copy of the donor. Up to 1.0.1 they kept the donor map instead, which
 		// is what CtrmapMainframe.repairSharedPaddingZones exists to undo.
-		GeometryForker.forkAppendedZones(p.newZos, p.master, oldCount, newRealZones);
+		//the grown table as the forkers repoint it: the same bytes, asked and set through the one class
+		MasterTable grown = MasterTable.detached(p.master, p.newCount);
+		GeometryForker.forkAppendedZones(p.newZos, grown, oldCount, newRealZones);
 
 		// ...and its OWN AREA, which is the atmosphere, the water animations, the prop
 		// registry and the NPC models. Sharing one meant a fog edit in a new zone
@@ -291,7 +308,7 @@ public class ZoneAppender {
 		for (int i = 0; i < addCount; i++) {
 			created[i] = oldCount + i;
 		}
-		AreaForker.forkAppendedAreas(p.newZos, p.master, created);
+		AreaForker.forkAppendedAreas(p.newZos, grown, created);
 
 		// ...and its own STORY TEXT, so writing dialogue for a new zone stops rewriting
 		// the donor's. Copied rather than emptied: the zone's SCRIPT cannot be forked
@@ -299,26 +316,24 @@ public class ZoneAppender {
 		// events, and those ask for line numbers. An empty text file under a script that
 		// wants line 12 misbehaves in game; a copy keeps the pair consistent, and
 		// independence is what this is for, not emptiness.
-		TextForker.forkAppendedTexts(Workspace.session(), p.newZos, p.master, created);
+		TextForker.forkAppendedTexts(Workspace.session(), p.newZos, grown, created);
 
-		if (pendingZoneDataOverrides == null) {
-			pendingZoneDataOverrides = new HashMap<>();
-		}
+		WorkspaceSession session = Workspace.session();
 		// new ZOs occupy entries oldCount..m-1 (decompressed on disk, LZ11 on pack)
 		for (int i = 0; i < addCount; i++) {
 			File f = new File(dir, String.valueOf(oldCount + i));
-			Files.write(f.toPath(), p.newZos[i]);
+			WorkspaceUnit.write(f, p.newZos[i]);
 			Workspace.addPersist(f);
-			pendingZoneDataOverrides.put(oldCount + i, Boolean.TRUE);
+			session.registerPendingCompression(ArchiveType.ZONE_DATA, oldCount + i, true);
 		}
 		// master table shifts to entry m, EN to entry m+1 (both uncompressed)
 		File masterOut = new File(dir, String.valueOf(m));
-		Files.write(masterOut.toPath(), p.master);
-		Files.write(enOut.toPath(), p.en);
+		WorkspaceUnit.write(masterOut, p.master);
+		WorkspaceUnit.write(enOut, p.en);
 		Workspace.addPersist(masterOut);
 		Workspace.addPersist(enOut);
-		pendingZoneDataOverrides.put(m, Boolean.FALSE);
-		pendingZoneDataOverrides.put(m + 1, Boolean.FALSE);
+		session.registerPendingCompression(ArchiveType.ZONE_DATA, m, false);
+		session.registerPendingCompression(ArchiveType.ZONE_DATA, m + 1, false);
 
 		AppendResult r = new AppendResult();
 		r.shared = stillShared;
@@ -327,32 +342,8 @@ public class ZoneAppender {
 		r.realZones = newRealZones;
 		r.spareZones = addCount - newRealZones;
 		r.newZoneCount = m;
+		r.patchZones = m - ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES;
 		return r;
-	}
-
-	/**
-	 * Hands the compression overrides of a pending append to the pack flow
-	 * and clears them (they apply to exactly one packDirectory call).
-	 * Returns null when no append is pending - packDirectory accepts that.
-	 */
-	/**
-	 * Registers a pending ZoneData compression override.
-	 *
-	 * <p>Its four siblings have had one since they were written; this one did not,
-	 * because nothing outside the appender ever added to the map. A pack that throws
-	 * now has to put the drained overrides BACK, and that needs a door in.
-	 */
-	public static void registerPendingZoneData(int index, boolean compressed) {
-		if (pendingZoneDataOverrides == null) {
-			pendingZoneDataOverrides = new HashMap<>();
-		}
-		pendingZoneDataOverrides.put(index, compressed);
-	}
-
-	public static Map<Integer, Boolean> consumePendingZoneDataOverrides() {
-		Map<Integer, Boolean> m = pendingZoneDataOverrides;
-		pendingZoneDataOverrides = null;
-		return m;
 	}
 
 	/**
@@ -434,12 +425,6 @@ public class ZoneAppender {
 	}
 
 	/**
-	 * Like {@link #rebuildEN} but appends {@code appendCount} empty ("no wild
-	 * data") blobs at once - used when adding several zones in one shot. Every
-	 * appended offset equals the (unchanged) data end, so the new blobs are
-	 * zero-length. appendCount 0 reproduces the input byte-for-byte.
-	 */
-	/**
 	 * The EN pack with only its first {@code keepCount} blobs - the mirror of
 	 * {@link #rebuildENMulti}, and the half that was missing.
 	 *
@@ -485,6 +470,12 @@ public class ZoneAppender {
 		return out;
 	}
 
+	/**
+	 * Like {@link #rebuildEN} but appends {@code appendCount} empty ("no wild
+	 * data") blobs at once - used when adding several zones in one shot. Every
+	 * appended offset equals the (unchanged) data end, so the new blobs are
+	 * zero-length. appendCount 0 reproduces the input byte-for-byte.
+	 */
 	public static byte[] rebuildENMulti(byte[] en, int expectedCount, int appendCount) {
 		if (appendCount < 0) {
 			throw new IllegalArgumentException("appendCount must be >= 0");

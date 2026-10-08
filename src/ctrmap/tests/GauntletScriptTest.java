@@ -76,7 +76,7 @@ public class GauntletScriptTest {
 				}
 				cfg.loseWhiteout = true;
 				List<Integer> before = ZoneScriptAnalyzer.listScriptIds(s);
-				int newId = GauntletScriptWizard.addChallengeScript(s, cfg);
+				int newId = GauntletScriptWizard.addChallengeScript(NpcScriptGateTest.ORAS, s, cfg);
 				byte[] out = s.getScriptBytes();
 
 				GFLPawnScript re = new GFLPawnScript(out);
@@ -108,7 +108,7 @@ public class GauntletScriptTest {
 						big.trainerIds[i] = 51 + i;
 					}
 					big.bpPerWin = 1;
-					int bigId = GauntletScriptWizard.addChallengeScript(s2, big);
+					int bigId = GauntletScriptWizard.addChallengeScript(NpcScriptGateTest.ORAS, s2, big);
 					GFLPawnScript re2 = new GFLPawnScript(s2.getScriptBytes());
 					re2.decompressThis();
 					ZoneScriptAnalyzer.Dispatch d2 = ZoneScriptAnalyzer.findDispatch(re2);
@@ -133,8 +133,6 @@ public class GauntletScriptTest {
 		}
 	}
 
-	/** Walks the case body to its final RETN, asserting natives, branch and
-	 *  CASETBL integrity, and the trainer-id push constants. */
 	/**
 	 * The subroutine a new dispatch case runs, asserting on the way that the
 	 * case is entered the way the engine requires: its target is the retail
@@ -156,6 +154,8 @@ public class GauntletScriptTest {
 		return sub;
 	}
 
+	/** Walks the case body to its final RETN, asserting natives, branch and
+	 *  CASETBL integrity, and the trainer-id push constants. */
 	static void verifyBody(GFLPawnScript re, PawnInstruction start, int[] mustCall, int[] trainerIds) {
 		int gi = idxOf(re.instructions, start);
 		if (gi < 0) {

@@ -96,9 +96,17 @@ public final class VaultUi {
 	 * which is the part that has historically been missed here.
 	 */
 	public static Vault.SealResult offer(Component parent, File dumpRoot, long dumpBytes) {
-		File entry = Vault.entryDir(dumpRoot, null);
+		File entry = Vault.entryFor(dumpRoot);
 		if (Vault.isSealed(entry)) {
-			return null;                   // already have one; say nothing, ask nothing
+			VaultManifest existing = VaultManifest.read(entry);
+			String why = existing == null ? "The backup there cannot be read." : Vault.mismatch(existing, dumpRoot);
+			if (why.isEmpty()) {
+				return null;               // this dump's backup is there; say nothing, ask nothing
+			}
+			//SAID, NOT SKIPPED (F121): silence here told the second of a version pair it was backed up
+			Ui.error(parent, "This game folder has NOT been backed up.\n\nThe vault holds a backup under"
+					+ " the same name, and it may not be this dump's:\n" + why, "Backup not kept");
+			return null;
 		}
 		if (Vault.isInterrupted(entry)) {
 			Ui.message(parent,
@@ -139,14 +147,21 @@ public final class VaultUi {
 	 * <p>Restoring everything discards every edit made to the dump since it was
 	 * sealed, which is exactly why {@link Vault#restoreOne} exists and why this
 	 * says so before doing anything. Returns true when the game was restored.
+	 *
+	 * @param open the session open now, or null; when it is over {@code targetRoot}, its archives
+	 * are re-read after the restore (F218)
 	 */
-	public static boolean restoreEverything(Component parent, File entry, File targetRoot) {
+	public static boolean restoreEverything(Component parent, File entry, File targetRoot,
+			ctrmap.WorkspaceSession open) {
 		VaultManifest man = read(entry);
 		if (man == null) {
 			Ui.error(parent, Vault.isInterrupted(entry)
 					? "The backup for this game was never finished, so it cannot be restored from."
 					: "There is no backup of this game to restore from.",
 					"Nothing to restore");
+			return false;
+		}
+		if (saidDamaged(parent, entry)) {
 			return false;
 		}
 		int r = Ui.confirm(parent,
@@ -164,6 +179,7 @@ public final class VaultUi {
 			return false;
 		}
 		List<String> bad = Vault.restoreAll(entry, targetRoot, null);
+		rewritten(open, targetRoot);   //whole or part, files were put back under the open game
 		if (bad.isEmpty()) {
 			Ui.message(parent, "The game folder has been put back as it was when the backup was taken.",
 					"Restored", JOptionPane.INFORMATION_MESSAGE);
@@ -177,9 +193,15 @@ public final class VaultUi {
 	}
 
 	/** Puts one file back, reporting either way. Returns true when it landed. */
-	public static boolean restoreOne(Component parent, File entry, String relPath, File targetRoot) {
+	public static boolean restoreOne(Component parent, File entry, String relPath, File targetRoot,
+			ctrmap.WorkspaceSession open) {
+		relPath = Vault.key(relPath);   //said as the backup keys it, whatever was typed (F155)
+		if (saidDamaged(parent, entry)) {
+			return false;
+		}
 		String why = Vault.restoreOne(entry, relPath, targetRoot);
 		if (why.isEmpty()) {
+			rewritten(open, targetRoot);
 			Ui.message(parent, relPath + " has been put back as it was when the backup was taken."
 					+ "\n\nNothing else in the game folder was touched.",
 					"Restored " + relPath, JOptionPane.INFORMATION_MESSAGE);
@@ -187,6 +209,59 @@ public final class VaultUi {
 		}
 		Ui.error(parent, why, "Could not restore " + relPath);
 		return false;
+	}
+
+	/**
+	 * Files were put back into {@code targetRoot}: when that is the open game's folder, the game's
+	 * archive handles are re-read and everything kept from them goes (F218). A restore wrote the game
+	 * folder under the open session and passed no reload, so the session kept reading the old entry
+	 * tables over the restored files, and every answer it had kept from them.
+	 */
+	static void rewritten(ctrmap.WorkspaceSession open, File targetRoot) {
+		if (open != null && open.gameDir() != null
+				&& open.gameDir().getAbsoluteFile().equals(targetRoot.getAbsoluteFile())) {
+			open.archivesRewritten();
+		}
+	}
+
+	/**
+	 * Checks the backup against its own record before anything is restored from it, and says so when
+	 * it has changed (F140): rot was found only by the restore, after it had written. The cheap
+	 * check - sizes, and digests where those disagree - so a gigabyte is not read to ask.
+	 *
+	 * @return true when it was damaged and the user was told; nothing is restored then
+	 */
+	static boolean saidDamaged(Component parent, File entry) {
+		List<Vault.Drift> drift = Vault.verify(entry, false);
+		if (drift.isEmpty()) {
+			return false;
+		}
+		Ui.error(parent, "The backup has changed since it was taken, so nothing was restored from it:\n\n"
+				+ join(drift, 8) + "\n\nRe-run the setup wizard against an unmodified dump to take a fresh one.",
+				"Backup damaged");
+		return true;
+	}
+
+	/**
+	 * Checks this game's backup when its workspace opens, and says when it has changed (F140) -
+	 * found then, rather than at the moment of need, as the vault plan asked. A backup that is not
+	 * this dump's (F121) is left alone: it is checked when it is someone's.
+	 *
+	 * @return what changed; empty when nothing did, or there is no backup of this dump
+	 */
+	public static List<Vault.Drift> checkOnOpen(Component parent, File gameDir) {
+		File entry = Vault.entryFor(gameDir);
+		VaultManifest man = Vault.isSealed(entry) ? VaultManifest.read(entry) : null;
+		if (man == null || !Vault.mismatch(man, gameDir).isEmpty()) {
+			return java.util.Collections.emptyList();
+		}
+		List<Vault.Drift> drift = Vault.verify(entry, false);
+		if (!drift.isEmpty()) {
+			Ui.message(parent, "The pristine backup of this game has changed since it was taken:\n\n" + join(drift, 8)
+					+ "\n\nIt cannot be trusted to restore from. Re-run the setup wizard against an unmodified"
+					+ " dump to take a fresh one.", "Backup changed", JOptionPane.WARNING_MESSAGE);
+		}
+		return drift;
 	}
 
 	static VaultManifest read(File entry) {
@@ -198,7 +273,7 @@ public final class VaultUi {
 		return null;
 	}
 
-	static String join(List<String> xs, int max) {
+	static String join(List<?> xs, int max) {
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < xs.size() && i < max; i++) {
 			sb.append("  ").append(xs.get(i)).append('\n');

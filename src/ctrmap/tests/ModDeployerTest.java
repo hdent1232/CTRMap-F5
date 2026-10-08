@@ -49,11 +49,14 @@ public class ModDeployerTest {
 	static int fails = 0;
 
 	public static void main(String[] args) throws Exception {
+		//needs no dump: the game is two archives written by hand
+		anArchiveBackToRetailIsTakenOutOfTheMod();
+		whereTheModGoes();
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump.getAbsolutePath());
-			System.out.println("ALL PASS");
-			return;
+			Skip.section("no dump at " + dump.getAbsolutePath());
+			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
+			System.exit(fails == 0 ? 0 : 1);
 		}
 
 		whatCountsAsWritable();
@@ -68,7 +71,6 @@ public class ModDeployerTest {
 		parkingIsAReversibleMove(modRoot);
 		isDeployedNeedsADirectoryWithFilesInIt(modRoot);
 		contentDiffIsByDecompressedBytes();
-		whereTheModGoes();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
@@ -100,6 +102,63 @@ public class ModDeployerTest {
 		again.clear();
 		check(ModDeployer.allWritableArchives().size() == 17,
 				"the list handed out is a copy; clearing it does not empty the next one");
+	}
+
+	/**
+	 * F021: deploy only ever added. An archive shipped once and since put back to retail was
+	 * reported "unchanged, skipped" while the modified copy shipped last time stayed in the mod,
+	 * and the game kept loading it. Now that copy is taken out of the load path - moved aside,
+	 * never deleted - and said.
+	 */
+	private static void anArchiveBackToRetailIsTakenOutOfTheMod() throws Exception {
+		System.out.println("--- an archive back to retail is taken out of the mod, and kept beside it");
+		Workspace.reset();
+		File ws = Scratch.dir("ctrmap_deploy_retail_ws");
+		File game = Scratch.dir("ctrmap_deploy_retail_game");
+		try {
+			ctrmap.tests.Sessions.bare(ws, game, GameType.ORAS);
+			Workspace.GAMEDIR_PATH = game.getAbsolutePath();
+			String rel = Workspace.getArchivePath(ArchiveType.ZONE_DATA, Workspace.game());
+			File live = new File(Workspace.GAMEDIR_PATH + rel);
+			File orig = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
+			live.getParentFile().mkdirs();
+			orig.getParentFile().mkdirs();
+			HandedGameTest.writeGarc(live, "zone0".getBytes("US-ASCII"), "master".getBytes("US-ASCII"));
+			HandedGameTest.writeGarc(orig, "zone0".getBytes("US-ASCII"), "master".getBytes("US-ASCII"));
+			File modRoot = new File(Scratch.dir("ctrmap_deploy_retail_mods"), "mods" + File.separator + "000400000011C400");
+			File shipped = new File(new File(modRoot, "romfs").getAbsolutePath() + rel);
+			shipped.getParentFile().mkdirs();
+			byte[] old = "an edited zone archive an earlier deploy shipped".getBytes("US-ASCII");
+			Files.write(shipped.toPath(), old);
+
+			ModDeployer.Result r = ModDeployer.deploy(modRoot, null);
+			check(r.deployed.isEmpty() && r.unchanged == 1, "the archive matches retail, so nothing is shipped ("
+					+ r.deployed + ", " + r.unchanged + " unchanged)");
+			check(!shipped.exists(), "and the copy an earlier deploy left in the mod is no longer in the load path");
+			check(r.removed.size() == 1 && r.removed.get(0).startsWith(rel), "and the result says it was taken out " + r.removed);
+			File kept = new File(new File(ModDeployer.removedRoot(modRoot), "romfs").getAbsolutePath() + rel);
+			check(kept.isFile() && Arrays.equals(Files.readAllBytes(kept.toPath()), old),
+					"and it was moved aside whole, not deleted: " + kept);
+			check(!kept.getAbsolutePath().startsWith(modRoot.getAbsolutePath() + File.separator),
+					"outside the mod folder the emulator loads");
+
+			ModDeployer.Result again = ModDeployer.deploy(modRoot, null);
+			check(again.removed.isEmpty() && again.skipped.isEmpty(), "a second deploy has nothing left to take out " + again.removed);
+
+			Files.write(shipped.toPath(), "a second stale copy".getBytes("US-ASCII"));
+			ModDeployer.deploy(modRoot, null);
+			check(kept.isFile() && Arrays.equals(Files.readAllBytes(kept.toPath()), old)
+					&& new File(kept.getPath() + ".1").isFile(),
+					"and a second copy set aside never overwrites the first");
+
+			HandedGameTest.writeGarc(live, "zone0 edited".getBytes("US-ASCII"), "master".getBytes("US-ASCII"));
+			ModDeployer.Result edited = ModDeployer.deploy(modRoot, null);
+			check(edited.deployed.equals(Arrays.asList(rel)) && edited.removed.isEmpty() && shipped.isFile(),
+					"an archive that differs from retail is still shipped, and nothing is taken out " + edited.deployed);
+		} finally {
+			Workspace.reset();
+			Workspace.GAMEDIR_PATH = null;
+		}
 	}
 
 	/** Nothing edited: nothing copied, and not even a romfs folder made. */
@@ -394,7 +453,7 @@ public class ModDeployerTest {
 					"...while an archive that reads whole still compares equal to itself,"
 					+ " or this refuses everything and deploys the world");
 		} else {
-			System.out.println("  skip: no readable archive to cut - the"
+			Skip.section("no readable archive to cut - the"
 					+ " truncated-vs-truncated case needs a real one");
 		}
 
@@ -405,11 +464,16 @@ public class ModDeployerTest {
 				"a real archive and an unreadable one compare unequal, so the unreadable one gets shipped");
 	}
 
-	/** The folder a mod is deployed into, and the title it is named for. */
-	private static void whereTheModGoes() {
+	/**
+	 * The folder a mod is deployed into, and the title it is named for: the one the dump says, or a
+	 * question - never the version pair's first, which sent an Alpha Sapphire or Y mod into Omega
+	 * Ruby's or X's folder, where it never loads (F238). Needs no dump: the folders are made here.
+	 */
+	private static void whereTheModGoes() throws IOException {
+		System.out.println("--- the title a mod is named for is the dump's own (F238)");
 		String appdata = System.getenv("APPDATA");
 		if (appdata == null) {
-			System.out.println("  skip: no APPDATA on this machine, so the Azahar path cannot be checked");
+			Skip.section("no APPDATA on this machine, so the Azahar path cannot be checked");
 		} else {
 			File root = ModDeployer.azaharModRoot("0004000000123456");
 			check(root != null && root.equals(new File(appdata + File.separator + "Azahar"
@@ -418,29 +482,58 @@ public class ModDeployerTest {
 		}
 
 		String heldPath = Workspace.GAMEDIR_PATH;
-		//the open game used to be a static this test assigned; it is a session
-		//now, so "the open game is XY" is said by installing an XY session over
-		//the same folders and putting the scratch one back afterwards
 		WorkspaceSession heldSession = Workspace.session();
+		File base = Scratch.dir("ctrmap_titles");
 		try {
-			Workspace.GAMEDIR_PATH = "C:" + File.separator + "dumps" + File.separator + "abcdef0123456789";
+			File named = new File(base, "abcdef0123456789");
+			File plain = new File(base, "RomFS");
+			File inTitle = new File(new File(base, "000400000011C500"), "romfs");
+			File besideExheader = new File(new File(base, "my as dump"), "romfs");
+			for (File d : new File[]{named, plain, inTitle, besideExheader}) {
+				d.mkdirs();
+			}
+			byte[] exheader = new byte[0x800];
+			long alphaSapphire = 0x000400000011C500L;
+			for (int i = 0; i < 8; i++) {
+				exheader[0x200 + i] = (byte) (alphaSapphire >>> (8 * i));
+			}
+			Files.write(new File(besideExheader.getParentFile(), "exheader.bin").toPath(), exheader);
+
+			Sessions.bare(base, plain, GameType.ORAS);
+			Workspace.GAMEDIR_PATH = named.getPath();
 			check("ABCDEF0123456789".equals(ModDeployer.guessTitleId()),
-					"a RomFS folder named like a title id is used as one, upper-cased: "
-					+ ModDeployer.guessTitleId());
-			Workspace.GAMEDIR_PATH = "C:" + File.separator + "dumps" + File.separator + "my oras dump";
-			Sessions.bare(heldSession.workspaceDir(), heldSession.gameDir(), GameType.ORAS);
-			check("000400000011C400".equals(ModDeployer.guessTitleId()),
-					"a folder named anything else falls back to the stock Omega Ruby id: "
-					+ ModDeployer.guessTitleId());
-			Sessions.bare(heldSession.workspaceDir(), heldSession.gameDir(), GameType.XY);
-			check("0004000000055D00".equals(ModDeployer.guessTitleId()),
-					"and to the stock X id for XY: " + ModDeployer.guessTitleId());
+					"control: a RomFS folder named like a title id is used as one, upper-cased: " + ModDeployer.guessTitleId());
+			Workspace.GAMEDIR_PATH = inTitle.getPath();
+			check("000400000011C500".equals(ModDeployer.guessTitleId()),
+					"a romfs inside a folder named by Alpha Sapphire's id is Alpha Sapphire: " + ModDeployer.guessTitleId());
+			Workspace.GAMEDIR_PATH = besideExheader.getPath();
+			check("000400000011C500".equals(ModDeployer.guessTitleId()),
+					"and so is one whose ExHeader says so, in a folder named anything: " + ModDeployer.guessTitleId());
+			Workspace.GAMEDIR_PATH = plain.getPath();
+			check(ModDeployer.guessTitleId() == null,
+					"a dump that does not say is not Omega Ruby's - it was 000400000011C400 for every one: " + ModDeployer.guessTitleId());
+			String[] asked = ModDeployer.titleChoices(null);
+			check(asked.length == 3 && asked[0].equals(ModDeployer.PICK_VERSION)
+					&& "000400000011C400".equals(ModDeployer.titleIdIn(asked[1])) && "000400000011C500".equals(ModDeployer.titleIdIn(asked[2])),
+					"so Deploy asks, offering both versions with neither picked: " + Arrays.toString(asked));
+			check(ModDeployer.titleIdIn(asked[0]) == null && ModDeployer.azaharModRoot(ModDeployer.titleIdIn(asked[0])) == null,
+					"and the question itself names no folder");
+			check(Arrays.equals(ModDeployer.titleChoices("000400000011C500"), new String[]{"000400000011C500"}),
+					"while a title the dump said is the only choice");
+			Sessions.bare(base, plain, GameType.XY);
+			asked = ModDeployer.titleChoices(ModDeployer.guessTitleId());
+			check(ModDeployer.guessTitleId() == null && asked.length == 3 && asked[2].startsWith("0004000000055E00"),
+					"an X/Y dump that does not say is asked about too, Y offered: " + Arrays.toString(asked));
 			Workspace.GAMEDIR_PATH = null;
-			check("0004000000055D00".equals(ModDeployer.guessTitleId()),
-					"with no game folder at all it still names a title: " + ModDeployer.guessTitleId());
+			check(ModDeployer.guessTitleId() == null, "and with no game folder at all it names no title");
+			String window = new String(Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()), "UTF-8");
+			check(window.contains("new javax.swing.JComboBox<>(ModDeployer.titleChoices(titleId))")
+					&& !window.contains("new javax.swing.JTextField(titleId)"),
+					"the Deploy dialog offers those choices, not a box pre-filled with one id");
 		} finally {
 			Workspace.GAMEDIR_PATH = heldPath;
 			Workspace.install(heldSession);
+			Scratch.deleteTree(base);
 		}
 	}
 

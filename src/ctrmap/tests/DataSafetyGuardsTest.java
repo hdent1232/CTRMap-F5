@@ -120,6 +120,9 @@ public class DataSafetyGuardsTest {
 	/** A SwingWorker completion hook; the same shape whatever the class extends. */
 	private static final Pattern DONE = Pattern.compile("void done\\(\\)\\s*\\{");
 
+	/** A worker held in a local: {@code SwingWorker<..> name = new SwingWorker<..>() {}. */
+	private static final Pattern WORKER_VAR = Pattern.compile("SwingWorker<[^=;]*>\\s+(\\w+)\\s*=\\s*new\\s+SwingWorker\\b");
+
 	public static void main(String[] args) throws Exception {
 		//FIRST statement, before any AWT class is loaded. Three checks below
 		//drive a real LoadingDialog - the Builder's add file, the zone that did
@@ -155,7 +158,7 @@ public class DataSafetyGuardsTest {
 	/** A GARC must detect that its file moved underneath it. */
 	static void staleArchive(File src) throws Exception {
 		if (!src.isFile()) {
-			System.out.println("  skip: no GARC at " + src);
+			Skip.section("no GARC at " + src);
 			return;
 		}
 		File tmp = File.createTempFile("ctrmap_stale", ".garc");
@@ -186,7 +189,7 @@ public class DataSafetyGuardsTest {
 	 */
 	static void lockedArchive(File src) throws Exception {
 		if (!src.isFile()) {
-			System.out.println("  skip: no GARC at " + src);
+			Skip.section("no GARC at " + src);
 			return;
 		}
 		File root = Files.createTempDirectory("ctrmap_lock").toFile();
@@ -258,15 +261,13 @@ public class DataSafetyGuardsTest {
 		check(w.isUnset(), "a new warp starts with no destination");
 		check(w.targetZone != 0, "a new warp does NOT default to zone 0");
 
-		ZoneEntities e = null;
-		try {
-			e = new ZoneEntities(new byte[]{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
-		} catch (RuntimeException ignore) {
-		}
-		if (e == null) {
-			System.out.println("  skip: could not build an empty ZoneEntities to assemble");
-			return;
-		}
+		//AN EMPTY ZONE'S ENTITIES, BUILT WHOLE (F144). Twelve zero bytes stopped being a zone when the
+		//reader learnt to refuse a script it cannot read (F149); the swallowed exception and the skip
+		//line after it then hid this check on every run, saying only that it had not run.
+		byte[] amx = HandedGameTest.amx();
+		byte[] blob = new byte[12 + amx.length];
+		System.arraycopy(amx, 0, blob, 12, amx.length);
+		ZoneEntities e = new ZoneEntities(blob);
 		e.warps.add(w);
 		try {
 			e.assembleData();
@@ -289,14 +290,14 @@ public class DataSafetyGuardsTest {
 	 */
 	static void warpEditor(File dump) throws Exception {
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump);
+			Skip.section("no dump at " + dump);
 			return;
 		}
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
 		Sessions.bare(Scratch.dir("ctrmap_data_safety_warps"), dump, GameType.ORAS);
 		GARC zo = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.ZONE_DATA, Workspace.game())));
 		GARC texts = new GARC(new File(Workspace.GAMEDIR_PATH + Workspace.getArchivePath(ArchiveType.GAMETEXT, Workspace.game())));
-		LocationNames.load(temp(texts.getDecompressedEntry(LocationNames.gametextIndex(Workspace.session()))));
+		LocationNames.load(Workspace.session(), temp(texts.getDecompressedEntry(LocationNames.gametextIndex(Workspace.session()))));
 		//three zones make a zone table; the editor is told zone 2 is open
 		LoadedZone lz = new LoadedZone();
 		ZoneLoadingPanel zonePnl = new ZoneLoadingPanel(lz, TOOLS, EDITORS, ZONE_EDITORS, NAVI);
@@ -490,12 +491,19 @@ public class DataSafetyGuardsTest {
 		Workspace.install(Sessions.bare(ws, Workspace.session().gameDir(), GameType.ORAS)
 				.withArchive(ArchiveType.ZONE_DATA, zo));
 		Workspace.session().prepareDirectories();
+		//THE ROW LANDS (F013): the master table's row for zone 2 is blanked first, as an edit,
+		//so only the save writing the zone's header into it puts it back
+		ctrmap.MasterTable blanked = ctrmap.MasterTable.read(Workspace.session());
+		blanked.setRow(2, new byte[ctrmap.MasterTable.ROW]);
+		blanked.write();
 		lz.at(2).entities.modified = true;
 		said = ctrmap.Ui.record();
 		try {
 			boolean saved = zonePnl.store(false);
 			check(saved, "the zone panel's Save answers true once every record serialises");
 			check(said.isEmpty(), "and has nothing to complain about: " + said);
+			check(java.util.Arrays.equals(ctrmap.MasterTable.read(Workspace.session()).row(2), lz.at(2).file.getFile(0)),
+					"and the master zone-header table's row for the zone holds the header it saved");
 		} catch (RuntimeException ex) {
 			check(false, "the zone panel's Save threw on a zone that serialises: " + ex);
 		} finally {
@@ -532,13 +540,26 @@ public class DataSafetyGuardsTest {
 	static void workerErrorsSurface(File src) throws Exception {
 		File root = new File(src, "ctrmap");
 		if (!root.isDirectory()) {
-			System.out.println("  skip: no source at " + root);
+			check(false, "no source at " + root);
 			return;
 		}
+		//KNOWN ANSWERS for the starter's half of the rule, before it is believed about the tree
+		String started = "void load() {\n SwingWorker<R, Void> w = new SwingWorker<R, Void>() {\n"
+				+ "  protected void done() { close(); }\n  protected R doInBackground() { return read(); }\n };\n"
+				+ " w.execute();\n";
+		String helper = "R take(SwingWorker<R, ?> w) { try { return w.get(); } catch (Exception ex) { throw fail(ex); } }\n";
+		String deaf = "R take(SwingWorker<R, ?> w) { return null; }\n";
+		int doneAt = started.indexOf("void done");
+		check(takenByStarter(started + " R r = take(w);\n}\n" + helper, doneAt)
+				&& takenByStarter(started + " R r = w.get();\n}\n", doneAt),
+				"control: a worker whose starter takes its result - directly or through a helper - is not silent");
+		check(!takenByStarter(started + "}\n" + helper, doneAt)
+				&& !takenByStarter(started + " R r = take(w);\n}\n" + deaf, doneAt),
+				"control: one started and abandoned, or handed to a helper that never calls get(), is silent");
 		List<String> silent = new ArrayList<>();
 		int workers = silentWorkers(root, silent);
 		check(workers >= 10, workers + " done() bodies found under " + root);
-		check(silent.isEmpty(), "every done() calls get(); missing at " + silent);
+		check(silent.isEmpty(), "every done() calls get(), or its starter takes the result; missing at " + silent);
 	}
 
 	/**
@@ -660,7 +681,7 @@ public class DataSafetyGuardsTest {
 	 */
 	static void builderAddFileFailureSurfaces(File dump) throws Exception {
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump);
+			Skip.section("no dump at " + dump);
 			return;
 		}
 		scratchGameOnce(dump);
@@ -727,7 +748,7 @@ public class DataSafetyGuardsTest {
 	 */
 	static void zoneThatDidNotLoadSaysSo(File dump) throws Exception {
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump);
+			Skip.section("no dump at " + dump);
 			return;
 		}
 		scratchGameOnce(dump);
@@ -766,7 +787,7 @@ public class DataSafetyGuardsTest {
 			}
 			check(!cause.isEmpty(), "a zone header naming area " + noSuchArea
 					+ " cannot fetch its archives: " + cause);
-			lz.table(new Zone[]{null, broken});
+			lz.table(new Zone[]{broken, broken});   //a table has no holes (F208): slot 1 is the one picked
 			fill(pnl, "zoneList", 2);
 			//the editors are showing the zone the user had open
 			Zone open = new Zone(new ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(15)), Workspace.session()), Workspace.game());
@@ -800,6 +821,67 @@ public class DataSafetyGuardsTest {
 	}
 
 	/** Comments are stripped first, so a get() mentioned in one does not count. */
+	/**
+	 * Whether the worker whose {@code done()} starts at {@code doneAt} has its result TAKEN where it
+	 * was started: {@code name.get()} after its body, or {@code name} handed to a method of the same
+	 * file whose body calls {@code get()}.
+	 *
+	 * <p>WHAT GET() IN DONE() IS FOR, said the other way round. A map load's result is taken by the
+	 * code that started it, after the modal dialog it waits behind closes (TileMapPanel.awaitLoad,
+	 * F220), and that is where a failure surfaces and is thrown on; done() only closes the dialog.
+	 * The rule read "done() calls get()" as its text and called that worker silent. A worker held in
+	 * no local, or started and abandoned, still has nothing taking its result and is still reported.
+	 */
+	static boolean takenByStarter(String text, int doneAt) {
+		Matcher var = WORKER_VAR.matcher(text.substring(0, doneAt));
+		String name = null;
+		int declared = -1;
+		while (var.find()) {
+			name = var.group(1);
+			declared = var.end();
+		}
+		if (name == null) {
+			return false;
+		}
+		int open = text.indexOf('{', declared), end = open, depth = 0;
+		do {
+			char ch = text.charAt(end++);
+			depth += ch == '{' ? 1 : ch == '}' ? -1 : 0;
+		} while (depth > 0 && end < text.length());
+		if (open < 0 || end <= doneAt) {
+			return false;                         //this done() is not inside that worker's body
+		}
+		//THE REST OF THE METHOD THAT STARTED IT, and no further: read to a fixed length, a helper's own
+		//`w.get()` further down the file counted as this worker's - the known-answer control caught it
+		int stop = end, d0 = 0;
+		while (stop < text.length()) {
+			char ch = text.charAt(stop);
+			if (ch == '}' && d0 == 0) {
+				break;
+			}
+			d0 += ch == '{' ? 1 : ch == '}' ? -1 : 0;
+			stop++;
+		}
+		String after = text.substring(end, stop);
+		if (Pattern.compile("\\b" + name + "\\.get\\(").matcher(after).find()) {
+			return true;
+		}
+		for (Matcher handed = Pattern.compile("\\b(\\w+)\\(\\s*" + name + "\\s*\\)").matcher(after); handed.find();) {
+			Matcher decl = Pattern.compile("\\b" + handed.group(1) + "\\s*\\([^)]*\\)\\s*(?:throws[^{]*)?\\{").matcher(text);
+			while (decl.find()) {
+				int b = decl.end() - 1, e = b, d = 0;
+				do {
+					char ch = text.charAt(e++);
+					d += ch == '{' ? 1 : ch == '}' ? -1 : 0;
+				} while (d > 0 && e < text.length());
+				if (text.substring(b, e).contains(".get()")) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	static int silentWorkers(File dir, List<String> silent) throws Exception {
 		int n = 0;
 		File[] files = dir.listFiles();
@@ -822,7 +904,7 @@ public class DataSafetyGuardsTest {
 					depth += ch == '{' ? 1 : ch == '}' ? -1 : 0;
 				} while (depth > 0);
 				n++;
-				if (!text.substring(open, end).contains("get()")) {
+				if (!text.substring(open, end).contains("get()") && !takenByStarter(text, m.start())) {
 					silent.add(f.getName() + ":" + text.substring(0, m.start()).split("\n", -1).length);
 				}
 			}
@@ -840,7 +922,7 @@ public class DataSafetyGuardsTest {
 	 */
 	static void matrixEditor(File dump) throws Exception {
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump);
+			Skip.section("no dump at " + dump);
 			return;
 		}
 		//the archives straight from the dump: the form's bound reads FieldData's
@@ -851,7 +933,7 @@ public class DataSafetyGuardsTest {
 		GARC fd = Workspace.getArchive(ArchiveType.FIELD_DATA);
 		GARC mmGarc = Workspace.getArchive(ArchiveType.MAP_MATRIX);
 		if (fd == null || mmGarc == null) {
-			System.out.println("  skip: the dump does not carry FieldData and MapMatrix");
+			check(false, "the dump does not carry FieldData and MapMatrix");
 			return;
 		}
 		int regions = fd.length;
@@ -932,19 +1014,19 @@ public class DataSafetyGuardsTest {
 	 */
 	static void locationNamesLoadThemselves(File dump) throws Exception {
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump);
+			Skip.section("no dump at " + dump);
 			return;
 		}
-		//1. nothing loaded, no workspace: a refusal in words, not an NPE
+		//1. no workspace, so no game to ask: a refusal in words, not an NPE
 		Workspace.reset();
 		Throwable refused = null;
 		try {
-			LocationNames.getLocName(0);
+			LocationNames.getLocName(Workspace.session(), 0);
 		} catch (Throwable t) {
 			refused = t;
 		}
-		check(refused instanceof IllegalStateException && String.valueOf(refused.getMessage()).contains("workspace"),
-				"with no table and no workspace, a name is refused out loud: " + refused);
+		check(refused instanceof IllegalArgumentException && String.valueOf(refused.getMessage()).contains("no game"),
+				"with no workspace, a name is refused out loud: " + refused);
 
 		//2. a table loaded by hand answers, and the next load replaces it
 		Workspace.GAMEDIR_PATH = dump.getAbsolutePath();
@@ -952,11 +1034,11 @@ public class DataSafetyGuardsTest {
 		GARC texts = new GARC(new File(dump.getAbsolutePath()
 				+ Workspace.getArchivePath(ArchiveType.GAMETEXT, Workspace.game())));
 		int table = LocationNames.gametextIndex(Workspace.session());
-		LocationNames.load(temp(texts.getDecompressedEntry(table)));
+		LocationNames.load(Workspace.session(), temp(texts.getDecompressedEntry(table)));
 		int line = -1;
 		String name = null;
 		for (int i = 0; i < 400 && line < 0; i++) {
-			String n = LocationNames.getLocName(i);
+			String n = LocationNames.getLocName(Workspace.session(), i);
 			//a plain name, so the line printed below reads as one
 			if (n != null && n.matches("[A-Za-z][A-Za-z0-9 .'-]+") && !n.equals("NullPointerException")) {
 				line = i;
@@ -973,18 +1055,18 @@ public class DataSafetyGuardsTest {
 			if (b == null || b.length < 16) {
 				continue;
 			}
-			LocationNames.load(temp(b));
-			if (!name.equals(LocationNames.getLocName(line))) {
+			LocationNames.load(Workspace.session(), temp(b));
+			if (!name.equals(LocationNames.getLocName(Workspace.session(), line))) {
 				other = t;
 			}
 		}
 		check(other >= 0, "loading GAMETEXT entry " + other + " instead replaces it: line " + line
-				+ " is now " + LocationNames.getLocName(line));
+				+ " is now " + LocationNames.getLocName(Workspace.session(), line));
 
-		//3. opening a workspace drops the hand-loaded table, and the next name
-		//asked for is read from that workspace on demand
+		//3. opening a workspace is another game, with its own table: the hand-loaded
+		//one went with the session that held it
 		ScratchGame.open(dump);
-		String fromWorkspace = LocationNames.getLocName(line);
+		String fromWorkspace = LocationNames.getLocName(Workspace.session(), line);
 		check(name.equals(fromWorkspace), "after a workspace opens, line " + line + " is its own "
 				+ name + " again, loaded on demand (got " + fromWorkspace + ")");
 	}

@@ -79,25 +79,180 @@ public class SourceSeamTest {
 			System.exit(1);
 		}
 		List<String> violations = new ArrayList<>();
+		//THE MARKER, KNOWN-ANSWER: a scratch source with a home path, once marked in a comment
+		//and once not - the marker was looked for after comments were stripped and never fired
+		File marked = new File(Scratch.dir("ctrmap_seammark"), "Marked.java");
+		String home = "/home/" + "someone" + "/";
+		Files.write(marked.toPath(), ("class Marked {\n\tString a = \"" + home + "x\"; // SEAM-OK: teaching a path\n"
+				+ "\tString b = \"" + home + "y\";\n}\n").getBytes(StandardCharsets.UTF_8));
+		List<String> markLeaks = new ArrayList<>();
+		scan(marked.getParentFile(), markLeaks);
+		boolean markerWorks = markLeaks.size() == 1 && markLeaks.get(0).startsWith("Marked.java:3 ");
+		System.out.println((markerWorks ? "  ok: " : "  FAIL: ") + "a line marked SEAM-OK in its comment is let through and"
+				+ " the unmarked one is not: " + markLeaks);
+		if (!markerWorks) {
+			violations.add("the SEAM-OK control: " + markLeaks);
+		}
+		redirectsSeen = 0;
 		int scanned = scan(new File(root, "ctrmap"), violations);
 		File repo = root.getAbsoluteFile().getParentFile();
 		int texts = scanText(repo, violations);
 		for (String v : violations) {
 			System.out.println("  LEAK: " + v);
 		}
+		if (ALLOWED_REDIRECTS.length > ALLOWED_REDIRECTS_CEILING || redirectsSeen != ALLOWED_REDIRECTS.length) {
+			violations.add("the allowed redirects are " + ALLOWED_REDIRECTS.length + " against a ceiling of "
+					+ ALLOWED_REDIRECTS_CEILING + ", and " + redirectsSeen + " of them are still in the source");
+			System.out.println("  LEAK: " + violations.get(violations.size() - 1));
+		}
 		System.out.println("seam guard: " + scanned + " sources + " + texts + " text files scanned, "
-				+ violations.size() + " leak(s)");
+				+ violations.size() + " leak(s), " + redirectsSeen + " allowed redirect(s)");
 
 		int asking = noApplicationClassAsksWhichGameIsLoaded(classes);
 		int above = noFormatClassReachesAboveItself(classes);
 		int facade = theFacadeDoesNotKnowTheWindow(classes);
 		int toolReach = theToolsDoNotKnowTheWindow(classes);
+		int retyped = noProfileCountIsRetyped(root);
 
-		boolean ok = violations.isEmpty() && asking == 0 && above == 0 && facade == 0 && toolReach == 0;
+		boolean ok = violations.isEmpty() && asking == 0 && above == 0 && facade == 0 && toolReach == 0 && retyped == 0;
 		System.out.println(ok ? "ALL PASS" : "FAILURES PRESENT");
 		if (!ok) {
 			System.exit(1);
 		}
+	}
+
+	// ---------------------------------------------------- the measured-count rule
+
+	/**
+	 * Literals that EQUAL a profile count by coincidence, as {file, value, how many, why}. Argued
+	 * one by one and held to a ceiling, as the askers are: a pixel size is not a record count, but
+	 * the next 280 typed into a form has to be looked at by someone before it joins this list.
+	 */
+	private static final String[][] COINCIDENT_COUNTS = {
+		{"GfEnvPicker.java", "280", "1", "the environment list's preferred width in pixels"},
+		{"IdChooser.java", "280", "1", "the chooser list's preferred width in pixels"},
+		{"TileEditForm.java", "280", "1", "a GroupLayout size in NetBeans' generated initComponents, not hand-edited"},
+		{"ScriptEditor.java", "170", "1", "the blue channel of the pointer column's highlight colour"},
+		{"ZoneLoadingPanel.java", "170", "2", "two GroupLayout sizes in NetBeans' generated initComponents, not hand-edited"},
+	};
+
+	/** Mirrors COINCIDENT_COUNTS.length. */
+	private static final int COINCIDENT_COUNTS_CEILING = 5;
+
+	/**
+	 * No count a game profile answers is typed as a literal outside ctrmap.gamedef (F205).
+	 *
+	 * <p>WHY. The counts were each defined once somewhere and then re-typed beside their own
+	 * name: 536 zones in the window's menus, the zone list's tooltips and two harvesters; 721
+	 * species and 621 moves in both trainer editors; 279 trainer classes; 776 items; 622, 722 and
+	 * 776 as the reference tables' fallbacks. Each is an Omega Ruby / Alpha Sapphire fact that X/Y
+	 * answers differently, and a re-typed copy is the one a correction misses. The seam scan read
+	 * only archive paths, so nothing refused any of them.
+	 *
+	 * <p>THE VALUES ARE ASKED, NOT LISTED: every registered profile's counts - and each maximum
+	 * plus one, the entry count a table of them has - so a count a profile gains is guarded the
+	 * day it is answered. DECIMAL LITERALS, comments stripped, strings kept: a message that says
+	 * "536" has re-typed the count as surely as code has. Hex is not read, measured: the three hex
+	 * literals equal to a count when this was written were a Pawn opcode (twice) and a PICA
+	 * register, and no count in this tree was ever written in hex.
+	 *
+	 * @return the number of violations
+	 */
+	static int noProfileCountIsRetyped(File root) throws Exception {
+		System.out.println("--- no count a game profile answers is re-typed outside it");
+		java.util.TreeMap<Integer, String> counts = new java.util.TreeMap<>();
+		for (ctrmap.gamedef.GameType g : ctrmap.gamedef.GameType.values()) {
+			ctrmap.gamedef.GameProfile p;
+			try {
+				p = ctrmap.gamedef.GameProfile.of(g);
+			} catch (IllegalArgumentException none) {
+				continue;
+			}
+			answered(counts, p.retailZoneCount(), g + " retailZoneCount", false);
+			answered(counts, p.areaTableIndex(), g + " areaTableIndex", false);
+			answered(counts, p.trainerIdMax(), g + " trainerIdMax", true);
+			answered(counts, p.itemIdMax(), g + " itemIdMax", true);
+			answered(counts, p.speciesIdMax(), g + " speciesIdMax", true);
+			answered(counts, p.moveIdMax(), g + " moveIdMax", true);
+			answered(counts, p.trainerClassMax(), g + " trainerClassMax", true);
+		}
+		int fails = 0;
+		boolean asked = counts.containsKey(536) && counts.containsKey(950) && counts.containsKey(622);
+		System.out.println((asked ? "  ok: " : "  FAIL: ") + "control: the profiles were asked - " + counts.size()
+				+ " counts, ORAS's 536 zones, 950 trainer entries and 622 move entries among them");
+		fails += asked ? 0 : 1;
+		List<String> seen = literalCounts(stripComments(
+				"int a = 949; // 721\nString s = \"536 zones\";\nint h = 0x218; float f = 280f; /* 775 */"), counts);
+		boolean reads = seen.equals(java.util.Arrays.asList("1:949", "2:536"));
+		System.out.println((reads ? "  ok: " : "  FAIL: ") + "control: a count in code and one in a string are read; one"
+				+ " in a comment, one in hex and one with a suffix are not: " + seen);
+		fails += reads ? 0 : 1;
+		Map<String, Integer> allowance = new LinkedHashMap<>();
+		for (String[] c : COINCIDENT_COUNTS) {
+			allowance.put(c[0] + ":" + c[1], Integer.parseInt(c[2]));
+		}
+		List<String> retyped = new ArrayList<>();
+		int files = 0;
+		for (File f : DialogSeamTest.javaSources(new File(root, "ctrmap"))) {
+			String path = f.getPath().replace('\\', '/');
+			if (path.contains("/ctrmap/tests/") || path.contains("/ctrmap/gamedef/")) {
+				continue;
+			}
+			files++;
+			for (String hit : literalCounts(stripComments(DialogSeamTest.read(f)), counts)) {
+				int value = Integer.parseInt(hit.substring(hit.indexOf(':') + 1));
+				String key = f.getName() + ":" + value;
+				Integer left = allowance.get(key);
+				if (left != null && left > 0) {
+					allowance.put(key, left - 1);
+				} else {
+					retyped.add(f.getName() + ":" + hit.substring(0, hit.indexOf(':')) + " types " + value + ", which is "
+							+ counts.get(value));
+				}
+			}
+		}
+		List<String> stale = new ArrayList<>();
+		for (Map.Entry<String, Integer> e : allowance.entrySet()) {
+			if (e.getValue() != 0) {
+				stale.add(e.getKey() + " (" + e.getValue() + " fewer)");
+			}
+		}
+		System.out.println((retyped.isEmpty() ? "  ok: " : "  FAIL: ") + "no profile count is typed in any of the " + files
+				+ " application sources outside gamedef" + (retyped.isEmpty() ? "" : " - these are: " + retyped
+				+ ". Ask the profile; if one is a coincidence, argue it in COINCIDENT_COUNTS"));
+		System.out.println((stale.isEmpty() ? "  ok: " : "  FAIL: ") + "every argued coincidence is still there"
+				+ (stale.isEmpty() ? "" : " - not: " + stale + ". Take it out of COINCIDENT_COUNTS"));
+		boolean capped = COINCIDENT_COUNTS.length <= COINCIDENT_COUNTS_CEILING;
+		System.out.println((capped ? "  ok: " : "  FAIL: ") + "the argued coincidences are " + COINCIDENT_COUNTS.length
+				+ " against a ceiling of " + COINCIDENT_COUNTS_CEILING);
+		return fails + retyped.size() + stale.size() + (capped ? 0 : 1);
+	}
+
+	/** Records a profile's answer - and, for a maximum, the entry count one past it - when it gave one. */
+	private static void answered(Map<Integer, String> counts, int value, String what, boolean plusOne) {
+		if (value < 0) {
+			return;
+		}
+		counts.putIfAbsent(value, what);
+		if (plusOne) {
+			counts.putIfAbsent(value + 1, what + " + 1, the entry count");
+		}
+	}
+
+	/** "line:value" for each decimal literal in {@code code} equal to a count. */
+	static List<String> literalCounts(String code, Map<Integer, String> counts) {
+		List<String> out = new ArrayList<>();
+		Pattern lit = Pattern.compile("(?<![\\w.$])\\d+(?![\\w.])");
+		String[] lines = code.split("\n", -1);
+		for (int i = 0; i < lines.length; i++) {
+			java.util.regex.Matcher m = lit.matcher(lines[i]);
+			while (m.find()) {
+				if (m.group().length() < 10 && counts.containsKey(Integer.parseInt(m.group()))) {
+					out.add((i + 1) + ":" + m.group());
+				}
+			}
+		}
+		return out;
 	}
 
 	// ---------------------------------------------------- the game-identity rule
@@ -341,55 +496,6 @@ public class SourceSeamTest {
 	private static final String ASK_TO_KEEP = "askToKeep";
 
 	/**
-	 * No class under {@code ctrmap.formats} may reference
-	 * {@code ctrmap.humaninterface}, {@code ctrmap.CtrmapMainframe},
-	 * {@code ctrmap.Ui}, {@code ctrmap.Workspace}, or {@code ctrmap.Utils}'
-	 * dialog wrapper and its answer: the widgets, the window, the dialogs, the
-	 * global. A format class is handed what it needs and says what happened in
-	 * its return value; it asks nobody anything and looks nothing up.
-	 *
-	 * <h2>Why this rule exists</h2>
-	 * It is the ratchet the decoupling campaign was building towards. Sixteen
-	 * format classes fetched the open game from the global; several opened
-	 * dialogs (a texture-pack import asked "keep the changes?" from inside the
-	 * container write, so no suite could drive the write without a person at
-	 * the keyboard); one read the main window's zone panel. Each was migrated
-	 * under its own suite ({@link GameFilesSeamTest}, {@link HandedGameTest},
-	 * {@link DialogSeamTest}); this is the rule that keeps all of it migrated,
-	 * in one place, for every class under the package at once, including the
-	 * ones nobody has written yet.
-	 *
-	 * <h2>Two kinds of reference</h2>
-	 * A MEMBER reference is a call or a field read: {@code Ui.error(...)},
-	 * {@code Workspace.session()}. A CLASS reference is the name of a type with
-	 * no member behind it: an {@code implements}, a parameter type, a cast.
-	 * {@link ClassFileScanner.ClassFile#refs} holds the first kind and
-	 * {@link ClassFileScanner.ClassFile#classes} the second, and this rule
-	 * asks both, because {@code GRProp implements MapObject} is a real edge
-	 * from the format layer to the widget package and holds not one member. A
-	 * class reference is reported only where no member edge to the same class
-	 * was, so one dialog call reads as one line, not two.
-	 *
-	 * <h2>Why bytecode</h2>
-	 * The same reason as {@link #noApplicationClassAsksWhichGameIsLoaded}: a
-	 * grep for {@code Ui\.error} is defeated by {@code import static
-	 * ctrmap.Ui.error;} followed by a bare {@code error(...)}, and 33 files in
-	 * this tree already static-import a class and use bare names. The class
-	 * file holds {@code invokestatic ctrmap/Ui.error} either way. Proven by
-	 * breaking, both ways: a {@code ctrmap.Ui.error} call added to a container
-	 * class failed here naming the class and the member, and the same call
-	 * through a static import with a bare name failed with the same line.
-	 *
-	 * <h2>The Utils rule</h2>
-	 * Utils is five unrelated helper groups in one file, and the format layer
-	 * legitimately uses the pure ones. So the rule is positive: the ONLY Utils
-	 * members the format layer uses are {@link #PURE_UTILS}, over exactly
-	 * {@link #PURE_UTILS_EDGES} edges. A dialog wrapper that crept back in
-	 * under a helper's name would be one member too many.
-	 *
-	 * @return the number of violations, so the caller can fail the suite
-	 */
-	/**
 	 * The workspace facade names the main window NOWHERE.
 	 *
 	 * <p>{@link ctrmap.Workspace} is where this program keeps the open game.
@@ -489,6 +595,55 @@ public class SourceSeamTest {
 		return found.size();
 	}
 
+	/**
+	 * No class under {@code ctrmap.formats} may reference
+	 * {@code ctrmap.humaninterface}, {@code ctrmap.CtrmapMainframe},
+	 * {@code ctrmap.Ui}, {@code ctrmap.Workspace}, or {@code ctrmap.Utils}'
+	 * dialog wrapper and its answer: the widgets, the window, the dialogs, the
+	 * global. A format class is handed what it needs and says what happened in
+	 * its return value; it asks nobody anything and looks nothing up.
+	 *
+	 * <h2>Why this rule exists</h2>
+	 * It is the ratchet the decoupling campaign was building towards. Sixteen
+	 * format classes fetched the open game from the global; several opened
+	 * dialogs (a texture-pack import asked "keep the changes?" from inside the
+	 * container write, so no suite could drive the write without a person at
+	 * the keyboard); one read the main window's zone panel. Each was migrated
+	 * under its own suite ({@link GameFilesSeamTest}, {@link HandedGameTest},
+	 * {@link DialogSeamTest}); this is the rule that keeps all of it migrated,
+	 * in one place, for every class under the package at once, including the
+	 * ones nobody has written yet.
+	 *
+	 * <h2>Two kinds of reference</h2>
+	 * A MEMBER reference is a call or a field read: {@code Ui.error(...)},
+	 * {@code Workspace.session()}. A CLASS reference is the name of a type with
+	 * no member behind it: an {@code implements}, a parameter type, a cast.
+	 * {@link ClassFileScanner.ClassFile#refs} holds the first kind and
+	 * {@link ClassFileScanner.ClassFile#classes} the second, and this rule
+	 * asks both, because {@code GRProp implements MapObject} is a real edge
+	 * from the format layer to the widget package and holds not one member. A
+	 * class reference is reported only where no member edge to the same class
+	 * was, so one dialog call reads as one line, not two.
+	 *
+	 * <h2>Why bytecode</h2>
+	 * The same reason as {@link #noApplicationClassAsksWhichGameIsLoaded}: a
+	 * grep for {@code Ui\.error} is defeated by {@code import static
+	 * ctrmap.Ui.error;} followed by a bare {@code error(...)}, and 33 files in
+	 * this tree already static-import a class and use bare names. The class
+	 * file holds {@code invokestatic ctrmap/Ui.error} either way. Proven by
+	 * breaking, both ways: a {@code ctrmap.Ui.error} call added to a container
+	 * class failed here naming the class and the member, and the same call
+	 * through a static import with a bare name failed with the same line.
+	 *
+	 * <h2>The Utils rule</h2>
+	 * Utils is five unrelated helper groups in one file, and the format layer
+	 * legitimately uses the pure ones. So the rule is positive: the ONLY Utils
+	 * members the format layer uses are {@link #PURE_UTILS}, over exactly
+	 * {@link #PURE_UTILS_EDGES} edges. A dialog wrapper that crept back in
+	 * under a helper's name would be one member too many.
+	 *
+	 * @return the number of violations, so the caller can fail the suite
+	 */
 	static int noFormatClassReachesAboveItself(File classesRoot) throws Exception {
 		if (!new File(classesRoot, WORKSPACE + ".class").isFile()) {
 			System.out.println("  FAIL: no compiled " + WORKSPACE + ".class under "
@@ -637,11 +792,26 @@ public class SourceSeamTest {
 			//this guard spells the patterns out, so it cannot scan itself
 			boolean isSelf = f.getName().equals("SourceSeamTest.java");
 			n++;
-			String src = stripComments(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
-			String[] lines = src.split("\n", -1);
+			String original = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+			String[] raw = original.split("\n", -1);
+			String[] lines = stripComments(original).split("\n", -1);
 			for (int i = 0; i < lines.length; i++) {
 				String line = lines[i];
-				if (line.contains("SEAM-OK") || isSelf) {
+				if (isSelf) {
+					continue;
+				}
+				if (STREAM_HIJACK.matcher(line).find()) {
+					if (allowedRedirect(f.getName()) != null) {
+						redirectsSeen++;
+					} else {
+						out.add(f.getName() + ":" + (i + 1) + " redirects System.out/err: " + line.trim());
+					}
+				}
+				//THE MARKER IS READ WHERE IT IS WRITTEN: on the line as written, comment and all. It
+				//was looked for after the comments had been stripped, so in a .java file it could
+				//never be found, and the escape the class comment offers did not exist. It covers
+				//the path rules, which is what it was offered for, and not the redirect above.
+				if (i < raw.length && raw[i].contains("SEAM-OK")) {
 					continue;
 				}
 				if (!isTest && !isGamedef && GARC_PATH.matcher(line).find()) {
@@ -654,12 +824,36 @@ public class SourceSeamTest {
 				if (HOME_PATH.matcher(line).find()) {
 					out.add(f.getName() + ":" + (i + 1) + " home directory in a shipped file: " + line.trim());
 				}
-				if (STREAM_HIJACK.matcher(line).find()) {
-					out.add(f.getName() + ":" + (i + 1) + " redirects System.out/err: " + line.trim());
-				}
 			}
 		}
 		return n;
+	}
+
+	/**
+	 * The files allowed to redirect a standard stream, as {file name, why}. The rule exists because
+	 * the script editor swapped both streams into its output box with no finally, and the first
+	 * assembler exception left every later diagnostic going nowhere. A tee that keeps writing to
+	 * the stream it replaced is not that, and one is allowed - by name, with its reason, under a
+	 * ceiling, and only while it is still there to be allowed.
+	 */
+	private static final String[][] ALLOWED_REDIRECTS = {
+		{"ErrorSink.java", "installs a tee on System.err once at startup, before any window: everything still"
+			+ " reaches the stream it went to, and a copy reaches the log file the user can send (F219)."}
+	};
+
+	/** Mirrors ALLOWED_REDIRECTS.length. Raising it is the decision this makes visible. */
+	private static final int ALLOWED_REDIRECTS_CEILING = 1;
+
+	/** How many allowed redirects the scan met - an allowance nobody uses any more is stale. */
+	private static int redirectsSeen;
+
+	private static String allowedRedirect(String fileName) {
+		for (String[] a : ALLOWED_REDIRECTS) {
+			if (a[0].equals(fileName) && a[1] != null && !a[1].trim().isEmpty()) {
+				return a[1];
+			}
+		}
+		return null;
 	}
 
 	/** Removes // and block comments while preserving line numbers and strings. */

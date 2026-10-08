@@ -28,7 +28,8 @@ import javax.swing.SwingUtilities;
  * There is no version of this feature worth having that does not use it.
  *
  * <p>So the preview owns a {@link TileMapPanel} and an {@link H3DRenderingPanel}
- * of its own and calls {@link TileMapPanel#loadRegions} - the same body the
+ * of its own and calls {@link TileMapPanel#readRegions} on its reading thread and
+ * {@link TileMapPanel#showRegions} on the event thread - the same two halves the
  * editor's own load calls, with a null progress dialog, because looking at a
  * zone must not clear the undo history, drop the picked tile or put a modal
  * dialog up.
@@ -44,8 +45,8 @@ public final class ZonePreviewPane extends JPanel {
 
 	private final JPanel middle = new JPanel(new BorderLayout());
 	private final JLabel note = new JLabel(" ");
-	/** The newest request wins: reads run off the EDT and may finish out of order. */
-	private final int[] seq = {0};
+	/** The reads, one at a time off the event thread; only the newest is drawn (F206). */
+	private final NewestOnly requests = new NewestOnly("zone-preview");
 
 	private WorkspaceSession ws;
 	/** The editor's map view, one of our own - built on first use, see below. */
@@ -128,57 +129,111 @@ public final class ZonePreviewPane extends JPanel {
 	 */
 	public void preview(final int zoneIndex) {
 		if (ws == null) {
+			requests.supersede(); //a read still on its way must not paint over this
 			drawn = -1;
 			note.setText("  No game is open, so there is nothing to preview.");
 			return;
 		}
 		if (zoneIndex < 0) {
+			requests.supersede();
 			drawn = -1;
 			note.setText("  No zone selected.");
 			return;
 		}
 		note.setText("  Reading zone " + zoneIndex + "...");
-		final int mine = ++seq[0];
 		final WorkspaceSession reading = ws;
-		Thread t = new Thread(new Runnable() {
-			@Override
-			public void run() {
-				Zone zone = null;
-				try {
-					zone = open(reading, zoneIndex);
-				} catch (Exception ex) {
-					say(mine, "Zone " + zoneIndex + " could not be read: " + ctrmap.Ui.reason(ex), -1);
-					return;
-				}
-				if (zone == null) {
-					say(mine, "Zone " + zoneIndex + " is not in the workspace.", -1);
-					return;
-				}
-				if (mine != seq[0]) {
-					free(zone);
-					return;                        //a newer zone is already being asked for
-				}
-				try {
-					draw(zone, reading);
-				} catch (Exception ex) {
-					free(zone);
-					say(mine, "Zone " + zoneIndex + " could not be drawn: " + ctrmap.Ui.reason(ex), -1);
-					return;
-				}
-				//SAY WHICH PART, not just which map. Three zones reading "area 19, map 12"
-				//over three identical pictures is what was reported; the map id alone cannot
-				//tell them apart, and neither could the picture. The cells are the part that
-				//differs, so they go in the words as well as in the camera - a caption a user
-				//can compare between two rows without trusting their eyes on a small canvas.
-				//...and when the footprint was discarded, say the WHOLE MAP rather than
-				//nothing, so a black or unhelpful preview is explained instead of silent.
-				String where = framed == null ? " - whole map" : " - " + framed.describeCells();
-				say(mine, "Zone " + zoneIndex + " - area " + zone.header.areadataID
-						+ ", map " + zone.header.mapmatrixID + where, zoneIndex);
-			}
-		}, "zone-preview");
-		t.setDaemon(true);
-		t.start();
+		requests.ask(ticket -> fetch(reading, zoneIndex, ticket), this::show, Fetched::free);
+	}
+
+	/** What the reading worker hands the event thread: the zone and its picture, or why there is none. */
+	private static final class Fetched {
+
+		final int zoneIndex;
+		Zone zone;
+		Read picture;
+		String failure;
+
+		Fetched(int zoneIndex) {
+			this.zoneIndex = zoneIndex;
+		}
+
+		void free() {
+			ZonePreviewPane.free(zone);
+		}
+	}
+
+	/** The read half, on the worker: files and parsing only (F220), and no further once superseded. */
+	private static Fetched fetch(WorkspaceSession reading, int zoneIndex, NewestOnly.Ticket ticket) {
+		Fetched f = new Fetched(zoneIndex);
+		try {
+			f.zone = open(reading, zoneIndex);
+		} catch (Exception ex) {
+			f.failure = "Zone " + zoneIndex + " could not be read: " + ctrmap.Ui.reason(ex);
+			return f;
+		}
+		if (f.zone == null) {
+			f.failure = "Zone " + zoneIndex + " is not in the workspace.";
+			return f;
+		}
+		if (!ticket.current()) {
+			return f; //a newer zone is already being asked for: this one is freed, not drawn
+		}
+		try {
+			f.picture = read(f.zone, reading);
+		} catch (Exception ex) {
+			f.failure = "Zone " + zoneIndex + " could not be drawn: " + ctrmap.Ui.reason(ex);
+		}
+		return f;
+	}
+
+	/** What the reading thread hands the event thread: the zone's matrix read into a picture. */
+	private static final class Read {
+
+		final MapMatrix matrix;
+		final ADPropRegistry props;
+		final TileMapPanel.Regions regions;
+
+		Read(MapMatrix matrix, ADPropRegistry props, TileMapPanel.Regions regions) {
+			this.matrix = matrix;
+			this.props = props;
+			this.regions = regions;
+		}
+	}
+
+	/** The read half: the matrix, the registry and the picture - files and parsing only (F220). */
+	private static Read read(Zone zone, WorkspaceSession reading) {
+		MapMatrix mm = new MapMatrix(zone.header.mapmatrix, reading);
+		ADPropRegistry props = new ADPropRegistry(zone.header.areadata, zone.header.propTextures, reading);
+		return new Read(mm, props, TileMapPanel.readRegions(mm, zone.header.worldTextures,
+				zone.header.propTextures, null, null));
+	}
+
+	/** The show half, on the event thread, for the newest request only - NewestOnly hands an older one to free. */
+	private void show(Fetched f) {
+		if (f.failure != null || f.picture == null) {
+			f.free();
+			say(f.failure != null ? f.failure : "Zone " + f.zoneIndex + " was not read.", -1);
+			return;
+		}
+		int zoneIndex = f.zoneIndex;
+		Zone zone = f.zone;
+		try {
+			draw(zone, f.picture);
+		} catch (RuntimeException ex) {
+			f.free();
+			say("Zone " + zoneIndex + " could not be drawn: " + ctrmap.Ui.reason(ex), -1);
+			return;
+		}
+		//SAY WHICH PART, not just which map. Three zones reading "area 19, map 12"
+		//over three identical pictures is what was reported; the map id alone cannot
+		//tell them apart, and neither could the picture. The cells are the part that
+		//differs, so they go in the words as well as in the camera - a caption a user
+		//can compare between two rows without trusting their eyes on a small canvas.
+		//...and when the footprint was discarded, say the WHOLE MAP rather than
+		//nothing, so a black or unhelpful preview is explained instead of silent.
+		String where = framed == null ? " - whole map" : " - " + framed.describeCells();
+		say("Zone " + zoneIndex + " - area " + zone.header.areadataID
+				+ ", map " + zone.header.mapmatrixID + where, zoneIndex);
 	}
 
 	/**
@@ -200,17 +255,15 @@ public final class ZonePreviewPane extends JPanel {
 	}
 
 	/** Hands the zone to the editor's own loader, on our own panel. */
-	private void draw(Zone zone, WorkspaceSession reading) {
-		MapMatrix mm = new MapMatrix(zone.header.mapmatrix, reading);
-		mapView().loadRegions(mm,
-				new ADPropRegistry(zone.header.areadata, zone.header.propTextures, reading),
-				zone.header.worldTextures, zone.header.propTextures, null);
-		//AND THEN AIM AT THE ZONE, not at the map. loadRegions ends by framing the whole
+	private void draw(Zone zone, Read picture) {
+		MapMatrix mm = picture.matrix;
+		mapView().showRegions(picture.regions, picture.props, null);
+		//AND THEN AIM AT THE ZONE, not at the map. showRegions ends by framing the whole
 		//matrix, which is right when the map is the subject and wrong here: several zones
 		//share one matrix, and the preview drew Route 132, 133 and 134 as the same image.
 		//Reported with three screenshots. Framed AFTER the load because the load is what
 		//pointed the camera at everything.
-		//WHERE THE ZONE IS, SAID IN WORDS - and the camera left exactly where loadRegions put
+		//WHERE THE ZONE IS, SAID IN WORDS - and the camera left exactly where showRegions put
 		//it, which is the whole matrix.
 		//
 		//THE CAMERA WAS MOVED HERE TWICE AND BROKE THE PREVIEW BOTH TIMES. First by clamping
@@ -233,20 +286,13 @@ public final class ZonePreviewPane extends JPanel {
 		}
 	}
 
-	private void say(final int mine, final String what, final int zone) {
-		SwingUtilities.invokeLater(new Runnable() {
-			@Override
-			public void run() {
-				if (mine != seq[0]) {
-					return;
-				}
-				drawn = zone;
-				note.setText("  " + what);
-				if (view != null) {
-					view.repaint();
-				}
-			}
-		});
+	/** Says what is shown. On the event thread: only the newest request's show reaches here. */
+	private void say(final String what, final int zone) {
+		drawn = zone;
+		note.setText("  " + what);
+		if (view != null) {
+			view.repaint();
+		}
 	}
 
 	private static void free(Zone zone) {

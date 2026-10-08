@@ -90,7 +90,7 @@ public class TileMapPanelStateTest {
 		unloadingDropsTheUndoHistoryWithTheMap();
 
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump
+			Skip.section("no dump at " + dump
 					+ " - the save-path checks need real region containers");
 		} else {
 			ScratchGame.open(dump);
@@ -254,7 +254,7 @@ public class TileMapPanelStateTest {
 		check(panel.mainGR == wasOpen && panel.tilemaps[0][0] == before,
 				"and a cancelled answer leaves the map that was open exactly where it was");
 		check(panel.tilemaps[0][0].modified, "with the edit still unsaved and still offered");
-		System.out.println("  skip: the loading half of loadTileMap needs a screen"
+		Skip.section("the loading half of loadTileMap needs a screen"
 				+ " (GraphicsEnvironment.getDefaultScreenDevice)");
 	}
 
@@ -274,7 +274,7 @@ public class TileMapPanelStateTest {
 		System.out.println("--- a matrix save asks once and writes every populated cell");
 		TileMapPanel panel = multiCell();
 		if (panel == null) {
-			System.out.println("  skip: no retail map matrix of 2 to 8 populated cells was found");
+			check(false, "no retail map matrix of 2 to 8 populated cells was found");
 			return;
 		}
 		int cells = populated(panel);
@@ -499,21 +499,6 @@ public class TileMapPanelStateTest {
 	}
 
 	/**
-	 * Where the viewport's centre is, in raw pixels, world units and tiles.
-	 *
-	 * <p>This is where the NPC, warp and trigger tools put a NEW entity: "Add"
-	 * places it at the centre of what the user is looking at. Wrong, and the
-	 * object lands off screen in a corner of the map, which reads as the button
-	 * having done nothing at all - the record is created, so the user presses
-	 * Add again.
-	 *
-	 * <p>Three conversions of one number, each with its own scale: raw pixels,
-	 * then world units at 720 per 400 pixels divided by the zoom, then tiles at
-	 * the image's own pixels-per-tile. They are asserted against the arithmetic
-	 * spelled out rather than against constants, so the check says which
-	 * conversion moved if one of them does.
-	 */
-	/**
 	 * Opening a map points the 3D camera at it - and the two ways of doing that
 	 * are NOT the same call.
 	 *
@@ -543,6 +528,21 @@ public class TileMapPanelStateTest {
 		SCENE.reset();
 	}
 
+	/**
+	 * Where the viewport's centre is, in raw pixels, world units and tiles.
+	 *
+	 * <p>This is where the NPC, warp and trigger tools put a NEW entity: "Add"
+	 * places it at the centre of what the user is looking at. Wrong, and the
+	 * object lands off screen in a corner of the map, which reads as the button
+	 * having done nothing at all - the record is created, so the user presses
+	 * Add again.
+	 *
+	 * <p>Three conversions of one number, each with its own scale: raw pixels,
+	 * then world units at 720 per 400 pixels divided by the zoom, then tiles at
+	 * the image's own pixels-per-tile. They are asserted against the arithmetic
+	 * spelled out rather than against constants, so the check says which
+	 * conversion moved if one of them does.
+	 */
 	static void theViewportCentreIsWhereTheScrollBarsSay() {
 		System.out.println("--- the viewport centre, in pixels, world units and tiles");
 		//the scroll pane is HANDED to the panel now rather than planted on the
@@ -631,7 +631,7 @@ public class TileMapPanelStateTest {
 		check(panel.tilemapScale == 0.25d, "and anything past 1, which is full size");
 		panel.perfScale(2d, 0, 0);
 		check(panel.tilemapScale == 0.25d, "the per-region path holds the same bounds");
-		System.out.println("  skip: an ACCEPTED scale renders through"
+		Skip.section("an ACCEPTED scale renders through"
 				+ " GraphicsEnvironment.getDefaultScreenDevice, which needs a display");
 	}
 
@@ -669,7 +669,7 @@ public class TileMapPanelStateTest {
 			}
 		}
 		check(untouched, "and a cell outside the scene it was computed for writes nothing, on either axis");
-		System.out.println("  skip: an ACCEPTED region refresh ends in makeAllBOs, which needs a GL context");
+		Skip.section("an ACCEPTED region refresh ends in makeAllBOs, which needs a GL context");
 	}
 
 	// ---- plumbing ----------------------------------------------------------
@@ -688,7 +688,6 @@ public class TileMapPanelStateTest {
 		return panel;
 	}
 
-	/** A panel holding the whole of zone 15's map, the way loadMatrix leaves it. */
 	/**
 	 * The 3D animator finds nothing to draw before a zone is open, and after
 	 * one is closed.
@@ -738,22 +737,6 @@ public class TileMapPanelStateTest {
 	}
 
 	/**
-	 * The colours a region is painted in follow the tileset, rather than the one
-	 * it happened to be loaded under.
-	 *
-	 * <p>{@code Tilemap} captures what it is handed into a final field and paints
-	 * from it forever, and {@code Workspace.getTileset()} returns a NEW tileset
-	 * object on every call. So handing the OBJECT over meant that changing the
-	 * tileset in Workspace settings - which assigns a new one to the tile form and
-	 * then asks the map view to redraw - repainted every region in the palette it
-	 * had captured at load. The user watched the progress dialog run and saw
-	 * nothing change, and the new colours only arrived with the next zone load.
-	 *
-	 * <p>What the panel hands a region is therefore a live VIEW, and the identity
-	 * below is the whole point: the same object keeps answering, and it answers
-	 * out of whatever the tileset is now.
-	 */
-	/**
 	 * What {@code tileColors()} answers. Reflection because the method is
 	 * package-private in {@code ctrmap.humaninterface} and every suite lives in
 	 * {@code ctrmap.tests} - widening it so a test can see it would make the
@@ -771,6 +754,22 @@ public class TileMapPanelStateTest {
 		}
 	}
 
+	/**
+	 * The colours a region is painted in follow the tileset, rather than the one
+	 * it happened to be loaded under.
+	 *
+	 * <p>{@code Tilemap} captures what it is handed into a final field and paints
+	 * from it forever, and {@code Workspace.getTileset()} returns a NEW tileset
+	 * object on every call. So handing the OBJECT over meant that changing the
+	 * tileset in Workspace settings - which assigns a new one to the tile form and
+	 * then asks the map view to redraw - repainted every region in the palette it
+	 * had captured at load. The user watched the progress dialog run and saw
+	 * nothing change, and the new colours only arrived with the next zone load.
+	 *
+	 * <p>What the panel hands a region is therefore a live VIEW, and the identity
+	 * below is the whole point: the same object keeps answering, and it answers
+	 * out of whatever the tileset is now.
+	 */
 	static void theColoursARegionIsPaintedInFollowTheTileset() {
 		System.out.println("--- the colours a region is painted in follow the tileset");
 		final java.awt.Color[] palette = {java.awt.Color.RED};
@@ -809,7 +808,7 @@ public class TileMapPanelStateTest {
 		for (boolean keep : new boolean[]{true, false}) {
 			TileMapPanel panel = multiCell();
 			if (panel == null) {
-				System.out.println("  skip: no retail matrix with 2-8 populated cells");
+				check(false, "no retail matrix with 2-8 populated cells");
 				return;
 			}
 			markOneModified(panel);
@@ -854,7 +853,7 @@ public class TileMapPanelStateTest {
 		System.out.println("--- opening a loose map drops the last zone's textures");
 		TileMapPanel panel = multiCell();
 		if (panel == null) {
-			System.out.println("  skip: no retail matrix with 2-8 populated cells");
+			check(false, "no retail matrix with 2-8 populated cells");
 			return;
 		}
 		List<ctrmap.formats.h3d.texturing.H3DTexture> world = new java.util.ArrayList<>();
@@ -926,7 +925,7 @@ public class TileMapPanelStateTest {
 		System.out.println("--- loading a map drops the tile picked on the last one");
 		TileMapPanel panel = multiCell();
 		if (panel == null) {
-			System.out.println("  skip: no retail matrix with 2-8 populated cells");
+			check(false, "no retail matrix with 2-8 populated cells");
 			return;
 		}
 		int cells = Math.min(panel.mm.width, panel.mm.height);
@@ -1011,6 +1010,7 @@ public class TileMapPanelStateTest {
 		fl.set(o, value);
 	}
 
+	/** A panel holding the whole of zone 15's map, the way loadMatrix leaves it. */
 	static TileMapPanel multi() throws Exception {
 		ctrmap.formats.zone.Zone z = new ctrmap.formats.zone.Zone(
 				new ctrmap.formats.containers.ZO(temp(Workspace.getArchive(ArchiveType.ZONE_DATA).getDecompressedEntry(ZONE)), Workspace.session()),

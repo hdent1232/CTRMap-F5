@@ -45,6 +45,22 @@ public final class TextForker {
 	}
 
 	/**
+	 * How many OTHER zones show their story text from this zone's text file, per the master
+	 * zone-header table (F233) - the guard {@link AreaForker#areaSharers} and
+	 * {@link GeometryForker#matrixSharers} are for the area and the map. A cloned zone keeps its
+	 * donor's text, and the dialogue editor rewrote a line in place whenever only THIS zone's
+	 * talkers used it - so the donor town's NPC said the new line too.
+	 *
+	 * @throws IOException naming the zone when the table has no row for it
+	 */
+	public static int textSharers(MasterTable master, int zoneIndex) throws IOException {
+		if (zoneIndex < 0 || zoneIndex >= master.zones()) {
+			throw new IOException("Master-table row for zone " + zoneIndex + " out of range.");
+		}
+		return master.sharing(ZoneResource.TEXT, zoneIndex).size();
+	}
+
+	/**
 	 * Whether this workspace can fork story text at all.
 	 *
 	 * <p>The STORYTEXT archive is opened lazily and a game folder without one is
@@ -72,7 +88,7 @@ public final class TextForker {
 	 * @param master the master zone-header table (rows repointed in place)
 	 * @param zoneIndices which zone each entry of {@code zos} is
 	 */
-	public static void forkAppendedTexts(WorkspaceSession ws, byte[][] zos, byte[] master,
+	public static void forkAppendedTexts(WorkspaceSession ws, byte[][] zos, MasterTable master,
 			int[] zoneIndices) throws IOException {
 		int count = zoneIndices == null ? 0 : zoneIndices.length;
 		if (count <= 0) {
@@ -101,14 +117,13 @@ public final class TextForker {
 						+ " workspace, so zone " + zoneIndices[i] + " cannot be given a copy of it.");
 			}
 			File out = new File(dir, String.valueOf(newText));
-			Files.write(out.toPath(), Files.readAllBytes(src.toPath()));
+			WorkspaceUnit.write(out, Files.readAllBytes(src.toPath()));
 			ws.addPersist(out);
 			ZoneResource.TEXT.setIn(zos[i], newText);
-			int rowOff = zoneIndices[i] * GeometryForker.MASTER_ROW + ZoneResource.TEXT.headerOffset;
-			if (rowOff + 2 > master.length) {
+			if (zoneIndices[i] < 0 || zoneIndices[i] >= master.zones()) {
 				throw new IOException("Master-table row for zone " + zoneIndices[i] + " out of range.");
 			}
-			putU16(master, rowOff, newText);
+			master.set(ZoneResource.TEXT, zoneIndices[i], newText);
 		}
 	}
 }

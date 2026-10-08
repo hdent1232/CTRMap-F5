@@ -6,6 +6,7 @@ import java.awt.GraphicsEnvironment;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import javax.swing.JDialog;
+import javax.swing.SwingUtilities;
 
 /**
  * Modal dialog with a progress bar suitable for SwingWorkers.
@@ -23,24 +24,43 @@ import javax.swing.JDialog;
  */
 public class LoadingDialog extends javax.swing.JPanel {
 
-	/**
-	 * Creates new form LoadingDialog
-	 */
 	private JDialog dlg;
 
 	/** Stands in for the modal window's blocking when there is no window. */
 	private final CountDownLatch closed = new CountDownLatch(1);
 
+	/**
+	 * Creates new form LoadingDialog
+	 */
 	public LoadingDialog() {
 		initComponents();
 	}
 
+	/**
+	 * Safe from any thread: a worker reports through these, and the bar and label are Swing
+	 * widgets, so the write is handed to the event thread (F220). The javadoc above has called
+	 * this class "suitable for SwingWorkers" since it was written; until this, its setters wrote
+	 * the widgets from whatever thread called them.
+	 */
 	public void setDescription(String text) {
-		desc.setText(text);
+		SwingUtilities.invokeLater(() -> desc.setText(text));
 	}
 
+	/** Safe from any thread - see {@link #setDescription}. */
 	public void setBarPercent(int val) {
-		bar.setValue(val);
+		SwingUtilities.invokeLater(() -> bar.setValue(val));
+	}
+
+	/**
+	 * Refuses a window made or shown off the event thread (F220). A modal dialog shown from a
+	 * worker blocked the worker, not the user, and was a second event loop on the wrong thread.
+	 * With no display there is no window, so a headless suite driving a load is not refused.
+	 */
+	private static void onTheEventThread(String what) {
+		if (!SwingUtilities.isEventDispatchThread()) {
+			throw new IllegalStateException(what + " off the event thread, on " + Thread.currentThread().getName()
+					+ " - Swing is the event thread's (F220)");
+		}
 	}
 
 	public void close() {
@@ -53,13 +73,16 @@ public class LoadingDialog extends javax.swing.JPanel {
 	}
 
 	public static LoadingDialog makeDialog(String desc) {
+		if (!GraphicsEnvironment.isHeadless()) {
+			onTheEventThread("A progress dialog was made");
+		}
 		LoadingDialog ret = new LoadingDialog();
 		if (!GraphicsEnvironment.isHeadless()) {
 			ret.dlg = new JDialog();
 			ret.dlg.add(ret);
 		}
-		ret.setDescription(desc);
-		ret.setBarPercent(0);
+		ret.desc.setText(desc); //here, not through the setter: the window is packed to this text
+		ret.bar.setValue(0);
 		if (ret.dlg != null) {
 			ret.dlg.setUndecorated(true);
 			ret.dlg.setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
@@ -82,6 +105,7 @@ public class LoadingDialog extends javax.swing.JPanel {
 			}
 			return;
 		}
+		onTheEventThread("A modal progress dialog was shown");
 		if (ctrmap.Ui.parent() != null) {
 			dlg.setLocationRelativeTo(ctrmap.Ui.parent());
 		}

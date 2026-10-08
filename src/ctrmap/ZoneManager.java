@@ -85,6 +85,46 @@ public class ZoneManager {
 	 * @param newName   the new location name (plain text)
 	 */
 	public static RenameResult renameZone(WorkspaceSession ws, int zoneIndex, String newName) throws IOException {
+		return renameZone(ws, zoneIndex, newName, false);
+	}
+
+	/**
+	 * A rename refused because the zone's name is shared and no free name line is left (F233,
+	 * census L.8): this zone cannot get a name of its own, and editing the shared line renames every
+	 * zone on it - which happened, after the dialog had promised the others were left unchanged.
+	 * Nothing was written.
+	 */
+	public static final class SharedNameOnly extends IOException {
+
+		public final int sharers;
+		public final String oldName;
+
+		SharedNameOnly(int sharers, String oldName) {
+			super("No free name line is left in the game's location names, so this zone cannot get a name"
+					+ " of its own - renaming \"" + oldName + "\" would rename all " + sharers + " zones that share"
+					+ " it. Nothing was renamed.");
+			this.sharers = sharers;
+			this.oldName = oldName;
+		}
+	}
+
+	/**
+	 * @param renameAllSharers what to do when the name is shared and no free line is left: true
+	 * renames the shared line for every zone on it, false refuses with {@link SharedNameOnly}
+	 */
+	public static RenameResult renameZone(WorkspaceSession ws, int zoneIndex, String newName, boolean renameAllSharers)
+			throws IOException {
+		//ONE UNIT (F227): the name, the zone header and the master row are written in turn, and a
+		//refusal at the master row left the header and the row naming different places
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Rename zone", ws)) {
+			RenameResult r = renameZoneWrites(ws, zoneIndex, newName, renameAllSharers);
+			unit.commit();
+			return r;
+		}
+	}
+
+	private static RenameResult renameZoneWrites(WorkspaceSession ws, int zoneIndex, String newName, boolean renameAllSharers)
+			throws IOException {
 		if (ws == null) {
 			throw new IOException("No workspace is loaded.");
 		}
@@ -92,9 +132,12 @@ public class ZoneManager {
 		if (zoGarc == null) {
 			throw new IOException("ZoneData archive unavailable.");
 		}
-		int masterIndex = ZoneCloner.getMasterIndex();
-		if (zoneIndex < 0 || zoneIndex >= masterIndex) {
-			throw new IOException("Zone " + zoneIndex + " out of range (0.." + (masterIndex - 1) + ").");
+		//THE HANDED GAME'S OWN TABLE bounds the index (F019): this asked the GLOBAL game's master
+		//index, so a caller handing another session got its range check - and its idea of which
+		//entry is the master table - from a different game
+		MasterTable table = MasterTable.read(ws);
+		if (zoneIndex < 0 || zoneIndex >= table.zones()) {
+			throw new IOException("Zone " + zoneIndex + " out of range (0.." + (table.zones() - 1) + ").");
 		}
 		// validate the new name encodes (fail before touching anything)
 		try {
@@ -103,16 +146,13 @@ public class ZoneManager {
 			throw new IOException("That name can't be encoded: " + ex.getMessage());
 		}
 
-		File masterFile = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
-		byte[] master = Files.readAllBytes(masterFile.toPath());
-		int rowOff = zoneIndex * ZoneCloner.ZONE_HEADER_SIZE;
-		int curParent = u16(master, rowOff + PARENTMAP_OFFSET) & PARENTMAP_MASK;
+		//through the one reader (F013): this read it with no check at all
+		int curParent = placeOf(table, zoneIndex);
 
 		// count zones sharing this name line (scan the master table - all headers)
-		int rows = master.length / ZoneCloner.ZONE_HEADER_SIZE;
 		int sharers = 0;
-		for (int i = 0; i < rows; i++) {
-			if ((u16(master, i * ZoneCloner.ZONE_HEADER_SIZE + PARENTMAP_OFFSET) & PARENTMAP_MASK) == curParent) {
+		for (int i = 0; i < table.zones(); i++) {
+			if (placeOf(table, i) == curParent) {
 				sharers++;
 			}
 		}
@@ -142,26 +182,33 @@ public class ZoneManager {
 			// shared name -> move this zone to a FREE, IN-BOUNDS name slot so the other
 			// zones keep their name. A new appended slot would exceed the game's hardcoded
 			// location-id bound (356), so we reuse an unused blank slot (index < count).
-			int slot = findFreeBlankSlot(master, names);
+			int slot = findFreeBlankSlot(table, names);
 			if (slot >= 0) {
 				names.setLine(slot, newName);
 				newParent = slot;
 				r.gaveOwnName = true;
+			} else if (!renameAllSharers) {
+				throw new SharedNameOnly(sharers, r.oldName);   //asked first, never done (F233, census L.8)
 			} else {
-				// no free slot: fall back to renaming the shared name in place (affects all sharers)
+				// no free slot, and the caller said so: rename the shared name in place (affects all sharers)
 				names.setLine(curParent, newName);
 				newParent = curParent;
 				r.renamedSharers = true;
 			}
 		}
-		Files.write(gtFile.toPath(), names.write());
+		WorkspaceUnit.write(gtFile, names.write());
 		ws.addPersist(gtFile);
 
 		if (newParent != curParent) {
-			repointParentMap(ws, zoneIndex, masterFile, master, rowOff, newParent);
+			repointParentMap(ws, zoneIndex, table, newParent);
 		}
 		r.parentMap = newParent;
 		return r;
+	}
+
+	/** The zone's place-name line: the low 10 bits of its master row's packed field at 0x1C. */
+	private static int placeOf(MasterTable table, int zone) {
+		return u16(table.row(zone), PARENTMAP_OFFSET) & PARENTMAP_MASK;
 	}
 
 	/**
@@ -169,12 +216,11 @@ public class ZoneManager {
 	 * place-id limit) and used by NO zone and currently blank - safe to repurpose
 	 * for a zone's private name. Returns -1 if none is free.
 	 */
-	private static int findFreeBlankSlot(byte[] master, GFMessageFile names) {
-		int rows = master.length / ZoneCloner.ZONE_HEADER_SIZE;
+	private static int findFreeBlankSlot(MasterTable table, GFMessageFile names) {
 		int count = Math.min(names.getLineCount(), PARENTMAP_MASK + 1); // parentMap is 10-bit
 		boolean[] used = new boolean[count];
-		for (int i = 0; i < rows; i++) {
-			int p = u16(master, i * ZoneCloner.ZONE_HEADER_SIZE + PARENTMAP_OFFSET) & PARENTMAP_MASK;
+		for (int i = 0; i < table.zones(); i++) {
+			int p = placeOf(table, i);
 			if (p >= 0 && p < count) {
 				used[p] = true;
 			}
@@ -191,7 +237,7 @@ public class ZoneManager {
 	}
 
 	/** Sets the zone's parentMap in BOTH the ZO header (subfile 0) and the master row. */
-	private static void repointParentMap(WorkspaceSession ws, int zoneIndex, File masterFile, byte[] master, int rowOff, int newParent) throws IOException {
+	private static void repointParentMap(WorkspaceSession ws, int zoneIndex, MasterTable table, int newParent) throws IOException {
 		// ZO header (subfile 0)
 		File zf = ws.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
 		ZO zo = new ZO(zf, ws);
@@ -204,9 +250,10 @@ public class ZoneManager {
 				+ ctrmap.util.Bytes.reason(notWritten), notWritten);
 		}
 		// master row
-		setParentMap(master, rowOff, newParent);
-		Files.write(masterFile.toPath(), master);
-		ws.addPersist(masterFile);
+		byte[] row = table.row(zoneIndex);
+		setParentMap(row, 0, newParent);
+		table.setRow(zoneIndex, row);
+		table.write();
 	}
 
 	/** Overwrites only the low-10-bit parentMap of the packed u16 at base+0x1C. */

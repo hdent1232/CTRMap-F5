@@ -50,6 +50,14 @@ public class ZoneEditors {
 		 * that DO hold a part-typed record, and the third was simply absent.
 		 */
 		boolean commit();
+
+		/**
+		 * Show the zone's entities again: a discard has put them back to what the file holds
+		 * (F106). An editor that shows none says so in a line, as {@link #clear()} does - showing the
+		 * whole zone again instead would reload the map and reset editors whose own unsaved edits
+		 * have not been asked about yet.
+		 */
+		void showEntities(Zone zone);
 	}
 
 	private final List<ZoneView> views;
@@ -101,6 +109,13 @@ public class ZoneEditors {
 			}
 		}
 		return true;
+	}
+
+	/** Hands the zone's entities, put back by a discard, to every editor, in order (F106). */
+	public void showEntities(Zone zone) {
+		for (ZoneView v : views) {
+			v.showEntities(zone);
+		}
 	}
 
 	/** How many editors show the zone; the guard checks the count it was built with. */

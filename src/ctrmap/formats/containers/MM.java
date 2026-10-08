@@ -28,13 +28,16 @@ public class MM extends AbstractGamefreakContainer{
 
 	/** Creates an empty container of {@code len} slots and the given type that reports its writes to {@code files}. */
 	public MM(File f, int len, int type, GameFiles files) {
-		super(f, len, files);
+		//the type first, THEN the layout that pads by it (F051: super(f, len, files) laid a
+		//move model out unpadded, because type was still 0 = map matrix while it ran)
+		super(files);
 		this.type = type;
+		createContainer(f, len);
 	}
 
 	/** A move model's first subfile is a BCH model; a map matrix's is not. */
 	private int sniffType() {
-		if (ctrmap.util.Bytes.checkBCHMagic(getFile(0))){
+		if (ctrmap.formats.h3d.BchSections.hasMagic(getFile(0))){
 			return MM_MOVE_MODEL;
 		}
 		return MM_MAP_MATRIX;

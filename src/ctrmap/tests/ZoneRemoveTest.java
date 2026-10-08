@@ -20,7 +20,7 @@ import java.util.List;
  * <li>append simulation: a 4-zone appended layout (zones 536-539 = copies,
  *     master grown to 540 rows at 540, EN at 541) round-trips through the
  *     rebuilder;</li>
- * <li>removal: {@link ZoneRemover#removeFromFile} restores the stock layout
+ * <li>removal: {@link ZoneRemover#stockLayout} restores the stock layout
  *     with every base zone, the master table and the EN pack content-equal
  *     to pristine;</li>
  * <li>the base-zone warp scan reports no references into added zones on
@@ -82,7 +82,7 @@ public class ZoneRemoveTest {
 		fails += check("grown master rows", ap.getDecompressedEntry(540).length == 540 * ZoneRemover.MASTER_ROW);
 
 		// (3) removal restores stock content
-		int removed = ZoneRemover.removeFromFile(c);
+		int removed = shrink(c);
 		fails += check("removed 4", removed == 4);
 		GARC rm = new GARC(c);
 		fails += check("restored count 538", rm.length == 538);
@@ -95,16 +95,32 @@ public class ZoneRemoveTest {
 			}
 		}
 		fails += check("restored content == pristine", restOk);
-		fails += check("removal on stock is a no-op", ZoneRemover.removeFromFile(b) == 0);
+		fails += check("removal on stock is a no-op", shrink(b) == 0);
 
 		// (4) pristine base zones reference no added zones
-		fails += check("no dangling references in pristine", ZoneRemover.referencesToAdded(pz).isEmpty());
+		fails += check("no dangling references in pristine", ZoneRemover.referencesToAdded(pz.length, pz::getDecompressedEntry).isEmpty());
 
 		System.out.println("rebuild+remove: identity 538, append 542, restore 538, " + fails + " failure(s)");
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * The removal's file-level shrink, on a scratch copy: {@link ZoneRemover#stockLayout} written
+	 * back. The product does this only inside {@link ZoneRemover#remove}, which also gives the
+	 * removed zones' area ids back (F043) and needs a whole workspace; the layout is what this
+	 * suite checks.
+	 */
+	static int shrink(File garc) throws Exception {
+		GARC g = new GARC(garc);
+		List<byte[]> stock = ZoneRemover.stockLayout(g);
+		if (stock == null) {
+			return 0;
+		}
+		GarcRebuilder.write(garc, garc, stock);
+		return g.length - stock.size();
 	}
 
 	static int check(String what, boolean ok) {

@@ -1,6 +1,8 @@
 package ctrmap.humaninterface;
 
+import ctrmap.Ui;
 import ctrmap.Workspace;
+import ctrmap.formats.GameCache;
 import ctrmap.formats.h3d.BCHFile;
 import ctrmap.formats.h3d.BuildingCatalog;
 import ctrmap.formats.h3d.MapPrefab;
@@ -39,20 +41,31 @@ import javax.swing.SwingUtilities;
  */
 public class BuildingPaletteDialog {
 
-	/** Per-session caches: extraction and donor textures are dump-backed.
-	 *  Both loaders are synchronized - the palette preview thread and the Map
-	 *  Builder's live-regen worker hit them concurrently, and the extraction
-	 *  writes fixed-named temp files. */
-	private static final Map<BuildingCatalog.Entry, MapPrefab> prefabCache = new HashMap<>();
-	private static final Map<Integer, List<H3DTexture>> donorTexCache = new HashMap<>();
+	/**
+	 * The cut prefabs and the donor areas' textures, kept by the game they were cut from (F218).
+	 * They were static maps keyed to nothing, so after repointing to another game the palette
+	 * offered - and Apply stamped - the first game's cut geometry and textures into the second.
+	 * Both loaders are synchronized - the palette preview thread and the Map Builder's
+	 * live-regen worker hit them concurrently, and the extraction writes fixed-named temp files.
+	 */
+	private static final GameCache.Key<Map<BuildingCatalog.Entry, MapPrefab>> PREFABS
+			= new GameCache.Key<>("building palette: cut prefabs");
+	private static final GameCache.Key<Map<Integer, List<H3DTexture>>> DONOR_TEXTURES
+			= new GameCache.Key<>("building palette: donor area textures");
 
+	/** This entry cut from the open game's pristine copy, kept for that game; null with no game open or nothing to cut. */
 	public static synchronized MapPrefab cachedPrefab(BuildingCatalog.Entry e) {
+		ctrmap.WorkspaceSession game = Workspace.session();
+		if (game == null) {
+			return null;   //nothing to cut from, as BuildingCatalog.extract answers for no game
+		}
+		Map<BuildingCatalog.Entry, MapPrefab> prefabs = game.cache().get(PREFABS, HashMap::new);
 		//bounded: the harvested catalog holds thousands of entries - browsing
 		//must not accumulate every cut prefab in memory
-		if (prefabCache.size() > 64 && !prefabCache.containsKey(e)) {
-			prefabCache.clear();
+		if (prefabs.size() > 64 && !prefabs.containsKey(e)) {
+			prefabs.clear();
 		}
-		return prefabCache.computeIfAbsent(e, k -> BuildingCatalog.extract(Workspace.session(), k));
+		return prefabs.computeIfAbsent(e, k -> BuildingCatalog.extract(game, k));
 	}
 
 	/**
@@ -114,38 +127,55 @@ public class BuildingPaletteDialog {
 		return "Buildings";
 	}
 
-	/** The donor area's decoded textures (world pack file 11, prop pack file 1). */
-	public static synchronized List<H3DTexture> donorTextures(int areaId) {
-		return donorTexCache.computeIfAbsent(areaId, id -> {
-			List<H3DTexture> out = new ArrayList<>();
-			try {
-				String rel = Workspace.getArchivePath(ArchiveType.AREA_DATA, Workspace.game());
-				File garcFile = new File(Workspace.originalSnapshotDir().getAbsolutePath() + rel);
-				if (!garcFile.exists()) {
-					garcFile = new File(Workspace.GAMEDIR_PATH + rel);
+	/**
+	 * The donor area's decoded textures (world pack file 11, prop pack file 1). THROWS when
+	 * they cannot be read, and a failure is not cached (F211): both the read and each pack's
+	 * parse were swallowed, the empty answer was cached for the session, and every building
+	 * from that area drew untextured in the palette and the painter's preview without a word.
+	 */
+	public static synchronized List<H3DTexture> donorTextures(int areaId) throws Exception {
+		ctrmap.WorkspaceSession session = Workspace.session();
+		if (session == null) {
+			throw new java.io.IOException("no workspace is open, so there is no untouched game to take textures from");
+		}
+		Map<Integer, List<H3DTexture>> kept = session.cache().get(DONOR_TEXTURES, HashMap::new);
+		List<H3DTexture> cached = kept.get(areaId);
+		if (cached != null) {
+			return cached;
+		}
+		List<H3DTexture> out = new ArrayList<>();
+		//NEVER THE LIVE GAME (F232). With no snapshot this read the game folder, so the textures stamped
+		//into a new building came from the user's own edits - the contamination the snapshot exists to
+		//prevent. The one pristine reader answers the snapshot, else the sealed backup, else nothing.
+		File garcFile = session.pristineArchive(ArchiveType.AREA_DATA);
+		if (garcFile == null) {
+			throw new java.io.IOException("this workspace has no untouched copy of the area archive - no pristine"
+					+ " snapshot and no sealed backup - so its textures would come from your edited game."
+					+ " Reopen the workspace to take the snapshot, or seal a backup under Options.");
+		}
+		byte[] entry = new ctrmap.formats.garc.GARC(garcFile).getDecompressedEntry(areaId);
+		File tmp = new File(session.scratch(), "bcat_area_" + areaId);
+		try (java.io.FileOutputStream fo = new java.io.FileOutputStream(tmp)) {
+			fo.write(entry);
+		}
+		ctrmap.formats.containers.AD ad = new ctrmap.formats.containers.AD(tmp, session);
+		for (int sub : new int[]{11, 1}) {
+			byte[] pack = ad.getFile(sub);
+			if (pack != null && pack.length > 0x44) {
+				try {
+					out.addAll(new BCHFile(pack).textures);
+				} catch (RuntimeException ex) {
+					throw new java.io.IOException("its texture pack (file " + sub + ") could not be read: "
+							+ ctrmap.Ui.reason(ex), ex);
 				}
-				byte[] entry = new ctrmap.formats.garc.GARC(garcFile).getDecompressedEntry(id);
-				File tmp = new File(Workspace.temp(), "bcat_area_" + id);
-				try (java.io.FileOutputStream fo = new java.io.FileOutputStream(tmp)) {
-					fo.write(entry);
-				}
-				ctrmap.formats.containers.AD ad = new ctrmap.formats.containers.AD(tmp, Workspace.session());
-				for (int sub : new int[]{11, 1}) {
-					byte[] pack = ad.getFile(sub);
-					if (pack != null && pack.length > 0x44) {
-						try {
-							BCHFile bch = new BCHFile(pack);
-							out.addAll(bch.textures);
-						} catch (RuntimeException ignore) {
-						}
-					}
-				}
-			} catch (Exception ex) {
-				System.err.println("BuildingPalette: donor textures area " + id + ": " + ex);
 			}
-			return out;
-		});
+		}
+		kept.put(areaId, out);
+		return out;
 	}
+
+	/** Whether this session has said what the catalog could not read. */
+	private static boolean catalogProblemsSaid;
 
 	/**
 	 * Shows the palette; returns the choice or null. {@code baseDonor} is the
@@ -163,6 +193,14 @@ public class BuildingPaletteDialog {
 					"The building catalog is empty - this build shipped without oras_buildings.tsv.",
 					"Building palette");
 			return null;
+		}
+		//WHAT THE CATALOG COULD NOT READ IS SAID, once (F067): it went to stderr
+		if (!catalogProblemsSaid && !BuildingCatalog.loadProblems().isEmpty()) {
+			catalogProblemsSaid = true;
+			List<String> p = BuildingCatalog.loadProblems();
+			ctrmap.Ui.message(parent, "The building catalog skipped " + p.size() + " row(s) it could not read; the"
+					+ " rest are offered:\n" + String.join("\n", p.subList(0, Math.min(5, p.size())))
+					+ (p.size() > 5 ? "\n..." : ""), "Building palette", javax.swing.JOptionPane.WARNING_MESSAGE);
 		}
 
 		final JTextField search = new JTextField();
@@ -263,7 +301,10 @@ public class BuildingPaletteDialog {
 		center.add(under, BorderLayout.SOUTH);
 		dlg.add(center, BorderLayout.CENTER);
 
-		final int[] previewSeq = {0};
+		//ONE WORKER, NEWEST SELECTION WINS (F206): a row arrowed past before its turn is never cut
+		//or built, and the grass every preview stands on is built once, on the worker, not per row
+		final NewestOnly previews = new NewestOnly("building-preview");
+		final byte[][] grassBase = {null};
 		list.addListSelectionListener(ev -> {
 			if (ev.getValueIsAdjusting()) {
 				return;
@@ -273,50 +314,50 @@ public class BuildingPaletteDialog {
 				return;
 			}
 			info.setText("  Loading preview: " + e.name + "...");
-			final int seq = ++previewSeq[0];
-			new Thread(() -> {
-				String note;
-				byte[] previewModel = null;
-				List<H3DTexture> texes = new ArrayList<>();
+			previews.ask(ticket -> {
+				Preview out = new Preview();
 				try {
 					MapPrefab p = cachedPrefab(e);
 					if (p == null) {
-						note = "  Could not cut this piece from the dump (see log).";
-					} else {
-						TilePalette[][] grass = new TilePalette[40][40];
-						for (TilePalette[] row : grass) {
-							java.util.Arrays.fill(row, TilePalette.GRASS);
+						out.note = "  Could not cut this piece from the dump (see log).";
+					} else if (ticket.current()) {
+						if (grassBase[0] == null) {
+							TilePalette[][] grass = new TilePalette[40][40];
+							for (TilePalette[] row : grass) {
+								java.util.Arrays.fill(row, TilePalette.GRASS);
+							}
+							grassBase[0] = PaintedRegionBuilder.build(Workspace.session(), baseDonor, grass, null, null,
+									TerrainLighting.daytime(), false).model;
 						}
-						byte[] base = PaintedRegionBuilder.build(Workspace.session(), baseDonor, grass, null, null,
-								TerrainLighting.daytime(), false).model;
 						int ax = 20 - e.tilesW() / 2, ay = 20 - e.tilesH() / 2;
-						MapPrefab.StampResult r = p.stampGeometry(base, ax, ay, -e.baseY);
-						previewModel = r.newModel;
+						MapPrefab.StampResult r = p.stampGeometry(grassBase[0], ax, ay, -e.baseY);
+						out.model = r.newModel;
 						if (baseTextures != null) {
-							texes.addAll(baseTextures);
+							out.textures.addAll(baseTextures);
 						}
-						texes.addAll(donorTextures(e.donorArea));
-						note = "  " + e.name + " - " + e.tilesW() + "x" + e.tilesH() + " tiles, " + manifest(p, r, e)
+						String untextured = "";
+						try {
+							out.textures.addAll(donorTextures(e.donorArea));
+						} catch (Exception ex) {
+							untextured = "  [shown untextured: donor area " + e.donorArea + "'s textures could not be"
+									+ " read - " + Ui.reason(ex) + "]";
+						}
+						out.note = "  " + e.name + " - " + e.tilesW() + "x" + e.tilesH() + " tiles, " + manifest(p, r, e)
 								+ (e.enterable() ? ", enterable (door + interior wiring on Apply)" : "")
 								+ (r.missingMaterials.isEmpty() ? "" : "  [" + r.missingMaterials.size() + " of "
-								+ p.pieces.size() + " piece(s) cannot be placed on this map: " + r.missingMaterials + "]");
+								+ p.pieces.size() + " piece(s) cannot be placed on this map: " + r.missingMaterials + "]")
+								+ untextured;
 					}
 				} catch (Exception ex) {
-					note = "  Preview failed: " + ex.getMessage();
+					out.note = "  Preview failed: " + Ui.reason(ex);
 				}
-				final String fnote = note;
-				final byte[] fmodel = previewModel;
-				final List<H3DTexture> ftex = texes;
-				SwingUtilities.invokeLater(() -> {
-					if (seq != previewSeq[0]) {
-						return; // a newer selection superseded this preview
-					}
-					if (fmodel != null) {
-						view.setRegion(fmodel, ftex);
-					}
-					info.setText("<html>" + fnote + "</html>"); //wraps: the manifest outgrows one line
-				});
-			}, "building-preview").start();
+				return out;
+			}, shown -> {
+				if (shown.model != null) {
+					view.setRegion(shown.model, shown.textures);
+				}
+				info.setText("<html>" + Ui.html(shown.note) + "</html>"); //wraps: the manifest outgrows one line
+			}, null);
 		});
 
 		JPanel buttons = new JPanel();
@@ -351,7 +392,16 @@ public class BuildingPaletteDialog {
 		dlg.pack();
 		dlg.setLocationRelativeTo(parent);
 		dlg.setVisible(true);
+		previews.close();
 		view.stop();
 		return result[0];
+	}
+
+	/** What the preview worker hands the event thread for one row. */
+	private static final class Preview {
+
+		String note = " ";
+		byte[] model;
+		final List<H3DTexture> textures = new ArrayList<>();
 	}
 }

@@ -693,6 +693,83 @@ class TheDispatcherAsksEveryGuardAndCannotBeWedged(unittest.TestCase):
                               "a transcript nobody could read was reported as nothing to refuse")
 
 
+class EveryWiredEntryPointRefusesWhatItCannotRead(unittest.TestCase):
+    """MEASURED ON CTRMAP 2026-10-06 (its F213): every entry point the settings wire exited 0 and
+    said nothing on a payload that is not JSON, on `{}`, and on one cut mid-command - fifteen of
+    fifteen - while the same hooks refused the controls. The dispatcher returned before any guard
+    was asked, so even the guards that refuse an unreadable payload never saw one. The entry points
+    are the install's own WIRING, not a list kept here."""
+
+    UNREADABLE = ("this is not json", "{}",
+                  '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls')
+
+    def entry_points(self):
+        """Every hook the harness runs as a process, by SHAPE: a file in the hooks folder that is
+        not a guard (a guard is asked through the dispatcher) and reads the payload through the one
+        door. Found from the folder because the install's list ships with the bundle only, and a
+        project's copy of this test would have nothing to read it from."""
+        found = sorted(p for p in glob.glob(os.path.join(HOOKS, "*.py"))
+                       if not os.path.basename(p).startswith("guard_")
+                       and "payload_text()" in io.open(p, encoding="utf-8").read())
+        self.assertIn(os.path.join(HOOKS, "dispatch.py"), found,
+                      "CONTROL: the shape did not find the dispatcher, so it finds nothing")
+        return found
+
+    def hook(self, script, raw, allow=False):
+        import bundle_env
+        env = {k: v for k, v in os.environ.items() if k != bundle_env.name("ALLOW_UNREADABLE")}
+        if allow:
+            env[bundle_env.name("ALLOW_UNREADABLE")] = "1"
+        done = subprocess.run([sys.executable, "-B", script], input=raw.encode("utf-8"), cwd=HERE,
+                              capture_output=True, timeout=120, env=env, creationflags=NO_WINDOW)
+        return done.returncode, (done.stdout + done.stderr).decode("utf-8", "replace")
+
+    def test_every_entry_point_REFUSES_a_payload_it_cannot_read_and_says_why(self):
+        points = self.entry_points()
+        self.assertTrue(points, "WIRING named no entry point - the class this asks about is empty")
+        for script in points:
+            for raw in self.UNREADABLE:
+                with self.subTest(hook=os.path.basename(script), payload=raw[:24]):
+                    code, said = self.hook(script, raw)
+                    self.assertEqual(code, 2, "UNREADABLE: %s allowed a payload it could not read: "
+                                     "%r" % (os.path.basename(script), said[:200]))
+                    self.assertIn("could not be judged", said)
+
+    def test_the_owners_way_past_lets_it_through_and_SAYS_so(self):
+        for script in self.entry_points():
+            with self.subTest(os.path.basename(script)):
+                code, said = self.hook(script, "this is not json", allow=True)
+                self.assertEqual(code, 0, "the owner's override did not let the call through")
+                self.assertIn("NO ", said, "a call let through unjudged said nothing: %r" % said)
+
+    def test_an_unreadable_TURN_END_is_refused_ONCE(self):
+        """A second refusal of the same stop spins forever; the harness marks the retry, and the
+        flag is read from the raw text because the payload around it does not parse."""
+        cut = '{"hook_event_name": "Stop", "session_id": "s", "transcript_path": "/x'
+        dispatch = os.path.join(HOOKS, "dispatch.py")
+        self.assertEqual(self.hook(dispatch, cut)[0], 2, "an unreadable turn end was not refused")
+        code, said = self.hook(dispatch, cut.replace('"session_id"', '"stop_hook_active": true, '
+                                                     '"session_id"'))
+        self.assertEqual(code, 0, "RETRY: the retried turn end was refused again - this spins")
+        self.assertIn("already sent back once", said)
+
+    def test_a_readable_call_is_still_judged_and_allowed(self):
+        """The control: an entry point that refuses everything is as dead as one that refuses
+        nothing."""
+        harmless = json.dumps({"hook_event_name": "PreToolUse", "session_id": "s",
+                               "tool_name": "Read", "tool_input": {"file_path": "README.md"}})
+        #A READABLE CALL IS JUDGED, and judging builds the rules' cache in the folder under test -
+        #measured: left behind, the bundle's own check refused the folder as unfit to hand on.
+        #Removed again only when this call made it.
+        import bundle_rules
+        cache = os.path.join(HERE, bundle_rules.CACHE)
+        if not os.path.exists(cache):
+            self.addCleanup(shutil.rmtree, cache, True)
+        code, said = self.hook(os.path.join(HOOKS, "dispatch.py"), harmless)
+        self.assertEqual(code, 0, said[:300])
+        self.assertNotIn("could not be judged", said)
+
+
 class AHookNamesTheFolderItSitsIn(unittest.TestCase):
     """A project that keeps its own guard stack in `.claude/hooks` installs the bundle's beside it
     (`_hooks_at`). Measured on CTRMap: every refusal named `.claude/hooks/<guard>` about a guard
@@ -979,6 +1056,42 @@ class AReadIsAReadWhateverCarriesIt(unittest.TestCase):
         found = self.guard.touched_paths([os.path.join(self.root, "src", "thing.py")],
                                          "src/thing.py", self.root)
         self.assertEqual(len(found), 1)
+
+    def test_the_lock_is_read_by_its_FIRST_line_as_every_writer_writes_it(self):
+        """Every writer of the lock writes more than the path - `take_lock` a nonce, a project's
+        sweep a pid and what it runs - and this guard read the whole file as the path, which no
+        command can contain: under every real lock a `cat` of the mutated file itself went through
+        (CTRMap F171). Driven through `main`, as the harness runs it."""
+        import bundle_rules
+        held = os.environ.get("CLAUDE_PROJECT_DIR")
+        self.addCleanup(lambda: os.environ.__setitem__("CLAUDE_PROJECT_DIR", held) if held
+                        else os.environ.pop("CLAUDE_PROJECT_DIR", None))
+        os.environ["CLAUDE_PROJECT_DIR"] = self.root
+        lock = os.path.join(self.root, self.guard.LOCK)
+        absolute = os.path.join(self.root, "src", "thing.py")
+        for shape, text in (("take_lock", "src/thing.py" + LF + "1234-0123456789abcdef" + LF),
+                            ("a sweep's", "src/thing.py" + LF + "pid=12" + LF + "what=mutation" + LF),
+                            ("absolute", absolute + LF + "pid=12" + LF),
+                            ("one line", "src/thing.py")):
+            with self.subTest(shape):
+                io.open(lock, "w", encoding="utf-8", newline=LF).write(text)
+                self.assertEqual(self.guard.locked_module(self.root), "src/thing.py",
+                                 "LOCK: the %s lock was not read as the file it names" % shape)
+                held_io = sys.stdin, sys.stdout
+                sys.stdin, sys.stdout = (io.StringIO(json.dumps({"tool_name": "Bash", "tool_input":
+                                         {"command": "cat src/thing.py"}})), io.StringIO())
+                try:
+                    try:
+                        self.guard.main()
+                    except SystemExit:
+                        pass
+                    said = sys.stdout.getvalue()
+                finally:
+                    sys.stdin, sys.stdout = held_io
+                self.assertIn('"deny"', said, "LOCK: `cat` of the mutated file went through under "
+                              "the %s lock" % shape)
+        self.assertEqual(bundle_rules._lock_names(self.root, self.guard.LOCK), "src/thing.py",
+                         "the judge's reading and this one disagree on the same lock")
 
     def test_GREP_over_its_directory_is_refused_and_a_sibling_is_not(self):
         self.assertTrue(self.guard.touched_paths(["src/"], "src/thing.py", self.root))
@@ -1658,6 +1771,26 @@ class AnAgentCampaignNeedsStateAndATrendThatFalls(unittest.TestCase):
         self.assertIn("NOT CONVERGING", why)
         self.rounds([40, 30, 20])
         self.assertFalse(self.guard.verdict(self.LAUNCH)[0], "a falling trend was refused")
+
+    def test_a_NEW_scope_does_not_hide_a_flat_one_and_a_written_closure_does(self):
+        """Measured on CTRMap: one round under any new scope name let the launch through while the
+        project's check still said STOP - renaming the campaign was the way past."""
+        self.agents_so_far(0)
+        rows = [{"scope": "audit", "n": i + 1, "findings": c, "recorded": "2026-09-2%dT00:00:00Z" % i}
+                for i, c in enumerate([10, 10, 10])]
+        renamed = rows + [{"scope": "audit-again", "n": 1, "findings": 3, "recorded": "2026-09-29T00:00:00Z"}]
+        io.open(self.guard.CONVERGENCE_LOG, "w", encoding="utf-8").write(json.dumps({"rounds": renamed}))
+        deny, why = self.guard.verdict(self.LAUNCH)
+        self.assertTrue(deny, "a flat scope was hidden by a newer one")
+        self.assertIn("'audit'", why)
+        closing = {"scope": "audit", "closed": "x" * self.guard.CLOSE_REASON, "recorded": "2026-09-29T00:00:00Z"}
+        io.open(self.guard.CONVERGENCE_LOG, "w", encoding="utf-8").write(
+            json.dumps({"rounds": renamed + [closing]}))
+        self.assertFalse(self.guard.verdict(self.LAUNCH)[0], "a scope closed with its reason still refused")
+        closing["closed"] = "done"
+        io.open(self.guard.CONVERGENCE_LOG, "w", encoding="utf-8").write(
+            json.dumps({"rounds": renamed + [closing]}))
+        self.assertTrue(self.guard.verdict(self.LAUNCH)[0], "a closure with no real reason let it go")
 
     def test_an_UNREADABLE_log_is_not_a_falling_trend(self):
         self.agents_so_far(0)
@@ -2639,6 +2772,44 @@ class ALedgerReviewIsIndependentAndReadNotRecorded(LedgerCase):
 
     def verdicts(self):
         return [(r["verdict"], r["text"][:60]) for r in self.ledger.reviews(self.rows)]
+
+    def test_the_owner_can_switch_the_reviewer_OFF_for_a_session_and_the_turn_end_SAYS_so(self):
+        """CTRMap F178: the reviewer is an agent launch at every turn end, its owner's rule file
+        forbids agents without a yes and a price, and a session told "NO AGENTS" could not end a
+        turn without one. The switch keeps the declaration and takes the reviewer out of this
+        session - and a turn that was not reviewed says so, where a silent pass would read as one."""
+        import bundle_env
+        import guard_requests
+        name = bundle_env.name("NO_REVIEW")
+        held = os.environ.pop(name, None)
+        self.addCleanup(lambda: os.environ.__setitem__(name, held) if held is not None
+                        else os.environ.pop(name, None))
+        self.assertTrue(self.problems(), "CONTROL: the declared reviewer owes this turn a review")
+        os.environ[name] = "1"
+        self.assertEqual(self.problems(), [],
+                         "NO_REVIEW: the reviewer switched off for the session still held the turn")
+        stop = {"hook_event_name": "Stop", "session_id": self.session,
+                "transcript_path": self.transcript}
+        streams = sys.stdin, sys.stdout
+        sys.stdin, sys.stdout = io.StringIO(json.dumps(stop)), io.StringIO()
+        try:
+            code = guard_requests.main()
+            said = sys.stdout.getvalue()
+        finally:
+            sys.stdin, sys.stdout = streams
+        self.assertEqual(code, 0)
+        self.assertIn("OFF", said, "NO_REVIEW: a turn nobody reviewed ended saying nothing")
+
+    def test_a_declaration_that_cannot_be_READ_is_trouble_not_NO_reviewer(self):
+        """Read as none, one stray comma in the declarations switched the reviewer off silently."""
+        with io.open(os.path.join(self.root, ".claude", "bundle-install.json"), "w",
+                     encoding="utf-8") as handle:
+            handle.write('{"_review": {"model": "haiku"},}')
+        config, trouble = self.ledger.declared_review(self.root)
+        self.assertIsNone(config)
+        self.assertIn("UNKNOWN", trouble or "",
+                      "DECLARATION: an unreadable declaration was read as no reviewer")
+        self.assertTrue(self.problems(), "an unreadable declaration let the turn end unreviewed")
 
     def test_a_verdict_the_harness_HANDED_BACK_is_read_from_the_frame_the_launch_names(self):
         """THE HARNESS CHANGED HOW A SYNCHRONOUS AGENT RETURNS. Measured 2026-09-26 in a peer

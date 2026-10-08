@@ -23,7 +23,15 @@ import ctrmap.formats.containers.ContainerBytes;
  * code.ips. Appended FieldData regions / MapMatrix entries from geometry
  * forks of the removed zones stay in their archives as unreferenced data
  * (harmless; the engine indexes those archives directly, extra tail entries
- * are simply never loaded).
+ * are simply never loaded), and so do their story text files. Map and text ids
+ * are 16-bit, so their tails cost space, not a budget.
+ *
+ * <p>AREA IDS ARE GIVEN BACK (F043). They are an 8-bit index with 27 to spare
+ * past retail, and every append forks one per zone, so leaving them behind ran
+ * the budget out after about six add-and-remove cycles. {@link #remove} empties
+ * the NPC registry of every area the removed zones held and no other zone names,
+ * and {@link AreaForker#takeAreaIds} hands those ids out before growing the
+ * archive.
  */
 public class ZoneRemover {
 
@@ -31,21 +39,44 @@ public class ZoneRemover {
 	public static final int MASTER_ROW = ctrmap.formats.codepatch.ZoneLimitPatch.MASTER_ROW;
 
 	/**
-	 * Restores the GARC at {@code garcFile} to the stock layout. Headless,
-	 * file-level. Returns the number of zones removed (0 = nothing added).
+	 * Restores the GARC at {@code garcFile} to the stock layout. Headless, file-level. Returns
+	 * the number of zones removed (0 = nothing added).
+	 *
+	 * <p>PRIVATE (F043): shrinking ZoneData alone left the removed zones' area ids spent, so the
+	 * one way to do it is {@link #remove}, which gives them back. {@link #stockLayout} is the
+	 * same layout for a caller that only needs to see it.
 	 */
-	public static int removeFromFile(File garcFile) throws IOException {
+	private static int removeFromFile(File garcFile) throws IOException {
 		GARC zo = new GARC(garcFile);
-		int count = zo.length;
-		if (count <= BASE_ZONES + 2) {
+		List<byte[]> stored = stockLayout(zo);
+		if (stored == null) {
 			return 0;
 		}
-		int removed = count - (BASE_ZONES + 2);
-		int masterIdx = count - 2, enIdx = count - 1;
+		GarcRebuilder.write(garcFile, garcFile, stored);
+		return zo.length - stored.size();
+	}
 
-		byte[] master = zo.getDecompressedEntry(masterIdx);
-		if (master == null || master.length < BASE_ZONES * MASTER_ROW) {
-			throw new IOException("Master zone-header table is smaller than the stock 536 rows - not an appended ZoneData?");
+	/**
+	 * The stored entries of {@code zo} in the stock layout - its base zones verbatim, the master
+	 * table cut to their rows, the EN pack cut to their count - or null when it has no added
+	 * zones. Writes nothing.
+	 */
+	public static List<byte[]> stockLayout(GARC zo) throws IOException {
+		//THE ONE READER, AT THE MEASURED ZONE COUNT (F013). This took the table at entry
+		//"count - 2" and accepted any table of at least 536 rows, so a table that did not
+		//match the zone count was cut to 536 rows whatever it had held. Appending zones is
+		//Omega Ruby / Alpha Sapphire's alone (BASE_ZONES is its count), so its profile answers.
+		int zones = ctrmap.ZoneTables.zoneCount(zo, ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS));
+		if (zones <= BASE_ZONES) {
+			return null;
+		}
+		int masterIdx = zones, enIdx = zones + 1;
+
+		byte[] master;
+		try {
+			master = ctrmap.MasterTable.detached(zo.getDecompressedEntry(masterIdx), zones).bytes();
+		} catch (IOException wrong) {
+			throw new IOException("The added zones were not removed: " + ctrmap.util.Bytes.reason(wrong), wrong);
 		}
 		byte[] truncated = java.util.Arrays.copyOf(master, BASE_ZONES * MASTER_ROW);
 		byte[] masterStored = zo.isEntryCompressed(masterIdx) ? LZ11.compress(truncated) : truncated;
@@ -73,40 +104,157 @@ public class ZoneRemover {
 		byte[] enOut = enCount == BASE_ZONES ? enBytes
 			: ctrmap.ZoneAppender.truncateEN(enBytes, enCount, BASE_ZONES);
 		stored.add(zo.isEntryCompressed(enIdx) ? LZ11.compress(enOut) : enOut);
-		GarcRebuilder.write(garcFile, garcFile, stored);
-		return removed;
+		return stored;
 	}
 
 	/**
-	 * Warp references from BASE zones into the added zones about to be removed
-	 * - each would become a warp into nothing. Human-readable, for the confirm
-	 * dialog; empty = safe.
+	 * What a removal did: how many zones went, and which area ids came back with them.
+	 *
+	 * <p>Not: AreaForker.ForkResult - that is one fork's outcome; this is a removal's, which
+	 * gives ids back rather than taking one.
 	 */
-	public static List<String> referencesToAdded(GARC zo) {
+	public static final class Removed {
+
+		/** How many added zones were removed; 0 when there were none. */
+		public final int zones;
+		/** The area ids the removed zones held and no other zone names, lowest first. */
+		public final List<Integer> areasBack;
+
+		Removed(int zones, List<Integer> areasBack) {
+			this.zones = zones;
+			this.areasBack = areasBack;
+		}
+	}
+
+	/**
+	 * The whole removal, on a workspace the caller has just packed: the added zones out of
+	 * ZoneData, the workspace's stale copies of their entries dropped, the archive re-read, and
+	 * their area ids given back - one operation, so nothing can do the first without the last.
+	 *
+	 * <p>GIVING AN AREA ID BACK (F043) is emptying its NPC registry in the archive, which is the
+	 * mark {@link AreaForker#givenBack} reads: the next fork takes the id instead of the
+	 * archive's end. Its AreaData entry and per-area table row stay until that fork overwrites
+	 * them; nothing reads an area no zone names. Only the ids the REMOVED zones held are given
+	 * back - an id no zone named before the removal, with NPCs in its registry, is what an older
+	 * build's misplaced fork left, and {@link WorkspaceIntegrity} asks the user to move those by
+	 * hand; this never touches it.
+	 *
+	 * @return what was removed and given back
+	 * @throws IOException when an archive is not open or an entry cannot be read
+	 */
+	public static Removed remove(WorkspaceSession s) throws IOException {
+		GARC zo = s.getArchive(ctrmap.gamedef.ArchiveType.ZONE_DATA);
+		if (zo == null) {
+			throw new IOException("ZoneData is not open, so there are no added zones to remove.");
+		}
+		//which areas the zones about to go hold, read while their rows still exist
+		MasterTable before = MasterTable.read(s);
+		java.util.Set<Integer> held = new java.util.TreeSet<>();
+		for (int z = BASE_ZONES; z < before.zones(); z++) {
+			held.add(before.id(ZoneResource.AREA, z));
+		}
+		int removed = removeFromFile(zo.file);
+		s.reloadGARC(ctrmap.gamedef.ArchiveType.ZONE_DATA);
+		//the stale extracted copies of everything at or past the stock zone range (the added
+		//zones and the old master table and EN pack)
+		s.dropExtracted(ctrmap.gamedef.ArchiveType.ZONE_DATA, n -> n >= BASE_ZONES);
+		GARC ad = s.getArchive(ctrmap.gamedef.ArchiveType.AREA_DATA);
+		List<Integer> back = new ArrayList<>();
+		if (removed > 0 && ad != null) {
+			for (int id : AreaForker.unnamedForkedAreas(MasterTable.read(s), ad.length)) {
+				if (held.contains(id)) {
+					back.add(id);
+				}
+			}
+			emptyRegistries(s, back);
+		}
+		return new Removed(removed, back);
+	}
+
+	/**
+	 * Empties the NPC registries of {@code freed} in the archive - file level, like
+	 * removeFromFile - then re-reads the session's handle and drops the stale extracted copies.
+	 *
+	 * @throws IOException when the archive is not open or an entry cannot be read; nothing was
+	 * changed then
+	 */
+	static void emptyRegistries(WorkspaceSession s, List<Integer> freed) throws IOException {
+		GARC np = s.getArchive(ctrmap.gamedef.ArchiveType.NPC_REGISTRIES);
+		if (np == null) {
+			throw new IOException("The NPC registries are not open, so the area ids the removed zones held could"
+					+ " not be given back.");
+		}
+		List<byte[]> stored = new ArrayList<>();
+		List<Integer> emptied = new ArrayList<>();
+		for (int i = 0; i < np.length; i++) {
+			byte[] b = np.getStoredEntry(i);
+			if (b == null) {
+				throw new IOException("NPC registry " + i + " could not be read, so no area id was given back"
+						+ " and nothing was changed.");
+			}
+			if (freed.contains(i) && b.length > 0) {
+				stored.add(new byte[0]);
+				emptied.add(i);
+			} else {
+				stored.add(b);
+			}
+		}
+		if (!emptied.isEmpty()) {
+			GarcRebuilder.write(np.file, np.file, stored);
+			s.reloadGARC(ctrmap.gamedef.ArchiveType.NPC_REGISTRIES);
+			s.dropExtracted(ctrmap.gamedef.ArchiveType.NPC_REGISTRIES, emptied::contains);
+		}
+	}
+
+	/**
+	 * Warp references from the workspace's BASE zones as they are now - unpacked edits included -
+	 * into the added zones about to be removed (F225); see {@link #referencesToAdded(int, ZoneTables.ZoneBytes)}.
+	 */
+	public static List<String> referencesToAdded(WorkspaceSession s) {
+		GARC zo = s.getArchive(ctrmap.gamedef.ArchiveType.ZONE_DATA);
+		return referencesToAdded(zo == null ? 0 : zo.length, i -> ZoneTables.zoneNow(s, i));
+	}
+
+	/**
+	 * Warp references from BASE zones into the added zones about to be removed - each would become a
+	 * warp into nothing - and every base zone that could not be read, whose warps are therefore not
+	 * checked. Human-readable, for the confirm dialog; empty = safe. An unreadable zone was skipped
+	 * ("the scan is advisory"), so a warp in it into an added zone was missing from the warning, and
+	 * the scan read the archive as of the last pack, without the user's unpacked edits (F225).
+	 */
+	public static List<String> referencesToAdded(int zones, ZoneTables.ZoneBytes source) {
 		List<String> out = new ArrayList<>();
-		for (int i = 0; i < Math.min(BASE_ZONES, zo.length); i++) {
+		for (int i = 0; i < Math.min(BASE_ZONES, zones); i++) {
+			byte[] z;
 			try {
-				byte[] z = zo.getDecompressedEntry(i);
-				if (z == null || z.length < 12 || (z[0] & 0xFF) != 0x5A || (z[1] & 0xFF) != 0x4F) {
-					continue;
-				}
-				int cnt = ContainerBytes.count(z);
-				if (cnt < 2) {
-					continue;
-				}
+				z = source.zone(i);
+			} catch (IOException | RuntimeException unread) {
+				out.add("zone " + i + " could not be read (" + Ui.reason(unread) + "), so its warps are not checked");
+				continue;
+			}
+			if (z == null) {
+				out.add("zone " + i + " could not be read, so its warps are not checked");
+				continue;
+			}
+			if (z.length < 12 || (z[0] & 0xFF) != 0x5A || (z[1] & 0xFF) != 0x4F) {
+				continue;
+			}
+			ZoneEntities ent;
+			try {
 				int o0 = i32(z, 4 + 4), o1 = i32(z, 4 + 2 * 4);
-				if (o0 < 0 || o1 > z.length || o1 <= o0) {
-					continue;
+				if (ContainerBytes.count(z) < 2 || o0 < 0 || o1 > z.length || o1 <= o0) {
+					throw new IllegalStateException("its container has no whole entity block");
 				}
-				ZoneEntities ent = new ZoneEntities(java.util.Arrays.copyOfRange(z, o0, o1));
-				for (int w = 0; w < ent.warps.size(); w++) {
-					int tz = ent.warps.get(w).targetZone;
-					if (tz >= BASE_ZONES && tz < 0x8000) {
-						out.add("zone " + i + " warp " + w + " -> added zone " + tz);
-					}
+				ent = new ZoneEntities(java.util.Arrays.copyOfRange(z, o0, o1));
+			} catch (RuntimeException unread) {
+				out.add("zone " + i + "'s warps could not be read (" + Ui.reason(unread) + "), so they are not checked");
+				continue;
+			}
+			for (int w = 0; w < ent.warps.size(); w++) {
+				int tz = ent.warps.get(w).targetZone;
+				if (tz >= BASE_ZONES && tz < 0x8000) {
+					out.add("zone " + i + " warp " + w + " -> added zone " + tz);
 				}
-			} catch (RuntimeException ex) {
-				// unreadable zone - skip (the scan is advisory)
 			}
 		}
 		return out;

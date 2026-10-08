@@ -244,8 +244,11 @@ public class SignWrapperInjector {
 	 * it is unreachable for any donor that passed buildDonor, but callers
 	 * that must be robust even against it should inject into a disposable
 	 * copy and commit it on success.
+	 * @param measured the game the target is from, already asked (NpcTemplates.measuredOn): the
+	 * routine's shape is ORAS's
 	 */
-	public static int injectSignWrapper(GFLPawnScript target, GFLPawnScript donor) {
+	public static int injectSignWrapper(NpcTemplates.Measured measured, GFLPawnScript target, GFLPawnScript donor) {
+		NpcTemplates.asked(measured);
 		try {
 			if (target == null) {
 				throw new InjectionException("No target script.");
@@ -417,8 +420,6 @@ public class SignWrapperInjector {
 		}
 }
 
-
-	
 	//============ donor model ============
 	/**
 	 * What the closure walk collected, plus what only this transplant adds.

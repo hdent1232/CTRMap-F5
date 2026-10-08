@@ -237,8 +237,9 @@ public class MapPrefabTest {
 		GR target = tempGR(scratch, garc, 1);
 		GR skinned = garc.length > 490 ? tempGR(scratch, garc, 490) : null;
 		if (target == null || skinned == null || !BchMapModel.isMapModel(target.getFile(1))) {
-			System.out.println("  skip stamp report: regions 1 and 490 are not both in this dump");
-			return 0;
+			//a corpus without the shape this was written for is a defect, not an absence (F144)
+			System.out.println("  FAIL stamp report: regions 1 and 490 are not both map models in this dump");
+			return 1;
 		}
 		MapPrefab whole = MapPrefab.extract(target, 12, 12, 27, 27, "self cut");
 		MapPrefab fragment = MapPrefab.extract(skinned, 8, 9, 19, 21, "skinned donor");

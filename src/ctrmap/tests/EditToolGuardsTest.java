@@ -112,16 +112,6 @@ public class EditToolGuardsTest {
 	// ---- the shape every tool advertises ------------------------------------
 
 	/**
-	 * The two questions the editor asks a tool before anything happens: may the
-	 * tile cursor follow the mouse, and may the 3D navigator stay bound. The
-	 * answers decide whether the CM2D cursor is drawn at all and whether a 3D
-	 * gizmo is attached, so a tool that changes its answer changes what the user
-	 * can do with it without touching a single handler.
-	 *
-	 * <p>Also the guard in AbstractTool's own constructor: with no 3D panel a
-	 * tool must still build. Every other check in this suite rests on it.
-	 */
-	/**
 	 * Which tool is held is an object, and two of them can exist at once.
 	 *
 	 * <p>It was {@code CtrmapMainframe.tool}, a public mutable static of the
@@ -190,7 +180,6 @@ public class EditToolGuardsTest {
 				"and one letting go does not touch the other");
 	}
 
-	/** A tool that records what it was told and when, and touches no editor. */
 	/**
 	 * A zone switch tells the tool that is held, and the tool decides what that
 	 * means for it.
@@ -239,7 +228,10 @@ public class EditToolGuardsTest {
 			"and a tool that does not override it does nothing, rather than being made to say so");
 	}
 
-	/** Not final: the zone-change section subclasses it to record that one call. */
+	/**
+	 * A tool that records what it was told and when, and touches no editor. Not final: the
+	 * zone-change section subclasses it to record that one call.
+	 */
 	static class SpySwitchTool extends AbstractTool {
 
 		private final java.util.List<String> log;
@@ -300,6 +292,16 @@ public class EditToolGuardsTest {
 		}
 	}
 
+	/**
+	 * The two questions the editor asks a tool before anything happens: may the
+	 * tile cursor follow the mouse, and may the 3D navigator stay bound. The
+	 * answers decide whether the CM2D cursor is drawn at all and whether a 3D
+	 * gizmo is attached, so a tool that changes its answer changes what the user
+	 * can do with it without touching a single handler.
+	 *
+	 * <p>Also the guard in AbstractTool's own constructor: with no 3D panel a
+	 * tool must still build. Every other check in this suite rests on it.
+	 */
 	static void everyToolAnswersForItself() {
 		check(CtrmapMainframe.m3DDebugPanel == null,
 				"fixture: there is no 3D panel, which is the case the guard in AbstractTool's constructor is for");
@@ -869,7 +871,7 @@ public class EditToolGuardsTest {
 		//host and the check runs with no display at all.
 		toolStartupSwitchesTheSidePanel();
 		if (!EditorBench.frameAvailable()) {
-			System.out.println("  skip: no display - the warp and trigger hit tests and the camera tool"
+			Skip.section("no display - the warp and trigger hit tests and the camera tool"
 					+ " read the map view's own rendered image, which needs one");
 			return;
 		}
@@ -1060,7 +1062,7 @@ public class EditToolGuardsTest {
 		System.out.println("--- a camera table that cannot be read: the form empties and says so");
 		File garcFile = new File(dump, Workspace.getArchivePath(ArchiveType.AREA_DATA, GameType.ORAS));
 		if (!garcFile.isFile()) {
-			System.out.println("  skip: no dump at " + dump);
+			Skip.section("no dump at " + dump);
 			return;
 		}
 		GARC garc = new GARC(garcFile);
@@ -1148,7 +1150,7 @@ public class EditToolGuardsTest {
 	static void cameraToolSwitchesCamera(File dump) throws Exception {
 		CameraDataFile cdf = cameraFile(dump);
 		if (cdf == null) {
-			System.out.println("  skip: no dump at " + dump + " - CameraDataFile only parses an AreaData container");
+			Skip.section("no dump at " + dump + " - CameraDataFile only parses an AreaData container");
 			return;
 		}
 		cdf.camData.clear();

@@ -26,6 +26,13 @@ import ctrmap.formats.zone.Zone;
  * position while {@link #open()} is null - that is the state after a rebuild,
  * and readers that need both check both, as they always did.
  *
+ * <p>NO HOLES (F208). The table used to be installed first and filled slot by slot, so one
+ * unreadable ZoneData entry left every later slot null - and five of the nine readers of
+ * {@link #at} dereferenced what it answered, so after that no zone could be opened at all, the
+ * warp form throwing on a zone nobody had asked about. A table is refused unless every slot
+ * holds a zone and a slot cannot be emptied, so at() never answers null and no reader has to
+ * remember that it might.
+ *
  * <p>Plain fields, as the panel's were: the panel writes from its workers and
  * the window reads on the event thread, and this class changes nothing about
  * that - it gives the state an owner, not a lock.
@@ -42,9 +49,8 @@ public final class LoadedZone {
 	}
 
 	/**
-	 * The zone in slot {@code i}, which may be null for a slot the rebuild
-	 * could not fill. Refuses, naming the index and the count, for a slot the
-	 * table does not have.
+	 * The zone in slot {@code i} - never null, since a table with a hole is refused (F208).
+	 * Refuses, naming the index and the count, for a slot the table does not have.
 	 */
 	public Zone at(int i) {
 		if (i < 0 || i >= count()) {
@@ -81,12 +87,22 @@ public final class LoadedZone {
 		if (zones == null) {
 			throw new IllegalArgumentException("a zone table cannot be null - hand an empty table to say the archive holds no zones");
 		}
+		for (int i = 0; i < zones.length; i++) {
+			if (zones[i] == null) {
+				throw new IllegalArgumentException("slot " + i + " of the zone table holds no zone - a table is installed"
+						+ " whole, once every zone in it has been read (F208)");
+			}
+		}
 		table = zones.clone();
 		open = null;
 	}
 
-	/** One slot of the table, filled or refilled; the rebuild fills them one by one. */
+	/** One slot of the table, refilled with another zone; a slot is never emptied (F208). */
 	public void replace(int i, Zone z) {
+		if (z == null) {
+			throw new IllegalArgumentException("slot " + i + " of the zone table cannot be emptied - a zone table"
+					+ " has no holes (F208)");
+		}
 		if (i < 0 || i >= count()) {
 			throw new IndexOutOfBoundsException("zone " + i + " is outside the loaded zone table, which holds "
 					+ count() + " zone(s)");
@@ -94,13 +110,9 @@ public final class LoadedZone {
 		table[i] = z;
 	}
 
-	/** Opens slot {@code i} of the table; refuses a slot the table does not have or could not fill. */
+	/** Opens slot {@code i} of the table; refuses a slot the table does not have. */
 	public void open(int i) {
-		Zone z = at(i);
-		if (z == null) {
-			throw new IllegalStateException("slot " + i + " of the loaded zone table holds no zone");
-		}
-		open = z;
+		open = at(i);
 		index = i;
 	}
 

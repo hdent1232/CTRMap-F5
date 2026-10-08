@@ -81,6 +81,50 @@ public final class ZoneTables {
 	}
 
 	/**
+	 * GARC index of the "EN" wild-encounter pack: the entry after the master table, on a game
+	 * that keeps one there (ORAS ends master, then EN). Three places wrote it {@code length - 1},
+	 * which on a game ending with the master table alone IS the master table (F029).
+	 *
+	 * @throws IOException when the game keeps no pack after its master table, or nobody measured
+	 * how its ZoneData ends
+	 */
+	public static int encounterPackIndex(GARC zoneData, GameProfile p) throws IOException {
+		int zones = zoneCount(zoneData, p);
+		if (zoneTrailing(p) < 2) {
+			throw new IOException(p.displayName() + "'s ZoneData ends with its master zone-header table;"
+					+ " it keeps no encounter pack after it.");
+		}
+		return zones + 1;
+	}
+
+	/** One zone's container bytes by index, from wherever a caller reads zones (F225). */
+	public interface ZoneBytes {
+
+		byte[] zone(int index) throws IOException;
+	}
+
+	/**
+	 * Zone {@code i} as the workspace holds it now, extracting nothing: its extracted copy - the
+	 * user's unpacked edits included - when the workspace holds one, else the archive's entry
+	 * (F225). The archive alone is the game as of the last pack: the zone-safety scans read it, so
+	 * a warp added since then into a zone did not count, and a zone filled since read as empty.
+	 *
+	 * @throws IOException when neither can be read
+	 */
+	public static byte[] zoneNow(WorkspaceSession s, int i) throws IOException {
+		java.io.File f = new java.io.File(s.getExtractionDirectory(ctrmap.gamedef.ArchiveType.ZONE_DATA), String.valueOf(i));
+		if (f.isFile()) {
+			return java.nio.file.Files.readAllBytes(f.toPath());
+		}
+		GARC zo = s.getArchive(ctrmap.gamedef.ArchiveType.ZONE_DATA);
+		byte[] b = zo == null ? null : zo.getDecompressedEntry(i);
+		if (b == null) {
+			throw new IOException("zone " + i + " is neither in the workspace nor readable from the archive");
+		}
+		return b;
+	}
+
+	/**
 	 * GARC index of the master zone-header table - the first entry past the
 	 * last zone, and the runtime-authoritative copy of every zone header.
 	 */
@@ -89,22 +133,50 @@ public final class ZoneTables {
 	}
 
 	/**
-	 * How many areas the open game has: every AreaData entry that is not one of
-	 * the tables at the end (on both measured games, the engine's global
-	 * per-area table, which is not an area).
+	 * The AreaData index of the engine's global per-area table: the profile's measured index
+	 * (F235). It was "the first entry past the last area" - length minus the trailing tables -
+	 * and an area fork appends AFTER the table, so after one fork that named the forked area as
+	 * the table and counted the table as an area.
+	 *
+	 * @throws IOException naming the game when nobody measured where its table is, or when this
+	 * archive is too short to hold it
 	 */
-	public static int areaCount(GARC areaData) throws IOException {
+	public static int areaTableIndex(GARC areaData) throws IOException {
 		requireArchive(areaData, "AreaData");
 		GameProfile p = requireProfile();
-		int n = p.areaDataTrailingEntries();
-		if (n < 0) {
-			throw new IOException("CTRMap has not measured how the AreaData archive of "
-					+ p.displayName() + " ends - how many of its last entries are tables"
-					+ " rather than areas - so it cannot say how many areas this game has."
+		int t = p.areaTableIndex();
+		if (t < 0) {
+			throw new IOException("CTRMap has not measured where the AreaData archive of "
+					+ p.displayName() + " keeps the engine's per-area table, so it cannot say"
+					+ " which of its entries are areas."
 					+ "\n\nMeasure it against a " + p.displayName() + " dump and fill in"
-					+ " areaDataTrailingEntries() in that game's profile.");
+					+ " areaTableIndex() in that game's profile.");
 		}
-		return areaData.length - n;
+		if (t >= areaData.length) {
+			throw new IOException("This AreaData archive holds " + areaData.length + " entries, so it has no"
+					+ " entry " + t + " for " + p.displayName() + "'s per-area table - it is not that game's archive.");
+		}
+		return t;
+	}
+
+	/**
+	 * Every AreaData entry that IS an area, in order: those before the per-area table and those
+	 * an area fork appended after it (F235).
+	 */
+	public static int[] areaIds(GARC areaData) throws IOException {
+		int t = areaTableIndex(areaData);
+		int[] ids = new int[areaData.length - 1];
+		for (int i = 0, k = 0; i < areaData.length; i++) {
+			if (i != t) {
+				ids[k++] = i;
+			}
+		}
+		return ids;
+	}
+
+	/** How many areas the open game has - the forked ones included (F235). */
+	public static int areaCount(GARC areaData) throws IOException {
+		return areaIds(areaData).length;
 	}
 
 	private static GameProfile requireProfile() throws IOException {

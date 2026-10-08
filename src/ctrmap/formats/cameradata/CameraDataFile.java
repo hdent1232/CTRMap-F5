@@ -65,6 +65,16 @@ public class CameraDataFile {
 		}
 	}
 
+	/** The profile of the game this table's area belongs to, or null when the area has none. */
+	public ctrmap.gamedef.GameProfile profile() {
+		return file == null || file.game() == null ? null : file.game().profile();
+	}
+
+	/** The area this table was read from and is written to; a discard reads it again (F106). */
+	public AD area() {
+		return file;
+	}
+
 	/** The area file this table came out of, for a message. */
 	private String name() {
 		return file == null || file.getOriginFile() == null ? "an unnamed area"

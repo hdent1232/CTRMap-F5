@@ -7,7 +7,6 @@ import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLJPanel;
 import com.jogamp.opengl.glu.GLU;
-import com.jogamp.opengl.util.FPSAnimator;
 
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.gfcollision.GRCollisionFile;
@@ -32,8 +31,9 @@ public class GLPanel extends GLJPanel implements GLEventListener {
 		super(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
 		this.parent = parent;
 		super.addGLEventListener(this);
-		FPSAnimator animator = new FPSAnimator(this, 300, true);
-		animator.start();
+		//WHILE IT IS SEEN, AT 60 (F099): this drew 300 frames a second from application start,
+		//whether or not the collision tab was ever opened
+		ShownLoop.of(this, 60);
 	}
 
 	@Override

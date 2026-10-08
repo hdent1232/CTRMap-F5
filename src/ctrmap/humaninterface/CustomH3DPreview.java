@@ -7,7 +7,6 @@ import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLJPanel;
 import com.jogamp.opengl.glu.GLU;
-import com.jogamp.opengl.util.FPSAnimator;
 import ctrmap.formats.h3d.model.H3DModel;
 
 /**
@@ -18,13 +17,18 @@ public class CustomH3DPreview extends GLJPanel implements GLEventListener {
 	private static final long serialVersionUID = -6824913720967100278L;
 
 	private H3DModel model;
-	private final FPSAnimator animator;
+	private final ShownLoop animator;
+
+	/** The model whose buffers are in the GL context below, or null: uploaded once, not every frame (F098). */
+	private H3DModel uploaded;
+	private Object uploadedIn;
+	/** Set by loadModel: the model handed is uploaded again on the next frame, in case it changed. */
+	private boolean reupload;
 
 	public CustomH3DPreview() {
 		super(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
 		super.addGLEventListener(this);
-		animator = new FPSAnimator(this, 60);
-		animator.start();
+		animator = ShownLoop.of(this, 60);   //while it is seen (F098)
 	}
 
 	/**
@@ -33,8 +37,8 @@ public class CustomH3DPreview extends GLJPanel implements GLEventListener {
 	 * context are released instead of leaking.
 	 */
 	public void stop() {
-		if (animator.isStarted()) {
-			animator.stop();
+		if (animator != null) {
+			animator.end();
 		}
 	}
 
@@ -49,14 +53,25 @@ public class CustomH3DPreview extends GLJPanel implements GLEventListener {
 		gl.glDisable(GL2.GL_CULL_FACE);
 		gl.glDepthFunc(GL2.GL_LEQUAL);
 		gl.glHint(GL2.GL_PERSPECTIVE_CORRECTION_HINT, GL2.GL_NICEST);
+		uploaded = null;   //a new context holds nothing yet
 	}
 
 	public void loadModel(H3DModel model) {
 		this.model = model;
+		reupload = true;
 	}
 
 	@Override
 	public void dispose(GLAutoDrawable drawable) {
+		release(drawable.getGL().getGL2());
+	}
+
+	/** Frees the shown model's buffers from the context going away. */
+	public void release(GL2 gl) {
+		if (uploaded != null) {
+			uploaded.destroyAllBOs(gl);
+		}
+		uploaded = null;
 	}
 
 	@Override
@@ -69,18 +84,37 @@ public class CustomH3DPreview extends GLJPanel implements GLEventListener {
 			gl.glTranslatef((model.minVector.x + model.maxVector.x) / -2f, -model.maxVector.y / 2f, -maxTransl0 * 3f - 5f);
 //			gl.glRotatef(90f, 0.0f, 1.0f, 0.0f);
 
-			model.destroyAllBOs(gl);
+			drawModel(gl, drawable.getContext());
+		}
+		gl.glFlush();
+	}
 
+	/**
+	 * Draws the model, uploading it first when this context does not hold it yet.
+	 *
+	 * <p>ONCE PER MODEL AND CONTEXT, NOT EVERY FRAME (F098): display() deleted and re-uploaded every
+	 * buffer sixty times a second. The buffers are kept per GL context on the mesh, so a model shown
+	 * in two previews is uploaded once into each; a model handed in again is uploaded again, in case
+	 * it changed; and one switched away from is freed from the context it was in.
+	 */
+	public void drawModel(GL2 gl, Object context) {
+		if (reupload || uploaded != model || uploadedIn != context) {
+			if (uploaded != null && uploaded != model && uploadedIn == context) {
+				uploaded.destroyAllBOs(gl);
+			}
 			if (model.meshes.size() > 0 && model.meshes.get(0).vbo == null) {
 				model.makeAllBOs();
 			}
-
-			for (int i = 0; i < model.meshes.size(); i++) { //direct rendering to bypass translation
+			for (int i = 0; i < model.meshes.size(); i++) {
 				model.meshes.get(i).uploadVBO(gl);
-				model.meshes.get(i).render(gl, (model.materials.size() > model.meshes.get(i).materialId) ? model.materials.get(model.meshes.get(i).materialId) : null);
 			}
+			uploaded = model;
+			uploadedIn = context;
+			reupload = false;
 		}
-		gl.glFlush();
+		for (int i = 0; i < model.meshes.size(); i++) { //direct rendering to bypass translation
+			model.meshes.get(i).render(gl, (model.materials.size() > model.meshes.get(i).materialId) ? model.materials.get(model.meshes.get(i).materialId) : null);
+		}
 	}
 
 	@Override

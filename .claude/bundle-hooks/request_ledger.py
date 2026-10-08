@@ -81,6 +81,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 FOLDER = ".claude/" + os.path.basename(HERE)
 sys.path.insert(0, HERE)
+import bundle_env        # noqa: E402  - the one spelling of the owner's switches
 import bundle_shell      # noqa: E402  - an agent launch, found by shape
 
 #: The project's store, one file per session. The directory ignores itself.
@@ -644,15 +645,41 @@ def mechanical(held, asked, rows, last=None, root=None):
     return out
 
 
+#: THE OWNER'S SWITCH FOR A SESSION WITH NO AGENTS AT ALL (CTRMap F178). The reviewer is an agent
+#: launch at every turn end, and a project's rule file can forbid agents without a yes and a price:
+#: CTRMap's owner gave the reviewer that yes once, and told a later session "NO AGENTS" - with no
+#: way for that session to end a turn without one. Set to 1, the declared reviewer is not asked for
+#: in this session, and every turn end says so; the declaration itself is untouched.
+NO_REVIEW = bundle_env.name("NO_REVIEW")
+
+
 def review_config(root=None):
-    """(config, trouble): the reviewer this project declared, or None when it declared none."""
+    """(config, trouble): the reviewer asked for in THIS session - the one the project declared,
+    unless the owner switched it off for the session (`NO_REVIEW`)."""
+    if bundle_env.allowed("NO_REVIEW"):
+        return None, None
+    return declared_review(root)
+
+
+def review_off(root=None):
+    """True when the project declares a reviewer and the owner switched it off for this session -
+    which the turn end says, so "not reviewed" never reads as "reviewed and passed"."""
+    return bundle_env.allowed("NO_REVIEW") and declared_review(root)[0] is not None
+
+
+def declared_review(root=None):
+    """(config, trouble): the reviewer this project declared, or None when it declared none.
+
+    A DECLARATIONS FILE THAT DOES NOT PARSE IS TROUBLE, not "no reviewer" (CTRMap F178): read as
+    none, one stray comma switched the reviewer off with nothing said."""
     text = _read(os.path.join(_root(root), DECLARATIONS))
     if not text:
         return None, None
     try:
         held = json.loads(text)
-    except ValueError:
-        return None, None
+    except ValueError as exc:
+        return None, ("%s cannot be read (%s), so whether this project declares a reviewer is "
+                      "UNKNOWN - and an unknown reviewer is not no reviewer" % (DECLARATIONS, exc))
     entry = held.get(REVIEW_KEY) if isinstance(held, dict) else None
     if entry is None:
         return None, None

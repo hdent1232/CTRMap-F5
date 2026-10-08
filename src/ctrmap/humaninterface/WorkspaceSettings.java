@@ -20,9 +20,6 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 	private String originTilesetPath;
 
 	/**
-	 * Creates new form WorkspaceSettings
-	 */
-	/**
 	 * The map view, handed in AS ITSELF.
 	 *
 	 * <p>A narrower interface was weighed and rejected for the reason
@@ -37,6 +34,9 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 	/** Re-reads the tileset into the inspector. Handed in: this dialog changed it. */
 	private final Runnable reloadTileset;
 
+	/**
+	 * Creates new form WorkspaceSettings
+	 */
 	public WorkspaceSettings(TileMapPanel map, Runnable reloadTileset) {
 		this.map = map;
 		this.reloadTileset = reloadTileset;
@@ -71,26 +71,38 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 			}
 		}
 		if (Ui.confirm(this, "Do you want to save the new settings?", "Save settings?", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION) {
-			save();
+			//what the save answered (F114): an interrupted save kept the pane open on the window
+			//this was, and answering true here let it go with the settings half-applied
+			return save();
 		}
 		return true;
 	}
 
-	public void save() {
-		Workspace.WORKSPACE_PATH = wsPathField.getText();
-		Workspace.ESPICA_PATH = spicaField.getText();
-		Workspace.TILESET_DEFAULT = btnTilesetDefault.isSelected();
-		Workspace.TILESET_PATH = tilesetPath.getText();
+	/**
+	 * Saves the settings, and answers whether it ran to the end: false when the game-folder step
+	 * was declined or cancelled, in which case NOTHING was assigned (F114). The four globals used
+	 * to be assigned first, so an interrupted save left them changed, unvalidated, and written to
+	 * preferences at exit - the next launch opened a workspace that was never validated, paired
+	 * with the old game folder.
+	 */
+	public boolean save() {
+		boolean[] ran = {false};
 		repointGameDir(this, gameField, originGamePath, new Runnable() {
 			@Override
 			public void run() {
 				applySettings();
+				ran[0] = true;
 			}
 		});
+		return ran[0];
 	}
 
-	/** The rest of the save, once the game folder has been settled. */
+	/** The rest of the save, once the game folder has been settled: the globals only now. */
 	private void applySettings() {
+		Workspace.WORKSPACE_PATH = wsPathField.getText();
+		Workspace.ESPICA_PATH = spicaField.getText();
+		Workspace.TILESET_DEFAULT = btnTilesetDefault.isSelected();
+		Workspace.TILESET_PATH = tilesetPath.getText();
 		ctrmap.CtrmapMainframe.onWorkspaceOpened(Workspace.validate(this));
 		originWSPath = wsPathField.getText();
 		originGamePath = gameField.getText();
@@ -130,23 +142,20 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 				gameField.setText(originGamePath);
 				return; //the user would rather not move the workspace after all
 			}
-			int res = Ui.confirm(null, "Game path has been changed. To prevent cross-injecting, the workspace will be cleaned.\n"
-					+ "Do you wish to commit your changes to the game data beforehand? \nUncommited data will be lost on cleanup.", "State change warning", JOptionPane.YES_NO_CANCEL_OPTION);
-			switch (res) {
-				case JOptionPane.YES_OPTION:
-					Workspace.packWorkspace();
-				case JOptionPane.NO_OPTION:
-					Workspace.GAMEDIR_PATH = gameField.getText();
-					ctrmap.CtrmapMainframe.unloadEditors();
-					Workspace.cleanAndReload();
-					break;
-				//closing the dialog means cancel. Without this case the switch
-				//ended and the settings were saved with the new game path but
-				//WITHOUT the cleanup - the cross-injection this warning exists
-				//to prevent, reached by pressing X.
-				case JOptionPane.CLOSED_OPTION:
-				case JOptionPane.CANCEL_OPTION:
-					return; //interrupt the saving process
+			//The question - and what each answer does - is Workspace.cleanAfterAsking,
+			//shared with Options > Clean workspace. It used to be asked here inline,
+			//where "pack first" fell through to the cleanup whether or not the pack
+			//finished: a failed pack, then the edits it was meant to keep deleted
+			//(census H.69). Closing it is Cancel, which stops the save - without that,
+			//the settings were once written with the new game path and WITHOUT the
+			//cleanup, the cross-injection this exists to prevent, reached by pressing X.
+			final String newGame = gameField.getText();
+			if (!Workspace.cleanAfterAsking(parent, "The game folder has changed. To keep the old game's"
+					+ " files out of the new one, the workspace will be cleaned.", () -> {
+						Workspace.GAMEDIR_PATH = newGame;
+						ctrmap.CtrmapMainframe.unloadEditors();
+					})) {
+				return; //interrupt the saving process
 			}
 		}
 		restOfTheSave.run();
@@ -362,7 +371,9 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 		jfc.setMultiSelectionEnabled(false);
 		jfc.setDialogTitle("Select a workspace directory");
 		jfc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-		jfc.showOpenDialog(this);
+		if (ctrmap.Ui.choose(this, jfc, false) == null) {
+			return;
+		}
 		if (jfc.getSelectedFile() != null) {
 			wsPathField.setText(jfc.getSelectedFile().getAbsolutePath());
 		}
@@ -373,7 +384,9 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 		jfc.setMultiSelectionEnabled(false);
 		jfc.setDialogTitle("Select game RomFS directory");
 		jfc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-		jfc.showOpenDialog(this);
+		if (ctrmap.Ui.choose(this, jfc, false) == null) {
+			return;
+		}
 		if (jfc.getSelectedFile() != null) {
 			gameField.setText(jfc.getSelectedFile().getAbsolutePath());
 		}
@@ -401,7 +414,9 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 		jfc.setMultiSelectionEnabled(false);
 		jfc.setDialogTitle("Locate ESPICA executable");
 		jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-		jfc.showOpenDialog(this);
+		if (ctrmap.Ui.choose(this, jfc, false) == null) {
+			return;
+		}
 		if (jfc.getSelectedFile() != null) {
 			spicaField.setText(jfc.getSelectedFile().getAbsolutePath());
 		}
@@ -431,7 +446,9 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 		jfc.setMultiSelectionEnabled(false);
 		jfc.setDialogTitle("Select a tileset file");
 		jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-		jfc.showOpenDialog(this);
+		if (ctrmap.Ui.choose(this, jfc, false) == null) {
+			return null;
+		}
 		return jfc.getSelectedFile();
 	}
 
@@ -444,16 +461,19 @@ public class WorkspaceSettings extends ctrmap.humaninterface.FormPanel {
 		/* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
          * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
 		 */
-		try {
-			for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-				if ("Nimbus".equals(info.getName())) {
-					javax.swing.UIManager.setLookAndFeel(info.getClassName());
-					break;
+		//on the event thread, ahead of the form queued below: the look and feel is Swing's too (F220)
+		java.awt.EventQueue.invokeLater(() -> {
+			try {
+				for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
+					if ("Nimbus".equals(info.getName())) {
+						javax.swing.UIManager.setLookAndFeel(info.getClassName());
+						break;
+					}
 				}
+			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
+				java.util.logging.Logger.getLogger(WorkspaceSettings.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
 			}
-		} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
-			java.util.logging.Logger.getLogger(WorkspaceSettings.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-		}
+		});
 		//</editor-fold>
 
 		//</editor-fold>

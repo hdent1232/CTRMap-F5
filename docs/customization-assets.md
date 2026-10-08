@@ -146,8 +146,8 @@ nb1_bangle   nb1_accehat02
 
 **570** distinct part-texture names — re-counted. An earlier pass here said
 544; that was an undercount, because 46 texture subfiles are LZ11-compressed
-above `GARC`'s 64:1 sniff cap and came back as raw blobs (see "A GARC reading
-defect found on the way"). Counting properly: 607 subfiles hold at least one
+above the 64:1 sniff cap `GARC` carried then, and came back as raw blobs (see "A
+GARC reading defect found on the way - since fixed"). Counting properly: 607 subfiles hold at least one
 texture, 600 distinct names, of which 570 are part textures once the shared
 lookups, the `nb*_` composite targets and `paintl/paintr/star` are set aside.
 The naming is
@@ -384,22 +384,21 @@ So of the 101 swappable part models, **86 are actually wearable** (55 heroine,
 the wardrobe, `b1_hair_shortmae` is the odd seventh short-hair model described
 above, and the two `bt*_00` entries are the assembled defaults.
 
-### A GARC reading defect found on the way
+### A GARC reading defect found on the way - since fixed
 
-`GARC.sniffLZ11` refuses to treat an entry as compressed when its declared size
-exceeds 64× its stored size. **697 entries across the dump fail that test while
-being genuinely LZ11-compressed** — measured, by decompressing every one of
-them: 691 come back at exactly the declared length and the other 6 within 11
-bytes of it (a partial trailing block), so all 697 really are compressed. A run
-of identical bytes beats 64:1 easily, which is why the cap is wrong in
-principle as well as in fact — `a/1/6/0` has 62-byte entries that expand to
-262,184.
+When this archive was first read, `GARC.sniffLZ11` refused to treat an entry as
+compressed when its declared size exceeded 64× its stored size, and hundreds of
+genuinely LZ11-compressed entries across the dump failed that test. A run of
+identical bytes beats 64:1 easily - `a/1/6/0` has 62-byte entries that expand to
+262,184 - so the cap was wrong in principle as well as in fact. In this archive
+it was 46 subfiles, the `_m` mask textures, which reached a caller as raw bytes.
 
-In this archive that is 46 subfiles, the `_m` mask textures, which reach a
-caller as raw bytes. `DressUpIndexTest` decompresses them itself and reports
-how many it had to; `DressUpArchive` does not depend on it. Fixing the sniff
-touches the packing path as well as the reading path, so it is filed separately
-rather than done here.
+The cap is gone. The sniff now decides by arithmetic and a strict decode of the
+first 64 stored bytes, and its javadoc carries the dump-wide measurement that
+replaced the guess. `GarcSniffTest` holds the mask textures as its high-ratio
+case, and `DressUpIndexTest` asserts that it had to decompress none of them
+itself - if the sniff ever regresses, that suite says so instead of quietly
+coping again.
 
 ### Not wired into `GameProfile.archivePath` yet
 

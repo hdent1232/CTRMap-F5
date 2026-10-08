@@ -27,7 +27,7 @@ public class BchMapModelTest {
 	public static void main(String[] args) throws Exception {
 		File garcFile = new File(args.length > 0 ? args[0] : DEFAULT_GARC_PATH);
 		if (!garcFile.exists()) {
-			System.out.println("SKIP: pristine FieldData GARC not found: " + garcFile.getAbsolutePath());
+			Skip.section("pristine FieldData GARC not found: " + garcFile.getAbsolutePath());
 			return;
 		}
 		GARC garc = new GARC(garcFile);

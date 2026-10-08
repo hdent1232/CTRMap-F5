@@ -57,9 +57,6 @@ import javax.swing.JTextArea;
  */
 public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
-	/**
-	 * Creates new form NPCEditForm
-	 */
 	public boolean loaded = false;
 	public ZoneEntities e;
 	public ZoneEntities.NPC npc;
@@ -119,6 +116,9 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	private final java.util.function.Consumer<javax.swing.JComponent> toolPane;
 
+	/**
+	 * Creates new form NPCEditForm
+	 */
 	public NPCEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
 			Navigator navi, ViewportCentre viewportCentre, ZoneSaver zoneSaver, ScriptView scriptView,
 			TileMapPanel map, java.util.function.Consumer<javax.swing.JComponent> toolPane) {
@@ -268,11 +268,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		areaW.setValue(npc.areaWidth);
 		areaH.setValue(npc.areaHeight);
 		mot.setValue(npc.movePerm1);
-		if (npc.movePerm1 < motionModel.getSize()) {
-			motDropdown.setSelectedIndex(npc.movePerm1);
-		} else {
-			motDropdown.setSelectedIndex(-1);
-		}
+		Combos.show(motDropdown, npc.movePerm1);   //the raw value is kept in "mot", which is what is saved
 		mp2.setValue(npc.movePerm2);
 		if (getMot2Index(npc.movePerm2) < motion2Model.getSize()) {
 			mot2Dropdown.setSelectedIndex(getMot2Index(npc.movePerm2));
@@ -304,12 +300,13 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					return;
 				}
 				NPCRegistry.NPCRegistryEntry failsafe = new NPCRegistry.NPCRegistryEntry();
-				failsafe.uid = npc.model; //in this case, GF sometimes uses different UIDs than models, for it****s and ob****s. It's not required though.
 				failsafe.model = npc.model;
-				if (reg.entries.size() < 31) {
-					reg.entries.put(failsafe.uid, failsafe);
+				if (reg.entries.size() < NPCRegistry.MAX_ENTRIES) {
+					//under the NPC's own model number, which is free - that is why it is being made. In
+					//this case GF sometimes uses different UIDs than models, for it****s and ob****s. It's
+					//not required though.
+					reg.register(failsafe, npc.model);
 					reg.mapModel(failsafe.uid, failsafe.uid);
-					reg.modified = true;
 					regentry = failsafe;
 				} else {
 					ctrmap.Ui.error(this, "The registry's maximum capacity of 31 unique NPCs has been reached.\n"
@@ -383,12 +380,28 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				ctrmap.Ui.error(this, missing, "Script not defined");
 				return false;
 			}
-			int idx = e.npcs.indexOf(npc);
+			//BY THE INDEX IT WAS SHOWN FROM (F210): indexOf answers the FIRST equal NPC, so of two
+			//identical ones an edit to the second was written over the first
+			if (npcIndex < 0 || npcIndex >= e.npcs.size() || e.npcs.get(npcIndex) != npc) {
+				throw new IllegalStateException("the NPC form is showing NPC " + npcIndex
+						+ " but holds a record that is not in that slot, so it cannot tell which to replace");
+			}
 			npc = npc2;
-			e.npcs.set(idx, npc);
+			e.npcs.set(npcIndex, npc);
 			e.modified = true;
 			if (loaded) {
-				String problem = talkerMessageProblem(npc2.script);
+				String problem;
+				try {
+					problem = talkerMessageProblem(npc2.script);
+				} catch (IOException unchecked) {
+					problem = null;
+					ctrmap.Ui.message(this,
+							"This NPC was saved, but whether its talking script has a message to show could not be"
+							+ " checked:\n" + ctrmap.Ui.reason(unchecked) + "\n\n"
+							+ "If its message line is missing or empty, talking to it in-game will FREEZE the game.\n"
+							+ "Check it with the \"Edit dialogue\" button before you deploy.",
+							"NPC message not checked", JOptionPane.WARNING_MESSAGE);
+				}
 				if (problem != null) {
 					ctrmap.Ui.message(this,
 							"Heads up: this NPC runs a talking script, but " + problem + ".\n\n"
@@ -419,9 +432,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (reg == null || !reg.modified) {
 			return true;
 		}
-		switch (ctrmap.Ui.askToKeep(dialog, "NPC registry")) {
+		switch (ctrmap.Ui.askToKeep(dialog, "NPC registry", this::discardRegistry)) {
 			case DISCARD:
-				reg.discard();
 				return true;
 			case CANCEL:
 				return false;
@@ -435,6 +447,29 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, "The NPC registry could not be written: " + ctrmap.Ui.reason(ex),
 					"NPC registry not saved");
 			return false;
+		}
+	}
+
+	/**
+	 * Puts the NPC registry back to what the area holds (F106) and says when an NPC of this zone
+	 * names an entry that goes with it: No used to forget that the registry was changed and keep the
+	 * added and edited entries, which the NPCs went on being drawn from and the next save wrote.
+	 */
+	private void discardRegistry() {
+		java.util.Set<Integer> before = new java.util.HashSet<>(reg.entries.keySet());
+		reg.discard();
+		java.util.Set<Integer> named = new java.util.TreeSet<>();
+		if (e != null) {
+			for (ZoneEntities.NPC n : e.npcs) {
+				if (before.contains(n.model) && !reg.entries.containsKey(n.model)) {
+					named.add(n.model);
+				}
+			}
+		}
+		if (!named.isEmpty()) {
+			ctrmap.Ui.message(this, "NPCs of this zone name registry UID(s) " + named + ", which were not kept.\n"
+					+ "Discard the entity data too, or give those NPCs a model this area registers.",
+					"NPC registry", JOptionPane.WARNING_MESSAGE);
 		}
 	}
 
@@ -538,17 +573,22 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 * soft-lock the game (its message line is missing or empty - the game opens a
 	 * message box the player can never close), or null when the NPC is not a
 	 * talker or its message is fine. Same detection as the read-only Dialogue
-	 * preview, but surfaced as an active guard when the NPC is saved. Fully
-	 * defensive: any lookup failure returns null rather than a false alarm.
+	 * preview, but surfaced as an active guard when the NPC is saved.
+	 *
+	 * <p>THROWS when it cannot check (F211). It was "fully defensive": every
+	 * lookup failure answered null, which is "fine", so the one warning that
+	 * stands between a save and a frozen game was silent exactly when the story
+	 * text could not be read. A false alarm was the fear; a missed freeze is the
+	 * cost, and "could not check" is neither - the caller says it as such.
 	 */
-	private String talkerMessageProblem(int scriptId) {
+	private String talkerMessageProblem(int scriptId) throws IOException {
+		Zone zone = getLoadedZone();
+		if (zone == null || zone.s == null || scriptId >= TalkerScriptWizard.ENGINE_RESERVED_MIN) {
+			return null; //no zone script to run, or an engine script: not a talker
+		}
 		try {
-			Zone zone = getLoadedZone();
-			if (zone == null || zone.s == null || scriptId >= TalkerScriptWizard.ENGINE_RESERVED_MIN) {
-				return null;
-			}
 			if (Workspace.getStoryTextGARC() == null) {
-				return null;
+				throw new IOException("the story text archive is not open");
 			}
 			zone.s.decompressThis();
 			ZoneScriptAnalyzer.TalkerPattern tp = ZoneScriptAnalyzer.findTalkerPattern(zone.s, scriptId);
@@ -557,7 +597,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 			GFMessageFile msg = getStoryFile(zone.header.textID);
 			if (msg == null) {
-				return null;
+				throw new IOException("story-text file " + zone.header.textID + " could not be read");
 			}
 			if (tp.msgLine < 0 || tp.msgLine >= msg.getLineCount()) {
 				return "its message line " + tp.msgLine + " does not exist in story-text file " + zone.header.textID;
@@ -566,8 +606,8 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 				return "its message (story-text file " + zone.header.textID + ", line " + tp.msgLine + ") is empty";
 			}
 			return null;
-		} catch (Exception ex) {
-			return null;
+		} catch (RuntimeException ex) {
+			throw new IOException(ctrmap.Ui.reason(ex), ex);
 		}
 	}
 
@@ -704,10 +744,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return null;
 		}
 		try {
-			InputStream in = new FileInputStream(f);
-			byte[] b = new byte[in.available()];
-			in.read(b);
-			in.close();
+			byte[] b = java.nio.file.Files.readAllBytes(f.toPath());
 			storyFile = new GFMessageFile(b);
 			storyFileTextID = textID;
 		} catch (IOException | RuntimeException ex) {
@@ -775,10 +812,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					return null;
 				}
 				try {
-					InputStream in = new FileInputStream(f);
-					byte[] b = new byte[in.available()];
-					in.read(b);
-					in.close();
+					byte[] b = java.nio.file.Files.readAllBytes(f.toPath());
 					return MsgWrapperInjector.extractZoneScript(b);
 				} catch (IOException ex) {
 					return null;
@@ -806,10 +840,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 					return null;
 				}
 				try {
-					InputStream in = new FileInputStream(f);
-					byte[] b = new byte[in.available()];
-					in.read(b);
-					in.close();
+					byte[] b = java.nio.file.Files.readAllBytes(f.toPath());
 					return MsgWrapperInjector.extractZoneScript(b);
 				} catch (IOException ex) {
 					return null;
@@ -873,6 +904,16 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	/**
+	 * Whether a talker's line may be rewritten where it is (F233): only when no other talker in
+	 * this zone uses it AND no other zone shows text from this file. Anything else - another zone
+	 * sharing the file, or nobody able to say (-1) - adds a new line instead, which leaves every
+	 * line the other zones show as it was.
+	 */
+	public static boolean rewriteInPlace(int talkersOnLine, int textSharers) {
+		return talkersOnLine <= 1 && textSharers == 0;
+	}
+
+	/**
 	 * The dialogue editor past its form: refuses text that will not encode
 	 * (saying so); rewrites the talker's line in place, or - when other
 	 * talkers share it - adds a new line and re-points scriptId's talker at
@@ -888,8 +929,15 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		boolean scriptChanged = false;
 		String previousLine = null;
-		if (TalkerScriptWizard.countTalkersUsingLine(zone.s, msgLine) > 1) {
-			//the line is shared with other talkers - add a new line and re-point this talker only
+		int textSharers;
+		try {
+			textSharers = ctrmap.TextForker.textSharers(ctrmap.MasterTable.read(Workspace.session()), loadedZone.index());
+		} catch (java.io.IOException | RuntimeException cannotTell) {
+			textSharers = -1;   //nobody can say: a new line hurts no other zone, a rewrite might (F233)
+		}
+		if (!rewriteInPlace(TalkerScriptWizard.countTalkersUsingLine(zone.s, msgLine), textSharers)) {
+			//the line is shared - with other talkers, or with another zone showing this text file (a
+			//clone keeps its donor's): add a new line and re-point this talker only
 			msg.addLine(text);
 			int newLine = msg.getLineCount() - 1;
 			if (!ZoneScriptAnalyzer.patchTalkerLine(zone.s, scriptId, newLine)) {
@@ -1037,7 +1085,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			ctrmap.Ui.error(this, ex.reason(), "Add talking NPC");
 			return null;
 		}
-		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, newId, pos.x, pos.y);
+		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.measuredOn(zone.game()), NpcTemplates.nextFreeUid(e), model, newId, pos.x, pos.y);
 		placeNpc(placed);
 		return placed;
 	}
@@ -1061,7 +1109,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 			int insCount = SignWrapperInjector.countInjectedInstructions(zone.s, signDonor);
 			if (ctrmap.Ui.confirm(this,
-					"This zone's script has no sign-display routine (467 of 536 vanilla zones lack it).\n"
+					"This zone's script has no sign-display routine (467 of " + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + " vanilla zones lack it).\n"
 					+ "Inject the vanilla routine (" + insCount + " instructions) into this zone's script?\n"
 					+ "This is the same transplant that makes talking NPCs work everywhere.",
 					"Add sign", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
@@ -1123,12 +1171,12 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			if (signDonor != null) {
 				edit.injectSignWrapperFrom(signDonor);
 			}
-			caseId = edit.apply((work, line) -> NpcTemplates.addSignScript(work, line, signType), this::writeStoryFile);
+			caseId = edit.apply((measured, work, line) -> NpcTemplates.addSignScript(measured, work, line, signType), this::writeStoryFile);
 		} catch (ZoneScriptEdit.Refused ex) {
 			ctrmap.Ui.error(this, ex.reason(), "Add sign");
 			return false;
 		}
-		e.furniture.add(NpcTemplates.makeSignFurniture(caseId, pos.x, pos.y));
+		e.furniture.add(NpcTemplates.makeSignFurniture(NpcTemplates.measuredOn(zone.game()), caseId, pos.x, pos.y));
 		e.furnitureCount = e.furniture.size();
 		e.modified = true;
 		ctrmap.Ui.message(this, "Sign added at tile (" + pos.x + ", " + pos.y + "). Adjust its position with the Prop tool.", "Add sign", JOptionPane.INFORMATION_MESSAGE);
@@ -1141,7 +1189,7 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	private void addGiverTemplate(Zone zone) {
 		if (ZoneScriptAnalyzer.findGiveWrapper(zone.s) == null) {
-			ctrmap.Ui.error(this, "This zone's script has no give-item routine (120 of 536 vanilla zones have one).\nPick a zone that already gives an item, or use pk3DS to place items differently.", "Add item giver");
+			ctrmap.Ui.error(this, "This zone's script has no give-item routine (120 of " + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + " vanilla zones have one).\nPick a zone that already gives an item, or use pk3DS to place items differently.", "Add item giver");
 			return;
 		}
 		GiverForm form = new GiverForm(Workspace.session(), reg, activePreviews, loadGameTextNames(NpcTemplates.gametextItemNames(Workspace.profile())));
@@ -1171,19 +1219,19 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		int caseId;
 		try {
 			caseId = new ZoneScriptEdit(zone, "the give-item script")
-					.apply((work, line) -> NpcTemplates.addItemGiverScript(work, itemId, count), this::writeStoryFile);
+					.apply((measured, work, line) -> NpcTemplates.addItemGiverScript(measured, work, itemId, count), this::writeStoryFile);
 		} catch (ZoneScriptEdit.Refused ex) {
 			ctrmap.Ui.error(this, ex.reason(), "Add item giver");
 			return null;
 		}
-		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
+		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.measuredOn(zone.game()), NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
 		placeNpc(placed);
 		return placed;
 	}
 
 	/**
 	 * "Battle challenge" template: an NPC that battles the player's OWN trainer
-	 * entries (Game Data -> Trainers) through the generic field battle natives -
+	 * entries (Game Data &gt; Edit trainer) through the generic field battle natives -
 	 * completely independent of the Battle Maison engine and its shared pools,
 	 * so the retail game's opponents stay vanilla. Each talk runs one battle:
 	 * the trainer for the current streak (a save-data work variable), BP on a
@@ -1198,8 +1246,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			finishNpcAdd(zone, true);
 		}
 	}
-
-
 
 	/**
 	 * The battle-challenge wizard past its form: refuses an empty lineup, a
@@ -1305,13 +1351,13 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		int caseId;
 		try {
-			caseId = edit.apply((work, line) -> ctrmap.formats.scripts.GauntletScriptWizard.addChallengeScript(work, cfg),
+			caseId = edit.apply((measured, work, line) -> ctrmap.formats.scripts.GauntletScriptWizard.addChallengeScript(measured, work, cfg),
 					this::writeStoryFile);
 		} catch (ZoneScriptEdit.Refused ex) {
 			ctrmap.Ui.error(this, ex.reason(), "Add battle challenge");
 			return null;
 		}
-		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
+		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.measuredOn(zone.game()), NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
 		placeNpc(placed);
 		return placed;
 	}
@@ -1347,13 +1393,13 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		int caseId;
 		try {
 			caseId = new ZoneScriptEdit(zone, "the Give BP script")
-					.apply((work, line) -> ctrmap.formats.scripts.FacilityScriptWizard.addGiveBpScript(work, amount),
+					.apply((measured, work, line) -> ctrmap.formats.scripts.FacilityScriptWizard.addGiveBpScript(measured, work, amount),
 							this::writeStoryFile);
 		} catch (ZoneScriptEdit.Refused ex) {
 			ctrmap.Ui.error(this, ex.reason(), "Add Give BP");
 			return null;
 		}
-		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
+		ZoneEntities.NPC placed = NpcTemplates.makeScriptedNpc(NpcTemplates.measuredOn(zone.game()), NpcTemplates.nextFreeUid(e), model, caseId, pos.x, pos.y);
 		placeNpc(placed);
 		return placed;
 	}
@@ -1392,10 +1438,10 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 		int placed = 0;
 		try {
-			placeNpc(NpcTemplates.makeTrainerNpc(NpcTemplates.nextFreeUid(e), tid, model, sight, face, pos.x, pos.y));
+			placeNpc(NpcTemplates.makeTrainerNpc(NpcTemplates.measuredOn(zone.game()), NpcTemplates.nextFreeUid(e), tid, model, sight, face, pos.x, pos.y));
 			placed++;
 			if (pair) {
-				placeNpc(NpcTemplates.makeTrainerPairNpc(NpcTemplates.nextFreeUid(e), tid, model, sight, face, pos.x + 1, pos.y));
+				placeNpc(NpcTemplates.makeTrainerPairNpc(NpcTemplates.measuredOn(zone.game()), NpcTemplates.nextFreeUid(e), tid, model, sight, face, pos.x + 1, pos.y));
 				placed++;
 			}
 		} catch (RuntimeException ex) {
@@ -1464,8 +1510,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}
 	}
 
-
-
 	private final java.util.List<CustomH3DPreview> activePreviews = new java.util.ArrayList<>();
 
 	/**
@@ -1526,11 +1570,6 @@ public class NPCEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		disposePreviews();
 		return rsl == JOptionPane.OK_OPTION;
 	}
-
-	/** A form's widgets stacked top to bottom, each behind its label. */
-
-
-
 
 	private void scrDropdownActionPerformed(java.awt.event.ActionEvent evt) {
 		if (loaded && !scrDropdownLoading && scrDropdown.getSelectedIndex() != -1) {

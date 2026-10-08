@@ -225,6 +225,11 @@ public class OpenEditorsTest {
 				log.add("commit:" + name);
 				return !name.equals(refuses);
 			}
+
+			@Override
+			public void showEntities(ctrmap.formats.zone.Zone zone) {
+				log.add("entities:" + name);
+			}
 		};
 	}
 

@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
-import ctrmap.AreaForker;
+import ctrmap.MasterTable;
+import ctrmap.ZoneResource;
 import ctrmap.formats.garc.GARC;
 import java.io.File;
 import java.util.Arrays;
@@ -55,7 +56,7 @@ public class AreaShareGuardTest {
 		//and it is why every carry was refused.
 		int selfFound = 0;
 		for (int z = 0; z < zones; z++) {
-			if (AreaForker.zonesUsingArea(master, area(master, z), -1).contains(z)) {
+			if (using(master, area(master, z), -1).contains(z)) {
 				selfFound++;
 			}
 		}
@@ -66,7 +67,7 @@ public class AreaShareGuardTest {
 		//Excluding the zone, NO zone ever finds itself. This is the whole fix.
 		int selfLeaked = 0;
 		for (int z = 0; z < zones; z++) {
-			if (AreaForker.zonesUsingArea(master, area(master, z), z).contains(z)) {
+			if (using(master, area(master, z), z).contains(z)) {
 				selfLeaked++;
 			}
 		}
@@ -81,7 +82,7 @@ public class AreaShareGuardTest {
 		int disagreed = 0, privateZones = 0;
 		for (int z = 0; z < zones; z++) {
 			int expected = byArea.get(area(master, z)) - 1; //everyone else on this area
-			int got = AreaForker.zonesUsingArea(master, area(master, z), z).size();
+			int got = using(master, area(master, z), z).size();
 			if (got != expected) {
 				disagreed++;
 			}
@@ -112,11 +113,11 @@ public class AreaShareGuardTest {
 			int fresh = ++maxArea;
 			forked[zone * MASTER_ROW + HDR_AREA_OFF] = (byte) (fresh & 0xFF);
 			forked[zone * MASTER_ROW + HDR_AREA_OFF + 1] = (byte) ((fresh >> 8) & 0xFF);
-			List<Integer> hits = AreaForker.zonesUsingArea(forked, fresh, zone);
+			List<Integer> hits = using(forked, fresh, zone);
 			check(hits.isEmpty(), "zone " + zone + " forked onto private area " + fresh
 					+ " is unblocked (got " + hits + ")");
 			//and the zone is still visible to a caller that does not exclude it
-			check(AreaForker.zonesUsingArea(forked, fresh, -1).equals(
+			check(using(forked, fresh, -1).equals(
 					java.util.Collections.singletonList(zone)),
 					"zone " + zone + " is still findable when nothing is excluded");
 		}
@@ -130,21 +131,35 @@ public class AreaShareGuardTest {
 		int appended = zones;
 		grown[appended * MASTER_ROW + HDR_AREA_OFF] = (byte) (retailArea & 0xFF);
 		grown[appended * MASTER_ROW + HDR_AREA_OFF + 1] = (byte) ((retailArea >> 8) & 0xFF);
-		check(AreaForker.zonesUsingArea(grown, retailArea, appended).contains(15),
+		check(using(grown, retailArea, appended).contains(15),
 				"an appended zone sees the retail zone already on its area");
-		check(AreaForker.zonesUsingArea(grown, retailArea, 15).contains(appended),
+		check(using(grown, retailArea, 15).contains(appended),
 				"a retail zone sees the appended zone on its area (the old BASE_ZONES"
 				+ " cap looked past it)");
 
 		//--- degenerate input ---------------------------------------------------
-		check(AreaForker.zonesUsingArea(null, 0, -1).isEmpty(), "null table yields nothing");
-		check(AreaForker.zonesUsingArea(new byte[7], 0, -1).isEmpty(), "runt table yields nothing");
-		check(AreaForker.zonesUsingArea(new byte[MASTER_ROW * 3 + 5], 0, -1).size() == 3,
-				"a trailing partial row is ignored, not misread");
+		//a table that is not whole rows is refused, never read as "nobody" (F013, F065)
+		check(refused(null), "a missing table is refused");
+		check(refused(new byte[7]), "a runt table is refused");
+		check(refused(new byte[MASTER_ROW * 3 + 5]), "a trailing partial row is refused, not read past");
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
+		}
+	}
+
+	/** Who uses {@code area}, leaving out {@code except}, through the one master-table reader. */
+	static List<Integer> using(byte[] master, int area, int except) throws java.io.IOException {
+		return MasterTable.detached(master, master.length / MASTER_ROW).using(ZoneResource.AREA, area, except);
+	}
+
+	static boolean refused(byte[] master) {
+		try {
+			MasterTable.detached(master, master == null ? 0 : master.length / MASTER_ROW);
+			return false;
+		} catch (java.io.IOException said) {
+			return said.getMessage().contains("bytes, not");
 		}
 	}
 

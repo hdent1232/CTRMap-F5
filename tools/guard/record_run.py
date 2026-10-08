@@ -23,6 +23,7 @@ import re
 import subprocess
 import sys
 import time
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 LF = chr(10)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -42,9 +43,25 @@ SCRIPT = os.path.join(ROOT, "test.ps1")
 _SUITE = re.compile(r"^--- (.+?)\s*$", re.M)
 _FAILED = re.compile(r"^FAILED:\s*(.+?)\s*$", re.M)
 _ALL_PASS = re.compile(r"^ALL SUITES PASS\b", re.M)
+#: A SKIP IS UNKNOWN, NEVER PASSED (F144). test.ps1 names the suites that ran nothing they were
+#: written for, and the ones that skipped a section, on lines of their own, and ends a run with
+#: no failure and something skipped on a verdict that is not ALL SUITES PASS.
+_SKIPPED = re.compile(r"^SKIPPED:\s*(.+?)\s*$", re.M)
+_PARTLY = re.compile(r"^PARTLY SKIPPED:\s*(.+?)\s*$", re.M)
+
+
+def skipped_in(text, announced):
+    """(skipped, partly skipped): the announced suites test.ps1 names as having run nothing they
+    were written for, and as having skipped a section - read the way `failed_in` reads a list."""
+    return listed_in(_SKIPPED, text, announced), listed_in(_PARTLY, text, announced)
 
 
 def failed_in(text, announced):
+    """Which ANNOUNCED suites the verdict line names as failed - see `listed_in`."""
+    return listed_in(_FAILED, text, announced)
+
+
+def listed_in(pattern, text, announced):
     """Which ANNOUNCED suites the verdict line names as failed.
 
     NOT `line.split(",")`. test.ps1 joins the failed names with ", " and suite names contain
@@ -61,7 +78,7 @@ def failed_in(text, announced):
     has changed shape, and the difference between that and "nothing failed" must not be
     silent - which is the very defect being fixed, one level up.
     """
-    named = _FAILED.search(text)
+    named = pattern.search(text)
     if not named:
         return []
     line = named.group(1)
@@ -115,7 +132,7 @@ def run(quick=False, anyway=None):
     written = {os.path.relpath(magnitude.SERIES, ROOT).replace(os.sep, "/")}
     before = commit_guard.source_digest(ROOT, exclude=written)
     began = time.time()
-    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=7200)
+    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=7200, creationflags=NO_WINDOW)
     after = commit_guard.source_digest(ROOT, exclude=written)
     if before is None or after is None:
         sys.stderr.write(
@@ -130,7 +147,7 @@ def run(quick=False, anyway=None):
         moved = ""
         try:
             listing = subprocess.run(["git", "-C", ROOT, "status", "--porcelain"],
-                                     capture_output=True, text=True, timeout=120)
+                                     capture_output=True, text=True, timeout=120, creationflags=NO_WINDOW)
             moved = (listing.stdout or "").strip()
         except (OSError, subprocess.SubprocessError):
             moved = "(git could not say which - which is not the same as none)"
@@ -157,7 +174,11 @@ def run(quick=False, anyway=None):
         # build - and there is no verdict line to read. Say that, rather than
         # recording a clean run of nought suites.
         failed = ["(the battery did not reach its verdict line; exit %d)" % done.returncode]
-    passed = [n for n in announced if n not in failed]
+    skipped, partly = skipped_in(text, announced)
+    #: A SUITE THAT RAN NOTHING IT WAS WRITTEN FOR DID NOT PASS (F144): it is not counted in `ran`,
+    #: so a commit's count is suites that passed. One that skipped a section ran the rest and is
+    #: counted - and named, so "partly" never reads as "all".
+    passed = [n for n in announced if n not in failed and n not in skipped]
     return {
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "subject": subject,
@@ -169,9 +190,17 @@ def run(quick=False, anyway=None):
         "seconds": round(time.time() - began, 1),
         "exit_code": done.returncode,
         "ok": done.returncode == 0 and not failed,
+        #: THE VERDICT AS THE GATE READS IT (F186): tools/commit_gate.py's test_counts asks `rc`, 0
+        #: for a run that passed, and this record carried `exit_code` and `ok` but no `rc` - so the
+        #: gate refused every honest count as "that run FAILED (exit None)", and commit_guard,
+        #: which never asked whether the run passed, let a red battery's count through.
+        "rc": 0 if (done.returncode == 0 and not failed) else (done.returncode or 1),
         "suites_announced": len(announced),
         "suites_passed": len(passed),
         "suites_failed": failed,
+        "suites_skipped": skipped,
+        "suites_partly_skipped": partly,
+        "complete": not skipped and not partly,
         "ran": len(passed),
         "slackRatchets": slack_ratchets(text),
         "quick": bool(quick),
@@ -262,6 +291,12 @@ def main(argv):
         print("FAILED SUITES:")
         for name in record["suites_failed"]:
             print("    %s" % name)
+    for title, key in (("SKIPPED - not counted as passed:", "suites_skipped"),
+                       ("PARTLY SKIPPED - counted, and not all of them ran:", "suites_partly_skipped")):
+        if record.get(key):
+            print(title)
+            for name in record[key]:
+                print("    %s" % name)
     print("recorded to %s" % os.path.relpath(LAST_RUN, ROOT))
     slack = record.get("slackRatchets") or []
     if slack:

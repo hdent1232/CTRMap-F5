@@ -67,19 +67,22 @@ public class GroundMaterialAudit {
 
 		//which areas each region belongs to: walk the zones' area ids and their
 		//matrices' region grids (a region can appear under more than one area)
-		byte[] master = zd.getDecompressedEntry(zd.length - 2);
+		//the one reader, at ORAS's measured zone count (F013): this took entry "length - 2"
+		//and any whole number of rows in it as the table
+		int zones = ctrmap.ZoneTables.zoneCount(zd, ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS));
+		ctrmap.MasterTable master = ctrmap.MasterTable.detached(zd.getDecompressedEntry(zones), zones);
 		Map<Integer, List<Integer>> areasOfRegion = new HashMap<>();
-		for (int zone = 0; zone < master.length / 0x38; zone++) {
-			int area = u16(master, zone * 0x38 + 2);
-			int matIdx = u16(master, zone * 0x38 + 4);
+		for (int zone = 0; zone < master.zones(); zone++) {
+			int area = master.id(ctrmap.ZoneResource.AREA, zone);
+			int matIdx = master.id(ctrmap.ZoneResource.MAP, zone);
 			if (matIdx >= mm.length) {
 				continue;
 			}
 			byte[] mat = mm.getDecompressedEntry(matIdx);
-			int sub0 = i32(mat, 4);
-			int w = u16(mat, sub0 + 4), h = u16(mat, sub0 + 6);
+			ctrmap.formats.mapmatrix.MapMatrix.Grid grid = ctrmap.formats.mapmatrix.MapMatrix.Grid.of(mat);
+			int w = grid.width, h = grid.height;
 			for (int k = 0; k < w * h; k++) {
-				int rid = u16(mat, sub0 + 8 + k * 2);
+				int rid = grid.id(k);
 				if (rid == 0xFFFF) {
 					continue;
 				}

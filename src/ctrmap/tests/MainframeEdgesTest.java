@@ -53,14 +53,11 @@ public class MainframeEdgesTest {
 	private static final String WINDOW = "ctrmap/CtrmapMainframe";
 
 	/**
-	 * {field, readers, what they use it for}. Measured over the compiled
-	 * program, the window itself excluded, folded to top-level classes.
-	 */
-	/**
-	 * {field, readers, what they use it for}. EMPTY, and that is the point of
-	 * keeping it as a table rather than a number: a name appearing here is a
-	 * class that has started reaching into the window for something instead of
-	 * being handed it, and the message says which class and which field.
+	 * {field, readers, what they use it for}, measured over the compiled program, the window itself
+	 * excluded, folded to top-level classes. EMPTY, and that is the point of keeping it as a table
+	 * rather than a number: a name appearing here is a class that has started reaching into the
+	 * window for something instead of being handed it, and the message says which class and which
+	 * field.
 	 */
 	private static final String[][] REACHES = {};
 
@@ -395,25 +392,6 @@ public class MainframeEdgesTest {
 	}
 
 	/**
-	 * The rule catches the three shapes it used to miss, and still does not
-	 * flag the one it must not.
-	 *
-	 * <p>WHY THIS SECTION EXISTS. The rule above is a ratchet over one file, so
-	 * "it passes" says nothing about what it can SEE. Three holes were found in
-	 * it by reading it rather than by running it, and every one of them was in
-	 * the direction that lets the original defect back in: it read only
-	 * {@code new X(...)} and never a setter; one lambda anywhere in an argument
-	 * list excused every plain argument beside it; and it gave up after eight
-	 * continuation lines, which is shorter than the window's own editor lists.
-	 * A rule that goes quiet on the largest calls in the file is worst exactly
-	 * where it is needed.
-	 *
-	 * <p>The fourth case is the one that must NOT fire: a lambda body naming a
-	 * static assigned further down is correct, because the body runs when it is
-	 * called. That is how both editor lists can be built before the editors they
-	 * name, and a rule that forbade it would forbid the fix it exists to protect.
-	 */
-	/**
 	 * Every zone the window hands the Zone tab is also given a table slot, in
 	 * the same block.
 	 *
@@ -467,6 +445,25 @@ public class MainframeEdgesTest {
 			+ unslotted);
 	}
 
+	/**
+	 * The rule catches the three shapes it used to miss, and still does not
+	 * flag the one it must not.
+	 *
+	 * <p>WHY THIS SECTION EXISTS. The rule above is a ratchet over one file, so
+	 * "it passes" says nothing about what it can SEE. Three holes were found in
+	 * it by reading it rather than by running it, and every one of them was in
+	 * the direction that lets the original defect back in: it read only
+	 * {@code new X(...)} and never a setter; one lambda anywhere in an argument
+	 * list excused every plain argument beside it; and it gave up after eight
+	 * continuation lines, which is shorter than the window's own editor lists.
+	 * A rule that goes quiet on the largest calls in the file is worst exactly
+	 * where it is needed.
+	 *
+	 * <p>The fourth case is the one that must NOT fire: a lambda body naming a
+	 * static assigned further down is correct, because the body runs when it is
+	 * called. That is how both editor lists can be built before the editors they
+	 * name, and a rule that forbade it would forbid the fix it exists to protect.
+	 */
 	static void theRuleSeesTheShapesItUsedToMiss() {
 		System.out.println("--- and the rule can see the shapes it used to miss");
 

@@ -60,7 +60,7 @@ Mauville floors that nothing can reach before Surf/Dive):
 | WATER | 153 | painted water + the spliced sea-scroll animation, waterfall |
 | PC INTERIOR | 157 | the cloned private Pokémon Center room (entered from BUILDINGS) |
 
-To deploy: open CTRMap → File → Deploy (the game files are already packed;
+To deploy: in CTRMap, File → Deploy to emulator (the game files are already packed;
 this pushes them to the emulator), then **fully close and restart the
 emulator**. To play: start/continue a save in Littleroot and walk into
 May's house.
@@ -170,7 +170,7 @@ not invalidate the rest.
 | Retail Route 102 broken | Area-9 splice or texture-carry side effect |
 | Challenge NPC: talking does nothing / freezes | Challenge script emission or the battle natives are unavailable in this zone |
 | Challenge battle starts but the opponent is empty/glitched | Custom trainer authoring (trdata/trpoke entries 51/52/61) |
-| Challenge battle: wrong sprite or blank class name in the intro | The spare class slots (2/9) — open Game Data → Trainers and try an ORAS-era class id instead |
+| Challenge battle: wrong sprite or blank class name in the intro | The spare class slots (2/9) — open Game Data → Edit trainer and try an ORAS-era class id instead |
 | Win but no BP appears | BP-award natives — report the BP counter before/after |
 | Streak doesn't advance, or resets on its own | The save variable 0x4020 may be engine-owned — report; it's user-changeable |
 | PC interior: the dirt patch is invisible | Composite visual path (clip + generated floor) |

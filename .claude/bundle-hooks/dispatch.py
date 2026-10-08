@@ -300,12 +300,22 @@ def verdict(raw, found=None):
 
 def main():
     raw = bundle_shell.payload_text()           # UTF-8, never the locale's code page
-    try:
-        json.loads(raw)
-    except ValueError:
-        # The payload is not JSON, so no guard could judge it and none would have been called
-        # under the old wiring either. Never wedge a turn over a malformed hook payload.
-        return 0
+    #: A PAYLOAD NO GUARD COULD JUDGE IS NOT ONE EVERY GUARD ALLOWED. This returned 0 "never wedge
+    #: a turn over a malformed hook payload" - and so the guards that refuse an unreadable payload
+    #: themselves were never asked one (CTRMap F213). It is refused in words; a turn end only ONCE,
+    #: as a crashed guard's is; and the owner's way past is one variable. Whatever goes through
+    #: unjudged says so.
+    problem = bundle_shell.payload_problem(raw)
+    if problem:
+        retried = bundle_shell.refused_before(raw)
+        if bundle_env.allowed("ALLOW_UNREADABLE") or retried:
+            why = ("a turn end already sent back once" if retried
+                   else "%s is set" % ALLOW_UNREADABLE)
+            sys.stdout.write(json.dumps({"systemMessage": "dispatch.py: %s, and this is %s - so NO "
+                                         "guard judged it" % (problem, why)}) + LF)
+            return 0
+        sys.stderr.write(bundle_shell.unreadable_payload(__file__, problem, ALLOW_UNREADABLE))
+        return 2
     code, said, forward = verdict(raw)
     if forward:
         sys.stdout.write(forward + LF)

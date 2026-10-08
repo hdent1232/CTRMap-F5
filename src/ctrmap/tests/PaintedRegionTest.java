@@ -246,26 +246,6 @@ public class PaintedRegionTest {
 	}
 
 	/**
-	 * A ramp whose way down is not lower is a contradiction in the painted
-	 * document, and the builder REFUSES it - it does not quietly build
-	 * something else.
-	 *
-	 * <p>That refusal is the whole reason the ramp grid carries a direction at
-	 * all. A ramp used to take the first neighbour that happened to be lower,
-	 * and a tile with none simply came out as a 36-unit wall across the
-	 * corridor the user was cutting: the map built, the dialog said it was
-	 * applied, and the wall was only found by walking into it in the emulator.
-	 * The tile and the way it claims to descend are named because a 40x40 grid
-	 * has 1,600 places to look for the one that disagrees.
-	 *
-	 * <p>Asserted through {@link PaintedRegionBuilder#build}, not through
-	 * rampDir alone: what matters is that the whole region comes back refused
-	 * rather than built. Both halves are checked, because a refusal that also
-	 * refuses the legitimate ramp beside it is not a guard, it is a broken
-	 * builder - the same grid with the ground actually lower must build, and
-	 * the tile must really be a slope.
-	 */
-	/**
 	 * The outline rounding on its own, with a polyline in hand and nothing
 	 * else. Three invariants the map-sealing argument rests on: the ends of an
 	 * open chain do not move (neighbouring chains must still meet), a closed
@@ -350,6 +330,26 @@ public class PaintedRegionTest {
 		return failures;
 	}
 
+	/**
+	 * A ramp whose way down is not lower is a contradiction in the painted
+	 * document, and the builder REFUSES it - it does not quietly build
+	 * something else.
+	 *
+	 * <p>That refusal is the whole reason the ramp grid carries a direction at
+	 * all. A ramp used to take the first neighbour that happened to be lower,
+	 * and a tile with none simply came out as a 36-unit wall across the
+	 * corridor the user was cutting: the map built, the dialog said it was
+	 * applied, and the wall was only found by walking into it in the emulator.
+	 * The tile and the way it claims to descend are named because a 40x40 grid
+	 * has 1,600 places to look for the one that disagrees.
+	 *
+	 * <p>Asserted through {@link PaintedRegionBuilder#build}, not through
+	 * rampDir alone: what matters is that the whole region comes back refused
+	 * rather than built. Both halves are checked, because a refusal that also
+	 * refuses the legitimate ramp beside it is not a guard, it is a broken
+	 * builder - the same grid with the ground actually lower must build, and
+	 * the tile must really be a slope.
+	 */
 	static int checkContradictoryRampIsRefused(byte[] donor) {
 		ctrmap.formats.tilemap.TerrainLighting L = ctrmap.formats.tilemap.TerrainLighting.daytime();
 		TilePalette[][] g = grid(TilePalette.GRASS);

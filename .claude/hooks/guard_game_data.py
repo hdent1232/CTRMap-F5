@@ -94,9 +94,163 @@ _DESTINATION = re.compile(r"-Destination\s+([^\s|;&]+)", re.I)
 #: `sed -i`, `python -c "...open(p,'w')..."` and friends write without a shell redirect
 _IN_PLACE = re.compile(r"\bsed\b[^|;&]*\s-i\b")
 
+#: WRITERS BY SHAPE, beside the names (F173). `find RomFS -name '*.bak' -delete` and
+#: `rsync -a --delete empty/ RomFS/` deleted from the dump while the guard looked only for a
+#: writer's NAME as the first word - `find` reads unless it is given an action, and `rsync`,
+#: `ln` and an extracting `tar`/`unzip` write ONE of their arguments, not all of them.
+_FIND_ACTIONS = ("-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0",
+                 "-fprintf", "-fls")
+
+
+def _by_shape(head, words):
+    """(path, why) for the argument a shape-recognised writer is about to change."""
+    out = []
+    if head == "find":
+        acting = [w for w in words[1:] if w in _FIND_ACTIONS]
+        if acting:
+            for word in words[1:]:
+                if word.startswith(("-", "(", "!")):
+                    break
+                out.append((word, "`find ... %s` changes what it finds under it" % acting[0]))
+    elif head in ("rsync", "ln"):
+        positional = [w for w in words[1:] if not w.startswith("-")]
+        if positional:
+            out.append((positional[-1], "`%s` writes its last argument" % head))
+    elif head == "tar" and any(w.startswith("-") and "x" in w.lstrip("-") or w == "--extract"
+                               for w in words[1:]):
+        for at, word in enumerate(words[1:-1], 1):
+            if word in ("-C", "--directory"):
+                out.append((words[at + 1], "`tar` extracts into it"))
+        out.extend((w.split("=", 1)[1], "`tar` extracts into it")
+                   for w in words[1:] if w.startswith("--directory="))
+    elif head == "unzip":
+        for at, word in enumerate(words[1:-1], 1):
+            if word == "-d":
+                out.append((words[at + 1], "`unzip -d` extracts into it"))
+    return out
+
+
+#: Writers that change ONE argument - where they put the copy - and only READ the rest.
+#: `cp RomFS/x build/` reads the dump, and the docstring above is the rule: reading is not refused.
+_COPIERS = ("cp", "install", "copy", "copy-item", "xcopy")
+#: Their options naming the place written, and those naming what is only read.
+_TARGET_VALUED = ("-t", "--target-directory", "-destination")
+_SOURCE_VALUED = ("-path", "-literalpath", "-filter", "-include", "-exclude", "-s", "--suffix",
+                  "-credential")
+#: cmd's switches - `xcopy a b /E /Y` - are not where the copy goes.
+_SWITCH = re.compile(r"^/[A-Za-z?]+(?::\S*)?$")
+
+
+def _copied_to(head, args):
+    """The arguments a copier writes."""
+    out, positional, directories, at = [], [], False, 1
+    while at < len(args):
+        word, low = args[at], args[at].lower()
+        if low in _TARGET_VALUED and at + 1 < len(args):
+            out.append(args[at + 1])
+            at += 2
+            continue
+        if low.startswith(("--target-directory=", "-destination:")):
+            out.append(word.split("=" if "=" in word else ":", 1)[1])
+        elif low in _SOURCE_VALUED and at + 1 < len(args):
+            at += 2
+            continue
+        elif head == "install" and low in ("-d", "--directory"):
+            directories = True
+        elif not (word.startswith("-") and len(word) > 1) and not (
+                head in ("copy", "xcopy") and _SWITCH.match(word)):
+            positional.append(word)
+        at += 1
+    if out:
+        return out
+    if directories:
+        return positional
+    if len(positional) >= 2:
+        return positional[-1:]
+    #`Copy-Item x` copies into the folder it runs in; `cp x` alone is an error, judged anyway
+    return ["."] if head in ("copy-item", "copy", "xcopy") else positional
+
+
+def _sed_files(args):
+    """The files `sed -i` rewrites - every positional but the SCRIPT, which is the first one
+    unless `-e`/`-f` gave it. Reading the script as a file refused a scratch-file edit whose
+    replacement text held the word RomFS (audit F173, observed live)."""
+    files, scripted, at = [], False, 1
+    while at < len(args):
+        word = args[at]
+        if word in ("-e", "--expression", "-f", "--file") and at + 1 < len(args):
+            scripted = True
+            at += 2
+            continue
+        if word.startswith(("--expression=", "--file=")):
+            scripted = True
+        elif not (word.startswith("-") and len(word) > 1):
+            files.append(word)
+        at += 1
+    return files if scripted else files[1:]
+
+
+def _in_place(args):
+    return any(w == "-i" or w.startswith("--in-place") or re.match(r"^-[A-Za-z]*i", w)
+               and not w.startswith("--") for w in args[1:])
+
 
 def _targets(command):
-    """(path, why) for every argument this command looks about to write."""
+    """(path, why) for every argument this command is about to write.
+
+    READ AS THE SHELL READS IT (F173): words through the shared reader, quotes respected, so a
+    `>` inside a quoted argument is not a redirect - one was, and `"Options > Workspace
+    settings"` in a commit-message argument was refused as a write to Workspace/. A command the
+    reader cannot split is read the old, cruder way, which refuses more and never less.
+    """
+    read = shellin.reader()
+    held = read.pairs(command)
+    if held is None:
+        return _crude_targets(command)
+    out = []
+    for stage in read.stages(held):
+        rest, _moves = read.peeled(stage)
+        args, at = [], 0
+        while at < len(rest):
+            word, typed = rest[at]
+            spelled = typed if typed is not None else word
+            if word and set(word) <= set("<>&|0123456789") and ">" in word:
+                if at + 1 < len(rest):
+                    out.append((rest[at + 1][1] or rest[at + 1][0], "a redirect writes it"))
+                at += 2
+                continue
+            if word and set(word) <= set("<&0123456789") and "<" in word:
+                at += 2                                     # an input redirect is a read
+                continue
+            args.append(spelled)
+            at += 1
+        if not args:
+            continue
+        for at, word in enumerate(args[:-1]):
+            if word.lower() == "-destination":
+                out.append((args[at + 1], "it is the -Destination"))
+        head = read.program_of(args[0])
+        if head in _COPIERS:
+            out.extend((w, "`%s` writes where it copies to" % head) for w in _copied_to(head, args))
+        elif head == "dd":
+            out.extend((w[3:], "`dd of=` writes it") for w in args[1:] if w.startswith("of="))
+        elif head == "sed":
+            if _in_place(args):
+                out.extend((w, "`sed -i` rewrites the file in place") for w in _sed_files(args))
+        elif head in _WRITERS:
+            for word in args[1:]:
+                if word.startswith("-") and len(word) > 1:
+                    if "=" in word:
+                        out.append((word.split("=", 1)[1], "`%s` writes its arguments" % head))
+                    continue
+                out.append((word, "`%s` writes its arguments" % head))
+        out.extend(_by_shape(head, args))
+    return out
+
+
+def _crude_targets(command):
+    """(path, why) for every argument this command looks about to write - by whitespace, for a
+    command the reader could not split."""
     out = []
     for found in _REDIRECT.finditer(command):
         out.append((found.group(1), "a redirect writes it"))
@@ -109,11 +263,10 @@ def _targets(command):
         head = os.path.basename(words[0]).lower()
         if head.endswith(".exe"):
             head = head[:-4]
-        if head in _WRITERS:
+        if head in _WRITERS or head in ("dd", "sed"):
             for word in words[1:]:
-                if word.startswith("-") or word.startswith("/"):
-                    continue
-                out.append((word, "`%s` writes its arguments" % head))
+                out.append((word.split("=", 1)[-1], "`%s` writes its arguments" % head))
+        out.extend(_by_shape(head, words))
         if _IN_PLACE.search(piece):
             for word in words[1:]:
                 if not word.startswith("-"):
@@ -121,12 +274,16 @@ def _targets(command):
     return out
 
 
-def verdict(command):
-    """(deny, reason) for one shell command. Separated so it can be tested directly."""
+def verdict(command, where=""):
+    """(deny, reason) for one shell command, run in `where` - the folder it moved to, relative to
+    the call's own ("" when it did not move; see shellin.each_located). `cd RomFS && rm a/0/1/3`
+    deletes from the dump although no argument names it, so a relative target is judged where it
+    lands. Separated so it can be tested directly."""
     for path, why in _targets(command):
-        root = under_a_protected_root(path)
+        landed = path if not where or shellin.absolute(path) else os.path.join(where, path)
+        root = under_a_protected_root(landed)
         if root:
-            return True, refusal(path, root, why)
+            return True, refusal(landed, root, why)
     return False, None
 
 
@@ -156,8 +313,16 @@ def decide(payload):
         root = under_a_protected_root(path)
         if root:
             return True, refusal(path, root, "a file-editing tool writes it directly")
-    for command in shellin.commands(payload):
-        deny, reason = verdict(command)
+    for command, where in shellin.located(payload):
+        if where is None:
+            #A FOLDER THE TEXT DOES NOT NAME IS UNKNOWN, NOT HERE: after `cd "$X"` or `popd` a
+            #relative write lands somewhere this cannot tell, and that may be the dump
+            blind_writes = [p for p, _why in _targets(command) if not shellin.absolute(p)]
+            if blind_writes:
+                return True, refusal(blind_writes[0], "an UNKNOWN folder",
+                                     "it writes after a move to a folder the command does not "
+                                     "name, so where it lands cannot be told")
+        deny, reason = verdict(command, where or "")
         if deny:
             return deny, reason
     return False, None

@@ -82,31 +82,34 @@ public class TilePainterForm {
 		return false;
 	}
 
-	/** Distinct internal model names of the zone's map regions (the anim binding key). */
-	static java.util.List<String> zoneRegionModels(LoadedZone loaded) {
+	/**
+	 * Distinct internal model names of the zone's map regions (the anim binding key).
+	 * THROWS when the map matrix or any region cannot be read (F211): both failures were
+	 * swallowed, so a zone with one unreadable cell answered the others' names, the water
+	 * check said every cell scrolls, and enabling it skipped that cell without a word.
+	 */
+	static java.util.List<String> zoneRegionModels(LoadedZone loaded) throws Exception {
 		java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
-		try {
-			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loaded.open().header.mapmatrixID);
-			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
-			int sub0 = i32(mm, 4);
-			int w = u16(mm, sub0 + 4), h = u16(mm, sub0 + 6);
-			for (int k = 0; k < w * h; k++) {
-				int id = u16(mm, sub0 + 8 + k * 2);
-				if (id == 0xFFFF) {
-					continue;
-				}
-				try {
-					byte[] model = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id), Workspace.session()).getFile(1);
-					if (BchMapModel.isMapModel(model)) {
-						String n = new BchMapModel(model).getModelName();
-						if (n != null && !n.isEmpty()) {
-							names.add(n);
-						}
-					}
-				} catch (Exception ignore) {
+		File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loaded.open().header.mapmatrixID);
+		ctrmap.formats.mapmatrix.MapMatrix.Grid grid = ctrmap.formats.mapmatrix.MapMatrix.Grid.of(
+				java.nio.file.Files.readAllBytes(mmFile.toPath()));
+		for (int k = 0; k < grid.cells(); k++) {
+			int id = grid.id(k);
+			if (id == 0xFFFF) {
+				continue;
+			}
+			byte[] model;
+			try {
+				model = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, id), Workspace.session()).getFile(1);
+			} catch (Exception ex) {
+				throw new java.io.IOException("map region " + id + " could not be read: " + ctrmap.Ui.reason(ex), ex);
+			}
+			if (BchMapModel.isMapModel(model)) {
+				String n = new BchMapModel(model).getModelName();
+				if (n != null && !n.isEmpty()) {
+					names.add(n);
 				}
 			}
-		} catch (Exception ignore) {
 		}
 		return new java.util.ArrayList<>(names);
 	}
@@ -158,7 +161,7 @@ public class TilePainterForm {
 		byte[] sub2 = ad.getFile(2);
 		java.util.List<String> models = zoneRegionModels(loaded);
 		if (models.isEmpty()) {
-			throw new IllegalStateException("could not read this zone's map cells (map matrix / region models)");
+			throw new IllegalStateException("none of this zone's map cells holds a named map model to bind the scroll to");
 		}
 		int changed = 0;
 		for (String m : models) {
@@ -298,7 +301,7 @@ public class TilePainterForm {
 	 * once every one of them has succeeded - and never into an area other zones
 	 * share.
 	 */
-	public static class StagedArea {
+	public static class StagedArea implements ctrmap.formats.propdata.PropRegistration.Area {
 
 		final int areaId;
 		final int editingZone;
@@ -313,7 +316,8 @@ public class TilePainterForm {
 		}
 
 		/** The subfile as this Apply will leave it: staged bytes, else disk. */
-		byte[] file(int num) {
+		@Override
+		public byte[] file(int num) {
 			byte[] staged = pending.get(num);
 			return staged != null ? staged : ad.getFile(num);
 		}
@@ -325,7 +329,8 @@ public class TilePainterForm {
 			pending.put(num, data);
 		}
 
-		ctrmap.formats.propdata.ADPropRegistry registry() {
+		@Override
+		public ctrmap.formats.propdata.ADPropRegistry registry() {
 			if (registry == null) {
 				registry = new ctrmap.formats.propdata.ADPropRegistry(ad);
 			}
@@ -335,14 +340,36 @@ public class TilePainterForm {
 		/** Re-stages the prop registry after an entry was added (its own write()
 		 *  goes straight to disk and cannot report a failure). */
 		void stageRegistry() throws java.io.IOException {
-			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-			ctrmap.LittleEndianDataOutputStream dos = new ctrmap.LittleEndianDataOutputStream(baos);
-			dos.writeInt(registry().entries.size());
-			for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : registry().entries.values()) {
-				e.write(dos);
-			}
-			dos.close();
-			stage(0, baos.toByteArray());
+			//the registry's own serializer: this wrote the layout a second time (F084)
+			stage(0, registry().serialize());
+		}
+
+		@Override
+		public int id() {
+			return areaId;
+		}
+
+		@Override
+		public int editingZone() {
+			return editingZone;
+		}
+
+		@Override
+		public void put(int subfile, byte[] data) {
+			stage(subfile, data);
+		}
+
+		@Override
+		public void registryChanged() throws java.io.IOException {
+			stageRegistry();
+		}
+
+		/** What waits for the commit: an import the prop database is told of only once it is on disk (F107). */
+		private final java.util.List<Runnable> afterCommit = new java.util.ArrayList<>();
+
+		@Override
+		public void whenWritten(Runnable then) {
+			afterCommit.add(then);
 		}
 
 		void commit() {
@@ -358,6 +385,10 @@ public class TilePainterForm {
 				}
 			}
 			pending.clear();
+			for (Runnable then : afterCommit) {
+				then.run();
+			}
+			afterCommit.clear();
 		}
 	}
 
@@ -482,73 +513,82 @@ public class TilePainterForm {
 		//describe the same zone, and callers reach here with a seeded zone that
 		//need not be the panel's current one.
 		int zoneArea = ctrmap.AreaForker.currentArea(zoneIndex);
-		if (needsAreaWrite(loaded, zoneArea, placed, texNeeds)) {
-			//the pack at the end of this Apply carries a fork's new area too, so
-			//the result is only read for the id - no packIfForked here
-			ctrmap.AreaForker.ForkResult owned = AreaForkPrompt.ensurePrivate(loaded, ctrmap.Ui.parent(), zoneIndex, zoneArea,
-					"adding this map's brush textures and door props");
-			if (owned == null) {
-				throw new IllegalStateException("Apply cancelled - nothing was changed.");
-			}
-			zoneArea = owned.newArea;
-			String shared = ctrmap.formats.h3d.BchTexturePack.zonesUsingArea(Workspace.session(), zoneArea, zoneIndex);
-			if (shared != null) {
-				throw new IllegalStateException("Area " + zoneArea + " is also used by " + shared
-						+ ".\nThis map's textures and door props cannot go into it without changing"
-						+ "\nthose maps, so nothing was applied. Give this zone its own area"
-						+ "\n(Map > Fork map geometry) and Apply again.");
-			}
-		}
-		StagedArea area = new StagedArea(loaded, zoneArea, zoneIndex);
-		// the swinging-door props for placed buildings (registry + textures staged)
+		//THE APPLY IS ONE UNIT (F112): the area fork, the map fork, every region and the area. A write
+		//that failed part way left a forked zone with half a map, and the report - "Nothing was
+		//written - the map is exactly as it was" - rested on the preconditions, not on the writes. Now it
+		//is true of both, and a refusal after the area fork puts that back too.
 		StringBuilder propNote = new StringBuilder();
-		byte[] doorProps = placed.isEmpty() ? null : buildDoorProps(loaded, placed, floorY, area, propNote);
-		// stamped pieces reference their donor areas' textures - carry any the
-		// zone's area lacks, or the game hardlocks on load
 		StringBuilder texNote = new StringBuilder();
-		for (java.util.Map.Entry<Integer, java.util.Set<String>> en : texNeeds.entrySet()) {
-			if (en.getKey() == zoneArea) {
-				continue;
-			}
-			ctrmap.formats.h3d.BchTexturePack.Carry carry = ctrmap.formats.h3d.BchTexturePack.planCarry(
-					Workspace.session(), en.getKey(), zoneArea, new java.util.ArrayList<>(en.getValue()),
-					area.file(11), area.file(1), zoneIndex);
-			if (carry.pack != null) {
-				area.stage(carry.subfile, carry.pack);
-			}
-			texNote.append(carry.note.trim()).append('\n');
-		}
-		//COMMIT. Every precondition has passed, so the writing can start: the
-		//zone's map is forked here when it is still shared (re-applying to an
-		//already-private zone reuses its own regions instead of orphaning
-		//another archive append), and the staged bytes land in its own regions.
-		GeometryForker.ForkResult r = GeometryForker.ensurePrivate(zoneIndex);
-		for (StagedRegion s : staged) {
-			int dest = destRegion(r, s.srcRegion);
-			GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, dest), Workspace.session());
-			try {
-				gr.storeFile(1, s.model);
-				gr.storeFile(2, s.collision);
-				gr.storeFile(0, s.tilemap);
-			// door props carry ABSOLUTE world coords of the FIRST map cell (where
-			// the warps also go) - storing them into every region would stack
-			// engine-visible duplicates at that one location
-				if (composite) {
-					// preserve the region's existing props; only merge new door props in
-					if (s.firstCell && doorProps != null) {
-						gr.storeFile(3, mergeProps(gr, doorProps));
-					}
-				} else {
-					gr.storeFile(3, (s.firstCell && doorProps != null) ? doorProps : s.props);
+		byte[] doorProps;
+		GeometryForker.ForkResult r;
+		try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Apply map", Workspace.session())) {
+			if (needsAreaWrite(loaded, zoneArea, placed, texNeeds)) {
+				//the pack at the end of this Apply carries a fork's new area too, so
+				//the result is only read for the id - no packIfForked here
+				ctrmap.AreaForker.ForkResult owned = AreaForkPrompt.ensurePrivate(loaded, ctrmap.Ui.parent(), zoneIndex, zoneArea,
+						"adding this map's brush textures and door props");
+				if (owned == null) {
+					throw new IllegalStateException("Apply cancelled - nothing was changed.");
 				}
-			} catch (RuntimeException notWritten) {
-				//THE REGION KEEPS ITS OWN NAME ON THE FAILURE, for the same reason the area
-				//does: this is the write the whole Apply exists to make.
-				throw new IllegalStateException("could not write region " + dest + ": "
-					+ ctrmap.util.Bytes.reason(notWritten), notWritten);
+				zoneArea = owned.newArea;
+				String shared = ctrmap.formats.h3d.BchTexturePack.zonesUsingArea(Workspace.session(), zoneArea, zoneIndex);
+				if (shared != null) {
+					throw new IllegalStateException("Area " + zoneArea + " is also used by " + shared
+							+ ".\nThis map's textures and door props cannot go into it without changing"
+							+ "\nthose maps, so nothing was applied. Give this zone its own area"
+							+ "\n(Map > Make zone independent) and Apply again.");
+				}
 			}
+			StagedArea area = new StagedArea(loaded, zoneArea, zoneIndex);
+			// the swinging-door props for placed buildings (registry + textures staged)
+			doorProps = placed.isEmpty() ? null : buildDoorProps(loaded, placed, floorY, area, propNote);
+			// stamped pieces reference their donor areas' textures - carry any the
+			// zone's area lacks, or the game hardlocks on load
+			for (java.util.Map.Entry<Integer, java.util.Set<String>> en : texNeeds.entrySet()) {
+				if (en.getKey() == zoneArea) {
+					continue;
+				}
+				ctrmap.formats.h3d.BchTexturePack.Carry carry = ctrmap.formats.h3d.BchTexturePack.planCarry(
+						Workspace.session(), en.getKey(), zoneArea, new java.util.ArrayList<>(en.getValue()),
+						area.file(11), area.file(1), zoneIndex);
+				if (carry.pack != null) {
+					area.stage(carry.subfile, carry.pack);
+				}
+				texNote.append(carry.note.trim()).append('\n');
+			}
+			//COMMIT. Every precondition has passed, so the writing can start: the
+			//zone's map is forked here when it is still shared (re-applying to an
+			//already-private zone reuses its own regions instead of orphaning
+			//another archive append), and the staged bytes land in its own regions.
+			r = GeometryForker.ensurePrivate(zoneIndex);
+			for (StagedRegion s : staged) {
+				int dest = destRegion(r, s.srcRegion);
+				GR gr = new GR(Workspace.getWorkspaceFile(ArchiveType.FIELD_DATA, dest), Workspace.session());
+				try {
+					gr.storeFile(1, s.model);
+					gr.storeFile(2, s.collision);
+					gr.storeFile(0, s.tilemap);
+				// door props carry ABSOLUTE world coords of the FIRST map cell (where
+				// the warps also go) - storing them into every region would stack
+				// engine-visible duplicates at that one location
+					if (composite) {
+						// preserve the region's existing props; only merge new door props in
+						if (s.firstCell && doorProps != null) {
+							gr.storeFile(3, mergeProps(gr, doorProps));
+						}
+					} else {
+						gr.storeFile(3, (s.firstCell && doorProps != null) ? doorProps : s.props);
+					}
+				} catch (RuntimeException notWritten) {
+					//THE REGION KEEPS ITS OWN NAME ON THE FAILURE, for the same reason the area
+					//does: this is the write the whole Apply exists to make.
+					throw new IllegalStateException("could not write region " + dest + ": "
+						+ ctrmap.util.Bytes.reason(notWritten), notWritten);
+				}
+			}
+			area.commit();
+			unit.commit();
 		}
-		area.commit();
 		int enterable = 0;
 		for (Placed pl : placed) {
 			if (pl.e.enterable()) {
@@ -813,11 +853,6 @@ public class TilePainterForm {
 		return (b0 & 1) == 1 ? TilePalette.VOID : TilePalette.GRASS;
 	}
 
-	static int firstRegion(LoadedZone loaded) {
-		int[] c = firstRegionCell(loaded);
-		return c == null ? -1 : c[0];
-	}
-
 	/**
 	 * {regionId, cellX, cellY} of THIS ZONE'S OWN map cell - the one to paint.
 	 *
@@ -830,29 +865,40 @@ public class TilePainterForm {
 	 * header carries the zone's own world position; the cell containing it is
 	 * the zone's own. The first occupied cell remains the fallback for a
 	 * header whose position lands outside the map.
+	 *
+	 * @return null when the zone's map holds no region at all
+	 * @throws IllegalStateException naming why, when there is no zone or its map cannot be read.
+	 * It answered null for those too - "no region" - so a read failure skipped door props and
+	 * signs without a word, and the painter took it for a region changed underneath it (F247).
 	 */
 	public static int[] firstRegionCell(LoadedZone loaded) {
+		if (!loaded.isOpen()) {
+			throw new IllegalStateException("no zone is open, so it has no map cell");
+		}
+		byte[] mm;
 		try {
 			File mmFile = Workspace.getWorkspaceFile(ArchiveType.MAP_MATRIX, loaded.open().header.mapmatrixID);
-			byte[] mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
-			int sub0 = i32(mm, 4);
-			int w = u16(mm, sub0 + 4), h = u16(mm, sub0 + 6);
-			//the zone's own position (X = world x, Y = world z), 720 units per cell
-			int ownX = loaded.open().header.X / 720;
-			int ownY = loaded.open().header.Y / 720;
-			if (ownX >= 0 && ownY >= 0 && ownX < w && ownY < h) {
-				int id = u16(mm, sub0 + 8 + (ownY * w + ownX) * 2);
-				if (id != 0xFFFF) {
-					return new int[]{id, ownX, ownY};
-				}
+			mm = java.nio.file.Files.readAllBytes(mmFile.toPath());
+		} catch (Exception unread) {
+			throw new IllegalStateException("the zone's map matrix " + loaded.open().header.mapmatrixID
+					+ " could not be read: " + ctrmap.Ui.reason(unread), unread);
+		}
+		ctrmap.formats.mapmatrix.MapMatrix.Grid grid = ctrmap.formats.mapmatrix.MapMatrix.Grid.of(mm);
+		int w = grid.width, h = grid.height;
+		//the zone's own position (X = world x, Y = world z), 720 units per cell
+		int ownX = loaded.open().header.X / 720;
+		int ownY = loaded.open().header.Y / 720;
+		if (ownX >= 0 && ownY >= 0 && ownX < w && ownY < h) {
+			int id = grid.id(ownX, ownY);
+			if (id != 0xFFFF) {
+				return new int[]{id, ownX, ownY};
 			}
-			for (int k = 0; k < w * h; k++) {
-				int id = u16(mm, sub0 + 8 + k * 2);
-				if (id != 0xFFFF) {
-					return new int[]{id, k % w, k / w};
-				}
+		}
+		for (int k = 0; k < w * h; k++) {
+			int id = grid.id(k);
+			if (id != 0xFFFF) {
+				return new int[]{id, k % w, k / w};
 			}
-		} catch (Exception ex) {
 		}
 		return null;
 	}
@@ -899,13 +945,6 @@ public class TilePainterForm {
 	 * share the area, and while the rest of the Apply could still fail. Returns
 	 * the registry reference id for the GRProp uid.
 	 */
-	/** An area's prop texture pack as this workspace holds it: the extracted file when there is one, else the archive's. */
-	static byte[] propPackOf(int area) throws Exception {
-		File ws = new File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA), String.valueOf(area));
-		byte[] entry = ws.exists() ? java.nio.file.Files.readAllBytes(ws.toPath()) : Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(area);
-		return ctrmap.formats.propdata.PropDatabase.getSubfile(entry, 1);
-	}
-
 	public static int ensureDoorPropRegistered(String propModelName, StagedArea area, StringBuilder note) throws Exception {
 		ctrmap.formats.propdata.PropDatabase db = ctrmap.formats.propdata.PropDatabase.get(Workspace.session());
 		if (db == null) {
@@ -915,63 +954,22 @@ public class TilePainterForm {
 		if (pm == null) {
 			throw new IllegalStateException("model \"" + propModelName + "\" not in BuildingModels");
 		}
-		ctrmap.formats.propdata.ADPropRegistry reg = area.registry();
-		for (ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
-			if (e.model == pm.modelIndex) {
-				return e.reference; // already registered in this area
+		//ONE REGISTRATION (F107), staged: the Apply writes it with everything else, or none of it
+		ctrmap.formats.propdata.PropRegistration.Registered r = ctrmap.formats.propdata.PropRegistration.register(
+				Workspace.session(), db, pm, area, new ctrmap.formats.propdata.PropRegistration.Voice() {
+			@Override
+			public boolean importFrom(int donorArea, java.util.List<String> textures) {
+				return true;   //the Apply was the question, and a door needs what it draws with
 			}
-		}
-		// textures first (all-or-nothing before any registry entry)
-		byte[] modelBch = ctrmap.formats.propdata.PropDatabase.getSubfile(
-				Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(pm.modelIndex), 0);
-		byte[] targetPack = area.file(1);
-		java.util.Set<String> available = ctrmap.formats.propdata.PropDatabase.getTexturePackTextureNames(targetPack);
-		java.util.List<String> missing = ctrmap.formats.propdata.PropDatabase.getMissingTextureNames(modelBch, available);
-		//the finding's other half: a name this area ALREADY holds under other
-		//pixels. Nothing is missing, so no donor is consulted and the door draws
-		//the area's version - "Littleroot house" on area 4 draws area 4's
-		//chip_mado - with no line anywhere. Compare against the prop's home.
-		if (note != null && !pm.donorAreas.isEmpty() && pm.donorAreas.get(0) != area.areaId) {
-			java.util.List<String> all = new java.util.ArrayList<>(ctrmap.formats.propdata.PropDatabase.getMaterialTextureNames(modelBch));
-			for (String c : ctrmap.formats.h3d.BchTexturePack.clashesWith(area.file(11), targetPack, propPackOf(pm.donorAreas.get(0)), all)) {
-				note.append("\n").append(propModelName).append(" will draw this area's ").append(c)
-						.append(", not its own: the two textures share a name and differ.");
-			}
-		}
-		if (!missing.isEmpty()) {
-			int donorArea = db.findDonorAreaWithTextures(pm, missing);
-			if (donorArea < 0) {
-				throw new IllegalStateException("no donor area has its textures " + missing);
-			}
-			byte[] donorPack = propPackOf(donorArea);
-			byte[] merged = ctrmap.formats.h3d.BchTexturePack.importIntoArea(
-					Workspace.session(), area.areaId, area.editingZone, targetPack, donorPack, missing);
-			if (merged != targetPack) {
-				ctrmap.formats.h3d.BCHFile check = new ctrmap.formats.h3d.BCHFile(merged);
-				if (check.errorlevel != 0) {
-					throw new IllegalStateException("merged texture pack failed verification");
+
+			@Override
+			public void note(String line) {
+				if (note != null) {
+					note.append("\n").append(line);
 				}
-				area.stage(1, merged);
 			}
-		}
-		// registry entry: retail template when one exists (carries the door's
-		// open/close animation bindings), else a bare entry
-		ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry entry;
-		if (pm.template != null) {
-			entry = new ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry(
-					new ctrmap.LittleEndianDataInputStream(new java.io.ByteArrayInputStream(pm.template)));
-		} else {
-			entry = new ctrmap.formats.propdata.ADPropRegistry.ADPropRegistryEntry();
-		}
-		int ref = pm.modelIndex;
-		while (reg.entries.containsKey(ref)) {
-			ref++;
-		}
-		entry.reference = ref;
-		entry.model = pm.modelIndex;
-		reg.entries.put(ref, entry);
-		area.stageRegistry();
-		return ref;
+		});
+		return r.reference;
 	}
 
 	/**
@@ -987,13 +985,16 @@ public class TilePainterForm {
 			throw new IllegalStateException("could not resolve the zone's map cell for warp placement");
 		}
 		// free base-zone slots for private interior clones (scripts need index
-		// < 536); a slot with an in-session workspace file is NOT free even if
-		// the packed archive (which the scanner reads) still looks empty
+		// < 536). The scanner reads the workspace's zones now, unpacked edits
+		// included (F225); a slot EDITED this session is still not taken. It was
+		// "has an extracted file", which every zone has once the zone list loads,
+		// so no slot was ever free.
 		java.util.List<Integer> slots = new java.util.ArrayList<>();
 		if (cloneInteriors) {
 			File zoDir = Workspace.getExtractionDirectory(ArchiveType.ZONE_DATA);
+			java.util.List<String> edited = Workspace.persistPaths();
 			for (ctrmap.ZoneRepurposeScanner.Candidate c : ctrmap.ZoneRepurposeScanner.scan()) {
-				if (c.tier <= 1 && c.index != zoneIndex && !new File(zoDir, String.valueOf(c.index)).exists()) {
+				if (c.tier <= 1 && c.index != zoneIndex && !edited.contains(new File(zoDir, String.valueOf(c.index)).getAbsolutePath())) {
 					slots.add(c.index);
 				}
 			}
@@ -1163,6 +1164,16 @@ public class TilePainterForm {
 		if (cell == null) {
 			return 0;
 		}
+		//F085: the sign templates were measured on ORAS's scripts; on any other game the signs
+		//stay scenery, said so before the script is read or a routine transplanted
+		final ctrmap.formats.scripts.NpcTemplates.Measured measured;
+		try {
+			measured = ctrmap.formats.scripts.NpcTemplates.measuredOn(loaded.open().game());
+		} catch (ctrmap.formats.scripts.NpcTemplates.NotMeasured no) {
+			ctrmap.Ui.message(signs.size() + " sign(s) placed as scenery only: " + no.getMessage(),
+					"Signs", JOptionPane.INFORMATION_MESSAGE);
+			return 0;
+		}
 		ctrmap.formats.containers.ZO zo = zoneContainer(loaded, zoneIndex);
 		ctrmap.formats.scripts.GFLPawnScript s = new ctrmap.formats.scripts.GFLPawnScript(zo.getFile(2));
 		s.decompressThis();
@@ -1179,7 +1190,7 @@ public class TilePainterForm {
 						"Signs", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
 					return 0;
 				}
-				ctrmap.formats.scripts.SignWrapperInjector.injectSignWrapper(s, donor);
+				ctrmap.formats.scripts.SignWrapperInjector.injectSignWrapper(measured, s, donor);
 				if (ctrmap.formats.scripts.ZoneScriptAnalyzer.findSignWrapper(s) == null) {
 					throw new IllegalStateException("the injected routine did not verify");
 				}
@@ -1240,15 +1251,33 @@ public class TilePainterForm {
 				continue;
 			}
 			int line = msg.getLineCount();
-			int caseId = ctrmap.formats.scripts.NpcTemplates.addSignScript(s, line,
+			int caseId = ctrmap.formats.scripts.NpcTemplates.addSignScript(measured, s, line,
 					ctrmap.formats.scripts.NpcTemplates.SIGN_TYPES[Math.max(0, typeBox.getSelectedIndex())]);
 			msg.addLine(text);
-			ent.furniture.add(ctrmap.formats.scripts.NpcTemplates.makeSignFurniture(caseId, gx, gy));
+			ent.furniture.add(ctrmap.formats.scripts.NpcTemplates.makeSignFurniture(measured, caseId, gx, gy));
 			wired++;
 		}
 		if (wired > 0) {
-			java.nio.file.Files.write(sf.toPath(), msg.write());
-			Workspace.addPersist(sf);
+			commitSigns(zo, sf, msg, ent, s);
+		}
+		return wired;
+	}
+
+	/**
+	 * Writes what a sign wiring added - its story lines, the furniture records that point at its
+	 * cases, and the script that holds them - as one unit, or none of them.
+	 *
+	 * <p>THREE SEPARATE WRITES (F088): the story text went out raw and was added to the pack list,
+	 * then the furniture, then the script, so a failure at the script left furniture pointing at
+	 * case ids the script does not have and lines nobody references, already persisted for the
+	 * next pack. Inside one unit the story file, the zone container and the edit list all come
+	 * back as they were.
+	 */
+	static void commitSigns(ctrmap.formats.containers.ZO zo, File storyFile, ctrmap.formats.text.GFMessageFile msg,
+			ctrmap.formats.zone.ZoneEntities ent, ctrmap.formats.scripts.GFLPawnScript s) throws java.io.IOException {
+		try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Wire signs", Workspace.session())) {
+			ctrmap.WorkspaceUnit.write(storyFile, msg.write());
+			Workspace.addPersist(storyFile);
 			ent.furnitureCount = ent.furniture.size();
 			ent.modified = true;
 			byte[] assembled = ent.assembleData();
@@ -1267,14 +1296,12 @@ public class TilePainterForm {
 				throw new IllegalStateException("could not write the sign script: "
 					+ ctrmap.util.Bytes.reason(notWritten), notWritten);
 			}
+			unit.commit();
 		}
-		return wired;
 	}
 
 	static Color textOn(Color c) {
 		double lum = 0.299 * c.getRed() + 0.587 * c.getGreen() + 0.114 * c.getBlue();
 		return lum > 140 ? Color.BLACK : Color.WHITE;
 	}
-
-	/** The 40x40 paint grid canvas. */
 }

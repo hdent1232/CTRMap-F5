@@ -73,7 +73,7 @@ public class MapModelObjImporter {
 						String matName = uniqueName(model, MapModelObj.sanitize(om.material));
 						current = BchModelAppender.append(current, templateModel, templateMesh, matName);
 						model = new BchMapModel(current);
-						target = findMeshByExactMaterial(model, matName);
+						target = model.meshWithMaterial(matName);
 						if (target < 0) {
 							oc.action = "skipped: template injection did not land";
 							continue;
@@ -230,15 +230,6 @@ public class MapModelObjImporter {
 		for (int m = 0; m < model.meshes.size(); m++) {
 			String name = model.getMaterialName(model.getMeshMaterialIndex(m));
 			if (name != null && MapModelObj.sanitize(name).equalsIgnoreCase(want)) {
-				return m;
-			}
-		}
-		return -1;
-	}
-
-	private static int findMeshByExactMaterial(BchMapModel model, String material) {
-		for (int m = 0; m < model.meshes.size(); m++) {
-			if (material.equals(model.getMaterialName(model.getMeshMaterialIndex(m)))) {
 				return m;
 			}
 		}

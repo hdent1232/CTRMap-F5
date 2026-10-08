@@ -35,11 +35,26 @@ public class MaisonPoolGuard {
 	public final boolean[] vanillaUsed;
 	/** True when the snapshot was available (labels are exact, not inferred). */
 	public final boolean exact;
+	/** Why the labels are inferred, in words for the editor to show; null when they are exact. */
+	public final String inexact;
 
-	private MaisonPoolGuard(MaisonSet[] vanilla, boolean[] used, boolean exact) {
+	private MaisonPoolGuard(MaisonSet[] vanilla, boolean[] used, String inexact) {
 		this.vanilla = vanilla;
 		this.vanillaUsed = used;
-		this.exact = exact;
+		this.exact = inexact == null;
+		this.inexact = inexact;
+	}
+
+	/**
+	 * The fail-CLOSED guard: without a trustworthy snapshot, whatever is non-empty NOW is
+	 * treated as retail (guarding too much, never too little), and {@code why} says so.
+	 */
+	private static MaisonPoolGuard inferred(MaisonSet[] current, String why) {
+		boolean[] used = new boolean[current.length];
+		for (int i = 0; i < current.length; i++) {
+			used[i] = current[i] != null && !current[i].isEmpty();
+		}
+		return new MaisonPoolGuard(null, used, why);
 	}
 
 	/**
@@ -64,31 +79,46 @@ public class MaisonPoolGuard {
 	 */
 	public static MaisonPoolGuard load(GameFiles files, ArchiveType pool, ArchiveType pairedList, MaisonSet[] current) {
 		handed(files);
-		MaisonSet[] vanilla = readSnapshotPool(files, pool);
-		if (vanilla != null && vanilla.length != current.length) {
-			vanilla = null; //truncated/mismatched snapshot - do not trust it
-		}
-		if (vanilla == null) {
-			//fail CLOSED: without a trustworthy snapshot, whatever is non-empty
-			//NOW is treated as retail (guarding too much, never too little)
-			boolean[] used = new boolean[current.length];
-			for (int i = 0; i < current.length; i++) {
-				used[i] = current[i] != null && !current[i].isEmpty();
+		//F211: a pool that would not read answered "no snapshot", and a class-list row that would not read
+		//was skipped with its references - which labels an empty slot that retail row names FREE, the one
+		//thing this guards. Each is now said, and a row that did not read keeps what is filled NOW retail
+		MaisonSet[] vanilla;
+		Set<Integer> referenced;
+		java.util.List<String> problems = new java.util.ArrayList<>();
+		try {
+			vanilla = readSnapshotPool(files, pool);
+			if (vanilla == null) {
+				return inferred(current, "no pristine snapshot");
 			}
-			return new MaisonPoolGuard(null, used, false);
+			if (vanilla.length != current.length) {
+				return inferred(current, "the pristine snapshot holds " + vanilla.length + " sets and the game "
+						+ current.length);
+			}
+			referenced = pairedList != null ? readSnapshotReferences(files, pairedList, problems) : new HashSet<Integer>();
+		} catch (Exception ex) {
+			return inferred(current, "the pristine snapshot could not be read: " + ctrmap.util.Bytes.reason(ex));
 		}
-		Set<Integer> referenced = pairedList != null ? readSnapshotReferences(files, pairedList) : new HashSet<Integer>();
 		boolean[] used = new boolean[vanilla.length];
 		for (int i = 0; i < vanilla.length; i++) {
-			used[i] = (vanilla[i] != null && !vanilla[i].isEmpty()) || referenced.contains(i);
+			used[i] = (vanilla[i] != null && !vanilla[i].isEmpty()) || referenced.contains(i)
+					|| (!problems.isEmpty() && current[i] != null && !current[i].isEmpty());
 		}
-		return new MaisonPoolGuard(vanilla, used, true);
+		return new MaisonPoolGuard(vanilla, used, problems.isEmpty() ? null
+				: "the pristine class lists could not all be read: " + String.join(", ", problems));
 	}
 
 	/** The first slot that is free to author in (empty now AND not retail), or -1. */
 	public int firstFreeSlot(MaisonSet[] current) {
+		return firstFreeSlot(current, i -> false);
+	}
+
+	/**
+	 * The same, passing over the slots {@code skip} names: a record the editor could not read shows
+	 * as empty and is not free - authoring into it would write over the bytes it holds (F102).
+	 */
+	public int firstFreeSlot(MaisonSet[] current, java.util.function.IntPredicate skip) {
 		for (int i = 0; i < current.length && i < vanillaUsed.length; i++) {
-			if (!vanillaUsed[i] && (current[i] == null || current[i].isEmpty())) {
+			if (!skip.test(i) && !vanillaUsed[i] && (current[i] == null || current[i].isEmpty())) {
 				return i;
 			}
 		}
@@ -106,45 +136,41 @@ public class MaisonPoolGuard {
 		return n;
 	}
 
-	/** Opens a pool GARC from the pristine snapshot, or null when unavailable
-	 *  or unparseable (the GARC parser swallows read errors and can hand back
-	 *  an empty shell - treat that as "no snapshot", never as "all free"). */
-	private static MaisonSet[] readSnapshotPool(GameFiles files, ArchiveType pool) {
-		try {
-			GARC g = snapshotGarc(files, pool);
-			if (g == null || g.length == 0) {
-				return null;
-			}
-			MaisonSet[] out = new MaisonSet[g.length];
-			for (int i = 0; i < g.length; i++) {
-				byte[] rec = g.getDecompressedEntry(i);
-				if (rec == null) {
-					return null; //partial snapshot - untrustworthy
-				}
-				out[i] = MaisonSet.read(rec);
-			}
-			return out;
-		} catch (Exception ex) {
+	/** A pool GARC's sets from the pristine snapshot, or null when the snapshot has no such
+	 *  pool (or an empty shell - the GARC parser can hand one back - which is "no snapshot",
+	 *  never "all free"). THROWS when it is there and cannot be read. */
+	private static MaisonSet[] readSnapshotPool(GameFiles files, ArchiveType pool) throws Exception {
+		GARC g = snapshotGarc(files, pool);
+		if (g == null || g.length == 0) {
 			return null;
 		}
+		MaisonSet[] out = new MaisonSet[g.length];
+		for (int i = 0; i < g.length; i++) {
+			byte[] rec = g.getDecompressedEntry(i);
+			if (rec == null) {
+				throw new java.io.IOException(pool + " set " + i + " is missing from the snapshot");
+			}
+			out[i] = MaisonSet.read(rec);
+		}
+		return out;
 	}
 
-	/** Every set index any retail class-list row references, from the snapshot. */
-	private static Set<Integer> readSnapshotReferences(GameFiles files, ArchiveType listTable) {
+	/** Every set index any retail class-list row references, from the snapshot; none when the
+	 *  snapshot holds no such table. A row that cannot be read is named in {@code problems} -
+	 *  it took its references with it, and they are the ones that keep a slot from reading free. */
+	private static Set<Integer> readSnapshotReferences(GameFiles files, ArchiveType listTable,
+			java.util.List<String> problems) throws Exception {
 		Set<Integer> refs = new HashSet<>();
-		try {
-			GARC g = snapshotGarc(files, listTable);
-			if (g == null) {
-				return refs;
+		GARC g = snapshotGarc(files, listTable);
+		if (g == null) {
+			return refs;
+		}
+		for (int i = 0; i < g.length; i++) {
+			try {
+				refs.addAll(MaisonClassList.read(g.getDecompressedEntry(i)).setIndices);
+			} catch (RuntimeException ex) {
+				problems.add(listTable + " row " + i + " (" + ctrmap.util.Bytes.reason(ex) + ")");
 			}
-			for (int i = 0; i < g.length; i++) {
-				try {
-					MaisonClassList l = MaisonClassList.read(g.getDecompressedEntry(i));
-					refs.addAll(l.setIndices);
-				} catch (Exception ignore) {
-				}
-			}
-		} catch (Exception ignore) {
 		}
 		return refs;
 	}
@@ -180,18 +206,7 @@ public class MaisonPoolGuard {
 	 * guessed from another game.
 	 */
 	private static GARC snapshotGarc(GameFiles files, ArchiveType t) throws Exception {
-		String rel = files.profile().archivePath(t);
-		if (rel == null) {
-			return null;
-		}
-		File snap = files.pristine();
-		if (snap == null) {
-			return null;
-		}
-		File f = new File(snap.getAbsolutePath() + rel);
-		if (!f.exists()) {
-			return null;
-		}
-		return new GARC(f, false);
+		File f = files.pristineArchive(t);   //the one pristine reader (F232)
+		return f == null ? null : new GARC(f, false);
 	}
 }

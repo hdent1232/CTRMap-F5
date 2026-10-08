@@ -39,8 +39,7 @@ public class DoorPropGuardsTest {
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump);
-			System.out.println("ALL PASS");
+			Skip.suite("no dump at " + dump);
 			return;
 		}
 		ScratchGame.open(dump);
@@ -69,9 +68,9 @@ public class DoorPropGuardsTest {
 			}
 		}
 		if (door == null) {
-			System.out.println("  skip: no catalogue door clashes with area " + TARGET_AREA + " in this dump (" + looked + " looked at)");
-			System.out.println("ALL PASS");
-			return;
+			check(false, "no catalogue door clashes with area " + TARGET_AREA + " in this dump (" + looked + " looked at)");
+			System.out.println("FAILURES PRESENT");
+			System.exit(1);
 		}
 		System.out.println("  fixture: \"" + door.name + "\" (door " + door.doorProp + " from area " + door.donorArea
 				+ ") draws area " + TARGET_AREA + "'s " + clash);

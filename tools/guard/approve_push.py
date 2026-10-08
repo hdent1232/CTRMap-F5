@@ -27,6 +27,7 @@ import os
 import subprocess
 import sys
 import time
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 LF = chr(10)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -34,7 +35,7 @@ TOKEN_NAME = ".push-approved"
 
 
 def _git(root, args):
-    p = subprocess.Popen(["git", "-C", root] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p = subprocess.Popen(["git", "-C", root] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
     out, err = p.communicate(timeout=30)
     return p.returncode, out.decode("utf-8", "replace").strip(), err.decode("utf-8", "replace")
 

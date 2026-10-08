@@ -24,6 +24,18 @@ mutation_baseline.json   what the last sweep measured; MutationBaselineTest guar
 how to run one suite or all of them, what the four families of guard assert, and
 what to do when `MutationBaselineTest` fails after an edit.
 
+### Switches the program reads
+
+Every `-D` switch the program reads is listed here, and `SwitchDocTest` refuses one
+that is not (F092: the terrain painter read five nobody had written down, three of
+which deleted the geometry that seals a painted map).
+
+| switch | what it does |
+|---|---|
+| `-Dterrain=<file>` | paints with another terrain catalogue instead of the bundled `oras_terrain.tsv`, so a volcanic design can make WATER lava and CLIFF black rock without changing every other map's |
+| `-Dctrmap.log.root=<folder>` | writes the error log there instead of beside the vault under the user's local data; the suites use it so they never write the user's real log |
+| `-Dctrmap.vault.root=<folder>` | keeps the vault's sealed pristine copies there instead; the suites use it so a test seal can never refuse the user's next real one |
+
 ## The three layers
 
 ```

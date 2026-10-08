@@ -114,16 +114,21 @@ public final class ZoneLinker {
 		a.ent.warps.get(warpA).targetZone = zoneB;
 		a.ent.warps.get(warpA).targetWarpId = warpB;
 		a.ent.modified = true;
-		write(a, zoneA, ws);
-		if (twoWay) {
-			//RELOADED, not the copy taken above: A and B are the same zone when
-			//somebody links two doors inside one building, and writing the stale
-			//copy would throw the first half of the link away.
-			Loaded back = zoneA == zoneB ? load(ws, zoneB) : b;
-			back.ent.warps.get(warpB).targetZone = zoneA;
-			back.ent.warps.get(warpB).targetWarpId = warpA;
-			back.ent.modified = true;
-			write(back, zoneB, ws);
+		//ONE UNIT (F227): zone A was written and then zone B, so a failure on B left a one-way
+		//door - the outcome this class's own javadoc calls worse than none. Now B failing puts A back.
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Connect zones", ws)) {
+			write(a, zoneA, ws);
+			if (twoWay) {
+				//RELOADED, not the copy taken above: A and B are the same zone when
+				//somebody links two doors inside one building, and writing the stale
+				//copy would throw the first half of the link away.
+				Loaded back = zoneA == zoneB ? load(ws, zoneB) : b;
+				back.ent.warps.get(warpB).targetZone = zoneA;
+				back.ent.warps.get(warpB).targetWarpId = warpA;
+				back.ent.modified = true;
+				write(back, zoneB, ws);
+			}
+			unit.commit();
 		}
 		return "Zone " + zoneA + " warp " + warpA + (twoWay ? " and " : " now leads to ")
 				+ (twoWay ? "zone " + zoneB + " warp " + warpB + " now lead to each other."

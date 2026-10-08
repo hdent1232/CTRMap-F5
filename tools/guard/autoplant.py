@@ -37,6 +37,7 @@ import re
 import subprocess
 import sys
 import time
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -85,7 +86,7 @@ def compile_one(path, javac):
              "-cp", LIBS, "-sourcepath", "src", "-d", os.path.join("build", "classes"),
              os.path.relpath(path, ROOT)],
             cwd=ROOT, capture_output=True, text=True, errors="replace",
-            timeout=COMPILE_TIMEOUT)
+            timeout=COMPILE_TIMEOUT, creationflags=NO_WINDOW)
     except subprocess.TimeoutExpired:
         return False
     return done.returncode == 0
@@ -103,10 +104,14 @@ def run_suite(cls, args, java):
         done = subprocess.run(
             [java, "-Xmx4g", "-cp", LIBS, cls] + args,
             cwd=ROOT, capture_output=True, text=True, errors="replace",
-            timeout=SUITE_TIMEOUT)
+            timeout=SUITE_TIMEOUT, creationflags=NO_WINDOW)
     except subprocess.TimeoutExpired:
         return None, ""
-    return done.returncode, (done.stdout or "") + (done.stderr or "")
+    said = (done.stdout or "") + (done.stderr or "")
+    #judged as the battery judges it - one definition, replant's (a suite that printed
+    #FAILURES PRESENT and exited 0 has failed)
+    from replant import verdict
+    return verdict(done.returncode, said), said
 
 
 def registered(pristine, gamedir):

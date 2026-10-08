@@ -27,8 +27,7 @@ public class DumpCheckTest {
 			System.exit(1);
 		}
 		if (!new File(args[0]).isDirectory()) {
-			System.out.println("  no complete RomFS dump at " + args[0] + " - suite skipped");
-			System.out.println("ALL PASS");
+			Skip.suite("no complete RomFS dump at " + args[0]);
 			return;
 		}
 		File dump = new File(args[0]);

@@ -53,6 +53,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 BASE = Path(__file__).resolve().parent.parent.parent   # tools -> repository -> the folder holding it
 WT = BASE / "wt" / "_guardcheck"
@@ -377,7 +378,7 @@ def run(cmd, timeout=900, keep=TAIL_BYTES):
     # kill), a flood (a kill, with the reason recorded), and an ordinary
     # non-zero exit.
     proc = subprocess.Popen(cmd, cwd=str(WT), stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, bufsize=0)
+                            stderr=subprocess.PIPE, bufsize=0, creationflags=NO_WINDOW)
     out, err = Tail(keep), Tail(keep)
     threads = [threading.Thread(target=_drain, args=(proc.stdout, out)),
                threading.Thread(target=_drain, args=(proc.stderr, err))]
@@ -1058,12 +1059,22 @@ import require_build
 # process; that is what the frozen-sha reset on the next run is for.
 import atexit
 
-#: WHERE THE LOCK LIVES. `.claude/hooks/guard_mutation_read.py` refuses a read of a file that
-#: currently carries an injected fault, and finds it by reading this. Nothing had ever written
-#: it, so that hook was installed, wired, running and unable to refuse anything - a consumer
-#: with no producer, which is the defect this project has filed in seven consecutive audits
-#: with the arrow pointing the other way.
-MUTATION_LOCK = BASE / ".mutation-in-flight"
+#: WHERE THE LOCK LIVES: beside the mutants, in the worktree this sweep mutates (WT), and through
+#: bundle_rules' one door - take_lock and release_lock (F179). It was written with mode 'w' at
+#: BASE, the repository's PARENT, where no reader looks - a producer with no consumer, the defect
+#: this project has filed in seven consecutive audits - and its removal was never counted, so the
+#: hooks' came-and-went check could not see a sweep. The repository itself holds no mutant: a
+#: sweep never writes there, so a read of the repository's file is not a read of a mutant.
+
+
+def _door():
+    """bundle_rules, where the lock's one door is."""
+    repo = str(Path(__file__).resolve().parent.parent)
+    sys.path.insert(0, os.path.join(repo, "tools"))
+    import bundle_hooks
+    sys.path.insert(0, bundle_hooks.path(repo))
+    import bundle_rules
+    return bundle_rules
 
 
 class _Pending(list):
@@ -1074,25 +1085,28 @@ class _Pending(list):
     CALL SITE FROM BROKEN.
     """
 
+    #: the file the lock names while this list holds a mutant, or None
+    _held = None
+
     def _sync(self):
-        try:
-            if self:
-                # the PID too: a lock with no process behind it is read as live by
-                # age alone, and a killed sweep then holds it for ninety minutes -
-                # long enough to refuse the sync that clears another guard.
-                with io.open(str(MUTATION_LOCK), "w", encoding="utf-8", newline=chr(10)) as handle:
-                    handle.write(
-                        self[-1][0] + chr(10)
-                        + "pid=%d" % os.getpid() + chr(10)
-                        + "what=a mutation sweep" + chr(10))
-            elif MUTATION_LOCK.exists():
-                MUTATION_LOCK.unlink()
-        except OSError as cannotWrite:
-            # A LOCK THAT CANNOT BE WRITTEN IS NOT A LOCK. Say so rather than carrying on
-            # quietly: the reader hook would then see no lock and clear a file that is
-            # mid-mutation, which is exactly the read this is here to refuse.
-            print("WARNING: cannot maintain %s (%s) - a reader cannot be told this file is "
-                  "mid-mutation" % (MUTATION_LOCK, cannotWrite), flush=True)
+        """Take the lock when a mutant lands, release it when none is left, re-take it when the
+        file changes. A lock that cannot be taken STOPS the sweep: another run holds this tree,
+        or it cannot be written - and a mutant on disk with no lock naming it is the read this
+        is here to refuse. atexit puts every pending file back on the way out."""
+        want = str(self[-1][0]).replace(chr(92), "/") if self else None
+        if want == self._held:
+            return
+        door = _door()
+        if self._held is not None:
+            stuck = door.release_lock(str(WT))
+            self._held = None
+            if stuck:
+                raise SystemExit("the mutation lock could not come off: %s" % stuck)
+        if want is not None:
+            refused = door.take_lock(str(WT), want)
+            if refused:
+                raise SystemExit("REFUSING to leave a mutant on disk unlocked: %s" % refused)
+            self._held = want
 
     def append(self, item):
         list.append(self, item)
@@ -1465,12 +1479,15 @@ def selftest():
         victim.parent.mkdir(parents=True, exist_ok=True)
         with io.open(victim, "w", encoding="utf-8", newline="") as handle:
             handle.write(u"GOOD\n")
+        #WT FIRST: the lock is taken beside the mutant, in the tree being mutated (F179)
+        _saved_wt = globals().get("WT")
+        globals()["WT"] = tmp
         _PENDING_RESTORE.append((str(victim.relative_to(tmp)).replace("\\", "/"), u"GOOD\n"))
         with io.open(victim, "w", encoding="utf-8", newline="") as handle:
             handle.write(u"MUTANT\n")
-        _saved_wt = globals().get("WT")
-        globals()["WT"] = tmp
         try:
+            check(os.path.isfile(str(tmp / ".mutation-in-flight")),
+                  "a mutant on disk is named by a lock beside it")
             _restore_pending()
         finally:
             globals()["WT"] = _saved_wt
@@ -1531,6 +1548,13 @@ def selftest():
     r2, f2, _, _, _ = compare_to_baseline(live, moved)
     check(not r2 and len(f2) == 2,
           "and when the file has changed since the baseline, its line numbers are not compared")
+
+    # WT IS THE CWD run() HANDS ITS CHILD, and these runs need no worktree. A machine that never
+    # ran a sweep has none, and the selftest died here with FileNotFoundError - red in test.ps1
+    # on every such machine, while its own usage line says "no worktree" (found running the
+    # battery's Python on a fresh clone, F184). A folder of its own, until the verdict.
+    runs_dir = Path(tempfile.mkdtemp(prefix="mutate2-selftest-runs"))
+    saved_wt_runs, WT = WT, runs_dir
 
     # DEFECT 3: a flood, a hang and an ordinary failure are three things.
     py = sys.executable
@@ -1679,6 +1703,8 @@ def selftest():
         if fake is not None:
             shutil.rmtree(str(fake.parent), ignore_errors=True)
 
+    WT = saved_wt_runs
+    shutil.rmtree(str(runs_dir), ignore_errors=True)
     print("ALL PASS" if not fails[0] else "FAILURES PRESENT (%d)" % fails[0])
     return 1 if fails[0] else 0
 

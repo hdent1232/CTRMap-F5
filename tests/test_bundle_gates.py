@@ -54,7 +54,8 @@ class ACommitIsAskedWhatSections2And14Ask(unittest.TestCase):
         self.assertEqual(self.gate.fix_touches_a_guard(self.FIX, ["src/reader.py",
                                                                   "tests/test_reader.py"]), [])
         self.assertEqual(self.gate.fix_touches_a_guard(
-            self.FIX + "No-guard: a typo in a message string" + LF, ["src/reader.py"]), [])
+            self.FIX + "No-guard: a typo in a message string, which no test could tell from the "
+            "right spelling any better than the person reading it" + LF, ["src/reader.py"]), [])
 
     def test_git_that_cannot_ANSWER_is_not_an_empty_commit(self):
         self.assertTrue(self.gate.fix_touches_a_guard(self.FIX, None))
@@ -73,6 +74,35 @@ class ACommitIsAskedWhatSections2And14Ask(unittest.TestCase):
         """The commit adding a rule once exempted itself by explaining it."""
         prose = self.FIX + "we no longer accept `No-guard:` lines that are this short" + LF
         self.assertTrue(self.gate.fix_touches_a_guard(prose, ["src/reader.py"]))
+
+    def test_an_ESCAPE_without_its_REASON_is_no_escape(self):
+        """`No-guard: x` let any fix through: the escape was asked for and its reason was not,
+        while No-refusal and Deferred-gap beside it held 80 characters (CTRMap F186)."""
+        reason = "a reader that returns zero for a truncated file is refused at the read itself"
+        refusal = self.FIX + "Guard: refusal -- " + reason + LF
+        for marker, asks in (("No-guard:", lambda m: self.gate.fix_touches_a_guard(
+                self.FIX + m, ["src/reader.py"])),
+                ("No-guard:", lambda m: self.gate.guard_claim(self.FIX + m)),
+                ("No-checker:", lambda m: self.gate.checker_resolves(refusal + m, execute=False))):
+            with self.subTest(marker):
+                self.assertTrue(asks(marker + " x" + LF),
+                                "ESCAPE: a %s line with no reason excused the fix" % marker)
+                self.assertEqual(asks(marker + " " + "z" * 90 + LF), [],
+                                 "ESCAPE: a %s line WITH its reason was refused" % marker)
+
+    def test_a_projects_OWN_trigger_asks_the_SAME_rule(self):
+        """A project whose gate asks the staged DIFF - CTRMap measured the subject line reaching
+        33 of 213 fixes - passes its answer, and the rule body asked is this one, not a copy."""
+        house = "The reader stops answering zero for a truncated file" + LF + LF
+        for name, asks in (("guard place", lambda m, fix: self.gate.fix_touches_a_guard(
+                m, ["src/reader.py"], fix=fix)), ("guard kind", self.gate.guard_claim)):
+            with self.subTest(name):
+                self.assertEqual(asks(house, None), [], "TRIGGER: a non-fix subject was asked")
+                self.assertTrue(asks(house, True),
+                                "TRIGGER: the project's own answer that this is a fix was ignored")
+                self.assertEqual(asks(self.FIX, False), [],
+                                 "TRIGGER: the project's own answer that this is NOT a fix was "
+                                 "overridden by the subject line")
 
     def test_an_ADMISSION_needs_a_Deferred_gap_with_a_reason(self):
         admitted = self.FIX + "The writer is still owed a test." + LF
@@ -176,11 +206,14 @@ class ACommitIsAskedWhatSections2And14Ask(unittest.TestCase):
                          "PROJECT LEDGER: a list-shaped or a keyed ledger was misread")
 
     def test_a_fix_with_no_NEW_plant_or_one_that_stays_green_is_refused(self):
-        self.assertTrue(self.gate.fix_has_a_plant(self.FIX, keys=[]))
+        """own=() - THIS bundle's ledger only. Left unset, the gate reads the INSTALLED project's
+        ledger and proves every plant new since HEAD for real: measured in CTRMap, 2026-10-07, 292
+        uncommitted plants, each a build and a suite, and the run sat on this test for 40 minutes."""
+        self.assertTrue(self.gate.fix_has_a_plant(self.FIX, keys=[], own=()))
         self.assertTrue(self.gate.fix_has_a_plant(self.FIX, keys=["k"],
-                                                  drive=lambda k: (False, "passed")))
+                                                  drive=lambda k: (False, "passed"), own=()))
         self.assertEqual(self.gate.fix_has_a_plant(self.FIX, keys=["k"],
-                                                   drive=lambda k: (True, "red")), [])
+                                                   drive=lambda k: (True, "red"), own=()), [])
 
 
 class AHeldPlantIsDrivenAgainWhenItsFileChanges(unittest.TestCase):
@@ -397,10 +430,14 @@ class TheInstallIsAskedAtEveryCommit(unittest.TestCase):
         io.open(message, "w", encoding="utf-8").write("a change" + LF)
         for hook in ("pre-commit", "commit-msg"):
             text = io.open(os.path.join(HERE, ".githooks", hook), encoding="utf-8").read()
+            # `tools/` AT ANY DEPTH: a project's hook that runs tools/guard/x.py first was never
+            # stubbed, so it died on the missing file before the line under test - measured in
+            # CTRMap 2026-10-07, whose commit-msg runs tools/guard/commit_guard.py first.
             named = sorted({rel for line in text.splitlines() if not line.lstrip().startswith("#")
-                            for rel in re.findall(r"tools/[\w.-]+\.py", line)})
+                            for rel in re.findall(r"tools/[\w./-]+\.py", line)})
             self.assertTrue(named, "%s runs no tool - nothing here could be asked" % hook)
             for rel in named:
+                os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
                 io.open(os.path.join(root, rel), "w", encoding="utf-8").write(stub)
             if os.path.exists(ran):
                 os.remove(ran)
@@ -973,7 +1010,18 @@ class EveryToolHereIsAskedAtTheActItGuards(unittest.TestCase):
         loose = [rel for rel, text in tiers.guards(HERE)
                  if rel.startswith("tools/") and rel not in gate
                  and not bundle_rules.declarations_in(text)]
-        self.assertEqual(loose, [], "these tools refuse things and declare no act to be asked at")
+        # THE PROJECT'S ADOPTED DEBT, AS tiers.py HOLDS IT - and held TIGHT. Installed, this asked
+        # a stricter rule than the ratchet it tests: measured in CTRMap 2026-10-07, 31 of its own
+        # tools refuse with no act, every one of them in the debt `--adopt` recorded at install,
+        # and tiers.py passes them while this failed. Here in the bundle nothing is adopted, so
+        # nothing changes. The debt only shrinks: an entry that is no longer loose is slack a tool
+        # could fall back into unnoticed, and is refused until the record lets it go.
+        debt = tiers.adopted(HERE)
+        self.assertEqual([rel for rel in loose if rel not in debt], [],
+                         "these tools refuse things and declare no act to be asked at")
+        self.assertEqual(sorted(rel for rel in debt if rel.startswith("tools/") and rel not in loose),
+                         [], "the adopted debt still holds tools that are no longer below the point "
+                             "of action - take them out of `_tiers_adopted`, or they can fall back")
 
     def test_tiers_refuses_a_guard_nothing_asks_and_credits_one_a_wired_hook_asks(self):
         import tiers

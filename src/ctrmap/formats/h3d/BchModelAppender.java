@@ -25,54 +25,20 @@ import static ctrmap.formats.LittleEndian.putU16;
  * pre-existing command-tail note).
  */
 public class BchModelAppender {
-    static String str(byte[] b,int abs){StringBuilder sb=new StringBuilder();for(int p=abs;p<b.length&&b[p]!=0;p++)sb.append((char)(b[p]&0xFF));return sb.toString();}
-    static int align(int v,int a){return (v+a-1)/a*a;}
 
-    // ---------------- patricia (validated byte-exact vs all 30538 GF trees) ----------------
-    static class Node { long refBit; int left, right; String name; }
-    static boolean getBit(String name, long bit){
-        int pos=(int)(bit>>>3);
-        if (name!=null && pos<name.length()) return ((name.charAt(pos)>>(int)(bit&7))&1)!=0;
-        return false;
-    }
-    static int traverse(String name, List<Node> nodes, Node[] rootOut, long bit){
-        Node root=nodes.get(0); int out=root.left; Node left=nodes.get(out);
-        while (root.refBit>left.refBit && left.refBit>bit){
-            out=getBit(name,left.refBit)?left.right:left.left;
-            root=left; left=nodes.get(out);
-        }
-        rootOut[0]=root; return out;
-    }
-    static List<Node> buildTree(List<String> names){
-        List<Node> nodes=new ArrayList<>();
-        Node root=new Node(); root.refBit=0xFFFFFFFFL; nodes.add(root);
-        int maxLen=0; for (String t:names) maxLen=Math.max(maxLen,t.length());
-        Node[] rootOut=new Node[1];
-        for (String t:names){
-            long bit=(maxLen<<3)-1;
-            int index=traverse(t,nodes,rootOut,0);
-            while (getBit(nodes.get(index).name,bit)==getBit(t,bit)) if (--bit<0) throw new IllegalArgumentException("dup "+t);
-            Node n=new Node(); n.name=t; n.refBit=bit;
-            if (getBit(t,bit)){ n.left=traverse(t,nodes,rootOut,bit); n.right=nodes.size(); }
-            else { n.left=nodes.size(); n.right=traverse(t,nodes,rootOut,bit); }
-            Node rt=rootOut[0];
-            if (getBit(t,rt.refBit)) rt.right=nodes.size(); else rt.left=nodes.size();
-            nodes.add(n);
-        }
-        return nodes;
-    }
+    // the patricia name tree (validated byte-exact vs all 30538 GF trees) is Patricia, shared (F066)
 
     // decoded reloc entry
     static class RE { int flag, tgt, src, ptrLoc, word; }
     static List<RE> decode(BchMapModel m, byte[] raw){
         List<RE> out=new ArrayList<>();
+        //decoded by the one relocation reader (F066); this writer handles contents and commands sources only
+        BchSections s=m.sections();
         for (int v : m.reloc){
+            BchSections.Reloc r=s.decode(v);
+            if (r.source!=BchSections.CONTENTS && r.source!=BchSections.COMMANDS) throw new IllegalStateException("reloc src "+r.source);
             RE e=new RE();
-            e.flag=(v>>>25)&0x7F; e.tgt=e.flag&0xF; e.src=e.flag>>>4;
-            int off=v&0x1FFFFFF;
-            int base = e.src==0?m.contentsAddr: e.src==2?m.commandsAddr: -1;
-            if (base<0) throw new IllegalStateException("reloc src "+e.src);
-            e.ptrLoc = base + (e.tgt==1?off:off*4);
+            e.flag=r.flag; e.tgt=r.target; e.src=r.source; e.ptrLoc=r.ptrLoc;
             e.word = i32(raw, e.ptrLoc);
             out.add(e);
         }
@@ -186,7 +152,7 @@ public class BchModelAppender {
     public static StringPool rebuildStrings(byte[] T, BchMapModel t, Collection<String> needed){
         TreeSet<String> set=new TreeSet<>(needed);
         { int s=t.stringsAddr+1, end=t.stringsAddr+t.stringsLen;
-          while (s<end){ String v=str(T,s); set.add(v); s+=v.length()+1; } }
+          while (s<end){ String v=StringUtils.cString(T,s); set.add(v); s+=v.length()+1; } }
         StringPool sp=new StringPool();
         sp.offset=new HashMap<>();
         int so=1;
@@ -198,7 +164,7 @@ public class BchModelAppender {
         sp.remap=new HashMap<>();
         { int s=t.stringsAddr+1, end=t.stringsAddr+t.stringsLen;
           sp.remap.put(0,0);
-          while (s<end){ String v=str(T,s); sp.remap.put(s-t.stringsAddr, sp.offset.get(v)); s+=v.length()+1; } }
+          while (s<end){ String v=StringUtils.cString(T,s); sp.remap.put(s-t.stringsAddr, sp.offset.get(v)); s+=v.length()+1; } }
         return sp;
     }
 
@@ -225,7 +191,7 @@ public class BchModelAppender {
         int mmv=t.ptr(t.modelMetaPtr), mmc=i32(T,t.modelMetaPtr+4);
         int P7=C+t.contentsLen;
         for (int k=0;k<mmc;k++){ int dp=t.ptr(mmv+k*0xC+8); if (dp!=0&&dp<P7) P7=dp; }
-        String tModelName=str(T, t.modelNamePtr);
+        String tModelName=StringUtils.cString(T, t.modelNamePtr);
 
         // ---- donor landmarks ----
         DonorSpans ds=locateDonor(D, d, dj);
@@ -243,12 +209,12 @@ public class BchModelAppender {
         }
         TreeSet<String> needed=new TreeSet<>();
         for (RE e : dBlockEntries) if (e.tgt==1){
-            String v = (e.ptrLoc==ds.paramsBeg+0x108)? newFull : str(D, d.stringsAddr+e.word);
+            String v = (e.ptrLoc==ds.paramsBeg+0x108)? newFull : StringUtils.cString(D, d.stringsAddr+e.word);
             needed.add(v);
         }
-        if (ds.tex0!=null) needed.add(str(D,ds.tex0));
-        if (ds.tex1!=null) needed.add(str(D,ds.tex1));
-        if (ds.tex2!=null) needed.add(str(D,ds.tex2));
+        if (ds.tex0!=null) needed.add(StringUtils.cString(D,ds.tex0));
+        if (ds.tex1!=null) needed.add(StringUtils.cString(D,ds.tex1));
+        if (ds.tex2!=null) needed.add(StringUtils.cString(D,ds.tex2));
         needed.add(newName); needed.add(newFull);
         StringPool sp=rebuildStrings(T, t, needed);
         byte[] newStrings=sp.bytes;
@@ -257,10 +223,10 @@ public class BchModelAppender {
 
         // ---- trees ----
         List<String> fullNames=new ArrayList<>(), matNames=new ArrayList<>();
-        for (int i=1;i<=N;i++) fullNames.add(str(T, t.ptr(d1t+i*0xC+8)));
+        for (int i=1;i<=N;i++) fullNames.add(StringUtils.cString(T, t.ptr(d1t+i*0xC+8)));
         for (int i=0;i<N;i++) matNames.add(t.getMaterialName(i));
-        List<Node> nD1=buildTree(concat(fullNames,newFull));
-        List<Node> nMT=buildTree(concat(matNames,newName));
+        List<Patricia.Node> nD1=Patricia.build(concat(fullNames,newFull));
+        List<Patricia.Node> nMT=Patricia.build(concat(matNames,newName));
 
         // ---- contents insertions ----
         int lam=i32(D,ds.meshHdr+4)>>>24;
@@ -335,9 +301,9 @@ public class BchModelAppender {
         putI32(newC, newMatHdrAbs-C+0x00, newParamsAbs-C);
         putI32(newC, newMatHdrAbs-C+0x10, newMatCmdRel+(ds.texCmdBeg-ds.matCmdBeg));
         putI32(newC, newMatHdrAbs-C+0x18, newParamsAbs-C+0x110);
-        putI32(newC, newMatHdrAbs-C+0x1C, ds.tex0==null?0:strOff.get(str(D,ds.tex0)));
-        putI32(newC, newMatHdrAbs-C+0x20, ds.tex1==null?0:strOff.get(str(D,ds.tex1)));
-        putI32(newC, newMatHdrAbs-C+0x24, ds.tex2==null?0:strOff.get(str(D,ds.tex2)));
+        putI32(newC, newMatHdrAbs-C+0x1C, ds.tex0==null?0:strOff.get(StringUtils.cString(D,ds.tex0)));
+        putI32(newC, newMatHdrAbs-C+0x20, ds.tex1==null?0:strOff.get(StringUtils.cString(D,ds.tex1)));
+        putI32(newC, newMatHdrAbs-C+0x24, ds.tex2==null?0:strOff.get(StringUtils.cString(D,ds.tex2)));
         putI32(newC, newMatHdrAbs-C+0x28, strOff.get(newName));
         // new mesh hdr
         System.arraycopy(D, ds.meshHdr, newC, newMeshHdrAbs-C, 0x38);
@@ -375,7 +341,7 @@ public class BchModelAppender {
         List<int[]> outTrios=new ArrayList<>();  // encoded words, CMD-source
         List<Integer> outRest=new ArrayList<>();
         int newContentsAddr=C, newStringsAddr=C+newC.length;
-        int newCommandsAddr=align(newStringsAddr+newStrings.length,0x10);
+        int newCommandsAddr=ctrmap.util.Bytes.align(newStringsAddr+newStrings.length,0x10);
         // old entries
         for (RE e : tre){
             int nl, w=e.word, nw;
@@ -428,7 +394,7 @@ public class BchModelAppender {
                 case 0: { int abs=e.word+0x44;
                           if (abs<base||abs>= (inMat?ds.paramsEnd:ds.subEnd)) throw new IllegalStateException("cross-block ptr");
                           nw=(nbase-C)+(abs-base); break; }
-                case 1: { String v=(e.ptrLoc==ds.paramsBeg+0x108)?newFull:str(D,d.stringsAddr+e.word); nw=strOff.get(v); break; }
+                case 1: { String v=(e.ptrLoc==ds.paramsBeg+0x108)?newFull:StringUtils.cString(D,d.stringsAddr+e.word); nw=strOff.get(v); break; }
                 case 2: case 3: {
                           if (e.word>=ds.matCmdBeg-d.commandsAddr && e.word<ds.texCmdEnd-d.commandsAddr) nw=newMatCmdRel+(e.word-(ds.matCmdBeg-d.commandsAddr));
                           else if (e.word>=ds.meshCmdBeg-d.commandsAddr && e.word<ds.disCmdEnd-d.commandsAddr) nw=newMeshCmdRel+(e.word-(ds.meshCmdBeg-d.commandsAddr));
@@ -475,10 +441,10 @@ public class BchModelAppender {
         }
 
         // ---- final file ----
-        int newRawAddr=align(newCommandsAddr+newCmdLen,0x80);
+        int newRawAddr=ctrmap.util.Bytes.align(newCommandsAddr+newCmdLen,0x80);
         int relocCount=outTrios.size()+outRest.size();
-        int newRelocAddr=align(newRawAddr+newRawLen,0x80);
-        int fileLen=align(newRelocAddr+relocCount*4,0x80);
+        int newRelocAddr=ctrmap.util.Bytes.align(newRawAddr+newRawLen,0x80);
+        int fileLen=ctrmap.util.Bytes.align(newRelocAddr+relocCount*4,0x80);
         byte[] out=new byte[fileLen];
         // header
         System.arraycopy(T,0,out,0,0x44);
@@ -508,7 +474,7 @@ public class BchModelAppender {
         return out;
     }
 
-    static void writeNode(byte[] b, int off, Node n, int nameOff){
+    static void writeNode(byte[] b, int off, Patricia.Node n, int nameOff){
         putI32(b,off,(int)n.refBit);
         putU16(b,off+4,n.left);
         putU16(b,off+6,n.right);

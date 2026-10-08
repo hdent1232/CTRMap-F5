@@ -46,31 +46,73 @@ public class ZoneRepurposeScanner {
 		}
 	}
 
-	/**
-	 * Scans all base zones and returns candidates sorted best-first (only zones
-	 * with no incoming warps are returned; the rest are considered in-use).
-	 */
+	/** What a scan found: the candidates best-first, and the base zones it could not read (F225). */
+	public static final class Scan {
+
+		public final List<Candidate> candidates = new ArrayList<>();
+		/** "zone N: why" - none of these is a candidate, and none of their warps is counted. */
+		public final List<String> unreadable = new ArrayList<>();
+	}
+
+	/** The open workspace's candidates, best-first; see {@link #scanZones}. */
 	public static List<Candidate> scan() {
-		GARC zo = Workspace.getArchive(ArchiveType.ZONE_DATA);
+		return scanZones(Workspace.isValid() ? Workspace.session() : null).candidates;
+	}
+
+	/** The workspace's base zones as they are now - unpacked edits included (F225). */
+	public static Scan scanZones(WorkspaceSession s) {
+		GARC zo = s == null ? null : s.getArchive(ArchiveType.ZONE_DATA);
 		if (zo == null) {
-			return new ArrayList<>();
+			return new Scan();
 		}
-		int base = Math.min(BASE_ZONES, zo.length);
+		return scanZones(Math.min(BASE_ZONES, zo.length), i -> ZoneTables.zoneNow(s, i),
+				parentMap -> LocationNames.getLocName(s, parentMap));
+	}
+
+	/**
+	 * Scans base zones 0..base-1 and returns candidates sorted best-first (only zones with no
+	 * incoming warps are returned; the rest are considered in-use).
+	 *
+	 * <p>A zone that cannot be read is NOT empty (F225): it was read from the archive as of the last
+	 * pack, a zone whose entity block was missing counted as having none - the safest tier - and a
+	 * zone whose entities would not read went unsaid. It is listed in {@link Scan#unreadable}, is no
+	 * candidate, and its warps, which nobody could count, are said to be uncounted.
+	 */
+	public static Scan scanZones(int base, ZoneTables.ZoneBytes zones) {
+		return scanZones(base, zones, parentMap -> "");
+	}
+
+	/** As above, naming each candidate by its parent map through {@code names} - the handed game's location names. */
+	public static Scan scanZones(int base, ZoneTables.ZoneBytes zones, java.util.function.IntFunction<String> names) {
+		Scan scan = new Scan();
 		int[] npcs = new int[base], warps = new int[base], trig = new int[base], parent = new int[base], incoming = new int[base];
 		boolean[] valid = new boolean[base];
 		for (int i = 0; i < base; i++) {
-			byte[] z = zo.getDecompressedEntry(i);
+			byte[] z;
+			try {
+				z = zones.zone(i);
+			} catch (java.io.IOException | RuntimeException unread) {
+				scan.unreadable.add("zone " + i + ": " + Ui.reason(unread));
+				continue;
+			}
 			if (z == null || z.length < 12 || (z[0] & 0xFF) != 0x5A || (z[1] & 0xFF) != 0x4F) {
 				continue;
 			}
-			valid[i] = true;
 			byte[] hdr = subfile(z, 0);
-			parent[i] = (hdr != null && hdr.length >= 0x1E) ? (u16(hdr, 0x1C) & 0x3FF) : 0;
+			parent[i] = (hdr != null && hdr.length >= 0x1E) ? ctrmap.formats.zone.ZoneHeader.parentMapOf(hdr) : 0;
 			byte[] ent = subfile(z, 1);
 			if (ent == null) {
+				scan.unreadable.add("zone " + i + ": its container holds no entity block");
 				continue;
 			}
-			ZoneEntities e = new ZoneEntities(ent);
+			ZoneEntities e;
+			try {
+				e = new ZoneEntities(ent);
+			} catch (RuntimeException unread) {
+				scan.unreadable.add("zone " + i + ": its entities do not read - " + Ui.reason(unread));
+				continue;
+			}
+			valid[i] = true;
 			npcs[i] = e.npcs.size();
 			warps[i] = e.warps.size();
 			trig[i] = e.triggers1.size() + e.triggers2.size();
@@ -81,14 +123,14 @@ public class ZoneRepurposeScanner {
 			}
 		}
 
-		List<Candidate> out = new ArrayList<>();
+		List<Candidate> out = scan.candidates;
 		for (int i = 1; i < base; i++) { // skip 0 (usually a special/system slot)
 			if (!valid[i] || incoming[i] > 0) {
 				continue;
 			}
 			Candidate c = new Candidate();
 			c.index = i;
-			c.name = safeName(parent[i]);
+			c.name = safeName(names, parent[i]);
 			c.npcs = npcs[i];
 			c.warpsOut = warps[i];
 			c.triggers = trig[i];
@@ -99,12 +141,12 @@ public class ZoneRepurposeScanner {
 			out.add(c);
 		}
 		out.sort(Comparator.comparingInt((Candidate c) -> c.tier).thenComparingInt(c -> c.index));
-		return out;
+		return scan;
 	}
 
-	private static String safeName(int parentMap) {
+	private static String safeName(java.util.function.IntFunction<String> names, int parentMap) {
 		try {
-			String n = LocationNames.getLocName(parentMap);
+			String n = names.apply(parentMap);
 			return n == null ? "" : n;
 		} catch (RuntimeException ex) {
 			return "";

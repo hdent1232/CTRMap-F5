@@ -1,5 +1,6 @@
 package ctrmap.formats.pokedata;
 
+import ctrmap.formats.GameCache;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.text.GFMessageFile;
@@ -14,21 +15,21 @@ import static ctrmap.formats.LittleEndian.i32;
  * Read-only Pokemon reference data for the editor previews: base stats, types
  * and abilities (the PERSONAL archive), move type/category/power (MOVE_DATA),
  * and display names from GameText - archive locations and text-entry indices
- * come from the handed game's {@link GameProfile}. Cached in statics; every
- * accessor is null/absent-safe so the editors work even without the full
- * romfs (they just fall back to id-only labels).
+ * come from the handed game's {@link GameProfile}. One instance per game, kept
+ * in that game's store; every accessor is null/absent-safe so the editors work
+ * even without the full romfs (they just fall back to id-only labels).
  *
- * <p>WHOSE GAME. {@link #load} is handed the {@link GameFiles} to read and
- * replaces whatever was loaded before. This class used to load itself, once,
+ * <p>WHOSE GAME. {@link #of} is handed the {@link GameFiles} to read and
+ * answers that game's tables. This class used to load itself, once,
  * on the first accessor call, from the application's global session holder
  * (or, with no workspace open, by probing the configured game folder on its
  * own): so it could never be pointed at a second game in the same JVM - an
  * ORAS session followed by an XY one kept showing ORAS names - and no suite
- * could hand it tables of its own. Now the application loads it when a
- * workspace opens and forgets it on reset, beside the location names, and a
- * suite hands it a fake. With nothing loaded every accessor answers the
- * id-only label it always answered when no game could be found; the
- * difference is that nothing here goes looking for one.
+ * could hand it tables of its own. Then the application loaded it into statics
+ * when a workspace opened and forgot it on reset - never after a pack (F218).
+ * Now each game's tables live in that game's store, which a pack empties, and
+ * a suite hands it a fake. {@link #none} answers the id-only label every
+ * accessor gave when no game could be found; nothing here goes looking for one.
  */
 public class PokeData {
 
@@ -51,34 +52,65 @@ public class PokeData {
 		return type >= 0 && type < TYPE_NAMES.length ? TYPE_NAMES[type] : "?";
 	}
 
-	// ---- the loaded tables ------------------------------------------------
+	// ---- the tables of one game -------------------------------------------
 
-	private static byte[][] personal;      // [species] -> 80-byte record
-	private static byte[] moveMini;        // the a/1/8/9 mini-container
-	private static int moveCount;
-	private static String[] speciesNames, abilityNames, moveNames, itemNames;
+	/** The handed game's tables, kept in that game's own store until a pack rewrites its archives (F218). */
+	private static final GameCache.Key<PokeData> TABLES = new GameCache.Key<>("reference tables");
 
-	/** True when a game has been loaded and it had a PERSONAL archive to read. */
-	public static synchronized boolean available() {
-		return personal != null;
+	private final byte[][] personal;      // [species] -> 80-byte record
+	private final byte[] moveMini;        // the a/1/8/9 mini-container
+	private final int moveCount;
+	private final String[] speciesNames, abilityNames, moveNames, itemNames;
+	/** How many species, moves and items the game's profile says there are - the counts when its text did not load; 0 with no game (F205). */
+	private final int speciesTotal, moveTotal, itemTotal;
+
+	private PokeData(byte[][] personal, byte[] moveMini, int moveCount, String[] speciesNames,
+			String[] abilityNames, String[] moveNames, String[] itemNames, int speciesTotal, int moveTotal,
+			int itemTotal) {
+		this.personal = personal;
+		this.moveMini = moveMini;
+		this.moveCount = moveCount;
+		this.speciesNames = speciesNames;
+		this.abilityNames = abilityNames;
+		this.moveNames = moveNames;
+		this.itemNames = itemNames;
+		this.speciesTotal = speciesTotal;
+		this.moveTotal = moveTotal;
+		this.itemTotal = itemTotal;
 	}
 
 	/**
-	 * Reads the handed game's reference tables, replacing whatever was loaded
-	 * before. Archives the game lacks are left absent, and the accessors fall
-	 * back to ids for them; a game that lacks all of them loads as nothing.
+	 * The handed game's reference tables: read the first time they are asked for, and kept in the
+	 * game's own store until a pack rewrites its archives (F218). They were statics loaded when a
+	 * workspace opened and forgotten on reset - and never after a pack, so a name packed into the
+	 * game showed as the old one until the workspace was reopened.
 	 *
-	 * <p>Reads the archives where the game keeps them, not the workspace's
-	 * staged copies: this is reference data for previews, and a name edited
-	 * in the workspace is not the game's name until it is packed.
+	 * <p>Reads the archives where the game keeps them, not the workspace's staged copies: this is
+	 * reference data for previews, and a name edited in the workspace is not the game's name until
+	 * it is packed. Archives the game lacks are left absent, and the accessors fall back to ids for
+	 * them; a game that lacks all of them reads as nothing.
+	 *
+	 * @param game the game to read; null is refused in words - a caller with no game open asks
+	 * {@link #none()}, which says so in its name
 	 */
-	public static synchronized void load(GameFiles game) {
+	public static PokeData of(GameFiles game) {
 		if (game == null) {
-			throw new IllegalArgumentException("PokeData.load was handed no game. The reference tables belong to"
-					+ " a game, and nothing here goes looking for one.");
+			throw new IllegalArgumentException("PokeData.of was handed no game. The reference tables belong to"
+					+ " a game, and nothing here goes looking for one; with no game open, ask PokeData.none().");
 		}
-		unload();
+		return game.cache().get(TABLES, () -> read(game));
+	}
+
+	/** The tables of no game: every name is the id alone, every count 0 - what a picker shows with no workspace open. */
+	public static PokeData none() {
+		return new PokeData(null, null, 0, null, null, null, null, 0, 0, 0);
+	}
+
+	private static PokeData read(GameFiles game) {
 		GameProfile prof = game.profile();
+		byte[][] personal = null;
+		byte[] moveMini = null;
+		int moveCount = 0;
 		try {
 			GARC p = optional(game.archiveFile(ArchiveType.PERSONAL));
 			if (p != null) {
@@ -98,25 +130,18 @@ public class PokeData {
 			System.err.println("PokeData: reference load failed: " + ex);
 		}
 		GARC gameText = optional(game.archiveFile(ArchiveType.GAMETEXT));
-		speciesNames = text(gameText, prof.textIndex(GameProfile.TextIndex.SPECIES_NAMES));
-		abilityNames = text(gameText, prof.textIndex(GameProfile.TextIndex.ABILITY_NAMES));
-		moveNames = text(gameText, prof.textIndex(GameProfile.TextIndex.MOVE_NAMES));
-		itemNames = text(gameText, prof.textIndex(GameProfile.TextIndex.ITEM_NAMES));
+		return new PokeData(personal, moveMini, moveCount,
+				text(gameText, prof.textIndex(GameProfile.TextIndex.SPECIES_NAMES)),
+				text(gameText, prof.textIndex(GameProfile.TextIndex.ABILITY_NAMES)),
+				text(gameText, prof.textIndex(GameProfile.TextIndex.MOVE_NAMES)),
+				text(gameText, prof.textIndex(GameProfile.TextIndex.ITEM_NAMES)),
+				Math.max(0, prof.speciesIdMax() + 1), Math.max(0, prof.moveIdMax() + 1),
+				Math.max(0, prof.itemIdMax() + 1));
 	}
 
-	/**
-	 * Forgets the loaded tables. {@code Workspace.reset} calls this beside
-	 * {@code LocationNames.unload}: the tables are derived from a game, and a
-	 * reset that kept them would hand one game's names to the next.
-	 */
-	public static synchronized void unload() {
-		personal = null;
-		moveMini = null;
-		moveCount = 0;
-		speciesNames = null;
-		abilityNames = null;
-		moveNames = null;
-		itemNames = null;
+	/** True when the game had a PERSONAL archive to read. */
+	public boolean available() {
+		return personal != null;
 	}
 
 	/** An archive opened without compression sniffing, or null when the game lacks it or the file is not there. */
@@ -144,7 +169,7 @@ public class PokeData {
 	// ---- species ----------------------------------------------------------
 
 	/** Base stats HP/Atk/Def/Spe/SpA/SpD, or null if unavailable. */
-	public static synchronized int[] baseStats(int species) {
+	public int[] baseStats(int species) {
 		byte[] r = rec(species);
 		if (r == null) {
 			return null;
@@ -153,7 +178,7 @@ public class PokeData {
 	}
 
 	/** {type1, type2}; type2 == type1 for mono-type. Null if unavailable. */
-	public static synchronized int[] types(int species) {
+	public int[] types(int species) {
 		byte[] r = rec(species);
 		if (r == null) {
 			return null;
@@ -162,7 +187,7 @@ public class PokeData {
 	}
 
 	/** Ability ids {a1, a2, hidden}, or null. */
-	public static synchronized int[] abilities(int species) {
+	public int[] abilities(int species) {
 		byte[] r = rec(species);
 		if (r == null || r.length < 0x1B) {
 			return null;
@@ -170,19 +195,19 @@ public class PokeData {
 		return new int[]{r[0x18] & 0xFF, r[0x19] & 0xFF, r[0x1A] & 0xFF};
 	}
 
-	public static synchronized String speciesName(int species) {
+	public String speciesName(int species) {
 		return name(speciesNames, species);
 	}
 
-	public static synchronized String abilityName(int ability) {
+	public String abilityName(int ability) {
 		return name(abilityNames, ability);
 	}
 
-	public static synchronized int speciesCount() {
-		return speciesNames != null ? speciesNames.length : 722;
+	public int speciesCount() {
+		return speciesNames != null ? speciesNames.length : speciesTotal;
 	}
 
-	private static byte[] rec(int species) {
+	private byte[] rec(int species) {
 		return personal != null && species >= 0 && species < personal.length && personal[species] != null
 				&& personal[species].length >= 8 ? personal[species] : null;
 	}
@@ -190,7 +215,7 @@ public class PokeData {
 	// ---- moves ------------------------------------------------------------
 
 	/** {type, category(0/1/2), power, accuracy, pp} or null. */
-	public static synchronized int[] moveInfo(int move) {
+	public int[] moveInfo(int move) {
 		if (moveMini == null || move < 0 || move > moveCount) {
 			return null;
 		}
@@ -202,22 +227,22 @@ public class PokeData {
 			moveMini[o + 4] & 0xFF, moveMini[o + 5] & 0xFF};
 	}
 
-	public static synchronized String moveName(int move) {
+	public String moveName(int move) {
 		return name(moveNames, move);
 	}
 
-	public static synchronized int moveCount() {
-		return moveNames != null && moveNames.length > 1 ? moveNames.length : 622;
+	public int moveCount() {
+		return moveNames != null && moveNames.length > 1 ? moveNames.length : moveTotal;
 	}
 
 	// ---- items ------------------------------------------------------------
 
-	public static synchronized String itemName(int item) {
+	public String itemName(int item) {
 		return name(itemNames, item);
 	}
 
-	public static synchronized int itemCount() {
-		return itemNames != null && itemNames.length > 1 ? itemNames.length : 776;
+	public int itemCount() {
+		return itemNames != null && itemNames.length > 1 ? itemNames.length : itemTotal;
 	}
 
 	// ---- helpers ----------------------------------------------------------

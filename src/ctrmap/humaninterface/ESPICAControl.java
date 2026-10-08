@@ -7,17 +7,15 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 public class ESPICAControl extends javax.swing.JFrame {
+
+	private Runnable onSuccess;
+	private boolean isSuccess = false;
 
 	/**
 	 * Creates new form ESPICAControl
 	 */
-	private Runnable onSuccess;
-	private boolean isSuccess = false;
-
 	public ESPICAControl() {
 		initComponents();
 		btnClose.setEnabled(false);
@@ -108,6 +106,11 @@ public class ESPICAControl extends javax.swing.JFrame {
 	 * @param args the command line arguments
 	 */
 	public static void main(String args[]) {
+		//a developer's harness, run where Swing is built: on the event thread (F220)
+		java.awt.EventQueue.invokeLater(ESPICAControl::harness);
+	}
+
+	private static void harness() {
 		/* Set the Nimbus look and feel */
 		//<editor-fold defaultstate="collapsed" desc=" Look and feel setting code (optional) ">
 		/* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
@@ -142,8 +145,11 @@ public class ESPICAControl extends javax.swing.JFrame {
 			if (new File(ESPICAPath).canExecute()) {
 				Thread ESPICAThread = new Thread() {
 					public void run() {
+						//THIS THREAD RUNS THE PROCESS AND READS IT; every widget write is handed
+						//to the event thread (F220). It wrote the label, the log and the button
+						//itself, while the event thread painted them.
+						javax.swing.SwingUtilities.invokeLater(() -> status.setText("ESPICA running"));
 						try {
-							status.setText("ESPICA running");
 							Process process = Runtime.getRuntime().exec(ESPICAPath + proc.getArguments());
 							InputStream is = process.getInputStream();
 							InputStreamReader isr = new InputStreamReader(is);
@@ -151,16 +157,27 @@ public class ESPICAControl extends javax.swing.JFrame {
 							String line;
 
 							while ((line = br.readLine()) != null) {
-								output.append(line + "\n");
+								final String said = line + "\n";
+								javax.swing.SwingUtilities.invokeLater(() -> output.append(said));
 							}
-							status.setText("ESPICA has finished");
-							btnClose.setEnabled(true);
-							isSuccess = true;
+							javax.swing.SwingUtilities.invokeLater(() -> {
+								status.setText("ESPICA has finished");
+								btnClose.setEnabled(true);
+								isSuccess = true;
+							});
 						} catch (IOException ex) {
-							Logger.getLogger(ESPICAControl.class.getName()).log(Level.SEVERE, null, ex);
+							//SAID, AND THE WINDOW LET GO (F206): this was logged and nothing else, so a
+							//converter that would not start left "ESPICA running" up and Close disabled
+							final String why = ctrmap.util.Bytes.reason(ex);
+							javax.swing.SwingUtilities.invokeLater(() -> {
+								status.setText("Failed - ESPICA could not run: " + why);
+								output.append("ESPICA could not run: " + why + "\n");
+								btnClose.setEnabled(true);
+							});
 						}
 					}
 				};
+				ESPICAThread.setDaemon(true); //the converter is its own process; this only reads it
 				ESPICAThread.start();
 			} else {
 				status.setText("Failed - ESPICA path not set or invalid.");

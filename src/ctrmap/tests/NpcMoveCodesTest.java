@@ -80,7 +80,7 @@ public class NpcMoveCodesTest {
 
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " - the retail-code checks need ZoneData");
+			Skip.section("no dump at " + dump + " - the retail-code checks need ZoneData");
 		} else {
 			everyCodeTheGameShipsSurvivesTheDropdown(dump);
 		}

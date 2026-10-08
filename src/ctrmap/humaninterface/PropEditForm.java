@@ -17,6 +17,7 @@ import ctrmap.formats.h3d.model.H3DVertex;
 import ctrmap.formats.h3d.texturing.H3DTexture;
 import ctrmap.formats.propdata.ADPropRegistry;
 import ctrmap.formats.propdata.PropDatabase;
+import ctrmap.formats.propdata.PropRegistration;
 import ctrmap.formats.text.LocationNames;
 import ctrmap.formats.vectors.Vec3f;
 import ctrmap.formats.zone.Zone;
@@ -46,9 +47,6 @@ import javax.swing.text.NumberFormatter;
  */
 public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
-	/**
-	 * Creates new form PropEditForm
-	 */
 	public GR gr;
 	public GRPropData props;
 	public ArrayList<H3DModel> models = new ArrayList<>();
@@ -117,6 +115,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	private final java.util.function.Consumer<javax.swing.JComponent> toolPane;
 
+	/**
+	 * Creates new form PropEditForm
+	 */
 	public PropEditForm(LoadedZone loadedZone, ctrmap.humaninterface.tools.ToolSelection tools, Redraw redraw,
 			Navigator navi, TileMapPanel map,
 			java.util.function.Consumer<javax.swing.JComponent> toolPane) {
@@ -149,8 +150,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		x.getDocument().addDocumentListener(new DocumentListener() {
 			@Override
 			public void insertUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.x != ctrmap.humaninterface.Forms.getFloatFromDocument(x)) {
-					prop.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);
+				if (loaded && prop != null && prop.x != typed(x, 0, prop.x)) {
+					prop.x = typed(x, 0, prop.x);
+					shown[0] = null;   //the user's number from here on, whatever the field reads (F161)
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 					//THE REDRAW REQUEST NOW REACHES SOMETHING, AND ONLY WHEN THE PROP MOVED.
@@ -176,8 +178,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 			@Override
 			public void removeUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.x != ctrmap.humaninterface.Forms.getFloatFromDocument(x)) {
-					prop.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);
+				if (loaded && prop != null && prop.x != typed(x, 0, prop.x)) {
+					prop.x = typed(x, 0, prop.x);
+					shown[0] = null;   //the user's number from here on, whatever the field reads (F161)
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 					//as x's insertUpdate above: the request goes to the Redraw this form was
@@ -193,8 +196,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		y.getDocument().addDocumentListener(new DocumentListener() {
 			@Override
 			public void insertUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.y != ctrmap.humaninterface.Forms.getFloatFromDocument(y)) {
-					prop.y = ctrmap.humaninterface.Forms.getFloatFromDocument(y);
+				if (loaded && prop != null && prop.y != typed(y, 1, prop.y)) {
+					prop.y = typed(y, 1, prop.y);
+					shown[1] = null;   //the user's number from here on, whatever the field reads (F161)
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 					//as x's insertUpdate above: the request goes to the Redraw this form was
@@ -205,8 +209,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 			@Override
 			public void removeUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.y != ctrmap.humaninterface.Forms.getFloatFromDocument(y)) {
-					prop.y = ctrmap.humaninterface.Forms.getFloatFromDocument(y);
+				if (loaded && prop != null && prop.y != typed(y, 1, prop.y)) {
+					prop.y = typed(y, 1, prop.y);
+					shown[1] = null;   //the user's number from here on, whatever the field reads (F161)
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 					//as x's insertUpdate above: the request goes to the Redraw this form was
@@ -222,8 +227,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		z.getDocument().addDocumentListener(new DocumentListener() {
 			@Override
 			public void insertUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.z != ctrmap.humaninterface.Forms.getFloatFromDocument(z)) {
-					prop.z = ctrmap.humaninterface.Forms.getFloatFromDocument(z);
+				if (loaded && prop != null && prop.z != typed(z, 2, prop.z)) {
+					prop.z = typed(z, 2, prop.z);
+					shown[2] = null;   //the user's number from here on, whatever the field reads (F161)
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 					//as x's insertUpdate above: the request goes to the Redraw this form was
@@ -234,8 +240,9 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 			@Override
 			public void removeUpdate(DocumentEvent e) {
-				if (loaded && prop != null && prop.z != ctrmap.humaninterface.Forms.getFloatFromDocument(z)) {
-					prop.z = ctrmap.humaninterface.Forms.getFloatFromDocument(z);
+				if (loaded && prop != null && prop.z != typed(z, 2, prop.z)) {
+					prop.z = typed(z, 2, prop.z);
+					shown[2] = null;   //the user's number from here on, whatever the field reads (F161)
 					props.modified = true;
 					updateH3D(props.props.indexOf(prop));
 					//as x's insertUpdate above: the request goes to the Redraw this form was
@@ -335,11 +342,6 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		}.execute();
 	}
 
-	/**
-	 * Refills the palette list from the database using the current search
-	 * filter. Does nothing (and keeps the list empty) until the database has
-	 * been built by ensurePaletteLoaded().
-	 */
 	//English search terms -> substrings of Game Freak's internal model names,
 	//so "computer"/"statue"/"lighthouse" find the right props despite codenames.
 	private static final String[][] SEARCH_ALIASES = {
@@ -349,6 +351,11 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		{"tv", "_bm_tv"}, {"television", "_bm_tv"}, {"palm", "yashi"},
 	};
 
+	/**
+	 * Refills the palette list from the database using the current search
+	 * filter. Does nothing (and keeps the list empty) until the database has
+	 * been built by ensurePaletteLoaded().
+	 */
 	private void refreshPalette() {
 		if (!PropDatabase.isBuilt(Workspace.session())) {
 			return;
@@ -448,66 +455,13 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			return;
 		}
 		PropDatabase.PropModel pm = paletteEntries[sel];
-		int uid = -1;
-		for (ADPropRegistry.ADPropRegistryEntry e : reg.entries.values()) {
-			if (e.model == pm.modelIndex) {
-				uid = e.reference;
-				break;
-			}
+		//ONE REGISTRATION (F107): the palette, a typed model number and the painter's doors each did
+		//this their own way, and disagreed on what was checked, asked, kept and told
+		PropRegistration.Registered registered = registerHere(pm, true);
+		if (registered == null) {
+			return; //declined or refused, and said - nothing was modified
 		}
-		if (uid == -1) {
-			//model not in this area's registry - guard the textures, then auto-import a donor entry
-			byte[] bch = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(pm.modelIndex), 0);
-			Set<String> available = new HashSet<>();
-			if (propTextures != null) {
-				for (H3DTexture t : propTextures) {
-					available.add(t.textureName);
-				}
-			}
-			List<String> missing = PropDatabase.getMissingTextureNames(bch, available);
-			if (!missing.isEmpty() && !offerTextureImport(pm, missing)) {
-				return; //user cancelled or the import failed - nothing was modified
-			}
-			ADPropRegistry.ADPropRegistryEntry imported = null;
-			if (pm.template != null) {
-				try {
-					imported = new ADPropRegistry.ADPropRegistryEntry(new LittleEndianDataInputStream(new ByteArrayInputStream(pm.template)));
-				} catch (IOException ex) {
-					imported = null;
-				}
-			}
-			if (imported == null) {
-				imported = new ADPropRegistry.ADPropRegistryEntry(); //no donor anywhere - dummy entry, animations must be set in PRE
-			}
-			int ref = pm.modelIndex;
-			while (reg.entries.containsKey(ref)) {
-				ref++; //ref == model everywhere in vanilla; only user-made mismatched entries can collide
-			}
-			imported.reference = ref;
-			imported.model = pm.modelIndex;
-			imported.eventScr1 = 0;
-			imported.eventScr2 = 0;
-			reg.entries.put(imported.reference, imported);
-			reg.modified = true;
-			//register the model under the new reference the same way the
-			//registry loader does, so rendering does not depend on the
-			//uid==modelIndex failsafe (ref can differ from model on collision)
-			try {
-				BCHFile mdlBch = new BCHFile(new BM(Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, imported.model), Workspace.session()).getFile(0));
-				if (!mdlBch.models.isEmpty()) {
-					H3DModel mdl = mdlBch.models.get(0);
-					mdl.setMaterialTextures(mdlBch.textures);
-					if (propTextures != null) {
-						mdl.setMaterialTextures(propTextures);
-					}
-					mdl.makeAllBOs();
-					reg.models.put(imported.reference, mdl);
-				}
-			} catch (Exception ex) {
-				ex.printStackTrace();
-			}
-			uid = imported.reference;
-		}
+		int uid = registered.reference;
 		//mirror of the New entry flow, with the palette model's UID
 		loaded = false;
 		GRProp newProp = new GRProp();
@@ -525,18 +479,6 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	/**
-	 * Offers to import the given missing prop textures from the best donor
-	 * area into this area's texture pack (AD subfile 1) and performs the
-	 * import on OK. All-or-nothing: the merged pack bytes are fully built and
-	 * verified in memory before the single storeFile call, so a failure can
-	 * never leave a half-imported pack. On success the imported textures are
-	 * appended to the live propTextures list (shared with the ZoneHeader) so
-	 * the prop renders immediately.
-	 *
-	 * @return true when the textures are available afterwards, false when the
-	 * user cancelled or the import failed (nothing was modified either way)
-	 */
-	/**
 	 * The refusal an area other zones use earns before the import is offered,
 	 * so the user is not talked into one the shared-area rule then turns down.
 	 * True when it was refused - and the user told which maps stood in the way.
@@ -550,131 +492,27 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	 */
 	public static boolean refuseSharedArea(java.awt.Component parent, int areaId, int zoneIndex,
 			String areaName, String inlineTextures) {
-		String shared = BchTexturePack.zonesUsingArea(Workspace.session(), areaId, zoneIndex);
+		String shared;
+		try {
+			shared = BchTexturePack.zonesUsingArea(Workspace.session(), areaId, zoneIndex);
+		} catch (IllegalStateException cannotTell) {
+			//the guard could not read the zone table: that is a refusal too, said as one (F065)
+			ctrmap.Ui.error(parent,
+					"This prop needs textures " + areaName + " does not have (" + inlineTextures + ").\n"
+					+ ctrmap.util.Bytes.reason(cannotTell) + "\n\nThe prop was not placed.",
+					"Shared area");
+			return true;
+		}
 		if (shared != null) {
 			ctrmap.Ui.error(parent,
 					"This prop needs textures this area does not have (" + inlineTextures + "),\n"
 					+ "but " + areaName + " is also used by " + shared + ".\n"
 					+ "Importing them would change those maps too, so the prop was not placed.\n\n"
-					+ "Give this zone its own area first (Map > Fork map geometry).",
+					+ "Give this zone its own area first (Map > Make zone independent).",
 					"Shared area");
 			return true;
 		}
 		return false;
-	}
-
-	private boolean offerTextureImport(PropDatabase.PropModel pm, List<String> missing) {
-		StringBuilder list = new StringBuilder();
-		StringBuilder inline = new StringBuilder();
-		for (String tex : missing) {
-			list.append("\n    ").append(tex);
-			if (inline.length() > 0) {
-				inline.append(", ");
-			}
-			inline.append(tex);
-		}
-		PropDatabase db = PropDatabase.get(Workspace.session());
-		ZoneHeader header = loadedZone.isOpen() ? loadedZone.open().header : null;
-		if (db == null || header == null || header.areadata == null) {
-			ctrmap.Ui.error(this,
-					"This prop needs textures that this area does not have:" + list
-					+ "\n\nPlacing it anyway would hardlock the game when the area loads,"
-					+ "\nand no area data is loaded to import them into, so the prop was not placed.",
-					"Missing textures");
-			return false;
-		}
-		int donorArea = db.findDonorAreaWithTextures(pm, missing);
-		if (donorArea == -1) {
-			ctrmap.Ui.error(this,
-					"This prop needs textures that this area does not have:" + list
-					+ "\n\nPlacing it anyway would hardlock the game when the area loads."
-					+ "\nNo single donor area contains all of these textures, so CTRMap"
-					+ "\ncan not import them automatically and the prop was not placed.",
-					"Missing textures");
-			return false;
-		}
-		//An area other zones use is not this prop's to grow. Asked BEFORE the
-		//import dialog, so the user is not talked into an import that the
-		//shared-area rule then refuses.
-		if (refuseSharedArea(this, header.areadataID,
-				loadedZone.index(),
-				getAreaDisplayName(header.areadataID), inline.toString())) {
-			return false;
-		}
-		int rsl = ctrmap.Ui.confirm(this,
-				"This prop's textures (" + inline + ") are not in this area.\n"
-				+ "Import them from " + getAreaDisplayName(donorArea) + "?\n\n"
-				+ "This modifies the area's texture data.",
-				"Missing textures", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
-		if (rsl != JOptionPane.OK_OPTION) {
-			return false;
-		}
-		try {
-			byte[] targetPack = header.areadata.getFile(1);
-			//read the donor from the same on-disk state the game will see: the
-			//workspace file when one exists (it carries earlier in-session
-			//imports that the packed GARC does not have yet), else the GARC
-			byte[] donorPack;
-			File donorWs = new File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA), String.valueOf(donorArea));
-			if (donorWs.exists()) {
-				donorPack = PropDatabase.getSubfile(java.nio.file.Files.readAllBytes(donorWs.toPath()), 1);
-			} else {
-				donorPack = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(donorArea), 1);
-			}
-			//verify against the actual bytes that will be read - the database's
-			//name-sets can be ahead of disk after earlier in-session imports
-			if (donorPack == null || !PropDatabase.getTexturePackTextureNames(donorPack).containsAll(missing)) {
-				throw new IllegalStateException("donor area " + donorArea + " does not actually contain all the needed textures on disk");
-			}
-			//a name the area already holds under other pixels is not "missing",
-			//so it is never imported - the prop just draws the area's version.
-			//Say which, before anything is written.
-			for (String c : BchTexturePack.clashesWith(header.areadata.getFile(11), targetPack, donorPack,
-					new ArrayList<>(PropDatabase.getMaterialTextureNames(
-							PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(pm.modelIndex), 0))))) {
-				ctrmap.Ui.message(this, "This prop will draw the area's " + c + ", not its own - the two textures share a name and differ.",
-						"Prop textures", JOptionPane.INFORMATION_MESSAGE);
-			}
-			byte[] merged = BchTexturePack.importIntoArea(Workspace.session(), header.areadataID,
-					loadedZone.index(),
-					targetPack, donorPack, missing);
-			if (merged != targetPack) { //already-present names are a no-op (same array returned)
-				//decode and verify the merged pack BEFORE storing anything
-				BCHFile packBch = new BCHFile(merged);
-				if (packBch.errorlevel != 0) {
-					throw new IllegalStateException("merged texture pack failed verification (errorlevel " + packBch.errorlevel + ")");
-				}
-				List<H3DTexture> imported = new ArrayList<>();
-				for (H3DTexture t : packBch.textures) {
-					if (missing.contains(t.textureName)) {
-						imported.add(t);
-					}
-				}
-				if (imported.size() != missing.size()) {
-					throw new IllegalStateException("merged texture pack is missing " + (missing.size() - imported.size()) + " of the imported textures");
-				}
-				//the single write: the workspace AD file, persisted by storeFile itself
-				try {
-					header.areadata.storeFile(1, merged);
-				} catch (RuntimeException notWritten) {
-					throw new IOException("could not write the merged texture pack to the workspace area"
-						+ " data file: " + ctrmap.util.Bytes.reason(notWritten), notWritten);
-				}
-				//minimal in-memory refresh instead of a zone reload
-				if (propTextures != null) {
-					propTextures.addAll(imported);
-				}
-				db.registerImportedTextures(header.areadataID, missing);
-			}
-			return true;
-		} catch (Exception ex) {
-			ex.printStackTrace();
-			ctrmap.Ui.error(this,
-					"The texture import failed:\n" + ex
-					+ "\n\nThe area was not modified and the prop was not placed.",
-					"Import failed");
-			return false;
-		}
 	}
 
 	/**
@@ -686,8 +524,8 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			if (loadedZone.count() > 0) {
 				for (int i = 0; i < loadedZone.count(); i++) {
 					Zone z = loadedZone.at(i);
-					if (z != null && z.header != null && z.header.areadataID == area) {
-						return LocationNames.getLocName(z.header.parentMap) + " (area " + area + ")";
+					if (z.header != null && z.header.areadataID == area) {   //a slot always holds a zone (F208)
+						return LocationNames.getLocName(ctrmap.Workspace.session(), z.header.parentMap) + " (area " + area + ")";
 					}
 				}
 			}
@@ -773,22 +611,77 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		entryBox.setSelectedIndex(index);
 	}
 
+	/** What each coordinate field held when its prop was shown; null once the user typed in it. */
+	private final Object[] shown = new Object[9];
+
+	/** The nine coordinate fields, in the order {@link #shown} keeps them. */
+	private JFormattedTextField[] coordinateFields() {
+		return new JFormattedTextField[]{x, y, z, rx, ry, rz, sx, sy, sz};
+	}
+
+	private float typed(JFormattedTextField f, int i, float current) {
+		Object committed = f.getValue();
+		String rendered = committed == null ? null : ((NumberFormatter) f.getFormatter()).getFormat().format(committed);
+		return fieldValue(f.getText(), committed, rendered, shown[i], current);
+	}
+
+	private static final java.util.regex.Pattern A_NUMBER = java.util.regex.Pattern.compile("-?(\\d+(\\.\\d*)?|\\.\\d+)");
+
+	/**
+	 * The number a coordinate field gives its prop (F161). Save used to parse every field's TEXT, and
+	 * the fields show two decimals: a finer number was rounded on its way to the file, a move made
+	 * on the record without refreshing the form was put back, and a half-typed "-" read as 0.
+	 * <ul>
+	 * <li>text being typed - it reads other than the committed value renders - gives what it reads,
+	 *     once that is a number;</li>
+	 * <li>a value set or committed since the prop was shown gives that value, at full precision;</li>
+	 * <li>a field untouched since then gives the record's own number, moved or not.</li>
+	 * </ul>
+	 *
+	 * @param committed the field's committed value
+	 * @param rendered that value as the field renders it, or null when there is none
+	 * @param shownValue the value the field was given when its prop was shown, or null once typed in
+	 */
+	public static float fieldValue(String text, Object committed, String rendered, Object shownValue, float current) {
+		String t = text == null ? "" : text.trim().replace(',', '.');
+		if (text != null && !text.equals(rendered) && A_NUMBER.matcher(t).matches()) {
+			return Float.parseFloat(t);
+		}
+		if (committed instanceof Number && !committed.equals(shownValue)) {
+			return ((Number) committed).floatValue();
+		}
+		return current;
+	}
+
+	/**
+	 * The model a prop's record may name (F161): the one asked for when the area's registry has it
+	 * or registers it now, else the one it names already. Save used to write the asked uid into the
+	 * record and register it afterwards, so a refused registration left the record - and every save
+	 * after it - naming a model the area does not have.
+	 */
+	public static int modelToKeep(int asked, int current, java.util.function.IntPredicate registered,
+			java.util.function.IntPredicate registers) {
+		return registered.test(asked) || registers.test(asked) ? asked : current;
+	}
+
 	public void saveProp() {
 		if (prop == null) {
 			return;
 		}
-		GRProp prop2 = new GRProp();
+		//THE RECORD, EDITED (F161): a fresh record parsed from two-decimal text rounded every number,
+		//put back a move made on the record alone and wrote the tail as zero
+		GRProp prop2 = prop.copy();
 		prop2.uid = (Integer) mdlNum.getValue();
 		prop2.updateName(reg, Workspace.session());
-		prop2.x = ctrmap.humaninterface.Forms.getFloatFromDocument(x);
-		prop2.y = ctrmap.humaninterface.Forms.getFloatFromDocument(y);
-		prop2.z = ctrmap.humaninterface.Forms.getFloatFromDocument(z);
-		prop2.rotateX = ctrmap.humaninterface.Forms.getFloatFromDocument(rx);
-		prop2.rotateY = ctrmap.humaninterface.Forms.getFloatFromDocument(ry);
-		prop2.rotateZ = ctrmap.humaninterface.Forms.getFloatFromDocument(rz);
-		prop2.scaleX = ctrmap.humaninterface.Forms.getFloatFromDocument(sx);
-		prop2.scaleY = ctrmap.humaninterface.Forms.getFloatFromDocument(sy);
-		prop2.scaleZ = ctrmap.humaninterface.Forms.getFloatFromDocument(sz);
+		prop2.x = typed(x, 0, prop.x);
+		prop2.y = typed(y, 1, prop.y);
+		prop2.z = typed(z, 2, prop.z);
+		prop2.rotateX = typed(rx, 3, prop.rotateX);
+		prop2.rotateY = typed(ry, 4, prop.rotateY);
+		prop2.rotateZ = typed(rz, 5, prop.rotateZ);
+		prop2.scaleX = typed(sx, 6, prop.scaleX);
+		prop2.scaleY = typed(sy, 7, prop.scaleY);
+		prop2.scaleZ = typed(sz, 8, prop.scaleZ);
 		if (!equalsData(prop, prop2)) {
 			int idx = props.props.indexOf(prop);
 			prop = prop2;
@@ -807,12 +700,24 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 		if (props != null) {
 			saveProp();
 			if (props.modified) {
-				switch (ctrmap.Ui.askToKeep(dialog, "Prop data")) {
+				switch (ctrmap.Ui.askToKeep(dialog, "Prop data", this::discardProps)) {
 					case SAVE:
-						if (map.mm != null) {
-							props.write(map.mm);
-						} else if (gr != null) {
-							props.write();
+						if (map.mm != null || gr != null) {
+							//ONE UNIT, AND A FAILURE SAID (F083). A matrix save stores every region in
+							//turn, and a store that threw part way left some regions written and the
+							//rest not, with the exception on the EDT and the edits marked clean
+							try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save props", Workspace.session())) {
+								if (map.mm != null) {
+									props.write(map.mm);
+								} else {
+									props.write();
+								}
+								unit.commit();
+							} catch (IOException | RuntimeException notSaved) {
+								ctrmap.Ui.error(this, "The prop edits were NOT saved: "
+										+ ctrmap.util.Bytes.reason(notSaved), "Prop data");
+								return false;
+							}
 						} else {
 							//ANSWERING "SAVE" AND WRITING NOTHING IS THE FAILURE THIS SWITCH
 							//COULD STILL CAUSE. The two branches above are the only ways these
@@ -834,16 +739,15 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 						}
 						break;
 					case DISCARD:
-						break;
+						break;   //put back to what the map holds by discardProps (F106)
 					case CANCEL:
 						return false;
 				}
 				props.modified = false;
 			}
 			if (reg != null && reg.modified) {
-				switch (ctrmap.Ui.askToKeep(dialog, "Prop registry")) {
+				switch (ctrmap.Ui.askToKeep(dialog, "Prop registry", this::discardRegistry)) {
 					case DISCARD:
-						reg.modified = false;
 						return true;
 					case CANCEL:
 						return false;
@@ -852,6 +756,49 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * Puts the props back to what the map holds and shows them again (F106). No cleared the flag
+	 * and left the moved, added and removed props drawn and in memory, so after a later Cancel in
+	 * the same save the next save wrote them. With no map to read them from - a matrix load that
+	 * failed part way - there is nothing to go back to, and none is shown.
+	 */
+	private void discardProps() {
+		GRPropData saved = map.mm != null ? GRPropData.combined(map.mm) : gr != null ? new GRPropData(gr) : new GRPropData();
+		reshow(saved);
+	}
+
+	/**
+	 * Puts the area's prop registry back to what the area holds and draws the props with it (F106):
+	 * No cleared the flag and kept the edited and added entries, which the props went on being drawn
+	 * from and the next registry save wrote. A prop that names an entry going with it is said.
+	 */
+	private void discardRegistry() {
+		java.util.Set<Integer> before = new java.util.HashSet<>(reg.entries.keySet());
+		reg.discard();
+		java.util.Set<Integer> named = new java.util.TreeSet<>();
+		for (GRProp p : props.props) {
+			if (before.contains(p.uid) && !reg.entries.containsKey(p.uid)) {
+				named.add(p.uid);
+			}
+		}
+		reshow(props);
+		if (!named.isEmpty()) {
+			ctrmap.Ui.message(this, "The props kept here name registry reference(s) " + named + ", which were not kept.\n"
+					+ "Until each is placed from the palette again or removed, it names nothing in this area.",
+					"Prop registry", JOptionPane.WARNING_MESSAGE);
+		}
+	}
+
+	/** Shows these props again, on the prop that was shown when there still is one. */
+	private void reshow(GRPropData data) {
+		int at = propIndex;
+		loadDataFile(data, reg, propTextures);
+		if (at > 0 && at < entryBox.getItemCount()) {
+			setProp(at);
+		}
+		redraw.all();
 	}
 
 	@Override
@@ -899,37 +846,7 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 	}
 
 	public boolean equalsData(GRProp p1, GRProp p2) {
-		if (p1.uid != p2.uid) {
-			return false;
-		}
-		if (p1.x != p2.x) {
-			return false;
-		}
-		if (p1.y != p2.y) {
-			return false;
-		}
-		if (p1.z != p2.z) {
-			return false;
-		}
-		if (p1.rotateY != p2.rotateY) {
-			return false;
-		}
-		if (p1.rotateX != p2.rotateX) {
-			return false;
-		}
-		if (p1.rotateZ != p2.rotateZ) {
-			return false;
-		}
-		if (p1.scaleX != p2.scaleX) {
-			return false;
-		}
-		if (p1.scaleY != p2.scaleY) {
-			return false;
-		}
-		if (p1.scaleZ != p2.scaleZ) {
-			return false;
-		}
-		return true;
+		return p1.sameRecord(p2);   //the tail included (F161)
 	}
 
 	public void showProp(int index) {
@@ -956,6 +873,10 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			sx.setValue(prop.scaleX);
 			sy.setValue(prop.scaleY);
 			sz.setValue(prop.scaleZ);
+			JFormattedTextField[] fields = coordinateFields();
+			for (int i = 0; i < fields.length; i++) {
+				shown[i] = fields[i].getValue();   //what Save compares against (F161)
+			}
 			updateModel(index);
 			//the gizmo follows the prop THIS CALL was asked to show. It used to
 			//index the list a second time through the selection box - two sources
@@ -985,8 +906,6 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 			}
 		}
 	}
-
-
 
 	public void updateModel(int index) {
 		if (index > models.size() - 1) {
@@ -1029,115 +948,174 @@ public class PropEditForm extends javax.swing.JPanel implements CM3DRenderable {
 
 	public void saveAndRefresh() {
 		if (loaded) {
+			//REGISTER BEFORE THE RECORD TAKES THE MODEL (F161): automatically - retail template entry
+			//(carries the prop's animation bindings) + auto-imported textures - and on a refusal the
+			//spinner goes back to the model the record names, which the area has
+			if (reg != null && prop != null) {
+				int asked = ((Number) mdlNum.getValue()).intValue();
+				int kept = modelToKeep(asked, prop.uid, reg.entries::containsKey, uid -> autoRegisterProp(uid) != null);
+				if (kept != asked) {
+					loaded = false;   //putting the spinner back must not save again
+					try {
+						mdlNum.setValue(kept);
+					} finally {
+						loaded = true;
+					}
+				}
+			}
 			saveProp();
 			showProp(entryBox.getSelectedIndex());
 			if (reg != null && prop != null) {
 				regentry = reg.entries.get(prop.uid);
-				if (regentry == null) {
-					//register automatically: retail template entry (carries the
-					//prop's animation bindings) + auto-imported textures
-					regentry = autoRegisterProp(prop.uid);
-				}
 			}
 		}
 	}
 
 	/**
-	 * Automatically registers a prop model in this area, the way retail data
-	 * would have it: the registry entry is cloned from the model's RETAIL
-	 * template (which carries the correct animation bindings - door open/close
-	 * etc.), and any textures the area lacks are imported from the best donor
-	 * area (a missing texture would hardlock the game). Only a model with no
-	 * retail template anywhere falls back to a bare entry, with a note.
+	 * Registers a model number typed into the form that this area has no entry for, through the one
+	 * registration (F107) and without asking: the retail template's entry, and any textures the area
+	 * lacks imported from a donor area, since placed without them it would hardlock the game.
 	 *
-	 * @return the registered entry, or null after reporting what failed
+	 * @return the registered entry, or null after saying why
 	 */
 	private ADPropRegistry.ADPropRegistryEntry autoRegisterProp(int uid) {
-		try {
-			PropDatabase db = PropDatabase.get(Workspace.session());
-			PropDatabase.PropModel pm = db == null ? null : db.getModel(uid);
-			ZoneHeader header = loadedZone.isOpen() ? loadedZone.open().header : null;
-			//textures first - all-or-nothing before any registry write
-			if (pm != null && Workspace.getArchive(ArchiveType.BUILDING_MODELS) != null) {
-				java.util.Set<String> available = new java.util.HashSet<>();
-				if (propTextures != null) {
-					for (H3DTexture t : propTextures) {
-						available.add(t.textureName);
-					}
-				}
-				byte[] mdlBch = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.BUILDING_MODELS).getDecompressedEntry(uid), 0);
-				java.util.List<String> missing = PropDatabase.getMissingTextureNames(mdlBch, available);
-				if (!missing.isEmpty()) {
-					int donorArea = (db != null && header != null && header.areadata != null)
-							? db.findDonorAreaWithTextures(pm, missing) : -1;
-					if (donorArea == -1) {
-						ctrmap.Ui.error(this,
-								"This prop needs textures this area does not have (" + missing + ")\n"
-								+ "and no donor area contains them all - it was not registered, because\n"
-								+ "placing it would hardlock the game when the area loads.",
-								"Prop registration");
-						return null;
-					}
-					byte[] targetPack = header.areadata.getFile(1);
-					byte[] donorPack;
-					File donorWs = new File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA), String.valueOf(donorArea));
-					if (donorWs.exists()) {
-						donorPack = PropDatabase.getSubfile(java.nio.file.Files.readAllBytes(donorWs.toPath()), 1);
-					} else {
-						donorPack = PropDatabase.getSubfile(Workspace.getArchive(ArchiveType.AREA_DATA).getDecompressedEntry(donorArea), 1);
-					}
-					for (String c : BchTexturePack.clashesWith(header.areadata.getFile(11), targetPack, donorPack,
-							new ArrayList<>(PropDatabase.getMaterialTextureNames(mdlBch)))) {
-						ctrmap.Ui.message(this, "This prop will draw the area's " + c + ", not its own - the two textures share a name and differ.",
-								"Prop textures", JOptionPane.INFORMATION_MESSAGE);
-					}
-					byte[] merged = BchTexturePack.importIntoArea(Workspace.session(), header.areadataID,
-							loadedZone.index(),
-							targetPack, donorPack, missing);
-					if (merged != targetPack) {
-						BCHFile packBch = new BCHFile(merged);
-						if (packBch.errorlevel != 0) {
-							throw new IllegalStateException("the merged texture pack failed verification");
-						}
-						try {
-							header.areadata.storeFile(1, merged);
-						} catch (RuntimeException notWritten) {
-							throw new IllegalStateException("could not write the area's texture pack: "
-								+ ctrmap.util.Bytes.reason(notWritten), notWritten);
-						}
-						Workspace.addPersist(Workspace.getWorkspaceFile(ArchiveType.AREA_DATA, header.areadataID));
-						for (H3DTexture t : packBch.textures) {
-							if (missing.contains(t.textureName) && propTextures != null) {
-								propTextures.add(t);
-							}
-						}
-					}
-				}
-			}
-			//registry entry: the retail template when one exists (animations ride along)
-			ADPropRegistry.ADPropRegistryEntry entry;
-			boolean fromTemplate = pm != null && pm.template != null;
-			if (fromTemplate) {
-				entry = new ADPropRegistry.ADPropRegistryEntry(new LittleEndianDataInputStream(new ByteArrayInputStream(pm.template)));
-			} else {
-				entry = new ADPropRegistry.ADPropRegistryEntry();
-			}
-			entry.reference = uid;
-			entry.model = uid;
-			reg.entries.put(entry.reference, entry);
-			reg.modified = true;
-			if (!fromTemplate) {
-				ctrmap.Ui.message(this,
-						"Registered with a BARE entry: this model has no retail registry template\n"
-						+ "anywhere (custom prop?), so its animation bindings could not be copied.\n"
-						+ "Set them via \"[DANGER] Edit registry data\" if the prop should animate.",
-						"Prop registration", JOptionPane.INFORMATION_MESSAGE);
-			}
-			return entry;
-		} catch (Exception ex) {
-			ctrmap.Ui.error(this, "Automatic prop registration failed:\n" + ex.getMessage(),
+		PropDatabase db = PropDatabase.get(Workspace.session());
+		PropDatabase.PropModel pm = db == null ? null : db.getModel(uid);
+		if (pm == null) {
+			ctrmap.Ui.error(this, "Model " + uid + " is not one of this game's BuildingModels, so it was not registered.",
 					"Prop registration");
 			return null;
+		}
+		PropRegistration.Registered r = registerHere(pm, false);
+		if (r == null) {
+			return null;
+		}
+		if (r.reference != uid) {
+			//the area registers this model under another reference already: a second entry for the
+			//same model would be one more thing to keep in step
+			ctrmap.Ui.message(this, "This area registers model " + uid + " under reference " + r.reference
+					+ " already. Give the prop " + r.reference + " to use it.", "Prop registration",
+					JOptionPane.INFORMATION_MESSAGE);
+			return null;
+		}
+		return reg.entries.get(r.reference);
+	}
+
+	/**
+	 * Registers a prop model in the open zone's area through the one registration (F107), and draws
+	 * it: the textures it imported join the area's, and its model is put under its reference the way
+	 * the registry loader does. Null, having said why, when the import was declined or refused.
+	 *
+	 * @param ask whether to ask before the area's texture pack grows: the palette asks; a typed model
+	 * number registers as it is typed, as it always did
+	 */
+	private PropRegistration.Registered registerHere(PropDatabase.PropModel pm, boolean ask) {
+		PropDatabase db = PropDatabase.get(Workspace.session());
+		ZoneHeader header = loadedZone.isOpen() ? loadedZone.open().header : null;
+		if (db == null || header == null || header.areadata == null || reg == null) {
+			ctrmap.Ui.error(this, "No area is loaded to register the prop in, so nothing was placed.", "Prop registration");
+			return null;
+		}
+		int zone = loadedZone.index();
+		PropRegistration.Area area = new PropRegistration.Area() {
+			@Override
+			public int id() {
+				return header.areadataID;
+			}
+
+			@Override
+			public int editingZone() {
+				return zone;
+			}
+
+			@Override
+			public byte[] file(int subfile) {
+				return header.areadata.getFile(subfile);
+			}
+
+			@Override
+			public void put(int subfile, byte[] data) throws IOException {
+				try {
+					header.areadata.storeFile(subfile, data);
+				} catch (RuntimeException notWritten) {
+					throw new IOException("could not write the area's subfile " + subfile + ": "
+							+ ctrmap.util.Bytes.reason(notWritten), notWritten);
+				}
+			}
+
+			@Override
+			public ADPropRegistry registry() {
+				return reg;
+			}
+
+			@Override
+			public void registryChanged() {
+				reg.modified = true;
+			}
+
+			@Override
+			public void whenWritten(Runnable then) {
+				then.run();   //written already: storeFile writes the file and records the edit
+			}
+		};
+		PropRegistration.Voice voice = new PropRegistration.Voice() {
+			@Override
+			public boolean importFrom(int donorArea, List<String> textures) {
+				if (!ask) {
+					return true;
+				}
+				String inline = String.join(", ", textures);
+				//the shared-area refusal BEFORE the question, so nobody is talked into an import the
+				//rule then turns down
+				if (refuseSharedArea(PropEditForm.this, header.areadataID, zone, getAreaDisplayName(header.areadataID), inline)) {
+					return false;
+				}
+				return ctrmap.Ui.confirm(PropEditForm.this, "This prop's textures (" + inline + ") are not in this area.\n"
+						+ "Import them from " + getAreaDisplayName(donorArea) + "?\n\n"
+						+ "This modifies the area's texture data.",
+						"Missing textures", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.OK_OPTION;
+			}
+
+			@Override
+			public void note(String line) {
+				ctrmap.Ui.message(PropEditForm.this, line, "Prop registration", JOptionPane.INFORMATION_MESSAGE);
+			}
+		};
+		PropRegistration.Registered r;
+		try {
+			r = PropRegistration.register(Workspace.session(), db, pm, area, voice);
+		} catch (IOException | RuntimeException refused) {
+			ctrmap.Ui.error(this, "The prop was not registered, and the area was not changed:\n"
+					+ ctrmap.util.Bytes.reason(refused), "Prop registration");
+			return null;
+		}
+		if (r != null && !r.already) {
+			if (propTextures != null) {
+				propTextures.addAll(r.imported);
+			}
+			drawRegistered(r.reference, pm.modelIndex);
+		}
+		return r;
+	}
+
+	/**
+	 * Puts a newly registered model under its reference the way the registry loader does, so the
+	 * prop is drawn whether or not its reference is its model number.
+	 */
+	private void drawRegistered(int reference, int model) {
+		try {
+			BCHFile mdlBch = new BCHFile(new BM(Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, model), Workspace.session()).getFile(0));
+			if (!mdlBch.models.isEmpty()) {
+				H3DModel mdl = mdlBch.models.get(0);
+				mdl.setMaterialTextures(mdlBch.textures);
+				if (propTextures != null) {
+					mdl.setMaterialTextures(propTextures);
+				}
+				mdl.makeAllBOs();
+				reg.models.put(reference, mdl);
+			}
+		} catch (Exception ex) {
+			ex.printStackTrace();
 		}
 	}
 

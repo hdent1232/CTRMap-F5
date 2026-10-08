@@ -119,6 +119,11 @@ def main():
                                     "turn's requests were NOT checked"}, sys.stdout)
         return 0
     if not found:
+        if request_ledger.review_off():
+            # NOT REVIEWED IS SAID, so it never reads as reviewed and passed (CTRMap F178).
+            json.dump({"systemMessage": "request ledger: the reviewer this project declares is OFF "
+                                        "for this session (%s=1), so no request was reviewed"
+                                        % request_ledger.NO_REVIEW}, sys.stdout)
         return 0
     sys.stderr.write(refusal(found) + LF)
     return 2

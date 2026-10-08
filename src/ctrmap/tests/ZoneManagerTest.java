@@ -44,8 +44,10 @@ import java.util.Arrays;
  * <li>renameZone on a SHARED name moves the zone to the lowest free blank name
  * slot and repoints BOTH the ZO header and the master row, preserving the six
  * high bits packed above the 10-bit parentMap in the same u16.</li>
- * <li>With no free blank slot left it falls back to renaming in place, which
- * renames every sharer, and says so in the result.</li>
+ * <li>With no free blank slot left it refuses and writes nothing (F233: it fell
+ * back to renaming in place, which renames every sharer, after the dialog had
+ * promised they were left unchanged); told to, it renames the shared line and
+ * says so in the result.</li>
  * </ul>
  *
  * <p>Everything runs against a throwaway copy of the dump ({@link ScratchGame}),
@@ -64,13 +66,12 @@ public class ZoneManagerTest {
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump.getAbsolutePath());
-			System.out.println("ALL PASS");
+			Skip.suite("no dump at " + dump.getAbsolutePath());
 			return;
 		}
 		ScratchGame.open(dump);
 
-		int masterIndex = ZoneCloner.getMasterIndex();
+		int masterIndex = ctrmap.ZoneTables.masterIndex(Workspace.getArchive(ArchiveType.ZONE_DATA));
 		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, masterIndex);
 		byte[] master0 = readAll(masterFile);
 		int rows = master0.length / ZoneCloner.ZONE_HEADER_SIZE;
@@ -379,8 +380,8 @@ public class ZoneManagerTest {
 				"the next forked rename took name line " + r2.parentMap + ", the next free blank slot");
 	}
 
-	private static void renameRefusals() {
-		int master = ZoneCloner.getMasterIndex();
+	private static void renameRefusals() throws IOException {
+		int master = ctrmap.ZoneTables.masterIndex(Workspace.getArchive(ArchiveType.ZONE_DATA));
 		try {
 			ZoneManager.renameZone(Workspace.session(), master, "x");
 			check(false, "renameZone refuses a zone index at the master table");
@@ -474,7 +475,16 @@ public class ZoneManagerTest {
 		byte[] zoBefore = readAll(zf);
 		int parent = u16(masterBefore, zone * ZoneCloner.ZONE_HEADER_SIZE + PARENT_OFF) & PARENT_MASK;
 
-		ZoneManager.RenameResult r = ZoneManager.renameZone(Workspace.session(), zone, "Characterization Shared");
+		byte[] gtBefore = readAll(gtFile);
+		String refused = "";
+		try {
+			ZoneManager.renameZone(Workspace.session(), zone, "Characterization Shared");
+		} catch (ZoneManager.SharedNameOnly shared) {
+			refused = shared.getMessage();
+		}
+		check(refused.contains("Nothing was renamed") && Arrays.equals(gtBefore, readAll(gtFile)),
+				"asked without consent, it refuses and writes nothing - it renamed every sharer (F233): " + refused);
+		ZoneManager.RenameResult r = ZoneManager.renameZone(Workspace.session(), zone, "Characterization Shared", true);
 
 		check(r.sharers > 1, "zone " + zone + " shares its name with " + (r.sharers - 1) + " others");
 		check(r.renamedSharers && !r.gaveOwnName,

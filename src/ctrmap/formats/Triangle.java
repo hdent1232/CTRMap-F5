@@ -59,10 +59,24 @@ public class Triangle {
 	public Polygon getAWTPoly(){
 		return new Polygon(new int[]{(int)x[0], (int)x[1], (int)x[2]}, new int[]{(int)z[0], (int)z[1], (int)z[2]}, 3);
 	}
+	/**
+	 * The colour a height draws in: the three floats {@code new Random(height)} answers first, made
+	 * once per height. render() built that Random for every triangle on every frame (F099) - a few
+	 * thousand per frame for one region - for a colour that depends on nothing but the height.
+	 */
+	public static float[] heightColour(long height) {
+		return HEIGHT_COLOURS.computeIfAbsent(height, h -> {
+			Random r = new Random(h);
+			return new float[]{r.nextFloat(), r.nextFloat(), r.nextFloat()};
+		});
+	}
+
+	private static final java.util.Map<Long, float[]> HEIGHT_COLOURS = new java.util.concurrent.ConcurrentHashMap<>();
+
     public void render(GL2 gl) {
         float averageheight = (Math.max(y[0], Math.max(y[1], y[2])) + Math.min(y[0], Math.min(y[1], y[2])))/2f;
-        Random heightRandom = new Random((long)averageheight);
-        gl.glColor3f(heightRandom.nextFloat(), heightRandom.nextFloat(), heightRandom.nextFloat());
+        float[] colour = heightColour((long) averageheight);
+        gl.glColor3f(colour[0], colour[1], colour[2]);
         for (int i = 0; i < 3; i++) {
             gl.glVertex3f(x[i], y[i], z[i]);
         }

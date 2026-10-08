@@ -73,7 +73,8 @@ public class ItemEditDialog {
 	private static final String NEW_ITEM_HINT =
 			"Four ids in the whole game can hold a new item: the records that are entirely empty and"
 			+ " sit below every bound the engine checks. Four is a real limit, not a choice made"
-			+ " here - the table is 776 long, and raising that is a code patch this editor does not"
+			+ " here - the table is " + ctrmap.formats.codepatch.ItemIconTable.COUNT + " long, and raising that is a code"
+			+ " patch this editor does not"
 			+ " attempt.";
 
 	/**
@@ -334,12 +335,13 @@ public class ItemEditDialog {
 
 		loadCode.addActionListener(e -> {
 			try {
-				JFileChooser fc = new JFileChooser(Workspace.GAMEDIR_PATH);
-				fc.setDialogTitle("Pick the DECOMPRESSED code.bin");
-				if (fc.showOpenDialog(dlg) != JFileChooser.APPROVE_OPTION) {
+				//the same file the shop editor and the zone-limit patch use, remembered with them
+				File picked = CodeBinFile.choose(dlg, new File(Workspace.GAMEDIR_PATH));
+				if (picked == null) {
 					return;
 				}
-				st.loadCode(fc.getSelectedFile());
+				st.loadCode(picked);
+				CodeBinFile.remember(picked);
 				iconSpin.setEnabled(true);
 				copyIcon.setEnabled(true);
 				saveIps.setEnabled(true);
@@ -355,7 +357,7 @@ public class ItemEditDialog {
 		});
 
 		copyIcon.addActionListener(e -> {
-			int other = ctrmap.humaninterface.pokepick.PokePickers.pickItem(dlg, st.id);
+			int other = ctrmap.humaninterface.pokepick.PokePickers.pickItem(dlg, st.id, Workspace.session());
 			if (other < 0 || st.icons == null || other >= st.icons.length) {
 				return;
 			}
@@ -462,37 +464,33 @@ public class ItemEditDialog {
 	 * already there, so one file still carries the zone-limit and shop patches.
 	 */
 	private static void saveIconPatch(java.awt.Component dlg, State st) {
+		if (st.code == null || st.icons == null) {
+			Ui.error(dlg, "Load your decompressed code.bin first.", "Item icons");
+			return;
+		}
+		saveIconPatch(dlg, st.codeFile, st.code, st.icons);
+	}
+
+	/**
+	 * The Save button's work once a code.bin is loaded: the code.ips the user picks beside
+	 * {@code codeFile} gets these icons. Public so a suite can press it headless - the chooser is
+	 * answered through the Ui seam (F152).
+	 */
+	public static void saveIconPatch(java.awt.Component dlg, File codeFile, byte[] code, int[] icons) {
 		try {
-			if (st.code == null || st.icons == null) {
-				Ui.error(dlg, "Load your decompressed code.bin first.", "Item icons");
-				return;
-			}
-			if (Arrays.equals(st.icons, st.stockIcons)) {
-				info(dlg, "No icon changes to save.", "Item icons");
-				return;
-			}
-			byte[] ips = ItemIconTable.diffIPS(st.code, st.icons);
-			JFileChooser fc = new JFileChooser(st.codeFile.getParentFile());
+			//NO "nothing to save" (F152): every icon put back to the game's own is still a change to a
+			//code.ips that carries an old edit, and saving it takes the icon table out of that file
+			byte[] ips = ItemIconTable.diffIPS(code, icons);
+			JFileChooser fc = new JFileChooser(codeFile.getParentFile());
 			fc.setDialogTitle("Save code.ips (Luma/Azahar executable patch)");
-			fc.setSelectedFile(new File(st.codeFile.getParentFile(), "code.ips"));
-			if (fc.showSaveDialog(dlg) != JFileChooser.APPROVE_OPTION) {
+			fc.setSelectedFile(new File(codeFile.getParentFile(), "code.ips"));
+			if (ctrmap.Ui.choose(dlg, fc, true) == null) {
 				return;
 			}
 			File out = fc.getSelectedFile();
-			String note = "";
-			if (out.exists()) {
-				int rsl = Ui.confirm(dlg, "code.ips already exists (the zone-limit or the shop"
-						+ " patch).\nMERGE the icon changes into it? (No = overwrite with icons"
-						+ " only)", "Item icons", JOptionPane.YES_NO_CANCEL_OPTION);
-				if (rsl != JOptionPane.YES_OPTION && rsl != JOptionPane.NO_OPTION) {
-					return;
-				}
-				if (rsl == JOptionPane.YES_OPTION) {
-					ips = ShopData.mergeIPS(Files.readAllBytes(out.toPath()), ips);
-					note = " (merged with the patch already there)";
-				}
-			}
-			Files.write(out.toPath(), ips);
+			//ONE WRITER FOR THE ONE code.ips (F152): the patches already in it are kept and only the
+			//table this editor owns is replaced - there is no question to close by mistake
+			String note = ctrmap.formats.codepatch.CodeIps.save(out, ips, ItemIconTable.owned());
 			info(dlg, "Saved " + out.getName() + note + ".\n\n"
 					+ "Install it like the zone patch:\n"
 					+ "  Azahar: load/mods/<titleid>/exefs/code.ips\n"

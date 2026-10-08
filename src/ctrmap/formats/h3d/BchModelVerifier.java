@@ -11,17 +11,24 @@ import java.util.*;
  * their command-tail contiguity note - writers (BchModelAppender) use that as
  * the acceptance rule for their output.
  */
-
-
-/** Strict structural verifier (all learned invariants, address-order based). */
 public class BchModelVerifier {
-    static byte[] raw;
-    static BchMapModel m;
-    static List<String> fails;
-    static int le32(int o){return (raw[o]&0xFF)|((raw[o+1]&0xFF)<<8)|((raw[o+2]&0xFF)<<16)|((raw[o+3]&0xFF)<<24);}
-    static void chk(boolean c,String w){ if(!c) fails.add(w); }
+    //ONE VERIFIER PER CALL (F218): these three were statics, so two threads verifying at once -
+    //a painter regen and a palette preview both build models - wrote into each other's report
+    private byte[] raw;
+    private BchMapModel m;
+    private List<String> fails;
+
+    private BchModelVerifier() {
+    }
+
+    private int le32(int o){return (raw[o]&0xFF)|((raw[o+1]&0xFF)<<8)|((raw[o+2]&0xFF)<<16)|((raw[o+3]&0xFF)<<24);}
+    private void chk(boolean c,String w){ if(!c) fails.add(w); }
 
     public static List<String> verify(byte[] bch){
+        return new BchModelVerifier().run(bch);
+    }
+
+    private List<String> run(byte[] bch){
         fails=new ArrayList<>();
         raw=bch; m=new BchMapModel(bch);
         fails.addAll(m.validate());
@@ -162,5 +169,5 @@ public class BchModelVerifier {
         }
         return fails;
     }
-    static int minSub(){ int v=Integer.MAX_VALUE; for (int j=0;j<m.meshCount;j++) v=Math.min(v,m.meshes.get(j)[3]); return v; }
+    private int minSub(){ int v=Integer.MAX_VALUE; for (int j=0;j<m.meshCount;j++) v=Math.min(v,m.meshes.get(j)[3]); return v; }
 }

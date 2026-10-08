@@ -75,7 +75,7 @@ public class MainframeShapeTest {
 	 */
 	private static final String[] EXPECTED_MENUS = {
 		"File: Open GR Mapfile | Open MapMatrix | Open Zone | Save | Pack Workspace | Deploy to emulator (mod)...",
-		"Map: Map Builder (this zone) | Blank map canvas (this zone)... | Resize map (this zone)... | Edit area fog & lighting... | Fork map geometry (make zone independent)... | --- | Import map model (.bch)... | Export map region to OBJ (Blender)... | Import OBJ into map region (Blender)... | OBJ to collisions | Tileset Editor",
+		"Map: Map Builder (this zone) | Blank map canvas (this zone)... | Resize map (this zone)... | Edit area fog & lighting... | Make zone independent (own map, own area)... | --- | Import map model (.bch)... | Export map region to OBJ (Blender)... | Import OBJ into map region (Blender)... | OBJ to collisions | Tileset Editor",
 		"Zone: Connect zones through a warp... | Rename zone (in-game name)... | Empty zone (clear contents)... | Find reusable base zones... | Remove added zones (restore stock 536)... | Custom battle facility here (clone a retail facility)",
 		"Game Data: Edit trainer (party/battle)... | Edit battle facility opponents... | Edit shop inventories (Marts)... | Edit items (price, effects, name)... | Edit wild encounters (this zone)...",
 		"Options: Setup wizard... | --- | Workspace settings | Restore from pristine backup... | Clean workspace",
@@ -108,7 +108,7 @@ public class MainframeShapeTest {
 	/** What a screen reader calls each tool, in row order. */
 	private static final String[] TOOL_NAMES = {"Edit", "Set", "Fill", "Camera", "Prop", "NPC", "Warp", "Trigger", "Map Builder", "Geometry"};
 
-	private static final String EXPECTED_MAP_ROW = "label: Map:   button:Blank canvas button:Resize map button:Fog & lighting button:Encounters button:Fork geometry";
+	private static final String EXPECTED_MAP_ROW = "label: Map:   button:Blank canvas button:Resize map button:Fog & lighting button:Encounters button:Make independent";
 	private static final String EXPECTED_ZONE_ROW = "label: Zone actions:   button:Connect zones button:Rename button:Empty button:Find reusable zones button:Remove added zones button:Custom battle facility";
 	private static final String EXPECTED_EXTRAS_ROW = "button:Raw archive browser (Builder) button:Tileset editor button:Workspace & paths";
 
@@ -155,6 +155,7 @@ public class MainframeShapeTest {
 		System.setProperty("java.awt.headless", "true");
 		File src = new File(args.length > 0 ? args[0] : "src");
 		everyMenuPathAMessageNamesExists(new File(src, "ctrmap"));
+		everyMenuPathADocNamesExists(src.getAbsoluteFile().getParentFile());
 
 		JMenuBar bar = CtrmapMainframe.buildMenuBar();
 		menuTree(bar);
@@ -454,13 +455,79 @@ public class MainframeShapeTest {
 	 * texture pack all refuse until the zone has its own area - so the one sentence they
 	 * get sends them looking through a menu for something that is not there.
 	 *
-	 * <p>It reads production sources for the literal shape, builds the real menu bar, and
-	 * matches. An item may be named by its start, so a message can leave off the long
-	 * parenthetical, and the ellipsis is ignored - what it refuses is a path that resolves
-	 * to nothing at all.
+	 * <p>WHAT IT MISSED, AND WHY IT NOW FAILS CLOSED (F224). It skipped a path whose menu it
+	 * did not know as "prose", so "Tools &gt; Import OBJ into map region" - a menu that does
+	 * not exist, the very defect it is for - passed. Its menu name started at the earliest word
+	 * that fit, so "Run File &gt; Deploy" read as a menu called "Run File" and was skipped too,
+	 * and so was every path written after a verb, among them "with File &gt; Deploy mod", an
+	 * item that does not exist. It never read the "-&gt;" spelling, so "Tools -&gt; Empty
+	 * zone", "Game Data -&gt; Trainers" and "Game Data -&gt; Facility opponents" went unread,
+	 * all of them wrong, and one suite pinned one of them. Seven messages sent a blocked user
+	 * nowhere while this passed. Now it reads only the TEXT of string literals (a {@code >} in
+	 * code is a comparison), joined across a {@code +}; it takes every arrow spelling; it
+	 * starts the next search at the item, so a second path in the same sentence is read; the
+	 * menu is the LAST one or two capitalised words before the arrow; and capitalised words
+	 * before an arrow that name no menu are REFUSED unless {@link #PROSE_ARROWS} argues they
+	 * are not a path.
+	 *
+	 * <p>An item may be named by its start, so a message can leave off the long parenthetical,
+	 * and the label's ellipsis is ignored - what it refuses is a path that resolves to nothing
+	 * at all.
 	 */
 	static void everyMenuPathAMessageNamesExists(File srcRoot) throws Exception {
-		System.out.println("--- every menu path a message names is one the menu bar has");
+		System.out.println("--- every menu path a message names is one the menu bar has (F224)");
+		Map<String, List<String>> menus = menus();
+		menuPathsAreReadInEveryShape(menus);
+		List<String> wrong = new ArrayList<>();
+		List<String> noMenu = new ArrayList<>();
+		java.util.Set<String[]> proseSeen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		int checked = 0;
+		for (File file : DialogSeamTest.javaSources(srcRoot)) {
+			if (file.getParentFile() != null && file.getParentFile().getName().equals("tests")) {
+				continue;
+			}
+			String body = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+			for (String text : messageTexts(body)) {
+				for (String[] path : menuPaths(text)) {
+					String where = file.getName() + ": " + path[0] + " > " + path[1];
+					String menu = menuOf(path[0], menus.keySet());
+					if (menu == null) {
+						String[] prose = proseArrow(file.getName(), path);
+						if (prose == null) {
+							noMenu.add(where);
+						} else {
+							proseSeen.add(prose);
+						}
+						continue;
+					}
+					checked++;
+					if (!itemExists(menus.get(menu), path[1])) {
+						wrong.add(where);
+					}
+				}
+			}
+		}
+		check(wrong.isEmpty(), "every menu path a message names is one the menu bar has"
+			+ (wrong.isEmpty() ? "" : " - except " + wrong + ". These fire at the moment"
+			+ " a user is blocked, so the one sentence they get has to name something they can find")
+			+ " (" + checked + " checked)");
+		check(noMenu.isEmpty(), "every capitalised phrase before an arrow in a message names a menu or is argued prose"
+			+ (noMenu.isEmpty() ? "" : " - except " + noMenu + ". A phrase that names no menu is a path into"
+			+ " one that does not exist, until PROSE_ARROWS argues otherwise"));
+		List<String> unused = new ArrayList<>();
+		for (String[] p : PROSE_ARROWS) {
+			if (!proseSeen.contains(p)) {
+				unused.add(p[0] + ": " + p[1] + " > " + p[2]);
+			}
+		}
+		check(unused.isEmpty(), "every argued prose arrow is still in a message (" + proseSeen.size() + " of "
+			+ PROSE_ARROWS.length + "), so the list cannot outlive its prose" + (unused.isEmpty() ? "" : " - unused: " + unused));
+		check(checked >= 5, "...and there were paths to check (" + checked + "), so a message that"
+			+ " stopped naming any would not pass this quietly");
+	}
+
+	/** The real menu bar: each menu's name and its items' labels. */
+	static Map<String, List<String>> menus() {
 		JMenuBar bar = CtrmapMainframe.buildMenuBar();
 		Map<String, List<String>> menus = new java.util.LinkedHashMap<>();
 		for (int i = 0; i < bar.getMenuCount(); i++) {
@@ -473,47 +540,311 @@ public class MainframeShapeTest {
 			}
 			menus.put(m.getText(), labels);
 		}
-		java.util.regex.Pattern named = java.util.regex.Pattern.compile(
-			//the item ends at a full stop, a bracket or a colon: several messages name a
-			//path and then explain it - "File > Save: every editor stores what it holds" -
-			//and the explanation is not part of the label
-			"(\\w[\\w ]{1,20}?) > ([A-Z][^\\n):]{2,60}?)[.):]");
+		return menus;
+	}
+
+	/**
+	 * Markdown files in the repository that are RECORDS, not directions to the program's user, each
+	 * with its argument (F224). Every other one is read. A record named here that no longer exists
+	 * is refused, so the list cannot outlive what it excuses. {file, why}.
+	 */
+	static final String[][] DOC_RECORDS = {
+		{"OUTSTANDING.md", "the work ledger: it quotes the wrong paths it fixed, \"Map > Fork area\" among them, as"
+			+ " the record of what was wrong"},
+		{"CLAUDE.md", "standing rules for whoever edits the code, not directions to the program's user"},
+	};
+
+	/**
+	 * Words before an arrow in a doc that are a STEP, not a menu: the docs write any sequence of
+	 * steps with arrows, and these are the ones that start at something other than the menu bar.
+	 * Each is argued; an entry no doc uses any more is refused. {file, words, why}.
+	 */
+	static final String[][] DOC_STEPS = {
+		{"TESTING.md", "Map Builder", "a step inside the Map Builder tool - open its palette, then filter - not a menu"},
+		{"TESTING.md", "ON", "a checkbox ticked, then the painter's Apply button"},
+		{"TESTING.md", "OFF", "a checkbox cleared, then what to expect"},
+		{"TESTING.md", "Apply", "the painter's Apply button, then the step after it"},
+	};
+
+	/**
+	 * Every menu path the docs the owner reads name is one the menu bar has (F224).
+	 *
+	 * <p>WHAT IT CAUGHT. TESTING.md - the owner's own checklist - sent them to "Tools &gt; Edit
+	 * shop inventories", "Tools &gt; Remove added zones", "Tools &gt; Rename zone", "Tools &gt;
+	 * Edit area fog &amp; lighting" and "Tools &gt; Tile painter": there is no Tools menu, and the
+	 * painter is the Map Builder now. The message check reads only the program's string literals,
+	 * so a page the owner follows step by step was never read. The scope is every Markdown file at
+	 * the repository's root, less the records {@link #DOC_RECORDS} argues for; quotes, bold and
+	 * code marks are dropped first, since docs wrap a label in them.
+	 */
+	static void everyMenuPathADocNamesExists(File repo) throws Exception {
+		System.out.println("--- every menu path a doc the owner reads names is one the menu bar has (F224)");
+		Map<String, List<String>> menus = menus();
+		File[] docs = repo.listFiles((d, n) -> n.endsWith(".md"));
+		if (docs == null) {
+			check(false, "the repository root could not be listed: " + repo.getAbsolutePath());
+			return;
+		}
+		java.util.Set<String> records = new java.util.HashSet<>();
+		List<String> stale = new ArrayList<>();
+		for (String[] r : DOC_RECORDS) {
+			records.add(r[0]);
+			if (!new File(repo, r[0]).isFile()) {
+				stale.add(r[0]);
+			}
+		}
 		List<String> wrong = new ArrayList<>();
+		List<String> noMenu = new ArrayList<>();
+		List<String> read = new ArrayList<>();
+		java.util.Set<String> stepsUsed = new java.util.HashSet<>();
 		int checked = 0;
-		for (File file : DialogSeamTest.javaSources(srcRoot)) {
-			if (file.getParentFile() != null && file.getParentFile().getName().equals("tests")) {
+		for (File doc : docs) {
+			if (records.contains(doc.getName())) {
 				continue;
 			}
-			String body = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-			java.util.regex.Matcher m = named.matcher(body);
-			while (m.find()) {
-				String menu = m.group(1).trim();
-				String item = m.group(2).trim();
-				if (!menus.containsKey(menu)) {
-					continue;                      //not a menu path at all, just prose with a >
-				}
-				checked++;
-				boolean found = false;
-				for (String label : menus.get(menu)) {
-					//either way round: a message may shorten a long label ("Fork map geometry" for
-					//"Fork map geometry (make zone independent)...") or carry on past a short one
-					//("Open Zone is only for single loose ZO files")
-					String a = label == null ? "" : label.toLowerCase();
-					String b = item.toLowerCase();
-					if (!a.isEmpty() && (a.startsWith(b) || b.startsWith(a))) {
-						found = true;
+			read.add(doc.getName());
+			List<String> lines = Files.readAllLines(doc.toPath(), StandardCharsets.UTF_8);
+			for (int i = 0; i < lines.size(); i++) {
+				String text = lines.get(i).replace("\"", "").replace("*", "").replace("`", "");
+				for (String[] path : menuPaths(text)) {
+					String menu = menuOf(path[0], menus.keySet());
+					String where = doc.getName() + ":" + (i + 1) + ": " + path[0] + " > " + path[1];
+					if (menu == null) {
+						String step = null;
+						for (String[] s : DOC_STEPS) {
+							if (s[0].equals(doc.getName()) && s[1].equals(path[0])) {
+								step = s[0] + "|" + s[1];
+							}
+						}
+						if (step == null) {
+							noMenu.add(where);
+						} else {
+							stepsUsed.add(step);
+						}
+					} else {
+						checked++;
+						if (!itemExists(menus.get(menu), path[1])) {
+							wrong.add(where);
+						}
 					}
-				}
-				if (!found) {
-					wrong.add(file.getName() + ": " + menu + " > " + item);
 				}
 			}
 		}
-		check(wrong.isEmpty(), checked + " menu path(s) named in messages, all of which the menu"
-			+ " bar has" + (wrong.isEmpty() ? "" : " - except " + wrong + ". These fire at the moment"
-			+ " a user is blocked, so the one sentence they get has to name something they can find"));
-		check(checked >= 5, "...and there were paths to check (" + checked + "), so a message that"
-			+ " stopped naming any would not pass this quietly");
+		java.util.Collections.sort(read);
+		check(read.contains("TESTING.md") && read.contains("README.md") && read.contains("QUICKSTART.md") && stale.isEmpty(),
+				"control: the owner's docs are read - " + read + (stale.isEmpty() ? "" : " - and a record that no longer"
+				+ " exists is still excused: " + stale));
+		check(wrong.isEmpty(), "every menu path the docs name is one the menu bar has" + (wrong.isEmpty() ? ""
+				: " - except " + wrong) + " (" + checked + " checked)");
+		check(noMenu.isEmpty(), "every capitalised phrase before an arrow in the docs names a menu or an argued step"
+				+ (noMenu.isEmpty() ? "" : " - except " + noMenu + ". The owner follows these step by step"));
+		List<String> unusedSteps = new ArrayList<>();
+		for (String[] s : DOC_STEPS) {
+			if (!stepsUsed.contains(s[0] + "|" + s[1])) {
+				unusedSteps.add(s[0] + ": " + s[1]);
+			}
+		}
+		check(unusedSteps.isEmpty(), "every argued step is still in its doc (" + stepsUsed.size() + " of " + DOC_STEPS.length
+				+ "), so the list cannot outlive it" + (unusedSteps.isEmpty() ? "" : " - unused: " + unusedSteps));
+	}
+
+	/**
+	 * Capitalised words before an arrow in a message that are NOT a path into this program's
+	 * menus, each with its argument (F224). Anything else that names no menu is refused, and so
+	 * is an entry here that no message uses any more. {file, the words before the arrow, the
+	 * start of what follows it, why it is not a menu path}.
+	 */
+	static final String[][] PROSE_ARROWS = {
+		{"CameraEditForm.java", "R", "L",
+			"a camera motion's direction, right to left, in the combo label \"Horizontal (R > L : 1 > 2)\""},
+		{"CameraEditForm.java", "Down", "Up",
+			"a camera motion's direction, down to up, in the combo label \"Vertical (Down > Up : 1 > 2)\""},
+		{"AreaLightingDialog.java", "Day", "all four",
+			"a button that copies the day's lighting to all four times of day: \"Day -> all four\""},
+		{"ZoneLoadingPanel.java", "Open Mods Location", "exefs",
+			"the emulator's own right-click menu (Azahar), not this program's: \"Open Mods Location -> exefs\\code.ips\""},
+	};
+
+	/**
+	 * A menu path's shape in a message: capitalised words, an arrow in any spelling (with or
+	 * without the spaces, plain or as HTML, or the arrow sign), and what it names. The item ends
+	 * at a full stop, a bracket, a colon, a quote, a tag or a line end: several messages name a
+	 * path and then explain it - "File > Save: every editor stores what it holds" - and the
+	 * explanation is not part of the label.
+	 */
+	static final java.util.regex.Pattern MENU_PATH = java.util.regex.Pattern.compile(
+		"([A-Z]\\w*(?: [A-Z]\\w*)*) ?(?:->|-&gt;|&gt;|>|→) ?([A-Za-z][^\\n.):\"<]{0,60})");
+
+	/**
+	 * {the words before the arrow, what it names} for every menu-path shape in a message's text.
+	 * The next search starts where the item does, so "File > Pack Workspace, then File > Deploy"
+	 * is two paths, not one long item.
+	 */
+	static List<String[]> menuPaths(String text) {
+		List<String[]> out = new ArrayList<>();
+		java.util.regex.Matcher m = MENU_PATH.matcher(text);
+		int from = 0;
+		while (m.find(from)) {
+			out.add(new String[]{m.group(1), m.group(2).trim()});
+			from = m.start(2);
+		}
+		return out;
+	}
+
+	/** The menu the LAST one or two words before an arrow name ("Run File" is File), or null. */
+	static String menuOf(String words, java.util.Set<String> menus) {
+		String[] w = words.split(" ");
+		String two = w.length >= 2 ? w[w.length - 2] + " " + w[w.length - 1] : null;
+		if (two != null && menus.contains(two)) {
+			return two;
+		}
+		return menus.contains(w[w.length - 1]) ? w[w.length - 1] : null;
+	}
+
+	/**
+	 * Whether a menu holds the item a message names. Either way round, at a word's end: a message
+	 * may shorten a long label ("Fork map geometry" for "Fork map geometry (make zone
+	 * independent)...") or carry on past a short one ("Open Zone is only for single loose ZO
+	 * files"), and may name the label without its own parenthetical ("Deploy to emulator (it
+	 * packs first)" for "Deploy to emulator (mod)..."). Case and the ellipsis are ignored.
+	 */
+	static boolean itemExists(List<String> labels, String item) {
+		String b = item.toLowerCase();
+		//and the message's OWN parenthetical, which the item stops inside: "File > Deploy (the game
+		//files are already packed" names Deploy, as "Game Data > Trainers (pick one" names Trainers
+		String named = b.replaceAll("\\s*\\(.*$", "");
+		for (String label : labels) {
+			String a = label == null ? "" : label.replaceAll("(\\.\\.\\.|…)\\s*$", "").trim().toLowerCase();
+			for (String form : new String[]{a, a.replaceAll("\\s*\\([^()]*\\)$", "")}) {
+				if (!form.isEmpty() && (startsAtWord(form, b) || startsAtWord(b, form)
+						|| (!named.isEmpty() && startsAtWord(form, named)))) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** Whether {@code s} starts with {@code start} and a word does not carry on past it. */
+	static boolean startsAtWord(String s, String start) {
+		return s.startsWith(start) && (s.length() == start.length() || !Character.isLetterOrDigit(s.charAt(start.length())));
+	}
+
+	/** The {@link #PROSE_ARROWS} entry that argues this phrase is not a path, or null. */
+	static String[] proseArrow(String file, String[] path) {
+		for (String[] p : PROSE_ARROWS) {
+			if (p[0].equals(file) && p[1].equals(path[0]) && path[1].startsWith(p[2])) {
+				return p;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The texts a source's string literals spell, adjacent literals joined across a {@code +} so
+	 * a message split over lines reads as one sentence. Comments, char literals and code are
+	 * never read: a {@code >} there is a comparison or a generic, not a menu path.
+	 */
+	static List<String> messageTexts(String src) {
+		List<String> out = new ArrayList<>();
+		StringBuilder cur = null;
+		int lastEnd = -1;
+		int n = src.length();
+		int i = 0;
+		while (i < n) {
+			char c = src.charAt(i);
+			char next = i + 1 < n ? src.charAt(i + 1) : 0;
+			if (c == '/' && next == '/') {
+				int j = src.indexOf('\n', i);
+				i = j < 0 ? n : j;
+				continue;
+			}
+			if (c == '/' && next == '*') {
+				int j = src.indexOf("*/", i + 2);
+				i = j < 0 ? n : j + 2;
+				continue;
+			}
+			if (c == '\'') {
+				int j = i + 1;
+				if (j < n && src.charAt(j) == '\\') {
+					j++;
+				}
+				j++;
+				while (j < n && src.charAt(j) != '\'') {
+					j++;
+				}
+				i = j + 1;
+				continue;
+			}
+			if (c != '"') {
+				i++;
+				continue;
+			}
+			StringBuilder lit = new StringBuilder();
+			int j = i + 1;
+			while (j < n && src.charAt(j) != '"') {
+				char d = src.charAt(j);
+				if (d == '\\' && j + 1 < n) {
+					char e = src.charAt(j + 1);
+					if (e == 'u' && j + 6 <= n) {
+						lit.append((char) Integer.parseInt(src.substring(j + 2, j + 6), 16));
+						j += 6;
+						continue;
+					}
+					lit.append(e == 'n' ? '\n' : e == 't' ? '\t' : e);
+					j += 2;
+					continue;
+				}
+				lit.append(d);
+				j++;
+			}
+			if (cur != null && src.substring(lastEnd, i).trim().equals("+")) {
+				cur.append(lit);
+			} else {
+				if (cur != null) {
+					out.add(cur.toString());
+				}
+				cur = lit;
+			}
+			lastEnd = j + 1;
+			i = j + 1;
+		}
+		if (cur != null) {
+			out.add(cur.toString());
+		}
+		return out;
+	}
+
+	/**
+	 * KNOWN ANSWERS for each shape the check was once blind to (F224), through the same methods
+	 * the scan uses, against the real menu bar - so a scan that reads nothing, or reads a shape
+	 * wrongly, cannot report a clean tree.
+	 */
+	static void menuPathsAreReadInEveryShape(Map<String, List<String>> menus) {
+		List<String> texts = messageTexts("a(\"Run File > Deploy to emulator.\" + \" via Tools -> Empty zone.\");"
+			+ " char q = '\"'; // \"Help > Nothing\" is a comment\n b(\"Zone&gt;Fork\" + x + \"Map \\u2192 Resize\")");
+		check(texts.size() == 3 && texts.get(0).equals("Run File > Deploy to emulator. via Tools -> Empty zone.")
+				&& texts.get(1).equals("Zone&gt;Fork") && texts.get(2).equals("Map → Resize"),
+			"control: literals are joined across a +, and a comment, a char literal and the code between are not read: " + texts);
+		List<String[]> p = menuPaths(texts.get(0));
+		check(p.size() == 2 && "File".equals(menuOf(p.get(0)[0], menus.keySet()))
+				&& itemExists(menus.get("File"), p.get(0)[1]),
+			"control: a path after a verb is read - \"Run File > Deploy to emulator\" is File's item");
+		check(p.size() == 2 && p.get(1)[0].equals("Tools") && menuOf("Tools", menus.keySet()) == null
+				&& proseArrow("CtrmapMainframe.java", p.get(1)) == null,
+			"control: the arrow spelling is read, and \"Tools\" names no menu and is no argued prose, so it is refused");
+		p = menuPaths("Game Data -> Trainers (pick one). Then Game Data > Edit trainer, or File > Pack Workspace, then File > Deploy mod.");
+		check(p.size() == 4 && "Game Data".equals(menuOf(p.get(0)[0], menus.keySet()))
+				&& !itemExists(menus.get("Game Data"), p.get(0)[1])
+				&& "Game Data".equals(menuOf(p.get(1)[0], menus.keySet()))
+				&& itemExists(menus.get("Game Data"), p.get(1)[1]),
+			"control: a two-word menu is the LAST two words, and \"Trainers\" is no item of it while \"Edit trainer\" is");
+		check(p.size() == 4 && itemExists(menus.get("File"), p.get(2)[1]) && p.get(3)[1].equals("Deploy mod")
+				&& !itemExists(menus.get("File"), p.get(3)[1]),
+			"control: a second path in the same sentence is read, and \"Deploy mod\" is no item of File");
+		check(menuPaths("Zone&gt;empty zone").size() == 1 && itemExists(menus.get("Zone"), "empty zone")
+				&& !itemExists(menus.get("File"), "Saved copy"),
+			"control: the HTML arrow and a lower-case item are read, and an item matches only at a word's end");
 	}
 
 	/** Whether {@code what} is somewhere inside {@code where}. */
@@ -744,7 +1075,7 @@ public class MainframeShapeTest {
 		//the zone is not on; then by pulling back the footprint's own depth, which put the
 		//camera 720 units from a map the working view frames from 7200. Both shipped with a
 		//green suite, because a suite here can assert the ARITHMETIC and cannot see the
-		//PICTURE. The camera is left where loadRegions puts it, and WHICH PART a zone
+		//PICTURE. The camera is left where showRegions puts it, and WHICH PART a zone
 		//occupies is said in the caption - the half that was legible in every screenshot of
 		//the broken versions.
 		File preview = new File(mainframe.getParentFile(), "ZonePreviewPane.java");
@@ -855,6 +1186,10 @@ public class MainframeShapeTest {
 								@Override
 								public boolean commit() {
 									return true;
+								}
+
+								@Override
+								public void showEntities(ctrmap.formats.zone.Zone zone) {
 								}
 							})),
 					new ctrmap.humaninterface.Navigator() {
@@ -1007,12 +1342,6 @@ public class MainframeShapeTest {
 		return null;
 	}
 
-	/**
-	 * Utils is the grab-bag every format and form reaches for. It used to
-	 * reach back into the window for its split pane and frame, which made
-	 * the window a dependency of everything. It no longer names the window
-	 * at all.
-	 */
 	/**
 	 * A shared helper does not depend on the main window.
 	 *

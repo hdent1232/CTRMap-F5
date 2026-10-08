@@ -58,7 +58,7 @@ public class MapDefaultsTest {
 
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " - the corpus checks need MapMatrix and FieldData");
+			Skip.section("no dump at " + dump + " - the corpus checks need MapMatrix and FieldData");
 		} else {
 			//no session on purpose: MapMatrix opens a GR per populated cell
 			//against the live workspace when there is one, and this suite only

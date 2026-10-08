@@ -145,6 +145,17 @@ public class Tilemap {
 		}
 	}
 
+	/**
+	 * Puts the tiles back to what the region holds and marks them unchanged (F106). A discard used to
+	 * clear the flag alone, so the discarded tiles stayed drawn, and the next edit in the region wrote
+	 * them along with it.
+	 */
+	public void discard() {
+		rawTileData = getTileData();
+		modified = false;
+		updateImage();
+	}
+
 	public BufferedImage getImage() {
 		return tilemapImage;
 	}

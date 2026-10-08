@@ -1,5 +1,6 @@
 package ctrmap.formats.propdata;
 
+import ctrmap.formats.GameCache;
 import ctrmap.formats.GameFiles;
 import ctrmap.formats.garc.GARC;
 import ctrmap.formats.h3d.H3DModelNameGet;
@@ -27,24 +28,24 @@ import static ctrmap.formats.LittleEndian.i32;
  * entries - no BCH model/texture decoding, no GL buffering and no workspace
  * file extraction, so building the whole database only costs the LZ11
  * decompression of the archives. The database is built lazily on first use
- * from the {@link GameFiles} it is handed and cached in memory for that game
+ * from the {@link GameFiles} it is handed and kept in that game's own store
  * (no flat-file cache - registry or archive edits would silently invalidate
- * it; call invalidate() after repacking instead).
+ * it). A pack empties the store, so the next use rebuilds from the fresh
+ * archives (F218).
  */
 public class PropDatabase {
 
 	public static final String DUMMY_MODEL_NAME = "com_bm_dummy";
 
-	private static PropDatabase instance;
 	/**
-	 * The game {@link #instance} was built from, by identity. The cache used
-	 * to be keyed on nothing: built once from the global's archives, it was
-	 * handed back for whatever game was asked about next, so a second game in
-	 * the same JVM got the first game's prop names until something called
-	 * {@link #invalidate}. Remembering who it was built for makes the answer
-	 * the handed game's, and {@code ctrmap.tests.HandedGameTest} hands two.
+	 * The database, kept by the game it was built from (F218). It was one static
+	 * instance keyed to nothing, handed back for whatever game was asked about
+	 * next; then one keyed to the identity of the last game handed, so two games
+	 * took turns rebuilding it; and a pack dropped it by a call of its own. The
+	 * game's store answers all three: each game keeps its own, and a pack
+	 * empties it with everything else read from the old archives.
 	 */
-	private static GameFiles builtFor;
+	private static final GameCache.Key<PropDatabase> DATABASE = new GameCache.Key<>("prop database");
 
 	/**
 	 * One entry per BuildingModels GARC index.
@@ -61,10 +62,9 @@ public class PropDatabase {
 
 	/**
 	 * The database of the handed game, built from its BuildingModels and
-	 * AreaData archives on first use and cached until {@link #invalidate} or
-	 * until a different game is handed in. Null when the handed game has not
-	 * opened both archives: absence, for the caller to say in words, never a
-	 * database built from another game.
+	 * AreaData archives on first use and kept until a pack rewrites them. Null
+	 * (kept too) when the handed game has not opened both archives: absence,
+	 * for the caller to say in words, never a database built from another game.
 	 *
 	 * <p>Handed the game rather than fetching the application's: this used to
 	 * gate on {@code Workspace.isValid()} and read the global's archives, so
@@ -73,36 +73,21 @@ public class PropDatabase {
 	 *
 	 * @param files the game to build from; null is refused in words
 	 */
-	public static synchronized PropDatabase get(GameFiles files) {
+	public static PropDatabase get(GameFiles files) {
 		if (files == null) {
 			throw new IllegalArgumentException("the prop database must be handed the game it is built from;"
 					+ " handed null, there is no archive to read and no game to answer for");
 		}
-		if (instance != null && builtFor == files) {
-			return instance;
-		}
-		GARC bm = files.archive(ArchiveType.BUILDING_MODELS);
-		GARC ad = files.archive(ArchiveType.AREA_DATA);
-		if (bm == null || ad == null) {
-			return null;
-		}
-		instance = build(bm, ad);
-		builtFor = files;
-		return instance;
+		return files.cache().get(DATABASE, () -> {
+			GARC bm = files.archive(ArchiveType.BUILDING_MODELS);
+			GARC ad = files.archive(ArchiveType.AREA_DATA);
+			return bm == null || ad == null ? null : build(bm, ad);
+		});
 	}
 
-	/** Whether {@link #get} would answer from the cache for this game, without building anything. */
-	public static synchronized boolean isBuilt(GameFiles files) {
-		return instance != null && builtFor == files;
-	}
-
-	/**
-	 * Drops the cached database, e.g. after repacking archives with changed
-	 * registries.
-	 */
-	public static synchronized void invalidate() {
-		instance = null;
-		builtFor = null;
+	/** Whether {@link #get} would answer from what the handed game keeps, without building anything. */
+	public static boolean isBuilt(GameFiles files) {
+		return files != null && files.cache().holds(DATABASE);
 	}
 
 	/**
@@ -386,17 +371,14 @@ public class PropDatabase {
 	}
 
 	public static boolean isBCH(byte[] b) {
-		return b != null && b.length > 0x40 && b[0] == 'B' && b[1] == 'C' && b[2] == 'H' && b[3] == 0;
+		return ctrmap.formats.h3d.BchSections.isBch(b); //the one reading of it (F066)
 	}
 
+	/** The string at {@code offset}, or null when the offset is outside the file (its callers' "no name"). */
 	private static String readCString(byte[] b, int offset) {
 		if (offset < 0 || offset >= b.length) {
 			return null;
 		}
-		StringBuilder sb = new StringBuilder();
-		for (int i = offset; i < b.length && b[i] != 0; i++) {
-			sb.append((char) (b[i] & 0xFF));
-		}
-		return sb.toString();
+		return ctrmap.formats.h3d.StringUtils.cString(b, offset);
 	}
 }

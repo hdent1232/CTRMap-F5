@@ -124,6 +124,9 @@ public class TrainerDataTest {
 			java.util.regex.Matcher m = TRAINER_RANGE.matcher(text);
 			while (m.find()) {
 				stated++;
+				if (m.group(1) == null) {
+					continue; //stated through the one name (F085): it cannot say another number
+				}
 				int upper = Integer.parseInt(m.group(1));
 				if (upper != ctrmap.formats.scripts.NpcTemplates.TRAINER_ID_MAX) {
 					failures++;
@@ -154,7 +157,7 @@ public class TrainerDataTest {
 	 * script variables elsewhere in the tree are not read as trainer bounds.
 	 */
 	static final java.util.regex.Pattern TRAINER_RANGE = java.util.regex.Pattern.compile(
-		"(?is)trainer.{0,60}?1\\s*\\.\\.\\s*(\\d+)");
+		"(?is)trainer.{0,60}?1\\s*\\.\\.\\s*(?:(\\d+)|\"\\s*\\+\\s*[\\w.]*TRAINER_ID_MAX)");
 
 	/** Every .java file under {@code dir}, at any depth. */
 	static java.util.List<File> javaSources(File dir) {

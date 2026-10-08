@@ -38,6 +38,10 @@ public class MapResizer {
 		public int oldW, oldH, newW, newH;
 		public int newMatrix;
 		public int[] newRegions;
+		/** The old cells' private copies, when the zone shared its map; empty when it did not. */
+		public int[] ownRegions = new int[0];
+		/** Zones whose ground those copies still carry (see GeometryForker.planFork). */
+		public int[] otherZones = new int[0];
 	}
 
 	/**
@@ -199,11 +203,11 @@ public class MapResizer {
 		byte[] matBytes = Files.readAllBytes(ws.getWorkspaceFile(ArchiveType.MAP_MATRIX, oldMatrix).toPath());
 
 		//template = the zone's first region (same area -> textures guaranteed)
-		int sub0 = i32(matBytes, 4);
-		int w = u16(matBytes, sub0 + 4), h = u16(matBytes, sub0 + 6);
+		ctrmap.formats.mapmatrix.MapMatrix.Grid grid = ctrmap.formats.mapmatrix.MapMatrix.Grid.of(matBytes);
+		int w = grid.width, h = grid.height;
 		int templateRegion = -1;
 		for (int k = 0; k < w * h && templateRegion < 0; k++) {
-			int id = u16(matBytes, sub0 + 8 + k * 2);
+			int id = grid.id(k);
 			if (id != 0xFFFF) {
 				templateRegion = id;
 			}
@@ -217,57 +221,85 @@ public class MapResizer {
 		if (newCells <= 0) {
 			throw new IOException("New size must grow the map (current " + w + "x" + h + ").");
 		}
+		//THE OLD CELLS BECOME THIS ZONE'S OWN (F018). The action said growing a map made the
+		//zone's geometry private first, and nothing did: the new matrix kept the old cells on the
+		//regions every zone sharing the map draws, so painting an old cell of a grown clone
+		//repainted the town it was cloned from. Forking first cannot work - a fork appends a
+		//matrix, and this refuses while one is pending - so the fork's own plan is taken here and
+		//its copies are written in this unit: each old region the grid names gets a private copy,
+		//and the new cells come after them.
+		int firstNew = gr.length;
+		GeometryForker.ForkPlan own = null;
+		if (!MasterTable.read(ws).sharing(ZoneResource.MAP, zoneIndex).isEmpty()) {
+			try {
+				own = GeometryForker.planFork(zoBytes, matBytes, firstNew, newMatrix, zoneIndex, false);
+			} catch (IllegalArgumentException bad) {
+				throw new IOException("The zone's map could not be made its own, so it was not grown: "
+						+ ctrmap.util.Bytes.reason(bad), bad);
+			}
+			matBytes = own.newMatrixBytes;
+			firstNew += own.newRegions.length;
+		}
 		int[] newIds = new int[newCells];
 		for (int i = 0; i < newCells; i++) {
-			newIds[i] = gr.length + i;
+			newIds[i] = firstNew + i;
 		}
 		//build the matrix FIRST (validates size before any file lands); new LOD
 		//zone-switch segments belong to this zone
 		byte[] newMat = buildResizedMatrix(matBytes, newW, newH, newIds, zoneIndex);
 
-		//blank-canvas regions for the new cells
-		for (int id : newIds) {
-			File f = new File(fdDir, String.valueOf(id));
-			Files.write(f.toPath(), templateGr);
-			GR reg = new GR(f, ws);
-			byte[] template = reg.getFile(1);
-			if (BchMapModel.isMapModel(template)) {
-				BchMapModel tm = new BchMapModel(template);
-				int gm = 0, bt = -1;
-				for (BchMapModel.MeshGeom g : tm.geometry()) {
-					if (g.posOk && tm.getTriangles(g.meshIndex).length > bt) {
-						bt = tm.getTriangles(g.meshIndex).length;
-						gm = g.meshIndex;
+		//ALL OF IT OR NONE OF IT (F227). New regions, then the matrix, then the zone
+		//header, then the master row: a failure between any two used to leave the
+		//earlier ones staged - a matrix nothing points to, or a header and master row
+		//that disagree. The unit puts every file, the list of edits and the pending
+		//compression flags back unless the last write landed.
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Resize map", ws)) {
+			//the old cells' private copies, when the map was shared
+			if (own != null) {
+				for (int i = 0; i < own.srcRegions.length; i++) {
+					int src = own.srcRegions[i];
+					if (src < 0 || src >= gr.length) {
+						throw new IOException("The zone's map names region " + src + ", which does not exist.");
 					}
-				}
-				RegionFactory.BlankContent bc = RegionFactory.blank(template, gm);
-				reg.storeFile(1, bc.model);
-				reg.storeFile(2, bc.collision);
-				reg.storeFile(0, bc.tilemap);
-				reg.storeFile(3, bc.props);
-				if (reg.len >= 9) {
-					reg.storeFile(7, RegionFactory.voidTilemap());
-					reg.storeFile(reg.len >= 11 ? 9 : 8, RegionFactory.emptyCollision());
-					if (reg.len >= 11) {
-						reg.storeFile(8, RegionFactory.voidTilemap());
-						reg.storeFile(10, RegionFactory.emptyCollision());
+					File from = ws.getWorkspaceFile(ArchiveType.FIELD_DATA, src);
+					if (from == null) {
+						throw new IOException("FieldData region " + src + " could not be read out of the workspace.");
 					}
+					File to = new File(fdDir, String.valueOf(own.newRegions[i]));
+					WorkspaceUnit.copy(from, to);
+					ws.addPersist(to);
+					ws.registerPendingCompression(ArchiveType.FIELD_DATA, own.newRegions[i], gr.isEntryCompressed(src));
 				}
 			}
-			ws.addPersist(f);
-			GeometryForker.registerPendingField(id, gr.isEntryCompressed(templateRegion));
+			//blank-canvas regions for the new cells
+			for (int id : newIds) {
+				File f = new File(fdDir, String.valueOf(id));
+				WorkspaceUnit.write(f, templateGr);
+				GR reg = new GR(f, ws);
+				//THE ONE BLANKING, with the ground the blank canvas chooses (F017, F073).
+				//This was a private copy of the subfile numbering, and it floored the new
+				//cells with the BIGGEST mesh - a wall, a fence or the sea on 312 of the
+				//first 400 retail regions, which is why Blank canvas stopped doing it.
+				if (BchMapModel.isMapModel(reg.getFile(1)) && !RegionFactory.blankRegionFiles(reg, -1)) {
+					throw new IOException("Region " + id + " could not be blanked, so the map was not grown.");
+				}
+				ws.addPersist(f);
+				ws.registerPendingCompression(ArchiveType.FIELD_DATA, id, gr.isEntryCompressed(templateRegion));
+			}
+
+			WorkspaceUnit.write(matrixOut, newMat);
+			ws.addPersist(matrixOut);
+			ws.registerPendingCompression(ArchiveType.MAP_MATRIX, newMatrix, mm.isEntryCompressed(oldMatrix));
+
+			//repoint the zone (ZO header + the runtime-authoritative master row), both
+			//through the session this was handed (F019)
+			byte[] newZo = zoBytes.clone();
+			putU16(newZo, hdrOff + 4, newMatrix);
+			WorkspaceUnit.write(zoneFile, newZo);
+			ws.addPersist(zoneFile);
+			GeometryForker.repointMasterRow(ws, zo, zoneIndex, ZoneResource.MAP, newMatrix);
+			unit.commit();
 		}
-
-		Files.write(matrixOut.toPath(), newMat);
-		ws.addPersist(matrixOut);
-		GeometryForker.registerPendingMatrix(newMatrix, mm.isEntryCompressed(oldMatrix));
-
-		//repoint the zone (ZO header + the runtime-authoritative master row)
-		byte[] newZo = zoBytes.clone();
-		putU16(newZo, hdrOff + 4, newMatrix);
-		Files.write(zoneFile.toPath(), newZo);
-		ws.addPersist(zoneFile);
-		GeometryForker.repointMasterRow(zo, zoneIndex, newMatrix);
 
 		ResizeResult r = new ResizeResult();
 		r.oldW = w;
@@ -276,6 +308,10 @@ public class MapResizer {
 		r.newH = newH;
 		r.newMatrix = newMatrix;
 		r.newRegions = newIds;
+		if (own != null) {
+			r.ownRegions = own.newRegions;
+			r.otherZones = own.otherZones;
+		}
 		return r;
 	}
 

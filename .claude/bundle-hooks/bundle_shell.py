@@ -80,6 +80,19 @@ def judge_under_mutation(root, lock_name):
     readings is always the real code. A hook asks this before it asks the judge anything, and a
     judge under mutation is asked nothing - its answer, either way, would be the plant's.
     """
+    named = lock_names(root, lock_name)
+    return named if named.startswith(FOLDER + "/") else ""
+
+
+def lock_names(root, lock_name):
+    """The repo-relative file a mutation run's lock names, or '' - its FIRST line, read here and
+    not by the judge (see `judge_under_mutation`).
+
+    THE FIRST LINE, BECAUSE EVERY WRITER WRITES MORE. `take_lock` writes the path and a nonce, and
+    a project's own sweep the path, a pid and what it is; `guard_mutation_read` read the whole
+    file as the path, which no command can ever contain - so under every real lock a `cat` of the
+    mutated file itself went through (CTRMap F171).
+    """
     import io
     try:
         with io.open(os.path.join(root, lock_name), encoding="utf-8") as handle:
@@ -94,7 +107,7 @@ def judge_under_mutation(root, lock_name):
     import bundle_env
     if named and named == os.environ.get(bundle_env.name("PLANTED"), "").replace(chr(92), "/"):
         return ""
-    return named if named.startswith(FOLDER + "/") else ""
+    return named
 
 #: How deep to walk a tool input looking for command strings. A batching tool nests one input
 #: inside another; nothing here nests deeper, and an unbounded walk on a self-referencing
@@ -132,6 +145,55 @@ def payload_text(stream=None):
     if buffer is None:
         return stream.read()
     return buffer.read().decode("utf-8", errors="replace")
+
+
+#: What a payload this harness writes carries - one of them at least, for every event: the event's
+#: name, the session, its transcript, the tool. A payload holding none is not one it wrote.
+PAYLOAD_KEYS = ("hook_event_name", "session_id", "transcript_path", "tool_name", "tool_input")
+
+
+def payload_problem(raw):
+    """Why `raw` is not a hook payload anything here can judge, or None when it is one.
+
+    A PAYLOAD NOBODY CAN READ IS UNKNOWN, NEVER CLEAN. Measured on CTRMap 2026-10-06 (its F213):
+    every wired entry point - both PreToolUse stacks, both Stop hooks, PostToolUse - was fed text
+    that is not JSON, `{}`, and a payload cut mid-command, and all fifteen runs exited 0 saying
+    nothing, while the same hooks refused the controls. `dispatch.py` returned before any guard
+    was asked, so even `guard_fanout`, which refuses an unreadable payload itself, never saw one.
+    """
+    import json
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        return "the hook payload is not JSON (%s)" % str(exc)[:120]
+    if not isinstance(payload, dict):
+        return "the hook payload is JSON but not an object (%s)" % type(payload).__name__
+    if not any(key in payload for key in PAYLOAD_KEYS):
+        return ("the hook payload names no event, session, transcript or tool (%s)"
+                % (", ".join(sorted(payload))[:120] or "it is empty"))
+    return None
+
+
+def refused_before(raw):
+    """True when `raw` - parsed or not - shows a turn end a stop hook already sent back once.
+
+    THE DISPATCHER REFUSES THE END OF A TURN ONCE: a second refusal of the same stop spins forever
+    over something the turn may not be able to reach. The harness marks the retry with
+    `stop_hook_active`, and a payload that does not parse can still carry it, so it is read from
+    the raw text. An unreadable turn end is then refused once, and the retry allowed - and SAID.
+    """
+    return re.search(r'"stop_hook_active"\s*:\s*true', raw or "") is not None
+
+
+def unreadable_payload(hook, problem, bypass_name):
+    """What a hook says when it cannot judge the call it was handed - and the one way past."""
+    return (policy(hook) + "\n"
+            "This call could not be judged: %s. Nothing behind %s was asked, and a call nobody "
+            "could judge is UNKNOWN - not allowed.\n\n"
+            "A QUERY THAT CANNOT READ ITS SUBJECT MUST NOT REPORT IT ABSENT.\n\n"
+            "If the harness changed what it sends, the owner can set %s=1 for the session: every "
+            "call is then accepted unchecked, and each one SAYS so.\n"
+            % (problem, os.path.basename(hook), bypass_name))
 
 
 def speak_utf8():

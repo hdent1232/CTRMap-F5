@@ -7,16 +7,19 @@ import ctrmap.formats.gfcollision.GRCollisionFile;
 import ctrmap.formats.Triangle;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import static ctrmap.formats.containers.ContainerBytes.subfile;
 
 /**
- * Validates the legacy-editor -> retail-exact-writer bridge: loading a
- * collision through GRCollisionFile (the render/edit model, which de-dupes
- * across buckets) and writing through the new GfColl path must preserve the
- * triangle SET exactly for every retail region, and the rebuilt subfile must
- * re-parse clean. This is the gate for the fixed "OBJ to collisions" and
+ * Validates the collision editor's save against the retail-exact writer: a
+ * collision loaded through GRCollisionFile (the render/edit model) and written
+ * back unedited must be EXACTLY GfColl.build(uniqueTris, parsed) - byte for
+ * byte, every repeated triangle kept - for every retail region. The editor
+ * used to read through a parser of its own that dropped every repeat (F061),
+ * and this suite then asserted only the triangle SET, so the loss was counted
+ * ("collapsed") and passed. This is the gate for the "OBJ to collisions" and
  * collision-editor save paths.
  *
  * Usage: java ctrmap.tests.GfCollLegacyBridgeTest <path-to-a039-garc> [step]
@@ -50,7 +53,7 @@ public class GfCollLegacyBridgeTest {
 					fos.write(entry);
 				}
 				GR gr = new GR(f, game);
-				GRCollisionFile legacy = new GRCollisionFile(gr);
+				GRCollisionFile legacy = GRCollisionFile.read(gr);
 				legacy.write(); //the FIXED path - routes through GfColl.build
 				byte[] rebuilt = new GR(f, game).getFile(2);
 
@@ -61,6 +64,13 @@ public class GfCollLegacyBridgeTest {
 							+ " unique vs rebuilt " + setB.size() + ")");
 				}
 				collapsedDupes += a.uniqueTris.size() - b.uniqueTris.size();
+				if (a.uniqueTris.size() != b.uniqueTris.size()) {
+					throw new IllegalStateException("the save collapsed " + (a.uniqueTris.size() - b.uniqueTris.size())
+							+ " repeated triangle(s) the region holds");
+				}
+				if (!Arrays.equals(rebuilt, GfColl.build(a.uniqueTris, a))) {
+					throw new IllegalStateException("the editor's save is not the retail-exact rebuild of what it read");
+				}
 				//bucket sanity: rebuilt must be internally consistent (parse ok, counts %3)
 				for (int k = 0; k < 16; k++) {
 					if (b.bucketCnt[k] % 3 != 0) {
@@ -77,7 +87,7 @@ public class GfCollLegacyBridgeTest {
 			}
 		}
 		System.out.println("\nLegacy bridge: tested=" + tested + "  ok=" + ok + "  failures=" + failures
-				+ "  (source-duplicate tris collapsed by the editor model: " + collapsedDupes + ")");
+				+ "  (repeated tris collapsed by the editor model: " + collapsedDupes + ", which must be 0)");
 		System.out.println(failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
 		if (failures > 0) {
 			System.exit(1);

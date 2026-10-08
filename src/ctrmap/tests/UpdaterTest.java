@@ -60,6 +60,16 @@ public class UpdaterTest {
 		check("escaped newline decoded", "line one\nline two".equals(UpdateChecker.field(json, "body")));
 		check("size read", UpdateChecker.longField(json, "size") == 1234);
 		check("digest read", repeat("ab", 32).equals(UpdateChecker.sha256Of(json)));
+		check("a \\u escape is decoded", "aéb".equals(UpdateChecker.field("{\"n\": \"a\\u00e9b\"}", "n")));
+		//F211: a \\u that was not hex was dropped and the string read on as if nothing were missing
+		String notHex;
+		try {
+			notHex = "answered '" + UpdateChecker.field("{\"n\": \"a\\uZZZZb\"}", "n") + "'";
+		} catch (IllegalArgumentException ex) {
+			notHex = null;
+		}
+		check("a \\u escape that is not hex is refused, not dropped (" + (notHex == null ? "refused" : notHex) + ")",
+				notHex == null);
 		check("github https accepted",
 				UpdateChecker.isGithubHttps("https://github.com/a/b/releases/download/v1/a.zip"));
 		check("http refused", !UpdateChecker.isGithubHttps("http://github.com/a/b.zip"));

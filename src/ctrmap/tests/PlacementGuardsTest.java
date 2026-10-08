@@ -95,8 +95,7 @@ public class PlacementGuardsTest {
 		File garcFile = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs/a/0/3/9");
 		int step = args.length > 1 ? Integer.parseInt(args[1]) : 20;
 		if (!garcFile.isFile()) {
-			System.out.println("  skip: no FieldData GARC at " + garcFile);
-			System.out.println("ALL PASS");
+			Skip.suite("no FieldData GARC at " + garcFile);
 			return;
 		}
 		//the palette cuts its donors from the workspace's pristine snapshot -

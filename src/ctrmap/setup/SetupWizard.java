@@ -331,7 +331,7 @@ public class SetupWizard extends JDialog {
 		p.add(row);
 		p.add(gap(8));
 		p.add(prose("Your changes are never applied to the emulator automatically - you choose"
-				+ " when, with File > Deploy mod."));
+				+ " when, with File > Deploy to emulator."));
 		browse.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
@@ -424,7 +424,7 @@ public class SetupWizard extends JDialog {
 		boolean ok = gameResult.usable();
 		gameVerdict.setForeground(ok ? new Color(0, 128, 0) : new Color(160, 0, 0));
 		gameVerdict.setText("<html>" + (ok ? "&#10003;&nbsp; " : "&#10007;&nbsp; ")
-				+ esc(gameResult.headline) + "</html>");
+				+ Ui.html(gameResult.headline) + "</html>");
 		setProse(gameDetail, gameResult.detail);
 		useSuggestion.setVisible(gameResult.suggestion != null);
 		next.setEnabled(ok);
@@ -507,10 +507,16 @@ public class SetupWizard extends JDialog {
 		}
 		//a workspace carrying a pristine backup of a DIFFERENT game folder would
 		//silently mis-report what the user has changed, forever
+		//the backup question reads the chosen folder's snapshot through the global, so it is set
+		//for the asking - and PUT BACK when the answer is to go back (F114): left set, a Cancel
+		//from that step kept a workspace path nobody chose beside the old game path, and the
+		//window's settings wrote the pair out
+		final String before = Workspace.WORKSPACE_PATH;
 		Workspace.WORKSPACE_PATH = wsPath;
 		settleBackup(this, gamePath, new Runnable() {
 			@Override
 			public void run() {
+				Workspace.WORKSPACE_PATH = before;
 				showStep(STEP_WORKSPACE);
 			}
 		}, new Runnable() {
@@ -528,18 +534,19 @@ public class SetupWizard extends JDialog {
 		finishBar.setIndeterminate(true);
 		finishStatus.setText("Making a pristine backup of your game's editable parts...");
 
-		new SwingWorker<Void, Void>() {
+		//set HERE, on the event thread every reader of them is on, before the worker starts
+		//(F220) - the worker wrote them from its own thread
+		Workspace.GAMEDIR_PATH = gamePath;
+		Workspace.WORKSPACE_PATH = wsPath;
+		new SwingWorker<ctrmap.WorkspaceSession.SnapshotReport, Void>() {
 			@Override
-			protected Void doInBackground() {
+			protected ctrmap.WorkspaceSession.SnapshotReport doInBackground() {
 				//done off the UI thread on purpose: this copies a few hundred
-				//megabytes, and doing it inside validate() froze the whole app
-				Workspace.GAMEDIR_PATH = gamePath;
-				Workspace.WORKSPACE_PATH = wsPath;
-				//the game is known from the dump check; nothing is opened yet, so
+				//megabytes, and doing it inside validate() froze the whole app.
+				//The game is known from the dump check; nothing is opened yet, so
 				//the backup is taken through a session built from the paths alone
-				Workspace.reportSnapshot(new ctrmap.WorkspaceSession(new File(wsPath), new File(gamePath),
-						gameResult.game, null).snapshotOriginals());
-				return null;
+				return new ctrmap.WorkspaceSession(new File(wsPath), new File(gamePath),
+						gameResult.game, null).snapshotOriginals();
 			}
 
 			@Override
@@ -547,7 +554,10 @@ public class SetupWizard extends JDialog {
 				finishBar.setIndeterminate(false);
 				finishBar.setVisible(false);
 				try {
-					get(); //without this, a backup that threw looks made and setup carries on without one
+					//without this, a backup that threw looks made and setup carries on without
+					//one. What the backup has to say is said here, on the event thread (F220):
+					//the worker reported it, and a report is a dialog
+					Workspace.reportSnapshot(get());
 				} catch (Exception ex) {
 					Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
 					setButtonsBusy(false);
@@ -580,6 +590,31 @@ public class SetupWizard extends JDialog {
 		}.execute();
 	}
 
+	/**
+	 * What setup tells the user when the game did not load.
+	 *
+	 * <p>It used to be one diagnosis for every failure - "the unpacked game is
+	 * probably incomplete, try unpacking again" (census M.140) - including a
+	 * game that was complete and could not be opened for a reason the user
+	 * could fix, such as one damaged archive or a file another program holds.
+	 * Sending them to redo a two-hour unpack fixes neither. When the load says
+	 * why, that is what is shown; the incomplete-unpack advice is kept for the
+	 * case it fits: a game that opened and held no maps.
+	 *
+	 * @param problems why the load failed, as the workspace reported it; empty
+	 *        when it opened and found nothing
+	 */
+	static String loadFailureText(java.util.List<String> problems) {
+		if (!problems.isEmpty()) {
+			return "CTRMap could not open that game folder:\n\n" + String.join("\n", problems)
+					+ "\n\nFix what is named above, or point CTRMap at another copy of your game.";
+		}
+		return "CTRMap read that folder but found no maps in it.\n\n"
+				+ "The unpacked game is probably incomplete - unpacking sometimes stops\n"
+				+ "early without saying so. Try unpacking your game again, then point\n"
+				+ "CTRMap at the new folder.";
+	}
+
 	/** Runs the real load and checks that it actually produced something. */
 	private void completeSetup() {
 		//Workspace.isValid() is true BEFORE the archives are read, so it says
@@ -589,20 +624,17 @@ public class SetupWizard extends JDialog {
 		//its dropdown: asking the widget that happens to display the answer, and
 		//catching RuntimeException around it because that widget might not exist.
 		int zones = 0;
+		java.util.List<String> problems = new java.util.ArrayList<>();
 		try {
-			zones = ctrmap.CtrmapMainframe.onWorkspaceOpened(Workspace.validate(this, false));
+			zones = ctrmap.CtrmapMainframe.onWorkspaceOpened(Workspace.validate(this, false, problems));
 		} catch (RuntimeException ex) {
 			zones = 0;
+			problems.add(Ui.reason(ex));
 		}
 		setButtonsBusy(false);
 		if (!Workspace.isValid() || zones == 0) {
 			finishStatus.setText(BLANK);
-			Ui.error(this,
-					"CTRMap read that folder but found no maps in it.\n\n"
-					+ "The unpacked game is probably incomplete - unpacking sometimes stops\n"
-					+ "early without saying so. Try unpacking your game again, then point\n"
-					+ "CTRMap at the new folder.",
-					"No maps found");
+			Ui.error(this, loadFailureText(problems), problems.isEmpty() ? "No maps found" : "Could not open the game");
 			showStep(STEP_GAME);
 			return;
 		}
@@ -678,7 +710,7 @@ public class SetupWizard extends JDialog {
 		JFileChooser fc = new JFileChooser(start == null || start.trim().isEmpty() ? null : start);
 		fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
 		fc.setDialogTitle(title);
-		return fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION ? fc.getSelectedFile() : null;
+		return ctrmap.Ui.choose(this, fc, false) != null ? fc.getSelectedFile() : null;
 	}
 
 	private static boolean isInside(File child, File parent) {
@@ -782,13 +814,9 @@ public class SetupWizard extends JDialog {
 		return n;
 	}
 
-	private static String esc(String s) {
-		return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-	}
-
 	private static String wrap(String s) {
 		return s == null || s.isEmpty() ? BLANK
-				: "<html><body style='width:566px'>" + esc(s) + "</body></html>";
+				: "<html><body style='width:566px'>" + Ui.html(s) + "</body></html>";
 	}
 
 	private static JPanel column() {

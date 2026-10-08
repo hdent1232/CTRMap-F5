@@ -48,8 +48,7 @@ public class MisplacedRegistryTest {
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump);
-			System.out.println("ALL PASS");
+			Skip.suite("no dump at " + dump);
 			return;
 		}
 		ScratchGame.open(dump);

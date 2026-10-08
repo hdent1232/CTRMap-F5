@@ -29,17 +29,8 @@ import java.util.List;
  */
 public class DumpCheck {
 
-	/** Archives {@link Workspace#validate} refuses to start without. */
-	private static final ArchiveType[] REQUIRED = {
-		ArchiveType.ZONE_DATA,
-		ArchiveType.AREA_DATA,
-		ArchiveType.FIELD_DATA,
-		ArchiveType.MAP_MATRIX,
-		ArchiveType.GAMETEXT,
-		ArchiveType.BUILDING_MODELS,
-		ArchiveType.NPC_REGISTRIES,
-		ArchiveType.MOVE_MODELS
-	};
+	/** Archives {@link Workspace#validate} refuses to start without: the session's own list (F038). */
+	private static final java.util.List<ArchiveType> REQUIRED = ctrmap.WorkspaceSession.requiredArchives();
 
 	/** Nice names for the archives, so no message ever shows a raw archive path. */
 	private static String friendly(ArchiveType t) {

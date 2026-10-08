@@ -263,6 +263,14 @@ public final class PaintedMaterials {
 	}
 
 	/**
+	 * Materials whose texture is mostly transparent - sprite strips, decals and
+	 * decoration atlases. Measured game-wide by
+	 * {@link ctrmap.tools.GroundMaterialAudit}; anything not listed is treated as
+	 * usable, so imported and user-supplied materials are never restricted.
+	 */
+	private static Set<String> spriteMaterials;
+
+	/**
 	 * The set of material names measured to be see-through, read once from the
 	 * harvested ground-material table and cached for the life of the process.
 	 *
@@ -270,44 +278,64 @@ public final class PaintedMaterials {
 	 * off the event thread; without it two callers can both find it null and
 	 * both build it, and one of them can hand out a half-filled set.
 	 *
-	 * <p>A missing or unreadable table is not fatal - it yields an empty set, so
-	 * nothing is rejected as a sprite and the painter behaves as it did before
-	 * the table existed. The failure is said on stderr rather than swallowed,
-	 * because "no material is a sprite" and "the table did not load" produce
-	 * identical geometry and only the message tells them apart.
+	 * <p>A missing or unreadable table THROWS, and nothing is cached, so a
+	 * repaired build reads it next time (F211). It yielded an empty set with a
+	 * line on stderr, which the user never sees - and an empty set is "no
+	 * material is a sprite", which is the Route 102 black hole above, back
+	 * without a word. The table ships inside the build; not reading it is a
+	 * broken build, and is said as one.
 	 */
-	static synchronized Set<String> spriteMaterials() {
+	public static synchronized Set<String> spriteMaterials() {
 		if (spriteMaterials != null) {
 			return spriteMaterials;
 		}
-		spriteMaterials = new HashSet<>();
 		try (java.io.InputStream in = PaintedRegionBuilder.class.getClassLoader()
 				.getResourceAsStream("ctrmap/resources/oras_ground_materials.tsv")) {
-			if (in != null) {
-				java.util.Scanner sc = new java.util.Scanner(in, "UTF-8");
-				while (sc.hasNextLine()) {
-					String line = sc.nextLine().trim();
-					if (line.isEmpty() || line.startsWith("#")) {
-						continue;
-					}
-					String[] f = line.split("\t");
-					if (f.length < 4) {
-						continue;
-					}
-					try {
-						//measured bimodal: 638 of 788 materials are 100% opaque and
-						//everything below 95% is a sprite, decal or atlas
-						if (Double.parseDouble(f[3]) < 95.0) {
-							spriteMaterials.add(f[0]);
-						}
-					} catch (NumberFormatException ignore) {
-					}
-				}
+			if (in == null) {
+				throw new java.io.IOException("ctrmap/resources/oras_ground_materials.tsv is missing from this build");
 			}
-		} catch (Exception ex) {
-			System.err.println("PaintedRegionBuilder: ground-material table unavailable: " + ex);
+			spriteMaterials = java.util.Collections.unmodifiableSet(readSpriteTable(in));
+		} catch (java.io.IOException ex) {
+			throw new IllegalStateException("The ground-material table could not be read, so the painter cannot tell"
+					+ " a sprite atlas from a floor (painting with one draws a black hole): "
+					+ ctrmap.util.Bytes.reason(ex), ex);
 		}
 		return spriteMaterials;
+	}
+
+	/**
+	 * The names a ground-material table measures below 95% opaque. STRICT: a row that is not
+	 * {@code name, ..., ..., opacity} or whose opacity is not a number THROWS, naming the line -
+	 * a row it skipped was a sprite atlas the painter would floor a map with.
+	 */
+	public static Set<String> readSpriteTable(java.io.InputStream in) throws java.io.IOException {
+		Set<String> out = new HashSet<>();
+		java.io.BufferedReader lines = new java.io.BufferedReader(
+				new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
+		int lineNo = 0;
+		for (String raw; (raw = lines.readLine()) != null;) {
+			lineNo++;
+			String line = raw.trim();
+			if (line.isEmpty() || line.startsWith("#")) {
+				continue;
+			}
+			String[] f = line.split("\t");
+			if (f.length != 4) {
+				throw new java.io.IOException("line " + lineNo + ": " + f.length + " fields, and a row has 4");
+			}
+			double opaque;
+			try {
+				opaque = Double.parseDouble(f[3]);
+			} catch (NumberFormatException ex) {
+				throw new java.io.IOException("line " + lineNo + ": the opacity '" + f[3] + "' is not a number", ex);
+			}
+			//measured bimodal: 638 of 788 materials are 100% opaque and
+			//everything below 95% is a sprite, decal or atlas
+			if (opaque < 95.0) {
+				out.add(f[0]);
+			}
+		}
+		return out;
 	}
 
 	/**
@@ -352,12 +380,9 @@ public final class PaintedMaterials {
 		//colour of every generated cliff is decided by whichever region the map
 		//happened to be painted from.
 		TerrainCatalog.Donor cd = TerrainCatalog.cliffDonor();
-		if (cd != null) {
-			for (int i = 0; i < model.meshCount; i++) {
-				if (cd.injectName.equals(model.getMaterialName(model.getMeshMaterialIndex(i)))) {
-					return i;
-				}
-			}
+		int imported = cd == null ? -1 : model.meshWithMaterial(cd.injectName);
+		if (imported >= 0) {
+			return imported;
 		}
 		for (String hint : new String[]{"gake", "cliff", "chip_rock", "rock", "iwa"}) {
 			for (BchMapModel.MeshGeom g : model.geometry()) {
@@ -447,23 +472,12 @@ public final class PaintedMaterials {
 	}
 
 	/**
-	 * The mesh to lay a floor on in {@code model}, honouring {@code preferred}
-	 * when that mesh exists here and can be read, and falling back to
-	 * {@link #defaultGroundMesh} when it cannot.
-	 *
-	 * <p>The fallback is the whole point. A zone's map is several regions and
-	 * they do NOT share a mesh numbering, so a mesh index chosen while looking
-	 * at one region is a guess about all the others - and a guess that misses
-	 * has to land on that region's ground, not on whatever happens to have the
-	 * most triangles. Blank map canvas used to pick by raw triangle count here,
-	 * which is exactly the heuristic {@link #defaultGroundMesh} was written to
-	 * replace: indoors the biggest mesh is usually a wall, so the new floor came
-	 * out textured like plaster.
-	 *
-	 * @param preferred the mesh the user picked, or any value at all - out of
-	 *                  range and unreadable are both answered by the fallback
-	 * @return a mesh index, or -1 if the model has no readable geometry
+	 * What a picker ordered by {@link #groundFirstMeshOrder} tells the user about its order, held
+	 * beside the order so the two cannot part. The blank-canvas dialog said "largest first - the
+	 * top entry is almost always the ground" fifty lines after this order replaced that one (F017).
 	 */
+	public static final String GROUND_FIRST_ORDER = "this map's main ground first, then the rest largest first";
+
 	/**
 	 * The order to OFFER a map's meshes in when asking the user which one is
 	 * the ground: the ground first, then everything else biggest first.
@@ -482,6 +496,7 @@ public final class PaintedMaterials {
 	 *
 	 * @return every mesh with readable positions, each exactly once; empty if
 	 *         the model has none
+	 * @see #GROUND_FIRST_ORDER, which is what a picker shows the user about it
 	 */
 	public static int[] groundFirstMeshOrder(BchMapModel model) {
 		List<int[]> bySize = new ArrayList<>();   //{meshIndex, triangles}
@@ -512,6 +527,24 @@ public final class PaintedMaterials {
 		return out;
 	}
 
+	/**
+	 * The mesh to lay a floor on in {@code model}, honouring {@code preferred}
+	 * when that mesh exists here and can be read, and falling back to
+	 * {@link #defaultGroundMesh} when it cannot.
+	 *
+	 * <p>The fallback is the whole point. A zone's map is several regions and
+	 * they do NOT share a mesh numbering, so a mesh index chosen while looking
+	 * at one region is a guess about all the others - and a guess that misses
+	 * has to land on that region's ground, not on whatever happens to have the
+	 * most triangles. Blank map canvas used to pick by raw triangle count here,
+	 * which is exactly the heuristic {@link #defaultGroundMesh} was written to
+	 * replace: indoors the biggest mesh is usually a wall, so the new floor came
+	 * out textured like plaster.
+	 *
+	 * @param preferred the mesh the user picked, or any value at all - out of
+	 *                  range and unreadable are both answered by the fallback
+	 * @return a mesh index, or -1 if the model has no readable geometry
+	 */
 	public static int groundMeshOr(BchMapModel model, int preferred) {
 		if (preferred >= 0 && preferred < model.meshCount) {
 			List<BchMapModel.MeshGeom> g = model.geometry();

@@ -77,70 +77,81 @@ public class GARC {
 			parsedLength = f.length();
 			parsedModified = f.lastModified();
 
-			RandomAccessFile in = new RandomAccessFile(f, "r");
+			try (RandomAccessFile in = new RandomAccessFile(f, "r")) {
 
-			byte[] strbuf = new byte[4];
-			in.readFully(strbuf);
+				byte[] strbuf = new byte[4];
+				in.readFully(strbuf);
 
-			String garcMagic = new String(strbuf);
-			int garcLength = Integer.reverseBytes(in.readInt());
-			short endian = Short.reverseBytes(in.readShort());
-			short version = Short.reverseBytes(in.readShort());
-			int sectionCount = Integer.reverseBytes(in.readInt());
-			int dataOffset = Integer.reverseBytes(in.readInt());
-			int decompressedLength = Integer.reverseBytes(in.readInt());
-			int compressedLength = Integer.reverseBytes(in.readInt());
-			padding = 4; //version 4 has always nearest pad to 4, ver 6 can specify more
-
-			in.seek(garcLength);
-
-			long fatoPosition = in.getFilePointer();
-			in.readFully(strbuf);
-			String fatoMagic = new String(strbuf);
-			int fatoLength = Integer.reverseBytes(in.readInt());
-			short fatoEntries = Short.reverseBytes(in.readShort());
-			length = fatoEntries;
-			short pad = in.readShort(); //0xFFFF
-
-			long fatbPosition = fatoPosition + fatoLength;
-			for (int i = 0; i < fatoEntries; i++) {
-				in.seek(fatoPosition + 0xc + i * 4);
-				in.seek(Integer.reverseBytes(in.readInt()) + fatbPosition + 0xc);
-
-				int flags = Integer.reverseBytes(in.readInt());
-
-				String folder = "";
-
-				if (flags != 1) {
-					folder = String.format("folder_{0:D5}/", i);
+				String garcMagic = new String(strbuf, java.nio.charset.StandardCharsets.ISO_8859_1);
+				//A FILE THAT IS NOT A GARC IS NOT READ AS ONE (F054). The magic was read and thrown away,
+				//so any file long enough was parsed into invented entries - and could be packed back.
+				if (!"CRAG".equals(garcMagic)) {
+					throw new RuntimeException(f.getName() + " is not a GARC: it begins '" + garcMagic
+							+ "', not 'CRAG'. Nothing was read from it.");
 				}
+				int garcLength = Integer.reverseBytes(in.readInt());
+				short endian = Short.reverseBytes(in.readShort());
+				short version = Short.reverseBytes(in.readShort());
+				this.version = version & 0xFFFF;
+				folderEntries = false;
+				int sectionCount = Integer.reverseBytes(in.readInt());
+				int dataOffset = Integer.reverseBytes(in.readInt());
+				int decompressedLength = Integer.reverseBytes(in.readInt());
+				int compressedLength = Integer.reverseBytes(in.readInt());
+				padding = 4; //version 4 has always nearest pad to 4, ver 6 can specify more
 
-				for (int bit = 0; bit < 32; bit++) {
-					if ((flags & (1 << bit)) > 0) {
-						int startOffset = Integer.reverseBytes(in.readInt());
-						int endOffset = Integer.reverseBytes(in.readInt());
-						int length = Integer.reverseBytes(in.readInt());
+				in.seek(garcLength);
 
-						long position = in.getFilePointer();
+				long fatoPosition = in.getFilePointer();
+				in.readFully(strbuf);
+				String fatoMagic = new String(strbuf);
+				int fatoLength = Integer.reverseBytes(in.readInt());
+				short fatoEntries = Short.reverseBytes(in.readShort());
+				length = fatoEntries;
+				short pad = in.readShort(); //0xFFFF
 
-						in.seek(startOffset + dataOffset);
+				long fatbPosition = fatoPosition + fatoLength;
+				long fileLength = in.length();
+				for (int i = 0; i < fatoEntries; i++) {
+					in.seek(fatoPosition + 0xc + i * 4);
+					in.seek(Integer.reverseBytes(in.readInt()) + fatbPosition + 0xc);
 
-						byte[] buffer = new byte[length];
-						in.readFully(buffer);
+					int flags = Integer.reverseBytes(in.readInt());
+					//an entry holding anything but one file is a folder the writer would flatten
+					folderEntries |= flags != 1;
 
-						boolean isCompressed = allowCompression && sniffLZ11(buffer);
+					for (int bit = 0; bit < 32; bit++) {
+						if ((flags & (1 << bit)) > 0) {
+							int startOffset = Integer.reverseBytes(in.readInt());
+							int endOffset = Integer.reverseBytes(in.readInt());
+							int length = Integer.reverseBytes(in.readInt());
 
-						GARCEntry entry = new GARCEntry();
-						entry.offset = startOffset + dataOffset;
-						entry.length = length;
-						entry.compressed = isCompressed;
-						entries.add(entry);
+							long position = in.getFilePointer();
 
-						in.seek(position);
+							in.seek(startOffset + dataOffset);
+
+							//ITS FIRST BYTES, NOT THE ENTRY (F055): the sniff decodes 64 of them, and reading
+							//every entry whole made opening an archive read all of it. An entry the file
+							//cannot hold is still a cut, as the whole read used to find it.
+							if ((long) startOffset + dataOffset + length > fileLength) {
+								throw new java.io.EOFException("entry " + entries.size() + " runs past the end of the file");
+							}
+							byte[] prefix = new byte[Math.min(length, SNIFF_PREFIX_BYTES)];
+							in.readFully(prefix);
+
+							boolean isCompressed = allowCompression && sniffLZ11(prefix, length);
+
+							GARCEntry entry = new GARCEntry();
+							entry.offset = startOffset + dataOffset;
+							entry.length = length;
+							entry.compressed = isCompressed;
+							entries.add(entry);
+
+							in.seek(position);
+						}
 					}
 				}
 			}
-			in.close();
 		} catch (IOException ex) {
 			//A HALF-PARSED ARCHIVE IS NOT AN ARCHIVE, AND IT IS NOT NOTHING EITHER.
 			//This logged and returned, leaving `length` at the count the header declared
@@ -234,14 +245,14 @@ public class GARC {
 	 *
 	 * <p>Guarded by {@link ctrmap.tests.GarcSniffTest}, in both directions.
 	 */
-	private static boolean sniffLZ11(byte[] buffer) {
-		if (buffer.length < 4 || buffer[0] != 0x11) {
+	private static boolean sniffLZ11(byte[] prefix, int stored) {
+		if (stored < 4 || prefix[0] != 0x11) {
 			return false;
 		}
-		int declared = (buffer[1] & 0xFF) | ((buffer[2] & 0xFF) << 8) | ((buffer[3] & 0xFF) << 16);
+		int declared = (prefix[1] & 0xFF) | ((prefix[2] & 0xFF) << 8) | ((prefix[3] & 0xFF) << 16);
 		return declared > 0
-				&& buffer.length >= LZ11.minimumStoredLength(declared)
-				&& LZ11.prefixDecodes(buffer, SNIFF_PREFIX_BYTES);
+				&& stored >= LZ11.minimumStoredLength(declared)
+				&& LZ11.prefixDecodes(prefix, SNIFF_PREFIX_BYTES, stored);
 	}
 
 	/**
@@ -282,6 +293,11 @@ public class GARC {
 		return file != null && file.exists()
 				&& (file.length() != parsedLength || file.lastModified() != parsedModified);
 	}
+
+	/** The header's version, as read: 0x400 for every archive this editor writes. */
+	private int version;
+	/** Whether any entry held more than one file (a folder), which the writer cannot keep. */
+	private boolean folderEntries;
 
 	/** File length when {@link #parse} last ran; see {@link #isStale}. */
 	private long parsedLength = -1;
@@ -325,6 +341,18 @@ public class GARC {
 		if (!dir.isDirectory()) {
 			return;
 		}
+		File newGARC = new File(scratchDir, file.getName() + "_new");
+		prepareRepack(dir, edited, compressionOverrides, newGARC);
+		replaceWith(newGARC);
+	}
+
+	/**
+	 * The first half of {@link #packDirectory}: writes the repacked archive to {@code newGARC}
+	 * and leaves the live archive untouched; {@link #commitRepack} puts it in place. Split so a
+	 * pack of several archives can write all of them before it changes any (F035).
+	 */
+	public void prepareRepack(File dir, java.util.function.Predicate<File> edited,
+			Map<Integer, Boolean> compressionOverrides, File newGARC) throws IOException {
 		//A TRUNCATED ARCHIVE MAY NOT BE PACKED BACK, and this is where the damage would be
 		//done rather than where it would be noticed. `parse` records a short read instead of
 		//refusing, because the entries before the cut are perfectly readable and taking them
@@ -341,10 +369,28 @@ public class GARC {
 				+ (length - readableEntries) + " entries that were never read. Restore the"
 				+ " archive from the pristine copy first.");
 		}
+		if (!dir.isDirectory()) {
+			throw new IOException(dir + " is not there, so nothing staged in it can be packed into "
+					+ file.getName() + ".");
+		}
+		//NOTHING IS WRITTEN IN A LAYOUT THE WRITER WAS NOT BUILT FOR (F054). It copies a version-4
+		//header and pads to 4, and writes every entry as one file: a version-6 archive (the
+		//Sun/Moon revision) or one with folder entries would be written back corrupt.
+		if (version != 0x0400) {
+			throw new IllegalStateException(file.getName() + " is GARC version 0x" + Integer.toHexString(version)
+					+ "; packing writes version 4 (0x400) only, so it is not written back.");
+		}
+		if (folderEntries) {
+			throw new IllegalStateException(file.getName() + " holds entries with more than one file in"
+					+ " them; packing writes one file per entry and would flatten them, so it is not written back.");
+		}
 		rereadIfStale();
 		PackPlan plan = plan(filesToPack(dir, edited), compressionOverrides);
-		File newGARC = new File(scratchDir, file.getName() + "_new");
 		writeRepacked(newGARC, plan);
+	}
+
+	/** The second half: moves a {@link #prepareRepack prepared} archive over this one and re-reads it. */
+	public void commitRepack(File newGARC) throws IOException {
 		replaceWith(newGARC);
 	}
 
@@ -494,6 +540,11 @@ public class GARC {
 	private void writeRepacked(File newGARC, PackPlan plan) throws IOException {
 		ArrayList<GARCEntry> working = plan.working;
 		int[] changedIndices = plan.changedIndices;
+		//A SET, NOT A SCAN PER ENTRY (F055)
+		java.util.Set<Integer> changed = new java.util.HashSet<>();
+		for (int c : changedIndices) {
+			changed.add(c);
+		}
 		byte[][] compressedData = plan.compressedData;
 		//get largest unpadded size
 		int maxlength = 0;
@@ -518,6 +569,7 @@ public class GARC {
 		//the game kept the old map, and the leaked streams made every retry
 		//fail the same way.
 		try (FileInputStream oldIn = new FileInputStream(file);
+				RandomAccessFile src = new RandomAccessFile(file, "r");
 				RandomAccessFile dos = new RandomAccessFile(newGARC, "rw")) {
 			LittleEndianDataInputStream old = new LittleEndianDataInputStream(oldIn);
 			//first 14 bytes of header should be unchanged - let's copy paste them
@@ -581,7 +633,7 @@ public class GARC {
 			int processedCustomFiles = 0;
 			for (int i = 0; i < fatbe.length; i++) {
 				FATBEntry e = fatbe[i];
-				if (indexOfIntArray(changedIndices, i) != -1) {
+				if (changed.contains(i)) {
 					//write changed file info
 					dos.writeInt(Integer.reverseBytes(e.flags));
 					dos.writeInt(Integer.reverseBytes(e.offset + offsetShift));
@@ -608,30 +660,26 @@ public class GARC {
 			processedCustomFiles = 0;
 			for (int i = 0; i < fatbe.length; i++) {
 				FATBEntry e = fatbe[i];
-				if (indexOfIntArray(changedIndices, i) != -1) {
+				if (changed.contains(i)) {
 					dos.write(compressedData[processedCustomFiles]);
 					for (int j = 0; j < padlengths[processedCustomFiles]; j++) {
 						dos.write(0xFF);
 					}
 					processedCustomFiles++;
 				} else {
-					try (InputStream entryReader = new FileInputStream(file)) {
-						//THE ENTRIES THE USER NEVER TOUCHED, and the reason this matters more than the
-						//edited ones: a short skip copies an untouched entry FROM THE WRONG OFFSET and a
-						//short read copies it with a zero tail, so editing one map corrupts a different
-						//one, with no exception and nothing in the report. The read path five hundred
-						//lines below was converted to these primitives when that was measured; the pack
-						//path was not.
-						LittleEndianDataInputStream entry = new LittleEndianDataInputStream(entryReader);
-						byte[] b = new byte[working.get(i).length];
-						entry.skipFully(working.get(i).offset);
-						entry.readFully(b);
-						dos.write(b);
-						int remainder = b.length % padding;
-						int padLength = (remainder == 0) ? 0 : padding - remainder;
-						for (int j = 0; j < padLength; j++) {
-							dos.write(0xFF);
-						}
+					//THE ENTRIES THE USER NEVER TOUCHED, and the reason this matters more than the
+					//edited ones: a short skip copies an untouched entry FROM THE WRONG OFFSET and a
+					//short read copies it with a zero tail, so editing one map corrupts a different
+					//one, with no exception and nothing in the report. readFully refuses both. One
+					//handle for all of them (F055): this opened the archive again for every entry.
+					byte[] b = new byte[working.get(i).length];
+					src.seek(working.get(i).offset);
+					src.readFully(b);
+					dos.write(b);
+					int remainder = b.length % padding;
+					int padLength = (remainder == 0) ? 0 : padding - remainder;
+					for (int j = 0; j < padLength; j++) {
+						dos.write(0xFF);
 					}
 				}
 			}
@@ -771,17 +819,6 @@ public class GARC {
 			Logger.getLogger(GARC.class.getName()).log(Level.SEVERE, null, ex);
 			return null;
 		}
-	}
-
-	public static int indexOfIntArray(int[] array, int key) {
-		int returnvalue = -1;
-		for (int i = 0; i < array.length; ++i) {
-			if (key == array[i]) {
-				returnvalue = i;
-				break;
-			}
-		}
-		return returnvalue;
 	}
 }
 

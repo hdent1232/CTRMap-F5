@@ -89,6 +89,8 @@ public class ModDeployer {
 		public final List<String> deployed = new ArrayList<>();
 		public int unchanged = 0;
 		public final List<String> skipped = new ArrayList<>();
+		/** Archives back to retail whose copy from an earlier deploy was taken out of the mod, and where it went. */
+		public final List<String> removed = new ArrayList<>();
 		public boolean codeIpsDeployed = false;
 		public File modRoot;
 	}
@@ -108,9 +110,12 @@ public class ModDeployer {
 	}
 
 	/**
-	 * Best-guess title id: the RomFS folder name when it looks like one, else
-	 * the open game's own default from its profile - and null when neither
-	 * says anything.
+	 * The dumped game's title id, as the dump says it - the folder's own name, its parent's, or
+	 * the ExHeader beside the romfs ({@link ctrmap.vault.Vault#titleIdOf}, the one reader) - and
+	 * null when it does not say. It fell back to the profile's first version, so an Alpha
+	 * Sapphire or Y dump in a folder not named by its id was deployed into Omega Ruby's or X's
+	 * mods folder and never loaded, while Deploy reported success (F238); null makes the deploy
+	 * dialog ask which version it is ({@link #titleChoices}).
 	 *
 	 * <p>The fallback was {@code isXY() ? X : Omega Ruby}. "Not X/Y" is three
 	 * games, so a Sun/Moon or Ultra Sun/Ultra Moon workspace was offered Omega
@@ -120,13 +125,39 @@ public class ModDeployer {
 	 * a game whose id nobody recorded.
 	 */
 	public static String guessTitleId() {
-		if (Workspace.GAMEDIR_PATH != null) {
-			String name = new File(Workspace.GAMEDIR_PATH).getName();
-			if (name.matches("(?i)[0-9a-fA-F]{16}")) {
-				return name.toUpperCase();
+		if (Workspace.GAMEDIR_PATH == null || Workspace.GAMEDIR_PATH.trim().isEmpty()) {
+			return null;
+		}
+		String tid = ctrmap.vault.Vault.titleIdOf(new File(Workspace.GAMEDIR_PATH));
+		return tid == null ? null : tid.toUpperCase();
+	}
+
+	/** The first line Deploy's title box shows when the dump does not say which version it is. */
+	public static final String PICK_VERSION = "(which version did you dump? its folder does not say)";
+
+	/**
+	 * What Deploy offers as the title (F238): the dump's own id when it says one, else a line
+	 * asking which, then every version the open game's profile covers - never one of them already
+	 * picked as if it had been read.
+	 */
+	public static String[] titleChoices(String detected) {
+		if (detected != null) {
+			return new String[]{detected};
+		}
+		List<String> out = new ArrayList<>();
+		out.add(PICK_VERSION);
+		if (Workspace.isValid()) {
+			for (java.util.Map.Entry<String, String> v : Workspace.profile().titleIds().entrySet()) {
+				out.add(v.getKey() + " - " + v.getValue());
 			}
 		}
-		return Workspace.isValid() ? Workspace.profile().titleId() : null;
+		return out.toArray(new String[0]);
+	}
+
+	/** The title id a choice starts with, or null for the question itself or anything else. */
+	public static String titleIdIn(Object choice) {
+		String s = choice == null ? "" : choice.toString().trim();
+		return s.length() >= 16 && s.substring(0, 16).matches("[0-9a-fA-F]{16}") ? s.substring(0, 16).toUpperCase() : null;
 	}
 
 	/**
@@ -157,7 +188,7 @@ public class ModDeployer {
 		}
 		Result r = new Result();
 		r.modRoot = modRoot;
-		File snapshot = Workspace.originalSnapshotDir();
+		WorkspaceSession session = Workspace.session();
 		File romfsOut = new File(modRoot, "romfs");
 		for (ArchiveType t : MODDABLE) {
 			String rel = Workspace.getArchivePath(t, Workspace.game());
@@ -165,19 +196,24 @@ public class ModDeployer {
 				continue;
 			}
 			File live = new File(Workspace.GAMEDIR_PATH + rel);
-			File orig = new File(snapshot.getAbsolutePath() + rel);
 			if (!live.exists()) {
 				continue;
 			}
 			boolean changed;
 			try {
-				changed = !orig.exists() || !garcContentsEqual(live, orig);
+				//WHAT SHIPPED, FROM THE ONE PRISTINE READER (F232): the snapshot, else the sealed backup.
+				//With neither, the archive is deployed whole - a copy too many is harmless, a missed edit
+				//is not - and a damaged backup throws, so the archive is reported skipped with the reason
+				//rather than compared against a copy nobody could read.
+				File orig = session == null ? null : session.pristineArchive(t);
+				changed = orig == null || !garcContentsEqual(live, orig);
 			} catch (Exception ex) {
 				r.skipped.add(rel + " (compare failed: " + ex.getMessage() + ")");
 				continue;
 			}
 			if (!changed) {
 				r.unchanged++;
+				takeOutOfTheMod(modRoot, romfsOut, rel, r);
 				continue;
 			}
 			try {
@@ -203,6 +239,13 @@ public class ModDeployer {
 					r.skipped.add(rel + " (copy failed: " + ex.getMessage() + ")");
 				}
 			}
+		} else if (ctrmap.formats.pokedata.ItemTable.baselineArchive(Workspace.session()) != null) {
+			//written once, now back to its baseline: the same as any archive back to retail. With
+			//no baseline the editor never wrote it, so a copy in the mod is not one this deploy made.
+			String rel = Workspace.getArchivePath(ArchiveType.ITEM_DATA, Workspace.game());
+			if (rel != null) {
+				takeOutOfTheMod(modRoot, romfsOut, rel, r);
+			}
 		}
 		if (codeIps != null && codeIps.exists()) {
 			try {
@@ -213,6 +256,43 @@ public class ModDeployer {
 			}
 		}
 		return r;
+	}
+
+	/**
+	 * BACK TO RETAIL IS A CHANGE TOO (F021). Deploy only ever added: an archive shipped once and
+	 * since put back to retail - Restore from vault, Remove added zones, an edit undone by hand -
+	 * was reported "unchanged, skipped" while the modified copy shipped last time stayed in the
+	 * mod, and the game kept loading it. The copy is taken out of the load path. MOVED, never
+	 * deleted, as the on/off switch moves rather than deletes: it may be something the user put
+	 * there, and a copy set aside costs nothing.
+	 */
+	private static void takeOutOfTheMod(File modRoot, File romfsOut, String rel, Result r) {
+		File stale = new File(romfsOut.getAbsolutePath() + rel);
+		if (!stale.exists()) {
+			return;
+		}
+		File kept = new File(removedRoot(modRoot).getAbsolutePath() + File.separator + "romfs" + rel);
+		for (int n = 1; kept.exists(); n++) {
+			kept = new File(new File(removedRoot(modRoot).getAbsolutePath() + File.separator + "romfs" + rel)
+					.getPath() + "." + n);
+		}
+		try {
+			kept.getParentFile().mkdirs();
+			java.nio.file.Files.move(stale.toPath(), kept.toPath());
+			r.removed.add(rel + "  (its old copy was moved to " + kept.getAbsolutePath() + ")");
+		} catch (IOException | RuntimeException ex) {
+			r.skipped.add(rel + " is back to retail, but the copy an earlier deploy left in the mod could not"
+					+ " be moved out, so the game still loads it: " + ctrmap.util.Bytes.reason(ex));
+		}
+	}
+
+	/** Where copies taken out of a mod are set aside: beside the mods folder, out of the load path. */
+	public static File removedRoot(File modRoot) {
+		File parent = modRoot.getParentFile();
+		if (parent != null && parent.getName().equalsIgnoreCase("mods")) {
+			return new File(new File(parent.getParentFile(), "mods_removed"), modRoot.getName());
+		}
+		return new File(parent, modRoot.getName() + "__removed");
 	}
 
 	/**

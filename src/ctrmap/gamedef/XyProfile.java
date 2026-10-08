@@ -86,13 +86,13 @@ public class XyProfile extends GameProfile {
 	}
 
 	/**
-	 * 1: the engine's global per-area table is the last AREA_DATA entry, at
-	 * index 170 in upstream CTRMap's XY mass-edits. Established by upstream
-	 * CTRMap, not measured against an XY dump here.
+	 * 170: the engine's global per-area table is the last AREA_DATA entry of a
+	 * retail dump, at index 170 in upstream CTRMap's XY mass-edits. Established
+	 * by upstream CTRMap, not measured against an XY dump here.
 	 */
 	@Override
-	public int areaDataTrailingEntries() {
-		return 1;
+	public int areaTableIndex() {
+		return 170;
 	}
 
 	/**
@@ -104,6 +104,12 @@ public class XyProfile extends GameProfile {
 	@Override
 	public int fieldDataSubfileCount() {
 		return 6;
+	}
+
+	/** 721: X/Y ship the same Generation 6 national dex as Omega Ruby / Alpha Sapphire. */
+	@Override
+	public int speciesIdMax() {
+		return 721;
 	}
 
 	/**
@@ -118,13 +124,22 @@ public class XyProfile extends GameProfile {
 		return true;
 	}
 
+	/** X and Y: the two titles this profile covers, neither the default (F238). */
+	@Override
+	public java.util.Map<String, String> titleIds() {
+		java.util.Map<String, String> ids = new java.util.LinkedHashMap<>();
+		ids.put("0004000000055D00", "X");
+		ids.put("0004000000055E00", "Y");
+		return java.util.Collections.unmodifiableMap(ids);
+	}
+
 	/**
-	 * Pokemon X. Y is 0004000000055E00 and this profile covers both, which is
-	 * why the deployer prefers the dumped folder's own name.
+	 * 2, as the camera form's author recorded it from the Cyllage gym's cameras (the field's
+	 * comment in CameraData describes them).
 	 */
 	@Override
-	public String titleId() {
-		return "0004000000055D00";
+	public int neutralCameraValue() {
+		return 2;
 	}
 
 	//zoneNumberInUnknownFlags: inherits false. Upstream CTRMap copies bits

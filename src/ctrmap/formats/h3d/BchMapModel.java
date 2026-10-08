@@ -81,13 +81,16 @@ public class BchMapModel {
 
 	/** True when the bytes look like a map-model BCH this reader handles. */
 	public static boolean isMapModel(byte[] b) {
-		if (b == null || b.length < 0x44 || b[0] != 'B' || b[1] != 'C' || b[2] != 'H' || b[3] != 0) {
+		if (!BchSections.isBch(b) || (b[4] & 0xFF) != 0x21) {
 			return false;
 		}
-		if ((b[4] & 0xFF) != 0x21) {
-			return false;
+		BchSections s;
+		try {
+			s = BchSections.read(b);
+		} catch (IllegalArgumentException notWhole) {
+			return false; //its relocation table is not inside it: nothing here can read it
 		}
-		int contentsAddr = LittleEndian.i32(b, 8);
+		int contentsAddr = s.contentsAddr;
 		if (contentsAddr != 0x44 || contentsAddr + 15 * 12 > b.length) {
 			return false;
 		}
@@ -100,65 +103,53 @@ public class BchMapModel {
 		return problems;
 	}
 
+	/** The header and relocation table, as the one reader reads them (F066). */
+	private BchSections sections;
+
+	/** The header and relocation table this model was read with. */
+	BchSections sections() {
+		return sections;
+	}
+
 	private void parseHeader() {
-		if (raw[0] != 'B' || raw[1] != 'C' || raw[2] != 'H' || raw[3] != 0) {
-			throw new IllegalArgumentException("not a BCH");
-		}
-		bc = u8(4);
-		fc = u8(5);
-		converterVersion = u16(6);
+		sections = BchSections.read(raw);
+		BchSections s = sections;
+		bc = s.bc;
+		fc = s.fc;
+		converterVersion = s.version;
 		if (bc != 0x21) {
 			throw new IllegalArgumentException("unsupported BCH backwardCompatibility 0x" + Integer.toHexString(bc));
 		}
-		contentsAddr = i32(8);
-		stringsAddr = i32(12);
-		commandsAddr = i32(16);
-		rawDataAddr = i32(20);
-		int c = 24;
-		rawExtAddr = i32(c);
-		c += 4;
-		relocAddr = i32(c);
-		c += 4;
-		contentsLen = i32(c);
-		c += 4;
-		stringsLen = i32(c);
-		c += 4;
-		commandsLen = i32(c);
-		c += 4;
-		rawDataLen = i32(c);
-		c += 4;
-		rawExtLen = i32(c);
-		c += 4;
-		relocLen = i32(c);
-		c += 4;
-		uninitData = i32(c);
-		c += 4;
-		uninitCmd = i32(c);
-		c += 4;
-		flagsByte = u8(c);
-		addressCount = u16(c + 2);
+		contentsAddr = s.contentsAddr;
+		stringsAddr = s.stringsAddr;
+		commandsAddr = s.commandsAddr;
+		rawDataAddr = s.rawDataAddr;
+		rawExtAddr = s.rawExtAddr;
+		relocAddr = s.relocAddr;
+		contentsLen = s.contentsLen;
+		stringsLen = s.stringsLen;
+		commandsLen = s.commandsLen;
+		rawDataLen = s.rawDataLen;
+		rawExtLen = s.rawExtLen;
+		relocLen = s.relocLen;
+		uninitData = s.uninitData;
+		uninitCmd = s.uninitCmd;
+		flagsByte = s.flags & 0xFF;
+		addressCount = s.addressCount;
 		check(contentsAddr == 0x44, "contentsAddr==0x44");
 	}
 
 	private void parseReloc() {
-		int n = relocLen / 4;
-		reloc = new int[n];
-		for (int i = 0; i < n; i++) {
-			int v = i32(relocAddr + i * 4);
-			reloc[i] = v;
-			int off25 = v & 0x1FFFFFF;
-			int flag = (v >>> 25) & 0x7F;
-			int target = flag & 0xF;
-			int source = flag >>> 4;
-			int sourceBase = sectionBase(source);
-			if (sourceBase < 0) {
+		reloc = sections.relocWords.clone();
+		for (int i = 0; i < sections.relocCount(); i++) {
+			BchSections.Reloc r = sections.reloc(i);
+			if (r.ptrLoc < 0) {
 				continue;
 			}
-			int ptrLoc = sourceBase + (target == SEC_STRINGS ? off25 : off25 * 4);
-			if (source == SEC_CONTENTS) {
-				ptrLocToTargetBase.put(ptrLoc, targetSectionBase(target));
-			} else if (source == SEC_COMMANDS) {
-				cmdRelocs.add(new int[]{flag, ptrLoc});
+			if (r.source == SEC_CONTENTS) {
+				ptrLocToTargetBase.put(r.ptrLoc, sections.targetBase(r.target));
+			} else if (r.source == SEC_COMMANDS) {
+				cmdRelocs.add(new int[]{r.flag, r.ptrLoc});
 			}
 		}
 		for (int[] cr : cmdRelocs) {
@@ -179,35 +170,6 @@ public class BchMapModel {
 				default:
 					break;
 			}
-		}
-	}
-
-	private int sectionBase(int sec) {
-		switch (sec) {
-			case SEC_CONTENTS: return contentsAddr;
-			case SEC_STRINGS: return stringsAddr;
-			case SEC_COMMANDS: return commandsAddr;
-			case SEC_RAWDATA: return rawDataAddr;
-			case SEC_RAWEXT: return rawExtAddr;
-			default: return -1;
-		}
-	}
-
-	private int targetSectionBase(int target) {
-		switch (target) {
-			case SEC_CONTENTS: return contentsAddr;
-			case SEC_STRINGS: return stringsAddr;
-			case SEC_COMMANDS: return commandsAddr;
-			case SEC_RAWDATA:
-			case SEC_RAWDATA_TEX:
-			case SEC_RAWDATA_VTX:
-			case SEC_RAWDATA_IDX16:
-			case SEC_RAWDATA_IDX8:
-				return rawDataAddr;
-			case SEC_BASEADDR:
-				return 0;
-			default:
-				return rawExtAddr;
 		}
 	}
 
@@ -488,14 +450,6 @@ public class BchMapModel {
 	}
 
 	/**
-	 * Returns a copy of this model with every vertex position translated by
-	 * (dx,dy,dz). This is an offset-PRESERVING edit: only vertex-position bytes
-	 * in the raw-data section change, so every section length, pointer, patricia
-	 * tree and relocation entry stays byte-identical - the result is game-valid
-	 * by construction (the sibling of BchTexturePack's deterministic rebuild).
-	 * Meshes whose position is not Float(3) are left untouched.
-	 */
-	/**
 	 * Reads a mesh's vertex positions as an array of {x,y,z}, or null if the mesh
 	 * has no decodable Float(3) position. This is the read side for in-app
 	 * reshaping (drag/sculpt vertices).
@@ -580,15 +534,25 @@ public class BchMapModel {
 		return out;
 	}
 
+	/**
+	 * The first mesh whose material is named exactly {@code material}, or -1 when none is. The one
+	 * copy of this lookup: seven loops wrote it out across the importers, the prefab stamper and
+	 * the painter until F092.
+	 */
+	public int meshWithMaterial(String material) {
+		for (int m = 0; m < meshes.size(); m++) {
+			if (material.equals(getMaterialName(getMeshMaterialIndex(m)))) {
+				return m;
+			}
+		}
+		return -1;
+	}
+
 	/** The material index a mesh draws with. */
 	public int getMeshMaterialIndex(int meshIndex) {
 		return meshes.get(meshIndex)[5];
 	}
 
-	/**
-	 * Reads a material's name from the strings section (the texture/material
-	 * identifier, e.g. "lawn01" - human-meaningful labels for the editor UI).
-	 */
 	/**
 	 * The model's internal name (e.g. "world03_02_02") - what the area's world
 	 * animations bind to (animation "&lt;name&gt;_chikei_" plays on this model).
@@ -597,13 +561,13 @@ public class BchMapModel {
 		if (modelNamePtr <= 0) {
 			return null;
 		}
-		StringBuilder sb = new StringBuilder();
-		for (int p = modelNamePtr; p < raw.length && raw[p] != 0; p++) {
-			sb.append((char) (raw[p] & 0xFF));
-		}
-		return sb.toString();
+		return StringUtils.cString(raw, modelNamePtr);
 	}
 
+	/**
+	 * Reads a material's name from the strings section (the texture/material
+	 * identifier, e.g. "lawn01" - human-meaningful labels for the editor UI).
+	 */
 	public String getMaterialName(int matIndex) {
 		if (matIndex < 0 || matIndex >= materialHeaderOffsets.size()) {
 			return null;
@@ -612,13 +576,17 @@ public class BchMapModel {
 		if (namePtr <= 0) {
 			return null;
 		}
-		StringBuilder sb = new StringBuilder();
-		for (int p = namePtr; p < raw.length && raw[p] != 0; p++) {
-			sb.append((char) (raw[p] & 0xFF));
-		}
-		return sb.toString();
+		return StringUtils.cString(raw, namePtr);
 	}
 
+	/**
+	 * Returns a copy of this model with every vertex position translated by
+	 * (dx,dy,dz). This is an offset-PRESERVING edit: only vertex-position bytes
+	 * in the raw-data section change, so every section length, pointer, patricia
+	 * tree and relocation entry stays byte-identical - the result is game-valid
+	 * by construction (the sibling of BchTexturePack's deterministic rebuild).
+	 * Meshes whose position is not Float(3) are left untouched.
+	 */
 	public byte[] translate(float dx, float dy, float dz) {
 		byte[] out = raw.clone();
 		for (MeshGeom g : geometry()) {

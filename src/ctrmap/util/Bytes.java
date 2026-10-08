@@ -30,6 +30,38 @@ import static ctrmap.formats.LittleEndian.u16;
 public final class Bytes {
 
 	/**
+	 * Writes {@code data} beside {@code f} and then moves it over, so a write that fails leaves the
+	 * file as it was rather than cut short - the rule the containers follow (F048), for a file that
+	 * is not one.
+	 */
+	public static void replaceFile(java.io.File f, byte[] data) throws java.io.IOException {
+		java.io.File tmp = java.io.File.createTempFile("ctrmap-" + f.getName() + ".", ".writing",
+				f.getAbsoluteFile().getParentFile());
+		try {
+			java.nio.file.Files.write(tmp.toPath(), data);
+			moveOver(tmp, f);
+			tmp = null;
+		} finally {
+			if (tmp != null) {
+				tmp.delete();
+			}
+		}
+	}
+
+	/**
+	 * Moves a file written beside {@code to} over it, atomically where the file system can: the one
+	 * move a staged write ends with - {@link #replaceFile}'s, and a vault restore's (F140).
+	 */
+	public static void moveOver(java.io.File from, java.io.File to) throws java.io.IOException {
+		try {
+			java.nio.file.Files.move(from.toPath(), to.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+					java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+		} catch (java.nio.file.AtomicMoveNotSupportedException notAtomic) {
+			java.nio.file.Files.move(from.toPath(), to.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		}
+	}
+
+	/**
 	 * What went wrong, in words: the exception's message, or its type when it gave none.
 	 *
 	 * <p>HERE BECAUSE THE FORMAT LAYER MAY NOT SPEAK TO THE UI. Ui.reason has said this
@@ -41,10 +73,31 @@ public final class Bytes {
 	 */
 	public static String reason(Throwable ex) {
 		String m = ex.getMessage();
-		return m == null || m.trim().isEmpty() ? ex.toString() : m;
+		String said = m == null || m.trim().isEmpty() ? ex.toString() : m;
+		//WHAT RODE ON IT IS SAID TOO. A unit of work that cannot put a file back attaches that to
+		//the operation's own exception, and WorkspaceUnit's contract was that this method says
+		//it - it did not, so a half-written workspace read as an ordinary refusal to every one of
+		//this method's callers
+		for (Throwable rider : ex.getSuppressed()) {
+			said += " - and " + reason(rider);
+		}
+		return said;
 	}
 
 	private Bytes() {
+	}
+
+	/**
+	 * {@code v} rounded up to a multiple of {@code a} - the one copy (F066: the texture pack, the
+	 * model appender and the area animation each had their own).
+	 *
+	 * @throws IllegalArgumentException for a boundary that is not positive
+	 */
+	public static int align(int v, int a) {
+		if (a <= 0) {
+			throw new IllegalArgumentException("Cannot align to a boundary of " + a + ".");
+		}
+		return (v + a - 1) / a * a;
 	}
 
 	/** The zero bytes that pad a subfile of {@code length} at {@code offsetInPack} to a 128-byte boundary. */
@@ -69,40 +122,17 @@ public final class Bytes {
 
 	/**
 	 * Compares the first two bytes of a file against a little endian 16bit magic
-	 * value. Returns false if the file is too short or unreadable.
+	 * value. False if the file is shorter than two bytes; a file that cannot be read
+	 * THROWS (F211): it answered false, so a zone the user picked and the system would
+	 * not open was reported as "not a zone mini-pack".
 	 */
-	public static boolean checkMagicLE16(File f, int magic) {
-		FileInputStream in = null;
-		try {
-			in = new FileInputStream(f);
-			byte[] b = new byte[2];
-			if (in.read(b) != 2) {
-				return false;
-			}
-			return u16(b, 0) == magic;
-		} catch (IOException ex) {
-			return false;
-		} finally {
-			if (in != null) {
-				try {
-					in.close();
-				} catch (IOException ex) {
-				}
-			}
+	public static boolean checkMagicLE16(File f, int magic) throws IOException {
+		try (FileInputStream in = new FileInputStream(f)) {
+			int lo = in.read(), hi = in.read();
+			return hi >= 0 && u16(new byte[]{(byte) lo, (byte) hi}, 0) == magic;
 		}
 	}
 
-	/** True when the data starts with the three bytes of a BCH container. */
-	public static boolean checkBCHMagic(byte[] data) {
-		if (data.length < 3) {
-			return false;
-		}
-		if (data[0] == 'B' && data[1] == 'C' && data[2] == 'H') {
-			return true;
-		} else {
-			return false;
-		}
-	}
 
 	/** True when the data starts with {@code magic}, and false rather than throwing when it is shorter. */
 	public static boolean checkMagic(byte[] data, String magic) {

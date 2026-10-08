@@ -7,7 +7,7 @@ import java.io.InputStream;
 /**
  * Simple DataInputStream implementation with automatic reversion of LE to Java BE.
  */
-public class LittleEndianDataInputStream {
+public class LittleEndianDataInputStream implements java.io.Closeable {
 	private DataInputStream dis;
 	public LittleEndianDataInputStream(InputStream in) {
 		dis = new DataInputStream(in);

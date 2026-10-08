@@ -51,9 +51,12 @@ public class GauntletScriptWizard {
 	/**
 	 * Emits the challenge and installs it as a new dispatch case.
 	 *
+	 * @param measured the game the zone is from, already asked (NpcTemplates.measuredOn): the
+	 * natives, the work range and the trainer bound are that game's
 	 * @return the newly allocated local script ID (for the NPC's script field)
 	 */
-	public static int addChallengeScript(GFLPawnScript script, Config cfg) {
+	public static int addChallengeScript(NpcTemplates.Measured measured, GFLPawnScript script, Config cfg) {
+		int trainerMax = NpcTemplates.asked(measured).profile().trainerIdMax();
 		script.decompressThis();
 		if (cfg.trainerIds == null || cfg.trainerIds.length == 0) {
 			throw new IllegalArgumentException("The challenge needs at least one trainer.");
@@ -62,8 +65,8 @@ public class GauntletScriptWizard {
 			throw new IllegalArgumentException("At most 64 trainers per challenge NPC.");
 		}
 		for (int tid : cfg.trainerIds) {
-			if (tid < 1 || tid > 949) {
-				throw new IllegalArgumentException("Trainer id " + tid + " out of range (1..949).");
+			if (tid < 1 || tid > trainerMax) {
+				throw new IllegalArgumentException("Trainer id " + tid + " out of range (1.." + trainerMax + ").");
 			}
 		}
 		if (cfg.streakWorkId < 0x4000 || cfg.streakWorkId > 0x4FFF) {
@@ -195,7 +198,7 @@ public class GauntletScriptWizard {
 		e.ins(PawnInstruction.Commands.ZERO_PRI, 0);
 		e.ins(PawnInstruction.Commands.RETN, 0);
 
-		return TalkerScriptWizard.installCase(script, e.body);
+		return TalkerScriptWizard.installCase(measured, script, e.body);
 	}
 
 	/** The talker-shaped message call: push -1, 1, line, 12; CALL the wrapper.

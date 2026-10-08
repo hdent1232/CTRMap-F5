@@ -74,7 +74,7 @@ public class ItemIconPatchTest {
 			roundTripsAndRefusals(code, "the real code.bin");
 			mergesWithTheOtherCodePatches(code);
 		} else {
-			System.out.println("  skip: no decompressed code.bin at " + codeFile
+			Skip.section("no decompressed code.bin at " + codeFile
 					+ " - the measured offsets were NOT checked against the real game this run");
 		}
 
@@ -238,7 +238,7 @@ public class ItemIconPatchTest {
 		int[] edited = icons.clone();
 		edited[50] = icons[2];               // Rare Candy draws the Ultra Ball icon
 		byte[] iconIps = ItemIconTable.diffIPS(code, edited);
-		byte[] zoneIps = ZoneLimitPatch.buildIPS(4);
+		byte[] zoneIps = ZoneLimitPatch.buildIPS(4, code);
 
 		int[][] shops = ShopData.read(code);
 		int[][] shopsEdited = new int[shops.length][];

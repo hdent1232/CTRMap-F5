@@ -68,6 +68,25 @@ public class GFLPawnScript {
 		this(new LittleEndianDataInputStream(new ByteArrayInputStream(b)));
 	}
 
+	/** The header's length: the tables are read straight after it. */
+	public static final int HEADER = 0x3C;
+
+	/** The magic of a Pawn script with 32-bit cells, the only kind this reader reads. */
+	public static final int MAGIC = 0xF1E0;
+
+	/**
+	 * Reads a zone script, or refuses it with the reason (F149).
+	 *
+	 * <p>NOTHING IN THE HEADER WAS CHECKED. A wrong magic, tables out of order, a declared length past
+	 * the end - the missing bytes read as zero code - were all taken; a table size of 0 divided by
+	 * zero past every caller that catches IOException; and a header cut short was logged and the
+	 * script handed back half built. The talker, sign, giver and challenge injectors rewrite what
+	 * this reads and the zone save writes it back, so each of those became a script written over the
+	 * one the game had. The header is now checked before anything is read by it, the code is read
+	 * whole, and a script that does not hold together is refused in words.
+	 *
+	 * @throws IllegalStateException naming what is wrong with it
+	 */
 	public GFLPawnScript(LittleEndianDataInputStream in) {
 		try {
 			len = in.readInt();
@@ -90,6 +109,7 @@ public class GFLPawnScript {
 			tagsOffset = in.readInt();
 			namesOffset = in.readInt();
 			overlaysOffset = in.readInt();
+			checkHeader();
 
 			readEntries(publics, PawnPrefixEntry.Type.PUBLIC, defsize, in, (nativesOffset - publicsOffset) / defsize);
 			readEntries(natives, PawnPrefixEntry.Type.NATIVE, defsize, in, (librariesOffset - nativesOffset) / defsize);
@@ -101,13 +121,47 @@ public class GFLPawnScript {
 
 			compCodeLen = len - instructionStart;
 			rest = new byte[instructionStart - overlaysOffset];
-			in.read(rest);
+			in.readFully(rest);
 			decCodeLen = heapStart - instructionStart;
 			compCode = new byte[compCodeLen];
-			in.read(compCode);
-		} catch (IOException ex) {
-			Logger.getLogger(GFLPawnScript.class.getName()).log(Level.SEVERE, null, ex);
+			in.readFully(compCode);
+		} catch (java.io.EOFException cutShort) {
+			throw refused("it ends before the " + len + " bytes its header declares");
+		} catch (IOException unread) {
+			throw refused(ctrmap.util.Bytes.reason(unread));
 		}
+	}
+
+	/** The header holds together, or the script is refused naming what does not. */
+	private void checkHeader() {
+		//EITHER BYTE ORDER: the tree's own fixtures write it both ways and the retail order was not
+		//measured where this was written, so neither is refused; anything else is not a Pawn script
+		int m = magic & 0xFFFF;
+		if (m != MAGIC && m != (((MAGIC & 0xFF) << 8) | (MAGIC >>> 8))) {
+			throw refused(String.format("its magic is 0x%04X, not a 32-bit Pawn script's 0x%04X in either byte order",
+					m, MAGIC));
+		}
+		if (defsize <= 0 || defsize % 4 != 0) {
+			throw refused("its table entries are " + defsize + " bytes long, not a whole number of 4-byte cells");
+		}
+		int[] at = {publicsOffset, nativesOffset, librariesOffset, publicVarsOffset, tagsOffset, namesOffset, overlaysOffset};
+		if (publicsOffset != HEADER) {
+			throw refused("its first table starts at " + publicsOffset + ", not straight after the " + HEADER + "-byte header");
+		}
+		for (int i = 1; i < at.length; i++) {
+			if (at[i] < at[i - 1] || (at[i] - at[i - 1]) % defsize != 0) {
+				throw refused("its tables at " + java.util.Arrays.toString(at) + " are not in order, each a whole number of "
+						+ defsize + "-byte entries");
+			}
+		}
+		if (instructionStart < overlaysOffset || len < instructionStart || heapStart < instructionStart) {
+			throw refused("its code starts at " + instructionStart + ", after tables ending at " + overlaysOffset
+					+ ", inside " + len + " bytes and before the heap at " + heapStart + " - not all of those hold");
+		}
+	}
+
+	private static IllegalStateException refused(String why) {
+		return new IllegalStateException("The zone script could not be read: " + why);
 	}
 
 	public void write(LittleEndianDataOutputStream dos) throws IOException {
@@ -199,7 +253,7 @@ public class GFLPawnScript {
 			mainEntryPointDummy = new PawnInstruction(0, 0x81, "MAIN ENTRYPOINT");
 			mainEntryPointDummy.argumentCount = 1;
 			mainEntryPointDummy.argumentCells = new int[]{mainEntryPoint};
-			mainEntryPointDummy.setParent(this);
+			bindMainEntry();
 		}
 	}
 
@@ -255,6 +309,20 @@ public class GFLPawnScript {
 		decInstructions = target;
 	}
 
+	/**
+	 * The natives-table index whose registered name hash matches {@code name}, or -1 - the one
+	 * lookup the assembler and the Script Editor's live edit both ask (F242).
+	 */
+	public int nativeIndexOf(String name) {
+		int hash = ctrmap.scripts.GfHash.hashForName(name);
+		for (int i = 0; i < natives.size(); i++) {
+			if (natives.get(i).data[1] == hash) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
 	public PawnInstruction lookupInstructionByPtr(int ptr) {
 		for (int i = 0; i < instructions.size(); i++) {
 			if (instructions.get(i).pointer == ptr) {
@@ -268,7 +336,7 @@ public class GFLPawnScript {
 		for (PawnInstruction i : instructions) {
 			i.setParent(this);
 		}
-		mainEntryPointDummy.setParent(this);
+		bindMainEntry();
 	}
 
 	/**
@@ -296,7 +364,52 @@ public class GFLPawnScript {
 		}
 	}
 
+	/**
+	 * Binds the main entry's listener, which follows the main function through a renumber - and binds
+	 * none when the script has no main (an entry below 0): its lookup found nothing, and the renumber
+	 * turned "no main" into "main at 0" without a word (F086).
+	 */
+	private void bindMainEntry() {
+		if (mainEntryPointDummy.argumentCells[0] < 0) {
+			mainEntryPointDummy.jmpListeners.clear();
+		} else {
+			mainEntryPointDummy.setParent(this);
+		}
+	}
+
+	/**
+	 * Every branch and case this script cannot carry through a renumber, in words (F086): a target
+	 * that is not the start of an instruction, or one no longer in the script. Empty when a
+	 * renumber is safe.
+	 */
+	public List<String> unresolvedBranches() {
+		java.util.Set<PawnInstruction> live = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		live.addAll(instructions);
+		List<String> out = new ArrayList<>();
+		for (PawnInstruction i : instructions) {
+			out.addAll(i.unresolvedBranches(live));
+		}
+		out.addAll(mainEntryPointDummy.unresolvedBranches(live));
+		return out;
+	}
+
+	/** "" when every branch can follow a renumber, else a sentence naming the first few that cannot (F086). */
+	public String whyNotRenumberable() {
+		List<String> lost = unresolvedBranches();
+		if (lost.isEmpty()) {
+			return "";
+		}
+		return "This script cannot be renumbered: " + String.join("; ", lost.subList(0, Math.min(3, lost.size())))
+				+ (lost.size() > 3 ? " (and " + (lost.size() - 3) + " more)" : "")
+				+ ". A renumber used to rewrite such a branch as a jump to address 0, so the edit was refused.";
+	}
+
 	public void callInstructionListeners() {
+		//REFUSED BEFORE ANY CELL IS REWRITTEN (F086); the edit paths ask first, so this is the backstop
+		String why = whyNotRenumberable();
+		if (!why.isEmpty()) {
+			throw new IllegalStateException(why);
+		}
 		for (int i = 0; i < instructions.size(); i++) {
 			instructions.get(i).callJumpListeners();
 			instructions.get(i).updateDisassembly();

@@ -39,7 +39,16 @@ class ZoneEditorsSpy extends ZoneEditors {
 			public boolean commit() {
 				return true;
 			}
+
+			@Override
+			public void showEntities(Zone zone) {
+			}
 		}));
+	}
+
+	@Override
+	public void showEntities(Zone zone) {
+		calls.add("showEntities");
 	}
 
 	@Override

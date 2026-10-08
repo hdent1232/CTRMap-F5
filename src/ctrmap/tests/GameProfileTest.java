@@ -77,7 +77,7 @@ public class GameProfileTest {
 
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS_original_garcs");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " - the measured counts need the archives");
+			Skip.section("no dump at " + dump + " - the measured counts need the archives");
 		} else {
 			orasCountsStillMatchTheDump(dump);
 			zoneTablesRefusesAnUnmeasuredGameInWords(dump);
@@ -85,11 +85,38 @@ public class GameProfileTest {
 		}
 		theShadowSlotIsWrittenBySlotCountNotByGame();
 		theLastGameGatesAskTheProfileInstead();
+		theFacilityLobbiesAreTheProfilesAnswer();
 
 		System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * F009: where a retail battle facility's lobby is, is the game's answer - ORAS's 517 and 448 -
+	 * and every other game says it has not been measured, rather than being handed ORAS's.
+	 */
+	static void theFacilityLobbiesAreTheProfilesAnswer() throws Exception {
+		System.out.println("--- a battle facility's lobby is the profile's answer, not the window's");
+		GameProfile oras = GameProfile.of(GameType.ORAS);
+		check(oras.facilityLobbyZone(GameProfile.Facility.MAISON) == 517
+				&& oras.facilityLobbyZone(GameProfile.Facility.INSTITUTE) == 448,
+				"ORAS's Maison lobby is zone 517 and its Institute 448");
+		for (GameType g : GameType.values()) {
+			if (g == GameType.ORAS) {
+				continue;
+			}
+			GameProfile p = GameProfile.of(g);
+			check(p == null || (p.facilityLobbyZone(GameProfile.Facility.MAISON) == -1
+					&& p.facilityLobbyZone(GameProfile.Facility.INSTITUTE) == -1),
+					g + " says it has not been measured, not ORAS's numbers");
+		}
+		File window = new File("src/ctrmap/CtrmapMainframe.java");
+		String body = window.isFile() ? SourceSeamTest.stripComments(new String(
+				java.nio.file.Files.readAllBytes(window.toPath()), java.nio.charset.StandardCharsets.UTF_8)) : "";
+		check(!body.isEmpty() && !body.matches("(?s).*\\b(517|448)\\b.*"),
+				"and the window holds neither number" + (body.isEmpty() ? " - its source was not found" : ""));
 	}
 
 	/**
@@ -176,14 +203,14 @@ public class GameProfileTest {
 			GameProfile p = GameProfile.of(g);
 			check(p.zoneDataTrailingEntries() == -1, g + ": zoneDataTrailingEntries says NOT MEASURED (-1), got "
 					+ p.zoneDataTrailingEntries());
-			check(p.areaDataTrailingEntries() == -1, g + ": areaDataTrailingEntries says NOT MEASURED (-1), got "
-					+ p.areaDataTrailingEntries());
+			check(p.areaTableIndex() == -1, g + ": areaTableIndex says NOT MEASURED (-1), got "
+					+ p.areaTableIndex());
 			check(p.fieldDataSubfileCount() == -1, g + ": fieldDataSubfileCount says NOT MEASURED (-1), got "
 					+ p.fieldDataSubfileCount());
 			check(!p.zoneNumberInUnknownFlags(), g + ": a zone clone copies unknownFlags verbatim rather"
 					+ " than rewriting bits of a layout nobody measured");
-			check(p.titleId() == null, g + ": no title id, so the mod deployer offers no folder rather"
-					+ " than another game's (got " + p.titleId() + ")");
+			check(p.titleIds().isEmpty(), g + ": no title id, so the mod deployer offers no folder rather"
+					+ " than another game's (got " + p.titleIds() + ")");
 			check(!p.cyclingFlagSafe(), g + ": the zone-header cycling flag is left clear, because"
 					+ " nobody has tried setting it on this game");
 			int on = 0;
@@ -207,9 +234,9 @@ public class GameProfileTest {
 		//XY's counts are cited from upstream CTRMap, not measured here, but
 		//they are PRESENT: a caller must not be refused for a game the editor
 		//does know how to count
-		check(xy.zoneDataTrailingEntries() == 1 && xy.areaDataTrailingEntries() == 1
+		check(xy.zoneDataTrailingEntries() == 1 && xy.areaTableIndex() == 170
 				&& xy.fieldDataSubfileCount() == 6,
-				"XY's archive-tail counts are present (1/1/6, established by upstream CTRMap)");
+				"XY's archive numbers are present (1/170/6, established by upstream CTRMap)");
 	}
 
 	/**
@@ -294,9 +321,9 @@ public class GameProfileTest {
 			areas++;
 		}
 		check(areas > 200, "AreaData: " + areas + " entries carry the AD container magic");
-		check(ad.length - p.areaDataTrailingEntries() == areas,
-				"areaDataTrailingEntries() = " + p.areaDataTrailingEntries() + " puts the area count at "
-				+ (ad.length - p.areaDataTrailingEntries()) + ", and " + areas + " entries are areas");
+		check(p.areaTableIndex() == areas && ad.length == areas + 1,
+				"areaTableIndex() = " + p.areaTableIndex() + " is the entry right after the " + areas
+				+ " areas, the last of the retail " + ad.length);
 		GARC np = new GARC(new File(dump.getAbsolutePath()
 				+ Workspace.getArchivePath(ArchiveType.NPC_REGISTRIES, GameType.ORAS)));
 		check(np.length == areas, "the NPC registry, which the engine indexes by the SAME id, holds "
@@ -360,7 +387,7 @@ public class GameProfileTest {
 			} catch (IOException ex) {
 				message = ex.getMessage();
 			}
-			check(message != null && message.contains("areaDataTrailingEntries"),
+			check(message != null && message.contains("areaTableIndex"),
 					g + ": an area count is refused the same way");
 		}
 		Scratch.deleteTree(ws);
@@ -391,7 +418,7 @@ public class GameProfileTest {
 		File ws = Scratch.dir("ctrmap_gameprofile_extras");
 
 		Sessions.overDump(ws, dump);
-		int areas = ExtrasPanel.areaEditRange();
+		int areas = ExtrasPanel.areaIds().length;
 		check(areas == ad.length - 1, "ORAS: the AreaData mass edits cover " + areas
 				+ " areas of " + ad.length + " entries");
 		int oldBound = ad.length - 2;
@@ -439,7 +466,7 @@ public class GameProfileTest {
 			message = null;
 			int wrong = -99;
 			try {
-				wrong = ExtrasPanel.areaEditRange();
+				wrong = ExtrasPanel.areaIds().length;
 			} catch (IOException ex) {
 				message = ex.getMessage();
 			}
@@ -515,14 +542,17 @@ public class GameProfileTest {
 		//2. the deployer offers a folder only for a game whose id it knows
 		String savedDir = Workspace.GAMEDIR_PATH;
 		try {
-			//a folder name that is NOT a 16-hex title id, so the profile answers
+			//a folder name that is NOT a 16-hex title id: the dump does not say which version it is,
+			//so no id is guessed and the profile offers both (F238 - it answered the first version)
 			Workspace.GAMEDIR_PATH = new File(ws, "RomFS").getAbsolutePath();
 			Sessions.bare(ws, new File("no-game"), GameType.ORAS);
-			check("000400000011C400".equals(ctrmap.ModDeployer.guessTitleId()),
-					"ORAS deploys to Omega Ruby's title id (" + ctrmap.ModDeployer.guessTitleId() + ")");
+			check(ctrmap.ModDeployer.guessTitleId() == null && GameProfile.of(GameType.ORAS).titleIds().size() == 2,
+					"ORAS: no id guessed, Omega Ruby and Alpha Sapphire offered (" + ctrmap.ModDeployer.guessTitleId()
+					+ ", " + GameProfile.of(GameType.ORAS).titleIds() + ")");
 			Sessions.bare(ws, new File("no-game"), GameType.XY);
-			check("0004000000055D00".equals(ctrmap.ModDeployer.guessTitleId()),
-					"X/Y deploys to Pokemon X's title id (" + ctrmap.ModDeployer.guessTitleId() + ")");
+			check(ctrmap.ModDeployer.guessTitleId() == null && GameProfile.of(GameType.XY).titleIds().size() == 2,
+					"X/Y: no id guessed, X and Y offered (" + ctrmap.ModDeployer.guessTitleId()
+					+ ", " + GameProfile.of(GameType.XY).titleIds() + ")");
 			for (GameType g : UNMEASURED) {
 				Sessions.bare(ws, new File("no-game"), g);
 				check(ctrmap.ModDeployer.guessTitleId() == null,

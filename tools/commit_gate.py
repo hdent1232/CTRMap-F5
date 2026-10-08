@@ -11,7 +11,9 @@ this bundle was extracted from had built them - so the next project read the pro
 again. Each has a bill attached, from that project's history:
 
   fix -> guard        a commit whose subject is a FIX must touch a place a guard lives (`tests/`,
-                      `tools/`, `.githooks/`, `.claude/hooks/`), or say `No-guard: <why>`. "Producer
+                      `tools/`, `.githooks/`, `.claude/hooks/`), or say `No-guard: <why>` (80+). A
+                      project whose own gate asks the staged DIFF passes its answer as `fix=`, so
+                      the rule is still this one, asked by a better trigger. "Producer
                       with no consumer" was filed in seven consecutive audits because nothing
                       asked this.
   Guard: <kind>       a fix names what it built - refusal, detector or convention - with a CLASS,
@@ -41,7 +43,8 @@ again. Each has a bill attached, from that project's history:
                       left a false one as the only way through.
 
 EVERY MARKER COUNTS ONLY AT THE START OF A LINE. `marker in message` is satisfied by prose that
-DESCRIBES the marker, so the commit adding a rule once exempted itself by explaining it.
+DESCRIBES the marker, so the commit adding a rule once exempted itself by explaining it. And every
+ESCAPE carries its reason, 80 characters, through `escaped` - one floor for all of them.
 
 Exit 0, or 1 with every reason on stderr.
 """
@@ -81,7 +84,10 @@ ROOT = _root()
 #: Where a guard can live. A fix touching none of these carried nothing that would catch it again.
 #: ... and every folder a hook is asked from, which `guard_paths` adds: the bundle's hooks may
 #: sit beside a stack of the project's own (`tools/bundle_hooks.py`).
-GUARD_PATHS = ("tests/", "tools/", ".githooks/")
+#: ADAPTED FOR CTRMAP (F186): its Java suite lives in src/ctrmap/tests, and the gate's list without
+#: it refused a fix that carried its test there, while tools/guard/commit_guard.py - which now asks
+#: this list - allowed it. The hook folders are added by `guard_paths`.
+GUARD_PATHS = ("src/ctrmap/tests/", "tests/", "tools/", ".githooks/")
 
 #: The suite runner's record: {"ran": N, "rc": 0, "subject": "<require_build.subject_digest>"}.
 RECORD = ".last-suite-run"
@@ -128,9 +134,27 @@ def marker_reason(message, marker):
     return None
 
 
+def escaped(message, marker):
+    """True when a line STARTS with the escape `marker` and says why in `MIN_REASON` characters.
+
+    AN ESCAPE WITHOUT ITS REASON IS A SWITCH. `No-guard:` and `No-checker:` were honoured at any
+    length here - `No-guard: x` let any fix through - while `No-refusal:` and `Deferred-gap:` beside
+    them held 80. Read on CTRMap 2026-10-07, whose own gate ran the same escapes at no floor at all
+    (its F186): every escape is asked through this one function, so none can drift from the rest."""
+    why = marker_reason(message, marker)
+    return why is not None and len(why) >= MIN_REASON
+
+
 def is_fix(message):
     subject = next((ln for ln in body_of(message).splitlines() if ln.strip()), "")
     return subject.lower().startswith("fix")
+
+
+def _asked(message, fix):
+    """Whether a fix rule is asked of this commit: `fix` when the project answered it - a project
+    whose gate asks the staged DIFF rather than the subject line passes its own answer, so the rule
+    BODY stays one implementation however the question is triggered - else the subject line."""
+    return is_fix(message) if fix is None else bool(fix)
 
 
 def _git(args, text=True):
@@ -150,8 +174,9 @@ def staged_files():
     return [ln.strip().replace(chr(92), "/") for ln in done.stdout.splitlines() if ln.strip()]
 
 
-def fix_touches_a_guard(message, files):
-    if not is_fix(message) or marker_reason(message, "No-guard:") is not None:
+def fix_touches_a_guard(message, files, fix=None):
+    """`fix`: the project's own answer to whether this commit is a fix (see `_asked`)."""
+    if not _asked(message, fix) or escaped(message, "No-guard:"):
         return []
     if files is None:
         return ["what this commit touches could not be read from git, so whether a fix carries "
@@ -160,8 +185,8 @@ def fix_touches_a_guard(message, files):
     if any(name.startswith(paths) for name in files):
         return []
     return ["this fixes something and touches none of %s - nothing new would catch it a second "
-            "time. Add the guard, or say `No-guard: <why>` where it stays in the log."
-            % ", ".join(paths)]
+            "time. Add the guard, or say `No-guard: <why, %d+ characters>` where it stays in the "
+            "log." % (", ".join(paths), MIN_REASON)]
 
 
 def guard_paths():
@@ -178,9 +203,9 @@ def _bundle_hooks():
     return bundle_hooks
 
 
-def guard_claim(message):
-    """A fix says WHICH of the three it built, and why that closes the class."""
-    if not is_fix(message) or marker_reason(message, "No-guard:") is not None:
+def guard_claim(message, fix=None):
+    """A fix says WHICH of the three it built, and why that closes the class. `fix`: see `_asked`."""
+    if not _asked(message, fix) or escaped(message, "No-guard:"):
         return []
     line = marker_reason(message, "Guard:")
     if line is None:
@@ -194,12 +219,9 @@ def guard_claim(message):
     if len(reason) < MIN_GUARD_REASON:
         return ["the Guard line names a kind and not a CLASS: %d characters is a label (%d+)"
                 % (len(reason), MIN_GUARD_REASON)]
-    if kind != "refusal":
-        why = marker_reason(message, "No-refusal:")
-        if why is None or len(why) < MIN_REASON:
-            return ["`Guard: %s` is not a class closer. Build the refusal, or say `No-refusal: "
-                    "<why the point of action cannot refuse, %d+ characters>`." % (kind,
-                                                                                  MIN_REASON)]
+    if kind != "refusal" and not escaped(message, "No-refusal:"):
+        return ["`Guard: %s` is not a class closer. Build the refusal, or say `No-refusal: "
+                "<why the point of action cannot refuse, %d+ characters>`." % (kind, MIN_REASON)]
     return []
 
 
@@ -217,13 +239,13 @@ def _defines(test_file, class_name, module):
     return "%s does not define %s" % (test_file, class_name)
 
 
-def checker_resolves(message, execute=True):
+def checker_resolves(message, execute=True, fix=None):
     """The `Checker:` line of a `Guard: refusal` resolves: README section 2's two conditions
-    (exists and committed; exits clean now) and the plant ledger's two sites."""
-    if not is_fix(message) or marker_reason(message, "No-guard:") is not None:
+    (exists and committed; exits clean now) and the plant ledger's two sites. `fix`: see `_asked`."""
+    if not _asked(message, fix) or escaped(message, "No-guard:"):
         return []
     line = marker_reason(message, "Guard:") or ""
-    if not line.lower().startswith("refusal") or marker_reason(message, "No-checker:"):
+    if not line.lower().startswith("refusal") or escaped(message, "No-checker:"):
         return []
     found = _CHECKER.search(body_of(message))
     if not found:
@@ -409,10 +431,11 @@ def _prove_in_project(prove, key):
     return done.returncode == 0, (tail[-1] if tail else "exit %d" % done.returncode)
 
 
-def fix_has_a_plant(message, keys=None, drive=None, own=None, added=None, prove=None):
+def fix_has_a_plant(message, keys=None, drive=None, own=None, added=None, prove=None, fix=None):
     """A fix records a NEW defect, and every new one is watched reddening its test here - in this
-    bundle's ledger, or in the one the project proves its own tests with (`project_ledger`)."""
-    if not is_fix(message) or marker_reason(message, "No-guard:") is not None:
+    bundle's ledger, or in the one the project proves its own tests with (`project_ledger`).
+    `fix`: see `_asked`."""
+    if not _asked(message, fix) or escaped(message, "No-guard:"):
         return []
     keys = new_plant_keys() if keys is None else keys
     own = project_ledger() if own is None else own

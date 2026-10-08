@@ -19,12 +19,7 @@ import java.util.EnumMap;
 final class Sessions {
 
 	/** The archives every game needs open - the same eight {@link WorkspaceSession#open} insists on. */
-	static final ArchiveType[] REQUIRED = {
-		ArchiveType.AREA_DATA, ArchiveType.FIELD_DATA,
-		ArchiveType.MAP_MATRIX, ArchiveType.GAMETEXT,
-		ArchiveType.ZONE_DATA, ArchiveType.BUILDING_MODELS,
-		ArchiveType.NPC_REGISTRIES, ArchiveType.MOVE_MODELS
-	};
+	static final java.util.List<ArchiveType> REQUIRED = ctrmap.WorkspaceSession.requiredArchives();
 
 	private Sessions() {
 	}

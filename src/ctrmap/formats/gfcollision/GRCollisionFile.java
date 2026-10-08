@@ -1,99 +1,99 @@
 package ctrmap.formats.gfcollision;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-
 import com.jogamp.opengl.GL2;
-import ctrmap.LittleEndianDataInputStream;
-import ctrmap.LittleEndianDataOutputStream;
 import ctrmap.formats.containers.GR;
 import ctrmap.formats.Triangle;
+import ctrmap.util.Bytes;
 import java.awt.Polygon;
-import java.awt.geom.Rectangle2D;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
+/**
+ * The collision editor's model of one region's walkable mesh: the sixteen buckets of GR
+ * subfile 2, each holding the triangles first seen in it.
+ *
+ * <p>READ THROUGH {@link GfColl}, THE ONE COLLISION PARSER (F058, F061). This class used to
+ * parse the same bytes with a reader of its own: a bad magic, a length past the end or a
+ * missing "term" was a line on a console the shipped build does not have, input that ran out
+ * part-way left the buckets part-filled, and the region opened and saved normally - writing
+ * whatever part had been read over its real collision. It also threw away every repeated
+ * triangle, where the spec-exact reader keeps the ones the source mesh genuinely repeats, so a
+ * region opened and saved through the collision editor was not the retail-exact rebuild.
+ *
+ * <p>A region whose collision cannot be read is {@link #unreadable}: it holds no triangles,
+ * reads every height as unknown, and refuses to be written, so nothing can save over the bytes
+ * it could not read.
+ */
 public class GRCollisionFile {
 
-	private GR mapFile;
+	private final GR mapFile;
+	/** The parsed subfile whose constants a write carries; null for a collision made from scratch. */
+	private final GfColl template;
+	/** Why this region's collision could not be read, in words; null when it was read. */
+	public final String unreadable;
 
-	public static final int COLL_MAGIC = 0x636F6C6C;
-	private int length;
-	private int unknown_const_0x5D8_1 = 0x5D8;
-	private int[] unknown_consts_1_3_2_1_2 = new int[]{1, 3, 2, 1, 2};
-
-	public GRCollisionBounds bounds;
-	private int[] offsets = new int[16];
-	private int[] lengths = new int[16];
 	public GRCollisionMesh[] meshes = new GRCollisionMesh[16]; //GR is limited to exactly 16 meshes, nothing more, nothing less
-
-	public static final int TERM_MAGIC = 0x7465726D;
-	private int unknown_const_0x0 = 0;
-	private int unknown_const_0x5D8_2 = 0x5D8;
-	private int unknown_const_0x1 = 1;
 
 	public boolean modified = false;
 
-	public GRCollisionFile(GR mapFile) {
-		this(mapFile, false);
-	}
-
-	public GRCollisionFile(GR mapFile, boolean fromScratch) {
+	private GRCollisionFile(GR mapFile, GfColl template, String unreadable) {
 		this.mapFile = mapFile;
-		if (!fromScratch) {
-			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(this.mapFile.getFile(2)));
-			try {
-				if (dis.read4Bytes() != COLL_MAGIC) {
-					System.err.println("Coll magic mismatch");
-				}
-				length = dis.readInt();
-				if (length > dis.available() - 24) {
-					System.err.println("Coll length exceeds EOF, will be adjusted on write.");
-				}
-				unknown_const_0x5D8_1 = dis.readInt();
-				for (int i = 0; i < 5; i++) {
-					unknown_consts_1_3_2_1_2[i] = dis.readInt();
-				}
-				bounds = new GRCollisionBounds(dis);
-				for (int i = 0; i < 16; i++) {
-					offsets[i] = dis.readInt();
-					//these bytes indicate the offsets of meshes from the start of the mesh sections, but the bytes
-					//after tell us their lengths and as we get to the end after finishing this sections, these are
-					//all we need to parse the format. GF are kinda weird. We are storing the offsets for ease of writing tho.
-
-					lengths[i] = dis.readInt();
-				}
-				for (int i = 0; i < 16; i++) {
-					meshes[i] = new GRCollisionMesh(dis, lengths[i]);
-				}
-				dedupe();
-				if (dis.read4Bytes() != TERM_MAGIC) {
-					System.err.println("Term missing/misplaced/magic error.");
-				}
-				unknown_const_0x0 = dis.readInt();
-				unknown_const_0x5D8_2 = dis.readInt();
-				unknown_const_0x1 = dis.readInt();
-				dis.close();
-			} catch (IOException e) {
-				e.printStackTrace();
+		this.template = template;
+		this.unreadable = unreadable;
+		for (int i = 0; i < 16; i++) {
+			meshes[i] = new GRCollisionMesh();
+		}
+		if (template != null) {
+			for (int k = 0; k < template.uniqueTris.size(); k++) {
+				float[] t = template.uniqueTris.get(k);
+				meshes[template.uniqueTriBucket.get(k)].tris.add(new Triangle(
+						new float[]{t[0], t[3], t[6]}, new float[]{t[1], t[4], t[7]}, new float[]{t[2], t[5], t[8]}));
 			}
-			bounds.originalExtremes = getMeshExtremes();
-		} else {
-			bounds = new GRCollisionBounds();
-			for (int i = 0; i < 16; i++) {
-				meshes[i] = new GRCollisionMesh();
-			}
-			meshes[0].tris.add(new Triangle(new float[]{-360f, -360f, 360f}, new float[3], new float[]{360f, -360f, -360f}));
-			meshes[0].tris.add(new Triangle(new float[]{-360f, 360f, 360f}, new float[3], new float[]{360f, -360f, 360f}));
-			modified = true;
 		}
 	}
 
+	/**
+	 * The region's collision, read strictly.
+	 *
+	 * @throws IllegalStateException saying what is wrong, when subfile 2 is not a whole collision
+	 */
+	public static GRCollisionFile read(GR region) {
+		try {
+			return new GRCollisionFile(region, new GfColl(region.getFile(2)), null);
+		} catch (RuntimeException damaged) {
+			throw new IllegalStateException("This region's collision (subfile 2) cannot be read, so it was not"
+					+ " opened and nothing will be saved over it: " + Bytes.reason(damaged), damaged);
+		}
+	}
+
+	/**
+	 * The region's collision, or - when it cannot be read - an {@link #unreadable} one saying
+	 * why, so that one damaged region costs the editor that region's collision and not the
+	 * whole map.
+	 */
+	public static GRCollisionFile readOrRefuse(GR region) {
+		try {
+			return read(region);
+		} catch (IllegalStateException refused) {
+			return new GRCollisionFile(region, null, refused.getMessage());
+		}
+	}
+
+	/** A new collision for a region being built: two triangles spanning the whole region. */
+	public static GRCollisionFile blank(GR region) {
+		GRCollisionFile made = new GRCollisionFile(region, null, null);
+		made.meshes[0].tris.add(new Triangle(new float[]{-360f, -360f, 360f}, new float[3], new float[]{360f, -360f, -360f}));
+		made.meshes[0].tris.add(new Triangle(new float[]{-360f, 360f, 360f}, new float[3], new float[]{360f, -360f, 360f}));
+		made.modified = true;
+		return made;
+	}
+
+	/** The ground height under (x, y); NaN - unknown - for a collision that was not read. */
 	public float getHeightAtPoint(float x, float y) {
-		//just check all the tris, if they are deduped, GF's hacks are useless
+		if (unreadable != null) {
+			return Float.NaN;
+		}
+		//every triangle sits in one bucket here, so checking them all checks each once
 		for (int i = 0; i < meshes.length; i++) {
 			for (int j = 0; j < meshes[i].tris.size(); j++) {
 				Polygon triPoly = meshes[i].tris.get(j).getAWTPoly();
@@ -111,44 +111,23 @@ public class GRCollisionFile {
 		return 0f;
 	}
 
-	public void dedupe() {
-		ArrayList<Triangle> usedTris = new ArrayList<>();
-		for (int i = 0; i < 16; i++) {
-			for (int j = 0; j < meshes[i].tris.size(); j++) {
-				Triangle testTri = meshes[i].tris.get(j);
-				if (usedTris.isEmpty()) {
-					usedTris.add(testTri);
-					continue;
-				}
-				boolean broken = false;
-				for (int k = 0; k < usedTris.size(); k++) {
-					Triangle testAgainst = usedTris.get(k);
-					if (Arrays.equals(testTri.x, testAgainst.x) && Arrays.equals(testTri.y, testAgainst.y) && Arrays.equals(testTri.z, testAgainst.z)) {
-						meshes[i].tris.remove(j);
-						j--;
-						broken = true;
-						break;
-					}
-				}
-				if (!broken) {
-					usedTris.add(testTri);
-				}
-			}
-		}
-	}
-
 	/**
-	 * Writes the collision back through the RETAIL-EXACT builder ({@link GfColl}):
-	 * the in-memory triangle set (de-duplicated across the 16 legacy bucket
-	 * lists at load) is re-bucketed and re-bounded with the algorithms that
-	 * reproduce the retail bytes on every collision file in the game. The old
-	 * in-class bounds/bucketing math was PROVEN game-invalid (bounds mismatch
-	 * retail in 846/857 regions, bucketing misses whole-cell triangles in
-	 * 853/857 - guaranteed height-lookup holes) and must never be used for
-	 * writes again.
+	 * Writes the collision back through the RETAIL-EXACT builder ({@link GfColl}), carrying
+	 * the constants of the subfile it was read from: the in-memory triangle set - each triangle
+	 * once in the bucket it was first seen in, with the repeats the source genuinely holds - is
+	 * re-bucketed and re-bounded with the algorithms that reproduce the retail bytes on every
+	 * collision file in the game. The old in-class bounds/bucketing math was PROVEN game-invalid
+	 * (bounds mismatch retail in 846/857 regions, bucketing misses whole-cell triangles in
+	 * 853/857 - guaranteed height-lookup holes) and must never be used for writes again.
+	 *
+	 * @throws IllegalStateException for an {@link #unreadable} collision, which is never written
+	 * over the bytes it could not read
 	 */
 	public void write() {
-		java.util.List<float[]> tris = new java.util.ArrayList<>();
+		if (unreadable != null) {
+			throw new IllegalStateException(unreadable);
+		}
+		List<float[]> tris = new ArrayList<>();
 		for (int i = 0; i < 16; i++) {
 			for (int j = 0; j < meshes[i].tris.size(); j++) {
 				Triangle t = meshes[i].tris.get(j);
@@ -159,112 +138,7 @@ public class GRCollisionFile {
 				});
 			}
 		}
-		mapFile.storeFile(2, GfColl.build(tris, null));
-	}
-
-	public float[] getMeshExtremes() {
-		float minX = Float.MAX_VALUE;
-		float maxX = -Float.MAX_VALUE;
-		float minY = Float.MAX_VALUE;
-		float maxY = -Float.MAX_VALUE;
-		float minZ = Float.MAX_VALUE;
-		float maxZ = -Float.MAX_VALUE;
-		for (int i = 0; i < 16; i++) {
-			for (int j = 0; j < meshes[i].tris.size(); j++) {
-				for (int k = 0; k < 3; k++) {
-					Triangle tri = meshes[i].tris.get(j);
-					if (tri.getX(k) < minX) {
-						minX = tri.getX(k);
-					}
-					if (tri.getX(k) > maxX) {
-						maxX = tri.getX(k);
-					}
-					if (tri.getY(k) < minY) {
-						minY = tri.getY(k);
-					}
-					if (tri.getY(k) > maxY) {
-						maxY = tri.getY(k);
-					}
-					if (tri.getZ(k) < minZ) {
-						minZ = tri.getZ(k);
-					}
-					if (tri.getZ(k) > maxZ) {
-						maxZ = tri.getZ(k);
-					}
-				}
-			}
-		}
-		return new float[]{minX, maxX, minY, maxY, minZ, maxZ};
-	}
-
-	public GRCollisionMesh[] computeMeshOrder() {
-		GRCollisionMesh[] meshes2 = new GRCollisionMesh[16];
-		for (int i = 0; i < 16; i++) {
-			meshes2[i] = new GRCollisionMesh();
-		}
-		//Deduping shouldn't be needed now that we dedupe before loading the mesh into the editor but it's more foolproof and doesn't impact performance much. Might delete later idk.
-		List<Triangle> trisDuped = new ArrayList<>();
-		for (int i = 0; i < 16; i++) {
-			trisDuped.addAll(meshes[i].tris);
-		}
-		List<Triangle> tris = new ArrayList<>();
-		for (int i = 0; i < trisDuped.size(); i++) {
-			Triangle orTri = trisDuped.get(i);
-			if (tris.isEmpty()) {
-				tris.add(orTri);
-			}
-			boolean broken = false;
-			for (int j = 0; j < tris.size(); j++) {
-				Triangle testTri = tris.get(j);
-				if (Arrays.equals(testTri.x, orTri.x) && Arrays.equals(testTri.y, orTri.y) && Arrays.equals(testTri.z, orTri.z)) {
-					broken = true;
-				}
-			}
-			if (!broken) {
-				tris.add(orTri);
-			}
-		}
-		//make triangles counter clockwise
-		for (int i = 0; i < tris.size(); i++) {
-			Triangle tri = tris.get(i);
-			List<float[]> vertexList = new ArrayList<>();
-			vertexList.add(new float[]{tri.getX(0), tri.getY(0), tri.getZ(0)});
-			vertexList.add(new float[]{tri.getX(1), tri.getY(1), tri.getZ(1)});
-			vertexList.add(new float[]{tri.getX(2), tri.getY(2), tri.getZ(2)});
-			float centerX = (vertexList.get(0)[0] + vertexList.get(1)[0] + vertexList.get(2)[0]) / 3f;
-			float centerZ = (vertexList.get(0)[2] + vertexList.get(1)[2] + vertexList.get(2)[2]) / 3f;
-			Collections.sort(vertexList, (float[] o1, float[] o2) -> {
-				double baseAngle1 = (Math.toDegrees(Math.atan2(o1[2] - centerZ, o1[0] - centerX)) + 360) % 360;
-				double baseAngle2 = (Math.toDegrees(Math.atan2(o2[2] - centerZ, o2[0] - centerX)) + 360) % 360;
-				return (int) (baseAngle2 - baseAngle1);
-			});
-			float[] v0 = vertexList.get(0);
-			float[] v1 = vertexList.get(1);
-			float[] v2 = vertexList.get(2);
-			tris.set(i, new Triangle(new float[]{v0[0], v1[0], v2[0]}, new float[]{v0[1], v1[1], v2[1]}, new float[]{v0[2], v1[2], v2[2]}));
-		}
-		float[] extremes = getMeshExtremes();
-		float width = (extremes[1] - extremes[0]) / 4f;
-		float height = (extremes[5] - extremes[4]) / 4f;
-		//split the boundary to 16 rectangles
-		Rectangle2D[] rects = new Rectangle2D[16];
-		for (int i = 0; i < 16; i++) {
-			float x = (float) (Math.floor(i / 8f) * 2 * width) + ((i / 4f - Math.floor(i / 4f) >= 0.5f) ? width : 0f) + extremes[0];
-			float y = (((i & 1) == 0) ? 0 : height) + ((i / 8f - Math.floor(i / 8f) >= 0.5f) ? 2 * height : 0f) + extremes[4];
-			rects[i] = new Rectangle2D.Float(x, y, width, height);
-		}
-		for (int i = 0; i < tris.size(); i++) {
-			for (int j = 0; j < 16; j++) {
-				for (int k = 0; k < 3; k++) {
-					Triangle tri = tris.get(i);
-					if (tri.getLine(k).intersects(rects[j]) || rects[j].contains(tri.getX(k), tri.getZ(k))) {
-						meshes2[j].tris.add(tri);
-						break;
-					}
-				}
-			}
-		}
-		return meshes2;
+		mapFile.storeFile(2, GfColl.build(tris, template));
 	}
 
 	public void render(GL2 gl) {

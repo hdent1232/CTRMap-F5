@@ -1,49 +1,56 @@
 
 package ctrmap.formats.h3d;
 
-import ctrmap.LittleEndianDataInputStream;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
+import ctrmap.formats.LittleEndian;
 
 /**
- * Class for obtaining model names from BCH containers, based on VisualBasic Ohana3DS source.
- * Ohana3DS-Rebirth was also used for docs but it relocates the offsets based on the reloc table which we do not
- * need in this case.
- * This class assumes that the file contains at least 1 model.
+ * Reads the name of a BCH container's first model, by following the content header's model
+ * pointer table to that model's name offset in the string table, based on VisualBasic Ohana3DS
+ * source. Ohana3DS-Rebirth was also used for docs, but it relocates the offsets by the reloc
+ * table, which reading one name does not need.
+ *
+ * <p>EVERY OFFSET IS CHECKED AGAINST THE FILE (F069). This read the name with a loop that stopped
+ * only at a NUL - and at the end of the stream read() answers -1, which is not 0, so a name, or a
+ * pointer, running off the end appended U+FFFF until the program ran out of memory. That is an
+ * Error, which the callers' catch blocks do not catch, and the offsets it followed were not
+ * checked at all. Anything that does not lead to a whole name inside the file is refused, in
+ * words.
  */
 public class H3DModelNameGet {
-	public static String H3DModelNameGet(byte[] bchFile){
+
+	/**
+	 * The first model's name.
+	 *
+	 * @throws IllegalStateException naming what is wrong, when {@code bchFile} is not a BCH or its
+	 * pointers do not lead to a whole name inside it
+	 */
+	public static String H3DModelNameGet(byte[] bchFile) {
+		BchSections s;
 		try {
-			ByteArrayInputStream is = new ByteArrayInputStream(bchFile);
-			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(is);
-			dis.skip(8);
-			int contentHeaderOffset = dis.readInt();
-			int stringTableOffset = dis.readInt();
-			dis.skip(contentHeaderOffset - 16);
-			int modelsPointerTableOffset = dis.readInt() + contentHeaderOffset; //relocate
-			is.reset();
-			dis.skip(modelsPointerTableOffset);
-			int model0offset = dis.readInt() + contentHeaderOffset; //relocate again
-			is.reset();
-			dis.skip(model0offset);
-			dis.skip(0x84);
-			int stroff = dis.readInt();
-			is.reset();
-			dis.skip(stroff + stringTableOffset);
-			StringBuilder sb = new StringBuilder();
-			int read;
-			while ((read = dis.read()) != 0){
-				sb.append((char)read);
-			}
-			dis.close();
-			is.close();
-			return sb.toString();
-		} catch (IOException ex) {
-			Logger.getLogger(H3DModelNameGet.class.getName()).log(Level.SEVERE, null, ex);
-			return null;
+			s = BchSections.read(bchFile); //the one header reader, and the one refusal of what is not a BCH (F066)
+		} catch (IllegalArgumentException notWhole) {
+			throw new IllegalStateException("A model's name cannot be read from this (" + (bchFile == null ? "absent"
+					: bchFile.length + " byte(s)") + "): " + notWhole.getMessage(), notWhole);
 		}
+		int contentHeaderOffset = s.contentsAddr;
+		int stringTableOffset = s.stringsAddr;
+		int modelsPointerTableOffset = at(bchFile, contentHeaderOffset, "the content header") + contentHeaderOffset; //relocate
+		int model0offset = at(bchFile, modelsPointerTableOffset, "the model pointer table") + contentHeaderOffset; //relocate again
+		int stroff = at(bchFile, model0offset + 0x84, "the first model's name field");
+		int name = stroff + stringTableOffset;
+		try {
+			return StringUtils.cString(bchFile, name);
+		} catch (IllegalArgumentException runsOff) {
+			throw new IllegalStateException("A model's name cannot be read: " + runsOff.getMessage(), runsOff);
+		}
+	}
+
+	/** The word at {@code offset}, refused in words when it is not inside the file. */
+	private static int at(byte[] b, int offset, String what) {
+		if (offset < 0 || offset > b.length - 4) {
+			throw new IllegalStateException("A model's name cannot be read: " + what + " is at byte " + offset
+					+ ", outside the " + b.length + "-byte BCH.");
+		}
+		return LittleEndian.i32(b, offset);
 	}
 }

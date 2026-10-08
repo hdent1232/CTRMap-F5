@@ -79,22 +79,34 @@ public final class PaddingZoneRepair {
 			}
 		}
 		r.kept.addAll(rest.kept);
+		r.wanted.addAll(rest.wanted);
 		if (r.refusedBecause.isEmpty()) {
 			r.refusedBecause = rest.refusedBecause;
+		} else if (!rest.refusedBecause.isEmpty() && !rest.refusedBecause.equals(r.refusedBecause)) {
+			r.refusedBecause = r.refusedBecause + "; and " + rest.refusedBecause;
 		}
 		if (!r.refusedBecause.isEmpty()) {
-			//only worth a word when there was something to repair - a workspace with
-			//no appended zones refuses nothing and must not greet the user with a
-			//dialog about a feature they have never used
-			if (!r.shared.isEmpty()) {
-				Ui.error(parent, "Zones added by an earlier version still share another zone's map:"
-						+ "\n  " + r.shared
+			//EITHER PASS, SAID (F024). Only worth a word when a pass found something to repair -
+			//a workspace with no appended zones refuses nothing worth a dialog about a feature
+			//its owner never used - but it stood behind the MAP pass's sharers alone, so a
+			//workspace whose maps were private and whose AREA pass refused said nothing, and the
+			//editor opened over zones still sharing another zone's area.
+			if (!r.wanted.isEmpty()) {
+				Ui.error(parent, "Zones added by an earlier version still share another zone's resources:"
+						+ "\n  " + String.join("\n  ", r.wanted)
 						+ "\n\nCTRMap could not give them their own just now: " + r.refusedBecause
-						+ "\n\nEditing the map in one of those would change the zone it shares with,"
-						+ " and every other zone on that map.",
-						"Zones sharing a map");
+						+ "\n\nWhat could not be repaired was put back as it was. Editing one of those"
+						+ " zones would change every zone it shares with."
+						+ (r.changedAnything() ? "\n\nThe zones that could be repaired were " + r.forked
+								+ ", and are packed now." : ""),
+						"Zones sharing a map or area");
 			}
-			then.run();
+			//a pass that DID finish keeps its work and is packed like any repair
+			if (r.changedAnything()) {
+				packer.accept(then);
+			} else {
+				then.run();
+			}
 			return;
 		}
 		if (!r.changedAnything()) {

@@ -7,7 +7,6 @@ import com.jogamp.opengl.GLEventListener;
 import com.jogamp.opengl.GLProfile;
 import com.jogamp.opengl.awt.GLJPanel;
 import com.jogamp.opengl.glu.GLU;
-import com.jogamp.opengl.util.FPSAnimator;
 
 import ctrmap.Workspace;
 import ctrmap.formats.h3d.BCHFile;
@@ -93,15 +92,14 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 	 * these for its lifetime, so nothing noticed; the Zone Loader preview has one too,
 	 * and a suite that builds one could not exit.
 	 */
-	private final FPSAnimator animator;
+	private final ShownLoop animator;
 
 	public H3DRenderingPanel(List<CM3DRenderable> slaves, ctrmap.humaninterface.tools.ToolSelection tools) {
 		super(new GLCapabilities(GLProfile.get(GLProfile.GL2)));
 		this.tools = tools;
 		CM3DComponents = slaves;
 		super.addGLEventListener(this);
-		animator = new FPSAnimator(this, 60);
-		animator.start();
+		animator = ShownLoop.of(this, 60);   //while it is seen (F098)
 	}
 
 	public void loadH3D(BCHFile file) {
@@ -270,8 +268,8 @@ public class H3DRenderingPanel extends GLJPanel implements GLEventListener {
 
 	/** Stops the frame clock. A view nobody is looking at should not be drawing. */
 	public void stop() {
-		if (animator != null && animator.isStarted()) {
-			animator.stop();
+		if (animator != null) {
+			animator.end();
 		}
 	}
 

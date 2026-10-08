@@ -421,15 +421,13 @@ public class TerrainHarvester {
 				+ ctrmap.Workspace.getArchivePath(ArchiveType.ZONE_DATA, game)));
 		GARC mm = new GARC(new File(root
 				+ ctrmap.Workspace.getArchivePath(ArchiveType.MAP_MATRIX, game)));
-		byte[] master = zo.getDecompressedEntry(zo.length - 2);
-		for (int z = 0; z < zo.length - 2; z++) {
-			int area, matrix;
-			try {
-				area = u16(master, z * 0x38 + 2);
-				matrix = u16(master, z * 0x38 + 4);
-			} catch (RuntimeException ex) {
-				continue;
-			}
+		//the one reader, at the game's measured zone count (F013): this took entry "length - 2"
+		//and skipped, one by one, the rows a short table did not have
+		int zones = ctrmap.ZoneTables.zoneCount(zo, ctrmap.gamedef.GameProfile.of(game));
+		ctrmap.MasterTable master = ctrmap.MasterTable.detached(zo.getDecompressedEntry(zones), zones);
+		for (int z = 0; z < master.zones(); z++) {
+			int area = master.id(ctrmap.ZoneResource.AREA, z);
+			int matrix = master.id(ctrmap.ZoneResource.MAP, z);
 			byte[] mat;
 			try {
 				mat = mm.getDecompressedEntry(matrix);
@@ -437,10 +435,10 @@ public class TerrainHarvester {
 				continue;
 			}
 			try {
-				int sub0 = i32(mat, 4);
-				int w = u16(mat, sub0 + 4), h = u16(mat, sub0 + 6);
+				ctrmap.formats.mapmatrix.MapMatrix.Grid grid = ctrmap.formats.mapmatrix.MapMatrix.Grid.of(mat);
+				int w = grid.width, h = grid.height;
 				for (int i = 0; i < w * h; i++) {
-					int r = u16(mat, sub0 + 8 + i * 2);
+					int r = grid.id(i);
 					if (r != 0xFFFF && r < regionCount) {
 						owner.putIfAbsent(r, new int[]{z, area});
 					}

@@ -65,8 +65,7 @@ public class TerrainImportNoiseTest {
 			return;
 		}
 		if (args.length == 0 || !new File(args[0]).isFile()) {
-			System.out.println("  skip: no pristine FieldData GARC (pass a/0/3/9 as args[0])");
-			System.out.println("ALL PASS");
+			Skip.suite("no pristine FieldData GARC (pass a/0/3/9 as args[0])");
 			return;
 		}
 		buildIsQuiet(new File(args[0]));
@@ -83,7 +82,7 @@ public class TerrainImportNoiseTest {
 		File java = new File(new File(System.getProperty("java.home"), "bin"),
 				System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java");
 		if (!java.isFile()) {
-			System.out.println("  skip: no java binary at " + java);
+			Skip.section("no java binary at " + java);
 			return;
 		}
 		final Process p = new ProcessBuilder(java.getAbsolutePath(), "-cp",

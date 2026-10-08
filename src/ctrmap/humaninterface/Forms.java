@@ -27,6 +27,16 @@ public final class Forms {
 	}
 
 	/**
+	 * A value typed into a table cell was refused: Swing's own refusal signal - the one a
+	 * formatted field gives - while the cell keeps its old value where the user sees it was
+	 * not taken. The trainer, Maison, encounter and class-list tables caught the bad number
+	 * and did nothing at all (F211), so a typo looked like a value the editor ignored.
+	 */
+	public static void refuseTyped(Component where) {
+		javax.swing.UIManager.getLookAndFeel().provideErrorFeedback(where);
+	}
+
+	/**
 	 * The number in a formatted field, as a float - 0 for anything that is not
 	 * one, including an empty field and a lone minus sign, and taking a comma
 	 * for a decimal point because that is what a European keyboard types.

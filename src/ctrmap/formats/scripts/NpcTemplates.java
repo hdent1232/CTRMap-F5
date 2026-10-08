@@ -2,6 +2,7 @@ package ctrmap.formats.scripts;
 
 import ctrmap.formats.zone.ZoneEntities;
 import ctrmap.gamedef.GameProfile;
+import ctrmap.gamedef.GameType;
 
 /**
  * The v1 NPC template library: one factory per template validated by the
@@ -26,10 +27,88 @@ import ctrmap.gamedef.GameProfile;
  * movePerm1=0, movePerm2=1, spawnFlag=0, area 0,0,1x1; all 21 pair NPCs use
  * movePerm2=9 with the same zero profile.
  *
- * Everything here was measured on ORAS. XY is NOT covered by the recon -
- * callers should gate these templates to ORAS workspaces.
+ * Everything here was measured on ORAS. XY is NOT covered by the recon, so
+ * every template - here and in the wizards and injectors beside it - is handed
+ * a {@link Measured}, which only {@link #measuredOn} makes and which it refuses
+ * for any game whose profile does not claim
+ * {@link GameProfile.Feature#NPC_SCRIPTS} (F085: the sentence that used to be
+ * here asked callers to gate them, and none did).
  */
 public class NpcTemplates {
+
+	/**
+	 * A game the scripted-NPC templates were measured on, handed to every
+	 * template that writes a zone script or builds an entity record. Only
+	 * {@link #measuredOn} makes one, so a template cannot be reached without the
+	 * question having been asked and answered yes.
+	 *
+	 * <p>Not: GameProfile - a profile answers for every game, measured or not;
+	 * this is the answer already given, for one game.
+	 */
+	public static final class Measured {
+
+		private final GameType game;
+
+		private Measured(GameType game) {
+			this.game = game;
+		}
+
+		/** The game the answer was given for. */
+		public GameType game() {
+			return game;
+		}
+
+		/** Its profile: the bounds a template checks are this game's. */
+		public GameProfile profile() {
+			return GameProfile.of(game);
+		}
+	}
+
+	/**
+	 * A template asked for in a game it was not measured on, or for no game at
+	 * all. Its message is a sentence the user can read.
+	 *
+	 * <p>Not: ZoneScriptEdit.Refused - that is one edit's refusal, which this is
+	 * turned into when the edit asks; the entity templates have no edit.
+	 */
+	public static final class NotMeasured extends IllegalStateException {
+
+		NotMeasured(String message) {
+			super(message);
+		}
+	}
+
+	/**
+	 * The one gate: the game's profile must say the templates were measured on
+	 * it. Refuses no game and any other game in words; nothing is written by
+	 * asking.
+	 *
+	 * @param game the game of the zone a template would write into
+	 * @return the answer, for handing to the templates
+	 * @throws NotMeasured when the game is null or its profile does not claim
+	 * {@link GameProfile.Feature#NPC_SCRIPTS}
+	 */
+	public static Measured measuredOn(GameType game) {
+		if (game == null) {
+			throw new NotMeasured("the zone was read for no game, so nothing can say whether its scripts are ones"
+					+ " these templates were measured on.");
+		}
+		GameProfile p = GameProfile.of(game);
+		if (!p.supports(GameProfile.Feature.NPC_SCRIPTS)) {
+			throw new NotMeasured("the scripted-NPC templates were measured on Omega Ruby / Alpha Sapphire's zone"
+					+ " scripts, and nothing has checked them against " + p.displayName() + "'s. A script the game"
+					+ " runs wrong freezes the zone in game, so nothing was added.");
+		}
+		return new Measured(game);
+	}
+
+	/** Refuses a missing answer: null here would be a template reached without asking. */
+	static Measured asked(Measured measured) {
+		if (measured == null) {
+			throw new NotMeasured("a scripted-NPC template was reached without asking which game it writes into.");
+		}
+		return measured;
+	}
 
 	/**
 	 * Trailing argbytes constant of the sign call site (2 arguments).
@@ -87,7 +166,7 @@ public class NpcTemplates {
 	 * Highest trainer ID with a name line (the ORAS trainer-name text file
 	 * has 950 lines; observed NPC references stop around 830).
 	 */
-	public static final int TRAINER_ID_MAX = 949;
+	public static final int TRAINER_ID_MAX = GameProfile.of(ctrmap.gamedef.GameType.ORAS).trainerIdMax(); //the profile's one answer (F085)
 
 	/**
 	 * movePerm2 of the dominant vanilla single-trainer profile ("approaching
@@ -104,7 +183,7 @@ public class NpcTemplates {
 	 * Highest item ID with a name line (the ORAS item-name text file has 776
 	 * lines, index 0 is the null item).
 	 */
-	public static final int ITEM_ID_MAX = 775;
+	public static final int ITEM_ID_MAX = GameProfile.of(ctrmap.gamedef.GameType.ORAS).itemIdMax(); //the profile's one answer (F085)
 
 	/**
 	 * GAMETEXT file index of the trainer-name list for the handed game (on
@@ -193,6 +272,7 @@ public class NpcTemplates {
 	 * PUSH 8; CALL signWrapper; ZERO_PRI; RETN - the R4 shape of 169 vanilla
 	 * cases) to the zone script and registers it in the dispatch.
 	 *
+	 * @param measured the game the zone is from, already asked (measuredOn)
 	 * @param script a decompressThis()'d zone script, modified in place
 	 * @param msgLine STORYTEXT line the sign displays
 	 * @param signType sign frame style (one of SIGN_TYPES)
@@ -201,13 +281,14 @@ public class NpcTemplates {
 	 * the TalkerScriptWizard machinery refuses; the script is not modified in
 	 * that case
 	 */
-	public static int addSignScript(GFLPawnScript script, int msgLine, int signType) {
+	public static int addSignScript(Measured measured, GFLPawnScript script, int msgLine, int signType) {
+		asked(measured);
 		script.decompressThis();
 		PawnInstruction wrapper = ZoneScriptAnalyzer.findSignWrapper(script);
 		if (wrapper == null) {
-			throw new IllegalStateException("The zone script has no sign display routine (present in 69 of 536 vanilla zones).");
+			throw new IllegalStateException("The zone script has no sign display routine (present in 69 of " + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + " vanilla zones).");
 		}
-		return TalkerScriptWizard.cloneCallerSub(script, wrapper, new int[]{signType, msgLine, SIGN_ARG_BYTES});
+		return TalkerScriptWizard.cloneCallerSub(measured, script, wrapper, new int[]{signType, msgLine, SIGN_ARG_BYTES});
 	}
 
 	/**
@@ -217,17 +298,19 @@ public class NpcTemplates {
 	 * the dispatch. The giver is repeatable: the vanilla one-shot flag guard
 	 * is not templated yet.
 	 *
+	 * @param measured the game the zone is from, already asked (measuredOn)
 	 * @param script a decompressThis()'d zone script, modified in place
-	 * @param itemId the item to give (1..ITEM_ID_MAX)
+	 * @param itemId the item to give (1..the game's itemIdMax)
 	 * @param count how many to give (1..99)
 	 * @return the newly allocated local script ID (dispatch case key)
 	 * @throws IllegalStateException if the zone script has no give-item
 	 * wrapper or the TalkerScriptWizard machinery refuses; the script is not
 	 * modified in that case
 	 */
-	public static int addItemGiverScript(GFLPawnScript script, int itemId, int count) {
-		if (itemId < 1 || itemId > ITEM_ID_MAX) {
-			throw new IllegalStateException("Item ID " + itemId + " is out of range 1.." + ITEM_ID_MAX + ".");
+	public static int addItemGiverScript(Measured measured, GFLPawnScript script, int itemId, int count) {
+		int max = asked(measured).profile().itemIdMax();
+		if (itemId < 1 || itemId > max) {
+			throw new IllegalStateException("Item ID " + itemId + " is out of range 1.." + max + ".");
 		}
 		if (count < 1 || count > 99) {
 			throw new IllegalStateException("Item count " + count + " is out of range 1..99.");
@@ -235,9 +318,9 @@ public class NpcTemplates {
 		script.decompressThis();
 		PawnInstruction wrapper = ZoneScriptAnalyzer.findGiveWrapper(script);
 		if (wrapper == null) {
-			throw new IllegalStateException("The zone script has no give-item routine (present in 120 of 536 vanilla zones).");
+			throw new IllegalStateException("The zone script has no give-item routine (present in 120 of " + ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES + " vanilla zones).");
 		}
-		return TalkerScriptWizard.cloneCallerSub(script, wrapper, new int[]{GIVE_MODE, count, itemId, GIVE_ARG_BYTES});
+		return TalkerScriptWizard.cloneCallerSub(measured, script, wrapper, new int[]{GIVE_MODE, count, itemId, GIVE_ARG_BYTES});
 	}
 
 	/**
@@ -294,11 +377,13 @@ public class NpcTemplates {
 	 * vanilla u2==3 records share it, only the height offset u10 ever
 	 * varies).
 	 *
+	 * @param measured the game the zone is from, already asked (measuredOn)
 	 * @param caseId the sign's local script ID (from addSignScript)
 	 * @param xTile tile X of the interaction spot
 	 * @param yTile tile Y of the interaction spot
 	 */
-	public static ZoneEntities.Prop makeSignFurniture(int caseId, int xTile, int yTile) {
+	public static ZoneEntities.Prop makeSignFurniture(Measured measured, int caseId, int xTile, int yTile) {
+		asked(measured);
 		ZoneEntities.Prop p = new ZoneEntities.Prop();
 		p.script = caseId;
 		p.unknown2 = SIGN_FURNITURE_U2;
@@ -314,11 +399,13 @@ public class NpcTemplates {
 	 * 1x1, multi-zone links unset). Used for user script IDs such as a
 	 * freshly cloned item giver.
 	 *
+	 * @param measured the game the zone is from, already asked (measuredOn)
 	 * @param uid free NPC UID (nextFreeUid)
 	 * @param model MoveModel UID
 	 * @param scriptId the local script ID the NPC runs on interaction
 	 */
-	public static ZoneEntities.NPC makeScriptedNpc(int uid, int model, int scriptId, int xTile, int yTile) {
+	public static ZoneEntities.NPC makeScriptedNpc(Measured measured, int uid, int model, int scriptId, int xTile, int yTile) {
+		asked(measured);
 		ZoneEntities.NPC npc = new ZoneEntities.NPC();
 		npc.uid = uid;
 		npc.model = model;
@@ -335,15 +422,17 @@ public class NpcTemplates {
 	 * The battle only exists if trainer data slot trainerId is valid - edit
 	 * party/class in pk3DS.
 	 *
+	 * @param measured the game the zone is from, already asked (measuredOn)
 	 * @param uid free NPC UID (nextFreeUid)
-	 * @param trainerId trainer data slot (1..TRAINER_ID_MAX)
+	 * @param trainerId trainer data slot (1..the game's trainerIdMax)
 	 * @param model MoveModel UID
 	 * @param sightRange tiles of sight (0 = battle on talk only; vanilla max 8)
 	 * @param faceDirection 0=down 1=up 2=left 3=right
 	 */
-	public static ZoneEntities.NPC makeTrainerNpc(int uid, int trainerId, int model, int sightRange, int faceDirection, int xTile, int yTile) {
-		if (trainerId < 1 || trainerId > TRAINER_ID_MAX) {
-			throw new IllegalStateException("Trainer ID " + trainerId + " is out of range 1.." + TRAINER_ID_MAX + ".");
+	public static ZoneEntities.NPC makeTrainerNpc(Measured measured, int uid, int trainerId, int model, int sightRange, int faceDirection, int xTile, int yTile) {
+		int max = asked(measured).profile().trainerIdMax();
+		if (trainerId < 1 || trainerId > max) {
+			throw new IllegalStateException("Trainer ID " + trainerId + " is out of range 1.." + max + ".");
 		}
 		ZoneEntities.NPC npc = new ZoneEntities.NPC();
 		npc.uid = uid;
@@ -363,8 +452,9 @@ public class NpcTemplates {
 	 * it in the same zone as (and usually adjacent to) the 3000+ twin of the
 	 * same trainer ID.
 	 */
-	public static ZoneEntities.NPC makeTrainerPairNpc(int uid, int trainerId, int model, int sightRange, int faceDirection, int xTile, int yTile) {
-		ZoneEntities.NPC npc = makeTrainerNpc(uid, trainerId, model, sightRange, faceDirection, xTile, yTile);
+	public static ZoneEntities.NPC makeTrainerPairNpc(Measured measured, int uid, int trainerId, int model, int sightRange, int faceDirection, int xTile, int yTile) {
+		asked(measured);
+		ZoneEntities.NPC npc = makeTrainerNpc(measured, uid, trainerId, model, sightRange, faceDirection, xTile, yTile);
 		npc.script = TRAINER_PAIR_SCRIPT_BASE + trainerId;
 		npc.movePerm2 = TRAINER_PAIR_MOVE_EVENT;
 		return npc;

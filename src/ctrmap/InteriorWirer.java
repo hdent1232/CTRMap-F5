@@ -72,6 +72,17 @@ public class InteriorWirer {
 	 * interiors; stairs of multi-floor houses stay retail-linked).
 	 */
 	public static int cloneAndWire(int exteriorZone, int extWarpIdx, int interiorDonor, int targetSlot) throws IOException {
+		//ONE UNIT (F227): the clone was written and persisted, and only then were its exits read,
+		//rewired and written - so a failure after the clone left an interior whose exits led into
+		//the retail exterior. The clone's own unit joins this one; a failure now puts it back.
+		try (WorkspaceUnit unit = WorkspaceUnit.begin("Wire an interior", Workspace.session())) {
+			int retail = cloneAndWireIn(exteriorZone, extWarpIdx, interiorDonor, targetSlot);
+			unit.commit();
+			return retail;
+		}
+	}
+
+	private static int cloneAndWireIn(int exteriorZone, int extWarpIdx, int interiorDonor, int targetSlot) throws IOException {
 		ZoneCloner.cloneIntoSlot(interiorDonor, targetSlot);
 		File zf = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, targetSlot);
 		ZO zo = new ZO(zf, Workspace.session());

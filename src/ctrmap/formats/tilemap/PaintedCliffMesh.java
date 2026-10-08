@@ -218,9 +218,6 @@ public final class PaintedCliffMesh {
 		//windings because the patch is edge-on to that plane and the corners of
 		//a map face four different ways.
 		for (Map.Entry<String, List<float[][]>> en : caps.entrySet()) {
-			if (System.getProperty("nogusset") != null) {
-				break;
-			}
 			List<float[][]> prof = en.getValue();
 			if (prof.size() < 2) {
 				continue;
@@ -835,11 +832,6 @@ public final class PaintedCliffMesh {
 	}
 
 	/**
-	 * One band of a contour strip, whose top row may sit on a different line
-	 * from its bottom row - the top on the true tile boundary so the floor above
-	 * meets it, the bottom on the rounded contour.
-	 */
-	/**
 	 * A horizontal quad, wound to face upward.
 	 *
 	 * <p>Used for the collar that joins the cliff's rounded top edge back to
@@ -937,7 +929,13 @@ public final class PaintedCliffMesh {
 	 *
 	 * <p>Two quads rather than one because a single 45-degree slab reads as a
 	 * ramp; splitting the fall 30/70 across a wide shoulder and a steep face is
-	 * what makes it read as rock. The foot is buried below the lower floor and
+	 * what makes it read as rock. The split is measured, not taste: over the
+	 * retail cliff meshes - the face angles of {@code d112r0103_gake1},
+	 * {@code d112r0103_gake2}, {@code gake_basic} and {@code chip_rock_b} - a
+	 * cliff averages 42-46 degrees, mean rise almost exactly equal to mean run,
+	 * with a large share of its area (44%, 62%) at only 20-30 degrees: the
+	 * shoulder, where the ground rolls over before the face steepens. (Moved here
+	 * from PaintedRegionBuilder, where the split left it above another class.) The foot is buried below the lower floor and
 	 * the top left exactly on the tile edge - both to keep any two surfaces from
 	 * ending up coplanar, which z-fights and shows as dark streaks down the
 	 * cliff. Returns empty for a drop of nothing.

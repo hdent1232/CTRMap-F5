@@ -116,7 +116,7 @@ public class TalkerWizardDryRunTest {
 		int preHeadroom = s.allocatedMem - s.heapStart;
 
 		//the full clone operation, in memory
-		int newId = TalkerScriptWizard.cloneTalker(s, FAKE_LINE);
+		int newId = TalkerScriptWizard.cloneTalker(NpcScriptGateTest.ORAS, s, FAKE_LINE);
 
 		//reserialize and re-parse from scratch
 		byte[] bytes = s.getScriptBytes();

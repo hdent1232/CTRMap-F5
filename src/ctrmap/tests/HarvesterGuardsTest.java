@@ -98,8 +98,7 @@ public class HarvesterGuardsTest {
 		File garcFile = new File(dump.getAbsolutePath()
 				+ Workspace.getArchivePath(ArchiveType.FIELD_DATA, GameType.ORAS));
 		if (!garcFile.isFile()) {
-			System.out.println("  skip: no pristine FieldData archive under " + dump + " (pass the romfs root as args[0])");
-			System.out.println("ALL PASS");
+			Skip.suite("no pristine FieldData archive under " + dump + " (pass the romfs root as args[0])");
 			return;
 		}
 		int wanted = args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_REGIONS;
@@ -161,7 +160,7 @@ public class HarvesterGuardsTest {
 			}
 		}
 		if (anchor == null) {
-			System.out.println("  skip: no swept component mixes a lamp material into a building");
+			check(false, "no swept component mixes a lamp material into a building");
 		} else {
 			check("building".equals(anchor.hint()), "a " + buildingTris + "-triangle building holding "
 					+ lampTris + " triangles of lamp is called a building, not a lamp - it is called \""
@@ -218,7 +217,7 @@ public class HarvesterGuardsTest {
 			}
 		}
 		if (anchor == null) {
-			System.out.println("  skip: every swept component's best family outweighs its biggest unknown material");
+			check(false, "every swept component's best family outweighs its biggest unknown material");
 			return;
 		}
 		String hint = anchor.hint();

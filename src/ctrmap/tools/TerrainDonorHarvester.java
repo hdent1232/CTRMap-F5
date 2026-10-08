@@ -55,22 +55,30 @@ public class TerrainDonorHarvester {
 		//region -> area (for the texture carry at paint time)
 		int[] regionArea = new int[gr.length];
 		Arrays.fill(regionArea, -1);
-		int zones = Math.min(536, zo.length - 2);
+		//the profile's measured zone count, not "length - 2" (F029)
+		ctrmap.gamedef.GameProfile prof = ctrmap.gamedef.GameProfile.of(game);
+		int retail = prof.retailZoneCount();
+		int zones = ctrmap.ZoneTables.zoneCount(zo, prof);
+		zones = retail < 0 ? zones : Math.min(retail, zones); //retail zones only, when the profile knows how many
+		//SAID, NOT DROPPED (F211): a zone that would not read was skipped in silence, its regions
+		//never scanned, and the table this writes came out short with nothing to show for it
+		List<String> skipped = new ArrayList<>();
 		for (int z = 0; z < zones; z++) {
 			try {
 				byte[] c = zo.getDecompressedEntry(z);
 				byte[] hdr = subfile(c, 0);
 				int area = u16(hdr, 2), matrix = u16(hdr, 4);
 				byte[] mat = mm.getDecompressedEntry(matrix);
-				int sub0 = i32(mat, 4);
-				int w = u16(mat, sub0 + 4), h = u16(mat, sub0 + 6);
+				ctrmap.formats.mapmatrix.MapMatrix.Grid grid = ctrmap.formats.mapmatrix.MapMatrix.Grid.of(mat);
+				int w = grid.width, h = grid.height;
 				for (int k = 0; k < w * h; k++) {
-					int id = u16(mat, sub0 + 8 + k * 2);
+					int id = grid.id(k);
 					if (id != 0xFFFF && id < regionArea.length && regionArea[id] < 0) {
 						regionArea[id] = area;
 					}
 				}
-			} catch (Exception ignore) {
+			} catch (Exception ex) {
+				skipped.add("zone " + z + " (" + ctrmap.util.Bytes.reason(ex) + ")");
 			}
 		}
 
@@ -92,9 +100,11 @@ public class TerrainDonorHarvester {
 			try {
 				m = new BchMapModel(modelB);
 				if (!m.validate().isEmpty()) {
+					skipped.add("region " + r + " (its model does not validate: " + m.validate().get(0) + ")");
 					continue;
 				}
 			} catch (RuntimeException ex) {
+				skipped.add("region " + r + " (" + ctrmap.util.Bytes.reason(ex) + ")");
 				continue;
 			}
 			for (BchMapModel.MeshGeom g : m.geometry()) {
@@ -134,6 +144,8 @@ public class TerrainDonorHarvester {
 			}
 		}
 		System.out.println("scanned " + scanned + " regions");
+		System.out.println(skipped.isEmpty() ? "skipped nothing"
+				: "SKIPPED " + skipped.size() + " - the table below was chosen without them: " + skipped);
 
 		List<String> rows = new ArrayList<>();
 		byte[][] targets = new byte[PROBE_TARGETS.length][];

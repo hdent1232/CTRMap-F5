@@ -40,8 +40,17 @@ SKIP_DIRS = ("build", "dist", ".git", "__pycache__", "node_modules", "wt", "lib"
 #: A rewrite: a substitution that produces new text.
 _REWRITE = re.compile(r"\.replace\s*\(|\bre\.sub\s*\(")
 
+#: A call that WRITES: its name, after any leading underscores, begins with "write" - write,
+#: write_text, .write, writelines, a private _write. NOT any name that merely contains it:
+#: `ask_write(root, rel, before, after)` judges a write and writes nothing, and the first version
+#: refused the bundle's own test of it (2026-10-07). Measured over this project's python before
+#: narrowing: of 51 names the old pattern matched, the four it stops seeing - ask_write,
+#: judged_at_write, stack_write, live_writers - are judges and queries, and `_write`, a writer,
+#: is still seen; the rest were `def test_...(` lines, definitions rather than calls.
+_WRITE_CALL = r"(?:^|[^\w])_*write\w*\s*\("
+
 #: ...handed straight to something that writes a file, on the same line.
-_WRITTEN_INLINE = re.compile(r"\b\w*write\w*\s*\([^\n]*(?:\.replace\s*\(|\bre\.sub\s*\()", re.I)
+_WRITTEN_INLINE = re.compile(_WRITE_CALL + r"[^\n]*(?:\.replace\s*\(|\bre\.sub\s*\()", re.I)
 
 #: ...or assigned to a name that is written within the next few lines.
 _ASSIGNED = re.compile(r"^\s*(\w+)\s*=\s*[^=\n]*(?:\.replace\s*\(|\bre\.sub\s*\()")
@@ -135,7 +144,7 @@ def reaches_a_file(lines, i):
         return False
     name = found.group(1)
     for later in lines[i + 1:i + 1 + LOOK_AHEAD]:
-        if re.search(r"\b\w*write\w*\s*\([^\n]*\b%s\b" % re.escape(name), later, re.I):
+        if re.search(_WRITE_CALL + r"[^\n]*\b%s\b" % re.escape(name), later, re.I):
             return True
     return False
 

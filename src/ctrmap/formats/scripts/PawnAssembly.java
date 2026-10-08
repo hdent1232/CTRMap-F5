@@ -50,16 +50,12 @@ public class PawnAssembly {
 
 	/** natives[] index whose registered name hash matches {@code name}, or -1. */
 	int resolveNativeIndex(String name) {
-		if (natives == null) {
-			return -1;
-		}
-		int hash = ctrmap.scripts.GfHash.hashForName(name);
-		for (int i = 0; i < natives.natives.size(); i++) {
-			if (natives.natives.get(i).data[1] == hash) {
-				return i;
-			}
-		}
-		return -1;
+		return natives == null ? -1 : natives.nativeIndexOf(name);
+	}
+
+	/** The script whose natives a name resolves in, or null when this assembly takes no names. */
+	GFLPawnScript nativesFrom() {
+		return natives;
 	}
 
 	boolean hasNextLine() {

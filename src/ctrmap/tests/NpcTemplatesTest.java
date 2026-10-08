@@ -147,7 +147,7 @@ public class NpcTemplatesTest {
 
 		int newId;
 		try {
-			newId = NpcTemplates.addSignScript(s, FAKE_LINE, signType);
+			newId = NpcTemplates.addSignScript(NpcScriptGateTest.ORAS, s, FAKE_LINE, signType);
 		} catch (RuntimeException ex) {
 			return "addSignScript threw: " + ex.getMessage();
 		}
@@ -179,7 +179,7 @@ public class NpcTemplatesTest {
 
 		int newId;
 		try {
-			newId = NpcTemplates.addItemGiverScript(s, itemId, count);
+			newId = NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s, itemId, count);
 		} catch (RuntimeException ex) {
 			return "addItemGiverScript threw: " + ex.getMessage();
 		}
@@ -284,10 +284,10 @@ public class NpcTemplatesTest {
 		int baseProp = e.furniture.size();
 		int uid = NpcTemplates.nextFreeUid(e);
 
-		ZoneEntities.NPC trainer = NpcTemplates.makeTrainerNpc(uid, 7, 100, 5, 1, 30, 40);
-		ZoneEntities.NPC pair = NpcTemplates.makeTrainerPairNpc(uid + 1, 7, 100, 5, 1, 31, 40);
-		ZoneEntities.NPC giverNpc = NpcTemplates.makeScriptedNpc(uid + 2, 50, 42, 10, 12);
-		ZoneEntities.Prop sign = NpcTemplates.makeSignFurniture(9, 15, 16);
+		ZoneEntities.NPC trainer = NpcTemplates.makeTrainerNpc(NpcScriptGateTest.ORAS, uid, 7, 100, 5, 1, 30, 40);
+		ZoneEntities.NPC pair = NpcTemplates.makeTrainerPairNpc(NpcScriptGateTest.ORAS, uid + 1, 7, 100, 5, 1, 31, 40);
+		ZoneEntities.NPC giverNpc = NpcTemplates.makeScriptedNpc(NpcScriptGateTest.ORAS, uid + 2, 50, 42, 10, 12);
+		ZoneEntities.Prop sign = NpcTemplates.makeSignFurniture(NpcScriptGateTest.ORAS, 9, 15, 16);
 
 		e.npcs.add(trainer);
 		e.npcs.add(pair);
@@ -330,7 +330,7 @@ public class NpcTemplatesTest {
 
 		//out-of-range guards
 		try {
-			NpcTemplates.makeTrainerNpc(0, 0, 0, 0, 0, 0, 0);
+			NpcTemplates.makeTrainerNpc(NpcScriptGateTest.ORAS, 0, 0, 0, 0, 0, 0, 0);
 			return "makeTrainerNpc accepted trainer id 0";
 		} catch (RuntimeException ok) {
 			//expected

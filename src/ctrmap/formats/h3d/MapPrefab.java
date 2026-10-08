@@ -82,6 +82,22 @@ public class MapPrefab {
 	// ---- extraction -------------------------------------------------------
 
 	/**
+	 * How many tiles run from {@code start} to {@code end}, both inclusive: the one width a catalog
+	 * box, a harvested component and a cut are measured by (F129). They were three formulas, and a
+	 * box whose end lay one tile before its start was listed 0 wide, hit-tested 0 wide and cut 2
+	 * wide, so a placed one could never be clicked again.
+	 *
+	 * @throws IllegalArgumentException when the end is before the start
+	 */
+	public static int span(int start, int end) {
+		if (end < start) {
+			throw new IllegalArgumentException("a tile box runs from " + start + " back to " + end
+					+ ": its end is before its start");
+		}
+		return end - start + 1;
+	}
+
+	/**
 	 * Cuts a prefab out of a region: every face fully inside the tile box
 	 * (region-local tiles, inclusive), all layers. Returns null if nothing
 	 * touches the box; refuses, naming the count, when faces overlap the box
@@ -90,6 +106,9 @@ public class MapPrefab {
 	 * empty while 60 faces lay across it.
 	 */
 	public static MapPrefab extract(GR gr, int tx0, int ty0, int tx1, int ty1, String name) {
+		//refused when inverted: Box.ofTiles would turn it round into a box wider than the one listed
+		int tilesW = span(tx0, tx1);
+		int tilesH = span(ty0, ty1);
 		GeoBoxOps.Box box = GeoBoxOps.Box.ofTiles(tx0, ty0, tx1, ty1);
 		byte[] modelBytes = gr.getFile(1);
 		if (!BchMapModel.isMapModel(modelBytes)) {
@@ -98,8 +117,8 @@ public class MapPrefab {
 		BchMapModel model = new BchMapModel(modelBytes);
 		MapPrefab p = new MapPrefab();
 		p.name = name;
-		p.tilesW = Math.abs(tx1 - tx0) + 1;
-		p.tilesH = Math.abs(ty1 - ty0) + 1;
+		p.tilesW = tilesW;
+		p.tilesH = tilesH;
 		float ax = box.minX, az = box.minZ; // anchor = box min corner
 
 		//per material, faces kept and faces left out: a cut says what it left
@@ -521,12 +540,16 @@ public class MapPrefab {
 		float ax = tileX * 18f - 360f, az = tileY * 18f - 360f;
 		byte[] current = targetModel;
 		//parsed once, not per piece: used to check that a fast-path target really
-		//has the donor's vertex layout and not merely its stride
+		//has the donor's vertex layout and not merely its stride. A donor that will
+		//not parse THROWS (F211): it was swallowed, which switched that check off and
+		//let the fast path grow a mesh of the same stride in a different format
 		BchMapModel donor = null;
 		if (donorModel != null && BchMapModel.isMapModel(donorModel)) {
 			try {
 				donor = new BchMapModel(donorModel);
-			} catch (RuntimeException ignore) {
+			} catch (RuntimeException ex) {
+				throw new IllegalStateException("the embedded donor model of " + name + " could not be read: "
+						+ ctrmap.util.Bytes.reason(ex), ex);
 			}
 		}
 		for (Piece piece : pieces) {
@@ -564,7 +587,7 @@ public class MapPrefab {
 					String matName = uniqueMaterialName(model, piece.material);
 					byte[] injected = BchModelAppender.append(current, donorModel, piece.donorMeshIndex, matName);
 					BchMapModel im = new BchMapModel(injected);
-					int newMesh = findMeshByMaterialName(im, matName);
+					int newMesh = im.meshWithMaterial(matName);
 					if (newMesh < 0) {
 						throw new IllegalStateException("appended mesh not found");
 					}
@@ -598,7 +621,7 @@ public class MapPrefab {
 	private String uniqueMaterialName(BchMapModel model, String base) {
 		String name = base;
 		int k = 2;
-		while (findMeshByMaterialName(model, name) >= 0 || materialNameExists(model, name)) {
+		while (model.meshWithMaterial(name) >= 0 || materialNameExists(model, name)) {
 			name = base + "_p" + (k++);
 		}
 		return name;
@@ -611,15 +634,6 @@ public class MapPrefab {
 			}
 		}
 		return false;
-	}
-
-	private static int findMeshByMaterialName(BchMapModel model, String material) {
-		for (int m = 0; m < model.meshes.size(); m++) {
-			if (material.equals(model.getMaterialName(model.getMeshMaterialIndex(m)))) {
-				return m;
-			}
-		}
-		return -1;
 	}
 
 	/**
@@ -712,12 +726,6 @@ public class MapPrefab {
 	}
 
 	/**
-	 * The mesh a piece stamps into: same material name AND the same vertex
-	 * layout (stride + position offset) - the same name can appear on several
-	 * meshes with different layouts, and vertex bytes are copied whole-stride
-	 * so the layout must match exactly.
-	 */
-	/**
 	 * True when the target mesh has EXACTLY the donor mesh's vertex layout, so
 	 * the piece's bytes can be copied into it whole-stride.
 	 *
@@ -755,6 +763,12 @@ public class MapPrefab {
 		}
 	}
 
+	/**
+	 * The mesh a piece stamps into: same material name AND the same vertex
+	 * layout (stride + position offset) - the same name can appear on several
+	 * meshes with different layouts, and vertex bytes are copied whole-stride
+	 * so the layout must match exactly.
+	 */
 	public static int findTargetMesh(BchMapModel model, Piece piece) {
 		return findTargetMesh(model, piece, null);
 	}
@@ -906,15 +920,20 @@ public class MapPrefab {
 					in.readFully(packed);
 					p.donorModel = ctrmap.formats.garc.LZ11.decompress(packed);
 				}
-				//skinning is a fact of the embedded donor, not stored: re-read it
+				//skinning is a fact of the embedded donor, not stored: re-read it. A donor
+				//that will not parse REFUSES the prefab (F211): it was swallowed, every piece
+				//read as unskinned, and the full path injected skinned meshes as if they were not
 				if (p.donorModel != null && BchMapModel.isMapModel(p.donorModel)) {
+					BchMapModel donor;
 					try {
-						BchMapModel donor = new BchMapModel(p.donorModel);
-						for (Piece piece : p.pieces) {
-							piece.skinned = piece.donorMeshIndex >= 0 && piece.donorMeshIndex < donor.meshCount
-									&& skinned(donor, piece.donorMeshIndex);
-						}
-					} catch (RuntimeException ignore) {
+						donor = new BchMapModel(p.donorModel);
+					} catch (RuntimeException ex) {
+						throw new IOException("prefab " + f.getName() + "'s embedded donor model could not be read: "
+								+ ctrmap.util.Bytes.reason(ex), ex);
+					}
+					for (Piece piece : p.pieces) {
+						piece.skinned = piece.donorMeshIndex >= 0 && piece.donorMeshIndex < donor.meshCount
+								&& skinned(donor, piece.donorMeshIndex);
 					}
 				}
 			}
@@ -935,16 +954,19 @@ public class MapPrefab {
 				}
 			}
 			//the optional loss block. A prefab written before it existed, or one
-			//whose cut lost nothing, simply ends here.
-			try {
-				if (in.readInt() == LOSS_TAG) {
+			//whose cut lost nothing, simply ends here - and ONLY here (F211): an
+			//EOFException anywhere in the block was taken for that, so a file cut
+			//short inside it loaded with half its losses and said nothing
+			int first = in.read();
+			if (first >= 0) {
+				int tag = (first << 24) | (in.readUnsignedByte() << 16) | (in.readUnsignedByte() << 8) | in.readUnsignedByte();
+				if (tag == LOSS_TAG) {
 					p.facesDropped = in.readInt();
 					int nl = in.readInt();
 					for (int i = 0; i < nl; i++) {
 						p.materialsLost.add(in.readUTF());
 					}
 				}
-			} catch (java.io.EOFException fileEndsWhereItAlwaysDid) {
 			}
 			return p;
 		}

@@ -2,7 +2,6 @@ package ctrmap;
 
 import ctrmap.formats.tilemap.EditorTileset;
 import ctrmap.formats.garc.GARC;
-import ctrmap.formats.pokedata.PokeData;
 import ctrmap.formats.text.LocationNames;
 import ctrmap.gamedef.ArchiveType;
 import ctrmap.gamedef.GameType;
@@ -15,6 +14,7 @@ import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.prefs.Preferences;
+import javax.swing.JOptionPane;
 import javax.swing.SwingWorker;
 
 /**
@@ -77,23 +77,31 @@ public class Workspace {
 		TILESET_PATH = customTilesetPath;
 	}
 
+	/**
+	 * The tileset the 2D tile editor draws with: the workspace's own when one is set and reads,
+	 * else the bundled one - and when the workspace's own does not read, the user is told why
+	 * (it used to be tested for null tiles, which a reader that logged its failures left behind;
+	 * a half-read file passed that test with nulls in it).
+	 */
 	public static EditorTileset getTileset() {
 		if (!TILESET_DEFAULT) {
-			if (TILESET_PATH != null) {
-				File f = new File(TILESET_PATH);
-				if (f.exists()) {
-					EditorTileset ts = new EditorTileset(f);
-					if (ts.tiles != null) { //if yes, the loader failed, wrong magic most likely
-						return ts;
-					}
+			try {
+				if (TILESET_PATH == null || TILESET_PATH.isEmpty()) {
+					throw new java.io.IOException("no tileset file is set");
 				}
+				return new EditorTileset(new File(TILESET_PATH));
+			} catch (java.io.IOException unreadable) {
+				Ui.error("The tileset " + (TILESET_PATH == null ? "" : TILESET_PATH + " ") + "could not be read, so"
+						+ " the default one is used:\n" + Ui.reason(unreadable), "Invalid tileset");
+				TILESET_DEFAULT = true;
 			}
-		} else {
-			return new EditorTileset(ResourceAccess.getStream("DefaultTileset.mets"));
 		}
-		Ui.error("The tileset is corrupt. Restoring defaults.", "Invalid tileset");
-		TILESET_DEFAULT = true;
-		return new EditorTileset(ResourceAccess.getStream("DefaultTileset.mets"));
+		try {
+			return new EditorTileset(ResourceAccess.getStream("DefaultTileset.mets"));
+		} catch (java.io.IOException broken) {
+			throw new IllegalStateException("the default tileset built into the program could not be read: "
+					+ Ui.reason(broken), broken);
+		}
 	}
 
 	/**
@@ -183,38 +191,71 @@ public class Workspace {
 	 * the raw list before they have had a chance to do anything.
 	 */
 	public static WorkspaceSession validate(Component parent, boolean showErrors) {
+		return validate(parent, showErrors, null);
+	}
+
+	/**
+	 * {@link #validate(Component, boolean)}, adding why it failed to {@code problems} - the
+	 * words the user is told - for a caller that reports in its own words (the setup wizard).
+	 * Handed a list rather than read back from a static: the reasons belong to this one call,
+	 * and a static would be a tenth global on a class whose statics are counted (GlobalStateTest).
+	 */
+	public static WorkspaceSession validate(Component parent, boolean showErrors, java.util.List<String> problems) {
 		install(null);
 		WorkspaceSession opened;
 		try {
 			opened = WorkspaceSession.open(WORKSPACE_PATH == null ? null : new File(WORKSPACE_PATH),
 					GAMEDIR_PATH == null ? null : new File(GAMEDIR_PATH));
+			opened.prepareDirectories();
+			reportSnapshot(opened.snapshotOriginals());
+			//the location names are read from the session that was just opened, NOW,
+			//so a game whose text lacks them is refused here rather than at the first
+			//zone dropdown (F231). They are kept in that session's own store (F218),
+			//like everything else read from its game: a reset drops the session and
+			//them with it, and a pack empties the store. The Pokemon reference tables
+			//are read now too, where opening already waits, rather than at the first
+			//picker; a pack's emptied store reads them again when next asked.
+			LocationNames.loadFromGarc(opened);
+			ctrmap.formats.pokedata.PokeData.of(opened);
 		} catch (WorkspaceSession.OpenFailed ex) {
-			if (!showErrors) {
-				return null;
-			}
-			StringBuilder sb = new StringBuilder();
-			for (String s : ex.problems()) {
-				sb.append(s);
-				sb.append("\n");
-			}
-			sb.append("\nRun Options > Setup wizard to point CTRMap at your game,\n");
-			sb.append("then open a map from the zone dropdown in the \"Zone Loader\" tab.");
-			Ui.error(parent, sb.toString(), "Setup Error");
-			return null;
+			return failedToOpen(parent, showErrors, ex.problems(), problems);
+		} catch (RuntimeException ex) {
+			//ANY FAILURE, NOT ONLY A MISSING FILE (F231). Only OpenFailed was caught,
+			//and that covers files that are absent. A game folder whose archives are
+			//all present but whose GameText lacks the location-names entry threw
+			//IllegalStateException from loadFromGarc straight past this method, with
+			//the old session already gone (install(null) above) and no caller ever
+			//reaching onWorkspaceOpened(null) - the method written to close the zone
+			//that was open, so its editors were left live over no workspace at all.
+			return failedToOpen(parent, showErrors,
+					java.util.Collections.singletonList("The game could not be opened: " + Ui.reason(ex)), problems);
 		}
-		opened.prepareDirectories();
-		reportSnapshot(opened.snapshotOriginals());
-		//the two tables derived from the game are loaded from the session that
-		//was just opened, handed in: neither class reads the global any more,
-		//so a workspace that opens without loading them leaves the location
-		//dropdowns refusing and the Pokemon pickers on id-only labels. They
-		//load BEFORE this returns, because the caller hands the session
-		//straight to the main window, whose zone dropdown names its rows
-		//from them.
-		LocationNames.loadFromGarc(opened);
-		PokeData.load(opened);
+		if (showErrors && !opened.openWarnings().isEmpty()) {
+			Ui.message(parent, "The game opened, but:\n\n" + String.join("\n", opened.openWarnings()),
+					"Damaged archive", JOptionPane.WARNING_MESSAGE);
+		}
 		install(opened);
 		return opened;
+	}
+
+	/** Hands why validate failed to {@code out} and, when asked to, shows it; always answers null. */
+	private static WorkspaceSession failedToOpen(Component parent, boolean showErrors, java.util.List<String> problems,
+			java.util.List<String> out) {
+		if (out != null) {
+			out.addAll(problems);
+		}
+		if (!showErrors) {
+			return null;
+		}
+		StringBuilder sb = new StringBuilder();
+		for (String s : problems) {
+			sb.append(s);
+			sb.append("\n");
+		}
+		sb.append("\nRun Options > Setup wizard to point CTRMap at your game,\n");
+		sb.append("then open a map from the zone dropdown in the \"Zone Loader\" tab.");
+		Ui.error(parent, sb.toString(), "Setup Error");
+		return null;
 	}
 
 	// ------------------------------------------------------------ delegators
@@ -260,12 +301,102 @@ public class Workspace {
 		cleanAll();
 	}
 
+	/**
+	 * Sweeps the extracted copies nobody edited - the window does this on close.
+	 *
+	 * <p>WITH NO SESSION OPEN, THE EDITS ARE STILL ON DISK AND STILL LISTED. This
+	 * branch used to sweep against an empty list, so after a game folder that
+	 * would not open (a damaged archive, a moved dump) closing the window
+	 * deleted every unpacked edit along with the scratch (census H.13, F231).
+	 * The workspace folder carries its own list; it is read here, and a list
+	 * that cannot be read sweeps nothing.
+	 */
 	public static void cleanUnchanged() {
 		if (current != null) {
 			current.cleanUnchanged();
 		} else if (WORKSPACE_PATH != null) {
-			WorkspaceSession.cleanDirectories(new File(WORKSPACE_PATH), false, NO_PERSISTED);
+			File ws = new File(WORKSPACE_PATH);
+			java.util.List<String> edits;
+			try {
+				edits = WorkspaceSession.persistedIn(ws);
+			} catch (java.io.IOException unreadable) {
+				Logger.getLogger(Workspace.class.getName()).log(Level.SEVERE,
+						"the workspace's list of edited files could not be read; nothing was swept", unreadable);
+				return;
+			}
+			WorkspaceSession.cleanDirectories(ws, false, edits);
 		}
+	}
+
+	/**
+	 * The user's edits the workspace holds: the open session's list, or with no
+	 * session, the workspace folder's own list on disk.
+	 *
+	 * @throws java.io.IOException with no session open, when the folder's list
+	 *         exists and cannot be read
+	 */
+	public static java.util.List<String> editsOnDisk() throws java.io.IOException {
+		if (current != null) {
+			return current.persistPaths();
+		}
+		return WORKSPACE_PATH == null ? NO_PERSISTED : WorkspaceSession.persistedIn(new File(WORKSPACE_PATH));
+	}
+
+	/**
+	 * Empties the workspace - every extracted file, the user's unpacked edits
+	 * included - once the user has agreed, offering to pack the edits into the
+	 * game first.
+	 *
+	 * <p>ONE QUESTION, ASKED BY BOTH DOORS. Options &gt; Clean workspace deleted
+	 * every edit with no question at all (F033), while the settings dialog's
+	 * game-folder change asked - and then, when the user chose to pack first,
+	 * ignored a pack that FAILED and cleaned anyway, destroying exactly the
+	 * edits the user had just asked to keep (census H.69). Both now come here:
+	 * the count of edits is in the question, closing it is Cancel, and "pack
+	 * first" cleans only after a pack that finished.
+	 *
+	 * @param why the first paragraph of the question: why this clean is happening
+	 * @param before what the caller needs done once the answer is final and before
+	 *        any file goes - unloading the editors that show the files
+	 * @return true when the workspace was cleaned
+	 */
+	public static boolean cleanAfterAsking(java.awt.Component parent, String why, Runnable before) {
+		int edits;
+		try {
+			edits = editsOnDisk().size();
+		} catch (java.io.IOException unreadable) {
+			Ui.error(parent, "The workspace's list of which files are your edits could not be read, so "
+					+ "cleaning would delete edits it cannot tell apart from scratch. Nothing was cleaned.\n\n"
+					+ Ui.reason(unreadable), "Clean workspace");
+			return false;
+		}
+		String question = why + "\n\n"
+				+ (edits == 0 ? "No file in the workspace is marked as your edit."
+						: edits + " file(s) in the workspace are your edits. Anything not yet packed into the"
+						+ " game is lost when the workspace is cleaned.")
+				+ "\n\nPack your edits into the game before the workspace is cleaned?"
+				+ "\n    Yes - pack, then clean (if the pack does not finish, nothing is cleaned)"
+				+ "\n    No - clean without packing"
+				+ "\n    Cancel - leave everything as it is";
+		int res = Ui.confirm(parent, question, "Clean workspace", JOptionPane.YES_NO_CANCEL_OPTION,
+				JOptionPane.WARNING_MESSAGE);
+		if (res == JOptionPane.YES_OPTION) {
+			if (current == null) {
+				Ui.error(parent, "No game is open, so there is nothing to pack your edits into. Nothing was"
+						+ " cleaned.", "Clean workspace");
+				return false;
+			}
+			final boolean[] packed = {false};
+			packWorkspace(() -> packed[0] = true);
+			if (!packed[0]) {
+				return false; //the pack said why; its edits are still here because nothing was cleaned
+			}
+		} else if (res != JOptionPane.NO_OPTION) {
+			return false; //Cancel, or the question closed: not consent to delete anything
+		}
+		before.run();
+		cleanAll();
+		return true;
 	}
 
 	public static GARC getArchive(ArchiveType type) {
@@ -392,12 +523,9 @@ public class Workspace {
 		TILESET_DEFAULT = false;
 		TILESET_PATH = null;
 		current = null;
-		//not fields of this class, but derived from it: the location-name
-		//table and the Pokemon reference tables are read from the open
-		//workspace's game, and a reset that kept them would hand one game's
-		//names to the next
-		LocationNames.unload();
-		PokeData.unload();
+		//what was read from the game - the location names, the Pokemon reference
+		//tables, the prop database - lived in the session's store and went with it
+
 		//spelled out rather than delegated to resetSnapshotProblemReporting():
 		//GlobalStateTest reads this method's own body to prove no field of this
 		//class was left out of the reset, and it cannot follow a call to do it.

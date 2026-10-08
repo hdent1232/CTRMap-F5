@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 LF = chr(10)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -64,7 +65,7 @@ def dirty_files():
     """Tracked files with uncommitted changes. Empty when git cannot be asked."""
     try:
         done = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, timeout=60, creationflags=NO_WINDOW)
     except (OSError, subprocess.TimeoutExpired):                                    # pragma: no cover - git not on PATH
         return []
     out = []

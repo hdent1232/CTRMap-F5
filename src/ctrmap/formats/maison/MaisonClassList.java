@@ -37,7 +37,15 @@ public class MaisonClassList {
 		l.sourceLength = rec.length;
 		l.classTag = u16(rec, 0);
 		int count = u16(rec, 2);
-		for (int i = 0; i < count && 4 + i * 2 + 1 < rec.length; i++) {
+		//STRICT (F211): it read the indices that fit and dropped the rest, so a record cut short
+		//handed the pool guard fewer references than it declares - slots it names read as free.
+		//Both tables leave room for every index they count (the layout above), so this refuses
+		//only a record that is damaged
+		if (4 + count * 2 > rec.length) {
+			throw new IllegalArgumentException("class-list record declares " + count + " set(s) but has room for "
+					+ (rec.length - 4) / 2);
+		}
+		for (int i = 0; i < count; i++) {
 			l.setIndices.add(u16(rec, 4 + i * 2));
 		}
 		return l;

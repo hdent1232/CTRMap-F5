@@ -147,7 +147,7 @@
   },
   "A RECORDED MEASUREMENT MUST CARRY THE SUBJECT IT WAS TAKEN AGAINST": {
    "by": "tools/guard/commit_guard.py",
-   "note": "record_is_about_another_tree refuses a count whose record carries no subject digest, or one that does not match this tree, and record_run refuses to write a record at all for a run whose tree moved while it ran; source_digest treats a subject it cannot compute as UNKNOWN rather than unchanged",
+   "note": "check_test_claim asks the gate's test_counts (tools/commit_gate.py, the one implementation since F186), which refuses a count whose record carries no subject digest, one that does not match this tree, and one from a run that did not pass; record_run refuses to write a record at all for a run whose tree moved while it ran; source_digest treats a subject it cannot compute as UNKNOWN rather than unchanged",
    "clauses": {
     "The record must not be part of its own subject — exclude it by SHAPE, because excluding it by ignore-rule holds in your repository": "commit_guard.source_digest"
    },

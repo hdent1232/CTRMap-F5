@@ -32,7 +32,8 @@ VERIFIED for this game", and callers must treat that as absence, never guess.
 
 Verified-feature declarations today:
     ORAS  28     the reference implementation
-    XY    12     substantially wired
+    XY    12     declared; of the editor's features only map viewing and geometry editing
+                 is switched on - the rest refuse until measured on an XY dump (F150)
     SM     1     stub
     USUM   0     stub - UsumProfile says "Fill from an USUM dump"
 

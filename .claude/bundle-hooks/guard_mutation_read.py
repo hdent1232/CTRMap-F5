@@ -115,13 +115,13 @@ def locked_module(root):
 
     An empty or unreadable lock reads as NO lock rather than as an unnamed one: this hook may
     never be the reason a turn cannot proceed on a file nobody is mutating.
+
+    ITS FIRST LINE, through `bundle_shell.lock_names` - the reading every hook outside the judge
+    shares. This read the WHOLE file as the path, and every writer of the lock writes more than
+    one line, so a `cat` of the mutated file itself was let through under every real lock (CTRMap
+    F171); only a grep of its directory was still refused.
     """
-    try:
-        with open(os.path.join(root, LOCK), encoding="utf-8") as handle:
-            held = handle.read().strip()
-    except OSError:
-        return None
-    return held.replace(chr(92), "/") or None
+    return bundle_shell.lock_names(root, LOCK) or None
 
 
 def readers_of(command, locked):

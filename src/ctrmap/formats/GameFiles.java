@@ -55,6 +55,21 @@ public interface GameFiles {
 	/** Records that an extracted file was changed and must be packed back into its archive. */
 	void edited(File f);
 
+	/**
+	 * Whether {@code f} is an edit waiting to be packed, rather than a plain extraction of what the
+	 * archive still holds. No default: a game that cannot tell must say so in its own answer, because
+	 * "not an edit" lets a caller replace the file with the archive's copy.
+	 */
+	boolean isEdit(File f);
+
+	/**
+	 * {@code f} is about to be rewritten - called BEFORE its first byte changes, so a
+	 * change that writes several files can put this one back if a later one fails
+	 * (the workspace's unit of work, F227). Nothing by default.
+	 */
+	default void aboutToWrite(File f) {
+	}
+
 	/** A directory this operation may write temporary files into; nothing in it survives cleaning the workspace. */
 	File scratch();
 
@@ -72,6 +87,29 @@ public interface GameFiles {
 
 	/** The directory holding the untouched copy of the game's archives, for a class that diffs against what shipped; null when no snapshot was taken. */
 	File pristine();
+
+	/**
+	 * One archive AS THE GAME SHIPPED IT, for a reader that needs retail bytes; null when no untouched
+	 * copy can be had - and NEVER the live folder, which holds the user's edits (F232).
+	 *
+	 * <p>THE ONE PRISTINE READER. Five readers built "snapshot + relative path" by hand, and two of
+	 * them, finding no snapshot, read the live game instead: a building's donor textures and the
+	 * atmosphere picker's "retail" values then came from the user's own edits - the contamination the
+	 * snapshot exists to prevent, one call site away from the refusal that guards it. Here the
+	 * snapshot's copy; a workspace adds the sealed backup's verified copy behind it.
+	 *
+	 * @throws java.io.IOException when an untouched copy exists and cannot be read as one - a backup
+	 * whose bytes no longer match what was sealed - which is not the same as there being none
+	 */
+	default File pristineArchive(ArchiveType type) throws java.io.IOException {
+		File snap = pristine();
+		String rel = profile() == null ? null : profile().archivePath(type);
+		if (snap == null || rel == null) {
+			return null;
+		}
+		File f = new File(snap.getAbsolutePath() + rel);
+		return f.isFile() ? f : null;
+	}
 
 	/**
 	 * A directory, named by the class asking, for files that must outlive
@@ -102,4 +140,12 @@ public interface GameFiles {
 	 * belongs to something cleaning empties
 	 */
 	File durable(String name);
+
+	/**
+	 * What has been read from this game and kept, in one store whose lifetime is the game's
+	 * (F218): another game is another store, and a pack that rewrites the archives empties it.
+	 * No default: an interface cannot hold a store, and a default answering a new one on every
+	 * call would keep nothing while looking as though it did.
+	 */
+	GameCache cache();
 }

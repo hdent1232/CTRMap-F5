@@ -35,7 +35,6 @@ import javax.swing.table.AbstractTableModel;
  */
 public class EncounterEditDialog {
 
-	/** Opens the editor for the currently loaded zone. */
 	/**
 	 * Reads one zone's wild encounters out of the EN pack.
 	 *
@@ -54,7 +53,8 @@ public class EncounterEditDialog {
 		if (zo == null) {
 			throw new java.io.IOException("No workspace is loaded.");
 		}
-		byte[] pack = loadPack(zo, zo.length - 1, ctrmap.ZoneTables.zoneCount(zo));
+		byte[] pack = loadPack(zo, ctrmap.ZoneTables.encounterPackIndex(zo, ws.profile()),
+				ctrmap.ZoneTables.zoneCount(zo, ws.profile()));
 		if (pack == null) {
 			throw new java.io.IOException("Could not read the encounter pack.");
 		}
@@ -77,8 +77,8 @@ public class EncounterEditDialog {
 		if (zo == null) {
 			throw new java.io.IOException("No workspace is loaded.");
 		}
-		int enIndex = zo.length - 1;
-		byte[] pack = loadPack(zo, enIndex, ctrmap.ZoneTables.zoneCount(zo));
+		int enIndex = ctrmap.ZoneTables.encounterPackIndex(zo, ws.profile());
+		byte[] pack = loadPack(zo, enIndex, ctrmap.ZoneTables.zoneCount(zo, ws.profile()));
 		if (pack == null) {
 			throw new java.io.IOException("Could not read the encounter pack.");
 		}
@@ -139,13 +139,14 @@ public class EncounterEditDialog {
 		//not from a "2" written into the arithmetic; the EN pack is the last
 		//entry of the archive on the games that have one
 		final int zoneCount;
+		final int enIndex;
 		try {
 			zoneCount = ctrmap.ZoneTables.zoneCount(zo);
+			enIndex = ctrmap.ZoneTables.encounterPackIndex(zo, Workspace.profile());
 		} catch (java.io.IOException ex) {
 			ctrmap.Ui.error(parent, ctrmap.Ui.reason(ex), "Wild encounters");
 			return null;
 		}
-		final int enIndex = zo.length - 1;
 
 		byte[] pack = loadPack(zo, enIndex, zoneCount);
 		if (pack == null) {
@@ -163,7 +164,7 @@ public class EncounterEditDialog {
 		jt.getColumnModel().getColumn(3).setPreferredWidth(120);
 		//double-click the species column -> the visual picker (stat/type card)
 		ctrmap.humaninterface.pokepick.PokePickers.installDoubleClickPickers(jt, col
-				-> col == 2 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.SPECIES : null);
+				-> col == 2 ? ctrmap.humaninterface.pokepick.PokePickers.Kind.SPECIES : null, Workspace.session());
 
 		//A PANEL, not a window. Everything below is unchanged: the same adds, the same
 		//listeners, the same Ui calls - a JPanel answers all of them.
@@ -374,7 +375,8 @@ public class EncounterEditDialog {
 						break;
 				}
 				fireTableRowsUpdated(r, r);
-			} catch (NumberFormatException ignore) {
+			} catch (NumberFormatException notANumber) {
+				Forms.refuseTyped(null); //the cell keeps its old value; the signal says the typed one was refused (F211)
 			}
 		}
 	}

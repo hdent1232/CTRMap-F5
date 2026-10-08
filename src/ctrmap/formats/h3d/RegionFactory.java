@@ -38,12 +38,6 @@ public class RegionFactory {
 	}
 
 	/**
-	 * Builds blank content from a template region's subfiles.
-	 *
-	 * @param templateModel the template's map model (subfile 1)
-	 * @param groundMesh    the mesh whose material becomes the ground plane
-	 */
-	/**
 	 * Blanks a region container in place: flat ground, no collision, void tiles,
 	 * no props, and every extra layer emptied. Answers false and writes NOTHING
 	 * when the region has no editable map model.
@@ -67,6 +61,26 @@ public class RegionFactory {
 	 *        does not necessarily name the ground in its neighbours.
 	 */
 	public static boolean blankRegionFiles(ctrmap.formats.containers.GR gr, int preferredGroundMesh) {
+		try {
+			return blankOrThrow(gr, preferredGroundMesh);
+		} catch (RuntimeException notWritten) {
+			//ANSWERED, NOT THROWN, which is this method's contract and the reason the
+			//append can call it: a spare that could not be emptied keeps the copy it
+			//already has, and the caller reports the zone as kept.
+			return false;
+		}
+	}
+
+	/**
+	 * The same blank for a caller inside a {@link ctrmap.WorkspaceUnit}: false, with nothing
+	 * written, for a region whose model this factory cannot rebuild - and a THROW when a write
+	 * fails part-way (F072), because half a blanked region is not blanked and only the unit can put
+	 * the half back. {@link #blankRegionFiles} answers false for both, and a caller that cannot tell
+	 * them apart cannot say which one happened.
+	 *
+	 * @throws IllegalStateException naming the file, when a write fails after the first
+	 */
+	public static boolean blankOrThrow(ctrmap.formats.containers.GR gr, int preferredGroundMesh) {
 		byte[] template = gr.getFile(1);
 		if (!BchMapModel.isMapModel(template)) {
 			return false;
@@ -90,29 +104,28 @@ public class RegionFactory {
 		//CANNOT REBUILD, decided before anything is written; past this line the region
 		//is already being rewritten, so the answer for a failure there is the same no:
 		//half a blanked region is not blanked, and the caller says the zone was kept.
-		try {
-			gr.storeFile(1, bc.model);
-			gr.storeFile(2, bc.collision);
-			gr.storeFile(0, bc.tilemap);
-			gr.storeFile(3, bc.props);
-			//extra layers (multi-layer templates): blank them out entirely
-			if (gr.len >= 9) {
-				gr.storeFile(7, voidTilemap());
-				gr.storeFile(gr.len >= 11 ? 9 : 8, emptyCollision());
-				if (gr.len >= 11) {
-					gr.storeFile(8, voidTilemap());
-					gr.storeFile(10, emptyCollision());
-				}
+		gr.storeFile(1, bc.model);
+		gr.storeFile(2, bc.collision);
+		gr.storeFile(0, bc.tilemap);
+		gr.storeFile(3, bc.props);
+		//extra layers (multi-layer templates): blank them out entirely
+		if (gr.len >= 9) {
+			gr.storeFile(7, voidTilemap());
+			gr.storeFile(gr.len >= 11 ? 9 : 8, emptyCollision());
+			if (gr.len >= 11) {
+				gr.storeFile(8, voidTilemap());
+				gr.storeFile(10, emptyCollision());
 			}
-		} catch (RuntimeException notWritten) {
-			//ANSWERED, NOT THROWN, which is this method's contract and the reason the
-			//append can call it: a spare that could not be emptied keeps the copy it
-			//already has, and the caller reports the zone as kept.
-			return false;
 		}
 		return true;
 	}
 
+	/**
+	 * Builds blank content from a template region's subfiles.
+	 *
+	 * @param templateModel the template's map model (subfile 1)
+	 * @param groundMesh    the mesh whose material becomes the ground plane
+	 */
 	public static BlankContent blank(byte[] templateModel, int groundMesh) {
 		BlankContent out = new BlankContent();
 		out.model = blankModel(templateModel, groundMesh);

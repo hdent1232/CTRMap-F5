@@ -46,7 +46,7 @@ public class WorkflowGuardsTest {
 	public static void main(String[] args) throws Exception {
 		File dump = new File(args.length > 0 ? args[0] : "../RomFS/000400000011C400");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " - the workflow checks pack real archives");
+			Skip.section("no dump at " + dump + " - the workflow checks pack real archives");
 		} else {
 			section("an orphaned entry never refuses an append", () -> anOrphanedEntryNeverRefusesAnAppend(dump));
 			section("append, pack, append again", () -> appendPackAppendAgain(dump));
@@ -54,7 +54,11 @@ public class WorkflowGuardsTest {
 			section("a created zone shares nothing, or says so", () -> aCreatedZoneSharesNothing(dump));
 			section("the preview shows the zone it names", () -> thePreviewShowsWhatItNames(dump));
 			section("a spare left sharing is repaired", () -> spareLeftSharingIsRepaired(dump));
+			section("a map repair that fails half way puts everything back",
+					() -> aMapRepairThatFailsHalfWayPutsEverythingBack(dump));
 			section("shared resources are repaired too", () -> sharedResourcesAreRepaired(dump));
+			section("a repair that fails half way puts everything back",
+					() -> aRepairThatFailsHalfWayPutsEverythingBack(dump));
 			section("resize, pack, resize again", () -> resizePackResizeAgain(dump));
 			section("deploy, disable, deploy again", () -> deployDisableDeployAgain(dump));
 			section("edit encounters, pack, edit again", () -> encountersPackEncounters(dump));
@@ -111,21 +115,23 @@ public class WorkflowGuardsTest {
 		} catch (Exception ex) {
 			refused = ex;
 		}
-		check(refused == null || !String.valueOf(refused.getMessage()).contains("already pending"),
-				"a second append after a pack is not refused as 'already pending': "
-				+ (refused == null ? "it ran" : refused.getMessage()));
-		if (refused != null) {
-			//it may legitimately refuse for a DIFFERENT reason - the appender only
-			//supports growing from a stock base - and that refusal must say so in
-			//its own words rather than blaming a pending append
-			check(String.valueOf(refused.getMessage()).contains("stock")
-					|| String.valueOf(refused.getMessage()).contains("Revert"),
-					"and if it refuses, it refuses for the reason that is actually true: "
-					+ refused.getMessage());
-		} else {
-			check(second != null && second.realZones == 1, "the second append adds its zone too");
-			check(Workspace.getArchive(ArchiveType.ZONE_DATA).length >= afterFirst,
-					"and ZoneData did not shrink under it");
+		//IT RUNS (F039). This section used to accept a refusal saying the appender only grows from
+		//a stock base; it now grows from what is there, so a refusal of any kind is the failure
+		check(refused == null, "a second append after a pack runs: "
+				+ (refused == null ? "it ran" : ctrmap.util.Bytes.reason(refused)));
+		if (second != null) {
+			check(second.realZones == 1, "the second append adds its zone too");
+			check(second.firstNewZone == first.newZoneCount,
+					"after the first append's zones, spares included (" + second.firstNewZone + ")");
+			check(second.newZoneCount == first.newZoneCount + 4,
+					"and moves the master table up one more block of four (" + first.newZoneCount
+					+ " -> " + second.newZoneCount + ")");
+			check(second.patchZones == second.newZoneCount - ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES,
+					"and the code patch it calls for counts every added zone, not this append's one ("
+					+ second.patchZones + ")");
+			check(pack() != null, "the workspace packs again");
+			check(ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA)) == second.newZoneCount,
+					"and ZoneData really grew a second time");
 		}
 	}
 
@@ -284,21 +290,19 @@ public class WorkflowGuardsTest {
 				//append again. The owner's dump has already been appended to, so a suite
 				//that skipped here would have skipped on the one machine where the defect
 				//was found. ScratchGame owns this file; the real game is never touched.
-				int removed = ctrmap.ZoneRemover.removeFromFile(
-					Workspace.getArchive(ArchiveType.ZONE_DATA).file);
-				Workspace.reloadGARC(ArchiveType.ZONE_DATA);
+				int removed = ctrmap.ZoneRemover.remove(Workspace.session()).zones;
 				have = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
 				System.out.println("  (the scratch copy held " + (have + removed) + " zones; removing "
 					+ removed + " added one(s) put it back to " + have + ")");
 			}
 			if (have != stock) {
-				System.out.println("  skip: the scratch copy holds " + have + " zones and would not"
+				Skip.section("the scratch copy holds " + have + " zones and would not"
 					+ " revert to the stock " + stock + " - there is nothing to append from");
 				return false;
 			}
 			return true;
 		} catch (Exception ex) {
-			System.out.println("  skip: could not read the zone count: " + ex);
+			Skip.section("could not read the zone count: " + ex);
 			return false;
 		}
 	}
@@ -446,17 +450,6 @@ public class WorkflowGuardsTest {
 	}
 
 
-	/** A section that throws is a FAILURE, not a crash that ends the run.
-	 *
-	 * <p>These sections drive real archive operations, and an operation that has
-	 * regressed throws rather than returning a bad answer - which used to kill the
-	 * whole suite at the first one, taking the sections after it with it and
-	 * leaving a stack trace where a named failure belongs. Worse for the ledger: a
-	 * crash prints no FAIL line, so a plant that puts the defect back cannot be
-	 * credited by what the suite SAID, and the runner correctly refuses to credit
-	 * it at all. Catching here turns the throw into the sentence it should have
-	 * been.
-	 */
 	/**
 	 * Undecodable region bytes answer NOTHING, and never take the editor down.
 	 *
@@ -502,6 +495,17 @@ public class WorkflowGuardsTest {
 				+ "missing, not the magic");
 	}
 
+	/** A section that throws is a FAILURE, not a crash that ends the run.
+	 *
+	 * <p>These sections drive real archive operations, and an operation that has
+	 * regressed throws rather than returning a bad answer - which used to kill the
+	 * whole suite at the first one, taking the sections after it with it and
+	 * leaving a stack trace where a named failure belongs. Worse for the ledger: a
+	 * crash prints no FAIL line, so a plant that puts the defect back cannot be
+	 * credited by what the suite SAID, and the runner correctly refuses to credit
+	 * it at all. Catching here turns the throw into the sentence it should have
+	 * been.
+	 */
 	static void section(String name, Section body) {
 		try {
 			body.run();
@@ -659,6 +663,80 @@ public class WorkflowGuardsTest {
 			+ held.size() + " pack(s), " + wentOn[0] + " continuation(s))");
 	}
 
+	/**
+	 * F011, the map pass: a repair that fails on its last zone puts back the zones before it.
+	 *
+	 * <p>The pass gave each spare its own matrix in turn - its regions copied, its header
+	 * repointed and written - and wrote the master table once at the end. A throw on the last
+	 * zone left the earlier headers on new matrices and the master rows on the old one.
+	 *
+	 * <p>Made to fail the way it can: the last spare's HEADER names a matrix that does not exist
+	 * while its master row still shares the donor's, which is exactly the disagreement this
+	 * leaves behind - so the fork, which reads the header, refuses that zone after the others.
+	 */
+	static void aMapRepairThatFailsHalfWayPutsEverythingBack(File dump) throws Exception {
+		System.out.println("--- a map repair that fails on its last zone puts back the ones before it");
+		ScratchGame.open(dump);
+		if (!stockBase()) {
+			return;
+		}
+		int stock = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
+		ZoneAppender.AppendResult r = ZoneAppender.appendZones(1, DONOR, true);
+		pack();
+		int donorMatrix = matrixOf(DONOR);
+		java.util.List<Integer> broken = new java.util.ArrayList<>();
+		for (int i = r.realZones; i < r.realZones + r.spareZones; i++) {
+			repointZoneAt(stock - 2 + i, donorMatrix);
+			broken.add(stock - 2 + i);
+		}
+		check(broken.size() >= 2, "at least two spares share the donor's map again " + broken);
+		if (broken.size() < 2) {
+			return;
+		}
+		int last = broken.get(broken.size() - 1);
+		File lastFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, last);
+		byte[] lb = java.nio.file.Files.readAllBytes(lastFile.toPath());
+		int hdrOff = (lb[4] & 0xFF) | ((lb[5] & 0xFF) << 8) | ((lb[6] & 0xFF) << 16) | ((lb[7] & 0xFF) << 24);
+		lb[hdrOff + 4] = (byte) 0xFF;
+		lb[hdrOff + 5] = (byte) 0xFF;
+		java.nio.file.Files.write(lastFile.toPath(), lb);
+
+		int zoneCount = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
+		byte[] masterBefore = java.nio.file.Files.readAllBytes(masterFile.toPath());
+		java.util.Map<Integer, byte[]> headersBefore = new java.util.HashMap<>();
+		for (int z : broken) {
+			headersBefore.put(z, zoneBytes(z));
+		}
+		File newMatrix = new File(Workspace.getExtractionDirectory(ArchiveType.MAP_MATRIX),
+				String.valueOf(Workspace.getArchive(ArchiveType.MAP_MATRIX).length));
+		File newRegion = new File(Workspace.getExtractionDirectory(ArchiveType.FIELD_DATA),
+				String.valueOf(Workspace.getArchive(ArchiveType.FIELD_DATA).length));
+		check(!newMatrix.exists() && !newRegion.exists(), "no matrix or region is staged before the repair");
+
+		ctrmap.GeometryForker.RepairReport rep = ctrmap.GeometryForker.repairSharedAppendedZones(
+			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
+		check(rep.refusedBecause.contains("does not exist"),
+				"the pass refused on zone " + last + ", after the spares before it: " + rep.refusedBecause);
+		check(java.util.Arrays.equals(java.nio.file.Files.readAllBytes(masterFile.toPath()), masterBefore),
+				"the master table is exactly as it was");
+		for (int z : broken) {
+			check(java.util.Arrays.equals(zoneBytes(z), headersBefore.get(z)),
+					"zone " + z + "'s header is exactly as it was");
+		}
+		check(!newMatrix.exists() && !newRegion.exists(),
+				"no matrix or region the failed pass copied is left staged");
+		check(rep.forked.isEmpty() && !rep.changedAnything(),
+				"and the report claims no repair it did not keep " + rep.forked);
+
+		//...and with the header put right the same repair runs, so the refusal was the cause
+		repointZoneAt(last, donorMatrix);
+		ctrmap.GeometryForker.RepairReport again = ctrmap.GeometryForker.repairSharedAppendedZones(
+			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
+		check(again.refusedBecause.isEmpty() && again.forked.size() == broken.size(),
+				"and the same repair then runs: " + again.refusedBecause + " " + again.forked);
+	}
+
 	/** Points a zone's ZO header AND its master-table row at a matrix - what 1.0.0 left. */
 	static void repointZoneAt(int zoneIndex, int matrix) throws Exception {
 		File zf = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneIndex);
@@ -780,7 +858,7 @@ public class WorkflowGuardsTest {
 				doomed[i] = zoneBytes(DONOR);
 			}
 			int[] tooManyZones = new int[doomed.length];
-			ctrmap.AreaForker.forkAppendedAreas(doomed, new byte[0], tooManyZones);
+			ctrmap.AreaForker.forkAppendedAreas(doomed, ctrmap.MasterTable.detached(new byte[0], 0), tooManyZones);
 		} catch (Exception ex) {
 			tooMany = String.valueOf(ex.getMessage());
 		}
@@ -817,7 +895,7 @@ public class WorkflowGuardsTest {
 	 * preview was a hole in that copy and not in the editor: one region instead of the
 	 * map, a region belonging to the zone next door, four cells of a thirteen-cell map
 	 * so the bridges ended in mid-air. The copy is deleted and the preview calls
-	 * TileMapPanel.loadRegions, the body the editor's own load calls.
+	 * TileMapPanel.readRegions and showRegions, the halves the editor's own load calls.
 	 *
 	 * <p>Two claims survive that. THAT THERE IS ONE COPY is a source claim about the
 	 * whole tree and is checked in the build, not here. THAT THE RIGHT ZONE IS READ is
@@ -861,9 +939,108 @@ public class WorkflowGuardsTest {
 	 */
 	static void sharedResourcesAreRepaired(File dump) throws Exception {
 		System.out.println("--- an area or story text an older version left sharing is repaired");
+		java.util.List<Integer> broken = staleSharing(dump);
+		if (broken == null) {
+			return;
+		}
+		java.util.List<String> before = sharersOf(broken);
+		check(!before.isEmpty(), "put back the old state: " + before);
+
+		ctrmap.GeometryForker.RepairReport rep = ctrmap.GeometryForker.repairSharedResources(
+			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
+		check(rep.refusedBecause.isEmpty(), "the repair runs rather than refusing: "
+			+ (rep.refusedBecause.isEmpty() ? "no refusal" : rep.refusedBecause));
+		pack();
+		java.util.List<String> after = sharersOf(broken);
+		check(after.isEmpty(), "and afterwards no created zone shares any resource the append"
+			+ " makes private " + after);
+		check(!rep.forked.isEmpty(), "and it says which zones it repaired " + rep.forked);
+
+		//...and it does not run again on a workspace that is already right, which would
+		//append a copy nothing uses and orphan the one in use
+		int areasBefore = Workspace.getArchive(ArchiveType.AREA_DATA).length;
+		ctrmap.GeometryForker.RepairReport again = ctrmap.GeometryForker.repairSharedResources(
+			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
+		check(again.forked.isEmpty(), "opening it again repairs nothing " + again.forked);
+		check(Workspace.getArchive(ArchiveType.AREA_DATA).length == areasBefore,
+			"and appends no area nobody would use (" + areasBefore + ")");
+	}
+
+	/**
+	 * F011: a repair that fails half way puts back everything it wrote.
+	 *
+	 * <p>The pass gave each resource its own copy in turn, wrote that resource's zone headers as
+	 * it went and the master table once at the end. A throw in the story-text pass, after the
+	 * area pass had written, left the headers on the new areas and the master rows on the old
+	 * ones - and the game reads the master. It runs on every open, by itself.
+	 *
+	 * <p>The text pass is made to fail the way it really can, with nothing added to the product
+	 * for the test: a story-text file already staged at the slot it would take, which it refuses
+	 * to overwrite. The area pass runs first, because the passes go in the enum's order.
+	 */
+	static void aRepairThatFailsHalfWayPutsEverythingBack(File dump) throws Exception {
+		System.out.println("--- a repair that fails half way puts back everything it wrote");
+		java.util.List<Integer> broken = staleSharing(dump);
+		if (broken == null) {
+			return;
+		}
+		int zoneCount = ctrmap.ZoneTables.zoneCount(Workspace.getArchive(ArchiveType.ZONE_DATA));
+		File masterFile = Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zoneCount);
+		byte[] masterBefore = java.nio.file.Files.readAllBytes(masterFile.toPath());
+		java.util.Map<Integer, byte[]> headersBefore = new java.util.HashMap<>();
+		for (int z : broken) {
+			headersBefore.put(z, zoneBytes(z));
+		}
+		File firstNewArea = new File(Workspace.getExtractionDirectory(ArchiveType.AREA_DATA),
+				String.valueOf(Workspace.getArchive(ArchiveType.AREA_DATA).length));
+		check(!firstNewArea.exists(), "no area is staged before the repair (" + firstNewArea.getName() + ")");
+
+		File textDir = Workspace.getExtractionDirectory(ArchiveType.STORYTEXT);
+		textDir.mkdirs();
+		File staged = new File(textDir, String.valueOf(Workspace.session().getStoryTextGARC().length));
+		java.nio.file.Files.write(staged.toPath(), new byte[]{0});
+		Workspace.addPersist(staged);
+
+		ctrmap.GeometryForker.RepairReport rep = ctrmap.GeometryForker.repairSharedResources(
+			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
+		check(rep.refusedBecause.contains("story text append is already staged"),
+				"the text pass refused, after the area pass had run: " + rep.refusedBecause);
+		check(java.util.Arrays.equals(java.nio.file.Files.readAllBytes(masterFile.toPath()), masterBefore),
+				"the master table is exactly as it was");
+		for (int z : broken) {
+			check(java.util.Arrays.equals(zoneBytes(z), headersBefore.get(z)),
+					"zone " + z + "'s header is exactly as it was");
+		}
+		check(!firstNewArea.exists(), "no area the failed pass forked is left staged");
+		check(rep.forked.isEmpty() && !rep.changedAnything(),
+				"and the report claims no repair it did not keep " + rep.forked);
+		//THE INTEGRITY THE FINDING NAMES: every header and its master row agree
+		byte[] masterNow = java.nio.file.Files.readAllBytes(masterFile.toPath());
+		for (int z : broken) {
+			for (ctrmap.ZoneResource res : ZoneAppender.madePrivate()) {
+				check(res.idIn(zoneBytes(z)) == res.idInMasterRow(masterNow, z),
+						"zone " + z + "'s header and master row name the same " + res.label);
+			}
+		}
+
+		//...and with the staged text gone the same repair runs, so the refusal was the cause
+		check(staged.delete(), "took the staged story text away again");
+		Workspace.session().persistPaths().remove(staged.getAbsolutePath());
+		ctrmap.GeometryForker.RepairReport again = ctrmap.GeometryForker.repairSharedResources(
+			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
+		check(again.refusedBecause.isEmpty() && !again.forked.isEmpty(),
+				"and the same repair then runs: " + again.refusedBecause + " " + again.forked);
+	}
+
+	/**
+	 * Appends one zone, packs, and puts back the sharing an older version left: every created
+	 * zone on the donor's area and story text again. Null when the scratch game is not a stock
+	 * base.
+	 */
+	static java.util.List<Integer> staleSharing(File dump) throws Exception {
 		ScratchGame.open(dump);
 		if (!stockBase()) {
-			return;
+			return null;
 		}
 		int stock = Workspace.getArchive(ArchiveType.ZONE_DATA).length;
 		ZoneAppender.AppendResult r = ZoneAppender.appendZones(1, DONOR, true);
@@ -890,27 +1067,7 @@ public class WorkflowGuardsTest {
 			Workspace.addPersist(Workspace.getWorkspaceFile(ArchiveType.ZONE_DATA, zone));
 			broken.add(zone);
 		}
-		java.util.List<String> before = sharersOf(broken);
-		check(!before.isEmpty(), "put back the old state: " + before);
-		
-		ctrmap.GeometryForker.RepairReport rep = ctrmap.GeometryForker.repairSharedResources(
-			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
-		check(rep.refusedBecause.isEmpty(), "the repair runs rather than refusing: "
-			+ (rep.refusedBecause.isEmpty() ? "no refusal" : rep.refusedBecause));
-		pack();
-		java.util.List<String> after = sharersOf(broken);
-		check(after.isEmpty(), "and afterwards no created zone shares any resource the append"
-			+ " makes private " + after);
-		check(!rep.forked.isEmpty(), "and it says which zones it repaired " + rep.forked);
-		
-		//...and it does not run again on a workspace that is already right, which would
-		//append a copy nothing uses and orphan the one in use
-		int areasBefore = Workspace.getArchive(ArchiveType.AREA_DATA).length;
-		ctrmap.GeometryForker.RepairReport again = ctrmap.GeometryForker.repairSharedResources(
-			ctrmap.formats.codepatch.ZoneLimitPatch.BASE_ZONES);
-		check(again.forked.isEmpty(), "opening it again repairs nothing " + again.forked);
-		check(Workspace.getArchive(ArchiveType.AREA_DATA).length == areasBefore,
-			"and appends no area nobody would use (" + areasBefore + ")");
+		return broken;
 	}
 
 	/** Which of these zones share a made-private resource with anyone, as sentences. */
@@ -1160,7 +1317,6 @@ public class WorkflowGuardsTest {
 			return null;
 		}
 	}
-	/** The FieldData regions a zone's matrix names, from the packed archives. */
 	/**
 	 * The preview DRAWS a zone - not "could decode it", drew it.
 	 *
@@ -1176,7 +1332,7 @@ public class WorkflowGuardsTest {
 	static void thePreviewActuallyDraws() throws Exception {
 		System.out.println("--- the preview draws a zone, end to end");
 		if (java.awt.GraphicsEnvironment.isHeadless()) {
-			System.out.println("  skip: no display, and this one needs a real canvas");
+			Skip.section("no display, and this one needs a real canvas");
 			return;
 		}
 		ctrmap.humaninterface.ZonePreviewPane pane = new ctrmap.humaninterface.ZonePreviewPane(
@@ -1357,6 +1513,7 @@ public class WorkflowGuardsTest {
 		}
 		return out;
 	}
+	/** The FieldData regions a zone's matrix names, from the packed archives. */
 	static java.util.List<Integer> regionsOf(int zoneIndex) {
 		java.util.List<Integer> out = new java.util.ArrayList<>();
 		try {

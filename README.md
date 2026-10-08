@@ -1,6 +1,7 @@
 # CTRMap-F5
 
-**A world editor for the Nintendo 3DS Pokémon games — Omega Ruby, Alpha Sapphire, X and Y.**
+**A world editor for the Nintendo 3DS Pokémon games — Omega Ruby and Alpha Sapphire, with X and Y for map
+viewing and geometry editing only ([what works on which game](#what-works-on-which-game)).**
 
 Build towns that were never in the game. Paint terrain, stamp buildings, place people and write
 what they say, wire up doors, set the weather, edit trainers and shops — then play it.
@@ -8,6 +9,33 @@ what they say, wire up doors, set the weather, edit trainers and shops — then 
 ![CTRMap-F5 with a map open](docs/img/editor.png)
 
 *The editor's own 3D view, live, in the same window you edit in.*
+
+## What works on which game
+
+Every feature is checked against a dump of the game before it is switched on for it; a game that has not
+been measured refuses the feature in words rather than guessing. X and Y open and draw their maps the way
+upstream CTRMap did, and everything else is Omega Ruby / Alpha Sapphire only until it is measured on an X/Y
+dump. Sun/Moon and Ultra Sun/Ultra Moon are recognised and refused.
+
+<!-- support-table: written from GameProfile.supports by GameSupportDocTest - do not edit by hand -->
+| | X / Y | Omega Ruby / Alpha Sapphire | Sun / Moon | Ultra Sun / Ultra Moon |
+|---|---|---|---|---|
+| Viewing maps and editing their geometry | yes | yes | no | no |
+| The Map Builder's tile painter | no | yes | no | no |
+| Area fog, light and atmosphere | no | yes | no | no |
+| Animated water | no | yes | no | no |
+| Trainer editing | no | yes | no | no |
+| Battle facility opponents | no | yes | no | no |
+| Pokemon reference previews | no | yes | no | no |
+| Scripts with named natives | no | yes | no | no |
+| code.bin patches | no | yes | no | no |
+| Item editing | no | yes | no | no |
+| Giving a zone its own area or map | no | yes | no | no |
+| Adding zones | no | yes | no | no |
+| Wild encounters | no | yes | no | no |
+| Talking NPCs, signs, givers and challenges | no | yes | no | no |
+| The free-camera mod | no | yes | no | no |
+<!-- /support-table -->
 
 CTRMap-F5 is a revival and major extension of [HelloOO7's CTRMap](https://github.com/HelloOO7)
 (2019), continued in 2026 with one goal: make Gen 6 fan games as buildable as Gen 3 ones. The
@@ -74,8 +102,10 @@ CTRMap ships none of them, and cuts each one out of the copy you provide.*
 ### Make it a place
 
 - **Talking NPCs without scripting** — *Add talking NPC*, type the dialogue, done. Works in
-  **all 536 zones**: the ones missing the message-display routine get it transplanted from the
-  game's own code.
+  **all 536 base zones**: the ones missing the message-display routine get it transplanted from the
+  game's own code. Not in an *appended* zone (number 536 and up): the game runs no field scripts
+  there, so talking NPCs, signs and battle facilities need a base zone — Zone → Find reusable
+  base zones lists the retail slots that are safe to repurpose.
 - **Dialogue editing** for existing NPCs, with a byte-faithful text codec.
 - **Signs**, and **warps and doors** with full round-trip wiring between a building's exterior
   and its interior.
@@ -97,7 +127,8 @@ CTRMap ships none of them, and cuts each one out of the copy you provide.*
 
 - **Live 3D view** in every mode, with the editor's own camera.
 - **Zone cloning, appending and removal** — and a generated `code.ips` patch that lifts ORAS's
-  536-zone limit when you need more.
+  536-zone limit when you need more. An appended zone holds a map, warps and NPCs that stand
+  still, but runs no scripts (see *Talking NPCs* above) — why the game will not is not yet known.
 - **Script trigger editing** — the "step on this tile → run this" events, fully decoded.
 - **Pawn script assembler/disassembler** with 801 engine functions resolved by name.
 - **OBJ import/export** of map geometry and collision, for editing maps in Blender.

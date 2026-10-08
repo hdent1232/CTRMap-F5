@@ -78,9 +78,9 @@ public class DispatchTrampolineTest {
 	public static void main(String[] args) throws Exception {
 		File garcFile = new File(args.length > 0 ? args[0] : DEFAULT_GARC_PATH);
 		if (!garcFile.exists()) {
-			System.out.println("  skip: no pristine ZoneData GARC at " + garcFile.getAbsolutePath());
+			Skip.section("no pristine ZoneData GARC at " + garcFile.getAbsolutePath());
 			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
-			return;
+			System.exit(fails == 0 ? 0 : 1);
 		}
 		GARC garc = new GARC(garcFile);
 
@@ -109,24 +109,24 @@ public class DispatchTrampolineTest {
 
 			if (hasMsg) {
 				run(0, z, raw, counts, bad, firstErrors, tags,
-						s -> TalkerScriptWizard.cloneTalker(s, FAKE_LINE));
+						s -> TalkerScriptWizard.cloneTalker(NpcScriptGateTest.ORAS, s, FAKE_LINE));
 			}
 			if (hasSign) {
 				run(1, z, raw, counts, bad, firstErrors, tags,
-						s -> NpcTemplates.addSignScript(s, FAKE_LINE, NpcTemplates.SIGN_TYPES[0]));
+						s -> NpcTemplates.addSignScript(NpcScriptGateTest.ORAS, s, FAKE_LINE, NpcTemplates.SIGN_TYPES[0]));
 			}
 			if (hasGive) {
 				run(2, z, raw, counts, bad, firstErrors, tags,
-						s -> NpcTemplates.addItemGiverScript(s, 4, 1));
+						s -> NpcTemplates.addItemGiverScript(NpcScriptGateTest.ORAS, s, 4, 1));
 			}
 			run(3, z, raw, counts, bad, firstErrors, tags,
-					s -> FacilityScriptWizard.addGiveBpScript(s, 5));
+					s -> FacilityScriptWizard.addGiveBpScript(NpcScriptGateTest.ORAS, s, 5));
 			if (z % GAUNTLET_STRIDE == 0) {
 				run(4, z, raw, counts, bad, firstErrors, tags, s -> {
 					GauntletScriptWizard.Config cfg = new GauntletScriptWizard.Config();
 					cfg.trainerIds = new int[]{51, 52, 53};
 					cfg.bpPerWin = 3;
-					return GauntletScriptWizard.addChallengeScript(s, cfg);
+					return GauntletScriptWizard.addChallengeScript(NpcScriptGateTest.ORAS, s, cfg);
 				});
 			}
 		}

@@ -39,26 +39,28 @@ import javax.swing.JSpinner;
  * characterization test that asserted the improvement would silently stop
  * guarding the refactor it exists for):
  * <ol>
- * <li>The ten widgets show the record on open, and Save reads them back into a
- *     brand-new {@link GRProp} that replaces it in the list.</li>
- * <li>Save reads the coordinate widgets as TEXT, and the widgets format to two
- *     decimal places. So a number written into the record without refreshing
- *     the form is REVERTED to what the widget still shows, and a number finer
- *     than two decimals is rounded on its way to the file. (No retail prop is
- *     finer than that - measured across all 857 regions - so opening a region
- *     and pressing Save writes nothing at all, which is checked first.)</li>
- * <li>The record Save builds is fresh, so the 4-byte {@code unknown} tail the
- *     format carries is written as zero whatever it held. {@code equalsData},
- *     which decides whether anything is written at all, does not compare it
- *     either.</li>
+ * <li>The ten widgets show the record on open, and Save edits a copy of it that
+ *     replaces it in the list.</li>
+ * <li>Save no longer reads the coordinate widgets as TEXT (F161). They format to
+ *     two decimal places, so a number written into the record without
+ *     refreshing the form used to be REVERTED to what the widget still showed,
+ *     and a number finer than two decimals was rounded on its way to the file;
+ *     both now survive. (No retail prop is finer than that - measured across
+ *     all 857 regions - so opening a region and pressing Save writes nothing at
+ *     all, which is checked first.)</li>
+ * <li>The 4-byte {@code unknown} tail the format carries is kept, and
+ *     {@code equalsData}, which decides whether anything is written at all,
+ *     compares it (F161: a fresh record wrote it as zero and the test ignored
+ *     it).</li>
  * <li>Typing in X, Y or Z moves the prop in the live record IMMEDIATELY, before
  *     Save, through the field's own document listener - and marks the propdata
  *     modified. Typing in a scale or rotation field does not.</li>
  * <li>Save-with-dialog: Yes writes, No throws the edit away without writing and
  *     without saying so, and closing the dialog cancels and keeps it.</li>
- * <li>Changing the model spinner commits at once, and a model this area cannot
- *     texture is refused registration with a reason - while the record is
- *     written pointing at it anyway.</li>
+ * <li>Changing the model spinner registers the model first, and a model this
+ *     area cannot texture is refused registration with a reason - and the
+ *     spinner goes back to the model the record names, which the area has
+ *     (F161: the record was written pointing at the refused one).</li>
  * <li>New entry and Remove entry, and what the propdata holds afterwards - and
  *     that both throw on the single-region path, which passes no registry.</li>
  * <li>{@code unload()} leaves nothing of the old region behind.</li>
@@ -123,11 +125,13 @@ public class PropEditFormGuardsTest {
 	}
 
 	static void run(String[] args) throws Exception {
+		aPropIsRefusedWhenItsAreaCannotBeToldShared();
+		theRecordIsEditedNotRebuilt();
 		File dump = new File(args.length > 0 ? args[0] : "no-dump-given");
 		if (!dump.isDirectory()) {
-			System.out.println("  skip: no dump at " + dump + " - the prop form checks need FieldData region " + REGION);
+			Skip.section("no dump at " + dump + " - the prop form checks need FieldData region " + REGION);
 			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
-			return;
+			System.exit(fails == 0 ? 0 : 1);
 		}
 		ScratchGame.open(dump);
 		ctrmap.formats.text.LocationNames.loadFromGarc(Workspace.session());
@@ -145,15 +149,16 @@ public class PropEditFormGuardsTest {
 		openingARegionLeavesTheFormLive();
 		theGizmoFollowsThePropTheFormShows();
 		saveWithNothingTypedWritesNothing();
-		saveWritesTheWidgetTextNotTheRecord();
-		saveWritesTheTypedNumbersAndZeroesTheUnknownTail();
-		equalsDataIgnoresTheUnknownTail();
+		saveKeepsWhatTheFieldsCannotShow();
+		saveWritesTheTypedNumbersAndKeepsTheTail();
+		equalsDataComparesTheTail();
 		typingACoordinateMovesThePropBeforeSave();
 		movingAPropAsksForARedraw();
 		saveWithDialogHasThreeAnswers();
 		newEntryAndRemoveEntry();
 		removingTheFirstOfTwoLeavesTheSurvivorShowing();
 		savingWithNowhereToWriteRefusesAndSaysSo();
+		savingPropsThatCouldNotBeReadRefuses();
 		withoutARegistryNewAndRemoveThrow();
 		unloadLeavesNothingBehind();
 
@@ -161,6 +166,100 @@ public class PropEditFormGuardsTest {
 		//the form owns a GL preview and the 3D view owns an animator, both of
 		//which keep non-daemon threads alive; the exit code is still the verdict
 		System.exit(fails == 0 ? 0 : 1);
+	}
+
+	/**
+	 * F065: a prop needing textures, on an area the shared-area guard cannot read the zone table
+	 * for. The guard answered "nobody" and the import was offered; now it refuses, and the form
+	 * says why. Needs no dump: a workspace with no zone archive open is exactly a table that
+	 * cannot be read.
+	 */
+	static void aPropIsRefusedWhenItsAreaCannotBeToldShared() throws Exception {
+		System.out.println("--- a prop is refused when whether its area is shared cannot be told (F065)");
+		Workspace.reset();
+		Sessions.bare(Scratch.dir("ctrmap_prop_cannot_tell"), Scratch.dir("ctrmap_prop_cannot_tell_game"),
+				ctrmap.gamedef.GameType.ORAS);
+		List<String> said = ctrmap.Ui.record();
+		boolean refused;
+		try {
+			refused = PropEditForm.refuseSharedArea(null, 7, 0, "Area 7", "chip_mado");
+		} finally {
+			ctrmap.Ui.stopRecording();
+			Workspace.reset();
+		}
+		check(refused, "the prop is refused");
+		check(said.size() == 1 && said.get(0).contains("Could not tell") && said.get(0).contains("ZoneData"),
+				"and the user is told why, naming what could not be read: " + said);
+	}
+
+	/**
+	 * F161, the parts that need no region: what Save makes of a field, which model a record may
+	 * name, and that a record is edited whole. The form asks these from its widgets; with no dump
+	 * the widgets cannot be filled and here the preview, a GL panel, cannot be built - so the
+	 * decisions are asked directly, and the form's own source is read for where it asks them.
+	 */
+	static void theRecordIsEditedNotRebuilt() throws Exception {
+		System.out.println("--- Save edits the record: precision, moves, the tail and the model (F161)");
+		Float shown = 50f;
+		check(PropEditForm.fieldValue("50.00", shown, "50.00", shown, 50.004f) == 50.004f,
+				"a field untouched since its prop was shown gives the record's number at full precision, not the 2 decimals it shows");
+		check(PropEditForm.fieldValue("50.00", shown, "50.00", shown, 173.456f) == 173.456f,
+				"and a move made on the record alone is kept, not put back to what the field still reads");
+		Float set = 1773.456f;
+		check(PropEditForm.fieldValue("1773.46", set, "1773.46", shown, 50f) == 1773.456f,
+				"a value set since gives that value at full precision: 1773.456, not the 1773.46 it reads");
+		check(PropEditForm.fieldValue("12.5", shown, "50.00", shown, 50f) == 12.5f, "text being typed gives what it reads");
+		check(PropEditForm.fieldValue("-", shown, "50.00", shown, 50f) == 50f
+				&& PropEditForm.fieldValue("", shown, "50.00", shown, 50f) == 50f,
+				"and a half-typed '-' or an emptied field moves nothing - both read as 0");
+		check(PropEditForm.fieldValue("12,5", shown, "50,00", shown, 50f) == 12.5f, "a comma decimal reads as one");
+		check(PropEditForm.fieldValue("50.00", shown, "50.00", null, 12f) == 50f,
+				"once typed in, a field is the user's: back to the text it showed gives the number it showed");
+
+		java.util.Set<Integer> area = new java.util.HashSet<>(Arrays.asList(5, 9));
+		int[] tried = {0};
+		check(PropEditForm.modelToKeep(9, 5, area::contains, uid -> {
+			tried[0]++;
+			return false;
+		}) == 9 && tried[0] == 0, "a model the area registers is taken, with no registration tried");
+		check(PropEditForm.modelToKeep(321, 5, area::contains, uid -> true) == 321, "one it registers now is taken");
+		check(PropEditForm.modelToKeep(321, 5, area::contains, uid -> false) == 5,
+				"and one it refuses is not: the record keeps model 5, which the area has - it named 321 regardless");
+
+		GRProp a = new GRProp();
+		a.uid = 7;
+		a.x = 1.005f;
+		a.rotateY = 90.125f;
+		a.scaleZ = 2.0625f;
+		a.unknown = 0x12345678;
+		GRProp b = a.copy();
+		check(b != a && b.sameRecord(a) && b.unknown == 0x12345678 && b.x == 1.005f && b.rotateY == 90.125f
+				&& b.scaleZ == 2.0625f && b.uid == 7, "a copy is the whole record, its tail included");
+		b.unknown = 0;
+		check(!b.sameRecord(a), "and two records differing only in the tail are not the same record - the tail was not compared");
+
+		String src = SourceSeamTest.stripComments(DialogSeamTest.read(new File("src/ctrmap/humaninterface/PropEditForm.java")));
+		String save = body(src, "public void saveProp() {");
+		int reads = 0;
+		for (String f : new String[]{"x, 0, prop.x", "y, 1, prop.y", "z, 2, prop.z", "rx, 3, prop.rotateX",
+			"ry, 4, prop.rotateY", "rz, 5, prop.rotateZ", "sx, 6, prop.scaleX", "sy, 7, prop.scaleY", "sz, 8, prop.scaleZ"}) {
+			reads += save.contains("typed(" + f + ")") ? 1 : 0;
+		}
+		check(save.contains("prop.copy()") && !save.contains("new GRProp()") && reads == 9,
+				"the form's Save starts from a copy of the record and reads all 9 fields through fieldValue (" + reads + " of 9)");
+		String refresh = body(src, "public void saveAndRefresh() {");
+		int asks = refresh.indexOf("modelToKeep(");
+		check(asks >= 0 && asks < refresh.indexOf("saveProp();") && refresh.contains("mdlNum.setValue(kept)"),
+				"and registers the model before Save writes it, putting the spinner back on a refusal");
+		check(body(src, "public boolean equalsData(GRProp p1, GRProp p2) {").contains("sameRecord("),
+				"and decides whether anything changed by the whole record");
+	}
+
+	/** The text of the method that opens with {@code signature}, up to its closing brace at one tab. */
+	static String body(String src, String signature) {
+		int at = src.indexOf(signature);
+		int end = at < 0 ? -1 : src.indexOf("\n\t}\n", at);
+		return at < 0 || end < 0 ? "" : src.substring(at, end);
 	}
 
 	/** The corpus these checks describe, asserted rather than assumed. */
@@ -220,28 +319,24 @@ public class PropEditFormGuardsTest {
 	}
 
 	/**
-	 * How the save actually works, which is the thing a refactor has to keep:
-	 * Save reads the coordinate widgets' TEXT, not their value and not the
-	 * record. So
-	 * <ul>
-	 * <li>a number written straight into the record - anything that moves a
-	 *     prop without refreshing the form - is REVERTED to whatever the widget
-	 *     still says, and</li>
-	 * <li>a number finer than the widget's two decimals is rounded on its way
-	 *     to the file.</li>
-	 * </ul>
-	 * Both asserted on the bytes.
+	 * What Save does with a number the widgets cannot show (F161). It read the coordinate widgets'
+	 * TEXT, so a number written straight into the record - anything that moves a prop without
+	 * refreshing the form - was REVERTED to whatever the widget still said, and a number finer than
+	 * the widget's two decimals was rounded on its way to the file. Both now survive, asserted on
+	 * the bytes.
 	 */
-	static void saveWritesTheWidgetTextNotTheRecord() throws Exception {
+	static void saveKeepsWhatTheFieldsCannotShow() throws Exception {
 		Fixture f = open(true);
 		GRProp p0 = f.form.props.props.get(0);
 		float shown = p0.x;
-		p0.x = shown + 123.456f; //moved in the record alone, as nothing that refreshes the form would
+		float moved = shown + 123.456f;
+		p0.x = moved; //moved in the record alone, as nothing that refreshes the form would
+		f.form.props.modified = true; //as the prop tool marks a move
 		check(text(f.form, "x").equals(fmt(shown)), "the X widget still reads " + text(f.form, "x"));
 		f.form.saveProp();
-		check(f.form.props.props.get(0).x == shown, "Save put the prop back to what the widget said: " + f.form.props.props.get(0).x);
+		check(f.form.props.props.get(0).x == moved, "Save keeps the move made on the record: " + f.form.props.props.get(0).x);
 		check(f.form.store(false), "the region stores");
-		check(f32(records(f.propdata())[0], 28) == shown, "and the file holds " + f32(records(f.propdata())[0], 28) + ", not " + (shown + 123.456f));
+		check(f32(records(f.propdata())[0], 28) == moved, "and the file holds " + f32(records(f.propdata())[0], 28) + ", not the " + shown + " the widget reads");
 
 		Fixture g = open(true);
 		type(g.form, "x", 1773.456f);
@@ -249,20 +344,21 @@ public class PropEditFormGuardsTest {
 		g.form.saveProp();
 		check(g.form.store(false), "the region stores");
 		byte[][] now = records(g.propdata());
-		check(f32(now[0], 28) == 1773.46f, "and the file holds " + f32(now[0], 28) + " - two decimals is all the form can carry");
+		check(f32(now[0], 28) == 1773.456f, "and the file holds " + f32(now[0], 28) + " - the number set, not the two decimals shown");
 		check(sameRecord(now[1], record(g.before, 1)), "prop 1, which was never selected, is byte for byte as it was read");
 	}
 
 	/**
-	 * The whole record, from the widgets, in the order the file holds it - and
-	 * the four bytes at the end that no widget shows, which Save always writes
-	 * as zero because it builds a fresh record rather than editing the old one.
+	 * The whole record, from the widgets, in the order the file holds it - and the four bytes at
+	 * the end that no widget shows, which Save wrote as zero because it built a fresh record rather
+	 * than editing the old one (F161).
 	 */
-	static void saveWritesTheTypedNumbersAndZeroesTheUnknownTail() throws Exception {
+	static void saveWritesTheTypedNumbersAndKeepsTheTail() throws Exception {
 		Fixture f = open(true);
-		//the model spinner commits on every change, and a model this area cannot
-		//texture is refused registration - with the record still pointed at it
+		//the model spinner registers on every change, and a model this area cannot texture is
+		//refused registration - and the spinner goes back to the model the record names (F161)
 		int registered = f.form.reg.entries.size();
+		int uid0 = f.form.prop.uid;
 		List<String> said = ctrmap.Ui.record();
 		try {
 			((JSpinner) field(f.form, "mdlNum")).setValue(321);
@@ -273,7 +369,9 @@ public class PropEditFormGuardsTest {
 				"typing an unregistered model says it was not registered: " + said);
 		check(f.form.reg.entries.size() == registered && !f.form.reg.entries.containsKey(321),
 				"and no entry is invented for it");
-		check(f.form.regentry == null, "so the form has no registry entry to edit");
+		check(((Integer) ((JSpinner) field(f.form, "mdlNum")).getValue()) == uid0 && f.form.prop.uid == uid0,
+				"and the spinner is back on model " + uid0 + ", which the record still names");
+		check(f.form.regentry != null, "so the form has that model's registry entry to edit");
 		type(f.form, "x", 111.25f);
 		type(f.form, "y", -222.5f);
 		type(f.form, "z", 333.75f);
@@ -283,37 +381,37 @@ public class PropEditFormGuardsTest {
 		type(f.form, "rx", 10.5f);
 		type(f.form, "ry", -20.25f);
 		type(f.form, "rz", 30.75f);
-		//no retail prop carries a non-zero tail, so the loss has to be staged - on
-		//the record Save is about to read, after the spinner already replaced one
+		//no retail prop carries a non-zero tail, so it has to be staged - on the record Save is
+		//about to edit
 		f.form.prop.unknown = 0x12345678;
 		f.form.saveProp();
 		check(f.form.store(false), "the region stores");
 
 		byte[] r = records(f.propdata())[0];
-		check(u32(r, 0) == 321, "the model uid is the spinner's: " + u32(r, 0));
+		check(u32(r, 0) == uid0, "the model uid is the one the area has: " + u32(r, 0));
 		check(f32(r, 4) == 2.5f && f32(r, 8) == 3.25f && f32(r, 12) == 4.75f,
 				"then scale X, Y, Z: " + f32(r, 4) + "," + f32(r, 8) + "," + f32(r, 12));
 		check(f32(r, 16) == 10.5f && f32(r, 20) == -20.25f && f32(r, 24) == 30.75f,
 				"then rotation X, Y, Z: " + f32(r, 16) + "," + f32(r, 20) + "," + f32(r, 24));
 		check(f32(r, 28) == 111.25f && f32(r, 32) == -222.5f && f32(r, 36) == 333.75f,
 				"then position X, Y, Z: " + f32(r, 28) + "," + f32(r, 32) + "," + f32(r, 36));
-		check(u32(r, 40) == 0, "and the unknown tail, written as 0 where the record held 0x12345678");
-		check(u32(r, 0) == 321 && !f.form.reg.entries.containsKey(321),
-				"the record names model 321 in the file while the area's registry still does not - see the report");
+		check(u32(r, 40) == 0x12345678, "and the unknown tail, 0x12345678 as the record held it: " + Integer.toHexString(u32(r, 40)));
+		check(u32(r, 0) != 321 && f.form.reg.entries.containsKey(u32(r, 0)),
+				"the record names a model the area's registry has, never the refused 321");
 	}
 
 	/**
 	 * The test that decides whether anything is written at all compares nine
-	 * numbers and the uid - not the unknown tail. Two records that differ only
-	 * there are "the same prop" to the form.
+	 * numbers, the uid and - since F161 - the unknown tail. Two records that differed only
+	 * there were "the same prop" to the form, so a tail edit was never written.
 	 */
-	static void equalsDataIgnoresTheUnknownTail() throws Exception {
+	static void equalsDataComparesTheTail() throws Exception {
 		Fixture f = open(false);
 		GRProp a = new GRProp();
 		GRProp b = new GRProp();
 		check(f.form.equalsData(a, b), "two default props are equal data");
 		b.unknown = 0x0BADF00D;
-		check(f.form.equalsData(a, b), "and still are when only the unknown tail differs");
+		check(!f.form.equalsData(a, b), "and are not when only the unknown tail differs");
 		b.unknown = 0;
 		b.scaleY = 1.5f;
 		check(!f.form.equalsData(a, b), "but not when a scale does");
@@ -345,9 +443,9 @@ public class PropEditFormGuardsTest {
 	}
 
 	/**
-	 * store(true) asks before writing. Yes writes; No writes nothing AND drops
-	 * the modified flag, so the edit is gone with nothing said; closing the
-	 * dialog cancels, which keeps the edit and refuses the store.
+	 * store(true) asks before writing. Yes writes; No writes nothing and puts the
+	 * props back to what the region holds (F106); closing the dialog cancels,
+	 * which keeps the edit and refuses the store.
 	 */
 	static void saveWithDialogHasThreeAnswers() throws Exception {
 		Fixture yes = open(true);
@@ -375,7 +473,9 @@ public class PropEditFormGuardsTest {
 		}
 		check(ok, "No: the store reports success");
 		check(Arrays.equals(no.propdata(), untouched), "and writes nothing");
-		check(!no.form.props.modified, "but clears the modified flag, so the edit is gone with nothing said");
+		check(!no.form.props.modified && no.form.props.props.get(0).x == f32(records(untouched)[0], 28),
+				"and puts the props back to what the region holds, so nothing discarded stays on screen (F106): X is "
+				+ no.form.props.props.get(0).x);
 
 		Fixture cancel = open(true);
 		untouched = cancel.propdata();
@@ -544,6 +644,35 @@ public class PropEditFormGuardsTest {
 			"and why - there is no map open to write them into");
 		check(f.form.props.modified,
 			"and the edits are still there to be saved, not marked clean and dropped");
+	}
+
+	/**
+	 * F083: props that could not all be read are never saved over - the form says so, in words.
+	 *
+	 * <p>A region whose prop section would not read used to load as an EMPTY list, and the next
+	 * save wrote that over every prop the region held. The list now carries why it is short, and
+	 * the save refuses on it; this drives the form's own save, not the list's, because the form is
+	 * where a refusal used to turn into an exception on the EDT and an edit marked clean.
+	 */
+	static void savingPropsThatCouldNotBeReadRefuses() throws Exception {
+		System.out.println("--- props that could not all be read are never saved over");
+		Fixture f = open(true);
+		type(f.form, "x", 123.5f);
+		f.form.saveProp();
+		check(f.form.props.modified, "there is an edit to save");
+		f.form.props.unreadable = "the props of a planted region could not be read (test)";
+		List<String> said = ctrmap.Ui.record(JOptionPane.YES_OPTION);
+		boolean answered;
+		try {
+			answered = f.form.store(true);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(!answered, "the save refuses rather than reporting success");
+		check(said.size() == 2 && said.get(1).contains("were NOT saved") && said.get(1).contains("could not be read"),
+			"and says the edits were not saved, and why: " + (said.size() == 2 ? said.get(1) : said));
+		check(f.form.props.modified, "and the edit is still there to be saved, not marked clean");
+		check(java.util.Arrays.equals(f.propdata(), f.before), "and the region is exactly as it was");
 	}
 
 	// ---- fixture -------------------------------------------------------

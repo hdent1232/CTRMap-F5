@@ -7,15 +7,9 @@ import ctrmap.gamedef.ArchiveType;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -118,33 +112,37 @@ public class TextEditor extends javax.swing.JPanel {
 			return;
 		}
 		loading = true;
-		byte[] b = new byte[0];
+		//A FILE THAT DOES NOT READ IS NOT OFFERED FOR EDITING. It was shown as an empty table that
+		//took typing, and the next save wrote what was typed over the file it could not read - a
+		//failed read, a file that would not extract and a file this decoder rejects all alike.
+		String why = null;
+		List<String> lines = new ArrayList<>();
+		loadedFile = null;
 		File f = Workspace.getWorkspaceFile(ArchiveType.GAMETEXT, idx);
-		if (f != null && f.exists()) {
+		if (f == null || !f.exists()) {
+			why = "it could not be extracted from the GameText archive";
+		} else {
 			try {
-				InputStream in = new FileInputStream(f);
-				b = new byte[in.available()];
-				in.read(b);
-				in.close();
-			} catch (IOException ex) {
-				Logger.getLogger(TextEditor.class.getName()).log(Level.SEVERE, null, ex);
+				loadedFile = new GFMessageFile(java.nio.file.Files.readAllBytes(f.toPath()));
+				lines = loadedFile.getLines();
+			} catch (IOException | RuntimeException unreadable) {
+				loadedFile = null;
+				why = ctrmap.Ui.reason(unreadable);
 			}
-		}
-		List<String> lines;
-		try {
-			loadedFile = new GFMessageFile(b);
-			lines = loadedFile.getLines();
-		} catch (RuntimeException ex) {
-			loadedFile = null; //unreadable file - show it as empty rather than crashing the tab
-			lines = new ArrayList<>();
 		}
 		model.setRowCount(0);
 		for (int i = 0; i < lines.size(); i++) {
 			model.addRow(new Object[]{i, lines.get(i)});
 		}
-		loadedIdx = idx;
+		loadedIdx = why == null ? idx : -1;
+		table.setEnabled(why == null);
+		btnSave.setEnabled(why == null);
 		modified = false;
 		loading = false;
+		if (why != null) {
+			ctrmap.Ui.error(this, "Text file " + idx + " could not be read, so it is not offered for editing:\n" + why,
+					"Text editor");
+		}
 	}
 
 	public boolean store(boolean dialog) {
@@ -157,17 +155,16 @@ public class TextEditor extends javax.swing.JPanel {
 		if (!modified) {
 			return true;
 		}
-		if (dialog) {
-			int rsl = ctrmap.Ui.confirm(this, "Save text changes?", "Save changes", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
-			switch (rsl) {
-				case JOptionPane.YES_OPTION:
-					break; //continue to save
-				case JOptionPane.NO_OPTION:
-					modified = false;
-					return true;
-				default:
-					return false;
-			}
+		//THROUGH THE ONE QUESTION (F106): No cleared the flag and left the typed lines in the table,
+		//shown and no longer marked unsaved; it now reads the file again
+		final int shown = loadedIdx;
+		switch (ctrmap.Ui.askToKeep(dialog, "Text file " + shown, () -> loadFile(shown))) {
+			case DISCARD:
+				return true;
+			case CANCEL:
+				return false;
+			default:
+				break; //continue to save
 		}
 		List<String> lines = new ArrayList<>();
 		for (int i = 0; i < model.getRowCount(); i++) {
@@ -192,12 +189,12 @@ public class TextEditor extends javax.swing.JPanel {
 			return false;
 		}
 		try {
-			OutputStream os = new FileOutputStream(f);
-			os.write(b);
-			os.flush();
-			os.close();
+			ctrmap.WorkspaceUnit.write(f, b);
 		} catch (IOException ex) {
-			Logger.getLogger(TextEditor.class.getName()).log(Level.SEVERE, null, ex);
+			//SAID, NOT LOGGED (census H.68): the Save button drops this answer, so a log was all
+			//there was - and the file is as it was, because the write goes beside it first
+			ctrmap.Ui.error(this, "Text file " + loadedIdx + " was not saved; it is as it was:\n" + ctrmap.Ui.reason(ex),
+					"Text save error");
 			return false;
 		}
 		Workspace.addPersist(f);

@@ -53,7 +53,7 @@ public final class ChallengeForm {
 		javax.swing.JButton removeBtn = new javax.swing.JButton("Remove selected");
 		addBtn.addActionListener(ev -> {
 			int tid = idChooser.getId();
-			if (tid >= 1 && tid <= 949) {
+			if (tid >= 1 && tid <= NpcTemplates.TRAINER_ID_MAX) {
 				trainerIds.add(tid);
 				listModel.addElement("#" + trainerIds.size() + "  " + tid
 						+ (trainerNames != null && tid < trainerNames.size() && trainerNames.get(tid) != null && !trainerNames.get(tid).isEmpty()
@@ -88,8 +88,8 @@ public final class ChallengeForm {
 		Forms.addLabeled(panel, "NPC model (type to search; preview below):", model);
 		panel.add(Forms.hint("<html>The lineup takes ANY trainer entry: retail trainers (Youngsters, Ace Trainers...)<br>"
 				+ "work AS-IS and are not modified by battling them here; for custom competitors,<br>"
-				+ "repurpose a blank-named entry in Game Data -> Trainers (set its class, name and<br>"
-				+ "team there - the class gives it the Youngster/Ace Trainer/... battle identity).<br>"
+				+ "repurpose a blank-named entry in Game Data > Edit trainer: set its class, name and<br>"
+				+ "team there - the class gives it the Youngster/Ace Trainer/... battle identity.<br>"
 				+ "Fully independent of the retail facilities' shared pools - vanilla stays untouched.<br>"
 				+ "Each talk = one battle at the current streak. UNPROVEN IN-GAME - test it first.</html>"));
 	}

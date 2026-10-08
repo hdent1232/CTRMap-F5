@@ -73,23 +73,23 @@ public abstract class GameProfile {
 	/** Editor capabilities, gated per game on what has been RE'd AND verified. */
 	public enum Feature {
 		/** BCH map models: viewer, geometry editing, prefabs, OBJ import. */
-		H3D_MAPS,
+		H3D_MAPS("Viewing maps and editing their geometry"),
 		/** The tile painter (terrain brushes, elevation, ramps, edge strips). */
-		TILE_PAINTER,
+		TILE_PAINTER("The Map Builder's tile painter"),
 		/** Area fog/ambient editing + the GameFreak atmosphere picker. */
-		AREA_ENV,
+		AREA_ENV("Area fog, light and atmosphere"),
 		/** The water-scroll animation splice (WorldAnim). */
-		WATER_SPLICE,
+		WATER_SPLICE("Animated water"),
 		/** Trainer team/class editing. */
-		TRAINER_EDITING,
+		TRAINER_EDITING("Trainer editing"),
 		/** Battle Maison opponent pools. */
-		MAISON,
+		MAISON("Battle facility opponents"),
 		/** Pokemon reference previews (stats, types, move data). */
-		POKE_PREVIEWS,
+		POKE_PREVIEWS("Pokemon reference previews"),
 		/** Script disassembly with named natives (a natives table exists). */
-		SCRIPT_NATIVES,
+		SCRIPT_NATIVES("Scripts with named natives"),
 		/** code.bin patches (addresses known for this game's executable). */
-		CODE_PATCHES,
+		CODE_PATCHES("code.bin patches"),
 		/**
 		 * Item records: reading and WRITING the item table.
 		 *
@@ -101,7 +101,7 @@ public abstract class GameProfile {
 		 * editor asks before it opens, so an unverified game gets a sentence
 		 * saying why rather than a writer poking 36 bytes into a guess.
 		 */
-		ITEM_EDITING,
+		ITEM_EDITING("Item editing"),
 		/**
 		 * Giving one zone its OWN copy of an area or of its map geometry, so
 		 * editing it stops changing every other zone that shares it -
@@ -115,7 +115,7 @@ public abstract class GameProfile {
 		 * ORAS. Turning this on for another game means measuring them again
 		 * there, not assuming the layout carried over.
 		 */
-		AREA_FORK,
+		AREA_FORK("Giving a zone its own area or map"),
 		/**
 		 * Adding zones past the ones the game shipped - {@code ZoneAppender}
 		 * and the paired {@code ZoneLimitPatch}, plus the repurpose scanner
@@ -127,14 +127,49 @@ public abstract class GameProfile {
 		 * flag is about being able to patch at all; this one is about the zone
 		 * table specifically.
 		 */
-		ZONE_APPEND,
+		ZONE_APPEND("Adding zones"),
 		/**
 		 * Wild encounter tables (the "EN" pack the zone archive carries).
 		 *
 		 * <p>Their record layout and the archive slot they live in were
 		 * measured on ORAS; nobody has checked either against another game.
 		 */
-		ENCOUNTERS
+		ENCOUNTERS("Wild encounters"),
+		/**
+		 * Scripted NPCs written into a zone's script - talkers, signs, item and Battle Points
+		 * givers, battle challenges: {@code ZoneScriptEdit} and every template it applies.
+		 *
+		 * <p>The templates reproduce call sites, argument layouts and native hashes measured on
+		 * ORAS's zone scripts; their own class says "XY is NOT covered by the recon - callers
+		 * should gate these templates", and nothing did (F085). A script the game runs wrong
+		 * freezes the zone in game rather than failing in the editor.
+		 */
+		NPC_SCRIPTS("Talking NPCs, signs, givers and challenges"),
+		/**
+		 * The Extras free-camera mod: dummy camera collision written into every area's subfile 7,
+		 * and the camera, failsafe and 3D flags set in every zone header and the per-area table.
+		 *
+		 * <p>The collision it writes is a bundled resource cut from X/Y's Lumiose City, and the mod
+		 * has been offered on the reference game since upstream; nothing in this tree measured that
+		 * subfile 7 or those flag offsets mean the same on another game, so a game is asked before
+		 * the mod is offered there (F100).
+		 */
+		FREE_CAMERA("The free-camera mod");
+
+		private final String label;
+
+		Feature(String label) {
+			this.label = label;
+		}
+
+		/**
+		 * What the docs call it: the README's table of what works on which game is written from
+		 * these and {@link GameProfile#supports}, and checked against them (F150). A feature cannot
+		 * be added without one.
+		 */
+		public String label() {
+			return label;
+		}
 	}
 
 	public abstract GameType type();
@@ -200,6 +235,23 @@ public abstract class GameProfile {
 	// game's number: that is exactly the defect these replace, where
 	// "archive.length - (isXY() ? 1 : 2)" handed Sun/Moon ORAS's answer.
 
+	/** A retail battle facility whose lobby "Set up a Battle facility" copies. */
+	public enum Facility {
+		MAISON, INSTITUTE
+	}
+
+	/**
+	 * The ZONE_DATA index of a retail battle facility's lobby, which "Set up a Battle facility"
+	 * copies - script and entities verbatim. -1 when not measured for this game.
+	 *
+	 * <p>HERE AND NOT IN THE WINDOW (F009): the two numbers lived in CtrmapMainframe as private
+	 * constants, ORAS facts in a class that names no game - the seam rule's "no game-detected
+	 * constant outside ctrmap.gamedef", passed only because the scan read string literals.
+	 */
+	public int facilityLobbyZone(Facility f) {
+		return -1;
+	}
+
 	/**
 	 * How many entries at the END of the ZONE_DATA archive are not zones, so
 	 * {@code archive.length - this} is the zone count and the first of them is
@@ -210,11 +262,62 @@ public abstract class GameProfile {
 	}
 
 	/**
-	 * How many entries at the END of the AREA_DATA archive are not areas, so
-	 * {@code archive.length - this} is the area count and the first of them is
-	 * the engine's global per-area table. -1 when not measured for this game.
+	 * The AREA_DATA index of the engine's global per-area table - not an area, but one row per
+	 * area id. Every entry before it is an area, and so is every entry an area fork appends after
+	 * it. It was "how many entries at the end are not areas", which holds for a retail dump and
+	 * named the first forked area as the table once one was appended (F235). -1 when not
+	 * measured for this game.
 	 */
-	public int areaDataTrailingEntries() {
+	public int areaTableIndex() {
+		return -1;
+	}
+
+	/**
+	 * The highest trainer id a script or an NPC may name: the trainer archives hold this many
+	 * entries after the dummy at 0. ONE ANSWER (F085): it was spelled as 949 in the templates,
+	 * the challenge form, the gauntlet wizard and the trainer editor's prompt. -1 when not
+	 * measured for this game.
+	 */
+	public int trainerIdMax() {
+		return -1;
+	}
+
+	/**
+	 * The highest item id a giver may hand out: the item-name text has this many lines after the
+	 * null item at 0 (F085). -1 when not measured for this game.
+	 */
+	public int itemIdMax() {
+		return -1;
+	}
+
+	/**
+	 * How many zones an unmodified dump of this game holds: the ZONE_DATA entries before the
+	 * trailing ones. Every zone past it is one the editor appended. ONE ANSWER (F205): it was
+	 * {@code ZoneLimitPatch.BASE_ZONES}, re-typed as 536 in the window's menus and messages, the
+	 * zone list's and the remover's, and two harvesters. -1 when not measured for this game.
+	 */
+	public int retailZoneCount() {
+		return -1;
+	}
+
+	/**
+	 * The highest species id: the last national dex number this game ships (F205). The species
+	 * text has this many lines after the empty one at 0. -1 when not measured for this game.
+	 */
+	public int speciesIdMax() {
+		return -1;
+	}
+
+	/**
+	 * The highest move id: the move-name text has this many lines after the null move at 0 (F205).
+	 * -1 when not measured for this game.
+	 */
+	public int moveIdMax() {
+		return -1;
+	}
+
+	/** The highest trainer class id a trainer may be given (F205). -1 when not measured for this game. */
+	public int trainerClassMax() {
 		return -1;
 	}
 
@@ -255,19 +358,32 @@ public abstract class GameProfile {
 	}
 
 	/**
-	 * The 3DS title id of this game's first version - Omega Ruby of ORAS, X of
-	 * X/Y - or null when no id has been recorded for this game.
+	 * The byte a camera's isNeutral field holds when the camera is a neutral zone (one that
+	 * keeps the angle it is entered with), or -1 when nobody has recorded it for this game.
 	 *
-	 * <p>A profile covers a VERSION PAIR, so this is only ever a default: the
-	 * mod deployer prefers the RomFS folder's own name when that looks like a
-	 * title id, because that is the one the user actually dumped. Null here
-	 * means the deployer offers no folder rather than the wrong one - it used
-	 * to answer {@code isXY() ? X : Omega Ruby}, which pointed a Sun/Moon mod
-	 * at Omega Ruby's emulator directory, where the game it was built for would
-	 * never look and the game it names might.
+	 * <p>The camera form ticked a camera neutral as 2 on every game, under a comment saying
+	 * ORAS uses 1 and X/Y 2, "but for now, 2 (XY) is the default" - on an editor whose
+	 * reference game is ORAS (F097). The form prefers the value the area's own neutral
+	 * cameras hold, which is a reading of this game's data; this is the answer when the area
+	 * has none. -1 refuses the tick rather than guessing a byte.
 	 */
-	public String titleId() {
-		return null;
+	public int neutralCameraValue() {
+		return -1;
+	}
+
+	/**
+	 * The 3DS title ids of the versions this profile covers, each with its version's name, in
+	 * order - empty when none has been recorded for this game.
+	 *
+	 * <p>A profile covers a VERSION PAIR, so none of these is "the" title: the mod deployer reads
+	 * the dumped one from the dump and, when the dump does not say, asks which of these it is. It
+	 * was one id, the pair's first, and the deployer fell back to it - so an Alpha Sapphire or Y
+	 * dump in a folder not named by its id was deployed into Omega Ruby's or X's mods folder, where
+	 * the game it was made for never looks (F238). Before that it was {@code isXY() ? X : Omega
+	 * Ruby}, which pointed a Sun/Moon mod at Omega Ruby's emulator directory.
+	 */
+	public java.util.Map<String, String> titleIds() {
+		return java.util.Collections.emptyMap();
 	}
 
 	// ---- registry ----------------------------------------------------------

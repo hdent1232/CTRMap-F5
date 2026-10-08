@@ -73,6 +73,10 @@ public class VaultGuardsTest {
 			labelsAnUnverifiedDumpAndKeepsTheLabel(dump);
 			aTruncatedManifestIsRefused(dump);
 			flowAsksAndNeverAssumesConsent(scratch);
+			aVersionPairIsNeverOneBackup(scratch);
+			aDamagedBackupRestoresNothing(scratch);
+			theGameAsItShippedIsNeverTheLiveGame(scratch);
+			aRestoreRereadsTheOpenGame(scratch);
 		} finally {
 			Scratch.deleteTree(scratch);
 		}
@@ -102,7 +106,7 @@ public class VaultGuardsTest {
 
 	static void refusesToOverwriteASealedVault(File dump) throws IOException {
 		System.out.println("--- a sealed vault is never silently replaced by a later, possibly edited dump");
-		File entry = Vault.entryDir(dump, null);
+		File entry = Vault.entryFor(dump);
 		VaultManifest before = readOrNull(entry);
 		//edit the dump the way a user would after hours of work
 		write(new File(dump, "a/0/1/3"), "EDITED BY THE USER");
@@ -140,7 +144,7 @@ public class VaultGuardsTest {
 
 	static void reportsDriftAndNamesTheFile(File dump) throws IOException {
 		System.out.println("--- rot in the backup is reported, and the file is named");
-		File entry = Vault.entryDir(dump, null);
+		File entry = Vault.entryFor(dump);
 		File inVault = new File(new File(entry, "files"), "a/0/1/3");
 		byte[] good = read(inVault);
 		write(inVault, "ROTTED");
@@ -157,7 +161,7 @@ public class VaultGuardsTest {
 
 	static void restoresOneFileWithoutTouchingOthers(File dump) throws IOException {
 		System.out.println("--- restoring ONE file: the zone-536 case, without losing the other edits");
-		File entry = Vault.entryDir(dump, null);
+		File entry = Vault.entryFor(dump);
 		//the user has edited two archives; one of them gets corrupted
 		write(new File(dump, "a/0/1/3"), "CORRUPTED BY A STALE PACK");
 		write(new File(dump, "a/0/1/4"), "the user's good work");
@@ -172,7 +176,7 @@ public class VaultGuardsTest {
 
 	static void labelsAnUnverifiedDumpAndKeepsTheLabel(File dump) {
 		System.out.println("--- a dump that failed DumpCheck is kept, but never called retail");
-		File entry = Vault.entryDir(dump, null);
+		File entry = Vault.entryFor(dump);
 		VaultManifest m = readOrNull(entry);
 		//the synthetic dump is not a real one, so DumpCheck cannot pass it -
 		//which is exactly the case that must not be mislabelled
@@ -187,7 +191,7 @@ public class VaultGuardsTest {
 
 	static void aTruncatedManifestIsRefused(File dump) throws IOException {
 		System.out.println("--- a manifest listing fewer files than it claims is not a manifest");
-		File entry = Vault.entryDir(dump, null);
+		File entry = Vault.entryFor(dump);
 		File man = new File(entry, "manifest.txt");
 		byte[] good = read(man);
 		String text = str(good);
@@ -207,7 +211,7 @@ public class VaultGuardsTest {
 		System.out.println("--- the user-facing flow: a closed dialog is never consent");
 		File dump = new File(scratch, "000400000011C402");
 		buildFakeDump(dump);
-		File entry = ctrmap.vault.Vault.entryDir(dump, null);
+		File entry = ctrmap.vault.Vault.entryFor(dump);
 
 		//1. offered, and declined by closing the dialog - nothing is written
 		java.util.List<String> said = ctrmap.Ui.record();          // no answers => CLOSED/null
@@ -238,7 +242,7 @@ public class VaultGuardsTest {
 		said = ctrmap.Ui.record();                                  // closed
 		boolean did;
 		try {
-			did = ctrmap.vault.VaultUi.restoreEverything(null, entry, dump);
+			did = ctrmap.vault.VaultUi.restoreEverything(null, entry, dump, null);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
@@ -251,13 +255,264 @@ public class VaultGuardsTest {
 		//4. and confirming it really does put everything back
 		said = ctrmap.Ui.record(Integer.valueOf(javax.swing.JOptionPane.YES_OPTION));
 		try {
-			did = ctrmap.vault.VaultUi.restoreEverything(null, entry, dump);
+			did = ctrmap.vault.VaultUi.restoreEverything(null, entry, dump, null);
 		} finally {
 			ctrmap.Ui.stopRecording();
 		}
 		check(did, "confirming it restores");
 		check("area data".equals(str(read(new File(dump, "a/0/1/4")))),
 				"and the file is what was sealed");
+	}
+
+	/**
+	 * Two versions of a pair - Omega Ruby and Alpha Sapphire - in folders not named by their title
+	 * (F121). Named by game, they share one entry; the second used to be told it was backed up, by
+	 * the first's backup, and a restore wrote the first one's files into it.
+	 */
+	static void aVersionPairIsNeverOneBackup(File scratch) throws IOException {
+		System.out.println("--- two dumps the vault cannot tell apart share no backup (F121)");
+		File first = new File(new File(scratch, "omega"), "romfs");
+		File second = new File(new File(scratch, "alpha"), "romfs");
+		buildFakeDump(first);
+		buildFakeDump(second);
+		write(new File(second, "a/0/1/3"), "the other version's zone data");
+		check(Vault.titleIdOf(first) == null && Vault.entryFor(first).equals(Vault.entryFor(second)),
+				"control: neither says its title, so both are named by game, alike");
+		Vault.SealResult a = Vault.seal(first, Vault.Scope.FULL_RAW, null);
+		check(a.sealed, "the first is backed up (" + a.problem + ")");
+		Vault.SealResult b = Vault.seal(second, Vault.Scope.FULL_RAW, null);
+		check(!b.sealed && b.problem.contains("cannot tell"),
+				"the second is NOT called backed up by the first's backup: " + b.problem);
+		VaultManifest kept = readOrNull(a.entry);
+		check(Vault.verify(a.entry, true).isEmpty() && kept != null && first.getAbsolutePath().equals(kept.takenFrom),
+				"and the first's backup is left as it was");
+		java.util.List<String> said = ctrmap.Ui.record();
+		try {
+			ctrmap.vault.VaultUi.offer(null, second, 4);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(said.size() == 1 && said.get(0).contains("NOT been backed up"),
+				"the setup offer says so, where it said nothing: " + said);
+
+		String why = Vault.restoreOne(a.entry, "a/0/1/3", second);
+		check(why.startsWith("Nothing was restored") && "the other version's zone data".equals(str(read(new File(second, "a/0/1/3")))),
+				"restoring the first's backup into the second writes nothing: " + why);
+		List<String> all = Vault.restoreAll(a.entry, second, null);
+		check(all.size() == 1 && all.get(0).startsWith("Nothing was restored"),
+				"nor does restoring all of it, refused once before any file: " + all.size() + " line(s)");
+		write(new File(first, "a/0/1/3"), "edited");
+		check(Vault.restoreOne(a.entry, "a/0/1/3", first).isEmpty() && "zone data".equals(str(read(new File(first, "a/0/1/3")))),
+				"while the folder it was taken from is restored from it");
+
+		System.out.println("--- a title id is read where the dump tools leave it (F121)");
+		File named = new File(new File(scratch, "000400000011C500"), "romfs");
+		check("000400000011C500".equals(Vault.titleIdOf(named)), "a romfs inside a folder named by its title is that title");
+		File cart = new File(scratch, "cart");
+		byte[] exheader = new byte[0x400];
+		long id = 0x000400000011C500L;
+		for (int i = 0; i < 8; i++) {
+			exheader[0x200 + i] = (byte) (id >>> (8 * i));
+		}
+		writeRaw(new File(cart, "exheader.bin"), exheader);
+		check("000400000011C500".equals(Vault.titleIdOf(new File(cart, "romfs"))),
+				"and so is a romfs beside an ExHeader naming it: " + Vault.titleIdOf(new File(cart, "romfs")));
+		exheader[0x204] = 0x77;
+		writeRaw(new File(cart, "exheader.bin"), exheader);
+		check(Vault.titleIdOf(new File(cart, "romfs")) == null, "an ExHeader naming no application's title names none");
+
+		File pairedWith = new File(new File(scratch, "0004000000055D00"), "romfs");
+		buildFakeDump(named);
+		buildFakeDump(pairedWith);
+		Vault.SealResult c = Vault.seal(named, Vault.Scope.FULL_RAW, null);
+		Vault.SealResult d = Vault.seal(pairedWith, Vault.Scope.FULL_RAW, null);
+		check(c.sealed && d.sealed && !c.entry.equals(d.entry), "two dumps that say their titles are two backups");
+	}
+
+	/**
+	 * A backup that has rotted (F140): the restore copied its bytes over the game file first and
+	 * checked them after, so it destroyed the file it was asked to repair; and nothing checked the
+	 * backup before a restore, or at all.
+	 */
+	static void aDamagedBackupRestoresNothing(File scratch) throws IOException {
+		System.out.println("--- a damaged backup restores nothing, and leaves the file it was asked to repair (F140)");
+		File dump = new File(scratch, "000400000011C403");
+		buildFakeDump(dump);
+		Vault.SealResult r = Vault.seal(dump, Vault.Scope.FULL_RAW, null);
+		check(r.sealed, "control: the dump is backed up (" + r.problem + ")");
+		File game = new File(dump, "a/0/1/3");
+		write(game, "the user's file");
+		//the backup rots: the same size, other bytes, so only the digest can tell
+		write(new File(new File(r.entry, "files"), "a/0/1/3"), "zone dat@");
+		String why = Vault.restoreOne(r.entry, "a/0/1/3", dump);
+		check(why.startsWith("Nothing was restored") && "the user's file".equals(str(read(game))),
+				"a restore from it is refused, and the user's file is as it was: " + why + " / " + str(read(game)));
+		check(!new File(dump, "a/0/1/3.restoring").exists(), "and nothing is left beside it");
+
+		java.util.List<String> said = ctrmap.Ui.record(Integer.valueOf(javax.swing.JOptionPane.YES_OPTION));
+		boolean did;
+		try {
+			did = ctrmap.vault.VaultUi.restoreOne(null, r.entry, "a/0/1/3", dump, null);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(!did && said.size() == 1 && said.get(0).contains("has changed since it was taken"),
+				"the window checks the backup first, and says it has changed: " + said);
+		said = ctrmap.Ui.record(Integer.valueOf(javax.swing.JOptionPane.YES_OPTION));
+		try {
+			did = ctrmap.vault.VaultUi.restoreEverything(null, r.entry, dump, null);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(!did && said.size() == 1 && said.get(0).contains("has changed since it was taken") && "the user's file".equals(str(read(game))),
+				"and so does a whole restore, before it asks anything: " + said);
+
+		said = ctrmap.Ui.record();
+		java.util.List<Vault.Drift> drift;
+		try {
+			drift = ctrmap.vault.VaultUi.checkOnOpen(null, dump);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(drift.size() == 1 && said.size() == 1 && said.get(0).contains("has changed since it was taken"),
+				"opening the game says the backup has changed, before it is needed: " + said);
+		write(new File(new File(r.entry, "files"), "a/0/1/3"), "zone data");
+		said = ctrmap.Ui.record();
+		try {
+			drift = ctrmap.vault.VaultUi.checkOnOpen(null, dump);
+		} finally {
+			ctrmap.Ui.stopRecording();
+		}
+		check(drift.isEmpty() && said.isEmpty(), "and says nothing of a backup that is whole: " + said);
+		check(Vault.restoreOne(r.entry, "a/0/1/3", dump).isEmpty() && "zone data".equals(str(read(game))),
+				"from which a restore lands");
+		write(game, "edited after");
+		String slashed = Vault.restoreOne(r.entry, "/a/0/1/3", dump);
+		String windows = Vault.restoreOne(r.entry, "a\\0\\1\\3", dump);
+		check(slashed.isEmpty() && windows.isEmpty() && "zone data".equals(str(read(game))),
+				"and a path with a leading slash, or with Windows separators, is the same file (F155): " + slashed + windows);
+
+		String mf = new String(java.nio.file.Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()),
+				java.nio.charset.StandardCharsets.UTF_8);
+		String open = CollisionReadTest.body(SourceSeamTest.stripComments(mf), "public static int onWorkspaceOpened(");
+		check(open != null && open.contains("VaultUi.checkOnOpen("), "and the window checks it whenever a game opens");
+	}
+
+	/**
+	 * The game as it shipped comes from the snapshot or the sealed backup, VERIFIED - never from the
+	 * live folder (F232).
+	 *
+	 * <p>Three readers built "snapshot + path" by hand, and two of them, finding no snapshot, read the
+	 * user's edited game instead: the donor textures stamped into a new building then came from the
+	 * user's own edits. Driven through the one pristine reader and through the building palette's
+	 * donor textures, which were one of the two.
+	 */
+	static void theGameAsItShippedIsNeverTheLiveGame(File scratch) throws Exception {
+		System.out.println("--- the game as it shipped is the snapshot's or the backup's, never the live game (F232)");
+		File dump = new File(scratch, "000400000011C405");
+		buildFakeDump(dump);
+		File workspace = new File(scratch, "ws-pristine");
+		workspace.mkdirs();
+		ctrmap.WorkspaceSession session = Sessions.bare(workspace, dump, ctrmap.gamedef.GameType.ORAS);
+		try {
+			check(session.pristineArchive(ctrmap.gamedef.ArchiveType.AREA_DATA) == null,
+					"with no snapshot and no backup there is no untouched copy - not the live file");
+			String refused = null;
+			try {
+				ctrmap.humaninterface.BuildingPaletteDialog.donorTextures(205);
+			} catch (Exception said) {   //any answer is read: one that parsed the live file fails below
+				refused = said.getMessage();
+			}
+			check(refused != null && refused.contains("no untouched copy"),
+					"and the palette's donor textures refuse in words rather than reading the edited game: " + refused);
+
+			Vault.SealResult r = Vault.seal(dump, Vault.Scope.FULL_RAW, null);
+			check(r.sealed, "control: the dump is backed up (" + r.problem + ")");
+			write(new File(dump, "a/0/1/4"), "edited areas");   //the user edits the live game after the seal
+			File copy = session.pristineArchive(ctrmap.gamedef.ArchiveType.AREA_DATA);
+			check(copy != null && "area data".equals(str(read(copy))),
+					"with a sealed backup, the untouched copy is the backup's sealed bytes, not the live edit: "
+					+ (copy == null ? "none" : str(read(copy))));
+
+			write(new File(new File(r.entry, "files"), "a/0/1/4"), "area dat@");   //the backup rots
+			ctrmap.WorkspaceSession fresh = Sessions.bare(new File(scratch, "ws-pristine-2"), dump,
+					ctrmap.gamedef.GameType.ORAS);
+			new File(scratch, "ws-pristine-2").mkdirs();
+			String damaged = null;
+			try {
+				fresh.pristineArchive(ctrmap.gamedef.ArchiveType.AREA_DATA);
+			} catch (IOException said) {
+				damaged = said.getMessage();
+			}
+			check(damaged != null && damaged.contains("does not match what was sealed"),
+					"and a backup that no longer matches what was sealed is refused, not read as absent: " + damaged);
+		} finally {
+			ctrmap.Workspace.install(null);
+		}
+	}
+
+	/**
+	 * A restore writes the game folder under the open session (F218). It passed no reload, so the
+	 * session went on reading the old entry tables over the restored files, and every answer it had
+	 * kept from them. Now a restore into the open game's folder re-reads its archives and empties
+	 * what it kept, as a pack does; a restore into another folder leaves the open game alone.
+	 */
+	static void aRestoreRereadsTheOpenGame(File scratch) throws Exception {
+		System.out.println("--- a restore into the open game re-reads it and empties what it kept (F218)");
+		File dump = new File(scratch, "000400000011C406");
+		buildFakeDump(dump);
+		Vault.SealResult r = Vault.seal(dump, Vault.Scope.FULL_RAW, null);
+		check(r.sealed, "control: the dump is backed up (" + r.problem + ")");
+		File ws = new File(scratch, "ws-restore");
+		ws.mkdirs();
+		File elsewhere = new File(scratch, "another-game");
+		elsewhere.mkdirs();
+		ctrmap.WorkspaceSession other = new ctrmap.WorkspaceSession(new File(scratch, "ws-other"), elsewhere,
+				ctrmap.gamedef.GameType.ORAS, null);
+		ctrmap.WorkspaceSession session = Sessions.bare(ws, dump, ctrmap.gamedef.GameType.ORAS);
+		ctrmap.formats.GameCache.Key<String> kept = new ctrmap.formats.GameCache.Key<>("an answer read from the game");
+		try {
+			session.cache().get(kept, () -> "read before the restore");
+			other.cache().get(kept, () -> "read from another game");
+			write(new File(dump, "a/0/1/3"), "edited");
+			java.util.List<String> said = ctrmap.Ui.record(Integer.valueOf(javax.swing.JOptionPane.YES_OPTION));
+			boolean did;
+			try {
+				did = ctrmap.vault.VaultUi.restoreOne(null, r.entry, "a/0/1/3", dump, other);
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			check(did && other.cache().holds(kept),
+					"control: a restore handed a session over ANOTHER folder lands, and leaves that game's answers: " + said);
+			write(new File(dump, "a/0/1/3"), "edited again");
+			said = ctrmap.Ui.record(Integer.valueOf(javax.swing.JOptionPane.YES_OPTION));
+			try {
+				did = ctrmap.vault.VaultUi.restoreOne(null, r.entry, "a/0/1/3", dump, session);
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			check(did && !session.cache().holds(kept),
+					"a restore of one archive into the open game empties what that game kept: " + said);
+
+			session.cache().get(kept, () -> "read before the whole restore");
+			write(new File(dump, "a/0/1/4"), "edited");
+			said = ctrmap.Ui.record(Integer.valueOf(javax.swing.JOptionPane.YES_OPTION));
+			try {
+				did = ctrmap.vault.VaultUi.restoreEverything(null, r.entry, dump, session);
+			} finally {
+				ctrmap.Ui.stopRecording();
+			}
+			check(did && !session.cache().holds(kept), "and so does a restore of the whole game: " + said);
+
+			String mf = new String(java.nio.file.Files.readAllBytes(new File("src/ctrmap/CtrmapMainframe.java").toPath()),
+					java.nio.charset.StandardCharsets.UTF_8);
+			String action = CollisionReadTest.body(SourceSeamTest.stripComments(mf), "private static void restoreFromVaultAction(");
+			check(action != null && action.contains("VaultUi.restoreOne(frame, entry, String.valueOf(rel).trim(), dump, Workspace.session())")
+					&& action.contains("VaultUi.restoreEverything(frame, entry, dump, Workspace.session())"),
+					"and the window hands both restores the session open over that folder");
+		} finally {
+			ctrmap.Workspace.install(null);
+		}
 	}
 
 	static String lastOf(java.util.List<String> xs) {

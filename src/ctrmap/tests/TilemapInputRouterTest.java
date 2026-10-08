@@ -293,7 +293,7 @@ public class TilemapInputRouterTest {
 	 */
 	static void theToolbarSwitchesTools() {
 		if (!EditorBench.frameAvailable()) {
-			System.out.println("  skip: no display, and every tool's onToolInit revalidates the mainframe's JFrame"
+			Skip.section("no display, and every tool's onToolInit revalidates the mainframe's JFrame"
 					+ " - the ten tool-switch sites are not measured here");
 			return;
 		}

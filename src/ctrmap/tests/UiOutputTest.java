@@ -126,7 +126,7 @@ public class UiOutputTest {
 	 */
 	static void withDialogsOnTheDialogIsOpened() throws Exception {
 		if (!java.awt.GraphicsEnvironment.isHeadless()) {
-			System.out.println("  skip: a display is attached, so a real dialog would open and block");
+			Skip.section("a display is attached, so a real dialog would open and block");
 			return;
 		}
 		//Ui.enableDialogs() is the application's to call and only the
@@ -136,12 +136,19 @@ public class UiOutputTest {
 		enabled.setAccessible(true);
 		enabled.set(null, Boolean.TRUE);
 		try {
-			Ui.message(null, "the emulator is holding a0/1/3 open", "Pack Workspace",
-					JOptionPane.ERROR_MESSAGE);
-			check(false, "with dialogs on the message reaches a real dialog (it returned instead:"
-					+ " the application would say nothing at all)");
-		} catch (java.awt.HeadlessException ex) {
-			check(true, "with dialogs on the message reaches a real dialog");
+			//ON THE EVENT THREAD, the only one a real dialog may open on (F220): asked from this
+			//main thread, Ui refuses before any window - EdtReachTest holds that half
+			Throwable[] thrown = {null};
+			javax.swing.SwingUtilities.invokeAndWait(() -> {
+				try {
+					Ui.message(null, "the emulator is holding a0/1/3 open", "Pack Workspace",
+							JOptionPane.ERROR_MESSAGE);
+				} catch (RuntimeException ex) {
+					thrown[0] = ex;
+				}
+			});
+			check(thrown[0] instanceof java.awt.HeadlessException, "with dialogs on the message reaches a real dialog"
+					+ " (" + (thrown[0] == null ? "it returned instead: the application would say nothing at all" : thrown[0]) + ")");
 		} finally {
 			enabled.set(null, Boolean.FALSE);
 		}

@@ -93,7 +93,10 @@ public class ZoneEntities {
 			scripts = new GFLPawnScript(dis);
 			dis.close();
 		} catch (IOException ex) {
-			Logger.getLogger(ZoneEntities.class.getName()).log(Level.SEVERE, null, ex);
+			//REFUSED IN WORDS (F149): this logged and handed back the records read so far, and the next
+			//save of the zone wrote that shorter list over the game's
+			throw new IllegalStateException("The zone's entities could not be read: " + (ex instanceof java.io.EOFException
+					? "they end before the records they declare" : ctrmap.util.Bytes.reason(ex)), ex);
 		}
 	}
 
@@ -208,36 +211,30 @@ public class ZoneEntities {
 			h = 1;
 		}
 
-		public Prop(LittleEndianDataInputStream dis) {
-			try {
-				script = dis.readUnsignedShort();
-				unknown2 = dis.readUnsignedShort();
-				unknown4 = dis.readUnsignedShort();
-				unknown6 = dis.readUnsignedShort();
-				x = dis.readUnsignedShort();
-				y = dis.readUnsignedShort();
-				w = dis.readUnsignedShort();
-				h = dis.readUnsignedShort();
-				unknown10 = dis.readInt();
-			} catch (IOException ex) {
-				Logger.getLogger(ZoneEntities.class.getName()).log(Level.SEVERE, null, ex);
-			}
+		/** Thrown to the entity reader, which refuses the zone in words (F149): it logged and went on. */
+		public Prop(LittleEndianDataInputStream dis) throws IOException {
+			script = dis.readUnsignedShort();
+			unknown2 = dis.readUnsignedShort();
+			unknown4 = dis.readUnsignedShort();
+			unknown6 = dis.readUnsignedShort();
+			x = dis.readUnsignedShort();
+			y = dis.readUnsignedShort();
+			w = dis.readUnsignedShort();
+			h = dis.readUnsignedShort();
+			unknown10 = dis.readInt();
 		}
 
-		public void write(LittleEndianDataOutputStream dos) {
-			try {
-				dos.writeShort((short) script);
-				dos.writeShort((short) unknown2);
-				dos.writeShort((short) unknown4);
-				dos.writeShort((short) unknown6);
-				dos.writeShort((short) x);
-				dos.writeShort((short) y);
-				dos.writeShort((short) w);
-				dos.writeShort((short) h);
-				dos.writeInt(unknown10);
-			} catch (IOException ex) {
-				Logger.getLogger(ZoneEntities.class.getName()).log(Level.SEVERE, null, ex);
-			}
+		/** Thrown to the entity writer, which refuses the save (F149): it logged, and wrote the rest. */
+		public void write(LittleEndianDataOutputStream dos) throws IOException {
+			dos.writeShort((short) script);
+			dos.writeShort((short) unknown2);
+			dos.writeShort((short) unknown4);
+			dos.writeShort((short) unknown6);
+			dos.writeShort((short) x);
+			dos.writeShort((short) y);
+			dos.writeShort((short) w);
+			dos.writeShort((short) h);
+			dos.writeInt(unknown10);
 		}
 	}
 
@@ -358,23 +355,30 @@ public class ZoneEntities {
 			dos.writeFloat(z3DCoordinate);
 		}
 
+		/**
+		 * The same NPC as the file holds it: every field {@link #write} puts there, the altitude
+		 * bit for bit. Left out on purpose, because none of them is written: xFlags and yFlags,
+		 * which nothing reads, and the drag accumulators and ground, which are the map view's
+		 * working state.
+		 *
+		 * <p>NO hashCode STOOD BESIDE IT (F210), so two equal NPCs hashed apart.
+		 */
 		@Override
 		public boolean equals(Object o2) {
-			if (o2 != null && o2 instanceof NPC) {
-				NPC npc = (NPC) o2;
-				return npc.uid == uid && npc.model == model && npc.movePerm1 == movePerm1
-						&& npc.movePerm2 == movePerm2 && npc.spawnFlag == spawnFlag && npc.script == script
-						&& npc.faceDirection == faceDirection && npc.sightRange == sightRange
-						&& npc.u10 == u10 && npc.u12 == u12 && npc.areaStartX == areaStartX
-						&& npc.areaStartY == areaStartY && npc.areaWidth == areaWidth
-						&& npc.areaHeight == areaHeight && npc.multiZoneLinkOriginZone == multiZoneLinkOriginZone
-						&& npc.multiZoneLinkTargetZone == multiZoneLinkTargetZone
-						&& npc.multiZoneLinkHostZone == multiZoneLinkHostZone
-						&& npc.multiZoneLink1Type == multiZoneLink1Type && npc.leashWidth == leashWidth
-						&& npc.leashHeight == leashHeight && npc.xTile == xTile
-						&& npc.yTile == yTile && npc.z3DCoordinate == z3DCoordinate;
-			}
-			return false;
+			return o2 instanceof NPC && java.util.Arrays.equals(written(), ((NPC) o2).written());
+		}
+
+		@Override
+		public int hashCode() {
+			return java.util.Arrays.hashCode(written());
+		}
+
+		/** The written fields, in file order. */
+		private int[] written() {
+			return new int[]{uid, model, movePerm1, movePerm2, spawnFlag, script, faceDirection, sightRange,
+				u10, u12, areaStartX, areaStartY, areaWidth, areaHeight, multiZoneLinkOriginZone,
+				multiZoneLinkTargetZone, multiZoneLinkHostZone, multiZoneLink1Type, leashWidth, leashHeight,
+				xTile, yTile, Float.floatToIntBits(z3DCoordinate)};
 		}
 
 		@Override
@@ -677,15 +681,20 @@ public class ZoneEntities {
 			dos.writeShort((short) u16val);
 		}
 
+		/** The same trigger as the file holds it; with a hashCode beside it now (F210). */
 		@Override
-		public boolean equals(Object o){
-			if (o != null && o instanceof Trigger){
-				Trigger t = (Trigger)o;
-				return t.script == script && t.u2 == u2 && t.constant == constant
-						&& t.u6 == u6 && t.u8 == u8 && t.uA == uA && t.x == x && t.y == y
-						&& t.w == this.w && t.h == h && t.u14 == u14 && t.u16val == u16val;
-			}
-			return false;
+		public boolean equals(Object o) {
+			return o instanceof Trigger && java.util.Arrays.equals(written(), ((Trigger) o).written());
+		}
+
+		@Override
+		public int hashCode() {
+			return java.util.Arrays.hashCode(written());
+		}
+
+		/** The written fields, in file order. */
+		private int[] written() {
+			return new int[]{script, u2, constant, u6, u8, uA, x, y, w, h, u14, u16val};
 		}
 	}
 }

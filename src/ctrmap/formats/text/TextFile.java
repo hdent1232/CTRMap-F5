@@ -2,7 +2,6 @@ package ctrmap.formats.text;
 
 import ctrmap.LittleEndianDataInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -25,7 +24,10 @@ public class TextFile {
 
 	public TextFile(File f) {
 		try {
-			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(f));
+			//READ WHOLE FIRST (F254): the file was read through an open handle that the early return
+			//below and any exception left open; a byte array has nothing to close
+			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(
+					new java.io.ByteArrayInputStream(java.nio.file.Files.readAllBytes(f.toPath())));
 			sectionCount = dis.readShort(); //always 1 from what I know so we don't need to loop through this
 			lineCount = dis.readShort();
 			if (lineCount == 0) {

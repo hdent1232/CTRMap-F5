@@ -379,8 +379,11 @@ public class MsgWrapperInjector {
 	 * donor that passed buildDonor's geometry+fingerprint validation, but
 	 * callers that must be robust even against them should inject into a
 	 * disposable copy and commit it on success (as NPCEditForm does).
+	 * @param measured the game the target is from, already asked (NpcTemplates.measuredOn): the
+	 * routine's shape and its yield native are ORAS's
 	 */
-	public static int injectMsgWrapper(GFLPawnScript target, GFLPawnScript donor) {
+	public static int injectMsgWrapper(NpcTemplates.Measured measured, GFLPawnScript target, GFLPawnScript donor) {
+		NpcTemplates.asked(measured);
 		try {
 			if (target == null) {
 				throw new InjectionException("No target script.");
@@ -580,8 +583,6 @@ public class MsgWrapperInjector {
 		}
 }
 
-
-
 	//============ donor model ============
 	/**
 	 * What the closure walk collected, plus what only this transplant adds.
@@ -769,8 +770,6 @@ public class MsgWrapperInjector {
 		}
 		return crc.getValue();
 	}
-
-	
 
 	private static boolean argIs(PawnInstruction ins, int idx, int value) {
 		return ins.argumentCells.length > idx && ins.argumentCells[idx] == value;

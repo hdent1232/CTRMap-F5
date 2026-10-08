@@ -1,6 +1,7 @@
 package ctrmap.tests;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -55,11 +56,13 @@ public class PlantLedgerTest {
 					+ " - the re-provable half of 'proven by breaking' is not installed");
 			System.exit(1);
 		}
+		//java only, so it runs with or without python
+		theRunnerFailsASuiteThatSaysItFailed(new File(repo, "test.ps1"));
 		if (!CommitGuardTest.onPath("python")) {
-			System.out.println("  skip: no python on PATH - the ledger's checks are a python tool, so "
+			Skip.section("no python on PATH - the ledger's checks are a python tool, so "
 					+ "run 'python tools/guard/replant.py --selftest' by hand");
-			System.out.println("ALL PASS");
-			return;
+			System.out.println(fails == 0 ? "ALL PASS" : "FAILURES PRESENT (" + fails + ")");
+			System.exit(fails == 0 ? 0 : 1);
 		}
 
 		theLedgerStillMatchesTheTree(repo);
@@ -71,6 +74,36 @@ public class PlantLedgerTest {
 		if (fails > 0) {
 			System.exit(1);
 		}
+	}
+
+	/**
+	 * A suite that printed FAILURES PRESENT has failed, whatever it exits with.
+	 *
+	 * <p>The battery's verdict was the exit code alone, and four suites printed their verdict on a
+	 * skip path and returned - exit 0. A check added before one of those skips printed "FAIL: the
+	 * prop is refused" and the battery passed it (2026-10-07). The loop that runs the suites must
+	 * fail one on the verdict line too, and replant's self-test (run below) pins that it judges a
+	 * plant's run the same way - a plant the battery would catch is a kill, and only then.
+	 */
+	static void theRunnerFailsASuiteThatSaysItFailed(File runner) throws Exception {
+		if (!runner.isFile()) {
+			check(false, "no runner at " + runner);
+			return;
+		}
+		String text = new String(Files.readAllBytes(runner.toPath()), StandardCharsets.UTF_8);
+		int start = text.indexOf("foreach ($s in $suites) {");
+		int end = start < 0 ? -1 : text.indexOf("\n}", start);
+		String loop = start < 0 || end < 0 ? "" : text.substring(start, end);
+		check(!loop.isEmpty(), "test.ps1 has the loop that runs the suites");
+		boolean judged = false;
+		for (String line : loop.split("\n")) {
+			if (line.contains("$failed += $s.n") && line.contains("-ne 0")
+					&& line.contains("-match '^FAILURES PRESENT'")) {
+				judged = true;
+			}
+		}
+		check(judged, "and it fails a suite on its exit code OR on a FAILURES PRESENT verdict line - a suite"
+				+ " that says it failed and exits 0 is a failure");
 	}
 
 	/**
@@ -190,7 +223,8 @@ public class PlantLedgerTest {
 				java.nio.file.Files.readAllBytes(runner.toPath()),
 				java.nio.charset.StandardCharsets.UTF_8));
 		int holds = text.indexOf("hold(path)");
-		int plants = text.indexOf("write(path, text.replace(");
+		//the substitution is computed where its matches are counted, and WRITTEN here
+		int plants = text.indexOf("write(path, planted");
 		check(holds >= 0 && plants >= 0,
 				"the runner still holds a lock and plants a file (" + holds + ", " + plants + ")");
 		if (holds < 0 || plants < 0) {

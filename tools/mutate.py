@@ -23,6 +23,7 @@ Usage: python tools/mutate.py [max-hunks-per-cluster]
 """
 import io, os, json, subprocess, sys, time
 from pathlib import Path
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console window for a captured child (F184)
 
 BASE = Path(__file__).resolve().parent.parent.parent   # tools -> repository -> the folder holding it
 WT = BASE / "wt" / "_guardcheck"
@@ -50,7 +51,7 @@ CLUSTERS = {
 
 def run(cmd, cwd=WT, timeout=600):
     return subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True,
-                          shell=isinstance(cmd, str), timeout=timeout)
+                          shell=isinstance(cmd, str), timeout=timeout, creationflags=NO_WINDOW)
 
 
 def split_hunks(diff):

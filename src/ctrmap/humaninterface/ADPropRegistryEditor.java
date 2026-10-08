@@ -23,9 +23,6 @@ import javax.swing.text.NumberFormatter;
  */
 public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 
-	/**
-	 * Creates new form ADPropRegistryEditor
-	 */
 	private ADPropRegistry reg;
 	private ADPropRegistry.ADPropRegistryEntry e;
 	private DefaultListModel<String> model = new DefaultListModel<>();
@@ -35,10 +32,14 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 
 	private PropEditForm parent;
 	
+	/**
+	 * Creates new form ADPropRegistryEditor
+	 */
 	public ADPropRegistryEditor(PropEditForm parentPropForm) {
 		initComponents();
 		parent = parentPropForm;
-		setShortValueClass(new JFormattedTextField[]{oa1, oa2, oa3, ea11, ea12, ea13});
+		//ea14 too: left out, it committed a Long that saveEntry's cast threw on (F095)
+		setShortValueClass(new JFormattedTextField[]{oa1, oa2, oa3, ea11, ea12, ea13, ea14});
 	}
 
 	/**
@@ -52,10 +53,13 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 	 */
 	@Override
 	public boolean closeRequested() {
-		if (saveEntry(true)) {
-				if (parent != null){
-				parent.setProp(parent.propIndex);
-			}
+		//what the save answered (F105): this said true over a refused save, so the pane went and the
+		//edit with it
+		if (!saveEntry(true)) {
+			return false;
+		}
+		if (parent != null) {
+			parent.setProp(parent.propIndex);
 		}
 		return true;
 	}
@@ -94,6 +98,9 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 		File bchFile = Workspace.getWorkspaceFile(ArchiveType.BUILDING_MODELS, model);
 		if (bchFile.exists()) {
 			BCHFile mdlBch = new BCHFile(new BM(bchFile, Workspace.session()).getFile(0));
+			if (mdlBch.models.isEmpty()) {
+				return null;   //a BCH with no model: there is nothing to preview, and get(0) threw (F095)
+			}
 			mdlBch.models.get(0).setMaterialTextures(mdlBch.textures);
 			mdlBch.models.get(0).setMaterialTextures(propTextures);
 			return mdlBch.models.get(0);
@@ -129,47 +136,51 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 
 	public boolean saveEntry(boolean dialog) {
 		if (e != null) {
-			if (reg.entries.containsKey((Integer) uid.getValue()) && !reg.entries.get((Integer) uid.getValue()).equals(e)) {
+			int newReference = ((Number) uid.getValue()).intValue();
+			if (newReference != e.reference && reg.entries.containsKey(newReference)) {
 				ctrmap.Ui.error(this, "The specified UID is already registered. Please use another one.", "UID not unique");
 				return false;
 			}
-			ADPropRegistry.ADPropRegistryEntry e2 = new ADPropRegistry.ADPropRegistryEntry();
-			e2.reference = (Integer) uid.getValue();
-			e2.model = (Integer) bm.getValue();
-			e2.eventScr1 = ((Integer) evtScr1.getValue()).byteValue();
-			e2.eventScr2 = ((Integer) evtScr2.getValue()).byteValue();
-			e2.u0 = e.u0;
+			//EDITED ON A COPY OF THE ENTRY (F084): it was rebuilt from defaults with only the fields
+			//shown here copied back, so every edit reset the 36 bytes nobody models. And every field is
+			//read as a Number (F095): a cast to the class one field happened to commit threw on another.
+			ADPropRegistry.ADPropRegistryEntry e2 = e.copy();
+			e2.reference = newReference;
+			e2.model = ((Number) bm.getValue()).intValue();
+			e2.eventScr1 = ((Number) evtScr1.getValue()).intValue() & 0xFF;
+			e2.eventScr2 = ((Number) evtScr2.getValue()).intValue() & 0xFF;
 			e2.isOmnipresentAnimated = oaEnabled.isSelected() ? (byte) 1 : 0;
-			e2.u1 = e.u1;
-			e2.omnipresentAnimations[0] = (Short) oa1.getValue();
-			e2.omnipresentAnimations[1] = (Short) oa2.getValue();
-			e2.omnipresentAnimations[2] = (Short) oa3.getValue();
-			e2.evtAnimations1[0] = (Short) ea11.getValue();
-			e2.evtAnimations1[1] = (Short) ea12.getValue();
-			e2.evtAnimations1[2] = (Short) ea13.getValue();
-			e2.evtAnimations1[3] = (Short) ea14.getValue();
+			e2.omnipresentAnimations[0] = ((Number) oa1.getValue()).shortValue();
+			e2.omnipresentAnimations[1] = ((Number) oa2.getValue()).shortValue();
+			e2.omnipresentAnimations[2] = ((Number) oa3.getValue()).shortValue();
+			e2.evtAnimations1[0] = ((Number) ea11.getValue()).shortValue();
+			e2.evtAnimations1[1] = ((Number) ea12.getValue()).shortValue();
+			e2.evtAnimations1[2] = ((Number) ea13.getValue()).shortValue();
+			e2.evtAnimations1[3] = ((Number) ea14.getValue()).shortValue();
 			for (int i = 0; i < 9; i++) {
-				e2.evtAnimations2[i / 3][i % 3] = (Short) evtA2Table.getValueAt(i % 3, i / 3);
+				e2.evtAnimations2[i / 3][i % 3] = ((Number) evtA2Table.getValueAt(i % 3, i / 3)).shortValue();
 			}
 			if (!e2.equals(e)) {
-				switch (ctrmap.Ui.askToKeep(dialog, "Prop registry")) {
+				//NO SHOWS THE ENTRY AS IT IS (F106): it left the boxes showing the edit it threw away
+				switch (ctrmap.Ui.askToKeep(dialog, "Prop registry", () -> showEntry(e.reference))) {
 					case DISCARD:
 						return true;
 					case CANCEL:
 						return false;
 				}
+				int row = dict.indexOf(e.reference);
 				if (e.model != e2.model) {
-					models.set(dict.indexOf(e.reference), getH3DModel(e2.model));
-					model.setElementAt("UID: " + e2.reference + " | Model: " + e2.model + " | " + models.get(dict.indexOf(e.reference)).name, dict.indexOf(e.reference));
+					models.set(row, getH3DModel(e2.model));
 				}
-				if (e.reference != e2.reference) {
-					model.setElementAt("UID: " + e2.reference + " | Model: " + e2.model + " | " + models.get(dict.indexOf(e.reference)).name, dict.indexOf(e.reference));
+				if (e.model != e2.model || e.reference != e2.reference) {
+					H3DModel shown = models.get(row);
+					model.setElementAt("UID: " + e2.reference + " | Model: " + e2.model + " | "
+							+ (shown == null ? "(no model)" : shown.name), row);
 				}
-				dict.set(dict.indexOf(e.reference), e2.reference);
-				reg.entries.remove(e.reference);
+				dict.set(row, e2.reference);
+				//IN ITS OWN PLACE: remove-then-put moved the edited entry to the end of the registry
+				reg.replace(e.reference, e2);
 				e = e2;
-				reg.entries.put(e.reference, e);
-				reg.modified = true;
 				showEntry(e.reference);
 			}
 		}
@@ -456,7 +467,8 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 
     private void btnNewEntryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNewEntryActionPerformed
 		ADPropRegistry.ADPropRegistryEntry e2 = new ADPropRegistry.ADPropRegistryEntry();
-		reg.entries.put(-1, e2);
+		//a FREE reference, not the fixed key -1 a second click overwrote (F084)
+		reg.register(e2, 0);
 		model.addElement("UID: " + e2.reference + " | Model: " + e2.model);
 		dict.add(e2.reference);
 		models.add(getH3DModel(e2.model));
@@ -487,17 +499,20 @@ public class ADPropRegistryEditor extends ctrmap.humaninterface.FormPanel {
 		/* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
          * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
 		 */
-		try {
-			for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-				if ("Nimbus".equals(info.getName())) {
-					javax.swing.UIManager.setLookAndFeel(info.getClassName());
-					break;
+		//on the event thread, ahead of the form queued below: the look and feel is Swing's too (F220)
+		java.awt.EventQueue.invokeLater(() -> {
+			try {
+				for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
+					if ("Nimbus".equals(info.getName())) {
+						javax.swing.UIManager.setLookAndFeel(info.getClassName());
+						break;
+					}
 				}
+			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
+				java.util.logging.Logger.getLogger(ADPropRegistryEditor.class
+						.getName()).log(java.util.logging.Level.SEVERE, null, ex);
 			}
-		} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | javax.swing.UnsupportedLookAndFeelException ex) {
-			java.util.logging.Logger.getLogger(ADPropRegistryEditor.class
-					.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-		}
+		});
 		//</editor-fold>
 
 		//</editor-fold>

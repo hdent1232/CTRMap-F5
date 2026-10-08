@@ -8,11 +8,35 @@
    "test_bundle.py::ARecordedMeasurementCarriesTheTreeItMeasured"
   ]
  },
- "evasion_ceiling": 14,
- "generalisation_ceiling": 1,
+ "evasion_ceiling": 25,
+ "generalisation_ceiling": 9,
  "must_say_ceiling": 19,
- "owed_ceiling": 2,
+ "owed_ceiling": 0,
  "plants": {
+  "test_a_skip_is_never_a_pass.py::NoSuiteSaysASkipAnyOtherWay::test_every_suite_skips_through_Skip": {
+   "file": "src/ctrmap/tests/LZ11Test.java",
+   "must_say": "SKIP: these suites print a skip that test.ps1 cannot count",
+   "new": "\t\t\tSystem.out.println(\"(corpus GARC not found at \" + path + \" - synthetic cases only)\");",
+   "old": "\t\t\tSkip.section(\"corpus GARC not found at \" + path + \" - synthetic cases only\");",
+   "site": "instance",
+   "why": "F144: LZ11Test ran its synthetic cases, printed that the corpus checks did not, and passed - a skip the battery could not see because it never used the word."
+  },
+  "test_a_skip_is_never_a_pass.py::TheBatteryReadsWhatSkipWrites::test_test_ps1_counts_the_exit_code_and_the_marker": {
+   "file": "test.ps1",
+   "must_say": "BATTERY: test.ps1 does not count exit 3 as a skipped suite",
+   "new": "    if ($false -and @($said -match '^FAILURES PRESENT').Count -eq 0) {",
+   "old": "    if ($exit -eq 3 -and @($said -match '^FAILURES PRESENT').Count -eq 0) {",
+   "site": "instance",
+   "why": "F144: test.ps1 recorded a failure only on a non-zero exit, so a suite that skipped everything and exited 0 was a pass; a skip code the battery does not count is the same hole one number over."
+  },
+  "test_a_skip_is_never_a_pass.py::TheRecordLeavesASkippedSuiteOut::test_a_skipped_suite_is_not_counted_and_a_partly_skipped_one_is_named": {
+   "file": "tools/guard/record_run.py",
+   "must_say": "RECORD: a skipped suite was counted as passed",
+   "new": "    passed = [n for n in announced if n not in failed]  #PLANTED: a skip is a pass\n",
+   "old": "    passed = [n for n in announced if n not in failed and n not in skipped]\n",
+   "site": "instance",
+   "why": "F144: `ran` is the number a commit message may claim; counting a suite that ran nothing in it is the 50-of-136 hole moved into the record."
+  },
   "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_a_checkout_pointing_its_hooks_elsewhere_is_repointed::evasion": {
    "file": "tools/arm_checkout.py",
    "must_say": "was TRUSTED instead of checked",
@@ -36,6 +60,30 @@
    "old": "        code, why = _git(root, [\"config\", \"--local\", \"core.hooksPath\", HOOKS_DIR])",
    "site": "instance",
    "why": "The fix undone: core.hooksPath lives in .git/config, which a clone never carries, so a fresh clone ran no commit hook at all and every commit-time guard was off while .githooks/ sat in the repository looking armed."
+  },
+  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_a_hook_COMMITTED_not_executable_is_never_reported_armed": {
+   "file": "tools/arm_checkout.py",
+   "must_say": "a hook git would skip was reported armed",
+   "new": "",
+   "old": "    skipped = unrunnable(root)\n    if skipped:\n        return False, \"the hooks are wired and git would SKIP them: \" + \"; \".join(skipped)\n",
+   "site": "instance",
+   "why": "F182: the hooks were committed 100644 from Windows, every POSIX clone took that mode and git skipped commit-msg and pre-commit, and session start said ARMED over 2 hooks that never ran. This plant stops asking whether git can run them."
+  },
+  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_a_hook_COMMITTED_not_executable_is_never_reported_armed::evasion": {
+   "file": "tools/arm_checkout.py",
+   "must_say": "a hook git would skip was reported armed",
+   "new": "    return []\n",
+   "old": "    return gate_stamps.unrunnable_hooks(root)\n",
+   "site": "evasion",
+   "why": "THE CHEAPEST WAY TO SAY ARMED AGAIN: give the bit back on disk and never ask the index. A clone takes its mode from the index, so the next 1 fresh checkout is skipped exactly as before while this machine looks fixed."
+  },
+  "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_asking_a_scratch_clone_leaves_no_installer_behind": {
+   "file": "tools/arm_checkout.py",
+   "must_say": "left its installer in the module cache",
+   "new": "    sys.path.insert(0, os.path.join(root, \"tools\"))\n    try:\n        import bundle_install\n",
+   "old": "    path = os.path.join(root, \"tools\", \"bundle_install.py\")\n    try:\n        spec = importlib.util.spec_from_file_location(\"bundle_install_of_checkout\", path)\n        bundle_install = importlib.util.module_from_spec(spec)\n        spec.loader.exec_module(bundle_install)\n",
+   "site": "instance",
+   "why": "F184: `import bundle_install` with a scratch clone's tools/ on the path left that copy in the module cache, and the bundle's install test, run later in the same process, could not say where the bundle lives."
   },
   "test_arm_checkout.py::AFreshCloneArmsItsOwnHooks::test_the_repository_runs_this_at_session_start::elsewhere": {
    "file": ".claude/settings.json",
@@ -85,6 +133,38 @@
    "site": "instance",
    "why": "The output written in the pipe's code page: stdout on a Windows pipe is cp1252 and strict, and the notes' index holds arrows, so the hook raised halfway through, exited 1, and the session was shown nothing it was meant to see."
   },
+  "test_battery_runs_python.py::TheBatteryRunsThePythonSuite::test_no_python_is_a_failure_not_a_pass": {
+   "file": "test.ps1",
+   "must_say": "records the Python suite as passed",
+   "new": "    Write-Host \"    FAIL: no python on PATH - the Python suite could not run, which is not a pass\"\n",
+   "old": "    Write-Host \"    FAIL: no python on PATH - the Python suite could not run, which is not a pass\"\n    $failed += $pname\n",
+   "site": "elsewhere",
+   "why": "F184: the same lost verdict on the other path - a machine with no python, where the suite never ran and the battery would have recorded it green."
+  },
+  "test_battery_runs_python.py::TheBatteryRunsThePythonSuite::test_record_run_counts_it_by_the_name_test_ps1_gives_it": {
+   "file": "test.ps1",
+   "must_say": "the suite is never announced",
+   "new": "Write-Host (\"Python: \" + $pname) -ForegroundColor Cyan\n",
+   "old": "Write-Host (\"--- \" + $pname) -ForegroundColor Cyan\n",
+   "site": "evasion",
+   "why": "F184: the cheapest way to keep a red Python suite out of the record is to print it in a shape record_run does not count as a suite."
+  },
+  "test_battery_runs_python.py::TheBatteryRunsThePythonSuite::test_the_battery_runs_this_folder_and_a_red_run_fails_it": {
+   "file": "test.ps1",
+   "must_say": "a red Python suite does not reach the battery's failed list",
+   "new": "",
+   "old": "    if ($pyExit -ne 0) { $failed += $pname }\n",
+   "site": "instance",
+   "why": "F184: nothing ran the Python suite, so 19 red tests - two real defects - turned nothing red; this plant runs it and drops the verdict."
+  },
+  "test_bundle.py::ACapturedChildOpensNoWINDOW::test_no_captured_child_here_opens_a_window": {
+   "file": "tools/commit_gate.py",
+   "must_say": "console window",
+   "new": "        return subprocess.run([\"git\"] + list(args), cwd=ROOT, capture_output=True, text=text,\n                              timeout=GIT_TIMEOUT)\n",
+   "old": "        return subprocess.run([\"git\"] + list(args), cwd=ROOT, capture_output=True, text=text,\n                              timeout=GIT_TIMEOUT, creationflags=NO_WINDOW)\n",
+   "site": "instance",
+   "why": "F184: 21 captured children in CTRMap's own tools gave the child a console window, which blinks across the owner's Windows screen at every commit. Since F186 the commit guard asks git only through commit_gate's one door, so that door is where the defect would now land."
+  },
   "test_bundle.py::ACapturedChildOpensNoWINDOW::test_no_captured_child_here_opens_a_window::elsewhere": {
    "file": "tests/test_bundle.py",
    "must_say": "console window",
@@ -130,6 +210,30 @@
    "old": "COUNTERFACTUAL = re.compile(r\"\\b(?:would|could|might|should)(?:n't| not)? have\\b[^.!?;:,]{0,40}$\",\n",
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST IT: a `would have` anywhere earlier in the sentence. A window that crosses a semicolon or comma lets *That would have been faster; the moment the sync lands the derive restarts* through."
+  },
+  "test_bundle.py::ADigestOfNOTHINGIsNotADigest::test_a_MISSING_root_refuses": {
+   "file": "tools/require_build.py",
+   "must_say": "not a directory",
+   "new": "    root = Path(root)\n",
+   "old": "    root = Path(root)\n    if not root.is_dir():\n        raise NothingToDigest(\n            \"%s is not a directory - there is nothing to digest, and an absent tree must not \"\n            \"hash to the same value as an empty one\" % root)\n",
+   "site": "instance",
+   "why": "F183: CTRMap's require_build hashed a MISSING src/ to sha256 of nothing - the digest of an empty tree and of a typo - and stamp_problem compared it as if it were an answer."
+  },
+  "test_bundle.py::ADigestOfNOTHINGIsNotADigest::test_a_tree_with_NO_SOURCES_is_refused_rather_than_passed": {
+   "file": "tools/require_build.py",
+   "must_say": "a tree with no sources reported NO PROBLEM",
+   "new": "        except NothingToDigest as absent:\n            continue\n",
+   "old": "        except NothingToDigest as absent:\n            return str(absent)\n",
+   "site": "evasion",
+   "why": "F183: the cheapest way past a refusing digest is a caller that reads 'could not digest' as 'nothing to compare' and moves on."
+  },
+  "test_bundle.py::ADigestOfNOTHINGIsNotADigest::test_an_EMPTY_root_refuses": {
+   "file": "tools/require_build.py",
+   "must_say": "NothingToDigest not raised",
+   "new": "    if False:\n",
+   "old": "    if not lines:\n",
+   "site": "elsewhere",
+   "why": "F183: the same digest of nothing, from a root that exists and is empty rather than one that is missing."
   },
   "test_bundle.py::AFanOutThisHookCannotMEASUREIsRefused::test_a_REMOTE_or_SCHEDULED_session_launched_on_a_prompt_is_counted": {
    "file": ".claude/bundle-hooks/bundle_shell.py",
@@ -270,10 +374,10 @@
   "test_bundle.py::AHookPayloadIsReadAsTheUTF8TheHarnessWrote::test_no_entry_point_the_harness_runs_reads_stdin_any_other_way": {
    "file": ".claude/bundle-hooks/after_rules.py",
    "must_say": "an entry point reads its payload in the locale's code page",
-   "new": "        payload = json.load(sys.stdin)",
-   "old": "        payload = json.loads(bundle_shell.payload_text())   # UTF-8, not the locale's code page",
+   "new": "    raw = sys.stdin.read()",
+   "old": "    raw = bundle_shell.payload_text()       # UTF-8, not the locale's code page",
    "site": "elsewhere",
-   "why": "the second entry point the harness runs, PostToolUse: fixing the dispatcher alone would have left every after-call rule judging a mangled path or command, the same defect one hook over"
+   "why": "the second entry point the harness runs, PostToolUse: fixing the dispatcher alone would have left every after-call rule judging a mangled path or command, the same defect one hook over. RE-ANCHORED 2026-10-07 (CTRMap F213): after_rules reads the raw text first so an unreadable payload can be refused in words."
   },
   "test_bundle.py::AHookPayloadIsReadAsTheUTF8TheHarnessWrote::test_the_dispatcher_hands_a_guard_the_text_the_harness_sent": {
    "file": ".claude/bundle-hooks/dispatch.py",
@@ -306,6 +410,14 @@
    "old": "            verdict = \"FAIL\" if why else UNSUPPORTED\n",
    "site": "instance",
    "why": "THE OWNER'S RULING, 2026-09-26: a reviewer that keeps hallucinating is as bad as shallow work. Six FAILs in two sessions stood on reasons no item held any more - an item 'still citing' a script it had stopped citing - and nothing could clear them but contrived items."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_declaration_that_cannot_be_READ_is_trouble_not_NO_reviewer": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "DECLARATION: an unreadable declaration was read as no reviewer",
+   "new": "    except ValueError as exc:\n        return None, None  #PLANTED: unreadable is none\n        return None, (\"%s cannot be read (%s), so whether this project declares a reviewer is \"\n",
+   "old": "    except ValueError as exc:\n        return None, (\"%s cannot be read (%s), so whether this project declares a reviewer is \"\n",
+   "site": "instance",
+   "why": "CTRMap F178: a declarations file that did not parse was read as no reviewer at all - one stray comma switched the reviewer off with nothing said."
   },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_a_declared_reviewer_is_owed_once_the_ledger_is_resolved": {
    "file": ".claude/bundle-hooks/request_ledger.py",
@@ -531,6 +643,22 @@
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST 'A REVIEW IS READ FROM ITS VERDICT': keep the record starting at the verdict line, which the first test asks, and let the reasons fall past the cut. The first reader cut from the verdict fixed the preamble and still showed the next reviewer only what the last one had checked - the real FAILs put leftUndone after a provenByBreaking list longer than the slice, both times. RE-ANCHORED 2026-09-26: a FAIL's reasons now come from its quoted entries, so emptying `left_undone` no longer reaches them; the record keeping the raw answer - verdict first, reasons past the cut - is the same defect at the line that builds it."
   },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_owner_can_switch_the_reviewer_OFF_for_a_session_and_the_turn_end_SAYS_so": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "NO_REVIEW: the reviewer switched off for the session still held the turn",
+   "new": "    return declared_review(root)  #PLANTED: no session can switch it off\n",
+   "old": "    if bundle_env.allowed(\"NO_REVIEW\"):\n        return None, None\n    return declared_review(root)\n",
+   "site": "instance",
+   "why": "CTRMap F178: the declared reviewer is an agent launch at every turn end, the owner's rule file forbids agents without a yes and a price, and a session told NO AGENTS had no way to end a turn without one."
+  },
+  "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_owner_can_switch_the_reviewer_OFF_for_a_session_and_the_turn_end_SAYS_so::said": {
+   "file": ".claude/bundle-hooks/guard_requests.py",
+   "must_say": "NO_REVIEW: a turn nobody reviewed ended saying nothing",
+   "new": "        if False:  #PLANTED: not reviewed, and said nowhere\n",
+   "old": "        if request_ledger.review_off():\n",
+   "site": "elsewhere",
+   "why": "CTRMap F178: a switch that takes the reviewer out silently makes an unreviewed turn read exactly as a reviewed and passed one."
+  },
   "test_bundle.py::ALedgerReviewIsIndependentAndReadNotRecorded::test_the_owners_next_message_gives_the_reviewer_a_fresh_count": {
    "file": ".claude/bundle-hooks/request_ledger.py",
    "must_say": "the owner's next message did not give the reviewer a fresh count",
@@ -698,6 +826,46 @@
    "site": "instance",
    "why": "The Read tool reading the unparsed module while only its directory is refused - the hook once said in a comment that Read falls through, and it read the mutant as surely as `cat`."
   },
+  "test_bundle.py::AReadIsAReadWhateverCarriesIt::test_the_lock_is_read_by_its_FIRST_line_as_every_writer_writes_it": {
+   "file": ".claude/bundle-hooks/guard_mutation_read.py",
+   "must_say": "LOCK: the take_lock lock was not read as the file it names",
+   "new": "    try:\n        with open(os.path.join(root, LOCK), encoding=\"utf-8\") as handle:\n            held = handle.read().strip()\n    except OSError:\n        return None\n    return held.replace(chr(92), \"/\") or None  #PLANTED: the whole lock is the path\n",
+   "old": "    return bundle_shell.lock_names(root, LOCK) or None\n",
+   "site": "instance",
+   "why": "CTRMap F171: the guard read the whole multi-line lock as the locked path, which no command can contain, so under every lock any writer here takes a `cat` of the mutated file itself went through. This plant is that code."
+  },
+  "test_bundle.py::AReadIsAReadWhateverCarriesIt::test_the_lock_is_read_by_its_FIRST_line_as_every_writer_writes_it::reader": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "LOCK: the take_lock lock was not read as the file it names",
+   "new": "    named = \" \".join(lines).strip().replace(chr(92), \"/\")  #PLANTED: every line is the path\n",
+   "old": "    named = (lines[0] if lines else \"\").strip().replace(chr(92), \"/\")\n",
+   "site": "elsewhere",
+   "why": "CTRMap F171: the reading every hook outside the judge shares is where the lock's format lives now; reading every line of it as the path is the same defect one function over."
+  },
+  "test_bundle.py::ARecordedMeasurementCarriesTheTreeItMeasured::test_a_record_at_the_ROOT_is_not_part_of_its_OWN_subject": {
+   "file": "tools/require_build.py",
+   "must_say": "AssertionError",
+   "new": "        if False:\n",
+   "old": "        if rel.startswith(\".\") and \"/\" not in rel:\n",
+   "site": "elsewhere",
+   "why": "F183: the subject read the wrong set of files - the run's own record at the root moved the subject it is compared against."
+  },
+  "test_bundle.py::ARecordedMeasurementCarriesTheTreeItMeasured::test_a_tree_that_is_NOT_a_repository_refuses": {
+   "file": "tools/require_build.py",
+   "must_say": "NothingToDigest not raised",
+   "new": "        return hashlib.sha256(b\"\").hexdigest()\n        raise NothingToDigest(\n            \"%s is not a git repository, so what it contains cannot be read - and an unreadable \"\n",
+   "old": "        raise NothingToDigest(\n            \"%s is not a git repository, so what it contains cannot be read - and an unreadable \"\n",
+   "site": "evasion",
+   "why": "F183: the cheapest subject is one that answers when git cannot be asked - a digest of nothing that reads as an unchanged tree."
+  },
+  "test_bundle.py::ARecordedMeasurementCarriesTheTreeItMeasured::test_the_RULE_FILE_above_the_root_is_part_of_the_subject": {
+   "file": "tools/require_build.py",
+   "must_say": "a rule added above the root did not move the subject",
+   "new": "        if False:\n",
+   "old": "        if rules.is_file():\n",
+   "site": "instance",
+   "why": "F183: the subject a recorded count carries must move when a CLAUDE.md above the repository changes, since a suite's verdict is a reading of it and git has never heard of it."
+  },
   "test_bundle.py::ARefusalMustBeAbleToPRINT::test_every_hook_and_tool_here_can_print_its_messages": {
    "file": ".claude/bundle-hooks/guard_fanout.py",
    "must_say": "these formats throw instead of printing",
@@ -725,10 +893,18 @@
   "test_bundle.py::AnAgentCampaignNeedsStateAndATrendThatFalls::test_a_FLAT_trend_refuses_the_next_round_and_a_falling_one_does_not": {
    "file": ".claude/bundle-hooks/guard_agent_campaign.py",
    "must_say": "False is not true",
-   "new": "    if True:",
-   "old": "    if last[0] > last[1] > last[2]:",
+   "new": "        if False:",
+   "old": "        if not closed.get(scope) and len(last) == 3 and not last[0] > last[1] > last[2]:",
    "site": "elsewhere",
    "why": "The next round launched over a flat trend - thirteen rounds at ~97M tokens in a day, flat from round 3, visible by round 6, and nothing made anyone look."
+  },
+  "test_bundle.py::AnAgentCampaignNeedsStateAndATrendThatFalls::test_a_NEW_scope_does_not_hide_a_flat_one_and_a_written_closure_does": {
+   "file": ".claude/bundle-hooks/guard_agent_campaign.py",
+   "must_say": "a flat scope was hidden by a newer one",
+   "new": "    for scope in order[-1:]:\n        last = counts[scope][-3:]\n",
+   "old": "    for scope in order:\n        last = counts[scope][-3:]\n",
+   "site": "instance",
+   "why": "The trend asked at an agent launch judged only the newest scope, so one round recorded under a new scope name let the launch through while the project's check said STOP - measured on CTRMap (its audit F198)."
   },
   "test_bundle.py::AnAgentCampaignNeedsStateAndATrendThatFalls::test_a_SECOND_agent_without_state_is_refused_and_with_fresh_state_is_not": {
    "file": ".claude/bundle-hooks/guard_agent_campaign.py",
@@ -1143,6 +1319,46 @@
    "old": "FACTOR = {\"\": 1, \"s\": 1, \"m\": 60, \"h\": 3600, \"d\": 86400}",
    "site": "elsewhere",
    "why": "a different hook and a different mistake: the unit dropped, so `sleep 2m` reads as two seconds and sails past the bound. A guard that passes the very case it exists for, which is the quote-spelling family this bundle's section on source greps describes."
+  },
+  "test_bundle.py::EveryWiredEntryPointRefusesWhatItCannotRead::test_a_readable_call_is_still_judged_and_allowed": {
+   "file": ".claude/bundle-hooks/bundle_shell.py",
+   "must_say": "could not be judged",
+   "new": "    if True:  #PLANTED: no payload is ever readable\n",
+   "old": "    if not any(key in payload for key in PAYLOAD_KEYS):\n",
+   "site": "instance",
+   "why": "CTRMap F213: a readability check that refuses everything is as dead as one that refuses nothing, and only a readable control can tell the two apart."
+  },
+  "test_bundle.py::EveryWiredEntryPointRefusesWhatItCannotRead::test_an_unreadable_TURN_END_is_refused_ONCE": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "RETRY: the retried turn end was refused again",
+   "new": "        retried = False  #PLANTED: a turn end is refused every time\n",
+   "old": "        retried = bundle_shell.refused_before(raw)\n",
+   "site": "instance",
+   "why": "CTRMap F213: an unreadable turn end refused on every retry spins forever, which is why a crashed guard's stop is refused once; the retry flag is read from the raw text because the payload around it does not parse."
+  },
+  "test_bundle.py::EveryWiredEntryPointRefusesWhatItCannotRead::test_every_entry_point_REFUSES_a_payload_it_cannot_read_and_says_why": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "UNREADABLE: dispatch.py allowed a payload it could not read",
+   "new": "    try:\n        json.loads(raw)\n    except ValueError:\n        return 0\n    problem = None\n    if problem:\n        retried",
+   "old": "    problem = bundle_shell.payload_problem(raw)\n    if problem:\n        retried",
+   "site": "instance",
+   "why": "CTRMap F213: the dispatcher returned 0 on a payload that did not parse - 'never wedge a turn' - so no guard judged it, not even the ones that refuse an unreadable payload themselves. This plant is that code."
+  },
+  "test_bundle.py::EveryWiredEntryPointRefusesWhatItCannotRead::test_every_entry_point_REFUSES_a_payload_it_cannot_read_and_says_why::after_rules": {
+   "file": ".claude/bundle-hooks/after_rules.py",
+   "must_say": "UNREADABLE: after_rules.py allowed a payload it could not read",
+   "new": "    problem = None  #PLANTED: whatever arrived is a payload\n    root = bundle_rules.repo_root(__file__)\n",
+   "old": "    problem = bundle_shell.payload_problem(raw)\n    root = bundle_rules.repo_root(__file__)\n",
+   "site": "elsewhere",
+   "why": "CTRMap F213: the PostToolUse entry point returned 0 on a payload it could not read, and on '{}' it asked the rules about nothing and reported nothing - the other entry point of the same class."
+  },
+  "test_bundle.py::EveryWiredEntryPointRefusesWhatItCannotRead::test_the_owners_way_past_lets_it_through_and_SAYS_so": {
+   "file": ".claude/bundle-hooks/dispatch.py",
+   "must_say": "the owner's override did not let the call through",
+   "new": "        if retried:  #PLANTED: no way past\n",
+   "old": "        if bundle_env.allowed(\"ALLOW_UNREADABLE\") or retried:\n",
+   "site": "instance",
+   "why": "CTRMap F213: refusing every unreadable payload wedges a session whose harness changed what it sends; the one logged way past is part of the fix, and a refusal with no way out of it is the wedge the dispatcher already learned from."
   },
   "test_bundle.py::EverythingGuardUnfinishedRefusedIsRefusedHere::test_a_blocker_in_ANOTHER_paragraph_does_not_excuse_an_admission": {
    "file": ".claude/bundle-hooks/guard_promise.py",
@@ -2421,10 +2637,10 @@
   "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_a_fix_names_its_KIND_and_a_detector_says_why_it_is_not_a_refusal": {
    "file": "tools/commit_gate.py",
    "must_say": "[] is not true",
-   "new": "    if False:\n        why = marker_reason(message, \"No-refusal:\")",
-   "old": "    if kind != \"refusal\":\n        why = marker_reason(message, \"No-refusal:\")",
+   "new": "    if False and not escaped(message, \"No-refusal:\"):",
+   "old": "    if kind != \"refusal\" and not escaped(message, \"No-refusal:\"):",
    "site": "instance",
-   "why": "A detector accepted as closing a class with no word on why the point of action cannot refuse - the commit whose Guard line was one clause tool and one clause rhetoric."
+   "why": "A detector accepted as closing a class with no word on why the point of action cannot refuse - the commit whose Guard line was one clause tool and one clause rhetoric. RE-ANCHORED 2026-10-07 (CTRMap F186): the No-refusal escape is asked through `escaped`, the one floor every escape shares."
   },
   "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_a_fix_proven_in_the_PROJECTS_OWN_ledger_has_its_plant": {
    "file": "tools/commit_gate.py",
@@ -2442,6 +2658,14 @@
    "site": "evasion",
    "why": "THE CHEAPEST WAY PAST: count a new plant in the project's ledger and never drive it, so a plant that stays green is accepted as proof. Re-anchored 2026-09-27 onto the pairs list the drive loop now reads, when the loop learned to count what it drove."
   },
+  "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_a_projects_OWN_trigger_asks_the_SAME_rule": {
+   "file": "tools/commit_gate.py",
+   "must_say": "TRIGGER: the project's own answer that this is a fix was ignored",
+   "new": "    return is_fix(message)\n",
+   "old": "    return is_fix(message) if fix is None else bool(fix)\n",
+   "site": "instance",
+   "why": "CTRMap F186: a project whose gate asks the staged diff kept a second copy of every fix rule because this one could only be triggered by the subject line; the trigger is now a parameter and the rule body is one."
+  },
   "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_an_ADMISSION_needs_a_Deferred_gap_with_a_reason": {
    "file": "tools/commit_gate.py",
    "must_say": "[] is not true",
@@ -2449,6 +2673,14 @@
    "old": "        return [] if len(why) >= MIN_REASON else [",
    "site": "elsewhere",
    "why": "`Deferred-gap: later` accepted as a deferral - the census that filed eleven gaps as the owner's work would have passed it with one word."
+  },
+  "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_an_ESCAPE_without_its_REASON_is_no_escape": {
+   "file": "tools/commit_gate.py",
+   "must_say": "ESCAPE: a No-guard: line with no reason excused the fix",
+   "new": "    return why is not None\n",
+   "old": "    return why is not None and len(why) >= MIN_REASON\n",
+   "site": "instance",
+   "why": "CTRMap F186: No-guard and No-checker were honoured at any length while No-refusal and Deferred-gap held 80 - `No-guard: x` let any fix through. Every escape now asks one floored function."
   },
   "test_bundle_gates.py::ACommitIsAskedWhatSections2And14Ask::test_the_projects_ledger_is_READ_from_its_declaration": {
    "file": "tools/commit_gate.py",
@@ -2834,6 +3066,14 @@
    "site": "evasion",
    "why": "THE CHEAPEST WAY TO ZERO GUARDS BELOW ACTION IS TO STOP CALLING THEM GUARDS. With the reason unread, any detector is excused by adding its name to a dict, and `every guard at the point of action` stays true while one sits at the commit."
   },
+  "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_every_tool_that_refuses_declares_an_act_or_is_run_by_the_gate": {
+   "file": ".claude/bundle-install.json",
+   "must_say": "no longer below the point of action",
+   "new": "   \"tools/hooks/guard_idle_poll.py\",\n   \"tools/guard/approve_push.py\",\n",
+   "old": "   \"tools/guard/approve_push.py\",\n",
+   "site": "instance",
+   "why": "F184: the adopted tier debt held seven tools no longer below the point of action - slack any of them could fall back into without a refusal."
+  },
   "test_bundle_gates.py::EveryToolHereIsAskedAtTheActItGuards::test_the_COMMIT_holds_the_adoption_to_HEADs": {
    "file": "tools/tiers.py",
    "must_say": "an adoption grown past HEAD's passed the commit",
@@ -2914,6 +3154,14 @@
    "site": "elsewhere",
    "why": "A project's commit runner, started without -B, writing tools/__pycache__ into the bundle folder on every commit - which the bundle then refuses to hand on."
   },
+  "test_bundle_gates.py::TheInstallIsAskedAtEveryCommit::test_the_gate_runs_where_only_python3_does": {
+   "file": ".githooks/commit-msg",
+   "must_say": "python: not found",
+   "new": "PY=python\n",
+   "old": "PY=python\ncommand -v python >/dev/null 2>&1 || PY=python3\n",
+   "site": "instance",
+   "why": "F184: CTRMap's commit-msg, kept different from the bundle's on purpose, still said `python` after the bundle's hook learned to fall back to python3 - every commit died on 'python: not found' where only python3 exists."
+  },
   "test_bundle_gates.py::TheInstallIsAskedAtEveryCommit::test_the_install_SCOPE_is_the_checkers_own_walk": {
    "file": "tools/bundle_install.py",
    "must_say": "is outside the scope",
@@ -2945,6 +3193,86 @@
    "old": "  \"wt/_state/items_feasibility.json\": {",
    "site": "elsewhere",
    "why": "The same defect arriving in the DATA rather than the code that was fixed: a declaration renamed away in the manifest leaves a real citation in docs/ undeclared, which is how a moved file strands every sentence that names it."
+  },
+  "test_convergence_one_rule.py::TheRoundLogIsAskedWhereItIsWritten::test_a_closure_without_its_reason_is_refused_at_the_write": {
+   "file": "tools/guard/convergence.py",
+   "must_say": "written past the record rule",
+   "new": "",
+   "old": "AT_RECORD = \"log_problems\"\n",
+   "site": "instance",
+   "why": "F198: the round log was asked by nothing at its write, so a closure with no real reason - a rename by another spelling - would land and silence the trend."
+  },
+  "test_convergence_one_rule.py::TheStoppingRuleIsOneTrend::test_check_and_the_launch_refusal_give_one_verdict": {
+   "file": "tools/guard/convergence.py",
+   "must_say": "one stopping rule answered two ways",
+   "new": "        bad = dict(_trend().not_converging(rows[-1:]))\n",
+   "old": "        bad = dict(_trend().not_converging(rows))\n",
+   "site": "instance",
+   "why": "F198: the stopping rule was computed twice and the two copies disagreed on which scopes they judged - one round under a new scope name split them."
+  },
+  "test_every_wired_hook_reads_its_payload.py::EveryWiredHookRefusesAPayloadItCannotRead::test_a_readable_harmless_call_is_still_allowed": {
+   "file": ".claude/hooks/guard_all.py",
+   "must_say": "CONTROL: guard_all.py refused a harmless read",
+   "new": "        if True:  #PLANTED: nothing is readable\n            raise ValueError(problem)\n",
+   "old": "        if problem:\n            raise ValueError(problem)\n",
+   "site": "instance",
+   "why": "F213: a readability check that refuses everything is as dead as one that refuses nothing, and only a readable control tells the two apart."
+  },
+  "test_every_wired_hook_reads_its_payload.py::EveryWiredHookRefusesAPayloadItCannotRead::test_an_unreadable_turn_end_is_refused_ONCE": {
+   "file": ".claude/hooks/guard_unfinished.py",
+   "must_say": "RETRY: guard_unfinished.py refused the retried turn end again",
+   "new": "        retried = False  #PLANTED: every retry is refused again\n",
+   "old": "        retried = reader.refused_before(raw)\n",
+   "site": "instance",
+   "why": "F213: refusing an unreadable turn end on every retry spins forever - the wedge the bundle's dispatcher already learned from - so the retry, marked by the harness, is let through and said."
+  },
+  "test_every_wired_hook_reads_its_payload.py::EveryWiredHookRefusesAPayloadItCannotRead::test_every_wired_hook_refuses_what_it_cannot_read_and_says_why::guard_all": {
+   "file": ".claude/hooks/guard_all.py",
+   "must_say": "UNREADABLE: guard_all.py for PreToolUse allowed a payload it could not read",
+   "new": "        problem = None  #PLANTED: '{}' is a call like any other\n",
+   "old": "        problem = shellin.reader().payload_problem(json.dumps(payload))\n",
+   "site": "elsewhere",
+   "why": "F213: after F177 the project's PreToolUse stack refused a payload that did not parse, but '{}' parsed, named nothing, and every guard found nothing to refuse in it - the call went through as judged."
+  },
+  "test_every_wired_hook_reads_its_payload.py::EveryWiredHookRefusesAPayloadItCannotRead::test_every_wired_hook_refuses_what_it_cannot_read_and_says_why::guard_unfinished": {
+   "file": ".claude/hooks/guard_unfinished.py",
+   "must_say": "UNREADABLE: guard_unfinished.py for Stop allowed a payload it could not read",
+   "new": "    problem = None  #PLANTED: whatever arrived is a payload\n    if problem:\n        retried = reader.refused_before(raw)\n",
+   "old": "    problem = reader.payload_problem(raw)\n    if problem:\n        retried = reader.refused_before(raw)\n",
+   "site": "instance",
+   "why": "F213: the project's Stop hook answered 0 - nothing owed - for a payload that did not parse and for '{}', exactly as for a reply that owes nothing."
+  },
+  "test_every_wired_hook_reads_its_payload.py::EveryWiredHookRefusesAPayloadItCannotRead::test_the_owners_way_past_lets_every_hook_through_and_SAYS_so": {
+   "file": ".claude/hooks/guard_all.py",
+   "must_say": "OVERRIDE: guard_all.py refused with the owner's way past set",
+   "new": "        if False:  #PLANTED: no way past\n            json.dump(",
+   "old": "        if hook_env.allowed(\"ALLOW_UNREADABLE\"):\n            json.dump(",
+   "site": "instance",
+   "why": "F213: a refusal of every unreadable payload with no way past wedges a session whose harness changed what it sends; the one logged variable is part of the fix."
+  },
+  "test_generated_code.py::AGeneratedBlockIsJudgedByWhatChanged::test_a_change_inside_the_block_is_refused_whatever_wrote_it": {
+   "file": "tools/guard/generated_code.py",
+   "must_say": "passed the change door",
+   "new": "",
+   "old": "AT_WRITE_CHANGE = \"generated_change_problems\"\n",
+   "site": "instance",
+   "why": "F194: the owner's never-hand-edit-initComponents rule was asked only of an Edit's or a Write's text; a sed -i or a script rewriting the block was never asked at all."
+  },
+  "test_generated_code.py::AGeneratedBlockIsJudgedByWhatChanged::test_a_change_outside_the_blocks_or_of_line_endings_only_passes": {
+   "file": "tools/guard/generated_code.py",
+   "must_say": "an edit outside every block was refused",
+   "new": "            for name, text in sorted(was.items()) if True]\n",
+   "old": "            for name, text in sorted(was.items()) if now.get(name) != text]\n",
+   "site": "evasion",
+   "why": "F194: the cheapest guard on a form is one that refuses every edit to the file - and that is switched off within the day."
+  },
+  "test_generated_code.py::AGeneratedBlockIsJudgedByWhatChanged::test_the_hook_refuses_an_edits_batch_inside_the_block": {
+   "file": ".claude/hooks/guard_generated_code.py",
+   "must_say": "an edits[] batch inside initComponents",
+   "new": "    for edit in []:\n",
+   "old": "    for edit in tool_input.get(\"edits\") or []:\n",
+   "site": "elsewhere",
+   "why": "F194: the same unasked write by another shape - an edits[] batch carrying a line inside the block passed the hook."
   },
   "test_guard_push.py::AnApprovalIsForTheCommitThePushSends::test_a_commit_the_approval_does_not_name_is_refused_though_head_is_approved": {
    "file": "tools/hooks/guard_push.py",
@@ -2993,6 +3321,142 @@
    "old": "        if fields.get(\"ref\") and ref != fields[\"ref\"]:",
    "site": "elsewhere",
    "why": "The same defect in the other half of the subject: the ref the token names was never compared, though the guard's docstring said it was."
+  },
+  "test_in_game_queue.py::EveryUnprovenActionIsQueued::test_every_queued_quote_is_still_a_warning::stale": {
+   "file": "src/ctrmap/humaninterface/ChallengeForm.java",
+   "must_say": "quotes warnings no production string carries any more",
+   "new": "proven in game.",
+   "old": "UNPROVEN IN-GAME - test it first.",
+   "site": "instance",
+   "why": "F217: when the owner proves an action in game its warning goes, and a queue line left behind is a test the owner would run for nothing; this plant drops the warning and keeps the line."
+  },
+  "test_in_game_queue.py::EveryUnprovenActionIsQueued::test_every_warning_is_quoted_in_the_queue::new-warning": {
+   "file": "src/ctrmap/humaninterface/AreaLightingDialog.java",
+   "must_say": "QUEUE: these warnings tell the user an action is unproven",
+   "new": "new JButton(\"Copy a GameFreak zone's atmosphere (experimental)\")",
+   "old": "new JButton(\"Copy a GameFreak zone's atmosphere\")",
+   "site": "elsewhere",
+   "why": "F217: a warning the queue has never seen, in a dialog none of the seven queued actions use - the scan must find it from the tree, not from the list it was written against."
+  },
+  "test_in_game_queue.py::EveryUnprovenActionIsQueued::test_every_warning_is_quoted_in_the_queue::unmarked-quote": {
+   "file": "OUTSTANDING.md",
+   "must_say": "QUEUE: these warnings tell the user an action is unproven",
+   "new": "UNPROVEN IN-GAME - \"test it first.\"",
+   "old": "\"UNPROVEN IN-GAME - test it first.\"",
+   "site": "evasion",
+   "why": "F217: the cheapest way past a substring check is to quote a harmless fragment of the warning; a quote that does not carry the marker word must not count as queuing it."
+  },
+  "test_in_game_queue.py::EveryUnprovenActionIsQueued::test_every_warning_is_quoted_in_the_queue::unqueued": {
+   "file": "OUTSTANDING.md",
+   "must_say": "QUEUE: these warnings tell the user an action is unproven",
+   "new": "UNPROVEN IN-GAME - test it first.",
+   "old": "\"UNPROVEN IN-GAME - test it first.\"",
+   "site": "instance",
+   "why": "F217: the Challenge NPC dialog told its user it was unproven in game and OUTSTANDING.md never named it; this plant takes its quote back out of the owner's queue."
+  },
+  "test_in_game_queue.py::EveryUnprovenActionIsQueued::test_the_walk_read_the_tree::no-walk": {
+   "file": "tests/test_in_game_queue.py",
+   "must_say": "the walk lost the tree",
+   "new": "        dirs[:] = []  # PLANTED: the walk stops at src/\n",
+   "old": "        dirs[:] = sorted(d for d in dirs if d != \"tests\")\n",
+   "site": "instance",
+   "why": "F217: a walk that reads no source finds no warning and reports an owner's queue with nothing owed - a confident empty result, the dangerous one."
+  },
+  "test_in_game_queue.py::TheLexerReadsWhatItClaims::test_a_source_that_does_not_close_is_refused_not_read_as_empty::unclosed": {
+   "file": "tests/test_in_game_queue.py",
+   "must_say": "LEXER: an unreadable source was read as one with no warnings",
+   "new": "                    return found  # PLANTED: an unclosed string ends the file\n",
+   "old": "                    raise CannotRead(\"a string on line %d never closes\" % start)\n",
+   "site": "evasion",
+   "why": "F217: a lexer that gives up quietly reports the rest of the file as holding no warning - I could not look, read as it is not there."
+  },
+  "test_in_game_queue.py::TheLexerReadsWhatItClaims::test_literals_are_read_and_comments_are_not::block-comment": {
+   "file": "tests/test_in_game_queue.py",
+   "must_say": "LEXER: a comment was read as a warning the user sees",
+   "new": "        elif text.startswith(\"/*\", i) and False:  # PLANTED: a block comment is text\n",
+   "old": "        elif text.startswith(\"/*\", i):\n",
+   "site": "elsewhere",
+   "why": "F217: the same misreading in the other comment form - thirteen of the production marker words sit in javadoc and block comments, none of them shown to a user."
+  },
+  "test_in_game_queue.py::TheLexerReadsWhatItClaims::test_literals_are_read_and_comments_are_not::line-comment": {
+   "file": "tests/test_in_game_queue.py",
+   "must_say": "LEXER: a comment was read as a warning the user sees",
+   "new": "        elif text.startswith(\"//\", i) and False:  # PLANTED: a comment is text\n",
+   "old": "        elif text.startswith(\"//\", i):\n",
+   "site": "instance",
+   "why": "F217: a comment is not a warning any user sees; ItemTable's javadoc says 'not yet verified' and a scan that reads comments queues it as an in-game test."
+  },
+  "test_in_game_queue.py::TheLexerReadsWhatItClaims::test_the_section_reader_finds_quotes_and_stops_at_the_next_heading::runs-on": {
+   "file": "tests/test_in_game_queue.py",
+   "must_say": "SECTION: the queue read quotes from outside its own section",
+   "new": "    stop = -1  # PLANTED: the section runs to the end of the file\n",
+   "old": "    stop = body.find(\"\\n## \")\n",
+   "site": "instance",
+   "why": "F217: a quote in the Done section, or anywhere below, would otherwise count as queued; the queue is the one section the owner reads for what is owed."
+  },
+  "test_mutation_selftest.py::TheHarnessSelftestNeedsNoWorktree::test_the_selftest_passes_with_no_worktree_beside_it": {
+   "file": "tools/mutate2.py",
+   "must_say": "the selftest failed with no worktree beside it",
+   "new": "    saved_wt_runs = WT\n",
+   "old": "    saved_wt_runs, WT = WT, runs_dir\n",
+   "site": "instance",
+   "why": "F184: the harness selftest handed its child cwd=WT, so on a machine that never ran a sweep it died with FileNotFoundError in every battery."
+  },
+  "test_one_lock_door.py::ALockTheDoorWroteIsJudgedByItsProcess::test_the_liveness_reader_takes_the_pid_from_the_doors_signature": {
+   "file": ".claude/hooks/guard_suite_running.py",
+   "must_say": "judged by its age, not its process",
+   "new": "",
+   "old": "    found = found or re.search(r\"(?m)^(\\d+)-[0-9a-f]{16}\\s*$\", body)\n",
+   "site": "instance",
+   "why": "F179: a lock the door wrote carries its process in the signature, not as pid=; read by age alone, a killed run refused edits for ninety minutes after it was gone."
+  },
+  "test_one_lock_door.py::TheLockHasOneDoor::test_nothing_but_the_door_writes_the_lock": {
+   "file": "tools/guard/replant.py",
+   "must_say": "past bundle_rules.take_lock",
+   "new": "    io.open(MUTATION_LOCK, \"w\", encoding=\"utf-8\").write(os.path.relpath(path, ROOT) + LF)\n",
+   "old": "    return _door().take_lock(ROOT, os.path.relpath(path, ROOT).replace(chr(92), \"/\"))\n",
+   "site": "instance",
+   "why": "F179: replant opened the lock with mode 'w', overwriting a lock another run held, and plants straight into this repository's own files."
+  },
+  "test_one_lock_door.py::TheLockHasOneDoor::test_nothing_but_the_door_writes_the_lock::elsewhere": {
+   "file": "tools/mutate2.py",
+   "must_say": "past bundle_rules.take_lock",
+   "new": "            stuck = (WT / \".mutation-in-flight\").unlink()\n",
+   "old": "            stuck = door.release_lock(str(WT))\n",
+   "site": "elsewhere",
+   "why": "F179: the same uncounted release in the other writer - mutate2 removed its lock with unlink, so the hooks' came-and-went check never saw a sweep."
+  },
+  "test_one_subject.py::TheRecordAndTheGateMeasureOneSubject::test_a_count_measured_by_record_run_is_accepted_by_the_gate": {
+   "file": "tools/guard/commit_guard.py",
+   "must_say": "measured DIFFERENT",
+   "new": "        return _REQUIRE_BUILD.tree_digest(root)\n",
+   "old": "        return _REQUIRE_BUILD.subject_digest(root, exclude)\n",
+   "site": "instance",
+   "why": "F183: record_run wrote one body's subject digest and commit_gate compared it with another's, so an honest count was refused as measured on different code."
+  },
+  "test_one_subject.py::TheRecordAndTheGateMeasureOneSubject::test_the_right_count_measured_on_ANOTHER_tree_is_refused": {
+   "file": "tools/commit_gate.py",
+   "must_say": "a count recorded against an earlier tree was accepted",
+   "new": "    if False:\n",
+   "old": "    if run.get(\"subject\") != now:\n",
+   "site": "evasion",
+   "why": "F183: the cheapest way to accept every honest count is to stop comparing the record's subject with this tree's - which also accepts every stale one."
+  },
+  "test_reviewer_is_in_the_rules.py::TheDeclaredReviewerIsWrittenInTheRules::test_a_declared_reviewer_is_named_in_CLAUDE_md_with_its_switch": {
+   "file": ".claude/bundle-hooks/request_ledger.py",
+   "must_say": "RULES: CLAUDE.md does not name the switch the ledger reads",
+   "new": "NO_REVIEW = bundle_env.name(\"SKIP_REVIEW\")  #PLANTED: the switch renamed, the rules not\n",
+   "old": "NO_REVIEW = bundle_env.name(\"NO_REVIEW\")\n",
+   "site": "instance",
+   "why": "F178: a switch the rule file names by a stale spelling is a switch nobody can find; the test reads the name from the ledger, so renaming it without the rules is red."
+  },
+  "test_reviewer_is_in_the_rules.py::TheDeclaredReviewerIsWrittenInTheRules::test_a_declared_reviewer_is_named_in_CLAUDE_md_with_its_switch::rules": {
+   "file": "CLAUDE.md",
+   "must_say": "RULES: the reviewer is declared and CLAUDE.md never mentions it",
+   "new": "The one launch with a standing yes is the\nrequest ledger's reviewer (in `.claude/bundle-install.json`)",
+   "old": "The one launch with a standing yes is the\nrequest ledger's reviewer (`\"_review\"` in `.claude/bundle-install.json`)",
+   "site": "elsewhere",
+   "why": "F178: the hooks required an agent launch at every turn end and the rule file forbidding agents did not mention it at all; this plant takes the mention back out."
   }
  },
  "retired": {

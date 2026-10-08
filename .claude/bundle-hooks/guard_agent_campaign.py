@@ -74,26 +74,60 @@ def state_problem(now=None, scripted=False):
     return None
 
 
+#: How long the reason closing a scope must be: a closure is a decision, and a short one is a
+#: rename by another spelling.
+CLOSE_REASON = 80
+
+
+def not_converging(rows):
+    """[(scope, its last three counts)] for EVERY scope whose last three rounds are not falling,
+    in the order the log first names them. THE ONE TREND: the project's `check` command asks
+    this too, so the refusal at the act and the report can never disagree.
+
+    EVERY SCOPE, NOT THE NEWEST. This judged only the scope whose latest row was newest - measured
+    on CTRMap, 2026-10-07: a flat scope plus ONE round recorded under any new scope name, and the
+    launch went through while the project's `check` said STOP AND REPORT. Renaming the campaign
+    is exactly the evasion this guard exists to refuse. A scope is let go only by a row CLOSING
+    it - {"scope": s, "closed": "<why, CLOSE_REASON characters>"} - and a round recorded after
+    that opens it again. A malformed row RAISES; the caller says so rather than guessing.
+    """
+    counts, closed, order = {}, {}, []
+    for row in rows:
+        scope = row["scope"]
+        if scope not in counts:
+            counts[scope] = []
+            order.append(scope)
+        if "closed" in row:
+            if len(str(row["closed"]).strip()) < CLOSE_REASON:
+                raise ValueError("the row closing %r gives a reason under %d characters"
+                                 % (scope, CLOSE_REASON))
+            closed[scope] = True
+            continue
+        counts[scope].append(int(row["findings"]))
+        closed[scope] = False
+    out = []
+    for scope in order:
+        last = counts[scope][-3:]
+        if not closed.get(scope) and len(last) == 3 and not last[0] > last[1] > last[2]:
+            out.append((scope, last))
+    return out
+
+
 def trend_problem():
-    """Why the next round may not start - the latest scope is not converging - or None."""
+    """Why the next round may not start - a scope is not converging - or None."""
     if not os.path.exists(CONVERGENCE_LOG):
         return None             # no rounds recorded: nothing to converge
     try:
         with io.open(CONVERGENCE_LOG, encoding="utf-8") as handle:
-            rows = [r for r in json.load(handle).get("rounds") or []]
-        latest = max(rows, key=lambda r: str(r.get("recorded") or ""))["scope"] if rows else None
-        counts = [int(r["findings"]) for r in rows if r.get("scope") == latest]
+            bad = not_converging(json.load(handle).get("rounds") or [])
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         return ("the convergence log at %s cannot be read (%s: %s) - an unmeasurable trend is "
                 "not a falling one" % (CONVERGENCE_LOG, type(exc).__name__, exc))
-    if latest is None or len(counts) < 3:
+    if not bad:
         return None
-    last = counts[-3:]
-    if last[0] > last[1] > last[2]:
-        return None
-    return ("the latest scope, %r, is NOT CONVERGING: %s. Two or three failed fixes on one piece "
-            "of logic means the design is wrong - say so and ask" % (latest,
-                                                                    " -> ".join(map(str, last))))
+    return ("NOT CONVERGING - %s. Two or three failed fixes on one piece of logic means the "
+            "design is wrong - say so and ask" % "; ".join(
+                "%r: %s" % (scope, " -> ".join(map(str, last))) for scope, last in bad))
 
 
 def verdict(payload):

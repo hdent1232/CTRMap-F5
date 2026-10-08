@@ -36,8 +36,7 @@ public class SetupWizardTest {
 
 	public static void main(String[] args) throws Exception {
 		if (GraphicsEnvironment.isHeadless()) {
-			System.out.println("  no display available - wizard layout not exercised");
-			System.out.println("ALL PASS");
+			Skip.suite("no display available - the wizard layout was not exercised");
 			return;
 		}
 		if (args.length < 1) {
@@ -45,8 +44,7 @@ public class SetupWizardTest {
 			System.exit(1);
 		}
 		if (!new File(args[0]).isDirectory()) {
-			System.out.println("  no complete RomFS dump at " + args[0] + " - suite skipped");
-			System.out.println("ALL PASS");
+			Skip.suite("no complete RomFS dump at " + args[0]);
 			return;
 		}
 		String dump = args[0];

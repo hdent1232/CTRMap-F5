@@ -56,6 +56,13 @@ public class GeoEditForm extends JPanel {
 	private final Map<Integer, byte[]> currentColl = new HashMap<>();
 	private boolean unsaved = false;
 	private final Deque<Snapshot> undo = new ArrayDeque<>();
+	/**
+	 * Each tile this form has changed since the region was picked or saved, as it was before the
+	 * first change (key x * 40 + y), and the tilemap they are in: what a discard puts back (F106).
+	 * Not the undo stack, which keeps only the last UNDO_DEPTH edits.
+	 */
+	private final Map<Integer, byte[]> tilesAsSaved = new HashMap<>();
+	private Tilemap tilesIn;
 	private GeoBoxOps.Box box;
 
 	private static class Snapshot {
@@ -63,6 +70,42 @@ public class GeoEditForm extends JPanel {
 		byte[] model;
 		Map<Integer, byte[]> coll;
 		List<int[]> tiles;      // {x, y, b0..b3} per changed tile
+		/** How many texture carries were waiting before this edit, or -1 for an edit that adds none. */
+		int carries = -1;
+	}
+
+	/**
+	 * A texture import a stamp needs, waiting for Save (F101). The stamp used to write it into the
+	 * area at once - while the class comment promised the workspace is touched only on Save - so
+	 * Undo and Discard left the imported textures in the area's pack.
+	 */
+	private static final class Carry {
+
+		final int donorArea;
+		final int targetArea;
+		final List<String> needed;
+
+		Carry(int donorArea, int targetArea, List<String> needed) {
+			this.donorArea = donorArea;
+			this.targetArea = targetArea;
+			this.needed = needed;
+		}
+	}
+
+	private final List<Carry> pendingCarries = new ArrayList<>();
+
+	/**
+	 * How many edits Undo keeps. It kept every one, each a whole copy of the region model and its
+	 * collision, for as long as the session lasted (F101).
+	 */
+	static final int UNDO_DEPTH = 32;
+
+	/** Pushes an edit's snapshot, letting the oldest go past the depth. */
+	private void remember(Snapshot snap) {
+		undo.push(snap);
+		while (undo.size() > UNDO_DEPTH) {
+			undo.removeLast();
+		}
 	}
 
 	private final JLabel selLabel = new JLabel("Drag on the map to select tiles.");
@@ -213,7 +256,7 @@ public class GeoEditForm extends JPanel {
 			if (save == JOptionPane.YES_OPTION) {
 				javax.swing.JFileChooser fc = new javax.swing.JFileChooser();
 				fc.setSelectedFile(new java.io.File(p.name.replaceAll("[^A-Za-z0-9_-]", "_") + ".ctrprefab"));
-				if (fc.showSaveDialog(this) == javax.swing.JFileChooser.APPROVE_OPTION) {
+				if (ctrmap.Ui.choose(this, fc, true) != null) {
 					p.save(fc.getSelectedFile());
 				}
 			}
@@ -260,7 +303,7 @@ public class GeoEditForm extends JPanel {
 						: "Stamp \"" + p.name + "\" here? (No = load a .ctrprefab file instead)"),
 				"Stamp prefab", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == JOptionPane.NO_OPTION) {
 			javax.swing.JFileChooser fc = new javax.swing.JFileChooser();
-			if (fc.showOpenDialog(this) != javax.swing.JFileChooser.APPROVE_OPTION) {
+			if (ctrmap.Ui.choose(this, fc, false) == null) {
 				return;
 			}
 			try {
@@ -344,13 +387,14 @@ public class GeoEditForm extends JPanel {
 			if (!r.texturesNeeded.isEmpty() && p.donorArea >= 0
 					&& loadedZone.isOpen()
 					&& loadedZone.open().header.areadataID != p.donorArea) {
-				try {
-					texNote = carryTextures(p.donorArea, loadedZone.open().header.areadataID, r.texturesNeeded);
-				} catch (Exception ex) {
-					texNote = "  TEXTURE CARRY FAILED (" + ex.getMessage() + ") - the stamped pieces may hardlock; undo if unsure!";
-				}
+				//RECORDED, NOT WRITTEN (F101): it goes into the area on Save, with the region, and an
+				//Undo of this stamp takes it back with the geometry
+				snap.carries = pendingCarries.size();
+				pendingCarries.add(new Carry(p.donorArea, loadedZone.open().header.areadataID,
+						new ArrayList<>(r.texturesNeeded)));
+				texNote = "  " + r.texturesNeeded.size() + " texture(s) from area " + p.donorArea + " will be imported on Save";
 			}
-			undo.push(snap);
+			remember(snap);
 			currentModel = r.newModel;
 			unsaved = true;
 			map.reloadRegionModel(cellX, cellY, currentModel);
@@ -407,20 +451,15 @@ public class GeoEditForm extends JPanel {
 					"Map geometry", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.OK_OPTION) {
 				return;
 			}
+			if (unsaved) {
+				//the region left behind is put back in the map view too, not only forgotten here (F106)
+				discard();
+			}
 			gr = target;
 			regionId = rid;
 			cellX = cx;
 			cellY = cy;
-			currentModel = gr.getFile(1);
-			currentColl.clear();
-			for (int cs : collSubfiles(gr)) {
-				byte[] cb = gr.getFile(cs);
-				if (GfColl.isColl(cb)) {
-					currentColl.put(cs, cb);
-				}
-			}
-			undo.clear();
-			unsaved = false;
+			readRegion();
 		}
 		//box in REGION-LOCAL world units (center-origin frame shared by model + collision)
 		box = GeoBoxOps.Box.ofTiles(selTx0 - cx * 40, selTy0 - cy * 40, selTx1 - cx * 40, selTy1 - cy * 40);
@@ -520,7 +559,7 @@ public class GeoEditForm extends JPanel {
 				tileNote = applyTiles(kind, fx, fz, snap.tiles);
 			}
 
-			undo.push(snap);
+			remember(snap);
 			currentModel = result;
 			unsaved = true;
 			map.reloadRegionModel(cellX, cellY, currentModel);
@@ -589,6 +628,56 @@ public class GeoEditForm extends JPanel {
 	private void recordTile(List<int[]> changed, Tilemap tm, int x, int y) {
 		byte[] b = tm.getTileData(x, y);
 		changed.add(new int[]{x, y, b[0] & 0xFF, b[1] & 0xFF, b[2] & 0xFF, b[3] & 0xFF});
+		//as it was before this form first changed it, for a discard (F106)
+		tilesIn = tm;
+		tilesAsSaved.putIfAbsent(x * 40 + y, b.clone());
+	}
+
+	/**
+	 * The region as its file holds it, as this form's model and collision, with nothing waiting:
+	 * what a newly picked region starts from and what a discard goes back to (F106).
+	 */
+	private void readRegion() {
+		currentModel = gr.getFile(1);
+		currentColl.clear();
+		for (int cs : collSubfiles(gr)) {
+			byte[] cb = gr.getFile(cs);
+			if (GfColl.isColl(cb)) {
+				currentColl.put(cs, cb);
+			}
+		}
+		undo.clear();
+		pendingCarries.clear();
+		tilesAsSaved.clear();
+		tilesIn = null;
+		unsaved = false;
+	}
+
+	/**
+	 * Puts the region back to what was last saved (F106): the model and collision this form holds,
+	 * the map view's model of the region, and every tile this form changed in the map view's tilemap.
+	 * No used to clear the flag and leave all three as edited - the map view went on drawing the
+	 * discarded geometry, and the tilemap stayed marked modified, so the next tile save wrote the
+	 * discarded tile moves. The tilemap is left unmarked only when nothing else changed it either.
+	 */
+	private void discard() {
+		if (gr == null) {
+			unsaved = false;
+			return;
+		}
+		Tilemap tm = tilesIn;
+		Map<Integer, byte[]> tiles = new HashMap<>(tilesAsSaved);
+		readRegion();
+		if (tm != null && !tiles.isEmpty()) {
+			for (Map.Entry<Integer, byte[]> t : tiles.entrySet()) {
+				tm.setTileData(t.getKey() / 40, t.getKey() % 40, t.getValue());
+			}
+			tm.modified = !java.util.Arrays.equals(tm.assembleTilemap(), gr.getFile(0));
+			refreshTiles(tm);
+		}
+		map.reloadRegionModel(cellX, cellY, currentModel);
+		status.setText("Discarded.");
+		updateEnabled();
 	}
 
 	private void refreshTiles(Tilemap tm) {
@@ -619,6 +708,9 @@ public class GeoEditForm extends JPanel {
 			return;
 		}
 		Snapshot snap = undo.pop();
+		while (snap.carries >= 0 && pendingCarries.size() > snap.carries) {
+			pendingCarries.remove(pendingCarries.size() - 1);
+		}
 		currentModel = snap.model;
 		currentColl.clear();
 		currentColl.putAll(snap.coll);
@@ -641,26 +733,38 @@ public class GeoEditForm extends JPanel {
 		if (gr == null || currentModel == null || !unsaved) {
 			return;
 		}
-		try {
+		Tilemap tm = map.getRegionForTile(cellX * 40, cellY * 40);
+		String texNote = "";
+		//ONE UNIT (F101): the stamps' texture imports, then the model, collision and tiles - all of
+		//them or none. A carry that is refused (an area another zone shares) writes nothing at all.
+		try (ctrmap.WorkspaceUnit unit = ctrmap.WorkspaceUnit.begin("Save map geometry", Workspace.session())) {
+			for (Carry c : pendingCarries) {
+				texNote += carryTextures(c.donorArea, c.targetArea, c.needed);
+			}
 			gr.storeFile(1, currentModel);
-		} catch (RuntimeException notWritten) {
-			status.setText("Could not write the model: " + ctrmap.util.Bytes.reason(notWritten));
+			for (Map.Entry<Integer, byte[]> e : currentColl.entrySet()) {
+				gr.storeFile(e.getKey(), e.getValue());
+			}
+			if (tm != null && tm.modified) {
+				gr.storeFile(0, tm.assembleTilemap());
+			}
+			if (Workspace.isValid() && gr.getOriginFile() != null
+					&& gr.getOriginFile().getAbsolutePath().startsWith(new java.io.File(Workspace.WORKSPACE_PATH).getAbsolutePath())) {
+				Workspace.addPersist(gr.getOriginFile());
+			}
+			unit.commit();
+		} catch (Exception notWritten) {
+			status.setText("Nothing was saved: " + ctrmap.util.Bytes.reason(notWritten));
 			return;
 		}
-		for (Map.Entry<Integer, byte[]> e : currentColl.entrySet()) {
-			gr.storeFile(e.getKey(), e.getValue());
-		}
-		Tilemap tm = map.getRegionForTile(cellX * 40, cellY * 40);
-		if (tm != null && tm.modified) {
-			gr.storeFile(0, tm.assembleTilemap());
+		if (tm != null) {
 			tm.modified = false;
 		}
-		if (Workspace.isValid() && gr.getOriginFile() != null
-				&& gr.getOriginFile().getAbsolutePath().startsWith(new java.io.File(Workspace.WORKSPACE_PATH).getAbsolutePath())) {
-			Workspace.addPersist(gr.getOriginFile());
-		}
+		pendingCarries.clear();
+		tilesAsSaved.clear();
+		tilesIn = null;
 		unsaved = false;
-		status.setText("Saved. Deploy to emulator to see it in game.");
+		status.setText("Saved." + texNote + " Deploy to emulator to see it in game.");
 		updateEnabled();
 	}
 
@@ -669,18 +773,23 @@ public class GeoEditForm extends JPanel {
 		if (!unsaved) {
 			return true;
 		}
-		int r = dialog ? ctrmap.Ui.confirm(this,
-				"Save the geometry edits in region " + regionId + "?", "Map geometry",
-				JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE) : JOptionPane.YES_OPTION;
-		if (r == JOptionPane.CANCEL_OPTION) {
-			return false;
+		//THROUGH THE ONE QUESTION (F106): this asked its own, took a closed dialog for No, and its No
+		//cleared the flag with the edit still drawn and the tilemap still marked modified
+		switch (ctrmap.Ui.askToKeep(dialog, "Map geometry of region " + regionId, this::discard)) {
+			case CANCEL:
+				return false;
+			case SAVE:
+				save();
+				if (unsaved) {
+					//A SAVE THAT DID NOT HAPPEN STOPS WHAT ASKED FOR IT: it answered true, and the zone
+					//switch went on over an edit only the status line said was not written
+					ctrmap.Ui.error(this, status.getText(), "Map geometry");
+					return false;
+				}
+				return true;
+			default:
+				return true;
 		}
-		if (r == JOptionPane.YES_OPTION) {
-			save();
-		} else {
-			unsaved = false;
-		}
-		return true;
 	}
 
 	private void updateEnabled() {

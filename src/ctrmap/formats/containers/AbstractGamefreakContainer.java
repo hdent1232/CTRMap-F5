@@ -67,6 +67,32 @@ public abstract class AbstractGamefreakContainer {
 		create(target, fileCount);
 	}
 
+	/**
+	 * For a subclass whose header or padding comes from its OWN fields: it sets
+	 * them, then calls {@link #openContainer} or {@link #createContainer}.
+	 *
+	 * <p>WHY (F050, F051). The two constructors above verify or lay out the file
+	 * at once, and that asks {@link #getHeader} and {@link #getIsPadded} - before a
+	 * subclass constructor has run past {@code super(...)}. DefaultGamefreakContainer
+	 * answered its header from a field Java had not assigned yet (0), so the raw
+	 * archive browser could open no container whose magic is not one of the five
+	 * named ones; MM answered padding from a type it had not set, so a new
+	 * move-model container was laid out unpadded and then read as padded.
+	 */
+	protected AbstractGamefreakContainer(GameFiles files) {
+		this.files = handed(files);
+	}
+
+	/** The open a subclass makes once its own fields are set: see the constructor above. */
+	protected final void openContainer(File f) {
+		open(f);
+	}
+
+	/** The create a subclass makes once its own fields are set: see the constructor above. */
+	protected final void createContainer(File target, int fileCount) {
+		create(target, fileCount);
+	}
+
 	/** A handed GameFiles must exist: null here is an edit nobody would ever pack. */
 	private static GameFiles handed(GameFiles files) {
 		if (files == null) {
@@ -108,8 +134,8 @@ public abstract class AbstractGamefreakContainer {
 				startingOffset += 0x80;
 			}
 		}
-		try {
-			LittleEndianDataOutputStream out = new LittleEndianDataOutputStream(new FileOutputStream(target));
+		files.aboutToWrite(target);
+		try (LittleEndianDataOutputStream out = new LittleEndianDataOutputStream(new FileOutputStream(target))) {
 			out.write2Bytes(getHeader());
 			out.writeShort((short)(len));
 			for (int i = 0; i < len + 1; i++) {
@@ -119,9 +145,11 @@ public abstract class AbstractGamefreakContainer {
 				out.write(ctrmap.util.Bytes.getPadding(0, headerLength));
 				out.write(new byte[len * 0x80]);
 			}
-			out.close();
 		} catch (IOException ex) {
-			Logger.getLogger(AbstractGamefreakContainer.class.getName()).log(Level.SEVERE, null, ex);
+			//it used to log and go on (F049), leaving an object over a file that was never
+			//written; every caller then stored into it and reported a container it never made
+			throw new IllegalStateException("could not create " + target.getName() + ": "
+				+ ctrmap.util.Bytes.reason(ex), ex);
 		}
 	}
 
@@ -139,50 +167,77 @@ public abstract class AbstractGamefreakContainer {
 	 * to hear rather than "could not open".
 	 */
 	public boolean verify() {
-		whyNot = null;
-		try {
-			long onDisk = f.length();
-			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(f));
-			try {
-				short head = dis.read2Bytes();
-				if (head != getHeader()) {
-					whyNot = f.getName() + " is not a " + getClass().getSimpleName()
-						+ ": its first two bytes are 0x" + Integer.toHexString(head & 0xFFFF)
-						+ " and this container is 0x" + Integer.toHexString(getHeader() & 0xFFFF) + ".";
-					return false;
-				}
-				len = dis.readShort();
-				if (len < 0) {
-					whyNot = f.getName() + " declares " + len + " subfiles.";
-					return false;
-				}
-				offsets = new int[len + 1];
-				for (int i = 0; i < len + 1; i++) {
-					offsets[i] = dis.readInt();
-				}
-			} finally {
-			}
-			dis.close();
-			//THE OFFSETS MUST FIT IN THE FILE. A container whose last offset is past the end
-			//is truncated, and every read from it would have come back zero-padded and been
-			//reported as data - which is how a torn pack becomes a zone full of nothing.
-			for (int i = 0; i <= len; i++) {
-				if (offsets[i] < 0 || offsets[i] > onDisk) {
-					whyNot = f.getName() + " is truncated or damaged: subfile " + i + " starts at 0x"
-						+ Integer.toHexString(offsets[i]) + " and the file is only " + onDisk
-						+ " byte(s) long.";
-					return false;
-				}
-				if (i > 0 && offsets[i] < offsets[i - 1]) {
-					whyNot = f.getName() + " is damaged: subfile " + i + " starts before subfile "
-						+ (i - 1) + " does.";
-					return false;
-				}
-			}
-			return true;
+		//try-with-resources: the finally block that was meant to close the handle was EMPTY,
+		//and both refusals returned before the close, so every refused file stayed open (F049)
+		try (LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(f))) {
+			return readTable(dis, f.length());
 		} catch (IOException e) {
 			whyNot = "could not read " + f.getName() + ": " + ctrmap.util.Bytes.reason(e);
 			return false;
+		}
+	}
+
+	/**
+	 * Reads and checks the header and offset table from the start of {@code dis},
+	 * and makes them this container's - true, or false with {@link #whyNot} set.
+	 *
+	 * <p>THE TABLE IS READ FROM THE FILE EVERY TIME IT IS USED (F234). It was read
+	 * once, when the container was opened, and every later read and store trusted
+	 * it - while Empty zone, Rename zone and Connect zones rewrite a zone through a
+	 * container of their own. The zone tab's container then sliced the file with
+	 * the offsets of the file as it had been: measured, a save after Connect zones
+	 * spliced the old header's bytes into the new file and cut the entity block
+	 * short. A table re-read from the header in the same open as the read that
+	 * uses it cannot be stale, whoever wrote the file last.
+	 */
+	private boolean readTable(LittleEndianDataInputStream dis, long onDisk) throws IOException {
+		whyNot = null;
+		short head = dis.read2Bytes();
+		if (head != getHeader()) {
+			whyNot = f.getName() + " is not a " + getClass().getSimpleName()
+				+ ": its first two bytes are 0x" + Integer.toHexString(head & 0xFFFF)
+				+ " and this container is 0x" + Integer.toHexString(getHeader() & 0xFFFF) + ".";
+			return false;
+		}
+		int count = dis.readShort();
+		if (count < 0) {
+			whyNot = f.getName() + " declares " + count + " subfiles.";
+			return false;
+		}
+		int[] table = new int[count + 1];
+		for (int i = 0; i < count + 1; i++) {
+			table[i] = dis.readInt();
+		}
+		if (table[0] < 4 + 4L * table.length) {
+			whyNot = f.getName() + " is damaged: its first subfile starts at 0x" + Integer.toHexString(table[0])
+				+ ", inside its own " + (4 + 4 * table.length) + "-byte header.";
+			return false;
+		}
+		//THE OFFSETS MUST FIT IN THE FILE. A container whose last offset is past the end
+		//is truncated, and every read from it would have come back zero-padded and been
+		//reported as data - which is how a torn pack becomes a zone full of nothing.
+		for (int i = 0; i <= count; i++) {
+			if (table[i] < 0 || table[i] > onDisk) {
+				whyNot = f.getName() + " is truncated or damaged: subfile " + i + " starts at 0x"
+					+ Integer.toHexString(table[i]) + " and the file is only " + onDisk
+					+ " byte(s) long.";
+				return false;
+			}
+			if (i > 0 && table[i] < table[i - 1]) {
+				whyNot = f.getName() + " is damaged: subfile " + i + " starts before subfile "
+					+ (i - 1) + " does.";
+				return false;
+			}
+		}
+		len = count;
+		offsets = table;
+		return true;
+	}
+
+	/** Makes the table the file's own as it is now, or throws naming why it cannot be read. */
+	private void refreshTable() {
+		if (!verify()) {
+			throw new IllegalStateException(whyNot);
 		}
 	}
 
@@ -197,7 +252,17 @@ public abstract class AbstractGamefreakContainer {
 		return f;
 	}
 
+	/**
+	 * The game this container was handed and reports its writes to - so something reading it
+	 * can ask that game's profile rather than the open workspace's global (the camera form asks
+	 * it which byte marks a neutral camera).
+	 */
+	public ctrmap.formats.GameFiles game() {
+		return files;
+	}
+
 	public int getOffset(int fileNum) {
+		refreshTable();
 		return offsets[fileNum];
 	}
 
@@ -213,26 +278,28 @@ public abstract class AbstractGamefreakContainer {
 	 * and then the editor writes that back over the real thing.
 	 */
 	public byte[] getFile(int fileNum) {
-		if (offsets == null || fileNum < 0 || fileNum + 1 >= offsets.length) {
-			return null;
-		}
-		int want = offsets[fileNum + 1] - offsets[fileNum];
-		if (want < 0) {
-			return null;
-		}
-		try {
-			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(f));
-			try {
-				byte[] b = new byte[want];
-				//BOTH OF THESE REFUSE SHORT DATA. skip() and read() answer how much they managed
-				//and both answers used to be dropped, which is how a truncated file became a
-				//zero-filled buffer reported as the subfile.
-				dis.skipFully(offsets[fileNum]);
-				dis.readFully(b);
-				return b;
-			} finally {
-				dis.close();
+		try (LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new FileInputStream(f))) {
+			//the table and the read in ONE open, so the bounds are the file's own (readTable)
+			if (!readTable(dis, f.length())) {
+				Logger.getLogger(AbstractGamefreakContainer.class.getName()).log(Level.SEVERE,
+					"reading " + f + " subfile " + fileNum + ": " + whyNot);
+				return null;
 			}
+			if (fileNum < 0 || fileNum + 1 >= offsets.length) {
+				return null;
+			}
+			int want = offsets[fileNum + 1] - offsets[fileNum];
+			if (want < 0) {
+				return null;
+			}
+			byte[] b = new byte[want];
+			//BOTH OF THESE REFUSE SHORT DATA. skip() and read() answer how much they managed
+			//and both answers used to be dropped, which is how a truncated file became a
+			//zero-filled buffer reported as the subfile. The header just read is 4 bytes
+			//plus one int per table entry, so the skip is from there.
+			dis.skipFully(offsets[fileNum] - 4 - 4L * offsets.length);
+			dis.readFully(b);
+			return b;
 		} catch (IOException e) {
 			Logger.getLogger(AbstractGamefreakContainer.class.getName()).log(Level.SEVERE,
 				"reading " + f + " subfile " + fileNum, e);
@@ -245,14 +312,20 @@ public abstract class AbstractGamefreakContainer {
 	 * or null when it could not be written.
 	 */
 	public File getIOFile(int fileNum){
-		try {
-			byte[] b = getFile(fileNum);
-			File out = new File(files.scratch(), "agfc_extract_" + UUID.randomUUID().toString());
-			OutputStream os = new FileOutputStream(out);
+		//getFile's null was written with os.write(null) - a NullPointerException this catch
+		//never saw - and the stream was closed only on success (F049): both answered here
+		byte[] b = getFile(fileNum);
+		if (b == null) {
+			return null;
+		}
+		File out = new File(files.scratch(), "agfc_extract_" + UUID.randomUUID().toString());
+		try (OutputStream os = new FileOutputStream(out)) {
 			os.write(b);
-			os.close();
 			return out;
 		} catch (IOException ex) {
+			Logger.getLogger(AbstractGamefreakContainer.class.getName()).log(Level.SEVERE,
+				"extracting subfile " + fileNum + " of " + f + " to " + out, ex);
+			out.delete();
 			return null;
 		}
 	}
@@ -289,9 +362,15 @@ public abstract class AbstractGamefreakContainer {
 	 * own name on the failure catch this and say so with the cause attached.
 	 */
 	public void storeFile(int num, byte[] data) {
+		//the table as the file holds it NOW - another container may have rewritten it (F234)
+		refreshTable();
+		if (num < 0 || num >= len) {
+			throw new IllegalStateException("could not write subfile " + num + " of " + f.getName()
+				+ ": it holds " + len + " subfile(s).");
+		}
 		byte[] paddedData;
 		if (getIsPadded()){
-			byte[] padding = ctrmap.util.Bytes.getPadding(getOffset(num), data.length);
+			byte[] padding = ctrmap.util.Bytes.getPadding(offsets[num], data.length);
 			paddedData = new byte[data.length + padding.length];
 			System.arraycopy(data, 0, paddedData, 0, data.length);
 			System.arraycopy(padding, 0, paddedData, data.length, padding.length);
@@ -302,45 +381,56 @@ public abstract class AbstractGamefreakContainer {
 		if (!checkStoreStatus(num, paddedData)){
 			return;
 		}
+		File tmp = null;
 		try {
-			int pos = 0;
 			//THE WHOLE CONTAINER, OR NONE OF IT. storeFile rebuilds the file from this buffer,
 			//so a short read here writes zeros over every subfile the user did NOT edit -
 			//the zone header, the region model, the collision - and reports a successful
 			//save.
 			byte[] b = java.nio.file.Files.readAllBytes(f.toPath());
-			//calculate new offsets
+			//the NEW table is built beside the old one, and becomes this container's only
+			//once the file holding it is in place (F048: the offsets used to move first, so
+			//a write that failed left the object describing a file that was never written)
 			int change = paddedData.length - (offsets[num + 1] - offsets[num]);
+			int[] next = offsets.clone();
 			for (int i = num + 1; i < len + 1; i++) {
-				offsets[i] += change;
+				next[i] += change;
 			}
-			LittleEndianDataOutputStream out = new LittleEndianDataOutputStream(new FileOutputStream(f));
+			java.io.ByteArrayOutputStream whole = new java.io.ByteArrayOutputStream(b.length + Math.max(change, 0));
+			LittleEndianDataOutputStream out = new LittleEndianDataOutputStream(whole);
 			out.write2Bytes(getHeader());
 			out.writeShort((short) len);
-			pos += 4;
-			for (int i = 0; i < offsets.length; i++) {
-				out.writeInt(offsets[i]);
+			int pos = 4;
+			for (int i = 0; i < next.length; i++) {
+				out.writeInt(next[i]);
 				pos += 4;
 			}
-			while (pos < offsets[0]) {
+			while (pos < next[0]) {
 				out.write(0);
 				pos++;
 			}
-			int firstlen = offsets[num] - offsets[0];
-			if (firstlen > 0) {
-				byte[] bytesbefore = new byte[firstlen];
-				System.arraycopy(b, offsets[0], bytesbefore, 0, firstlen);
-				out.write(bytesbefore);
-			}
+			out.write(Arrays.copyOfRange(b, offsets[0], offsets[num]));
 			out.write(paddedData);
-			int secondlen = offsets[len] - offsets[num + 1];
-			if (secondlen > 0) {
-				byte[] bytesafter = new byte[secondlen];
-				System.arraycopy(b, offsets[num + 1] - change, bytesafter, 0, secondlen);
-				out.write(bytesafter);
-			}
+			out.write(Arrays.copyOfRange(b, offsets[num + 1], offsets[len]));
 			out.flush();
-			out.close();
+			//WRITTEN BESIDE, THEN MOVED OVER (F048). Opening the container itself for writing
+			//truncated it to nothing first; a write that then failed - the emulator or a virus
+			//scanner holding the file, a full disk - left every subfile of it gone, not just
+			//the one being stored. The original is untouched until the new one is whole.
+			files.aboutToWrite(f);
+			//"ctrmap-" FIRST: createTempFile refuses a prefix under three characters, and an
+			//extracted entry is named by its number - "1." threw before a byte was written
+			tmp = File.createTempFile("ctrmap-" + f.getName() + ".", ".writing",
+				f.getAbsoluteFile().getParentFile());
+			java.nio.file.Files.write(tmp.toPath(), whole.toByteArray());
+			try {
+				java.nio.file.Files.move(tmp.toPath(), f.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+					java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+			} catch (java.nio.file.AtomicMoveNotSupportedException notAtomic) {
+				java.nio.file.Files.move(tmp.toPath(), f.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			}
+			tmp = null;
+			offsets = next;
 			files.edited(getOriginFile());
 		} catch (IOException e) {
 			//THROWN, not returned: see the javadoc. The message names the file and the
@@ -348,6 +438,10 @@ public abstract class AbstractGamefreakContainer {
 			//on a console they do not have.
 			throw new IllegalStateException("could not write subfile " + num + " of "
 				+ f.getName() + ": " + ctrmap.util.Bytes.reason(e), e);
+		} finally {
+			if (tmp != null) {
+				tmp.delete();
+			}
 		}
 	}
 

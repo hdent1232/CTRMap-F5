@@ -178,7 +178,7 @@ public class SignWrapperInjectTest {
 				byte[] before = s.getScriptBytes();
 				boolean refused = false;
 				try {
-					SignWrapperInjector.injectSignWrapper(s, donor);
+					SignWrapperInjector.injectSignWrapper(NpcScriptGateTest.ORAS, s, donor);
 				} catch (SignWrapperInjector.InjectionException ex) {
 					refused = true;
 				}
@@ -274,7 +274,7 @@ public class SignWrapperInjectTest {
 
 		int wrapperPtr;
 		try {
-			wrapperPtr = SignWrapperInjector.injectSignWrapper(t, donor);
+			wrapperPtr = SignWrapperInjector.injectSignWrapper(NpcScriptGateTest.ORAS, t, donor);
 		} catch (SignWrapperInjector.InjectionException ex) {
 			return new String[]{"refused: " + ex.getMessage(), "skipped"};
 		}
@@ -435,7 +435,7 @@ public class SignWrapperInjectTest {
 		//double-inject guard: the injected script must now be refused
 		boolean refused = false;
 		try {
-			SignWrapperInjector.injectSignWrapper(fresh, donor);
+			SignWrapperInjector.injectSignWrapper(NpcScriptGateTest.ORAS, fresh, donor);
 		} catch (SignWrapperInjector.InjectionException ex) {
 			refused = true;
 		}
@@ -478,7 +478,7 @@ public class SignWrapperInjectTest {
 
 		int newId;
 		try {
-			newId = NpcTemplates.addSignScript(s2, FAKE_LINE, FAKE_SIGN_TYPE);
+			newId = NpcTemplates.addSignScript(NpcScriptGateTest.ORAS, s2, FAKE_LINE, FAKE_SIGN_TYPE);
 		} catch (RuntimeException ex) {
 			return "addSignScript failed on injected script: " + ex.getMessage();
 		}
@@ -555,16 +555,16 @@ public class SignWrapperInjectTest {
 		int msgPtr, signPtr;
 		try {
 			if (msgFirst) {
-				msgPtr = MsgWrapperInjector.injectMsgWrapper(t, donor);
+				msgPtr = MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, t, donor);
 				//reserialize between the two injections (fresh-parse composition)
 				t = new GFLPawnScript(t.getScriptBytes());
 				t.decompressThis();
-				signPtr = SignWrapperInjector.injectSignWrapper(t, donor);
+				signPtr = SignWrapperInjector.injectSignWrapper(NpcScriptGateTest.ORAS, t, donor);
 			} else {
-				signPtr = SignWrapperInjector.injectSignWrapper(t, donor);
+				signPtr = SignWrapperInjector.injectSignWrapper(NpcScriptGateTest.ORAS, t, donor);
 				t = new GFLPawnScript(t.getScriptBytes());
 				t.decompressThis();
-				msgPtr = MsgWrapperInjector.injectMsgWrapper(t, donor);
+				msgPtr = MsgWrapperInjector.injectMsgWrapper(NpcScriptGateTest.ORAS, t, donor);
 			}
 		} catch (RuntimeException ex) {
 			return "second injection refused/failed: " + ex.getMessage();
@@ -606,13 +606,13 @@ public class SignWrapperInjectTest {
 		//both editor entry points work on the composed script
 		int talkerId;
 		try {
-			talkerId = TalkerScriptWizard.cloneTalker(fresh, FAKE_TALKER_LINE);
+			talkerId = TalkerScriptWizard.cloneTalker(NpcScriptGateTest.ORAS, fresh, FAKE_TALKER_LINE);
 		} catch (RuntimeException ex) {
 			return "cloneTalker failed on composed script: " + ex.getMessage();
 		}
 		int signId;
 		try {
-			signId = NpcTemplates.addSignScript(fresh, FAKE_LINE, FAKE_SIGN_TYPE);
+			signId = NpcTemplates.addSignScript(NpcScriptGateTest.ORAS, fresh, FAKE_LINE, FAKE_SIGN_TYPE);
 		} catch (RuntimeException ex) {
 			return "addSignScript failed on composed script: " + ex.getMessage();
 		}

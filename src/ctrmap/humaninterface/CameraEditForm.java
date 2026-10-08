@@ -7,7 +7,7 @@ import java.awt.Component;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import javax.swing.JFormattedTextField;
-import javax.swing.JOptionPane;
+import javax.swing.JSlider;
 import javax.swing.text.NumberFormatter;
 
 /**
@@ -15,9 +15,6 @@ import javax.swing.text.NumberFormatter;
  */
 public class CameraEditForm extends javax.swing.JPanel {
 
-	/**
-	 * Creates new form CameraEditForm
-	 */
 	public CameraDataFile f;
 	public CameraData cam;
 	public int camIndex = -1;
@@ -26,11 +23,23 @@ public class CameraEditForm extends javax.swing.JPanel {
 	/** Asks for the editor to be drawn again; handed in, because a JFrame needs a display. */
 	private final Redraw redraw;
 
+	/**
+	 * Creates new form CameraEditForm
+	 */
 	public CameraEditForm(Redraw redraw) {
 		this.redraw = redraw;
 		initComponents();
 		setFloatValueClass(new JFormattedTextField[]{pitchShift1, pitchShift2, yawShift1, yawShift2, plrDist1, plrDist2, pitch1, pitch2, yaw1, yaw2, roll1, roll2});
 		((NumberFormatter) transTime.getFormatter()).setValueClass(Integer.class);
+		//AN ANGLE OF VIEW IS BETWEEN 0 AND 180 (F123): the generated sliders offered -180..180.
+		//A stored value outside is shown at the nearest end and written back as read, unless
+		//the slider is moved. The labels stay on the 45s rather than following the minimum.
+		for (JSlider fov : new JSlider[]{fov1Slider, fov2Slider}) {
+			fov.setMinimum(1);
+			fov.setMaximum(179);
+			fov.setLabelTable(fov.createStandardLabels(45, 45));
+		}
+		btnAdd.setEnabled(false);
 	}
 
 	public void setFloatValueClass(JFormattedTextField[] fields) {
@@ -43,8 +52,11 @@ public class CameraEditForm extends javax.swing.JPanel {
 		entryBox.setSelectedIndex(-1);
 		showCamera(-1);
 		cam = null;
+		shown = null;
 		f = null;
 		loaded = false;
+		//NOTHING TO ADD TO (census M.73): its handler adds to f, which is gone
+		btnAdd.setEnabled(false);
 	}
 
 	/**
@@ -79,12 +91,14 @@ public class CameraEditForm extends javax.swing.JPanel {
 	public void loadDataFile(CameraDataFile cdf) {
 		loaded = false;
 		cam = null;
+		shown = null;
 		f = cdf;
 		entryBox.removeAllItems();
 		for (int i = 0; i < cdf.camData.size(); i++) {
 			entryBox.addItem(String.valueOf(i));
 		}
 		loaded = true;
+		btnAdd.setEnabled(true);
 		if (cdf.numEntries > 0) {
 			entryBox.setSelectedIndex(0);
 		}
@@ -98,25 +112,28 @@ public class CameraEditForm extends javax.swing.JPanel {
 		if (!loaded) {
 			return;
 		}
+		//neutralCheckbox and layer were missing from both lists (census M.73), so an emptied
+		//form left the tick live over a camera that was gone
+		Component[] perCamera = {neutralCheckbox, layer, d1active, d2active, d1default, d2default, fov1Slider, fov2Slider, x, y, w, h, motion, roll1, roll2, pitch1,
+			pitch2, yaw1, yaw2, plrDist1, plrDist2, transTime, pitchShift1, pitchShift2, yawShift1, yawShift2, entryBox, btnRemove, btnSave};
 		if (entryNum == -1) {
-			setComponentsEnabled(new Component[]{d1active, d2active, d1default, d2default, fov1Slider, fov2Slider, x, y, w, h, motion, roll1, roll2, pitch1,
-				pitch2, yaw1, yaw2, plrDist1, plrDist2, transTime, pitchShift1, pitchShift2, yawShift1, yawShift2, entryBox, btnRemove, btnSave}, false);
+			setComponentsEnabled(perCamera, false);
 			return;
 		} else {
-			setComponentsEnabled(new Component[]{d1active, d2active, d1default, d2default, fov1Slider, fov2Slider, x, y, w, h, motion, roll1, roll2, pitch1,
-				pitch2, yaw1, yaw2, plrDist1, plrDist2, transTime, pitchShift1, pitchShift2, yawShift1, yawShift2, entryBox, btnRemove, btnSave}, true);
+			setComponentsEnabled(perCamera, true);
 		}
-		camIndex = entryNum;
+		//SAVED BEFORE camIndex MOVES: the save puts the camera back at the index it was shown
+		//from, and this used to point camIndex at the next one first
 		if (save) {
 			saveCamera(false);
 		}
+		camIndex = entryNum;
 		cam = f.camData.get(entryNum);
 		neutralCheckbox.setSelected(cam.isNeutral != 0);
 		transTime.setValue(Short.toUnsignedInt(cam.transitionPeriod) * 35);
-		motion.setSelectedIndex(getMotionIndex(cam.movementDirection));
-		if (cam.unknown01or03 == 03) {
-			motion.setSelectedIndex(2); //different static
-		}
+		//A CODE WITH NO ROW SHOWS NO ROW (F127): it showed as Static, and the next entry
+		//switch wrote 7 over it. unknown01or03 == 3 is static whatever the code says.
+		Combos.show(motion, cam.unknown01or03 == 03 ? 2 : getMotionIndex(cam.movementDirection));
 		x.setValue(Short.toUnsignedInt(cam.boundX1));
 		y.setValue(Short.toUnsignedInt(cam.boundY1));
 		w.setValue(Short.toUnsignedInt(cam.boundX2) - Short.toUnsignedInt(cam.boundX1));
@@ -149,8 +166,15 @@ public class CameraEditForm extends javax.swing.JPanel {
 		if (!neutralCheckbox.isSelected()){
 			setActiveEnabled();
 		}
+		shown = fromWidgets(cam);
 		redraw.all();
 	}
+
+	/**
+	 * What the widgets said when {@link #cam} was shown, read the way the save reads them: a
+	 * field whose widget still says the same is written back as it was read (F123).
+	 */
+	private CameraData shown;
 
 	public void commitAndSwitch(int switchNum) {
 		entryBox.requestFocus(); //first focus something else so that the listener is called
@@ -174,72 +198,21 @@ public class CameraEditForm extends javax.swing.JPanel {
 	}
 
 	public void saveCamera(boolean update) {
-		if (cam == null) {
+		if (cam == null || shown == null) {
 			return;
 		}
-		CameraData cam2 = new CameraData();
-		cam2.acceptCoords1 = (d1active.isSelected()) ? 0x01 : 0x00;
-		cam2.acceptCoords2 = (d2active.isSelected()) ? 0x01 : 0x00;
-		cam2.boundX1 = ((Integer) x.getValue()).shortValue();
-		cam2.boundY1 = ((Integer) y.getValue()).shortValue();
-		cam2.boundX2 = (short) ((Integer) x.getValue() + (Integer) w.getValue()); //add it from the ground up to prevent Java signed shorts
-		cam2.boundY2 = (short) ((Integer) y.getValue() + (Integer) h.getValue());
-		if (d1default.isSelected() || d2default.isSelected()) {
-			cam2.isFirstEnabled = (!d1default.isSelected()) ? (short) -1 : 0;
-			cam2.isSecondEnabled = (!d2default.isSelected()) ? (short) -1 : 0;
-		} else {
-			if (cam.isFirstEnabled == -1 && cam.isSecondEnabled == -1) {
-				cam2.isFirstEnabled = -1;
-				cam2.isSecondEnabled = -1;
-			} else {
-				cam2.isFirstEnabled = 0;
-				cam2.isSecondEnabled = 0;
-			}
-		}
-		if ((Integer) transTime.getValue() > 65535) {
-			transTime.setValue(65535);
-		}
-		cam2.transitionPeriod = (short) Math.round((Integer) transTime.getValue() / 35f);
-		if (neutralCheckbox.isSelected()) {
-			if (cam.isNeutral != 0) {
-				cam2.isNeutral = cam.isNeutral;
-			} else {
-				cam2.isNeutral = 0x2;
-			}
-			//OA uses 0x1 for this while XY uses 0x2. If there is a difference, I'll be sure to link it to the workspace but for now, 2 (XY) is the default.
-		} else {
-			cam2.isNeutral = 0x0;
-		}
-		cam2.coords1.pitchShift = (Float) pitchShift1.getValue();
-		cam2.coords1.yawShift = (Float) yawShift1.getValue();
-		cam2.coords1.pitch = (Float) pitch1.getValue();
-		cam2.coords1.yaw = (Float) yaw1.getValue();
-		cam2.coords1.roll = (Float) roll1.getValue();
-		cam2.coords1.FOV = (float) fov1Slider.getValue();
-		cam2.coords1.distanceFromTarget = (Float) plrDist1.getValue();
-
-		cam2.coords2.pitchShift = (Float) pitchShift2.getValue();
-		cam2.coords2.yawShift = (Float) yawShift2.getValue();
-		cam2.coords2.pitch = (Float) pitch2.getValue();
-		cam2.coords2.yaw = (Float) yaw2.getValue();
-		cam2.coords2.roll = (Float) roll2.getValue();
-		cam2.coords2.FOV = (float) fov2Slider.getValue();
-		cam2.coords2.distanceFromTarget = (Float) plrDist2.getValue();
-		cam2.layer = ((Integer) layer.getValue()).byteValue();
-		cam2.unknown01or03 = cam.unknown01or03;
-		if (cam.movementDirection == 0 && getMotionRaw(motion.getSelectedIndex()) == 0x07) {
-			cam2.movementDirection = 0;
-		} else {
-			if (cam.unknown01or03 == 0x03 && getMotionRaw(motion.getSelectedIndex()) == 0x07) {
-				cam2.movementDirection = cam.movementDirection; //might not be set to static, so we'll keep it the same as 03 overrides it
-			} else {
-				cam2.movementDirection = getMotionRaw(motion.getSelectedIndex());
-			}
-		}
+		//WHAT THE FORM MOVED, OVER WHAT WAS READ (F123, F127, F097): see CameraData.keep. The
+		//record used to be built from the widgets alone, so whatever they could not hold - a
+		//fractional FOV, a motion code with no row, the unknowns - was lost on any write.
+		CameraData cam2 = CameraData.keep(cam, shown, fromWidgets(cam));
 		if (!cam.equals(cam2)) {
-			//set this after verifying as it is a nonstandard op specific to this editor and we don't wanna invoke the save dialog on autocorrect
-			cam2.unknown01or03 = (cam2.movementDirection == 0x07) ? 0x03 : 0x01; //no idea what the difference between 00 and 01 is but 03 is static and so is MD7, so doing this is a good measure to allow users to change static cameras to dynamic without messing with this unknown
-			f.camData.set(f.camData.indexOf(cam), cam2);
+			//BY THE INDEX IT WAS SHOWN FROM (F210): indexOf found the first EQUAL camera, so after
+			//two New entries an edit to the second was written over the first
+			if (f.camData.get(camIndex) != cam) {
+				throw new IllegalStateException("the camera form is showing camera " + camIndex
+					+ " but holds a record that is not in that slot, so it cannot tell which to replace");
+			}
+			f.camData.set(camIndex, cam2);
 			cam = cam2;
 			f.modified = true;
 		}
@@ -248,23 +221,84 @@ public class CameraEditForm extends javax.swing.JPanel {
 		}
 	}
 
-	public float getFloatFromField(JFormattedTextField field) {
-		try {
-			float ret = Float.parseFloat(field.getText());
-			return ret;
-		} catch (NumberFormatException | NullPointerException ex) {
-			ctrmap.Ui.message(null, "Warning: Couldn't retrieve floating point value of " + field.getText(), "Message", JOptionPane.INFORMATION_MESSAGE);
-			return 0f;
+	/**
+	 * The camera the widgets describe, over a copy of {@code base}, so a field no widget holds
+	 * stays as {@code base} has it. Reads the widgets and changes none of them: the save it
+	 * came out of clamped the transition field to 65535 - in MILLISECONDS, the limit of the
+	 * frame count it is converted to, so any period over 1872 frames was cut to it.
+	 */
+	CameraData fromWidgets(CameraData base) {
+		CameraData c = base.copy();
+		c.acceptCoords1 = (d1active.isSelected()) ? 0x01 : 0x00;
+		c.acceptCoords2 = (d2active.isSelected()) ? 0x01 : 0x00;
+		int bx = ((Number) x.getValue()).intValue();
+		int by = ((Number) y.getValue()).intValue();
+		c.boundX1 = (short) bx;
+		c.boundY1 = (short) by;
+		c.boundX2 = (short) (bx + ((Number) w.getValue()).intValue()); //add it from the ground up to prevent Java signed shorts
+		c.boundY2 = (short) (by + ((Number) h.getValue()).intValue());
+		if (d1default.isSelected() || d2default.isSelected()) {
+			c.isFirstEnabled = (!d1default.isSelected()) ? (short) -1 : 0;
+			c.isSecondEnabled = (!d2default.isSelected()) ? (short) -1 : 0;
+		} else if (!(base.isFirstEnabled == -1 && base.isSecondEnabled == -1)) {
+			c.isFirstEnabled = 0;
+			c.isSecondEnabled = 0;
 		}
+		int frames = Math.round(((Number) transTime.getValue()).intValue() / 35f);
+		c.transitionPeriod = (short) Math.max(0, Math.min(0xFFFF, frames));
+		if (!neutralCheckbox.isSelected()) {
+			c.isNeutral = 0x0;
+		} else if (base.isNeutral == 0 && neutralValue() >= 0) {
+			c.isNeutral = neutralValue();
+		}
+		c.coords1.pitchShift = (Float) pitchShift1.getValue();
+		c.coords1.yawShift = (Float) yawShift1.getValue();
+		c.coords1.pitch = (Float) pitch1.getValue();
+		c.coords1.yaw = (Float) yaw1.getValue();
+		c.coords1.roll = (Float) roll1.getValue();
+		c.coords1.FOV = (float) fov1Slider.getValue();
+		c.coords1.distanceFromTarget = (Float) plrDist1.getValue();
+
+		c.coords2.pitchShift = (Float) pitchShift2.getValue();
+		c.coords2.yawShift = (Float) yawShift2.getValue();
+		c.coords2.pitch = (Float) pitch2.getValue();
+		c.coords2.yaw = (Float) yaw2.getValue();
+		c.coords2.roll = (Float) roll2.getValue();
+		c.coords2.FOV = (float) fov2Slider.getValue();
+		c.coords2.distanceFromTarget = (Float) plrDist2.getValue();
+		c.layer = ((Number) layer.getValue()).byteValue();
+		if (motion.getSelectedIndex() != -1) {
+			c.movementDirection = getMotionRaw(motion.getSelectedIndex());
+			//03 is static and so is MD7, so a camera moved between static and dynamic carries the
+			//matching one; keep() leaves it as read unless that is what changed
+			c.unknown01or03 = (c.movementDirection == 0x07) ? 0x03 : 0x01;
+		}
+		return c;
+	}
+
+	/**
+	 * The isNeutral byte a camera ticked neutral gets: what this area's neutral cameras already
+	 * hold, else the game's recorded value, else -1 - unknown, and refused rather than guessed.
+	 */
+	int neutralValue() {
+		if (f != null) {
+			for (CameraData c : f.camData) {
+				if (c.isNeutral != 0) {
+					return c.isNeutral;
+				}
+			}
+		}
+		//the game the AREA belongs to, not the open workspace's global
+		ctrmap.gamedef.GameProfile p = f == null ? null : f.profile();
+		return p == null ? -1 : p.neutralCameraValue();
 	}
 
 	public boolean store(boolean dialog) {
 		if (f != null) {
 			saveCamera();
 			if (f.modified) {
-				switch (ctrmap.Ui.askToKeep(dialog, "Camera data")) {
+				switch (ctrmap.Ui.askToKeep(dialog, "Camera data", this::discard)) {
 					case DISCARD:
-						f.modified = false;
 						return true;
 					case CANCEL:
 						return false;
@@ -274,6 +308,19 @@ public class CameraEditForm extends javax.swing.JPanel {
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * Puts the cameras back to what the area holds, on the camera that was shown (F106). No cleared
+	 * the flag and left the edited cameras in the table this form and the map view draw from.
+	 */
+	void discard() {
+		int at = camIndex;
+		loadFrom(f.area());
+		if (f != null && at > 0 && at < entryBox.getItemCount()) {
+			entryBox.setSelectedIndex(at);
+		}
+		redraw.all();
 	}
 
 	public int getMotionIndex(short raw) {
@@ -287,8 +334,7 @@ public class CameraEditForm extends javax.swing.JPanel {
 			case 7:
 				return 2;
 		}
-		System.out.println("Unknown motion type: " + raw);
-		return 2;
+		return -1;   //no row for it: shown as none and written back as read (F127)
 	}
 
 	public short getMotionRaw(int index) {
@@ -874,7 +920,13 @@ public class CameraEditForm extends javax.swing.JPanel {
     }//GEN-LAST:event_d2activeActionPerformed
 
     private void neutralCheckboxActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_neutralCheckboxActionPerformed
-		cam.isNeutral = (neutralCheckbox.isSelected()) ? 2 : 0;
+		//THE TICK IS READ BY THE SAVE, NOT WRITTEN INTO THE RECORD HERE (F097): writing 2 into the
+		//live camera made the save's copy agree with it, so a neutral-only change was never saved
+		if (neutralCheckbox.isSelected() && cam != null && cam.isNeutral == 0 && neutralValue() < 0) {
+			neutralCheckbox.setSelected(false);
+			ctrmap.Ui.error(this, "Neither this area's cameras nor this game's profile say what value marks"
+				+ " a neutral camera, so it is left as it is.", "Camera data");
+		}
 		setNeutralEnabled();
     }//GEN-LAST:event_neutralCheckboxActionPerformed
 
@@ -902,7 +954,7 @@ public class CameraEditForm extends javax.swing.JPanel {
     }//GEN-LAST:event_entryBoxActionPerformed
 
     private void transTimeActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_transTimeActionPerformed
-		// TODO add your handling code here:
+		//nothing: the field is read when the camera is saved
     }//GEN-LAST:event_transTimeActionPerformed
 
     private void btnRemoveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveActionPerformed
@@ -920,6 +972,9 @@ public class CameraEditForm extends javax.swing.JPanel {
     }//GEN-LAST:event_btnRemoveActionPerformed
 
     private void btnAddActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddActionPerformed
+		if (f == null) {
+			return;   //nothing loaded to add to (census M.73)
+		}
 		f.camData.add(new CameraData());
 		int index = entryBox.getItemCount();
 		entryBox.addItem(String.valueOf(index));

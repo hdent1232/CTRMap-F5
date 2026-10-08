@@ -222,9 +222,32 @@ public class HandedGameTest {
 				"the staged master table is read in preference to the archive's ("
 				+ BchTexturePack.zonesUsingArea(edited, 9, 2) + ")");
 
-		//a game whose zone archive nothing opened: no table to read, no refusal
-		check(BchTexturePack.zonesUsingArea(new FakeGameFiles(), 7, 0) == null,
-				"a game with no zone archive open yields no sharers rather than a crash");
+		//CANNOT TELL IS NOT "NOBODY" (F065). Each of these answered null - go ahead - and each is
+		//now a refusal that says what could not be read.
+		String noArchive = cannotTell(new FakeGameFiles(), 7, 0);
+		check(noArchive != null && noArchive.contains("ZoneData"),
+				"a game whose zone archive nothing opened is refused, naming the archive: " + noArchive);
+		FakeGameFiles stagedShort = zoneGame(7, 7, 9, 7).plant(ArchiveType.ZONE_DATA, 4, master(9, 9, 9, 9, 9));
+		stagedShort.edited(stagedShort.staged(ArchiveType.ZONE_DATA, 4));
+		String wrongEdit = cannotTell(stagedShort, 9, 2);
+		check(wrongEdit != null && wrongEdit.contains("it is an edit"),
+				"a staged EDIT of the table that is whole rows but the wrong count is refused, not read"
+				+ " as five zones or replaced with the archive's: " + wrongEdit);
+		FakeGameFiles staleShort = zoneGame(7, 7, 9, 7).plant(ArchiveType.ZONE_DATA, 4, master(9, 9, 9, 9, 9));
+		check("zones 1, 3".equals(BchTexturePack.zonesUsingArea(staleShort, 7, 0)),
+				"a stale extraction of the wrong size, which is no edit, is answered from the archive's copy ("
+				+ BchTexturePack.zonesUsingArea(staleShort, 7, 0) + ")");
+		String unmeasured = cannotTell(zoneGame(7, 7, 9, 7).profile(ctrmap.gamedef.GameProfile.of(
+				ctrmap.gamedef.GameType.XY)), 9, 2);
+		check(unmeasured != null && unmeasured.contains("measured"),
+				"a game whose zone table nobody measured is refused, not waved through: " + unmeasured);
+		try {
+			BchTexturePack.assertNotShared(stagedShort, 9, 2);
+			check(false, "assertNotShared refuses when it cannot tell (it allowed area 9)");
+		} catch (IllegalStateException ex) {
+			check(String.valueOf(ex.getMessage()).startsWith("Could not tell"),
+					"assertNotShared refuses when it cannot tell: " + firstLine(ex));
+		}
 
 		//the refusals built on it
 		try {
@@ -233,6 +256,9 @@ public class HandedGameTest {
 		} catch (IllegalStateException ex) {
 			check(String.valueOf(ex.getMessage()).contains("zones 1, 3"),
 					"assertNotShared refuses a shared area and names the sharers: " + firstLine(ex));
+			//F064: and names the door that gives the zone its own AREA, not the map fork
+			check(String.valueOf(ex.getMessage()).contains("(Map > Make zone independent)"),
+					"and it names the door that gives the zone its own area: " + ex.getMessage().replace('\n', ' '));
 		}
 		BchTexturePack.assertNotShared(fake, 9, 2);
 		check(true, "and allows a private one");
@@ -365,6 +391,31 @@ public class HandedGameTest {
 		MaisonPoolGuard mismatch = MaisonPoolGuard.load(fake, ArchiveType.MAISON_SET_POOL_A, ArchiveType.MAISON_CLASS_LIST_A, emptySets(4));
 		check(!mismatch.exact && mismatch.vanilla == null,
 				"a snapshot whose length disagrees with the pool is not trusted");
+
+		//F211: a class-list row that will not read was skipped in silence, the labels stayed "exact",
+		//and a slot only that row names would have read FREE
+		FakeGameFiles damaged = new FakeGameFiles().withPristine();
+		pristineArchive(damaged, ArchiveType.MAISON_SET_POOL_A,
+				set(25).write(), set(0).write(), set(0).write(), set(0).write(), set(0).write(), set(0).write());
+		pristineArchive(damaged, ArchiveType.MAISON_CLASS_LIST_A, classList(1, 4).write(), new byte[]{1, 0});
+		MaisonSet[] now = emptySets(6);
+		now[2].species = 7;
+		MaisonPoolGuard d = MaisonPoolGuard.load(damaged, ArchiveType.MAISON_SET_POOL_A, ArchiveType.MAISON_CLASS_LIST_A, now);
+		check(!d.exact && d.inexact != null && d.inexact.contains("row 1"),
+				"a class-list row that cannot be read makes the labels inferred and is named: " + d.inexact);
+		check(Arrays.equals(d.vanillaUsed, new boolean[]{true, false, true, false, true, false}),
+				"and the guard keeps what it could read (slot 0 shipped filled, slot 4 named by row 0) and treats"
+				+ " what is filled now (slot 2) as retail: " + Arrays.toString(d.vanillaUsed));
+		byte[] shortRow = classList(1, 4, 5, 6).write();
+		shortRow = Arrays.copyOf(shortRow, 6);
+		String strict;
+		try {
+			strict = "read " + MaisonClassList.read(shortRow).setIndices;
+		} catch (IllegalArgumentException ex) {
+			strict = null;
+		}
+		check(strict == null, "a class-list record that declares more sets than it holds is refused, not read short ("
+				+ (strict == null ? "refused" : strict) + ")");
 		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
 				"after all of it no workspace is open and nothing reached the global");
 	}
@@ -521,57 +572,64 @@ public class HandedGameTest {
 
 	// ------------------------------------------------ 9. the Pokemon reference tables
 	static void thePokeDataAnswersForTheGameItIsHanded() throws Exception {
-		System.out.println("--- the Pokemon reference tables are those of the game they are handed, with no workspace open");
+		System.out.println("--- the Pokemon reference tables are those of the game they are handed, kept by that game");
 		FakeGameFiles fake = referenceGame("Bulbasaur", new int[]{45, 49, 49, 45, 65, 65}, 11, 3, "Pound", 40, "Master Ball");
-		PokeData.load(fake);
-		check(PokeData.available(), "a game with a PERSONAL archive loads as available");
-		check(Arrays.equals(PokeData.baseStats(1), new int[]{45, 49, 49, 45, 65, 65}),
-				"species 1's base stats are the handed game's " + Arrays.toString(PokeData.baseStats(1)));
-		check(Arrays.equals(PokeData.types(1), new int[]{11, 3}) && Arrays.equals(PokeData.abilities(1), new int[]{65, 0, 34}),
+		PokeData d = PokeData.of(fake);
+		check(d.available(), "a game with a PERSONAL archive reads as available");
+		check(Arrays.equals(d.baseStats(1), new int[]{45, 49, 49, 45, 65, 65}),
+				"species 1's base stats are the handed game's " + Arrays.toString(d.baseStats(1)));
+		check(Arrays.equals(d.types(1), new int[]{11, 3}) && Arrays.equals(d.abilities(1), new int[]{65, 0, 34}),
 				"and its types and abilities");
-		check("Bulbasaur".equals(PokeData.speciesName(1)) && PokeData.speciesCount() == 2,
-				"and its name; the count is the list's (" + PokeData.speciesCount() + ")");
-		check("Pound".equals(PokeData.moveName(1)) && Arrays.equals(PokeData.moveInfo(1), new int[]{0, 1, 40, 100, 35}),
-				"move 1 is the handed game's, name and numbers " + Arrays.toString(PokeData.moveInfo(1)));
-		check("Master Ball".equals(PokeData.itemName(1)) && "Overgrow".equals(PokeData.abilityName(65)),
+		check("Bulbasaur".equals(d.speciesName(1)) && d.speciesCount() == 2,
+				"and its name; the count is the list's (" + d.speciesCount() + ")");
+		check("Pound".equals(d.moveName(1)) && Arrays.equals(d.moveInfo(1), new int[]{0, 1, 40, 100, 35}),
+				"move 1 is the handed game's, name and numbers " + Arrays.toString(d.moveInfo(1)));
+		check("Master Ball".equals(d.itemName(1)) && "Overgrow".equals(d.abilityName(65)),
 				"and so are item 1 and ability 65");
-		check("#5".equals(PokeData.speciesName(5)) && PokeData.baseStats(5) == null,
+		check("#5".equals(d.speciesName(5)) && d.baseStats(5) == null,
 				"a species the game does not have is an id, with no stats");
 
 		//a DIFFERENT game
 		FakeGameFiles other = referenceGame("Fushigidane", new int[]{1, 2, 3, 4, 5, 6}, 9, 2, "Hataku", 50, "Masuta Booru");
-		PokeData.load(other);
-		check("Fushigidane".equals(PokeData.speciesName(1)) && Arrays.equals(PokeData.baseStats(1), new int[]{1, 2, 3, 4, 5, 6})
-				&& Arrays.equals(PokeData.types(1), new int[]{9, 2}),
-				"handed another game, species 1 is that game's (" + PokeData.speciesName(1) + ")");
-		check("Hataku".equals(PokeData.moveName(1)) && PokeData.moveInfo(1)[2] == 50 && "Masuta Booru".equals(PokeData.itemName(1)),
+		PokeData o = PokeData.of(other);
+		check("Fushigidane".equals(o.speciesName(1)) && Arrays.equals(o.baseStats(1), new int[]{1, 2, 3, 4, 5, 6})
+				&& Arrays.equals(o.types(1), new int[]{9, 2}),
+				"handed another game, species 1 is that game's (" + o.speciesName(1) + ")");
+		check("Hataku".equals(o.moveName(1)) && o.moveInfo(1)[2] == 50 && "Masuta Booru".equals(o.itemName(1)),
 				"and so are its move and item");
-		PokeData.load(fake);
-		check("Bulbasaur".equals(PokeData.speciesName(1)) && PokeData.moveInfo(1)[2] == 40,
-				"and handed the first again, the first game's");
+		check(PokeData.of(fake) == d && "Bulbasaur".equals(PokeData.of(fake).speciesName(1)),
+				"and the first game's tables are still the first game's, read once and kept by it (F218)");
+
+		//KEPT BY THE GAME UNTIL IT CHANGES (F218): the game's PERSONAL archive is rewritten - what a pack
+		//does - and the kept tables are the old ones until the game's store is emptied, which the pack does
+		fake.plantArchive(ArchiveType.PERSONAL, java.nio.file.Files.readAllBytes(other.archiveFile(ArchiveType.PERSONAL).toPath()));
+		check(Arrays.equals(PokeData.of(fake).baseStats(1), new int[]{45, 49, 49, 45, 65, 65}),
+				"control: rewriting the archive alone changes nothing kept");
+		fake.cache().drop();
+		check(Arrays.equals(PokeData.of(fake).baseStats(1), new int[]{1, 2, 3, 4, 5, 6}),
+				"and once the game's store is emptied the tables are read again, from the archive as it is now ("
+				+ Arrays.toString(PokeData.of(fake).baseStats(1)) + ")");
 
 		//a game with none of the archives: nothing, not the last game's tables
-		PokeData.load(new FakeGameFiles());
-		check(!PokeData.available() && PokeData.baseStats(1) == null && "#1".equals(PokeData.speciesName(1))
-				&& PokeData.moveInfo(1) == null && "#1".equals(PokeData.itemName(1)),
-				"a game with none of the reference archives loads as nothing: id-only labels, no guess from the last game");
+		PokeData none = PokeData.of(new FakeGameFiles());
+		check(!none.available() && none.baseStats(1) == null && "#1".equals(none.speciesName(1))
+				&& none.moveInfo(1) == null && "#1".equals(none.itemName(1)),
+				"a game with none of the reference archives reads as nothing: id-only labels, no guess from the last game");
 		//species 0 (its list is empty, not absent), moves and items at the gen 6
 		//fallbacks: an asymmetry the class always had, not one this suite pins
-		check(PokeData.speciesCount() != 2 && PokeData.moveCount() == 622 && PokeData.itemCount() == 776,
-				"and no count is the last game's (species " + PokeData.speciesCount() + ", moves "
-				+ PokeData.moveCount() + ", items " + PokeData.itemCount() + ")");
-
-		PokeData.load(fake);
-		Workspace.reset();
-		check(!PokeData.available() && "#1".equals(PokeData.speciesName(1)),
-				"Workspace.reset() forgets the tables, so one game's names cannot outlive it into the next");
+		check(none.speciesCount() != 2 && none.moveCount() == 622 && none.itemCount() == 776,
+				"and no count is the last game's (species " + none.speciesCount() + ", moves "
+				+ none.moveCount() + ", items " + none.itemCount() + ")");
+		check(!PokeData.none().available() && "#1".equals(PokeData.none().speciesName(1))
+				&& PokeData.none().speciesCount() == 0,
+				"and the tables of no game at all are ids alone, with nothing to count");
 		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
 				"after all of it no workspace is open and nothing reached the global");
 	}
 
 	// ------------------------------------------------ 10. the location names
 	static void theLocationNamesLoadFromTheGameTheyAreHanded() throws Exception {
-		System.out.println("--- the location names load from the game they are handed, at the entry that game's edition uses");
+		System.out.println("--- the location names are read from the game they are handed, at the entry that game's edition uses");
 		int retail = ORAS.textIndex(GameProfile.TextIndex.LOCATION_NAMES, GameProfile.Variant.RETAIL);
 		int demo = ORAS.textIndex(GameProfile.TextIndex.LOCATION_NAMES, GameProfile.Variant.DEMO);
 		check(retail != demo, "the fixture rests on ORAS keeping its demo's names in another entry (" + retail + " vs " + demo + ")");
@@ -581,43 +639,49 @@ public class HandedGameTest {
 				"a retail game's entry is the retail one (" + LocationNames.gametextIndex(fake) + ")");
 		check(LocationNames.gametextIndex(new FakeGameFiles().variant(GameProfile.Variant.DEMO)) == demo,
 				"and a demo's is the demo's (" + demo + ")");
-		LocationNames.loadFromGarc(fake);
-		check("Oldale Town".equals(LocationNames.getLocName(1)),
-				"loaded from the handed game, line 1 is its (" + LocationNames.getLocName(1) + ")");
+		check("Oldale Town".equals(LocationNames.getLocName(fake, 1)),
+				"asked of the handed game, line 1 is its, read on first ask (" + LocationNames.getLocName(fake, 1) + ")");
 
 		//a DIFFERENT game
 		FakeGameFiles other = new FakeGameFiles()
 				.plant(ArchiveType.GAMETEXT, retail, textOf("Pallet Town", "Viridian City"));
-		LocationNames.loadFromGarc(other);
-		check("Viridian City".equals(LocationNames.getLocName(1)),
-				"handed another game, line 1 is that game's (" + LocationNames.getLocName(1) + ")");
+		check("Viridian City".equals(LocationNames.getLocName(other, 1)),
+				"handed another game, line 1 is that game's (" + LocationNames.getLocName(other, 1) + ")");
+		check("Oldale Town".equals(LocationNames.getLocName(fake, 1)),
+				"and the first game's is still the first game's - each keeps its own (F218)");
 
 		//a demo: read at the demo's entry, not the retail entry beside it
 		FakeGameFiles demoGame = new FakeGameFiles().variant(GameProfile.Variant.DEMO)
 				.plant(ArchiveType.GAMETEXT, retail, textOf("Wrong Town", "Wrong City"))
 				.plant(ArchiveType.GAMETEXT, demo, textOf("Demo Town", "Demo City"));
-		LocationNames.loadFromGarc(demoGame);
-		check("Demo City".equals(LocationNames.getLocName(1)),
-				"a demo is read at the demo's entry, not the retail one beside it (" + LocationNames.getLocName(1) + ")");
+		check("Demo City".equals(LocationNames.getLocName(demoGame, 1)),
+				"a demo is read at the demo's entry, not the retail one beside it (" + LocationNames.getLocName(demoGame, 1) + ")");
+
+		//A WRITER OF THE ENTRY SAYS SO (a rename, a text save): kept until then, read again after
+		fake.plant(ArchiveType.GAMETEXT, retail, textOf("Littleroot Town", "Renamed Town"));
+		check("Oldale Town".equals(LocationNames.getLocName(fake, 1)), "control: rewriting the entry alone changes nothing kept");
+		LocationNames.loadFromGarc(fake);
+		check("Renamed Town".equals(LocationNames.getLocName(fake, 1)),
+				"and after loadFromGarc - what a rename and a text save call - the rewritten entry is read ("
+				+ LocationNames.getLocName(fake, 1) + ")");
 
 		//a game with nothing at that entry
+		FakeGameFiles empty = new FakeGameFiles();
 		try {
-			LocationNames.loadFromGarc(new FakeGameFiles());
+			LocationNames.loadFromGarc(empty);
 			check(false, "a game with nothing at that entry is refused (it loaded)");
 		} catch (IllegalStateException ex) {
 			check(String.valueOf(ex.getMessage()).contains("GAMETEXT entry " + retail),
 					"a game with nothing at that entry is refused in words: " + firstLine(ex));
 		}
-		check("Demo City".equals(LocationNames.getLocName(1)), "and the refused load left the previous table in place");
-
-		Workspace.reset();
 		try {
-			LocationNames.getLocName(1);
-			check(false, "after a reset, with nothing loaded, a name is refused (it answered)");
+			LocationNames.getLocName(empty, 1);
+			check(false, "and a name asked of it is refused too (it answered)");
 		} catch (IllegalStateException ex) {
-			check(String.valueOf(ex.getMessage()).contains("workspace"),
-					"after a reset, with nothing loaded, a name is refused in words that name the workspace: " + firstLine(ex));
+			check(String.valueOf(ex.getMessage()).contains("GAMETEXT entry " + retail),
+					"and a name asked of it is refused in words, never a blank: " + firstLine(ex));
 		}
+		check("Demo City".equals(LocationNames.getLocName(demoGame, 1)), "and the refusals left every other game's table in place");
 		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
 				"after all of it no workspace is open and nothing reached the global");
 	}
@@ -635,9 +699,10 @@ public class HandedGameTest {
 		refuses("ItemText.setLine", () -> ItemText.setLine(null, ItemText.Which.NAMES, 1, "x"));
 		refuses("ItemText.count", () -> ItemText.count(null, ItemText.Which.NAMES));
 		refuses("ItemEditSession.open", () -> ItemEditSession.open(null));
-		refuses("PokeData.load", () -> PokeData.load(null));
+		refuses("PokeData.of", () -> PokeData.of(null));
 		refuses("LocationNames.gametextIndex", () -> LocationNames.gametextIndex(null));
 		refuses("LocationNames.loadFromGarc", () -> LocationNames.loadFromGarc(null));
+		refuses("LocationNames.getLocName", () -> LocationNames.getLocName(null, 1));
 	}
 
 	// ------------------------------------------------ 12. the NPC templates
@@ -665,8 +730,7 @@ public class HandedGameTest {
 
 	// ------------------------------------------------ 13. the prop database
 	static void thePropDatabaseIsBuiltFromTheGameItIsHanded() throws Exception {
-		System.out.println("--- the prop database is built from the archives of the game it is handed, and remembers which");
-		PropDatabase.invalidate();
+		System.out.println("--- the prop database is built from the archives of the game it is handed, and kept by that game");
 		FakeGameFiles fake = propGame(1, "pc01", "tree01");
 		check(!PropDatabase.isBuilt(fake), "nothing is built for a game nobody has asked about");
 		PropDatabase db = PropDatabase.get(fake);
@@ -687,17 +751,18 @@ public class HandedGameTest {
 		PropDatabase o = PropDatabase.get(other);
 		check(o != null && o != db && "bench01".equals(o.getModel(1).name),
 				"handed another game, the database is that game's (" + (o == null ? "null" : o.getModel(1).name) + ")");
-		check(PropDatabase.isBuilt(other) && !PropDatabase.isBuilt(fake),
-				"and the cache knows which game it now holds");
-		PropDatabase again = PropDatabase.get(fake);
-		check(again != o && "pc01".equals(again.getModel(1).name),
-				"handed the first game again, the first game's, rebuilt (" + again.getModel(1).name + ")");
+		check(PropDatabase.isBuilt(other) && PropDatabase.isBuilt(fake) && PropDatabase.get(fake) == db,
+				"and each game keeps its own: the first game's was not thrown away for the second's (F218)");
 
 		//a game with neither archive open: no database, not the last game's
 		check(PropDatabase.get(new FakeGameFiles()) == null, "a game with no archives open has no database, not the last game's");
 		check("pc01".equals(PropDatabase.get(fake).getModel(1).name), "and asking for it did not disturb the first game's");
-		PropDatabase.invalidate();
-		check(!PropDatabase.isBuilt(fake), "invalidate() forgets it");
+		fake.cache().drop();
+		check(!PropDatabase.isBuilt(fake) && PropDatabase.isBuilt(other),
+				"emptying a game's store - what a pack does - forgets that game's database and no other's");
+		PropDatabase again = PropDatabase.get(fake);
+		check(again != db && "pc01".equals(again.getModel(1).name),
+				"and the next ask rebuilds it from the game's archives (" + again.getModel(1).name + ")");
 		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
 				"after all of it no workspace is open and nothing reached the global");
 	}
@@ -705,7 +770,6 @@ public class HandedGameTest {
 	// ------------------------------------------------ 14. the move-model pool
 	static void theMoveModelPoolListsTheGameItIsHanded() throws Exception {
 		System.out.println("--- the move-model pool lists the models of the game it is handed, read through its staged copies");
-		MoveModelPool.invalidate();
 		FakeGameFiles fake = npcGame("hero", "rival");
 		check(MoveModelPool.size(fake) == 2 && "hero".equals(MoveModelPool.name(fake, 0)) && "rival".equals(MoveModelPool.name(fake, 1)),
 				"the pool is the handed game's (" + MoveModelPool.size(fake) + ": " + MoveModelPool.name(fake, 0) + ", " + MoveModelPool.name(fake, 1) + ")");
@@ -720,8 +784,15 @@ public class HandedGameTest {
 		check("hero".equals(MoveModelPool.name(fake, 0)) && MoveModelPool.size(fake) == 2,
 				"and handed the first again, the first game's");
 		check(MoveModelPool.size(new FakeGameFiles()) == 0, "a game with no MoveModels archive open lists nothing, not the last game's");
-		MoveModelPool.invalidate();
-		check(MoveModelPool.size(fake) == 2, "after invalidate() the pool reloads from the game it is handed");
+		//KEPT BY THE GAME UNTIL IT CHANGES (F218): a model the game now holds under another name
+		FakeGameFiles renamed = npcGame("hero", "prof");
+		java.nio.file.Files.copy(renamed.staged(ArchiveType.MOVE_MODELS, 1).toPath(),
+				fake.staged(ArchiveType.MOVE_MODELS, 1).toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+		check("rival".equals(MoveModelPool.name(fake, 1)), "control: rewriting a staged model alone changes nothing kept");
+		fake.cache().drop();
+		check("prof".equals(MoveModelPool.name(fake, 1)) && MoveModelPool.size(fake) == 2,
+				"after the game's store is emptied - what a pack does - the pool is read again, from what the game"
+				+ " holds now (" + MoveModelPool.name(fake, 1) + ")");
 		check(Workspace.session() == null && Workspace.persistPaths().isEmpty(),
 				"after all of it no workspace is open and nothing reached the global");
 	}
@@ -842,7 +913,7 @@ public class HandedGameTest {
 		//the decision "discard": nothing written, nothing reported, and said so
 		int heard = fake.edited().size();
 		byte[] onDisk = Files.readAllBytes(f.toPath());
-		reg.entries.remove(0);
+		reg.remove(0);
 		reg.modified = true;
 		check(reg.discard() && !reg.modified, "discard() forgets the change and says there was one");
 		check(Arrays.equals(onDisk, Files.readAllBytes(f.toPath())) && fake.edited().size() == heard,
@@ -1134,12 +1205,14 @@ public class HandedGameTest {
 		check(Arrays.equals(before, Files.readAllBytes(f.toPath())) && fake.edited().size() == heard && z.entities.modified,
 				"and nothing was written, nothing reported, and the entities stay modified");
 
-		//the decision "discard": nothing written, said so
-		check(z.discardEntities() && !z.entities.modified && z.changed().isEmpty(), "discardEntities() forgets the change and says there was one");
-		check(!z.discardEntities(), "and after it there is nothing to forget");
+		//the decision "discard": nothing written, the records put back to what the file holds (F106)
+		check(z.discardEntities() && !z.entities.modified && z.changed().isEmpty() && z.entities.warps.isEmpty(),
+				"discardEntities() puts the records back - the refused warp is gone - and says there was a change");
+		check(!z.discardEntities(), "and after it there is nothing to put back");
 
 		//given a destination, the entities are written
-		ZoneEntities.Warp w = z.entities.warps.get(z.entities.warps.size() - 1);
+		ZoneEntities.Warp w = new ZoneEntities.Warp();
+		z.entities.warps.add(w);
 		w.targetZone = 1;
 		w.targetWarpId = 0;
 		z.entities.modified = true;
@@ -1706,6 +1779,18 @@ public class HandedGameTest {
 					what + " handed null refuses and says why: " + firstLine(ex));
 		} catch (Exception ex) {
 			check(false, what + " handed null refuses in words, not with " + ex);
+		}
+	}
+
+	/** The shared-area check's refusal when it cannot tell, whole; null when it answered instead. */
+	static String cannotTell(FakeGameFiles g, int area, int zone) {
+		try {
+			String said = BchTexturePack.zonesUsingArea(g, area, zone);
+			System.out.println("    (it answered " + said + " instead of refusing)");
+			return null;
+		} catch (IllegalStateException ex) {
+			String m = String.valueOf(ex.getMessage());
+			return m.startsWith("Could not tell") ? m.replace('\n', ' ') : null;
 		}
 	}
 

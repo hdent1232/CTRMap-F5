@@ -36,17 +36,21 @@ import java.util.List;
  *
  * <p>The patch targets the <b>decompressed</b> code (Luma3DS's {@code code.ips}
  * and Azahar both operate on the decompressed image), so offsets are file
- * offsets into code.bin. IPS generation is self-contained (the stock words are
- * embedded from the RE), so a {@code code.ips} can be produced from N alone;
- * {@link #applyToCode} additionally verifies the stock bytes to guarantee it is
- * patching a matching ORAS build.
+ * offsets into code.bin.
+ *
+ * <p>BUILT AGAINST THE USER'S OWN EXECUTABLE, NEVER FROM N ALONE (F046). The IPS used to be
+ * made from N and the five offsets, which were measured on Omega Ruby, without ever seeing the
+ * code.bin it would be applied to - and handed to every ORAS user, an Alpha Sapphire one too,
+ * whose executable is a different build at a path their game does not read. Both builders now
+ * take the user's decompressed code.bin and {@link #verify} it first: every site must hold the
+ * stock word Omega Ruby holds there, or nothing is produced and the refusal names the site.
  */
 public class ZoneLimitPatch {
 
-	/** Stock ORAS zone count (indices 0..535). */
-	public static final int BASE_ZONES = 536;
-	/** Master-table row size in bytes (one zone header per row). */
-	public static final int MASTER_ROW = 0x38;
+	/** Stock zone count this patch is measured from: Omega Ruby / Alpha Sapphire's profile answers it (F205). */
+	public static final int BASE_ZONES = ctrmap.gamedef.GameProfile.of(ctrmap.gamedef.GameType.ORAS).retailZoneCount();
+	/** Master-table row size in bytes: one zone header per row. */
+	public static final int MASTER_ROW = ctrmap.formats.zone.ZoneHeader.SIZE;
 	/** Omega Ruby title id (for the Luma patch path). */
 	public static final String TITLE_ID = "000400000011C400";
 
@@ -88,6 +92,28 @@ public class ZoneLimitPatch {
 		return (BASE_ZONES + newZones + 3) & ~3;
 	}
 
+	/**
+	 * The master-table archive index once {@code addZones} more are added to a game that holds
+	 * {@code currentZones} now - the zones a previous append made, spares included, count toward
+	 * N, because the patch is always measured from the stock base.
+	 *
+	 * <p>ADDING IS NOT ONE-SHOT (F039). The appender refused any game that was not exactly the
+	 * stock 536, so the only way to a fifth zone after four was "Remove added zones", which
+	 * deletes every added zone and what was built in them. The code patch was never the obstacle:
+	 * it is built from the stock executable for any N, so a second append is the same patch for
+	 * a larger N, installed over the first.
+	 *
+	 * @throws IllegalArgumentException for a game with fewer than the stock zones, or a total
+	 *         past {@link #MAX_NEW_ZONES}
+	 */
+	public static int masterIndexFrom(int currentZones, int addZones) {
+		if (currentZones < BASE_ZONES) {
+			throw new IllegalArgumentException("the game holds " + currentZones + " zones, fewer than the stock "
+					+ BASE_ZONES + " this patch is measured from");
+		}
+		return masterIndex(currentZones - BASE_ZONES + addZones);
+	}
+
 	/** How many zone slots the archive must actually contain (real + spares). */
 	public static int totalZoneSlots(int newZones) {
 		return masterIndex(newZones);
@@ -110,11 +136,58 @@ public class ZoneLimitPatch {
 		return out;
 	}
 
+	/** The build the five offsets were measured on, which a code.bin must be before it is patched. */
+	public static final String MEASURED_ON = "Omega Ruby (title " + TITLE_ID + ")";
+
 	/**
-	 * Builds an IPS patch (for Luma3DS: sdmc:/luma/titles/{@value #TITLE_ID}/code.ips).
-	 * Self-contained; does not need the original code.bin.
+	 * Checks a decompressed code.bin holds the stock word at every site this patch edits.
+	 *
+	 * @throws IllegalStateException naming the first site that differs, or a file too short to
+	 *         hold one: it is not the build these offsets were measured on, and nothing may be
+	 *         patched - Alpha Sapphire's executable is a different build whose offsets nobody has
+	 *         measured
 	 */
-	public static byte[] buildIPS(int newZones) {
+	public static void verify(byte[] code) {
+		for (Patch p : patches(1)) {
+			if (code == null || code.length < p.fileOffset + 4) {
+				throw new IllegalStateException(String.format("this file is %d bytes, too short to hold"
+						+ " the patch site at 0x%X (%s) - it is not a decompressed code.bin of %s.",
+						code == null ? 0 : code.length, p.fileOffset, p.desc, MEASURED_ON));
+			}
+			for (int i = 0; i < 4; i++) {
+				if (code[p.fileOffset + i] != p.original[i]) {
+					throw new IllegalStateException(String.format("this code.bin is not the %s build"
+							+ " the zone-limit patch was measured on: offset 0x%X (%s) holds %08X where"
+							+ " that build holds %08X. An Alpha Sapphire executable is a different build"
+							+ " whose offsets nobody has measured, so nothing was patched.",
+							MEASURED_ON, p.fileOffset, p.desc, word(code, p.fileOffset), word(p.original, 0)));
+				}
+			}
+		}
+	}
+
+	private static int word(byte[] b, int at) {
+		return (b[at] & 0xFF) | (b[at + 1] & 0xFF) << 8 | (b[at + 2] & 0xFF) << 16 | (b[at + 3] & 0xFF) << 24;
+	}
+
+	/** The code.bin bytes a zone-limit save writes: the word at each site it patches (F152). */
+	public static int[][] owned() {
+		List<Patch> sites = patches(1);
+		int[][] out = new int[sites.size()][];
+		for (int i = 0; i < out.length; i++) {
+			out[i] = new int[]{sites.get(i).fileOffset, sites.get(i).fileOffset + 4};
+		}
+		return out;
+	}
+
+	/**
+	 * Builds an IPS patch (for Luma3DS: sdmc:/luma/titles/{@value #TITLE_ID}/code.ips) for THIS
+	 * code.bin, after {@link #verify} has passed on it.
+	 *
+	 * @throws IllegalStateException when it is not the build the offsets fit - nothing is built
+	 */
+	public static byte[] buildIPS(int newZones, byte[] code) {
+		verify(code);
 		ByteArrayOutputStream b = new ByteArrayOutputStream();
 		writeAscii(b, "PATCH");
 		for (Patch p : patches(newZones)) {
@@ -135,15 +208,9 @@ public class ZoneLimitPatch {
 	 * word first (throws if the input is not a matching ORAS build).
 	 */
 	public static byte[] applyToCode(int newZones, byte[] code) {
+		verify(code);
 		byte[] out = code.clone();
 		for (Patch p : patches(newZones)) {
-			for (int i = 0; i < 4; i++) {
-				if (out[p.fileOffset + i] != p.original[i]) {
-					throw new IllegalStateException(String.format(
-							"stock byte mismatch at code offset 0x%X (%s): not a matching ORAS code.bin",
-							p.fileOffset + i, p.desc));
-				}
-			}
 			System.arraycopy(p.patched, 0, out, p.fileOffset, 4);
 		}
 		return out;

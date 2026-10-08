@@ -13,13 +13,13 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.Objects;
 
 /**
  * Basic implementation of the first section of AreaData, the prop registry.
@@ -29,7 +29,11 @@ public class ADPropRegistry {
 	private AD f;
 	public Map<Integer, ADPropRegistryEntry> entries = new LinkedHashMap<>();
 	public Map<Integer, H3DModel> models = new HashMap<>();
+	/** The models as read or last written: what a discard puts back (F106). */
+	private Map<Integer, H3DModel> savedModels = new HashMap<>();
 	public boolean modified = false;
+	/** References the area held more than once: only the last of each was kept when it was read. */
+	private final List<Integer> duplicates = new ArrayList<>();
 
 	/**
 	 * The registry's entries only: no model is read, so no game is needed.
@@ -65,19 +69,10 @@ public class ADPropRegistry {
 	}
 
 	private ADPropRegistry(AD ad, List<H3DTexture> textures, GameFiles files, boolean loadModels) {
-		try {
-			f = ad;
-			LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(ad.getFile(0)));
-			int numEntries = dis.readInt();
-			for (int i = 0; i < numEntries; i++) {
-				ADPropRegistryEntry entry = new ADPropRegistryEntry(dis);
-				if (entries.containsKey(entry.reference)) {
-					System.err.println("ADPropRegistry: duplicate reference id " + entry.reference + " at entry " + i + " - the previous entry will be overwritten");
-				}
-				entries.put(entry.reference, entry);
-				if (!loadModels) {
-					continue;
-				}
+		f = ad;
+		read();
+		if (loadModels) {
+			for (ADPropRegistryEntry entry : entries.values()) {
 				File model = files.staged(ArchiveType.BUILDING_MODELS, entry.model);
 				if (model == null || !model.isFile()) {
 					//refused in words, where the container base would have died on a
@@ -95,32 +90,151 @@ public class ADPropRegistry {
 					models.put(entry.reference, bch.models.get(0));
 				}
 			}
-			dis.close();
-		} catch (IOException ex) {
-			System.err.println("IOException thrown when reading prop registry");
-			ex.printStackTrace();
 		}
+		savedModels = new HashMap<>(models);
+	}
+
+	/**
+	 * The entries, from the area: what the registry opens with and what a discard goes back to
+	 * (F106). Read whole before anything held is replaced, so a read that fails leaves it as it was.
+	 */
+	private void read() {
+		Map<Integer, ADPropRegistryEntry> read = new LinkedHashMap<>();
+		List<Integer> twice = new ArrayList<>();
+		try (LittleEndianDataInputStream dis = new LittleEndianDataInputStream(new ByteArrayInputStream(f.getFile(0)))) {
+			int numEntries = dis.readInt();
+			for (int i = 0; i < numEntries; i++) {
+				ADPropRegistryEntry entry = new ADPropRegistryEntry(dis);
+				if (read.containsKey(entry.reference)) {
+					//the map keeps one entry per reference, so writing this registry back would drop
+					//the other: noted here, and serialize() refuses rather than doing it (F084)
+					twice.add(entry.reference);
+				}
+				read.put(entry.reference, entry);
+			}
+		} catch (IOException ex) {
+			//REFUSED, NOT PRINTED (F084): a short read kept the entries read so far, and the next
+			//write saved that shorter registry back over the area's
+			throw new IllegalStateException("The prop registry of " + (f == null ? "(no area)" : f.getOriginFile().getName())
+					+ " could not be read, so it was not opened: " + (ex instanceof java.io.EOFException
+					? "it ends before the entries it declares" : ctrmap.util.Bytes.reason(ex)), ex);
+		}
+		entries.clear();
+		entries.putAll(read);
+		duplicates.clear();
+		duplicates.addAll(twice);
+	}
+
+	/**
+	 * Puts the entries back to what the area holds and the models to what they were when it was read
+	 * or last written, writing nothing (F106). No used to clear the flag and keep the edited and added
+	 * entries, where the props went on being drawn from them and the next registry save wrote them.
+	 *
+	 * @return true when there was a change to put back, false when the registry was not modified
+	 * @throws IllegalStateException when the area no longer reads; nothing here is changed then
+	 */
+	public boolean discard() {
+		if (!modified) {
+			return false;
+		}
+		read();
+		models.clear();
+		models.putAll(savedModels);
+		modified = false;
+		return true;
 	}
 	
 	public H3DModel getModel(int uid){
 		return models.get(uid);
 	}
 	
-	public void write(){
-		if (modified == false) return;
-		modified = false;
+	/**
+	 * The registry as the area stores it: the count, then every entry in order. The one writer of
+	 * the layout (F084) - the map painter wrote the same body a second time, because write() went
+	 * straight to the container and could not hand the bytes back.
+	 *
+	 * @throws IllegalStateException when the area held a reference twice: only one of the two was
+	 * kept when it was read, so writing the registry back would drop the other without a word
+	 */
+	public byte[] serialize() {
+		if (!duplicates.isEmpty()) {
+			throw new IllegalStateException("This area's prop registry holds reference(s) " + duplicates
+					+ " more than once. Only one of each could be kept when it was read, so it is not written"
+					+ " back - that would drop the others.");
+		}
 		try {
 			ByteArrayOutputStream baos = new ByteArrayOutputStream();
 			LittleEndianDataOutputStream dos = new LittleEndianDataOutputStream(baos);
 			dos.writeInt(entries.size());
-			for (Map.Entry<Integer, ADPropRegistryEntry> e : entries.entrySet()){
-				e.getValue().write(dos);
+			for (ADPropRegistryEntry e : entries.values()) {
+				e.write(dos);
 			}
 			dos.close();
-			f.storeFile(0, baos.toByteArray());
+			return baos.toByteArray();
 		} catch (IOException ex) {
-			Logger.getLogger(ADPropRegistry.class.getName()).log(Level.SEVERE, null, ex);
+			throw new IllegalStateException("the prop registry could not be assembled: " + ctrmap.util.Bytes.reason(ex), ex);
 		}
+	}
+
+	/**
+	 * Stores the registry in its area when it was changed. {@link #modified} is cleared only once
+	 * the store has happened: it was cleared first, so a write that failed was forgotten (F084).
+	 */
+	public void write() {
+		if (!modified) {
+			return;
+		}
+		f.storeFile(0, serialize());
+		modified = false;
+		savedModels = new HashMap<>(models);
+	}
+
+	/**
+	 * Puts {@code entry} where the entry {@code oldReference} was - the same place in the written
+	 * order. Remove-then-put moved an edited entry to the end of the registry (F084).
+	 *
+	 * @throws IllegalArgumentException when there is no such entry, or the entry's reference is
+	 * already another entry's
+	 */
+	public void replace(int oldReference, ADPropRegistryEntry entry) {
+		if (!entries.containsKey(oldReference)) {
+			throw new IllegalArgumentException("no prop registry entry has reference " + oldReference);
+		}
+		if (entry.reference != oldReference && entries.containsKey(entry.reference)) {
+			throw new IllegalArgumentException("reference " + entry.reference + " is already registered");
+		}
+		Map<Integer, ADPropRegistryEntry> next = new LinkedHashMap<>();
+		for (Map.Entry<Integer, ADPropRegistryEntry> e : entries.entrySet()) {
+			if (e.getKey() == oldReference) {
+				next.put(entry.reference, entry);
+			} else {
+				next.put(e.getKey(), e.getValue());
+			}
+		}
+		entries.clear();
+		entries.putAll(next);
+		modified = true;
+	}
+
+	/**
+	 * Adds {@code entry} under the lowest free reference from {@code preferredReference} up, and
+	 * answers it. Every addition goes through here: the registry editor's New entry put each one
+	 * under the fixed key -1, so a second click replaced the first in the registry while the list
+	 * went on showing both (F084), and two other callers searched for a free reference by hand.
+	 * It does not mark the registry modified; a caller that stages the bytes itself does not want it.
+	 */
+	public int register(ADPropRegistryEntry entry, int preferredReference) {
+		int ref = Math.max(0, preferredReference);
+		while (entries.containsKey(ref)) {
+			ref++;
+		}
+		if (ref > 0xFFFF) {
+			throw new IllegalStateException("no prop reference is free from " + preferredReference
+					+ " up: references are 16-bit");
+		}
+		entry.reference = ref;
+		entries.put(ref, entry);
+		return ref;
 	}
 
 	public static class ADPropRegistryEntry {
@@ -155,8 +269,7 @@ public class ADPropRegistry {
 			for (int i = 0; i < 9; i++) {
 				evtAnimations2[i / 3][i % 3] = dis.readShort();
 			}
-			dis.read(u2);
-			dis.close();
+			dis.readFully(u2);
 		}
 		
 		public ADPropRegistryEntry(){
@@ -169,7 +282,8 @@ public class ADPropRegistry {
 			for (int i = 0; i < 3; i++) {
 				omnipresentAnimations[i] = -1;
 			}
-			for (int i = 0; i < 3; i++) {
+			//all four: the field's own note says the fourth is never seen as anything but FFFF
+			for (int i = 0; i < 4; i++) {
 				evtAnimations1[i] = -1;
 			}
 			for (int i = 0; i < 9; i++) {
@@ -196,19 +310,52 @@ public class ADPropRegistry {
 				dos.writeShort(evtAnimations2[i / 3][i % 3]);
 			}
 			dos.write(u2);
-			dos.close();
+		}
+
+		/**
+		 * A deep copy. The registry editor edits one of these (F084): it rebuilt the entry from
+		 * defaults and copied back only the fields it shows, so every edit reset the 36 bytes nobody
+		 * models to a constant.
+		 */
+		public ADPropRegistryEntry copy() {
+			ADPropRegistryEntry c = new ADPropRegistryEntry();
+			c.reference = reference;
+			c.model = model;
+			c.eventScr1 = eventScr1;
+			c.eventScr2 = eventScr2;
+			c.u0 = u0;
+			c.isOmnipresentAnimated = isOmnipresentAnimated;
+			c.u1 = u1;
+			c.omnipresentAnimations = omnipresentAnimations.clone();
+			c.evtAnimations1 = evtAnimations1.clone();
+			c.evtAnimations2 = new short[evtAnimations2.length][];
+			for (int i = 0; i < evtAnimations2.length; i++) {
+				c.evtAnimations2[i] = evtAnimations2[i].clone();
+			}
+			c.u2 = u2.clone();
+			return c;
 		}
 		
+		/** Every field, u2 included (F084): it answered true for null and for anything else, and never compared u2. */
 		@Override
-		public boolean equals(Object obj){
-			if (obj != null && obj instanceof ADPropRegistryEntry){
-				ADPropRegistryEntry e = (ADPropRegistryEntry) obj;
-				return e.reference == reference && e.model == model && e.eventScr1 == eventScr1 && e.eventScr2 == eventScr2 &&
-						e.u0 == u0 && e.isOmnipresentAnimated == isOmnipresentAnimated && e.u1 == u1 &&
-						Arrays.equals(e.omnipresentAnimations, omnipresentAnimations) && Arrays.equals(e.evtAnimations1, evtAnimations1) &&
-						Arrays.deepEquals(e.evtAnimations2, evtAnimations2);
+		public boolean equals(Object obj) {
+			if (!(obj instanceof ADPropRegistryEntry)) {
+				return false;
 			}
-			return true;
+			ADPropRegistryEntry e = (ADPropRegistryEntry) obj;
+			return e.reference == reference && e.model == model && e.eventScr1 == eventScr1 && e.eventScr2 == eventScr2
+					&& e.u0 == u0 && e.isOmnipresentAnimated == isOmnipresentAnimated && e.u1 == u1
+					&& Arrays.equals(e.omnipresentAnimations, omnipresentAnimations) && Arrays.equals(e.evtAnimations1, evtAnimations1)
+					&& Arrays.deepEquals(e.evtAnimations2, evtAnimations2) && Arrays.equals(e.u2, u2);
+		}
+
+		@Override
+		public int hashCode() {
+			int h = Objects.hash(reference, model, eventScr1, eventScr2, u0, isOmnipresentAnimated, u1);
+			h = 31 * h + Arrays.hashCode(omnipresentAnimations);
+			h = 31 * h + Arrays.hashCode(evtAnimations1);
+			h = 31 * h + Arrays.deepHashCode(evtAnimations2);
+			return 31 * h + Arrays.hashCode(u2);
 		}
 	}
 }
